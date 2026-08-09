@@ -14,7 +14,7 @@ sandboxes. The suite covers complete user sessions rather than individual implem
 units: invocation and failure behavior, human output, structured output, and the cache
 lifecycle.
 
-Four session files and one portable fixture are the target.
+The suite uses four session files and one portable fixture.
 Exact output is the default.
 Patterns are limited to values the test does not control: sandbox paths, filesystem
 timestamps, allocated block counts, and operating-system error text.
@@ -156,15 +156,16 @@ partial run emits a valid JSON document and a usage error does not.
   truncated
 - `--by-type --json` is rejected rather than silently ignoring `--by-type`; JSON already
   carries both the tree and extension projections
-- Invalid Unicode never collapses two filesystem identities.
+- Invalid Unicode never collapses two retained node identities.
   A node whose name is not valid Unicode retains the lossy `name` for display and adds
   `name_raw` with a documented platform encoding and hexadecimal payload.
   The root has the corresponding optional `root_raw` field
 
 Raw identity fields are omitted when the adjacent string is valid Unicode.
-On Unix, `encoding` is `unix-bytes` and `hex` is the lowercase, prefix-free byte
-sequence returned by `OsStr`. On Windows, `encoding` is `windows-wtf16le` and `hex` is
-the lowercase, prefix-free little-endian sequence of raw 16-bit code units.
+On Unix, `encoding` is `unix-bytes` and `hex` is the lowercase byte sequence returned by
+`OsStr`, without a `0x` prefix.
+On Windows, `encoding` is `windows-wtf16le` and `hex` is the lowercase little-endian
+sequence of raw 16-bit code units, also without a prefix.
 
 The completeness and raw-name fields are additive to `fdu.tree/2`; they do not change
 the meaning or type of existing fields.
@@ -188,7 +189,7 @@ A future breaking shape change still requires a schema-version bump.
 The suite is organized by state ownership.
 Each file gets one sandbox and contains the commands that must share that state.
 
-| Session file | Unique behavior covered | Planned `fdu` invocations |
+| Session file | Unique behavior covered | `fdu` invocations |
 | --- | --- | ---: |
 | `cli-surface.tryscript.md` | Exact help and version; default path on an empty tree; unknown option; missing root; file-as-root; stdout/stderr/exit separation | 6 |
 | `cli-human.tryscript.md` | Full apparent-size tree; stable ordering and bars; depth and per-directory number limits; extension grouping; compound and case-folded extensions | 3 |
@@ -256,7 +257,7 @@ The complete suite sets:
 | `OS_ERROR` | Kernel error wording and numeric suffix differ | Error class, failing path, cause structure, stream, and exit status |
 | `BLANK_LINE` | Tryscript cannot spell an empty stderr line without trailing whitespace | Exactly one newline; no content is elided |
 
-No generic multiline elision is planned.
+No generic multiline elision is used.
 Stable version numbers, schema identifiers, flags, counts, sizes, ordering, percentages,
 bars, source labels, booleans, and error prefixes remain literal.
 
@@ -286,6 +287,8 @@ These tests supplement rather than repeat the full transcripts.
 - Run `npm audit` after installation and keep the existing Cargo audit
 - Use Node 24 in CI and the package’s declared minimum of Node 20 for local development
 - Build `target/debug/fdu` before running the transcripts
+- Pass the transcript glob in portable double quotes and force every golden input to LF
+  at checkout so Windows observes the same fixture bytes
 
 The test command performs no network access after the locked npm install.
 Tryscript is a development-only tool and does not enter either Rust crate’s dependency
@@ -312,14 +315,14 @@ graph or published artifacts.
 
 ### Phase 2: Make the Contract a Handoff Gate
 
-- [ ] Add `make test-golden` and `make golden-update`; include the former in `make test`
+- [x] Add `make test-golden` and `make golden-update`; include the former in `make test`
   and `make check`
-- [ ] Run the golden suite on Linux, macOS, and Windows in CI with a SHA-pinned Node
+- [x] Run the golden suite on Linux, macOS, and Windows in CI with a SHA-pinned Node
   setup action and npm cache
-- [ ] Document the update-and-review workflow without duplicating tryscript syntax
-- [ ] Verify that an intentional stable-output mutation fails, that `--update` changes
+- [x] Document the update-and-review workflow without duplicating tryscript syntax
+- [x] Verify that an intentional stable-output mutation fails, that `--update` changes
   only the intended block, and that reverting the mutation restores a clean pass
-- [ ] Review every golden for unnecessary patterns and every focused test for duplicate
+- [x] Review every golden for unnecessary patterns and every focused test for duplicate
   coverage
 
 ## Issue Ledger
@@ -341,6 +344,8 @@ design decision and acceptance behavior.
 | Tryscript cannot express an exact blank stderr line without fragile trailing whitespace | Accept bare `!` as an empty stderr line; use an exact newline pattern until released | `fdu-ms3k` | Reported as [tryscript 45](https://github.com/jlevy/tryscript/issues/45) |
 | Tryscript concatenates multiple `$` prompts in one fence into one command | Reject the second prompt or parse it as an independent invocation | `fdu-lz5o` | Reported as [tryscript 46](https://github.com/jlevy/tryscript/issues/46) |
 | Tryscript `--update` misassigns results among identical raw blocks | Replace blocks by source range; keep stateful command spellings distinct until released | `fdu-hs0l` | Reported as [tryscript 47](https://github.com/jlevy/tryscript/issues/47) |
+| POSIX single quotes in npm scripts become literal on Windows | Quote the transcript glob portably for Unix shells and `cmd.exe` | `fdu-p7wj` | Fixed |
+| Git could convert the size-sensitive fixture from LF to CRLF on Windows | Pin every golden input to LF in `.gitattributes` | `fdu-p7wj` | Fixed |
 
 ## Bead Map
 
@@ -359,6 +364,7 @@ Epic: **fdu-a0w0** — Specify and harden the fdu CLI with golden tests.
 | `fdu-ms3k` | Upstream blank-stderr parser issue and local exact workaround | — |
 | `fdu-lz5o` | Upstream multi-command parser issue and one-fence-per-command rule | — |
 | `fdu-hs0l` | Upstream updater identity bug and distinct-command workaround | — |
+| `fdu-p7wj` | Portable npm glob quoting and fixture line endings on Windows | — |
 | `fdu-xuq9` | Make, CI, npm audit, and review workflow | All behavior slices |
 
 ## Acceptance Criteria

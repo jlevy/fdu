@@ -3,14 +3,18 @@
 .DEFAULT_GOAL := help
 
 CARGO ?= cargo
+NPM ?= npm
+NODE_INSTALL_STAMP := node_modules/.package-lock.json
 
-.PHONY: help build release test check fix fmt fmt-check clippy docs audit python-smoke clean cli
+.PHONY: help build release test rust-test test-golden golden-update check fix fmt fmt-check clippy docs audit npm-audit python-smoke clean cli
 
 help:
 	@echo "make build      Debug build of the core library and CLI, all features"
 	@echo "make release    Optimized build of the core library and CLI"
-	@echo "make test       Run the test suite"
-	@echo "make check      Handoff gate: Rust gates, audit, and installed-wheel smoke"
+	@echo "make test       Run Rust tests and the CLI golden contract"
+	@echo "make test-golden  Build and compare the CLI golden contract"
+	@echo "make golden-update  Regenerate intentional golden changes, then compare"
+	@echo "make check      Handoff gate: tests, audits, docs, and installed-wheel smoke"
 	@echo "make fix        Apply formatting and machine-applicable lint fixes"
 	@echo "make audit      Dependency advisory and license audit (needs cargo-deny)"
 	@echo "make python-smoke  Build, install, and smoke-test the locked Python wheel"
@@ -22,11 +26,25 @@ build:
 release:
 	$(CARGO) build --locked --release -p fdu --all-features
 
-test:
+test: rust-test test-golden
+
+rust-test:
 	$(CARGO) test --locked --all-features
 
+test-golden: build $(NODE_INSTALL_STAMP)
+	$(NPM) run test:golden
+
+# Tryscript returns nonzero when it updates a previously failing block. The immediate
+# comparison is authoritative and catches execution failures or incomplete updates.
+golden-update: build $(NODE_INSTALL_STAMP)
+	-$(NPM) run test:golden:update
+	$(NPM) run test:golden
+
+$(NODE_INSTALL_STAMP): package.json package-lock.json .npmrc
+	$(NPM) ci
+
 # Everything CI enforces, in the order that fails fastest.
-check: fmt-check clippy test docs lib-only audit python-smoke
+check: fmt-check clippy test docs lib-only audit npm-audit python-smoke
 
 fmt:
 	$(CARGO) fmt --all
@@ -51,6 +69,9 @@ fix:
 
 audit:
 	$(CARGO) deny --locked check
+
+npm-audit: $(NODE_INSTALL_STAMP)
+	$(NPM) audit --audit-level=moderate
 
 python-smoke:
 	cd crates/fdu-py && wheel_dir="$$(mktemp -d "$${TMPDIR:-/tmp}/fdu-wheel.XXXXXX")" && \

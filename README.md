@@ -7,10 +7,10 @@ it hold, what changed most recently, and what kinds of files live in it.
 One walk, many metrics, cached between runs.
 
 > **Status: early scaffold.** The observation/commit contract, bounded in-process change
-> feed, cache lifecycle, applying reconciler, CLI, and Python wheel are tested end to end.
-> The fast walker is not — the current one is a portable `read_dir` + `symlink_metadata`
-> implementation, and **no performance claim should be made for this crate until the
-> syscall layer lands and the benchmark gate passes**. See
+> feed, cache lifecycle, applying reconciler, CLI, and Python wheel are tested end to
+> end. The fast walker is not — the current one is a portable `read_dir` +
+> `symlink_metadata` implementation, and **no performance claim should be made for this
+> crate until the syscall layer lands and the benchmark gate passes**. See
 > [docs/project/specs/active/plan-2026-08-08-fdu-phase-1.md](docs/project/specs/active/plan-2026-08-08-fdu-phase-1.md).
 
 ## Why
@@ -34,8 +34,9 @@ cargo install --path crates/fdu
 make python-smoke          # build, install, and exercise the wheel in an isolated venv
 ```
 
-Publishing is Phase 1 work. `cargo install fdu` and `uv add fdu` are future commands;
-neither package should be presented as available from crates.io or PyPI yet.
+Publishing is Phase 1 work.
+`cargo install fdu` and `uv add fdu` are future commands; neither package should be
+presented as available from crates.io or PyPI yet.
 
 ## Use it
 
@@ -54,9 +55,13 @@ fdu --json .               # stable, versioned JSON for agents and scripts
 ```
 
 `--help` is the complete source of truth.
-JSON output carries a `schema` field (`fdu.tree/2`) that is versioned with the tool, plus
-freshness and per-path error details. Exit status 2 means partial results; pass
-`--allow-partial` to accept those as success. Exit status 1 means the command failed.
+JSON output carries a `schema` field (`fdu.tree/2`) that is versioned with the tool,
+plus freshness and per-path error details.
+Scan completeness, scan scope, and rendered-tree truncation are separate fields.
+Invalid-Unicode paths retain their display string and add a lossless, platform-tagged
+raw identity.
+Exit status 2 means partial results; pass `--allow-partial` to accept those
+as success. Exit status 1 means the command failed.
 
 ## As a Rust library
 
@@ -112,21 +117,26 @@ Three artifacts and one contract:
 | **Observation** | Verified producer input, optionally conditional on the indexed path state |
 | **AppliedDelta** | A clocked batch of effective committed changes for the bounded change feed |
 
-Everything else produces observations or consumes applied deltas. A cold scan establishes
-a historyless baseline; a reconciliation sweep conditionally applies its diff while it
-walks; the watch layer coalesces event hints and verifies them by stat. The index alone
-arbitrates observations, removes no-ops, advances the clock, and mints `AppliedDelta`.
+Everything else produces observations or consumes applied deltas.
+A cold scan establishes a historyless baseline; a reconciliation sweep conditionally
+applies its diff while it walks; the watch layer coalesces event hints and verifies them
+by stat.
+The index alone arbitrates observations, removes no-ops, advances the clock, and
+mints `AppliedDelta`.
 
 Today, `open()` is deliberately blocking: it loads a usable snapshot and completes a
-filesystem reconciliation before returning. It never serves the snapshot as fresh before
-that pass, and it never replaces a complete snapshot with a partial result. `IndexHandle`
-and the reconciliation APIs support readers between applied batches with explicit
-`Fresh`, `Reconciling`, `Stale`, and `Partial` state, but applications must opt into that
-serving model. The optional watcher is an adapter and driver; `open()` and the Python API
-do not start it automatically. Its applying driver currently accepts only an unbounded,
-cross-filesystem scope; bounded-depth and one-filesystem event filtering is tracked as
-watch-hardening work and those configurations fail explicitly rather than indexing
-excluded paths.
+filesystem reconciliation before returning.
+It never serves the snapshot as fresh before that pass, and it never replaces a complete
+snapshot with a partial result.
+`IndexHandle` and the reconciliation APIs support readers between applied batches with
+explicit `Fresh`, `Reconciling`, `Stale`, and `Partial` state, but applications must opt
+into that serving model.
+The optional watcher is an adapter and driver; `open()` and the Python API do not start
+it automatically, and the Python wheel does not compile the watch dependency.
+Its applying driver re-verifies queued samples at a clock-stable commit boundary and
+currently accepts only an unbounded, cross-filesystem scope; bounded-depth and
+one-filesystem event filtering is tracked as watch-hardening work and those
+configurations fail explicitly rather than indexing excluded paths.
 
 Two invariants are non-negotiable, because a cache that lies is worse than no cache:
 
@@ -135,24 +145,33 @@ Two invariants are non-negotiable, because a cache that lies is worse than no ca
   kernel-controlled. All observed stat fields are still compared when updating stored
   state, so allocated-byte or device changes cannot leave query results stale.
 - A corrupt or unrecognized snapshot is treated as **absent, never as data**. Failing
-  closed costs a rescan; failing open silently corrupts every answer built on it. The
-  bootstrap format verifies its payload checksum before parsing records, and Unix cache
-  files are created owner-only because they contain a filesystem inventory.
-- Conditional observations carry generation and revision guards. Present-state ABA,
-  parent replacement, and absent create/remove races are rejected at one batch boundary
-  without making changes in unrelated subtrees conflict.
-- Cold scans and every warm mutation path enforce the same semantic scope. Depth zero is
-  root-only, and subtree reconciliation refuses paths below depth/filesystem boundaries
-  or through symlink ancestors.
+  closed costs a rescan; failing open silently corrupts every answer built on it.
+  The bootstrap format verifies its payload checksum before parsing records, and Unix
+  cache files are created owner-only because they contain a filesystem inventory.
+- Conditional observations carry generation and revision guards.
+  Present-state ABA, parent replacement, and absent create/remove races are rejected at
+  one batch boundary without making changes in unrelated subtrees conflict.
+- Cold scans and every warm mutation path enforce the same semantic scope.
+  Depth zero is root-only, and subtree reconciliation refuses paths below
+  depth/filesystem boundaries or through symlink ancestors.
 
 ## Development
 
 ```shell
+npm ci          # install the exact development-only golden-test toolchain
 make build      # debug build, all features
-make test       # test suite
-make check      # Rust gates, dependency audit, and installed-wheel smoke — the handoff gate
+make test       # Rust tests plus the end-to-end CLI golden contract
+make test-golden  # build and compare only the four CLI sessions
+make check      # tests, audits, docs, and installed-wheel smoke — the handoff gate
 make fix        # apply formatting
 ```
+
+The golden sessions are executable Markdown under `tests/golden/`. After an intentional
+CLI output change, run `make golden-update`; it regenerates affected blocks and
+immediately reruns comparison.
+Review the Markdown diff before committing.
+The scenario design and the small set of permitted dynamic patterns are documented in
+[the CLI golden-test plan](docs/project/specs/active/plan-2026-08-09-fdu-cli-golden-tests.md).
 
 ## License
 
@@ -161,3 +180,7 @@ MIT. See [LICENSE](LICENSE).
 Designs adapted from GPL-licensed tools (`dut`’s atomic-refcount roll-up, `fsearch`’s
 record layout) are clean reimplementations written from the descriptions in the research
 doc, not transliterated from their source.
+
+<!-- This document follows common-doc-guidelines.md.
+See github.com/jlevy/practical-prose and review guidelines before editing.
+-->

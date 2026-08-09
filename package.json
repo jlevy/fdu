@@ -6,8 +6,8 @@
     "node": ">=20"
   },
   "scripts": {
-    "test:golden": "tryscript run 'tests/golden/*.tryscript.md'",
-    "test:golden:update": "tryscript run --update 'tests/golden/*.tryscript.md'"
+    "test:golden": "tryscript run \"tests/golden/*.tryscript.md\"",
+    "test:golden:update": "tryscript run --update \"tests/golden/*.tryscript.md\""
   },
   "devDependencies": {
     "tryscript": "0.1.7"
