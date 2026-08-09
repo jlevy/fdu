@@ -4,6 +4,10 @@
   "root": "/fixture",
   "source": "cold_scan",
   "complete": false,
+  "display_depth": 2,
+  "entries_per_directory": 10,
+  "scan_max_depth": null,
+  "tree_truncated": false,
   "freshness": "partial",
   "errors": [
     "I/O error at /fixture/denied: denied"

@@ -250,6 +250,13 @@ impl Cli {
             })
         )?;
         writeln!(out, "  \"complete\": {},", report.is_complete())?;
+        writeln!(out, "  \"display_depth\": {},", self.depth)?;
+        writeln!(out, "  \"entries_per_directory\": {},", self.number)?;
+        match self.max_depth {
+            Some(max_depth) => writeln!(out, "  \"scan_max_depth\": {max_depth},")?,
+            None => writeln!(out, "  \"scan_max_depth\": null,")?,
+        }
+        writeln!(out, "  \"tree_truncated\": {},", self.tree_is_truncated(index))?;
         writeln!(out, "  \"freshness\": {},", quote(freshness_label(index.freshness())))?;
         writeln!(out, "  \"errors\": [")?;
         for (position, error) in report.errors().iter().enumerate() {
@@ -284,6 +291,26 @@ impl Cli {
         writeln!(out)?;
         writeln!(out, "}}")?;
         Ok(())
+    }
+
+    /// Return whether the rendered tree omits any entry retained in `index`.
+    fn tree_is_truncated(&self, index: &Index) -> bool {
+        self.json_node_is_truncated(index, EntryId::ROOT, 0)
+    }
+
+    fn json_node_is_truncated(&self, index: &Index, id: EntryId, depth: usize) -> bool {
+        let children = index.children_of(id).unwrap_or_default();
+        if children.is_empty() {
+            return false;
+        }
+        if depth >= self.depth || children.len() > self.number {
+            return true;
+        }
+
+        children.into_iter().any(|(_, child)| {
+            index.kind_of(child).is_some_and(EntryKind::is_dir)
+                && self.json_node_is_truncated(index, child, depth + 1)
+        })
     }
 
     fn write_json_node(
@@ -612,5 +639,32 @@ mod tests {
         let apparent = rendered.find("\"name\": \"apparent-heavy\"").expect("apparent file");
 
         assert!(allocated < apparent);
+    }
+
+    #[test]
+    fn tree_truncation_distinguishes_exact_fit_from_hidden_entries() {
+        let (mut cli, index, _) = schema_fixture();
+
+        cli.depth = 2;
+        cli.number = 10;
+        assert!(!cli.tree_is_truncated(&index));
+
+        cli.depth = 1;
+        assert!(cli.tree_is_truncated(&index));
+
+        cli.depth = 2;
+        cli.number = 4;
+        assert!(!cli.tree_is_truncated(&index));
+
+        cli.number = 3;
+        assert!(cli.tree_is_truncated(&index));
+
+        cli.depth = 0;
+        cli.number = 10;
+        assert!(cli.tree_is_truncated(&index));
+
+        cli.depth = 2;
+        cli.number = 0;
+        assert!(cli.tree_is_truncated(&index));
     }
 }

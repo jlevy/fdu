@@ -291,7 +291,7 @@ graph or published artifacts.
 - [ ] Add one failing transcript at a time, then make it pass before adding the next
 - [x] Fix the human by-type measure mismatch under its failing transcript
 - [x] Reject ignored output-mode combinations under an argument-contract transcript
-- [ ] Add explicit JSON scan-scope and tree-projection completeness under exact goldens
+- [x] Add explicit JSON scan-scope and tree-projection completeness under exact goldens
 - [ ] Preserve invalid filesystem names in machine output under platform-focused tests
 - [x] Expand `--help` so the golden document is genuinely sufficient for scripts and
   agents, including exit statuses and limit semantics
@@ -320,13 +320,13 @@ design decision and acceptance behavior.
 
 | Finding | Required behavior | Bead | Status |
 | --- | --- | --- | --- |
-| The current JSON `complete` field can be true while depth or row limits omit retained entries | Report scan scope and tree truncation independently | `fdu-y0o2` | Open |
+| The current JSON `complete` field can be true while depth or row limits omit retained entries | Report scan scope and tree truncation independently | `fdu-y0o2` | Fixed |
 | Human `--by-type` rows use apparent bytes while the default summary uses allocated bytes | Use apparent bytes consistently for the entire by-type view | `fdu-msbx` | Fixed |
 | `--by-type --json` silently ignores `--by-type` | Reject the conflicting modes with a usage error | `fdu-msbx` | Fixed |
 | Lossy JSON names can collapse distinct non-UTF-8 filesystem entries | Emit optional raw identity data with a documented platform encoding | `fdu-17to` | Open |
 | `--help` claims to be complete but omits exit-status and projection-scope semantics | Put those contracts in help and lock the whole output | `fdu-cauc` | Fixed |
 | ANSI stripping and non-terminal subprocesses prevent tryscript from proving color behavior | Keep a focused deterministic color-decision contract test | `fdu-qqpt` | Open |
-| The current binary integration suite covers only the Unix partial-result path | Add four portable end-to-end sessions and retain narrow platform tests | `fdu-ijz4` | Open |
+| The current binary integration suite covers only the Unix partial-result path | Add four portable end-to-end sessions and retain narrow platform tests | `fdu-ijz4` | In progress |
 | The documented workspace build links the PyO3 `cdylib` directly and fails on macOS outside maturin | Build the core CLI directly and keep maturin as the binding artifact gate | `fdu-f4o2` | Fixed |
 | Tryscript cannot express an exact blank stderr line without fragile trailing whitespace | Accept bare `!` as an empty stderr line; use an exact newline pattern until released | `fdu-ms3k` | Reported as [tryscript 45](https://github.com/jlevy/tryscript/issues/45) |
 | Tryscript concatenates multiple `$` prompts in one fence into one command | Reject the second prompt or parse it as an independent invocation | `fdu-lz5o` | Reported as [tryscript 46](https://github.com/jlevy/tryscript/issues/46) |
