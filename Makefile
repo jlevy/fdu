@@ -7,8 +7,8 @@ CARGO ?= cargo
 .PHONY: help build release test check fix fmt fmt-check clippy docs audit python-smoke clean cli
 
 help:
-	@echo "make build      Debug build, all features"
-	@echo "make release    Optimized build"
+	@echo "make build      Debug build of the core library and CLI, all features"
+	@echo "make release    Optimized build of the core library and CLI"
 	@echo "make test       Run the test suite"
 	@echo "make check      Handoff gate: Rust gates, audit, and installed-wheel smoke"
 	@echo "make fix        Apply formatting and machine-applicable lint fixes"
@@ -17,10 +17,10 @@ help:
 	@echo "make cli        Build and run the CLI against this repo"
 
 build:
-	$(CARGO) build --locked --all-features
+	$(CARGO) build --locked -p fdu --all-features
 
 release:
-	$(CARGO) build --locked --release --all-features
+	$(CARGO) build --locked --release -p fdu --all-features
 
 test:
 	$(CARGO) test --locked --all-features
