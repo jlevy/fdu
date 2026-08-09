@@ -72,6 +72,7 @@ pub use crate::types::{
     ScanScope,
 };
 
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 /// How to open a tree.
@@ -165,17 +166,45 @@ pub fn default_cache_path(root: &Path) -> Option<PathBuf> {
 }
 
 fn user_cache_dir() -> Option<PathBuf> {
-    if let Some(xdg) = std::env::var_os("XDG_CACHE_HOME") {
-        if !xdg.is_empty() {
-            return Some(PathBuf::from(xdg));
-        }
+    if let Some(xdg) = nonempty_env("XDG_CACHE_HOME") {
+        return Some(PathBuf::from(xdg));
     }
-    let home = PathBuf::from(std::env::var_os("HOME")?);
-    if cfg!(target_os = "macos") {
-        Some(home.join("Library").join("Caches"))
-    } else {
-        Some(home.join(".cache"))
-    }
+    platform_cache_dir()
+}
+
+fn nonempty_env(name: &str) -> Option<OsString> {
+    std::env::var_os(name).filter(|value| !value.is_empty())
+}
+
+#[cfg(target_os = "windows")]
+fn platform_cache_dir() -> Option<PathBuf> {
+    windows_cache_dir(
+        nonempty_env("LOCALAPPDATA"),
+        nonempty_env("USERPROFILE"),
+        nonempty_env("HOME"),
+    )
+}
+
+#[cfg(target_os = "windows")]
+fn windows_cache_dir(
+    local_app_data: Option<OsString>,
+    user_profile: Option<OsString>,
+    home: Option<OsString>,
+) -> Option<PathBuf> {
+    local_app_data
+        .map(PathBuf::from)
+        .or_else(|| user_profile.map(|path| PathBuf::from(path).join("AppData").join("Local")))
+        .or_else(|| home.map(|path| PathBuf::from(path).join(".cache")))
+}
+
+#[cfg(target_os = "macos")]
+fn platform_cache_dir() -> Option<PathBuf> {
+    Some(PathBuf::from(nonempty_env("HOME")?).join("Library").join("Caches"))
+}
+
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+fn platform_cache_dir() -> Option<PathBuf> {
+    Some(PathBuf::from(nonempty_env("HOME")?).join(".cache"))
 }
 
 #[cfg(test)]
@@ -311,5 +340,27 @@ mod tests {
         };
         assert_ne!(pa, pb);
         assert_eq!(pa, default_cache_path(a.path()).expect("stable"));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_cache_discovery_prefers_native_locations() {
+        let local = OsString::from(r"C:\Users\tester\AppData\Local");
+        let profile = OsString::from(r"D:\Profile");
+        let home = OsString::from(r"E:\Home");
+
+        assert_eq!(
+            windows_cache_dir(Some(local.clone()), Some(profile.clone()), Some(home.clone())),
+            Some(PathBuf::from(local))
+        );
+        assert_eq!(
+            windows_cache_dir(None, Some(profile.clone()), Some(home.clone())),
+            Some(PathBuf::from(profile).join("AppData").join("Local"))
+        );
+        assert_eq!(
+            windows_cache_dir(None, None, Some(home.clone())),
+            Some(PathBuf::from(home).join(".cache"))
+        );
+        assert_eq!(windows_cache_dir(None, None, None), None);
     }
 }

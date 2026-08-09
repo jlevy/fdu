@@ -30,12 +30,12 @@ What that means concretely, because “scaffold” is otherwise an unhelpful wor
 | --- | --- | --- |
 | Observation/commit contract | `types.rs` | Conditional producer observations; only effective accepted ops become clocked `AppliedDelta` |
 | In-memory index | `index.rs` | Parent-pointer arena, generation/revision-safe arbitration, per-directory roll-ups, O(depth) apply, bounded feed |
-| Roll-up reducers | `index.rs` | Counts, apparent and allocated bytes, newest mtime, per-extension tallies — all hierarchical |
-| Walk and reconcile | `scan.rs` | Scope-safe applying full/subtree reconciliation with explicit freshness; correct and portable, **not fast** |
+| Roll-up reducers | `index.rs` | Counts, apparent and allocated bytes, pre-epoch-safe newest mtime, per-extension tallies — all hierarchical |
+| Walk and reconcile | `scan.rs` | Scope-safe applying full/subtree reconciliation with explicit freshness and bounded producer batches; correct and portable, **not fast** |
 | Snapshot | `snapshot.rs` | Flat format v2 bootstrap; bounded streaming load, payload checksum, semantic scope, owner-only concurrent replacement |
-| Watch layer | `watch.rs` | notify-backed adapter plus apply/reconcile driver; not started by `open()` or Python |
+| Watch layer | `watch.rs` | notify-backed adapter plus clock-stable re-verifying apply/reconcile driver; not started by `open()` or Python |
 | CLI | `cli.rs` | Human tree, schema-v2 JSON, exact kinds/errors, partial exit status, `NO_COLOR` |
-| Python bindings | `fdu-py` | Bulk API, retained scan scope, freshness/errors, GIL release, installed-wheel smoke |
+| Python bindings | `fdu-py` | Bulk API, retained scan scope, freshness/errors, GIL release, watch-independent installed-wheel smoke |
 | CI | `.github/workflows/ci.yml` | SHA-pinned Actions; locked three-OS tests, MSRV, docs, audit, and wheel smoke |
 
 The workspace suite includes adversarial ordering and ABA arbitration, cache-scope,
@@ -48,20 +48,38 @@ Clippy pedantic is clean with `unsafe_code = "deny"` on the core crate; the
 this repository is fast yet, and **no performance claim should be made until the syscall
 layer lands and the benchmark gate passes**. The snapshot format is a flat uncompressed
 image whose reader is bounded and streaming but whose writer still materializes the
-image. `open()` blocks until warm reconciliation finishes. `IndexHandle` supports an
-explicit concurrent reader/reconciler model, but no server or Python watcher integration
-is implied yet. These pieces settle the contract, cache lifecycle, and CI matrix before
-the syscall and packed-layout work that is harder to change later.
+image. `open()` blocks until warm reconciliation finishes.
+`IndexHandle` supports an explicit concurrent reader/reconciler model, but no server or
+Python watcher integration is implied yet.
+Watch queue bounds and permanent backend-failure marking remain part of the existing
+watch-hardening bead.
+These pieces settle the contract, cache lifecycle, and CI matrix before the syscall and
+packed-layout work that is harder to change later.
 
-Two findings from building it, worth recording because neither was in the research:
+Findings from implementation and the final branch-wide review, worth recording because
+they were not in the research:
 
 - Snapshot parsing now bounds the whole image, count, and path fields before allocation
-  and rebuilds records incrementally. “Corrupt equals empty” is not a policy you get by
-  intending it; resource bounds and sparse/oversized regression tests are part of it.
+  and rebuilds records incrementally.
+  “Corrupt equals empty” is not a policy you get by intending it; resource bounds and
+  sparse/oversized regression tests are part of it.
 - The watcher deadlocked on shutdown because the worker thread was joined before the
   notify watcher was dropped, and dropping it is what closes the channel the worker
   waits on. Ordering is now explicit and commented.
   This is the kind of thing a feature flag hides until someone turns it on.
+- A verified watch sample is not necessarily current by the time a consumer drains its
+  queue. The applying driver now re-stats against a clock-stable index boundary and
+  rejects a watcher/index root mismatch before consuming an observation.
+- Operational batch size is still untrusted allocation input.
+  Zero and oversized values now fail before allocation, and filesystem-boundary mode
+  fails explicitly where the platform cannot supply device identity.
+- The Python artifact had accidentally enabled the optional watch feature despite
+  exposing no watcher.
+  The wheel now proves the watch layer is deletable, and Windows cache discovery uses
+  its native local-app-data location.
+- Zero cannot be both the max-reducer identity and a valid epoch timestamp.
+  Newest-mtime reduction now uses file presence as its identity and preserves negative
+  timestamps.
 
 ## What Phase 1 Delivers
 
@@ -72,8 +90,9 @@ Plus the CLI as a finished product surface, and the type-rule dialect defined ea
 enough that plugins never need two rule languages.
 
 Phase 1 explicitly excludes content-tier metrics (words, sentences, paragraphs) and a
-durable cross-restart delta journal. A bounded process-local `AppliedDelta` feed exists;
-persisting or compacting it remains separate work until the stat tier is solid.
+durable cross-restart delta journal.
+A bounded process-local `AppliedDelta` feed exists; persisting or compacting it remains
+separate work until the stat tier is solid.
 
 ## Sequencing
 
@@ -119,16 +138,18 @@ Measure first.
   Portable fallback retained for non-Linux.
 - **Packed records.** Parent-pointer tree with name-only storage, optional attributes
   behind a flags word, interned device IDs, per-thread arenas.
-  Target ncdu 2’s budget: ~25–32 bytes per file.
+  Target ncdu 2’s budget: ~25–32 bytes per file, with retained per-path diagnostics
+  bounded separately rather than allowed to grow with every failed entry.
 - **Reducer registry.** Turn the fixed `RollUp` struct into registered reducers with
-  declared invertibility, so a new metric is a registration rather than an engine
-  change.
+  declared invertibility and an explicit aggregate-overflow policy, so a new metric is a
+  registration rather than an engine change.
 - **Block snapshot format.** Compressed blocks, tail index, `(block << k) | offset`
   references delta-encoded within a block, sibling groups contiguous, front-coded names,
   pre-computed roll-ups stored per directory.
 - **Revalidation.** Add the directory-mtime shortcut and parallel sweep while preserving
-  the current conditional, applying stream. Callers using `IndexHandle` can already
-  serve stale-and-labeled between batches; conservative `open()` remains blocking.
+  the current conditional, applying stream.
+  Callers using `IndexHandle` can already serve stale-and-labeled between batches;
+  conservative `open()` remains blocking.
 - **Hardlink policy.** Pick a deterministic, incrementally maintainable rule.
   dut’s shared/unique split is the most informative, and none of the surveyed tools
   attempt to keep it correct under incremental updates — so this needs design, not just
@@ -136,13 +157,16 @@ Measure first.
 
 ### Stage C: Product surfaces
 
-- **CLI polish** as scheduled work, not cosmetics.
+- **CLI polish** as scheduled work, not cosmetics, including structured raw path
+  identity for partial errors and the corresponding lossless Python path surface.
 - **Type-rule dialect**, a compatible superset of metabrowser’s `[[kind]]` predicates,
   compiled at build time.
 - **Watch hardening**: cookie-paired renames applied without I/O on inotify, file-id
   stitching elsewhere, tuned backend selection (native for local filesystems, polling
   for NFS/FUSE/CIFS), periodic reconciliation for kqueue, and marking entries where
   watching failed instead of silently not watching.
+  Bound raw and verified-observation queues; backpressure or a dropped hint must
+  escalate to reconciliation.
 
 ### Stage D: Proof
 
@@ -203,6 +227,15 @@ restart. That is tracked separately in the metabrowser repository.
 
 Epic: **fdu-qfz6** — fdu phase 1: fastest walker with full stats, proven by benchmark.
 Phase 0 is recorded and closed as **fdu-v178**.
+
+Final phase-0 review follow-up: **fdu-vdi9**.
+
+| Bead | Work |
+| --- | --- |
+| fdu-xktk | Reverify queued watch samples at a matching, clock-stable index root |
+| fdu-52oq | Bound scan batching and fail closed on unsupported filesystem scope |
+| fdu-3wpe | Keep Python independent of watch and discover the native Windows cache |
+| fdu-x7jc | Preserve pre-epoch newest-mtime values |
 
 | Stage | Bead | Work |
 | --- | --- | --- |

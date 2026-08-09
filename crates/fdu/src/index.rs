@@ -105,11 +105,18 @@ impl RollUp {
     /// Fold another roll-up into this one. Commutative and associative, which is what
     /// lets the walk merge subtrees in whatever order threads finish them.
     fn merge(&mut self, other: &RollUp) {
+        let had_files = self.files > 0;
         self.files += other.files;
         self.dirs += other.dirs;
         self.bytes += other.bytes;
         self.allocated += other.allocated;
-        self.newest_mtime_ns = self.newest_mtime_ns.max(other.newest_mtime_ns);
+        if other.files > 0 {
+            self.newest_mtime_ns = if had_files {
+                self.newest_mtime_ns.max(other.newest_mtime_ns)
+            } else {
+                other.newest_mtime_ns
+            };
+        }
         for (ext, tally) in &other.by_ext {
             let slot = self.by_ext.entry(ext.clone()).or_default();
             slot.files += tally.files;
@@ -782,16 +789,19 @@ impl Index {
     fn recompute_newest_upward(&mut self, from: Option<EntryId>) {
         let mut current = from;
         while let Some(id) = current {
-            let mut newest = 0i64;
+            let mut newest: Option<i64> = None;
             for child in self.entry(id).children.values() {
                 let child_entry = self.entry(*child);
                 let candidate = if child_entry.kind.is_dir() {
-                    child_entry.rollup.newest_mtime_ns
+                    (child_entry.rollup.files > 0).then_some(child_entry.rollup.newest_mtime_ns)
                 } else {
-                    child_entry.attrs.mtime_ns
+                    Some(child_entry.attrs.mtime_ns)
                 };
-                newest = newest.max(candidate);
+                if let Some(candidate) = candidate {
+                    newest = Some(newest.map_or(candidate, |current| current.max(candidate)));
+                }
             }
+            let newest = newest.unwrap_or(0);
             let entry = self.entry_mut(id);
             if entry.rollup.newest_mtime_ns == newest {
                 return;
@@ -1320,6 +1330,27 @@ mod tests {
         assert_eq!(outcome.stats.unchanged, 0);
         assert_eq!(index.total().allocated, 4096);
         assert_eq!(index.attrs(Path::new("file.bin")), Some(&repacked));
+    }
+
+    #[test]
+    fn newest_mtime_preserves_pre_epoch_values_through_updates_and_removals() {
+        let mut index = Index::new("/root");
+        index.apply(&Observation::new(vec![
+            upsert("newer.txt", EntryKind::File, file_attrs(10, -10)),
+            upsert("older.txt", EntryKind::File, file_attrs(20, -20)),
+        ]));
+
+        assert_eq!(index.total().newest_mtime_ns, -10);
+
+        index.apply(&Observation::new(vec![upsert(
+            "newer.txt",
+            EntryKind::File,
+            file_attrs(10, -30),
+        )]));
+        assert_eq!(index.total().newest_mtime_ns, -20);
+
+        index.apply(&Observation::new(vec![Op::Remove { path: PathBuf::from("older.txt") }]));
+        assert_eq!(index.total().newest_mtime_ns, -30);
     }
 
     #[test]

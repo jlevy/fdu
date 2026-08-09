@@ -399,6 +399,9 @@ pub enum Error {
 
     #[error("watch worker stopped before another observation was available")]
     WatchStopped,
+
+    #[error("watch root {watched:?} does not match index root {indexed:?}")]
+    WatchRootMismatch { watched: PathBuf, indexed: PathBuf },
 }
 
 impl Error {

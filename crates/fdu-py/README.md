@@ -21,7 +21,13 @@ print(index.since(mark))      # what changed, or truncated=True if you fell behi
 Every method is bulk: it returns a whole structured result in one call rather than a
 cursor Python iterates.
 Native work runs with the GIL released.
+The wheel uses the core scan/cache surface and does not compile the optional watch
+dependency; no Python watcher API is implied yet.
 
 **Status: early scaffold**, not yet published to PyPI.
 
 License: MIT.
+
+<!-- This document follows common-doc-guidelines.md.
+See github.com/jlevy/practical-prose and review guidelines before editing.
+-->

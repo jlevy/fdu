@@ -9,8 +9,9 @@ repository: <https://github.com/jlevy/fdu>
 
 **Status: early scaffold.** The revision-arbitrated observation/commit contract,
 applying reconciler, bounded payload-checksummed snapshot reader, and cache lifecycle
-are tested. `open()` currently blocks until a full reconciliation completes, and the
-fast syscall-level walker is not built, so no latency or throughput claim is made.
+are tested.
+`open()` currently blocks until a full reconciliation completes, and the fast
+syscall-level walker is not built, so no latency or throughput claim is made.
 
 ```toml
 [dependencies]
@@ -24,3 +25,7 @@ Features: `cli` (default, gates the binary and clap), `watch` (gates the notify
 dependency).
 
 License: MIT.
+
+<!-- This document follows common-doc-guidelines.md.
+See github.com/jlevy/practical-prose and review guidelines before editing.
+-->

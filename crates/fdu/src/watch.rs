@@ -38,6 +38,10 @@ use crate::scan;
 use crate::types::{AppliedDelta, Error, InvalidateReason, Observation, Op, Result};
 use crate::{ApplyOutcome, IndexHandle, ScanConfig};
 
+/// Optimistic re-verification retries before the applying driver guarantees progress
+/// under the writer lock.
+const MAX_OPTIMISTIC_APPLY_ATTEMPTS: usize = 3;
+
 /// Tuning for event coalescing.
 #[derive(Clone, Copy, Debug)]
 pub struct WatchConfig {
@@ -66,6 +70,17 @@ impl Default for WatchConfig {
     }
 }
 
+impl WatchConfig {
+    fn validate(self) -> Result<()> {
+        if self.settle.is_zero() {
+            return Err(Error::UnsupportedScanConfig(
+                "watch settle duration must be greater than zero",
+            ));
+        }
+        Ok(())
+    }
+}
+
 /// What a coalesced path still needs before it can become an observation.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Pending {
@@ -84,6 +99,7 @@ enum Pending {
 ///
 /// Dropping it stops the OS watch and shuts the worker thread down.
 pub struct Watcher {
+    root: PathBuf,
     /// `Option` only so [`Drop`] can release it before joining the worker.
     inner: Option<RecommendedWatcher>,
     observations: Receiver<Observation>,
@@ -100,6 +116,7 @@ pub struct WatchApplyReport {
 impl Watcher {
     /// Start watching `root` recursively.
     pub fn new(root: &Path, config: WatchConfig) -> Result<Self> {
+        config.validate()?;
         let root = root.canonicalize().map_err(|e| Error::io(root, e))?;
 
         let (raw_tx, raw_rx) = channel::<notify::Result<notify::Event>>();
@@ -119,7 +136,7 @@ impl Watcher {
             .spawn(move || run_worker(&worker_root, config, &raw_rx, &observation_tx))
             .map_err(|e| Error::io(&root, e))?;
 
-        Ok(Self { inner: Some(inner), observations: observation_rx, worker: Some(worker) })
+        Ok(Self { root, inner: Some(inner), observations: observation_rx, worker: Some(worker) })
     }
 
     /// The stream of verified observations awaiting index arbitration.
@@ -143,7 +160,15 @@ impl Watcher {
         timeout: Duration,
         sink: &mut dyn FnMut(&AppliedDelta),
     ) -> Result<Option<WatchApplyReport>> {
-        scan_config.validate_for_watch_scope(index.read()?.scope())?;
+        let current = index.read()?;
+        scan_config.validate_for_watch_scope(current.scope())?;
+        if current.root_path() != self.root {
+            return Err(Error::WatchRootMismatch {
+                watched: self.root.clone(),
+                indexed: current.root_path().to_path_buf(),
+            });
+        }
+        drop(current);
         match self.observations.recv_timeout(timeout) {
             Ok(observation) => apply_observation(index, &observation, scan_config, sink).map(Some),
             Err(RecvTimeoutError::Timeout) => Ok(None),
@@ -163,12 +188,66 @@ pub fn apply_observation(
     sink: &mut dyn FnMut(&AppliedDelta),
 ) -> Result<WatchApplyReport> {
     scan_config.validate_for_watch_scope(index.read()?.scope())?;
-    let apply = index.apply(observation)?;
+    let apply = apply_reverified(index, observation, scan_config)?;
     if let Some(applied) = &apply.applied {
         sink(applied);
     }
     let reconciliation = scan::reconcile_pending_handle(index, scan_config, sink)?;
     Ok(WatchApplyReport { apply, reconciliation })
+}
+
+/// Re-stat a queued watch sample against a clock-stable index boundary before applying
+/// it. The common path stays optimistic; sustained competing writes fall back to
+/// verification under the writer lock so an old queue entry can never win by arriving
+/// late.
+fn apply_reverified(
+    index: &IndexHandle,
+    observation: &Observation,
+    scan_config: &ScanConfig,
+) -> Result<ApplyOutcome> {
+    for _ in 0..MAX_OPTIMISTIC_APPLY_ATTEMPTS {
+        let current = index.read()?;
+        scan_config.validate_for_watch_scope(current.scope())?;
+        let root = current.root_path().to_path_buf();
+        let clock = current.clock();
+        drop(current);
+
+        let verified = reverify_observation(&root, observation)?;
+        let mut current = index.write()?;
+        if current.clock() == clock {
+            return Ok(current.apply(&verified));
+        }
+    }
+
+    let mut current = index.write()?;
+    scan_config.validate_for_watch_scope(current.scope())?;
+    let root = current.root_path().to_path_buf();
+    let verified = reverify_observation(&root, observation)?;
+    Ok(current.apply(&verified))
+}
+
+fn reverify_observation(root: &Path, observation: &Observation) -> Result<Observation> {
+    let mut ops = Vec::with_capacity(observation.len());
+    for observed in &observation.ops {
+        let relative = scan::normalize_subtree(observed.op.path())?;
+        let op = match &observed.op {
+            Op::InvalidateSubtree { reason, .. } => {
+                Op::InvalidateSubtree { path: relative, reason: *reason }
+            }
+            Op::Upsert { .. } | Op::Remove { .. } => {
+                let absolute = root.join(&relative);
+                match std::fs::symlink_metadata(&absolute) {
+                    Ok(metadata) => {
+                        let (kind, attrs) = scan::observe(&metadata);
+                        Op::Upsert { path: relative, kind, attrs }
+                    }
+                    Err(error) => op_for_stat_error(relative, &error),
+                }
+            }
+        };
+        ops.push(op);
+    }
+    Ok(Observation::new(ops))
 }
 
 impl Drop for Watcher {
@@ -332,6 +411,9 @@ fn flush(
 
 fn op_for_stat_error(path: PathBuf, error: &std::io::Error) -> Op {
     match error.kind() {
+        std::io::ErrorKind::NotFound if path.as_os_str().is_empty() => {
+            Op::InvalidateSubtree { path, reason: InvalidateReason::VerificationFailed }
+        }
         std::io::ErrorKind::NotFound => Op::Remove { path },
         std::io::ErrorKind::NotADirectory => Op::InvalidateSubtree {
             path: path.parent().map_or_else(PathBuf::new, Path::to_path_buf),
@@ -609,6 +691,53 @@ mod tests {
     }
 
     #[test]
+    fn applying_driver_reverifies_a_queued_sample_after_reconciliation() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("sample.txt");
+        fs::write(&path, b"old").expect("write old sample");
+        let (index, _) =
+            crate::scan::scan_into_index(dir.path(), &crate::ScanConfig::default()).expect("scan");
+        let old_attrs = *index.attrs(Path::new("sample.txt")).expect("sample attributes");
+        let delayed = Observation::new(vec![Op::Upsert {
+            path: PathBuf::from("sample.txt"),
+            kind: crate::EntryKind::File,
+            attrs: old_attrs,
+        }]);
+        let handle = crate::IndexHandle::new(index);
+
+        fs::write(&path, b"new contents").expect("write current sample");
+        crate::scan::reconcile_handle(&handle, &crate::ScanConfig::default(), &mut |_| {})
+            .expect("reconcile newer sample");
+        let current_size = fs::metadata(&path).expect("sample metadata").len();
+
+        apply_observation(&handle, &delayed, &crate::ScanConfig::default(), &mut |_| {})
+            .expect("apply delayed watch sample");
+
+        assert_eq!(
+            handle
+                .read()
+                .expect("read index")
+                .attrs(Path::new("sample.txt"))
+                .expect("sample remains")
+                .size,
+            current_size
+        );
+    }
+
+    #[test]
+    fn disappearing_watch_root_escalates_instead_of_removing_the_index_root() {
+        let error = std::io::Error::new(std::io::ErrorKind::NotFound, "root disappeared");
+
+        assert!(matches!(
+            op_for_stat_error(PathBuf::new(), &error),
+            Op::InvalidateSubtree {
+                path,
+                reason: InvalidateReason::VerificationFailed,
+            } if path.as_os_str().is_empty()
+        ));
+    }
+
+    #[test]
     fn observation_driver_rejects_scope_mismatch_before_apply() {
         let dir = tempfile::tempdir().expect("tempdir");
         let shallow = crate::ScanConfig { max_depth: Some(1), ..crate::ScanConfig::default() };
@@ -655,7 +784,12 @@ mod tests {
         let handle = crate::IndexHandle::new(index);
         let (sender, observations) = channel();
         sender.send(Observation::default()).expect("queue observation");
-        let watcher = Watcher { inner: None, observations, worker: None };
+        let watcher = Watcher {
+            root: dir.path().canonicalize().expect("canonical root"),
+            inner: None,
+            observations,
+            worker: None,
+        };
 
         let error = watcher
             .apply_next(&handle, &shallow, Duration::ZERO, &mut |_| {})
@@ -663,5 +797,37 @@ mod tests {
 
         assert!(matches!(error, Error::UnsupportedScanConfig(_)));
         assert!(watcher.next_observation(Duration::ZERO).is_some());
+    }
+
+    #[test]
+    fn apply_next_rejects_a_watcher_for_another_root_without_consuming() {
+        let indexed = tempfile::tempdir().expect("indexed root");
+        let watched_root_dir = tempfile::tempdir().expect("watched root");
+        let (index, _) =
+            crate::scan::scan_into_index(indexed.path(), &crate::ScanConfig::default())
+                .expect("scan indexed root");
+        let handle = crate::IndexHandle::new(index);
+        let (sender, observations) = channel();
+        sender.send(Observation::default()).expect("queue observation");
+        let watcher = Watcher {
+            root: watched_root_dir.path().canonicalize().expect("canonical watched root"),
+            inner: None,
+            observations,
+            worker: None,
+        };
+
+        let error = watcher
+            .apply_next(&handle, &crate::ScanConfig::default(), Duration::ZERO, &mut |_| {})
+            .expect_err("mismatched root must fail");
+
+        assert!(matches!(error, Error::WatchRootMismatch { .. }));
+        assert!(watcher.next_observation(Duration::ZERO).is_some());
+    }
+
+    #[test]
+    fn zero_settle_is_rejected_before_starting_a_busy_worker() {
+        let config = WatchConfig { settle: Duration::ZERO, ..WatchConfig::default() };
+
+        assert!(matches!(config.validate(), Err(Error::UnsupportedScanConfig(_))));
     }
 }

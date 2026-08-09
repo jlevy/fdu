@@ -33,6 +33,9 @@ use crate::types::{
 /// is still being walked rather than one delta at the end.
 const DEFAULT_BATCH_SIZE: usize = 1024;
 
+/// Largest producer batch accepted before work must be published incrementally.
+pub const MAX_SCAN_BATCH_SIZE: usize = 64 * 1024;
+
 /// Identity of the current built-in ignore policy. No ignore rules exist yet.
 const IGNORE_RULES_FINGERPRINT: u64 = 0;
 
@@ -48,7 +51,7 @@ pub struct ScanConfig {
     /// Maximum relative entry depth to retain. Zero keeps only the index root and `None`
     /// means unlimited.
     pub max_depth: Option<usize>,
-    /// Ops per emitted observation.
+    /// Ops per emitted observation. Must be between one and [`MAX_SCAN_BATCH_SIZE`].
     pub batch_size: usize,
     /// Follow symlinks to directories. Off by default: following them turns a tree walk
     /// into a graph walk with cycles, and every surveyed tool defaults to off.
@@ -82,9 +85,20 @@ impl ScanConfig {
     }
 
     fn validate(&self) -> Result<()> {
+        if self.batch_size == 0 || self.batch_size > MAX_SCAN_BATCH_SIZE {
+            return Err(Error::UnsupportedScanConfig(
+                "batch_size must be nonzero and no greater than MAX_SCAN_BATCH_SIZE",
+            ));
+        }
         if self.follow_symlinks {
             return Err(Error::UnsupportedScanConfig(
                 "follow_symlinks requires cycle, root-boundary, and filesystem-boundary semantics",
+            ));
+        }
+        #[cfg(not(unix))]
+        if self.one_filesystem {
+            return Err(Error::UnsupportedScanConfig(
+                "one_filesystem requires platform device identity",
             ));
         }
         Ok(())
@@ -144,6 +158,14 @@ impl ScanReport {
 pub struct ReconcileReport {
     pub scan: ScanReport,
     pub apply: ApplyStats,
+}
+
+impl ReconcileReport {
+    /// True when the filesystem walk was complete and no conditional observation lost
+    /// a race with another producer.
+    pub fn is_complete(&self) -> bool {
+        self.scan.is_complete() && self.apply.stale == 0
+    }
 }
 
 enum ReconcileTarget<'a> {
@@ -523,7 +545,7 @@ fn reconcile_target(
     let started_at = target.begin_reconcile(&subtree)?;
     match reconcile_target_inner(target, &subtree, config, sink) {
         Ok(report) => {
-            target.finish_reconcile(&subtree, started_at, report.scan.is_complete())?;
+            target.finish_reconcile(&subtree, started_at, report.is_complete())?;
             Ok(report)
         }
         Err(error) => {
@@ -710,7 +732,7 @@ fn reconcile_pending_target(
     for (position, (root, reason)) in roots.iter().enumerate() {
         match reconcile_target(target, root, config, sink) {
             Ok(report) => {
-                if !report.scan.is_complete() {
+                if !report.is_complete() {
                     target.restore_pending_invalidations(vec![(root.clone(), *reason)])?;
                 }
                 merge_reconcile_report(&mut combined, report);
@@ -804,7 +826,7 @@ fn should_descend(
     kind.is_dir() && within_depth && same_filesystem
 }
 
-fn normalize_subtree(path: &Path) -> Result<PathBuf> {
+pub(crate) fn normalize_subtree(path: &Path) -> Result<PathBuf> {
     let mut normalized = PathBuf::new();
     for component in path.components() {
         match component {
@@ -918,12 +940,7 @@ fn compose_ns(secs: i64, nanos: i64) -> i64 {
 
 #[cfg(not(unix))]
 fn attrs_from(meta: &fs::Metadata) -> Attrs {
-    let mtime_ns = meta
-        .modified()
-        .ok()
-        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-        .and_then(|d| i64::try_from(d.as_nanos()).ok())
-        .unwrap_or(0);
+    let mtime_ns = meta.modified().map(system_time_ns).unwrap_or(0);
     Attrs {
         size: meta.len(),
         // No allocated size without platform-specific calls; apparent size is the
@@ -935,6 +952,16 @@ fn attrs_from(meta: &fs::Metadata) -> Attrs {
         ctime_ns: 0,
         inode: 0,
         dev: 0,
+    }
+}
+
+#[cfg(any(not(unix), test))]
+fn system_time_ns(time: std::time::SystemTime) -> i64 {
+    match time.duration_since(std::time::UNIX_EPOCH) {
+        Ok(duration) => i64::try_from(duration.as_nanos()).unwrap_or(i64::MAX),
+        Err(error) => {
+            i64::try_from(error.duration().as_nanos()).map_or(i64::MIN, i64::saturating_neg)
+        }
     }
 }
 
@@ -1122,6 +1149,43 @@ mod tests {
     }
 
     #[test]
+    fn invalid_batch_sizes_are_rejected_before_allocation() {
+        let zero = ScanConfig { batch_size: 0, ..ScanConfig::default() };
+        let unbounded = ScanConfig { batch_size: usize::MAX, ..ScanConfig::default() };
+
+        assert!(matches!(zero.validate(), Err(Error::UnsupportedScanConfig(_))));
+        assert!(matches!(unbounded.validate(), Err(Error::UnsupportedScanConfig(_))));
+    }
+
+    #[test]
+    fn stale_arbitration_keeps_a_reconciliation_incomplete() {
+        let report = ReconcileReport {
+            scan: ScanReport::default(),
+            apply: ApplyStats { stale: 1, ..ApplyStats::default() },
+        };
+
+        assert!(!report.is_complete());
+    }
+
+    #[test]
+    fn portable_system_time_conversion_preserves_pre_epoch_values() {
+        let before_epoch = std::time::UNIX_EPOCH
+            .checked_sub(std::time::Duration::from_nanos(5))
+            .expect("represent pre-epoch fixture");
+
+        assert_eq!(system_time_ns(before_epoch), -5);
+        assert_eq!(system_time_ns(std::time::UNIX_EPOCH), 0);
+    }
+
+    #[cfg(not(unix))]
+    #[test]
+    fn one_filesystem_fails_when_device_identity_is_unavailable() {
+        let config = ScanConfig { one_filesystem: true, ..ScanConfig::default() };
+
+        assert!(matches!(config.validate(), Err(Error::UnsupportedScanConfig(_))));
+    }
+
+    #[test]
     fn revalidate_is_a_no_op_against_an_unchanged_tree() {
         let dir = sample_tree();
         let (mut index, _) = scan_into_index(dir.path(), &ScanConfig::default()).expect("scan");
@@ -1203,7 +1267,7 @@ mod tests {
         })
         .expect("reconcile pending");
 
-        assert!(report.scan.is_complete());
+        assert!(report.is_complete());
         assert!(index.lookup(Path::new("src/added.rs")).is_some());
         assert_eq!(index.freshness_at(Path::new("src")), crate::Freshness::Fresh);
         assert!(index.take_pending_invalidations().is_empty());
@@ -1308,7 +1372,7 @@ mod tests {
             .expect("permission failure is a partial report");
         let pending = index.take_pending_invalidations();
         fs::set_permissions(&blocked, fs::Permissions::from_mode(0o700)).expect("restore reads");
-        if report.scan.is_complete() {
+        if report.is_complete() {
             return; // Privileged test environments can read mode-000 directories.
         }
 
@@ -1403,7 +1467,7 @@ mod tests {
             reconcile_subtree(&mut index, Path::new("parent/child.txt"), &config, &mut |_| {})
                 .expect("reconcile widened ancestor");
 
-        assert!(report.scan.is_complete());
+        assert!(report.is_complete());
         assert_eq!(index.kind(Path::new("parent")), Some(EntryKind::File));
         assert!(index.lookup(Path::new("parent/child.txt")).is_none());
         assert_eq!(index.freshness(), crate::Freshness::Fresh);
@@ -1421,7 +1485,7 @@ mod tests {
             reconcile_subtree(&mut index, Path::new("parent/child.txt"), &config, &mut |_| {})
                 .expect("reconcile widened ancestor");
 
-        assert!(report.scan.is_complete());
+        assert!(report.is_complete());
         assert!(index.lookup(Path::new("parent")).is_none());
         assert_eq!(index.freshness(), crate::Freshness::Fresh);
     }
