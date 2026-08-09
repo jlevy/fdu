@@ -15,7 +15,7 @@ The detailed benchmark methodology and implementation graph are in
 Phase-0 work is on branch `claude/fdu-phase-0-scaffold`, open as
 [PR #1](https://github.com/jlevy/fdu/pull/1), with `main` holding only the initial
 commit. CI is green across Linux, macOS, and Windows, but final approval is held on the
-two P0 merge blockers in **Wave 0** below.
+P0 correctness/trust blockers and the concurrency-safety gate in **Wave 0** below.
 
 Beads live on the `tbd-sync` branch and are visible from any clone (`tbd list`).
 `make check` is the handoff gate; `AGENTS.md` carries the conventions worth not
@@ -23,10 +23,10 @@ rediscovering.
 
 ## Where This Stands
 
-The Phase 0 implementation is complete: the repository exists, the architecture is
+The Phase 0 product slice is implemented: the repository exists, the architecture is
 expressed in code, and the whole pipeline runs end to end.
-Phase 0 is not yet merge-complete because the executable-dependency policy and
-malformed-batch atomicity findings remain open.
+Phase 0 hardening is not yet merge-complete because the executable-dependency policy,
+malformed-batch atomicity, and shared-state lifecycle findings remain open.
 What that means concretely, because “scaffold” is otherwise an unhelpful word:
 
 **Built and tested.**
@@ -38,7 +38,7 @@ What that means concretely, because “scaffold” is otherwise an unhelpful wor
 | Roll-up reducers | `index.rs` | Counts, apparent and allocated bytes, pre-epoch-safe newest mtime, per-extension tallies — all hierarchical |
 | Walk and reconcile | `scan.rs` | Scope-safe applying full/subtree reconciliation with explicit freshness and bounded producer batches; correct and portable, **not fast** |
 | Snapshot | `snapshot.rs` | Flat format v2 bootstrap; bounded streaming load, payload checksum, semantic scope, owner-only concurrent replacement |
-| Watch layer | `watch.rs` | notify-backed adapter plus clock-stable re-verifying apply/reconcile driver; not started by `open()` or Python |
+| Watch layer | `watch.rs` | notify-backed adapter plus re-verifying apply/reconcile driver; its lock fallback and unbounded transport are now explicit merge-gate work; not started by `open()` or Python |
 | CLI | `cli.rs` | Human tree, schema-v2 JSON, exact kinds/errors, partial exit status, `NO_COLOR` |
 | Python bindings | `fdu-py` | Bulk API, retained scan scope, freshness/errors, GIL release, watch-independent installed-wheel smoke |
 | CI | `.github/workflows/ci.yml` | SHA-pinned Actions; locked three-OS tests, MSRV, docs, audit, and wheel smoke |
@@ -54,10 +54,11 @@ this repository is fast yet, and **no performance claim should be made until the
 layer lands and the benchmark gate passes**. The snapshot format is a flat uncompressed
 image whose reader is bounded and streaming but whose writer still materializes the
 image. `open()` blocks until warm reconciliation finishes.
-`IndexHandle` supports an explicit concurrent reader/reconciler model, but no server or
-Python watcher integration is implied yet.
-Watch queue bounds and permanent backend-failure marking remain part of the existing
-watch-hardening bead.
+`IndexHandle` has the intended single-writer shape, but its public read guard and
+current watch fallback do not yet enforce the required lock-lifetime contract.
+No server or Python watcher integration is implied yet.
+Generic queue bounds, overload, and shutdown are merge-gate work; permanent
+backend-failure marking and platform behavior remain in the later watch-hardening bead.
 These pieces settle the contract, cache lifecycle, and CI matrix before the syscall and
 packed-layout work that is harder to change later.
 
@@ -75,6 +76,18 @@ they were not in the research:
 - A verified watch sample is not necessarily current by the time a consumer drains its
   queue. The applying driver now re-stats against a clock-stable index boundary and
   rejects a watcher/index root mismatch before consuming an observation.
+  A concurrency review then found that its sustained-conflict fallback performs those
+  stats while holding the writer lock; `fdu-1j0b` replaces that fallback.
+- The existing watcher shutdown ordering is correct for unbounded sends, but both
+  channels and the pending-path map can grow without limit.
+  A naive blocking bound would reintroduce a full-output-queue shutdown deadlock.
+  `fdu-8jte` makes the joined worker a bounded I/O-free coalescer, moves verification to
+  the consuming thread immediately before arbitration, and owns the complete nonblocking
+  overflow, cancellation, and join protocol.
+- Public `IndexHandle::read` lets callers hold a read lock across arbitrary work or
+  self-deadlock by applying while the guard remains live.
+  `fdu-s7wr` seals that API, and `fdu-gd6n` proves the resulting ownership and
+  visibility contract with real interleavings.
 - Operational batch size is still untrusted allocation input.
   Zero and oversized values now fail before allocation, and filesystem-boundary mode
   fails explicitly where the platform cannot supply device identity.
@@ -106,9 +119,10 @@ The graph does not make unrelated correctness and supply-chain fixes wait on eac
 merely to force a serial work queue.
 
 ```text
-Wave 0:  fdu-ad45 ─┐
-                   ├──→ fdu-sn43 ──→ approve PR #1
-         fdu-nlh8 ─┘
+Wave 0:  fdu-ad45 ──────────────────────────────────────┐
+         fdu-nlh8 ──→ fdu-s7wr ──┐                   │
+         fdu-1j0b ────────────────├─→ fdu-gd6n ────────├─→ fdu-sn43 ─→ approve PR #1
+         fdu-8jte ────────────────┘
 
 Wave 1:  trust/API safety and corpus/oracle → runner → probes/adapters
 Wave 2:  measured design decisions and risk spikes
@@ -119,22 +133,36 @@ Future:  activate only from the evidence and release gates in the future roadmap
 
 ### Wave 0: Close the Current Merge Gate
 
-The two P0 defects are independent and may be fixed in parallel:
+The two P0 defects remain highest priority.
+The concurrency implementation work is also required before approval because it changes
+whether the current watch and shared-index surfaces have bounded, deadlock-resistant
+behavior:
 
 - `fdu-ad45` restores the 14-day executable-dependency cool-off, provenance checks,
   least-privilege workflow settings, and reviewed tbd integration surfaces.
 - `fdu-nlh8` validates a complete observation batch before mutation so malformed paths
   cannot look like no-ops or permit partial application.
-- `fdu-sn43` depends on both fixes and owns the final local gate, cross-platform CI,
-  synchronized tbd state, PR description update, and superseding senior approval.
+- `fdu-1j0b` replaces writer-lock filesystem I/O with bounded apply-if-clock attempts;
+  exhausted contention becomes an explicit root invalidation and normal reconciliation.
+- `fdu-8jte` makes the joined worker an I/O-free bounded coalescer.
+  Verification occurs on the consuming thread; overload becomes a sticky root
+  invalidation, and cancellation always joins the worker.
+- `fdu-s7wr` follows atomic apply and removes lock guards, receivers, and lock-held
+  callbacks from the supported API.
+- `fdu-gd6n` follows all state/lifecycle fixes and proves whole-batch visibility, writer
+  linearization, freshness epochs, snapshot replacement, watcher teardown, and Python
+  thread behavior with deterministic interleavings.
+- `fdu-sn43` follows the supply-chain and concurrency validation gates and owns the
+  final local gate, cross-platform CI, synchronized tbd state, PR description update,
+  and superseding senior approval.
 
 No Phase 1 optimization is a substitute for closing this gate.
 
 ### Wave 1: Establish Safe Refactor and Evidence Foundations
 
 The [Rust quality plan](plan-2026-08-09-fdu-rust-engineering-quality.md) then pins the
-normal toolchain (`fdu-zga3`), seals the guard-free public API (`fdu-s7wr`), and adds
-the independent index model (`fdu-o8r8`) and snapshot fault-state suite (`fdu-471a`).
+normal toolchain (`fdu-zga3`) and adds the independent index model (`fdu-o8r8`) and
+snapshot fault-state suite (`fdu-471a`). The guard-free API is already closed in Wave 0.
 Stack-safe rendering (`fdu-zsdy`) is independent; lossless classification and Python
 identity (`fdu-k8zw`) follows the API work.
 
@@ -156,8 +184,9 @@ depends on:
   and probe; it gates optimized revalidation.
 - `fdu-1vd0` compares snapshot candidates using the same infrastructure; it gates the
   block format.
-- `fdu-gdrv` proves whether metric-vector atomic roll-up remains barrier-free; it gates
-  parallel aggregation and the reducer registry.
+- `fdu-gdrv` proves whether metric-vector atomic roll-up remains barrier-free, including
+  an explicit memory-ordering argument and model checking if the design stays lock-free;
+  it gates parallel aggregation and the reducer registry.
 - `fdu-p35d` measures tag-don’t-prune gitignore matching before the type-rule dialect.
 - `fdu-odx6` records maintainer ratification or amendment of extensibility and
   trustworthy-result goals before their public interfaces are frozen.
@@ -167,15 +196,17 @@ depends on:
 ### Wave 3: Build the Optimized Engine
 
 - `fdu-atqk` implements the portable-fallback syscall walker; `fdu-aky1` adds the
-  measured scheduler and parallel roll-up after the walker and refcount spike.
+  measured, bounded, cancellable scheduler and parallel roll-up after the walker and
+  refcount spike. It starts with safe scoped workers and a bounded queue; an intrusive
+  unsafe queue needs separate measured and model-checked justification.
 - `fdu-1gbl` packs records behind the API, model-test, and measurement foundations.
 - `fdu-a6dz` implements registered reducers after the model, goal, refcount, and
   hardlink decisions.
 - `fdu-xihx` implements the block snapshot only after its candidate spike, packed
   records, reducer encoding, and reusable persistence fault tests.
 - `fdu-wbis` implements optimized revalidation after the cost curve and syscall walker.
-- `fdu-r27g` measures the retained single-writer concurrency model using the common
-  probe before any synchronization redesign is considered.
+- `fdu-r27g` measures the retained standard-library single-writer lock using the common
+  probe before any synchronization redesign or dependency is considered.
 
 ### Wave 4: Finish Product Surfaces, Proof, and Release
 
@@ -183,8 +214,8 @@ depends on:
   rendering and native identity foundations.
 - `fdu-v4lc` defines the native-unit type-rule dialect after gitignore measurement and
   goal ratification.
-- `fdu-lka2` hardens watcher queues, backend failure, rename handling, and
-  reconciliation after the public shared-index API is sealed.
+- `fdu-lka2` hardens platform backend failure, rename handling, descriptor limits, and
+  reconciliation after the shared-index API and bounded generic transport are sealed.
 - `fdu-8z5l` establishes stable regression and claim governance on the completed runner,
   probes, adapters, and pinned toolchain.
 - `fdu-ywu0` publishes the full evidence matrix only after the required engine,
@@ -210,6 +241,9 @@ Phase 1 is done when all of these hold, and not before:
    and reproduction manifest.
 6. Goals 6 and 7 are ratified or amended — they already shape the architecture, so
    leaving them unsigned means building on an unratified premise.
+7. Every concurrent subsystem has bounded ownership, deterministic shutdown/error tests,
+   and no filesystem I/O, blocking send, or user callback under an index lock; custom
+   lock-free protocols have a documented memory model and model-checking evidence.
 
 ## Open Questions
 
@@ -257,11 +291,15 @@ is **fdu-a0w0**.
 | --- | --- | --- | --- |
 | `fdu-ad45` | P0 | Restore and enforce executable-dependency cool-off and provenance | — |
 | `fdu-nlh8` | P0 | Reject malformed observation batches atomically | — |
-| `fdu-sn43` | P0 | Run final gates and publish the superseding senior approval | `fdu-ad45`, `fdu-nlh8` |
+| `fdu-1j0b` | P1 | Remove filesystem I/O from watch writer-lock arbitration | — |
+| `fdu-8jte` | P1 | Bound watcher overload, cancellation, and shutdown | — |
+| `fdu-s7wr` | P1 | Seal the guard-free ownership API | `fdu-nlh8` |
+| `fdu-gd6n` | P1 | Prove concurrency contracts deterministically | `fdu-s7wr`, `fdu-1j0b`, `fdu-8jte` |
+| `fdu-sn43` | P0 | Run final gates and publish the superseding senior approval | `fdu-ad45`, `fdu-gd6n` |
 
-The first two beads are children of the Rust-quality epic and are intentionally
-independent. `fdu-sn43` is the only bead whose completion means PR #1 is approved for
-merge.
+The implementation beads are children of the Rust-quality epic.
+Independent fixes are not serialized; `fdu-gd6n` is the convergence point.
+`fdu-sn43` remains the only bead whose completion means PR #1 is approved for merge.
 
 ### Governing Workstreams
 
@@ -279,7 +317,7 @@ blocker. The table below is the complete set owned directly by this plan.
 
 | Wave | Bead | Priority | Work | Direct blockers |
 | --- | --- | --- | --- | --- |
-| 0 | `fdu-sn43` | P0 | Close the PR #1 merge gate | `fdu-ad45`, `fdu-nlh8` |
+| 0 | `fdu-sn43` | P0 | Close the PR #1 merge gate | `fdu-ad45`, `fdu-gd6n` |
 | 2 | `fdu-gdrv` | P1 | Prove metric-vector atomic-refcount roll-up | `fdu-sn43` |
 | 2 | `fdu-p35d` | P1 | Measure gitignore tag-don’t-prune matching | `fdu-sn43` |
 | 2 | `fdu-odx6` | P1 | Ratify or amend goals 6 and 7 | `fdu-sn43` |
@@ -296,7 +334,7 @@ blocker. The table below is the complete set owned directly by this plan.
 | 4 | `fdu-oqoy` | P2 | Finish human CLI behavior | `fdu-zsdy` |
 | 4 | `fdu-jej9` | P2 | Finish agent CLI and schema behavior | `fdu-zsdy`, `fdu-k8zw` |
 | 4 | `fdu-v4lc` | P2 | Define native-unit compiled type rules | `fdu-k8zw`, `fdu-p35d`, `fdu-odx6` |
-| 4 | `fdu-lka2` | P2 | Harden watcher queues and platform backends | `fdu-s7wr` |
+| 4 | `fdu-lka2` | P2 | Harden watcher platform backends | `fdu-s7wr`, `fdu-8jte` |
 | 4 | `fdu-9cf0` | P2 | Publish crates and wheels after all release gates | `fdu-ad45`, `fdu-zga3`, `fdu-s7wr`, `fdu-k8zw`, `fdu-ywu0`, `fdu-oqoy`, `fdu-jej9`, `fdu-v4lc`, `fdu-lka2` |
 
 The future epic owns `fdu-p02b`, `fdu-3dtq`, `fdu-3n8c`, and `fdu-ktka`; their explicit

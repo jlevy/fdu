@@ -1222,12 +1222,14 @@ fingerprints rather than replacing them.
   mtime, mtime-recency histogram, size histogram, count-and-bytes by file type, top-k
   largest, top-k most recent.
   Content-tier (later): line/word/sentence/paragraph counts per document type.
-- **Hierarchical roll-ups** computed during the walk via dut’s atomic child-counter,
-  with the counter generalized so that the thread which zeroes a parent merges the full
-  reducer vector rather than two `u64`s. Every directory stores its merged state, so
-  queries read it directly (duc’s lesson) and incremental updates re-merge only the
-  dirty ancestor chain — the same shape as metabrowser’s `_update_ancestor_aggregates`,
-  over arbitrary metrics.
+- **Hierarchical roll-ups** stored in every directory so queries read them directly
+  (duc’s lesson) and incremental updates re-merge only the dirty ancestor chain — the
+  same shape as metabrowser’s `_update_ancestor_aggregates`, over arbitrary metrics.
+  The walk-time implementation begins with a safe scoped reduction.
+  `fdu-gdrv` tests whether dut’s atomic child-counter can be generalized so the thread
+  which zeroes a parent safely merges the full reducer vector rather than two `u64`s;
+  that lock-free shape is adopted only with an explicit memory-ordering argument, model
+  checking, and a measured advantage.
 
 ### Cache and Revalidation (Three Tiers, Git-Shaped)
 
@@ -1348,13 +1350,14 @@ accidents:
   One documented line; accepted (no bead — resolved by policy).
 - **Goal 1’s concurrency corner is now resolved: single-writer, `RwLock` first.**
   Queries-while-deltas-apply uses the boring proven shape — one writer applying deltas,
-  readers behind `parking_lot::RwLock` — because both sides are short: writes are
-  O(depth) applies, and reads are lookups of pre-computed roll-up state, not queries
-  that walk. The delta contract being the only mutation path means escalating later to
-  epoch/arc-swap snapshots is contained rather than a rewrite; escalation happens only
-  if phase-1 measurement shows read contention under watch churn (fdu-r27g). (The
-  cold-path walk needs no locks at all — dut’s atomic refcount roll-up builds the tree
-  before it is ever shared.)
+  readers behind the current `std::sync::RwLock` — because both sides are short: writes
+  are O(depth) applies, and reads are lookups of pre-computed roll-up state, not queries
+  that walk. `IndexHandle` keeps that primitive private and does not return lock guards.
+  The delta contract being the only mutation path means escalating later to epoch or
+  arc-swap snapshots is contained rather than a rewrite; a different primitive or new
+  dependency is considered only if phase-1 measurement shows reader or writer contention
+  under watch churn (fdu-s7wr, fdu-r27g). The cold-path walk builds the tree before it
+  is shared and therefore needs no index lock.
 
 One item is deliberately **not** resolved here: proposed Goals 6 and 7 await maintainer
 sign-off (fdu-odx6; see *Open Questions*).

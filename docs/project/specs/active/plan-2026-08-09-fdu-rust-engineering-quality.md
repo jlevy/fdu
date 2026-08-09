@@ -4,7 +4,7 @@
 
 **Author:** fdu project
 
-**Status:** Active — two P0 merge blockers open
+**Status:** Active — trust, atomicity, and concurrency merge gates open
 
 ## Overview
 
@@ -28,14 +28,23 @@ changes rather than replacing or rescoping them.
 ## Current Status
 
 The epic is `fdu-dxee`, a child of the Phase 1 epic `fdu-qfz6`. Two independent P0 bugs
-are the current PR #1 merge blockers:
+remain the highest-severity PR #1 blockers:
 
 - `fdu-ad45`: executable-dependency cool-off, provenance, and CI trust controls;
 - `fdu-nlh8`: whole-batch path validation before any index mutation.
 
-Both block the final merge-approval bead `fdu-sn43` in the Phase 1 plan.
-The remaining P1 and P2 work protects pre-release refactors and publishing; it does not
-outrank those two fixes.
+The concurrency review added three P1 implementation gates before this PR can receive
+final approval:
+
+- `fdu-s7wr`: remove public lock guards and define the supported ownership contract;
+- `fdu-1j0b`: remove filesystem I/O from the watch writer-lock fallback;
+- `fdu-8jte`: bound watcher transport and make overload, stop, and teardown fail safe.
+
+`fdu-gd6n` proves the combined result with deterministic cross-thread tests.
+The final merge-approval bead `fdu-sn43` waits on that validation gate as well as the P0
+work.
+Other P1 and P2 items still protect later refactors and publishing rather than this
+merge.
 
 ## Goals
 
@@ -45,6 +54,10 @@ outrank those two fixes.
   an unchanged observation
 - Keep synchronization primitives and unnecessary allocations out of the supported Rust
   API
+- Keep filesystem I/O, blocking sends, serialization, Python conversion, and user
+  callbacks outside index locks
+- Bound every watcher pipeline stage and turn overload into explicit reconciliation,
+  with cancellable joined worker ownership
 - Add refactor-oriented state-machine and persistence tests before the Phase 1 storage
   and reducer rewrites
 - Pin the normal Rust toolchain and prove every supported feature and MSRV combination
@@ -98,6 +111,9 @@ more broad lints, or a rewrite of working test infrastructure.
 | P0 | As of the audit, `Cargo.lock` contains `clap` 4.6.6 from 2026-08-06, the PyO3 0.29.2 family from 2026-08-05, and `thiserror` 2.0.20 from 2026-08-08. The pinned `Swatinem/rust-cache` and `dtolnay/rust-toolchain` commits are also only three to four days old. | Restore pins that cleared the 14-day cool-off and add a fail-closed, tested gate for Cargo, Python, Node, GitHub Actions, and bootstrap tools. |
 | P0 | `Index::apply` treats an absolute or parent-escaping operation as `unchanged`; a mixed batch can therefore hide malformed producer input while valid operations mutate state. | Validate the whole observation before mutation and return a typed error without changing any index state. |
 | P1 | `IndexHandle::read` returns `std::sync::RwLockReadGuard`, exposing the lock implementation and letting callers hold it across arbitrary work. The public surface also duplicates module and root re-exports and forces a `Vec` allocation for child iteration. | Define the minimal supported API, keep locking inside the abstraction, and use borrowed iteration where ownership permits it. |
+| P1 | After three optimistic clock conflicts, `watch::apply_reverified` takes the index writer lock and calls `symlink_metadata` once per queued operation before releasing it. A slow filesystem or large observation can block all readers and writers indefinitely. | Introduce a linearizable apply-if-clock operation; perform every stat outside the lock, then escalate exhausted conflicts to an explicit root invalidation and ordinary reconciliation rather than spinning or moving I/O under the lock. |
+| P1 | The raw notify channel, verified-observation channel, and pending-path map are unbounded. Replacing either channel with a blocking bounded send would let a full output queue deadlock `Watcher::drop` while it joins the worker and still owns the receiver. The worker also performs stats that the applying path repeats. | Make the joined worker an I/O-free bounded coalescer, verify on the consuming thread immediately before arbitration, and use nonblocking ingress/output, capped state, sticky overflow-to-root invalidation, explicit cancellation, and stop distinct from timeout. |
+| P1 | Existing shared-handle tests are sequential and do not prove batch visibility, writer linearization, freshness epochs under real overlap, snapshot old-or-new visibility, worker teardown, or Python GIL/same-object behavior. | Add deterministic state-machine tests using barriers, channels, injectable seams, and bounded deadlines; require a model checker before adopting future custom lock-free protocols. |
 | P1 | Running rustdoc with `-D missing-docs` reports 61 undocumented public fields, variants, and methods. Clippy identifies 45 `must_use_candidate` sites while the workspace disables that lint globally. | Reduce the public surface first, document every remaining contract, and apply `#[must_use]` to values whose loss can break correctness rather than enabling the lint indiscriminately. |
 | P1 | The index has extensive example tests but no generated reference-model comparison for arbitrary upsert, remove, kind-change, invalidation, and delayed-conditional sequences. | Compare every generated transition against a simple recomputed model with fixed seeds and useful failing traces. |
 | P1 | Snapshot tests cover targeted corruption and concurrent writers, but not a broad byte-mutation corpus, concurrent reader visibility, or injected create/write/sync/rename failures. The duplicated FNV-style hash uses `0x1000_0000_01b3`, not the standard FNV-1a 64-bit prime, and has no known-vector test. | Test the parser and commit state machine under arbitrary corruptions and injected failures; name and test the stable fingerprint algorithm. |
@@ -110,11 +126,11 @@ more broad lints, or a rewrite of working test infrastructure.
 
 | Guideline | Disposition for fdu |
 | --- | --- |
-| `rust-rules.md` | **Apply selectively.** Ownership, domain types, typed errors, module responsibility, safe Rust, and measured-performance rules are already strong. The malformed-observation, lock-guard, public-surface, documentation, `must_use`, and stable-fingerprint findings remain. |
+| `rust-rules.md` | **Apply selectively.** Ownership, domain types, typed errors, module responsibility, safe Rust, and measured-performance rules are already strong. The malformed-observation, lock lifetime, bounded-worker-lifecycle, public-surface, documentation, `must_use`, and stable-fingerprint findings remain. |
 | `rust-project-setup.md` | **Apply.** The two-crate shape, feature boundaries, lint policy, lockfiles, local gate, audits, and pinned action syntax are sound. Toolchain reproducibility, cool-off enforcement, least-privilege workflow settings, trusted-only cache writes, and the feature/MSRV matrix need work. |
 | `rust-cli-rules.md` | **Mostly met.** The binary is thin, streams and exits are tested, redirected output is deterministic, broken pipes are quiet success, and golden tests own help/errors/cache behavior. Deep-tree stack safety remains; prompts, destructive dry-run, configuration files, paging, and completions are not current features. |
 | `rust-filesystem-rules.md` | **Apply to scan and cache boundaries.** Native path storage, non-following symlink policy, root boundaries, partial-error reporting, private temporary files, atomic replacement, and fail-closed parsing are present. Classification/Python path narrowing and injected snapshot failure-state tests remain. fdu does not mutate the scanned user tree. |
-| `rust-testing-rules.md` | **Apply.** Test placement, isolated roots, exact goldens, cross-platform CI, doctests, failure cases, and zero ignored tests are strong. A reference model, broad corrupt-input coverage, injected commit failures, MSRV tests, watch-only features, and minimum-Python wheel coverage add distinct evidence rather than duplicate assertions. |
+| `rust-testing-rules.md` | **Apply.** Test placement, isolated roots, exact goldens, cross-platform CI, doctests, failure cases, and zero ignored tests are strong. Deterministic concurrency interleavings, a reference model, broad corrupt-input coverage, injected commit failures, MSRV tests, watch-only features, and minimum-Python wheel coverage add distinct evidence rather than duplicate assertions. |
 | `rust-release-rules.md` | **Prepare now, execute later.** No artifact is published, so channels and release credentials remain Phase 1 work. Package contents, one release identity, least privilege, compatibility policy, native artifact smoke tests, and incident/security documentation must be acceptance criteria for the existing publishing bead. |
 | `rust-code-review-rules.md` | **Applied by this review.** Automated gates ran first; the review then followed unsafe, data integrity, errors, public API, concurrency, dependencies, performance, tests, and documentation risk order. There is no handwritten unsafe code or FFI pointer manipulation to audit. |
 | `porting-principles-and-antipatterns.md` | **Process lessons only.** fdu has no source implementation against which to claim parity. Its useful general rules already apply: tests run in CI, missing tools fail, goldens do not truncate discrepancies, no ignores hide gaps, and defects receive red-before-green tests. Dynamic cross-language corpus parity is not applicable. |
@@ -127,15 +143,18 @@ more broad lints, or a rewrite of working test infrastructure.
 
 ### Approach
 
-Use three gates, in order:
+Use four gates, in order:
 
 1. **Trust the inputs.** Restore aged dependency and action pins, enforce provenance and
    cool-off, pin the normal Rust toolchain, and make CI permissions and cache behavior
    explicit.
-2. **Harden the contracts before optimizing them.** Make observation rejection fallible,
-   shrink the public API, hide locks, and add model and persistence tests before packed
-   storage and reducers change internal representation.
-3. **Finish boundary resilience.** Make deep CLI rendering iterative, preserve native
+2. **Make mutation and concurrency fail safe.** Make observation rejection fallible,
+   hide lock capabilities, keep I/O and callbacks outside locks, and bound the watcher
+   with explicit overload and shutdown semantics.
+3. **Prove the contracts before optimizing them.** Exercise real interleavings, then add
+   model and persistence tests before packed storage and reducers change internal
+   representation.
+4. **Finish boundary resilience.** Make deep CLI rendering iterative, preserve native
    paths through classification and Python, then finish package and release evidence.
 
 Every behavior change starts with a discriminating test.
@@ -169,6 +188,49 @@ commit stage.
 - Supported public items have complete rustdoc and deliberate `must_use` behavior.
   Internal modules and helpers become `pub(crate)` rather than receiving documentation
   solely to satisfy a lint.
+
+#### Concurrency and Lifecycle Contracts
+
+- One accepted observation has one writer-lock linearization point.
+  Concurrent readers see the complete state before or after that point, including
+  roll-ups, clock, journal, and freshness; they never see a partially applied batch.
+- Watch verification uses a bounded optimistic apply-if-clock loop.
+  Exhausted conflicts publish a conservative root invalidation with an explicit
+  contention reason and reconcile after unlock; progress never depends on holding a lock
+  across `stat` or on an unbounded retry loop.
+- Index locks protect in-memory state only.
+  Filesystem I/O, snapshot serialization and commit, blocking channel operations, Python
+  object conversion, and user-provided sinks run after the lock is released.
+  The current design has no nested index locks; any future second lock must document and
+  test one global acquisition order.
+- `IndexHandle` owns synchronization and returns plain owned data or results.
+  It does not expose guards, receivers, or arbitrary closures that could retain a
+  capability or re-enter a writer operation and self-deadlock.
+  Poisoning and worker failure become typed outcomes rather than panics or quiet
+  timeouts.
+- Watch ingress, pending coalescing, and coalesced output have explicit bounds.
+  Backend callbacks never block.
+  Capacity loss sets a sticky root `WatchOverflow` invalidation; the system may do extra
+  reconciliation but may never silently claim freshness.
+- The joined watch worker only coalesces bounded hints; it performs no filesystem I/O.
+  `next_observation` or `apply_next` verifies on the consuming thread immediately before
+  arbitration, avoiding duplicated stats and keeping worker teardown cancellable.
+- Watcher cancellation has one owner, wakes every wait, and joins every worker.
+  A full output queue, disconnected consumer, in-flight batch, backend error, or worker
+  panic cannot deadlock teardown or leave a detached thread.
+- Snapshot replacement gives concurrent readers one complete old or new image.
+  Shared index capture releases the index lock before serialization and filesystem
+  commit.
+- PyO3 native work releases the GIL so unrelated Python threads progress.
+  Access to one `PyIndex` follows an explicit serialized-or-rejected borrow contract; it
+  is not described as concurrent shared-index reading unless its representation changes.
+- The current safe `std::sync::RwLock` design needs deterministic interleaving tests,
+  not a model-checker dependency.
+  Any custom atomic-refcount, work-stealing, unsafe, or lock-free Phase 1 protocol must
+  specify memory orderings and pass a small model-checking harness before adoption.
+  `unsafe_code = "deny"` remains the default; an intrusive unsafe queue requires
+  measured need, a separate reviewed boundary, written invariants, and Miri where
+  applicable.
 
 #### Refactor Safety Nets
 
@@ -215,10 +277,11 @@ found during the usage inventory.
 
 | Existing bead | How this plan changes its acceptance criteria |
 | --- | --- |
-| `fdu-r27g` | Measure contention only after the public API no longer exposes a lock guard; the internal lock remains replaceable. |
+| `fdu-r27g` | Retain the current standard-library lock and measure contention only after the public API no longer exposes a guard; change primitives only from evidence. |
+| `fdu-gdrv` and `fdu-aky1` | Specify ownership, memory orderings, bounded work, cancellation, panic propagation, and joins. Begin with safe scoped workers/queues; model-check custom atomics and require separate evidence before relaxing the unsafe-code ban. |
 | `fdu-1gbl` and `fdu-a6dz` | Packed records and reducers land behind the reference-model suite. Aggregate overflow policy remains owned by `fdu-a6dz`. |
 | `fdu-xihx` | The block format must pass the reusable corrupt-input and commit-failure state-machine tests. |
-| `fdu-lka2` | Watch queue/backend work must also make timeout distinct from permanent worker disconnection; a stopped watcher cannot look like a quiet tree. |
+| `fdu-lka2` | Platform rename, backend selection, descriptor, and failed-coverage work consumes the bounded transport from `fdu-8jte`; it does not reopen generic queue or shutdown semantics. |
 | `fdu-oqoy` and `fdu-jej9` | Human, JSON, and future JSONL views retain exact current output while moving to stack-safe traversal. The existing raw error-path and schema work remains. |
 | `fdu-v4lc` | The rule dialect starts from native path units and cannot reintroduce UTF-8-only extension/basename matching. |
 | `fdu-9cf0` | Publishing is blocked on the minimal documented API, complete package contents, support/security policy, cool-off-clean release tooling, and installed-artifact smoke tests. |
@@ -229,16 +292,23 @@ found during the usage inventory.
 
 - [ ] `fdu-ad45`: restore and enforce the 14-day executable-dependency cool-off
 - [ ] `fdu-nlh8`: reject malformed observation batches before any mutation
-- [ ] `fdu-sn43`: rerun all gates and publish the superseding senior approval after both
-  fixes land
+- [ ] `fdu-1j0b`: remove filesystem verification from the writer-lock fallback
+- [ ] `fdu-8jte`: make the worker an I/O-free bounded coalescer and make overload and
+  shutdown fail safe
+- [ ] `fdu-s7wr`: seal the shared-index API without public guards or lock-held callbacks
+- [ ] `fdu-gd6n`: prove the combined concurrency contract under deterministic
+  interleavings
+- [ ] `fdu-sn43`: rerun all gates and publish the superseding senior approval
 
-The two implementation bugs are independent and should be fixed in parallel when
-capacity permits. The final approval bead is deliberately blocked on both.
+The supply-chain, watch-lock, and watch-transport fixes are independent.
+Atomic batch rejection precedes the final guard-free API because it changes the apply
+result contract. The deterministic concurrency suite follows all four state/lifecycle
+corrections, then final approval follows that suite and the independent supply-chain
+fix.
 
-### Phase 1: Reproducible Tooling and Public Contracts
+### Phase 1: Reproducible Tooling
 
 - [ ] `fdu-zga3`: pin the normal Rust toolchain and complete the feature/MSRV matrix
-- [ ] `fdu-s7wr`: seal and document the public Rust API without leaking lock guards
 
 ### Phase 2: Add Refactor Safety Nets
 
@@ -264,6 +334,17 @@ The bead IDs and dependency graph are recorded in the **Beads** section.
   the questions each combination uniquely answers
 - Run the supported core contract on the exact MSRV and all normal checks on the pinned
   development toolchain
+- Use barriers and handoff channels to place threads at exact transitions.
+  Every wait has a bounded deadline that fails with the captured state; synchronization
+  never depends on a scheduling sleep
+- Prove simultaneous writers receive unique contiguous clocks, readers observe whole
+  batches, newer invalidations survive older reconciliation completion, and reentrant
+  sinks run after unlock
+- Fill every watcher stage, disconnect every owner, and drop during queued and in-flight
+  work; prove bounded state, root-invalidation degradation, typed stop/panic outcomes,
+  no duplicated verification, and prompt worker join
+- Race snapshot readers and writers and exercise Python GIL release and same-object
+  borrow behavior from installed artifacts
 - Use fixed-seed generated operation sequences with the seed and operation trace printed
   on failure; retain minimized discoveries as focused regressions
 - Mutate committed snapshot seeds and inject every write/commit failure stage without
@@ -287,12 +368,14 @@ Work rolls out in dependency order:
 
 1. repair supply-chain inputs and make observation application atomic as independent P0
    fixes;
-2. rerun the complete PR gate and publish final approval only after both pass;
-3. pin and prove toolchain/feature contracts;
-4. shrink and document the public API under red tests;
-5. land the index model and snapshot state-machine safety nets;
-6. harden CLI and language boundaries;
-7. let the existing Phase 1 engine and publishing beads consume those gates.
+2. remove watch I/O from index locks, bound watcher lifecycle, and seal the shared-index
+   API under red tests;
+3. pass the deterministic concurrency state-machine suite;
+4. rerun the complete PR gate and publish final approval;
+5. pin and prove toolchain/feature contracts;
+6. land the index model and snapshot failure-state safety nets;
+7. harden CLI and language boundaries;
+8. let the existing Phase 1 engine and publishing beads consume those gates.
 
 No migration is needed for pre-release snapshots.
 A fingerprint or format correction must cause a cold scan, never an attempted
@@ -320,31 +403,38 @@ guards appear in one program graph.
 
 Audit and planning record: **fdu-qcgm** — Review the playbook, capture evidence, write
 this plan, and assemble the non-duplicative implementation graph.
-That bead is closed; the implementation beads remain open.
+The focused concurrency review is **fdu-07t4**. The playbook audit is closed; the
+concurrency review closes when this plan, its beads, and the PR record agree.
 
-| Phase | Bead | Priority | Work | Direct blocker |
+| Phase | Bead | Priority | Work | Direct blockers |
 | --- | --- | --- | --- | --- |
 | 0 | `fdu-ad45` | P0 | Restore and enforce the 14-day executable-dependency cool-off | — |
 | 0 | `fdu-nlh8` | P0 | Reject malformed observation batches before mutation | — |
+| 0 | `fdu-1j0b` | P1 | Keep watch arbitration free of filesystem I/O under index locks | — |
+| 0 | `fdu-8jte` | P1 | Bound watcher transport and make overload/shutdown fail safe | — |
+| 0 | `fdu-s7wr` | P1 | Seal the minimal guard-free Rust API and ownership contract | `fdu-nlh8` |
+| 0 | `fdu-gd6n` | P1 | Prove current concurrency contracts deterministically | `fdu-s7wr`, `fdu-1j0b`, `fdu-8jte` |
 | 1 | `fdu-zga3` | P1 | Pin Rust tooling and prove supported feature/MSRV contracts | `fdu-ad45`, `fdu-sn43` |
-| 1 | `fdu-s7wr` | P1 | Seal the minimal guard-free Rust API | `fdu-nlh8`, `fdu-sn43` |
 | 2 | `fdu-o8r8` | P1 | Add a deterministic index/delta reference model | `fdu-nlh8`, `fdu-sn43` |
 | 2 | `fdu-471a` | P1 | Exercise snapshot parsing and commit failures as a state machine | `fdu-nlh8`, `fdu-sn43` |
 | 3 | `fdu-zsdy` | P2 | Make CLI rendering iterative and stack-safe | `fdu-sn43` |
 | 3 | `fdu-k8zw` | P2 | Preserve native identity through classification and Python | `fdu-s7wr` |
 
-The Phase 1 bead `fdu-sn43` depends on both P0 bugs and owns final PR validation and
-approval. This keeps the merge decision explicit without making the two unrelated fixes
-block each other.
+The Phase 1 bead `fdu-sn43` depends on `fdu-ad45` and `fdu-gd6n` and owns final PR
+validation and approval.
+Atomic rejection reaches it transitively through `fdu-s7wr` and the validation gate,
+without serializing independent fixes.
 
 Cross-epic dependencies make the existing work consume these gates:
 
 - `fdu-ad45` blocks `fdu-zga3`, comparator acquisition under `fdu-k5t5`, publishing
   under `fdu-9cf0`, and final approval under `fdu-sn43`.
-- `fdu-nlh8` blocks `fdu-s7wr`, `fdu-o8r8`, `fdu-471a`, and final approval under
-  `fdu-sn43`.
-- `fdu-sn43` is the explicit post-approval start gate for `fdu-zga3`, `fdu-s7wr`,
-  `fdu-o8r8`, `fdu-471a`, and `fdu-zsdy`.
+- `fdu-nlh8` blocks `fdu-s7wr`, `fdu-o8r8`, `fdu-471a`, and final approval transitively
+  through `fdu-gd6n` and `fdu-sn43`.
+- `fdu-1j0b`, `fdu-8jte`, and `fdu-s7wr` block final concurrency validation under
+  `fdu-gd6n`; `fdu-gd6n` blocks `fdu-sn43`.
+- `fdu-sn43` is the explicit post-approval start gate for `fdu-zga3`, `fdu-o8r8`,
+  `fdu-471a`, and `fdu-zsdy`.
 - `fdu-s7wr` blocks `fdu-r27g`, `fdu-1gbl`, `fdu-a6dz`, `fdu-lka2`, and `fdu-9cf0`.
 - `fdu-o8r8` blocks `fdu-1gbl` and `fdu-a6dz`.
 - `fdu-471a` blocks `fdu-xihx`.
