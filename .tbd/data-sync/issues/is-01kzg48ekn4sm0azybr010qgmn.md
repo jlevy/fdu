@@ -5,7 +5,7 @@ title: "fdu phase 1: fastest walker with full stats, proven by benchmark"
 kind: epic
 status: open
 priority: 1
-version: 21
+version: 22
 spec_path: docs/project/specs/active/plan-2026-08-08-fdu-phase-1.md
 labels: []
 dependencies: []
@@ -30,8 +30,9 @@ child_order_hints:
   - is-01kzg4c6vnh98mqrpkzw7ydne0
   - is-01kzg4c75tvbrg6rgh3803nwzj
   - is-01kzkskszrb20xkk7g3gt32za6
+  - is-01kzkzm62q1vwxbv9hbp39bxxm
 created_at: 2026-08-08T07:26:35.637Z
-updated_at: 2026-08-09T17:37:31.127Z
+updated_at: 2026-08-09T19:22:34.966Z
 ---
 Umbrella for phase 1. Phase 0 (scaffold) is done: delta contract, index with hierarchical reducers, portable walk+revalidate, snapshot lifecycle, notify-backed watch layer, CLI, Python bindings, CI. Phase 1 makes Goal 1 true and demonstrable.
 
