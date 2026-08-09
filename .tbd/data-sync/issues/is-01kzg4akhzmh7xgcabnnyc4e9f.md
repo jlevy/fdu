@@ -4,14 +4,19 @@ id: is-01kzg4akhzmh7xgcabnnyc4e9f
 title: Hardlink attribution policy that survives incremental updates
 kind: task
 status: open
-priority: 2
-version: 1
+priority: 1
+version: 4
 spec_path: docs/project/specs/active/plan-2026-08-08-fdu-phase-1.md
-labels: []
-dependencies: []
+labels:
+  - design-gate
+dependencies:
+  - type: blocks
+    target: is-01kzg49sswr78gpjykxctbe6c7
+  - type: blocks
+    target: is-01kzg4ajxc0pvgcmj834gahcgt
 parent_id: is-01kzg48ekn4sm0azybr010qgmn
 created_at: 2026-08-08T07:27:46.239Z
-updated_at: 2026-08-08T07:27:46.239Z
+updated_at: 2026-08-09T20:37:09.044Z
 ---
 No prior art to copy — this needs design, not just a choice.
 

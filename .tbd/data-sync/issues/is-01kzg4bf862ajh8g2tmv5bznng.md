@@ -5,14 +5,16 @@ title: "CLI agent surface: stable JSON schema, exit codes, help completeness"
 kind: task
 status: open
 priority: 2
-version: 4
+version: 5
 spec_path: docs/project/specs/active/plan-2026-08-08-fdu-phase-1.md
 labels:
   - pr-review
-dependencies: []
+dependencies:
+  - type: blocks
+    target: is-01kzg4c6vnh98mqrpkzw7ydne0
 parent_id: is-01kzg48ekn4sm0azybr010qgmn
 created_at: 2026-08-08T07:28:14.597Z
-updated_at: 2026-08-09T18:28:34.240Z
+updated_at: 2026-08-09T20:37:09.702Z
 ---
 Agents get --help as the complete source of truth, stable machine-readable output whose schema is versioned with the tool, meaningful exit codes, and no interactive surprises (no pager, no prompts).
 

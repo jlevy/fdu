@@ -5,13 +5,15 @@ title: "Spike: gitignore tag-don't-prune via the ignore crate matcher"
 kind: task
 status: open
 priority: 1
-version: 1
+version: 2
 spec_path: docs/project/specs/active/plan-2026-08-08-fdu-phase-1.md
 labels: []
-dependencies: []
+dependencies:
+  - type: blocks
+    target: is-01kzg4bfj2cqzcksgpmfce89w6
 parent_id: is-01kzg48ekn4sm0azybr010qgmn
 created_at: 2026-08-08T07:26:53.712Z
-updated_at: 2026-08-08T07:26:53.712Z
+updated_at: 2026-08-09T20:37:08.583Z
 ---
 Confirm GitignoreBuilder/Gitignore can be used standalone — build the matcher from .gitignore files and call matched_path_or_any_parents() during a normal walk — at acceptable per-entry cost, tagging every entry rather than pruning.
 

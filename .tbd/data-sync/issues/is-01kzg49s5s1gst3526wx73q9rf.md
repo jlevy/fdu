@@ -5,13 +5,15 @@ title: "Walk layer: work-stealing parallelism and batched distribution"
 kind: feature
 status: open
 priority: 1
-version: 1
+version: 2
 spec_path: docs/project/specs/active/plan-2026-08-08-fdu-phase-1.md
 labels: []
-dependencies: []
+dependencies:
+  - type: blocks
+    target: is-01kzg4c6h9v2dzand7t090p278
 parent_id: is-01kzg48ekn4sm0azybr010qgmn
 created_at: 2026-08-08T07:27:19.224Z
-updated_at: 2026-08-08T07:27:19.224Z
+updated_at: 2026-08-09T20:37:09.461Z
 ---
 Parallel walk that saturates the syscall path without a thundering herd.
 

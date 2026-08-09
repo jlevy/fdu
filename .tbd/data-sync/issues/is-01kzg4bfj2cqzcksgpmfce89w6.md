@@ -5,13 +5,17 @@ title: "Type-rule dialect: declarative rules compiled at build time"
 kind: feature
 status: open
 priority: 2
-version: 2
+version: 4
 spec_path: docs/project/specs/active/plan-2026-08-08-fdu-phase-1.md
 labels: []
-dependencies: []
+dependencies:
+  - type: blocks
+    target: is-01kzg4c6vnh98mqrpkzw7ydne0
+  - type: blocks
+    target: is-01kzg4d256qmchmtyvttnpvn4y
 parent_id: is-01kzg48ekn4sm0azybr010qgmn
 created_at: 2026-08-08T07:28:14.914Z
-updated_at: 2026-08-09T18:59:17.510Z
+updated_at: 2026-08-09T20:37:10.355Z
 ---
 Today classify.rs does compound-tail extensions only. Goal 6 requires pluggable recognition through a stable interface.
 

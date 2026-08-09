@@ -5,11 +5,14 @@ title: io_uring accelerator for openat, close, and statx
 kind: feature
 status: open
 priority: 3
-version: 1
-labels: []
+version: 2
+spec_path: docs/project/specs/future/plan-2026-08-09-fdu-post-phase-1-roadmap.md
+labels:
+  - future
 dependencies: []
+parent_id: is-01kzm3v6nndedpwk414enwysv3
 created_at: 2026-08-08T07:29:07.370Z
-updated_at: 2026-08-08T07:29:07.370Z
+updated_at: 2026-08-09T20:36:52.385Z
 ---
 Open question from the research: phase-1 complexity or a later accelerator behind a feature flag? It is a large amount of machinery for a Linux-only win, so it is parked here rather than in phase 1.
 

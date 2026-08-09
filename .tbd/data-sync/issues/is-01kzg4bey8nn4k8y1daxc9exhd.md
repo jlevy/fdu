@@ -5,13 +5,15 @@ title: CLI human polish is product work, not cosmetics
 kind: task
 status: open
 priority: 2
-version: 2
+version: 3
 spec_path: docs/project/specs/active/plan-2026-08-08-fdu-phase-1.md
 labels: []
-dependencies: []
+dependencies:
+  - type: blocks
+    target: is-01kzg4c6vnh98mqrpkzw7ydne0
 parent_id: is-01kzg48ekn4sm0azybr010qgmn
 created_at: 2026-08-08T07:28:14.279Z
-updated_at: 2026-08-09T18:59:17.685Z
+updated_at: 2026-08-09T20:37:09.697Z
 ---
 Goal 2 deviation guard. Earlier drafts described the CLI as 'for testing, scripting, and agent use', which contradicted Goal 2. It is a first-class product surface and must be scheduled in phase 1 alongside the engine, not deferred as cosmetics.
 

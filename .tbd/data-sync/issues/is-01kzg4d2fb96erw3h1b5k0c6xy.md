@@ -5,11 +5,14 @@ title: "Cache coherency B: snapshot + append-only delta journal"
 kind: feature
 status: open
 priority: 3
-version: 1
-labels: []
+version: 2
+spec_path: docs/project/specs/future/plan-2026-08-09-fdu-post-phase-1-roadmap.md
+labels:
+  - future
 dependencies: []
+parent_id: is-01kzm3v6nndedpwk414enwysv3
 created_at: 2026-08-08T07:29:07.051Z
-updated_at: 2026-08-08T07:29:07.051Z
+updated_at: 2026-08-09T20:36:52.138Z
 ---
 Phase 1 ships option A: rewrite the whole snapshot on quiesce and at shutdown. Simple, write cost proportional to tree size, and a crash loses only warmth, never correctness — the next open revalidates.
 

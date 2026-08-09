@@ -5,15 +5,19 @@ title: "Block snapshot format: compressed blocks, tail index, lazy directory lis
 kind: feature
 status: open
 priority: 1
-version: 3
+version: 5
 spec_path: docs/project/specs/active/plan-2026-08-08-fdu-phase-1.md
 labels: []
 dependencies:
   - type: blocks
     target: is-01kzg4c6h9v2dzand7t090p278
+  - type: blocks
+    target: is-01kzg4d2fb96erw3h1b5k0c6xy
+  - type: blocks
+    target: is-01kzg4d256qmchmtyvttnpvn4y
 parent_id: is-01kzg48ekn4sm0azybr010qgmn
 created_at: 2026-08-08T07:27:45.580Z
-updated_at: 2026-08-09T04:41:43.294Z
+updated_at: 2026-08-09T20:37:10.361Z
 ---
 Replace the flat, uncompressed bootstrap format v2. Its lifecycle invariants—engine-fingerprint invalidation, semantic scope, payload integrity verification, exclusive temporary-file reservation plus atomic rename, corrupt-equals-empty behavior, complete-only persistence, and bounded allocation—must survive unchanged.
 

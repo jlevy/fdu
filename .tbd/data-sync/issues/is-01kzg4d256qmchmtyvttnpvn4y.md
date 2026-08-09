@@ -5,11 +5,14 @@ title: "Content-tier metrics: line, word, sentence, paragraph counts"
 kind: feature
 status: open
 priority: 3
-version: 1
-labels: []
+version: 2
+spec_path: docs/project/specs/future/plan-2026-08-09-fdu-post-phase-1-roadmap.md
+labels:
+  - future
 dependencies: []
+parent_id: is-01kzm3v6nndedpwk414enwysv3
 created_at: 2026-08-08T07:29:06.726Z
-updated_at: 2026-08-08T07:29:06.726Z
+updated_at: 2026-08-09T20:36:51.882Z
 ---
 Deferred past phase 1 deliberately: build it once the stat tier is solid. Its PLACE is reserved now — in the reducer registry and in the per-analyzer fingerprint cache — because that shapes the snapshot format and cannot be retrofitted cheaply.
 

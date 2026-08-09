@@ -5,13 +5,15 @@ title: "Watch hardening: rename stitching, backend selection, kqueue sweep, fail
 kind: feature
 status: open
 priority: 2
-version: 4
+version: 5
 spec_path: docs/project/specs/active/plan-2026-08-08-fdu-phase-1.md
 labels: []
-dependencies: []
+dependencies:
+  - type: blocks
+    target: is-01kzg4c6vnh98mqrpkzw7ydne0
 parent_id: is-01kzg48ekn4sm0azybr010qgmn
 created_at: 2026-08-08T07:28:15.231Z
-updated_at: 2026-08-09T18:59:17.859Z
+updated_at: 2026-08-09T20:37:09.716Z
 ---
 The watch layer works (coalesce -> verify by stat -> delta, with Flag::Rescan escalated rather than dropped). What is missing is everything platform-specific:
 

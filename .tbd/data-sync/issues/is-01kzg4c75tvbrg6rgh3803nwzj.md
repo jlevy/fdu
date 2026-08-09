@@ -5,13 +5,17 @@ title: Ratify proposed goals 6 (extensibility) and 7 (trustworthy results)
 kind: task
 status: open
 priority: 1
-version: 1
+version: 3
 spec_path: docs/project/specs/active/plan-2026-08-08-fdu-phase-1.md
 labels: []
-dependencies: []
+dependencies:
+  - type: blocks
+    target: is-01kzg4bfj2cqzcksgpmfce89w6
+  - type: blocks
+    target: is-01kzg49sswr78gpjykxctbe6c7
 parent_id: is-01kzg48ekn4sm0azybr010qgmn
 created_at: 2026-08-08T07:28:39.097Z
-updated_at: 2026-08-08T07:28:39.097Z
+updated_at: 2026-08-09T20:37:08.797Z
 ---
 The research states five user-set goals plus two the research proposed:
 (6) Extensible metrics and pluggable file typing — new roll-up dimensions and type rules must be registrations against stable interfaces (the reducer registry, the type-rule dialect), never engine changes.
