@@ -3,9 +3,9 @@ type: is
 id: is-01kzmaf3k9d4zk3ctcxez4n7tk
 title: Keep cfg-disabled integration test crates documented cross-platform
 kind: bug
-status: in_progress
+status: closed
 priority: 0
-version: 3
+version: 4
 spec_path: docs/project/specs/active/plan-2026-08-09-fdu-rust-engineering-quality.md
 labels:
   - ci
@@ -16,7 +16,9 @@ dependencies:
     target: is-01kzm3t12dcq5h7n92xztnhcyd
 parent_id: is-01kzky6vqxwd47xz3we21s86zq
 created_at: 2026-08-09T22:32:02.920Z
-updated_at: 2026-08-09T22:34:00.720Z
+updated_at: 2026-08-09T22:38:41.270Z
+closed_at: 2026-08-09T22:38:41.269Z
+close_reason: "Fixed in 8a539a2 by keeping crate documentation before #![cfg(unix)]. The exact Rust 1.97.1 x86_64-pc-windows-msvc all-feature test-target check passes with warnings denied, the complete local make check passes, and fresh GitHub Actions run 31339731585 is green on Windows and every other required job."
 ---
 Windows CI compiles the Unix-only cli_exit integration-test target as an empty cfg-disabled crate under RUSTFLAGS=-D warnings. Because #![cfg(unix)] preceded the //! crate documentation, rustc removed the docs before enforcing workspace missing_docs and failed the Windows job. Put crate docs before the cfg attribute, retain Unix-only execution, and verify the complete local and fresh cross-platform gates.
 
