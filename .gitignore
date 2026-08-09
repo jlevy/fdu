@@ -1,0 +1,27 @@
+# Cargo build output
+target/
+debug/
+
+# rustfmt backups
+**/*.rs.bk
+
+# MSVC debug info
+*.pdb
+
+# Third-party source checked out for reference only, never built or shipped.
+attic/
+
+# Benchmark corpora and results are generated, often large, and machine-specific.
+benchmarks/corpus/
+benchmarks/results/
+
+# Python build artifacts from maturin
+*.so
+*.pyd
+dist/
+.venv/
+__pycache__/
+
+# Editors
+.DS_Store
+*.swp
