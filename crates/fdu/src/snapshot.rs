@@ -182,13 +182,17 @@ pub fn save(index: &Index, path: &Path) -> Result<()> {
 /// engine-fingerprint mismatch, and a truncated or corrupt file. Every one of those
 /// means the same thing to a caller: there is no warm cache, so scan.
 pub fn load(path: &Path) -> Result<Option<Index>> {
+    load_with_size_limit(path, MAX_SNAPSHOT_BYTES)
+}
+
+fn load_with_size_limit(path: &Path, max_snapshot_bytes: u64) -> Result<Option<Index>> {
     let mut file = match fs::File::open(path) {
         Ok(file) => file,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(e) => return Err(Error::io(path, e)),
     };
     let file_len = file.metadata().map_err(|e| Error::io(path, e))?.len();
-    if file_len > MAX_SNAPSHOT_BYTES || file_len < u64::try_from(TRAILER.len()).unwrap_or(u64::MAX)
+    if file_len > max_snapshot_bytes || file_len < u64::try_from(TRAILER.len()).unwrap_or(u64::MAX)
     {
         return Ok(None);
     }
@@ -541,6 +545,16 @@ mod tests {
         index
     }
 
+    fn entry_count_offset(bytes: &[u8]) -> usize {
+        let root_len_at = MAGIC.len() + 4 + 8 + 1 + SERIALIZED_SCOPE_BYTES;
+        let root_len = u32::from_le_bytes(
+            bytes[root_len_at..root_len_at + 4]
+                .try_into()
+                .expect("saved snapshot has a root length"),
+        );
+        root_len_at + 4 + usize::try_from(root_len).expect("root length fits usize")
+    }
+
     #[test]
     fn round_trip_preserves_tree_and_rollups() {
         let dir = tempfile::tempdir().expect("tempdir");
@@ -573,13 +587,13 @@ mod tests {
     }
 
     #[test]
-    fn oversized_sparse_snapshot_is_rejected_before_body_allocation() {
+    fn configured_size_limit_rejects_before_body_allocation() {
         let dir = tempfile::tempdir().expect("tempdir");
-        let path = dir.path().join("huge.fdu");
-        let file = fs::File::create(&path).expect("create");
-        file.set_len(MAX_SNAPSHOT_BYTES + 1).expect("make sparse file");
+        let path = dir.path().join("snap.fdu");
+        save(&sample_index(), &path).expect("save");
+        let file_len = fs::metadata(&path).expect("metadata").len();
 
-        assert!(load(&path).expect("load must not error").is_none());
+        assert!(load_with_size_limit(&path, file_len - 1).expect("load must not error").is_none());
     }
 
     #[test]
@@ -614,7 +628,7 @@ mod tests {
 
         let mut bytes = fs::read(&path).expect("read");
         // Claim far more entries than the body holds.
-        let count_at = MAGIC.len() + 4 + 8 + 1 + SERIALIZED_SCOPE_BYTES + 4 + "/some/root".len();
+        let count_at = entry_count_offset(&bytes);
         bytes[count_at..count_at + 8].copy_from_slice(&u64::MAX.to_le_bytes());
         fs::write(&path, &bytes).expect("write");
 
@@ -628,10 +642,20 @@ mod tests {
         save(&sample_index(), &path).expect("save");
 
         let mut bytes = fs::read(&path).expect("read");
-        let count_at = MAGIC.len() + 4 + 8 + 1 + SERIALIZED_SCOPE_BYTES + 4 + "/some/root".len();
+        let count_at = entry_count_offset(&bytes);
         let records_at = count_at + 8;
-        let first_child_name_at = records_at + MIN_RECORD_BYTES + 4 + 1 + 4;
-        bytes[first_child_name_at..first_child_name_at + 8].copy_from_slice(b"../bad!!");
+        let first_child_name_len_at = records_at + MIN_RECORD_BYTES + 4 + 1;
+        let old_name_len = u32::from_le_bytes(
+            bytes[first_child_name_len_at..first_child_name_len_at + 4]
+                .try_into()
+                .expect("saved snapshot has a child name length"),
+        );
+        let old_name_end = first_child_name_len_at
+            + 4
+            + usize::try_from(old_name_len).expect("name length fits usize");
+        let mut invalid_name = Vec::new();
+        put_os_str(&mut invalid_name, OsStr::new("../bad")).expect("encode invalid name");
+        bytes.splice(first_child_name_len_at..old_name_end, invalid_name);
         fs::write(&path, &bytes).expect("write");
 
         assert!(load(&path).expect("load must not error").is_none());
