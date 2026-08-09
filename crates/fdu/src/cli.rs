@@ -67,7 +67,7 @@ pub struct Cli {
     #[arg(long, action = ArgAction::SetTrue)]
     pub no_cache: bool,
 
-    /// Limit how deep the filesystem walk descends.
+    /// Limit retained entry depth; zero keeps only the root.
     #[arg(long, value_name = "N")]
     pub max_depth: Option<usize>,
 

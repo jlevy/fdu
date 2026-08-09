@@ -29,17 +29,18 @@ What that means concretely, because “scaffold” is otherwise an unhelpful wor
 | Piece | Module | State |
 | --- | --- | --- |
 | Observation/commit contract | `types.rs` | Conditional producer observations; only effective accepted ops become clocked `AppliedDelta` |
-| In-memory index | `index.rs` | Parent-pointer arena, generation-safe handles, per-directory roll-ups, O(depth) apply, bounded feed |
+| In-memory index | `index.rs` | Parent-pointer arena, generation/revision-safe arbitration, per-directory roll-ups, O(depth) apply, bounded feed |
 | Roll-up reducers | `index.rs` | Counts, apparent and allocated bytes, newest mtime, per-extension tallies — all hierarchical |
-| Walk and reconcile | `scan.rs` | Applying full/subtree reconciliation with explicit freshness; correct and portable, **not fast** |
-| Snapshot | `snapshot.rs` | Flat format v1 bootstrap; bounded streaming load, semantic scope, complete-only replacement |
+| Walk and reconcile | `scan.rs` | Scope-safe applying full/subtree reconciliation with explicit freshness; correct and portable, **not fast** |
+| Snapshot | `snapshot.rs` | Flat format v2 bootstrap; bounded streaming load, payload checksum, semantic scope, owner-only concurrent replacement |
 | Watch layer | `watch.rs` | notify-backed adapter plus apply/reconcile driver; not started by `open()` or Python |
 | CLI | `cli.rs` | Human tree, schema-v2 JSON, exact kinds/errors, partial exit status, `NO_COLOR` |
 | Python bindings | `fdu-py` | Bulk API, retained scan scope, freshness/errors, GIL release, installed-wheel smoke |
 | CI | `.github/workflows/ci.yml` | SHA-pinned Actions; locked three-OS tests, MSRV, docs, audit, and wheel smoke |
 
-The workspace suite includes adversarial ordering, cache-scope, non-UTF-8 identity,
-snapshot resource-bound, invalidation-closure, partial-exit, and installed-wheel tests.
+The workspace suite includes adversarial ordering and ABA arbitration, cache-scope,
+non-UTF-8 identity, snapshot integrity/resource/permission bounds, concurrent
+replacement, invalidation-retry, partial-exit, and installed-wheel tests.
 Clippy pedantic is clean with `unsafe_code = "deny"` on the core crate; the
 `--no-default-features` library path is built and tested in CI rather than assumed.
 
@@ -122,7 +123,7 @@ Measure first.
 - **Reducer registry.** Turn the fixed `RollUp` struct into registered reducers with
   declared invertibility, so a new metric is a registration rather than an engine
   change.
-- **Snapshot format v1.** Compressed blocks, tail index, `(block << k) | offset`
+- **Block snapshot format.** Compressed blocks, tail index, `(block << k) | offset`
   references delta-encoded within a block, sibling groups contiguous, front-coded names,
   pre-computed roll-ups stored per directory.
 - **Revalidation.** Add the directory-mtime shortcut and parallel sweep while preserving
@@ -213,7 +214,7 @@ Phase 0 is recorded and closed as **fdu-v178**.
 | B | fdu-aky1 | Walk layer: work-stealing parallelism and batched distribution |
 | B | fdu-1gbl | Packed entry records: hit the 25–32 bytes per file budget |
 | B | fdu-a6dz | Reducer registry: metrics as registrations, not engine changes |
-| B | fdu-xihx | Snapshot format v1: compressed blocks, tail index, lazy listing |
+| B | fdu-xihx | Block snapshot format: compressed blocks, tail index, lazy listing |
 | B | fdu-wbis | Revalidation: directory-mtime shortcut and parallel sweep |
 | B | fdu-579b | Hardlink attribution policy that survives incremental updates |
 | B | fdu-r27g | Index concurrency: single-writer `RwLock`, escalate on measurement |

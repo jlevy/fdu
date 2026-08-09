@@ -16,14 +16,20 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - **In-memory index** (`index.rs`): parent-pointer arena with per-directory
     pre-computed roll-ups (counts, apparent and allocated bytes, newest mtime,
     per-extension tallies), O(depth) apply, generation-safe free-slot reuse, explicit
-    freshness, and an operation-bounded change feed.
+    freshness, revision-safe conditional arbitration (including structural and ABA
+    races), and an operation-bounded change feed.
   - **Scan layer** (`scan.rs`): portable cold scan plus applying full/subtree/shared
-    reconciliation with stale-observation arbitration.
+    reconciliation with stale-observation arbitration, exact scope matching, retryable
+    invalidations with missing/non-directory ancestor widening, root-only depth-zero
+    semantics, and enforcement of depth, symlink, and filesystem subtree boundaries.
   - **Snapshot** (`snapshot.rs`): semantic-scope invalidation, bounded streaming load,
-    complete-only atomic replacement, and corrupt-equals-empty semantics.
+    payload integrity checks, complete-only concurrency-safe atomic replacement, and
+    corrupt-equals-empty semantics. Unix snapshots are created owner-only (`0600`).
   - **Watch layer** (`watch.rs`, feature `watch`): notify-backed, coalescing then
     verifying by stat, with `Flag::Rescan` escalated to `InvalidateSubtree` rather than
-    dropped, plus an apply/reconcile driver that closes invalidations.
+    dropped, plus an apply/reconcile driver that closes invalidations. The applying
+    driver rejects depth- and filesystem-restricted scopes until events can be filtered
+    against those boundaries.
   - **CLI** (feature `cli`): human tree output with percentage bars, `--by-type`,
     versioned JSON (`fdu.tree/2`), exact entry kinds, error details, partial exit status,
     `NO_COLOR`, and pipe detection.

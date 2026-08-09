@@ -10,8 +10,9 @@
 //! - **Observations carry truth, not hints.** A producer stats before it emits. Filesystem
 //!   events on most platforms carry no metadata, so a raw event is never a delta.
 //! - **Conditional observations cannot overwrite newer state.** Revalidation attaches
-//!   the state it observed at the start of its check. If another producer commits a
-//!   change first, arbitration rejects the delayed observation.
+//!   state plus generation and revision guards from the start of its check. If another
+//!   producer commits a conflicting change first, arbitration rejects the delayed
+//!   observation.
 //! - **Applied deltas contain changes, not attempts.** No-ops and stale observations do
 //!   not advance the public clock or consume journal space.
 
@@ -217,14 +218,86 @@ pub enum PathState {
     Present { kind: EntryKind, attrs: Attrs },
 }
 
+/// Generation- and revision-safe identity for one indexed entry.
+///
+/// The fields are intentionally opaque. Producers obtain identities through
+/// [`crate::index::Index::expectation`] rather than manufacturing handles that could
+/// accidentally alias a recycled arena slot or bypass ABA detection.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+pub(crate) struct EntryIdentity {
+    slot: u32,
+    generation: u64,
+    revision: u64,
+    children_revision: u64,
+    directory: bool,
+}
+
+impl EntryIdentity {
+    pub(crate) const fn new(
+        slot: u32,
+        generation: u64,
+        revision: u64,
+        children_revision: u64,
+        directory: bool,
+    ) -> Self {
+        Self { slot, generation, revision, children_revision, directory }
+    }
+
+    pub(crate) const fn same_target(self, other: Self, require_structure: bool) -> bool {
+        self.slot == other.slot
+            && self.generation == other.generation
+            && self.revision == other.revision
+            && (!require_structure || self.children_revision == other.children_revision)
+    }
+
+    pub(crate) const fn same_absence_guard(self, other: Self) -> bool {
+        self.slot == other.slot
+            && self.generation == other.generation
+            && self.children_revision == other.children_revision
+            && (other.directory || self.revision == other.revision)
+    }
+}
+
+/// State and entry revisions captured at one observation boundary.
+///
+/// Present paths carry a generation-safe target identity and direct revision so a
+/// change-away-and-back cannot masquerade as the original state. Absent paths carry the
+/// nearest existing ancestor's structural revision, closing create/remove and parent
+/// replacement races without making unrelated subtrees conflict.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+pub struct PathExpectation {
+    pub state: PathState,
+    entry: Option<EntryIdentity>,
+    absence_guard: Option<EntryIdentity>,
+}
+
+impl PathExpectation {
+    pub(crate) const fn new(
+        state: PathState,
+        entry: Option<EntryIdentity>,
+        absence_guard: Option<EntryIdentity>,
+    ) -> Self {
+        Self { state, entry, absence_guard }
+    }
+
+    pub(crate) const fn entry(self) -> Option<EntryIdentity> {
+        self.entry
+    }
+
+    pub(crate) const fn absence_guard(self) -> Option<EntryIdentity> {
+        self.absence_guard
+    }
+}
+
 /// The condition under which an observation may be committed.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum Expectation {
     /// Commit according to arrival order. Used by freshly verified watch observations
     /// and cold-scan bootstrap data.
     Any,
-    /// Commit only if the index still matches the producer baseline.
-    State(PathState),
+    /// Commit only if the target state and relevant structural revisions still match the
+    /// producer baseline.
+    State(PathExpectation),
 }
 
 /// One observed operation together with its arbitration precondition.
@@ -240,9 +313,9 @@ impl ObservationOp {
         Self { op, expectation: Expectation::Any }
     }
 
-    /// An operation valid only while `state` still matches the index.
-    pub const fn if_state(op: Op, state: PathState) -> Self {
-        Self { op, expectation: Expectation::State(state) }
+    /// An operation valid only while `expected` still matches the index.
+    pub const fn if_state(op: Op, expected: PathExpectation) -> Self {
+        Self { op, expectation: Expectation::State(expected) }
     }
 }
 
@@ -314,6 +387,12 @@ pub enum Error {
 
     #[error("unsupported scan configuration: {0}")]
     UnsupportedScanConfig(&'static str),
+
+    #[error("scan scope mismatch: index has {indexed:?}, requested {requested:?}")]
+    ScanScopeMismatch { indexed: ScanScope, requested: ScanScope },
+
+    #[error("subtree {path:?} lies outside scan scope {scope:?}")]
+    SubtreeOutsideScanScope { path: PathBuf, scope: ScanScope },
 
     #[error("index lock was poisoned by a panicking writer")]
     IndexLockPoisoned,

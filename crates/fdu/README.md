@@ -7,10 +7,10 @@ OS-native watch layer.
 Full documentation, design notes, and the tool survey this is built from live in the
 repository: <https://github.com/jlevy/fdu>
 
-**Status: early scaffold.** The observation/commit contract, applying reconciler, bounded
-snapshot reader, and cache lifecycle are tested. `open()` currently blocks until a full
-reconciliation completes, and the fast syscall-level walker is not built, so no latency
-or throughput claim is made.
+**Status: early scaffold.** The revision-arbitrated observation/commit contract,
+applying reconciler, bounded payload-checksummed snapshot reader, and cache lifecycle
+are tested. `open()` currently blocks until a full reconciliation completes, and the
+fast syscall-level walker is not built, so no latency or throughput claim is made.
 
 ```toml
 [dependencies]

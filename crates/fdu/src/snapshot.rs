@@ -1,13 +1,13 @@
 //! Persisting an index to disk and reading it back.
 //!
-//! # Status: format v1 is a bounded bootstrap format
+//! # Status: format v2 is a bounded bootstrap format
 //!
 //! This module implements a flat, uncompressed writer and a bounded streaming reader.
 //! It exists so the cache *lifecycle* — semantic-scope invalidation, atomic replacement,
 //! complete-only persistence, resource limits, and corrupt-equals-empty — is nailed down
 //! before the optimized wire format is designed. The loader checks file size, trailer,
-//! header, record count, and path lengths before allocating record data, then rebuilds
-//! one entry at a time.
+//! and payload checksum before parsing, then checks the header, record count, and path
+//! lengths before allocating record data and rebuilds one entry at a time.
 //!
 //! The target format is different in every other respect: zstd-compressed blocks with an
 //! index block at the tail, so opening costs one small read and directory listings
@@ -28,9 +28,10 @@
 //!   crash mid-write leaves the previous snapshot intact rather than a half-written one.
 
 use std::ffi::{OsStr, OsString};
-use std::fs;
+use std::fs::{self, OpenOptions};
 use std::io::{BufReader, Read, Seek, SeekFrom, Write};
 use std::path::{Component, Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::index::{EntryId, Index};
 use crate::types::{Attrs, EntryKind, Error, Freshness, Observation, Op, Result, ScanScope};
@@ -42,9 +43,19 @@ const MAGIC: &[u8; 8] = b"FDUSNAP\x00";
 /// file is detected on load rather than parsed into a plausible-looking partial tree.
 const TRAILER: &[u8; 8] = b"FDUEND\x00\x00";
 
+/// CRC-32C of every byte before the footer. This detects plausible payload corruption
+/// that remains structurally valid; it is an integrity check, not authentication.
+const CHECKSUM_BYTES: usize = std::mem::size_of::<u32>();
+
+/// Reversed Castagnoli polynomial used by CRC-32C.
+const CRC32C_POLYNOMIAL: u32 = 0x82f6_3b78;
+
+/// One table lookup per byte keeps integrity validation from dominating snapshot load.
+const CRC32C_TABLE: [u32; 256] = make_crc32c_table();
+
 /// On-disk format version. Bump on any layout change; old snapshots are then discarded
 /// rather than misread.
-const FORMAT_VERSION: u32 = 1;
+const FORMAT_VERSION: u32 = 2;
 
 /// Snapshot path encoding used by Unix targets.
 #[cfg(unix)]
@@ -85,8 +96,15 @@ const MIN_RECORD_BYTES: usize = 4 + 1 + 4 + 8 * 6;
 /// Binary size unit used by the snapshot resource limits.
 const GIBIBYTE: u64 = 1024 * 1024 * 1024;
 
-/// Largest snapshot image accepted by the format-v1 streaming reader.
+/// Largest snapshot image accepted by the bootstrap streaming reader.
 const MAX_SNAPSHOT_BYTES: u64 = 64 * GIBIBYTE;
+
+/// Process-local discriminator for exclusive sibling temporary files.
+static NEXT_TEMP_FILE: AtomicU64 = AtomicU64::new(0);
+
+/// Stale files can survive a killed writer. Try enough unique sequence values to step
+/// over them without turning an attacker-controlled directory into an unbounded loop.
+const MAX_TEMP_CREATE_ATTEMPTS: usize = 1024;
 
 /// Largest encoded root or entry name accepted from a snapshot.
 const MAX_PATH_BYTES: u32 = 1024 * 1024;
@@ -171,6 +189,8 @@ pub fn save(index: &Index, path: &Path) -> Result<()> {
         buf.extend_from_slice(&attrs.inode.to_le_bytes());
         buf.extend_from_slice(&attrs.dev.to_le_bytes());
     }
+    let checksum = crc32c(&buf);
+    buf.extend_from_slice(&checksum.to_le_bytes());
     buf.extend_from_slice(TRAILER);
 
     write_atomically(path, &buf)
@@ -192,14 +212,22 @@ fn load_with_size_limit(path: &Path, max_snapshot_bytes: u64) -> Result<Option<I
         Err(e) => return Err(Error::io(path, e)),
     };
     let file_len = file.metadata().map_err(|e| Error::io(path, e))?.len();
-    if file_len > max_snapshot_bytes || file_len < u64::try_from(TRAILER.len()).unwrap_or(u64::MAX)
-    {
+    let footer_bytes = CHECKSUM_BYTES
+        .checked_add(TRAILER.len())
+        .and_then(|bytes| u64::try_from(bytes).ok())
+        .ok_or_else(|| Error::Snapshot("snapshot footer size overflow".into()))?;
+    if file_len > max_snapshot_bytes || file_len < footer_bytes {
         return Ok(None);
     }
 
-    let trailer_offset = i64::try_from(TRAILER.len())
-        .map_err(|_| Error::Snapshot("snapshot trailer size overflow".into()))?;
-    file.seek(SeekFrom::End(-trailer_offset)).map_err(|e| Error::io(path, e))?;
+    let footer_offset = i64::try_from(footer_bytes)
+        .map_err(|_| Error::Snapshot("snapshot footer size overflow".into()))?;
+    file.seek(SeekFrom::End(-footer_offset)).map_err(|e| Error::io(path, e))?;
+    let expected_checksum = match read_footer_checksum(&mut file) {
+        Ok(checksum) => checksum,
+        Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(None),
+        Err(error) => return Err(Error::io(path, error)),
+    };
     let mut trailer = [0u8; TRAILER.len()];
     match file.read_exact(&mut trailer) {
         Ok(()) if &trailer == TRAILER => {}
@@ -207,17 +235,78 @@ fn load_with_size_limit(path: &Path, max_snapshot_bytes: u64) -> Result<Option<I
         Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(None),
         Err(e) => return Err(Error::io(path, e)),
     }
-    file.seek(SeekFrom::Start(0)).map_err(|e| Error::io(path, e))?;
-
     let payload_len = file_len
-        .checked_sub(u64::try_from(TRAILER.len()).unwrap_or(u64::MAX))
+        .checked_sub(footer_bytes)
         .ok_or_else(|| Error::Snapshot("snapshot length underflow".into()))?;
+    file.seek(SeekFrom::Start(0)).map_err(|e| Error::io(path, e))?;
+    let actual_checksum = checksum_reader((&mut file).take(payload_len), payload_len)
+        .map_err(|error| Error::io(path, error))?;
+    if actual_checksum != Some(expected_checksum) {
+        return Ok(None);
+    }
+    file.seek(SeekFrom::Start(0)).map_err(|e| Error::io(path, e))?;
     let mut reader = BufReader::new(file.take(payload_len));
     match parse_stream(&mut reader, payload_len) {
         Ok(index) => Ok(Some(index)),
         Err(ParseError::Invalid) => Ok(None),
         Err(ParseError::Io(source)) => Err(Error::io(path, source)),
     }
+}
+
+fn read_footer_checksum(reader: &mut impl Read) -> std::io::Result<u32> {
+    let mut bytes = [0u8; CHECKSUM_BYTES];
+    reader.read_exact(&mut bytes)?;
+    Ok(u32::from_le_bytes(bytes))
+}
+
+fn checksum_reader(mut reader: impl Read, payload_len: u64) -> std::io::Result<Option<u32>> {
+    let mut state = u32::MAX;
+    let mut remaining = payload_len;
+    let mut buffer = [0u8; 8 * 1024];
+    while remaining > 0 {
+        let wanted = usize::try_from(remaining).unwrap_or(usize::MAX).min(buffer.len());
+        let read = reader.read(&mut buffer[..wanted])?;
+        if read == 0 {
+            return Ok(None);
+        }
+        state = crc32c_update(state, &buffer[..read]);
+        let read = u64::try_from(read)
+            .map_err(|_| std::io::Error::other("checksum read length exceeds u64"))?;
+        remaining = remaining
+            .checked_sub(read)
+            .ok_or_else(|| std::io::Error::other("checksum reader exceeded payload bound"))?;
+    }
+    Ok(Some(!state))
+}
+
+fn crc32c(bytes: &[u8]) -> u32 {
+    !crc32c_update(u32::MAX, bytes)
+}
+
+fn crc32c_update(mut state: u32, bytes: &[u8]) -> u32 {
+    for byte in bytes {
+        let index = usize::from(state.to_le_bytes()[0] ^ *byte);
+        state = CRC32C_TABLE[index] ^ (state >> 8);
+    }
+    state
+}
+
+const fn make_crc32c_table() -> [u32; 256] {
+    let mut table = [0u32; 256];
+    let mut index = 0usize;
+    let mut value = 0u32;
+    while index < table.len() {
+        let mut crc = value;
+        let mut bit = 0;
+        while bit < u8::BITS {
+            crc = (crc >> 1) ^ (CRC32C_POLYNOMIAL & 0u32.wrapping_sub(crc & 1));
+            bit += 1;
+        }
+        table[index] = crc;
+        index += 1;
+        value += 1;
+    }
+    table
 }
 
 /// Parse a bounded payload. Records are applied one at a time so bootstrap paths are not
@@ -484,13 +573,7 @@ fn write_atomically(path: &Path, bytes: &[u8]) -> Result<()> {
     let parent = path.parent().unwrap_or_else(|| Path::new("."));
     fs::create_dir_all(parent).map_err(|e| Error::io(parent, e))?;
 
-    let tmp = parent.join(format!(
-        ".{}.tmp{}",
-        path.file_name().map_or_else(|| "snapshot".into(), |n| n.to_string_lossy()),
-        std::process::id()
-    ));
-
-    let mut file = fs::File::create(&tmp).map_err(|e| Error::io(&tmp, e))?;
+    let (tmp, mut file) = create_temp_file(path, parent)?;
     let write_then_sync = file.write_all(bytes).and_then(|()| file.sync_all());
     if let Err(e) = write_then_sync {
         let _ = fs::remove_file(&tmp);
@@ -503,6 +586,35 @@ fn write_atomically(path: &Path, bytes: &[u8]) -> Result<()> {
         return Err(Error::io(path, e));
     }
     Ok(())
+}
+
+fn create_temp_file(path: &Path, parent: &Path) -> Result<(PathBuf, fs::File)> {
+    for _ in 0..MAX_TEMP_CREATE_ATTEMPTS {
+        let sequence = NEXT_TEMP_FILE.fetch_add(1, Ordering::Relaxed);
+        let mut name = OsString::from(".");
+        name.push(path.file_name().unwrap_or_else(|| OsStr::new("snapshot")));
+        name.push(format!(".tmp.{}.{}", std::process::id(), sequence));
+        let tmp = parent.join(name);
+        let mut options = OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        match options.open(&tmp) {
+            Ok(file) => return Ok((tmp, file)),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(error) => return Err(Error::io(&tmp, error)),
+        }
+    }
+    Err(Error::io(
+        parent,
+        std::io::Error::new(
+            std::io::ErrorKind::AlreadyExists,
+            "could not reserve a unique snapshot temporary file",
+        ),
+    ))
 }
 
 #[cfg(test)]
@@ -553,6 +665,17 @@ mod tests {
                 .expect("saved snapshot has a root length"),
         );
         root_len_at + 4 + usize::try_from(root_len).expect("root length fits usize")
+    }
+
+    fn rewrite_checksum(bytes: &mut [u8]) {
+        let payload_len = bytes.len() - CHECKSUM_BYTES - TRAILER.len();
+        let checksum = crc32c(&bytes[..payload_len]);
+        bytes[payload_len..payload_len + CHECKSUM_BYTES].copy_from_slice(&checksum.to_le_bytes());
+    }
+
+    #[test]
+    fn crc32c_matches_the_standard_check_value() {
+        assert_eq!(crc32c(b"123456789"), 0xe306_9283);
     }
 
     #[test]
@@ -630,6 +753,26 @@ mod tests {
         // Claim far more entries than the body holds.
         let count_at = entry_count_offset(&bytes);
         bytes[count_at..count_at + 8].copy_from_slice(&u64::MAX.to_le_bytes());
+        rewrite_checksum(&mut bytes);
+        fs::write(&path, &bytes).expect("write");
+
+        assert!(load(&path).expect("load must not error").is_none());
+    }
+
+    #[test]
+    fn plausible_attribute_corruption_is_rejected() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("snap.fdu");
+        save(&sample_index(), &path).expect("save");
+
+        let mut bytes = fs::read(&path).expect("read");
+        let records_at = entry_count_offset(&bytes) + 8;
+        // The root record has an empty name, so its first attribute starts immediately
+        // after parent, kind, and encoded-name length. Changing a low size byte keeps the
+        // image structurally valid and would silently alter the restored state without an
+        // integrity check.
+        let root_size_at = records_at + 4 + 1 + 4;
+        bytes[root_size_at] ^= 1;
         fs::write(&path, &bytes).expect("write");
 
         assert!(load(&path).expect("load must not error").is_none());
@@ -656,6 +799,7 @@ mod tests {
         let mut invalid_name = Vec::new();
         put_os_str(&mut invalid_name, OsStr::new("../bad")).expect("encode invalid name");
         bytes.splice(first_child_name_len_at..old_name_end, invalid_name);
+        rewrite_checksum(&mut bytes);
         fs::write(&path, &bytes).expect("write");
 
         assert!(load(&path).expect("load must not error").is_none());
@@ -670,6 +814,7 @@ mod tests {
         let mut bytes = fs::read(&path).expect("read");
         let root_len_at = MAGIC.len() + 4 + 8 + 1 + SERIALIZED_SCOPE_BYTES;
         bytes[root_len_at..root_len_at + 4].copy_from_slice(&(MAX_PATH_BYTES + 1).to_le_bytes());
+        rewrite_checksum(&mut bytes);
         fs::write(&path, &bytes).expect("write");
 
         assert!(load(&path).expect("load must not error").is_none());
@@ -684,6 +829,7 @@ mod tests {
         let mut bytes = fs::read(&path).expect("read");
         let fp_at = MAGIC.len() + 4;
         bytes[fp_at] ^= 0xff;
+        rewrite_checksum(&mut bytes);
         fs::write(&path, &bytes).expect("write");
 
         assert!(load(&path).expect("load must not error").is_none());
@@ -713,6 +859,61 @@ mod tests {
             .filter(|name| name != "snap.fdu")
             .collect();
         assert!(leftovers.is_empty(), "temp files left behind: {leftovers:?}");
+    }
+
+    #[test]
+    fn concurrent_atomic_writes_do_not_share_a_temporary_file() {
+        use std::sync::{Arc, Barrier};
+
+        const WRITERS: usize = 8;
+        const PAYLOAD_BYTES: usize = 1024 * 1024;
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("snap.fdu");
+        let barrier = Arc::new(Barrier::new(WRITERS));
+        let results = std::thread::scope(|scope| {
+            let handles: Vec<_> = (0..WRITERS)
+                .map(|writer| {
+                    let barrier = Arc::clone(&barrier);
+                    let path = path.clone();
+                    scope.spawn(move || {
+                        let byte = u8::try_from(writer + 1).expect("writer id fits");
+                        let bytes = vec![byte; PAYLOAD_BYTES];
+                        barrier.wait();
+                        write_atomically(&path, &bytes)
+                    })
+                })
+                .collect();
+            handles.into_iter().map(std::thread::ScopedJoinHandle::join).collect::<Vec<_>>()
+        });
+
+        for result in results {
+            result.expect("writer thread did not panic").expect("concurrent atomic write");
+        }
+        let final_bytes = fs::read(&path).expect("read final image");
+        assert_eq!(final_bytes.len(), PAYLOAD_BYTES);
+        assert!(final_bytes.iter().all(|byte| *byte == final_bytes[0]));
+
+        let leftovers: Vec<_> = fs::read_dir(dir.path())
+            .expect("read_dir")
+            .filter_map(std::result::Result::ok)
+            .map(|entry| entry.file_name())
+            .filter(|name| name != "snap.fdu")
+            .collect();
+        assert!(leftovers.is_empty(), "temp files left behind: {leftovers:?}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn saved_snapshot_is_owner_readable_only() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("snap.fdu");
+        save(&sample_index(), &path).expect("save");
+
+        let mode = fs::metadata(&path).expect("metadata").permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
     }
 
     #[test]

@@ -133,6 +133,9 @@ impl Watcher {
     }
 
     /// Apply one verified watch observation and close any invalidation loop it opens.
+    ///
+    /// Restricted `max_depth` and `one_filesystem` scopes are rejected until the watch
+    /// adapter can filter raw backend events against those boundaries.
     pub fn apply_next(
         &self,
         index: &IndexHandle,
@@ -140,6 +143,7 @@ impl Watcher {
         timeout: Duration,
         sink: &mut dyn FnMut(&AppliedDelta),
     ) -> Result<Option<WatchApplyReport>> {
+        scan_config.validate_for_watch_scope(index.read()?.scope())?;
         match self.observations.recv_timeout(timeout) {
             Ok(observation) => apply_observation(index, &observation, scan_config, sink).map(Some),
             Err(RecvTimeoutError::Timeout) => Ok(None),
@@ -149,12 +153,16 @@ impl Watcher {
 }
 
 /// Apply a verified observation and reconcile all subtrees it invalidates.
+///
+/// Restricted `max_depth` and `one_filesystem` scopes are rejected until event-scope
+/// filtering is implemented; accepting those events would add paths a cold scan excludes.
 pub fn apply_observation(
     index: &IndexHandle,
     observation: &Observation,
     scan_config: &ScanConfig,
     sink: &mut dyn FnMut(&AppliedDelta),
 ) -> Result<WatchApplyReport> {
+    scan_config.validate_for_watch_scope(index.read()?.scope())?;
     let apply = index.apply(observation)?;
     if let Some(applied) = &apply.applied {
         sink(applied);
@@ -323,10 +331,13 @@ fn flush(
 }
 
 fn op_for_stat_error(path: PathBuf, error: &std::io::Error) -> Op {
-    if error.kind() == std::io::ErrorKind::NotFound {
-        Op::Remove { path }
-    } else {
-        Op::InvalidateSubtree { path, reason: InvalidateReason::VerificationFailed }
+    match error.kind() {
+        std::io::ErrorKind::NotFound => Op::Remove { path },
+        std::io::ErrorKind::NotADirectory => Op::InvalidateSubtree {
+            path: path.parent().map_or_else(PathBuf::new, Path::to_path_buf),
+            reason: InvalidateReason::VerificationFailed,
+        },
+        _ => Op::InvalidateSubtree { path, reason: InvalidateReason::VerificationFailed },
     }
 }
 
@@ -461,13 +472,25 @@ mod tests {
     }
 
     #[test]
-    fn only_not_found_verification_errors_remove_known_state() {
-        let path = PathBuf::from("known.txt");
+    fn verification_errors_distinguish_absence_from_an_invalid_ancestor() {
+        let path = PathBuf::from("parent/known.txt");
         let missing = op_for_stat_error(
             path.clone(),
             &std::io::Error::new(std::io::ErrorKind::NotFound, "gone"),
         );
         assert!(matches!(missing, Op::Remove { path: removed } if removed == path));
+
+        let not_a_directory = op_for_stat_error(
+            path.clone(),
+            &std::io::Error::new(std::io::ErrorKind::NotADirectory, "ancestor is a file"),
+        );
+        assert!(matches!(
+            not_a_directory,
+            Op::InvalidateSubtree {
+                path: invalidated,
+                reason: InvalidateReason::VerificationFailed,
+            } if invalidated == Path::new("parent")
+        ));
 
         let denied = op_for_stat_error(
             path.clone(),
@@ -583,5 +606,62 @@ mod tests {
             .expect("apply and reconcile");
 
         assert!(handle.read().expect("read").lookup(Path::new("raced.txt")).is_some());
+    }
+
+    #[test]
+    fn observation_driver_rejects_scope_mismatch_before_apply() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let shallow = crate::ScanConfig { max_depth: Some(1), ..crate::ScanConfig::default() };
+        let (index, _) = crate::scan::scan_into_index(dir.path(), &shallow).expect("scan");
+        let handle = crate::IndexHandle::new(index);
+        let observation = Observation::new(vec![Op::Upsert {
+            path: PathBuf::from("deep/nested.txt"),
+            kind: crate::EntryKind::File,
+            attrs: crate::Attrs { size: 5, allocated: 5, ..crate::Attrs::default() },
+        }]);
+
+        let error =
+            apply_observation(&handle, &observation, &crate::ScanConfig::default(), &mut |_| {})
+                .expect_err("mismatched scope must fail");
+
+        assert!(matches!(error, Error::ScanScopeMismatch { .. }));
+        assert!(handle.read().expect("read").lookup(Path::new("deep/nested.txt")).is_none());
+    }
+
+    #[test]
+    fn observation_driver_rejects_restricted_scopes_until_events_are_filtered() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let shallow = crate::ScanConfig { max_depth: Some(1), ..crate::ScanConfig::default() };
+        let (index, _) = crate::scan::scan_into_index(dir.path(), &shallow).expect("scan");
+        let handle = crate::IndexHandle::new(index);
+        let observation = Observation::new(vec![Op::Upsert {
+            path: PathBuf::from("deep/nested.txt"),
+            kind: crate::EntryKind::File,
+            attrs: crate::Attrs { size: 5, allocated: 5, ..crate::Attrs::default() },
+        }]);
+
+        let error = apply_observation(&handle, &observation, &shallow, &mut |_| {})
+            .expect_err("unfiltered bounded watch scope must fail");
+
+        assert!(matches!(error, Error::UnsupportedScanConfig(_)));
+        assert!(handle.read().expect("read").lookup(Path::new("deep/nested.txt")).is_none());
+    }
+
+    #[test]
+    fn apply_next_rejects_restricted_scope_without_consuming_an_observation() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let shallow = crate::ScanConfig { max_depth: Some(1), ..crate::ScanConfig::default() };
+        let (index, _) = crate::scan::scan_into_index(dir.path(), &shallow).expect("scan");
+        let handle = crate::IndexHandle::new(index);
+        let (sender, observations) = channel();
+        sender.send(Observation::default()).expect("queue observation");
+        let watcher = Watcher { inner: None, observations, worker: None };
+
+        let error = watcher
+            .apply_next(&handle, &shallow, Duration::ZERO, &mut |_| {})
+            .expect_err("restricted scope must fail before receive");
+
+        assert!(matches!(error, Error::UnsupportedScanConfig(_)));
+        assert!(watcher.next_observation(Duration::ZERO).is_some());
     }
 }

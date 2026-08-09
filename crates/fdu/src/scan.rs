@@ -22,7 +22,8 @@ use std::path::{Component, Path, PathBuf};
 use crate::ApplyStats;
 use crate::index::{Index, IndexHandle};
 use crate::types::{
-    AppliedDelta, Attrs, EntryKind, Error, Observation, ObservationOp, Op, Result, ScanScope,
+    AppliedDelta, Attrs, EntryKind, Error, Observation, ObservationOp, Op, PathExpectation, Result,
+    ScanScope,
 };
 
 /// How many ops accumulate before an observation is handed to the sink.
@@ -44,7 +45,8 @@ const REDUCERS_FINGERPRINT: u64 = 1;
 /// Knobs for a scan.
 #[derive(Clone, Debug)]
 pub struct ScanConfig {
-    /// Maximum directory depth to descend. `None` means unlimited.
+    /// Maximum relative entry depth to retain. Zero keeps only the index root and `None`
+    /// means unlimited.
     pub max_depth: Option<usize>,
     /// Ops per emitted observation.
     pub batch_size: usize,
@@ -83,6 +85,26 @@ impl ScanConfig {
         if self.follow_symlinks {
             return Err(Error::UnsupportedScanConfig(
                 "follow_symlinks requires cycle, root-boundary, and filesystem-boundary semantics",
+            ));
+        }
+        Ok(())
+    }
+
+    pub(crate) fn validate_for_scope(&self, indexed: ScanScope) -> Result<()> {
+        self.validate()?;
+        let requested = self.scope();
+        if indexed != requested {
+            return Err(Error::ScanScopeMismatch { indexed, requested });
+        }
+        Ok(())
+    }
+
+    #[cfg(feature = "watch")]
+    pub(crate) fn validate_for_watch_scope(&self, indexed: ScanScope) -> Result<()> {
+        self.validate_for_scope(indexed)?;
+        if self.max_depth.is_some() || self.one_filesystem {
+            return Err(Error::UnsupportedScanConfig(
+                "watch application for max_depth or one_filesystem requires event-scope filtering",
             ));
         }
         Ok(())
@@ -130,6 +152,13 @@ enum ReconcileTarget<'a> {
 }
 
 impl ReconcileTarget<'_> {
+    fn scope(&self) -> Result<ScanScope> {
+        match self {
+            Self::Direct(index) => Ok(index.scope()),
+            Self::Shared(handle) => Ok(handle.read()?.scope()),
+        }
+    }
+
     fn root_path(&self) -> Result<PathBuf> {
         match self {
             Self::Direct(index) => Ok(index.root_path().to_path_buf()),
@@ -137,14 +166,14 @@ impl ReconcileTarget<'_> {
         }
     }
 
-    fn path_state(&self, path: &Path) -> Result<crate::PathState> {
+    fn expectation(&self, path: &Path) -> Result<PathExpectation> {
         match self {
-            Self::Direct(index) => Ok(index.path_state(path)),
-            Self::Shared(handle) => Ok(handle.read()?.path_state(path)),
+            Self::Direct(index) => Ok(index.expectation(path)),
+            Self::Shared(handle) => Ok(handle.read()?.expectation(path)),
         }
     }
 
-    fn child_states(&self, path: &Path) -> Result<BTreeMap<OsString, crate::PathState>> {
+    fn child_states(&self, path: &Path) -> Result<BTreeMap<OsString, PathExpectation>> {
         match self {
             Self::Direct(index) => Ok(collect_child_states(index, path)),
             Self::Shared(handle) => {
@@ -168,6 +197,19 @@ impl ReconcileTarget<'_> {
         }
     }
 
+    fn restore_pending_invalidations(
+        &mut self,
+        invalidations: Vec<(PathBuf, crate::InvalidateReason)>,
+    ) -> Result<()> {
+        match self {
+            Self::Direct(index) => index.restore_pending_invalidations(invalidations),
+            Self::Shared(handle) => {
+                handle.write()?.restore_pending_invalidations(invalidations);
+            }
+        }
+        Ok(())
+    }
+
     fn begin_reconcile(&mut self, path: &Path) -> Result<u64> {
         match self {
             Self::Direct(index) => Ok(index.begin_reconcile(path)),
@@ -186,14 +228,14 @@ impl ReconcileTarget<'_> {
     }
 }
 
-fn collect_child_states(index: &Index, path: &Path) -> BTreeMap<OsString, crate::PathState> {
+fn collect_child_states(index: &Index, path: &Path) -> BTreeMap<OsString, PathExpectation> {
     index
         .children(path)
         .unwrap_or_default()
         .into_iter()
         .map(|(name, _)| {
             let child_path = path.join(name);
-            (name.to_os_string(), index.path_state(&child_path))
+            (name.to_os_string(), index.expectation(&child_path))
         })
         .collect()
 }
@@ -215,6 +257,9 @@ pub fn scan(
     let root_dev = attrs_from(&root_meta).dev;
 
     let mut report = ScanReport::default();
+    if config.max_depth == Some(0) {
+        return Ok(report);
+    }
     let mut batch: Vec<Op> = Vec::with_capacity(config.batch_size);
     // Depth-first keeps the portable reference implementation small and locality-friendly.
     // Traversal order becomes a measured choice once the parallel syscall layer lands.
@@ -291,12 +336,17 @@ pub fn scan_into_index(root: &Path, config: &ScanConfig) -> Result<(Index, ScanR
 ///
 /// Entries the index holds but the filesystem no longer has become [`Op::Remove`],
 /// detected per directory rather than by accumulating every visited path in memory.
+///
+/// This observation-only reference API assumes its emitted stream is applied to the same
+/// unchanged baseline after the borrow ends. Use [`reconcile`] or [`reconcile_handle`]
+/// when other producers can write concurrently; those paths capture the stronger
+/// generation/revision/absence expectations returned by [`Index::expectation`].
 pub fn revalidate(
     index: &Index,
     config: &ScanConfig,
     sink: &mut dyn FnMut(Observation),
 ) -> Result<ScanReport> {
-    config.validate()?;
+    config.validate_for_scope(index.scope())?;
     let root = index.root_path().to_path_buf();
     let root_meta = fs::symlink_metadata(&root).map_err(|error| Error::io(&root, error))?;
     if !root_meta.is_dir() {
@@ -310,7 +360,25 @@ pub fn revalidate(
     }
     let root_dev = attrs_from(&root_meta).dev;
     let mut report = ScanReport::default();
-    let mut batch: Vec<ObservationOp> = Vec::with_capacity(config.batch_size);
+    let batch_limit = config.batch_size.max(1);
+    let mut batch: Vec<ObservationOp> = Vec::with_capacity(batch_limit);
+    if config.max_depth == Some(0) {
+        for (name, _) in index.children(Path::new("")).unwrap_or_default() {
+            let path = PathBuf::from(name);
+            batch.push(ObservationOp::if_state(
+                Op::Remove { path: path.clone() },
+                index.relaxed_expectation(&path),
+            ));
+            if batch.len() >= batch_limit {
+                sink(Observation::from_ops(std::mem::take(&mut batch)));
+                batch.reserve(batch_limit);
+            }
+        }
+        if !batch.is_empty() {
+            sink(Observation::from_ops(batch));
+        }
+        return Ok(report);
+    }
     let mut queue: Vec<(PathBuf, usize)> = vec![(PathBuf::new(), 0)];
 
     while let Some((rel_dir, depth)) = queue.pop() {
@@ -338,7 +406,7 @@ pub fn revalidate(
             let name = item.file_name();
             seen.insert(name.clone());
             let rel_path = rel_dir.join(&name);
-            let baseline = index.path_state(&rel_path);
+            let baseline = index.relaxed_expectation(&rel_path);
             let meta = match fs::symlink_metadata(item.path()) {
                 Ok(meta) => meta,
                 Err(e) => {
@@ -354,13 +422,25 @@ pub fn revalidate(
                 Op::Upsert { path: rel_path.clone(), kind, attrs },
                 baseline,
             ));
-            if batch.len() >= config.batch_size {
+            if batch.len() >= batch_limit {
                 sink(Observation::from_ops(std::mem::take(&mut batch)));
-                batch.reserve(config.batch_size);
+                batch.reserve(batch_limit);
             }
 
             if should_descend(kind, attrs, depth, root_dev, config) {
                 queue.push((rel_path, depth + 1));
+            } else if kind.is_dir() {
+                for (child_name, _) in index.children(&rel_path).unwrap_or_default() {
+                    let child_path = rel_path.join(child_name);
+                    batch.push(ObservationOp::if_state(
+                        Op::Remove { path: child_path.clone() },
+                        index.relaxed_expectation(&child_path),
+                    ));
+                    if batch.len() >= batch_limit {
+                        sink(Observation::from_ops(std::mem::take(&mut batch)));
+                        batch.reserve(batch_limit);
+                    }
+                }
             }
         }
 
@@ -372,7 +452,7 @@ pub fn revalidate(
                         let path = rel_dir.join(name);
                         batch.push(ObservationOp::if_state(
                             Op::Remove { path: path.clone() },
-                            index.path_state(&path),
+                            index.relaxed_expectation(&path),
                         ));
                     }
                 }
@@ -396,6 +476,9 @@ pub fn reconcile(
 }
 
 /// Reconcile one relative subtree, applying effective changes during the walk.
+///
+/// If an ancestor vanished or became a non-directory, reconciliation widens to that
+/// ancestor so a child invalidation can converge instead of retrying `ENOTDIR` forever.
 pub fn reconcile_subtree(
     index: &mut Index,
     subtree: &Path,
@@ -414,7 +497,8 @@ pub fn reconcile_handle(
     reconcile_subtree_handle(handle, Path::new(""), config, sink)
 }
 
-/// Reconcile one subtree of a shared index.
+/// Reconcile one subtree of a shared index, widening to a missing/non-directory ancestor
+/// when necessary.
 pub fn reconcile_subtree_handle(
     handle: &IndexHandle,
     subtree: &Path,
@@ -430,8 +514,12 @@ fn reconcile_target(
     config: &ScanConfig,
     sink: &mut dyn FnMut(&AppliedDelta),
 ) -> Result<ReconcileReport> {
-    config.validate()?;
+    config.validate_for_scope(target.scope()?)?;
     let subtree = normalize_subtree(subtree)?;
+    if config.max_depth.is_some_and(|maximum| subtree.components().count() > maximum) {
+        return Err(Error::SubtreeOutsideScanScope { path: subtree, scope: config.scope() });
+    }
+    let subtree = resolve_subtree_root(target, &subtree, config)?;
     let started_at = target.begin_reconcile(&subtree)?;
     match reconcile_target_inner(target, &subtree, config, sink) {
         Ok(report) => {
@@ -467,8 +555,13 @@ fn reconcile_target_inner(
     let mut report = ReconcileReport::default();
     let mut batch: Vec<ObservationOp> = Vec::with_capacity(config.batch_size.max(1));
 
+    if config.max_depth == Some(0) {
+        remove_known_children(target, Path::new(""), config, &mut batch, sink, &mut report.apply)?;
+        return Ok(report);
+    }
+
     if !subtree.as_os_str().is_empty() {
-        let baseline = target.path_state(subtree)?;
+        let baseline = target.expectation(subtree)?;
         let absolute = root.join(subtree);
         let meta = match fs::symlink_metadata(&absolute) {
             Ok(meta) => meta,
@@ -494,6 +587,16 @@ fn reconcile_target_inner(
         ));
         flush_reconcile_batch(target, &mut batch, sink, &mut report.apply)?;
         if !should_descend(kind, attrs, start_depth.saturating_sub(1), root_dev, config) {
+            if kind.is_dir() {
+                remove_known_children(
+                    target,
+                    subtree,
+                    config,
+                    &mut batch,
+                    sink,
+                    &mut report.apply,
+                )?;
+            }
             return Ok(report);
         }
     }
@@ -523,7 +626,10 @@ fn reconcile_target_inner(
             };
             let name = item.file_name();
             let rel_path = rel_dir.join(&name);
-            let baseline = known.remove(&name).unwrap_or(crate::PathState::Absent);
+            let baseline = match known.remove(&name) {
+                Some(baseline) => baseline,
+                None => target.expectation(&rel_path)?,
+            };
             let meta = match fs::symlink_metadata(item.path()) {
                 Ok(meta) => meta,
                 Err(error) => {
@@ -544,6 +650,15 @@ fn reconcile_target_inner(
 
             if should_descend(kind, attrs, depth, root_dev, config) {
                 queue.push((rel_path, depth + 1));
+            } else if kind.is_dir() {
+                remove_known_children(
+                    target,
+                    &rel_path,
+                    config,
+                    &mut batch,
+                    sink,
+                    &mut report.apply,
+                )?;
             }
         }
 
@@ -571,13 +686,7 @@ pub fn reconcile_pending(
     sink: &mut dyn FnMut(&AppliedDelta),
 ) -> Result<ReconcileReport> {
     let mut target = ReconcileTarget::Direct(index);
-    let roots = take_invalidation_roots(&mut target)?;
-    let mut combined = ReconcileReport::default();
-    for root in roots {
-        let report = reconcile_target(&mut target, &root, config, sink)?;
-        merge_reconcile_report(&mut combined, report);
-    }
-    Ok(combined)
+    reconcile_pending_target(&mut target, config, sink)
 }
 
 /// Drain and reconcile invalidations on a shared index.
@@ -587,30 +696,67 @@ pub fn reconcile_pending_handle(
     sink: &mut dyn FnMut(&AppliedDelta),
 ) -> Result<ReconcileReport> {
     let mut target = ReconcileTarget::Shared(handle);
-    let roots = take_invalidation_roots(&mut target)?;
+    reconcile_pending_target(&mut target, config, sink)
+}
+
+fn reconcile_pending_target(
+    target: &mut ReconcileTarget<'_>,
+    config: &ScanConfig,
+    sink: &mut dyn FnMut(&AppliedDelta),
+) -> Result<ReconcileReport> {
+    config.validate_for_scope(target.scope()?)?;
+    let roots = take_invalidation_roots(target)?;
     let mut combined = ReconcileReport::default();
-    for root in roots {
-        let report = reconcile_target(&mut target, &root, config, sink)?;
-        merge_reconcile_report(&mut combined, report);
+    for (position, (root, reason)) in roots.iter().enumerate() {
+        match reconcile_target(target, root, config, sink) {
+            Ok(report) => {
+                if !report.scan.is_complete() {
+                    target.restore_pending_invalidations(vec![(root.clone(), *reason)])?;
+                }
+                merge_reconcile_report(&mut combined, report);
+            }
+            Err(error) => {
+                target.restore_pending_invalidations(roots[position..].to_vec())?;
+                return Err(error);
+            }
+        }
     }
     Ok(combined)
 }
 
-fn take_invalidation_roots(target: &mut ReconcileTarget<'_>) -> Result<Vec<PathBuf>> {
-    let mut pending: Vec<PathBuf> =
-        target.take_pending_invalidations()?.into_iter().map(|(path, _)| path).collect();
-    pending.sort_by(|left, right| {
+fn take_invalidation_roots(
+    target: &mut ReconcileTarget<'_>,
+) -> Result<Vec<(PathBuf, crate::InvalidateReason)>> {
+    let mut pending = target.take_pending_invalidations()?;
+    pending.sort_by(|(left, _), (right, _)| {
         left.components().count().cmp(&right.components().count()).then_with(|| left.cmp(right))
     });
-    let mut roots: Vec<PathBuf> = Vec::new();
-    for path in pending {
-        if roots.iter().any(|root| path.starts_with(root)) {
+    let mut roots: Vec<(PathBuf, crate::InvalidateReason)> = Vec::new();
+    for (path, reason) in pending {
+        if roots.iter().any(|(root, _)| path.starts_with(root)) {
             continue;
         }
-        roots.push(path);
+        roots.push((path, reason));
     }
 
     Ok(roots)
+}
+
+fn remove_known_children(
+    target: &mut ReconcileTarget<'_>,
+    path: &Path,
+    config: &ScanConfig,
+    batch: &mut Vec<ObservationOp>,
+    sink: &mut dyn FnMut(&AppliedDelta),
+    stats: &mut ApplyStats,
+) -> Result<()> {
+    for (name, baseline) in target.child_states(path)? {
+        batch.push(ObservationOp::if_state(Op::Remove { path: path.join(name) }, baseline));
+        if batch.len() >= config.batch_size.max(1) {
+            flush_reconcile_batch(target, batch, sink, stats)?;
+        }
+    }
+    flush_reconcile_batch(target, batch, sink, stats)
 }
 
 fn flush_reconcile_batch(
@@ -670,6 +816,62 @@ fn normalize_subtree(path: &Path) -> Result<PathBuf> {
         }
     }
     Ok(normalized)
+}
+
+fn resolve_subtree_root(
+    target: &ReconcileTarget<'_>,
+    subtree: &Path,
+    config: &ScanConfig,
+) -> Result<PathBuf> {
+    if subtree.as_os_str().is_empty() {
+        return Ok(PathBuf::new());
+    }
+    let root = target.root_path()?;
+    let Ok(root_metadata) = fs::symlink_metadata(&root) else {
+        // The applying pass reports operational root failures as partial.
+        return Ok(subtree.to_path_buf());
+    };
+    if !root_metadata.is_dir() {
+        return Ok(subtree.to_path_buf());
+    }
+    let root_dev = attrs_from(&root_metadata).dev;
+    let mut prefix = PathBuf::new();
+    let mut components = subtree.components().peekable();
+    while let Some(component) = components.next() {
+        if components.peek().is_none() {
+            break; // The boundary entry itself remains visible even when descent stops.
+        }
+        prefix.push(component.as_os_str());
+        let metadata = match fs::symlink_metadata(root.join(&prefix)) {
+            Ok(metadata) => metadata,
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
+                ) =>
+            {
+                return Ok(prefix);
+            }
+            Err(_) => break, // The applying pass records operational failures as partial.
+        };
+        if metadata.file_type().is_symlink() {
+            return Err(Error::SubtreeOutsideScanScope {
+                path: subtree.to_path_buf(),
+                scope: config.scope(),
+            });
+        }
+        if !metadata.is_dir() {
+            return Ok(prefix);
+        }
+        let attrs = attrs_from(&metadata);
+        if config.one_filesystem && attrs.dev != root_dev && attrs.dev != 0 {
+            return Err(Error::SubtreeOutsideScanScope {
+                path: subtree.to_path_buf(),
+                scope: config.scope(),
+            });
+        }
+    }
+    Ok(subtree.to_path_buf())
 }
 
 /// Read an entry's kind and roll-up attributes out of its metadata.
@@ -796,6 +998,17 @@ mod tests {
     }
 
     #[test]
+    fn zero_max_depth_keeps_only_the_index_root() {
+        let dir = sample_tree();
+        let config = ScanConfig { max_depth: Some(0), ..ScanConfig::default() };
+        let (index, report) = scan_into_index(dir.path(), &config).expect("scan");
+
+        assert!(index.is_empty());
+        assert_eq!(report.entries, 0);
+        assert_eq!(report.dirs_read, 0);
+    }
+
+    #[test]
     fn direct_scan_records_the_canonical_root() {
         let dir = sample_tree();
         let aliased = dir.path().join(".");
@@ -835,6 +1048,47 @@ mod tests {
         }
 
         assert!(index.lookup(Path::new("src/added-after-scan.txt")).is_none());
+    }
+
+    #[test]
+    fn zero_depth_revalidation_prunes_cached_root_children() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let config = ScanConfig { max_depth: Some(0), ..ScanConfig::default() };
+        let mut index = Index::new_with_scope(dir.path(), config.scope());
+        index.apply_baseline(&Observation::new(vec![Op::Upsert {
+            path: PathBuf::from("stale.txt"),
+            kind: EntryKind::File,
+            attrs: Attrs::default(),
+        }]));
+
+        let mut observations = Vec::new();
+        let report = revalidate(&index, &config, &mut |observation| {
+            observations.push(observation);
+        })
+        .expect("revalidate");
+        for observation in &observations {
+            index.apply(observation);
+        }
+
+        assert!(index.is_empty());
+        assert_eq!(report.dirs_read, 0);
+    }
+
+    #[test]
+    fn zero_depth_applying_reconciliation_prunes_cached_root_children() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let config = ScanConfig { max_depth: Some(0), ..ScanConfig::default() };
+        let mut index = Index::new_with_scope(dir.path(), config.scope());
+        index.apply_baseline(&Observation::new(vec![Op::Upsert {
+            path: PathBuf::from("stale.txt"),
+            kind: EntryKind::File,
+            attrs: Attrs::default(),
+        }]));
+
+        let report = reconcile(&mut index, &config, &mut |_| {}).expect("reconcile");
+
+        assert!(index.is_empty());
+        assert_eq!(report.scan.dirs_read, 0);
     }
 
     #[test]
@@ -1015,6 +1269,222 @@ mod tests {
 
         assert!(reconcile(&mut index, &ScanConfig::default(), &mut |_| {}).is_err());
         assert_eq!(index.freshness(), crate::Freshness::Partial);
+    }
+
+    #[test]
+    fn failed_pending_reconciliation_remains_queued_for_retry() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let (mut index, _) = scan_into_index(dir.path(), &ScanConfig::default()).expect("scan");
+        index.apply(&Observation::new(vec![Op::InvalidateSubtree {
+            path: PathBuf::new(),
+            reason: crate::InvalidateReason::Requested,
+        }]));
+        fs::remove_dir_all(dir.path()).expect("remove root");
+
+        assert!(reconcile_pending(&mut index, &ScanConfig::default(), &mut |_| {}).is_err());
+        assert_eq!(
+            index.take_pending_invalidations(),
+            vec![(PathBuf::new(), crate::InvalidateReason::Requested)]
+        );
+        assert_eq!(index.freshness(), crate::Freshness::Partial);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn partial_pending_reconciliation_remains_queued_for_retry() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        write_file(&dir.path().join("blocked/known.txt"), b"known");
+        let (mut index, _) = scan_into_index(dir.path(), &ScanConfig::default()).expect("scan");
+        let blocked = dir.path().join("blocked");
+        fs::set_permissions(&blocked, fs::Permissions::from_mode(0o000)).expect("deny reads");
+        index.apply(&Observation::new(vec![Op::InvalidateSubtree {
+            path: PathBuf::from("blocked"),
+            reason: crate::InvalidateReason::VerificationFailed,
+        }]));
+
+        let report = reconcile_pending(&mut index, &ScanConfig::default(), &mut |_| {})
+            .expect("permission failure is a partial report");
+        let pending = index.take_pending_invalidations();
+        fs::set_permissions(&blocked, fs::Permissions::from_mode(0o700)).expect("restore reads");
+        if report.scan.is_complete() {
+            return; // Privileged test environments can read mode-000 directories.
+        }
+
+        assert_eq!(
+            pending,
+            vec![(PathBuf::from("blocked"), crate::InvalidateReason::VerificationFailed)]
+        );
+        assert_eq!(index.freshness_at(Path::new("blocked")), crate::Freshness::Partial);
+    }
+
+    #[test]
+    fn pending_scope_mismatch_does_not_drain_the_retry_queue() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let shallow = ScanConfig { max_depth: Some(1), ..ScanConfig::default() };
+        let (mut index, _) = scan_into_index(dir.path(), &shallow).expect("scan");
+        index.apply(&Observation::new(vec![Op::InvalidateSubtree {
+            path: PathBuf::new(),
+            reason: crate::InvalidateReason::Requested,
+        }]));
+
+        let error = reconcile_pending(&mut index, &ScanConfig::default(), &mut |_| {})
+            .expect_err("mismatched scope must fail");
+
+        assert!(matches!(error, Error::ScanScopeMismatch { .. }));
+        assert_eq!(
+            index.take_pending_invalidations(),
+            vec![(PathBuf::new(), crate::InvalidateReason::Requested)]
+        );
+    }
+
+    #[test]
+    fn reconciliation_rejects_a_scope_mismatch_before_mutating() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        write_file(&dir.path().join("deep/nested.txt"), b"nested");
+        let shallow = ScanConfig { max_depth: Some(1), ..ScanConfig::default() };
+        let (mut index, _) = scan_into_index(dir.path(), &shallow).expect("scan");
+        assert!(index.lookup(Path::new("deep/nested.txt")).is_none());
+
+        let error = reconcile(&mut index, &ScanConfig::default(), &mut |_| {})
+            .expect_err("mismatched scope must fail");
+
+        assert!(matches!(error, Error::ScanScopeMismatch { .. }));
+        assert!(index.lookup(Path::new("deep/nested.txt")).is_none());
+        assert_eq!(index.freshness(), crate::Freshness::Fresh);
+    }
+
+    #[test]
+    fn subtree_reconciliation_rejects_a_path_beyond_the_depth_scope() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        write_file(&dir.path().join("deep/nested.txt"), b"nested");
+        let shallow = ScanConfig { max_depth: Some(1), ..ScanConfig::default() };
+        let (mut index, _) = scan_into_index(dir.path(), &shallow).expect("scan");
+
+        let result =
+            reconcile_subtree(&mut index, Path::new("deep/nested.txt"), &shallow, &mut |_| {});
+
+        assert!(matches!(result, Err(Error::SubtreeOutsideScanScope { .. })));
+        assert!(index.lookup(Path::new("deep/nested.txt")).is_none());
+        assert_eq!(index.freshness(), crate::Freshness::Fresh);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn subtree_reconciliation_does_not_follow_an_ancestor_symlink() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempfile::tempdir().expect("root");
+        let outside = tempfile::tempdir().expect("outside");
+        write_file(&outside.path().join("secret.txt"), b"secret");
+        symlink(outside.path(), root.path().join("link")).expect("symlink");
+        let config = ScanConfig::default();
+        let (mut index, _) = scan_into_index(root.path(), &config).expect("scan");
+
+        let result =
+            reconcile_subtree(&mut index, Path::new("link/secret.txt"), &config, &mut |_| {});
+
+        assert!(matches!(result, Err(Error::SubtreeOutsideScanScope { .. })));
+        assert!(index.lookup(Path::new("link/secret.txt")).is_none());
+        assert_eq!(index.freshness(), crate::Freshness::Fresh);
+    }
+
+    #[test]
+    fn subtree_reconciliation_widens_to_a_non_directory_ancestor() {
+        let root = tempfile::tempdir().expect("root");
+        write_file(&root.path().join("parent/child.txt"), b"old");
+        let config = ScanConfig::default();
+        let (mut index, _) = scan_into_index(root.path(), &config).expect("scan");
+        fs::remove_dir_all(root.path().join("parent")).expect("remove directory");
+        write_file(&root.path().join("parent"), b"replacement");
+
+        let report =
+            reconcile_subtree(&mut index, Path::new("parent/child.txt"), &config, &mut |_| {})
+                .expect("reconcile widened ancestor");
+
+        assert!(report.scan.is_complete());
+        assert_eq!(index.kind(Path::new("parent")), Some(EntryKind::File));
+        assert!(index.lookup(Path::new("parent/child.txt")).is_none());
+        assert_eq!(index.freshness(), crate::Freshness::Fresh);
+    }
+
+    #[test]
+    fn subtree_reconciliation_widens_to_a_missing_ancestor() {
+        let root = tempfile::tempdir().expect("root");
+        write_file(&root.path().join("parent/child.txt"), b"old");
+        let config = ScanConfig::default();
+        let (mut index, _) = scan_into_index(root.path(), &config).expect("scan");
+        fs::remove_dir_all(root.path().join("parent")).expect("remove directory");
+
+        let report =
+            reconcile_subtree(&mut index, Path::new("parent/child.txt"), &config, &mut |_| {})
+                .expect("reconcile widened ancestor");
+
+        assert!(report.scan.is_complete());
+        assert!(index.lookup(Path::new("parent")).is_none());
+        assert_eq!(index.freshness(), crate::Freshness::Fresh);
+    }
+
+    #[test]
+    fn observation_only_revalidation_rejects_a_scope_mismatch() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let shallow = ScanConfig { max_depth: Some(1), ..ScanConfig::default() };
+        let (index, _) = scan_into_index(dir.path(), &shallow).expect("scan");
+        let mut observations = Vec::new();
+
+        let error = revalidate(&index, &ScanConfig::default(), &mut |observation| {
+            observations.push(observation);
+        })
+        .expect_err("mismatched scope must fail");
+
+        assert!(matches!(error, Error::ScanScopeMismatch { .. }));
+        assert!(observations.is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_new_filesystem_boundary_prunes_cached_descendants() {
+        use std::os::unix::fs::MetadataExt;
+
+        let root = Path::new("/");
+        let root_dev = fs::symlink_metadata(root).expect("stat root").dev();
+        let Some(mount) = [Path::new("/dev"), Path::new("/proc"), Path::new("/sys")]
+            .into_iter()
+            .find(|candidate| {
+                fs::symlink_metadata(candidate)
+                    .is_ok_and(|metadata| metadata.is_dir() && metadata.dev() != root_dev)
+            })
+        else {
+            return; // This host exposes no convenient cross-device directory.
+        };
+        let relative = mount.strip_prefix(root).expect("mount is below root");
+        let stale_child = relative.join(".fdu-stale-snapshot-entry");
+        let config = ScanConfig { one_filesystem: true, ..ScanConfig::default() };
+        let mount_meta = fs::symlink_metadata(mount).expect("stat mount");
+        let mut index = Index::new_with_scope(root, config.scope());
+        index.apply_baseline(&Observation::new(vec![
+            Op::Upsert {
+                path: relative.to_path_buf(),
+                kind: EntryKind::Dir,
+                attrs: attrs_from(&mount_meta),
+            },
+            Op::Upsert {
+                path: stale_child.clone(),
+                kind: EntryKind::File,
+                attrs: Attrs { size: 10, allocated: 10, ..Attrs::default() },
+            },
+        ]));
+
+        let error = reconcile_subtree(&mut index, &stale_child, &config, &mut |_| {})
+            .expect_err("a descendant below the mount boundary is outside scope");
+        assert!(matches!(error, Error::SubtreeOutsideScanScope { .. }));
+        assert!(index.lookup(&stale_child).is_some());
+
+        reconcile_subtree(&mut index, relative, &config, &mut |_| {}).expect("reconcile mount");
+
+        assert!(index.lookup(relative).is_some(), "the mount point itself stays visible");
+        assert!(index.lookup(&stale_child).is_none(), "out-of-scope descendants are pruned");
     }
 
     #[test]

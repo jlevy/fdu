@@ -68,7 +68,8 @@ pub use crate::index::{
 pub use crate::scan::{ReconcileReport, ScanConfig, ScanReport};
 pub use crate::types::{
     AppliedDelta, Attrs, Clock, EntryKind, Error, Expectation, Fingerprint, Freshness,
-    InvalidateReason, Observation, ObservationOp, Op, PathState, Result, ScanScope,
+    InvalidateReason, Observation, ObservationOp, Op, PathExpectation, PathState, Result,
+    ScanScope,
 };
 
 use std::path::{Path, PathBuf};

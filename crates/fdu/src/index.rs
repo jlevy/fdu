@@ -37,8 +37,8 @@ use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use crate::classify::derive_ext;
 use crate::types::{
-    AppliedDelta, Attrs, Clock, EntryKind, Expectation, Freshness, InvalidateReason, Observation,
-    Op, PathState, ScanScope,
+    AppliedDelta, Attrs, Clock, EntryIdentity, EntryKind, Expectation, Freshness, InvalidateReason,
+    Observation, Op, PathExpectation, PathState, ScanScope,
 };
 
 /// Maximum number of effective operations retained for [`Index::since`].
@@ -149,6 +149,12 @@ struct Entry {
     children: BTreeMap<OsString, EntryId>,
     /// Meaningful for directories only.
     rollup: RollUp,
+    /// Changes on direct metadata updates. Together with the arena generation this
+    /// detects present-state ABA races.
+    revision: u64,
+    /// Changes only on direct child-map mutations. This is the narrow structural guard
+    /// for absent paths and destructive subtree operations.
+    children_revision: u64,
 }
 
 #[derive(Clone, Debug)]
@@ -275,6 +281,8 @@ impl Index {
             attrs: Attrs::default(),
             children: BTreeMap::new(),
             rollup: RollUp::default(),
+            revision: 0,
+            children_revision: 0,
         };
         Self {
             root_path: root_path.into(),
@@ -350,19 +358,29 @@ impl Index {
     pub fn apply(&mut self, observation: &Observation) -> ApplyOutcome {
         let mut stats = ApplyStats::default();
         let mut effective = Vec::new();
+        let mut accepted = Vec::with_capacity(observation.len());
         for observed in &observation.ops {
             let op = &observed.op;
             if normalize(op.path()).is_none() {
                 stats.unchanged += 1;
+                accepted.push(false);
                 continue;
             }
             if let Expectation::State(expected) = observed.expectation {
-                if self.path_state(op.path()) != expected {
+                if !self.expectation_matches(op, expected) {
                     stats.stale += 1;
+                    accepted.push(false);
                     continue;
                 }
             }
+            accepted.push(true);
+        }
 
+        for (observed, accepted) in observation.ops.iter().zip(accepted) {
+            if !accepted {
+                continue;
+            }
+            let op = &observed.op;
             let changed = match op {
                 Op::Upsert { path, kind, attrs } => {
                     self.apply_upsert(path, *kind, *attrs, &mut stats)
@@ -447,13 +465,30 @@ impl Index {
         epoch
     }
 
-    /// State token used by conditional producers such as revalidation.
+    /// Current user-visible state for one path.
+    ///
+    /// Conditional producers should capture [`Self::expectation`] so ABA and structural
+    /// races cannot return to the same visible state unnoticed.
     pub fn path_state(&self, path: &Path) -> PathState {
         let Some(id) = self.lookup(path) else {
             return PathState::Absent;
         };
         let entry = self.entry(id);
         PathState::Present { kind: entry.kind, attrs: entry.attrs }
+    }
+
+    /// Conditional baseline with target and nearest-ancestor ABA protection.
+    pub fn expectation(&self, path: &Path) -> PathExpectation {
+        let entry = self.entry_identity(path);
+        PathExpectation::new(
+            self.path_state(path),
+            entry,
+            entry.is_none().then(|| self.absence_guard_identity(path)).flatten(),
+        )
+    }
+
+    pub(crate) fn relaxed_expectation(&self, path: &Path) -> PathExpectation {
+        PathExpectation::new(self.path_state(path), self.entry_identity(path), None)
     }
 
     /// Deltas applied since `clock`, oldest first.
@@ -471,6 +506,14 @@ impl Index {
     /// re-scanning is what makes an index silently diverge.
     pub fn take_pending_invalidations(&mut self) -> Vec<(PathBuf, InvalidateReason)> {
         std::mem::take(&mut self.pending_invalidations)
+    }
+
+    /// Put unresolved invalidations back without minting a second public change.
+    pub(crate) fn restore_pending_invalidations(
+        &mut self,
+        invalidations: Vec<(PathBuf, InvalidateReason)>,
+    ) {
+        self.pending_invalidations.extend(invalidations);
     }
 
     /// Look up an entry id by path relative to the root.
@@ -564,6 +607,80 @@ impl Index {
         match self.arena.get(id.idx())? {
             Slot::Occupied { generation, entry } if *generation == id.generation => Some(entry),
             Slot::Occupied { .. } | Slot::Free { .. } => None,
+        }
+    }
+
+    fn expectation_matches(&self, op: &Op, expected: PathExpectation) -> bool {
+        if self.path_state(op.path()) != expected.state {
+            return false;
+        }
+
+        let require_structure = match (op, expected.state) {
+            (Op::Remove { .. }, _) => true,
+            (Op::Upsert { kind, .. }, PathState::Present { kind: baseline, .. }) => {
+                *kind != baseline
+            }
+            (Op::Upsert { .. } | Op::InvalidateSubtree { .. }, _) => false,
+        };
+        if !same_target(self.entry_identity(op.path()), expected.entry(), require_structure) {
+            return false;
+        }
+
+        match expected.absence_guard() {
+            Some(expected) => self
+                .absence_guard_identity(op.path())
+                .is_some_and(|current| current.same_absence_guard(expected)),
+            None => true,
+        }
+    }
+
+    fn absence_guard_identity(&self, path: &Path) -> Option<EntryIdentity> {
+        let parts = normalize(path)?;
+        let (_, ancestors) = parts.split_last()?;
+        let mut current = EntryId::ROOT;
+        for part in ancestors {
+            let Some(child) = self.entry(current).children.get(part).copied() else {
+                break;
+            };
+            current = child;
+        }
+        Some(self.identity(current))
+    }
+
+    fn entry_identity(&self, path: &Path) -> Option<EntryIdentity> {
+        Some(self.identity(self.lookup(path)?))
+    }
+
+    fn identity(&self, id: EntryId) -> EntryIdentity {
+        let entry = self.entry(id);
+        EntryIdentity::new(
+            id.slot,
+            id.generation,
+            entry.revision,
+            entry.children_revision,
+            entry.kind.is_dir(),
+        )
+    }
+
+    fn bump_revision(entry: &mut Entry) {
+        entry.revision = entry.revision.checked_add(1).expect("entry revision exhausted");
+    }
+
+    fn bump_children_revision(entry: &mut Entry) {
+        entry.children_revision =
+            entry.children_revision.checked_add(1).expect("entry children revision exhausted");
+    }
+
+    fn insert_child(&mut self, parent: EntryId, name: OsString, child: EntryId) {
+        let entry = self.entry_mut(parent);
+        entry.children.insert(name, child);
+        Self::bump_children_revision(entry);
+    }
+
+    fn remove_child(&mut self, parent: EntryId, name: &OsStr) {
+        let entry = self.entry_mut(parent);
+        if entry.children.remove(name).is_some() {
+            Self::bump_children_revision(entry);
         }
     }
 
@@ -710,8 +827,10 @@ impl Index {
                 attrs: Attrs::default(),
                 children: BTreeMap::new(),
                 rollup: RollUp::default(),
+                revision: 0,
+                children_revision: 0,
             });
-            self.entry_mut(current).children.insert(part.clone(), child);
+            self.insert_child(current, part.clone(), child);
             // A new empty directory contributes one to `dirs` all the way up.
             let contribution = RollUp { dirs: 1, ..RollUp::default() };
             self.merge_upward(Some(current), &contribution);
@@ -737,7 +856,9 @@ impl Index {
                 stats.unchanged += 1;
                 return false;
             }
-            self.entry_mut(EntryId::ROOT).attrs = attrs;
+            let root = self.entry_mut(EntryId::ROOT);
+            root.attrs = attrs;
+            Self::bump_revision(root);
             stats.updated += 1;
             return true;
         };
@@ -755,13 +876,17 @@ impl Index {
                 if kind.is_dir() {
                     // A directory's own attributes do not reach its ancestors' roll-ups,
                     // so there is nothing to re-merge.
-                    self.entry_mut(id).attrs = attrs;
+                    let entry = self.entry_mut(id);
+                    entry.attrs = attrs;
+                    Self::bump_revision(entry);
                     stats.updated += 1;
                     return true;
                 }
                 let old = self.contribution(id);
                 self.unmerge_upward(Some(parent), &old);
-                self.entry_mut(id).attrs = attrs;
+                let entry = self.entry_mut(id);
+                entry.attrs = attrs;
+                Self::bump_revision(entry);
                 let new = self.contribution(id);
                 self.merge_upward(Some(parent), &new);
                 if new.newest_mtime_ns < old.newest_mtime_ns {
@@ -782,8 +907,10 @@ impl Index {
             attrs,
             children: BTreeMap::new(),
             rollup: RollUp::default(),
+            revision: 0,
+            children_revision: 0,
         });
-        self.entry_mut(parent).children.insert(name.clone(), id);
+        self.insert_child(parent, name.clone(), id);
         let contribution = self.contribution(id);
         self.merge_upward(Some(parent), &contribution);
         stats.inserted += 1;
@@ -810,7 +937,7 @@ impl Index {
 
         self.unmerge_upward(parent, &contribution);
         if let Some(parent) = parent {
-            self.entry_mut(parent).children.remove(&name);
+            self.remove_child(parent, &name);
         }
 
         // Free the subtree iteratively; a recursive drop would blow the stack on deep
@@ -845,6 +972,18 @@ fn normalize(path: &Path) -> Option<Vec<OsString>> {
     Some(parts)
 }
 
+fn same_target(
+    current: Option<EntryIdentity>,
+    expected: Option<EntryIdentity>,
+    require_structure: bool,
+) -> bool {
+    match (current, expected) {
+        (Some(current), Some(expected)) => current.same_target(expected, require_structure),
+        (None, None) => true,
+        (Some(_), None) | (None, Some(_)) => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -874,7 +1013,7 @@ mod tests {
             file_attrs(10, 1),
         )]));
 
-        let baseline = index.path_state(Path::new("file.txt"));
+        let baseline = index.expectation(Path::new("file.txt"));
         let delayed = Observation::from_ops(vec![ObservationOp::if_state(
             upsert("file.txt", EntryKind::File, file_attrs(20, 2)),
             baseline,
@@ -890,6 +1029,174 @@ mod tests {
         assert_eq!(outcome.stats.stale, 1);
         assert!(outcome.applied.is_none());
         assert_eq!(index.attrs(Path::new("file.txt")).expect("file").size, 30);
+    }
+
+    #[test]
+    fn delayed_absent_child_cannot_replace_a_newer_parent_file() {
+        let mut index = Index::new("/root");
+        index.apply(&Observation::new(vec![upsert("parent", EntryKind::Dir, file_attrs(0, 1))]));
+        let child_baseline = index.expectation(Path::new("parent/child.txt"));
+        let delayed = Observation::from_ops(vec![ObservationOp::if_state(
+            upsert("parent/child.txt", EntryKind::File, file_attrs(10, 2)),
+            child_baseline,
+        )]);
+
+        index.apply(&Observation::new(vec![upsert("parent", EntryKind::File, file_attrs(20, 3))]));
+        let outcome = index.apply(&delayed);
+
+        assert_eq!(outcome.stats.stale, 1);
+        assert!(outcome.applied.is_none());
+        assert_eq!(index.kind(Path::new("parent")), Some(EntryKind::File));
+        assert!(index.lookup(Path::new("parent/child.txt")).is_none());
+    }
+
+    #[test]
+    fn conditional_observation_rejects_present_state_aba() {
+        let mut index = Index::new("/root");
+        index.apply(&Observation::new(vec![upsert(
+            "file.txt",
+            EntryKind::File,
+            file_attrs(10, 1),
+        )]));
+        let baseline = index.expectation(Path::new("file.txt"));
+        let delayed = Observation::from_ops(vec![ObservationOp::if_state(
+            upsert("file.txt", EntryKind::File, file_attrs(20, 2)),
+            baseline,
+        )]);
+
+        index.apply(&Observation::new(vec![upsert(
+            "file.txt",
+            EntryKind::File,
+            file_attrs(30, 3),
+        )]));
+        index.apply(&Observation::new(vec![upsert(
+            "file.txt",
+            EntryKind::File,
+            file_attrs(10, 1),
+        )]));
+        let outcome = index.apply(&delayed);
+
+        assert_eq!(outcome.stats.stale, 1);
+        assert!(outcome.applied.is_none());
+        assert_eq!(index.attrs(Path::new("file.txt")).expect("file").size, 10);
+    }
+
+    #[test]
+    fn conditional_observation_rejects_absent_state_aba() {
+        let mut index = Index::new("/root");
+        let baseline = index.expectation(Path::new("file.txt"));
+        let delayed = Observation::from_ops(vec![ObservationOp::if_state(
+            upsert("file.txt", EntryKind::File, file_attrs(20, 2)),
+            baseline,
+        )]);
+
+        index.apply(&Observation::new(vec![upsert(
+            "file.txt",
+            EntryKind::File,
+            file_attrs(30, 3),
+        )]));
+        index.apply(&Observation::new(vec![Op::Remove { path: PathBuf::from("file.txt") }]));
+        let outcome = index.apply(&delayed);
+
+        assert_eq!(outcome.stats.stale, 1);
+        assert!(outcome.applied.is_none());
+        assert!(index.lookup(Path::new("file.txt")).is_none());
+    }
+
+    #[test]
+    fn unrelated_mutation_does_not_stale_an_absent_path() {
+        let mut index = Index::new("/root");
+        index.apply(&Observation::new(vec![upsert("dir", EntryKind::Dir, file_attrs(0, 1))]));
+        let baseline = index.expectation(Path::new("dir/new.txt"));
+        let delayed = Observation::from_ops(vec![ObservationOp::if_state(
+            upsert("dir/new.txt", EntryKind::File, file_attrs(20, 2)),
+            baseline,
+        )]);
+
+        index.apply(&Observation::new(vec![upsert(
+            "other.txt",
+            EntryKind::File,
+            file_attrs(30, 3),
+        )]));
+        let outcome = index.apply(&delayed);
+
+        assert_eq!(outcome.stats.stale, 0);
+        assert_eq!(outcome.stats.inserted, 1);
+        assert_eq!(index.attrs(Path::new("dir/new.txt")).expect("file").size, 20);
+    }
+
+    #[test]
+    fn directory_metadata_change_does_not_stale_an_absent_child() {
+        let mut index = Index::new("/root");
+        index.apply(&Observation::new(vec![upsert("dir", EntryKind::Dir, file_attrs(0, 1))]));
+        let baseline = index.expectation(Path::new("dir/new.txt"));
+        let delayed = Observation::from_ops(vec![ObservationOp::if_state(
+            upsert("dir/new.txt", EntryKind::File, file_attrs(20, 2)),
+            baseline,
+        )]);
+
+        index.apply(&Observation::new(vec![upsert("dir", EntryKind::Dir, file_attrs(0, 3))]));
+        let outcome = index.apply(&delayed);
+
+        assert_eq!(outcome.stats.stale, 0);
+        assert_eq!(outcome.stats.inserted, 1);
+    }
+
+    #[test]
+    fn file_parent_metadata_change_stales_an_absent_child() {
+        let mut index = Index::new("/root");
+        index.apply(&Observation::new(vec![upsert("parent", EntryKind::File, file_attrs(10, 1))]));
+        let baseline = index.expectation(Path::new("parent/child.txt"));
+        let delayed = Observation::from_ops(vec![ObservationOp::if_state(
+            upsert("parent/child.txt", EntryKind::File, file_attrs(20, 2)),
+            baseline,
+        )]);
+
+        index.apply(&Observation::new(vec![upsert("parent", EntryKind::File, file_attrs(30, 3))]));
+        let outcome = index.apply(&delayed);
+
+        assert_eq!(outcome.stats.stale, 1);
+        assert_eq!(index.kind(Path::new("parent")), Some(EntryKind::File));
+        assert!(index.lookup(Path::new("parent/child.txt")).is_none());
+    }
+
+    #[test]
+    fn delayed_directory_remove_cannot_delete_a_newer_child() {
+        let mut index = Index::new("/root");
+        index.apply(&Observation::new(vec![upsert("dir", EntryKind::Dir, file_attrs(0, 1))]));
+        let baseline = index.expectation(Path::new("dir"));
+        let delayed = Observation::from_ops(vec![ObservationOp::if_state(
+            Op::Remove { path: PathBuf::from("dir") },
+            baseline,
+        )]);
+
+        index.apply(&Observation::new(vec![upsert(
+            "dir/new.txt",
+            EntryKind::File,
+            file_attrs(20, 2),
+        )]));
+        let outcome = index.apply(&delayed);
+
+        assert_eq!(outcome.stats.stale, 1);
+        assert!(index.lookup(Path::new("dir/new.txt")).is_some());
+    }
+
+    #[test]
+    fn conditional_batch_is_validated_at_one_boundary() {
+        let mut index = Index::new("/root");
+        let first = index.expectation(Path::new("first.txt"));
+        let second = index.expectation(Path::new("second.txt"));
+
+        let outcome = index.apply(&Observation::from_ops(vec![
+            ObservationOp::if_state(upsert("first.txt", EntryKind::File, file_attrs(10, 1)), first),
+            ObservationOp::if_state(
+                upsert("second.txt", EntryKind::File, file_attrs(20, 2)),
+                second,
+            ),
+        ]));
+
+        assert_eq!(outcome.stats.inserted, 2);
+        assert_eq!(outcome.stats.stale, 0);
     }
 
     fn index_with_sample_tree() -> Index {

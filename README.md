@@ -123,7 +123,10 @@ that pass, and it never replaces a complete snapshot with a partial result. `Ind
 and the reconciliation APIs support readers between applied batches with explicit
 `Fresh`, `Reconciling`, `Stale`, and `Partial` state, but applications must opt into that
 serving model. The optional watcher is an adapter and driver; `open()` and the Python API
-do not start it automatically.
+do not start it automatically. Its applying driver currently accepts only an unbounded,
+cross-filesystem scope; bounded-depth and one-filesystem event filtering is tracked as
+watch-hardening work and those configurations fail explicitly rather than indexing
+excluded paths.
 
 Two invariants are non-negotiable, because a cache that lies is worse than no cache:
 
@@ -132,7 +135,15 @@ Two invariants are non-negotiable, because a cache that lies is worse than no ca
   kernel-controlled. All observed stat fields are still compared when updating stored
   state, so allocated-byte or device changes cannot leave query results stale.
 - A corrupt or unrecognized snapshot is treated as **absent, never as data**. Failing
-  closed costs a rescan; failing open silently corrupts every answer built on it.
+  closed costs a rescan; failing open silently corrupts every answer built on it. The
+  bootstrap format verifies its payload checksum before parsing records, and Unix cache
+  files are created owner-only because they contain a filesystem inventory.
+- Conditional observations carry generation and revision guards. Present-state ABA,
+  parent replacement, and absent create/remove races are rejected at one batch boundary
+  without making changes in unrelated subtrees conflict.
+- Cold scans and every warm mutation path enforce the same semantic scope. Depth zero is
+  root-only, and subtree reconciliation refuses paths below depth/filesystem boundaries
+  or through symlink ancestors.
 
 ## Development
 
