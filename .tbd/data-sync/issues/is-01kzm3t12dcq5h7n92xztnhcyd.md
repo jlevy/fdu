@@ -5,7 +5,7 @@ title: "Close PR #1 merge gate and publish final senior approval"
 kind: task
 status: in_progress
 priority: 0
-version: 16
+version: 17
 spec_path: docs/project/specs/active/plan-2026-08-08-fdu-phase-1.md
 labels:
   - merge-blocker
@@ -31,10 +31,10 @@ dependencies:
     target: is-01kzg4akhzmh7xgcabnnyc4e9f
 parent_id: is-01kzg48ekn4sm0azybr010qgmn
 created_at: 2026-08-09T20:35:40.748Z
-updated_at: 2026-08-09T22:10:21.578Z
+updated_at: 2026-08-09T22:26:58.915Z
 ---
 Close PR #1 only after the independent supply-chain blocker and the concurrency validation gate are complete. The concurrency gate transitively requires atomic malformed-batch rejection, the guard-free shared-index API, filesystem-I/O-free watch arbitration, bounded fail-safe watcher transport/shutdown, and deterministic cross-thread evidence. Then run the complete local handoff gate, verify the full GitHub Linux/macOS/Windows/MSRV/docs/audit/Python matrix, confirm the branch is clean and tbd is synchronized, update the PR description, and publish a final senior-review comment that supersedes the current hold. The final comment must state the tested ownership, lock, overload, shutdown, snapshot visibility, and Python GIL contracts and identify any explicitly deferred performance-only work. Do not close this bead merely because GitHub reports the branch mergeable.
 
 ## Notes
 
-Final merge gate started after fdu-ad45 and fdu-gd6n closed. Updating specs and bead graph, then running the complete handoff gate, reviewing the full diff, committing/pushing, watching CI, and posting the superseding PR review.
+All implementation blockers, including final thread-aware findings fdu-l8vc/fdu-83gl/fdu-ie5z and the live-provenance quota fix fdu-b3qe, are closed. The complete local make check passes: 10 supply-chain tests plus live verification of 66 Cargo/31 npm/2 Python packages/21 action uses/bootstrap pins; fmt and Clippy; 145 all-feature library + 2 CLI + 1 integration + 2 doctests; 25 golden scenarios; rustdoc; 105 core-only + 135 watch-only tests; exact Rust 1.85.0 all-feature compile and 105 core tests; Cargo/npm audits; 2 Python concurrency tests; installed abi3 wheel smoke. tbd doctor and sync are clean. Remaining: commit/push, inspect fresh PR threads, require every new GitHub check, update the PR description, publish the superseding senior approval, then close this bead.
