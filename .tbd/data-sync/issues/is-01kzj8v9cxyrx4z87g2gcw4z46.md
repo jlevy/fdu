@@ -5,7 +5,7 @@ title: "Address review: PR #1 — delta, cache, freshness, and surface contracts
 kind: task
 status: closed
 priority: 1
-version: 22
+version: 23
 labels:
   - pr-review
 dependencies: []
@@ -29,7 +29,7 @@ child_order_hints:
   - is-01kzj8wg5gkkrkkdsvsnrjw5tw
   - is-01kzj8wgcxppt8qpvkzw907j0s
 created_at: 2026-08-09T03:25:16.060Z
-updated_at: 2026-08-09T04:25:58.862Z
+updated_at: 2026-08-09T04:26:59.920Z
 closed_at: 2026-08-09T04:25:58.862Z
 close_reason: "All R1-R9, C1-C6, S1/S3, and D1 review implementation beads are complete; S2 is deduplicated with its PR slice complete and S4 remains explicitly deferred to the existing packed-record phase-1 gate. Commits 89e5d4a, e3b8f90, and ce3033c are pushed; full local make check and GitHub CI run 31294466206 are green; final disposition: https://github.com/jlevy/fdu/pull/1#issuecomment-5229752603"
 ---
@@ -37,4 +37,4 @@ Address every unresolved finding in the senior engineering review and Cursor inl
 
 ## Notes
 
-Disposition map uses R1-R9 and C1-C6 as published. All blocking findings and Cursor defects are implemented and locally validated. S1 is complete; S2 is deduplicated into fdu-jej9 with its PR acceptance slice complete; S3 is complete; S4 remains intentionally deferred under fdu-1gbl as the phase-1 packed-record memory gate; D1 is complete. Additional hardening found during implementation covers root-escape rejection, partial-directory deletion safety, ambiguous rename escalation, snapshot structural validation, and allocated-size JSON ordering. Remaining parent exit criteria: commit/push, green post-push CI, and final PR disposition comment.
+Disposition map uses R1-R9 and C1-C6 as published. All blocking findings and Cursor defects are implemented. S1 and S3 are complete; S2 is deduplicated into fdu-jej9 with this PR's acceptance slice complete; S4 remains intentionally deferred under fdu-1gbl as the phase-1 packed-record memory gate; D1 is complete. Additional hardening covers root-escape rejection, partial-directory deletion safety, ambiguous rename escalation, snapshot structural validation, allocated-size JSON ordering, clean feature-gated test targets, and cross-platform snapshot fixtures. Final commits are pushed, local make check passes, CI run 31294466206 is green, and the disposition is posted at https://github.com/jlevy/fdu/pull/1#issuecomment-5229752603.
