@@ -302,6 +302,7 @@ graph or published artifacts.
 - [x] Reject ignored output-mode combinations under an argument-contract transcript
 - [x] Add explicit JSON scan-scope and tree-projection completeness under exact goldens
 - [x] Preserve invalid filesystem names in machine output under platform-focused tests
+- [x] Make color selection and broken-pipe completion deterministic under focused tests
 - [x] Expand `--help` so the golden document is genuinely sufficient for scripts and
   agents, including exit statuses and limit semantics
 - [x] Report the blank-stderr, multiple-command, and duplicate-block update hazards
@@ -334,7 +335,7 @@ design decision and acceptance behavior.
 | `--by-type --json` silently ignores `--by-type` | Reject the conflicting modes with a usage error | `fdu-msbx` | Fixed |
 | Lossy JSON names can collapse distinct non-UTF-8 filesystem entries | Emit optional raw identity data with a documented platform encoding | `fdu-17to` | Fixed |
 | `--help` claims to be complete but omits exit-status and projection-scope semantics | Put those contracts in help and lock the whole output | `fdu-cauc` | Fixed |
-| ANSI stripping and non-terminal subprocesses prevent tryscript from proving color behavior | Keep a focused deterministic color-decision contract test | `fdu-qqpt` | Open |
+| ANSI stripping and non-terminal subprocesses prevent tryscript from proving color behavior | Keep a focused deterministic color-decision contract test | `fdu-qqpt` | Fixed |
 | The current binary integration suite covers only the Unix partial-result path | Add four portable end-to-end sessions and retain narrow platform tests | `fdu-ijz4` | Fixed |
 | The documented workspace build links the PyO3 `cdylib` directly and fails on macOS outside maturin | Build the core CLI directly and keep maturin as the binding artifact gate | `fdu-f4o2` | Fixed |
 | Tryscript cannot express an exact blank stderr line without fragile trailing whitespace | Accept bare `!` as an empty stderr line; use an exact newline pattern until released | `fdu-ms3k` | Reported as [tryscript 45](https://github.com/jlevy/tryscript/issues/45) |

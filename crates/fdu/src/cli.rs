@@ -387,15 +387,33 @@ impl Cli {
     }
 
     fn use_color(&self) -> bool {
-        if self.no_color || self.json {
-            return false;
-        }
         // NO_COLOR is honored whenever it is set to anything non-empty, per the
         // no-color.org convention.
-        if std::env::var_os("NO_COLOR").is_some_and(|v| !v.is_empty()) {
-            return false;
+        let no_color_env = std::env::var_os("NO_COLOR").is_some_and(|v| !v.is_empty());
+        ColorContext {
+            explicitly_disabled: self.no_color,
+            json: self.json,
+            no_color_env,
+            stdout_is_terminal: io::stdout().is_terminal(),
         }
-        io::stdout().is_terminal()
+        .enabled()
+    }
+}
+
+#[derive(Clone, Copy)]
+// Each boolean is an independent external input to the color contract. Naming them here
+// is clearer than encoding four unrelated facts into bit flags or positional arguments.
+#[allow(clippy::struct_excessive_bools)]
+struct ColorContext {
+    explicitly_disabled: bool,
+    json: bool,
+    no_color_env: bool,
+    stdout_is_terminal: bool,
+}
+
+impl ColorContext {
+    fn enabled(self) -> bool {
+        !self.explicitly_disabled && !self.json && !self.no_color_env && self.stdout_is_terminal
     }
 }
 
@@ -663,6 +681,22 @@ mod tests {
     fn paint_is_a_no_op_when_color_is_off() {
         assert_eq!(paint("text", Style::Bold, false), "text");
         assert!(paint("text", Style::Bold, true).contains("\u{1b}["));
+    }
+
+    #[test]
+    fn color_decision_covers_terminal_and_every_explicit_suppression() {
+        let auto_terminal = ColorContext {
+            explicitly_disabled: false,
+            json: false,
+            no_color_env: false,
+            stdout_is_terminal: true,
+        };
+
+        assert!(auto_terminal.enabled());
+        assert!(!ColorContext { stdout_is_terminal: false, ..auto_terminal }.enabled());
+        assert!(!ColorContext { explicitly_disabled: true, ..auto_terminal }.enabled());
+        assert!(!ColorContext { json: true, ..auto_terminal }.enabled());
+        assert!(!ColorContext { no_color_env: true, ..auto_terminal }.enabled());
     }
 
     #[test]
