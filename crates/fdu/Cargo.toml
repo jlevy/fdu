@@ -22,6 +22,11 @@ name = "fdu"
 path = "src/main.rs"
 required-features = ["cli"]
 
+[[test]]
+name = "cli_exit"
+path = "tests/cli_exit.rs"
+required-features = ["cli"]
+
 [features]
 default = ["cli"]
 # Gates clap and the [[bin]], flowmark-style: library consumers take

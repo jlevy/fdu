@@ -432,21 +432,11 @@ fn put_os_str(buf: &mut Vec<u8>, value: &OsStr) -> Result<()> {
 #[cfg(windows)]
 fn put_os_str(buf: &mut Vec<u8>, value: &OsStr) -> Result<()> {
     use std::os::windows::ffi::OsStrExt;
-    let units: Vec<u16> = value.encode_wide().collect();
-    let byte_len = units
-        .len()
-        .checked_mul(std::mem::size_of::<u16>())
-        .ok_or_else(|| Error::Snapshot("path length overflow".into()))?;
-    let byte_len = u32::try_from(byte_len)
-        .map_err(|_| Error::Snapshot("path too long for snapshot".into()))?;
-    if byte_len > MAX_PATH_BYTES {
-        return Err(Error::Snapshot("path exceeds snapshot limit".into()));
+    let mut bytes = Vec::new();
+    for unit in value.encode_wide() {
+        bytes.extend_from_slice(&unit.to_le_bytes());
     }
-    buf.extend_from_slice(&byte_len.to_le_bytes());
-    for unit in units {
-        buf.extend_from_slice(&unit.to_le_bytes());
-    }
-    Ok(())
+    put_bytes(buf, &bytes)
 }
 
 #[cfg(not(any(unix, windows)))]
