@@ -3,9 +3,9 @@ type: is
 id: is-01kzm3t12dcq5h7n92xztnhcyd
 title: "Close PR #1 merge gate and publish final senior approval"
 kind: task
-status: in_progress
+status: closed
 priority: 0
-version: 19
+version: 20
 spec_path: docs/project/specs/active/plan-2026-08-08-fdu-phase-1.md
 labels:
   - merge-blocker
@@ -31,7 +31,9 @@ dependencies:
     target: is-01kzg4akhzmh7xgcabnnyc4e9f
 parent_id: is-01kzg48ekn4sm0azybr010qgmn
 created_at: 2026-08-09T20:35:40.748Z
-updated_at: 2026-08-09T22:40:09.458Z
+updated_at: 2026-08-09T22:47:09.272Z
+closed_at: 2026-08-09T22:47:09.270Z
+close_reason: "Final senior approval posted at https://github.com/jlevy/fdu/pull/1#issuecomment-5234242247 for exact head cfb4b6a. Complete local make check, exact Windows cross-target compilation, and final GitHub Actions run 31340000186 all pass; all automated threads are resolved; branch/remote heads match; the worktree is clean; PR #1 is cleanly mergeable with no Phase 0 blocker."
 ---
 Close PR #1 only after the independent supply-chain blocker and the concurrency validation gate are complete. The concurrency gate transitively requires atomic malformed-batch rejection, the guard-free shared-index API, filesystem-I/O-free watch arbitration, bounded fail-safe watcher transport/shutdown, and deterministic cross-thread evidence. Then run the complete local handoff gate, verify the full GitHub Linux/macOS/Windows/MSRV/docs/audit/Python matrix, confirm the branch is clean and tbd is synchronized, update the PR description, and publish a final senior-review comment that supersedes the current hold. The final comment must state the tested ownership, lock, overload, shutdown, snapshot visibility, and Python GIL contracts and identify any explicitly deferred performance-only work. Do not close this bead merely because GitHub reports the branch mergeable.
 
