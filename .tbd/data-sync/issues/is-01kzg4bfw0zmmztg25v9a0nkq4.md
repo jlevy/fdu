@@ -5,13 +5,13 @@ title: "Watch hardening: rename stitching, backend selection, kqueue sweep, fail
 kind: feature
 status: open
 priority: 2
-version: 3
+version: 4
 spec_path: docs/project/specs/active/plan-2026-08-08-fdu-phase-1.md
 labels: []
 dependencies: []
 parent_id: is-01kzg48ekn4sm0azybr010qgmn
 created_at: 2026-08-08T07:28:15.231Z
-updated_at: 2026-08-09T18:27:27.116Z
+updated_at: 2026-08-09T18:59:17.859Z
 ---
 The watch layer works (coalesce -> verify by stat -> delta, with Flag::Rescan escalated rather than dropped). What is missing is everything platform-specific:
 
@@ -26,4 +26,4 @@ Currently every created directory escalates for a re-list, which is correct but 
 
 ## Notes
 
-Final phase-0 review confirmed that phase 1 must bound both the raw notify channel and the verified-observation queue. Backpressure or drops must become a root invalidation, never silent loss. Permanent backend errors must keep affected scope non-fresh until watch installation recovers. Clock-stable re-verification and watcher/index root matching are complete under fdu-xktk.
+Final phase-0 review confirmed that phase 1 must bound both the raw notify channel and the verified-observation queue. Backpressure or drops must become a root invalidation, never silent loss. Permanent backend errors must keep affected scope non-fresh until watch installation recovers. Clock-stable re-verification and watcher/index root matching are complete under fdu-xktk. The 2026-08-09 Rust guideline audit adds one public failure ambiguity: next_observation currently maps both timeout and channel disconnection to None. A stopped worker must be distinguishable from a quiet tree, coordinated with the guard-free API work in fdu-s7wr.

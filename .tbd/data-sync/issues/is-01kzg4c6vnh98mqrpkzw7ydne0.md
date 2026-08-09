@@ -5,13 +5,13 @@ title: "Publishing: crates.io, PyPI abi3 wheels, and a name re-verification gate
 kind: task
 status: open
 priority: 2
-version: 1
+version: 2
 spec_path: docs/project/specs/active/plan-2026-08-08-fdu-phase-1.md
 labels: []
 dependencies: []
 parent_id: is-01kzg48ekn4sm0azybr010qgmn
 created_at: 2026-08-08T07:28:38.772Z
-updated_at: 2026-08-08T07:28:38.772Z
+updated_at: 2026-08-09T18:59:18.038Z
 ---
 Ship both artifacts from one workspace.
 - crates.io: fdu, with cli as a default feature so 'cargo install fdu' just works. Library consumers write default-features = false; that trade-off is accepted and must be one documented line in the README.
@@ -24,3 +24,7 @@ RE-VERIFY NAME AVAILABILITY IMMEDIATELY BEFORE FIRST PUBLISH — availability is
 Methodological trap for whoever re-checks: https://pypi.org/project/<name>/ can return HTTP 200 with an anti-bot interstitial (<title>Client Challenge</title>) for names that do not exist. Use the Simple index (PEP 503) or the JSON API, and calibrate against a known-present package, or the check reports false positives.
 
 Two prior uses of the name exist, neither blocking: an npm package 'fdu' (disk usage flame graph, last published 2022) and a dormant GitHub script nicollet/fdu. Neither is on PyPI, crates.io, or Homebrew.
+
+## Notes
+
+The 2026-08-09 Rust release audit found that cargo package --list -p fdu omits the license file. Before first publish, inspect and smoke-test the packaged crate and every native artifact, include expected license/readme content, define one tag/version identity, use least-privilege trusted publishing, and document supported platforms, MSRV-change policy, deprecation policy, security reporting, rerun behavior, and incident recovery. This bead is blocked on cool-off-clean tooling, the pinned compatibility matrix, the minimal documented Rust API, and the lossless Python boundary.
