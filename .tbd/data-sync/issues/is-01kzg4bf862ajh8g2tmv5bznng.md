@@ -5,14 +5,14 @@ title: "CLI agent surface: stable JSON schema, exit codes, help completeness"
 kind: task
 status: open
 priority: 2
-version: 3
+version: 4
 spec_path: docs/project/specs/active/plan-2026-08-08-fdu-phase-1.md
 labels:
   - pr-review
 dependencies: []
 parent_id: is-01kzg48ekn4sm0azybr010qgmn
 created_at: 2026-08-08T07:28:14.597Z
-updated_at: 2026-08-09T04:06:09.351Z
+updated_at: 2026-08-09T18:28:34.240Z
 ---
 Agents get --help as the complete source of truth, stable machine-readable output whose schema is versioned with the tool, meaningful exit codes, and no interactive surprises (no pager, no prompts).
 
@@ -23,4 +23,4 @@ Because warm queries are milliseconds, agents can call this freely — tally a t
 
 ## Notes
 
-PR #1 review suggestion S2 acceptance slice completed on 2026-08-08: CLI JSON schema fdu.tree/2 and Python now preserve dir/file/symlink/other, expose partial/error details, and have an exact schema golden plus installed-wheel kind smoke. Remaining bead scope is JSONL streaming, schema documentation/skill polish, and broader agent surface work. Source: https://github.com/jlevy/fdu/pull/1#issuecomment-5229523550
+CLI retained-node/root identity is lossless through raw encoding fields. Remaining surface work should give structured path identity to partial-error details and preserve non-Unicode names/paths in Python children and since() rather than exposing only lossy display strings.

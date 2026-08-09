@@ -5,7 +5,7 @@ title: Specify and harden the fdu CLI with golden tests
 kind: epic
 status: in_progress
 priority: 1
-version: 16
+version: 17
 spec_path: docs/project/specs/active/plan-2026-08-09-fdu-cli-golden-tests.md
 labels: []
 dependencies:
@@ -27,7 +27,8 @@ child_order_hints:
   - is-01kzkt8wd2cah0n9kp4h79t8y0
   - is-01kzkt8wd2rwzb1bwyxy7w1weh
   - is-01kzktxd8pfnk7q2e6ndetm3v1
+  - is-01kzkvb2y6jhmtzna9e6vh5nxt
 created_at: 2026-08-09T17:37:31.127Z
-updated_at: 2026-08-09T18:00:14.357Z
+updated_at: 2026-08-09T18:07:42.533Z
 ---
 Executable CLI contract using four tryscript sessions plus focused platform tests. Covers human and JSON output, errors and exit statuses, cache lifecycle, deterministic cross-platform execution, and every behavior defect recorded in the linked spec.
