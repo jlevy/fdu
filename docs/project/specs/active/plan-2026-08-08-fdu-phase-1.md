@@ -162,6 +162,9 @@ revision rather than any one fix:
   terminal-clock no-op/stale arbitration.
 - `fdu-b3qe` keeps the online provenance gate authenticated locally and in CI without
   broadening pull-request permissions.
+- `fdu-9xf7` corrects cfg-disabled integration-test documentation ordering; exact
+  Windows-target compilation and the complete local gate pass, with fresh Windows CI
+  still required.
 - `fdu-sn43` follows the supply-chain and concurrency validation gates and owns the
   final local gate, cross-platform CI, synchronized tbd state, PR description update,
   and superseding senior approval.
@@ -310,7 +313,8 @@ is **fdu-a0w0**.
 | `fdu-83gl` | P0 | Closed | Specify watch stat-to-commit linearization and convergence | — |
 | `fdu-ie5z` | P0 | Closed | Preserve no-op and stale terminal-clock arbitration | — |
 | `fdu-b3qe` | P0 | Closed | Authenticate live provenance checks with least privilege | — |
-| `fdu-sn43` | P0 | In progress | Run final gates and publish the superseding senior approval | `fdu-ad45`, `fdu-gd6n`, `fdu-l8vc`, `fdu-83gl`, `fdu-ie5z`, `fdu-b3qe` |
+| `fdu-9xf7` | P0 | In progress | Keep cfg-disabled integration-test crates documented cross-platform | — |
+| `fdu-sn43` | P0 | In progress | Run final gates and publish the superseding senior approval | `fdu-ad45`, `fdu-gd6n`, `fdu-l8vc`, `fdu-83gl`, `fdu-ie5z`, `fdu-b3qe`, `fdu-9xf7` |
 
 The implementation beads are children of the Rust-quality epic.
 Independent fixes are not serialized; `fdu-gd6n` is the convergence point.
@@ -332,7 +336,7 @@ blocker. The table below is the complete set owned directly by this plan.
 
 | Wave | Bead | Priority | Work | Direct blockers |
 | --- | --- | --- | --- | --- |
-| 0 | `fdu-sn43` | P0 | Close the PR #1 merge gate | `fdu-ad45`, `fdu-gd6n`, `fdu-l8vc`, `fdu-83gl`, `fdu-ie5z`, `fdu-b3qe` |
+| 0 | `fdu-sn43` | P0 | Close the PR #1 merge gate | `fdu-ad45`, `fdu-gd6n`, `fdu-l8vc`, `fdu-83gl`, `fdu-ie5z`, `fdu-b3qe`, `fdu-9xf7` |
 | 2 | `fdu-gdrv` | P1 | Prove metric-vector atomic-refcount roll-up | `fdu-sn43` |
 | 2 | `fdu-p35d` | P1 | Measure gitignore tag-don’t-prune matching | `fdu-sn43` |
 | 2 | `fdu-odx6` | P1 | Ratify or amend goals 6 and 7 | `fdu-sn43` |

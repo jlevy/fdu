@@ -28,8 +28,9 @@ changes rather than replacing or rescoping them.
 
 ## Current Status
 
-The epic is `fdu-dxee`, a child of the Phase 1 epic `fdu-qfz6`. Every implementation
-node on the PR #1 merge path is closed:
+The epic is `fdu-dxee`, a child of the Phase 1 epic `fdu-qfz6`. Every design and
+implementation node on the PR #1 merge path is closed except the fresh remote
+confirmation for `fdu-9xf7`:
 
 - `fdu-ad45`: executable-dependency cool-off, provenance, and CI trust controls now fail
   closed in CI and the local handoff gate;
@@ -52,6 +53,9 @@ node on the PR #1 merge path is closed:
 - `fdu-b3qe`: GitHub provenance checks use an explicit workflow token in CI and a
   non-shell local `gh` credential fallback, while retaining read-only permissions and
   fail-closed validation.
+- `fdu-9xf7`: the Windows-only missing-doc failure is corrected by retaining crate
+  documentation before the Unix cfg attribute; exact Windows-target compilation and the
+  complete local gate pass, and fresh cross-platform CI remains required.
 
 `fdu-zga3` also completed early because reproducible review evidence required the pinned
 normal toolchain, watch-only feature lane, and test-running MSRV lane now rather than
@@ -140,6 +144,7 @@ more broad lints, or a rewrite of working test infrastructure.
 | P0 | The free public watch observation helper carried only relative paths, so it could not prove that an observation and `IndexHandle` represented the same root. | Keep unrooted observations generic and make the root-checked `Watcher::apply_next` driver the only supported watch-application boundary. |
 | P0 | `Index::apply` checked for the next logical clock before arbitration, so an entirely unchanged or stale nonempty observation failed at the terminal clock even though it committed nothing. | Probe the otherwise infallible mutation phase only on the unreachable terminal-clock path; return no-op/stale stats without mutation and reject a real change atomically. |
 | P0 | The live provenance gate depended on GitHub’s shared unauthenticated 60-request quota locally and failed with HTTP 403 after that quota was exhausted. | Prefer explicit workflow/environment tokens, fall back to the authenticated local `gh` credential without a shell or output, and test that CI supplies only its read-only workflow token. |
+| P0 | Windows compiled the Unix-only CLI exit integration target as an empty crate; placing `#![cfg(unix)]` before its `//!` documentation removed the docs before workspace `missing_docs` enforcement. | Keep crate documentation before the cfg attribute, compile-check the exact Windows target locally with warnings denied, and require a fresh Windows CI pass. |
 | P1 | An automated review treated the interval between filesystem `stat` and index commit as lockable, which would encourage lock-held I/O or repeated stats without eliminating the external race. | Specify the attainable contract: the sample is valid at its `stat` point, later backend events remain queued, loss invalidates and reconciles, and the clock boundary arbitrates only in-memory writers. |
 | P1 | Running rustdoc with `-D missing-docs` reports 61 undocumented public fields, variants, and methods. Clippy identifies 45 `must_use_candidate` sites while the workspace disables that lint globally. | Reduce the public surface first, document every remaining contract, and apply `#[must_use]` to values whose loss can break correctness rather than enabling the lint indiscriminately. |
 | P1 | The index has extensive example tests but no generated reference-model comparison for arbitrary upsert, remove, kind-change, invalidation, and delayed-conditional sequences. | Compare every generated transition against a simple recomputed model with fixed seeds and useful failing traces. |
@@ -351,6 +356,8 @@ found during the usage inventory.
 - [x] `fdu-83gl`: specify the stat-sample and queued-event convergence contract
 - [x] `fdu-ie5z`: preserve no-op and stale arbitration at the terminal logical clock
 - [x] `fdu-b3qe`: authenticate live provenance checks without widening PR permissions
+- [ ] `fdu-9xf7`: confirm the cfg-disabled integration-test documentation fix in fresh
+  Windows CI
 - [ ] `fdu-sn43`: rerun all gates and publish the superseding senior approval
 
 The supply-chain, watch-lock, and watch-transport fixes are independent.
@@ -473,6 +480,7 @@ concurrency review closes when this plan, its beads, and the PR record agree.
 | 0 | `fdu-83gl` | P0 | Specify watch stat-to-commit linearization and convergence | — |
 | 0 | `fdu-ie5z` | P0 | Allow no-op and stale observations at the terminal clock | — |
 | 0 | `fdu-b3qe` | P0 | Authenticate live provenance checks with least privilege | — |
+| 0 | `fdu-9xf7` | P0 | Keep cfg-disabled integration-test crates documented cross-platform | — |
 | 1 | `fdu-zga3` | P1 | Pin Rust tooling and prove supported feature/MSRV contracts | `fdu-ad45` |
 | 2 | `fdu-o8r8` | P1 | Add a deterministic index/delta reference model | `fdu-nlh8`, `fdu-sn43` |
 | 2 | `fdu-471a` | P1 | Exercise snapshot parsing and commit failures as a state machine | `fdu-nlh8`, `fdu-sn43` |
@@ -480,7 +488,7 @@ concurrency review closes when this plan, its beads, and the PR record agree.
 | 3 | `fdu-k8zw` | P2 | Preserve native identity through classification and Python | `fdu-s7wr` |
 
 The Phase 1 bead `fdu-sn43` depends on `fdu-ad45`, `fdu-gd6n`, `fdu-l8vc`, `fdu-83gl`,
-`fdu-ie5z`, and `fdu-b3qe` and owns final PR validation and approval.
+`fdu-ie5z`, `fdu-b3qe`, and `fdu-9xf7` and owns final PR validation and approval.
 Atomic rejection reaches it transitively through `fdu-s7wr` and the validation gate,
 without serializing independent fixes.
 
@@ -495,6 +503,8 @@ Cross-epic dependencies make the existing work consume these gates:
 - `fdu-l8vc`, `fdu-83gl`, and `fdu-ie5z` are final-review corrections that directly
   block `fdu-sn43` without serializing one another.
 - `fdu-b3qe` is the final-gate provenance fix and directly blocks `fdu-sn43`.
+- `fdu-9xf7` is the cross-platform documentation-lint fix and directly blocks `fdu-sn43`
+  until fresh Windows CI passes.
 - `fdu-sn43` is the explicit post-approval start gate for `fdu-o8r8`, `fdu-471a`, and
   `fdu-zsdy`; `fdu-zga3` completed early because the merge gate already needed its
   reproducibility and feature evidence.

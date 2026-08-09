@@ -1,5 +1,5 @@
-#![cfg(unix)]
 //! End-to-end process exit-code contract for incomplete filesystem scans.
+#![cfg(unix)]
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
