@@ -8,6 +8,16 @@
 [research-2026-08-06-file-rollup-engine.md](../../research/research-2026-08-06-file-rollup-engine.md)
 — the twelve-tool survey and the architecture this plan builds.
 
+## Working on This
+
+Phase-0 work is on branch `claude/fdu-phase-0-scaffold`, open as
+[PR #1](https://github.com/jlevy/fdu/pull/1), with `main` holding only the initial
+commit. CI is green across Linux, macOS, and Windows.
+
+Beads live on the `tbd-sync` branch and are visible from any clone (`tbd list`).
+`make check` is the handoff gate; `AGENTS.md` carries the conventions worth not
+rediscovering.
+
 ## Where This Stands
 
 Phase 0 is complete: the repository exists, the architecture is expressed in code, and
