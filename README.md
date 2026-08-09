@@ -171,7 +171,7 @@ CLI output change, run `make golden-update`; it regenerates affected blocks and
 immediately reruns comparison.
 Review the Markdown diff before committing.
 The scenario design and the small set of permitted dynamic patterns are documented in
-[the CLI golden-test plan](docs/project/specs/active/plan-2026-08-09-fdu-cli-golden-tests.md).
+[the completed CLI golden-test plan](docs/project/specs/done/plan-2026-08-09-fdu-cli-golden-tests.md).
 
 ## License
 

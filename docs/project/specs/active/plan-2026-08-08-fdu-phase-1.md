@@ -228,7 +228,7 @@ restart. That is tracked separately in the metabrowser repository.
 Epic: **fdu-qfz6** — fdu phase 1: fastest walker with full stats, proven by benchmark.
 Phase 0 is recorded and closed as **fdu-v178**.
 
-Final phase-0 review follow-up: **fdu-vdi9**.
+Completed final phase-0 review follow-up: **fdu-vdi9**.
 
 | Bead | Work |
 | --- | --- |

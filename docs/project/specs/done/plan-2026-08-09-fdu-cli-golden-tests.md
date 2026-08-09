@@ -4,7 +4,7 @@
 
 **Author:** fdu project
 
-**Status:** Active
+**Status:** Complete
 
 ## Overview
 
@@ -24,8 +24,8 @@ Focused Rust tests remain authoritative for behavior that cannot be represented 
 by a shell-driven golden test, including permission failures, non-UTF-8 names, terminal
 detection, and broken pipes.
 
-This plan is a focused child of
-[plan-2026-08-08-fdu-phase-1.md](plan-2026-08-08-fdu-phase-1.md).
+This plan is a completed child of
+[plan-2026-08-08-fdu-phase-1.md](../active/plan-2026-08-08-fdu-phase-1.md).
 It advances the human and agent CLI work tracked there without coupling the CLI contract
 to the portable walker that the syscall layer will replace.
 
@@ -389,6 +389,20 @@ Epic: **fdu-a0w0** — Specify and harden the fdu CLI with golden tests.
 10. The final diff contains no generated sandbox/cache artifacts and no unrelated
     changes.
 
+## Completion Evidence
+
+Completed on 2026-08-09. The local `make check` handoff gate passes, including 122
+all-feature library tests, the CLI unit/integration tests, two doctests, 95
+no-default-feature tests, all 25 golden scenarios, both dependency audits,
+documentation, and the installed Python wheel smoke test.
+The intentional-mutation exercise proved that a stable-output change fails comparison,
+that the updater changes only the intended block, and that restoring the expectation
+returns the suite to a clean pass.
+GitHub Actions [run 31329423861](https://github.com/jlevy/fdu/actions/runs/31329423861)
+passes the complete Linux, macOS, Windows, MSRV, documentation, dependency, and wheel
+matrix; Windows runs the same 25 golden scenarios against LF-pinned fixtures and
+portable npm glob quoting.
+
 ## Rollout Plan
 
 The CLI has not been published, so the contract can be corrected on the existing Phase 1
@@ -418,7 +432,7 @@ types do not change.
 - [Tryscript blank stderr issue](https://github.com/jlevy/tryscript/issues/45)
 - [Tryscript multiple-command issue](https://github.com/jlevy/tryscript/issues/46)
 - [Tryscript duplicate-block update issue](https://github.com/jlevy/tryscript/issues/47)
-- [Phase 1 plan](plan-2026-08-08-fdu-phase-1.md)
+- [Phase 1 plan](../active/plan-2026-08-08-fdu-phase-1.md)
 - [File roll-up engine research](../../research/research-2026-08-06-file-rollup-engine.md)
 
 <!-- This document follows common-doc-guidelines.md.
