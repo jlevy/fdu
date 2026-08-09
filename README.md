@@ -11,7 +11,8 @@ One walk, many metrics, cached between runs.
 > end. The fast walker is not — the current one is a portable `read_dir` +
 > `symlink_metadata` implementation, and **no performance claim should be made for this
 > crate until the syscall layer lands and the benchmark gate passes**. See
-> [docs/project/specs/active/plan-2026-08-08-fdu-phase-1.md](docs/project/specs/active/plan-2026-08-08-fdu-phase-1.md).
+> [the Phase 1 plan](docs/project/specs/active/plan-2026-08-08-fdu-phase-1.md) and the
+> [performance-evidence plan](docs/project/specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md).
 
 ## Why
 

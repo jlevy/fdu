@@ -6,7 +6,9 @@
 
 **Status:** Accepted — Option E adopted, scaffold built.
 See [plan-2026-08-08-fdu-phase-1.md](../specs/active/plan-2026-08-08-fdu-phase-1.md) for
-what is implemented and what is still ahead.
+what is implemented and what is still ahead, and
+[plan-2026-08-09-fdu-end-to-end-performance-testing.md](../specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md)
+for the reproducible evidence system behind the performance gates.
 
 This research was carried out in the metabrowser repository and moved here when fdu
 became its own project.

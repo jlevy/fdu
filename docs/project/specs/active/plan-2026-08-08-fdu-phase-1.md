@@ -7,6 +7,8 @@
 **Background:**
 [research-2026-08-06-file-rollup-engine.md](../../research/research-2026-08-06-file-rollup-engine.md)
 — the twelve-tool survey and the architecture this plan builds.
+The detailed benchmark methodology and implementation graph are in
+[plan-2026-08-09-fdu-end-to-end-performance-testing.md](plan-2026-08-09-fdu-end-to-end-performance-testing.md).
 
 ## Working on This
 
@@ -170,10 +172,15 @@ Measure first.
 
 ### Stage D: Proof
 
-- **Benchmark harness**, reporting cold and warm separately *and* raw-walk versus
-  with-stats separately.
+- **Benchmark harness**, reporting snapshot and filesystem-cache state separately *and*
+  scan-producer versus full-index work separately—the precise form of the original
+  cold/warm × raw-walk/with-stats requirement.
   Anything less compares different jobs: bfs and dut discard most metadata while fdu
   retains a full inventory.
+  The dedicated
+  [performance-testing plan](plan-2026-08-09-fdu-end-to-end-performance-testing.md)
+  defines the corpus recipes, semantic oracle, independent snapshot/filesystem-cache
+  states, runner, result schema, comparator adapters, statistical policy, and CI tiers.
 - **Publishing**: crates.io and PyPI, abi3 wheels, re-verify name availability
   immediately before first publish since availability is a race.
 
@@ -186,8 +193,9 @@ Phase 1 is done when all of these hold, and not before:
 3. Memory within ~25–32 bytes per file record.
 4. `fdu --help` is complete enough that an agent needs no other documentation, and the
    JSON schema is versioned and stable.
-5. The benchmark harness reports the full cold/warm x raw/with-stats matrix, and the
-   README’s performance claims cite it.
+5. The benchmark harness reports the full snapshot/filesystem-state ×
+   producer/full-index matrix, and the README’s performance claims cite its raw evidence
+   and reproduction manifest.
 6. Goals 6 and 7 are ratified or amended — they already shape the architecture, so
    leaving them unsigned means building on an unratified premise.
 
@@ -255,7 +263,8 @@ Completed final phase-0 review follow-up: **fdu-vdi9**.
 | C | fdu-jej9 | CLI agent surface: stable JSON schema, exit codes, help completeness |
 | C | fdu-v4lc | Type-rule dialect: declarative rules compiled at build time |
 | C | fdu-lka2 | Watch hardening: rename stitching, backend selection, kqueue sweep |
-| D | fdu-ywu0 | Benchmark harness: cold/warm x raw-walk/with-stats vs dut and gdu |
+| D | fdu-d5e1 | Performance evidence system: corpus, oracle, runner, probes, adapters, and regression governance |
+| D | fdu-ywu0 | Publish the Phase 1 state/job matrix and dut/gdu evidence report |
 | D | fdu-9cf0 | Publishing: crates.io, PyPI abi3 wheels, name re-verification gate |
 | — | fdu-odx6 | Ratify proposed goals 6 and 7 |
 
