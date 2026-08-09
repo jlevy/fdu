@@ -71,10 +71,13 @@ This plan is independently actionable.
 The design and Flowmark synthesis are complete; planning bead `fdu-f0or` is closed.
 Epic `fdu-d5e1` and all six implementation/proof children remain open.
 
-Repository-wide execution closes the two PR merge blockers (`fdu-ad45` and `fdu-nlh8`)
-first. The performance work then starts with `fdu-rq5m`, followed by `fdu-d8kq` and
-`fdu-oj25`. Comparator acquisition under `fdu-k5t5` also waits for the executable-
-dependency policy. No current timing result supports a product claim.
+The repository-wide correctness, supply-chain, and concurrency implementation gates are
+closed; `fdu-sn43` is running the final PR approval gate.
+After that approval, the performance work starts with `fdu-rq5m`, followed by `fdu-d8kq`
+and `fdu-oj25`. Comparator acquisition under `fdu-k5t5` has cleared its
+executable-dependency policy blocker but still waits on the corpus and runner
+prerequisites shown below.
+No current timing result supports a product claim.
 
 ## Background
 
@@ -775,8 +778,9 @@ infrastructure:
   (`fdu-p2i1`) and snapshot candidate spike (`fdu-1vd0`).
 - `fdu-oj25` blocks the packed-record memory gate (`fdu-1gbl`) and concurrency
   measurement (`fdu-r27g`).
-- The comparator adapters wait for the executable-dependency policy (`fdu-ad45`), and
-  scheduled numeric baselines wait for the pinned toolchain (`fdu-zga3`).
+- The comparator adapters and scheduled numeric baselines have cleared the completed
+  executable-dependency (`fdu-ad45`) and pinned-toolchain (`fdu-zga3`) prerequisites;
+  their remaining graph edges still apply.
 - The syscall walk (`fdu-atqk`), parallel scheduler (`fdu-aky1`), reducer registry
   (`fdu-a6dz`), block snapshot (`fdu-xihx`), optimized revalidation (`fdu-wbis`),
   contention proof (`fdu-r27g`), and pinned toolchain (`fdu-zga3`) also block `fdu-ywu0`

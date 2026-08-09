@@ -33,7 +33,7 @@ use std::io::{BufReader, Read, Seek, SeekFrom, Write};
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use crate::index::{EntryId, Index};
+use crate::index::{EntryId, Index, IndexHandle};
 use crate::types::{Attrs, EntryKind, Error, Freshness, Observation, Op, Result, ScanScope};
 
 /// Leading magic. Distinguishes an fdu snapshot from any other file that lands here.
@@ -160,7 +160,7 @@ pub fn save(index: &Index, path: &Path) -> Result<()> {
         let children = index
             .children_of(id)
             .ok_or_else(|| Error::Snapshot("stale entry handle while saving".into()))?;
-        for (_, child) in children.into_iter().rev() {
+        for (_, child) in children.rev() {
             stack.push((slot, child));
         }
     }
@@ -194,6 +194,13 @@ pub fn save(index: &Index, path: &Path) -> Result<()> {
     buf.extend_from_slice(TRAILER);
 
     write_atomically(path, &buf)
+}
+
+/// Capture and persist a coherent shared-index image without holding its lock during
+/// serialization or filesystem I/O.
+pub fn save_handle(index: &IndexHandle, path: &Path) -> Result<()> {
+    let snapshot = index.snapshot()?;
+    save(&snapshot, path)
 }
 
 /// Load a snapshot, or return `None` when there is nothing usable at `path`.
@@ -353,11 +360,13 @@ fn parse_stream(reader: &mut impl Read, payload_len: u64) -> ParseResult<Index> 
             if slot != 0 || kind != EntryKind::Dir || !name.is_empty() {
                 return Err(ParseError::Invalid);
             }
-            index.apply_baseline(&Observation::new(vec![Op::Upsert {
-                path: PathBuf::new(),
-                kind,
-                attrs,
-            }]));
+            index
+                .apply_baseline(&Observation::new(vec![Op::Upsert {
+                    path: PathBuf::new(),
+                    kind,
+                    attrs,
+                }]))
+                .map_err(|_| ParseError::Invalid)?;
             ids.push(EntryId::ROOT);
             continue;
         }
@@ -373,11 +382,9 @@ fn parse_stream(reader: &mut impl Read, payload_len: u64) -> ParseResult<Index> 
         if index.lookup(&path).is_some() {
             return Err(ParseError::Invalid);
         }
-        index.apply_baseline(&Observation::new(vec![Op::Upsert {
-            path: path.clone(),
-            kind,
-            attrs,
-        }]));
+        index
+            .apply_baseline(&Observation::new(vec![Op::Upsert { path: path.clone(), kind, attrs }]))
+            .map_err(|_| ParseError::Invalid)?;
         let id = index.lookup(&path).ok_or(ParseError::Invalid)?;
         ids.push(id);
     }
@@ -636,7 +643,7 @@ mod tests {
 
     fn sample_index() -> Index {
         let mut index = Index::new("/some/root");
-        index.apply(&Observation::new(vec![
+        index.apply_ok(&Observation::new(vec![
             Op::Upsert { path: PathBuf::from("src"), kind: EntryKind::Dir, attrs: attrs(0, 1) },
             Op::Upsert {
                 path: PathBuf::from("src/main.rs"),
@@ -700,6 +707,26 @@ mod tests {
             restored.attrs(Path::new("src/deep/nested.rs")),
             original.attrs(Path::new("src/deep/nested.rs"))
         );
+    }
+
+    #[test]
+    fn shared_save_captures_before_filesystem_io() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("shared.fdu");
+        let handle = IndexHandle::new(sample_index());
+
+        save_handle(&handle, &path).expect("save shared snapshot");
+        handle
+            .apply(&Observation::new(vec![Op::Upsert {
+                path: PathBuf::from("after.txt"),
+                kind: EntryKind::File,
+                attrs: attrs(9, 40),
+            }]))
+            .expect("mutate after capture");
+
+        let restored = load(&path).expect("load").expect("snapshot present");
+        assert!(restored.lookup(Path::new("after.txt")).is_none());
+        assert!(handle.kind(Path::new("after.txt")).expect("query").is_some());
     }
 
     #[test]
@@ -842,7 +869,7 @@ mod tests {
 
         save(&sample_index(), &path).expect("first save");
         let mut smaller = Index::new("/some/root");
-        smaller.apply(&Observation::new(vec![Op::Upsert {
+        smaller.apply_ok(&Observation::new(vec![Op::Upsert {
             path: PathBuf::from("only.txt"),
             kind: EntryKind::File,
             attrs: attrs(1, 1),
@@ -901,6 +928,90 @@ mod tests {
             .filter(|name| name != "snap.fdu")
             .collect();
         assert!(leftovers.is_empty(), "temp files left behind: {leftovers:?}");
+    }
+
+    #[test]
+    fn concurrent_snapshot_reader_sees_only_a_complete_old_or_new_image() {
+        use std::sync::{Arc, Barrier};
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("snap.fdu");
+        let mut old_index = Index::new("/some/root");
+        old_index.apply_ok(&Observation::new(vec![Op::Upsert {
+            path: PathBuf::from("old.txt"),
+            kind: EntryKind::File,
+            attrs: attrs(11, 1),
+        }]));
+        let mut new_index = Index::new("/some/root");
+        new_index.apply_ok(&Observation::new(vec![
+            Op::Upsert {
+                path: PathBuf::from("new-a.txt"),
+                kind: EntryKind::File,
+                attrs: attrs(20, 2),
+            },
+            Op::Upsert {
+                path: PathBuf::from("new-b.txt"),
+                kind: EntryKind::File,
+                attrs: attrs(30, 3),
+            },
+        ]));
+        save(&old_index, &path).expect("save old image");
+
+        let start: Arc<Barrier> = Arc::new(Barrier::new(2));
+        let (done_tx, done_rx) = std::sync::mpsc::sync_channel(1);
+        std::thread::scope(|scope| {
+            let writer_start: Arc<Barrier> = Arc::clone(&start);
+            let writer_path: PathBuf = path.clone();
+            scope.spawn(move || {
+                writer_start.wait();
+                done_tx.send(save(&new_index, &writer_path)).expect("report snapshot write");
+            });
+
+            let reader_start: Arc<Barrier> = Arc::clone(&start);
+            let reader_path: PathBuf = path.clone();
+            scope.spawn(move || {
+                reader_start.wait();
+                let deadline: std::time::Instant =
+                    std::time::Instant::now() + std::time::Duration::from_secs(10);
+                loop {
+                    assert!(
+                        std::time::Instant::now() < deadline,
+                        "snapshot replacement did not finish before the deadline"
+                    );
+                    let image: Index =
+                        load(&reader_path).expect("load during replacement").expect("image");
+                    match image.total().files {
+                        1 => {
+                            assert_eq!(image.total().bytes, 11);
+                            assert!(image.lookup(Path::new("old.txt")).is_some());
+                            assert!(image.lookup(Path::new("new-a.txt")).is_none());
+                        }
+                        2 => {
+                            assert_eq!(image.total().bytes, 50);
+                            assert!(image.lookup(Path::new("old.txt")).is_none());
+                            assert!(image.lookup(Path::new("new-a.txt")).is_some());
+                            assert!(image.lookup(Path::new("new-b.txt")).is_some());
+                        }
+                        partial => panic!("reader observed partial image with {partial} files"),
+                    }
+
+                    match done_rx.try_recv() {
+                        Ok(result) => {
+                            result.expect("replace snapshot");
+                            break;
+                        }
+                        Err(std::sync::mpsc::TryRecvError::Empty) => {}
+                        Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                            panic!("snapshot writer disconnected")
+                        }
+                    }
+                }
+            });
+        });
+
+        let final_image: Index = load(&path).expect("load final").expect("final image");
+        assert_eq!(final_image.total().files, 2);
+        assert_eq!(final_image.total().bytes, 50);
     }
 
     #[cfg(unix)]
@@ -971,7 +1082,7 @@ mod tests {
         let mut root = PathBuf::from("/some");
         root.push(OsString::from_vec(vec![b'r', 0x82]));
         let mut index = Index::new(&root);
-        index.apply_baseline(&Observation::new(vec![
+        index.apply_baseline_ok(&Observation::new(vec![
             Op::Upsert { path: first.clone(), kind: EntryKind::File, attrs: attrs(10, 1) },
             Op::Upsert { path: second.clone(), kind: EntryKind::File, attrs: attrs(20, 2) },
         ]));

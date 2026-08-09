@@ -33,7 +33,7 @@ use std::collections::BTreeMap;
 use std::collections::VecDeque;
 use std::ffi::{OsStr, OsString};
 use std::path::{Component, Path, PathBuf};
-use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::sync::{Arc, RwLock};
 
 use crate::classify::derive_ext;
 use crate::types::{
@@ -68,7 +68,9 @@ impl EntryId {
 /// Per-extension tally within a roll-up.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub struct ExtTally {
+    /// Files with this extension.
     pub files: u64,
+    /// Apparent bytes across those files.
     pub bytes: u64,
 }
 
@@ -171,10 +173,11 @@ enum Slot {
 }
 
 /// Result of [`Index::since`].
-#[derive(Debug)]
-pub struct Since<'a> {
+#[derive(Clone, PartialEq, Eq, Debug, Default)]
+#[must_use]
+pub struct Since {
     /// Deltas applied strictly after the requested clock, oldest first.
-    pub deltas: Vec<&'a AppliedDelta>,
+    pub deltas: Vec<AppliedDelta>,
     /// True when the requested clock is older than the retained journal, meaning the
     /// caller has missed changes and must re-read state rather than trust `deltas`.
     pub truncated: bool,
@@ -201,9 +204,28 @@ pub struct ApplyStats {
 /// Result of arbitrating and applying one producer observation.
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 pub struct ApplyOutcome {
+    /// Per-operation arbitration and mutation counts.
     pub stats: ApplyStats,
     /// Present only when at least one effective mutation was committed.
     pub applied: Option<AppliedDelta>,
+}
+
+/// One direct child captured from a shared index at a single read boundary.
+///
+/// Every field is owned so retaining this value never retains an index lock. The
+/// optional roll-up is present for directories; non-directories carry only `attrs`.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct ChildSnapshot {
+    /// Generation-safe arena identity at the capture boundary.
+    pub id: EntryId,
+    /// Entry name relative to its direct parent.
+    pub name: OsString,
+    /// Filesystem entry kind.
+    pub kind: EntryKind,
+    /// Last observed metadata.
+    pub attrs: Attrs,
+    /// Pre-computed subtree totals for a directory.
+    pub rollup: Option<RollUp>,
 }
 
 impl std::ops::Deref for ApplyOutcome {
@@ -215,7 +237,7 @@ impl std::ops::Deref for ApplyOutcome {
 }
 
 /// The in-memory hierarchical index.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Index {
     root_path: PathBuf,
     scope: ScanScope,
@@ -246,22 +268,180 @@ pub struct IndexHandle {
 }
 
 impl IndexHandle {
+    /// Wrap an owned index in the shared single-writer owner.
     pub fn new(index: Index) -> Self {
         Self { inner: Arc::new(RwLock::new(index)) }
     }
 
-    /// Acquire a read view of the current index state.
-    pub fn read(&self) -> crate::Result<RwLockReadGuard<'_, Index>> {
+    fn read_index(&self) -> crate::Result<std::sync::RwLockReadGuard<'_, Index>> {
         self.inner.read().map_err(|_| crate::Error::IndexLockPoisoned)
     }
 
-    pub(crate) fn write(&self) -> crate::Result<RwLockWriteGuard<'_, Index>> {
+    fn write_index(&self) -> crate::Result<std::sync::RwLockWriteGuard<'_, Index>> {
         self.inner.write().map_err(|_| crate::Error::IndexLockPoisoned)
     }
 
     /// Arbitrate and apply one observation under the single-writer lock.
     pub fn apply(&self, observation: &Observation) -> crate::Result<ApplyOutcome> {
-        Ok(self.write()?.apply(observation))
+        self.write_index()?.apply(observation)
+    }
+
+    /// Absolute filesystem root, copied without retaining the read lock.
+    pub fn root_path(&self) -> crate::Result<PathBuf> {
+        Ok(self.read_index()?.root_path().to_path_buf())
+    }
+
+    /// Semantic scan scope represented by the shared index.
+    pub fn scope(&self) -> crate::Result<ScanScope> {
+        Ok(self.read_index()?.scope())
+    }
+
+    /// Trust state for the whole index.
+    pub fn freshness(&self) -> crate::Result<Freshness> {
+        Ok(self.read_index()?.freshness())
+    }
+
+    /// Trust state for one subtree.
+    pub fn freshness_at(&self, path: &Path) -> crate::Result<Freshness> {
+        Ok(self.read_index()?.freshness_at(path))
+    }
+
+    /// Clock of the most recently committed delta.
+    pub fn clock(&self) -> crate::Result<Clock> {
+        Ok(self.read_index()?.clock())
+    }
+
+    /// Number of live entries, including the root.
+    pub fn len(&self) -> crate::Result<u64> {
+        Ok(self.read_index()?.len())
+    }
+
+    /// Whether the index contains only its root.
+    pub fn is_empty(&self) -> crate::Result<bool> {
+        Ok(self.read_index()?.is_empty())
+    }
+
+    /// Owned roll-up totals for the whole tree.
+    pub fn total(&self) -> crate::Result<RollUp> {
+        Ok(self.read_index()?.total().clone())
+    }
+
+    /// Owned roll-up state for a relative directory path.
+    pub fn rollup(&self, path: &Path) -> crate::Result<Option<RollUp>> {
+        Ok(self.read_index()?.rollup(path).cloned())
+    }
+
+    /// Owned metadata for a relative path.
+    pub fn attrs(&self, path: &Path) -> crate::Result<Option<Attrs>> {
+        Ok(self.read_index()?.attrs(path).copied())
+    }
+
+    /// Entry kind for a relative path.
+    pub fn kind(&self, path: &Path) -> crate::Result<Option<EntryKind>> {
+        Ok(self.read_index()?.kind(path))
+    }
+
+    /// Current visible state for a relative path.
+    pub fn path_state(&self, path: &Path) -> crate::Result<PathState> {
+        Ok(self.read_index()?.path_state(path))
+    }
+
+    /// Conditional baseline for a producer operating on a shared index.
+    pub fn expectation(&self, path: &Path) -> crate::Result<PathExpectation> {
+        Ok(self.read_index()?.expectation(path))
+    }
+
+    /// Owned deltas committed after `clock`.
+    pub fn since(&self, clock: Clock) -> crate::Result<Since> {
+        Ok(self.read_index()?.since(clock))
+    }
+
+    /// Direct children captured coherently at one read boundary.
+    pub fn children(&self, path: &Path) -> crate::Result<Option<Vec<ChildSnapshot>>> {
+        let index = self.read_index()?;
+        let Some(children) = index.children(path) else {
+            return Ok(None);
+        };
+        Ok(Some(
+            children
+                .map(|(name, id)| {
+                    let entry = index.entry(id);
+                    ChildSnapshot {
+                        id,
+                        name: name.to_os_string(),
+                        kind: entry.kind,
+                        attrs: entry.attrs,
+                        rollup: entry.kind.is_dir().then(|| entry.rollup.clone()),
+                    }
+                })
+                .collect(),
+        ))
+    }
+
+    /// Capture one coherent owned index image, releasing the lock before callers do
+    /// serialization, filesystem I/O, conversion, or other potentially blocking work.
+    pub fn snapshot(&self) -> crate::Result<Index> {
+        Ok(self.read_index()?.clone())
+    }
+
+    pub(crate) fn child_states(
+        &self,
+        path: &Path,
+    ) -> crate::Result<BTreeMap<OsString, PathExpectation>> {
+        let index = self.read_index()?;
+        Ok(collect_child_expectations(&index, path))
+    }
+
+    pub(crate) fn take_pending_invalidations(
+        &self,
+    ) -> crate::Result<Vec<(PathBuf, InvalidateReason)>> {
+        Ok(self.write_index()?.take_pending_invalidations())
+    }
+
+    pub(crate) fn restore_pending_invalidations(
+        &self,
+        invalidations: Vec<(PathBuf, InvalidateReason)>,
+    ) -> crate::Result<()> {
+        self.write_index()?.restore_pending_invalidations(invalidations);
+        Ok(())
+    }
+
+    pub(crate) fn begin_reconcile(&self, path: &Path) -> crate::Result<u64> {
+        Ok(self.write_index()?.begin_reconcile(path))
+    }
+
+    pub(crate) fn finish_reconcile(
+        &self,
+        path: &Path,
+        started_at: u64,
+        complete: bool,
+    ) -> crate::Result<()> {
+        self.write_index()?.finish_reconcile(path, started_at, complete);
+        Ok(())
+    }
+
+    #[cfg(feature = "watch")]
+    pub(crate) fn apply_if_clock(
+        &self,
+        clock: Clock,
+        observation: &Observation,
+    ) -> crate::Result<Option<ApplyOutcome>> {
+        let mut index = self.write_index()?;
+        if index.clock() != clock {
+            return Ok(None);
+        }
+        index.apply(observation).map(Some)
+    }
+
+    #[cfg(feature = "watch")]
+    pub(crate) fn watch_boundary(&self) -> crate::Result<(PathBuf, ScanScope, Clock)> {
+        let index = self.read_index()?;
+        Ok((index.root_path().to_path_buf(), index.scope(), index.clock()))
+    }
+
+    #[cfg(feature = "watch")]
+    pub(crate) fn invalidate_root(&self, reason: InvalidateReason) -> crate::Result<ApplyOutcome> {
+        self.apply(&Observation::new(vec![Op::InvalidateSubtree { path: PathBuf::new(), reason }]))
     }
 }
 
@@ -362,17 +542,36 @@ impl Index {
     ///
     /// Conditional operations are accepted only while their baseline still matches.
     /// No-ops and stale operations do not advance the clock or enter the journal.
-    pub fn apply(&mut self, observation: &Observation) -> ApplyOutcome {
+    pub fn apply(&mut self, observation: &Observation) -> crate::Result<ApplyOutcome> {
+        validate_observation(observation)?;
+        if observation.is_empty() {
+            return Ok(ApplyOutcome::default());
+        }
+        let Some(next_clock) = self.clock.checked_next() else {
+            // Clock exhaustion is relevant only if arbitration would commit a change.
+            // Probe the otherwise infallible mutation phase on a clone so an all-no-op
+            // or all-stale observation still reports its stats at the terminal clock,
+            // while a real change fails before touching shared state. This path is
+            // reachable only after 2^64 committed batches (or by an injected test).
+            let mut probe = self.clone();
+            let outcome = probe.apply_validated(observation, self.clock);
+            return if outcome.applied.is_some() {
+                Err(crate::Error::ClockExhausted)
+            } else {
+                Ok(outcome)
+            };
+        };
+
+        Ok(self.apply_validated(observation, next_clock))
+    }
+
+    /// Apply an already validated observation with a clock known to be available.
+    fn apply_validated(&mut self, observation: &Observation, next_clock: Clock) -> ApplyOutcome {
         let mut stats = ApplyStats::default();
         let mut effective = Vec::new();
         let mut accepted = Vec::with_capacity(observation.len());
         for observed in &observation.ops {
             let op = &observed.op;
-            if normalize(op.path()).is_none() {
-                stats.unchanged += 1;
-                accepted.push(false);
-                continue;
-            }
             if let Expectation::State(expected) = observed.expectation {
                 if !self.expectation_matches(op, expected) {
                     stats.stale += 1;
@@ -409,7 +608,7 @@ impl Index {
             return ApplyOutcome { stats, applied: None };
         }
 
-        self.clock = self.clock.next();
+        self.clock = next_clock;
         let applied = AppliedDelta { clock: self.clock, ops: effective };
         if applied.len() > self.journal_op_capacity {
             self.journal.clear();
@@ -430,10 +629,23 @@ impl Index {
     }
 
     /// Apply trusted bootstrap data without exposing it as live change history.
-    pub(crate) fn apply_baseline(&mut self, observation: &Observation) -> ApplyStats {
-        let outcome = self.apply(observation);
+    pub(crate) fn apply_baseline(
+        &mut self,
+        observation: &Observation,
+    ) -> crate::Result<ApplyStats> {
+        let outcome = self.apply(observation)?;
         self.establish_baseline();
-        outcome.stats
+        Ok(outcome.stats)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn apply_ok(&mut self, observation: &Observation) -> ApplyOutcome {
+        self.apply(observation).expect("test observation must be valid")
+    }
+
+    #[cfg(test)]
+    pub(crate) fn apply_baseline_ok(&mut self, observation: &Observation) -> ApplyStats {
+        self.apply_baseline(observation).expect("test baseline must be valid")
     }
 
     /// Mark the current tree as the process baseline.
@@ -499,9 +711,9 @@ impl Index {
     }
 
     /// Deltas applied since `clock`, oldest first.
-    pub fn since(&self, clock: Clock) -> Since<'_> {
+    pub fn since(&self, clock: Clock) -> Since {
         Since {
-            deltas: self.journal.iter().filter(|d| d.clock > clock).collect(),
+            deltas: self.journal.iter().filter(|d| d.clock > clock).cloned().collect(),
             truncated: clock < self.journal_floor,
         }
     }
@@ -549,27 +761,29 @@ impl Index {
         Some(self.entry(self.lookup(path)?).kind)
     }
 
-    /// Direct children of a directory, as `(name, id)` pairs in name order.
-    pub fn children(&self, path: &Path) -> Option<Vec<(&OsStr, EntryId)>> {
+    /// Borrow direct children of a directory as `(name, id)` pairs in name order.
+    ///
+    /// The iterator borrows this owned index and allocates nothing.
+    pub fn children(
+        &self,
+        path: &Path,
+    ) -> Option<impl DoubleEndedIterator<Item = (&OsStr, EntryId)> + ExactSizeIterator + '_> {
         let id = self.lookup(path)?;
         let entry = self.entry(id);
         entry
             .kind
             .is_dir()
-            .then(|| entry.children.iter().map(|(n, id)| (n.as_os_str(), *id)).collect())
+            .then(|| entry.children.iter().map(|(name, child)| (name.as_os_str(), *child)))
     }
 
-    /// Direct children of an entry id, as `(name, id)` pairs in name order.
+    /// Borrow direct children of an entry id as `(name, id)` pairs in name order.
     ///
-    /// Returns `None` for a stale handle. A live non-directory returns an empty vector.
-    pub fn children_of(&self, id: EntryId) -> Option<Vec<(&OsStr, EntryId)>> {
-        Some(
-            self.try_entry(id)?
-                .children
-                .iter()
-                .map(|(name, child)| (name.as_os_str(), *child))
-                .collect(),
-        )
+    /// Returns `None` for a stale handle. A live non-directory returns an empty iterator.
+    pub fn children_of(
+        &self,
+        id: EntryId,
+    ) -> Option<impl DoubleEndedIterator<Item = (&OsStr, EntryId)> + ExactSizeIterator + '_> {
+        Some(self.try_entry(id)?.children.iter().map(|(name, child)| (name.as_os_str(), *child)))
     }
 
     /// Reconstruct an entry's path relative to the root by walking parent pointers.
@@ -965,6 +1179,17 @@ impl Index {
     }
 }
 
+fn collect_child_expectations(index: &Index, path: &Path) -> BTreeMap<OsString, PathExpectation> {
+    index.children(path).map_or_else(BTreeMap::new, |children| {
+        children
+            .map(|(name, _)| {
+                let child_path = path.join(name);
+                (name.to_os_string(), index.expectation(&child_path))
+            })
+            .collect()
+    })
+}
+
 /// Split a relative path into its normal components, rejecting anything that escapes.
 ///
 /// Returns `None` for paths containing `..`, a root, or a prefix — an index keyed by
@@ -980,6 +1205,16 @@ fn normalize(path: &Path) -> Option<Vec<OsString>> {
         }
     }
     Some(parts)
+}
+
+fn validate_observation(observation: &Observation) -> crate::Result<()> {
+    for observed in &observation.ops {
+        let path = observed.op.path();
+        if normalize(path).is_none() {
+            return Err(crate::Error::PathEscapesRoot(path.to_path_buf()));
+        }
+    }
+    Ok(())
 }
 
 fn same_target(
@@ -998,6 +1233,7 @@ fn same_target(
 mod tests {
     use super::*;
     use crate::types::ObservationOp;
+    use std::sync::{Arc, Barrier};
 
     fn file_attrs(size: u64, mtime_ns: i64) -> Attrs {
         Attrs {
@@ -1015,9 +1251,260 @@ mod tests {
     }
 
     #[test]
+    fn shared_queries_return_owned_values_and_release_the_lock() {
+        let handle = IndexHandle::new(index_with_sample_tree());
+        let retained_total = handle.total().expect("total");
+        let retained_history = handle.since(Clock::ZERO).expect("history");
+        let retained_children = handle.children(Path::new("src")).expect("children");
+        let retained_snapshot = handle.snapshot().expect("snapshot");
+
+        let writer = handle.clone();
+        let (done_tx, done_rx) = std::sync::mpsc::sync_channel(1);
+        let thread = std::thread::spawn(move || {
+            let result = writer.apply(&Observation::new(vec![upsert(
+                "concurrent.txt",
+                EntryKind::File,
+                file_attrs(7, 30),
+            )]));
+            done_tx.send(result).expect("report writer result");
+        });
+
+        let outcome = done_rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("owned query results must not retain the read lock")
+            .expect("writer apply");
+        thread.join().expect("writer thread");
+
+        assert_eq!(outcome.inserted, 1);
+        assert_eq!(retained_total.files, 3);
+        assert!(!retained_history.deltas.is_empty());
+        assert_eq!(retained_children.expect("src directory").len(), 2);
+        assert!(retained_snapshot.lookup(Path::new("concurrent.txt")).is_none());
+        assert!(handle.kind(Path::new("concurrent.txt")).expect("query").is_some());
+    }
+
+    #[test]
+    fn index_and_shared_handle_are_send_and_sync() {
+        fn assert_send_sync<T: Send + Sync>() {}
+
+        assert_send_sync::<Index>();
+        assert_send_sync::<IndexHandle>();
+    }
+
+    #[test]
+    fn simultaneous_writers_commit_unique_contiguous_clocks_in_journal_order() {
+        let writer_count: usize = 8;
+        let handle: IndexHandle = IndexHandle::new(Index::new("/root"));
+        let barrier: Arc<Barrier> = Arc::new(Barrier::new(writer_count));
+        let (result_tx, result_rx) = std::sync::mpsc::sync_channel(writer_count);
+
+        std::thread::scope(|scope| {
+            for worker_id in 0..writer_count {
+                let worker: IndexHandle = handle.clone();
+                let start: Arc<Barrier> = Arc::clone(&barrier);
+                let results = result_tx.clone();
+                scope.spawn(move || {
+                    let ordinal: u64 = u64::try_from(worker_id + 1).expect("small worker count");
+                    let path: String = format!("writer-{ordinal}.txt");
+                    start.wait();
+                    let outcome: crate::Result<ApplyOutcome> =
+                        worker.apply(&Observation::new(vec![upsert(
+                            &path,
+                            EntryKind::File,
+                            file_attrs(ordinal, i64::try_from(ordinal).expect("small ordinal")),
+                        )]));
+                    results.send((path, outcome)).expect("report writer result");
+                });
+            }
+        });
+        drop(result_tx);
+
+        let mut committed_clocks: Vec<u64> = Vec::with_capacity(writer_count);
+        for (path, outcome) in result_rx {
+            let applied: AppliedDelta =
+                outcome.expect("writer apply").applied.expect("unique upsert must commit");
+            committed_clocks.push(applied.clock.0);
+            assert!(handle.kind(Path::new(&path)).expect("query committed path").is_some());
+        }
+        committed_clocks.sort_unstable();
+
+        let last_clock: u64 = u64::try_from(writer_count).expect("small writer count");
+        let expected_clocks: Vec<u64> = (1..=last_clock).collect();
+        assert_eq!(committed_clocks, expected_clocks);
+        assert_eq!(handle.clock().expect("clock"), Clock(last_clock));
+
+        let journal_clocks: Vec<u64> = handle
+            .since(Clock::ZERO)
+            .expect("journal")
+            .deltas
+            .iter()
+            .map(|delta| delta.clock.0)
+            .collect();
+        assert_eq!(journal_clocks, expected_clocks);
+    }
+
+    #[test]
+    fn readers_observe_only_complete_states_around_a_large_batch() {
+        let file_count: u64 = 2_048;
+        let expected_bytes: u64 = file_count * (file_count + 1) / 2;
+        let operations: Vec<Op> = (1..=file_count)
+            .map(|ordinal| {
+                upsert(
+                    &format!("batch/file-{ordinal}.bin"),
+                    EntryKind::File,
+                    file_attrs(ordinal, i64::try_from(ordinal).expect("small ordinal")),
+                )
+            })
+            .collect();
+        let observation: Observation = Observation::new(operations);
+        let handle: IndexHandle = IndexHandle::new(Index::new("/root"));
+        let before: Index = handle.snapshot().expect("before snapshot");
+        assert_eq!(before.total().files, 0);
+
+        let barrier: Arc<Barrier> = Arc::new(Barrier::new(2));
+        let (done_tx, done_rx) = std::sync::mpsc::sync_channel(1);
+        std::thread::scope(|scope| {
+            let writer: IndexHandle = handle.clone();
+            let writer_start: Arc<Barrier> = Arc::clone(&barrier);
+            scope.spawn(move || {
+                writer_start.wait();
+                let result: crate::Result<ApplyOutcome> = writer.apply(&observation);
+                done_tx.send(result).expect("report batch result");
+            });
+
+            let reader: IndexHandle = handle.clone();
+            let reader_start: Arc<Barrier> = Arc::clone(&barrier);
+            scope.spawn(move || {
+                reader_start.wait();
+                let deadline: std::time::Instant =
+                    std::time::Instant::now() + std::time::Duration::from_secs(10);
+                loop {
+                    assert!(
+                        std::time::Instant::now() < deadline,
+                        "reader did not observe batch completion before the deadline"
+                    );
+                    let image: Index = reader.snapshot().expect("coherent reader snapshot");
+                    let total: &RollUp = image.total();
+                    match total.files {
+                        0 => {
+                            assert_eq!(total.bytes, 0);
+                            assert_eq!(image.len(), 1);
+                        }
+                        count if count == file_count => {
+                            assert_eq!(total.bytes, expected_bytes);
+                            assert_eq!(total.dirs, 1);
+                            assert_eq!(image.len(), file_count + 2);
+                        }
+                        partial => panic!("reader observed partial batch with {partial} files"),
+                    }
+
+                    match done_rx.try_recv() {
+                        Ok(result) => {
+                            assert_eq!(result.expect("batch apply").inserted, file_count + 1);
+                            break;
+                        }
+                        Err(std::sync::mpsc::TryRecvError::Empty) => {}
+                        Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                            panic!("batch writer disconnected")
+                        }
+                    }
+                }
+            });
+        });
+
+        let after: Index = handle.snapshot().expect("after snapshot");
+        assert_eq!(after.total().files, file_count);
+        assert_eq!(after.total().bytes, expected_bytes);
+        assert_eq!(after.len(), file_count + 2);
+    }
+
+    #[test]
+    fn poisoned_shared_lock_returns_typed_errors() {
+        let handle: IndexHandle = IndexHandle::new(Index::new("/root"));
+        let poisoner: IndexHandle = handle.clone();
+        let panic_result: std::thread::Result<()> = std::thread::spawn(move || {
+            let _poison_guard = poisoner.write_index().expect("initial write lock");
+            panic!("intentional lock poison");
+        })
+        .join();
+        assert!(panic_result.is_err());
+
+        assert!(matches!(handle.total(), Err(crate::Error::IndexLockPoisoned)));
+        assert!(matches!(
+            handle.apply(&Observation::new(vec![upsert(
+                "never-applied.txt",
+                EntryKind::File,
+                file_attrs(1, 1),
+            )])),
+            Err(crate::Error::IndexLockPoisoned)
+        ));
+    }
+
+    #[test]
+    fn clock_exhaustion_rejects_before_any_mutation() {
+        let mut index = index_with_sample_tree();
+        index.clock = Clock(u64::MAX);
+        let before_total = index.total().clone();
+        let before_len = index.len();
+
+        let error = index
+            .apply(&Observation::new(vec![upsert(
+                "too-late.txt",
+                EntryKind::File,
+                file_attrs(1, 1),
+            )]))
+            .expect_err("clock exhaustion must be typed");
+
+        assert!(matches!(error, crate::Error::ClockExhausted));
+        assert_eq!(index.clock(), Clock(u64::MAX));
+        assert_eq!(index.len(), before_len);
+        assert_eq!(index.total(), &before_total);
+        assert!(index.lookup(Path::new("too-late.txt")).is_none());
+    }
+
+    #[test]
+    fn terminal_clock_still_accepts_no_op_and_stale_observations() {
+        let mut index = index_with_sample_tree();
+        let current = *index.attrs(Path::new("src/main.rs")).expect("sample attributes");
+        let stale_baseline = index.expectation(Path::new("src/main.rs"));
+        index.apply_ok(&Observation::new(vec![upsert(
+            "src/main.rs",
+            EntryKind::File,
+            file_attrs(99, 99),
+        )]));
+        index.clock = Clock(u64::MAX);
+        let before_total = index.total().clone();
+        let before_len = index.len();
+        let before_journal = index.journal.clone();
+
+        let no_op = index
+            .apply(&Observation::new(vec![upsert(
+                "src/main.rs",
+                EntryKind::File,
+                file_attrs(99, 99),
+            )]))
+            .expect("a no-op needs no new clock");
+        let stale = index
+            .apply(&Observation::from_ops(vec![ObservationOp::if_state(
+                upsert("src/main.rs", EntryKind::File, current),
+                stale_baseline,
+            )]))
+            .expect("a rejected stale observation needs no new clock");
+
+        assert_eq!(no_op.unchanged, 1);
+        assert!(no_op.applied.is_none());
+        assert_eq!(stale.stale, 1);
+        assert!(stale.applied.is_none());
+        assert_eq!(index.clock(), Clock(u64::MAX));
+        assert_eq!(index.len(), before_len);
+        assert_eq!(index.total(), &before_total);
+        assert_eq!(index.journal, before_journal);
+    }
+
+    #[test]
     fn delayed_conditional_observation_cannot_overwrite_newer_state() {
         let mut index = Index::new("/root");
-        index.apply(&Observation::new(vec![upsert(
+        index.apply_ok(&Observation::new(vec![upsert(
             "file.txt",
             EntryKind::File,
             file_attrs(10, 1),
@@ -1029,12 +1516,12 @@ mod tests {
             baseline,
         )]);
 
-        index.apply(&Observation::new(vec![upsert(
+        index.apply_ok(&Observation::new(vec![upsert(
             "file.txt",
             EntryKind::File,
             file_attrs(30, 3),
         )]));
-        let outcome = index.apply(&delayed);
+        let outcome = index.apply_ok(&delayed);
 
         assert_eq!(outcome.stats.stale, 1);
         assert!(outcome.applied.is_none());
@@ -1044,15 +1531,19 @@ mod tests {
     #[test]
     fn delayed_absent_child_cannot_replace_a_newer_parent_file() {
         let mut index = Index::new("/root");
-        index.apply(&Observation::new(vec![upsert("parent", EntryKind::Dir, file_attrs(0, 1))]));
+        index.apply_ok(&Observation::new(vec![upsert("parent", EntryKind::Dir, file_attrs(0, 1))]));
         let child_baseline = index.expectation(Path::new("parent/child.txt"));
         let delayed = Observation::from_ops(vec![ObservationOp::if_state(
             upsert("parent/child.txt", EntryKind::File, file_attrs(10, 2)),
             child_baseline,
         )]);
 
-        index.apply(&Observation::new(vec![upsert("parent", EntryKind::File, file_attrs(20, 3))]));
-        let outcome = index.apply(&delayed);
+        index.apply_ok(&Observation::new(vec![upsert(
+            "parent",
+            EntryKind::File,
+            file_attrs(20, 3),
+        )]));
+        let outcome = index.apply_ok(&delayed);
 
         assert_eq!(outcome.stats.stale, 1);
         assert!(outcome.applied.is_none());
@@ -1063,7 +1554,7 @@ mod tests {
     #[test]
     fn conditional_observation_rejects_present_state_aba() {
         let mut index = Index::new("/root");
-        index.apply(&Observation::new(vec![upsert(
+        index.apply_ok(&Observation::new(vec![upsert(
             "file.txt",
             EntryKind::File,
             file_attrs(10, 1),
@@ -1074,17 +1565,17 @@ mod tests {
             baseline,
         )]);
 
-        index.apply(&Observation::new(vec![upsert(
+        index.apply_ok(&Observation::new(vec![upsert(
             "file.txt",
             EntryKind::File,
             file_attrs(30, 3),
         )]));
-        index.apply(&Observation::new(vec![upsert(
+        index.apply_ok(&Observation::new(vec![upsert(
             "file.txt",
             EntryKind::File,
             file_attrs(10, 1),
         )]));
-        let outcome = index.apply(&delayed);
+        let outcome = index.apply_ok(&delayed);
 
         assert_eq!(outcome.stats.stale, 1);
         assert!(outcome.applied.is_none());
@@ -1100,13 +1591,13 @@ mod tests {
             baseline,
         )]);
 
-        index.apply(&Observation::new(vec![upsert(
+        index.apply_ok(&Observation::new(vec![upsert(
             "file.txt",
             EntryKind::File,
             file_attrs(30, 3),
         )]));
-        index.apply(&Observation::new(vec![Op::Remove { path: PathBuf::from("file.txt") }]));
-        let outcome = index.apply(&delayed);
+        index.apply_ok(&Observation::new(vec![Op::Remove { path: PathBuf::from("file.txt") }]));
+        let outcome = index.apply_ok(&delayed);
 
         assert_eq!(outcome.stats.stale, 1);
         assert!(outcome.applied.is_none());
@@ -1116,19 +1607,19 @@ mod tests {
     #[test]
     fn unrelated_mutation_does_not_stale_an_absent_path() {
         let mut index = Index::new("/root");
-        index.apply(&Observation::new(vec![upsert("dir", EntryKind::Dir, file_attrs(0, 1))]));
+        index.apply_ok(&Observation::new(vec![upsert("dir", EntryKind::Dir, file_attrs(0, 1))]));
         let baseline = index.expectation(Path::new("dir/new.txt"));
         let delayed = Observation::from_ops(vec![ObservationOp::if_state(
             upsert("dir/new.txt", EntryKind::File, file_attrs(20, 2)),
             baseline,
         )]);
 
-        index.apply(&Observation::new(vec![upsert(
+        index.apply_ok(&Observation::new(vec![upsert(
             "other.txt",
             EntryKind::File,
             file_attrs(30, 3),
         )]));
-        let outcome = index.apply(&delayed);
+        let outcome = index.apply_ok(&delayed);
 
         assert_eq!(outcome.stats.stale, 0);
         assert_eq!(outcome.stats.inserted, 1);
@@ -1138,15 +1629,15 @@ mod tests {
     #[test]
     fn directory_metadata_change_does_not_stale_an_absent_child() {
         let mut index = Index::new("/root");
-        index.apply(&Observation::new(vec![upsert("dir", EntryKind::Dir, file_attrs(0, 1))]));
+        index.apply_ok(&Observation::new(vec![upsert("dir", EntryKind::Dir, file_attrs(0, 1))]));
         let baseline = index.expectation(Path::new("dir/new.txt"));
         let delayed = Observation::from_ops(vec![ObservationOp::if_state(
             upsert("dir/new.txt", EntryKind::File, file_attrs(20, 2)),
             baseline,
         )]);
 
-        index.apply(&Observation::new(vec![upsert("dir", EntryKind::Dir, file_attrs(0, 3))]));
-        let outcome = index.apply(&delayed);
+        index.apply_ok(&Observation::new(vec![upsert("dir", EntryKind::Dir, file_attrs(0, 3))]));
+        let outcome = index.apply_ok(&delayed);
 
         assert_eq!(outcome.stats.stale, 0);
         assert_eq!(outcome.stats.inserted, 1);
@@ -1155,15 +1646,23 @@ mod tests {
     #[test]
     fn file_parent_metadata_change_stales_an_absent_child() {
         let mut index = Index::new("/root");
-        index.apply(&Observation::new(vec![upsert("parent", EntryKind::File, file_attrs(10, 1))]));
+        index.apply_ok(&Observation::new(vec![upsert(
+            "parent",
+            EntryKind::File,
+            file_attrs(10, 1),
+        )]));
         let baseline = index.expectation(Path::new("parent/child.txt"));
         let delayed = Observation::from_ops(vec![ObservationOp::if_state(
             upsert("parent/child.txt", EntryKind::File, file_attrs(20, 2)),
             baseline,
         )]);
 
-        index.apply(&Observation::new(vec![upsert("parent", EntryKind::File, file_attrs(30, 3))]));
-        let outcome = index.apply(&delayed);
+        index.apply_ok(&Observation::new(vec![upsert(
+            "parent",
+            EntryKind::File,
+            file_attrs(30, 3),
+        )]));
+        let outcome = index.apply_ok(&delayed);
 
         assert_eq!(outcome.stats.stale, 1);
         assert_eq!(index.kind(Path::new("parent")), Some(EntryKind::File));
@@ -1173,19 +1672,19 @@ mod tests {
     #[test]
     fn delayed_directory_remove_cannot_delete_a_newer_child() {
         let mut index = Index::new("/root");
-        index.apply(&Observation::new(vec![upsert("dir", EntryKind::Dir, file_attrs(0, 1))]));
+        index.apply_ok(&Observation::new(vec![upsert("dir", EntryKind::Dir, file_attrs(0, 1))]));
         let baseline = index.expectation(Path::new("dir"));
         let delayed = Observation::from_ops(vec![ObservationOp::if_state(
             Op::Remove { path: PathBuf::from("dir") },
             baseline,
         )]);
 
-        index.apply(&Observation::new(vec![upsert(
+        index.apply_ok(&Observation::new(vec![upsert(
             "dir/new.txt",
             EntryKind::File,
             file_attrs(20, 2),
         )]));
-        let outcome = index.apply(&delayed);
+        let outcome = index.apply_ok(&delayed);
 
         assert_eq!(outcome.stats.stale, 1);
         assert!(index.lookup(Path::new("dir/new.txt")).is_some());
@@ -1197,7 +1696,7 @@ mod tests {
         let first = index.expectation(Path::new("first.txt"));
         let second = index.expectation(Path::new("second.txt"));
 
-        let outcome = index.apply(&Observation::from_ops(vec![
+        let outcome = index.apply_ok(&Observation::from_ops(vec![
             ObservationOp::if_state(upsert("first.txt", EntryKind::File, file_attrs(10, 1)), first),
             ObservationOp::if_state(
                 upsert("second.txt", EntryKind::File, file_attrs(20, 2)),
@@ -1209,9 +1708,70 @@ mod tests {
         assert_eq!(outcome.stats.stale, 0);
     }
 
+    #[test]
+    fn malformed_batch_is_rejected_before_any_index_mutation() {
+        let invalid_paths = [
+            PathBuf::from("../escape"),
+            PathBuf::from(format!("{}absolute", std::path::MAIN_SEPARATOR)),
+        ];
+
+        for invalid_path in invalid_paths {
+            for invalid_first in [false, true] {
+                let mut index = index_with_sample_tree();
+                let before_clock = index.clock;
+                let before_live = index.live;
+                let before_total = index.total().clone();
+                let before_journal = index.journal.clone();
+                let before_journal_ops = index.journal_ops;
+                let before_journal_floor = index.journal_floor;
+                let before_invalidations = index.pending_invalidations.clone();
+                let before_freshness_epoch = index.freshness_epoch;
+                let before_freshness = index.freshness();
+                let valid = upsert("new.txt", EntryKind::File, file_attrs(99, 99));
+                let invalid = Op::InvalidateSubtree {
+                    path: invalid_path.clone(),
+                    reason: InvalidateReason::Requested,
+                };
+                let ops = if invalid_first { vec![invalid, valid] } else { vec![valid, invalid] };
+
+                let error = index.apply(&Observation::new(ops)).expect_err("malformed batch");
+
+                assert!(
+                    matches!(error, crate::Error::PathEscapesRoot(path) if path == invalid_path)
+                );
+                assert_eq!(index.clock, before_clock);
+                assert_eq!(index.live, before_live);
+                assert_eq!(index.total(), &before_total);
+                assert_eq!(index.journal, before_journal);
+                assert_eq!(index.journal_ops, before_journal_ops);
+                assert_eq!(index.journal_floor, before_journal_floor);
+                assert_eq!(index.pending_invalidations, before_invalidations);
+                assert_eq!(index.freshness_epoch, before_freshness_epoch);
+                assert_eq!(index.freshness(), before_freshness);
+                assert!(index.lookup(Path::new("new.txt")).is_none());
+            }
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_prefix_is_rejected_before_mutation() {
+        let mut index = index_with_sample_tree();
+        let before_clock = index.clock();
+
+        let error = index
+            .apply(&Observation::new(vec![Op::Remove { path: PathBuf::from(r"C:\escape") }]))
+            .expect_err("prefixed path");
+
+        assert!(
+            matches!(error, crate::Error::PathEscapesRoot(path) if path == Path::new(r"C:\escape"))
+        );
+        assert_eq!(index.clock(), before_clock);
+    }
+
     fn index_with_sample_tree() -> Index {
         let mut index = Index::new("/root");
-        index.apply(&Observation::new(vec![
+        index.apply_ok(&Observation::new(vec![
             upsert("src", EntryKind::Dir, Attrs::default()),
             upsert("src/main.rs", EntryKind::File, file_attrs(100, 10)),
             upsert("src/lib.rs", EntryKind::File, file_attrs(200, 20)),
@@ -1258,7 +1818,7 @@ mod tests {
         let before = index.total().clone();
         let mark = index.clock();
 
-        let stats = index.apply(&Observation::new(vec![upsert(
+        let stats = index.apply_ok(&Observation::new(vec![upsert(
             "src/main.rs",
             EntryKind::File,
             file_attrs(100, 10),
@@ -1274,7 +1834,7 @@ mod tests {
     #[test]
     fn applied_delta_contains_only_effective_mutations() {
         let mut index = index_with_sample_tree();
-        let outcome = index.apply(&Observation::new(vec![
+        let outcome = index.apply_ok(&Observation::new(vec![
             upsert("src/main.rs", EntryKind::File, file_attrs(100, 10)),
             upsert("new.txt", EntryKind::File, file_attrs(4, 4)),
             Op::Remove { path: PathBuf::from("missing.txt") },
@@ -1293,9 +1853,9 @@ mod tests {
             upsert("a", EntryKind::Dir, Attrs::default()),
             upsert("a/f.txt", EntryKind::File, file_attrs(10, 1)),
         ]);
-        index.apply(&delta);
+        index.apply_ok(&delta);
         let after_first = index.total().clone();
-        let stats = index.apply(&delta);
+        let stats = index.apply_ok(&delta);
 
         assert_eq!(stats.unchanged, 2);
         assert_eq!(index.total(), &after_first);
@@ -1305,7 +1865,7 @@ mod tests {
     #[test]
     fn changed_size_updates_every_ancestor() {
         let mut index = index_with_sample_tree();
-        index.apply(&Observation::new(vec![upsert(
+        index.apply_ok(&Observation::new(vec![upsert(
             "src/main.rs",
             EntryKind::File,
             file_attrs(150, 11),
@@ -1320,11 +1880,11 @@ mod tests {
     fn allocated_size_change_updates_rollups_even_when_fingerprint_matches() {
         let mut index = Index::new("/root");
         let original = Attrs { allocated: 512, ..file_attrs(100, 10) };
-        index.apply(&Observation::new(vec![upsert("file.bin", EntryKind::File, original)]));
+        index.apply_ok(&Observation::new(vec![upsert("file.bin", EntryKind::File, original)]));
 
         let repacked = Attrs { allocated: 4096, ..original };
         let outcome =
-            index.apply(&Observation::new(vec![upsert("file.bin", EntryKind::File, repacked)]));
+            index.apply_ok(&Observation::new(vec![upsert("file.bin", EntryKind::File, repacked)]));
 
         assert_eq!(outcome.stats.updated, 1);
         assert_eq!(outcome.stats.unchanged, 0);
@@ -1335,21 +1895,21 @@ mod tests {
     #[test]
     fn newest_mtime_preserves_pre_epoch_values_through_updates_and_removals() {
         let mut index = Index::new("/root");
-        index.apply(&Observation::new(vec![
+        index.apply_ok(&Observation::new(vec![
             upsert("newer.txt", EntryKind::File, file_attrs(10, -10)),
             upsert("older.txt", EntryKind::File, file_attrs(20, -20)),
         ]));
 
         assert_eq!(index.total().newest_mtime_ns, -10);
 
-        index.apply(&Observation::new(vec![upsert(
+        index.apply_ok(&Observation::new(vec![upsert(
             "newer.txt",
             EntryKind::File,
             file_attrs(10, -30),
         )]));
         assert_eq!(index.total().newest_mtime_ns, -20);
 
-        index.apply(&Observation::new(vec![Op::Remove { path: PathBuf::from("older.txt") }]));
+        index.apply_ok(&Observation::new(vec![Op::Remove { path: PathBuf::from("older.txt") }]));
         assert_eq!(index.total().newest_mtime_ns, -30);
     }
 
@@ -1358,7 +1918,7 @@ mod tests {
         let mut index = index_with_sample_tree();
         // guide.md holds the newest mtime for the whole tree.
         let stats = index
-            .apply(&Observation::new(vec![Op::Remove { path: PathBuf::from("docs/guide.md") }]));
+            .apply_ok(&Observation::new(vec![Op::Remove { path: PathBuf::from("docs/guide.md") }]));
 
         assert_eq!(stats.removed, 1);
         let total = index.total();
@@ -1371,7 +1931,9 @@ mod tests {
     #[test]
     fn removing_a_directory_cascades_to_descendants() {
         let mut index = index_with_sample_tree();
-        let stats = index.apply(&Observation::new(vec![Op::Remove { path: PathBuf::from("src") }]));
+        let stats = index
+            .apply(&Observation::new(vec![Op::Remove { path: PathBuf::from("src") }]))
+            .expect("valid observation");
 
         assert_eq!(stats.removed, 3, "the directory and both files");
         let total = index.total();
@@ -1386,8 +1948,8 @@ mod tests {
     fn freed_slots_are_reused() {
         let mut index = index_with_sample_tree();
         let before = index.len();
-        index.apply(&Observation::new(vec![Op::Remove { path: PathBuf::from("src") }]));
-        index.apply(&Observation::new(vec![
+        index.apply_ok(&Observation::new(vec![Op::Remove { path: PathBuf::from("src") }]));
+        index.apply_ok(&Observation::new(vec![
             upsert("other", EntryKind::Dir, Attrs::default()),
             upsert("other/x.rs", EntryKind::File, file_attrs(1, 1)),
             upsert("other/y.rs", EntryKind::File, file_attrs(1, 1)),
@@ -1398,14 +1960,14 @@ mod tests {
     #[test]
     fn stale_entry_handle_does_not_alias_a_reused_slot() {
         let mut index = Index::new("/root");
-        index.apply(&Observation::new(vec![upsert(
+        index.apply_ok(&Observation::new(vec![upsert(
             "first.txt",
             EntryKind::File,
             file_attrs(1, 1),
         )]));
         let stale = index.lookup(Path::new("first.txt")).expect("first id");
-        index.apply(&Observation::new(vec![Op::Remove { path: PathBuf::from("first.txt") }]));
-        index.apply(&Observation::new(vec![upsert(
+        index.apply_ok(&Observation::new(vec![Op::Remove { path: PathBuf::from("first.txt") }]));
+        index.apply_ok(&Observation::new(vec![upsert(
             "second.txt",
             EntryKind::File,
             file_attrs(2, 2),
@@ -1426,7 +1988,7 @@ mod tests {
     fn missing_ancestors_are_created_for_out_of_order_upserts() {
         let mut index = Index::new("/root");
         // A watch event can name a deep path the index has never seen.
-        index.apply(&Observation::new(vec![upsert(
+        index.apply_ok(&Observation::new(vec![upsert(
             "deep/nested/tree/file.txt",
             EntryKind::File,
             file_attrs(42, 7),
@@ -1441,9 +2003,13 @@ mod tests {
     #[test]
     fn non_directory_ancestor_is_replaced_before_attaching_a_child() {
         let mut index = Index::new("/root");
-        index.apply(&Observation::new(vec![upsert("conflict", EntryKind::File, file_attrs(9, 1))]));
+        index.apply_ok(&Observation::new(vec![upsert(
+            "conflict",
+            EntryKind::File,
+            file_attrs(9, 1),
+        )]));
 
-        let outcome = index.apply(&Observation::new(vec![upsert(
+        let outcome = index.apply_ok(&Observation::new(vec![upsert(
             "conflict/child.txt",
             EntryKind::File,
             file_attrs(4, 2),
@@ -1460,10 +2026,14 @@ mod tests {
     #[test]
     fn kind_change_replaces_the_entry() {
         let mut index = Index::new("/root");
-        index.apply(&Observation::new(vec![upsert("thing", EntryKind::File, file_attrs(50, 5))]));
+        index.apply_ok(&Observation::new(vec![upsert(
+            "thing",
+            EntryKind::File,
+            file_attrs(50, 5),
+        )]));
         assert_eq!(index.total().files, 1);
 
-        index.apply(&Observation::new(vec![upsert("thing", EntryKind::Dir, Attrs::default())]));
+        index.apply_ok(&Observation::new(vec![upsert("thing", EntryKind::Dir, Attrs::default())]));
         let total = index.total();
         assert_eq!(total.files, 0);
         assert_eq!(total.dirs, 1);
@@ -1481,9 +2051,9 @@ mod tests {
     #[test]
     fn since_returns_deltas_after_a_clock() {
         let mut index = Index::new("/root");
-        index.apply(&Observation::new(vec![upsert("a.txt", EntryKind::File, file_attrs(1, 1))]));
+        index.apply_ok(&Observation::new(vec![upsert("a.txt", EntryKind::File, file_attrs(1, 1))]));
         let mark = index.clock();
-        index.apply(&Observation::new(vec![upsert("b.txt", EntryKind::File, file_attrs(2, 2))]));
+        index.apply_ok(&Observation::new(vec![upsert("b.txt", EntryKind::File, file_attrs(2, 2))]));
 
         let since = index.since(mark);
         assert!(!since.truncated);
@@ -1496,7 +2066,7 @@ mod tests {
     #[test]
     fn oversized_single_batch_is_not_retained() {
         let mut index = Index::with_journal_op_capacity("/root", 2);
-        let outcome = index.apply(&Observation::new(vec![
+        let outcome = index.apply_ok(&Observation::new(vec![
             upsert("a.txt", EntryKind::File, file_attrs(1, 1)),
             upsert("b.txt", EntryKind::File, file_attrs(2, 2)),
             upsert("c.txt", EntryKind::File, file_attrs(3, 3)),
@@ -1511,11 +2081,11 @@ mod tests {
     #[test]
     fn journal_eviction_uses_the_operation_budget() {
         let mut index = Index::with_journal_op_capacity("/root", 3);
-        index.apply(&Observation::new(vec![
+        index.apply_ok(&Observation::new(vec![
             upsert("a.txt", EntryKind::File, file_attrs(1, 1)),
             upsert("b.txt", EntryKind::File, file_attrs(2, 2)),
         ]));
-        index.apply(&Observation::new(vec![
+        index.apply_ok(&Observation::new(vec![
             upsert("c.txt", EntryKind::File, file_attrs(3, 3)),
             upsert("d.txt", EntryKind::File, file_attrs(4, 4)),
         ]));
@@ -1530,7 +2100,7 @@ mod tests {
     #[test]
     fn invalidations_are_queued_for_the_scan_layer() {
         let mut index = Index::new("/root");
-        let stats = index.apply(&Observation::new(vec![Op::InvalidateSubtree {
+        let stats = index.apply_ok(&Observation::new(vec![Op::InvalidateSubtree {
             path: PathBuf::from("src"),
             reason: InvalidateReason::WatchOverflow,
         }]));
@@ -1553,17 +2123,19 @@ mod tests {
         );
 
         let mut index = Index::new("/root");
-        index.apply(&Observation::new(vec![upsert(
-            "../escape",
-            EntryKind::File,
-            file_attrs(1, 1),
-        )]));
-        assert_eq!(index.total().files, 0, "escaping upserts are dropped");
+        let upsert_error = index
+            .apply(&Observation::new(vec![upsert("../escape", EntryKind::File, file_attrs(1, 1))]))
+            .expect_err("escaping upsert");
+        assert!(matches!(upsert_error, crate::Error::PathEscapesRoot(_)));
+        assert_eq!(index.total().files, 0);
 
-        index.apply(&Observation::new(vec![Op::InvalidateSubtree {
-            path: PathBuf::from("../outside"),
-            reason: InvalidateReason::Requested,
-        }]));
+        let invalidation_error = index
+            .apply(&Observation::new(vec![Op::InvalidateSubtree {
+                path: PathBuf::from("../outside"),
+                reason: InvalidateReason::Requested,
+            }]))
+            .expect_err("escaping invalidation");
+        assert!(matches!(invalidation_error, crate::Error::PathEscapesRoot(_)));
         assert!(index.take_pending_invalidations().is_empty());
         assert_eq!(index.freshness(), Freshness::Fresh);
     }
@@ -1577,7 +2149,7 @@ mod tests {
         let first = PathBuf::from(OsString::from_vec(vec![b'n', 0x80]));
         let second = PathBuf::from(OsString::from_vec(vec![b'n', 0x81]));
         let mut index = Index::new("/root");
-        index.apply(&Observation::new(vec![
+        index.apply_ok(&Observation::new(vec![
             Op::Upsert { path: first.clone(), kind: EntryKind::File, attrs: file_attrs(10, 1) },
             Op::Upsert { path: second.clone(), kind: EntryKind::File, attrs: file_attrs(20, 2) },
         ]));

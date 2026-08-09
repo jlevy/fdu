@@ -6,10 +6,10 @@
 //!
 //! # The shape: three artifacts, one contract
 //!
-//! 1. **The index** ([`index::Index`]) — the in-memory hierarchical structure: entry
+//! 1. **The index** ([`Index`]) — the in-memory hierarchical structure: entry
 //!    records plus per-directory roll-up state.
 //! 2. **The snapshot** ([`snapshot`]) — that index, serialized.
-//! 3. **The change contract** ([`types::Observation`] and [`types::AppliedDelta`]) —
+//! 3. **The change contract** ([`Observation`] and [`AppliedDelta`]) —
 //!    producers submit verified observations; the index commits clocked effective
 //!    changes.
 //!
@@ -51,10 +51,10 @@
 //!   works, just without live updates.
 
 pub mod classify;
-pub mod index;
+mod index;
 pub mod scan;
 pub mod snapshot;
-pub mod types;
+mod types;
 
 #[cfg(feature = "cli")]
 pub mod cli;
@@ -63,7 +63,7 @@ pub mod cli;
 pub mod watch;
 
 pub use crate::index::{
-    ApplyOutcome, ApplyStats, EntryId, ExtTally, Index, IndexHandle, RollUp, Since,
+    ApplyOutcome, ApplyStats, ChildSnapshot, EntryId, ExtTally, Index, IndexHandle, RollUp, Since,
 };
 pub use crate::scan::{ReconcileReport, ScanConfig, ScanReport};
 pub use crate::types::{
@@ -99,7 +99,9 @@ pub enum OpenPath {
 /// What [`open`] did.
 #[derive(Debug)]
 pub struct OpenReport {
+    /// Cache tier used to produce the returned index.
     pub path_taken: OpenPath,
+    /// Filesystem walk results, including any partial errors.
     pub scan: ScanReport,
 }
 

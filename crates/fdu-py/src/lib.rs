@@ -7,8 +7,13 @@
 //! lose comfortably to one large call, because the per-call boundary cost dominates once
 //! the native work per item is a field read.
 //!
-//! Native work runs with the GIL released, so a scan of a large tree does not stall the
-//! host process's other threads.
+//! `open()`, `scan()`, and the native reconciliation phase of `Index.refresh()` release
+//! the GIL. One `PyIndex` still owns one ordinary Rust [`fdu::Index`]: `refresh()` keeps
+//! `PyO3`'s exclusive object borrow for the whole detached reconciliation, so an
+//! overlapping call on that same Python object is rejected by `PyO3`'s runtime borrow
+//! check rather than becoming an unsynchronized shared-index read. Calls on independent
+//! indexes may run concurrently. Python dictionary/list conversion happens after native
+//! work returns and therefore runs with the GIL held.
 
 use std::path::{Path, PathBuf};
 
@@ -254,4 +259,56 @@ fn fdu_py(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(scan, m)?)?;
 
     Ok(())
+}
+
+// PyO3's extension-module mode deliberately omits libpython linkage. The mandatory
+// `python-concurrency` gate disables that default feature and runs these embedding
+// tests inside the project's locked uv environment.
+#[cfg(all(test, not(feature = "extension-module")))]
+mod tests {
+    use super::*;
+    use std::sync::mpsc::sync_channel;
+    use std::time::Duration;
+
+    #[test]
+    fn same_python_index_uses_runtime_borrow_exclusion() {
+        Python::initialize();
+        Python::attach(|py| {
+            let index = Py::new(
+                py,
+                PyIndex {
+                    inner: fdu::Index::new("/unused"),
+                    config: ScanConfig::default(),
+                    errors: Vec::new(),
+                },
+            )
+            .expect("allocate Python index");
+
+            let read = index.try_borrow(py).expect("initial immutable borrow");
+            assert!(index.try_borrow_mut(py).is_err());
+            drop(read);
+            assert!(index.try_borrow_mut(py).is_ok());
+        });
+    }
+
+    #[test]
+    fn detached_native_work_allows_another_python_thread_to_progress() {
+        Python::initialize();
+        Python::attach(|py| {
+            let (ready_tx, ready_rx) = sync_channel(1);
+            let (progress_tx, progress_rx) = sync_channel(1);
+            let worker = std::thread::spawn(move || {
+                ready_tx.send(()).expect("signal worker ready");
+                Python::attach(|_| progress_tx.send(()).expect("report Python progress"));
+            });
+            ready_rx.recv().expect("worker ready");
+
+            py.detach(move || {
+                progress_rx
+                    .recv_timeout(Duration::from_secs(5))
+                    .expect("another Python thread must run while native work is detached");
+            });
+            worker.join().expect("Python worker");
+        });
+    }
 }

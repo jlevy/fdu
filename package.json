@@ -6,6 +6,8 @@
     "node": ">=20"
   },
   "scripts": {
+    "check:supply-chain": "node scripts/check-supply-chain.mjs",
+    "test:supply-chain": "node --test scripts/check-supply-chain.test.mjs",
     "test:golden": "tryscript run \"tests/golden/*.tryscript.md\"",
     "test:golden:update": "tryscript run --update \"tests/golden/*.tryscript.md\""
   },

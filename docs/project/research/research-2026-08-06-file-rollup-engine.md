@@ -1299,9 +1299,9 @@ classification-dependent views stay untouched.
 The CLI is a first-class product surface (Goal 2), not a debugging shim.
 It serves two audiences from one binary:
 
-- **Humans** get colored, terminal-width-aware tree output with percentage bars in the
-  dust/dut style, sensible defaults (current directory, top-N by size, depth-limited),
-  and `NO_COLOR`/pipe detection so redirection degrades cleanly.
+- **Humans** get colored, fixed-column tree output with percentage bars in the dust/dut
+  style, sensible defaults (current directory, top-N by size, depth-limited), and
+  `NO_COLOR`/pipe detection so redirection degrades cleanly.
 - **Agents** get `--help` as the complete source of truth, stable JSON/JSONL output
   whose schema is versioned with the tool, meaningful exit codes, and no interactive
   surprises (no pager, no prompts).

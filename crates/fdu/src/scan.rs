@@ -156,7 +156,9 @@ impl ScanReport {
 /// Filesystem and index effects from an applying reconciliation pass.
 #[derive(Debug, Default)]
 pub struct ReconcileReport {
+    /// Filesystem walk effects and partial errors.
     pub scan: ScanReport,
+    /// Index arbitration and mutation effects.
     pub apply: ApplyStats,
 }
 
@@ -177,37 +179,34 @@ impl ReconcileTarget<'_> {
     fn scope(&self) -> Result<ScanScope> {
         match self {
             Self::Direct(index) => Ok(index.scope()),
-            Self::Shared(handle) => Ok(handle.read()?.scope()),
+            Self::Shared(handle) => handle.scope(),
         }
     }
 
     fn root_path(&self) -> Result<PathBuf> {
         match self {
             Self::Direct(index) => Ok(index.root_path().to_path_buf()),
-            Self::Shared(handle) => Ok(handle.read()?.root_path().to_path_buf()),
+            Self::Shared(handle) => handle.root_path(),
         }
     }
 
     fn expectation(&self, path: &Path) -> Result<PathExpectation> {
         match self {
             Self::Direct(index) => Ok(index.expectation(path)),
-            Self::Shared(handle) => Ok(handle.read()?.expectation(path)),
+            Self::Shared(handle) => handle.expectation(path),
         }
     }
 
     fn child_states(&self, path: &Path) -> Result<BTreeMap<OsString, PathExpectation>> {
         match self {
             Self::Direct(index) => Ok(collect_child_states(index, path)),
-            Self::Shared(handle) => {
-                let index = handle.read()?;
-                Ok(collect_child_states(&index, path))
-            }
+            Self::Shared(handle) => handle.child_states(path),
         }
     }
 
     fn apply(&mut self, observation: &Observation) -> Result<crate::ApplyOutcome> {
         match self {
-            Self::Direct(index) => Ok(index.apply(observation)),
+            Self::Direct(index) => index.apply(observation),
             Self::Shared(handle) => handle.apply(observation),
         }
     }
@@ -215,7 +214,7 @@ impl ReconcileTarget<'_> {
     fn take_pending_invalidations(&mut self) -> Result<Vec<(PathBuf, crate::InvalidateReason)>> {
         match self {
             Self::Direct(index) => Ok(index.take_pending_invalidations()),
-            Self::Shared(handle) => Ok(handle.write()?.take_pending_invalidations()),
+            Self::Shared(handle) => handle.take_pending_invalidations(),
         }
     }
 
@@ -225,9 +224,7 @@ impl ReconcileTarget<'_> {
     ) -> Result<()> {
         match self {
             Self::Direct(index) => index.restore_pending_invalidations(invalidations),
-            Self::Shared(handle) => {
-                handle.write()?.restore_pending_invalidations(invalidations);
-            }
+            Self::Shared(handle) => handle.restore_pending_invalidations(invalidations)?,
         }
         Ok(())
     }
@@ -235,31 +232,28 @@ impl ReconcileTarget<'_> {
     fn begin_reconcile(&mut self, path: &Path) -> Result<u64> {
         match self {
             Self::Direct(index) => Ok(index.begin_reconcile(path)),
-            Self::Shared(handle) => Ok(handle.write()?.begin_reconcile(path)),
+            Self::Shared(handle) => handle.begin_reconcile(path),
         }
     }
 
     fn finish_reconcile(&mut self, path: &Path, started_at: u64, complete: bool) -> Result<()> {
         match self {
             Self::Direct(index) => index.finish_reconcile(path, started_at, complete),
-            Self::Shared(handle) => {
-                handle.write()?.finish_reconcile(path, started_at, complete);
-            }
+            Self::Shared(handle) => handle.finish_reconcile(path, started_at, complete)?,
         }
         Ok(())
     }
 }
 
 fn collect_child_states(index: &Index, path: &Path) -> BTreeMap<OsString, PathExpectation> {
-    index
-        .children(path)
-        .unwrap_or_default()
-        .into_iter()
-        .map(|(name, _)| {
-            let child_path = path.join(name);
-            (name.to_os_string(), index.expectation(&child_path))
-        })
-        .collect()
+    index.children(path).map_or_else(BTreeMap::new, |children| {
+        children
+            .map(|(name, _)| {
+                let child_path = path.join(name);
+                (name.to_os_string(), index.expectation(&child_path))
+            })
+            .collect()
+    })
 }
 
 /// Walk `root` and emit observations describing everything found.
@@ -342,9 +336,17 @@ pub fn scan_into_index(root: &Path, config: &ScanConfig) -> Result<(Index, ScanR
     config.validate()?;
     let root = root.canonicalize().map_err(|error| Error::io(root, error))?;
     let mut index = Index::new_with_scope(&root, config.scope());
+    let mut apply_error: Option<Error> = None;
     let report = scan(&root, config, &mut |observation| {
-        index.apply_baseline(&observation);
+        if apply_error.is_none() {
+            if let Err(error) = index.apply_baseline(&observation) {
+                apply_error = Some(error);
+            }
+        }
     })?;
+    if let Some(error) = apply_error {
+        return Err(error);
+    }
     index.set_initial_freshness(report.is_complete());
     Ok((index, report))
 }
@@ -385,15 +387,17 @@ pub fn revalidate(
     let batch_limit = config.batch_size.max(1);
     let mut batch: Vec<ObservationOp> = Vec::with_capacity(batch_limit);
     if config.max_depth == Some(0) {
-        for (name, _) in index.children(Path::new("")).unwrap_or_default() {
-            let path = PathBuf::from(name);
-            batch.push(ObservationOp::if_state(
-                Op::Remove { path: path.clone() },
-                index.relaxed_expectation(&path),
-            ));
-            if batch.len() >= batch_limit {
-                sink(Observation::from_ops(std::mem::take(&mut batch)));
-                batch.reserve(batch_limit);
+        if let Some(children) = index.children(Path::new("")) {
+            for (name, _) in children {
+                let path = PathBuf::from(name);
+                batch.push(ObservationOp::if_state(
+                    Op::Remove { path: path.clone() },
+                    index.relaxed_expectation(&path),
+                ));
+                if batch.len() >= batch_limit {
+                    sink(Observation::from_ops(std::mem::take(&mut batch)));
+                    batch.reserve(batch_limit);
+                }
             }
         }
         if !batch.is_empty() {
@@ -452,15 +456,17 @@ pub fn revalidate(
             if should_descend(kind, attrs, depth, root_dev, config) {
                 queue.push((rel_path, depth + 1));
             } else if kind.is_dir() {
-                for (child_name, _) in index.children(&rel_path).unwrap_or_default() {
-                    let child_path = rel_path.join(child_name);
-                    batch.push(ObservationOp::if_state(
-                        Op::Remove { path: child_path.clone() },
-                        index.relaxed_expectation(&child_path),
-                    ));
-                    if batch.len() >= batch_limit {
-                        sink(Observation::from_ops(std::mem::take(&mut batch)));
-                        batch.reserve(batch_limit);
+                if let Some(children) = index.children(&rel_path) {
+                    for (child_name, _) in children {
+                        let child_path = rel_path.join(child_name);
+                        batch.push(ObservationOp::if_state(
+                            Op::Remove { path: child_path.clone() },
+                            index.relaxed_expectation(&child_path),
+                        ));
+                        if batch.len() >= batch_limit {
+                            sink(Observation::from_ops(std::mem::take(&mut batch)));
+                            batch.reserve(batch_limit);
+                        }
                     }
                 }
             }
@@ -1071,7 +1077,7 @@ mod tests {
         revalidate(&index, &config, &mut |observation| observations.push(observation))
             .expect("revalidate");
         for observation in &observations {
-            index.apply(observation);
+            index.apply_ok(observation);
         }
 
         assert!(index.lookup(Path::new("src/added-after-scan.txt")).is_none());
@@ -1082,7 +1088,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let config = ScanConfig { max_depth: Some(0), ..ScanConfig::default() };
         let mut index = Index::new_with_scope(dir.path(), config.scope());
-        index.apply_baseline(&Observation::new(vec![Op::Upsert {
+        index.apply_baseline_ok(&Observation::new(vec![Op::Upsert {
             path: PathBuf::from("stale.txt"),
             kind: EntryKind::File,
             attrs: Attrs::default(),
@@ -1094,7 +1100,7 @@ mod tests {
         })
         .expect("revalidate");
         for observation in &observations {
-            index.apply(observation);
+            index.apply_ok(observation);
         }
 
         assert!(index.is_empty());
@@ -1106,7 +1112,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let config = ScanConfig { max_depth: Some(0), ..ScanConfig::default() };
         let mut index = Index::new_with_scope(dir.path(), config.scope());
-        index.apply_baseline(&Observation::new(vec![Op::Upsert {
+        index.apply_baseline_ok(&Observation::new(vec![Op::Upsert {
             path: PathBuf::from("stale.txt"),
             kind: EntryKind::File,
             attrs: Attrs::default(),
@@ -1197,7 +1203,7 @@ mod tests {
         revalidate(&index, &ScanConfig::default(), &mut |d| deltas.push(d)).expect("revalidate");
         let mut unchanged = 0;
         for delta in &deltas {
-            unchanged += index.apply(delta).unchanged;
+            unchanged += index.apply_ok(delta).unchanged;
         }
 
         assert_eq!(unchanged, 5, "3 files + 2 dirs all already known");
@@ -1217,7 +1223,7 @@ mod tests {
         revalidate(&index, &ScanConfig::default(), &mut |d| deltas.push(d)).expect("revalidate");
         let mut stats = crate::index::ApplyStats::default();
         for delta in &deltas {
-            let s = index.apply(delta);
+            let s = index.apply_ok(delta);
             stats.inserted += s.inserted;
             stats.updated += s.updated;
             stats.removed += s.removed;
@@ -1243,7 +1249,7 @@ mod tests {
         let mut deltas = Vec::new();
         revalidate(&index, &ScanConfig::default(), &mut |d| deltas.push(d)).expect("revalidate");
         for delta in &deltas {
-            index.apply(delta);
+            index.apply_ok(delta);
         }
 
         let total = index.total();
@@ -1257,7 +1263,7 @@ mod tests {
         let dir = sample_tree();
         let (mut index, _) = scan_into_index(dir.path(), &ScanConfig::default()).expect("scan");
         write_file(&dir.path().join("src/added.rs"), b"new");
-        index.apply(&Observation::new(vec![Op::InvalidateSubtree {
+        index.apply_ok(&Observation::new(vec![Op::InvalidateSubtree {
             path: PathBuf::from("src"),
             reason: crate::InvalidateReason::Requested,
         }]));
@@ -1292,7 +1298,7 @@ mod tests {
         reconcile_handle(&handle, &ScanConfig::default(), &mut |delta| {
             if delta.ops.iter().any(|op| op.path() == Path::new("added.md")) {
                 observed_after_apply =
-                    reader.read().expect("read index").lookup(Path::new("added.md")).is_some();
+                    reader.kind(Path::new("added.md")).expect("query index").is_some();
             }
         })
         .expect("reconcile handle");
@@ -1312,7 +1318,7 @@ mod tests {
         reconcile_handle(&handle, &ScanConfig::default(), &mut |delta| {
             if delta.ops.iter().any(|op| op.path() == Path::new("added.md")) {
                 saw_reconciling =
-                    invalidator.read().expect("read").freshness() == crate::Freshness::Reconciling;
+                    invalidator.freshness().expect("query") == crate::Freshness::Reconciling;
                 invalidator
                     .apply(&Observation::new(vec![Op::InvalidateSubtree {
                         path: PathBuf::new(),
@@ -1324,7 +1330,7 @@ mod tests {
         .expect("reconcile handle");
 
         assert!(saw_reconciling);
-        assert_eq!(handle.read().expect("read").freshness(), crate::Freshness::Stale);
+        assert_eq!(handle.freshness().expect("query"), crate::Freshness::Stale);
     }
 
     #[test]
@@ -1341,7 +1347,7 @@ mod tests {
     fn failed_pending_reconciliation_remains_queued_for_retry() {
         let dir = tempfile::tempdir().expect("tempdir");
         let (mut index, _) = scan_into_index(dir.path(), &ScanConfig::default()).expect("scan");
-        index.apply(&Observation::new(vec![Op::InvalidateSubtree {
+        index.apply_ok(&Observation::new(vec![Op::InvalidateSubtree {
             path: PathBuf::new(),
             reason: crate::InvalidateReason::Requested,
         }]));
@@ -1365,7 +1371,7 @@ mod tests {
         let (mut index, _) = scan_into_index(dir.path(), &ScanConfig::default()).expect("scan");
         let blocked = dir.path().join("blocked");
         fs::set_permissions(&blocked, fs::Permissions::from_mode(0o000)).expect("deny reads");
-        index.apply(&Observation::new(vec![Op::InvalidateSubtree {
+        index.apply_ok(&Observation::new(vec![Op::InvalidateSubtree {
             path: PathBuf::from("blocked"),
             reason: crate::InvalidateReason::VerificationFailed,
         }]));
@@ -1390,7 +1396,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let shallow = ScanConfig { max_depth: Some(1), ..ScanConfig::default() };
         let (mut index, _) = scan_into_index(dir.path(), &shallow).expect("scan");
-        index.apply(&Observation::new(vec![Op::InvalidateSubtree {
+        index.apply_ok(&Observation::new(vec![Op::InvalidateSubtree {
             path: PathBuf::new(),
             reason: crate::InvalidateReason::Requested,
         }]));
@@ -1529,7 +1535,7 @@ mod tests {
         let config = ScanConfig { one_filesystem: true, ..ScanConfig::default() };
         let mount_meta = fs::symlink_metadata(mount).expect("stat mount");
         let mut index = Index::new_with_scope(root, config.scope());
-        index.apply_baseline(&Observation::new(vec![
+        index.apply_baseline_ok(&Observation::new(vec![
             Op::Upsert {
                 path: relative.to_path_buf(),
                 kind: EntryKind::Dir,
@@ -1593,7 +1599,7 @@ mod tests {
         })
         .expect("revalidate");
         for observation in &observations {
-            index.apply(observation);
+            index.apply_ok(observation);
         }
         assert!(index.lookup(&first).is_none());
         assert!(index.lookup(&second).is_some());

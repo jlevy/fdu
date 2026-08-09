@@ -30,5 +30,5 @@ Documentation = "https://docs.rs/fdu"
 # A cdylib extension module, not a bundled binary: metabrowser wants a persistent
 # in-process index, which a subprocess cannot provide.
 module-name = "fdu_py"
-features = ["pyo3/extension-module"]
+features = ["extension-module"]
 strip = true

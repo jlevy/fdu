@@ -318,7 +318,7 @@ graph or published artifacts.
 - [x] Add `make test-golden` and `make golden-update`; include the former in `make test`
   and `make check`
 - [x] Run the golden suite on Linux, macOS, and Windows in CI with a SHA-pinned Node
-  setup action and npm cache
+  setup action and a cache-free locked install
 - [x] Document the update-and-review workflow without duplicating tryscript syntax
 - [x] Verify that an intentional stable-output mutation fails, that `--update` changes
   only the intended block, and that reverting the mutation restores a clean pass

@@ -20,7 +20,10 @@ print(index.since(mark))      # what changed, or truncated=True if you fell behi
 
 Every method is bulk: it returns a whole structured result in one call rather than a
 cursor Python iterates.
-Native work runs with the GIL released.
+Open, scan, and the native reconciliation phase of refresh run with the GIL released, so
+unrelated Python threads and independent indexes can progress.
+One `Index` object still has `PyO3` runtime borrow exclusion: an overlapping call on
+that same object is rejected rather than becoming an unsynchronized shared-index access.
 The wheel uses the core scan/cache surface and does not compile the optional watch
 dependency; no Python watcher API is implied yet.
 

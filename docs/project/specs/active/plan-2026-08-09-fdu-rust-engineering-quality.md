@@ -4,7 +4,8 @@
 
 **Author:** fdu project
 
-**Status:** Active — trust, atomicity, and concurrency merge gates open
+**Status:** Active — merge-blocking implementation complete; final approval gate in
+progress
 
 ## Overview
 
@@ -27,24 +28,46 @@ changes rather than replacing or rescoping them.
 
 ## Current Status
 
-The epic is `fdu-dxee`, a child of the Phase 1 epic `fdu-qfz6`. Two independent P0 bugs
-remain the highest-severity PR #1 blockers:
+The epic is `fdu-dxee`, a child of the Phase 1 epic `fdu-qfz6`. Every implementation
+node on the PR #1 merge path is closed:
 
-- `fdu-ad45`: executable-dependency cool-off, provenance, and CI trust controls;
-- `fdu-nlh8`: whole-batch path validation before any index mutation.
+- `fdu-ad45`: executable-dependency cool-off, provenance, and CI trust controls now fail
+  closed in CI and the local handoff gate;
+- `fdu-nlh8`: whole-batch path validation happens before any index mutation;
+- `fdu-s7wr`: the shared-index surface returns owned values and never exposes a lock
+  guard or receiver;
+- `fdu-1j0b`: watch verification and reconciliation perform filesystem I/O after index
+  locks are released;
+- `fdu-8jte`: all watcher stages are bounded, overload degrades to a sticky root
+  invalidation, and cancellation joins the worker without blocking sends;
+- `fdu-gd6n`: deterministic cross-thread tests prove writer ordering, whole-batch reader
+  visibility, freshness epochs, typed failure paths, old-or-new snapshots, watcher
+  ownership, and the Python GIL/borrow contract.
+- `fdu-l8vc`: the unsupported rootless public watch-apply helper is test-only; the
+  supported applying driver proves watcher/index root identity before consuming work;
+- `fdu-83gl`: the watch contract now distinguishes the filesystem `stat` sample point
+  from in-memory writer arbitration and documents queued-event convergence;
+- `fdu-ie5z`: terminal-clock no-op and stale observations report their arbitration
+  result, while a real mutation still fails atomically.
+- `fdu-b3qe`: GitHub provenance checks use an explicit workflow token in CI and a
+  non-shell local `gh` credential fallback, while retaining read-only permissions and
+  fail-closed validation.
 
-The concurrency review added three P1 implementation gates before this PR can receive
-final approval:
+`fdu-zga3` also completed early because reproducible review evidence required the pinned
+normal toolchain, watch-only feature lane, and test-running MSRV lane now rather than
+after merge.
 
-- `fdu-s7wr`: remove public lock guards and define the supported ownership contract;
-- `fdu-1j0b`: remove filesystem I/O from the watch writer-lock fallback;
-- `fdu-8jte`: bound watcher transport and make overload, stop, and teardown fail safe.
-
-`fdu-gd6n` proves the combined result with deterministic cross-thread tests.
-The final merge-approval bead `fdu-sn43` waits on that validation gate as well as the P0
-work.
-Other P1 and P2 items still protect later refactors and publishing rather than this
-merge.
+The only active merge-path bead is `fdu-sn43`. The complete local handoff gate now
+passes: 145 all-feature library tests, two CLI unit tests, one CLI integration test, two
+doctests, 25 built-binary golden scenarios, 105 core-only tests, 135 watch-only tests,
+exact-1.85.0 compilation and core tests, ten live supply-chain policy tests, Clippy,
+rustdoc, Cargo/npm audits, two Python concurrency tests, and an installed abi3 wheel
+smoke test. The remaining work is to push the assembled branch, require the fresh GitHub
+Linux/macOS/Windows/MSRV/docs/audit/Python matrix, and publish the superseding senior
+approval.
+The remaining P1 and P2 items protect later representation changes, performance
+evidence, and publishing; they are explicitly deferred rather than hidden merge
+blockers.
 
 ## Goals
 
@@ -114,6 +137,10 @@ more broad lints, or a rewrite of working test infrastructure.
 | P1 | After three optimistic clock conflicts, `watch::apply_reverified` takes the index writer lock and calls `symlink_metadata` once per queued operation before releasing it. A slow filesystem or large observation can block all readers and writers indefinitely. | Introduce a linearizable apply-if-clock operation; perform every stat outside the lock, then escalate exhausted conflicts to an explicit root invalidation and ordinary reconciliation rather than spinning or moving I/O under the lock. |
 | P1 | The raw notify channel, verified-observation channel, and pending-path map are unbounded. Replacing either channel with a blocking bounded send would let a full output queue deadlock `Watcher::drop` while it joins the worker and still owns the receiver. The worker also performs stats that the applying path repeats. | Make the joined worker an I/O-free bounded coalescer, verify on the consuming thread immediately before arbitration, and use nonblocking ingress/output, capped state, sticky overflow-to-root invalidation, explicit cancellation, and stop distinct from timeout. |
 | P1 | Existing shared-handle tests are sequential and do not prove batch visibility, writer linearization, freshness epochs under real overlap, snapshot old-or-new visibility, worker teardown, or Python GIL/same-object behavior. | Add deterministic state-machine tests using barriers, channels, injectable seams, and bounded deadlines; require a model checker before adopting future custom lock-free protocols. |
+| P0 | The free public watch observation helper carried only relative paths, so it could not prove that an observation and `IndexHandle` represented the same root. | Keep unrooted observations generic and make the root-checked `Watcher::apply_next` driver the only supported watch-application boundary. |
+| P0 | `Index::apply` checked for the next logical clock before arbitration, so an entirely unchanged or stale nonempty observation failed at the terminal clock even though it committed nothing. | Probe the otherwise infallible mutation phase only on the unreachable terminal-clock path; return no-op/stale stats without mutation and reject a real change atomically. |
+| P0 | The live provenance gate depended on GitHub’s shared unauthenticated 60-request quota locally and failed with HTTP 403 after that quota was exhausted. | Prefer explicit workflow/environment tokens, fall back to the authenticated local `gh` credential without a shell or output, and test that CI supplies only its read-only workflow token. |
+| P1 | An automated review treated the interval between filesystem `stat` and index commit as lockable, which would encourage lock-held I/O or repeated stats without eliminating the external race. | Specify the attainable contract: the sample is valid at its `stat` point, later backend events remain queued, loss invalidates and reconciles, and the clock boundary arbitrates only in-memory writers. |
 | P1 | Running rustdoc with `-D missing-docs` reports 61 undocumented public fields, variants, and methods. Clippy identifies 45 `must_use_candidate` sites while the workspace disables that lint globally. | Reduce the public surface first, document every remaining contract, and apply `#[must_use]` to values whose loss can break correctness rather than enabling the lint indiscriminately. |
 | P1 | The index has extensive example tests but no generated reference-model comparison for arbitrary upsert, remove, kind-change, invalidation, and delayed-conditional sequences. | Compare every generated transition against a simple recomputed model with fixed seeds and useful failing traces. |
 | P1 | Snapshot tests cover targeted corruption and concurrent writers, but not a broad byte-mutation corpus, concurrent reader visibility, or injected create/write/sync/rename failures. The duplicated FNV-style hash uses `0x1000_0000_01b3`, not the standard FNV-1a 64-bit prime, and has no known-vector test. | Test the parser and commit state machine under arbitrary corruptions and injected failures; name and test the stable fingerprint algorithm. |
@@ -127,10 +154,10 @@ more broad lints, or a rewrite of working test infrastructure.
 | Guideline | Disposition for fdu |
 | --- | --- |
 | `rust-rules.md` | **Apply selectively.** Ownership, domain types, typed errors, module responsibility, safe Rust, and measured-performance rules are already strong. The malformed-observation, lock lifetime, bounded-worker-lifecycle, public-surface, documentation, `must_use`, and stable-fingerprint findings remain. |
-| `rust-project-setup.md` | **Apply.** The two-crate shape, feature boundaries, lint policy, lockfiles, local gate, audits, and pinned action syntax are sound. Toolchain reproducibility, cool-off enforcement, least-privilege workflow settings, trusted-only cache writes, and the feature/MSRV matrix need work. |
+| `rust-project-setup.md` | **Applied.** The two-crate shape, feature boundaries, lint policy, lockfiles, local gate, and audits were already sound. `fdu-ad45` and `fdu-zga3` now provide toolchain reproducibility, cool-off enforcement, least privilege, cache-free pull-request jobs, and the feature/MSRV matrix. |
 | `rust-cli-rules.md` | **Mostly met.** The binary is thin, streams and exits are tested, redirected output is deterministic, broken pipes are quiet success, and golden tests own help/errors/cache behavior. Deep-tree stack safety remains; prompts, destructive dry-run, configuration files, paging, and completions are not current features. |
 | `rust-filesystem-rules.md` | **Apply to scan and cache boundaries.** Native path storage, non-following symlink policy, root boundaries, partial-error reporting, private temporary files, atomic replacement, and fail-closed parsing are present. Classification/Python path narrowing and injected snapshot failure-state tests remain. fdu does not mutate the scanned user tree. |
-| `rust-testing-rules.md` | **Apply.** Test placement, isolated roots, exact goldens, cross-platform CI, doctests, failure cases, and zero ignored tests are strong. Deterministic concurrency interleavings, a reference model, broad corrupt-input coverage, injected commit failures, MSRV tests, watch-only features, and minimum-Python wheel coverage add distinct evidence rather than duplicate assertions. |
+| `rust-testing-rules.md` | **Apply selectively.** Test placement, isolated roots, exact goldens, cross-platform CI, doctests, failure cases, deterministic concurrency, MSRV tests, and watch-only coverage are strong. A reference model, broad corrupt-input coverage, injected commit failures, and minimum-Python wheel coverage remain distinct later evidence. |
 | `rust-release-rules.md` | **Prepare now, execute later.** No artifact is published, so channels and release credentials remain Phase 1 work. Package contents, one release identity, least privilege, compatibility policy, native artifact smoke tests, and incident/security documentation must be acceptance criteria for the existing publishing bead. |
 | `rust-code-review-rules.md` | **Applied by this review.** Automated gates ran first; the review then followed unsafe, data integrity, errors, public API, concurrency, dependencies, performance, tests, and documentation risk order. There is no handwritten unsafe code or FFI pointer manipulation to audit. |
 | `porting-principles-and-antipatterns.md` | **Process lessons only.** fdu has no source implementation against which to claim parity. Its useful general rules already apply: tests run in CI, missing tools fail, goldens do not truncate discrepancies, no ignores hide gaps, and defects receive red-before-green tests. Dynamic cross-language corpus parity is not applicable. |
@@ -198,6 +225,12 @@ commit stage.
   Exhausted conflicts publish a conservative root invalidation with an explicit
   contention reason and reconcile after unlock; progress never depends on holding a lock
   across `stat` or on an unbounded retry loop.
+- A verified watch sample is linearized at its filesystem `stat`, not at a fictional
+  filesystem-wide lock.
+  Events that race after that sample stay in the bounded backend queue and converge in a
+  later batch; reported loss or ambiguity invalidates and reconciles.
+  The clock boundary arbitrates in-memory writers and does not claim to make external
+  filesystem mutation transactional.
 - Index locks protect in-memory state only.
   Filesystem I/O, snapshot serialization and commit, blocking channel operations, Python
   object conversion, and user-provided sinks run after the lock is released.
@@ -255,6 +288,22 @@ commit stage.
   useful `OSError` fields, and tests the minimum and current supported Python versions
   from installed wheels.
 
+#### Shared-Index Consumer Inventory
+
+| Consumer | Required ownership surface | Lock boundary |
+| --- | --- | --- |
+| CLI renderer | Owned `Index`; borrowed child iterators and entry fields | No shared lock |
+| Python binding | Owned `Index` inside one `PyIndex` | PyO3 rejects overlapping access while `refresh()` holds its exclusive borrow; native open/scan/refresh work releases the GIL |
+| Direct scan/reconcile | Mutable owned `Index` | No shared lock |
+| Applying reconcile | `IndexHandle` expectations, child-state capture, apply, and freshness transitions | Each focused operation acquires and releases internally; sinks run afterward |
+| Watch driver | `IndexHandle` root/scope/clock capture, apply-if-clock, and root invalidation | Verification happens before the writer lock; reconciliation and sinks happen after it |
+| Snapshot writer | Owned `Index`, or `IndexHandle::snapshot()` followed by `snapshot::save()` | A coherent clone is captured under a read lock; encoding and filesystem commit happen after release |
+| Future server/UI | Owned totals, roll-ups, metadata, child snapshots, history, or coherent full snapshots | No guard or receiver is part of the supported API |
+
+No current consumer needs a public `RwLock` guard, writer guard, channel receiver, or
+lock-held callback. The `index` and `types` implementation modules are private; their
+supported types are exported once at the crate root.
+
 ### API Changes
 
 The exact signatures are settled under red tests, but the intended compatibility
@@ -290,14 +339,18 @@ found during the usage inventory.
 
 ### Phase 0: Close the PR Merge Blockers
 
-- [ ] `fdu-ad45`: restore and enforce the 14-day executable-dependency cool-off
-- [ ] `fdu-nlh8`: reject malformed observation batches before any mutation
-- [ ] `fdu-1j0b`: remove filesystem verification from the writer-lock fallback
-- [ ] `fdu-8jte`: make the worker an I/O-free bounded coalescer and make overload and
+- [x] `fdu-ad45`: restore and enforce the 14-day executable-dependency cool-off
+- [x] `fdu-nlh8`: reject malformed observation batches before any mutation
+- [x] `fdu-1j0b`: remove filesystem verification from the writer-lock fallback
+- [x] `fdu-8jte`: make the worker an I/O-free bounded coalescer and make overload and
   shutdown fail safe
-- [ ] `fdu-s7wr`: seal the shared-index API without public guards or lock-held callbacks
-- [ ] `fdu-gd6n`: prove the combined concurrency contract under deterministic
+- [x] `fdu-s7wr`: seal the shared-index API without public guards or lock-held callbacks
+- [x] `fdu-gd6n`: prove the combined concurrency contract under deterministic
   interleavings
+- [x] `fdu-l8vc`: remove the unrooted public watch-application capability
+- [x] `fdu-83gl`: specify the stat-sample and queued-event convergence contract
+- [x] `fdu-ie5z`: preserve no-op and stale arbitration at the terminal logical clock
+- [x] `fdu-b3qe`: authenticate live provenance checks without widening PR permissions
 - [ ] `fdu-sn43`: rerun all gates and publish the superseding senior approval
 
 The supply-chain, watch-lock, and watch-transport fixes are independent.
@@ -308,7 +361,7 @@ fix.
 
 ### Phase 1: Reproducible Tooling
 
-- [ ] `fdu-zga3`: pin the normal Rust toolchain and complete the feature/MSRV matrix
+- [x] `fdu-zga3`: pin the normal Rust toolchain and complete the feature/MSRV matrix
 
 ### Phase 2: Add Refactor Safety Nets
 
@@ -343,8 +396,8 @@ The bead IDs and dependency graph are recorded in the **Beads** section.
 - Fill every watcher stage, disconnect every owner, and drop during queued and in-flight
   work; prove bounded state, root-invalidation degradation, typed stop/panic outcomes,
   no duplicated verification, and prompt worker join
-- Race snapshot readers and writers and exercise Python GIL release and same-object
-  borrow behavior from installed artifacts
+- Race snapshot readers and writers; exercise Python GIL release and same-object borrow
+  behavior in the locked embedding lane, then smoke the installed wheel separately
 - Use fixed-seed generated operation sequences with the seed and operation trace printed
   on failure; retain minimized discoveries as focused regressions
 - Mutate committed snapshot seeds and inject every write/commit failure stage without
@@ -366,13 +419,13 @@ This is pre-release hardening, so breaking internal and unpublished Rust/Python 
 changes land before the first crates.io or PyPI release.
 Work rolls out in dependency order:
 
-1. repair supply-chain inputs and make observation application atomic as independent P0
-   fixes;
-2. remove watch I/O from index locks, bound watcher lifecycle, and seal the shared-index
-   API under red tests;
-3. pass the deterministic concurrency state-machine suite;
-4. rerun the complete PR gate and publish final approval;
-5. pin and prove toolchain/feature contracts;
+1. **Complete:** repair supply-chain inputs and make observation application atomic as
+   independent P0 fixes;
+2. **Complete:** remove watch I/O from index locks, bound watcher lifecycle, and seal
+   the shared-index API under red tests;
+3. **Complete:** pass the deterministic concurrency state-machine suite;
+4. **In progress:** rerun the complete PR gate and publish final approval;
+5. **Complete early:** pin and prove toolchain/feature contracts;
 6. land the index model and snapshot failure-state safety nets;
 7. harden CLI and language boundaries;
 8. let the existing Phase 1 engine and publishing beads consume those gates.
@@ -381,15 +434,17 @@ No migration is needed for pre-release snapshots.
 A fingerprint or format correction must cause a cold scan, never an attempted
 reinterpretation.
 
-## Open Questions
+## Resolved and Open Questions
 
-- **Guard-free shared-index API (`fdu-s7wr`)**: which query shape best serves the first
-  real concurrent consumer—focused owned methods, a bounded immutable view, or another
-  measured design? Returning a standard-library lock guard is not an option.
-- **Pinned normal Rust release (`fdu-zga3`)**: which exact release has cleared the
-  14-day cool-off when the toolchain bead is implemented?
-  The plan pins that reviewed release; it does not encode today’s moving `stable`
-  answer.
+- **Guard-free shared-index API (`fdu-s7wr`) — resolved:** focused owned methods serve
+  shared consumers, `IndexHandle::snapshot()` captures a coherent owned image, and the
+  owned `Index` retains allocation-free borrowed child iteration.
+  No supported API exposes a standard-library lock guard.
+- **Pinned normal Rust release (`fdu-zga3`) — resolved:** 1.97.1 and its rustfmt/Clippy
+  components are pinned after provenance review.
+  Core-only and watch-only tests run locally and in CI; the exact 1.85.0 MSRV lane
+  compiles all features and runs the core tests rather than relying on compilation
+  alone.
 - **Snapshot durability contract (`fdu-471a`)**: is crash durability a product
   requirement, or is atomic visibility plus disposable-cache recovery sufficient?
   The current architecture needs only the latter; stronger fsync claims require platform
@@ -414,14 +469,18 @@ concurrency review closes when this plan, its beads, and the PR record agree.
 | 0 | `fdu-8jte` | P1 | Bound watcher transport and make overload/shutdown fail safe | — |
 | 0 | `fdu-s7wr` | P1 | Seal the minimal guard-free Rust API and ownership contract | `fdu-nlh8` |
 | 0 | `fdu-gd6n` | P1 | Prove current concurrency contracts deterministically | `fdu-s7wr`, `fdu-1j0b`, `fdu-8jte` |
-| 1 | `fdu-zga3` | P1 | Pin Rust tooling and prove supported feature/MSRV contracts | `fdu-ad45`, `fdu-sn43` |
+| 0 | `fdu-l8vc` | P0 | Bind supported watch application to the indexed root | — |
+| 0 | `fdu-83gl` | P0 | Specify watch stat-to-commit linearization and convergence | — |
+| 0 | `fdu-ie5z` | P0 | Allow no-op and stale observations at the terminal clock | — |
+| 0 | `fdu-b3qe` | P0 | Authenticate live provenance checks with least privilege | — |
+| 1 | `fdu-zga3` | P1 | Pin Rust tooling and prove supported feature/MSRV contracts | `fdu-ad45` |
 | 2 | `fdu-o8r8` | P1 | Add a deterministic index/delta reference model | `fdu-nlh8`, `fdu-sn43` |
 | 2 | `fdu-471a` | P1 | Exercise snapshot parsing and commit failures as a state machine | `fdu-nlh8`, `fdu-sn43` |
 | 3 | `fdu-zsdy` | P2 | Make CLI rendering iterative and stack-safe | `fdu-sn43` |
 | 3 | `fdu-k8zw` | P2 | Preserve native identity through classification and Python | `fdu-s7wr` |
 
-The Phase 1 bead `fdu-sn43` depends on `fdu-ad45` and `fdu-gd6n` and owns final PR
-validation and approval.
+The Phase 1 bead `fdu-sn43` depends on `fdu-ad45`, `fdu-gd6n`, `fdu-l8vc`, `fdu-83gl`,
+`fdu-ie5z`, and `fdu-b3qe` and owns final PR validation and approval.
 Atomic rejection reaches it transitively through `fdu-s7wr` and the validation gate,
 without serializing independent fixes.
 
@@ -433,8 +492,12 @@ Cross-epic dependencies make the existing work consume these gates:
   through `fdu-gd6n` and `fdu-sn43`.
 - `fdu-1j0b`, `fdu-8jte`, and `fdu-s7wr` block final concurrency validation under
   `fdu-gd6n`; `fdu-gd6n` blocks `fdu-sn43`.
-- `fdu-sn43` is the explicit post-approval start gate for `fdu-zga3`, `fdu-o8r8`,
-  `fdu-471a`, and `fdu-zsdy`.
+- `fdu-l8vc`, `fdu-83gl`, and `fdu-ie5z` are final-review corrections that directly
+  block `fdu-sn43` without serializing one another.
+- `fdu-b3qe` is the final-gate provenance fix and directly blocks `fdu-sn43`.
+- `fdu-sn43` is the explicit post-approval start gate for `fdu-o8r8`, `fdu-471a`, and
+  `fdu-zsdy`; `fdu-zga3` completed early because the merge gate already needed its
+  reproducibility and feature evidence.
 - `fdu-s7wr` blocks `fdu-r27g`, `fdu-1gbl`, `fdu-a6dz`, `fdu-lka2`, and `fdu-9cf0`.
 - `fdu-o8r8` blocks `fdu-1gbl` and `fdu-a6dz`.
 - `fdu-471a` blocks `fdu-xihx`.
@@ -442,11 +505,11 @@ Cross-epic dependencies make the existing work consume these gates:
 - `fdu-zsdy` blocks `fdu-oqoy` and `fdu-jej9`.
 - `fdu-k8zw` blocks `fdu-jej9`, `fdu-v4lc`, and `fdu-9cf0`.
 
-The supply-chain bead also owns the tbd integration drift reported during this review.
-`tbd doctor` marks the managed `AGENTS.md` and Codex hook surfaces stale, while a dry
-run would remove two legacy hooks.
-Any refresh must be reviewed as an open-time executable change and preserve fdu’s
-explicit opt-in-only GitHub CLI bootstrap.
+The supply-chain bead also resolved the tbd integration drift reported during this
+review. The managed surfaces were refreshed with GitHub CLI auto-bootstrap disabled; the
+two legacy session-start installers were removed.
+The capability remains as the explicit, checksum-verified `scripts/bootstrap-gh-cli.sh`,
+and `tbd doctor` is clean.
 
 ## References
 

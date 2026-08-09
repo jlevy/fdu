@@ -138,6 +138,12 @@ Its applying driver re-verifies queued samples at a clock-stable commit boundary
 currently accepts only an unbounded, cross-filesystem scope; bounded-depth and
 one-filesystem event filtering is tracked as watch-hardening work and those
 configurations fail explicitly rather than indexing excluded paths.
+A watch sample is valid at its filesystem `stat` point; the process does not pretend it
+can freeze external filesystem mutation until the in-memory commit.
+Backend events that arrive during or after verification remain queued for the next
+batch, while reported loss or ambiguity invalidates and reconciles the affected scope.
+The logical-clock check prevents an older sample from overwriting a newer in-memory
+commit; it is not a filesystem transaction.
 
 Two invariants are non-negotiable, because a cache that lies is worse than no cache:
 
@@ -160,6 +166,7 @@ Two invariants are non-negotiable, because a cache that lies is worse than no ca
 
 ```shell
 npm ci          # install the exact development-only golden-test toolchain
+make supply-chain  # verify release age, provenance, exact pins, and CI trust controls
 make build      # debug build, all features
 make test       # Rust tests plus the end-to-end CLI golden contract
 make test-golden  # build and compare only the four CLI sessions
@@ -173,6 +180,8 @@ immediately reruns comparison.
 Review the Markdown diff before committing.
 The scenario design and the small set of permitted dynamic patterns are documented in
 [the completed CLI golden-test plan](docs/project/specs/done/plan-2026-08-09-fdu-cli-golden-tests.md).
+Read [the supply-chain policy](SUPPLY-CHAIN-SECURITY.md) before changing a dependency,
+toolchain, CI action, or bootstrap download.
 
 ## License
 

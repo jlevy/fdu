@@ -9,14 +9,15 @@
             "command": "bash .claude/scripts/tbd-session.sh"
           }
         ]
-      },
+      }
+    ],
+    "PostToolUse": [
       {
-        "matcher": "",
+        "matcher": "Bash",
         "hooks": [
           {
             "type": "command",
-            "command": "bash .claude/scripts/ensure-gh-cli.sh",
-            "timeout": 120
+            "command": "bash \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/tbd-closing-reminder.sh"
           }
         ]
       }
@@ -28,17 +29,6 @@
           {
             "type": "command",
             "command": "bash .claude/scripts/tbd-session.sh --brief"
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/tbd-closing-reminder.sh"
           }
         ]
       }

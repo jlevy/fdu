@@ -4,7 +4,6 @@ This file provides instructions and context for AI coding agents working on this
 project.
 
 <!-- BEGIN TBD INTEGRATION format=f06 surface=agents-md -->
-
 ## tbd
 
 This repository uses **tbd** for git-native issue tracking (beads), spec-driven
@@ -95,7 +94,8 @@ Three artifacts and one contract:
 
 ## Dependencies
 
-Read `tbd guidelines supply-chain-hardening` before any dependency change.
+Read [SUPPLY-CHAIN-SECURITY.md](SUPPLY-CHAIN-SECURITY.md) and
+`tbd guidelines supply-chain-hardening` before any dependency change.
 Preserve the 14-day cool-off; first-party tools (tbd, flowmark) are the documented
 exceptions. Commit `Cargo.lock` when dependencies change, and keep the core crate’s
 always-on dependency list short — `deny.toml` documents the policy.

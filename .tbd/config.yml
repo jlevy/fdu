@@ -14,7 +14,7 @@ sync:
 settings:
   auto_sync: false
   doc_auto_sync_hours: 24
-  use_gh_cli: true
+  use_gh_cli: false
 # Documentation cache: the docs tbd serves (guidelines, shortcuts, templates), synced
 # into the gitignored .tbd/docs/ cache. Managed with `tbd docs` (run `tbd docs --help`).
 # files: destination path (under .tbd/docs/) -> source docref. Common source forms:

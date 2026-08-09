@@ -2,7 +2,7 @@
 //!
 //! The CLI serves two audiences from one binary, and neither is an afterthought:
 //!
-//! - **Humans** get colored, width-aware tree output with percentage bars, sensible
+//! - **Humans** get colored, fixed-column tree output with percentage bars, sensible
 //!   defaults, and `NO_COLOR` plus pipe detection so redirection degrades cleanly.
 //! - **Agents** get `--help` as the complete source of truth, JSON whose schema is
 //!   versioned with the tool, and meaningful exit codes — no pager, no prompts, no
@@ -26,7 +26,9 @@ const JSON_SCHEMA: &str = "fdu.tree/2";
 /// exit status 2, so scripts can opt into them without confusing them with complete data.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum RunOutcome {
+    /// Every path in scope was read successfully.
     Complete,
+    /// Output was produced, but one or more filesystem paths could not be read.
     Partial,
 }
 
@@ -186,8 +188,8 @@ impl Cli {
 
         let mut rows: Vec<(u64, &OsStr, EntryId, bool)> = index
             .children_of(id)
-            .unwrap_or_default()
             .into_iter()
+            .flatten()
             .map(|(name, child)| {
                 let is_dir = index.kind_of(child).expect("child handle is live").is_dir();
                 let size = index.rollup_of(child).map_or_else(
@@ -300,15 +302,15 @@ impl Cli {
     }
 
     fn json_node_is_truncated(&self, index: &Index, id: EntryId, depth: usize) -> bool {
-        let children = index.children_of(id).unwrap_or_default();
-        if children.is_empty() {
+        let Some(mut children) = index.children_of(id) else {
             return false;
-        }
-        if depth >= self.depth || children.len() > self.number {
+        };
+        let child_count = children.len();
+        if child_count > 0 && (depth >= self.depth || child_count > self.number) {
             return true;
         }
 
-        children.into_iter().any(|(_, child)| {
+        children.any(|(_, child)| {
             index.kind_of(child).is_some_and(EntryKind::is_dir)
                 && self.json_node_is_truncated(index, child, depth + 1)
         })
@@ -351,8 +353,8 @@ impl Cli {
         if is_dir && depth < self.depth {
             let mut rows: Vec<(u64, &OsStr, EntryId)> = index
                 .children_of(id)
-                .unwrap_or_default()
                 .into_iter()
+                .flatten()
                 .map(|(child_name, child)| {
                     let size = index.rollup_of(child).map_or_else(
                         || {
@@ -602,7 +604,7 @@ mod tests {
             dev: 1,
         };
         let mut index = Index::new("/fixture");
-        index.apply(&crate::Observation::new(vec![
+        index.apply_ok(&crate::Observation::new(vec![
             crate::Op::Upsert {
                 path: PathBuf::from("directory"),
                 kind: EntryKind::Dir,
@@ -712,7 +714,7 @@ mod tests {
     fn json_child_order_uses_the_selected_size_measure() {
         let (mut cli, mut index, report) = schema_fixture();
         cli.apparent_size = false;
-        index.apply(&crate::Observation::new(vec![
+        index.apply_ok(&crate::Observation::new(vec![
             crate::Op::Upsert {
                 path: PathBuf::from("apparent-heavy"),
                 kind: EntryKind::File,
@@ -775,7 +777,7 @@ mod tests {
         let (mut cli, _, _) = schema_fixture();
         cli.depth = 1;
         let mut index = Index::new(root);
-        index.apply(&crate::Observation::new(vec![
+        index.apply_ok(&crate::Observation::new(vec![
             crate::Op::Upsert {
                 path: PathBuf::from(first),
                 kind: EntryKind::File,

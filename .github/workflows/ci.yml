@@ -5,35 +5,62 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: 0
+  NPM_CONFIG_IGNORE_SCRIPTS: "true"
   RUSTFLAGS: "-D warnings"
 
 jobs:
-  fmt:
-    name: Format check
+  supply-chain:
+    name: Supply-chain provenance
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
         with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.18.0
+      - run: node --test scripts/check-supply-chain.test.mjs
+      - run: node scripts/check-supply-chain.mjs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  fmt:
+    name: Format check
+    needs: supply-chain
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # 1.97.1
+        with:
+          toolchain: 1.97.1
           components: rustfmt
       - run: cargo fmt --all -- --check
 
   clippy:
     name: Clippy
+    needs: supply-chain
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
         with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # 1.97.1
+        with:
+          toolchain: 1.97.1
           components: clippy
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       - run: cargo clippy --locked --all-targets --all-features -- -D warnings
 
   test:
     name: Test (${{ matrix.os }})
+    needs: supply-chain
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -41,13 +68,15 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # 1.97.1
+        with:
+          toolchain: 1.97.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 24
-          cache: npm
-      - run: npm ci
+          node-version: 24.18.0
+      - run: npm ci --ignore-scripts
       # The watch tests exercise a different notify backend on each of these runners —
       # inotify, FSEvents, and ReadDirectoryChangesW — which is the only way to catch
       # per-platform event semantics before a user does.
@@ -58,63 +87,88 @@ jobs:
         run: npm run test:golden
 
   test-lib-only:
-    name: Test library (no default features)
+    name: Test library feature boundaries
+    needs: supply-chain
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # 1.97.1
+        with:
+          toolchain: 1.97.1
       # Library consumers take `default-features = false`. Without this job, that path
       # would only ever be compiled by them.
       - run: cargo test --locked -p fdu --no-default-features
+      # The watch layer is strictly additive and must not inherit CLI-only features.
+      - run: cargo test --locked -p fdu --no-default-features --features watch
 
   msrv:
     name: MSRV (1.85)
+    needs: supply-chain
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-      - uses: dtolnay/rust-toolchain@85c23e28f7ccc75a9a153d45d385d94a85464876 # 1.85
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # 1.85.0
+        with:
+          toolchain: 1.85.0
       - run: cargo check --locked --all-features
+      # Compile success alone misses behavioral and test-only MSRV regressions.
+      - run: cargo test --locked -p fdu --no-default-features
 
   docs:
     name: Documentation
+    needs: supply-chain
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # 1.97.1
+        with:
+          toolchain: 1.97.1
       - run: cargo doc --locked --no-deps --all-features
         env:
           RUSTDOCFLAGS: "-D warnings"
 
   deny:
     name: Dependency audit
+    needs: supply-chain
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 24
-          cache: npm
-      - run: npm ci
+          node-version: 24.18.0
+      - run: npm ci --ignore-scripts
       - run: npm audit --audit-level=moderate
+      - run: npm audit signatures
       - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2
         with:
           arguments: "--all-features --locked"
 
   python:
     name: Python bindings
+    needs: supply-chain
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-      - uses: dtolnay/rust-toolchain@4360b52568e2003a75bf9bc1d59f33a8e3fc893c # stable
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # 1.97.1
+        with:
+          toolchain: 1.97.1
       - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
           version: "0.11.28"
-          python-version: "3.13"
-          enable-cache: true
+          enable-cache: false
+      - name: Test GIL release and Python object borrow exclusion
+        working-directory: crates/fdu-py
+        run: uv run --frozen --only-group dev cargo test --locked -p fdu-py --lib --no-default-features
       - name: Build the extension module
         working-directory: crates/fdu-py
         run: uv run --frozen --only-group dev maturin build --locked --release --out dist
