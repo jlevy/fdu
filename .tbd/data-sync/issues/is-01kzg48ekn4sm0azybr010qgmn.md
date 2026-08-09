@@ -5,7 +5,7 @@ title: "fdu phase 1: fastest walker with full stats, proven by benchmark"
 kind: epic
 status: open
 priority: 1
-version: 27
+version: 28
 spec_path: docs/project/specs/active/plan-2026-08-08-fdu-phase-1.md
 labels: []
 dependencies: []
@@ -34,6 +34,6 @@ child_order_hints:
   - is-01kzg4c6vnh98mqrpkzw7ydne0
   - is-01kzkskszrb20xkk7g3gt32za6
 created_at: 2026-08-08T07:26:35.637Z
-updated_at: 2026-08-09T20:40:57.964Z
+updated_at: 2026-08-09T21:11:30.137Z
 ---
-Root execution epic for fdu. The Phase 0 implementation is assembled and green, but PR #1 remains held until independent P0 bugs fdu-ad45 and fdu-nlh8 close and integration gate fdu-sn43 publishes final approval. After merge, execute Rust refactor guards and the shared evidence foundation, resolve measured design gates, build the optimized engine, finish product surfaces, publish the complete performance report, then release. Future-only extensions live under fdu-x746 and do not compete with this critical path. Exit criteria remain the measured cold full-stat, warm 500k, memory, CLI/schema, reproducible evidence, and ratified-goal gates in the linked plan.
+Root execution epic for fdu. The Phase 0 product slice is assembled and the existing suite is green, but PR #1 remains held on the Wave 0 graph: independent supply-chain trust fdu-ad45; atomic malformed-batch rejection fdu-nlh8 before guard-free API fdu-s7wr; lock-free-of-I/O watch arbitration fdu-1j0b; bounded I/O-free watch coalescing and shutdown fdu-8jte; deterministic convergence at fdu-gd6n; and final approval fdu-sn43 after fdu-ad45 plus fdu-gd6n. After merge, execute the remaining Rust refactor guards and shared performance-evidence foundation, resolve measured design gates, build the optimized engine, finish product surfaces, publish the complete performance report, then release. Future-only extensions live under fdu-x746 and do not compete with this critical path. Exit criteria include measured cold/full-stat, warm 500k, memory, CLI/schema, reproducible evidence, ratified goals, and bounded provable concurrency contracts from the linked plan.

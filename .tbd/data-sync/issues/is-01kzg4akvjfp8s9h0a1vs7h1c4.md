@@ -5,23 +5,19 @@ title: "Index concurrency: single-writer RwLock, escalate only on measured conte
 kind: task
 status: open
 priority: 2
-version: 3
+version: 6
 spec_path: docs/project/specs/active/plan-2026-08-08-fdu-phase-1.md
-labels: []
+labels:
+  - concurrency
+  - performance
 dependencies:
   - type: blocks
     target: is-01kzg4c6h9v2dzand7t090p278
 parent_id: is-01kzg48ekn4sm0azybr010qgmn
 created_at: 2026-08-08T07:27:46.546Z
-updated_at: 2026-08-09T20:37:09.481Z
+updated_at: 2026-08-09T21:11:18.165Z
 ---
-Settled design decision, carried over from the research (Goal Coverage and Deviations): the index uses a single-writer model with parking_lot::RwLock for phase 1. Writes are short (O(depth) delta applies); reads are pre-computed roll-up field lookups, not queries that walk.
-
-Phase-1 task: implement it, then MEASURE read contention under watch churn before considering anything fancier. The delta contract being the only mutation path is what keeps a later escalation to epoch or arc-swap snapshots contained rather than a rewrite.
-
-The cold-path walk needs no locks at all — the atomic-refcount roll-up builds the tree before it is ever shared.
-
-Retrofitting concurrency later would be a rewrite, which is why this is settled now rather than left open.
+Retain the phase-1 single-writer model behind the sealed IndexHandle boundary, initially using the current std::sync::RwLock. Writes are intended to be short O(depth) delta applications; reads consume precomputed roll-up state. Do not introduce parking_lot, arc-swap, epochs, sharding, or another synchronization dependency by assertion. First implement the guard-free API and common performance probe, then measure reader latency, writer wait/progress, throughput, and starvation under representative watch churn, wide-directory reconciliation, and snapshot capture. Report distribution and workload details, not only averages. Correctness remains owned by fdu-gd6n; this bead answers whether contention justifies a redesign. The cold-path walker builds before sharing and needs no index lock. Any change in primitive must preserve Delta-only mutation, typed poison/panic behavior, callback-after-unlock, and the same deterministic concurrency suite, and must pass supply-chain review before adding a dependency.
 
 ## Notes
 
