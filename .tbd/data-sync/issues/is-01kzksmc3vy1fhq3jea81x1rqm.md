@@ -5,8 +5,8 @@ title: Add locked tryscript harness and deterministic CLI fixture
 kind: task
 status: closed
 priority: 1
-version: 7
-spec_path: docs/project/specs/active/plan-2026-08-09-fdu-cli-golden-tests.md
+version: 9
+spec_path: docs/project/specs/done/plan-2026-08-09-fdu-cli-golden-tests.md
 labels: []
 dependencies:
   - type: blocks
@@ -19,7 +19,7 @@ dependencies:
     target: is-01kzksmmryehfvwx8beyyfppg5
 parent_id: is-01kzkskszrb20xkk7g3gt32za6
 created_at: 2026-08-09T17:37:49.690Z
-updated_at: 2026-08-09T17:43:31.579Z
+updated_at: 2026-08-09T18:39:21.121Z
 closed_at: 2026-08-09T17:43:31.577Z
 close_reason: Pinned tryscript 0.1.7 with audited lockfile and lifecycle scripts disabled; added an isolated exact-output smoke transcript, portable fixture tree, and local run/update scripts. npm ci, npm audit, golden smoke, and make check all pass.
 ---

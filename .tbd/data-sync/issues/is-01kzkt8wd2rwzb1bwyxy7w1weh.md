@@ -5,13 +5,13 @@ title: Report tryscript blank-line stderr assertion gap
 kind: task
 status: closed
 priority: 2
-version: 2
-spec_path: docs/project/specs/active/plan-2026-08-09-fdu-cli-golden-tests.md
+version: 4
+spec_path: docs/project/specs/done/plan-2026-08-09-fdu-cli-golden-tests.md
 labels: []
 dependencies: []
 parent_id: is-01kzkskszrb20xkk7g3gt32za6
 created_at: 2026-08-09T17:49:01.728Z
-updated_at: 2026-08-09T17:50:06.021Z
+updated_at: 2026-08-09T18:39:23.872Z
 closed_at: 2026-08-09T17:50:06.020Z
 close_reason: Filed https://github.com/jlevy/tryscript/issues/45 with a minimal exact-stderr reproduction, parser analysis, workaround tradeoffs, and proposed regression coverage; documented the exact-newline bridge in the fdu spec.
 ---

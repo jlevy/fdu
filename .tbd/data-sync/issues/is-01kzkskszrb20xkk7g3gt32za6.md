@@ -3,10 +3,10 @@ type: is
 id: is-01kzkskszrb20xkk7g3gt32za6
 title: Specify and harden the fdu CLI with golden tests
 kind: epic
-status: in_progress
+status: closed
 priority: 1
-version: 17
-spec_path: docs/project/specs/active/plan-2026-08-09-fdu-cli-golden-tests.md
+version: 19
+spec_path: docs/project/specs/done/plan-2026-08-09-fdu-cli-golden-tests.md
 labels: []
 dependencies:
   - type: blocks
@@ -29,6 +29,8 @@ child_order_hints:
   - is-01kzktxd8pfnk7q2e6ndetm3v1
   - is-01kzkvb2y6jhmtzna9e6vh5nxt
 created_at: 2026-08-09T17:37:31.127Z
-updated_at: 2026-08-09T18:07:42.533Z
+updated_at: 2026-08-09T18:39:20.747Z
+closed_at: 2026-08-09T18:39:04.102Z
+close_reason: The 25-scenario CLI golden contract is wired into Make and locked audits, its update workflow is proven, and CI run 31329423861 passes it on Linux, macOS, and Windows.
 ---
 Executable CLI contract using four tryscript sessions plus focused platform tests. Covers human and JSON output, errors and exit statuses, cache lifecycle, deterministic cross-platform execution, and every behavior defect recorded in the linked spec.

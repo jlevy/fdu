@@ -5,13 +5,13 @@ title: Report tryscript multi-command console block hazard
 kind: task
 status: closed
 priority: 2
-version: 2
-spec_path: docs/project/specs/active/plan-2026-08-09-fdu-cli-golden-tests.md
+version: 4
+spec_path: docs/project/specs/done/plan-2026-08-09-fdu-cli-golden-tests.md
 labels: []
 dependencies: []
 parent_id: is-01kzkskszrb20xkk7g3gt32za6
 created_at: 2026-08-09T17:49:01.729Z
-updated_at: 2026-08-09T17:50:06.241Z
+updated_at: 2026-08-09T18:39:23.646Z
 closed_at: 2026-08-09T17:50:06.240Z
 close_reason: Filed https://github.com/jlevy/tryscript/issues/46 with a minimal multi-prompt reproduction, false-pass risk analysis, and proposed parse-error regression; documented one command per console fence in the fdu spec.
 ---

@@ -5,13 +5,13 @@ title: Report tryscript update misassignment for duplicate blocks
 kind: bug
 status: closed
 priority: 1
-version: 2
-spec_path: docs/project/specs/active/plan-2026-08-09-fdu-cli-golden-tests.md
+version: 4
+spec_path: docs/project/specs/done/plan-2026-08-09-fdu-cli-golden-tests.md
 labels: []
 dependencies: []
 parent_id: is-01kzkskszrb20xkk7g3gt32za6
 created_at: 2026-08-09T18:00:14.357Z
-updated_at: 2026-08-09T18:02:15.184Z
+updated_at: 2026-08-09T18:39:22.951Z
 closed_at: 2026-08-09T18:02:15.183Z
 close_reason: Filed https://github.com/jlevy/tryscript/issues/47 with a minimal stateful reproduction and updater source-level cause. Kept repeated fdu invocations textually distinct so --update cannot confuse blocks, restored expectations from the sequential run, and documented the workaround.
 ---

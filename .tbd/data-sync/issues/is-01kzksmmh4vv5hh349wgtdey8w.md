@@ -5,8 +5,8 @@ title: Expose JSON scan scope and tree projection completeness
 kind: bug
 status: closed
 priority: 1
-version: 6
-spec_path: docs/project/specs/active/plan-2026-08-09-fdu-cli-golden-tests.md
+version: 8
+spec_path: docs/project/specs/done/plan-2026-08-09-fdu-cli-golden-tests.md
 labels: []
 dependencies:
   - type: blocks
@@ -17,7 +17,7 @@ dependencies:
     target: is-01kzksn3gepmk01a21gkxxs6bv
 parent_id: is-01kzkskszrb20xkk7g3gt32za6
 created_at: 2026-08-09T17:37:58.307Z
-updated_at: 2026-08-09T17:54:35.337Z
+updated_at: 2026-08-09T18:39:21.806Z
 closed_at: 2026-08-09T17:54:35.336Z
 close_reason: Preserved complete as scan completeness and added display_depth, entries_per_directory, scan_max_depth, and tree_truncated. Added exact full/truncated/restricted-scope JSON sessions plus synthetic depth/number exact-fit boundary tests; goldens pass twice and make check passes.
 ---
