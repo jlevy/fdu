@@ -157,6 +157,11 @@ partial run emits a valid JSON document and a usage error does not.
   `name_raw` with a documented platform encoding and hexadecimal payload.
   The root has the corresponding optional `root_raw` field
 
+Raw identity fields are omitted when the adjacent string is valid Unicode.
+On Unix, `encoding` is `unix-bytes` and `hex` is the lowercase, prefix-free byte
+sequence returned by `OsStr`. On Windows, `encoding` is `windows-wtf16le` and `hex` is
+the lowercase, prefix-free little-endian sequence of raw 16-bit code units.
+
 The completeness and raw-name fields are additive to `fdu.tree/2`; they do not change
 the meaning or type of existing fields.
 A future breaking shape change still requires a schema-version bump.
@@ -292,7 +297,7 @@ graph or published artifacts.
 - [x] Fix the human by-type measure mismatch under its failing transcript
 - [x] Reject ignored output-mode combinations under an argument-contract transcript
 - [x] Add explicit JSON scan-scope and tree-projection completeness under exact goldens
-- [ ] Preserve invalid filesystem names in machine output under platform-focused tests
+- [x] Preserve invalid filesystem names in machine output under platform-focused tests
 - [x] Expand `--help` so the golden document is genuinely sufficient for scripts and
   agents, including exit statuses and limit semantics
 - [x] Report the blank-stderr and multiple-command parser hazards upstream with minimal
@@ -323,7 +328,7 @@ design decision and acceptance behavior.
 | The current JSON `complete` field can be true while depth or row limits omit retained entries | Report scan scope and tree truncation independently | `fdu-y0o2` | Fixed |
 | Human `--by-type` rows use apparent bytes while the default summary uses allocated bytes | Use apparent bytes consistently for the entire by-type view | `fdu-msbx` | Fixed |
 | `--by-type --json` silently ignores `--by-type` | Reject the conflicting modes with a usage error | `fdu-msbx` | Fixed |
-| Lossy JSON names can collapse distinct non-UTF-8 filesystem entries | Emit optional raw identity data with a documented platform encoding | `fdu-17to` | Open |
+| Lossy JSON names can collapse distinct non-UTF-8 filesystem entries | Emit optional raw identity data with a documented platform encoding | `fdu-17to` | Fixed |
 | `--help` claims to be complete but omits exit-status and projection-scope semantics | Put those contracts in help and lock the whole output | `fdu-cauc` | Fixed |
 | ANSI stripping and non-terminal subprocesses prevent tryscript from proving color behavior | Keep a focused deterministic color-decision contract test | `fdu-qqpt` | Open |
 | The current binary integration suite covers only the Unix partial-result path | Add four portable end-to-end sessions and retain narrow platform tests | `fdu-ijz4` | In progress |
