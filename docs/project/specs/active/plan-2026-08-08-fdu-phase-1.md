@@ -14,11 +14,11 @@ The detailed benchmark methodology and implementation graph are in
 
 Phase-0 work is on branch `claude/fdu-phase-0-scaffold`, open as
 [PR #1](https://github.com/jlevy/fdu/pull/1), with `main` holding only the initial
-commit. The previous revision was green across Linux, macOS, and Windows.
-All P0 and concurrency implementation blockers in **Wave 0** below are now closed; final
-approval is active. The assembled revision passes the complete local handoff gate; the
-remaining merge work is commit, push, fresh cross-platform CI, and the superseding
-senior approval.
+commit. All P0, concurrency, and final-validation blockers in **Wave 0** below are
+closed. The assembled revision passes the complete local handoff gate and the fresh
+[Linux/macOS/Windows matrix](https://github.com/jlevy/fdu/actions/runs/31339731585). The
+superseding senior review approves PR #1 for merge; Phase 1 performance work remains
+separate and makes no claim about the portable walker.
 
 Beads live on the `tbd-sync` branch and are visible from any clone (`tbd list`).
 `make check` is the handoff gate; `AGENTS.md` carries the conventions worth not
@@ -28,9 +28,9 @@ rediscovering.
 
 The Phase 0 product slice is implemented: the repository exists, the architecture is
 expressed in code, and the whole pipeline runs end to end.
-Phase 0 hardening is implemented but not yet merge-complete because the final assembled
-revision still needs its pushed cross-platform CI and superseding senior approval.
-The local gate and tbd integrity/synchronization checks pass.
+Phase 0 hardening is merge-complete: the local gate, fresh cross-platform matrix,
+automated review disposition, and tbd integrity/synchronization checks pass, and the
+final senior review records no unresolved blocker.
 What that means concretely, because “scaffold” is otherwise an unhelpful word:
 
 **Built and tested.**
@@ -139,9 +139,8 @@ Future:  activate only from the evidence and release gates in the future roadmap
 
 ### Wave 0: Close the Current Merge Gate
 
-All implementation nodes in this wave are closed.
-The final approval bead remains highest priority because it proves the assembled
-revision rather than any one fix:
+Every implementation and final-validation node in this wave is closed.
+The approval gate proved the assembled revision rather than any one fix:
 
 - `fdu-ad45` restored the 14-day executable-dependency cool-off, provenance checks,
   least-privilege workflow settings, and reviewed tbd integration surfaces.
@@ -163,11 +162,10 @@ revision rather than any one fix:
 - `fdu-b3qe` keeps the online provenance gate authenticated locally and in CI without
   broadening pull-request permissions.
 - `fdu-9xf7` corrects cfg-disabled integration-test documentation ordering; exact
-  Windows-target compilation and the complete local gate pass, with fresh Windows CI
-  still required.
-- `fdu-sn43` follows the supply-chain and concurrency validation gates and owns the
-  final local gate, cross-platform CI, synchronized tbd state, PR description update,
-  and superseding senior approval.
+  Windows-target compilation, the complete local gate, and fresh Windows CI pass.
+- `fdu-sn43` completed the final local gate, fresh cross-platform CI, synchronized tbd
+  state, PR description update, automated-thread disposition, and superseding senior
+  approval after the supply-chain and concurrency validation gates.
 
 No Phase 1 optimization is a substitute for closing this gate.
 
@@ -313,12 +311,13 @@ is **fdu-a0w0**.
 | `fdu-83gl` | P0 | Closed | Specify watch stat-to-commit linearization and convergence | — |
 | `fdu-ie5z` | P0 | Closed | Preserve no-op and stale terminal-clock arbitration | — |
 | `fdu-b3qe` | P0 | Closed | Authenticate live provenance checks with least privilege | — |
-| `fdu-9xf7` | P0 | In progress | Keep cfg-disabled integration-test crates documented cross-platform | — |
-| `fdu-sn43` | P0 | In progress | Run final gates and publish the superseding senior approval | `fdu-ad45`, `fdu-gd6n`, `fdu-l8vc`, `fdu-83gl`, `fdu-ie5z`, `fdu-b3qe`, `fdu-9xf7` |
+| `fdu-9xf7` | P0 | Closed | Keep cfg-disabled integration-test crates documented cross-platform | — |
+| `fdu-sn43` | P0 | Closed | Run final gates and publish the superseding senior approval | `fdu-ad45`, `fdu-gd6n`, `fdu-l8vc`, `fdu-83gl`, `fdu-ie5z`, `fdu-b3qe`, `fdu-9xf7` |
 
 The implementation beads are children of the Rust-quality epic.
 Independent fixes are not serialized; `fdu-gd6n` is the convergence point.
-`fdu-sn43` remains the only bead whose completion means PR #1 is approved for merge.
+`fdu-sn43` is closed; its completion is the explicit approval record and start gate for
+the queued Phase 1 work.
 
 ### Governing Workstreams
 

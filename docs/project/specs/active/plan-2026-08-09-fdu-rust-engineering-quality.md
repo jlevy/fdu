@@ -4,8 +4,7 @@
 
 **Author:** fdu project
 
-**Status:** Active — merge-blocking implementation complete; final approval gate in
-progress
+**Status:** Active — PR #1 merge gate complete; later hardening queued
 
 ## Overview
 
@@ -28,9 +27,8 @@ changes rather than replacing or rescoping them.
 
 ## Current Status
 
-The epic is `fdu-dxee`, a child of the Phase 1 epic `fdu-qfz6`. Every design and
-implementation node on the PR #1 merge path is closed except the fresh remote
-confirmation for `fdu-9xf7`:
+The epic is `fdu-dxee`, a child of the Phase 1 epic `fdu-qfz6`. Every design,
+implementation, and validation node on the PR #1 merge path is closed:
 
 - `fdu-ad45`: executable-dependency cool-off, provenance, and CI trust controls now fail
   closed in CI and the local handoff gate;
@@ -55,20 +53,21 @@ confirmation for `fdu-9xf7`:
   fail-closed validation.
 - `fdu-9xf7`: the Windows-only missing-doc failure is corrected by retaining crate
   documentation before the Unix cfg attribute; exact Windows-target compilation and the
-  complete local gate pass, and fresh cross-platform CI remains required.
+  complete local gate pass, and fresh cross-platform CI confirms the correction.
 
 `fdu-zga3` also completed early because reproducible review evidence required the pinned
 normal toolchain, watch-only feature lane, and test-running MSRV lane now rather than
 after merge.
 
-The only active merge-path bead is `fdu-sn43`. The complete local handoff gate now
-passes: 145 all-feature library tests, two CLI unit tests, one CLI integration test, two
-doctests, 25 built-binary golden scenarios, 105 core-only tests, 135 watch-only tests,
-exact-1.85.0 compilation and core tests, ten live supply-chain policy tests, Clippy,
-rustdoc, Cargo/npm audits, two Python concurrency tests, and an installed abi3 wheel
-smoke test. The remaining work is to push the assembled branch, require the fresh GitHub
-Linux/macOS/Windows/MSRV/docs/audit/Python matrix, and publish the superseding senior
-approval.
+The final merge-path bead `fdu-sn43` is closed.
+The complete local handoff gate passes: 145 all-feature library tests, two CLI unit
+tests, one CLI integration test, two doctests, 25 built-binary golden scenarios, 105
+core-only tests, 135 watch-only tests, exact-1.85.0 compilation and core tests, ten live
+supply-chain policy tests, Clippy, rustdoc, Cargo/npm audits, two Python concurrency
+tests, and an installed abi3 wheel smoke test.
+Fresh [GitHub run 31339731585](https://github.com/jlevy/fdu/actions/runs/31339731585)
+passes the Linux, macOS, Windows, MSRV, feature-boundary, docs, audit, provenance,
+golden, and Python jobs, and the superseding senior review approves PR #1 for merge.
 The remaining P1 and P2 items protect later representation changes, performance
 evidence, and publishing; they are explicitly deferred rather than hidden merge
 blockers.
@@ -356,9 +355,9 @@ found during the usage inventory.
 - [x] `fdu-83gl`: specify the stat-sample and queued-event convergence contract
 - [x] `fdu-ie5z`: preserve no-op and stale arbitration at the terminal logical clock
 - [x] `fdu-b3qe`: authenticate live provenance checks without widening PR permissions
-- [ ] `fdu-9xf7`: confirm the cfg-disabled integration-test documentation fix in fresh
+- [x] `fdu-9xf7`: confirm the cfg-disabled integration-test documentation fix in fresh
   Windows CI
-- [ ] `fdu-sn43`: rerun all gates and publish the superseding senior approval
+- [x] `fdu-sn43`: rerun all gates and publish the superseding senior approval
 
 The supply-chain, watch-lock, and watch-transport fixes are independent.
 Atomic batch rejection precedes the final guard-free API because it changes the apply
@@ -431,7 +430,7 @@ Work rolls out in dependency order:
 2. **Complete:** remove watch I/O from index locks, bound watcher lifecycle, and seal
    the shared-index API under red tests;
 3. **Complete:** pass the deterministic concurrency state-machine suite;
-4. **In progress:** rerun the complete PR gate and publish final approval;
+4. **Complete:** rerun the complete PR gate and publish final approval;
 5. **Complete early:** pin and prove toolchain/feature contracts;
 6. land the index model and snapshot failure-state safety nets;
 7. harden CLI and language boundaries;
@@ -503,8 +502,8 @@ Cross-epic dependencies make the existing work consume these gates:
 - `fdu-l8vc`, `fdu-83gl`, and `fdu-ie5z` are final-review corrections that directly
   block `fdu-sn43` without serializing one another.
 - `fdu-b3qe` is the final-gate provenance fix and directly blocks `fdu-sn43`.
-- `fdu-9xf7` is the cross-platform documentation-lint fix and directly blocks `fdu-sn43`
-  until fresh Windows CI passes.
+- `fdu-9xf7` was the cross-platform documentation-lint fix; fresh Windows CI closed it
+  before `fdu-sn43` completed.
 - `fdu-sn43` is the explicit post-approval start gate for `fdu-o8r8`, `fdu-471a`, and
   `fdu-zsdy`; `fdu-zga3` completed early because the merge gate already needed its
   reproducibility and feature evidence.
