@@ -5,13 +5,13 @@ title: "Watch hardening: rename stitching, backend selection, kqueue sweep, fail
 kind: feature
 status: open
 priority: 2
-version: 1
+version: 2
 spec_path: docs/project/specs/active/plan-2026-08-08-fdu-phase-1.md
 labels: []
 dependencies: []
 parent_id: is-01kzg48ekn4sm0azybr010qgmn
 created_at: 2026-08-08T07:28:15.231Z
-updated_at: 2026-08-08T07:28:15.231Z
+updated_at: 2026-08-09T04:38:43.044Z
 ---
 The watch layer works (coalesce -> verify by stat -> delta, with Flag::Rescan escalated rather than dropped). What is missing is everything platform-specific:
 
@@ -23,3 +23,7 @@ The watch layer works (coalesce -> verify by stat -> delta, with Flag::Rescan es
 - kqueue watches per FILE (one fd each), which is a real limit at scale: bound it and degrade explicitly.
 
 Currently every created directory escalates for a re-list, which is correct but heavier than needed on natively-recursive backends (FSEvents, ReadDirectoryChangesW). Scope the escalation to backends that actually have the watch-setup race.
+
+## Notes
+
+Add semantic event-scope filtering for max_depth and one_filesystem before enabling the applying watch driver on restricted scopes. Phase 0 rejects those scoped watch applications to preserve cache/index truth.
