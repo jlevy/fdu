@@ -14,7 +14,8 @@ The detailed benchmark methodology and implementation graph are in
 
 Phase-0 work is on branch `claude/fdu-phase-0-scaffold`, open as
 [PR #1](https://github.com/jlevy/fdu/pull/1), with `main` holding only the initial
-commit. CI is green across Linux, macOS, and Windows.
+commit. CI is green across Linux, macOS, and Windows, but final approval is held on the
+two P0 merge blockers in **Wave 0** below.
 
 Beads live on the `tbd-sync` branch and are visible from any clone (`tbd list`).
 `make check` is the handoff gate; `AGENTS.md` carries the conventions worth not
@@ -22,8 +23,10 @@ rediscovering.
 
 ## Where This Stands
 
-Phase 0 is complete: the repository exists, the architecture is expressed in code, and
-the whole pipeline runs end to end.
+The Phase 0 implementation is complete: the repository exists, the architecture is
+expressed in code, and the whole pipeline runs end to end.
+Phase 0 is not yet merge-complete because the executable-dependency policy and
+malformed-batch atomicity findings remain open.
 What that means concretely, because “scaffold” is otherwise an unhelpful word:
 
 **Built and tested.**
@@ -98,91 +101,100 @@ separate work until the stat tier is solid.
 
 ## Sequencing
 
-Risk spikes first, because three separate design decisions rest on numbers nobody has
-measured. The plan is deliberately ordered so that the load-bearing assumption is tested
-before the format that depends on it is frozen.
+Priority means current program urgency, while blocker edges mean a real prerequisite.
+The graph does not make unrelated correctness and supply-chain fixes wait on each other
+merely to force a serial work queue.
 
 ```text
-      ┌─ SPIKE: revalidation cost at 500k ─┐
-      ├─ SPIKE: snapshot load candidates ──┤
-      ├─ SPIKE: metric-vector refcount ────┼──→ engine work ──→ benchmark gate ──→ Goal 1 met
-      └─ SPIKE: tag-don't-prune gitignore ─┘         │
-                                                     ├──→ CLI polish
-                                                     ├──→ type-rule dialect
-                                                     └──→ watch hardening ──→ metabrowser seam
+Wave 0:  fdu-ad45 ─┐
+                   ├──→ fdu-sn43 ──→ approve PR #1
+         fdu-nlh8 ─┘
+
+Wave 1:  trust/API safety and corpus/oracle → runner → probes/adapters
+Wave 2:  measured design decisions and risk spikes
+Wave 3:  syscall walk, parallelism, packed reducers, and snapshot/revalidation
+Wave 4:  product surfaces and stable evidence → final report → publishing
+Future:  activate only from the evidence and release gates in the future roadmap
 ```
 
-### Stage A: Risk spikes
+### Wave 0: Close the Current Merge Gate
 
-The whole design rests on “a parallel stat sweep of 500k unchanged files is fast enough
-to feel instant.” If that is false, the cache tiering changes shape and everything
-downstream of it is wasted work.
-Measure first.
+The two P0 defects are independent and may be fixed in parallel:
 
-- **Revalidation cost curve.** Generate a 500k-entry corpus; measure a parallel stat
-  sweep, with and without the directory-mtime shortcut, cold and warm page cache.
-- **Snapshot load candidates.** Time flat-read versus block-compressed-with-tail-index
-  for open latency *and* first-directory-listing latency.
-  Open latency is the one that matters; a monolithic decode can win on throughput and
-  still lose the product.
-- **Metric-vector refcount.** Prototype dut’s atomic `unsearched_children` roll-up
-  generalized from two `u64`s to a reducer vector, and confirm the barrier-free property
-  survives generalization.
-- **Tag-don’t-prune gitignore.** Confirm `GitignoreBuilder` used standalone can tag
-  every entry at acceptable cost — this is the fix for the ~1.5 s gitignore parse that
-  dominates metabrowser’s walker today.
+- `fdu-ad45` restores the 14-day executable-dependency cool-off, provenance checks,
+  least-privilege workflow settings, and reviewed tbd integration surfaces.
+- `fdu-nlh8` validates a complete observation batch before mutation so malformed paths
+  cannot look like no-ops or permit partial application.
+- `fdu-sn43` depends on both fixes and owns the final local gate, cross-platform CI,
+  synchronized tbd state, PR description update, and superseding senior approval.
 
-### Stage B: The engine
+No Phase 1 optimization is a substitute for closing this gate.
 
-- **Syscall walk layer.** Raw `getdents64` into a large reused per-thread buffer,
-  dirfd-relative `statx` with a narrow field mask, `d_type` stat-avoidance, an LRU cache
-  of open directory fds, work-stealing distribution, I/O threads capped around 8.
-  Portable fallback retained for non-Linux.
-- **Packed records.** Parent-pointer tree with name-only storage, optional attributes
-  behind a flags word, interned device IDs, per-thread arenas.
-  Target ncdu 2’s budget: ~25–32 bytes per file, with retained per-path diagnostics
-  bounded separately rather than allowed to grow with every failed entry.
-- **Reducer registry.** Turn the fixed `RollUp` struct into registered reducers with
-  declared invertibility and an explicit aggregate-overflow policy, so a new metric is a
-  registration rather than an engine change.
-- **Block snapshot format.** Compressed blocks, tail index, `(block << k) | offset`
-  references delta-encoded within a block, sibling groups contiguous, front-coded names,
-  pre-computed roll-ups stored per directory.
-- **Revalidation.** Add the directory-mtime shortcut and parallel sweep while preserving
-  the current conditional, applying stream.
-  Callers using `IndexHandle` can already serve stale-and-labeled between batches;
-  conservative `open()` remains blocking.
-- **Hardlink policy.** Pick a deterministic, incrementally maintainable rule.
-  dut’s shared/unique split is the most informative, and none of the surveyed tools
-  attempt to keep it correct under incremental updates — so this needs design, not just
-  a choice.
+### Wave 1: Establish Safe Refactor and Evidence Foundations
 
-### Stage C: Product surfaces
+The [Rust quality plan](plan-2026-08-09-fdu-rust-engineering-quality.md) then pins the
+normal toolchain (`fdu-zga3`), seals the guard-free public API (`fdu-s7wr`), and adds
+the independent index model (`fdu-o8r8`) and snapshot fault-state suite (`fdu-471a`).
+Stack-safe rendering (`fdu-zsdy`) is independent; lossless classification and Python
+identity (`fdu-k8zw`) follows the API work.
 
-- **CLI polish** as scheduled work, not cosmetics, including structured raw path
-  identity for partial errors and the corresponding lossless Python path surface.
-- **Type-rule dialect**, a compatible superset of metabrowser’s `[[kind]]` predicates,
-  compiled at build time.
-- **Watch hardening**: cookie-paired renames applied without I/O on inotify, file-id
-  stitching elsewhere, tuned backend selection (native for local filesystems, polling
-  for NFS/FUSE/CIFS), periodic reconciliation for kqueue, and marking entries where
-  watching failed instead of silently not watching.
-  Bound raw and verified-observation queues; backpressure or a dropped hint must
-  escalate to reconciliation.
+In parallel, the
+[performance plan](plan-2026-08-09-fdu-end-to-end-performance-testing.md) builds one
+shared evidence foundation instead of separate ad hoc benchmark scripts:
 
-### Stage D: Proof
+1. `fdu-rq5m`: deterministic corpora and semantic oracle;
+2. `fdu-d8kq`: strict scenario/result schemas and state-machine runner;
+3. `fdu-oj25`: fdu component probe and resource collectors;
+4. `fdu-k5t5`: pinned dut/gdu adapters after the cool-off gate.
 
-- **Benchmark harness**, reporting snapshot and filesystem-cache state separately *and*
-  scan-producer versus full-index work separately—the precise form of the original
-  cold/warm × raw-walk/with-stats requirement.
-  Anything less compares different jobs: bfs and dut discard most metadata while fdu
-  retains a full inventory.
-  The dedicated
-  [performance-testing plan](plan-2026-08-09-fdu-end-to-end-performance-testing.md)
-  defines the corpus recipes, semantic oracle, independent snapshot/filesystem-cache
-  states, runner, result schema, comparator adapters, statistical policy, and CI tiers.
-- **Publishing**: crates.io and PyPI, abi3 wheels, re-verify name availability
-  immediately before first publish since availability is a race.
+### Wave 2: Resolve Load-Bearing Decisions
+
+The expensive implementation starts only after the evidence or design decision it
+depends on:
+
+- `fdu-p2i1` measures revalidation at 10k through 1M entries using the corpus, runner,
+  and probe; it gates optimized revalidation.
+- `fdu-1vd0` compares snapshot candidates using the same infrastructure; it gates the
+  block format.
+- `fdu-gdrv` proves whether metric-vector atomic roll-up remains barrier-free; it gates
+  parallel aggregation and the reducer registry.
+- `fdu-p35d` measures tag-don’t-prune gitignore matching before the type-rule dialect.
+- `fdu-odx6` records maintainer ratification or amendment of extensibility and
+  trustworthy-result goals before their public interfaces are frozen.
+- `fdu-579b` settles deterministic hardlink attribution before reducers and the snapshot
+  encode that policy.
+
+### Wave 3: Build the Optimized Engine
+
+- `fdu-atqk` implements the portable-fallback syscall walker; `fdu-aky1` adds the
+  measured scheduler and parallel roll-up after the walker and refcount spike.
+- `fdu-1gbl` packs records behind the API, model-test, and measurement foundations.
+- `fdu-a6dz` implements registered reducers after the model, goal, refcount, and
+  hardlink decisions.
+- `fdu-xihx` implements the block snapshot only after its candidate spike, packed
+  records, reducer encoding, and reusable persistence fault tests.
+- `fdu-wbis` implements optimized revalidation after the cost curve and syscall walker.
+- `fdu-r27g` measures the retained single-writer concurrency model using the common
+  probe before any synchronization redesign is considered.
+
+### Wave 4: Finish Product Surfaces, Proof, and Release
+
+- `fdu-oqoy` and `fdu-jej9` finish human and agent-facing CLI behavior after stack-safe
+  rendering and native identity foundations.
+- `fdu-v4lc` defines the native-unit type-rule dialect after gitignore measurement and
+  goal ratification.
+- `fdu-lka2` hardens watcher queues, backend failure, rename handling, and
+  reconciliation after the public shared-index API is sealed.
+- `fdu-8z5l` establishes stable regression and claim governance on the completed runner,
+  probes, adapters, and pinned toolchain.
+- `fdu-ywu0` publishes the full evidence matrix only after the required engine,
+  contention, and harness work is complete.
+- `fdu-9cf0` publishes crates and wheels only after the report and product surfaces pass
+  their release gates; name availability is rechecked immediately before publication.
+
+Content metrics, a durable delta journal, metabrowser integration, and io_uring are
+owned by the
+[post-Phase 1 roadmap](../future/plan-2026-08-09-fdu-post-phase-1-roadmap.md).
 
 ## Exit Criteria
 
@@ -203,25 +215,26 @@ Phase 1 is done when all of these hold, and not before:
 
 Carried from the research, still unanswered, each one a decision someone has to make:
 
-1. **Hardlink attribution** under incremental updates — no prior art to copy.
-2. **io_uring**: phase-1 complexity or a later accelerator behind a feature flag?
-   Large machinery for a Linux-only win.
-3. **DFS/BFS traversal order** — worth a runtime switch, and can warm/cold state be
-   detected rather than configured?
-4. **Content probe bounds** for type recognition (first 8 KiB?), and whether sniffing is
-   on-demand-only at first so the walk stays stat-pure.
-5. **How much classification belongs engine-side** versus in Python plugins.
-   Proposal: the engine yields type verdicts from compiled rules; adapter-level sniffing
-   stays in plugins. Validate against real manifests.
-6. **Journal compaction and `since(clock)` across restart** — nice for SSE resume,
-   simpler without.
-7. **Non-invertible reducer cost under churn** — measure the pathological case (repeated
-   deletes of the current max in a 100k-entry directory) before committing to which
-   metrics are watch-maintained versus revalidation-only.
-8. **Watcher ownership in metabrowser**: does `fdu::watch` replace `watch_backends.py`
-   outright, or does metabrowser keep its watcher and push hints through
-   `ingest_events()`? The open part is sequencing and the acceptance test for dropping
-   the Python watcher.
+1. **Hardlink attribution (`fdu-579b`)** under incremental updates — no prior art to
+   copy.
+2. **io_uring (`fdu-ktka`)**: phase-1 complexity or a later accelerator behind a feature
+   flag? Large machinery for a Linux-only win.
+3. **DFS/BFS traversal order (`fdu-aky1`, `fdu-ywu0`)** — worth a runtime switch, and
+   can warm/cold state be detected rather than configured?
+4. **Content probe bounds (`fdu-v4lc`, `fdu-3n8c`)** for type recognition (first 8
+   KiB?), and whether sniffing is on-demand-only at first so the walk stays stat-pure.
+5. **Engine versus Python classification (`fdu-v4lc`, `fdu-p02b`)**. Proposal: the
+   engine yields type verdicts from compiled rules; adapter-level sniffing stays in
+   plugins. Validate against real manifests.
+6. **Journal compaction and `since(clock)` across restart (`fdu-3dtq`)** — nice for SSE
+   resume, simpler without.
+7. **Non-invertible reducer cost under churn (`fdu-a6dz`, `fdu-oj25`)** — measure the
+   pathological case before deciding which metrics are watch-maintained versus
+   revalidation-only.
+8. **Watcher ownership in metabrowser (`fdu-p02b`, `fdu-lka2`)**: does `fdu::watch`
+   replace `watch_backends.py` outright, or does metabrowser retain its watcher and push
+   hints through `ingest_events()`? The open part is sequencing and the acceptance test
+   for dropping the Python watcher.
 
 ## Note for Metabrowser
 
@@ -234,48 +247,61 @@ restart. That is tracked separately in the metabrowser repository.
 ## Beads
 
 Epic: **fdu-qfz6** — fdu phase 1: fastest walker with full stats, proven by benchmark.
-Phase 0 is recorded and closed as **fdu-v178**.
+The status-reconciliation record is **fdu-co2i**. Phase 0 and its final review follow-up
+are recorded as closed beads **fdu-v178** and **fdu-vdi9**; the completed CLI workstream
+is **fdu-a0w0**.
 
-Completed final phase-0 review follow-up: **fdu-vdi9**.
+### Current Merge Gate
 
-| Bead | Work |
-| --- | --- |
-| fdu-xktk | Reverify queued watch samples at a matching, clock-stable index root |
-| fdu-52oq | Bound scan batching and fail closed on unsupported filesystem scope |
-| fdu-3wpe | Keep Python independent of watch and discover the native Windows cache |
-| fdu-x7jc | Preserve pre-epoch newest-mtime values |
+| Bead | Priority | Work | Direct blockers |
+| --- | --- | --- | --- |
+| `fdu-ad45` | P0 | Restore and enforce executable-dependency cool-off and provenance | — |
+| `fdu-nlh8` | P0 | Reject malformed observation batches atomically | — |
+| `fdu-sn43` | P0 | Run final gates and publish the superseding senior approval | `fdu-ad45`, `fdu-nlh8` |
 
-| Stage | Bead | Work |
-| --- | --- | --- |
-| A | fdu-p2i1 | Spike: revalidation cost curve at 500k entries |
-| A | fdu-1vd0 | Spike: snapshot format candidates, open vs first-listing latency |
-| A | fdu-gdrv | Spike: metric-vector atomic-refcount roll-up |
-| A | fdu-p35d | Spike: gitignore tag-don’t-prune via the `ignore` matcher |
-| B | fdu-atqk | Walk layer: raw `getdents64` and dirfd-relative `statx` |
-| B | fdu-aky1 | Walk layer: work-stealing parallelism and batched distribution |
-| B | fdu-1gbl | Packed entry records: hit the 25–32 bytes per file budget |
-| B | fdu-a6dz | Reducer registry: metrics as registrations, not engine changes |
-| B | fdu-xihx | Block snapshot format: compressed blocks, tail index, lazy listing |
-| B | fdu-wbis | Revalidation: directory-mtime shortcut and parallel sweep |
-| B | fdu-579b | Hardlink attribution policy that survives incremental updates |
-| B | fdu-r27g | Index concurrency: single-writer `RwLock`, escalate on measurement |
-| C | fdu-oqoy | CLI human polish is product work, not cosmetics |
-| C | fdu-jej9 | CLI agent surface: stable JSON schema, exit codes, help completeness |
-| C | fdu-v4lc | Type-rule dialect: declarative rules compiled at build time |
-| C | fdu-lka2 | Watch hardening: rename stitching, backend selection, kqueue sweep |
-| D | fdu-d5e1 | Performance evidence system: corpus, oracle, runner, probes, adapters, and regression governance |
-| D | fdu-ywu0 | Publish the Phase 1 state/job matrix and dut/gdu evidence report |
-| D | fdu-9cf0 | Publishing: crates.io, PyPI abi3 wheels, name re-verification gate |
-| — | fdu-odx6 | Ratify proposed goals 6 and 7 |
+The first two beads are children of the Rust-quality epic and are intentionally
+independent. `fdu-sn43` is the only bead whose completion means PR #1 is approved for
+merge.
 
-Tracked but deliberately outside phase 1:
+### Governing Workstreams
 
-| Bead | Work |
-| --- | --- |
-| fdu-3n8c | Content-tier metrics: line, word, sentence, paragraph counts |
-| fdu-3dtq | Cache coherency B: snapshot + append-only delta journal |
-| fdu-ktka | io_uring accelerator for `openat`, `close`, and `statx` |
-| fdu-p02b | Metabrowser integration: replace the Python walker and inventory hot path |
+| Epic | Status | Start blocker | Governing plan |
+| --- | --- | --- | --- |
+| `fdu-qfz6` | Active | — | This Phase 1 plan |
+| `fdu-dxee` | Active; owns Wave 0 | — | [Rust engineering quality](plan-2026-08-09-fdu-rust-engineering-quality.md) |
+| `fdu-d5e1` | Queued | `fdu-sn43` | [End-to-end performance evidence](plan-2026-08-09-fdu-end-to-end-performance-testing.md) |
+| `fdu-x746` | Future | `fdu-9cf0` | [Post-Phase 1 roadmap](../future/plan-2026-08-09-fdu-post-phase-1-roadmap.md) |
+
+The two detailed active plans list every child bead they own and every cross-workstream
+blocker. The table below is the complete set owned directly by this plan.
+
+### Phase 1 Execution Beads
+
+| Wave | Bead | Priority | Work | Direct blockers |
+| --- | --- | --- | --- | --- |
+| 0 | `fdu-sn43` | P0 | Close the PR #1 merge gate | `fdu-ad45`, `fdu-nlh8` |
+| 2 | `fdu-gdrv` | P1 | Prove metric-vector atomic-refcount roll-up | `fdu-sn43` |
+| 2 | `fdu-p35d` | P1 | Measure gitignore tag-don’t-prune matching | `fdu-sn43` |
+| 2 | `fdu-odx6` | P1 | Ratify or amend goals 6 and 7 | `fdu-sn43` |
+| 2 | `fdu-579b` | P1 | Set deterministic incremental hardlink attribution | `fdu-sn43` |
+| 2 | `fdu-p2i1` | P1 | Measure the 10k-1M revalidation cost curve | `fdu-rq5m`, `fdu-d8kq`, `fdu-oj25` |
+| 2 | `fdu-1vd0` | P1 | Compare snapshot open and first-listing candidates | `fdu-rq5m`, `fdu-d8kq`, `fdu-oj25` |
+| 3 | `fdu-atqk` | P1 | Implement `getdents64` and dirfd-relative `statx` | `fdu-oj25` |
+| 3 | `fdu-aky1` | P1 | Add work-stealing parallel walk and roll-up | `fdu-gdrv`, `fdu-atqk` |
+| 3 | `fdu-1gbl` | P1 | Pack entry records to the measured memory budget | `fdu-s7wr`, `fdu-o8r8`, `fdu-oj25` |
+| 3 | `fdu-a6dz` | P1 | Implement the reducer registry and overflow policy | `fdu-gdrv`, `fdu-s7wr`, `fdu-o8r8`, `fdu-odx6`, `fdu-579b` |
+| 3 | `fdu-xihx` | P1 | Implement the block snapshot format | `fdu-1vd0`, `fdu-1gbl`, `fdu-a6dz`, `fdu-471a`, `fdu-579b` |
+| 3 | `fdu-wbis` | P1 | Optimize revalidation and stream applied deltas | `fdu-p2i1`, `fdu-atqk` |
+| 3 | `fdu-r27g` | P2 | Measure index contention before changing synchronization | `fdu-s7wr`, `fdu-oj25` |
+| 4 | `fdu-oqoy` | P2 | Finish human CLI behavior | `fdu-zsdy` |
+| 4 | `fdu-jej9` | P2 | Finish agent CLI and schema behavior | `fdu-zsdy`, `fdu-k8zw` |
+| 4 | `fdu-v4lc` | P2 | Define native-unit compiled type rules | `fdu-k8zw`, `fdu-p35d`, `fdu-odx6` |
+| 4 | `fdu-lka2` | P2 | Harden watcher queues and platform backends | `fdu-s7wr` |
+| 4 | `fdu-9cf0` | P2 | Publish crates and wheels after all release gates | `fdu-ad45`, `fdu-zga3`, `fdu-s7wr`, `fdu-k8zw`, `fdu-ywu0`, `fdu-oqoy`, `fdu-jej9`, `fdu-v4lc`, `fdu-lka2` |
+
+The future epic owns `fdu-p02b`, `fdu-3dtq`, `fdu-3n8c`, and `fdu-ktka`; their explicit
+activation dependencies are recorded in the future roadmap rather than mixed into the
+active queue.
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

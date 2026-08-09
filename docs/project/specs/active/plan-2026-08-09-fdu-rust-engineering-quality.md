@@ -4,7 +4,7 @@
 
 **Author:** fdu project
 
-**Status:** Active
+**Status:** Active — two P0 merge blockers open
 
 ## Overview
 
@@ -24,6 +24,18 @@ No forbidden zero-width, soft-hyphen, or bidirectional-control text was found.
 The resulting work is additive to the [Phase 1 plan](plan-2026-08-08-fdu-phase-1.md).
 It protects that plan’s packed-record, reducer, snapshot, watcher, CLI, and publishing
 changes rather than replacing or rescoping them.
+
+## Current Status
+
+The epic is `fdu-dxee`, a child of the Phase 1 epic `fdu-qfz6`. Two independent P0 bugs
+are the current PR #1 merge blockers:
+
+- `fdu-ad45`: executable-dependency cool-off, provenance, and CI trust controls;
+- `fdu-nlh8`: whole-batch path validation before any index mutation.
+
+Both block the final merge-approval bead `fdu-sn43` in the Phase 1 plan.
+The remaining P1 and P2 work protects pre-release refactors and publishing; it does not
+outrank those two fixes.
 
 ## Goals
 
@@ -84,7 +96,7 @@ more broad lints, or a rewrite of working test infrastructure.
 | Severity | Evidence | Required correction |
 | --- | --- | --- |
 | P0 | As of the audit, `Cargo.lock` contains `clap` 4.6.6 from 2026-08-06, the PyO3 0.29.2 family from 2026-08-05, and `thiserror` 2.0.20 from 2026-08-08. The pinned `Swatinem/rust-cache` and `dtolnay/rust-toolchain` commits are also only three to four days old. | Restore pins that cleared the 14-day cool-off and add a fail-closed, tested gate for Cargo, Python, Node, GitHub Actions, and bootstrap tools. |
-| P1 | `Index::apply` treats an absolute or parent-escaping operation as `unchanged`; a mixed batch can therefore hide malformed producer input instead of returning the existing `PathEscapesRoot` error. | Validate a whole observation before mutation and return a typed error for malformed paths. |
+| P0 | `Index::apply` treats an absolute or parent-escaping operation as `unchanged`; a mixed batch can therefore hide malformed producer input while valid operations mutate state. | Validate the whole observation before mutation and return a typed error without changing any index state. |
 | P1 | `IndexHandle::read` returns `std::sync::RwLockReadGuard`, exposing the lock implementation and letting callers hold it across arbitrary work. The public surface also duplicates module and root re-exports and forces a `Vec` allocation for child iteration. | Define the minimal supported API, keep locking inside the abstraction, and use borrowed iteration where ownership permits it. |
 | P1 | Running rustdoc with `-D missing-docs` reports 61 undocumented public fields, variants, and methods. Clippy identifies 45 `must_use_candidate` sites while the workspace disables that lint globally. | Reduce the public surface first, document every remaining contract, and apply `#[must_use]` to values whose loss can break correctness rather than enabling the lint indiscriminately. |
 | P1 | The index has extensive example tests but no generated reference-model comparison for arbitrary upsert, remove, kind-change, invalidation, and delayed-conditional sequences. | Compare every generated transition against a simple recomputed model with fixed seeds and useful failing traces. |
@@ -213,24 +225,34 @@ found during the usage inventory.
 
 ## Implementation Plan
 
-### Phase 1: Restore Trust and Reproducibility
+### Phase 0: Close the PR Merge Blockers
 
-- [ ] Restore and enforce the 14-day executable-dependency cool-off
-- [ ] Pin the normal Rust toolchain and complete the feature/MSRV test matrix
+- [ ] `fdu-ad45`: restore and enforce the 14-day executable-dependency cool-off
+- [ ] `fdu-nlh8`: reject malformed observation batches before any mutation
+- [ ] `fdu-sn43`: rerun all gates and publish the superseding senior approval after both
+  fixes land
 
-### Phase 2: Harden Contracts Before Phase 1 Refactors
+The two implementation bugs are independent and should be fixed in parallel when
+capacity permits. The final approval bead is deliberately blocked on both.
 
-- [ ] Make observation application fail closed on malformed producer paths
-- [ ] Seal and document the public Rust API without leaking lock guards
-- [ ] Add deterministic reference-model tests for delta and roll-up state transitions
-- [ ] Add snapshot parser and commit-state fault tests with stable fingerprint vectors
+### Phase 1: Reproducible Tooling and Public Contracts
+
+- [ ] `fdu-zga3`: pin the normal Rust toolchain and complete the feature/MSRV matrix
+- [ ] `fdu-s7wr`: seal and document the public Rust API without leaking lock guards
+
+### Phase 2: Add Refactor Safety Nets
+
+- [ ] `fdu-o8r8`: add a deterministic index/delta reference model
+- [ ] `fdu-471a`: add snapshot parser and commit-state fault tests with stable
+  fingerprint vectors
 
 ### Phase 3: Harden Product and Distribution Boundaries
 
-- [ ] Make human and JSON rendering iterative and stack-safe
-- [ ] Preserve native filesystem identity through classification and Python bindings
+- [ ] `fdu-zsdy`: make human and JSON rendering iterative and stack-safe
+- [ ] `fdu-k8zw`: preserve native filesystem identity through classification and Python
+  bindings
 - [ ] Complete package, compatibility, security, and artifact-smoke acceptance under the
-  existing publishing bead
+  existing publishing bead `fdu-9cf0`
 
 The bead IDs and dependency graph are recorded in the **Beads** section.
 
@@ -263,12 +285,14 @@ This is pre-release hardening, so breaking internal and unpublished Rust/Python 
 changes land before the first crates.io or PyPI release.
 Work rolls out in dependency order:
 
-1. repair and enforce supply-chain inputs;
-2. pin and prove toolchain/feature contracts;
-3. change state and public APIs under red tests;
-4. land refactor safety nets;
-5. harden CLI and language boundaries;
-6. let the existing Phase 1 engine and publishing beads consume those gates.
+1. repair supply-chain inputs and make observation application atomic as independent P0
+   fixes;
+2. rerun the complete PR gate and publish final approval only after both pass;
+3. pin and prove toolchain/feature contracts;
+4. shrink and document the public API under red tests;
+5. land the index model and snapshot state-machine safety nets;
+6. harden CLI and language boundaries;
+7. let the existing Phase 1 engine and publishing beads consume those gates.
 
 No migration is needed for pre-release snapshots.
 A fingerprint or format correction must cause a cold scan, never an attempted
@@ -276,48 +300,57 @@ reinterpretation.
 
 ## Open Questions
 
-- Which guard-free shared-index query shape best serves the first real concurrent
-  consumer: focused owned query methods, a bounded immutable view, or another measured
-  design? Returning a standard-library lock guard is not an option.
-- Which exact normal Rust release has cleared the 14-day cool-off when the toolchain
-  bead is implemented?
+- **Guard-free shared-index API (`fdu-s7wr`)**: which query shape best serves the first
+  real concurrent consumer—focused owned methods, a bounded immutable view, or another
+  measured design? Returning a standard-library lock guard is not an option.
+- **Pinned normal Rust release (`fdu-zga3`)**: which exact release has cleared the
+  14-day cool-off when the toolchain bead is implemented?
   The plan pins that reviewed release; it does not encode today’s moving `stable`
   answer.
-- Is snapshot crash durability a product requirement, or is atomic visibility plus
-  disposable-cache recovery sufficient?
+- **Snapshot durability contract (`fdu-471a`)**: is crash durability a product
+  requirement, or is atomic visibility plus disposable-cache recovery sufficient?
   The current architecture needs only the latter; stronger fsync claims require platform
   evidence.
 
 ## Beads
 
 Epic: **fdu-dxee** — Harden fdu against the Rust engineering quality audit.
+It is a child of the Phase 1 epic `fdu-qfz6` so the urgent fixes and later refactor
+guards appear in one program graph.
 
 Audit and planning record: **fdu-qcgm** — Review the playbook, capture evidence, write
 this plan, and assemble the non-duplicative implementation graph.
-This bead closes when the plan is committed, pushed, and validated in CI; the
-implementation beads remain open.
+That bead is closed; the implementation beads remain open.
 
 | Phase | Bead | Priority | Work | Direct blocker |
 | --- | --- | --- | --- | --- |
-| 1 | `fdu-ad45` | P0 | Restore and enforce the 14-day executable-dependency cool-off | — |
-| 1 | `fdu-zga3` | P1 | Pin Rust tooling and prove supported feature/MSRV contracts | `fdu-ad45` |
-| 2 | `fdu-nlh8` | P1 | Reject malformed observation batches before mutation | `fdu-ad45` |
-| 2 | `fdu-s7wr` | P1 | Seal the minimal guard-free Rust API | `fdu-nlh8` |
-| 2 | `fdu-o8r8` | P1 | Add a deterministic index/delta reference model | `fdu-nlh8` |
-| 2 | `fdu-471a` | P1 | Exercise snapshot parsing and commit failures as a state machine | `fdu-nlh8` |
-| 3 | `fdu-zsdy` | P2 | Make CLI rendering iterative and stack-safe | `fdu-ad45` |
+| 0 | `fdu-ad45` | P0 | Restore and enforce the 14-day executable-dependency cool-off | — |
+| 0 | `fdu-nlh8` | P0 | Reject malformed observation batches before mutation | — |
+| 1 | `fdu-zga3` | P1 | Pin Rust tooling and prove supported feature/MSRV contracts | `fdu-ad45`, `fdu-sn43` |
+| 1 | `fdu-s7wr` | P1 | Seal the minimal guard-free Rust API | `fdu-nlh8`, `fdu-sn43` |
+| 2 | `fdu-o8r8` | P1 | Add a deterministic index/delta reference model | `fdu-nlh8`, `fdu-sn43` |
+| 2 | `fdu-471a` | P1 | Exercise snapshot parsing and commit failures as a state machine | `fdu-nlh8`, `fdu-sn43` |
+| 3 | `fdu-zsdy` | P2 | Make CLI rendering iterative and stack-safe | `fdu-sn43` |
 | 3 | `fdu-k8zw` | P2 | Preserve native identity through classification and Python | `fdu-s7wr` |
+
+The Phase 1 bead `fdu-sn43` depends on both P0 bugs and owns final PR validation and
+approval. This keeps the merge decision explicit without making the two unrelated fixes
+block each other.
 
 Cross-epic dependencies make the existing work consume these gates:
 
+- `fdu-ad45` blocks `fdu-zga3`, comparator acquisition under `fdu-k5t5`, publishing
+  under `fdu-9cf0`, and final approval under `fdu-sn43`.
+- `fdu-nlh8` blocks `fdu-s7wr`, `fdu-o8r8`, `fdu-471a`, and final approval under
+  `fdu-sn43`.
+- `fdu-sn43` is the explicit post-approval start gate for `fdu-zga3`, `fdu-s7wr`,
+  `fdu-o8r8`, `fdu-471a`, and `fdu-zsdy`.
 - `fdu-s7wr` blocks `fdu-r27g`, `fdu-1gbl`, `fdu-a6dz`, `fdu-lka2`, and `fdu-9cf0`.
 - `fdu-o8r8` blocks `fdu-1gbl` and `fdu-a6dz`.
 - `fdu-471a` blocks `fdu-xihx`.
 - `fdu-zga3` blocks `fdu-ywu0` and `fdu-9cf0`.
 - `fdu-zsdy` blocks `fdu-oqoy` and `fdu-jej9`.
 - `fdu-k8zw` blocks `fdu-jej9`, `fdu-v4lc`, and `fdu-9cf0`.
-- `fdu-ad45` also blocks publishing directly; a release cannot use inputs that violate
-  the repository’s cool-off policy.
 
 The supply-chain bead also owns the tbd integration drift reported during this review.
 `tbd doctor` marks the managed `AGENTS.md` and Codex hook surfaces stale, while a dry

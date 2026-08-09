@@ -4,7 +4,7 @@
 
 **Author:** fdu project
 
-**Status:** In Review
+**Status:** Active
 
 ## Overview
 
@@ -65,6 +65,16 @@ This plan is independently actionable.
   schema leaves room for them later
 - Replace the CLI golden suite, index reference model, snapshot corruption tests, or
   ordinary correctness gates with performance tests
+
+## Current Status
+
+The design and Flowmark synthesis are complete; planning bead `fdu-f0or` is closed.
+Epic `fdu-d5e1` and all six implementation/proof children remain open.
+
+Repository-wide execution closes the two PR merge blockers (`fdu-ad45` and `fdu-nlh8`)
+first. The performance work then starts with `fdu-rq5m`, followed by `fdu-d8kq` and
+`fdu-oj25`. Comparator acquisition under `fdu-k5t5` also waits for the executable-
+dependency policy. No current timing result supports a product claim.
 
 ## Background
 
@@ -595,40 +605,43 @@ real consumer. Benchmarking alone is not a reason to stabilize an abstraction.
 
 ### Phase 1: Establish the Evidence Contract
 
-- [ ] Commit scenario, corpus-manifest, and result schemas with strict parsers and
-  fixtures for valid, unknown-field, truncated, and incompatible-version input
-- [ ] Implement deterministic contract, scale, topology, metadata, and churn recipes in
-  a unique safe run directory
-- [ ] Implement the independent observed-manifest verifier and semantic digest
-- [ ] Implement the probe modes and ensure every mode detects a deliberately wrong
-  count, digest, source, or snapshot postcondition
-- [ ] Document terminology, host capabilities, safe corpus cleanup, and the rule that
-  smoke results support no performance claim
+- [ ] `fdu-rq5m`: implement deterministic contract, scale, topology, metadata, and churn
+  recipes in unique safe run directories
+- [ ] `fdu-rq5m`: implement the independent observed-manifest verifier, mutation
+  transitions, and semantic digest
+- [ ] `fdu-d8kq`: commit strict scenario, corpus-manifest, and result schemas with
+  valid, unknown-field, truncated, and incompatible-version fixtures
+- [ ] `fdu-oj25`: implement probe modes that detect deliberately wrong counts, digests,
+  cache sources, and snapshot postconditions
+- [ ] `fdu-d8kq`: document terminology, host capabilities, safe cleanup, and why smoke
+  results support no performance claim
 
 ### Phase 2: Measure the Engine and Comparators
 
-- [ ] Implement the direct-argv scenario state machine, timeouts, process-group cleanup,
-  randomized paired order, collectors, and immutable raw results
-- [ ] Implement report validation and deterministic Markdown/statistics generation
-- [ ] Complete reviewed dut and gdu adapters and the job-capability matrix
-- [ ] Execute the revalidation cost curve and snapshot candidate spikes before freezing
-  those Phase 1 designs
-- [ ] Add peak-memory, scale, thread-count, traversal-order, output, Python, and
-  contention scenarios as their implementation surfaces become available
-- [ ] Profile failed targets and land optimizations only with before/after correctness
-  and end-to-end evidence
+- [ ] `fdu-d8kq`: implement the direct-argv state machine, timeouts, process cleanup,
+  paired ordering, immutable results, validation, statistics, and report rendering
+- [ ] `fdu-oj25`: implement external timing plus capability-negotiated resource and
+  profile collectors
+- [ ] `fdu-k5t5`: complete reviewed dut/gdu adapters and the job-capability matrix
+- [ ] `fdu-p2i1` and `fdu-1vd0`: execute the revalidation and snapshot-candidate spikes
+  before freezing their Phase 1 designs
+- [ ] `fdu-oj25`: add memory, scale, thread-count, traversal-order, output, Python, and
+  contention scenarios as their engine surfaces become available
+- [ ] `fdu-atqk`, `fdu-aky1`, `fdu-1gbl`, `fdu-a6dz`, `fdu-xihx`, and `fdu-wbis`:
+  profile failed targets and land optimizations only with before/after correctness and
+  end-to-end evidence
 
 ### Phase 3: Govern Regressions and Claims
 
-- [ ] Add the tiny harness correctness suite to the handoff gate after measuring its
-  cost
-- [ ] Establish a protected stable scheduled runner, baseline compatibility key, noise
-  bands, artifact retention, and regression triage workflow
-- [ ] Run the full dedicated-host Phase 1 evidence matrix and generate the reviewed
-  benchmark report
-- [ ] Update README claims only from that report and link the reproduction manifest
-- [ ] Make the full performance report an acceptance gate for publishing without making
-  shared CI timing a release oracle
+- [ ] `fdu-8z5l`: add the tiny harness correctness suite to the handoff gate after
+  measuring its cost
+- [ ] `fdu-8z5l`: establish a protected scheduled runner, compatible baselines, noise
+  policy, artifact retention, and regression triage
+- [ ] `fdu-ywu0`: run the dedicated-host Phase 1 matrix and generate the reviewed report
+- [ ] `fdu-ywu0`: update README claims only from that report and link its reproduction
+  manifest
+- [ ] `fdu-9cf0`: require the reviewed report for publishing without treating shared CI
+  timing as a release oracle
 
 ## Testing Strategy
 
@@ -670,7 +683,7 @@ reasonable correctness prerequisite for every commit.
    timing number.
 2. Land the runner and probe; exercise them against the portable scaffold only to find
    harness defects.
-3. Use the common system for the P0 revalidation and snapshot spikes.
+3. Use the common system for the foundational revalidation and snapshot spikes.
 4. Let the syscall, parallelism, packed-record, revalidation, and block-snapshot beads
    consume component results while their APIs are still pre-release.
 5. Establish the stable scheduled runner and collect enough history to set
@@ -706,17 +719,19 @@ The performance-testing workstream is complete when:
 
 ## Open Questions
 
-- Which dedicated Linux runner and filesystem become the first canonical host class?
+- **Dedicated Linux host (`fdu-8z5l`, `fdu-ywu0`)**: which runner and filesystem become
+  the first benchmark host class?
   The result schema and local harness do not depend on the answer, but numeric baselines
   do.
-- Which controlled-cold protocol is safe and verifiable on that host: privileged cache
-  eviction, disposable VM/block device, or a corpus larger than available cache?
+- **Controlled-cold protocol (`fdu-8z5l`, `fdu-ywu0`)**: privileged cache eviction,
+  disposable VM/block device, or a corpus larger than available cache?
   The full report must document the chosen method and its limits.
-- Can dut and gdu expose a strong enough machine-readable postcondition at the pinned
-  revisions, or must their adapters add an external traversal/count verification step?
-- Does the optimized snapshot surface naturally expose first-listing timing to a real
-  consumer, or is a narrow query API needed under `fdu-xihx`?
-- Which platform resource collectors are stable enough to be required outside Linux?
+- **Comparator postconditions (`fdu-k5t5`)**: can dut and gdu expose strong enough
+  machine-readable evidence, or must adapters add external traversal/count validation?
+- **Snapshot first-listing surface (`fdu-1vd0`, `fdu-xihx`)**: does the optimized
+  snapshot expose this through a real query, or is a narrow API needed?
+- **Portable collectors (`fdu-oj25`)**: which resource counters are stable enough to
+  require outside Linux?
   Unsupported counters remain explicit rather than blocking the portable smoke tier.
 
 None of these questions blocks Phase 1 of the harness.
@@ -738,14 +753,15 @@ The planning bead retains the same stable IDs.
 ## Beads
 
 Epic: **fdu-d5e1** — Build reproducible end-to-end performance evidence for fdu.
-It is a child of the Phase 1 epic `fdu-qfz6`.
+It is a child of the Phase 1 epic `fdu-qfz6` and depends on final PR approval under
+`fdu-sn43`.
 
 Planning record: **fdu-f0or** — Synthesize the pinned Flowmark lessons, write the
 research and plan, assemble this graph, and validate it through CI.
 
 | Bead | Priority | Work | Direct blockers |
 | --- | --- | --- | --- |
-| `fdu-rq5m` | P0 | Deterministic corpus recipes, safe generator, observed manifests, mutation transitions, and semantic oracle | — |
+| `fdu-rq5m` | P1 | Deterministic corpus recipes, safe generator, observed manifests, mutation transitions, and semantic oracle | `fdu-sn43` |
 | `fdu-d8kq` | P1 | Strict scenario/result schemas, direct-argv runner, immutable trials, statistics, and report renderer | `fdu-rq5m` |
 | `fdu-oj25` | P1 | fdu component probe, first-output timing, resource collectors, and profiles | `fdu-rq5m`, `fdu-d8kq` |
 | `fdu-k5t5` | P1 | Pinned dut/gdu adapters, parsers, postconditions, and capability matrix | `fdu-rq5m`, `fdu-d8kq`, `fdu-ad45` |
@@ -755,14 +771,16 @@ research and plan, assemble this graph, and validate it through CI.
 Cross-workstream dependencies make the existing decision beads consume the common
 infrastructure:
 
-- `fdu-rq5m` blocks the 500k revalidation spike (`fdu-p2i1`) and, with `fdu-d8kq`, the
-  snapshot candidate spike (`fdu-1vd0`).
+- `fdu-rq5m`, `fdu-d8kq`, and `fdu-oj25` together block both the 500k revalidation spike
+  (`fdu-p2i1`) and snapshot candidate spike (`fdu-1vd0`).
 - `fdu-oj25` blocks the packed-record memory gate (`fdu-1gbl`) and concurrency
   measurement (`fdu-r27g`).
 - The comparator adapters wait for the executable-dependency policy (`fdu-ad45`), and
   scheduled numeric baselines wait for the pinned toolchain (`fdu-zga3`).
-- The existing syscall walk, block snapshot, optimized revalidation, and
-  pinned-toolchain blockers continue to block `fdu-ywu0` through the Phase 1 graph.
+- The syscall walk (`fdu-atqk`), parallel scheduler (`fdu-aky1`), reducer registry
+  (`fdu-a6dz`), block snapshot (`fdu-xihx`), optimized revalidation (`fdu-wbis`),
+  contention proof (`fdu-r27g`), and pinned toolchain (`fdu-zga3`) also block `fdu-ywu0`
+  through the Phase 1 graph.
 
 The implementation tasks remain open after this planning record closes.
 
