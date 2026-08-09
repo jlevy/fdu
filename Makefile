@@ -4,28 +4,29 @@
 
 CARGO ?= cargo
 
-.PHONY: help build release test check fix fmt fmt-check clippy docs audit clean cli
+.PHONY: help build release test check fix fmt fmt-check clippy docs audit python-smoke clean cli
 
 help:
 	@echo "make build      Debug build, all features"
 	@echo "make release    Optimized build"
 	@echo "make test       Run the test suite"
-	@echo "make check      Handoff gate: fmt, clippy, tests, docs, lib-only build"
+	@echo "make check      Handoff gate: Rust gates, audit, and installed-wheel smoke"
 	@echo "make fix        Apply formatting and machine-applicable lint fixes"
 	@echo "make audit      Dependency advisory and license audit (needs cargo-deny)"
+	@echo "make python-smoke  Build, install, and smoke-test the locked Python wheel"
 	@echo "make cli        Build and run the CLI against this repo"
 
 build:
-	$(CARGO) build --all-features
+	$(CARGO) build --locked --all-features
 
 release:
-	$(CARGO) build --release --all-features
+	$(CARGO) build --locked --release --all-features
 
 test:
-	$(CARGO) test --all-features
+	$(CARGO) test --locked --all-features
 
 # Everything CI enforces, in the order that fails fastest.
-check: fmt-check clippy test docs lib-only
+check: fmt-check clippy test docs lib-only audit python-smoke
 
 fmt:
 	$(CARGO) fmt --all
@@ -34,25 +35,33 @@ fmt-check:
 	$(CARGO) fmt --all --check
 
 clippy:
-	$(CARGO) clippy --all-targets --all-features -- -D warnings
+	$(CARGO) clippy --locked --all-targets --all-features -- -D warnings
 
 docs:
-	RUSTDOCFLAGS="-D warnings" $(CARGO) doc --no-deps --all-features
+	RUSTDOCFLAGS="-D warnings" $(CARGO) doc --locked --no-deps --all-features
 
 # Library consumers take `default-features = false`; this proves that path still
 # compiles and tests, rather than only ever exercising the CLI-enabled build.
 lib-only:
-	$(CARGO) test -p fdu --no-default-features
+	$(CARGO) test --locked -p fdu --no-default-features
 
 fix:
 	$(CARGO) fmt --all
-	$(CARGO) clippy --all-targets --all-features --fix --allow-dirty --allow-staged
+	$(CARGO) clippy --locked --all-targets --all-features --fix --allow-dirty --allow-staged
 
 audit:
-	$(CARGO) deny check
+	$(CARGO) deny --locked check
+
+python-smoke:
+	cd crates/fdu-py && wheel_dir="$$(mktemp -d "$${TMPDIR:-/tmp}/fdu-wheel.XXXXXX")" && \
+		trap 'rm -r -- "$$wheel_dir"' EXIT && \
+		uv run --frozen --only-group dev maturin build --locked --release --out "$$wheel_dir" && \
+		uv venv --clear .venv-smoke && \
+		uv pip install --python .venv-smoke "$$wheel_dir"/*.whl && \
+		uv run --no-project --python .venv-smoke python tests/smoke.py
 
 cli:
-	$(CARGO) run --release --bin fdu -- --no-cache -d 2 .
+	$(CARGO) run --locked --release --bin fdu -- --no-cache -d 2 .
 
 clean:
 	$(CARGO) clean

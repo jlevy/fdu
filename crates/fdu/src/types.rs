@@ -1,25 +1,25 @@
-//! The delta contract: the single vocabulary every producer and consumer speaks.
+//! The observation and commit contract shared by every producer and consumer.
 //!
-//! The walker, the revalidator, the watch layer, and journal replay are all *producers*
-//! of [`Delta`]. The in-memory index, the on-disk snapshot, and any consumer-facing
-//! change feed are all *consumers* of [`Delta`]. Nothing else mutates the index.
+//! The walker, revalidator, and watch layer produce [`Observation`] batches. The index
+//! arbitrates their preconditions, removes no-ops, and stamps an [`AppliedDelta`] only
+//! after a change has been accepted. The journal and consumer-facing change feed see
+//! only those committed deltas. Nothing else mutates the index.
 //!
 //! Three properties are load-bearing, and the rest of the crate depends on them:
 //!
-//! - **Deltas carry truth, not hints.** A producer stats before it emits. Filesystem
+//! - **Observations carry truth, not hints.** A producer stats before it emits. Filesystem
 //!   events on most platforms carry no metadata, so a raw event is never a delta.
-//! - **Deltas are idempotent.** Re-applying an [`Op::Upsert`] whose fingerprint already
-//!   matches is a no-op, which is what makes journal replay, at-least-once delivery, and
-//!   overlap between a revalidation sweep and live watch events safe without
-//!   coordination.
-//! - **Deltas are the serialization unit.** The same type is applied in memory, appended
-//!   to the journal, and rendered to consumers.
+//! - **Conditional observations cannot overwrite newer state.** Revalidation attaches
+//!   the state it observed at the start of its check. If another producer commits a
+//!   change first, arbitration rejects the delayed observation.
+//! - **Applied deltas contain changes, not attempts.** No-ops and stale observations do
+//!   not advance the public clock or consume journal space.
 
 use std::path::{Path, PathBuf};
 
 /// A monotonic logical clock, in the spirit of Watchman's clockspec but process-local.
 ///
-/// Every applied [`Delta`] is stamped, so a consumer can ask "what changed since C?"
+/// Every [`AppliedDelta`] is stamped, so a consumer can ask "what changed since C?"
 /// rather than having to hold a live subscription.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Default, Hash)]
 pub struct Clock(pub u64);
@@ -68,7 +68,7 @@ impl EntryKind {
 }
 
 /// The stat fields an entry contributes to roll-ups, plus the ones that identify it.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Hash)]
 pub struct Attrs {
     /// Apparent size in bytes.
     pub size: u64,
@@ -113,6 +113,44 @@ pub struct Fingerprint {
     pub inode: u64,
 }
 
+/// Semantic inputs that decide which entries and derived values belong in an index.
+///
+/// Operational settings such as producer batch size are intentionally absent. A
+/// snapshot may be reused only when this value matches exactly.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+pub struct ScanScope {
+    pub max_depth: Option<usize>,
+    pub follow_symlinks: bool,
+    pub one_filesystem: bool,
+    pub ignore_rules_fingerprint: u64,
+    pub type_rules_fingerprint: u64,
+    pub reducers_fingerprint: u64,
+}
+
+/// Trust state for an index or queried subtree.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+pub enum Freshness {
+    /// Every path in scope has been reconciled successfully.
+    Fresh,
+    /// A reconciliation pass is currently checking this scope.
+    Reconciling,
+    /// A producer reported lost precision and reconciliation has not completed.
+    Stale,
+    /// Reconciliation encountered errors, so some state is unknown.
+    Partial,
+}
+
+impl Freshness {
+    pub(crate) const fn rank(self) -> u8 {
+        match self {
+            Self::Fresh => 0,
+            Self::Reconciling => 1,
+            Self::Stale => 2,
+            Self::Partial => 3,
+        }
+    }
+}
+
 /// Why a producer had to escalate to [`Op::InvalidateSubtree`] instead of describing a
 /// change precisely.
 ///
@@ -134,6 +172,9 @@ pub enum InvalidateReason {
     /// A periodic reconciliation sweep, for backends that cannot signal drops at all
     /// (kqueue).
     PeriodicSweep,
+    /// Stat verification failed without proving the path is gone. The known entry must
+    /// remain until reconciliation can retry and report the underlying I/O error.
+    VerificationFailed,
     /// Requested by the caller.
     Requested,
 }
@@ -167,22 +208,83 @@ impl Op {
     }
 }
 
-/// A batch of ops stamped with the clock at which they were applied.
+/// The complete indexed state of one path at an observation boundary.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+pub enum PathState {
+    /// The path was not indexed.
+    Absent,
+    /// The path was indexed with these observed fields.
+    Present { kind: EntryKind, attrs: Attrs },
+}
+
+/// The condition under which an observation may be committed.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+pub enum Expectation {
+    /// Commit according to arrival order. Used by freshly verified watch observations
+    /// and cold-scan bootstrap data.
+    Any,
+    /// Commit only if the index still matches the producer baseline.
+    State(PathState),
+}
+
+/// One observed operation together with its arbitration precondition.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct ObservationOp {
+    pub op: Op,
+    pub expectation: Expectation,
+}
+
+impl ObservationOp {
+    /// An operation whose fresh verification makes arrival order authoritative.
+    pub const fn unconditional(op: Op) -> Self {
+        Self { op, expectation: Expectation::Any }
+    }
+
+    /// An operation valid only while `state` still matches the index.
+    pub const fn if_state(op: Op, state: PathState) -> Self {
+        Self { op, expectation: Expectation::State(state) }
+    }
+}
+
+/// A producer batch awaiting arbitration by the index.
 ///
 /// Batching is not just an efficiency detail: producers coalesce per path within a batch
-/// (keep-latest wins) and stat once per batch rather than once per event.
+/// and stat once per batch rather than once per event.
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
-pub struct Delta {
+pub struct Observation {
+    pub ops: Vec<ObservationOp>,
+}
+
+impl Observation {
+    /// Build an unconditional batch from freshly verified operations.
+    pub fn new(ops: Vec<Op>) -> Self {
+        Self { ops: ops.into_iter().map(ObservationOp::unconditional).collect() }
+    }
+
+    /// Build a batch whose operations already carry explicit expectations.
+    pub const fn from_ops(ops: Vec<ObservationOp>) -> Self {
+        Self { ops }
+    }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.ops.is_empty()
+    }
+
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.ops.len()
+    }
+}
+
+/// A committed batch containing only effective mutations.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct AppliedDelta {
     pub clock: Clock,
     pub ops: Vec<Op>,
 }
 
-impl Delta {
-    /// A delta with no clock assigned yet. The index stamps it on apply.
-    pub fn new(ops: Vec<Op>) -> Self {
-        Self { clock: Clock::ZERO, ops }
-    }
-
+impl AppliedDelta {
     #[inline]
     pub fn is_empty(&self) -> bool {
         self.ops.is_empty()
@@ -209,6 +311,15 @@ pub enum Error {
 
     #[error("snapshot is not usable: {0}")]
     Snapshot(String),
+
+    #[error("unsupported scan configuration: {0}")]
+    UnsupportedScanConfig(&'static str),
+
+    #[error("index lock was poisoned by a panicking writer")]
+    IndexLockPoisoned,
+
+    #[error("watch worker stopped before another observation was available")]
+    WatchStopped,
 }
 
 impl Error {

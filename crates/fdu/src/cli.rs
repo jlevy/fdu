@@ -8,6 +8,7 @@
 //!   versioned with the tool, and meaningful exit codes — no pager, no prompts, no
 //!   interactive surprises.
 
+use std::ffi::OsStr;
 use std::fmt::Write as _;
 use std::io::{self, IsTerminal, Write};
 use std::path::PathBuf;
@@ -15,11 +16,19 @@ use std::path::PathBuf;
 use clap::{ArgAction, Parser};
 
 use crate::index::{EntryId, Index};
-use crate::{OpenConfig, OpenPath, ScanConfig, default_cache_path, open};
+use crate::{EntryKind, Freshness, OpenConfig, OpenPath, ScanConfig, default_cache_path, open};
 
 /// The JSON schema identifier. Bump the version on any breaking shape change so an
 /// agent can tell what it is parsing without guessing from the payload.
-const JSON_SCHEMA: &str = "fdu.tree/1";
+const JSON_SCHEMA: &str = "fdu.tree/2";
+
+/// Successful command outcome. Partial results are rendered before the caller returns
+/// exit status 2, so scripts can opt into them without confusing them with complete data.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum RunOutcome {
+    Complete,
+    Partial,
+}
 
 /// Summarize directory trees: sizes, counts, recency, and file types, rolled up for
 /// every directory at once.
@@ -65,11 +74,15 @@ pub struct Cli {
     /// Never colorize output.
     #[arg(long, action = ArgAction::SetTrue)]
     pub no_color: bool,
+
+    /// Exit successfully even when unreadable paths make the result partial.
+    #[arg(long, action = ArgAction::SetTrue)]
+    pub allow_partial: bool,
 }
 
 impl Cli {
     /// Run the command, writing to `out`.
-    pub fn run(&self, out: &mut dyn Write) -> anyhow::Result<()> {
+    pub fn run(&self, out: &mut dyn Write) -> anyhow::Result<RunOutcome> {
         let cache_path = if self.no_cache { None } else { default_cache_path(&self.path) };
         let config = OpenConfig {
             scan: ScanConfig { max_depth: self.max_depth, ..ScanConfig::default() },
@@ -84,7 +97,7 @@ impl Cli {
         } else {
             self.write_human(out, &index, &report)?;
         }
-        Ok(())
+        Ok(if report.is_complete() { RunOutcome::Complete } else { RunOutcome::Partial })
     }
 
     fn size_of(&self, roll: &crate::RollUp) -> u64 {
@@ -161,18 +174,16 @@ impl Cli {
             return Ok(());
         }
 
-        let mut rows: Vec<(u64, &str, EntryId, bool)> = index
+        let mut rows: Vec<(u64, &OsStr, EntryId, bool)> = index
             .children_of(id)
+            .unwrap_or_default()
             .into_iter()
             .map(|(name, child)| {
-                let is_dir = index.kind_of(child).is_dir();
+                let is_dir = index.kind_of(child).expect("child handle is live").is_dir();
                 let size = index.rollup_of(child).map_or_else(
                     || {
-                        if self.apparent_size {
-                            index.attrs_of(child).size
-                        } else {
-                            index.attrs_of(child).allocated
-                        }
+                        let attrs = index.attrs_of(child).expect("child handle is live");
+                        if self.apparent_size { attrs.size } else { attrs.allocated }
                     },
                     |roll| self.size_of(roll),
                 );
@@ -183,10 +194,11 @@ impl Cli {
 
         for (size, name, child, is_dir) in rows.into_iter().take(self.number) {
             let share = ratio(size, grand);
+            let display_name = name.to_string_lossy();
             let label = if is_dir {
-                paint(&format!("{name}/"), Style::Blue, color)
+                paint(&format!("{display_name}/"), Style::Blue, color)
             } else {
-                name.to_string()
+                display_name.into_owned()
             };
             writeln!(
                 out,
@@ -227,8 +239,14 @@ impl Cli {
                 OpenPath::WarmRevalidate => "warm_revalidate",
             })
         )?;
-        writeln!(out, "  \"complete\": {},", report.scan.is_complete())?;
-        writeln!(out, "  \"errors\": {},", report.scan.errors.len())?;
+        writeln!(out, "  \"complete\": {},", report.is_complete())?;
+        writeln!(out, "  \"freshness\": {},", quote(freshness_label(index.freshness())))?;
+        writeln!(out, "  \"errors\": [")?;
+        for (position, error) in report.errors().iter().enumerate() {
+            let comma = if position + 1 == report.errors().len() { "" } else { "," };
+            writeln!(out, "    {}{comma}", quote(&error.to_string()))?;
+        }
+        writeln!(out, "  ],")?;
 
         write!(out, "  \"by_extension\": {{")?;
         let mut kinds: Vec<_> = total.by_ext.iter().collect();
@@ -252,7 +270,7 @@ impl Cli {
         }
 
         write!(out, "  \"tree\": ")?;
-        self.write_json_node(out, index, EntryId::ROOT, ".", 0, 2)?;
+        self.write_json_node(out, index, EntryId::ROOT, OsStr::new("."), 0, 2)?;
         writeln!(out)?;
         writeln!(out, "}}")?;
         Ok(())
@@ -263,17 +281,21 @@ impl Cli {
         out: &mut dyn Write,
         index: &Index,
         id: EntryId,
-        name: &str,
+        name: &OsStr,
         depth: usize,
         indent: usize,
     ) -> anyhow::Result<()> {
         let pad = " ".repeat(indent);
-        let attrs = index.attrs_of(id);
-        let is_dir = index.kind_of(id).is_dir();
+        let attrs = index.attrs_of(id).expect("tree handle is live");
+        let is_dir = index.kind_of(id).expect("tree handle is live").is_dir();
 
         writeln!(out, "{{")?;
-        writeln!(out, "{pad}  \"name\": {},", quote(name))?;
-        writeln!(out, "{pad}  \"kind\": {},", quote(if is_dir { "dir" } else { "file" }))?;
+        writeln!(out, "{pad}  \"name\": {},", quote(&name.to_string_lossy()))?;
+        writeln!(
+            out,
+            "{pad}  \"kind\": {},",
+            quote(entry_kind_label(index.kind_of(id).expect("tree handle is live")))
+        )?;
 
         if let Some(roll) = index.rollup_of(id) {
             writeln!(out, "{pad}  \"bytes\": {},", roll.bytes)?;
@@ -288,13 +310,18 @@ impl Cli {
         }
 
         if is_dir && depth < self.depth {
-            let mut rows: Vec<(u64, &str, EntryId)> = index
+            let mut rows: Vec<(u64, &OsStr, EntryId)> = index
                 .children_of(id)
+                .unwrap_or_default()
                 .into_iter()
                 .map(|(child_name, child)| {
-                    let size = index
-                        .rollup_of(child)
-                        .map_or_else(|| index.attrs_of(child).size, |roll| self.size_of(roll));
+                    let size = index.rollup_of(child).map_or_else(
+                        || {
+                            let attrs = index.attrs_of(child).expect("child handle is live");
+                            if self.apparent_size { attrs.size } else { attrs.allocated }
+                        },
+                        |roll| self.size_of(roll),
+                    );
                     (size, child_name, child)
                 })
                 .collect();
@@ -354,6 +381,24 @@ impl Style {
 
 fn paint(text: &str, style: Style, color: bool) -> String {
     if color { format!("\u{1b}[{}m{text}\u{1b}[0m", style.code()) } else { text.to_string() }
+}
+
+fn entry_kind_label(kind: EntryKind) -> &'static str {
+    match kind {
+        EntryKind::File => "file",
+        EntryKind::Dir => "dir",
+        EntryKind::Symlink => "symlink",
+        EntryKind::Other => "other",
+    }
+}
+
+fn freshness_label(freshness: Freshness) -> &'static str {
+    match freshness {
+        Freshness::Fresh => "fresh",
+        Freshness::Reconciling => "reconciling",
+        Freshness::Stale => "stale",
+        Freshness::Partial => "partial",
+    }
 }
 
 fn ratio(part: u64, whole: u64) -> f64 {
@@ -421,6 +466,70 @@ fn quote(text: &str) -> String {
 mod tests {
     use super::*;
 
+    fn schema_fixture() -> (Cli, Index, crate::OpenReport) {
+        let cli = Cli {
+            path: PathBuf::from("/fixture"),
+            depth: 2,
+            number: 10,
+            apparent_size: true,
+            by_type: false,
+            json: true,
+            no_cache: true,
+            max_depth: None,
+            no_color: true,
+            allow_partial: false,
+        };
+        let attrs = |size, mtime_ns| crate::Attrs {
+            size,
+            allocated: size,
+            mtime_ns,
+            ctime_ns: mtime_ns,
+            inode: u64::try_from(mtime_ns).expect("positive fixture time"),
+            dev: 1,
+        };
+        let mut index = Index::new("/fixture");
+        index.apply(&crate::Observation::new(vec![
+            crate::Op::Upsert {
+                path: PathBuf::from("directory"),
+                kind: EntryKind::Dir,
+                attrs: attrs(0, 1),
+            },
+            crate::Op::Upsert {
+                path: PathBuf::from("directory/nested.bin"),
+                kind: EntryKind::File,
+                attrs: attrs(5, 5),
+            },
+            crate::Op::Upsert {
+                path: PathBuf::from("file.txt"),
+                kind: EntryKind::File,
+                attrs: attrs(4, 4),
+            },
+            crate::Op::Upsert {
+                path: PathBuf::from("link"),
+                kind: EntryKind::Symlink,
+                attrs: attrs(3, 3),
+            },
+            crate::Op::Upsert {
+                path: PathBuf::from("special"),
+                kind: EntryKind::Other,
+                attrs: attrs(2, 2),
+            },
+        ]));
+        index.set_initial_freshness(false);
+        let report = crate::OpenReport {
+            path_taken: OpenPath::ColdScan,
+            scan: crate::ScanReport {
+                dirs_read: 1,
+                entries: 5,
+                errors: vec![crate::Error::io(
+                    "/fixture/denied",
+                    std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied"),
+                )],
+            },
+        };
+        (cli, index, report)
+    }
+
     #[test]
     fn bytes_render_at_human_scale() {
         assert_eq!(human_bytes(0), "0 B");
@@ -458,5 +567,40 @@ mod tests {
     fn paint_is_a_no_op_when_color_is_off() {
         assert_eq!(paint("text", Style::Bold, false), "text");
         assert!(paint("text", Style::Bold, true).contains("\u{1b}["));
+    }
+
+    #[test]
+    fn schema_v2_golden_covers_kinds_and_partial_errors() {
+        let (cli, index, report) = schema_fixture();
+        let mut output = Vec::new();
+        cli.write_json(&mut output, &index, &report).expect("render JSON");
+        let rendered = String::from_utf8(output).expect("UTF-8 fixture");
+        assert_eq!(rendered, include_str!("testdata/tree-schema-v2.json"));
+    }
+
+    #[test]
+    fn json_child_order_uses_the_selected_size_measure() {
+        let (mut cli, mut index, report) = schema_fixture();
+        cli.apparent_size = false;
+        index.apply(&crate::Observation::new(vec![
+            crate::Op::Upsert {
+                path: PathBuf::from("apparent-heavy"),
+                kind: EntryKind::File,
+                attrs: crate::Attrs { size: 1_000, allocated: 1, ..Default::default() },
+            },
+            crate::Op::Upsert {
+                path: PathBuf::from("allocated-heavy"),
+                kind: EntryKind::File,
+                attrs: crate::Attrs { size: 1, allocated: 2_000, ..Default::default() },
+            },
+        ]));
+
+        let mut output = Vec::new();
+        cli.write_json(&mut output, &index, &report).expect("render JSON");
+        let rendered = String::from_utf8(output).expect("UTF-8 fixture");
+        let allocated = rendered.find("\"name\": \"allocated-heavy\"").expect("allocated file");
+        let apparent = rendered.find("\"name\": \"apparent-heavy\"").expect("apparent file");
+
+        assert!(allocated < apparent);
     }
 }

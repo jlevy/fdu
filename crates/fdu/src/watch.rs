@@ -1,4 +1,4 @@
-//! The OS-native watch layer: turning an unreliable event stream into trustworthy deltas.
+//! The OS-native watch layer: turning an unreliable event stream into verified observations.
 //!
 //! This module's whole job is that conversion. Filesystem events are **hints, not
 //! truth**, and the ways they lie are documented per platform:
@@ -20,7 +20,7 @@
 //! So this layer never forwards an event. It coalesces, then **verifies by stat**, and
 //! emits only [`Op::Upsert`] with a fresh fingerprint, [`Op::Remove`], or —
 //! when it genuinely cannot describe the change — [`Op::InvalidateSubtree`], which the
-//! scan layer resolves back into precise deltas.
+//! scan layer resolves back into precise committed changes.
 //!
 //! Building on notify rather than on raw platform APIs is deliberate: its six backends
 //! and its overflow signaling are proven, and the information loss that motivates this
@@ -35,7 +35,8 @@ use std::time::{Duration, Instant};
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher as NotifyWatcher};
 
 use crate::scan;
-use crate::types::{Delta, Error, InvalidateReason, Op, Result};
+use crate::types::{AppliedDelta, Error, InvalidateReason, Observation, Op, Result};
+use crate::{ApplyOutcome, IndexHandle, ScanConfig};
 
 /// Tuning for event coalescing.
 #[derive(Clone, Copy, Debug)]
@@ -65,12 +66,16 @@ impl Default for WatchConfig {
     }
 }
 
-/// What a coalesced path still needs before it can become a delta.
+/// What a coalesced path still needs before it can become an observation.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Pending {
     /// Stat it and decide. Covers creates, writes, removes, and every rename shape:
     /// letting the stat decide is what makes the same code correct on all backends.
-    Verify,
+    Verify {
+        /// Preserve whether a create event occurred while this path was coalesced. Only
+        /// a newly created directory has the watch-registration race that needs a relist.
+        relist_if_dir: bool,
+    },
     /// The producer already knows it cannot describe this precisely.
     Escalate(InvalidateReason),
 }
@@ -81,8 +86,15 @@ enum Pending {
 pub struct Watcher {
     /// `Option` only so [`Drop`] can release it before joining the worker.
     inner: Option<RecommendedWatcher>,
-    deltas: Receiver<Delta>,
+    observations: Receiver<Observation>,
     worker: Option<JoinHandle<()>>,
+}
+
+/// Effects of one watch observation and any reconciliation it requested.
+#[derive(Debug)]
+pub struct WatchApplyReport {
+    pub apply: ApplyOutcome,
+    pub reconciliation: scan::ReconcileReport,
 }
 
 impl Watcher {
@@ -91,7 +103,7 @@ impl Watcher {
         let root = root.canonicalize().map_err(|e| Error::io(root, e))?;
 
         let (raw_tx, raw_rx) = channel::<notify::Result<notify::Event>>();
-        let (delta_tx, delta_rx) = channel::<Delta>();
+        let (observation_tx, observation_rx) = channel::<Observation>();
 
         let mut inner = notify::recommended_watcher(move |res| {
             // A send failure means the worker is gone, which happens during shutdown.
@@ -104,21 +116,51 @@ impl Watcher {
         let worker_root = root.clone();
         let worker = std::thread::Builder::new()
             .name("fdu-watch".into())
-            .spawn(move || run_worker(&worker_root, config, &raw_rx, &delta_tx))
+            .spawn(move || run_worker(&worker_root, config, &raw_rx, &observation_tx))
             .map_err(|e| Error::io(&root, e))?;
 
-        Ok(Self { inner: Some(inner), deltas: delta_rx, worker: Some(worker) })
+        Ok(Self { inner: Some(inner), observations: observation_rx, worker: Some(worker) })
     }
 
-    /// The stream of verified deltas.
-    pub fn deltas(&self) -> &Receiver<Delta> {
-        &self.deltas
+    /// The stream of verified observations awaiting index arbitration.
+    pub fn observations(&self) -> &Receiver<Observation> {
+        &self.observations
     }
 
-    /// Block for the next delta, up to `timeout`.
-    pub fn next_delta(&self, timeout: Duration) -> Option<Delta> {
-        self.deltas.recv_timeout(timeout).ok()
+    /// Block for the next observation, up to `timeout`.
+    pub fn next_observation(&self, timeout: Duration) -> Option<Observation> {
+        self.observations.recv_timeout(timeout).ok()
     }
+
+    /// Apply one verified watch observation and close any invalidation loop it opens.
+    pub fn apply_next(
+        &self,
+        index: &IndexHandle,
+        scan_config: &ScanConfig,
+        timeout: Duration,
+        sink: &mut dyn FnMut(&AppliedDelta),
+    ) -> Result<Option<WatchApplyReport>> {
+        match self.observations.recv_timeout(timeout) {
+            Ok(observation) => apply_observation(index, &observation, scan_config, sink).map(Some),
+            Err(RecvTimeoutError::Timeout) => Ok(None),
+            Err(RecvTimeoutError::Disconnected) => Err(Error::WatchStopped),
+        }
+    }
+}
+
+/// Apply a verified observation and reconcile all subtrees it invalidates.
+pub fn apply_observation(
+    index: &IndexHandle,
+    observation: &Observation,
+    scan_config: &ScanConfig,
+    sink: &mut dyn FnMut(&AppliedDelta),
+) -> Result<WatchApplyReport> {
+    let apply = index.apply(observation)?;
+    if let Some(applied) = &apply.applied {
+        sink(applied);
+    }
+    let reconciliation = scan::reconcile_pending_handle(index, scan_config, sink)?;
+    Ok(WatchApplyReport { apply, reconciliation })
 }
 
 impl Drop for Watcher {
@@ -142,7 +184,7 @@ fn run_worker(
     root: &Path,
     config: WatchConfig,
     raw: &Receiver<notify::Result<notify::Event>>,
-    out: &Sender<Delta>,
+    out: &Sender<Observation>,
 ) {
     let mut pending: BTreeMap<PathBuf, Pending> = BTreeMap::new();
     let mut batch_started: Option<Instant> = None;
@@ -190,49 +232,76 @@ fn run_worker(
 fn record(root: &Path, event: &notify::Event, pending: &mut BTreeMap<PathBuf, Pending>) {
     if event.need_rescan() {
         // The kernel dropped events. Escalate the narrowest subtree the event names, or
-        // the whole root when it names nothing.
-        let target = event.paths.first().and_then(|p| relative_to(root, p)).unwrap_or_default();
+        // the whole root when it names zero/multiple paths or crosses the watch boundary.
+        let target = if event.paths.len() == 1 {
+            relative_to(root, &event.paths[0]).unwrap_or_default()
+        } else {
+            PathBuf::new()
+        };
         pending.insert(target, Pending::Escalate(InvalidateReason::WatchOverflow));
         return;
     }
 
-    for path in &event.paths {
-        let Some(rel) = relative_to(root, path) else {
-            continue;
-        };
-        // An escalation already queued for this path outranks a plain verify: it
-        // describes strictly less certainty, and downgrading it would lose information.
-        if matches!(pending.get(&rel), Some(Pending::Escalate(_))) {
-            continue;
+    let rename_mode = match event.kind {
+        EventKind::Modify(notify::event::ModifyKind::Name(mode)) => Some(mode),
+        _ => None,
+    };
+    let relative_paths: Vec<(usize, PathBuf)> = event
+        .paths
+        .iter()
+        .enumerate()
+        .filter_map(|(position, path)| relative_to(root, path).map(|relative| (position, relative)))
+        .collect();
+    let paired_rename = matches!(rename_mode, Some(notify::event::RenameMode::Both))
+        && event.paths.len() == 2
+        && relative_paths.len() == 2;
+    if rename_mode.is_some() && !paired_rename {
+        // A one-sided rename gives no safe bound on where its counterpart lives. A full
+        // reconciliation is more expensive than guessing a parent, but it cannot leave
+        // the old name behind or miss a moved-in subtree.
+        pending.insert(PathBuf::new(), Pending::Escalate(InvalidateReason::UnpairedRename));
+    }
+
+    for (position, rel) in relative_paths {
+        if matches!(event.kind, EventKind::Access(_)) {
+            continue; // Reads change nothing this engine records.
         }
-        match event.kind {
-            EventKind::Access(_) => {} // Reads change nothing this engine records.
-            _ => {
-                pending.insert(rel, Pending::Verify);
+        let relist_if_dir = matches!(event.kind, EventKind::Create(_))
+            || matches!(rename_mode, Some(notify::event::RenameMode::To))
+            || (paired_rename && position == 1);
+        match pending.get_mut(&rel) {
+            // An escalation outranks verification: it describes strictly less
+            // certainty, and downgrading it would lose information.
+            Some(Pending::Escalate(_)) => {}
+            Some(Pending::Verify { relist_if_dir: queued }) => {
+                *queued |= relist_if_dir;
+            }
+            None => {
+                pending.insert(rel, Pending::Verify { relist_if_dir });
             }
         }
     }
 }
 
-/// Turn the pending set into one delta: stat once per path, never once per event.
+/// Turn the pending set into one observation: stat once per path, never once per event.
 fn flush(
     root: &Path,
     config: WatchConfig,
     pending: &mut BTreeMap<PathBuf, Pending>,
-    out: &Sender<Delta>,
+    out: &Sender<Observation>,
 ) -> std::result::Result<(), ()> {
     let mut ops = Vec::with_capacity(pending.len());
 
     for (rel, state) in std::mem::take(pending) {
         match state {
             Pending::Escalate(reason) => ops.push(Op::InvalidateSubtree { path: rel, reason }),
-            Pending::Verify => {
+            Pending::Verify { relist_if_dir } => {
                 let absolute = root.join(&rel);
                 match std::fs::symlink_metadata(&absolute) {
                     Ok(meta) => {
                         let (kind, attrs) = scan::observe(&meta);
                         ops.push(Op::Upsert { path: rel.clone(), kind, attrs });
-                        if kind.is_dir() && config.relist_new_dirs {
+                        if kind.is_dir() && relist_if_dir && config.relist_new_dirs {
                             // The watch for this directory was installed after it was
                             // created, so anything already inside produced no event.
                             ops.push(Op::InvalidateSubtree {
@@ -241,8 +310,7 @@ fn flush(
                             });
                         }
                     }
-                    // Gone by the time we looked: that is the answer, not a failure.
-                    Err(_) => ops.push(Op::Remove { path: rel }),
+                    Err(error) => ops.push(op_for_stat_error(rel, &error)),
                 }
             }
         }
@@ -251,7 +319,15 @@ fn flush(
     if ops.is_empty() {
         return Ok(());
     }
-    out.send(Delta::new(ops)).map_err(|_| ())
+    out.send(Observation::new(ops)).map_err(|_| ())
+}
+
+fn op_for_stat_error(path: PathBuf, error: &std::io::Error) -> Op {
+    if error.kind() == std::io::ErrorKind::NotFound {
+        Op::Remove { path }
+    } else {
+        Op::InvalidateSubtree { path, reason: InvalidateReason::VerificationFailed }
+    }
 }
 
 /// Express an absolute path relative to the watch root.
@@ -265,6 +341,7 @@ fn relative_to(root: &Path, path: &Path) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use notify::event::{CreateKind, Flag, MetadataKind, ModifyKind, RenameMode};
     use std::fs;
 
     /// Collect deltas until `want` is satisfied or the deadline passes.
@@ -280,8 +357,8 @@ mod tests {
         let start = Instant::now();
         let mut seen: Vec<Op> = Vec::new();
         while start.elapsed() < deadline {
-            if let Some(delta) = watcher.next_delta(Duration::from_millis(200)) {
-                seen.extend(delta.ops);
+            if let Some(observation) = watcher.next_observation(Duration::from_millis(200)) {
+                seen.extend(observation.ops.into_iter().map(|observed| observed.op));
                 if want(&seen) {
                     return seen;
                 }
@@ -381,5 +458,130 @@ mod tests {
         let root = Path::new("/a/b");
         assert_eq!(relative_to(root, Path::new("/a/b/c/d")), Some(PathBuf::from("c/d")));
         assert_eq!(relative_to(root, Path::new("/elsewhere")), None);
+    }
+
+    #[test]
+    fn only_not_found_verification_errors_remove_known_state() {
+        let path = PathBuf::from("known.txt");
+        let missing = op_for_stat_error(
+            path.clone(),
+            &std::io::Error::new(std::io::ErrorKind::NotFound, "gone"),
+        );
+        assert!(matches!(missing, Op::Remove { path: removed } if removed == path));
+
+        let denied = op_for_stat_error(
+            path.clone(),
+            &std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied"),
+        );
+        assert!(matches!(
+            denied,
+            Op::InvalidateSubtree {
+                path: invalidated,
+                reason: InvalidateReason::VerificationFailed,
+            } if invalidated == path
+        ));
+    }
+
+    #[test]
+    fn create_intent_survives_coalescing_but_metadata_only_does_not_relist() {
+        let root = Path::new("/watch-root");
+        let path = root.join("directory");
+        let mut pending = BTreeMap::new();
+
+        record(
+            root,
+            &notify::Event::new(EventKind::Create(CreateKind::Folder)).add_path(path.clone()),
+            &mut pending,
+        );
+        record(
+            root,
+            &notify::Event::new(EventKind::Modify(ModifyKind::Metadata(MetadataKind::Any)))
+                .add_path(path),
+            &mut pending,
+        );
+        assert_eq!(
+            pending.get(Path::new("directory")),
+            Some(&Pending::Verify { relist_if_dir: true })
+        );
+
+        let mut metadata_only = BTreeMap::new();
+        record(
+            root,
+            &notify::Event::new(EventKind::Modify(ModifyKind::Metadata(MetadataKind::Any)))
+                .add_path(root.join("existing")),
+            &mut metadata_only,
+        );
+        assert_eq!(
+            metadata_only.get(Path::new("existing")),
+            Some(&Pending::Verify { relist_if_dir: false })
+        );
+    }
+
+    #[test]
+    fn unpaired_renames_and_ambiguous_rescans_escalate_the_root() {
+        let root = Path::new("/watch-root");
+        let mut rename_pending = BTreeMap::new();
+        record(
+            root,
+            &notify::Event::new(EventKind::Modify(ModifyKind::Name(RenameMode::From)))
+                .add_path(root.join("old")),
+            &mut rename_pending,
+        );
+        assert_eq!(
+            rename_pending.get(Path::new("")),
+            Some(&Pending::Escalate(InvalidateReason::UnpairedRename))
+        );
+
+        let mut rescan_pending = BTreeMap::new();
+        record(
+            root,
+            &notify::Event::new(EventKind::Any)
+                .add_path(root.join("a"))
+                .add_path(root.join("b"))
+                .set_flag(Flag::Rescan),
+            &mut rescan_pending,
+        );
+        assert_eq!(
+            rescan_pending.get(Path::new("")),
+            Some(&Pending::Escalate(InvalidateReason::WatchOverflow))
+        );
+    }
+
+    #[test]
+    fn paired_rename_preserves_the_new_directory_relist_intent() {
+        let root = Path::new("/watch-root");
+        let mut pending = BTreeMap::new();
+        record(
+            root,
+            &notify::Event::new(EventKind::Modify(ModifyKind::Name(RenameMode::Both)))
+                .add_path(root.join("old"))
+                .add_path(root.join("new")),
+            &mut pending,
+        );
+
+        assert!(!matches!(
+            pending.get(Path::new("")),
+            Some(Pending::Escalate(InvalidateReason::UnpairedRename))
+        ));
+        assert_eq!(pending.get(Path::new("old")), Some(&Pending::Verify { relist_if_dir: false }));
+        assert_eq!(pending.get(Path::new("new")), Some(&Pending::Verify { relist_if_dir: true }));
+    }
+
+    #[test]
+    fn observation_driver_closes_the_invalidation_loop() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let (index, _) =
+            crate::scan::scan_into_index(dir.path(), &crate::ScanConfig::default()).expect("scan");
+        let handle = crate::IndexHandle::new(index);
+        fs::write(dir.path().join("raced.txt"), b"raced").expect("write");
+        let observation = Observation::new(vec![Op::InvalidateSubtree {
+            path: PathBuf::new(),
+            reason: InvalidateReason::WatchSetupRace,
+        }]);
+
+        apply_observation(&handle, &observation, &crate::ScanConfig::default(), &mut |_| {})
+            .expect("apply and reconcile");
+
+        assert!(handle.read().expect("read").lookup(Path::new("raced.txt")).is_some());
     }
 }

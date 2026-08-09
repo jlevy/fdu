@@ -16,7 +16,7 @@ use pyo3::exceptions::{PyOSError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 
-use fdu::{OpenConfig, RollUp, ScanConfig};
+use fdu::{EntryKind, Freshness, OpenConfig, RollUp, ScanConfig};
 
 fn to_py_err(err: fdu::Error) -> PyErr {
     match err {
@@ -44,10 +44,30 @@ fn rollup_dict<'py>(py: Python<'py>, roll: &RollUp) -> PyResult<Bound<'py, PyDic
     Ok(dict)
 }
 
+fn entry_kind_label(kind: EntryKind) -> &'static str {
+    match kind {
+        EntryKind::File => "file",
+        EntryKind::Dir => "dir",
+        EntryKind::Symlink => "symlink",
+        EntryKind::Other => "other",
+    }
+}
+
+fn freshness_label(freshness: Freshness) -> &'static str {
+    match freshness {
+        Freshness::Fresh => "fresh",
+        Freshness::Reconciling => "reconciling",
+        Freshness::Stale => "stale",
+        Freshness::Partial => "partial",
+    }
+}
+
 /// A live index over one directory tree.
 #[pyclass(name = "Index", module = "fdu")]
 pub struct PyIndex {
     inner: fdu::Index,
+    config: ScanConfig,
+    errors: Vec<String>,
 }
 
 #[pymethods]
@@ -62,6 +82,24 @@ impl PyIndex {
     #[getter]
     fn clock(&self) -> u64 {
         self.inner.clock().0
+    }
+
+    /// Whether every path in this index's configured scope is currently trustworthy.
+    #[getter]
+    fn complete(&self) -> bool {
+        self.inner.freshness() == Freshness::Fresh
+    }
+
+    /// Current trust state: fresh, reconciling, stale, or partial.
+    #[getter]
+    fn freshness(&self) -> &'static str {
+        freshness_label(self.inner.freshness())
+    }
+
+    /// Error details from the most recent scan or refresh.
+    #[getter]
+    fn errors(&self) -> Vec<String> {
+        self.errors.clone()
     }
 
     /// Number of entries held, including the root.
@@ -96,13 +134,13 @@ impl PyIndex {
         let out = PyList::empty(py);
         for (name, id) in children {
             let entry = PyDict::new(py);
-            entry.set_item("name", name)?;
-            let is_dir = self.inner.kind_of(id).is_dir();
-            entry.set_item("kind", if is_dir { "dir" } else { "file" })?;
+            entry.set_item("name", name.to_string_lossy().as_ref())?;
+            let kind = self.inner.kind_of(id).expect("child handle is live");
+            entry.set_item("kind", entry_kind_label(kind))?;
             if let Some(roll) = self.inner.rollup_of(id) {
                 entry.set_item("rollup", rollup_dict(py, roll)?)?;
             } else {
-                let attrs = self.inner.attrs_of(id);
+                let attrs = self.inner.attrs_of(id).expect("child handle is live");
                 entry.set_item("bytes", attrs.size)?;
                 entry.set_item("allocated", attrs.allocated)?;
                 entry.set_item("mtime_ns", attrs.mtime_ns)?;
@@ -115,38 +153,26 @@ impl PyIndex {
     /// Reconcile the index against the filesystem and return what changed.
     ///
     /// This is the revalidation tier: unchanged entries cost a stat and nothing more,
-    /// because an upsert whose fingerprint already matches is discarded as a no-op.
+    /// because an upsert whose complete observed state already matches is a no-op.
     fn refresh<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
-        let config = ScanConfig::default();
-        let index = &mut self.inner;
-
-        let (deltas, report) = py.detach(|| {
-            let mut deltas = Vec::new();
-            let report = fdu::scan::revalidate(index, &config, &mut |d| deltas.push(d));
-            (deltas, report)
-        });
-        let report = report.map_err(to_py_err)?;
-
-        let mut inserted = 0u64;
-        let mut updated = 0u64;
-        let mut removed = 0u64;
-        let mut unchanged = 0u64;
-        for delta in &deltas {
-            let stats = index.apply(delta);
-            inserted += stats.inserted;
-            updated += stats.updated;
-            removed += stats.removed;
-            unchanged += stats.unchanged;
-        }
+        let config = self.config.clone();
+        let report = py
+            .detach(|| fdu::scan::reconcile(&mut self.inner, &config, &mut |_| {}))
+            .map_err(to_py_err)?;
+        self.errors = report.scan.errors.iter().map(ToString::to_string).collect();
+        let stats = report.apply;
 
         let out = PyDict::new(py);
-        out.set_item("inserted", inserted)?;
-        out.set_item("updated", updated)?;
-        out.set_item("removed", removed)?;
-        out.set_item("unchanged", unchanged)?;
-        out.set_item("errors", report.errors.len())?;
-        out.set_item("complete", report.is_complete())?;
-        out.set_item("clock", index.clock().0)?;
+        out.set_item("inserted", stats.inserted)?;
+        out.set_item("updated", stats.updated)?;
+        out.set_item("removed", stats.removed)?;
+        out.set_item("unchanged", stats.unchanged)?;
+        out.set_item("stale", stats.stale)?;
+        out.set_item("error_count", self.errors.len())?;
+        out.set_item("errors", self.errors.clone())?;
+        out.set_item("complete", self.complete())?;
+        out.set_item("freshness", self.freshness())?;
+        out.set_item("clock", self.inner.clock().0)?;
         Ok(out)
     }
 
@@ -167,7 +193,7 @@ impl PyIndex {
                 match op {
                     fdu::Op::Upsert { kind, attrs, .. } => {
                         item.set_item("op", "upsert")?;
-                        item.set_item("kind", if kind.is_dir() { "dir" } else { "file" })?;
+                        item.set_item("kind", entry_kind_label(*kind))?;
                         item.set_item("bytes", attrs.size)?;
                         item.set_item("mtime_ns", attrs.mtime_ns)?;
                     }
@@ -203,8 +229,9 @@ fn open(py: Python<'_>, root: &str, cache: bool, max_depth: Option<usize>) -> Py
     };
 
     let opened = py.detach(|| fdu::open(&root, &config));
-    let (index, _report) = opened.map_err(to_py_err)?;
-    Ok(PyIndex { inner: index })
+    let (index, report) = opened.map_err(to_py_err)?;
+    let errors = report.errors().iter().map(ToString::to_string).collect();
+    Ok(PyIndex { inner: index, config: config.scan, errors })
 }
 
 /// Walk a tree with no cache at all and return the index.
@@ -214,8 +241,9 @@ fn scan(py: Python<'_>, root: &str, max_depth: Option<usize>) -> PyResult<PyInde
     let root = PathBuf::from(root);
     let config = ScanConfig { max_depth, ..ScanConfig::default() };
     let scanned = py.detach(|| fdu::scan::scan_into_index(&root, &config));
-    let (index, _report) = scanned.map_err(to_py_err)?;
-    Ok(PyIndex { inner: index })
+    let (index, report) = scanned.map_err(to_py_err)?;
+    let errors = report.errors.iter().map(ToString::to_string).collect();
+    Ok(PyIndex { inner: index, config, errors })
 }
 
 #[pymodule]

@@ -1,12 +1,13 @@
 //! Persisting an index to disk and reading it back.
 //!
-//! # Status: format v0 is a placeholder, and deliberately a boring one
+//! # Status: format v1 is a bounded bootstrap format
 //!
-//! This module implements a flat, uncompressed, read-it-all format. It exists so the
-//! cache *lifecycle* — engine-fingerprint invalidation, atomic replacement, and
-//! corrupt-equals-empty — is nailed down and tested before the wire format is designed,
-//! because those invariants are the ones that make a cache trustworthy and they are
-//! independent of layout.
+//! This module implements a flat, uncompressed writer and a bounded streaming reader.
+//! It exists so the cache *lifecycle* — semantic-scope invalidation, atomic replacement,
+//! complete-only persistence, resource limits, and corrupt-equals-empty — is nailed down
+//! before the optimized wire format is designed. The loader checks file size, trailer,
+//! header, record count, and path lengths before allocating record data, then rebuilds
+//! one entry at a time.
 //!
 //! The target format is different in every other respect: zstd-compressed blocks with an
 //! index block at the tail, so opening costs one small read and directory listings
@@ -26,12 +27,13 @@
 //! - **Replacement is atomic.** Write a temporary file, then rename over the target, so a
 //!   crash mid-write leaves the previous snapshot intact rather than a half-written one.
 
+use std::ffi::{OsStr, OsString};
 use std::fs;
-use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::io::{BufReader, Read, Seek, SeekFrom, Write};
+use std::path::{Component, Path, PathBuf};
 
 use crate::index::{EntryId, Index};
-use crate::types::{Attrs, Delta, EntryKind, Error, Op, Result};
+use crate::types::{Attrs, EntryKind, Error, Freshness, Observation, Op, Result, ScanScope};
 
 /// Leading magic. Distinguishes an fdu snapshot from any other file that lands here.
 const MAGIC: &[u8; 8] = b"FDUSNAP\x00";
@@ -42,15 +44,55 @@ const TRAILER: &[u8; 8] = b"FDUEND\x00\x00";
 
 /// On-disk format version. Bump on any layout change; old snapshots are then discarded
 /// rather than misread.
-const FORMAT_VERSION: u32 = 0;
+const FORMAT_VERSION: u32 = 1;
+
+/// Snapshot path encoding used by Unix targets.
+#[cfg(unix)]
+const PATH_ENCODING_UNIX_BYTES: u8 = 1;
+
+/// Snapshot path encoding used by Windows targets.
+#[cfg(windows)]
+const PATH_ENCODING_WINDOWS_WIDE: u8 = 2;
+
+/// Portable UTF-8 fallback for targets outside Unix and Windows.
+#[cfg(not(any(unix, windows)))]
+const PATH_ENCODING_UTF8: u8 = 3;
 
 /// Marks the root's absent parent.
 const NO_PARENT: u32 = u32::MAX;
+
+/// Sentinel for an unlimited scan depth in the snapshot header.
+const UNLIMITED_DEPTH: u64 = u64::MAX;
+
+/// Scope flag for symlink-following traversal.
+const SCOPE_FOLLOW_SYMLINKS: u8 = 1 << 0;
+
+/// Scope flag for staying on the root filesystem.
+const SCOPE_ONE_FILESYSTEM: u8 = 1 << 1;
+
+/// All scope bits understood by this format version.
+const SCOPE_KNOWN_FLAGS: u8 = SCOPE_FOLLOW_SYMLINKS | SCOPE_ONE_FILESYSTEM;
+
+/// Encoded byte width of the fixed scan-scope header.
+#[cfg(test)]
+const SERIALIZED_SCOPE_BYTES: usize = 8 + 1 + 8 * 3;
 
 /// Smallest possible on-disk record: parent slot, kind, name length, and six 8-byte
 /// attribute fields, with a zero-length name. Used to sanity-check a declared entry
 /// count against the bytes actually present.
 const MIN_RECORD_BYTES: usize = 4 + 1 + 4 + 8 * 6;
+
+/// Binary size unit used by the snapshot resource limits.
+const GIBIBYTE: u64 = 1024 * 1024 * 1024;
+
+/// Largest snapshot image accepted by the format-v1 streaming reader.
+const MAX_SNAPSHOT_BYTES: u64 = 64 * GIBIBYTE;
+
+/// Largest encoded root or entry name accepted from a snapshot.
+const MAX_PATH_BYTES: u32 = 1024 * 1024;
+
+/// Upper bound on records accepted even when a sparse file could physically hold more.
+const MAX_SNAPSHOT_ENTRIES: u64 = 100_000_000;
 
 /// A fingerprint of everything that would change how the engine interprets a tree.
 ///
@@ -75,13 +117,19 @@ pub fn engine_fingerprint() -> u64 {
 
 /// Write `index` to `path`, replacing any existing snapshot atomically.
 pub fn save(index: &Index, path: &Path) -> Result<()> {
+    if index.freshness() != Freshness::Fresh {
+        return Err(Error::Snapshot(
+            "refusing to persist an index that is stale, reconciling, or partial".into(),
+        ));
+    }
     let mut buf: Vec<u8> = Vec::new();
     buf.extend_from_slice(MAGIC);
     buf.extend_from_slice(&FORMAT_VERSION.to_le_bytes());
     buf.extend_from_slice(&engine_fingerprint().to_le_bytes());
+    buf.push(path_encoding());
+    put_scope(&mut buf, index.scope())?;
 
-    let root_path = index.root_path().to_string_lossy().into_owned();
-    put_bytes(&mut buf, root_path.as_bytes())?;
+    put_os_str(&mut buf, index.root_path().as_os_str())?;
 
     // Pre-order, so a parent's record always precedes its children's and the loader can
     // rebuild the tree in one forward pass with no fixups.
@@ -91,7 +139,10 @@ pub fn save(index: &Index, path: &Path) -> Result<()> {
         let slot = u32::try_from(records.len())
             .map_err(|_| Error::Snapshot("snapshot exceeds u32 entry capacity".into()))?;
         records.push((parent_slot, id));
-        for (_, child) in index.children_of(id).into_iter().rev() {
+        let children = index
+            .children_of(id)
+            .ok_or_else(|| Error::Snapshot("stale entry handle while saving".into()))?;
+        for (_, child) in children.into_iter().rev() {
             stack.push((slot, child));
         }
     }
@@ -102,9 +153,17 @@ pub fn save(index: &Index, path: &Path) -> Result<()> {
 
     for (parent_slot, id) in records {
         buf.extend_from_slice(&parent_slot.to_le_bytes());
-        buf.push(index.kind_of(id) as u8);
-        put_bytes(&mut buf, index.name_of(id).as_bytes())?;
-        let attrs = index.attrs_of(id);
+        let kind = index
+            .kind_of(id)
+            .ok_or_else(|| Error::Snapshot("stale entry handle while saving".into()))?;
+        buf.push(kind as u8);
+        let name = index
+            .name_of(id)
+            .ok_or_else(|| Error::Snapshot("stale entry handle while saving".into()))?;
+        put_os_str(&mut buf, name)?;
+        let attrs = index
+            .attrs_of(id)
+            .ok_or_else(|| Error::Snapshot("stale entry handle while saving".into()))?;
         buf.extend_from_slice(&attrs.size.to_le_bytes());
         buf.extend_from_slice(&attrs.allocated.to_le_bytes());
         buf.extend_from_slice(&attrs.mtime_ns.to_le_bytes());
@@ -123,90 +182,303 @@ pub fn save(index: &Index, path: &Path) -> Result<()> {
 /// engine-fingerprint mismatch, and a truncated or corrupt file. Every one of those
 /// means the same thing to a caller: there is no warm cache, so scan.
 pub fn load(path: &Path) -> Result<Option<Index>> {
-    let bytes = match fs::read(path) {
-        Ok(bytes) => bytes,
+    let mut file = match fs::File::open(path) {
+        Ok(file) => file,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(e) => return Err(Error::io(path, e)),
     };
-    Ok(parse(&bytes))
+    let file_len = file.metadata().map_err(|e| Error::io(path, e))?.len();
+    if file_len > MAX_SNAPSHOT_BYTES || file_len < u64::try_from(TRAILER.len()).unwrap_or(u64::MAX)
+    {
+        return Ok(None);
+    }
+
+    let trailer_offset = i64::try_from(TRAILER.len())
+        .map_err(|_| Error::Snapshot("snapshot trailer size overflow".into()))?;
+    file.seek(SeekFrom::End(-trailer_offset)).map_err(|e| Error::io(path, e))?;
+    let mut trailer = [0u8; TRAILER.len()];
+    match file.read_exact(&mut trailer) {
+        Ok(()) if &trailer == TRAILER => {}
+        Ok(()) => return Ok(None),
+        Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(None),
+        Err(e) => return Err(Error::io(path, e)),
+    }
+    file.seek(SeekFrom::Start(0)).map_err(|e| Error::io(path, e))?;
+
+    let payload_len = file_len
+        .checked_sub(u64::try_from(TRAILER.len()).unwrap_or(u64::MAX))
+        .ok_or_else(|| Error::Snapshot("snapshot length underflow".into()))?;
+    let mut reader = BufReader::new(file.take(payload_len));
+    match parse_stream(&mut reader, payload_len) {
+        Ok(index) => Ok(Some(index)),
+        Err(ParseError::Invalid) => Ok(None),
+        Err(ParseError::Io(source)) => Err(Error::io(path, source)),
+    }
 }
 
-/// Parse a snapshot image, yielding `None` for anything not recognizable as a current,
-/// complete one.
-fn parse(bytes: &[u8]) -> Option<Index> {
-    let mut cur = Cursor::new(bytes);
-    if cur.take(MAGIC.len())? != MAGIC {
-        return None;
+/// Parse a bounded payload. Records are applied one at a time so bootstrap paths are not
+/// retained in a second full-tree allocation.
+fn parse_stream(reader: &mut impl Read, payload_len: u64) -> ParseResult<Index> {
+    if read_array::<_, 8>(reader)? != *MAGIC {
+        return Err(ParseError::Invalid);
     }
-    if cur.u32()? != FORMAT_VERSION {
-        return None;
+    if read_u32(reader)? != FORMAT_VERSION || read_u64(reader)? != engine_fingerprint() {
+        return Err(ParseError::Invalid);
     }
-    if cur.u64()? != engine_fingerprint() {
-        return None;
+    if read_u8(reader)? != path_encoding() {
+        return Err(ParseError::Invalid);
     }
-    // A truncated snapshot can still parse as a shorter valid one, so the trailer is
-    // checked before any of the body is trusted.
-    if bytes.len() < TRAILER.len() || &bytes[bytes.len() - TRAILER.len()..] != TRAILER {
-        return None;
+    let scope = read_scope(reader)?;
+    let root_path = PathBuf::from(read_os_string(reader)?);
+    let count = read_u64(reader)?;
+    if count == 0 || count > MAX_SNAPSHOT_ENTRIES {
+        return Err(ParseError::Invalid);
     }
-
-    let root_path = String::from_utf8(cur.bytes()?.to_vec()).ok()?;
-
-    // The declared count comes from a file that may be corrupt or hostile, so it is
-    // checked against what the remaining bytes could physically hold before it is
-    // allowed to size an allocation. Trusting it directly turns a corrupt snapshot into
-    // an out-of-memory abort — which would be exactly the "fails open" behaviour this
-    // module exists to prevent.
-    let count = usize::try_from(cur.u64()?).ok()?;
-    let remaining = bytes.len().checked_sub(cur.pos)?;
-    if count.checked_mul(MIN_RECORD_BYTES)? > remaining {
-        return None;
+    let minimum_body = count
+        .checked_mul(u64::try_from(MIN_RECORD_BYTES).map_err(|_| ParseError::Invalid)?)
+        .ok_or(ParseError::Invalid)?;
+    if minimum_body > payload_len {
+        return Err(ParseError::Invalid);
     }
 
-    let mut index = Index::new(&root_path);
-    // Slot number -> path, so a child can name its parent by the path the index knows.
-    let mut paths: Vec<PathBuf> = Vec::with_capacity(count);
-    let mut ops: Vec<Op> = Vec::new();
-
-    for _ in 0..count {
-        let parent_slot = cur.u32()?;
-        let kind = EntryKind::from_u8(cur.u8()?)?;
-        let name = String::from_utf8(cur.bytes()?.to_vec()).ok()?;
+    let mut index = Index::new_with_scope(&root_path, scope);
+    let mut ids: Vec<EntryId> = Vec::new();
+    for slot in 0..count {
+        let parent_slot = read_u32(reader)?;
+        let kind = EntryKind::from_u8(read_u8(reader)?).ok_or(ParseError::Invalid)?;
+        let name = read_os_string(reader)?;
         let attrs = Attrs {
-            size: cur.u64()?,
-            allocated: cur.u64()?,
-            mtime_ns: cur.i64()?,
-            ctime_ns: cur.i64()?,
-            inode: cur.u64()?,
-            dev: cur.u64()?,
+            size: read_u64(reader)?,
+            allocated: read_u64(reader)?,
+            mtime_ns: read_i64(reader)?,
+            ctime_ns: read_i64(reader)?,
+            inode: read_u64(reader)?,
+            dev: read_u64(reader)?,
         };
 
         if parent_slot == NO_PARENT {
-            paths.push(PathBuf::new());
+            if slot != 0 || kind != EntryKind::Dir || !name.is_empty() {
+                return Err(ParseError::Invalid);
+            }
+            index.apply_baseline(&Observation::new(vec![Op::Upsert {
+                path: PathBuf::new(),
+                kind,
+                attrs,
+            }]));
+            ids.push(EntryId::ROOT);
             continue;
         }
-        let parent_path = paths.get(usize::try_from(parent_slot).ok()?)?;
-        let path = parent_path.join(&name);
-        paths.push(path.clone());
-        ops.push(Op::Upsert { path, kind, attrs });
+
+        let parent = *ids
+            .get(usize::try_from(parent_slot).map_err(|_| ParseError::Invalid)?)
+            .ok_or(ParseError::Invalid)?;
+        if index.kind_of(parent) != Some(EntryKind::Dir) || !is_snapshot_name(&name) {
+            return Err(ParseError::Invalid);
+        }
+        let mut path = index.path_of(parent).ok_or(ParseError::Invalid)?;
+        path.push(name);
+        if index.lookup(&path).is_some() {
+            return Err(ParseError::Invalid);
+        }
+        index.apply_baseline(&Observation::new(vec![Op::Upsert {
+            path: path.clone(),
+            kind,
+            attrs,
+        }]));
+        let id = index.lookup(&path).ok_or(ParseError::Invalid)?;
+        ids.push(id);
     }
 
-    if cur.take(TRAILER.len())? != TRAILER {
-        return None;
+    let mut extra = [0u8; 1];
+    if reader.read(&mut extra).map_err(ParseError::Io)? != 0 {
+        return Err(ParseError::Invalid);
     }
+    Ok(index)
+}
 
-    // Rebuilding through the delta path means roll-up state can never disagree with the
-    // entries it summarizes: there is one code path that computes it.
-    index.apply(&Delta::new(ops));
-    Some(index)
+#[derive(Debug)]
+enum ParseError {
+    Invalid,
+    Io(std::io::Error),
+}
+
+type ParseResult<T> = std::result::Result<T, ParseError>;
+
+fn read_array<R: Read, const N: usize>(reader: &mut R) -> ParseResult<[u8; N]> {
+    let mut bytes = [0u8; N];
+    match reader.read_exact(&mut bytes) {
+        Ok(()) => Ok(bytes),
+        Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => Err(ParseError::Invalid),
+        Err(error) => Err(ParseError::Io(error)),
+    }
+}
+
+fn read_u8(reader: &mut impl Read) -> ParseResult<u8> {
+    Ok(read_array::<_, 1>(reader)?[0])
+}
+
+fn read_u32(reader: &mut impl Read) -> ParseResult<u32> {
+    Ok(u32::from_le_bytes(read_array(reader)?))
+}
+
+fn read_u64(reader: &mut impl Read) -> ParseResult<u64> {
+    Ok(u64::from_le_bytes(read_array(reader)?))
+}
+
+fn read_i64(reader: &mut impl Read) -> ParseResult<i64> {
+    Ok(i64::from_le_bytes(read_array(reader)?))
+}
+
+fn read_bytes(reader: &mut impl Read) -> ParseResult<Vec<u8>> {
+    let len = read_u32(reader)?;
+    if len > MAX_PATH_BYTES {
+        return Err(ParseError::Invalid);
+    }
+    let mut bytes = vec![0u8; usize::try_from(len).map_err(|_| ParseError::Invalid)?];
+    match reader.read_exact(&mut bytes) {
+        Ok(()) => Ok(bytes),
+        Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => Err(ParseError::Invalid),
+        Err(error) => Err(ParseError::Io(error)),
+    }
+}
+
+#[cfg(unix)]
+fn read_os_string(reader: &mut impl Read) -> ParseResult<OsString> {
+    Ok(os_string_from_bytes(&read_bytes(reader)?))
+}
+
+#[cfg(not(unix))]
+fn read_os_string(reader: &mut impl Read) -> ParseResult<OsString> {
+    os_string_from_bytes(&read_bytes(reader)?).ok_or(ParseError::Invalid)
 }
 
 fn put_bytes(buf: &mut Vec<u8>, bytes: &[u8]) -> Result<()> {
     let len = u32::try_from(bytes.len())
         .map_err(|_| Error::Snapshot("string too long for snapshot".into()))?;
+    if len > MAX_PATH_BYTES {
+        return Err(Error::Snapshot("path exceeds snapshot limit".into()));
+    }
     buf.extend_from_slice(&len.to_le_bytes());
     buf.extend_from_slice(bytes);
     Ok(())
+}
+
+fn is_snapshot_name(name: &OsStr) -> bool {
+    let mut components = Path::new(name).components();
+    matches!(components.next(), Some(Component::Normal(_))) && components.next().is_none()
+}
+
+fn put_scope(buf: &mut Vec<u8>, scope: ScanScope) -> Result<()> {
+    let max_depth = scope.max_depth.map_or(Ok(UNLIMITED_DEPTH), |depth| {
+        u64::try_from(depth).map_err(|_| Error::Snapshot("scan depth overflow".into()))
+    })?;
+    buf.extend_from_slice(&max_depth.to_le_bytes());
+    let mut flags = 0u8;
+    if scope.follow_symlinks {
+        flags |= SCOPE_FOLLOW_SYMLINKS;
+    }
+    if scope.one_filesystem {
+        flags |= SCOPE_ONE_FILESYSTEM;
+    }
+    buf.push(flags);
+    buf.extend_from_slice(&scope.ignore_rules_fingerprint.to_le_bytes());
+    buf.extend_from_slice(&scope.type_rules_fingerprint.to_le_bytes());
+    buf.extend_from_slice(&scope.reducers_fingerprint.to_le_bytes());
+    Ok(())
+}
+
+fn read_scope(reader: &mut impl Read) -> ParseResult<ScanScope> {
+    let depth = read_u64(reader)?;
+    let max_depth = if depth == UNLIMITED_DEPTH {
+        None
+    } else {
+        Some(usize::try_from(depth).map_err(|_| ParseError::Invalid)?)
+    };
+    let flags = read_u8(reader)?;
+    if flags & !SCOPE_KNOWN_FLAGS != 0 {
+        return Err(ParseError::Invalid);
+    }
+    Ok(ScanScope {
+        max_depth,
+        follow_symlinks: flags & SCOPE_FOLLOW_SYMLINKS != 0,
+        one_filesystem: flags & SCOPE_ONE_FILESYSTEM != 0,
+        ignore_rules_fingerprint: read_u64(reader)?,
+        type_rules_fingerprint: read_u64(reader)?,
+        reducers_fingerprint: read_u64(reader)?,
+    })
+}
+
+#[cfg(unix)]
+fn path_encoding() -> u8 {
+    PATH_ENCODING_UNIX_BYTES
+}
+
+#[cfg(windows)]
+fn path_encoding() -> u8 {
+    PATH_ENCODING_WINDOWS_WIDE
+}
+
+#[cfg(not(any(unix, windows)))]
+fn path_encoding() -> u8 {
+    PATH_ENCODING_UTF8
+}
+
+#[cfg(unix)]
+fn put_os_str(buf: &mut Vec<u8>, value: &OsStr) -> Result<()> {
+    use std::os::unix::ffi::OsStrExt;
+    put_bytes(buf, value.as_bytes())
+}
+
+#[cfg(windows)]
+fn put_os_str(buf: &mut Vec<u8>, value: &OsStr) -> Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    let units: Vec<u16> = value.encode_wide().collect();
+    let byte_len = units
+        .len()
+        .checked_mul(std::mem::size_of::<u16>())
+        .ok_or_else(|| Error::Snapshot("path length overflow".into()))?;
+    let byte_len = u32::try_from(byte_len)
+        .map_err(|_| Error::Snapshot("path too long for snapshot".into()))?;
+    if byte_len > MAX_PATH_BYTES {
+        return Err(Error::Snapshot("path exceeds snapshot limit".into()));
+    }
+    buf.extend_from_slice(&byte_len.to_le_bytes());
+    for unit in units {
+        buf.extend_from_slice(&unit.to_le_bytes());
+    }
+    Ok(())
+}
+
+#[cfg(not(any(unix, windows)))]
+fn put_os_str(buf: &mut Vec<u8>, value: &OsStr) -> Result<()> {
+    let text = value
+        .to_str()
+        .ok_or_else(|| Error::Snapshot("path is not valid UTF-8 on this platform".into()))?;
+    put_bytes(buf, text.as_bytes())
+}
+
+#[cfg(unix)]
+fn os_string_from_bytes(bytes: &[u8]) -> OsString {
+    use std::os::unix::ffi::OsStringExt;
+    OsString::from_vec(bytes.to_vec())
+}
+
+#[cfg(windows)]
+fn os_string_from_bytes(bytes: &[u8]) -> Option<OsString> {
+    use std::os::windows::ffi::OsStringExt;
+    if !bytes.len().is_multiple_of(std::mem::size_of::<u16>()) {
+        return None;
+    }
+    let units: Vec<u16> = bytes
+        .chunks_exact(std::mem::size_of::<u16>())
+        .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
+        .collect();
+    Some(OsString::from_wide(&units))
+}
+
+#[cfg(not(any(unix, windows)))]
+fn os_string_from_bytes(bytes: &[u8]) -> Option<OsString> {
+    Some(OsString::from(String::from_utf8(bytes.to_vec()).ok()?))
 }
 
 /// Write to a sibling temporary file, then rename over the target.
@@ -239,52 +511,11 @@ fn write_atomically(path: &Path, bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
-/// Minimal forward-only reader. Every accessor returns `None` past the end, so a
-/// truncated file falls out as "unusable snapshot" rather than a panic.
-struct Cursor<'a> {
-    bytes: &'a [u8],
-    pos: usize,
-}
-
-impl<'a> Cursor<'a> {
-    fn new(bytes: &'a [u8]) -> Self {
-        Self { bytes, pos: 0 }
-    }
-
-    fn take(&mut self, n: usize) -> Option<&'a [u8]> {
-        let end = self.pos.checked_add(n)?;
-        let slice = self.bytes.get(self.pos..end)?;
-        self.pos = end;
-        Some(slice)
-    }
-
-    fn u8(&mut self) -> Option<u8> {
-        Some(self.take(1)?[0])
-    }
-
-    fn u32(&mut self) -> Option<u32> {
-        Some(u32::from_le_bytes(self.take(4)?.try_into().ok()?))
-    }
-
-    fn u64(&mut self) -> Option<u64> {
-        Some(u64::from_le_bytes(self.take(8)?.try_into().ok()?))
-    }
-
-    fn i64(&mut self) -> Option<i64> {
-        Some(i64::from_le_bytes(self.take(8)?.try_into().ok()?))
-    }
-
-    fn bytes(&mut self) -> Option<&'a [u8]> {
-        let len = self.u32()?;
-        self.take(usize::try_from(len).ok()?)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::index::ExtTally;
-    use crate::types::Delta;
+    use crate::types::Observation;
 
     fn attrs(size: u64, mtime_ns: i64) -> Attrs {
         Attrs {
@@ -299,7 +530,7 @@ mod tests {
 
     fn sample_index() -> Index {
         let mut index = Index::new("/some/root");
-        index.apply(&Delta::new(vec![
+        index.apply(&Observation::new(vec![
             Op::Upsert { path: PathBuf::from("src"), kind: EntryKind::Dir, attrs: attrs(0, 1) },
             Op::Upsert {
                 path: PathBuf::from("src/main.rs"),
@@ -330,6 +561,8 @@ mod tests {
         let restored = load(&path).expect("load").expect("snapshot present");
 
         assert_eq!(restored.root_path(), Path::new("/some/root"));
+        assert_eq!(restored.clock(), crate::Clock::ZERO);
+        assert!(restored.since(crate::Clock::ZERO).deltas.is_empty());
         assert_eq!(restored.len(), original.len());
         assert_eq!(restored.total(), original.total());
         assert_eq!(restored.total().files, 3);
@@ -347,6 +580,16 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let loaded = load(&dir.path().join("nope.fdu")).expect("load must not error");
         assert!(loaded.is_none());
+    }
+
+    #[test]
+    fn oversized_sparse_snapshot_is_rejected_before_body_allocation() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("huge.fdu");
+        let file = fs::File::create(&path).expect("create");
+        file.set_len(MAX_SNAPSHOT_BYTES + 1).expect("make sparse file");
+
+        assert!(load(&path).expect("load must not error").is_none());
     }
 
     #[test]
@@ -381,8 +624,38 @@ mod tests {
 
         let mut bytes = fs::read(&path).expect("read");
         // Claim far more entries than the body holds.
-        let count_at = MAGIC.len() + 4 + 8 + 4 + "/some/root".len();
+        let count_at = MAGIC.len() + 4 + 8 + 1 + SERIALIZED_SCOPE_BYTES + 4 + "/some/root".len();
         bytes[count_at..count_at + 8].copy_from_slice(&u64::MAX.to_le_bytes());
+        fs::write(&path, &bytes).expect("write");
+
+        assert!(load(&path).expect("load must not error").is_none());
+    }
+
+    #[test]
+    fn entry_names_with_path_components_are_rejected() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("snap.fdu");
+        save(&sample_index(), &path).expect("save");
+
+        let mut bytes = fs::read(&path).expect("read");
+        let count_at = MAGIC.len() + 4 + 8 + 1 + SERIALIZED_SCOPE_BYTES + 4 + "/some/root".len();
+        let records_at = count_at + 8;
+        let first_child_name_at = records_at + MIN_RECORD_BYTES + 4 + 1 + 4;
+        bytes[first_child_name_at..first_child_name_at + 8].copy_from_slice(b"../bad!!");
+        fs::write(&path, &bytes).expect("write");
+
+        assert!(load(&path).expect("load must not error").is_none());
+    }
+
+    #[test]
+    fn oversized_declared_path_is_rejected_before_allocation() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("snap.fdu");
+        save(&sample_index(), &path).expect("save");
+
+        let mut bytes = fs::read(&path).expect("read");
+        let root_len_at = MAGIC.len() + 4 + 8 + 1 + SERIALIZED_SCOPE_BYTES;
+        bytes[root_len_at..root_len_at + 4].copy_from_slice(&(MAX_PATH_BYTES + 1).to_le_bytes());
         fs::write(&path, &bytes).expect("write");
 
         assert!(load(&path).expect("load must not error").is_none());
@@ -409,7 +682,7 @@ mod tests {
 
         save(&sample_index(), &path).expect("first save");
         let mut smaller = Index::new("/some/root");
-        smaller.apply(&Delta::new(vec![Op::Upsert {
+        smaller.apply(&Observation::new(vec![Op::Upsert {
             path: PathBuf::from("only.txt"),
             kind: EntryKind::File,
             attrs: attrs(1, 1),
@@ -438,5 +711,65 @@ mod tests {
         let restored = load(&path).expect("load").expect("present");
         assert!(restored.is_empty());
         assert_eq!(restored.total(), empty.total());
+    }
+
+    #[test]
+    fn partial_index_is_never_persisted() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("partial.fdu");
+        save(&Index::new("/root"), &path).expect("complete baseline");
+        let complete_bytes = fs::read(&path).expect("read complete snapshot");
+
+        let mut index = Index::new("/root");
+        index.set_initial_freshness(false);
+
+        assert!(matches!(save(&index, &path), Err(Error::Snapshot(_))));
+        assert_eq!(fs::read(&path).expect("old snapshot remains"), complete_bytes);
+    }
+
+    #[test]
+    fn semantic_scan_scope_round_trips() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("snap.fdu");
+        let scope = ScanScope {
+            max_depth: Some(7),
+            follow_symlinks: false,
+            one_filesystem: true,
+            ignore_rules_fingerprint: 11,
+            type_rules_fingerprint: 22,
+            reducers_fingerprint: 33,
+        };
+        let index = Index::new_with_scope("/some/root", scope);
+
+        save(&index, &path).expect("save");
+        let restored = load(&path).expect("load").expect("present");
+        assert_eq!(restored.scope(), scope);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn non_utf8_names_round_trip_without_aliasing() {
+        use std::os::unix::ffi::OsStringExt;
+
+        let first = PathBuf::from(OsString::from_vec(vec![b'n', 0x80]));
+        let second = PathBuf::from(OsString::from_vec(vec![b'n', 0x81]));
+        let mut root = PathBuf::from("/some");
+        root.push(OsString::from_vec(vec![b'r', 0x82]));
+        let mut index = Index::new(&root);
+        index.apply_baseline(&Observation::new(vec![
+            Op::Upsert { path: first.clone(), kind: EntryKind::File, attrs: attrs(10, 1) },
+            Op::Upsert { path: second.clone(), kind: EntryKind::File, attrs: attrs(20, 2) },
+        ]));
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("snap.fdu");
+        save(&index, &path).expect("save");
+        let restored = load(&path).expect("load").expect("present");
+
+        assert_eq!(restored.root_path(), root);
+        assert_eq!(restored.total().files, 2);
+        assert_eq!(restored.total().bytes, 30);
+        assert!(restored.lookup(&first).is_some());
+        assert!(restored.lookup(&second).is_some());
     }
 }

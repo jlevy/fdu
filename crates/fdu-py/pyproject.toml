@@ -1,5 +1,5 @@
 [build-system]
-requires = ["maturin>=1.9,<2.0"]
+requires = ["maturin==1.14.1"]
 build-backend = "maturin"
 
 [project]
@@ -16,6 +16,11 @@ classifiers = [
     "Topic :: System :: Filesystems",
     "Topic :: System :: Monitoring",
 ]
+
+[dependency-groups]
+# Pinned after the repository's 14-day cool-off window; uv.lock freezes its
+# transitive environment for local and CI wheel builds.
+dev = ["maturin==1.14.1"]
 
 [project.urls]
 Repository = "https://github.com/jlevy/fdu"

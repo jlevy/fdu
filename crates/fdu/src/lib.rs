@@ -9,26 +9,29 @@
 //! 1. **The index** ([`index::Index`]) — the in-memory hierarchical structure: entry
 //!    records plus per-directory roll-up state.
 //! 2. **The snapshot** ([`snapshot`]) — that index, serialized.
-//! 3. **The delta** ([`types::Delta`]) — a typed, clocked description of change, and the
-//!    *only* way the index or the cache is ever modified.
+//! 3. **The change contract** ([`types::Observation`] and [`types::AppliedDelta`]) —
+//!    producers submit verified observations; the index commits clocked effective
+//!    changes.
 //!
-//! Everything else is a producer or a consumer of deltas. The walker produces them (a
-//! cold scan is a large batch of upserts), the revalidator produces them (the diff
-//! between snapshot and reality), the watch layer produces them (verified, coalesced
-//! filesystem events). The index consumes them and re-rolls its reducers; a change feed
-//! consumes them and forwards them.
+//! Everything else is a producer of observations or a consumer of applied deltas. The
+//! walker establishes a baseline from upsert observations; the reconciler submits the
+//! conditional diff between indexed state and reality; the watch layer submits verified,
+//! coalesced observations. The index arbitrates them and re-rolls its reducers; a change
+//! feed consumes the effective committed deltas.
 //!
 //! A deliberate consequence: **watching is not tied to the roll-up logic.** The index
-//! knows `apply(Delta)` and nothing about filesystem events, so a batch scan, a test
-//! feeding synthetic deltas, and a live watcher are indistinguishable to it.
+//! knows `apply(Observation)` and nothing about filesystem events, so a batch scan, a test
+//! feeding synthetic observations, and a live watcher are indistinguishable to it.
 //!
 //! # Freshness is a ladder, not a set of alternatives
 //!
-//! [`open`] walks it: the snapshot answers instantly, the revalidation sweep guarantees
-//! correctness at open, and (with the `watch` feature) the watcher keeps the gap between
-//! the two near zero while the process lives. Correctness never rests on the watcher —
-//! a missed event costs staleness until the next open, never a wrong answer that
-//! persists.
+//! [`open`] is the conservative, blocking entry point: it loads a compatible snapshot,
+//! reconciles the configured filesystem scope, and only then returns. It does not serve
+//! the loaded baseline concurrently. Applications that want that model can own an
+//! [`IndexHandle`], call the applying reconciliation APIs, and inspect [`Freshness`]
+//! while readers continue between short write batches. With the `watch` feature,
+//! [`watch::Watcher::apply_next`] verifies event hints and closes invalidations through
+//! subtree reconciliation; neither `open` nor the Python binding starts it implicitly.
 //!
 //! ```no_run
 //! use fdu::{OpenConfig, open};
@@ -59,10 +62,13 @@ pub mod cli;
 #[cfg(feature = "watch")]
 pub mod watch;
 
-pub use crate::index::{ApplyStats, EntryId, ExtTally, Index, RollUp, Since};
-pub use crate::scan::{ScanConfig, ScanReport};
+pub use crate::index::{
+    ApplyOutcome, ApplyStats, EntryId, ExtTally, Index, IndexHandle, RollUp, Since,
+};
+pub use crate::scan::{ReconcileReport, ScanConfig, ScanReport};
 pub use crate::types::{
-    Attrs, Clock, Delta, EntryKind, Error, Fingerprint, InvalidateReason, Op, Result,
+    AppliedDelta, Attrs, Clock, EntryKind, Error, Expectation, Fingerprint, Freshness,
+    InvalidateReason, Observation, ObservationOp, Op, PathState, Result, ScanScope,
 };
 
 use std::path::{Path, PathBuf};
@@ -95,23 +101,33 @@ pub struct OpenReport {
     pub scan: ScanReport,
 }
 
+impl OpenReport {
+    /// Whether every path in the requested scan scope was read successfully.
+    pub fn is_complete(&self) -> bool {
+        self.scan.is_complete()
+    }
+
+    /// Per-path errors that make this result partial.
+    pub fn errors(&self) -> &[Error] {
+        &self.scan.errors
+    }
+}
+
 /// Open a tree, using the snapshot cache when one is usable.
 ///
-/// On the warm path the snapshot is loaded and then revalidated against the filesystem
-/// before being returned, so the result is never stale — the saving is that unchanged
-/// entries keep their derived data instead of being recomputed.
+/// On the warm path the snapshot is loaded and then reconciled against the filesystem
+/// before being returned. Errors are represented as partial freshness and the previous
+/// complete snapshot is left untouched; callers must inspect [`OpenReport::is_complete`]
+/// or [`Index::freshness`] before treating totals as complete.
 pub fn open(root: &Path, config: &OpenConfig) -> Result<(Index, OpenReport)> {
     let root = root.canonicalize().map_err(|e| Error::io(root, e))?;
 
     if let Some(cache_path) = &config.cache_path {
         if let Some(mut index) = snapshot::load(cache_path)? {
-            if index.root_path() == root {
-                let mut deltas = Vec::new();
-                let scan_report = scan::revalidate(&index, &config.scan, &mut |d| deltas.push(d))?;
-                for delta in &deltas {
-                    index.apply(delta);
-                }
-                if config.save_on_open {
+            if index.root_path() == root && index.scope() == config.scan.scope() {
+                let scan_report = scan::reconcile(&mut index, &config.scan, &mut |_| {})?.scan;
+                index.establish_baseline();
+                if config.save_on_open && scan_report.is_complete() {
                     snapshot::save(&index, cache_path)?;
                 }
                 return Ok((
@@ -124,7 +140,9 @@ pub fn open(root: &Path, config: &OpenConfig) -> Result<(Index, OpenReport)> {
     }
 
     let (index, scan_report) = scan::scan_into_index(&root, &config.scan)?;
-    if let (Some(cache_path), true) = (&config.cache_path, config.save_on_open) {
+    if let (Some(cache_path), true, true) =
+        (&config.cache_path, config.save_on_open, scan_report.is_complete())
+    {
         snapshot::save(&index, cache_path)?;
     }
     Ok((index, OpenReport { path_taken: OpenPath::ColdScan, scan: scan_report }))
@@ -230,6 +248,56 @@ mod tests {
         assert_eq!(report.path_taken, OpenPath::ColdScan);
         assert!(index.lookup(Path::new("only-in-b.txt")).is_some());
         assert!(index.lookup(Path::new("only-in-a.txt")).is_none());
+    }
+
+    #[test]
+    fn snapshot_scope_mismatch_forces_a_cold_scan() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let cache = tempfile::tempdir().expect("cache dir");
+        write_file(&dir.path().join("top.txt"), b"top");
+        write_file(&dir.path().join("deep/nested.txt"), b"nested");
+
+        let cache_path = cache.path().join("snap.fdu");
+        let full = OpenConfig {
+            cache_path: Some(cache_path.clone()),
+            save_on_open: true,
+            ..OpenConfig::default()
+        };
+        open(dir.path(), &full).expect("full open");
+
+        let shallow = OpenConfig {
+            scan: ScanConfig { max_depth: Some(1), ..ScanConfig::default() },
+            cache_path: Some(cache_path),
+            save_on_open: false,
+        };
+        let (index, report) = open(dir.path(), &shallow).expect("shallow open");
+
+        assert_eq!(report.path_taken, OpenPath::ColdScan);
+        assert!(index.lookup(Path::new("deep")).is_some());
+        assert!(index.lookup(Path::new("deep/nested.txt")).is_none());
+    }
+
+    #[test]
+    fn operational_batch_size_does_not_invalidate_a_snapshot() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let cache = tempfile::tempdir().expect("cache dir");
+        write_file(&dir.path().join("a.txt"), b"a");
+        let cache_path = cache.path().join("snap.fdu");
+
+        let first = OpenConfig {
+            scan: ScanConfig { batch_size: 1, ..ScanConfig::default() },
+            cache_path: Some(cache_path.clone()),
+            save_on_open: true,
+        };
+        open(dir.path(), &first).expect("first open");
+
+        let second = OpenConfig {
+            scan: ScanConfig { batch_size: 17, ..ScanConfig::default() },
+            cache_path: Some(cache_path),
+            save_on_open: false,
+        };
+        let (_, report) = open(dir.path(), &second).expect("second open");
+        assert_eq!(report.path_taken, OpenPath::WarmRevalidate);
     }
 
     #[test]

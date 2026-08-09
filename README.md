@@ -6,8 +6,8 @@ fdu answers, for *every* directory in a tree at once: how big is it, how many fi
 it hold, what changed most recently, and what kinds of files live in it.
 One walk, many metrics, cached between runs.
 
-> **Status: early scaffold.** The architecture, the delta contract, and the cache
-> lifecycle are in place and tested end to end.
+> **Status: early scaffold.** The observation/commit contract, bounded in-process change
+> feed, cache lifecycle, applying reconciler, CLI, and Python wheel are tested end to end.
 > The fast walker is not — the current one is a portable `read_dir` + `symlink_metadata`
 > implementation, and **no performance claim should be made for this crate until the
 > syscall layer lands and the benchmark gate passes**. See
@@ -24,15 +24,18 @@ The combination is unoccupied ground, and it is what a live file browser actuall
 The full survey, with the techniques worth adapting and their sources, is in
 [docs/project/research/research-2026-08-06-file-rollup-engine.md](docs/project/research/research-2026-08-06-file-rollup-engine.md).
 
-## Install
+## Build locally
 
 ```shell
-cargo install fdu          # CLI
+cargo install --path crates/fdu
 ```
 
 ```shell
-uv add fdu                 # Python module (not yet published)
+make python-smoke          # build, install, and exercise the wheel in an isolated venv
 ```
+
+Publishing is Phase 1 work. `cargo install fdu` and `uv add fdu` are future commands;
+neither package should be presented as available from crates.io or PyPI yet.
 
 ## Use it
 
@@ -51,14 +54,15 @@ fdu --json .               # stable, versioned JSON for agents and scripts
 ```
 
 `--help` is the complete source of truth.
-JSON output carries a `schema` field (`fdu.tree/1`) that is versioned with the tool, so
-an agent can tell what it is parsing.
+JSON output carries a `schema` field (`fdu.tree/2`) that is versioned with the tool, plus
+freshness and per-path error details. Exit status 2 means partial results; pass
+`--allow-partial` to accept those as success. Exit status 1 means the command failed.
 
 ## As a Rust library
 
 ```toml
 [dependencies]
-fdu = { version = "0.0.1", default-features = false }
+fdu = { path = "crates/fdu", default-features = false }
 ```
 
 `default-features = false` skips the CLI’s dependency tree.
@@ -85,6 +89,7 @@ if let Some(src) = index.rollup(Path::new("src")) {
 import fdu_py
 
 index = fdu_py.open("/path/to/tree")
+print(index.complete, index.freshness, index.errors)
 print(index.total())          # {'files': ..., 'bytes': ..., 'by_extension': {...}}
 print(index.children("src"))  # one call returns every child with its roll-up
 
@@ -103,26 +108,29 @@ Three artifacts and one contract:
 | Artifact | What it is |
 | --- | --- |
 | **Index** | In-memory parent-pointer tree; every directory carries pre-computed roll-ups |
-| **Snapshot** | That index, serialized, invalidated wholesale by an engine fingerprint |
-| **Delta** | A typed, clocked change — the *only* way the index or cache is ever modified |
+| **Snapshot** | A complete index baseline, keyed by canonical root, semantic scan scope, format, and engine version |
+| **Observation** | Verified producer input, optionally conditional on the indexed path state |
+| **AppliedDelta** | A clocked batch of effective committed changes for the bounded change feed |
 
-Everything else produces or consumes deltas.
-A cold scan is a large batch of upserts; a revalidation sweep is the diff between
-snapshot and reality; the watch layer is verified, coalesced filesystem events.
-The index knows `apply(Delta)` and nothing about where changes came from, so a batch
-run, a synthetic test, and a live watcher are indistinguishable to it.
+Everything else produces observations or consumes applied deltas. A cold scan establishes
+a historyless baseline; a reconciliation sweep conditionally applies its diff while it
+walks; the watch layer coalesces event hints and verifies them by stat. The index alone
+arbitrates observations, removes no-ops, advances the clock, and mints `AppliedDelta`.
 
-Freshness is a ladder, not a set of alternatives: the snapshot answers instantly, the
-revalidation sweep guarantees correctness at open, and the watcher keeps the gap between
-them near zero while the process lives.
-**Correctness never rests on the watcher** — a missed event costs staleness until the
-next open, never a wrong answer that persists.
+Today, `open()` is deliberately blocking: it loads a usable snapshot and completes a
+filesystem reconciliation before returning. It never serves the snapshot as fresh before
+that pass, and it never replaces a complete snapshot with a partial result. `IndexHandle`
+and the reconciliation APIs support readers between applied batches with explicit
+`Fresh`, `Reconciling`, `Stale`, and `Partial` state, but applications must opt into that
+serving model. The optional watcher is an adapter and driver; `open()` and the Python API
+do not start it automatically.
 
 Two invariants are non-negotiable, because a cache that lies is worse than no cache:
 
-- Fingerprints are **size + mtime + ctime + inode**, not mtime alone.
+- Content-reuse fingerprints are **size + mtime + ctime + inode**, not mtime alone.
   mtime is user-settable and some applications roll it back after writing; ctime is
-  kernel-controlled. Borg and restic both learned this the hard way.
+  kernel-controlled. All observed stat fields are still compared when updating stored
+  state, so allocated-byte or device changes cannot leave query results stale.
 - A corrupt or unrecognized snapshot is treated as **absent, never as data**. Failing
   closed costs a rescan; failing open silently corrupts every answer built on it.
 
@@ -131,7 +139,7 @@ Two invariants are non-negotiable, because a cache that lies is worse than no ca
 ```shell
 make build      # debug build, all features
 make test       # test suite
-make check      # fmt, clippy, tests, docs — the handoff gate
+make check      # Rust gates, dependency audit, and installed-wheel smoke — the handoff gate
 make fix        # apply formatting
 ```
 

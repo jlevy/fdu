@@ -29,6 +29,9 @@ def main() -> None:
     index = fdu_py.scan(str(root))
 
     assert index.root == os.path.realpath(root), index.root
+    assert index.complete is True, index.errors
+    assert index.freshness == "fresh", index.freshness
+    assert index.errors == [], index.errors
     assert len(index) == 4, f"root + 2 files + 1 dir, got {len(index)}"
 
     total = index.total()
@@ -63,6 +66,8 @@ def main() -> None:
     assert stats["removed"] == 1, stats
     assert stats["unchanged"] == 2, stats
     assert stats["complete"] is True, stats
+    assert stats["freshness"] == "fresh", stats
+    assert stats["error_count"] == 0 and stats["errors"] == [], stats
 
     after = index.total()
     assert after["files"] == 2, after
@@ -75,6 +80,28 @@ def main() -> None:
     ops = {(op["op"], op["path"]) for op in changed["ops"]}
     assert ("remove", "a.txt") in ops, ops
     assert ("upsert", "added.md") in ops, ops
+
+    # refresh() retains the semantic scan scope used to create the index.
+    scoped_root = pathlib.Path(tempfile.mkdtemp())
+    (scoped_root / "nested").mkdir()
+    (scoped_root / "nested" / "before.txt").write_text("before")
+    scoped = fdu_py.scan(str(scoped_root), max_depth=1)
+    assert scoped.total()["files"] == 0, scoped.total()
+    (scoped_root / "nested" / "after.txt").write_text("after")
+    scoped.refresh()
+    assert scoped.total()["files"] == 0, "refresh widened max_depth"
+
+    # Kind labels remain lossless at the language boundary.
+    kind_root = pathlib.Path(tempfile.mkdtemp())
+    (kind_root / "directory").mkdir()
+    (kind_root / "file").write_text("file")
+    expected_kinds = {"directory": "dir", "file": "file"}
+    if os.name != "nt":
+        os.symlink("file", kind_root / "link")
+        os.mkfifo(kind_root / "fifo")
+        expected_kinds.update({"link": "symlink", "fifo": "other"})
+    kinds = {child["name"]: child["kind"] for child in fdu_py.scan(str(kind_root)).children("")}
+    assert kinds == expected_kinds, kinds
 
     print(f"fdu_py {fdu_py.__version__} ok")
 

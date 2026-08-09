@@ -7,14 +7,18 @@ OS-native watch layer.
 Full documentation, design notes, and the tool survey this is built from live in the
 repository: <https://github.com/jlevy/fdu>
 
-**Status: early scaffold.** The architecture and cache lifecycle are in place and
-tested; the fast syscall-level walker is not yet, so no performance claim is made for
-this release.
+**Status: early scaffold.** The observation/commit contract, applying reconciler, bounded
+snapshot reader, and cache lifecycle are tested. `open()` currently blocks until a full
+reconciliation completes, and the fast syscall-level walker is not built, so no latency
+or throughput claim is made.
 
 ```toml
 [dependencies]
-fdu = { version = "0.0.1", default-features = false }
+fdu = { path = "crates/fdu", default-features = false }
 ```
+
+The crate is not published yet; the version-based dependency form is a Phase 1 release
+step.
 
 Features: `cli` (default, gates the binary and clap), `watch` (gates the notify
 dependency).
