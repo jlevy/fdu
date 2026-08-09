@@ -20,6 +20,7 @@ benchmarks/results/
 *.pyd
 dist/
 .venv/
+.venv-smoke/
 __pycache__/
 
 # Editors

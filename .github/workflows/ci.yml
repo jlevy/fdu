@@ -100,19 +100,11 @@ jobs:
       - name: Build the extension module
         working-directory: crates/fdu-py
         run: uv run --with 'maturin>=1.9,<2.0' maturin build --release --out dist
+      # A separate venv name on purpose: the build step above already created .venv for
+      # this project, and `uv venv` refuses to overwrite an existing environment.
       - name: Install and smoke-test the wheel
         working-directory: crates/fdu-py
         run: |
-          uv venv
-          uv pip install dist/*.whl
-          uv run python -c "
-          import fdu_py, tempfile, pathlib
-          d = tempfile.mkdtemp()
-          pathlib.Path(d, 'a.txt').write_text('hello')
-          ix = fdu_py.scan(d)
-          total = ix.total()
-          assert total['files'] == 1, total
-          assert total['bytes'] == 5, total
-          assert total['by_extension']['.txt']['files'] == 1, total
-          print('fdu_py', fdu_py.__version__, 'ok')
-          "
+          uv venv --clear .venv-smoke
+          uv pip install --python .venv-smoke dist/*.whl
+          uv run --no-project --python .venv-smoke python tests/smoke.py
