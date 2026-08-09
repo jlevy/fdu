@@ -1,0 +1,29 @@
+[build-system]
+requires = ["maturin>=1.9,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "fdu"
+description = "Fast, incremental file roll-up engine: hierarchical tallies over large directory trees"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+readme = "README.md"
+dynamic = ["version"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Environment :: Console",
+    "Programming Language :: Rust",
+    "Topic :: System :: Filesystems",
+    "Topic :: System :: Monitoring",
+]
+
+[project.urls]
+Repository = "https://github.com/jlevy/fdu"
+Documentation = "https://docs.rs/fdu"
+
+[tool.maturin]
+# A cdylib extension module, not a bundled binary: metabrowser wants a persistent
+# in-process index, which a subprocess cannot provide.
+module-name = "fdu_py"
+features = ["pyo3/extension-module"]
+strip = true

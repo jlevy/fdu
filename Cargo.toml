@@ -1,0 +1,41 @@
+[workspace]
+resolver = "3"
+members = ["crates/fdu", "crates/fdu-py"]
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.85"
+license = "MIT"
+repository = "https://github.com/jlevy/fdu"
+authors = ["fdu contributors"]
+
+[workspace.dependencies]
+fdu = { version = "0.0.1", path = "crates/fdu", default-features = false }
+
+[workspace.lints.clippy]
+pedantic = { level = "deny", priority = -1 }
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+too_many_lines = "allow"
+unwrap_used = "deny"
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+warnings = "deny"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+# Deliberately no `panic = "abort"`: the same profile builds the fdu-py cdylib, and
+# aborting on panic there would take the host Python process down with it. PyO3 needs
+# unwinding so it can translate a Rust panic into a Python exception.
+
+# Benchmarks and the revalidation spikes are meaningless on a debug build, and a
+# debug-built walker is slow enough to distort manual timing too. Keep the dev
+# profile's dependencies optimized so scans over large trees stay usable locally.
+[profile.dev.package."*"]
+opt-level = 2

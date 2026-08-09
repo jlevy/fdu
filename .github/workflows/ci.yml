@@ -1,0 +1,118 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  fmt:
+    name: Format check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --locked --all-targets --all-features -- -D warnings
+
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # The watch tests exercise a different notify backend on each of these runners —
+      # inotify, FSEvents, and ReadDirectoryChangesW — which is the only way to catch
+      # per-platform event semantics before a user does.
+      - run: cargo test --locked --all-features
+
+  test-lib-only:
+    name: Test library (no default features)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # Library consumers take `default-features = false`. Without this job, that path
+      # would only ever be compiled by them.
+      - run: cargo test --locked -p fdu --no-default-features
+
+  msrv:
+    name: MSRV (1.85)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@1.85
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --locked --all-features
+
+  docs:
+    name: Documentation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo doc --locked --no-deps --all-features
+        env:
+          RUSTDOCFLAGS: "-D warnings"
+
+  deny:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: EmbarkStudios/cargo-deny-action@v2
+
+  python:
+    name: Python bindings
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.13"
+          enable-cache: true
+      - name: Build the extension module
+        working-directory: crates/fdu-py
+        run: uv run --with 'maturin>=1.9,<2.0' maturin build --release --out dist
+      - name: Install and smoke-test the wheel
+        working-directory: crates/fdu-py
+        run: |
+          uv venv
+          uv pip install dist/*.whl
+          uv run python -c "
+          import fdu_py, tempfile, pathlib
+          d = tempfile.mkdtemp()
+          pathlib.Path(d, 'a.txt').write_text('hello')
+          ix = fdu_py.scan(d)
+          total = ix.total()
+          assert total['files'] == 1, total
+          assert total['bytes'] == 5, total
+          assert total['by_extension']['.txt']['files'] == 1, total
+          print('fdu_py', fdu_py.__version__, 'ok')
+          "
