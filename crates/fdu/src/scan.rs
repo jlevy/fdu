@@ -1170,10 +1170,12 @@ mod tests {
     #[test]
     fn portable_system_time_conversion_preserves_pre_epoch_values() {
         let before_epoch = std::time::UNIX_EPOCH
-            .checked_sub(std::time::Duration::from_nanos(5))
+            // Windows timestamps have 100 ns granularity, so use a duration that every
+            // supported platform can represent without rounding back to the epoch.
+            .checked_sub(std::time::Duration::from_secs(1))
             .expect("represent pre-epoch fixture");
 
-        assert_eq!(system_time_ns(before_epoch), -5);
+        assert_eq!(system_time_ns(before_epoch), -1_000_000_000);
         assert_eq!(system_time_ns(std::time::UNIX_EPOCH), 0);
     }
 
