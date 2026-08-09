@@ -95,6 +95,8 @@ The relevant limitations are:
 - A bare `!` is parsed as stdout, while the `! ` spelling needed for an empty stderr
   line relies on fragile trailing whitespace
 - Multiple `$` prompts in one console fence are silently concatenated as one command
+- `--update` finds blocks by raw text, so repeated identical commands in a stateful file
+  can receive another invocation’s captured output
 
 The suite therefore uses committed fixtures and `node -e` only for the two state changes
 that must occur between commands: modifying a fixture file and corrupting a generated
@@ -103,7 +105,9 @@ Every invocation has its own console fence.
 Exact blank stderr lines use a named pattern whose regular expression is one newline,
 pending [tryscript issue 45](https://github.com/jlevy/tryscript/issues/45). The
 multi-command hazard is tracked in
-[tryscript issue 46](https://github.com/jlevy/tryscript/issues/46).
+[tryscript issue 46](https://github.com/jlevy/tryscript/issues/46). Stateful invocations
+use equivalent but textually distinct option spellings until the updater is fixed in
+[tryscript issue 47](https://github.com/jlevy/tryscript/issues/47).
 
 ## Behavioral Contract
 
@@ -189,7 +193,7 @@ Each file gets one sandbox and contains the commands that must share that state.
 | `cli-surface.tryscript.md` | Exact help and version; default path on an empty tree; unknown option; missing root; file-as-root; stdout/stderr/exit separation | 6 |
 | `cli-human.tryscript.md` | Full apparent-size tree; stable ordering and bars; depth and per-directory number limits; extension grouping; compound and case-folded extensions | 3 |
 | `cli-json.tryscript.md` | Full schema; normalized unstable fields; display truncation metadata; scan-depth scope; rejected output-mode conflict | 4 |
-| `cli-cache.tryscript.md` | No-cache side effect; cold then warm; warm revalidation after mutation; scope mismatch; corrupt-cache fallback | 5 |
+| `cli-cache.tryscript.md` | No-cache side effect; cold then warm; warm revalidation after mutation; scope mismatch; corrupt-cache fallback | 6 |
 
 This is deliberately not a Cartesian product of flags.
 Each additional invocation must protect a behavior not already visible in another full
@@ -293,16 +297,16 @@ graph or published artifacts.
 
 - [x] Add the locked tryscript toolchain, deterministic scenario configuration, fixture,
   and explicit run/update commands
-- [ ] Add one failing transcript at a time, then make it pass before adding the next
+- [x] Add one failing transcript at a time, then make it pass before adding the next
 - [x] Fix the human by-type measure mismatch under its failing transcript
 - [x] Reject ignored output-mode combinations under an argument-contract transcript
 - [x] Add explicit JSON scan-scope and tree-projection completeness under exact goldens
 - [x] Preserve invalid filesystem names in machine output under platform-focused tests
 - [x] Expand `--help` so the golden document is genuinely sufficient for scripts and
   agents, including exit statuses and limit semantics
-- [x] Report the blank-stderr and multiple-command parser hazards upstream with minimal
-  reproductions and regression-test suggestions
-- [ ] Add the cache lifecycle session and fix every discrepancy it exposes before
+- [x] Report the blank-stderr, multiple-command, and duplicate-block update hazards
+  upstream with minimal reproductions and regression-test suggestions
+- [x] Add the cache lifecycle session and fix every discrepancy it exposes before
   accepting output
 
 ### Phase 2: Make the Contract a Handoff Gate
@@ -331,10 +335,11 @@ design decision and acceptance behavior.
 | Lossy JSON names can collapse distinct non-UTF-8 filesystem entries | Emit optional raw identity data with a documented platform encoding | `fdu-17to` | Fixed |
 | `--help` claims to be complete but omits exit-status and projection-scope semantics | Put those contracts in help and lock the whole output | `fdu-cauc` | Fixed |
 | ANSI stripping and non-terminal subprocesses prevent tryscript from proving color behavior | Keep a focused deterministic color-decision contract test | `fdu-qqpt` | Open |
-| The current binary integration suite covers only the Unix partial-result path | Add four portable end-to-end sessions and retain narrow platform tests | `fdu-ijz4` | In progress |
+| The current binary integration suite covers only the Unix partial-result path | Add four portable end-to-end sessions and retain narrow platform tests | `fdu-ijz4` | Fixed |
 | The documented workspace build links the PyO3 `cdylib` directly and fails on macOS outside maturin | Build the core CLI directly and keep maturin as the binding artifact gate | `fdu-f4o2` | Fixed |
 | Tryscript cannot express an exact blank stderr line without fragile trailing whitespace | Accept bare `!` as an empty stderr line; use an exact newline pattern until released | `fdu-ms3k` | Reported as [tryscript 45](https://github.com/jlevy/tryscript/issues/45) |
 | Tryscript concatenates multiple `$` prompts in one fence into one command | Reject the second prompt or parse it as an independent invocation | `fdu-lz5o` | Reported as [tryscript 46](https://github.com/jlevy/tryscript/issues/46) |
+| Tryscript `--update` misassigns results among identical raw blocks | Replace blocks by source range; keep stateful command spellings distinct until released | `fdu-hs0l` | Reported as [tryscript 47](https://github.com/jlevy/tryscript/issues/47) |
 
 ## Bead Map
 
@@ -352,6 +357,7 @@ Epic: **fdu-a0w0** — Specify and harden the fdu CLI with golden tests.
 | `fdu-f4o2` | Core build target separated from the maturin-only PyO3 artifact | — |
 | `fdu-ms3k` | Upstream blank-stderr parser issue and local exact workaround | — |
 | `fdu-lz5o` | Upstream multi-command parser issue and one-fence-per-command rule | — |
+| `fdu-hs0l` | Upstream updater identity bug and distinct-command workaround | — |
 | `fdu-xuq9` | Make, CI, npm audit, and review workflow | All behavior slices |
 
 ## Acceptance Criteria
@@ -404,6 +410,7 @@ types do not change.
 - [tryscript](https://github.com/jlevy/tryscript)
 - [Tryscript blank stderr issue](https://github.com/jlevy/tryscript/issues/45)
 - [Tryscript multiple-command issue](https://github.com/jlevy/tryscript/issues/46)
+- [Tryscript duplicate-block update issue](https://github.com/jlevy/tryscript/issues/47)
 - [Phase 1 plan](plan-2026-08-08-fdu-phase-1.md)
 - [File roll-up engine research](../../research/research-2026-08-06-file-rollup-engine.md)
 
