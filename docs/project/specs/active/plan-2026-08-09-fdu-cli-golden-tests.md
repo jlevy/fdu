@@ -18,6 +18,8 @@ Four session files and one portable fixture are the target.
 Exact output is the default.
 Patterns are limited to values the test does not control: sandbox paths, filesystem
 timestamps, allocated block counts, and operating-system error text.
+One exact-newline pattern bridges a tryscript parser limitation for blank stderr lines;
+it does not accept variable content.
 Focused Rust tests remain authoritative for behavior that cannot be represented portably
 by a shell-driven golden test, including permission failures, non-UTF-8 names, terminal
 detection, and broken pipes.
@@ -90,10 +92,18 @@ The relevant limitations are:
 - Output matching strips ANSI escapes, so it cannot prove that color was emitted
 - Filesystem allocation and timestamp values are inherently platform-dependent
 - Temporary paths differ by run and JSON escapes Windows path separators
+- A bare `!` is parsed as stdout, while the `! ` spelling needed for an empty stderr
+  line relies on fragile trailing whitespace
+- Multiple `$` prompts in one console fence are silently concatenated as one command
 
 The suite therefore uses committed fixtures and `node -e` only for the two state changes
 that must occur between commands: modifying a fixture file and corrupting a generated
 snapshot. Node is already the runtime executing tryscript.
+Every invocation has its own console fence.
+Exact blank stderr lines use a named pattern whose regular expression is one newline,
+pending [tryscript issue 45](https://github.com/jlevy/tryscript/issues/45). The
+multi-command hazard is tracked in
+[tryscript issue 46](https://github.com/jlevy/tryscript/issues/46).
 
 ## Behavioral Contract
 
@@ -235,6 +245,7 @@ The complete suite sets:
 | `MTIME_NS` | Checkout and fixture-copy times change | JSON key, numeric shape, ordering, and aggregates |
 | `ALLOCATED` | Filesystem block accounting differs | Apparent sizes and every non-allocation field |
 | `OS_ERROR` | Kernel error wording and numeric suffix differ | Error class, failing path, cause structure, stream, and exit status |
+| `BLANK_LINE` | Tryscript cannot spell an empty stderr line without trailing whitespace | Exactly one newline; no content is elided |
 
 No generic multiline elision is planned.
 Stable version numbers, schema identifiers, flags, counts, sizes, ordering, percentages,
@@ -278,12 +289,14 @@ graph or published artifacts.
 - [x] Add the locked tryscript toolchain, deterministic scenario configuration, fixture,
   and explicit run/update commands
 - [ ] Add one failing transcript at a time, then make it pass before adding the next
-- [ ] Fix the human by-type measure mismatch under its failing transcript
-- [ ] Reject ignored output-mode combinations under an argument-contract transcript
+- [x] Fix the human by-type measure mismatch under its failing transcript
+- [x] Reject ignored output-mode combinations under an argument-contract transcript
 - [ ] Add explicit JSON scan-scope and tree-projection completeness under exact goldens
 - [ ] Preserve invalid filesystem names in machine output under platform-focused tests
-- [ ] Expand `--help` so the golden document is genuinely sufficient for scripts and
+- [x] Expand `--help` so the golden document is genuinely sufficient for scripts and
   agents, including exit statuses and limit semantics
+- [x] Report the blank-stderr and multiple-command parser hazards upstream with minimal
+  reproductions and regression-test suggestions
 - [ ] Add the cache lifecycle session and fix every discrepancy it exposes before
   accepting output
 
@@ -308,13 +321,15 @@ design decision and acceptance behavior.
 | Finding | Required behavior | Bead | Status |
 | --- | --- | --- | --- |
 | The current JSON `complete` field can be true while depth or row limits omit retained entries | Report scan scope and tree truncation independently | `fdu-y0o2` | Open |
-| Human `--by-type` rows use apparent bytes while the default summary uses allocated bytes | Use apparent bytes consistently for the entire by-type view | `fdu-msbx` | Open |
-| `--by-type --json` silently ignores `--by-type` | Reject the conflicting modes with a usage error | `fdu-msbx` | Open |
+| Human `--by-type` rows use apparent bytes while the default summary uses allocated bytes | Use apparent bytes consistently for the entire by-type view | `fdu-msbx` | Fixed |
+| `--by-type --json` silently ignores `--by-type` | Reject the conflicting modes with a usage error | `fdu-msbx` | Fixed |
 | Lossy JSON names can collapse distinct non-UTF-8 filesystem entries | Emit optional raw identity data with a documented platform encoding | `fdu-17to` | Open |
-| `--help` claims to be complete but omits exit-status and projection-scope semantics | Put those contracts in help and lock the whole output | `fdu-cauc` | Open |
+| `--help` claims to be complete but omits exit-status and projection-scope semantics | Put those contracts in help and lock the whole output | `fdu-cauc` | Fixed |
 | ANSI stripping and non-terminal subprocesses prevent tryscript from proving color behavior | Keep a focused deterministic color-decision contract test | `fdu-qqpt` | Open |
 | The current binary integration suite covers only the Unix partial-result path | Add four portable end-to-end sessions and retain narrow platform tests | `fdu-ijz4` | Open |
-| The documented workspace build links the PyO3 `cdylib` directly and fails on macOS outside maturin | Build the core CLI directly and keep maturin as the binding artifact gate | `fdu-f4o2` | Open |
+| The documented workspace build links the PyO3 `cdylib` directly and fails on macOS outside maturin | Build the core CLI directly and keep maturin as the binding artifact gate | `fdu-f4o2` | Fixed |
+| Tryscript cannot express an exact blank stderr line without fragile trailing whitespace | Accept bare `!` as an empty stderr line; use an exact newline pattern until released | `fdu-ms3k` | Reported as [tryscript 45](https://github.com/jlevy/tryscript/issues/45) |
+| Tryscript concatenates multiple `$` prompts in one fence into one command | Reject the second prompt or parse it as an independent invocation | `fdu-lz5o` | Reported as [tryscript 46](https://github.com/jlevy/tryscript/issues/46) |
 
 ## Bead Map
 
@@ -330,6 +345,8 @@ Epic: **fdu-a0w0** — Specify and harden the fdu CLI with golden tests.
 | `fdu-bxbs` | Sequential cache-lifecycle golden session | `fdu-y0o2` |
 | `fdu-qqpt` | Partial, color, and broken-pipe contract tests | `fdu-ijz4` |
 | `fdu-f4o2` | Core build target separated from the maturin-only PyO3 artifact | — |
+| `fdu-ms3k` | Upstream blank-stderr parser issue and local exact workaround | — |
+| `fdu-lz5o` | Upstream multi-command parser issue and one-fence-per-command rule | — |
 | `fdu-xuq9` | Make, CI, npm audit, and review workflow | All behavior slices |
 
 ## Acceptance Criteria
@@ -380,6 +397,8 @@ types do not change.
 
 - [Golden Testing Guidelines](https://github.com/jlevy/tbd)
 - [tryscript](https://github.com/jlevy/tryscript)
+- [Tryscript blank stderr issue](https://github.com/jlevy/tryscript/issues/45)
+- [Tryscript multiple-command issue](https://github.com/jlevy/tryscript/issues/46)
 - [Phase 1 plan](plan-2026-08-08-fdu-phase-1.md)
 - [File roll-up engine research](../../research/research-2026-08-06-file-rollup-engine.md)
 

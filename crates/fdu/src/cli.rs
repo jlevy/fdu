@@ -33,7 +33,13 @@ pub enum RunOutcome {
 /// Summarize directory trees: sizes, counts, recency, and file types, rolled up for
 /// every directory at once.
 #[derive(Parser, Debug)]
-#[command(name = "fdu", version, about, long_about = None)]
+#[command(
+    name = "fdu",
+    version,
+    about,
+    long_about = None,
+    after_help = "Result scope:\n  --depth and --number limit only the rendered view.\n  --max-depth limits the scan scope and retained index.\n\nExit status:\n  0  Complete result, or a partial result accepted with --allow-partial\n  1  Fatal filesystem or cache error\n  2  Partial result, or command-line usage error"
+)]
 // A command line is a flat bag of independent switches. Folding these into enums to
 // satisfy the lint would obscure the one thing this struct exists to mirror: the flags a
 // user actually types.
@@ -43,11 +49,11 @@ pub struct Cli {
     #[arg(default_value = ".")]
     pub path: PathBuf,
 
-    /// Levels of the tree to display.
+    /// Directory levels below the root to render; does not limit scanning.
     #[arg(short, long, default_value_t = 2, value_name = "N")]
     pub depth: usize,
 
-    /// Entries to show per directory, largest first.
+    /// Entries to render per directory, largest first; does not limit scanning.
     #[arg(short = 'n', long, default_value_t = 10, value_name = "N")]
     pub number: usize,
 
@@ -56,7 +62,7 @@ pub struct Cli {
     pub apparent_size: bool,
 
     /// Break the tree down by file extension instead of by directory.
-    #[arg(long, action = ArgAction::SetTrue)]
+    #[arg(long, action = ArgAction::SetTrue, conflicts_with = "json")]
     pub by_type: bool,
 
     /// Emit machine-readable JSON on stdout.
@@ -67,7 +73,7 @@ pub struct Cli {
     #[arg(long, action = ArgAction::SetTrue)]
     pub no_cache: bool,
 
-    /// Limit retained entry depth; zero keeps only the root.
+    /// Maximum entry depth to scan and retain; zero keeps only the root.
     #[arg(long, value_name = "N")]
     pub max_depth: Option<usize>,
 
@@ -112,7 +118,11 @@ impl Cli {
     ) -> anyhow::Result<()> {
         let color = self.use_color();
         let total = index.total();
-        let grand = self.size_of(total).max(1);
+        // Extension tallies retain apparent bytes only. Treat `--by-type` as an
+        // apparent-size view end to end so its summary, rows, bars, and percentages
+        // cannot disagree about the selected measure.
+        let selected_total = if self.by_type { total.bytes } else { self.size_of(total) };
+        let grand = selected_total.max(1);
 
         writeln!(
             out,
@@ -120,7 +130,7 @@ impl Cli {
             paint(&index.root_path().display().to_string(), Style::Bold, color),
             total.files,
             total.dirs,
-            human_bytes(self.size_of(total)),
+            human_bytes(selected_total),
         )?;
 
         if self.by_type {
