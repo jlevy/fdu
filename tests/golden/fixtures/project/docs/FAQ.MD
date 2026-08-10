@@ -1,0 +1,3 @@
+# FAQ
+
+Run make check.

@@ -1,0 +1,34 @@
+[build-system]
+requires = ["maturin==1.14.1"]
+build-backend = "maturin"
+
+[project]
+name = "fdu"
+description = "Fast, incremental file roll-up engine: hierarchical tallies over large directory trees"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+readme = "README.md"
+dynamic = ["version"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Environment :: Console",
+    "Programming Language :: Rust",
+    "Topic :: System :: Filesystems",
+    "Topic :: System :: Monitoring",
+]
+
+[dependency-groups]
+# Pinned after the repository's 14-day cool-off window; uv.lock freezes its
+# transitive environment for local and CI wheel builds.
+dev = ["maturin==1.14.1"]
+
+[project.urls]
+Repository = "https://github.com/jlevy/fdu"
+Documentation = "https://docs.rs/fdu"
+
+[tool.maturin]
+# A cdylib extension module, not a bundled binary: metabrowser wants a persistent
+# in-process index, which a subprocess cannot provide.
+module-name = "fdu_py"
+features = ["extension-module"]
+strip = true

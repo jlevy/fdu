@@ -1,0 +1,45 @@
+[package]
+name = "fdu-py"
+version = "0.0.1"
+description = "Python bindings for fdu, the incremental file roll-up engine"
+publish = false
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[lib]
+name = "fdu_py"
+# The one genuinely compelled crate split in this workspace: a cdylib cannot also be the
+# library that Rust consumers depend on, and the pyo3 dependency and maturin build
+# backend have no business in the core crate's dependency tree.
+crate-type = ["cdylib"]
+
+[features]
+# Extension modules intentionally do not link libpython. Keep that as the ordinary
+# build, while `--no-default-features` provides the embeddable mode used by the
+# concurrency tests.
+default = ["extension-module"]
+extension-module = ["pyo3/extension-module"]
+
+[dependencies]
+fdu = { workspace = true }
+pyo3 = { version = "0.29", features = ["abi3-py39"] }
+
+# Deliberately not `[lints] workspace = true`: the pyo3 attribute macros expand to
+# `unsafe impl` blocks, so the workspace's `unsafe_code = "deny"` cannot apply here. Every
+# other workspace lint is repeated verbatim so this crate is not quietly held to a lower
+# standard than the core one.
+[lints.clippy]
+pedantic = { level = "deny", priority = -1 }
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+too_many_lines = "allow"
+unwrap_used = "deny"
+
+[lints.rust]
+missing_docs = "deny"
+warnings = "deny"

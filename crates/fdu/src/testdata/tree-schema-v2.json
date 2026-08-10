@@ -1,0 +1,69 @@
+{
+  "schema": "fdu.tree/2",
+  "generator": "fdu 0.0.1",
+  "root": "/fixture",
+  "source": "cold_scan",
+  "complete": false,
+  "display_depth": 2,
+  "entries_per_directory": 10,
+  "scan_max_depth": null,
+  "tree_truncated": false,
+  "freshness": "partial",
+  "errors": [
+    "I/O error at /fixture/denied: denied"
+  ],
+  "by_extension": {
+    ".bin": {"files": 1, "bytes": 5},
+    ".txt": {"files": 1, "bytes": 4}
+  },
+  "tree": {
+    "name": ".",
+    "kind": "dir",
+    "bytes": 14,
+    "allocated": 14,
+    "files": 4,
+    "dirs": 1,
+    "newest_mtime_ns": 5,
+    "children": [
+      {
+        "name": "directory",
+        "kind": "dir",
+        "bytes": 5,
+        "allocated": 5,
+        "files": 1,
+        "dirs": 0,
+        "newest_mtime_ns": 5,
+        "children": [
+          {
+            "name": "nested.bin",
+            "kind": "file",
+            "bytes": 5,
+            "allocated": 5,
+            "newest_mtime_ns": 5
+          }
+        ]
+      },
+      {
+        "name": "file.txt",
+        "kind": "file",
+        "bytes": 4,
+        "allocated": 4,
+        "newest_mtime_ns": 4
+      },
+      {
+        "name": "link",
+        "kind": "symlink",
+        "bytes": 3,
+        "allocated": 3,
+        "newest_mtime_ns": 3
+      },
+      {
+        "name": "special",
+        "kind": "other",
+        "bytes": 2,
+        "allocated": 2,
+        "newest_mtime_ns": 2
+      }
+    ]
+  }
+}

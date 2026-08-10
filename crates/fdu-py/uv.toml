@@ -1,0 +1,3 @@
+# Resolve only packages that have cleared the repository's supply-chain cool-off.
+exclude-newer = "14 days"
+exclude-newer-package = {}

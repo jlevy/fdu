@@ -1,0 +1,50 @@
+[package]
+name = "fdu"
+version = "0.0.1"
+description = "A fast, incremental file roll-up engine: hierarchical tallies over large directory trees"
+readme = "README.md"
+documentation = "https://docs.rs/fdu"
+keywords = ["disk-usage", "filesystem", "du", "cli", "index"]
+categories = ["command-line-utilities", "filesystem"]
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+exclude = [".github/", "docs/", "attic/", "benchmarks/"]
+
+[lib]
+name = "fdu"
+path = "src/lib.rs"
+
+[[bin]]
+name = "fdu"
+path = "src/main.rs"
+required-features = ["cli"]
+
+[[test]]
+name = "cli_exit"
+path = "tests/cli_exit.rs"
+required-features = ["cli"]
+
+[features]
+default = ["cli"]
+# Gates clap and the [[bin]], flowmark-style: library consumers take
+# `default-features = false` and never compile the CLI's dependency tree.
+cli = ["dep:clap", "dep:anyhow"]
+# Gates the OS-native watch layer. Strictly additive: without it, scan, index,
+# snapshot, and the CLI are all fully functional, just without live updates.
+watch = ["dep:notify"]
+
+[dependencies]
+thiserror = "2.0"
+
+clap = { version = "4.5", features = ["derive"], optional = true }
+anyhow = { version = "1.0", optional = true }
+notify = { version = "8.2", optional = true }
+
+[dev-dependencies]
+tempfile = "3.26"
+
+[lints]
+workspace = true
