@@ -5,7 +5,7 @@ title: "fdu phase 1: fastest walker with full stats, proven by benchmark"
 kind: epic
 status: open
 priority: 1
-version: 29
+version: 31
 spec_path: docs/project/specs/active/plan-2026-08-08-fdu-phase-1.md
 labels: []
 dependencies: []
@@ -33,11 +33,12 @@ child_order_hints:
   - is-01kzg4bfw0zmmztg25v9a0nkq4
   - is-01kzg4c6vnh98mqrpkzw7ydne0
   - is-01kzkskszrb20xkk7g3gt32za6
+  - is-01kzmnx3taexx4cq4m722p0yp0
 created_at: 2026-08-08T07:26:35.637Z
-updated_at: 2026-08-09T22:08:32.634Z
+updated_at: 2026-08-10T02:04:36.562Z
 ---
-Root execution epic for fdu. The Phase 0 product slice is assembled and the existing suite is green, but PR #1 remains held on the Wave 0 graph: independent supply-chain trust fdu-ad45; atomic malformed-batch rejection fdu-nlh8 before guard-free API fdu-s7wr; lock-free-of-I/O watch arbitration fdu-1j0b; bounded I/O-free watch coalescing and shutdown fdu-8jte; deterministic convergence at fdu-gd6n; and final approval fdu-sn43 after fdu-ad45 plus fdu-gd6n. After merge, execute the remaining Rust refactor guards and shared performance-evidence foundation, resolve measured design gates, build the optimized engine, finish product surfaces, publish the complete performance report, then release. Future-only extensions live under fdu-x746 and do not compete with this critical path. Exit criteria include measured cold/full-stat, warm 500k, memory, CLI/schema, reproducible evidence, ratified goals, and bounded provable concurrency contracts from the linked plan.
+Root execution epic for fdu. PR #1 merged the Phase 0 product slice and all Wave 0 supply-chain, atomicity, ownership, concurrency, cross-platform, and final-validation gates into main. Execute the remaining Rust refactor guards and shared performance-evidence foundation, resolve measured design gates, build the optimized engine, finish product surfaces, publish the complete performance report, then release. The CLI UX and zero-install skill follow-up is owned by fdu-6c8n on a new branch from main. Future-only extensions live under fdu-x746 and do not compete with the critical path. Exit criteria include measured cold/full-stat, warm 500k, memory, CLI/schema, reproducible evidence, ratified goals, and bounded provable concurrency contracts from the linked plan.
 
 ## Notes
 
-Phase 0 product and all Wave 0 implementation hardening are assembled. Final approval fdu-sn43 is active; no Phase 1 performance claim is made. After approval, execute the recorded refactor-safety and performance-evidence graph.
+PR #1 merged at origin/main commit 92ee5ab. The next active P1 slice is the focused CLI UX/skill/wheel follow-up fdu-6c8n; no performance claim is made.
