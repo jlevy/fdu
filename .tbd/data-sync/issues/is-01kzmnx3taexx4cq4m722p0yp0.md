@@ -5,7 +5,7 @@ title: CLI UX and zero-install agent skill
 kind: epic
 status: open
 priority: 1
-version: 8
+version: 9
 spec_path: docs/project/specs/active/plan-2026-08-09-fdu-cli-ux-and-agent-skill.md
 labels:
   - cli
@@ -22,7 +22,8 @@ child_order_hints:
   - is-01kzmnxh8812bvnjj5v790jtdy
   - is-01kzmnxr765dahd3cr5j58eews
   - is-01kzmnxy0xvkvazmqvdwsjm20h
+  - is-01kzmqww3nn7eafa3awhk6r0zx
 created_at: 2026-08-10T01:51:56.233Z
-updated_at: 2026-08-10T01:52:33.640Z
+updated_at: 2026-08-10T02:26:45.493Z
 ---
 Implement the approved pre-release CLI surface plan: semantic color and complete help, strict stdout/stderr behavior, stack-safe rendering, one portable agent skill, and an installed-wheel fdu command that delegates to the same Rust process boundary. Publication remains gated by fdu-9cf0.
