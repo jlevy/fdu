@@ -5,7 +5,7 @@ title: Build reproducible end-to-end performance evidence for fdu
 kind: epic
 status: open
 priority: 1
-version: 12
+version: 15
 spec_path: docs/project/specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md
 labels: []
 dependencies: []
@@ -19,11 +19,13 @@ child_order_hints:
   - is-01kzg4c6h9v2dzand7t090p278
   - is-01kzkzmrbcwvtrfpgbpbs4vpw0
   - is-01kzmyvzzhag70nv3fh7rfhec7
+  - is-01kzn04cg15xabhzvnnnmraqs3
+  - is-01kzn04cqdaaknww7941cbp7aw
 created_at: 2026-08-09T19:22:34.966Z
-updated_at: 2026-08-10T04:28:36.720Z
+updated_at: 2026-08-10T04:51:54.165Z
 ---
 Child evidence epic under fdu-qfz6. After the current merge blockers take priority, build deterministic corpora/oracle, then the strict state-machine runner, fdu probes and collectors, reviewed dut/gdu adapters, stable regression governance, and the final generated report. The harness supplies common evidence to Phase 1 owner beads, resets every trial state, rejects samples whose oracle fails, and introduces no performance claim until the optimized engine passes the dedicated-host matrix.
 
 ## Notes
 
-The self-contained design and six-bead implementation graph remain current. Supply-chain, correctness, and concurrency implementation prerequisites are closed; execution begins with fdu-rq5m after final PR approval fdu-sn43. No timing result yet supports a product claim.
+Portable foundation is complete: corpus/oracle fdu-rq5m, strict runner fdu-d8kq, and probe/portable collectors fdu-oj25 are closed. Exact probe validation also closed correctness bead fdu-6x07 and portable metadata optimization fdu-s23t. Claim-grade provenance and intrusive Linux diagnostics are split into fdu-849g and fdu-bmhr, which block stable/release evidence but not the now-unblocked revalidation and snapshot spikes. No current timing supports a product claim.

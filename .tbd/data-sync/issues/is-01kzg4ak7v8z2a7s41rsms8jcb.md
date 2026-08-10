@@ -5,7 +5,7 @@ title: "Revalidation: directory-mtime shortcut and parallel sweep streamed as de
 kind: feature
 status: open
 priority: 1
-version: 3
+version: 4
 spec_path: docs/project/specs/active/plan-2026-08-08-fdu-phase-1.md
 labels: []
 dependencies:
@@ -15,13 +15,6 @@ dependencies:
     target: is-01kzg4d2fb96erw3h1b5k0c6xy
 parent_id: is-01kzg48ekn4sm0azybr010qgmn
 created_at: 2026-08-08T07:27:45.915Z
-updated_at: 2026-08-09T20:37:09.927Z
+updated_at: 2026-08-10T04:50:57.868Z
 ---
-The current revalidate() re-lists every directory and stats every entry. Make it the git-shaped tier it is meant to be:
-- Directories whose own mtime is unchanged skip re-listing entirely (git's untracked-cache trick).
-- Files with matching fingerprints keep their derived data (type verdicts, future content metrics) with zero reads.
-- Only changed entries re-derive.
-- Parallel sweep, not the current serial walk.
-- Results stream as deltas so a caller serves the stale snapshot instantly and reconciles — and stale-while-revalidating is LABELED as such to consumers, never silently served as fresh.
-
-Depends on the spike: if the sweep is not fast enough at 500k, this design changes.
+Optimize revalidation after the measured 10k-1M cost curve and syscall walker. An unchanged cached directory fingerprint may skip only read_dir name-set discovery; it must never skip statting every known child or recursing into known directories, because an in-place file edit does not change the parent directory mtime. A changed directory fingerprint requires re-listing to discover additions, removals, and renames. Matching file fingerprints retain derived data with zero content reads. Run the truth-check as a bounded parallel sweep and stream conditional observations as deltas; stale-while-revalidating must remain explicitly labeled. Prove in-place edits, membership changes, timestamp-edge cases, partial errors, races, cancellation, and sequential-oracle equivalence before accepting speed evidence.

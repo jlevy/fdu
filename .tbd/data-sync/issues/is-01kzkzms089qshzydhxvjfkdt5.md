@@ -3,9 +3,9 @@ type: is
 id: is-01kzkzms089qshzydhxvjfkdt5
 title: Add fdu performance probe and resource collectors
 kind: task
-status: in_progress
+status: closed
 priority: 1
-version: 12
+version: 13
 spec_path: docs/project/specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md
 labels: []
 dependencies:
@@ -25,7 +25,9 @@ dependencies:
     target: is-01kzg49rw1p40pjc18feb9ghpv
 parent_id: is-01kzkzm62q1vwxbv9hbp39bxxm
 created_at: 2026-08-09T19:22:54.343Z
-updated_at: 2026-08-10T04:37:28.887Z
+updated_at: 2026-08-10T04:50:58.269Z
+closed_at: 2026-08-10T04:50:58.268Z
+close_reason: "The portable probe and collector foundation is complete: eight real component jobs, exact fingerprint-sensitive oracle checks, compact untimed validation, per-invocation wall/component/first-output timing, per-child wait4 CPU/RSS/fault/block/context-switch evidence, null-with-reason capability handling, adversarial validation, 56 harness tests, and full make-check coverage. Claim-grade build/host manifests moved to fdu-849g and intrusive dedicated-Linux collectors moved to fdu-bmhr; both now block stable release evidence rather than the local scale spikes."
 ---
 Add a non-production probe in the existing fdu crate for scan-producer, scan-index, snapshot save/load, revalidation, delta apply, and supported query phases. Timed component modes emit compact summaries; untimed validation emits the full stable semantic digest. Add external wall/first-output timing and capability-negotiated CPU, RSS, fault, I/O, syscall, layout/arena, and profile collectors. External end-to-end time stays authoritative, absent counters are null with reasons, record layout is not inferred from RSS, and no benchmark-only stable API or third crate is introduced.
 
