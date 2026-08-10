@@ -247,8 +247,9 @@ Epic: `fdu-6c8n` — CLI UX and zero-install agent skill.
 | 2a | `fdu-gxvl` | Complete | P1 | Add the portable version-pinned skill | `fdu-4jd7` |
 | 2b | `fdu-4pnh` | Complete | P1 | Expose the Rust CLI from the installed wheel | `fdu-4jd7` |
 | 3 | `fdu-sqfw` | Complete | P1 | Isolate the native-argv wheel smoke fixture | `fdu-4pnh` |
-| 4 | `fdu-51a4` | In progress | P1 | Normalize embedded skill line endings across platforms | `fdu-gxvl` |
-| 5 | `fdu-8ysf` | In progress | P1 | Validate and publish the focused follow-up PR | `fdu-4jd7`, `fdu-gxvl`, `fdu-4pnh`, `fdu-zsdy`, `fdu-sqfw`, `fdu-51a4` |
+| 4 | `fdu-51a4` | Complete | P1 | Normalize embedded skill line endings across platforms | `fdu-gxvl` |
+| 5 | `fdu-jeol` | In progress | P1 | Compare canonical Python roots by filesystem identity | `fdu-4pnh` |
+| 6 | `fdu-8ysf` | In progress | P1 | Validate and publish the focused follow-up PR | `fdu-4jd7`, `fdu-gxvl`, `fdu-4pnh`, `fdu-zsdy`, `fdu-sqfw`, `fdu-51a4`, `fdu-jeol` |
 
 Cross-plan work retains its existing owner:
 

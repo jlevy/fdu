@@ -33,7 +33,10 @@ def main() -> None:
 
     index = fdu_py.scan(str(root))
 
-    assert index.root == os.path.realpath(root), index.root
+    # Rust preserves Windows canonical verbatim paths (`\\?\`), while Python's
+    # realpath commonly returns the conventional spelling. Compare the filesystem
+    # identity rather than weakening native long-path behavior to satisfy a string.
+    assert os.path.samefile(index.root, root), (index.root, root)
     assert index.complete is True, index.errors
     assert index.freshness == "fresh", index.freshness
     assert index.errors == [], index.errors
