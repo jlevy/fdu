@@ -615,11 +615,7 @@ def _apply_mixed_file_operations(
             ledger.operations.append(
                 {"from": relative, "kind": "rename", "to": new_relative}
             )
-        os.utime(
-            destination,
-            ns=(new_mtime_ns, new_mtime_ns),
-            follow_symlinks=False,
-        )
+        _set_path_times_ns(destination, new_mtime_ns, new_mtime_ns)
         ledger.semantic.add(_file_record(new_relative, size, new_mtime_ns))
         ledger.changed_paths.update({relative, new_relative})
 
@@ -644,11 +640,7 @@ def _update_touched_directory_records(
         ledger.semantic.remove(
             {"kind": "directory", "mtime_ns": old_mtime_ns, "path": relative}
         )
-        os.utime(
-            directory_path,
-            ns=(new_mtime_ns, new_mtime_ns),
-            follow_symlinks=False,
-        )
+        _set_path_times_ns(directory_path, new_mtime_ns, new_mtime_ns)
         ledger.semantic.add(
             {"kind": "directory", "mtime_ns": new_mtime_ns, "path": relative}
         )
@@ -1111,7 +1103,22 @@ def _set_directory_mtimes(root: Path, seed: str) -> None:
         directories, key=lambda item: _path_depth(item[1]), reverse=True
     ):
         mtime_ns = _mtime_ns_for(seed, relative)
-        os.utime(path, ns=(mtime_ns, mtime_ns), follow_symlinks=False)
+        _set_path_times_ns(path, mtime_ns, mtime_ns)
+
+
+def _set_path_times_ns(path: Path, atime_ns: int, mtime_ns: int) -> None:
+    """Set exact times on an owned corpus path, rejecting observed symlinks."""
+    timestamps = (atime_ns, mtime_ns)
+    if os.utime in os.supports_follow_symlinks:
+        os.utime(path, ns=timestamps, follow_symlinks=False)
+        return
+
+    # Python exposes the keyword on every platform but raises NotImplementedError when
+    # `False` is unsupported. Generated files and directories are real paths; reject a
+    # replaced symlink before using the platform's ordinary path operation.
+    if stat.S_ISLNK(path.lstat().st_mode):
+        raise CorpusError(f"cannot set deterministic times through symlink: {path}")
+    os.utime(path, ns=timestamps)
 
 
 def _create_file(root: Path, relative: str, size: int, seed: str) -> int:
@@ -1124,7 +1131,7 @@ def _create_file(root: Path, relative: str, size: int, seed: str) -> int:
             output.write((token * 2)[: min(size, len(token) * 2)])
             output.truncate(size)
     mtime_ns = _mtime_ns_for(seed, relative)
-    os.utime(path, ns=(mtime_ns, mtime_ns), follow_symlinks=False)
+    _set_path_times_ns(path, mtime_ns, mtime_ns)
     return mtime_ns
 
 
@@ -1569,7 +1576,7 @@ def _rewrite_file_preserving_size(path: Path, mtime_ns: int, seed: str) -> None:
         ).digest()[:1]
         with path.open("r+b") as output:
             output.write(replacement)
-    os.utime(path, ns=(mtime_ns, mtime_ns), follow_symlinks=False)
+    _set_path_times_ns(path, mtime_ns, mtime_ns)
 
 
 def _mtime_ns_for(seed: str, relative: str) -> int:

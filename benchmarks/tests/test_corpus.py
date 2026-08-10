@@ -6,9 +6,12 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any
+from unittest import mock
 
 from benchmarks.corpus import (
     CorpusError,
+    _set_path_times_ns,
     apply_transition,
     cleanup_run_directory,
     create_corpus,
@@ -19,6 +22,30 @@ from benchmarks.corpus import (
 
 
 class CorpusGenerationTests(unittest.TestCase):
+    def test_generation_omits_an_unsupported_no_follow_utime_flag(self) -> None:
+        real_utime = os.utime
+
+        def emulate_platform_utime(*args: Any, **kwargs: Any) -> None:
+            if kwargs.get("follow_symlinks") is False:
+                raise NotImplementedError("follow_symlinks unavailable")
+            real_utime(*args, **kwargs)
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            with mock.patch.object(
+                os, "supports_follow_symlinks", set()
+            ), mock.patch(
+                "benchmarks.corpus.os.utime",
+                side_effect=emulate_platform_utime,
+            ):
+                run_root = reserve_run_directory(Path(temporary_directory))
+                manifest = create_corpus(
+                    run_root, "balanced", target_entries=20
+                )
+
+            verified = verify_corpus(run_root)
+
+        self.assertEqual(verified["semantic_digest"], manifest["semantic_digest"])
+
     def test_contract_matches_committed_exact_expectations(self) -> None:
         expectations_path = (
             Path(__file__).resolve().parents[1] / "expected" / "contract-v1.json"
@@ -188,10 +215,10 @@ class CorpusGenerationTests(unittest.TestCase):
             )
             path = run_root / "corpus" / file_record["path"]
             before = path.stat()
-            os.utime(
+            _set_path_times_ns(
                 path,
-                ns=(before.st_atime_ns, before.st_mtime_ns + 1_000),
-                follow_symlinks=False,
+                before.st_atime_ns,
+                before.st_mtime_ns + 1_000,
             )
             if path.stat().st_mtime_ns == before.st_mtime_ns:
                 self.skipTest("filesystem does not retain subsecond mtimes")

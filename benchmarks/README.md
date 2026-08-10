@@ -187,6 +187,9 @@ The semantic record includes the relative POSIX path, kind, apparent file size,
 deterministic nanosecond mtime, symlink target, and canonical in-corpus hardlink source.
 It deliberately excludes inode, ctime, absolute paths, and allocated blocks because
 those values change across valid regenerations.
+Timestamp writes request non-following behavior only where Python reports it available.
+On platforms such as Windows that reject that flag, the generator verifies that each
+owned timestamp target is not a symlink before using the ordinary path operation.
 The separate engine digest includes allocated size, ctime, inode, and device identity.
 It intentionally changes across valid corpus regeneration and is compared only to the
 probe that scanned that exact invocation. The portable semantic digest remains the

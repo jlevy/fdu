@@ -94,7 +94,7 @@ Comparator acquisition under `fdu-k5t5` has cleared its executable-dependency po
 blocker but now waits only on the reviewed adapter implementation shown below.
 No current timing result supports a product claim.
 
-The portable harness now has 56 deterministic and adversarial tests, passes Python
+The portable harness now has 57 deterministic and adversarial tests, passes Python
 3.9 and the current interpreter, and is included in `make check` without a numeric
 timing assertion. See the [performance harness README](../../../../benchmarks/README.md)
 for its commands, manifest contract, mutation model, and cleanup rules.
@@ -113,6 +113,10 @@ accepted. Closed bead `fdu-s23t` then removed redundant caller-owned absolute-pa
 construction on Unix with exact-oracle before/after evidence. Windows retains a fresh
 non-following query because its cached directory-enumeration attributes are not a sound
 fingerprint source; `fdu-k9zq` records that cross-platform correction.
+The next Windows stage exposed an independent corpus portability defect: Python accepts
+the `follow_symlinks` keyword for `os.utime()` but raises `NotImplementedError` where a
+platform cannot honor `False`. `fdu-tqz1` centralizes capability-aware timestamp writes,
+rejects symlinks before the fallback, and emulates the unsupported platform in tests.
 
 ## Background
 
@@ -839,6 +843,7 @@ The planning bead retains the same stable IDs.
 | PEV-22 | Medium | Known-child expectation capture reconstructed each path and performed repeated root-to-leaf lookups; exclusive unchanged reconciliation then allocated and arbitrated guaranteed no-op upserts | Capture present-child state and identity directly from coherent child iteration, and elide exact no-op upserts only for `&mut Index`; nine exact-oracle 100k pairs improved by a paired median 18.15%, while shared ABA arbitration remains unchanged |
 | PEV-23 | Medium | The first 1M invocation spent more than twelve minutes in serial Python corpus setup before any probe child launched, making fresh generation per sample impractical for scheduled evidence | `fdu-6wu0` adds a keyed immutable base-corpus cache with capability-proven clone/reflink and safe copy fallback; trials still verify their own exact fingerprint-sensitive precondition and never hardlink mutable corpus files |
 | PEV-24 | High | Windows `DirEntry::metadata()` reuses directory-enumeration attributes that the platform permits to be non-current, producing a spurious warm-path update in both native and wheel CI | `fdu-k9zq` retains the measured `DirEntry` path on Unix, performs a fresh non-following stat on non-Unix platforms, and locks the boundary down with mutation-after-enumeration coverage |
+| PEV-25 | High | Python exposes `os.utime(..., follow_symlinks=False)` on Windows but raises `NotImplementedError` because that operation is unavailable, so every generated performance trial failed during setup | `fdu-tqz1` checks `os.supports_follow_symlinks`, keeps non-following writes where available, verifies that fallback targets are not symlinks, and tests the unsupported-capability path on every development platform |
 
 ## Beads
 
@@ -857,6 +862,7 @@ research and plan, assemble this graph, and validate it through CI.
 | `fdu-6x07` | P1 | Exclude symlinks and special nodes from documented regular-file roll-ups | discovered by `fdu-oj25` |
 | `fdu-s23t` | P1 | Use `DirEntry` metadata on Unix, with paired exact-oracle evidence | discovered by `fdu-oj25` |
 | `fdu-k9zq` | P0 | Keep Unix metadata speedups without trusting cached Windows enumeration attributes | discovered by cross-platform CI |
+| `fdu-tqz1` | P0 | Set deterministic corpus timestamps without unsupported Windows flags | discovered by cross-platform CI |
 | `fdu-pkyu` | P1 | Elide redundant path lookups and guaranteed no-op applies during reconciliation | discovered by `fdu-p2i1` |
 | `fdu-6wu0` | P1 | Reuse safely cloned and independently verified base corpora for large repeated trials | discovered by `fdu-p2i1` |
 | `fdu-849g` | P1 | Strict claim-grade build and anonymous host provenance manifests | `fdu-oj25` |
