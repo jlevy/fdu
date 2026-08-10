@@ -265,6 +265,18 @@ fn collect_child_states(index: &Index, path: &Path) -> BTreeMap<OsString, PathEx
     })
 }
 
+#[cfg(unix)]
+fn metadata_for_fingerprint(entry: &fs::DirEntry) -> std::io::Result<fs::Metadata> {
+    entry.metadata()
+}
+
+#[cfg(not(unix))]
+fn metadata_for_fingerprint(entry: &fs::DirEntry) -> std::io::Result<fs::Metadata> {
+    // Windows serves DirEntry metadata from directory-enumeration data, which the
+    // platform permits to be stale. Fingerprints need a fresh non-following query.
+    fs::symlink_metadata(entry.path())
+}
+
 /// Walk `root` and emit observations describing everything found.
 pub fn scan(
     root: &Path,
@@ -311,10 +323,7 @@ pub fn scan(
             };
             let name = item.file_name();
             let rel_path = rel_dir.join(&name);
-            // DirEntry::metadata is non-following and lets Unix use the directory
-            // handle retained by read_dir instead of resolving an allocated absolute
-            // path again for every entry.
-            let meta = match item.metadata() {
+            let meta = match metadata_for_fingerprint(&item) {
                 Ok(meta) => meta,
                 Err(e) => {
                     report.errors.push(Error::io(item.path(), e));
@@ -445,7 +454,7 @@ pub fn revalidate(
             seen.insert(name.clone());
             let rel_path = rel_dir.join(&name);
             let baseline = index.relaxed_expectation(&rel_path);
-            let meta = match item.metadata() {
+            let meta = match metadata_for_fingerprint(&item) {
                 Ok(meta) => meta,
                 Err(e) => {
                     report.errors.push(Error::io(item.path(), e));
@@ -675,7 +684,7 @@ fn reconcile_target_inner(
                 Some(baseline) => baseline,
                 None => target.expectation(&rel_path)?,
             };
-            let meta = match item.metadata() {
+            let meta = match metadata_for_fingerprint(&item) {
                 Ok(meta) => meta,
                 Err(error) => {
                     report.scan.errors.push(Error::io(item.path(), error));
@@ -1037,6 +1046,23 @@ mod tests {
         write_file(&dir.path().join("src/main.rs"), b"fn main() {}");
         write_file(&dir.path().join("src/deep/nested.rs"), b"// nested");
         dir
+    }
+
+    #[test]
+    fn fingerprint_metadata_observes_mutation_after_directory_enumeration() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("changing.bin");
+        write_file(&path, b"before");
+        let entry = fs::read_dir(dir.path())
+            .expect("read directory")
+            .next()
+            .expect("one entry")
+            .expect("read entry");
+
+        write_file(&path, b"after mutation");
+
+        let metadata = metadata_for_fingerprint(&entry).expect("fresh metadata");
+        assert_eq!(metadata.len(), b"after mutation".len() as u64);
     }
 
     #[test]

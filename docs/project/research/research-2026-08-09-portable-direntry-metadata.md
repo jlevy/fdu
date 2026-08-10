@@ -1,4 +1,4 @@
-# Research: Directory-Entry-Relative Metadata Evidence
+# Research: Unix `DirEntry` Metadata Evidence
 
 **Date:** 2026-08-09
 
@@ -6,14 +6,22 @@
 
 ## Decision
 
-Use `std::fs::DirEntry::metadata()` in the portable directory-enumeration loops instead
-of constructing an absolute path and calling `std::fs::symlink_metadata()` for every
-entry.
+Use `std::fs::DirEntry::metadata()` in the Unix directory-enumeration loops instead of
+constructing an absolute path and calling `std::fs::symlink_metadata()` for every entry.
+Use a fresh
+[`symlink_metadata()`](https://doc.rust-lang.org/std/fs/fn.symlink_metadata.html) query
+on non-Unix platforms.
 
-The Rust API preserves the required non-following behavior while allowing the platform
-implementation to resolve metadata relative to the directory handle already owned by
-`ReadDir`. On the measured 100,000-entry corpus, the focused change improved all three
-affected component medians and preserved the exact index digest in every sample.
+Both APIs preserve the required non-following behavior. The
+[Rust documentation](https://doc.rust-lang.org/std/fs/struct.DirEntry.html#method.metadata)
+states that `DirEntry::metadata()` is semantically equivalent to `symlink_metadata()`
+on Unix but reuses enumeration data without a syscall on Windows. That Windows shortcut
+is not a valid fingerprint source: Microsoft documents that
+[directory-enumeration attributes may be non-current on NTFS](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-findfirstfilew).
+The fresh query preserves cache correctness there.
+
+On the measured macOS 100,000-entry corpus, the Unix change improved all three affected
+component medians and preserved the exact index digest in every sample.
 
 This is evidence for one localized implementation choice, not a product-performance
 claim. The optimized Linux syscall walker, cross-tool comparison, dedicated-host
@@ -27,8 +35,16 @@ The portable walker previously performed these operations for every directory en
 2. resolve that path from the process root with `symlink_metadata()`;
 3. allocate the same absolute path again only if an error had to be reported.
 
-`DirEntry::metadata()` can avoid the first two costs on the success path. The error path
-still constructs a full path so diagnostics retain the existing precision.
+On Unix, `DirEntry::metadata()` can avoid the caller-owned path construction on the
+success path while retaining the same non-following semantics. The error path still
+constructs a full path so diagnostics retain the existing precision.
+
+On Windows, Rust obtains `DirEntry` metadata from directory-enumeration data. The first
+cross-platform CI run observed one entry's cached attributes change between the cold
+scan and immediate revalidation in both the Rust and installed-wheel suites. Treating
+those cached values as an authoritative fingerprint would create spurious updates and
+could accept non-current attributes. Non-Unix builds therefore pay for a fresh path
+query.
 
 ## Method
 
@@ -77,10 +93,13 @@ no stable batch-size effect, so the default remains 1,024.
 
 ## Correctness and Engineering Review
 
-- `DirEntry::metadata()` is documented to avoid following a symbolic link represented
-  by the entry.
+- Both metadata paths are non-following, so a retained symlink cannot turn the tree walk
+  into traversal of its target.
 - A focused Unix regression test points a retained symlink at an external directory and
   proves that the scan records the link itself without traversing the target.
+- A cross-platform regression mutates a file after obtaining its directory entry and
+  proves that the fingerprint helper observes the post-mutation size. This fails if the
+  Windows implementation regresses to cached enumeration metadata.
 - The existing scan, revalidation, snapshot, golden CLI, and cross-platform suites still
   own the complete semantic contract.
 - All 42 paired performance samples matched the independent per-run engine digest.
@@ -89,12 +108,13 @@ no stable batch-size effect, so the default remains 1,024.
 
 ## Limitations
 
-The run used one local host and an uncontrolled operating-system cache. It measured the
-probe’s internal component boundary rather than CLI or Python latency and did not invoke
-a comparator. The raw set was produced by the focused paired script rather than the
-immutable release runner. These limits prevent a broader claim, but they do not weaken
-the causal comparison between two binaries that differ only in the metadata call and
-operate on the same exact corpus.
+The run used one local macOS host and an uncontrolled operating-system cache. It
+measured the probe's internal component boundary rather than CLI or Python latency and
+did not invoke a comparator. The raw set was produced by the focused paired script
+rather than the immutable release runner. These limits prevent a broader claim, but
+they do not weaken the causal Unix comparison between two binaries that differ only in
+the metadata call and operate on the same exact corpus. They provide no performance
+evidence for Windows, where correctness requires the fresh query.
 
 ## Follow-Up
 
