@@ -25,10 +25,10 @@ from benchmarks.corpus import (
     CorpusError,
     apply_transition,
     cleanup_run_directory,
-    create_corpus,
     reserve_run_directory,
     verify_corpus,
 )
+from benchmarks.corpus_cache import CorpusBasePool
 from benchmarks.schema import (
     RESULT_SCHEMA,
     SchemaError,
@@ -145,16 +145,18 @@ def run_scenario_set(
     artifact_root.mkdir()
     trials: List[Dict[str, Any]] = []
     scenarios_by_id = {scenario["id"]: scenario for scenario in selected}
-    for invocation in schedule:
-        scenario = scenarios_by_id[invocation["scenario_id"]]
-        trial = _execute_invocation(
-            scenario,
-            invocation,
-            executables[scenario["adapter"]],
-            work_root,
-            artifact_root,
-        )
-        trials.append(trial)
+    with CorpusBasePool(work_root) as corpus_bases:
+        for invocation in schedule:
+            scenario = scenarios_by_id[invocation["scenario_id"]]
+            trial = _execute_invocation(
+                scenario,
+                invocation,
+                executables[scenario["adapter"]],
+                work_root,
+                artifact_root,
+                corpus_bases,
+            )
+            trials.append(trial)
 
     if not any(artifact_root.iterdir()):
         artifact_root.rmdir()
@@ -242,6 +244,7 @@ def _execute_invocation(
     executable: Sequence[str],
     work_root: Path,
     artifact_root: Path,
+    corpus_bases: CorpusBasePool,
 ) -> Dict[str, Any]:
     run_root = reserve_run_directory(work_root)
     placeholders = _invocation_placeholders(run_root)
@@ -260,6 +263,8 @@ def _execute_invocation(
     )
     artifact_name: Optional[str] = None
     probe_metrics: Dict[str, Any] = {}
+    preparation = _empty_preparation_evidence()
+    preparation_started = time.perf_counter_ns()
     try:
         manifest = _prepare_invocation(
             scenario,
@@ -267,7 +272,10 @@ def _execute_invocation(
             run_root,
             placeholders,
             environment,
+            corpus_bases,
+            preparation,
         )
+        preparation["total_ns"] = time.perf_counter_ns() - preparation_started
         precondition = True
         argv = _expand_argv(scenario["command"]["argv"], executable, placeholders)
         command_result = _run_command(
@@ -301,6 +309,7 @@ def _execute_invocation(
             )
             _copy_exclusive(command_result.stdout_path, artifact_root / artifact_name)
     except (CorpusError, RunnerError, OSError, SchemaError) as error:
+        preparation["total_ns"] = time.perf_counter_ns() - preparation_started
         reasons.append(f"setup failed: {error}")
     finally:
         try:
@@ -319,6 +328,7 @@ def _execute_invocation(
         reasons,
         artifact_name,
         probe_metrics,
+        preparation,
     )
 
 
@@ -328,14 +338,17 @@ def _prepare_invocation(
     run_root: Path,
     placeholders: Mapping[str, str],
     environment: Mapping[str, str],
+    corpus_bases: CorpusBasePool,
+    preparation: Dict[str, Any],
 ) -> Dict[str, Any]:
     corpus = scenario["corpus"]
-    manifest = create_corpus(
+    manifest, corpus_preparation = corpus_bases.materialize(
         run_root,
         corpus["recipe_id"],
         target_entries=corpus["target_entries"],
         seed=corpus["seed"],
     )
+    preparation.update(corpus_preparation)
     snapshot_state = scenario["snapshot_state"]
     if snapshot_state == "compatible-changed":
         _run_preparation_command(
@@ -810,6 +823,7 @@ def _trial_record(
     reasons: Sequence[str],
     artifact_name: Optional[str],
     probe_metrics: Mapping[str, Any],
+    preparation: Mapping[str, Any],
 ) -> Dict[str, Any]:
     corpus = None
     if manifest is not None:
@@ -834,6 +848,7 @@ def _trial_record(
             "stdout_bytes": command.stdout_bytes if command else 0,
             "stdout_sha256": command.stdout_sha256 if command else None,
         },
+        "preparation": dict(preparation),
         "process": {
             "exit_code": command.exit_code if command else None,
             "signal": command.signal if command else None,
@@ -861,6 +876,25 @@ def _trial_record(
             "reasons": list(reasons),
             "valid": precondition and postcondition and not reasons,
         },
+    }
+
+
+def _empty_preparation_evidence() -> Dict[str, Any]:
+    return {
+        "base_cache_key": None,
+        "base_created": False,
+        "base_generation_ns": None,
+        "cloned_files": 0,
+        "copied_bytes": 0,
+        "copied_files": 0,
+        "copy_strategy": None,
+        "directories": 0,
+        "hardlinks": 0,
+        "materialization_ns": None,
+        "source_verification_ns": None,
+        "strategy_probe_ns": None,
+        "symlinks": 0,
+        "total_ns": 0,
     }
 
 
@@ -1026,7 +1060,13 @@ def _harness_identity() -> Dict[str, Any]:
     benchmark_root = Path(__file__).resolve().parent
     components = [
         {"name": name, "sha256": _hash_file(benchmark_root / name)}
-        for name in ("corpus.py", "report.py", "runner.py", "schema.py")
+        for name in (
+            "corpus.py",
+            "corpus_cache.py",
+            "report.py",
+            "runner.py",
+            "schema.py",
+        )
     ]
     identity = {
         "components": components,

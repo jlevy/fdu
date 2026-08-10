@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import math
@@ -382,6 +383,46 @@ def verify_corpus(run_root: Path) -> Dict[str, Any]:
     """Verify the current corpus against its stored observed manifest."""
     resolved_run_root = _validate_run_root(run_root)
     with _operation_lock(resolved_run_root):
+        return _verify_corpus_unlocked(resolved_run_root)
+
+
+def refresh_copied_corpus(
+    run_root: Path, source_manifest: Mapping[str, Any]
+) -> Dict[str, Any]:
+    """Validate a copied corpus and bind its manifest to fresh filesystem identity."""
+    resolved_run_root = _validate_run_root(run_root)
+    with _operation_lock(resolved_run_root):
+        copied = _load_manifest(resolved_run_root / MANIFEST_NAME)
+        if copied != source_manifest:
+            raise CorpusError("copied corpus manifest differs from its verified base")
+        corpus_root = resolved_run_root / CORPUS_NAME
+        if corpus_root.is_symlink() or not corpus_root.is_dir():
+            raise CorpusError("the copied corpus is missing or is a symlink")
+        capture_records = "records" in copied
+        observed, observed_capabilities = _observe_corpus(
+            corpus_root, capture_records=capture_records
+        )
+        expected_summary: Dict[str, Any] = {
+            "counts": copied["counts"],
+            "extensions": copied["extensions"],
+            "semantic_components": copied["oracle"]["semantic_components"],
+            "semantic_digest": copied["semantic_digest"],
+            "sizes": copied["sizes"],
+            "topology": copied["topology"],
+        }
+        if capture_records:
+            expected_summary["records"] = copied["records"]
+        _assert_expected_matches_observed(expected_summary, observed)
+
+        refreshed = copy.deepcopy(copied)
+        refreshed["capabilities"].update(observed_capabilities)
+        refreshed["sizes"] = observed["sizes"]
+        refreshed["oracle"]["engine_digest"] = observed["engine_digest"]
+        refreshed["oracle"]["engine_digest_components"] = observed[
+            "engine_digest_components"
+        ]
+        refreshed["manifest_hash"] = _manifest_hash(refreshed)
+        _atomic_write_json(resolved_run_root / MANIFEST_NAME, refreshed)
         return _verify_corpus_unlocked(resolved_run_root)
 
 

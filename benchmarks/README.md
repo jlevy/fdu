@@ -83,8 +83,15 @@ uv run --no-project python -m benchmarks.run execute \
 An executable mapping is a direct argument-vector prefix. Repeat an adapter name for an
 interpreter plus script; no command passes through a shell.
 
-Each warmup and timed invocation receives a newly generated, verified corpus and freshly
-prepared snapshot and filesystem-cache state.
+One verified base is generated per effective recipe, seed, and scale within a result
+run. Each warmup and timed invocation receives an independent clone or bounded copy of
+that base plus freshly prepared snapshot and filesystem-cache state. APFS `clonefile`
+and Linux `FICLONE` are used only after a live probe proves copy-on-write independence;
+the fallback refuses more than 8 GiB of logical copying. Internal hardlinks are
+re-created only within the trial and never connect mutable trial files to the base.
+The runner independently refreshes and verifies every trial's exact filesystem identity.
+Base generation, verification, clone/copy counts, copied bytes, strategy-probe time, and
+total setup time are recorded separately and excluded from the measured command.
 The runner uses a minimal environment, kills the child process group on a timeout,
 validates the corpus again afterward, and retains invalid samples with mechanical
 reasons. It writes one exclusive result file; it never replaces an earlier run.

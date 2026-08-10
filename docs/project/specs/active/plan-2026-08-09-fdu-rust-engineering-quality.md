@@ -74,6 +74,13 @@ merged through PR #1. The remaining P1 and P2 items protect later representation
 changes, performance evidence, and publishing; they are explicitly deferred rather than
 hidden merge blockers.
 
+The maintainer has now selected Python 3.12 as the minimum for the unpublished wheel
+and repository-owned Python tooling. `fdu-c7z2` owns the pending PyO3 ABI, package
+metadata, uv lock, CI, and documentation update. The first-party
+`jlevy/simple-modern-uv` v0.4.0 template was inspected as a conventions source; fdu will
+adopt its relevant uv and supported-version practices without applying its pure-Python
+migration structure to this Cargo workspace and maturin extension.
+
 ## Goals
 
 - Restore the repository’s stated 14-day executable-dependency cool-off and enforce it
@@ -383,6 +390,8 @@ fix.
   CLI follow-up preserves exact output and adds a small-stack subprocess regression
 - [ ] `fdu-k8zw`: preserve native filesystem identity through classification and Python
   bindings
+- [ ] `fdu-c7z2`: raise the wheel and tooling minimum to Python 3.12 and align PyO3,
+  uv, CI, and documentation
 - [ ] Complete package, compatibility, security, and artifact-smoke acceptance under the
   existing publishing bead `fdu-9cf0`
 
@@ -487,6 +496,7 @@ concurrency review closes when this plan, its beads, and the PR record agree.
 | 2 | `fdu-o8r8` | P1 | Add a deterministic index/delta reference model | `fdu-nlh8`, `fdu-sn43` |
 | 2 | `fdu-471a` | P1 | Exercise snapshot parsing and commit failures as a state machine | `fdu-nlh8`, `fdu-sn43` |
 | 3 | `fdu-zsdy` | P2 | Make CLI rendering iterative and stack-safe (complete) | `fdu-sn43` |
+| 3 | `fdu-c7z2` | P1 | Raise the supported Python floor to 3.12 and align uv packaging | — |
 | 3 | `fdu-k8zw` | P2 | Preserve native identity through classification and Python | `fdu-s7wr` |
 
 The Phase 1 bead `fdu-sn43` depends on `fdu-ad45`, `fdu-gd6n`, `fdu-l8vc`, `fdu-83gl`,
@@ -515,6 +525,8 @@ Cross-epic dependencies make the existing work consume these gates:
 - `fdu-471a` blocks `fdu-xihx`.
 - `fdu-zga3` blocks `fdu-ywu0` and `fdu-9cf0`.
 - `fdu-zsdy` blocks `fdu-oqoy` and `fdu-jej9`.
+- `fdu-c7z2` blocks minimum-version coverage under `fdu-k8zw` and publishing under
+  `fdu-9cf0`.
 - `fdu-k8zw` blocks `fdu-jej9`, `fdu-v4lc`, and `fdu-9cf0`.
 
 The supply-chain bead also resolved the tbd integration drift reported during this

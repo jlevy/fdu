@@ -12,14 +12,14 @@ in the active performance plan.
 - Finished: `2026-08-09T12:00:01.000000Z`
 - Source revision: `8888888888888888888888888888888888888888`
 - Result schema: `fdu-performance-result-v1`
-- Result hash: `e899121f712a6757acdb1558a68092b161b252b36c2e32dd6dcb2123d7abf3be`
+- Result hash: `5579c5f942299e30c5d3eb0f1093f42238dd615452f3c7a08e91ca8c9245bf66`
 - Host class: `fixture-host-v1`
 - Platform: `FixtureOS aarch64`
 - Kernel: `fixture-kernel`
 - Logical CPUs: `8`
 - Memory bytes: `16000000000`
 - Filesystem: `apfs`
-- Harness identity: `975c47207fee7d34c68a62d98474cbcfcfd9a84837e848cc0335ec853546715a`
+- Harness identity: `a632df335c38d47fad94770c366eccf6e6db8de8f6e7ef08b72a3e97775fbb57`
 - Python: `cpython 3.13.5`
 
 ## Executables
@@ -64,18 +64,19 @@ table below.
 
 ## Raw Trials
 
-| Ordinal | Kind | Scenario | Snapshot | FS cache | Valid | First output | External wall | Component | CPU | Peak RSS | Exit | Stdout bytes | Stdout SHA-256 | Reason |
-| ---: | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |
-| 0 | timed | fixture/contract/baseline | absent | uncontrolled | yes | 5.000 ms | 10.000 ms | n/a | n/a | n/a | 0 | 100 | `6666666666666666666666666666666666666666666666666666666666666666` | — |
-| 1 | timed | fixture/contract/baseline | absent | uncontrolled | yes | 10.000 ms | 20.000 ms | n/a | n/a | n/a | 0 | 100 | `6666666666666666666666666666666666666666666666666666666666666666` | — |
-| 2 | timed | fixture/contract/baseline | absent | uncontrolled | yes | 15.000 ms | 30.000 ms | n/a | n/a | n/a | 0 | 100 | `6666666666666666666666666666666666666666666666666666666666666666` | — |
-| 3 | timed | fixture/contract/baseline | absent | uncontrolled | no | 500.000 ms | 1000.000 ms | n/a | n/a | n/a | 0 | 100 | `6666666666666666666666666666666666666666666666666666666666666666` | synthetic invalid sample |
+| Ordinal | Kind | Scenario | Snapshot | FS cache | Setup | Corpus materialization | Valid | First output | External wall | Component | CPU | Peak RSS | Exit | Stdout bytes | Stdout SHA-256 | Reason |
+| ---: | --- | --- | --- | --- | ---: | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |
+| 0 | timed | fixture/contract/baseline | absent | uncontrolled | 4.000 ms | fixture-clone-v1 (new base; 90 cloned, 0 copied) | yes | 5.000 ms | 10.000 ms | n/a | n/a | n/a | 0 | 100 | `6666666666666666666666666666666666666666666666666666666666666666` | — |
+| 1 | timed | fixture/contract/baseline | absent | uncontrolled | 2.000 ms | fixture-clone-v1 (reused base; 90 cloned, 0 copied) | yes | 10.000 ms | 20.000 ms | n/a | n/a | n/a | 0 | 100 | `6666666666666666666666666666666666666666666666666666666666666666` | — |
+| 2 | timed | fixture/contract/baseline | absent | uncontrolled | 2.000 ms | fixture-clone-v1 (reused base; 90 cloned, 0 copied) | yes | 15.000 ms | 30.000 ms | n/a | n/a | n/a | 0 | 100 | `6666666666666666666666666666666666666666666666666666666666666666` | — |
+| 3 | timed | fixture/contract/baseline | absent | uncontrolled | 2.000 ms | fixture-clone-v1 (reused base; 90 cloned, 0 copied) | no | 500.000 ms | 1000.000 ms | n/a | n/a | n/a | 0 | 100 | `6666666666666666666666666666666666666666666666666666666666666666` | synthetic invalid sample |
 
 ## Reproduction Contract
 
 - Invocation ordering: `sha256-round-robin-v1`
 - Order seed: `synthetic-order`
 - Snapshot state and filesystem-cache state are recorded per raw trial.
+- Setup and corpus materialization are recorded but excluded from timed work.
 - Exact commands use tokenized argument arrays; personal absolute paths are not
   persisted.
 - Invalid samples are retained and are never included in the statistics.

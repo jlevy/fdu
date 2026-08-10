@@ -256,13 +256,14 @@ def render_report(result: Mapping[str, Any]) -> str:
             "## Raw Trials",
             "",
             (
-                "| Ordinal | Kind | Scenario | Snapshot | FS cache | Valid | "
-                "First output | External wall | Component | CPU | Peak RSS | Exit | "
-                "Stdout bytes | Stdout SHA-256 | Reason |"
+                "| Ordinal | Kind | Scenario | Snapshot | FS cache | Setup | "
+                "Corpus materialization | Valid | First output | External wall | "
+                "Component | CPU | Peak RSS | Exit | Stdout bytes | Stdout SHA-256 | "
+                "Reason |"
             ),
             (
-                "| ---: | --- | --- | --- | --- | --- | ---: | ---: | ---: | "
-                "---: | ---: | ---: | ---: | --- | --- |"
+                "| ---: | --- | --- | --- | --- | ---: | --- | --- | ---: | "
+                "---: | ---: | ---: | ---: | ---: | ---: | --- | --- |"
             ),
         ]
     )
@@ -271,15 +272,17 @@ def render_report(result: Mapping[str, Any]) -> str:
             _escape(reason) for reason in trial["validation"]["reasons"]
         )
         lines.append(
-            "| {ordinal} | {kind} | {scenario} | {snapshot} | {cache} | {valid} | "
-            "{first_output} | {wall} | {component} | {cpu} | {rss} | "
-            "{exit_code} | {stdout_bytes} | "
+            "| {ordinal} | {kind} | {scenario} | {snapshot} | {cache} | {setup} | "
+            "{materialization} | {valid} | {first_output} | {wall} | {component} | "
+            "{cpu} | {rss} | {exit_code} | {stdout_bytes} | "
             "`{digest}` | {reasons} |".format(
                 ordinal=trial["ordinal"],
                 kind=trial["sample_kind"],
                 scenario=_escape(trial["scenario_id"]),
                 snapshot=trial["snapshot_state"],
                 cache=trial["filesystem_cache_state"],
+                setup=_format_duration(trial["preparation"]["total_ns"]),
+                materialization=_format_preparation(trial["preparation"]),
                 valid="yes" if trial["validation"]["valid"] else "no",
                 first_output=_format_duration(trial["timing"]["first_output_ns"]),
                 wall=_format_duration(trial["timing"]["wall_ns"]),
@@ -307,6 +310,7 @@ def render_report(result: Mapping[str, Any]) -> str:
             f"- Invocation ordering: `{result['method']['order_algorithm']}`",
             f"- Order seed: `{result['method']['order_seed']}`",
             "- Snapshot state and filesystem-cache state are recorded per raw trial.",
+            "- Setup and corpus materialization are recorded but excluded from timed work.",
             *_bullet(
                 "Exact commands use tokenized argument arrays; personal absolute "
                 "paths are not persisted."
@@ -320,6 +324,17 @@ def render_report(result: Mapping[str, Any]) -> str:
         ]
     )
     return "\n".join(lines)
+
+
+def _format_preparation(preparation: Mapping[str, Any]) -> str:
+    strategy = preparation["copy_strategy"]
+    if strategy is None:
+        return "unavailable"
+    base = "new base" if preparation["base_created"] else "reused base"
+    return _escape(
+        f"{strategy} ({base}; {preparation['cloned_files']} cloned, "
+        f"{preparation['copied_files']} copied)"
+    )
 
 
 def _review_triggers(statistics: Sequence[Mapping[str, Any]]) -> List[str]:

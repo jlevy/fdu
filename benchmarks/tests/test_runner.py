@@ -40,7 +40,7 @@ class ScenarioRunnerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary_directory:
             base = Path(temporary_directory)
             with mock.patch(
-                "benchmarks.runner.create_corpus",
+                "benchmarks.runner.CorpusBasePool.materialize",
                 side_effect=CorpusError("intentional corpus setup failure"),
             ), mock.patch("benchmarks.runner._run_command") as run_command:
                 result = run_scenario_set(
@@ -90,6 +90,7 @@ class ScenarioRunnerTests(unittest.TestCase):
                     output_directory=base / "results",
                     order_seed="stable-order",
                 )
+                remaining_work_paths = list((base / "work").iterdir())
                 result_paths = list((base / "results").glob("run-*.json"))
                 persisted = json.loads(result_paths[0].read_text(encoding="utf-8"))
         finally:
@@ -99,6 +100,7 @@ class ScenarioRunnerTests(unittest.TestCase):
                 os.environ["FDU_SENTINEL"] = previous
 
         self.assertEqual(len(result_paths), 1)
+        self.assertEqual(remaining_work_paths, [])
         self.assertEqual(len(result["trials"]), 3)
         self.assertEqual(
             [trial["sample_kind"] for trial in result["trials"]],
@@ -110,6 +112,18 @@ class ScenarioRunnerTests(unittest.TestCase):
             all(trial["timing"]["first_output_ns"] is not None for trial in result["trials"])
         )
         self.assertTrue(all(trial["output"]["artifact"] is None for trial in result["trials"]))
+        preparations = [trial["preparation"] for trial in result["trials"]]
+        self.assertEqual(
+            [preparation["base_created"] for preparation in preparations],
+            [True, False, False],
+        )
+        self.assertEqual(
+            len({preparation["base_cache_key"] for preparation in preparations}),
+            1,
+        )
+        self.assertTrue(
+            all(preparation["total_ns"] > 0 for preparation in preparations)
+        )
         self.assertTrue(
             all(
                 trial["probe_metrics"] == {"component_ns": 123}
@@ -179,6 +193,23 @@ class ScenarioRunnerTests(unittest.TestCase):
         extra_count["result_hash"] = result_document_hash(extra_count)
         with self.assertRaisesRegex(SchemaError, "unknown fields"):
             validate_result_document(extra_count)
+
+        missing_base_key = json.loads(json.dumps(result))
+        preparation = missing_base_key["trials"][0]["preparation"]
+        preparation["base_cache_key"] = None
+        preparation["copy_strategy"] = None
+        preparation["materialization_ns"] = None
+        preparation["source_verification_ns"] = None
+        preparation["strategy_probe_ns"] = None
+        missing_base_key["result_hash"] = result_document_hash(missing_base_key)
+        with self.assertRaisesRegex(SchemaError, "requires a base_cache_key"):
+            validate_result_document(missing_base_key)
+
+        impossible_total = json.loads(json.dumps(result))
+        impossible_total["trials"][0]["preparation"]["total_ns"] = 0
+        impossible_total["result_hash"] = result_document_hash(impossible_total)
+        with self.assertRaisesRegex(SchemaError, "smaller than its timed components"):
+            validate_result_document(impossible_total)
 
     def test_wrong_output_and_nonzero_exit_are_recorded_as_invalid(self) -> None:
         executable = [sys.executable, str(FIXTURES / "fake_benchmark.py")]

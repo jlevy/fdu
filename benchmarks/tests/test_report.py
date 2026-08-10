@@ -47,6 +47,7 @@ def _synthetic_result(
     harness_base = {
         "components": [
             {"name": "corpus.py", "sha256": "a" * 64},
+            {"name": "corpus_cache.py", "sha256": "e" * 64},
             {"name": "report.py", "sha256": "d" * 64},
             {"name": "runner.py", "sha256": "b" * 64},
             {"name": "schema.py", "sha256": "c" * 64},
@@ -100,6 +101,22 @@ def _synthetic_result(
                     "stderr_sha256": "5" * 64,
                     "stdout_bytes": 100,
                     "stdout_sha256": "6" * 64,
+                },
+                "preparation": {
+                    "base_cache_key": "8" * 64,
+                    "base_created": index == 0,
+                    "base_generation_ns": 2_000_000 if index == 0 else None,
+                    "cloned_files": 90,
+                    "copied_bytes": 0,
+                    "copied_files": 0,
+                    "copy_strategy": "fixture-clone-v1",
+                    "directories": 11,
+                    "hardlinks": 0,
+                    "materialization_ns": 1_000_000,
+                    "source_verification_ns": 500_000,
+                    "strategy_probe_ns": 100_000,
+                    "symlinks": 0,
+                    "total_ns": 4_000_000 if index == 0 else 2_000_000,
                 },
                 "process": {
                     "exit_code": 0,

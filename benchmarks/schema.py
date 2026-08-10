@@ -841,6 +841,7 @@ def _validate_trial(
             "filesystem_cache_state",
             "ordinal",
             "output",
+            "preparation",
             "probe_metrics",
             "process",
             "resources",
@@ -873,6 +874,7 @@ def _validate_trial(
     _validate_trial_corpus(trial["corpus"], scenario, f"{path}.corpus")
     _validate_trial_environment(trial["environment"], f"{path}.environment")
     _validate_trial_output(trial["output"], f"{path}.output")
+    _validate_trial_preparation(trial["preparation"], f"{path}.preparation")
     _validate_trial_probe_metrics(trial["probe_metrics"], f"{path}.probe_metrics")
     _validate_trial_process(trial["process"], f"{path}.process")
     _validate_trial_resources(trial["resources"], f"{path}.resources")
@@ -938,6 +940,96 @@ def _validate_trial_corpus(
         raise SchemaError(f"{path}.recipe_id disagrees with its scenario")
     if state["id"] != scenario["corpus"]["state"]:
         raise SchemaError(f"{path}.state.id disagrees with its scenario")
+
+
+def _validate_trial_preparation(value: Any, path: str) -> None:
+    preparation = _object(
+        value,
+        required={
+            "base_cache_key",
+            "base_created",
+            "base_generation_ns",
+            "cloned_files",
+            "copied_bytes",
+            "copied_files",
+            "copy_strategy",
+            "directories",
+            "hardlinks",
+            "materialization_ns",
+            "source_verification_ns",
+            "strategy_probe_ns",
+            "symlinks",
+            "total_ns",
+        },
+        optional=set(),
+        path=path,
+    )
+    cache_key = preparation["base_cache_key"]
+    if cache_key is not None:
+        _sha256(cache_key, f"{path}.base_cache_key")
+    if not isinstance(preparation["base_created"], bool):
+        raise SchemaError(f"{path}.base_created must be boolean")
+    for field in (
+        "base_generation_ns",
+        "materialization_ns",
+        "source_verification_ns",
+        "strategy_probe_ns",
+    ):
+        _nullable_nonnegative_integer(preparation[field], f"{path}.{field}")
+    for field in (
+        "cloned_files",
+        "copied_bytes",
+        "copied_files",
+        "directories",
+        "hardlinks",
+        "symlinks",
+        "total_ns",
+    ):
+        _integer(preparation[field], f"{path}.{field}", minimum=0)
+    strategy = preparation["copy_strategy"]
+    if strategy is not None and (
+        not isinstance(strategy, str) or not strategy or len(strategy) > 100
+    ):
+        raise SchemaError(f"{path}.copy_strategy must be a bounded string or null")
+    if preparation["base_created"] != (
+        preparation["base_generation_ns"] is not None
+    ):
+        raise SchemaError(f"{path}.base_created disagrees with base_generation_ns")
+    materialized = cache_key is not None
+    if preparation["base_created"] and not materialized:
+        raise SchemaError(f"{path}.base_created requires a base_cache_key")
+    for field in (
+        "copy_strategy",
+        "materialization_ns",
+        "source_verification_ns",
+        "strategy_probe_ns",
+    ):
+        if (preparation[field] is not None) != materialized:
+            raise SchemaError(f"{path}.{field} disagrees with base_cache_key")
+    if not materialized and any(
+        preparation[field] != 0
+        for field in (
+            "cloned_files",
+            "copied_bytes",
+            "copied_files",
+            "directories",
+            "hardlinks",
+            "symlinks",
+        )
+    ):
+        raise SchemaError(f"{path} has copy counts without a materialized corpus")
+    if strategy == "bounded-copy-v1" and preparation["cloned_files"] != 0:
+        raise SchemaError(f"{path}.cloned_files disagrees with bounded-copy-v1")
+    accounted_ns = sum(
+        preparation[field] or 0
+        for field in (
+            "base_generation_ns",
+            "materialization_ns",
+            "source_verification_ns",
+        )
+    )
+    if preparation["total_ns"] < accounted_ns:
+        raise SchemaError(f"{path}.total_ns is smaller than its timed components")
 
 
 def _validate_trial_environment(value: Any, path: str) -> None:
@@ -1096,6 +1188,8 @@ def _validate_trial_contract(
         raise SchemaError(f"{path}.precondition disagrees with corpus evidence")
     if validation["postcondition"] and not validation["precondition"]:
         raise SchemaError(f"{path}.postcondition cannot pass without a precondition")
+    if validation["precondition"] and trial["preparation"]["base_cache_key"] is None:
+        raise SchemaError(f"{path}.precondition lacks corpus preparation evidence")
 
     expected_environment: Dict[str, str] = {
         "LANG": "C",

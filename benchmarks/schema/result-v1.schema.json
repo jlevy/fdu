@@ -422,6 +422,106 @@
       ],
       "type": "object"
     },
+    "preparation": {
+      "additionalProperties": false,
+      "properties": {
+        "base_cache_key": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "base_created": {
+          "type": "boolean"
+        },
+        "base_generation_ns": {
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "cloned_files": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "copied_bytes": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "copied_files": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "copy_strategy": {
+          "maxLength": 100,
+          "minLength": 1,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "directories": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "hardlinks": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "materialization_ns": {
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "source_verification_ns": {
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "strategy_probe_ns": {
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "symlinks": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "total_ns": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "base_cache_key",
+        "base_created",
+        "base_generation_ns",
+        "cloned_files",
+        "copied_bytes",
+        "copied_files",
+        "copy_strategy",
+        "directories",
+        "hardlinks",
+        "materialization_ns",
+        "source_verification_ns",
+        "strategy_probe_ns",
+        "symlinks",
+        "total_ns"
+      ],
+      "type": "object"
+    },
     "resources": {
       "additionalProperties": false,
       "properties": {
@@ -656,6 +756,9 @@
         "output": {
           "$ref": "#/$defs/output"
         },
+        "preparation": {
+          "$ref": "#/$defs/preparation"
+        },
         "process": {
           "$ref": "#/$defs/process"
         },
@@ -715,6 +818,7 @@
         "filesystem_cache_state",
         "ordinal",
         "output",
+        "preparation",
         "probe_metrics",
         "process",
         "resources",

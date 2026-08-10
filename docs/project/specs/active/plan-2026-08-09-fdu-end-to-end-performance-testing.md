@@ -94,10 +94,13 @@ Comparator acquisition under `fdu-k5t5` has cleared its executable-dependency po
 blocker but now waits only on the reviewed adapter implementation shown below.
 No current timing result supports a product claim.
 
-The portable harness now has 59 deterministic and adversarial tests, passes Python
-3.9 and the current interpreter, and is included in `make check` without a numeric
-timing assertion. See the [performance harness README](../../../../benchmarks/README.md)
-for its commands, manifest contract, mutation model, and cleanup rules.
+The portable harness now has 63 deterministic and adversarial tests and is included in
+`make check` without a numeric timing assertion. The maintainer selected Python 3.12 as
+the new minimum for the wheel and repository-owned tooling; `fdu-c7z2` owns the pending
+PyO3 ABI, package metadata, uv lock, CI, and documentation alignment. Earlier Python 3.9
+evidence is no longer an acceptance requirement. See the
+[performance harness README](../../../../benchmarks/README.md) for commands, manifest
+contract, mutation model, and cleanup rules.
 
 The first exact-oracle revalidation curve measured 72.258 ms at 10k, 725.023 ms at
 100k, 8.186 s at 500k, and 62.906 s at 1M on one uncontrolled local APFS host. It is an
@@ -123,6 +126,22 @@ efficient directory-entry path where its identity is authoritative and uses a fr
 non-following path stat on Windows. `fdu-viyi` separately ensures a setup failure remains
 schema-valid evidence carrying the primary error instead of being masked by environment
 validation.
+
+The first `fdu-6wu0` implementation now keeps one run-scoped verified base per effective
+recipe, seed, and scale. Every invocation receives an independently verified APFS clone,
+Linux reflink, or bounded copy; mutable trial files never hardlink to the base. Result
+records expose base generation, strategy probing, cloning, fallback copying, and total
+preparation separately from measured CLI and component time. Unit and state-machine
+tests prove base reuse, trial isolation, internal-hardlink preservation, fallback limits,
+cleanup, preservation of primary failures when cleanup also fails, and evidence-schema
+consistency. The bead remains open until repeated large runs show that remaining Python
+verification walks are proportionate.
+
+The first-party `jlevy/simple-modern-uv` v0.4.0 template was inspected at commit
+`d05a34cf8c73d184a3f333ea478a3c2bd573d74e`. Its uv, supported-version, lint, test, and
+publishing conventions are relevant, but its own adoption guide excludes monorepos and
+native-extension projects. fdu will therefore preserve its Cargo workspace and maturin
+build while selectively applying the useful conventions under `fdu-c7z2`.
 
 ## Background
 
@@ -391,8 +410,10 @@ Each scenario expands into explicit steps:
 reserve unique run directory
 → build/select exact binary
 → choose and record randomized invocation order
+→ generate one private verified base per effective recipe, seed, and scale on demand
 → for each declared warmup and timed invocation:
-    restore or generate the corpus
+    clone/reflink or bounded-copy the matching pristine base
+    → bind the copied manifest to fresh filesystem identity
     → verify the exact pre-trial manifest
     → establish snapshot state
     → establish and record filesystem-cache state
@@ -403,8 +424,10 @@ reserve unique run directory
 → release run directory according to retention policy
 ```
 
-Mutating scenarios restore from the recipe or use a copy/reflink strategy whose time is
-outside the measurement.
+Mutating scenarios always begin from a pristine run-scoped base. The runner capability-
+probes APFS clone or Linux reflink behavior before use, falls back per file where needed,
+preserves hardlinks only inside the destination, and caps fallback logical bytes. Base
+generation and all materialization work are diagnostics outside the timed command.
 Snapshot and output paths are siblings of the corpus, never inside the scanned root.
 Every destructive cleanup resolves and verifies its unique run-directory marker before
 removing data.
@@ -661,6 +684,49 @@ If lazy snapshot access makes first-listing impossible to observe through the pu
 surface, the snapshot-format bead may add the smallest supported query API needed by a
 real consumer. Benchmarking alone is not a reason to stabilize an abstraction.
 
+### Real-Tree Iterative Optimization Loop
+
+The deterministic corpora remain the correctness and scale oracle. A second campaign
+under `fdu-j2ka` uses an operator-supplied checkout with a large dependency tree to find
+the path distributions and filesystem behavior common in real development work. The
+first subject is the local metabrowser checkout, but results persist only a tokenized
+root identity and source revision, never a personal absolute path.
+
+Each optimization cycle follows the same sequence:
+
+1. Freeze a release binary, source revision, scenario contract, and read-only subject
+   inventory. Record entry counts, apparent bytes, filesystem class, and an independent
+   before/after mutation check. Any subject change invalidates the complete run set.
+2. Measure at least scan production, scan plus index, and end-to-end CLI completion.
+   Measure snapshot-absent and compatible-snapshot states separately. Record ordinary
+   local filesystem caches as `uncontrolled`, explicit warming as `verified-warm`, and
+   reserve `controlled-cold` for the dedicated-host eviction protocol.
+3. Use enough interleaved repetitions to report median, MAD, coefficient of variation,
+   direction count, external wall time, component time, CPU, and peak RSS. Never compare
+   a raw producer job with a full-index or rendering job as though they were equivalent.
+4. Profile the slowest accepted job before editing. Use the phase probe plus OS-native
+   sampling, syscall, and allocation evidence to attribute time to enumeration,
+   metadata, index application, snapshot work, sorting/rendering, and process startup.
+5. Form one narrow causal hypothesis, add or retain exact correctness coverage, and
+   implement only that candidate. Run alternating before/after binaries against the
+   same immutable subject and reject any trial whose oracle or process contract fails.
+6. Accept a change only when the end-to-end effect is stable, material relative to
+   noise, and worth its complexity. As a default review trigger, gains below roughly 3%
+   or without a strong directional result are documented and reverted unless they
+   unlock a measured larger change. Instruction or syscall reductions alone are
+   diagnostic evidence, not product wins.
+7. Commit each accepted improvement independently with its evidence hash and update the
+   plan and PR ledger. Record rejected experiments with the profile, raw comparison,
+   and reason for rejection; do not retain speculative complexity.
+8. Repeat from the new clean commit until profiles show the remaining cost is dominated
+   by an explicit next-phase boundary or several narrow candidates fail the stability
+   and complexity gate. Revalidate the accepted series on deterministic 10k, 100k, and
+   500k corpora plus the real tree before drawing a design conclusion.
+
+This loop intentionally separates local engineering decisions from product claims. The
+final claim still requires the dedicated-host dut/gdu matrix and raw evidence governed
+by `fdu-ywu0`.
+
 ## Implementation Plan
 
 ### Phase 1: Establish the Evidence Contract
@@ -689,6 +755,12 @@ real consumer. Benchmarking alone is not a reason to stabilize an abstraction.
   before freezing their Phase 1 designs
 - [ ] `fdu-6wu0`: establish repeated large trials from safely cloned, independently
   verified base corpora instead of regenerating 500k-1M entries for every invocation
+- [ ] `fdu-hh8g`: add a mutation-detecting, path-redacted real-tree evidence baseline
+- [ ] `fdu-16py`: profile and iteratively optimize snapshot-absent producer, full-index,
+  and CLI work, with one evidence-backed commit per accepted change
+- [ ] `fdu-xnyn`: profile and iteratively optimize compatible-snapshot revalidation and
+  user-visible warm completion under the same acceptance policy
+- [ ] `fdu-e4nq`: publish the multi-scale real-tree optimization decision ledger
 - [ ] `fdu-ywu0`: add memory, scale, thread-count, traversal-order, output, Python, and
   contention scenarios as their engine surfaces become available
 - [ ] `fdu-atqk`, `fdu-aky1`, `fdu-1gbl`, `fdu-a6dz`, `fdu-xihx`, and `fdu-wbis`:
@@ -847,11 +919,13 @@ The planning bead retains the same stable IDs.
 | PEV-20 | Medium | The Unix portable walker constructed an absolute path for every successful metadata lookup even though the equivalent `DirEntry` API was available | Unix `DirEntry::metadata()` preserves non-following semantics and improved alternating same-corpus 100k paired medians by 6.84-8.24% across producer, full-index, and revalidation jobs; the focused evidence and limits are recorded in the linked research note |
 | PEV-21 | High | “Unchanged directory mtime skips re-listing” can be misread as permission to trust a whole subtree, which misses in-place file edits because they do not change the parent directory mtime | A matching cached directory fingerprint may skip only `read_dir` name-set discovery; revalidation must still stat every known child and recurse into known directories, while a changed directory fingerprint triggers re-listing for membership changes |
 | PEV-22 | Medium | Known-child expectation capture reconstructed each path and performed repeated root-to-leaf lookups; exclusive unchanged reconciliation then allocated and arbitrated guaranteed no-op upserts | Capture present-child state and identity directly from coherent child iteration, and elide exact no-op upserts only for `&mut Index`; nine exact-oracle 100k pairs improved by a paired median 18.15%, while shared ABA arbitration remains unchanged |
-| PEV-23 | Medium | The first 1M invocation spent more than twelve minutes in serial Python corpus setup before any probe child launched, making fresh generation per sample impractical for scheduled evidence | `fdu-6wu0` adds a keyed immutable base-corpus cache with capability-proven clone/reflink and safe copy fallback; trials still verify their own exact fingerprint-sensitive precondition and never hardlink mutable corpus files |
+| PEV-23 | Medium | The first 1M invocation spent more than twelve minutes in serial Python corpus setup before any probe child launched, making fresh generation per sample impractical for scheduled evidence | `fdu-6wu0` now has a tested run-scoped immutable base pool with capability-proven clone/reflink and bounded-copy fallback; trials still verify their exact fingerprint-sensitive precondition and never hardlink mutable files to the base, while repeated large-run evidence and redundant-walk review remain open |
 | PEV-24 | High | Windows `DirEntry::metadata()` reuses directory-enumeration attributes that the platform permits to be non-current, producing a spurious warm-path update in both native and wheel CI | `fdu-k9zq` retains the measured `DirEntry` path on Unix, performs a fresh non-following stat on non-Unix platforms, and locks the boundary down with mutation-after-enumeration coverage |
 | PEV-25 | High | Python exposes `os.utime(..., follow_symlinks=False)` on Windows but raises `NotImplementedError` because that operation is unavailable, so every generated performance trial failed during setup | `fdu-tqz1` checks `os.supports_follow_symlinks`, keeps non-following writes where available, verifies that fallback targets are not symlinks, and tests the unsupported-capability path on every development platform |
 | PEV-26 | High | Windows `os.DirEntry.stat()` deliberately reports zero device, inode, and link-count fields, causing unrelated regular files to collapse into one false hardlink group in the independent oracle | `fdu-gc6h` uses fresh path identity on Windows, retains the cheaper authoritative Unix metadata path, and directly tests the non-authoritative boundary |
 | PEV-27 | High | A fallible corpus setup left the recorded environment empty, so result validation masked the primary setup failure with a secondary schema error | `fdu-viyi` establishes and tokenizes the declared environment before corpus creation and proves that a setup-failed trial remains immutable, schema-valid evidence without launching the timed child |
+| PEV-28 | High | A live development checkout can mutate during measurement and contains personal absolute paths that must not enter portable evidence | `fdu-hh8g` records a path-redacted subject identity and independent before/after inventory; any mutation invalidates the complete run set |
+| PEV-29 | Medium | Repeated optimization can reward noisy microbenchmarks or accumulate complexity whose local counter improvement does not help users | `fdu-j2ka` requires profiles before edits, paired end-to-end evidence, one accepted change per commit, explicit rejected-experiment records, and final deterministic plus real-tree validation |
 
 ## Beads
 
@@ -875,6 +949,11 @@ research and plan, assemble this graph, and validate it through CI.
 | `fdu-viyi` | P0 | Preserve primary setup failures as schema-valid trial evidence | discovered by cross-platform CI |
 | `fdu-pkyu` | P1 | Elide redundant path lookups and guaranteed no-op applies during reconciliation | discovered by `fdu-p2i1` |
 | `fdu-6wu0` | P1 | Reuse safely cloned and independently verified base corpora for large repeated trials | discovered by `fdu-p2i1` |
+| `fdu-j2ka` | P1 | Coordinate the iterative real-tree profile and optimization campaign | `fdu-6wu0` informs generated-corpus setup |
+| `fdu-hh8g` | P1 | Add a mutation-detecting, path-redacted real-tree baseline | — |
+| `fdu-16py` | P1 | Profile and optimize snapshot-absent real-tree traversal | `fdu-hh8g` |
+| `fdu-xnyn` | P1 | Profile and optimize compatible-snapshot real-tree revalidation | `fdu-hh8g` |
+| `fdu-e4nq` | P1 | Publish the optimization decision ledger and multi-scale validation | `fdu-16py`, `fdu-xnyn` |
 | `fdu-849g` | P1 | Strict claim-grade build and anonymous host provenance manifests | `fdu-oj25` |
 | `fdu-bmhr` | P2 | Opt-in dedicated Linux byte-I/O, syscall, perf-stat, and profile collectors | `fdu-oj25` |
 | `fdu-k5t5` | P1 | Pinned dut/gdu adapters, parsers, postconditions, and capability matrix | `fdu-rq5m`, `fdu-d8kq`, `fdu-ad45` |
