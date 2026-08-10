@@ -12,6 +12,11 @@
     "test:golden:update": "tryscript run --update \"tests/golden/*.tryscript.md\""
   },
   "devDependencies": {
-    "tryscript": "0.1.7"
+    "tryscript": "0.2.0"
+  },
+  "overrides": {
+    "tsx": {
+      "esbuild": "0.28.1"
+    }
   }
 }
