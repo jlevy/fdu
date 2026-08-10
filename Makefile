@@ -95,8 +95,10 @@ python-smoke:
 		trap 'rm -r -- "$$wheel_dir"' EXIT && \
 		uv run --frozen --only-group dev maturin build --locked --release --out "$$wheel_dir" && \
 		uv venv --clear .venv-smoke && \
-		uv pip install --python .venv-smoke "$$wheel_dir"/*.whl && \
-		uv run --no-project --python .venv-smoke python tests/smoke.py
+		uv pip install --python .venv-smoke --no-index --find-links "$$wheel_dir" fdu && \
+		uv run --no-project --python .venv-smoke python tests/smoke.py && \
+		wheel_path="$$(find "$$wheel_dir" -maxdepth 1 -type f -name '*.whl' -print -quit)" && \
+		uvx --isolated --no-index --from "$$wheel_path" fdu --version
 
 cli:
 	$(CARGO) run --locked --release --bin fdu -- --no-cache -d 2 .

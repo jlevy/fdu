@@ -18,7 +18,7 @@ patterns:
 ## A Full Tree Has Stable Sizes, Ordering, Bars, and Indentation
 
 ```console
-$ fdu --no-cache --no-color --apparent-size --depth 2 --number 10 project
+$ fdu --no-cache --color never --apparent-size --depth 2 --number 10 project
 [SCAN_PATH]  6 files, 3 dirs, 263 B
      128 B  █████░░░░░    49%  dist/
      128 B  █████░░░░░    49%    acorn-0.1.0.tar.gz
@@ -35,7 +35,7 @@ $ fdu --no-cache --no-color --apparent-size --depth 2 --number 10 project
 ## Depth and Number Limit Only the Rendered View
 
 ```console
-$ fdu --no-cache --no-color --apparent-size --depth 1 --number 2 project
+$ fdu --no-cache --color never --apparent-size --depth 1 --number 2 project
 [SCAN_PATH]  6 files, 3 dirs, 263 B
      128 B  █████░░░░░    49%  dist/
       48 B  ██░░░░░░░░    18%  README.md
@@ -45,9 +45,9 @@ $ fdu --no-cache --no-color --apparent-size --depth 1 --number 2 project
 ## Type View Uses Apparent Bytes Consistently
 
 ```console
-$ fdu --no-cache --no-color --by-type --number 10 project
+$ fdu --no-cache --color never --by-type --number 10 project
 [SCAN_PATH]  6 files, 3 dirs, 263 B
-     128 B  █████░░░░░    49%  .tar.gz  1 files
+     128 B  █████░░░░░    49%  .tar.gz  1 file
       71 B  ███░░░░░░░    27%  .md  2 files
       36 B  █░░░░░░░░░    14%  .rs  2 files
 ? 0

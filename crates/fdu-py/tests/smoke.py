@@ -7,14 +7,19 @@ virtualenv holding nothing but the wheel.
 Run manually with:
 
     uv venv --clear .venv-smoke
-    uv pip install --python .venv-smoke dist/*.whl
+    uv pip install --python .venv-smoke --no-index --find-links dist fdu
     uv run --no-project --python .venv-smoke python tests/smoke.py
+    uvx --isolated --no-index --find-links dist --from fdu fdu --version
 """
 
 from __future__ import annotations
 
+import errno
+import json
 import os
 import pathlib
+import subprocess
+import sys
 import tempfile
 
 import fdu_py
@@ -28,7 +33,10 @@ def main() -> None:
 
     index = fdu_py.scan(str(root))
 
-    assert index.root == os.path.realpath(root), index.root
+    # Rust preserves Windows canonical verbatim paths (`\\?\`), while Python's
+    # realpath commonly returns the conventional spelling. Compare the filesystem
+    # identity rather than weakening native long-path behavior to satisfy a string.
+    assert os.path.samefile(index.root, root), (index.root, root)
     assert index.complete is True, index.errors
     assert index.freshness == "fresh", index.freshness
     assert index.errors == [], index.errors
@@ -55,6 +63,95 @@ def main() -> None:
     assert by_name["src"]["kind"] == "dir"
     assert by_name["a.txt"]["kind"] == "file"
     assert by_name["a.txt"]["bytes"] == 5
+
+    # The installed wheel is also the zero-install CLI artifact used by uvx.
+    entrypoint = pathlib.Path(sys.executable).with_name("fdu.exe" if os.name == "nt" else "fdu")
+    assert entrypoint.is_file(), entrypoint
+
+    version = subprocess.run([entrypoint, "--version"], check=False, capture_output=True, text=True)
+    assert version.returncode == 0, version
+    assert version.stdout == f"fdu {fdu_py.__version__}\n", version.stdout
+    assert version.stderr == "", version.stderr
+
+    help_result = subprocess.run(
+        [entrypoint, "--help"], check=False, capture_output=True, text=True
+    )
+    assert help_result.returncode == 0, help_result
+    assert "Output and automation:" in help_result.stdout, help_result.stdout
+    assert "--color <WHEN>" in help_result.stdout, help_result.stdout
+    assert "--skill" in help_result.stdout, help_result.stdout
+    assert help_result.stderr == "", help_result.stderr
+
+    cli_scan = subprocess.run(
+        [
+            entrypoint,
+            "--no-cache",
+            "--json",
+            "--apparent-size",
+            "--depth",
+            "1",
+            str(root),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert cli_scan.returncode == 0, cli_scan
+    cli_data = json.loads(cli_scan.stdout)
+    assert cli_data["schema"] == "fdu.tree/2", cli_data
+    assert cli_data["complete"] is True, cli_data
+    assert cli_data["tree_truncated"] is True, cli_data
+    assert cli_data["tree"]["bytes"] == 17, cli_data
+    assert cli_scan.stderr == "", cli_scan.stderr
+
+    usage = subprocess.run(
+        [entrypoint, "--definitely-not-an-option"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert usage.returncode == 2, usage
+    assert usage.stdout == "", usage.stdout
+    assert "unexpected argument" in usage.stderr, usage.stderr
+    assert "Traceback" not in usage.stderr, usage.stderr
+
+    if os.name != "nt":
+        # Python stores undecodable argv bytes with surrogateescape. The wheel entry
+        # point must recover the native bytes rather than narrowing them to UTF-8. Keep
+        # this fixture outside `root`: Linux accepts the byte name, and adding it beneath
+        # the already indexed API fixture would couple this check to the refresh test.
+        raw_parent = tempfile.mkdtemp(prefix="fdu-native-argv-")
+        raw_root = os.fsencode(raw_parent) + b"/raw-\xff"
+        try:
+            os.mkdir(raw_root)
+        except OSError as error:
+            if error.errno != errno.EILSEQ:
+                raise
+            # APFS rejects this fixture, but passing the same bytes to fdu still proves
+            # that Python argv reached Rust losslessly instead of raising in PyO3.
+            raw_scan = subprocess.run(
+                [os.fsencode(entrypoint), b"--no-cache", b"--json", raw_root],
+                check=False,
+                capture_output=True,
+            )
+            assert raw_scan.returncode == 1, raw_scan
+            assert raw_scan.stderr.startswith(b"fdu:"), raw_scan.stderr
+            assert b"Traceback" not in raw_scan.stderr, raw_scan.stderr
+        else:
+            with open(raw_root + b"/data.bin", "wb") as raw_file:
+                raw_file.write(b"raw")
+            raw_scan = subprocess.run(
+                [os.fsencode(entrypoint), b"--no-cache", b"--json", raw_root],
+                check=False,
+                capture_output=True,
+            )
+            assert raw_scan.returncode == 0, raw_scan
+            raw_data = json.loads(raw_scan.stdout)
+            assert raw_data["root_raw"] == {
+                "encoding": "unix-bytes",
+                "hex": os.path.realpath(raw_root).hex(),
+            }, raw_data
+            assert raw_scan.stderr == b"", raw_scan.stderr
 
     # Revalidation reconciles against the filesystem and reports what moved.
     mark = index.clock

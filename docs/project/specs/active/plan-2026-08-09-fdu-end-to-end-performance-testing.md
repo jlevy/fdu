@@ -72,11 +72,10 @@ The design and Flowmark synthesis are complete; planning bead `fdu-f0or` is clos
 Epic `fdu-d5e1` and all six implementation/proof children remain open.
 
 The repository-wide correctness, supply-chain, and concurrency implementation gates are
-closed; final PR approval bead `fdu-sn43` is also closed.
-After PR #1 merges, the performance work starts with `fdu-rq5m`, followed by `fdu-d8kq`
-and `fdu-oj25`. Comparator acquisition under `fdu-k5t5` has cleared its
-executable-dependency policy blocker but still waits on the corpus and runner
-prerequisites shown below.
+closed; final approval bead `fdu-sn43` is closed and PR #1 has merged.
+The performance work starts with `fdu-rq5m`, followed by `fdu-d8kq` and `fdu-oj25`.
+Comparator acquisition under `fdu-k5t5` has cleared its executable-dependency policy
+blocker but still waits on the corpus and runner prerequisites shown below.
 No current timing result supports a product claim.
 
 ## Background

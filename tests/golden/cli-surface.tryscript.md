@@ -27,21 +27,42 @@ Arguments:
   [PATH]  Directory to summarize [default: .]
 
 Options:
-  -d, --depth <N>      Directory levels below the root to render; does not limit scanning [default: 2]
-  -n, --number <N>     Entries to render per directory, largest first; does not limit scanning [default: 10]
-  -a, --apparent-size  Report apparent size rather than the space actually allocated on disk
-      --by-type        Break the tree down by file extension instead of by directory
-      --json           Emit machine-readable JSON on stdout
-      --no-cache       Ignore any cached snapshot and do not write one
-      --max-depth <N>  Maximum entry depth to scan and retain; zero keeps only the root
-      --no-color       Never colorize output
-      --allow-partial  Exit successfully even when unreadable paths make the result partial
+  -d, --depth <N>      Directory levels to show; does not limit scanning [default: 2]
+  -n, --number <N>     Entries to show per directory, largest first [default: 10]
+  -a, --apparent-size  Use apparent bytes instead of allocated disk space
+      --by-type        Group totals by file extension instead of directory
+      --json           Write schema-versioned JSON to stdout
+      --no-cache       Do not read or write the snapshot cache
+      --max-depth <N>  Limit scanning and retention to N entry levels
+      --color <WHEN>   Colorize human output: auto, always, or never [default: auto]
+      --allow-partial  Accept incomplete totals when paths cannot be read
+      --skill          Print a portable agent skill to stdout
   -h, --help           Print help
   -V, --version        Print version
+
+Examples:
+  fdu
+  fdu --depth 3 --number 20 ~/src
+  fdu --by-type ~/Downloads
+  fdu --json --depth 1 --number 50 .
+
+Output and automation:
+  Human output reports allocated disk space unless --apparent-size is set.
+  Results go to stdout; warnings and errors go to stderr.
+  JSON is schema-versioned, never colorized, and includes completeness and truncation.
+  For automation, check the exit status, complete, errors, tree_truncated, and scan_max_depth.
+  The command never prompts, pages, or animates progress.
 
 Result scope:
   --depth and --number limit only the rendered view.
   --max-depth limits the scan scope and retained index.
+
+Cache:
+  Unless --no-cache is set, fdu reads and writes a snapshot in the user cache directory.
+
+Color:
+  --color overrides NO_COLOR and FORCE_COLOR. In auto mode, NO_COLOR disables color,
+  FORCE_COLOR enables it, and otherwise the destination must be a terminal.
 
 Exit status:
   0  Complete result, or a partial result accepted with --allow-partial
@@ -49,6 +70,71 @@ Exit status:
   2  Partial result, or command-line usage error
 ? 0
 ```
+
+## The Portable Skill Is Complete and Version-Pinned
+
+````console
+$ fdu --skill
+---
+name: fdu
+description: >-
+  Inspect directory trees with hierarchical file counts, apparent and allocated sizes,
+  recency, and extension tallies. Use when investigating disk usage, finding large
+  directories, summarizing file types, or collecting stable JSON filesystem roll-ups
+  for scripts and coding agents.
+---
+# fdu Directory Roll-Ups
+
+Use `fdu` to summarize a directory tree without modifying files in that tree.
+
+## Run fdu
+
+Use the local command when it is available:
+
+```bash
+fdu --json --depth 2 --number 20 PATH
+```
+
+If no local command exists and this release is published on PyPI, use the exact reviewed
+version. Never use an unversioned `uvx` runner or `latest` in agent instructions:
+
+```bash
+uvx --from fdu==0.0.1 fdu --json --depth 2 --number 20 PATH
+```
+
+## Choose the View Deliberately
+
+- Use the default human tree for terminal investigation.
+- Use `--by-type` for an extension summary.
+- Use `--json` for scripts and agents; it never contains ANSI color.
+- Use `--apparent-size` for logical bytes instead of allocated disk space.
+- Use `--no-cache` when the run must not read or write the user cache.
+
+`--depth` and `--number` limit only the returned view.
+`--max-depth` limits what is scanned and retained, so do not use it merely to reduce
+output.
+
+## Validate Every Automated Result
+
+Check the process exit status and these JSON fields:
+
+- `schema` before parsing fields
+- `complete` and `errors` before trusting totals
+- `tree_truncated` before treating the rendered tree as exhaustive
+- `scan_max_depth` before treating the scan scope as exhaustive
+- `freshness` before presenting cached or partial data as current
+
+Exit 0 is accepted success, exit 1 is a fatal failure, and exit 2 is incomplete data or
+invalid usage. Do not discard useful stdout from exit 2; inspect the completeness fields
+and use `--allow-partial` only when incomplete totals are acceptable.
+
+Run `fdu --help` for the complete flag, stream, cache, color, scope, and exit contract.
+
+<!-- This document follows common-doc-guidelines.md.
+See github.com/jlevy/practical-prose and review guidelines before editing.
+-->
+? 0
+````
 
 ## Version Is Exact
 
@@ -61,7 +147,7 @@ fdu 0.0.1
 ## The Default Root Works for an Empty Sandbox
 
 ```console
-$ fdu --no-cache --no-color --apparent-size --depth 0
+$ fdu --no-cache --color never --apparent-size --depth 0
 [SCAN_PATH]  0 files, 0 dirs, 0 B
 ? 0
 ```

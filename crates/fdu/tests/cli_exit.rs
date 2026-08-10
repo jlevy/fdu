@@ -24,6 +24,12 @@ fn partial_results_use_exit_two_unless_explicitly_allowed() {
 
     let partial = run(false);
     let allowed = run(true);
+
+    let human = Command::new(env!("CARGO_BIN_EXE_fdu"))
+        .args(["--no-cache", "--color", "never"])
+        .arg(root.path())
+        .output()
+        .expect("run human fdu");
     fs::set_permissions(&denied, fs::Permissions::from_mode(0o700)).expect("restore reads");
 
     assert_eq!(
@@ -36,4 +42,10 @@ fn partial_results_use_exit_two_unless_explicitly_allowed() {
     assert!(stdout.contains("\"complete\": false"), "{stdout}");
     assert!(stdout.contains("/denied"), "error details missing: {stdout}");
     assert!(allowed.status.success(), "stderr: {}", String::from_utf8_lossy(&allowed.stderr));
+
+    assert_eq!(human.status.code(), Some(2));
+    let human_stdout = String::from_utf8(human.stdout).expect("human stdout is UTF-8");
+    let human_stderr = String::from_utf8(human.stderr).expect("human stderr is UTF-8");
+    assert!(!human_stdout.contains("warning:"), "diagnostic leaked to stdout: {human_stdout}");
+    assert!(human_stderr.starts_with("warning:"), "missing stderr warning: {human_stderr}");
 }

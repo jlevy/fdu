@@ -17,6 +17,9 @@ classifiers = [
     "Topic :: System :: Monitoring",
 ]
 
+[project.scripts]
+fdu = "fdu_py:main"
+
 [dependency-groups]
 # Pinned after the repository's 14-day cool-off window; uv.lock freezes its
 # transitive environment for local and CI wheel builds.
@@ -27,8 +30,9 @@ Repository = "https://github.com/jlevy/fdu"
 Documentation = "https://docs.rs/fdu"
 
 [tool.maturin]
-# A cdylib extension module, not a bundled binary: metabrowser wants a persistent
-# in-process index, which a subprocess cannot provide.
+# Keep one extension module rather than duplicating the native payload as a bundled
+# binary. The `fdu` console script above calls the same Rust process boundary through
+# `fdu_py.main`; library consumers still get the persistent in-process index.
 module-name = "fdu_py"
 features = ["extension-module"]
 strip = true

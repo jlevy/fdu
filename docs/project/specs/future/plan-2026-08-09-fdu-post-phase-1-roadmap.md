@@ -6,9 +6,10 @@
 
 ## Overview
 
-Keep useful but nonessential extensions out of the PR #1 merge gate and the Phase 1
-critical path. These workstreams have reserved architectural seams, but each requires
-evidence or a stable Phase 1 surface that does not exist yet.
+Keep useful but nonessential extensions out of the Phase 1 critical path.
+PR #1 has already merged without activating them.
+These workstreams have reserved architectural seams, but each requires evidence or a
+stable Phase 1 surface that does not exist yet.
 
 The active [Phase 1 plan](../active/plan-2026-08-08-fdu-phase-1.md) owns the optimized
 stat-tier engine, product surfaces, performance proof, and first release.
@@ -18,7 +19,7 @@ This document owns only work that begins after its stated activation gate.
 
 - A future bead becomes active only when every blocker in the bead graph is closed and
   the Phase 1 evidence supports its premise.
-- Future work does not delay PR #1, the correctness hardening, or Phase 1 unless new
+- Future work does not delay the remaining correctness hardening or Phase 1 unless new
   evidence promotes a concrete correctness or security defect.
 - An activated workstream receives its own active plan when its open design questions
   are material enough to affect user-visible behavior or persistent formats.
