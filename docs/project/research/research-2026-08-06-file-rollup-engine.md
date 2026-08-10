@@ -941,10 +941,10 @@ copies at the commits in `attic/`.
    Language matters less than syscall discipline; metabrowser’s 7k files/s is a
    Python-and-GIL ceiling, but the gap to the leaders is syscall technique as much as it
    is language.
-2. **The floor of a warm re-scan is a stat sweep — unless you persist and revalidate.**
+2. **The floor of a trustworthy warm re-scan is still a stat sweep.**
    With a snapshot: load (one bulk read of a compact file, milliseconds) + revalidation
-   (parallel stat sweep with the dir-mtime shortcut skipping unchanged directories) +
-   re-derivation only for changed entries.
+   (parallel stat sweep, with a matching directory fingerprint avoiding only redundant
+   name-set enumeration) + re-derivation only for changed entries.
    This is git’s model, and flowmark proves the UX at 23 ms warm.
 3. **Content work must be opt-in, lazy, and cached by fingerprint.** Every system that
    touches content bounds the read or caches by identity.
@@ -1245,9 +1245,12 @@ fingerprints rather than replacing them.
    mismatch. Atomic temp-file + rename; corrupt equals empty.
 2. **Revalidation.** On open, a parallel sweep comparing stat fingerprints — **size,
    mtime, ctime, and inode**, per borg/restic, not mtime alone.
-   Directories whose own mtime is unchanged skip re-listing (git’s untracked-cache
-   trick); files with matching fingerprints keep their derived data (type verdicts,
-   content metrics) with zero reads.
+   A directory whose cached fingerprint matches may skip `read_dir` name-set discovery
+   (git’s untracked-cache trick), but the sweep still stats every known child and
+   recurses into known directories: modifying a file in place does not change its
+   parent directory mtime. A changed directory fingerprint triggers re-listing to find
+   additions, removals, and renames. Files with matching fingerprints keep their
+   derived data (type verdicts, content metrics) with zero content reads.
    Only changed entries re-derive.
    Results stream as deltas so callers serve the stale snapshot instantly and reconcile.
 3. **Watch mode.** In a long-lived process, `fdu::watch` keeps the index and cache

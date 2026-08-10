@@ -77,17 +77,19 @@ The strict evidence layer now validates versioned scenario and result contracts,
 a deterministic paired schedule, executes every sample in a fresh marked run, records
 pipe-drained first-output and completion timing, retains invalid samples, and renders a
 deterministic report from immutable self-checking results.
-The fdu probe and portable collector child `fdu-oj25` is now in progress; the other
-three implementation/proof children remain open under epic `fdu-d5e1`.
+The fdu probe and portable collector child `fdu-oj25` is complete.
 The excluded Rust probe covers all eight component jobs in the committed smoke matrix.
 Each invocation is checked against the exact per-run engine digest, and the result keeps
 external wall time, internal component time, and per-child resource usage distinct.
 The smoke suite also proves that deliberately wrong counts, digests, cache sources,
 snapshot postconditions, and corrupt or absent snapshot inputs are rejected.
+Claim-grade build/host manifests and intrusive Linux diagnostic collectors are separate
+release-evidence children, `fdu-849g` and `fdu-bmhr`; neither blocks local scale spikes.
 
 The repository-wide correctness, supply-chain, and concurrency implementation gates are
 closed; final approval bead `fdu-sn43` is closed and PR #1 has merged.
-The next implementation step is the fdu probe and collectors under `fdu-oj25`.
+The next measurement steps are the revalidation and snapshot cost-curve spikes under
+`fdu-p2i1` and `fdu-1vd0`.
 Comparator acquisition under `fdu-k5t5` has cleared its executable-dependency policy
 blocker but now waits only on the reviewed adapter implementation shown below.
 No current timing result supports a product claim.
@@ -97,9 +99,11 @@ The portable harness now has 56 deterministic and adversarial tests, passes Pyth
 timing assertion. See the [performance harness README](../../../../benchmarks/README.md)
 for its commands, manifest contract, mutation model, and cleanup rules.
 
-The first exact probe run exposed a product correctness defect: symlinks and special
-nodes contributed to regular-file roll-ups despite the documented contract. Bead
-`fdu-6x07` tracks the focused fix and regression test; no affected timing was accepted.
+The first exact probe run exposed and then verified the fix for a product correctness
+defect: symlinks and special nodes contributed to regular-file roll-ups despite the
+documented contract. Closed bead `fdu-6x07` owns that correction; no affected timing was
+accepted. Closed bead `fdu-s23t` then removed redundant absolute-path metadata
+resolution with exact-oracle before/after evidence.
 
 ## Background
 
@@ -659,11 +663,12 @@ real consumer. Benchmarking alone is not a reason to stabilize an abstraction.
   paired ordering, immutable results, validation, statistics, and report rendering
 - [x] `fdu-oj25`: implement external timing plus capability-negotiated portable resource
   collectors
-- [ ] `fdu-oj25`: add opt-in dedicated-host profile and byte-I/O/syscall collectors
+- [ ] `fdu-bmhr`: add opt-in dedicated-host profile and byte-I/O/syscall collectors
+- [ ] `fdu-849g`: pin strict claim-grade build and anonymous host manifests
 - [ ] `fdu-k5t5`: complete reviewed dut/gdu adapters and the job-capability matrix
 - [ ] `fdu-p2i1` and `fdu-1vd0`: execute the revalidation and snapshot-candidate spikes
   before freezing their Phase 1 designs
-- [ ] `fdu-oj25`: add memory, scale, thread-count, traversal-order, output, Python, and
+- [ ] `fdu-ywu0`: add memory, scale, thread-count, traversal-order, output, Python, and
   contention scenarios as their engine surfaces become available
 - [ ] `fdu-atqk`, `fdu-aky1`, `fdu-1gbl`, `fdu-a6dz`, `fdu-xihx`, and `fdu-wbis`:
   profile failed targets and land optimizations only with before/after correctness and
@@ -819,6 +824,7 @@ The planning bead retains the same stable IDs.
 | PEV-18 | Medium | A portable semantic digest omits inode, ctime, device, and allocated size, so it cannot prove the exact fingerprint-sensitive index scanned in one trial | Manifests now carry a second per-run engine digest over pinned binary records; probe output must match it while cross-run compatibility continues to use the portable semantic digest |
 | PEV-19 | Low | Increasing observation batches looked like an easy way to reduce index and reconciliation overhead | A six-point 10k sweep from 64 through 65,536 ops showed no stable improvement, so the 1,024 default remains unchanged |
 | PEV-20 | Medium | The portable walker allocated and re-resolved an absolute path for every successful metadata lookup even though `ReadDir` already owned the directory context | `DirEntry::metadata()` preserves non-following semantics and improved alternating same-corpus 100k paired medians by 6.84-8.24% across producer, full-index, and revalidation jobs; the focused evidence and limits are recorded in the linked research note |
+| PEV-21 | High | “Unchanged directory mtime skips re-listing” can be misread as permission to trust a whole subtree, which misses in-place file edits because they do not change the parent directory mtime | A matching cached directory fingerprint may skip only `read_dir` name-set discovery; revalidation must still stat every known child and recurse into known directories, while a changed directory fingerprint triggers re-listing for membership changes |
 
 ## Beads
 
@@ -833,19 +839,24 @@ research and plan, assemble this graph, and validate it through CI.
 | --- | --- | --- | --- |
 | `fdu-rq5m` | P1 | Deterministic corpus recipes, safe generator, observed manifests, mutation transitions, and semantic oracle | `fdu-sn43` |
 | `fdu-d8kq` | P1 | Strict scenario/result schemas, direct-argv runner, immutable trials, statistics, and report renderer | `fdu-rq5m` |
-| `fdu-oj25` | P1 | fdu component probe, first-output timing, resource collectors, and profiles | `fdu-rq5m`, `fdu-d8kq` |
+| `fdu-oj25` | P1 | fdu component probe, first-output timing, and portable per-child resource collectors | `fdu-rq5m`, `fdu-d8kq` |
 | `fdu-6x07` | P1 | Exclude symlinks and special nodes from documented regular-file roll-ups | discovered by `fdu-oj25` |
+| `fdu-s23t` | P1 | Use directory-entry-relative metadata in the portable walker, with paired exact-oracle evidence | discovered by `fdu-oj25` |
+| `fdu-849g` | P1 | Strict claim-grade build and anonymous host provenance manifests | `fdu-oj25` |
+| `fdu-bmhr` | P2 | Opt-in dedicated Linux byte-I/O, syscall, perf-stat, and profile collectors | `fdu-oj25` |
 | `fdu-k5t5` | P1 | Pinned dut/gdu adapters, parsers, postconditions, and capability matrix | `fdu-rq5m`, `fdu-d8kq`, `fdu-ad45` |
-| `fdu-8z5l` | P2 | Pull-request smoke, stable scheduled baselines, regression triage, artifact retention, and claim governance | `fdu-d8kq`, `fdu-oj25`, `fdu-k5t5`, `fdu-zga3` |
-| `fdu-ywu0` | P1 | Execute the complete Phase 1 matrix and publish the generated evidence report | all five implementation beads plus the existing engine blockers |
+| `fdu-8z5l` | P2 | Pull-request smoke, stable scheduled baselines, regression triage, artifact retention, and claim governance | `fdu-d8kq`, `fdu-k5t5`, `fdu-zga3`, `fdu-849g`, `fdu-bmhr` |
+| `fdu-ywu0` | P1 | Execute the complete Phase 1 matrix and publish the generated evidence report | all implementation/proof beads plus the existing engine blockers |
 
 Cross-workstream dependencies make the existing decision beads consume the common
 infrastructure:
 
-- `fdu-rq5m`, `fdu-d8kq`, and `fdu-oj25` together block both the 500k revalidation spike
-  (`fdu-p2i1`) and snapshot candidate spike (`fdu-1vd0`).
-- `fdu-oj25` blocks the packed-record memory gate (`fdu-1gbl`) and concurrency
-  measurement (`fdu-r27g`).
+- Closed beads `fdu-rq5m`, `fdu-d8kq`, and `fdu-oj25` supply the common foundation for
+  the now-unblocked 500k revalidation spike (`fdu-p2i1`), snapshot candidate spike
+  (`fdu-1vd0`), packed-record memory gate (`fdu-1gbl`), and concurrency measurement
+  (`fdu-r27g`).
+- `fdu-849g` and `fdu-bmhr` block stable release evidence and claims, not exploratory
+  local engine decisions.
 - The comparator adapters and scheduled numeric baselines have cleared the completed
   executable-dependency (`fdu-ad45`) and pinned-toolchain (`fdu-zga3`) prerequisites;
   their remaining graph edges still apply.

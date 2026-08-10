@@ -217,6 +217,9 @@ depends on:
 - `fdu-xihx` implements the block snapshot only after its candidate spike, packed
   records, reducer encoding, and reusable persistence fault tests.
 - `fdu-wbis` implements optimized revalidation after the cost curve and syscall walker.
+  A matching directory fingerprint may avoid only `read_dir` membership discovery;
+  every known child is still statted and known directories are still traversed, because
+  in-place child edits do not change the parent directory mtime.
 - `fdu-r27g` measures the retained standard-library single-writer lock using the common
   probe before any synchronization redesign or dependency is considered.
 
