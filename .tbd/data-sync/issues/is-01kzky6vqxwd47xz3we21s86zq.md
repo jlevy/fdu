@@ -5,7 +5,7 @@ title: Harden fdu against the Rust engineering quality audit
 kind: epic
 status: open
 priority: 1
-version: 24
+version: 25
 spec_path: docs/project/specs/active/plan-2026-08-09-fdu-rust-engineering-quality.md
 labels:
   - engineering-quality
@@ -29,8 +29,9 @@ child_order_hints:
   - is-01kzm9qxshmd1st8ck5rpjjg02
   - is-01kzma00ysmgrv2tree7fpsww7
   - is-01kzmaf3k9d4zk3ctcxez4n7tk
+  - is-01kzn5df3mk0bw73zh92wbmhyj
 created_at: 2026-08-09T18:57:49.820Z
-updated_at: 2026-08-09T22:32:02.920Z
+updated_at: 2026-08-10T06:23:00.723Z
 ---
 Child hardening epic under fdu-qfz6. The current merge graph is deliberate: fdu-ad45 independently restores executable-input trust; fdu-nlh8 makes batch application atomic before fdu-s7wr seals the guard-free ownership API; fdu-1j0b removes watch filesystem I/O from index locks; and fdu-8jte makes the watcher an I/O-free bounded coalescer with fail-safe overload and shutdown. Those concurrency paths converge at deterministic validation fdu-gd6n, and final approval fdu-sn43 waits on fdu-ad45 plus fdu-gd6n. After approval, pin the toolchain, add model and snapshot failure-state safety nets, and harden stack, native-path, package, and release boundaries before Phase 1 representation and publishing work consumes them.
 
