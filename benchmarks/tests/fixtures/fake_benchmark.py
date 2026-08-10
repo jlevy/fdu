@@ -88,6 +88,7 @@ def main(arguments: Optional[Sequence[str]] = None) -> int:
     if namespace.mode == "wrong-digest":
         semantic_digest = "0" * 64
     output = {
+        "component_ns": 123,
         "entry_count": manifest["counts"]["total"],
         "ok": True,
         "semantic_digest": semantic_digest,

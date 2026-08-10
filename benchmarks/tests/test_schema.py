@@ -123,6 +123,21 @@ class ScenarioSchemaTests(unittest.TestCase):
         with self.assertRaisesRegex(SchemaError, "between 0.01 and 3600"):
             validate_scenario_set(scenario_set)
 
+    def test_resource_and_probe_metric_contracts_fail_closed(self) -> None:
+        scenario_set = load_scenario_set(FIXTURES / "scenario-valid.json")
+        scenario_set["scenarios"][0]["method"]["required_resources"] = [
+            "not-a-metric"
+        ]
+        with self.assertRaisesRegex(SchemaError, "required_resources"):
+            validate_scenario_set(scenario_set)
+
+        scenario_set = load_scenario_set(FIXTURES / "scenario-valid.json")
+        scenario_set["scenarios"][0]["validation"]["stdout_json"]["record"] = [
+            "bad path"
+        ]
+        with self.assertRaisesRegex(SchemaError, "field path"):
+            validate_scenario_set(scenario_set)
+
 
 if __name__ == "__main__":
     unittest.main()

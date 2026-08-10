@@ -30,6 +30,7 @@
       "job": "scan-index",
       "method": {
         "order_group": "fixture-contract",
+        "required_resources": [],
         "timeout_seconds": 5.0,
         "trials": 2,
         "warmups": 1
@@ -57,7 +58,8 @@
           "matches_manifest": {
             "entry_count": "counts.total",
             "semantic_digest": "semantic_digest"
-          }
+          },
+          "record": []
         }
       }
     }

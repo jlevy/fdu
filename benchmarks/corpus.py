@@ -8,6 +8,7 @@ import math
 import os
 import shutil
 import stat
+import struct
 import tempfile
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -24,6 +25,7 @@ MANIFEST_NAME = "observed-corpus.json"
 CORPUS_NAME = "corpus"
 RUN_PREFIX = "fdu-perf-"
 SEMANTIC_DIGEST_ALGORITHM = "sha256-multiset-v1"
+ENGINE_DIGEST_ALGORITHM = "fdu-index-record-v1/sha256-multiset-v1"
 MAX_TARGET_ENTRIES = 10_000_000
 DETAIL_ENTRY_LIMIT = 512
 MAX_JSON_BYTES = 8 * 1024 * 1024
@@ -88,7 +90,13 @@ class Recipe:
 class _SemanticAccumulator:
     """Build a stable multiset digest without retaining or sorting every record."""
 
-    def __init__(self, components: Optional[Mapping[str, Any]] = None) -> None:
+    def __init__(
+        self,
+        components: Optional[Mapping[str, Any]] = None,
+        *,
+        algorithm: str = SEMANTIC_DIGEST_ALGORITHM,
+    ) -> None:
+        self._algorithm = algorithm
         if components is None:
             self._count = 0
             self._xor = bytearray(32)
@@ -117,7 +125,14 @@ class _SemanticAccumulator:
         self._sum = parsed_sum
 
     def add(self, record: Mapping[str, Any]) -> None:
-        leaf = hashlib.sha256(_canonical_json(record)).digest()
+        self.add_bytes(_canonical_json(record))
+
+    def add_bytes(self, record: bytes) -> None:
+        """Add one already normalized binary record."""
+        leaf = hashlib.sha256(record).digest()
+        self._add_leaf(leaf)
+
+    def _add_leaf(self, leaf: bytes) -> None:
         for index, value in enumerate(leaf):
             self._xor[index] ^= value
         self._sum = (self._sum + int.from_bytes(leaf, "big")) % (1 << 256)
@@ -141,7 +156,7 @@ class _SemanticAccumulator:
 
     def finish(self) -> str:
         digest = hashlib.sha256()
-        digest.update(SEMANTIC_DIGEST_ALGORITHM.encode("ascii"))
+        digest.update(self._algorithm.encode("ascii"))
         digest.update(b"\0")
         digest.update(self._count.to_bytes(8, "big"))
         digest.update(bytes(self._xor))
@@ -335,6 +350,11 @@ def _create_corpus_unlocked(
         "oracle": {
             "creation_matches_observation": True,
             "digest_algorithm": SEMANTIC_DIGEST_ALGORITHM,
+            "engine_digest": observed_summary["engine_digest"],
+            "engine_digest_algorithm": ENGINE_DIGEST_ALGORITHM,
+            "engine_digest_components": observed_summary[
+                "engine_digest_components"
+            ],
             "root_inclusive": True,
             "semantic_components": observed_summary["semantic_components"],
         },
@@ -384,6 +404,14 @@ def _verify_corpus_unlocked(run_root: Path) -> Dict[str, Any]:
         "semantic_components"
     ):
         raise CorpusError("corpus verification failed for semantic components")
+    if manifest.get("oracle", {}).get("engine_digest") != observed.get(
+        "engine_digest"
+    ):
+        raise CorpusError("corpus verification failed for engine digest")
+    if manifest.get("oracle", {}).get("engine_digest_components") != observed.get(
+        "engine_digest_components"
+    ):
+        raise CorpusError("corpus verification failed for engine digest components")
     return manifest
 
 
@@ -683,6 +711,8 @@ def _updated_transition_manifest(
     updated_oracle = dict(manifest.get("oracle", {}))
     updated_oracle.update(
         {
+            "engine_digest": observed["engine_digest"],
+            "engine_digest_components": observed["engine_digest_components"],
             "semantic_components": observed["semantic_components"],
             "transition_matches_observation": True,
         }
@@ -915,6 +945,8 @@ def _observe_corpus(
             hardlinks[identity] = (canonical, (previous[1] if previous else 0) + 1)
 
     builder = _ManifestBuilder(capture_records=capture_records)
+    engine_digest = _SemanticAccumulator(algorithm=ENGINE_DIGEST_ALGORITHM)
+    engine_digest.add_bytes(_engine_record_bytes(".", "directory", None))
     root_metadata = root.lstat()
     if not stat.S_ISDIR(root_metadata.st_mode):
         raise CorpusError("corpus root changed while it was being observed")
@@ -932,12 +964,14 @@ def _observe_corpus(
     for path, relative, metadata in _walk_corpus(root):
         mode = metadata.st_mode
         if stat.S_ISDIR(mode):
+            engine_kind = "directory"
             record = {
                 "kind": "directory",
                 "mtime_ns": metadata.st_mtime_ns,
                 "path": relative,
             }
         elif stat.S_ISREG(mode):
+            engine_kind = "file"
             identity = (metadata.st_dev, metadata.st_ino)
             canonical, occurrences = hardlinks.get(identity, (relative, 1))
             hardlink_to = (
@@ -956,16 +990,23 @@ def _observe_corpus(
                     unique_allocated_bytes += allocated
                     allocated_identities.add(identity)
         elif stat.S_ISLNK(mode):
+            engine_kind = "symlink"
             record = {
                 "kind": "symlink",
                 "path": relative,
                 "target": _normalize_link_target(os.readlink(path)),
             }
         else:
+            engine_kind = "other"
             record = {"kind": "other", "path": relative}
+        engine_digest.add_bytes(
+            _engine_record_bytes(relative, engine_kind, metadata)
+        )
         builder.add(record)
 
     summary = builder.summary()
+    summary["engine_digest"] = engine_digest.finish()
+    summary["engine_digest_components"] = engine_digest.components()
     summary["sizes"].update(
         {
             "entry_allocated_bytes": entry_allocated_bytes
@@ -985,6 +1026,47 @@ def _observe_corpus(
         }
     }
     return summary, capability
+
+
+def _engine_record_bytes(
+    relative: str,
+    kind: str,
+    metadata: Optional[os.stat_result],
+) -> bytes:
+    path_bytes = relative.encode("utf-8")
+    if len(path_bytes) > (1 << 32) - 1:
+        raise CorpusError("engine oracle path exceeds its u32 encoding")
+    kind_value = {
+        "file": 0,
+        "directory": 1,
+        "symlink": 2,
+        "other": 3,
+    }[kind]
+    if metadata is None:
+        attrs = (0, 0, 0, 0, 0, 0)
+    else:
+        size = int(metadata.st_size)
+        allocated = (
+            int(metadata.st_blocks) * 512
+            if os.name == "posix" and hasattr(metadata, "st_blocks")
+            else size
+        )
+        attrs = (
+            size,
+            allocated,
+            int(metadata.st_mtime_ns),
+            int(metadata.st_ctime_ns) if os.name == "posix" else 0,
+            int(metadata.st_ino) if os.name == "posix" else 0,
+            int(metadata.st_dev) if os.name == "posix" else 0,
+        )
+    return b"".join(
+        (
+            struct.pack(">I", len(path_bytes)),
+            path_bytes,
+            bytes((kind_value,)),
+            struct.pack(">QQqqQQ", *attrs),
+        )
+    )
 
 
 def _walk_corpus(root: Path) -> Iterator[Tuple[Path, str, os.stat_result]]:
@@ -1310,6 +1392,8 @@ def _validate_manifest_shape(manifest: Mapping[str, Any]) -> None:
     oracle = manifest["oracle"]
     if oracle.get("digest_algorithm") != SEMANTIC_DIGEST_ALGORITHM:
         raise CorpusError("observed corpus manifest digest algorithm is unsupported")
+    if oracle.get("engine_digest_algorithm") != ENGINE_DIGEST_ALGORITHM:
+        raise CorpusError("observed corpus manifest engine digest is unsupported")
     components = oracle.get("semantic_components")
     accumulator = _SemanticAccumulator(
         components if isinstance(components, Mapping) else None
@@ -1320,6 +1404,15 @@ def _validate_manifest_shape(manifest: Mapping[str, Any]) -> None:
         raise CorpusError(
             "observed corpus semantic digest does not match its components"
         )
+    engine_components = oracle.get("engine_digest_components")
+    engine_accumulator = _SemanticAccumulator(
+        engine_components if isinstance(engine_components, Mapping) else None,
+        algorithm=ENGINE_DIGEST_ALGORITHM,
+    )
+    if not isinstance(engine_components, Mapping):
+        raise CorpusError("observed corpus engine digest components are malformed")
+    if engine_accumulator.finish() != oracle.get("engine_digest"):
+        raise CorpusError("observed corpus engine digest does not match its components")
     records = manifest.get("records")
     if records is not None and not isinstance(records, list):
         raise CorpusError("observed corpus manifest records must be an array")

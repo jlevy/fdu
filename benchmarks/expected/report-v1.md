@@ -12,14 +12,14 @@ in the active performance plan.
 - Finished: `2026-08-09T12:00:01.000000Z`
 - Source revision: `8888888888888888888888888888888888888888`
 - Result schema: `fdu-performance-result-v1`
-- Result hash: `35333b5dfa0a13f02447b79dd40f882a9da1b90abbea2e1bb7bfdb18cf7365de`
+- Result hash: `e899121f712a6757acdb1558a68092b161b252b36c2e32dd6dcb2123d7abf3be`
 - Host class: `fixture-host-v1`
 - Platform: `FixtureOS aarch64`
 - Kernel: `fixture-kernel`
 - Logical CPUs: `8`
 - Memory bytes: `16000000000`
 - Filesystem: `apfs`
-- Harness identity: `7556981e77baff4b7a9943ebf3cdcdccdbbc4681647d90fa1dd98f7364ef69d3`
+- Harness identity: `975c47207fee7d34c68a62d98474cbcfcfd9a84837e848cc0335ec853546715a`
 - Python: `cpython 3.13.5`
 
 ## Executables
@@ -33,9 +33,26 @@ in the active performance plan.
 Only valid timed samples contribute. Warmups and invalid trials remain in the raw-trial
 table below.
 
-| Scenario | Valid | Invalid | Median | MAD | P95 | Min | Max | Mean | Stddev | CV | Entries/s |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| fixture/contract/baseline | 3 | 1 | 20.000 ms | 10.000 ms | n/a (requires at least 20 valid trials) | 10.000 ms | 30.000 ms | 20.000 ms | 8.165 ms | 40.82% | 5,050.0 |
+| Scenario | Valid | Invalid | External median | Component median | CPU median | Peak RSS | MAD | P95 | Min | Max | Mean | Stddev | CV | External entries/s | Component entries/s |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| fixture/contract/baseline | 3 | 1 | 20.000 ms | n/a | n/a | n/a | 10.000 ms | n/a (requires at least 20 valid trials) | 10.000 ms | 30.000 ms | 20.000 ms | 8.165 ms | 40.82% | 5,050.0 | n/a |
+
+## Collector Capabilities
+
+- `unavailable-v1`
+  - input_blocks: synthetic fixture
+  - involuntary_context_switches: synthetic fixture
+  - major_faults: synthetic fixture
+  - minor_faults: synthetic fixture
+  - output_blocks: synthetic fixture
+  - peak_rss_bytes: synthetic fixture
+  - read_bytes: synthetic fixture
+  - retained_rss_bytes: synthetic fixture
+  - syscalls: synthetic fixture
+  - system_cpu_ns: synthetic fixture
+  - user_cpu_ns: synthetic fixture
+  - voluntary_context_switches: synthetic fixture
+  - write_bytes: synthetic fixture
 
 ## Review Triggers
 
@@ -47,12 +64,12 @@ table below.
 
 ## Raw Trials
 
-| Ordinal | Kind | Scenario | Snapshot | FS cache | Valid | First output | Wall | Exit | Stdout bytes | Stdout SHA-256 | Reason |
-| ---: | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | --- | --- |
-| 0 | timed | fixture/contract/baseline | absent | uncontrolled | yes | 5.000 ms | 10.000 ms | 0 | 100 | `6666666666666666666666666666666666666666666666666666666666666666` | — |
-| 1 | timed | fixture/contract/baseline | absent | uncontrolled | yes | 10.000 ms | 20.000 ms | 0 | 100 | `6666666666666666666666666666666666666666666666666666666666666666` | — |
-| 2 | timed | fixture/contract/baseline | absent | uncontrolled | yes | 15.000 ms | 30.000 ms | 0 | 100 | `6666666666666666666666666666666666666666666666666666666666666666` | — |
-| 3 | timed | fixture/contract/baseline | absent | uncontrolled | no | 500.000 ms | 1000.000 ms | 0 | 100 | `6666666666666666666666666666666666666666666666666666666666666666` | synthetic invalid sample |
+| Ordinal | Kind | Scenario | Snapshot | FS cache | Valid | First output | External wall | Component | CPU | Peak RSS | Exit | Stdout bytes | Stdout SHA-256 | Reason |
+| ---: | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |
+| 0 | timed | fixture/contract/baseline | absent | uncontrolled | yes | 5.000 ms | 10.000 ms | n/a | n/a | n/a | 0 | 100 | `6666666666666666666666666666666666666666666666666666666666666666` | — |
+| 1 | timed | fixture/contract/baseline | absent | uncontrolled | yes | 10.000 ms | 20.000 ms | n/a | n/a | n/a | 0 | 100 | `6666666666666666666666666666666666666666666666666666666666666666` | — |
+| 2 | timed | fixture/contract/baseline | absent | uncontrolled | yes | 15.000 ms | 30.000 ms | n/a | n/a | n/a | 0 | 100 | `6666666666666666666666666666666666666666666666666666666666666666` | — |
+| 3 | timed | fixture/contract/baseline | absent | uncontrolled | no | 500.000 ms | 1000.000 ms | n/a | n/a | n/a | 0 | 100 | `6666666666666666666666666666666666666666666666666666666666666666` | synthetic invalid sample |
 
 ## Reproduction Contract
 

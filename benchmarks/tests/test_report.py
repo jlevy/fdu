@@ -47,6 +47,7 @@ def _synthetic_result(
     harness_base = {
         "components": [
             {"name": "corpus.py", "sha256": "a" * 64},
+            {"name": "report.py", "sha256": "d" * 64},
             {"name": "runner.py", "sha256": "b" * 64},
             {"name": "schema.py", "sha256": "c" * 64},
         ],
@@ -105,13 +106,39 @@ def _synthetic_result(
                     "signal": None,
                     "spawn_error": None,
                     "timed_out": False,
+                    "wait_error": None,
                 },
+                "probe_metrics": {},
                 "resources": {
+                    "collector": "unavailable-v1",
+                    "input_blocks": None,
+                    "involuntary_context_switches": None,
                     "major_faults": None,
+                    "minor_faults": None,
+                    "output_blocks": None,
                     "peak_rss_bytes": None,
-                    "reason": "synthetic fixture",
+                    "read_bytes": None,
+                    "retained_rss_bytes": None,
+                    "syscalls": None,
                     "system_cpu_ns": None,
                     "user_cpu_ns": None,
+                    "voluntary_context_switches": None,
+                    "write_bytes": None,
+                    "unavailable_reasons": {
+                        "input_blocks": "synthetic fixture",
+                        "involuntary_context_switches": "synthetic fixture",
+                        "major_faults": "synthetic fixture",
+                        "minor_faults": "synthetic fixture",
+                        "output_blocks": "synthetic fixture",
+                        "peak_rss_bytes": "synthetic fixture",
+                        "read_bytes": "synthetic fixture",
+                        "retained_rss_bytes": "synthetic fixture",
+                        "syscalls": "synthetic fixture",
+                        "system_cpu_ns": "synthetic fixture",
+                        "user_cpu_ns": "synthetic fixture",
+                        "voluntary_context_switches": "synthetic fixture",
+                        "write_bytes": "synthetic fixture"
+                    },
                 },
                 "sample_index": index,
                 "sample_kind": "timed",
@@ -192,6 +219,36 @@ class ReportStatisticsTests(unittest.TestCase):
 
         self.assertEqual(statistics["p95_wall_ns"], 19_000_000)
         self.assertIsNone(statistics["p95_reason"])
+
+    def test_component_and_resource_statistics_remain_distinct_from_wall_time(self) -> None:
+        result = _synthetic_result([10, 20, 30])
+        result["scenario_definitions"][0]["validation"]["stdout_json"]["record"] = [
+            "component_ns"
+        ]
+        for trial in result["trials"]:
+            trial["probe_metrics"] = {
+                "component_ns": trial["timing"]["wall_ns"] // 2
+            }
+            resources = trial["resources"]
+            resources["collector"] = "posix-wait4-rusage-v1"
+            resources["user_cpu_ns"] = 2_000_000
+            resources["system_cpu_ns"] = 1_000_000
+            resources["peak_rss_bytes"] = 4 * 1024 * 1024
+            for field in ("user_cpu_ns", "system_cpu_ns", "peak_rss_bytes"):
+                resources["unavailable_reasons"].pop(field)
+        result["result_hash"] = result_document_hash(result)
+
+        statistics = scenario_statistics(result)[0]
+
+        self.assertEqual(statistics["median_wall_ns"], 20_000_000)
+        self.assertEqual(statistics["median_component_ns"], 10_000_000)
+        self.assertEqual(statistics["median_cpu_ns"], 3_000_000)
+        self.assertEqual(statistics["median_peak_rss_bytes"], 4 * 1024 * 1024)
+        self.assertEqual(statistics["component_entries_per_second"], 10_100.0)
+        report = render_report(result)
+        self.assertIn("10.000 ms", report)
+        self.assertIn("4.0 MiB", report)
+        self.assertIn("`posix-wait4-rusage-v1`", report)
 
     def test_baseline_compatibility_names_every_material_mismatch(self) -> None:
         baseline = _synthetic_result([10, 11, 12])

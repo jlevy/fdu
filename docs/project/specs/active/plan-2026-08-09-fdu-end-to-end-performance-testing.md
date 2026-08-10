@@ -77,7 +77,13 @@ The strict evidence layer now validates versioned scenario and result contracts,
 a deterministic paired schedule, executes every sample in a fresh marked run, records
 pipe-drained first-output and completion timing, retains invalid samples, and renders a
 deterministic report from immutable self-checking results.
-The other four implementation/proof children remain open under epic `fdu-d5e1`.
+The fdu probe and portable collector child `fdu-oj25` is now in progress; the other
+three implementation/proof children remain open under epic `fdu-d5e1`.
+The excluded Rust probe covers all eight component jobs in the committed smoke matrix.
+Each invocation is checked against the exact per-run engine digest, and the result keeps
+external wall time, internal component time, and per-child resource usage distinct.
+The smoke suite also proves that deliberately wrong counts, digests, cache sources,
+snapshot postconditions, and corrupt or absent snapshot inputs are rejected.
 
 The repository-wide correctness, supply-chain, and concurrency implementation gates are
 closed; final approval bead `fdu-sn43` is closed and PR #1 has merged.
@@ -86,10 +92,14 @@ Comparator acquisition under `fdu-k5t5` has cleared its executable-dependency po
 blocker but now waits only on the reviewed adapter implementation shown below.
 No current timing result supports a product claim.
 
-The completed portable harness has 51 deterministic and adversarial tests, passes Python
+The portable harness now has 56 deterministic and adversarial tests, passes Python
 3.9 and the current interpreter, and is included in `make check` without a numeric
 timing assertion. See the [performance harness README](../../../../benchmarks/README.md)
 for its commands, manifest contract, mutation model, and cleanup rules.
+
+The first exact probe run exposed a product correctness defect: symlinks and special
+nodes contributed to regular-file roll-ups despite the documented contract. Bead
+`fdu-6x07` tracks the focused fix and regression test; no affected timing was accepted.
 
 ## Background
 
@@ -638,7 +648,7 @@ real consumer. Benchmarking alone is not a reason to stabilize an abstraction.
   transitions, and semantic digest
 - [x] `fdu-d8kq`: commit strict scenario, corpus-manifest, and result schemas with
   valid, unknown-field, truncated, and incompatible-version fixtures
-- [ ] `fdu-oj25`: implement probe modes that detect deliberately wrong counts, digests,
+- [x] `fdu-oj25`: implement probe modes that detect deliberately wrong counts, digests,
   cache sources, and snapshot postconditions
 - [x] `fdu-d8kq`: document terminology, host capabilities, safe cleanup, and why smoke
   results support no performance claim
@@ -647,8 +657,9 @@ real consumer. Benchmarking alone is not a reason to stabilize an abstraction.
 
 - [x] `fdu-d8kq`: implement the direct-argv state machine, timeouts, process cleanup,
   paired ordering, immutable results, validation, statistics, and report rendering
-- [ ] `fdu-oj25`: implement external timing plus capability-negotiated resource and
-  profile collectors
+- [x] `fdu-oj25`: implement external timing plus capability-negotiated portable resource
+  collectors
+- [ ] `fdu-oj25`: add opt-in dedicated-host profile and byte-I/O/syscall collectors
 - [ ] `fdu-k5t5`: complete reviewed dut/gdu adapters and the job-capability matrix
 - [ ] `fdu-p2i1` and `fdu-1vd0`: execute the revalidation and snapshot-candidate spikes
   before freezing their Phase 1 designs
@@ -771,9 +782,12 @@ The performance-testing workstream is complete when:
   machine-readable evidence, or must adapters add external traversal/count validation?
 - **Snapshot first-listing surface (`fdu-1vd0`, `fdu-xihx`)**: does the optimized
   snapshot expose this through a real query, or is a narrow API needed?
-- **Portable collectors (`fdu-oj25`)**: which resource counters are stable enough to
-  require outside Linux?
-  Unsupported counters remain explicit rather than blocking the portable smoke tier.
+- **Dedicated-host collectors (`fdu-oj25`, `fdu-8z5l`)**: which pinned `perf` and
+  byte-I/O protocol becomes the Linux release collector?
+  Portable POSIX runs use per-child `wait4` for CPU, peak RSS, faults, block operations,
+  and context switches. Byte I/O, retained RSS, and syscall counts remain explicitly
+  unavailable until the dedicated-host protocol supplies them; Windows smoke records
+  the whole rusage set as unavailable rather than inventing zeros.
 
 None of these questions blocks Phase 1 of the harness.
 They are settled before the first corresponding numeric baseline or comparator claim.
@@ -798,7 +812,11 @@ The planning bead retains the same stable IDs.
 | PEV-11 | High | Requiring identical executable checksums would reject every regression comparison whose subject binary legitimately changed | Compatibility now requires the same adapter command shape while recording checksum changes separately; harness, host, corpus, scenario, and collector contracts must still match |
 | PEV-12 | High | A self-consistent result hash did not prove that the stored invocation list contained every declared warmup and trial in the seeded order | Result validation reconstructs the complete schedule and cross-checks every trial against its scenario, corpus, environment, state, process, output, and timing contract |
 | PEV-13 | High | Any successful preparation command could label a portable run `controlled-cold` without evidence that the operating-system cache was evicted | The portable runner rejects that label; only the dedicated-host protocol under `fdu-8z5l` may authorize it, while local preparation can establish `verified-warm` |
-| PEV-14 | Medium | Binary hashes alone omitted the exact Python and harness implementation that generated timings and validity decisions | Results now record Python identity plus hashes of the corpus, runner, and schema implementations, and compatibility requires an exact harness match |
+| PEV-14 | Medium | Binary hashes alone omitted the exact Python and harness implementation that generated timings and validity decisions | Results now record Python identity plus hashes of the corpus, runner, schema, and report implementations, and compatibility requires an exact harness match |
+| PEV-15 | High | Process-wide cumulative `getrusage(RUSAGE_CHILDREN)` counters would attribute earlier setup and trials to later samples | A single owner thread reaps each POSIX child with `wait4`; every resource value is per invocation, while unsupported platforms and metrics retain exact null reasons |
+| PEV-16 | High | Reporting only process wall time for component probes hid the target operation behind setup, exact validation, and JSON emission | Results and reports preserve external wall and explicit internal component duration separately; only product jobs may use external latency as the user-facing number |
+| PEV-17 | High | The exact contract corpus showed that retained symlinks and special nodes incremented regular-file counts and bytes despite the `RollUp` contract | `fdu-6x07` splits non-file contributions from regular-file roll-ups and adds kind-transition regression coverage before any sample is accepted |
+| PEV-18 | Medium | A portable semantic digest omits inode, ctime, device, and allocated size, so it cannot prove the exact fingerprint-sensitive index scanned in one trial | Manifests now carry a second per-run engine digest over pinned binary records; probe output must match it while cross-run compatibility continues to use the portable semantic digest |
 
 ## Beads
 
@@ -814,6 +832,7 @@ research and plan, assemble this graph, and validate it through CI.
 | `fdu-rq5m` | P1 | Deterministic corpus recipes, safe generator, observed manifests, mutation transitions, and semantic oracle | `fdu-sn43` |
 | `fdu-d8kq` | P1 | Strict scenario/result schemas, direct-argv runner, immutable trials, statistics, and report renderer | `fdu-rq5m` |
 | `fdu-oj25` | P1 | fdu component probe, first-output timing, resource collectors, and profiles | `fdu-rq5m`, `fdu-d8kq` |
+| `fdu-6x07` | P1 | Exclude symlinks and special nodes from documented regular-file roll-ups | discovered by `fdu-oj25` |
 | `fdu-k5t5` | P1 | Pinned dut/gdu adapters, parsers, postconditions, and capability matrix | `fdu-rq5m`, `fdu-d8kq`, `fdu-ad45` |
 | `fdu-8z5l` | P2 | Pull-request smoke, stable scheduled baselines, regression triage, artifact retention, and claim governance | `fdu-d8kq`, `fdu-oj25`, `fdu-k5t5`, `fdu-zga3` |
 | `fdu-ywu0` | P1 | Execute the complete Phase 1 matrix and publish the generated evidence report | all five implementation beads plus the existing engine blockers |

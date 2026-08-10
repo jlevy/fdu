@@ -7,14 +7,14 @@ NPM ?= npm
 MSRV ?= 1.85.0
 NODE_INSTALL_STAMP := node_modules/.package-lock.json
 
-.PHONY: help build release test rust-test test-golden test-performance golden-update check supply-chain fix fmt fmt-check clippy docs lib-only msrv audit npm-audit python-concurrency python-smoke clean cli
+.PHONY: help build release test rust-test test-golden performance-probe test-performance golden-update check supply-chain fix fmt fmt-check clippy docs lib-only msrv audit npm-audit python-concurrency python-smoke clean cli
 
 help:
 	@echo "make build      Debug build of the core library and CLI, all features"
 	@echo "make release    Optimized build of the core library and CLI"
 	@echo "make test       Run Rust, CLI golden, and performance-harness tests"
 	@echo "make test-golden  Build and compare the CLI golden contract"
-	@echo "make test-performance  Test the performance corpus and oracle tooling"
+	@echo "make test-performance  Test the performance harness and every fdu probe job"
 	@echo "make golden-update  Regenerate intentional golden changes, then compare"
 	@echo "make check      Handoff gate: tests, audits, docs, and installed-wheel smoke"
 	@echo "make supply-chain  Verify release age, provenance, pins, and CI trust controls"
@@ -39,7 +39,10 @@ rust-test:
 test-golden: build $(NODE_INSTALL_STAMP)
 	$(NPM) run test:golden
 
-test-performance:
+performance-probe:
+	$(CARGO) build --locked -p fdu --example perf_probe --no-default-features
+
+test-performance: performance-probe
 	uv run --no-project python -m unittest discover -s benchmarks/tests -p 'test_*.py'
 
 # Tryscript returns nonzero when it updates a previously failing block. The immediate

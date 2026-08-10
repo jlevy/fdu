@@ -37,6 +37,7 @@ _JOBS = {
     "concurrent-query",
     "delta-apply",
     "python-open-query",
+    "query",
     "revalidate-churn",
     "revalidate-unchanged",
     "scan-index",
@@ -58,6 +59,21 @@ _FILESYSTEM_CACHE_STATES = {
     "verified-warm",
 }
 _CORPUS_STATES = {"baseline", "mixed-1pct", "modify-1pct", "one-change"}
+_RESOURCE_METRICS = {
+    "input_blocks",
+    "involuntary_context_switches",
+    "major_faults",
+    "minor_faults",
+    "output_blocks",
+    "peak_rss_bytes",
+    "read_bytes",
+    "retained_rss_bytes",
+    "syscalls",
+    "system_cpu_ns",
+    "user_cpu_ns",
+    "voluntary_context_switches",
+    "write_bytes",
+}
 
 
 class SchemaError(ValueError):
@@ -416,7 +432,13 @@ def _validate_job_state(
 def _validate_method(value: Any, path: str) -> None:
     method = _object(
         value,
-        required={"order_group", "timeout_seconds", "trials", "warmups"},
+        required={
+            "order_group",
+            "required_resources",
+            "timeout_seconds",
+            "trials",
+            "warmups",
+        },
         optional=set(),
         path=path,
     )
@@ -434,6 +456,15 @@ def _validate_method(value: Any, path: str) -> None:
     order_group = method["order_group"]
     if order_group is not None:
         _identifier(order_group, f"{path}.order_group")
+    required_resources = method["required_resources"]
+    if (
+        not isinstance(required_resources, list)
+        or any(not isinstance(resource, str) for resource in required_resources)
+        or len(required_resources) != len(set(required_resources))
+    ):
+        raise SchemaError(f"{path}.required_resources must be a unique array")
+    for resource in required_resources:
+        _choice(resource, _RESOURCE_METRICS, f"{path}.required_resources")
 
 
 def _validate_validation(value: Any, path: str) -> None:
@@ -478,7 +509,7 @@ def _validate_validation(value: Any, path: str) -> None:
         return
     stdout_json = _object(
         validation["stdout_json"],
-        required={"equals", "matches_manifest"},
+        required={"equals", "matches_manifest", "record"},
         optional=set(),
         path=f"{path}.stdout_json",
     )
@@ -492,6 +523,17 @@ def _validate_validation(value: Any, path: str) -> None:
     for output_path, manifest_path in matches.items():
         _field_path(output_path, f"{path}.stdout_json.matches_manifest")
         _field_path(manifest_path, f"{path}.stdout_json.matches_manifest")
+    record = stdout_json["record"]
+    if (
+        not isinstance(record, list)
+        or any(not isinstance(output_path, str) for output_path in record)
+        or len(record) != len(set(record))
+    ):
+        raise SchemaError(f"{path}.stdout_json.record must be a unique array")
+    if len(record) > 64:
+        raise SchemaError(f"{path}.stdout_json.record exceeds 64 fields")
+    for output_path in record:
+        _field_path(output_path, f"{path}.stdout_json.record")
     if not equals and not matches:
         raise SchemaError(f"{path}.stdout_json must declare at least one assertion")
 
@@ -799,6 +841,7 @@ def _validate_trial(
             "filesystem_cache_state",
             "ordinal",
             "output",
+            "probe_metrics",
             "process",
             "resources",
             "sample_index",
@@ -830,6 +873,7 @@ def _validate_trial(
     _validate_trial_corpus(trial["corpus"], scenario, f"{path}.corpus")
     _validate_trial_environment(trial["environment"], f"{path}.environment")
     _validate_trial_output(trial["output"], f"{path}.output")
+    _validate_trial_probe_metrics(trial["probe_metrics"], f"{path}.probe_metrics")
     _validate_trial_process(trial["process"], f"{path}.process")
     _validate_trial_resources(trial["resources"], f"{path}.resources")
     _validate_trial_timing(trial["timing"], f"{path}.timing")
@@ -948,7 +992,7 @@ def _validate_trial_output(value: Any, path: str) -> None:
 def _validate_trial_process(value: Any, path: str) -> None:
     process = _object(
         value,
-        required={"exit_code", "signal", "spawn_error", "timed_out"},
+        required={"exit_code", "signal", "spawn_error", "timed_out", "wait_error"},
         optional=set(),
         path=path,
     )
@@ -956,6 +1000,8 @@ def _validate_trial_process(value: Any, path: str) -> None:
     _nullable_nonnegative_integer(process["signal"], f"{path}.signal")
     if process["spawn_error"] is not None and not isinstance(process["spawn_error"], str):
         raise SchemaError(f"{path}.spawn_error must be string or null")
+    if process["wait_error"] is not None and not isinstance(process["wait_error"], str):
+        raise SchemaError(f"{path}.wait_error must be string or null")
     if not isinstance(process["timed_out"], bool):
         raise SchemaError(f"{path}.timed_out must be boolean")
 
@@ -963,20 +1009,40 @@ def _validate_trial_process(value: Any, path: str) -> None:
 def _validate_trial_resources(value: Any, path: str) -> None:
     resources = _object(
         value,
-        required={
-            "major_faults",
-            "peak_rss_bytes",
-            "reason",
-            "system_cpu_ns",
-            "user_cpu_ns",
-        },
+        required={"collector", "unavailable_reasons", *_RESOURCE_METRICS},
         optional=set(),
         path=path,
     )
-    for field in ("major_faults", "peak_rss_bytes", "system_cpu_ns", "user_cpu_ns"):
+    collector = resources["collector"]
+    if not isinstance(collector, str) or not collector or len(collector) > 100:
+        raise SchemaError(f"{path}.collector must be a non-empty short string")
+    for field in _RESOURCE_METRICS:
         _nullable_nonnegative_integer(resources[field], f"{path}.{field}")
-    if resources["reason"] is not None and not isinstance(resources["reason"], str):
-        raise SchemaError(f"{path}.reason must be string or null")
+    unavailable = resources["unavailable_reasons"]
+    if not isinstance(unavailable, dict):
+        raise SchemaError(f"{path}.unavailable_reasons must be an object")
+    expected_unavailable = {
+        field for field in _RESOURCE_METRICS if resources[field] is None
+    }
+    if set(unavailable) != expected_unavailable:
+        raise SchemaError(
+            f"{path}.unavailable_reasons must name exactly the null metrics"
+        )
+    if any(not isinstance(reason, str) or not reason for reason in unavailable.values()):
+        raise SchemaError(
+            f"{path}.unavailable_reasons values must be non-empty strings"
+        )
+
+
+def _validate_trial_probe_metrics(value: Any, path: str) -> None:
+    if not isinstance(value, dict) or len(value) > 64:
+        raise SchemaError(f"{path} must be an object with at most 64 fields")
+    for field, metric in value.items():
+        _field_path(field, path)
+        if isinstance(metric, float) and not math.isfinite(metric):
+            raise SchemaError(f"{path}[{field!r}] must be finite")
+        if metric is not None and not isinstance(metric, (bool, int, float, str)):
+            raise SchemaError(f"{path}[{field!r}] must be a JSON scalar")
 
 
 def _validate_trial_timing(value: Any, path: str) -> None:
@@ -1065,7 +1131,11 @@ def _validate_trial_contract(
         return
     process = trial["process"]
     contract = scenario["validation"]
-    if process["spawn_error"] is not None or process["timed_out"]:
+    if (
+        process["spawn_error"] is not None
+        or process["wait_error"] is not None
+        or process["timed_out"]
+    ):
         raise SchemaError(f"{path} cannot be valid after a process failure")
     if process["signal"] is not None:
         raise SchemaError(f"{path} cannot be valid after a signal")
@@ -1080,6 +1150,13 @@ def _validate_trial_contract(
         raise SchemaError(f"{path}.output.stdout_sha256 violates its scenario")
     if scenario["output_sink"] == "output-file" and output["artifact"] is None:
         raise SchemaError(f"{path}.output.artifact is required for output-file")
+    stdout_json = contract["stdout_json"]
+    expected_probe_metrics = set(stdout_json["record"]) if stdout_json else set()
+    if set(trial["probe_metrics"]) != expected_probe_metrics:
+        raise SchemaError(f"{path}.probe_metrics disagrees with its scenario")
+    for resource in scenario["method"]["required_resources"]:
+        if trial["resources"][resource] is None:
+            raise SchemaError(f"{path}.resources.{resource} is required")
 
 
 def _nullable_nonnegative_integer(value: Any, path: str) -> None:

@@ -381,6 +381,16 @@
         "digest_algorithm": {
           "const": "sha256-multiset-v1"
         },
+        "engine_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "engine_digest_algorithm": {
+          "const": "fdu-index-record-v1/sha256-multiset-v1"
+        },
+        "engine_digest_components": {
+          "$ref": "#/$defs/digest_components"
+        },
         "root_inclusive": {
           "const": true
         },
@@ -394,6 +404,9 @@
       "required": [
         "creation_matches_observation",
         "digest_algorithm",
+        "engine_digest",
+        "engine_digest_algorithm",
+        "engine_digest_components",
         "root_inclusive",
         "semantic_components"
       ],

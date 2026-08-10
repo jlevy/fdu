@@ -34,6 +34,9 @@ def _scenario_set(mode: str = "success") -> Dict[str, Any]:
 class ScenarioRunnerTests(unittest.TestCase):
     def test_successful_run_reestablishes_state_and_records_immutable_trials(self) -> None:
         document = _scenario_set()
+        document["scenarios"][0]["validation"]["stdout_json"]["record"] = [
+            "component_ns"
+        ]
         executable = [sys.executable, str(FIXTURES / "fake_benchmark.py")]
         previous = os.environ.get("FDU_SENTINEL")
         os.environ["FDU_SENTINEL"] = "must-not-leak"
@@ -68,10 +71,28 @@ class ScenarioRunnerTests(unittest.TestCase):
         )
         self.assertTrue(all(trial["output"]["artifact"] is None for trial in result["trials"]))
         self.assertTrue(
+            all(
+                trial["probe_metrics"] == {"component_ns": 123}
+                for trial in result["trials"]
+            )
+        )
+        self.assertTrue(
             all("/private/" not in " ".join(trial["argv"]) for trial in result["trials"])
         )
         self.assertEqual(persisted, result)
         validate_result_document(persisted)
+
+        resources = persisted["trials"][0]["resources"]
+        null_metrics = {
+            name
+            for name, value in resources.items()
+            if name not in {"collector", "unavailable_reasons"} and value is None
+        }
+        self.assertEqual(set(resources["unavailable_reasons"]), null_metrics)
+        if os.name == "posix" and hasattr(os, "wait4"):
+            self.assertEqual(resources["collector"], "posix-wait4-rusage-v1")
+            self.assertIsNotNone(resources["user_cpu_ns"])
+            self.assertIsNotNone(resources["peak_rss_bytes"])
 
         persisted["unexpected"] = True
         persisted["result_hash"] = result_document_hash(persisted)
@@ -384,6 +405,32 @@ class ScenarioRunnerTests(unittest.TestCase):
                     output_directory=base / "results",
                     order_seed="false-cold-label",
                 )
+
+    def test_required_unavailable_resource_invalidates_only_that_scenario(self) -> None:
+        document = _scenario_set()
+        scenario = document["scenarios"][0]
+        scenario["method"].update({"trials": 1, "warmups": 0})
+        scenario["method"]["required_resources"] = ["syscalls"]
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            base = Path(temporary_directory)
+            result = run_scenario_set(
+                document,
+                executables={
+                    "fixture": [sys.executable, str(FIXTURES / "fake_benchmark.py")]
+                },
+                work_directory=base / "work",
+                output_directory=base / "results",
+                order_seed="required-resource",
+            )
+
+        trial = result["trials"][0]
+        self.assertFalse(trial["validation"]["valid"])
+        self.assertTrue(
+            any(
+                "required resource syscalls is unavailable" in reason
+                for reason in trial["validation"]["reasons"]
+            )
+        )
 
 
 if __name__ == "__main__":

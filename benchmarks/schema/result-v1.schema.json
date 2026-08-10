@@ -405,20 +405,60 @@
         },
         "timed_out": {
           "type": "boolean"
+        },
+        "wait_error": {
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
       "required": [
         "exit_code",
         "signal",
         "spawn_error",
-        "timed_out"
+        "timed_out",
+        "wait_error"
       ],
       "type": "object"
     },
     "resources": {
       "additionalProperties": false,
       "properties": {
+        "collector": {
+          "maxLength": 100,
+          "minLength": 1,
+          "type": "string"
+        },
+        "input_blocks": {
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "involuntary_context_switches": {
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "major_faults": {
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "minor_faults": {
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "output_blocks": {
           "minimum": 0,
           "type": [
             "integer",
@@ -432,9 +472,24 @@
             "null"
           ]
         },
-        "reason": {
+        "read_bytes": {
+          "minimum": 0,
           "type": [
-            "string",
+            "integer",
+            "null"
+          ]
+        },
+        "retained_rss_bytes": {
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "syscalls": {
+          "minimum": 0,
+          "type": [
+            "integer",
             "null"
           ]
         },
@@ -451,14 +506,62 @@
             "integer",
             "null"
           ]
+        },
+        "voluntary_context_switches": {
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "write_bytes": {
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "unavailable_reasons": {
+          "additionalProperties": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "propertyNames": {
+            "enum": [
+              "input_blocks",
+              "involuntary_context_switches",
+              "major_faults",
+              "minor_faults",
+              "output_blocks",
+              "peak_rss_bytes",
+              "read_bytes",
+              "retained_rss_bytes",
+              "syscalls",
+              "system_cpu_ns",
+              "user_cpu_ns",
+              "voluntary_context_switches",
+              "write_bytes"
+            ]
+          },
+          "type": "object"
         }
       },
       "required": [
+        "collector",
+        "input_blocks",
+        "involuntary_context_switches",
         "major_faults",
+        "minor_faults",
+        "output_blocks",
         "peak_rss_bytes",
-        "reason",
+        "read_bytes",
+        "retained_rss_bytes",
+        "syscalls",
         "system_cpu_ns",
-        "user_cpu_ns"
+        "user_cpu_ns",
+        "voluntary_context_switches",
+        "write_bytes",
+        "unavailable_reasons"
       ],
       "type": "object"
     },
@@ -556,6 +659,22 @@
         "process": {
           "$ref": "#/$defs/process"
         },
+        "probe_metrics": {
+          "additionalProperties": {
+            "type": [
+              "boolean",
+              "integer",
+              "number",
+              "string",
+              "null"
+            ]
+          },
+          "maxProperties": 64,
+          "propertyNames": {
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*$"
+          },
+          "type": "object"
+        },
         "resources": {
           "$ref": "#/$defs/resources"
         },
@@ -596,6 +715,7 @@
         "filesystem_cache_state",
         "ordinal",
         "output",
+        "probe_metrics",
         "process",
         "resources",
         "sample_index",

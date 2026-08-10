@@ -68,6 +68,8 @@ class _CommandResult:
     stdout_sha256: str
     stderr_sha256: str
     first_output_ns: Optional[int]
+    resources: Dict[str, Any]
+    wait_error: Optional[str]
 
 
 @dataclass
@@ -79,6 +81,32 @@ class _OutputDrain:
     first_output_ns: Optional[int] = None
     stdout_bytes: int = 0
     stdout_sha256: Optional[str] = None
+
+
+@dataclass
+class _WaitState:
+    """Result written by the one thread that owns child reaping."""
+
+    error: Optional[str] = None
+    return_code: Optional[int] = None
+    usage: Optional[Any] = None
+
+
+_RESOURCE_METRICS = (
+    "input_blocks",
+    "involuntary_context_switches",
+    "major_faults",
+    "minor_faults",
+    "output_blocks",
+    "peak_rss_bytes",
+    "read_bytes",
+    "retained_rss_bytes",
+    "syscalls",
+    "system_cpu_ns",
+    "user_cpu_ns",
+    "voluntary_context_switches",
+    "write_bytes",
+)
 
 
 def run_scenario_set(
@@ -228,6 +256,7 @@ def _execute_invocation(
         "set": {},
     }
     artifact_name: Optional[str] = None
+    probe_metrics: Dict[str, Any] = {}
     try:
         manifest, placeholders, environment = _prepare_invocation(
             scenario, executable, run_root
@@ -252,7 +281,11 @@ def _execute_invocation(
             ),
         )
         reasons.extend(_validate_process(scenario, command_result))
-        reasons.extend(_validate_stdout(scenario, command_result, manifest))
+        stdout_reasons, probe_metrics = _validate_stdout(
+            scenario, command_result, manifest
+        )
+        reasons.extend(stdout_reasons)
+        reasons.extend(_validate_required_resources(scenario, command_result))
         try:
             verify_corpus(run_root)
             postcondition = True
@@ -283,6 +316,7 @@ def _execute_invocation(
         postcondition,
         reasons,
         artifact_name,
+        probe_metrics,
     )
 
 
@@ -384,6 +418,8 @@ def _run_preparation_command(
         raise RunnerError(f"{label} preparation timed out")
     if result.capture_error is not None:
         raise RunnerError(f"{label} preparation output failed: {result.capture_error}")
+    if result.wait_error is not None:
+        raise RunnerError(f"{label} preparation wait failed: {result.wait_error}")
     if result.exit_code != 0:
         raise RunnerError(
             f"{label} preparation exited with {result.exit_code}"
@@ -408,6 +444,10 @@ def _run_command(
     spawn_error: Optional[str] = None
     timed_out = False
     return_code: Optional[int] = None
+    wait_error: Optional[str] = None
+    resource_evidence = _unavailable_resources(
+        "per-process resource collection did not start"
+    )
     drain = _OutputDrain(capture=bytearray() if retain_stdout else None)
     with stderr_path.open("xb") as stderr:
         stdout_file = (
@@ -442,14 +482,41 @@ def _run_command(
                 name=f"fdu-perf-{label}-stdout",
             )
             drain_thread.start()
-            try:
-                return_code = process.wait(
-                    timeout=max(0.0, deadline - time.monotonic())
+            wait_state: Optional[_WaitState] = None
+            wait_thread: Optional[threading.Thread] = None
+            if os.name == "posix" and hasattr(os, "wait4"):
+                wait_state = _WaitState()
+                wait_thread = threading.Thread(
+                    target=_wait4_child,
+                    args=(process.pid, wait_state),
+                    daemon=True,
+                    name=f"fdu-perf-{label}-wait4",
                 )
-            except subprocess.TimeoutExpired:
-                timed_out = True
-                _kill_process_group(process)
-                return_code = process.wait()
+                wait_thread.start()
+                wait_thread.join(timeout=max(0.0, deadline - time.monotonic()))
+                if wait_thread.is_alive():
+                    timed_out = True
+                    _kill_process_group(process)
+                    wait_thread.join(timeout=5)
+                if wait_thread.is_alive():
+                    wait_error = "child did not exit after process-group cleanup"
+                else:
+                    return_code = wait_state.return_code
+                    wait_error = wait_state.error
+                    process.returncode = return_code
+                    resource_evidence = _resources_from_wait4(wait_state.usage)
+            else:
+                try:
+                    return_code = process.wait(
+                        timeout=max(0.0, deadline - time.monotonic())
+                    )
+                except subprocess.TimeoutExpired:
+                    timed_out = True
+                    _kill_process_group(process)
+                    return_code = process.wait()
+                resource_evidence = _unavailable_resources(
+                    "os.wait4 per-process rusage is unavailable on this platform"
+                )
             drain_thread.join(timeout=max(0.0, deadline - time.monotonic()))
             if drain_thread.is_alive():
                 timed_out = True
@@ -496,6 +563,8 @@ def _run_command(
         stdout_sha256=stdout_digest,
         stderr_sha256=_hash_file(stderr_path),
         first_output_ns=drain.first_output_ns,
+        resources=resource_evidence,
+        wait_error=wait_error,
     )
 
 
@@ -542,6 +611,58 @@ def _drain_stdout(
         stdout.close()
 
 
+def _wait4_child(pid: int, state: _WaitState) -> None:
+    """Reap exactly one child and retain its non-cumulative resource usage."""
+    try:
+        _waited_pid, status, usage = os.wait4(pid, 0)
+        state.return_code = os.waitstatus_to_exitcode(status)
+        state.usage = usage
+    except (ChildProcessError, OSError, ValueError) as error:
+        state.error = f"cannot wait for child process: {error}"
+
+
+def _resources_from_wait4(usage: Any) -> Dict[str, Any]:
+    if usage is None:
+        return _unavailable_resources("wait4 did not return resource usage")
+    peak_rss = int(usage.ru_maxrss)
+    if sys.platform != "darwin":
+        peak_rss *= 1024
+    values: Dict[str, Optional[int]] = {
+        "input_blocks": int(usage.ru_inblock),
+        "involuntary_context_switches": int(usage.ru_nivcsw),
+        "major_faults": int(usage.ru_majflt),
+        "minor_faults": int(usage.ru_minflt),
+        "output_blocks": int(usage.ru_oublock),
+        "peak_rss_bytes": peak_rss,
+        "read_bytes": None,
+        "retained_rss_bytes": None,
+        "syscalls": None,
+        "system_cpu_ns": round(float(usage.ru_stime) * 1_000_000_000),
+        "user_cpu_ns": round(float(usage.ru_utime) * 1_000_000_000),
+        "voluntary_context_switches": int(usage.ru_nvcsw),
+        "write_bytes": None,
+    }
+    reasons = {
+        "read_bytes": "POSIX rusage reports input blocks, not read bytes",
+        "retained_rss_bytes": "retained RSS is not observable after process exit",
+        "syscalls": "POSIX rusage does not report syscall counts",
+        "write_bytes": "POSIX rusage reports output blocks, not written bytes",
+    }
+    return {
+        "collector": "posix-wait4-rusage-v1",
+        **values,
+        "unavailable_reasons": reasons,
+    }
+
+
+def _unavailable_resources(reason: str) -> Dict[str, Any]:
+    return {
+        "collector": "unavailable-v1",
+        **{metric: None for metric in _RESOURCE_METRICS},
+        "unavailable_reasons": {metric: reason for metric in _RESOURCE_METRICS},
+    }
+
+
 def _kill_process_group(process: subprocess.Popen[bytes]) -> None:
     if os.name == "posix":
         try:
@@ -570,6 +691,8 @@ def _validate_process(
         reasons.append(f"command failed to start: {result.spawn_error}")
     if result.capture_error is not None:
         reasons.append(f"command output failed: {result.capture_error}")
+    if result.wait_error is not None:
+        reasons.append(f"command wait failed: {result.wait_error}")
     if result.timed_out:
         reasons.append("command timed out")
     if result.exit_code not in scenario["validation"]["allowed_exit_codes"]:
@@ -579,12 +702,26 @@ def _validate_process(
     return reasons
 
 
+def _validate_required_resources(
+    scenario: Mapping[str, Any], result: _CommandResult
+) -> List[str]:
+    reasons: List[str] = []
+    unavailable = result.resources["unavailable_reasons"]
+    for metric in scenario["method"]["required_resources"]:
+        if result.resources[metric] is None:
+            reasons.append(
+                f"required resource {metric} is unavailable: {unavailable[metric]}"
+            )
+    return reasons
+
+
 def _validate_stdout(
     scenario: Mapping[str, Any],
     result: _CommandResult,
     manifest: Mapping[str, Any],
-) -> List[str]:
+) -> Tuple[List[str], Dict[str, Any]]:
     reasons: List[str] = []
+    metrics: Dict[str, Any] = {}
     validation = scenario["validation"]
     if validation["stdout_nonempty"] and result.stdout_bytes == 0:
         reasons.append("stdout was empty")
@@ -596,12 +733,12 @@ def _validate_stdout(
         )
     contract = validation["stdout_json"]
     if contract is None:
-        return reasons
+        return reasons, metrics
     try:
         output = _read_json_output(result.stdout_path)
     except RunnerError as error:
         reasons.append(str(error))
-        return reasons
+        return reasons, metrics
     for output_path, expected in contract["equals"].items():
         try:
             actual = _lookup_field(output, output_path)
@@ -625,7 +762,23 @@ def _validate_stdout(
                 f"stdout manifest mismatch for {output_path}: expected {expected!r}, "
                 f"received {actual!r}"
             )
-    return reasons
+    for output_path in contract["record"]:
+        try:
+            actual = _lookup_field(output, output_path)
+            _validate_recorded_metric(actual, output_path)
+        except RunnerError as error:
+            reasons.append(str(error))
+            continue
+        metrics[output_path] = actual
+    return reasons, metrics
+
+
+def _validate_recorded_metric(value: Any, path: str) -> None:
+    if value is None or isinstance(value, (bool, int, str)):
+        return
+    if isinstance(value, float) and value == value and abs(value) != float("inf"):
+        return
+    raise RunnerError(f"recorded stdout metric {path!r} must be a finite JSON scalar")
 
 
 def _validate_snapshot_postcondition(
@@ -650,6 +803,7 @@ def _trial_record(
     postcondition: bool,
     reasons: Sequence[str],
     artifact_name: Optional[str],
+    probe_metrics: Mapping[str, Any],
 ) -> Dict[str, Any]:
     corpus = None
     if manifest is not None:
@@ -679,14 +833,14 @@ def _trial_record(
             "signal": command.signal if command else None,
             "spawn_error": command.spawn_error if command else None,
             "timed_out": command.timed_out if command else False,
+            "wait_error": command.wait_error if command else None,
         },
-        "resources": {
-            "major_faults": None,
-            "peak_rss_bytes": None,
-            "reason": "portable collectors are implemented by fdu-oj25",
-            "system_cpu_ns": None,
-            "user_cpu_ns": None,
-        },
+        "probe_metrics": dict(probe_metrics),
+        "resources": (
+            command.resources
+            if command
+            else _unavailable_resources("command did not start")
+        ),
         "sample_index": invocation["sample_index"],
         "sample_kind": invocation["sample_kind"],
         "scenario_id": scenario["id"],
@@ -866,7 +1020,7 @@ def _harness_identity() -> Dict[str, Any]:
     benchmark_root = Path(__file__).resolve().parent
     components = [
         {"name": name, "sha256": _hash_file(benchmark_root / name)}
-        for name in ("corpus.py", "runner.py", "schema.py")
+        for name in ("corpus.py", "report.py", "runner.py", "schema.py")
     ]
     identity = {
         "components": components,

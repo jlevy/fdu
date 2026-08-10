@@ -33,11 +33,31 @@ def scenario_statistics(result: Mapping[str, Any]) -> List[Dict[str, Any]]:
             and trial["timing"]["wall_ns"] is not None
         ]
         walls = [int(trial["timing"]["wall_ns"]) for trial in valid]
+        components = [
+            int(trial["probe_metrics"]["component_ns"])
+            for trial in valid
+            if isinstance(trial["probe_metrics"].get("component_ns"), int)
+        ]
+        cpu_times = [
+            int(trial["resources"]["user_cpu_ns"])
+            + int(trial["resources"]["system_cpu_ns"])
+            for trial in valid
+            if trial["resources"]["user_cpu_ns"] is not None
+            and trial["resources"]["system_cpu_ns"] is not None
+        ]
+        peak_rss = [
+            int(trial["resources"]["peak_rss_bytes"])
+            for trial in valid
+            if trial["resources"]["peak_rss_bytes"] is not None
+        ]
         row = _statistics_row(
             scenario_id,
             walls,
             invalid_trials=len(timed) - len(valid),
             entry_count=_entry_count(valid),
+            components=components,
+            cpu_times=cpu_times,
+            peak_rss=peak_rss,
         )
         rows.append(row)
     return rows
@@ -183,23 +203,28 @@ def render_report(result: Mapping[str, Any]) -> str:
         ),
         "",
         (
-            "| Scenario | Valid | Invalid | Median | MAD | P95 | Min | Max | "
-            "Mean | Stddev | CV | Entries/s |"
+            "| Scenario | Valid | Invalid | External median | Component median | "
+            "CPU median | Peak RSS | MAD | P95 | Min | Max | Mean | Stddev | "
+            "CV | External entries/s | Component entries/s |"
         ),
         (
-            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | "
-            "---: | ---: | ---: | ---: |"
+            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | "
+            "---: | ---: | ---: | ---: | ---: | ---: | ---: |"
         ),
         ]
     )
     for row in statistics:
         lines.append(
-            "| {scenario} | {valid} | {invalid} | {median} | {mad} | {p95} | "
-            "{minimum} | {maximum} | {mean} | {stddev} | {cv} | {throughput} |".format(
+            "| {scenario} | {valid} | {invalid} | {median} | {component} | "
+            "{cpu} | {rss} | {mad} | {p95} | {minimum} | {maximum} | {mean} | "
+            "{stddev} | {cv} | {throughput} | {component_throughput} |".format(
                 scenario=_escape(row["scenario_id"]),
                 valid=row["valid_trials"],
                 invalid=row["invalid_trials"],
                 median=_format_duration(row["median_wall_ns"]),
+                component=_format_duration(row["median_component_ns"]),
+                cpu=_format_duration(row["median_cpu_ns"]),
+                rss=_format_bytes(row["median_peak_rss_bytes"]),
                 mad=_format_duration(row["mad_wall_ns"]),
                 p95=_format_p95(row),
                 minimum=_format_duration(row["minimum_wall_ns"]),
@@ -208,8 +233,14 @@ def render_report(result: Mapping[str, Any]) -> str:
                 stddev=_format_duration(row["standard_deviation_wall_ns"]),
                 cv=_format_cv(row["coefficient_of_variation"]),
                 throughput=_format_throughput(row["entries_per_second"]),
+                component_throughput=_format_throughput(
+                    row["component_entries_per_second"]
+                ),
             )
         )
+
+    lines.extend(["", "## Collector Capabilities", ""])
+    lines.extend(_collector_summary(result))
 
     lines.extend(["", "## Review Triggers", ""])
     triggers = _review_triggers(statistics)
@@ -226,11 +257,12 @@ def render_report(result: Mapping[str, Any]) -> str:
             "",
             (
                 "| Ordinal | Kind | Scenario | Snapshot | FS cache | Valid | "
-                "First output | Wall | Exit | Stdout bytes | Stdout SHA-256 | Reason |"
+                "First output | External wall | Component | CPU | Peak RSS | Exit | "
+                "Stdout bytes | Stdout SHA-256 | Reason |"
             ),
             (
                 "| ---: | --- | --- | --- | --- | --- | ---: | ---: | ---: | "
-                "---: | --- | --- |"
+                "---: | ---: | ---: | ---: | --- | --- |"
             ),
         ]
     )
@@ -240,7 +272,8 @@ def render_report(result: Mapping[str, Any]) -> str:
         )
         lines.append(
             "| {ordinal} | {kind} | {scenario} | {snapshot} | {cache} | {valid} | "
-            "{first_output} | {wall} | {exit_code} | {stdout_bytes} | "
+            "{first_output} | {wall} | {component} | {cpu} | {rss} | "
+            "{exit_code} | {stdout_bytes} | "
             "`{digest}` | {reasons} |".format(
                 ordinal=trial["ordinal"],
                 kind=trial["sample_kind"],
@@ -250,6 +283,11 @@ def render_report(result: Mapping[str, Any]) -> str:
                 valid="yes" if trial["validation"]["valid"] else "no",
                 first_output=_format_duration(trial["timing"]["first_output_ns"]),
                 wall=_format_duration(trial["timing"]["wall_ns"]),
+                component=_format_duration(
+                    trial["probe_metrics"].get("component_ns")
+                ),
+                cpu=_format_duration(_trial_cpu_ns(trial)),
+                rss=_format_bytes(trial["resources"]["peak_rss_bytes"]),
                 exit_code=(
                     trial["process"]["exit_code"]
                     if trial["process"]["exit_code"] is not None
@@ -298,6 +336,13 @@ def _review_triggers(statistics: Sequence[Mapping[str, Any]]) -> List[str]:
                 f"{scenario_id}: coefficient of variation is "
                 f"{coefficient * 100:.2f}%, above the 10% investigation threshold."
             )
+        component_coefficient = row["component_coefficient_of_variation"]
+        if component_coefficient is not None and component_coefficient > 0.10:
+            triggers.append(
+                f"{scenario_id}: component coefficient of variation is "
+                f"{component_coefficient * 100:.2f}%, above the 10% "
+                "investigation threshold."
+            )
         if row["valid_trials"] < 10:
             triggers.append(
                 f"{scenario_id}: {row['valid_trials']} valid timed trial(s) are below "
@@ -326,15 +371,23 @@ def _statistics_row(
     *,
     invalid_trials: int,
     entry_count: Optional[int],
+    components: Sequence[int],
+    cpu_times: Sequence[int],
+    peak_rss: Sequence[int],
 ) -> Dict[str, Any]:
     if not walls:
         return {
             "coefficient_of_variation": None,
+            "component_coefficient_of_variation": _coefficient(components),
+            "component_entries_per_second": None,
             "entries_per_second": None,
             "invalid_trials": invalid_trials,
             "mad_wall_ns": None,
             "maximum_wall_ns": None,
             "mean_wall_ns": None,
+            "median_component_ns": _median(components),
+            "median_cpu_ns": _median(cpu_times),
+            "median_peak_rss_bytes": _median(peak_rss),
             "median_wall_ns": None,
             "minimum_wall_ns": None,
             "p95_reason": "no valid timed trials",
@@ -359,13 +412,22 @@ def _statistics_row(
     throughput = None
     if entry_count is not None and median > 0:
         throughput = entry_count * 1_000_000_000 / median
+    component_median = _median(components)
+    component_throughput = None
+    if entry_count is not None and component_median is not None and component_median > 0:
+        component_throughput = entry_count * 1_000_000_000 / component_median
     return {
         "coefficient_of_variation": coefficient,
+        "component_coefficient_of_variation": _coefficient(components),
+        "component_entries_per_second": component_throughput,
         "entries_per_second": throughput,
         "invalid_trials": invalid_trials,
         "mad_wall_ns": mad,
         "maximum_wall_ns": max(walls),
         "mean_wall_ns": mean,
+        "median_component_ns": component_median,
+        "median_cpu_ns": _median(cpu_times),
+        "median_peak_rss_bytes": _median(peak_rss),
         "median_wall_ns": median,
         "minimum_wall_ns": min(walls),
         "p95_reason": p95_reason,
@@ -384,6 +446,46 @@ def _entry_count(trials: Sequence[Mapping[str, Any]]) -> Optional[int]:
             if isinstance(counts, Mapping) and isinstance(counts.get("total"), int):
                 return int(counts["total"])
     return None
+
+
+def _median(values: Sequence[int]) -> Optional[float]:
+    return statistics_module.median(values) if values else None
+
+
+def _coefficient(values: Sequence[int]) -> Optional[float]:
+    if not values:
+        return None
+    mean = statistics_module.fmean(values)
+    return statistics_module.pstdev(values) / mean if mean else None
+
+
+def _trial_cpu_ns(trial: Mapping[str, Any]) -> Optional[int]:
+    resources = trial["resources"]
+    user = resources["user_cpu_ns"]
+    system = resources["system_cpu_ns"]
+    if user is None or system is None:
+        return None
+    return int(user) + int(system)
+
+
+def _collector_summary(result: Mapping[str, Any]) -> List[str]:
+    collectors: Dict[str, Dict[str, str]] = {}
+    for trial in result["trials"]:
+        if trial["sample_kind"] != "timed":
+            continue
+        resources = trial["resources"]
+        unavailable = collectors.setdefault(resources["collector"], {})
+        unavailable.update(resources["unavailable_reasons"])
+    lines: List[str] = []
+    for collector in sorted(collectors):
+        lines.append(f"- `{collector}`")
+        unavailable = collectors[collector]
+        if unavailable:
+            for metric in sorted(unavailable):
+                lines.extend(_sub_bullet(f"{metric}: {unavailable[metric]}"))
+        else:
+            lines.append("  - All schema metrics were available.")
+    return lines or ["No timed trial recorded a collector."]
 
 
 def _scenario_map(value: Any) -> Dict[str, Mapping[str, Any]]:
@@ -419,7 +521,7 @@ def _compare_scenario_contract(
             reasons.append(f"scenario {scenario_id!r} {field} differs")
     current_method = current.get("method", {})
     baseline_method = baseline.get("method", {})
-    for field in ("order_group", "timeout_seconds"):
+    for field in ("order_group", "required_resources", "timeout_seconds"):
         if current_method.get(field) != baseline_method.get(field):
             reasons.append(f"scenario {scenario_id!r} method.{field} differs")
 
@@ -475,8 +577,10 @@ def _collector_shape(result: Mapping[str, Any]) -> Dict[str, str]:
         if not isinstance(resources, Mapping):
             continue
         for key, value in resources.items():
-            if key != "reason":
+            if key not in {"collector", "unavailable_reasons"}:
                 observations.setdefault(key, []).append(value is not None)
+        collector = resources.get("collector")
+        observations.setdefault(f"collector:{collector}", []).append(True)
     shape: Dict[str, str] = {}
     for key, values in observations.items():
         if all(values):
@@ -508,6 +612,18 @@ def _format_throughput(value: Optional[float]) -> str:
     return "n/a" if value is None else f"{value:,.1f}"
 
 
+def _format_bytes(value: Optional[float]) -> str:
+    if value is None:
+        return "n/a"
+    units = ("B", "KiB", "MiB", "GiB", "TiB")
+    scaled = float(value)
+    for unit in units:
+        if scaled < 1024 or unit == units[-1]:
+            return f"{scaled:.1f} {unit}"
+        scaled /= 1024
+    return "n/a"
+
+
 def _escape(value: str) -> str:
     return value.replace("|", "\\|").replace("\n", " ")
 
@@ -524,6 +640,17 @@ def _bullet(value: str) -> List[str]:
         width=88,
         initial_indent="- ",
         subsequent_indent="  ",
+        break_long_words=False,
+        break_on_hyphens=False,
+    )
+
+
+def _sub_bullet(value: str) -> List[str]:
+    return textwrap.wrap(
+        value,
+        width=88,
+        initial_indent="  - ",
+        subsequent_indent="    ",
         break_long_words=False,
         break_on_hyphens=False,
     )
