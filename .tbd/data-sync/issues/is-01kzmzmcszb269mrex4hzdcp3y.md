@@ -1,0 +1,16 @@
+---
+type: is
+id: is-01kzmzmcszb269mrex4hzdcp3y
+title: Use directory-entry-relative metadata in the portable walker
+kind: task
+status: open
+priority: 1
+version: 1
+spec_path: docs/project/specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md
+labels: []
+dependencies: []
+parent_id: is-01kzg49rw1p40pjc18feb9ghpv
+created_at: 2026-08-10T04:41:56.286Z
+updated_at: 2026-08-10T04:41:56.286Z
+---
+The release probe measured a 100k balanced baseline of 577.5 ms scan-producer, 693.0 ms scan-index, and 834.7 ms unchanged revalidation on the same warm APFS corpus. Replace path-based symlink_metadata(item.path()) with DirEntry::metadata() in all directory enumeration loops so the standard library can use the already-open directory handle and avoid allocating/re-resolving an absolute path per entry. Preserve no-follow semantics, exact engine digest, partial errors, and cross-platform behavior; accept only with same-corpus before/after medians and full make check.
