@@ -1,7 +1,7 @@
 ---
 sandbox: true
 fixtures:
-  - fixtures/tree
+  - fixtures/project
 path:
   - $TRYSCRIPT_GIT_ROOT/target/debug
 env:
@@ -21,7 +21,7 @@ patterns:
 ## Full Output Exposes Scan and Projection Completeness Separately
 
 ```console
-$ fdu --no-cache --json --apparent-size --depth 2 --number 10 tree
+$ fdu --no-cache --json --apparent-size --depth 2 --number 10 project
 {
   "schema": "fdu.tree/2",
   "generator": "fdu 0.0.1",
@@ -36,83 +36,93 @@ $ fdu --no-cache --json --apparent-size --depth 2 --number 10 tree
   "errors": [
   ],
   "by_extension": {
-    ".tar.gz": {"files": 1, "bytes": 13},
-    ".md": {"files": 1, "bytes": 9},
-    ".txt": {"files": 2, "bytes": 8},
-    ".bin": {"files": 1, "bytes": 5}
+    ".tar.gz": {"files": 1, "bytes": 128},
+    ".md": {"files": 2, "bytes": 71},
+    ".rs": {"files": 2, "bytes": 36}
   },
   "tree": {
     "name": ".",
     "kind": "dir",
-    "bytes": 37,
+    "bytes": 263,
     "allocated": [ALLOCATED],
     "files": 6,
-    "dirs": 2,
+    "dirs": 3,
     "newest_mtime_ns": [MTIME_NS],
     "children": [
       {
-        "name": "assets",
+        "name": "dist",
         "kind": "dir",
-        "bytes": 13,
+        "bytes": 128,
         "allocated": [ALLOCATED],
         "files": 1,
         "dirs": 0,
         "newest_mtime_ns": [MTIME_NS],
         "children": [
           {
-            "name": "archive.tar.gz",
+            "name": "acorn-0.1.0.tar.gz",
             "kind": "file",
-            "bytes": 13,
+            "bytes": 128,
             "allocated": [ALLOCATED],
             "newest_mtime_ns": [MTIME_NS]
           }
         ]
       },
       {
-        "name": "docs",
+        "name": "README.md",
+        "kind": "file",
+        "bytes": 48,
+        "allocated": [ALLOCATED],
+        "newest_mtime_ns": [MTIME_NS]
+      },
+      {
+        "name": "src",
         "kind": "dir",
-        "bytes": 12,
+        "bytes": 36,
         "allocated": [ALLOCATED],
         "files": 2,
         "dirs": 0,
         "newest_mtime_ns": [MTIME_NS],
         "children": [
           {
-            "name": "guide.md",
+            "name": "alpha.rs",
             "kind": "file",
-            "bytes": 9,
+            "bytes": 18,
             "allocated": [ALLOCATED],
             "newest_mtime_ns": [MTIME_NS]
           },
           {
-            "name": "note.txt",
+            "name": "omega.rs",
             "kind": "file",
-            "bytes": 3,
+            "bytes": 18,
             "allocated": [ALLOCATED],
             "newest_mtime_ns": [MTIME_NS]
           }
         ]
       },
       {
-        "name": "ALPHA.TXT",
+        "name": "Makefile",
         "kind": "file",
-        "bytes": 5,
+        "bytes": 28,
         "allocated": [ALLOCATED],
         "newest_mtime_ns": [MTIME_NS]
       },
       {
-        "name": "beta.bin",
-        "kind": "file",
-        "bytes": 5,
+        "name": "docs",
+        "kind": "dir",
+        "bytes": 23,
         "allocated": [ALLOCATED],
-        "newest_mtime_ns": [MTIME_NS]
-      },
-      {
-        "name": "README",
-        "kind": "file",
-        "bytes": 2,
-        "allocated": [ALLOCATED],
-        "newest_mtime_ns": [MTIME_NS]
+        "files": 1,
+        "dirs": 0,
+        "newest_mtime_ns": [MTIME_NS],
+        "children": [
+          {
+            "name": "FAQ.MD",
+            "kind": "file",
+            "bytes": 23,
+            "allocated": [ALLOCATED],
+            "newest_mtime_ns": [MTIME_NS]
+          }
+        ]
       }
     ]
   }
@@ -123,7 +133,7 @@ $ fdu --no-cache --json --apparent-size --depth 2 --number 10 tree
 ## Render Limits Mark the Projection as Truncated
 
 ```console
-$ fdu --no-cache --json --apparent-size --depth 1 --number 2 tree
+$ fdu --no-cache --json --apparent-size --depth 1 --number 2 project
 {
   "schema": "fdu.tree/2",
   "generator": "fdu 0.0.1",
@@ -138,36 +148,33 @@ $ fdu --no-cache --json --apparent-size --depth 1 --number 2 tree
   "errors": [
   ],
   "by_extension": {
-    ".tar.gz": {"files": 1, "bytes": 13},
-    ".md": {"files": 1, "bytes": 9},
-    ".txt": {"files": 2, "bytes": 8},
-    ".bin": {"files": 1, "bytes": 5}
+    ".tar.gz": {"files": 1, "bytes": 128},
+    ".md": {"files": 2, "bytes": 71},
+    ".rs": {"files": 2, "bytes": 36}
   },
   "tree": {
     "name": ".",
     "kind": "dir",
-    "bytes": 37,
+    "bytes": 263,
     "allocated": [ALLOCATED],
     "files": 6,
-    "dirs": 2,
+    "dirs": 3,
     "newest_mtime_ns": [MTIME_NS],
     "children": [
       {
-        "name": "assets",
+        "name": "dist",
         "kind": "dir",
-        "bytes": 13,
+        "bytes": 128,
         "allocated": [ALLOCATED],
         "files": 1,
         "dirs": 0,
         "newest_mtime_ns": [MTIME_NS]
       },
       {
-        "name": "docs",
-        "kind": "dir",
-        "bytes": 12,
+        "name": "README.md",
+        "kind": "file",
+        "bytes": 48,
         "allocated": [ALLOCATED],
-        "files": 2,
-        "dirs": 0,
         "newest_mtime_ns": [MTIME_NS]
       }
     ]
@@ -179,7 +186,7 @@ $ fdu --no-cache --json --apparent-size --depth 1 --number 2 tree
 ## Scan Depth Is an Explicit Complete Scope
 
 ```console
-$ fdu --no-cache --json --apparent-size --max-depth 1 --depth 2 --number 10 tree
+$ fdu --no-cache --json --apparent-size --max-depth 1 --depth 2 --number 10 project
 {
   "schema": "fdu.tree/2",
   "generator": "fdu 0.0.1",
@@ -194,41 +201,33 @@ $ fdu --no-cache --json --apparent-size --max-depth 1 --depth 2 --number 10 tree
   "errors": [
   ],
   "by_extension": {
-    ".bin": {"files": 1, "bytes": 5},
-    ".txt": {"files": 1, "bytes": 5}
+    ".md": {"files": 1, "bytes": 48}
   },
   "tree": {
     "name": ".",
     "kind": "dir",
-    "bytes": 12,
+    "bytes": 76,
     "allocated": [ALLOCATED],
-    "files": 3,
-    "dirs": 2,
+    "files": 2,
+    "dirs": 3,
     "newest_mtime_ns": [MTIME_NS],
     "children": [
       {
-        "name": "ALPHA.TXT",
+        "name": "README.md",
         "kind": "file",
-        "bytes": 5,
+        "bytes": 48,
         "allocated": [ALLOCATED],
         "newest_mtime_ns": [MTIME_NS]
       },
       {
-        "name": "beta.bin",
+        "name": "Makefile",
         "kind": "file",
-        "bytes": 5,
+        "bytes": 28,
         "allocated": [ALLOCATED],
         "newest_mtime_ns": [MTIME_NS]
       },
       {
-        "name": "README",
-        "kind": "file",
-        "bytes": 2,
-        "allocated": [ALLOCATED],
-        "newest_mtime_ns": [MTIME_NS]
-      },
-      {
-        "name": "assets",
+        "name": "dist",
         "kind": "dir",
         "bytes": 0,
         "allocated": 0,
@@ -238,6 +237,15 @@ $ fdu --no-cache --json --apparent-size --max-depth 1 --depth 2 --number 10 tree
       },
       {
         "name": "docs",
+        "kind": "dir",
+        "bytes": 0,
+        "allocated": 0,
+        "files": 0,
+        "dirs": 0,
+        "newest_mtime_ns": 0
+      },
+      {
+        "name": "src",
         "kind": "dir",
         "bytes": 0,
         "allocated": 0,
@@ -254,7 +262,7 @@ $ fdu --no-cache --json --apparent-size --max-depth 1 --depth 2 --number 10 tree
 ## Human-Only Type View Cannot Be Combined with JSON
 
 ```console
-$ fdu --no-cache --by-type --json tree
+$ fdu --no-cache --by-type --json project
 ! error: the argument '--by-type' cannot be used with '--json'[BLANK_LINE]
 ! Usage: fdu --no-cache --by-type <PATH>[BLANK_LINE]
 ! For more information, try '--help'.

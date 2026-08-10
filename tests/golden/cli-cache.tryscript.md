@@ -1,7 +1,7 @@
 ---
 sandbox: true
 fixtures:
-  - fixtures/tree
+  - fixtures/project
 path:
   - $TRYSCRIPT_GIT_ROOT/target/debug
 env:
@@ -26,7 +26,7 @@ patterns:
 ### Scan Without a Cache
 
 ```console
-$ fdu --no-cache --json --apparent-size --depth 0 --number 0 tree
+$ fdu --no-cache --json --apparent-size --depth 0 --number 0 project
 {
   "schema": "fdu.tree/2",
   "generator": "fdu 0.0.1",
@@ -41,18 +41,17 @@ $ fdu --no-cache --json --apparent-size --depth 0 --number 0 tree
   "errors": [
   ],
   "by_extension": {
-    ".tar.gz": {"files": 1, "bytes": 13},
-    ".md": {"files": 1, "bytes": 9},
-    ".txt": {"files": 2, "bytes": 8},
-    ".bin": {"files": 1, "bytes": 5}
+    ".tar.gz": {"files": 1, "bytes": 128},
+    ".md": {"files": 2, "bytes": 71},
+    ".rs": {"files": 2, "bytes": 36}
   },
   "tree": {
     "name": ".",
     "kind": "dir",
-    "bytes": 37,
+    "bytes": 263,
     "allocated": [ALLOCATED],
     "files": 6,
-    "dirs": 2,
+    "dirs": 3,
     "newest_mtime_ns": [MTIME_NS]
   }
 }
@@ -72,7 +71,7 @@ cache absent
 ### Create the Snapshot
 
 ```console
-$ fdu --json --apparent-size --depth 0 --number 0 tree
+$ fdu --json --apparent-size --depth 0 --number 0 project
 {
   "schema": "fdu.tree/2",
   "generator": "fdu 0.0.1",
@@ -87,18 +86,17 @@ $ fdu --json --apparent-size --depth 0 --number 0 tree
   "errors": [
   ],
   "by_extension": {
-    ".tar.gz": {"files": 1, "bytes": 13},
-    ".md": {"files": 1, "bytes": 9},
-    ".txt": {"files": 2, "bytes": 8},
-    ".bin": {"files": 1, "bytes": 5}
+    ".tar.gz": {"files": 1, "bytes": 128},
+    ".md": {"files": 2, "bytes": 71},
+    ".rs": {"files": 2, "bytes": 36}
   },
   "tree": {
     "name": ".",
     "kind": "dir",
-    "bytes": 37,
+    "bytes": 263,
     "allocated": [ALLOCATED],
     "files": 6,
-    "dirs": 2,
+    "dirs": 3,
     "newest_mtime_ns": [MTIME_NS]
   }
 }
@@ -116,7 +114,7 @@ snapshot present
 ## An Unchanged Second Open Revalidates the Snapshot
 
 ```console
-$ fdu --json --apparent-size --depth=0 --number 0 tree
+$ fdu --json --apparent-size --depth=0 --number 0 project
 {
   "schema": "fdu.tree/2",
   "generator": "fdu 0.0.1",
@@ -131,18 +129,17 @@ $ fdu --json --apparent-size --depth=0 --number 0 tree
   "errors": [
   ],
   "by_extension": {
-    ".tar.gz": {"files": 1, "bytes": 13},
-    ".md": {"files": 1, "bytes": 9},
-    ".txt": {"files": 2, "bytes": 8},
-    ".bin": {"files": 1, "bytes": 5}
+    ".tar.gz": {"files": 1, "bytes": 128},
+    ".md": {"files": 2, "bytes": 71},
+    ".rs": {"files": 2, "bytes": 36}
   },
   "tree": {
     "name": ".",
     "kind": "dir",
-    "bytes": 37,
+    "bytes": 263,
     "allocated": [ALLOCATED],
     "files": 6,
-    "dirs": 2,
+    "dirs": 3,
     "newest_mtime_ns": [MTIME_NS]
   }
 }
@@ -154,7 +151,7 @@ $ fdu --json --apparent-size --depth=0 --number 0 tree
 ### Expand the Fixture
 
 ```console
-$ node -e "require('node:fs').writeFileSync('tree/docs/guide.md', '1234567890123456789\n'); console.log('fixture expanded')"
+$ node -e "require('node:fs').writeFileSync('project/docs/FAQ.MD', '# FAQ\n\nRun the full check before every release.\n'); console.log('fixture expanded')"
 fixture expanded
 ? 0
 ```
@@ -162,7 +159,7 @@ fixture expanded
 ### Revalidate the Changed Tree
 
 ```console
-$ fdu --json --apparent-size --depth 0 --number=0 tree
+$ fdu --json --apparent-size --depth 0 --number=0 project
 {
   "schema": "fdu.tree/2",
   "generator": "fdu 0.0.1",
@@ -177,18 +174,17 @@ $ fdu --json --apparent-size --depth 0 --number=0 tree
   "errors": [
   ],
   "by_extension": {
-    ".md": {"files": 1, "bytes": 20},
-    ".tar.gz": {"files": 1, "bytes": 13},
-    ".txt": {"files": 2, "bytes": 8},
-    ".bin": {"files": 1, "bytes": 5}
+    ".tar.gz": {"files": 1, "bytes": 128},
+    ".md": {"files": 2, "bytes": 96},
+    ".rs": {"files": 2, "bytes": 36}
   },
   "tree": {
     "name": ".",
     "kind": "dir",
-    "bytes": 48,
+    "bytes": 288,
     "allocated": [ALLOCATED],
     "files": 6,
-    "dirs": 2,
+    "dirs": 3,
     "newest_mtime_ns": [MTIME_NS]
   }
 }
@@ -198,7 +194,7 @@ $ fdu --json --apparent-size --depth 0 --number=0 tree
 ## A Different Semantic Scan Scope Misses the Snapshot
 
 ```console
-$ fdu --json --apparent-size --max-depth 1 --depth 0 --number 0 tree
+$ fdu --json --apparent-size --max-depth 1 --depth 0 --number 0 project
 {
   "schema": "fdu.tree/2",
   "generator": "fdu 0.0.1",
@@ -213,16 +209,15 @@ $ fdu --json --apparent-size --max-depth 1 --depth 0 --number 0 tree
   "errors": [
   ],
   "by_extension": {
-    ".bin": {"files": 1, "bytes": 5},
-    ".txt": {"files": 1, "bytes": 5}
+    ".md": {"files": 1, "bytes": 48}
   },
   "tree": {
     "name": ".",
     "kind": "dir",
-    "bytes": 12,
+    "bytes": 76,
     "allocated": [ALLOCATED],
-    "files": 3,
-    "dirs": 2,
+    "files": 2,
+    "dirs": 3,
     "newest_mtime_ns": [MTIME_NS]
   }
 }
@@ -242,7 +237,7 @@ snapshot corrupted
 ### Recover with a Cold Scan
 
 ```console
-$ fdu --json --apparent-size --max-depth=1 --depth 0 --number 0 tree
+$ fdu --json --apparent-size --max-depth=1 --depth 0 --number 0 project
 {
   "schema": "fdu.tree/2",
   "generator": "fdu 0.0.1",
@@ -257,16 +252,15 @@ $ fdu --json --apparent-size --max-depth=1 --depth 0 --number 0 tree
   "errors": [
   ],
   "by_extension": {
-    ".bin": {"files": 1, "bytes": 5},
-    ".txt": {"files": 1, "bytes": 5}
+    ".md": {"files": 1, "bytes": 48}
   },
   "tree": {
     "name": ".",
     "kind": "dir",
-    "bytes": 12,
+    "bytes": 76,
     "allocated": [ALLOCATED],
-    "files": 3,
-    "dirs": 2,
+    "files": 2,
+    "dirs": 3,
     "newest_mtime_ns": [MTIME_NS]
   }
 }

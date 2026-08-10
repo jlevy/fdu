@@ -1,7 +1,7 @@
 ---
 sandbox: true
 fixtures:
-  - fixtures/tree
+  - fixtures/project
 path:
   - $TRYSCRIPT_GIT_ROOT/target/debug
 env:
@@ -18,38 +18,38 @@ patterns:
 ## A Full Tree Has Stable Sizes, Ordering, Bars, and Indentation
 
 ```console
-$ fdu --no-cache --no-color --apparent-size --depth 2 --number 10 tree
-[SCAN_PATH]  6 files, 2 dirs, 37 B
-      13 B  ████░░░░░░    35%  assets/
-      13 B  ████░░░░░░    35%    archive.tar.gz
-      12 B  ███░░░░░░░    32%  docs/
-       9 B  ██░░░░░░░░    24%    guide.md
-       3 B  █░░░░░░░░░     8%    note.txt
-       5 B  █░░░░░░░░░    14%  ALPHA.TXT
-       5 B  █░░░░░░░░░    14%  beta.bin
-       2 B  █░░░░░░░░░     5%  README
+$ fdu --no-cache --no-color --apparent-size --depth 2 --number 10 project
+[SCAN_PATH]  6 files, 3 dirs, 263 B
+     128 B  █████░░░░░    49%  dist/
+     128 B  █████░░░░░    49%    acorn-0.1.0.tar.gz
+      48 B  ██░░░░░░░░    18%  README.md
+      36 B  █░░░░░░░░░    14%  src/
+      18 B  █░░░░░░░░░     7%    alpha.rs
+      18 B  █░░░░░░░░░     7%    omega.rs
+      28 B  █░░░░░░░░░    11%  Makefile
+      23 B  █░░░░░░░░░     9%  docs/
+      23 B  █░░░░░░░░░     9%    FAQ.MD
 ? 0
 ```
 
 ## Depth and Number Limit Only the Rendered View
 
 ```console
-$ fdu --no-cache --no-color --apparent-size --depth 1 --number 2 tree
-[SCAN_PATH]  6 files, 2 dirs, 37 B
-      13 B  ████░░░░░░    35%  assets/
-      12 B  ███░░░░░░░    32%  docs/
+$ fdu --no-cache --no-color --apparent-size --depth 1 --number 2 project
+[SCAN_PATH]  6 files, 3 dirs, 263 B
+     128 B  █████░░░░░    49%  dist/
+      48 B  ██░░░░░░░░    18%  README.md
 ? 0
 ```
 
 ## Type View Uses Apparent Bytes Consistently
 
 ```console
-$ fdu --no-cache --no-color --by-type --number 10 tree
-[SCAN_PATH]  6 files, 2 dirs, 37 B
-      13 B  ████░░░░░░    35%  .tar.gz  1 files
-       9 B  ██░░░░░░░░    24%  .md  1 files
-       8 B  ██░░░░░░░░    22%  .txt  2 files
-       5 B  █░░░░░░░░░    14%  .bin  1 files
+$ fdu --no-cache --no-color --by-type --number 10 project
+[SCAN_PATH]  6 files, 3 dirs, 263 B
+     128 B  █████░░░░░    49%  .tar.gz  1 files
+      71 B  ███░░░░░░░    27%  .md  2 files
+      36 B  █░░░░░░░░░    14%  .rs  2 files
 ? 0
 ```
 

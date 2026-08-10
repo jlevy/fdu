@@ -19,6 +19,8 @@ benchmarks/results/
 *.so
 *.pyd
 dist/
+!tests/golden/fixtures/project/dist/
+!tests/golden/fixtures/project/dist/acorn-0.1.0.tar.gz
 .venv/
 .venv-smoke/
 __pycache__/

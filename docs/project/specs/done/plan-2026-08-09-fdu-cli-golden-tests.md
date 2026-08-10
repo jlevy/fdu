@@ -97,6 +97,8 @@ The relevant limitations are:
 - Multiple `$` prompts in one console fence are silently concatenated as one command
 - `--update` finds blocks by raw text, so repeated identical commands in a stateful file
   can receive another invocation’s captured output
+- `--update` replaces a failing block’s named patterns with one run’s literal values,
+  making the next sandbox fail even after an intentional stable-output update
 
 The suite therefore uses committed fixtures and `node -e` only for the two state changes
 that must occur between commands: modifying a fixture file and corrupting a generated
@@ -107,7 +109,11 @@ pending [tryscript issue 45](https://github.com/jlevy/tryscript/issues/45). The
 multi-command hazard is tracked in
 [tryscript issue 46](https://github.com/jlevy/tryscript/issues/46). Stateful invocations
 use equivalent but textually distinct option spellings until the updater is fixed in
-[tryscript issue 47](https://github.com/jlevy/tryscript/issues/47).
+[tryscript issue 47](https://github.com/jlevy/tryscript/issues/47). The immediate
+comparison after `make golden-update` fails safely if update mode literalizes an
+approved pattern; reviewers restore only the named unstable fields and rerun the suite.
+Preserving those patterns automatically is tracked in
+[tryscript issue 49](https://github.com/jlevy/tryscript/issues/49).
 
 ## Behavioral Contract
 
@@ -223,16 +229,25 @@ transcript would only duplicate the same branch.
 
 ### Portable Fixture
 
-One committed ASCII fixture contains six regular files under two directories.
-Its file contents have intentional apparent sizes, including a same-size pair for the
-name tie-break, mixed-case extensions, a compound `.tar.gz` extension, and an
-extensionless file.
-It contains no symlink, device, permission, sparse-file, or timestamp
-assumption.
+One committed fixture represents a small Acorn software project: a Markdown overview, a
+working Makefile target, a Markdown FAQ, two Rust source files, and a valid release
+archive.
+The six regular files occupy exactly 263 apparent bytes under three directories.
+The files remain intentionally selected, but their names and contents now explain the
+scenario rather than acting as anonymous byte-count tokens.
 
-Every substantive session copies the fixture into `tree/` inside its sandbox.
+The project preserves the compact fixture’s behavioral coverage.
+`Makefile` is extensionless; `README.md` and `docs/FAQ.MD` test extension aggregation
+and case folding; equally sized `src/alpha.rs` and `src/omega.rs` test the name
+tie-break; and `dist/acorn-0.1.0.tar.gz` tests compound-extension classification with a
+real, deterministic archive.
+It contains no symlink, device, permission, sparse-file, or timestamp assumption.
+`tests/golden/fixtures/README.md` keeps this rationale adjacent to the corpus without
+adding a scanned file.
+
+Every substantive session copies the fixture into `project/` inside its sandbox.
 The cache directory is a sibling selected with `XDG_CACHE_HOME=.cache`; it is never
-inside the scanned `tree/`, avoiding a self-observing snapshot.
+inside the scanned `project/`, avoiding a self-observing snapshot.
 
 ### Stable Environment
 
@@ -287,8 +302,8 @@ These tests supplement rather than repeat the full transcripts.
 - Run `npm audit` after installation and keep the existing Cargo audit
 - Use Node 24 in CI and the package’s declared minimum of Node 20 for local development
 - Build `target/debug/fdu` before running the transcripts
-- Pass the transcript glob in portable double quotes and force every golden input to LF
-  at checkout so Windows observes the same fixture bytes
+- Pass the transcript glob in portable double quotes, force golden text to LF, and mark
+  the compressed archive as binary so Windows observes the same fixture bytes
 
 The test command performs no network access after the locked npm install.
 Tryscript is a development-only tool and does not enter either Rust crate’s dependency
@@ -324,6 +339,8 @@ graph or published artifacts.
   only the intended block, and that reverting the mutation restores a clean pass
 - [x] Review every golden for unnecessary patterns and every focused test for duplicate
   coverage
+- [x] `fdu-12q9`: replace the opaque byte-token corpus with a documented project fixture
+  while preserving the same behavioral coverage
 
 ## Issue Ledger
 
@@ -344,8 +361,10 @@ design decision and acceptance behavior.
 | Tryscript cannot express an exact blank stderr line without fragile trailing whitespace | Accept bare `!` as an empty stderr line; use an exact newline pattern until released | `fdu-ms3k` | Reported as [tryscript 45](https://github.com/jlevy/tryscript/issues/45) |
 | Tryscript concatenates multiple `$` prompts in one fence into one command | Reject the second prompt or parse it as an independent invocation | `fdu-lz5o` | Reported as [tryscript 46](https://github.com/jlevy/tryscript/issues/46) |
 | Tryscript `--update` misassigns results among identical raw blocks | Replace blocks by source range; keep stateful command spellings distinct until released | `fdu-hs0l` | Reported as [tryscript 47](https://github.com/jlevy/tryscript/issues/47) |
+| Tryscript `--update` replaces named unstable patterns with literal values | Preserve matching named patterns while updating stable neighbors; fail the immediate comparison until restored | `fdu-gwe8` | Reported as [tryscript 49](https://github.com/jlevy/tryscript/issues/49) |
 | POSIX single quotes in npm scripts become literal on Windows | Quote the transcript glob portably for Unix shells and `cmd.exe` | `fdu-p7wj` | Fixed |
 | Git could convert the size-sensitive fixture from LF to CRLF on Windows | Pin every golden input to LF in `.gitattributes` | `fdu-p7wj` | Fixed |
+| Anonymous one-character fixture contents make the behavioral intent difficult to review | Use a documented, believable project whose valid contents preserve each required boundary | `fdu-12q9` | Fixed |
 
 ## Bead Map
 
@@ -364,8 +383,10 @@ Epic: **fdu-a0w0** — Specify and harden the fdu CLI with golden tests.
 | `fdu-ms3k` | Upstream blank-stderr parser issue and local exact workaround | — |
 | `fdu-lz5o` | Upstream multi-command parser issue and one-fence-per-command rule | — |
 | `fdu-hs0l` | Upstream updater identity bug and distinct-command workaround | — |
+| `fdu-gwe8` | Upstream update-mode named-pattern preservation and fail-safe local review | — |
 | `fdu-p7wj` | Portable npm glob quoting and fixture line endings on Windows | — |
 | `fdu-xuq9` | Make, CI, npm audit, and review workflow | All behavior slices |
+| `fdu-12q9` | Self-explanatory project corpus with equivalent exact coverage | — |
 
 ## Acceptance Criteria
 
@@ -382,6 +403,8 @@ Epic: **fdu-a0w0** — Specify and harden the fdu CLI with golden tests.
    in the cache transcript and return correct stable totals.
 7. `make test`, `make check`, and CI run the golden contract; `make golden-update` is
    the only supported regeneration path and reruns comparison after updating.
+   The comparison must reject an update that replaced an approved instability pattern
+   with a literal value.
 8. Npm dependencies are exact and locked, lifecycle scripts are disabled, and both npm
    and Cargo audits pass.
 9. Every finding in the issue ledger has a linked bead and is closed only after its
@@ -391,13 +414,15 @@ Epic: **fdu-a0w0** — Specify and harden the fdu CLI with golden tests.
 
 ## Completion Evidence
 
-Completed on 2026-08-09. The local `make check` handoff gate passes, including 122
-all-feature library tests, the CLI unit/integration tests, two doctests, 95
-no-default-feature tests, all 25 golden scenarios, both dependency audits,
-documentation, and the installed Python wheel smoke test.
-The intentional-mutation exercise proved that a stable-output change fails comparison,
-that the updater changes only the intended block, and that restoring the expectation
-returns the suite to a clean pass.
+Completed on 2026-08-09. The current local `make check` handoff gate passes, including
+145 all-feature library tests, two CLI unit tests, one CLI integration test, two
+doctests, 105 core-only tests, 135 watch-only tests, all 25 golden scenarios, both
+dependency audits, documentation, two Python concurrency tests, and the installed Python
+wheel smoke test.
+The golden scenarios pass against the documented 263-byte Acorn project
+fixture. The intentional-mutation exercise proved that a stable-output change fails
+comparison, that the updater changes only the intended block, and that restoring the
+expectation returns the suite to a clean pass.
 GitHub Actions [run 31329423861](https://github.com/jlevy/fdu/actions/runs/31329423861)
 passes the complete Linux, macOS, Windows, MSRV, documentation, dependency, and wheel
 matrix; Windows runs the same 25 golden scenarios against LF-pinned fixtures and
@@ -432,6 +457,7 @@ types do not change.
 - [Tryscript blank stderr issue](https://github.com/jlevy/tryscript/issues/45)
 - [Tryscript multiple-command issue](https://github.com/jlevy/tryscript/issues/46)
 - [Tryscript duplicate-block update issue](https://github.com/jlevy/tryscript/issues/47)
+- [Tryscript named-pattern update issue](https://github.com/jlevy/tryscript/issues/49)
 - [Phase 1 plan](../active/plan-2026-08-08-fdu-phase-1.md)
 - [File roll-up engine research](../../research/research-2026-08-06-file-rollup-engine.md)
 
