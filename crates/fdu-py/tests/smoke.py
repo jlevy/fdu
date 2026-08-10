@@ -114,8 +114,11 @@ def main() -> None:
 
     if os.name != "nt":
         # Python stores undecodable argv bytes with surrogateescape. The wheel entry
-        # point must recover the native bytes rather than narrowing them to UTF-8.
-        raw_root = os.fsencode(root) + b"/raw-\xff"
+        # point must recover the native bytes rather than narrowing them to UTF-8. Keep
+        # this fixture outside `root`: Linux accepts the byte name, and adding it beneath
+        # the already indexed API fixture would couple this check to the refresh test.
+        raw_parent = tempfile.mkdtemp(prefix="fdu-native-argv-")
+        raw_root = os.fsencode(raw_parent) + b"/raw-\xff"
         try:
             os.mkdir(raw_root)
         except OSError as error:

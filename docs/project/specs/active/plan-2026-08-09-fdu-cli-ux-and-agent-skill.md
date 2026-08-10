@@ -246,7 +246,8 @@ Epic: `fdu-6c8n` — CLI UX and zero-install agent skill.
 | 1 | `fdu-4jd7` | Complete | P1 | Harden color, help, streams, and the shared process boundary | — |
 | 2a | `fdu-gxvl` | Complete | P1 | Add the portable version-pinned skill | `fdu-4jd7` |
 | 2b | `fdu-4pnh` | Complete | P1 | Expose the Rust CLI from the installed wheel | `fdu-4jd7` |
-| 3 | `fdu-8ysf` | In progress | P1 | Validate and publish the focused follow-up PR | `fdu-4jd7`, `fdu-gxvl`, `fdu-4pnh`, `fdu-zsdy` |
+| 3 | `fdu-sqfw` | In progress | P1 | Isolate the native-argv wheel smoke fixture | `fdu-4pnh` |
+| 4 | `fdu-8ysf` | In progress | P1 | Validate and publish the focused follow-up PR | `fdu-4jd7`, `fdu-gxvl`, `fdu-4pnh`, `fdu-zsdy`, `fdu-sqfw` |
 
 Cross-plan work retains its existing owner:
 
