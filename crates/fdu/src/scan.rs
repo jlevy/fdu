@@ -22,8 +22,8 @@ use std::path::{Component, Path, PathBuf};
 use crate::ApplyStats;
 use crate::index::{Index, IndexHandle};
 use crate::types::{
-    AppliedDelta, Attrs, EntryKind, Error, Observation, ObservationOp, Op, PathExpectation, Result,
-    ScanScope,
+    AppliedDelta, Attrs, EntryKind, Error, Observation, ObservationOp, Op, PathExpectation,
+    PathState, Result, ScanScope,
 };
 
 /// How many ops accumulate before an observation is handed to the sink.
@@ -209,6 +209,15 @@ impl ReconcileTarget<'_> {
             Self::Direct(index) => index.apply(observation),
             Self::Shared(handle) => handle.apply(observation),
         }
+    }
+
+    fn direct_upsert_is_unchanged(
+        &self,
+        baseline: PathExpectation,
+        kind: EntryKind,
+        attrs: Attrs,
+    ) -> bool {
+        matches!(self, Self::Direct(_)) && baseline.state == (PathState::Present { kind, attrs })
     }
 
     fn take_pending_invalidations(&mut self) -> Result<Vec<(PathBuf, crate::InvalidateReason)>> {
@@ -612,10 +621,15 @@ fn reconcile_target_inner(
         let kind = kind_from(&meta);
         let attrs = attrs_from(&meta);
         report.scan.entries += 1;
-        batch.push(ObservationOp::if_state(
-            Op::Upsert { path: subtree.to_path_buf(), kind, attrs },
+        push_reconcile_upsert(
+            target,
+            subtree,
+            kind,
+            attrs,
             baseline,
-        ));
+            &mut batch,
+            &mut report.apply,
+        );
         flush_reconcile_batch(target, &mut batch, sink, &mut report.apply)?;
         if !should_descend(kind, attrs, start_depth.saturating_sub(1), root_dev, config) {
             if kind.is_dir() {
@@ -671,10 +685,15 @@ fn reconcile_target_inner(
             let kind = kind_from(&meta);
             let attrs = attrs_from(&meta);
             report.scan.entries += 1;
-            batch.push(ObservationOp::if_state(
-                Op::Upsert { path: rel_path.clone(), kind, attrs },
+            push_reconcile_upsert(
+                target,
+                &rel_path,
+                kind,
+                attrs,
                 baseline,
-            ));
+                &mut batch,
+                &mut report.apply,
+            );
             if batch.len() >= config.batch_size.max(1) {
                 flush_reconcile_batch(target, &mut batch, sink, &mut report.apply)?;
             }
@@ -788,6 +807,30 @@ fn remove_known_children(
         }
     }
     flush_reconcile_batch(target, batch, sink, stats)
+}
+
+fn push_reconcile_upsert(
+    target: &ReconcileTarget<'_>,
+    path: &Path,
+    kind: EntryKind,
+    attrs: Attrs,
+    baseline: PathExpectation,
+    batch: &mut Vec<ObservationOp>,
+    stats: &mut ApplyStats,
+) {
+    // An exclusive Index borrow cannot race another index producer. If filesystem
+    // metadata exactly matches the captured state, applying this upsert can only be a
+    // no-op, so avoid allocating an owned op and walking the index again. Shared
+    // reconciliation keeps the conditional observation so ABA arbitration remains
+    // authoritative between its read and write lock boundaries.
+    if target.direct_upsert_is_unchanged(baseline, kind, attrs) {
+        stats.unchanged += 1;
+        return;
+    }
+    batch.push(ObservationOp::if_state(
+        Op::Upsert { path: path.to_path_buf(), kind, attrs },
+        baseline,
+    ));
 }
 
 fn flush_reconcile_batch(
@@ -1229,6 +1272,45 @@ mod tests {
 
         assert_eq!(unchanged, 5, "3 files + 2 dirs all already known");
         assert_eq!(index.total(), &before);
+    }
+
+    #[test]
+    fn direct_reconciliation_counts_unchanged_entries_without_publishing_deltas() {
+        let dir = sample_tree();
+        let (mut index, _) = scan_into_index(dir.path(), &ScanConfig::default()).expect("scan");
+        let before_total = index.total().clone();
+        let before_clock = index.clock();
+        let mut deltas = Vec::new();
+
+        let report = reconcile(&mut index, &ScanConfig::default(), &mut |delta| {
+            deltas.push(delta.clone());
+        })
+        .expect("reconcile");
+
+        assert!(report.is_complete());
+        assert_eq!(report.apply.unchanged, 5, "3 files + 2 dirs all already known");
+        assert!(deltas.is_empty());
+        assert_eq!(index.clock(), before_clock);
+        assert_eq!(index.total(), &before_total);
+    }
+
+    #[test]
+    fn shared_reconciliation_retains_conditional_no_op_arbitration() {
+        let dir = sample_tree();
+        let (index, _) = scan_into_index(dir.path(), &ScanConfig::default()).expect("scan");
+        let handle = crate::IndexHandle::new(index);
+        let before_clock = handle.clock().expect("clock");
+        let mut deltas = Vec::new();
+
+        let report = reconcile_handle(&handle, &ScanConfig::default(), &mut |delta| {
+            deltas.push(delta.clone());
+        })
+        .expect("reconcile");
+
+        assert!(report.is_complete());
+        assert_eq!(report.apply.unchanged, 5, "3 files + 2 dirs all already known");
+        assert!(deltas.is_empty());
+        assert_eq!(handle.clock().expect("clock"), before_clock);
     }
 
     #[test]

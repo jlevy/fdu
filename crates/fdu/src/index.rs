@@ -1183,9 +1183,14 @@ impl Index {
 fn collect_child_expectations(index: &Index, path: &Path) -> BTreeMap<OsString, PathExpectation> {
     index.children(path).map_or_else(BTreeMap::new, |children| {
         children
-            .map(|(name, _)| {
-                let child_path = path.join(name);
-                (name.to_os_string(), index.expectation(&child_path))
+            .map(|(name, id)| {
+                let entry = index.entry(id);
+                let expectation = PathExpectation::new(
+                    PathState::Present { kind: entry.kind, attrs: entry.attrs },
+                    Some(index.identity(id)),
+                    None,
+                );
+                (name.to_os_string(), expectation)
             })
             .collect()
     })
@@ -1282,6 +1287,17 @@ mod tests {
         assert_eq!(retained_children.expect("src directory").len(), 2);
         assert!(retained_snapshot.lookup(Path::new("concurrent.txt")).is_none());
         assert!(handle.kind(Path::new("concurrent.txt")).expect("query").is_some());
+    }
+
+    #[test]
+    fn captured_child_expectations_match_individual_path_lookups() {
+        let index = index_with_sample_tree();
+        let captured = collect_child_expectations(&index, Path::new("src"));
+
+        assert!(!captured.is_empty());
+        for (name, expectation) in captured {
+            assert_eq!(expectation, index.expectation(&Path::new("src").join(name)));
+        }
     }
 
     #[test]

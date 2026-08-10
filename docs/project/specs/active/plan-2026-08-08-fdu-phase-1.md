@@ -53,8 +53,9 @@ replacement, invalidation-retry, partial-exit, and installed-wheel tests.
 Clippy pedantic is clean with `unsafe_code = "deny"` on the core crate; the
 `--no-default-features` library path is built and tested in CI rather than assumed.
 
-**Deliberately not built.** The walker is `read_dir` + `symlink_metadata`. Nothing in
-this repository is fast yet, and **no performance claim should be made until the syscall
+**Deliberately not built.** The walker is still portable `read_dir` plus per-entry
+metadata, despite two measured constant-factor improvements. Nothing in this repository
+is claim-grade fast yet, and **no performance claim should be made until the syscall
 layer lands and the benchmark gate passes**. The snapshot format is a flat uncompressed
 image whose reader is bounded and streaming but whose writer still materializes the
 image. `open()` blocks until warm reconciliation finishes.
@@ -104,6 +105,11 @@ they were not in the research:
 - Zero cannot be both the max-reducer identity and a valid epoch timestamp.
   Newest-mtime reduction now uses file presence as its identity and preserves negative
   timestamps.
+- The first exact-oracle revalidation curve measured 72.258 ms at 10k, 725.023 ms at
+  100k, 8.186 s at 500k, and 62.906 s at 1M on one uncontrolled APFS host. The 500k
+  target is therefore not met. Direct expectation capture plus exclusive no-op elision
+  improved nine alternating 100k pairs by a paired median 18.15%, but does not change
+  the need for the syscall walker and bounded parallel sweep.
 
 ## What Phase 1 Delivers
 
@@ -329,7 +335,7 @@ the queued Phase 1 work.
 | `fdu-qfz6` | Active | — | This Phase 1 plan |
 | `fdu-dxee` | Active; owns Wave 0 | — | [Rust engineering quality](plan-2026-08-09-fdu-rust-engineering-quality.md) |
 | `fdu-6c8n` | Active follow-up | `fdu-sn43` | [CLI UX and zero-install skill](plan-2026-08-09-fdu-cli-ux-and-agent-skill.md) |
-| `fdu-d5e1` | Queued | `fdu-sn43` | [End-to-end performance evidence](plan-2026-08-09-fdu-end-to-end-performance-testing.md) |
+| `fdu-d5e1` | Active | `fdu-sn43` (closed) | [End-to-end performance evidence](plan-2026-08-09-fdu-end-to-end-performance-testing.md) |
 | `fdu-x746` | Future | `fdu-9cf0` | [Post-Phase 1 roadmap](../future/plan-2026-08-09-fdu-post-phase-1-roadmap.md) |
 
 The two detailed active plans list every child bead they own and every cross-workstream

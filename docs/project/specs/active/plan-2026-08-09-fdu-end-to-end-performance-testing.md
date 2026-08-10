@@ -99,6 +99,13 @@ The portable harness now has 56 deterministic and adversarial tests, passes Pyth
 timing assertion. See the [performance harness README](../../../../benchmarks/README.md)
 for its commands, manifest contract, mutation model, and cleanup rules.
 
+The first exact-oracle revalidation curve measured 72.258 ms at 10k, 725.023 ms at
+100k, 8.186 s at 500k, and 62.906 s at 1M on one uncontrolled local APFS host. It is an
+exploratory design result, not a product claim, but it proves the current 500k target is
+not met. A focused index fast path then improved every one of nine alternating 100k
+pairs, with a -18.15% paired median change. The linked research note preserves the raw
+samples and concurrency boundary.
+
 The first exact probe run exposed and then verified the fix for a product correctness
 defect: symlinks and special nodes contributed to regular-file roll-ups despite the
 documented contract. Closed bead `fdu-6x07` owns that correction; no affected timing was
@@ -668,6 +675,8 @@ real consumer. Benchmarking alone is not a reason to stabilize an abstraction.
 - [ ] `fdu-k5t5`: complete reviewed dut/gdu adapters and the job-capability matrix
 - [ ] `fdu-p2i1` and `fdu-1vd0`: execute the revalidation and snapshot-candidate spikes
   before freezing their Phase 1 designs
+- [ ] `fdu-6wu0`: establish repeated large trials from safely cloned, independently
+  verified base corpora instead of regenerating 500k-1M entries for every invocation
 - [ ] `fdu-ywu0`: add memory, scale, thread-count, traversal-order, output, Python, and
   contention scenarios as their engine surfaces become available
 - [ ] `fdu-atqk`, `fdu-aky1`, `fdu-1gbl`, `fdu-a6dz`, `fdu-xihx`, and `fdu-wbis`:
@@ -825,6 +834,8 @@ The planning bead retains the same stable IDs.
 | PEV-19 | Low | Increasing observation batches looked like an easy way to reduce index and reconciliation overhead | A six-point 10k sweep from 64 through 65,536 ops showed no stable improvement, so the 1,024 default remains unchanged |
 | PEV-20 | Medium | The portable walker allocated and re-resolved an absolute path for every successful metadata lookup even though `ReadDir` already owned the directory context | `DirEntry::metadata()` preserves non-following semantics and improved alternating same-corpus 100k paired medians by 6.84-8.24% across producer, full-index, and revalidation jobs; the focused evidence and limits are recorded in the linked research note |
 | PEV-21 | High | “Unchanged directory mtime skips re-listing” can be misread as permission to trust a whole subtree, which misses in-place file edits because they do not change the parent directory mtime | A matching cached directory fingerprint may skip only `read_dir` name-set discovery; revalidation must still stat every known child and recurse into known directories, while a changed directory fingerprint triggers re-listing for membership changes |
+| PEV-22 | Medium | Known-child expectation capture reconstructed each path and performed repeated root-to-leaf lookups; exclusive unchanged reconciliation then allocated and arbitrated guaranteed no-op upserts | Capture present-child state and identity directly from coherent child iteration, and elide exact no-op upserts only for `&mut Index`; nine exact-oracle 100k pairs improved by a paired median 18.15%, while shared ABA arbitration remains unchanged |
+| PEV-23 | Medium | The first 1M invocation spent more than twelve minutes in serial Python corpus setup before any probe child launched, making fresh generation per sample impractical for scheduled evidence | `fdu-6wu0` adds a keyed immutable base-corpus cache with capability-proven clone/reflink and safe copy fallback; trials still verify their own exact fingerprint-sensitive precondition and never hardlink mutable corpus files |
 
 ## Beads
 
@@ -842,10 +853,12 @@ research and plan, assemble this graph, and validate it through CI.
 | `fdu-oj25` | P1 | fdu component probe, first-output timing, and portable per-child resource collectors | `fdu-rq5m`, `fdu-d8kq` |
 | `fdu-6x07` | P1 | Exclude symlinks and special nodes from documented regular-file roll-ups | discovered by `fdu-oj25` |
 | `fdu-s23t` | P1 | Use directory-entry-relative metadata in the portable walker, with paired exact-oracle evidence | discovered by `fdu-oj25` |
+| `fdu-pkyu` | P1 | Elide redundant path lookups and guaranteed no-op applies during reconciliation | discovered by `fdu-p2i1` |
+| `fdu-6wu0` | P1 | Reuse safely cloned and independently verified base corpora for large repeated trials | discovered by `fdu-p2i1` |
 | `fdu-849g` | P1 | Strict claim-grade build and anonymous host provenance manifests | `fdu-oj25` |
 | `fdu-bmhr` | P2 | Opt-in dedicated Linux byte-I/O, syscall, perf-stat, and profile collectors | `fdu-oj25` |
 | `fdu-k5t5` | P1 | Pinned dut/gdu adapters, parsers, postconditions, and capability matrix | `fdu-rq5m`, `fdu-d8kq`, `fdu-ad45` |
-| `fdu-8z5l` | P2 | Pull-request smoke, stable scheduled baselines, regression triage, artifact retention, and claim governance | `fdu-d8kq`, `fdu-k5t5`, `fdu-zga3`, `fdu-849g`, `fdu-bmhr` |
+| `fdu-8z5l` | P2 | Pull-request smoke, stable scheduled baselines, regression triage, artifact retention, and claim governance | `fdu-d8kq`, `fdu-k5t5`, `fdu-zga3`, `fdu-849g`, `fdu-bmhr`, `fdu-6wu0` |
 | `fdu-ywu0` | P1 | Execute the complete Phase 1 matrix and publish the generated evidence report | all implementation/proof beads plus the existing engine blockers |
 
 Cross-workstream dependencies make the existing decision beads consume the common
@@ -871,6 +884,7 @@ The implementation tasks remain open after this planning record closes.
 
 - [Performance-evidence research](../../research/research-2026-08-09-end-to-end-performance-evidence.md)
 - [Directory-entry-relative metadata evidence](../../research/research-2026-08-09-portable-direntry-metadata.md)
+- [Reconciliation index fast-path evidence](../../research/research-2026-08-09-reconciliation-index-fast-path.md)
 - [fdu Phase 1 plan](plan-2026-08-08-fdu-phase-1.md)
 - [fdu file-roll-up engine research](../../research/research-2026-08-06-file-rollup-engine.md)
 - [fdu CLI golden-test plan](../done/plan-2026-08-09-fdu-cli-golden-tests.md)
