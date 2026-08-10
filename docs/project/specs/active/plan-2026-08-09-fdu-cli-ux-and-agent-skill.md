@@ -4,8 +4,7 @@
 
 **Author:** fdu project
 
-**Status:** Local implementation and handoff gate complete; follow-up PR and CI in
-progress
+**Status:** Follow-up PR #2 open; local handoff gate complete and CI in progress
 
 ## Overview
 
@@ -198,7 +197,7 @@ runner.
 - [x] Run the golden suite, installed-wheel checks, and complete local `make check`
 - [ ] Wait for fresh Linux, macOS, and Windows CI, including the expanded Python wheel
   matrix
-- [ ] Open and update a dedicated follow-up PR from merged `origin/main` with the
+- [x] Open and update a dedicated follow-up PR from merged `origin/main` with the
   design, exact validation evidence, and remaining Phase 1 CLI work
 
 ## Testing Strategy
@@ -225,8 +224,8 @@ embedding invisible control bytes in Markdown goldens.
 
 ## Rollout Plan
 
-PR #1 has merged. Land this behavior in a dedicated follow-up PR rooted at the merged
-`origin/main` while the interface is explicitly pre-release.
+PR #1 has merged. PR #2 carries this behavior from the merged `origin/main` while the
+interface is explicitly pre-release.
 Do not publish from this plan.
 `fdu-9cf0` later builds the release wheel matrix, re-verifies the registry name,
 confirms the exact skill pin resolves, and only then changes README examples from
