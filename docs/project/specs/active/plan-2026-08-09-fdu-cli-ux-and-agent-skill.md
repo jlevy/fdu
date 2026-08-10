@@ -4,7 +4,7 @@
 
 **Author:** fdu project
 
-**Status:** Follow-up PR #2 open; local handoff gate complete and CI in progress
+**Status:** Complete; PR #2 is ready to merge with local and CI gates green
 
 ## Overview
 
@@ -195,7 +195,7 @@ runner.
 - [x] Register and smoke-test the wheel console entry point
 - [x] Update the README, Python package README, active plans, and linked beads
 - [x] Run the golden suite, installed-wheel checks, and complete local `make check`
-- [ ] Wait for fresh Linux, macOS, and Windows CI, including the expanded Python wheel
+- [x] Wait for fresh Linux, macOS, and Windows CI, including the expanded Python wheel
   matrix
 - [x] Open and update a dedicated follow-up PR from merged `origin/main` with the
   design, exact validation evidence, and remaining Phase 1 CLI work
@@ -248,8 +248,8 @@ Epic: `fdu-6c8n` — CLI UX and zero-install agent skill.
 | 2b | `fdu-4pnh` | Complete | P1 | Expose the Rust CLI from the installed wheel | `fdu-4jd7` |
 | 3 | `fdu-sqfw` | Complete | P1 | Isolate the native-argv wheel smoke fixture | `fdu-4pnh` |
 | 4 | `fdu-51a4` | Complete | P1 | Normalize embedded skill line endings across platforms | `fdu-gxvl` |
-| 5 | `fdu-jeol` | In progress | P1 | Compare canonical Python roots by filesystem identity | `fdu-4pnh` |
-| 6 | `fdu-8ysf` | In progress | P1 | Validate and publish the focused follow-up PR | `fdu-4jd7`, `fdu-gxvl`, `fdu-4pnh`, `fdu-zsdy`, `fdu-sqfw`, `fdu-51a4`, `fdu-jeol` |
+| 5 | `fdu-jeol` | Complete | P1 | Compare canonical Python roots by filesystem identity | `fdu-4pnh` |
+| 6 | `fdu-8ysf` | Complete | P1 | Validate and publish the focused follow-up PR | `fdu-4jd7`, `fdu-gxvl`, `fdu-4pnh`, `fdu-zsdy`, `fdu-sqfw`, `fdu-51a4`, `fdu-jeol` |
 
 Cross-plan work retains its existing owner:
 
@@ -272,8 +272,11 @@ The complete `make check` handoff gate passes on the follow-up branch:
 - two Python concurrency tests, installed abi3 wheel/module/console smoke, and direct
   `uvx --from <local-wheel> fdu --version`
 
-The follow-up CI expands the Python wheel job from Linux-only to Linux, macOS, and
-Windows. That remote evidence remains pending until the branch is pushed.
+Fresh PR #2 CI run 31350476952 passes all 13 repository jobs.
+That includes native and golden tests on Linux, macOS, and Windows, plus installed-wheel
+and direct `uvx` checks on all three platforms.
+The expanded matrix found and verified fixes for Linux fixture isolation, Windows
+embedded-resource line endings, and Windows canonical path spelling.
 
 ## References
 
