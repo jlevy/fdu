@@ -714,7 +714,14 @@ fn plural<'a>(count: u64, singular: &'a str, plural: &'a str) -> &'a str {
 }
 
 fn compose_skill() -> String {
-    SKILL_TEMPLATE.replace("__FDU_VERSION__", env!("CARGO_PKG_VERSION"))
+    compose_skill_from(SKILL_TEMPLATE)
+}
+
+fn compose_skill_from(template: &str) -> String {
+    // Git checkouts may translate the Markdown resource to CRLF on Windows. Keep the
+    // public skill byte-stable across installation platforms before substituting the
+    // reviewed package version.
+    template.replace("\r\n", "\n").replace("__FDU_VERSION__", env!("CARGO_PKG_VERSION"))
 }
 
 fn entry_kind_label(kind: EntryKind) -> &'static str {
@@ -1020,10 +1027,15 @@ mod tests {
         let skill = compose_skill();
 
         assert!(skill.starts_with("---\nname: fdu\n"));
+        assert!(!skill.contains('\r'), "the public skill must use portable LF endings");
         assert!(skill.contains(&format!("uvx --from fdu=={} fdu", env!("CARGO_PKG_VERSION"))));
         assert!(!skill.contains("__FDU_VERSION__"));
         assert!(!skill.contains("uvx --from fdu fdu"));
         assert!(!skill.contains("fdu==latest"), "the runnable command must not float releases");
+        assert_eq!(
+            compose_skill_from("---\r\nversion: __FDU_VERSION__\r\n"),
+            format!("---\nversion: {}\n", env!("CARGO_PKG_VERSION"))
+        );
     }
 
     #[test]
