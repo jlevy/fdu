@@ -117,6 +117,9 @@ impl Arguments {
                 Some("--batch-size") => {
                     scan.batch_size = next_usize(&mut arguments, "--batch-size")?;
                 }
+                Some("--threads") => {
+                    scan.threads = Some(next_usize(&mut arguments, "--threads")?);
+                }
                 Some("--max-depth") => {
                     scan.max_depth = Some(next_usize(&mut arguments, "--max-depth")?);
                 }

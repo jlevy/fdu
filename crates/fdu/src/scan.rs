@@ -58,6 +58,18 @@ pub struct ScanConfig {
     pub follow_symlinks: bool,
     /// Stay on the filesystem the root lives on.
     pub one_filesystem: bool,
+    /// Directory-reading worker threads.
+    ///
+    /// A tree walk is a pile of independent, latency-bound directory reads, so it
+    /// scales with threads far better than most work does. One means the serial
+    /// walker, which stays the reference implementation and the thing every result is
+    /// checked against. [`None`] asks for a bounded default derived from the
+    /// machine's available parallelism.
+    ///
+    /// This is an operational knob, not a semantic one: it changes how fast the same
+    /// observations are produced, never which observations they are. That is why it
+    /// stays out of [`ScanScope`] and cannot invalidate a cache.
+    pub threads: Option<usize>,
 }
 
 impl Default for ScanConfig {
@@ -67,6 +79,7 @@ impl Default for ScanConfig {
             batch_size: DEFAULT_BATCH_SIZE,
             follow_symlinks: false,
             one_filesystem: false,
+            threads: None,
         }
     }
 }
@@ -81,6 +94,19 @@ impl ScanConfig {
             ignore_rules_fingerprint: IGNORE_RULES_FINGERPRINT,
             type_rules_fingerprint: TYPE_RULES_FINGERPRINT,
             reducers_fingerprint: REDUCERS_FINGERPRINT,
+        }
+    }
+
+    /// Resolve [`Self::threads`] to a concrete, bounded worker count.
+    ///
+    /// A machine that will not report its parallelism gets one thread rather than a
+    /// guess: the serial walker is always correct, and silently choosing a pool size
+    /// out of thin air is how a benchmark ends up measuring the guess.
+    fn worker_threads(&self) -> usize {
+        match self.threads {
+            Some(threads) => threads.clamp(1, MAX_SCAN_THREADS),
+            None => std::thread::available_parallelism()
+                .map_or(1, |value| value.get().clamp(1, DEFAULT_SCAN_THREADS_CAP)),
         }
     }
 
@@ -150,6 +176,13 @@ impl ScanReport {
     /// True when every directory in scope was read successfully.
     pub fn is_complete(&self) -> bool {
         self.errors.is_empty()
+    }
+
+    /// Fold one worker's share of a parallel walk into the whole-walk report.
+    fn absorb(&mut self, other: Self) {
+        self.dirs_read += other.dirs_read;
+        self.entries += other.entries;
+        self.errors.extend(other.errors);
     }
 }
 
@@ -293,6 +326,10 @@ pub fn scan(
     }
     let root_dev = attrs_from(&root_meta).dev;
 
+    if config.max_depth != Some(0) && config.worker_threads() > 1 {
+        return Ok(scan_concurrent(root, config, root_dev, sink));
+    }
+
     let mut report = ScanReport::default();
     if config.max_depth == Some(0) {
         return Ok(report);
@@ -350,6 +387,245 @@ pub fn scan(
         sink(Observation::new(batch));
     }
     Ok(report)
+}
+
+/// Largest worker pool a caller may ask for explicitly.
+///
+/// Well past anything measured to help. It exists so a caller that computes a thread
+/// count from something silly cannot spawn thousands of threads.
+const MAX_SCAN_THREADS: usize = 32;
+
+/// Ceiling on the pool size chosen automatically.
+///
+/// Measured, not guessed. On a 10-core machine walking a 60k-entry `node_modules`
+/// tree, wall time fell 37% at two workers and 50% at four, then stopped improving:
+/// six matched four within noise and eight was 4% worse than four. The walk becomes
+/// bound by the single index consumer, so past this point extra workers buy queue
+/// contention and efficiency-core scheduling rather than throughput. See
+/// `docs/project/reports/report-2026-08-10-fdu-performance-experiments.md`.
+const DEFAULT_SCAN_THREADS_CAP: usize = 6;
+
+/// Directories handed to a worker in one go.
+///
+/// Popping one directory at a time makes the queue lock the bottleneck on a wide,
+/// shallow tree; taking a small run amortizes the lock without letting one worker
+/// starve the others by hoarding the queue.
+const DIR_CLAIM: usize = 4;
+
+/// A parallel directory walk that produces exactly the observations the serial walk does.
+///
+/// The shape is deliberate. Workers read directories and *produce* observations; they
+/// never touch an index. A single consumer — the caller's sink, on this thread —
+/// applies them. That keeps the crate's one mutation contract intact: parallelism is a
+/// property of the producer, and the index still sees one ordered stream of deltas.
+///
+/// Ordering across workers is not fixed, so an entry can arrive before its parent
+/// directory does. The index already tolerates that, because watch events have never
+/// arrived parent-first either, and it fills in a synthesized ancestor's real
+/// attributes when the observation for it turns up. The resulting index is
+/// byte-identical to the serial walker's, which the benchmark harness re-proves on
+/// every trial by comparing engine digests against an independent oracle.
+fn scan_concurrent(
+    root: &Path,
+    config: &ScanConfig,
+    root_dev: u64,
+    sink: &mut dyn FnMut(Observation),
+) -> ScanReport {
+    let workers = config.worker_threads();
+    let queue = DirectoryQueue::new(vec![(PathBuf::new(), 0)]);
+    let (sender, receiver) = std::sync::mpsc::channel::<Observation>();
+
+    let mut report = std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..workers)
+            .map(|_| {
+                let sender = sender.clone();
+                let queue = &queue;
+                scope.spawn(move || walk_worker(root, config, root_dev, queue, &sender))
+            })
+            .collect();
+        // The loop below ends when every sender is gone, so this one must go first.
+        drop(sender);
+
+        for observation in receiver {
+            sink(observation);
+        }
+
+        let mut report = ScanReport::default();
+        for handle in handles {
+            match handle.join() {
+                Ok(worker) => report.absorb(worker),
+                Err(_) => {
+                    // A worker panicked. Its directories are unaccounted for, so the
+                    // scan is partial; say so rather than reporting a short tree as
+                    // complete.
+                    report.errors.push(Error::io(
+                        root,
+                        std::io::Error::other("a scan worker thread panicked"),
+                    ));
+                }
+            }
+        }
+        report
+    });
+
+    // Workers finish in whatever order the filesystem lets them, so a report assembled
+    // from them is only reproducible if the errors are ordered here.
+    report.errors.sort_by_cached_key(ToString::to_string);
+    report
+}
+
+/// One worker's share of the walk: claim directories, read them, publish observations.
+fn walk_worker(
+    root: &Path,
+    config: &ScanConfig,
+    root_dev: u64,
+    queue: &DirectoryQueue,
+    sender: &std::sync::mpsc::Sender<Observation>,
+) -> ScanReport {
+    let mut report = ScanReport::default();
+    let mut batch: Vec<Op> = Vec::with_capacity(config.batch_size);
+    let mut claimed: Vec<(PathBuf, usize)> = Vec::with_capacity(DIR_CLAIM);
+    let mut discovered: Vec<(PathBuf, usize)> = Vec::new();
+
+    while queue.claim(&mut claimed) {
+        for (rel_dir, depth) in claimed.drain(..) {
+            let abs_dir = root.join(&rel_dir);
+            let listing = match fs::read_dir(&abs_dir) {
+                Ok(listing) => listing,
+                Err(e) => {
+                    report.errors.push(Error::io(abs_dir, e));
+                    continue;
+                }
+            };
+            report.dirs_read += 1;
+
+            for item in listing {
+                let item = match item {
+                    Ok(item) => item,
+                    Err(e) => {
+                        report.errors.push(Error::io(&abs_dir, e));
+                        continue;
+                    }
+                };
+                let name = item.file_name();
+                let rel_path = rel_dir.join(&name);
+                let meta = match metadata_for_fingerprint(&item) {
+                    Ok(meta) => meta,
+                    Err(e) => {
+                        report.errors.push(Error::io(item.path(), e));
+                        continue;
+                    }
+                };
+
+                let attrs = attrs_from(&meta);
+                let kind = kind_from(&meta);
+                report.entries += 1;
+                let descend = should_descend(kind, attrs, depth, root_dev, config);
+                batch.push(Op::Upsert { path: rel_path.clone(), kind, attrs });
+                if batch.len() >= config.batch_size
+                    && sender.send(Observation::new(std::mem::take(&mut batch))).is_err()
+                {
+                    // The consumer is gone; nothing further will be read.
+                    return report;
+                }
+                if descend {
+                    discovered.push((rel_path, depth + 1));
+                }
+            }
+        }
+        // Publish before releasing the claim so a worker that finds nothing new does
+        // not hold work that others could be doing.
+        if !discovered.is_empty() {
+            queue.extend(discovered.drain(..));
+        }
+        queue.release();
+    }
+
+    if !batch.is_empty() {
+        let _ = sender.send(Observation::new(batch));
+    }
+    report
+}
+
+/// Directories still to read, plus enough state to know when the walk is finished.
+///
+/// The termination condition is the only subtle part: the queue being empty does not
+/// mean the walk is done, because a worker that is mid-directory may be about to push
+/// its children. So a worker holds a claim from the moment it takes work until the
+/// moment it has published everything that work produced, and the walk ends only when
+/// the queue is empty *and* no claim is outstanding.
+struct DirectoryQueue {
+    state: std::sync::Mutex<DirectoryQueueState>,
+    ready: std::sync::Condvar,
+}
+
+struct DirectoryQueueState {
+    pending: Vec<(PathBuf, usize)>,
+    outstanding: usize,
+    finished: bool,
+}
+
+impl DirectoryQueue {
+    fn new(initial: Vec<(PathBuf, usize)>) -> Self {
+        Self {
+            state: std::sync::Mutex::new(DirectoryQueueState {
+                pending: initial,
+                outstanding: 0,
+                finished: false,
+            }),
+            ready: std::sync::Condvar::new(),
+        }
+    }
+
+    /// Take up to [`DIR_CLAIM`] directories, blocking until there is work or the walk
+    /// is over. Returns false once no more work will ever arrive.
+    fn claim(&self, into: &mut Vec<(PathBuf, usize)>) -> bool {
+        let mut state = self.lock();
+        loop {
+            if !state.pending.is_empty() {
+                let take = state.pending.len().min(DIR_CLAIM);
+                let start = state.pending.len() - take;
+                into.extend(state.pending.drain(start..));
+                state.outstanding += 1;
+                return true;
+            }
+            if state.finished {
+                return false;
+            }
+            if state.outstanding == 0 {
+                state.finished = true;
+                self.ready.notify_all();
+                return false;
+            }
+            state = self.ready.wait(state).unwrap_or_else(std::sync::PoisonError::into_inner);
+        }
+    }
+
+    fn extend(&self, directories: impl Iterator<Item = (PathBuf, usize)>) {
+        let mut state = self.lock();
+        state.pending.extend(directories);
+        drop(state);
+        self.ready.notify_all();
+    }
+
+    /// Give up a claim taken by [`claim`]. Wakes everyone if this was the last one.
+    fn release(&self) {
+        let mut state = self.lock();
+        state.outstanding -= 1;
+        if state.outstanding == 0 && state.pending.is_empty() {
+            state.finished = true;
+            drop(state);
+            self.ready.notify_all();
+        }
+    }
+
+    /// A poisoned queue means a worker panicked mid-walk. The data behind the lock is
+    /// a plain work list with no invariant that a panic could have broken, and the
+    /// caller already reports the panic as a scan error, so recovering the list is
+    /// strictly better than propagating a second panic into every other worker.
+    fn lock(&self) -> std::sync::MutexGuard<'_, DirectoryQueueState> {
+        self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
 }
 
 /// Walk `root` and return a fully populated index.
@@ -1063,6 +1339,131 @@ mod tests {
 
         let metadata = metadata_for_fingerprint(&entry).expect("fresh metadata");
         assert_eq!(metadata.len(), b"after mutation".len() as u64);
+    }
+
+    /// A tree wide and deep enough that workers genuinely interleave.
+    ///
+    /// A three-file fixture would pass every one of these tests with a broken queue,
+    /// because one worker would finish before another started.
+    fn branching_tree() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().expect("tempdir");
+        for top in 0..12 {
+            for middle in 0..6 {
+                for leaf in 0..7 {
+                    write_file(
+                        &dir.path().join(format!("t{top}/m{middle}/leaf-{leaf}.dat")),
+                        &vec![b'x'; leaf * 13],
+                    );
+                }
+            }
+            // A deep chain alongside the wide fan-out, so depth and width are both
+            // exercised by the same walk.
+            write_file(&dir.path().join(format!("t{top}/a/b/c/d/e/deep.txt")), b"deep");
+        }
+        dir
+    }
+
+    fn index_fingerprint(index: &Index) -> Vec<(PathBuf, EntryKind, Attrs)> {
+        let mut entries: Vec<(PathBuf, EntryKind, Attrs)> = Vec::new();
+        let mut queue = vec![PathBuf::new()];
+        while let Some(path) = queue.pop() {
+            let Some(children) = index.children(&path) else {
+                continue;
+            };
+            let names: Vec<PathBuf> = children.map(|(name, _id)| path.join(name)).collect();
+            for child_path in names {
+                let kind = index.kind(&child_path).expect("child has a kind");
+                let attrs = *index.attrs(&child_path).expect("child has attrs");
+                entries.push((child_path.clone(), kind, attrs));
+                if kind.is_dir() {
+                    queue.push(child_path);
+                }
+            }
+        }
+        entries.sort_by(|left, right| left.0.cmp(&right.0));
+        entries
+    }
+
+    #[test]
+    fn parallel_and_serial_walks_produce_the_same_index() {
+        let dir = branching_tree();
+        let serial_config = ScanConfig { threads: Some(1), ..ScanConfig::default() };
+        let (serial, serial_report) =
+            scan_into_index(dir.path(), &serial_config).expect("serial scan");
+        assert!(serial_report.is_complete());
+
+        for threads in [2_usize, 3, 8] {
+            let config = ScanConfig { threads: Some(threads), ..ScanConfig::default() };
+            let (parallel, report) = scan_into_index(dir.path(), &config).expect("parallel scan");
+            assert!(report.is_complete(), "{threads} threads reported errors");
+            assert_eq!(report.entries, serial_report.entries, "{threads} threads");
+            assert_eq!(report.dirs_read, serial_report.dirs_read, "{threads} threads");
+            assert_eq!(parallel.total(), serial.total(), "{threads} threads roll-up");
+            assert_eq!(
+                index_fingerprint(&parallel),
+                index_fingerprint(&serial),
+                "{threads} threads produced a different index"
+            );
+        }
+    }
+
+    #[test]
+    fn parallel_walk_emits_every_entry_exactly_once() {
+        let dir = branching_tree();
+        let config = ScanConfig { threads: Some(4), batch_size: 16, ..ScanConfig::default() };
+        let mut seen: BTreeMap<PathBuf, usize> = BTreeMap::new();
+        let report = scan(dir.path(), &config, &mut |observation| {
+            for op in &observation.ops {
+                if let Op::Upsert { path, .. } = &op.op {
+                    *seen.entry(path.clone()).or_default() += 1;
+                }
+            }
+        })
+        .expect("parallel scan");
+
+        assert!(report.is_complete());
+        assert_eq!(seen.len() as u64, report.entries, "entry count disagrees with the report");
+        let duplicated: Vec<_> =
+            seen.iter().filter(|(_path, count)| **count != 1).map(|(path, _)| path).collect();
+        assert!(duplicated.is_empty(), "paths emitted more than once: {duplicated:?}");
+    }
+
+    #[test]
+    fn parallel_walk_honours_max_depth() {
+        let dir = branching_tree();
+        for threads in [1_usize, 4] {
+            let config =
+                ScanConfig { threads: Some(threads), max_depth: Some(2), ..ScanConfig::default() };
+            let (index, report) = scan_into_index(dir.path(), &config).expect("scan");
+            assert!(report.is_complete());
+            for (path, _kind, _attrs) in index_fingerprint(&index) {
+                assert!(
+                    path.components().count() <= 2,
+                    "{threads} threads kept {path:?} past the depth limit"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn worker_threads_are_bounded_and_never_zero() {
+        let zero = ScanConfig { threads: Some(0), ..ScanConfig::default() };
+        assert_eq!(zero.worker_threads(), 1, "zero threads must fall back to the serial walk");
+        let absurd = ScanConfig { threads: Some(usize::MAX), ..ScanConfig::default() };
+        assert_eq!(absurd.worker_threads(), MAX_SCAN_THREADS);
+        // The automatic choice is capped well below what a caller may request, because
+        // the measured knee is far below the core count on a large machine.
+        let automatic = ScanConfig { threads: None, ..ScanConfig::default() };
+        assert!((1..=DEFAULT_SCAN_THREADS_CAP).contains(&automatic.worker_threads()));
+    }
+
+    #[test]
+    fn thread_count_does_not_change_the_cache_scope() {
+        // Threads are an operational choice. If they leaked into the scope, changing
+        // the pool size would invalidate every snapshot on disk.
+        let serial = ScanConfig { threads: Some(1), ..ScanConfig::default() };
+        let parallel = ScanConfig { threads: Some(8), ..ScanConfig::default() };
+        assert_eq!(serial.scope(), parallel.scope());
     }
 
     #[test]
