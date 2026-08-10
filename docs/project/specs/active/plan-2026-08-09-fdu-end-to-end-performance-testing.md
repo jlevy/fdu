@@ -69,24 +69,27 @@ This plan is independently actionable.
 ## Current Status
 
 The design and Flowmark synthesis are complete; planning bead `fdu-f0or` is closed.
-The first implementation child, `fdu-rq5m`, is complete.
-Its standard-library-only corpus tool now generates and independently verifies all eight
+The first two implementation children, `fdu-rq5m` and `fdu-d8kq`, are complete.
+The standard-library-only corpus tool generates and independently verifies all eight
 recipe families, applies deterministic local and distributed churn, and exposes
 structured create, verify, mutate, and cleanup commands.
-The other five implementation/proof children remain open under epic `fdu-d5e1`.
+The strict evidence layer now validates versioned scenario and result contracts, creates
+a deterministic paired schedule, executes every sample in a fresh marked run, records
+pipe-drained first-output and completion timing, retains invalid samples, and renders a
+deterministic report from immutable self-checking results.
+The other four implementation/proof children remain open under epic `fdu-d5e1`.
 
 The repository-wide correctness, supply-chain, and concurrency implementation gates are
 closed; final approval bead `fdu-sn43` is closed and PR #1 has merged.
-The next implementation step is `fdu-d8kq`, followed by `fdu-oj25`. Comparator
-acquisition under `fdu-k5t5` has cleared its executable-dependency policy blocker but
-still waits on the corpus and runner prerequisites shown below.
+The next implementation step is the fdu probe and collectors under `fdu-oj25`.
+Comparator acquisition under `fdu-k5t5` has cleared its executable-dependency policy
+blocker but now waits only on the reviewed adapter implementation shown below.
 No current timing result supports a product claim.
 
-The completed corpus slice has 27 deterministic and adversarial tests, runs at the 1k
-smoke scale in under one second locally, passes Python 3.9 and the current interpreter,
-and is included in `make check` without a numeric timing assertion.
-See the [performance harness README](../../../../benchmarks/README.md) for its commands,
-manifest contract, mutation model, and cleanup rules.
+The completed portable harness has 51 deterministic and adversarial tests, passes Python
+3.9 and the current interpreter, and is included in `make check` without a numeric
+timing assertion. See the [performance harness README](../../../../benchmarks/README.md)
+for its commands, manifest contract, mutation model, and cleanup rules.
 
 ## Background
 
@@ -633,16 +636,16 @@ real consumer. Benchmarking alone is not a reason to stabilize an abstraction.
   recipes in unique safe run directories
 - [x] `fdu-rq5m`: implement the independent observed-manifest verifier, mutation
   transitions, and semantic digest
-- [ ] `fdu-d8kq`: commit strict scenario, corpus-manifest, and result schemas with
+- [x] `fdu-d8kq`: commit strict scenario, corpus-manifest, and result schemas with
   valid, unknown-field, truncated, and incompatible-version fixtures
 - [ ] `fdu-oj25`: implement probe modes that detect deliberately wrong counts, digests,
   cache sources, and snapshot postconditions
-- [ ] `fdu-d8kq`: document terminology, host capabilities, safe cleanup, and why smoke
+- [x] `fdu-d8kq`: document terminology, host capabilities, safe cleanup, and why smoke
   results support no performance claim
 
 ### Phase 2: Measure the Engine and Comparators
 
-- [ ] `fdu-d8kq`: implement the direct-argv state machine, timeouts, process cleanup,
+- [x] `fdu-d8kq`: implement the direct-argv state machine, timeouts, process cleanup,
   paired ordering, immutable results, validation, statistics, and report rendering
 - [ ] `fdu-oj25`: implement external timing plus capability-negotiated resource and
   profile collectors
@@ -703,6 +706,13 @@ subsecond mtime detection, ordered local and distributed transitions, operation-
 declarations, precondition tampering, manifest hashes and shapes, JSON size limits,
 atomic operation exclusion, failed-lock release, safe cleanup, and the Python 3.9
 surface. It remains a correctness gate, not a performance baseline.
+
+The implemented evidence suite locks unknown and incompatible schemas, non-finite JSON,
+schedule reconstruction, immutable hashes, minimal environments, bounded pipe capture,
+pipe-versus-file output semantics, first-output timing, process-group timeouts,
+per-sample snapshot and cache preparation, churn ordering, corpus postconditions,
+invalid-sample retention, baseline compatibility, all declared statistics, review
+triggers, structured CLI errors, and byte-for-byte report regeneration.
 
 `make check` remains the handoff gate for code changes.
 Full benchmarks run separately because creating one million filesystem entries is not a
@@ -784,6 +794,11 @@ The planning bead retains the same stable IDs.
 | PEV-07 | High | Concurrent mutate, verify, or cleanup processes could race one run’s manifest and filesystem state | Every stateful operation acquires the same atomic run-directory lock; active and abandoned locks fail closed |
 | PEV-08 | Medium | Add, remove, and rename transitions could accidentally change corpus size, shape, extension mix, or fan-out and confound revalidation evidence | Every transition preserves and rechecks those aggregate invariants while chaining exact changed paths and semantic components |
 | PEV-09 | Medium | Long hashed directory segments made the nominally platform-safe deep corpus exceed narrower path budgets | Deep recipes use compact segments under an explicit tested relative-path budget while other seeded fields retain recipe variation |
+| PEV-10 | High | The first runner draft called a temporary stdout file `output-digest`, so it measured filesystem writes and hashed bytes after the timer | `output-digest` now drains and hashes a pipe during the timed job with only bounded compact-JSON retention; `output-file` alone measures real writes and hashes the completed file afterward |
+| PEV-11 | High | Requiring identical executable checksums would reject every regression comparison whose subject binary legitimately changed | Compatibility now requires the same adapter command shape while recording checksum changes separately; harness, host, corpus, scenario, and collector contracts must still match |
+| PEV-12 | High | A self-consistent result hash did not prove that the stored invocation list contained every declared warmup and trial in the seeded order | Result validation reconstructs the complete schedule and cross-checks every trial against its scenario, corpus, environment, state, process, output, and timing contract |
+| PEV-13 | High | Any successful preparation command could label a portable run `controlled-cold` without evidence that the operating-system cache was evicted | The portable runner rejects that label; only the dedicated-host protocol under `fdu-8z5l` may authorize it, while local preparation can establish `verified-warm` |
+| PEV-14 | Medium | Binary hashes alone omitted the exact Python and harness implementation that generated timings and validity decisions | Results now record Python identity plus hashes of the corpus, runner, and schema implementations, and compatibility requires an exact harness match |
 
 ## Beads
 

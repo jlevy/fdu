@@ -1,0 +1,709 @@
+{
+  "$defs": {
+    "corpus": {
+      "additionalProperties": false,
+      "properties": {
+        "counts": {
+          "additionalProperties": false,
+          "properties": {
+            "directories": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "files": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "hardlink_groups": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "other": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "symlinks": {
+              "minimum": 0,
+              "type": "integer"
+            },
+            "total": {
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "directories",
+            "files",
+            "hardlink_groups",
+            "other",
+            "symlinks",
+            "total"
+          ],
+          "type": "object"
+        },
+        "manifest_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "recipe_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "recipe_id": {
+          "pattern": "^[a-z0-9][a-z0-9._/-]*$",
+          "type": "string"
+        },
+        "semantic_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "state": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "enum": [
+                "baseline",
+                "one-change",
+                "modify-1pct",
+                "mixed-1pct"
+              ]
+            },
+            "transition_index": {
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "id",
+            "transition_index"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "counts",
+        "manifest_hash",
+        "recipe_hash",
+        "recipe_id",
+        "semantic_digest",
+        "state"
+      ],
+      "type": "object"
+    },
+    "environment": {
+      "additionalProperties": false,
+      "properties": {
+        "explicitly_unset": {
+          "items": {
+            "pattern": "^[A-Z_][A-Z0-9_]*$",
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "set": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "propertyNames": {
+            "pattern": "^[A-Z_][A-Z0-9_]*$"
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "explicitly_unset",
+        "set"
+      ],
+      "type": "object"
+    },
+    "executable_identity": {
+      "additionalProperties": false,
+      "properties": {
+        "components": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "sha256": {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "sha256"
+            ],
+            "type": "object"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "identity_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "components",
+        "identity_hash"
+      ],
+      "type": "object"
+    },
+    "host_class": {
+      "additionalProperties": false,
+      "properties": {
+        "architecture": {
+          "type": "string"
+        },
+        "cpu_logical": {
+          "minimum": 1,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "filesystem": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "filesystem_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "host_class": {
+          "type": "string"
+        },
+        "kernel": {
+          "type": "string"
+        },
+        "memory_bytes": {
+          "minimum": 1,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "memory_reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "operating_system": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "architecture",
+        "cpu_logical",
+        "filesystem",
+        "filesystem_reason",
+        "host_class",
+        "kernel",
+        "memory_bytes",
+        "memory_reason",
+        "operating_system"
+      ],
+      "type": "object"
+    },
+    "harness": {
+      "additionalProperties": false,
+      "properties": {
+        "components": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "sha256": {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "sha256"
+            ],
+            "type": "object"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "identity_hash": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "python_implementation": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "python_version": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "components",
+        "identity_hash",
+        "python_implementation",
+        "python_version"
+      ],
+      "type": "object"
+    },
+    "identity": {
+      "additionalProperties": false,
+      "properties": {
+        "finished_at_utc": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+          "type": "string"
+        },
+        "run_id": {
+          "pattern": "^[0-9a-f]{32}$",
+          "type": "string"
+        },
+        "started_at_utc": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "finished_at_utc",
+        "run_id",
+        "started_at_utc"
+      ],
+      "type": "object"
+    },
+    "invocation": {
+      "additionalProperties": false,
+      "properties": {
+        "ordinal": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "sample_index": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "sample_kind": {
+          "enum": [
+            "warmup",
+            "timed"
+          ]
+        },
+        "scenario_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "ordinal",
+        "sample_index",
+        "sample_kind",
+        "scenario_id"
+      ],
+      "type": "object"
+    },
+    "method": {
+      "additionalProperties": false,
+      "properties": {
+        "order_algorithm": {
+          "const": "sha256-round-robin-v1"
+        },
+        "order_seed": {
+          "maxLength": 200,
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "order_algorithm",
+        "order_seed"
+      ],
+      "type": "object"
+    },
+    "output": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact": {
+          "pattern": "^[^/\\\\]+$",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "stderr_bytes": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "stderr_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "stdout_bytes": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "stdout_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "artifact",
+        "stderr_bytes",
+        "stderr_sha256",
+        "stdout_bytes",
+        "stdout_sha256"
+      ],
+      "type": "object"
+    },
+    "process": {
+      "additionalProperties": false,
+      "properties": {
+        "exit_code": {
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "signal": {
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "spawn_error": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "timed_out": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "exit_code",
+        "signal",
+        "spawn_error",
+        "timed_out"
+      ],
+      "type": "object"
+    },
+    "resources": {
+      "additionalProperties": false,
+      "properties": {
+        "major_faults": {
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "peak_rss_bytes": {
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "system_cpu_ns": {
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "user_cpu_ns": {
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "major_faults",
+        "peak_rss_bytes",
+        "reason",
+        "system_cpu_ns",
+        "user_cpu_ns"
+      ],
+      "type": "object"
+    },
+    "source": {
+      "additionalProperties": false,
+      "properties": {
+        "dirty": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "revision": {
+          "anyOf": [
+            {
+              "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "dirty",
+        "reason",
+        "revision"
+      ],
+      "type": "object"
+    },
+    "timing": {
+      "additionalProperties": false,
+      "properties": {
+        "first_output_ns": {
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "wall_ns": {
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "first_output_ns",
+        "wall_ns"
+      ],
+      "type": "object"
+    },
+    "trial": {
+      "additionalProperties": false,
+      "properties": {
+        "argv": {
+          "$ref": "scenario-v1.schema.json#/$defs/argv"
+        },
+        "corpus": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/corpus"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "environment": {
+          "$ref": "#/$defs/environment"
+        },
+        "filesystem_cache_state": {
+          "enum": [
+            "uncontrolled",
+            "verified-warm",
+            "controlled-cold"
+          ]
+        },
+        "ordinal": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "output": {
+          "$ref": "#/$defs/output"
+        },
+        "process": {
+          "$ref": "#/$defs/process"
+        },
+        "resources": {
+          "$ref": "#/$defs/resources"
+        },
+        "sample_index": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "sample_kind": {
+          "enum": [
+            "warmup",
+            "timed"
+          ]
+        },
+        "scenario_id": {
+          "type": "string"
+        },
+        "snapshot_state": {
+          "enum": [
+            "absent",
+            "compatible-unchanged",
+            "compatible-changed",
+            "corrupt",
+            "incompatible-scope",
+            "incompatible-engine"
+          ]
+        },
+        "timing": {
+          "$ref": "#/$defs/timing"
+        },
+        "validation": {
+          "$ref": "#/$defs/trial_validation"
+        }
+      },
+      "required": [
+        "argv",
+        "corpus",
+        "environment",
+        "filesystem_cache_state",
+        "ordinal",
+        "output",
+        "process",
+        "resources",
+        "sample_index",
+        "sample_kind",
+        "scenario_id",
+        "snapshot_state",
+        "timing",
+        "validation"
+      ],
+      "type": "object"
+    },
+    "trial_validation": {
+      "additionalProperties": false,
+      "properties": {
+        "postcondition": {
+          "type": "boolean"
+        },
+        "precondition": {
+          "type": "boolean"
+        },
+        "reasons": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "valid": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "postcondition",
+        "precondition",
+        "reasons",
+        "valid"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "result-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "executables": {
+      "additionalProperties": {
+        "$ref": "#/$defs/executable_identity"
+      },
+      "minProperties": 1,
+      "type": "object"
+    },
+    "host_class": {
+      "$ref": "#/$defs/host_class"
+    },
+    "harness": {
+      "$ref": "#/$defs/harness"
+    },
+    "identity": {
+      "$ref": "#/$defs/identity"
+    },
+    "invocation_order": {
+      "items": {
+        "$ref": "#/$defs/invocation"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "method": {
+      "$ref": "#/$defs/method"
+    },
+    "result_hash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "scenario_definitions": {
+      "items": {
+        "$ref": "scenario-v1.schema.json#/$defs/scenario"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "schema": {
+      "const": "fdu-performance-result-v1"
+    },
+    "source": {
+      "$ref": "#/$defs/source"
+    },
+    "trials": {
+      "items": {
+        "$ref": "#/$defs/trial"
+      },
+      "minItems": 1,
+      "type": "array"
+    }
+  },
+  "required": [
+    "executables",
+    "host_class",
+    "harness",
+    "identity",
+    "invocation_order",
+    "method",
+    "result_hash",
+    "scenario_definitions",
+    "schema",
+    "source",
+    "trials"
+  ],
+  "title": "fdu performance result v1",
+  "type": "object"
+}

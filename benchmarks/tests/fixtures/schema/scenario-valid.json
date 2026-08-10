@@ -1,0 +1,66 @@
+{
+  "scenarios": [
+    {
+      "adapter": "fixture",
+      "command": {
+        "argv": [
+          "{executable}",
+          "--mode",
+          "success",
+          "--manifest",
+          "{manifest_path}"
+        ],
+        "environment": {
+          "set": {
+            "FDU_PERF_MODE": "fixture"
+          },
+          "unset": [
+            "FDU_SENTINEL"
+          ]
+        }
+      },
+      "corpus": {
+        "recipe_id": "contract",
+        "seed": null,
+        "state": "baseline",
+        "target_entries": 14
+      },
+      "filesystem_cache_state": "uncontrolled",
+      "id": "fixture/contract/baseline",
+      "job": "scan-index",
+      "method": {
+        "order_group": "fixture-contract",
+        "timeout_seconds": 5.0,
+        "trials": 2,
+        "warmups": 1
+      },
+      "output_sink": "output-digest",
+      "preparation": {
+        "filesystem_cache_argv": null,
+        "snapshot_argv": null
+      },
+      "process_state": "new-process",
+      "snapshot_state": "absent",
+      "validation": {
+        "allowed_exit_codes": [
+          0
+        ],
+        "corpus": "unchanged",
+        "snapshot": "any",
+        "stderr": "empty",
+        "stdout_nonempty": true,
+        "stdout_sha256": null,
+        "stdout_json": {
+          "equals": {
+            "ok": true
+          },
+          "matches_manifest": {
+            "entry_count": "counts.total",
+            "semantic_digest": "semantic_digest"
+          }
+        }
+      }
+    }
+  ],
+  "schema": "fdu-performance-scenarios-v1"
+}

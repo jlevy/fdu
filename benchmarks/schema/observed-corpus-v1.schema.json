@@ -1,0 +1,598 @@
+{
+  "$defs": {
+    "allocated_capability": {
+      "additionalProperties": false,
+      "properties": {
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "supported": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "reason",
+        "supported"
+      ],
+      "type": "object"
+    },
+    "capabilities": {
+      "additionalProperties": false,
+      "properties": {
+        "allocated_size": {
+          "$ref": "#/$defs/allocated_capability"
+        },
+        "hardlink": {
+          "$ref": "#/$defs/optional_capability"
+        },
+        "partial_permissions": {
+          "$ref": "#/$defs/partial_capability"
+        },
+        "symlink": {
+          "$ref": "#/$defs/optional_capability"
+        }
+      },
+      "required": [
+        "allocated_size",
+        "hardlink",
+        "partial_permissions",
+        "symlink"
+      ],
+      "type": "object"
+    },
+    "counts": {
+      "additionalProperties": false,
+      "properties": {
+        "directories": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "files": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "hardlink_groups": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "other": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "symlinks": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "total": {
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "directories",
+        "files",
+        "hardlink_groups",
+        "other",
+        "symlinks",
+        "total"
+      ],
+      "type": "object"
+    },
+    "digest_components": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "sum": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "xor": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "count",
+        "sum",
+        "xor"
+      ],
+      "type": "object"
+    },
+    "extension_totals": {
+      "additionalProperties": false,
+      "properties": {
+        "apparent_bytes": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "count": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "apparent_bytes",
+        "count"
+      ],
+      "type": "object"
+    },
+    "file_record": {
+      "additionalProperties": false,
+      "properties": {
+        "hardlink_to": {
+          "type": "string"
+        },
+        "kind": {
+          "const": "file"
+        },
+        "mtime_ns": {
+          "type": "integer"
+        },
+        "path": {
+          "type": "string"
+        },
+        "size": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "mtime_ns",
+        "path",
+        "size"
+      ],
+      "type": "object"
+    },
+    "optional_capability": {
+      "additionalProperties": false,
+      "properties": {
+        "entries_added": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "requested": {
+          "type": "boolean"
+        },
+        "supported": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "entries_added",
+        "reason",
+        "requested",
+        "supported"
+      ],
+      "type": "object"
+    },
+    "operation": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "modify"
+            },
+            "path": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "path"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "added": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "replace"
+            },
+            "removed": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "added",
+            "kind",
+            "removed"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "from": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "rename"
+            },
+            "to": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "from",
+            "kind",
+            "to"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "partial_capability": {
+      "additionalProperties": false,
+      "properties": {
+        "reason": {
+          "type": "string"
+        },
+        "requested": {
+          "type": "boolean"
+        },
+        "supported": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "reason",
+        "requested",
+        "supported"
+      ],
+      "type": "object"
+    },
+    "recipe": {
+      "additionalProperties": false,
+      "properties": {
+        "fanout": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "max_depth": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "metadata_profile": {
+          "type": "string"
+        },
+        "mutation_locality": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "optional_links": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "recipe_id": {
+          "type": "string"
+        },
+        "scale_points": {
+          "items": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "seed": {
+          "type": "string"
+        },
+        "target_entries": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "topology": {
+          "type": "string"
+        },
+        "transitions": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "fanout",
+        "max_depth",
+        "metadata_profile",
+        "mutation_locality",
+        "optional_links",
+        "recipe_id",
+        "scale_points",
+        "seed",
+        "target_entries",
+        "topology",
+        "transitions"
+      ],
+      "type": "object"
+    },
+    "state": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "transition_index": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "transition_index"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "observed-corpus-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "capabilities": {
+      "$ref": "#/$defs/capabilities"
+    },
+    "counts": {
+      "$ref": "#/$defs/counts"
+    },
+    "extensions": {
+      "additionalProperties": {
+        "$ref": "#/$defs/extension_totals"
+      },
+      "type": "object"
+    },
+    "generator_source_hash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "generator_version": {
+      "const": 1
+    },
+    "manifest_hash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "oracle": {
+      "additionalProperties": false,
+      "properties": {
+        "creation_matches_observation": {
+          "const": true
+        },
+        "digest_algorithm": {
+          "const": "sha256-multiset-v1"
+        },
+        "root_inclusive": {
+          "const": true
+        },
+        "semantic_components": {
+          "$ref": "#/$defs/digest_components"
+        },
+        "transition_matches_observation": {
+          "const": true
+        }
+      },
+      "required": [
+        "creation_matches_observation",
+        "digest_algorithm",
+        "root_inclusive",
+        "semantic_components"
+      ],
+      "type": "object"
+    },
+    "recipe": {
+      "$ref": "#/$defs/recipe"
+    },
+    "recipe_hash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "recipe_id": {
+      "type": "string"
+    },
+    "records": {
+      "items": {
+        "oneOf": [
+          {
+            "$ref": "#/$defs/file_record"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "directory"
+              },
+              "mtime_ns": {
+                "type": "integer"
+              },
+              "path": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "mtime_ns",
+              "path"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "symlink"
+              },
+              "path": {
+                "type": "string"
+              },
+              "target": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "path",
+              "target"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "other"
+              },
+              "path": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "path"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "type": "array"
+    },
+    "schema": {
+      "const": "fdu-observed-corpus-v1"
+    },
+    "semantic_digest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "sizes": {
+      "additionalProperties": false,
+      "properties": {
+        "entry_allocated_bytes": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "entry_apparent_bytes": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "unique_allocated_bytes": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "unique_apparent_bytes": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "entry_allocated_bytes",
+        "entry_apparent_bytes",
+        "unique_allocated_bytes",
+        "unique_apparent_bytes"
+      ],
+      "type": "object"
+    },
+    "state": {
+      "$ref": "#/$defs/state"
+    },
+    "topology": {
+      "additionalProperties": false,
+      "properties": {
+        "max_depth": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "max_directory_fanout": {
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "max_depth",
+        "max_directory_fanout"
+      ],
+      "type": "object"
+    },
+    "transition_history": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "changed_paths": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "uniqueItems": true
+          },
+          "id": {
+            "type": "string"
+          },
+          "index": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "operations": {
+            "items": {
+              "$ref": "#/$defs/operation"
+            },
+            "type": "array"
+          },
+          "previous_manifest_hash": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "changed_paths",
+          "id",
+          "index",
+          "operations",
+          "previous_manifest_hash"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "capabilities",
+    "counts",
+    "extensions",
+    "generator_source_hash",
+    "generator_version",
+    "manifest_hash",
+    "oracle",
+    "recipe",
+    "recipe_hash",
+    "recipe_id",
+    "schema",
+    "semantic_digest",
+    "sizes",
+    "state",
+    "topology"
+  ],
+  "title": "fdu observed corpus manifest v1",
+  "type": "object"
+}

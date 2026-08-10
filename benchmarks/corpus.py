@@ -1342,11 +1342,15 @@ def _load_json(path: Path) -> Any:
                 f"JSON input {path.name} exceeds the {MAX_JSON_BYTES}-byte safety limit"
             )
         with path.open("r", encoding="utf-8") as input_file:
-            return json.load(input_file)
+            return json.load(input_file, parse_constant=_reject_json_constant)
     except (OSError, json.JSONDecodeError) as error:
         raise CorpusError(
             f"cannot read valid JSON from {path.name}: {error}"
         ) from error
+
+
+def _reject_json_constant(value: str) -> None:
+    raise json.JSONDecodeError(f"non-standard JSON constant {value!r}", value, 0)
 
 
 def _atomic_write_json(path: Path, value: Mapping[str, Any]) -> None:

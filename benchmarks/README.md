@@ -57,6 +57,71 @@ The corpus suite takes well under a second at smoke scale and is included in
 `make check`. Numeric timing and large-corpus runs remain separate from that correctness
 gate.
 
+## Execute and Validate Evidence
+
+`run.py` is the structured entry point for scenario execution and evidence handling.
+Every command emits exactly one JSON object, writes diagnostics to stderr, and uses a
+nonzero status for an invalid request or incompatible comparison.
+
+An executable mapping is a direct argument-vector prefix.
+Repeat the same adapter name for an interpreter plus script; no command passes through a
+shell:
+
+```shell
+uv run --no-project python -m benchmarks.run execute \
+  --scenarios benchmarks/tests/fixtures/schema/scenario-valid.json \
+  --executable fixture=/absolute/path/to/python \
+  --executable fixture=/absolute/path/to/fake_benchmark.py \
+  --work-dir /absolute/scratch/fdu-performance \
+  --output-dir /absolute/results/fdu-performance \
+  --order-seed documented-seed
+```
+
+Each warmup and timed invocation receives a newly generated, verified corpus and freshly
+prepared snapshot and filesystem-cache state.
+The runner uses a minimal environment, kills the child process group on a timeout,
+validates the corpus again afterward, and retains invalid samples with mechanical
+reasons. It writes one exclusive result file; it never replaces an earlier run.
+
+Validate, render, or compare an existing result without executing a benchmark:
+
+```shell
+uv run --no-project python -m benchmarks.run validate \
+  --kind result --path /absolute/results/run-EXAMPLE.json
+
+uv run --no-project python -m benchmarks.run render \
+  --result /absolute/results/run-EXAMPLE.json \
+  --output /absolute/results/report.md
+
+uv run --no-project python -m benchmarks.run compare \
+  --current /absolute/results/current.json \
+  --baseline /absolute/results/baseline.json
+```
+
+Comparison requires the same host capabilities, harness and Python runtime, scenario
+contracts, observed corpora, executable command shapes, and collector availability.
+Executable checksums are recorded but may differ: comparing two code revisions is the
+normal regression use case.
+An exact checksum change is reported separately.
+
+The portable runner deliberately rejects `controlled-cold`. That label requires the
+dedicated-host eviction protocol and supporting collector evidence, which are owned by
+`fdu-8z5l`. A successful cache-preparation command can establish `verified-warm`; normal
+developer and hosted-CI runs remain `uncontrolled`.
+
+`output-digest` drains stdout through a pipe and hashes it without timing filesystem
+writes. Compact JSON postconditions are retained in a bounded 16 MiB buffer for untimed
+validation.
+Use `output-file` for complete or potentially large JSON; its writes are part
+of the measured product job.
+Both modes record byte count, digest, first-output latency, and completion latency.
+
+The strict contracts are versioned under `schema/`. Runtime validation rejects unknown
+fields and cross-checks the declared schedule, scenario states, environment, corpus,
+process outcome, output, and self-checking result hash.
+The result also records hashes for the executable components and the corpus, runner, and
+schema implementation.
+
 ## Corpus Families
 
 `corpora.json` is the strict, versioned source of recipe defaults.
