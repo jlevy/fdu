@@ -244,27 +244,29 @@ def _execute_invocation(
     artifact_root: Path,
 ) -> Dict[str, Any]:
     run_root = reserve_run_directory(work_root)
+    placeholders = _invocation_placeholders(run_root)
+    environment = _build_environment(
+        scenario["command"]["environment"], placeholders
+    )
     reasons: List[str] = []
     precondition = False
     postcondition = False
     manifest: Optional[Dict[str, Any]] = None
     command_result: Optional[_CommandResult] = None
-    recorded_environment: Dict[str, Any] = {
-        "explicitly_unset": sorted(
-            scenario["command"]["environment"]["unset"]
-        ),
-        "set": {},
-    }
+    recorded_environment = _record_environment(
+        environment,
+        scenario["command"]["environment"]["unset"],
+        placeholders,
+    )
     artifact_name: Optional[str] = None
     probe_metrics: Dict[str, Any] = {}
     try:
-        manifest, placeholders, environment = _prepare_invocation(
-            scenario, executable, run_root
-        )
-        recorded_environment = _record_environment(
-            environment,
-            scenario["command"]["environment"]["unset"],
+        manifest = _prepare_invocation(
+            scenario,
+            executable,
+            run_root,
             placeholders,
+            environment,
         )
         precondition = True
         argv = _expand_argv(scenario["command"]["argv"], executable, placeholders)
@@ -321,24 +323,18 @@ def _execute_invocation(
 
 
 def _prepare_invocation(
-    scenario: Mapping[str, Any], executable: Sequence[str], run_root: Path
-) -> Tuple[Dict[str, Any], Dict[str, str], Dict[str, str]]:
+    scenario: Mapping[str, Any],
+    executable: Sequence[str],
+    run_root: Path,
+    placeholders: Mapping[str, str],
+    environment: Mapping[str, str],
+) -> Dict[str, Any]:
     corpus = scenario["corpus"]
     manifest = create_corpus(
         run_root,
         corpus["recipe_id"],
         target_entries=corpus["target_entries"],
         seed=corpus["seed"],
-    )
-    placeholders = {
-        "corpus_root": str(run_root / CORPUS_NAME),
-        "manifest_path": str(run_root / MANIFEST_NAME),
-        "output_path": str(run_root / "command-output"),
-        "run_root": str(run_root),
-        "snapshot_path": str(run_root / "snapshot.fdu"),
-    }
-    environment = _build_environment(
-        scenario["command"]["environment"], placeholders
     )
     snapshot_state = scenario["snapshot_state"]
     if snapshot_state == "compatible-changed":
@@ -388,7 +384,17 @@ def _prepare_invocation(
             run_root,
             "filesystem-cache",
         )
-    return manifest, placeholders, environment
+    return manifest
+
+
+def _invocation_placeholders(run_root: Path) -> Dict[str, str]:
+    return {
+        "corpus_root": str(run_root / CORPUS_NAME),
+        "manifest_path": str(run_root / MANIFEST_NAME),
+        "output_path": str(run_root / "command-output"),
+        "run_root": str(run_root),
+        "snapshot_path": str(run_root / "snapshot.fdu"),
+    }
 
 
 def _run_preparation_command(

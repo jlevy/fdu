@@ -10,6 +10,7 @@ from unittest import mock
 from pathlib import Path
 from typing import Any, Dict
 
+from benchmarks.corpus import CorpusError
 from benchmarks.runner import RunnerError, run_scenario_set
 from benchmarks.schema import (
     SchemaError,
@@ -32,6 +33,45 @@ def _scenario_set(mode: str = "success") -> Dict[str, Any]:
 
 
 class ScenarioRunnerTests(unittest.TestCase):
+    def test_setup_failure_retains_the_declared_environment_and_primary_error(self) -> None:
+        document = _scenario_set()
+        document["scenarios"][0]["method"].update({"trials": 1, "warmups": 0})
+        executable = [sys.executable, str(FIXTURES / "fake_benchmark.py")]
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            base = Path(temporary_directory)
+            with mock.patch(
+                "benchmarks.runner.create_corpus",
+                side_effect=CorpusError("intentional corpus setup failure"),
+            ), mock.patch("benchmarks.runner._run_command") as run_command:
+                result = run_scenario_set(
+                    document,
+                    executables={"fixture": executable},
+                    work_directory=base / "work",
+                    output_directory=base / "results",
+                    order_seed="setup-failure",
+                )
+
+        run_command.assert_not_called()
+        trial = result["trials"][0]
+        recorded_environment = dict(trial["environment"]["set"])
+        recorded_environment.pop("SYSTEMROOT", None)
+        recorded_environment.pop("WINDIR", None)
+        self.assertEqual(
+            recorded_environment,
+            {
+                "FDU_PERF_MODE": "fixture",
+                "LANG": "C",
+                "LC_ALL": "C",
+                "TZ": "UTC",
+            },
+        )
+        self.assertFalse(trial["validation"]["valid"])
+        self.assertEqual(
+            trial["validation"]["reasons"],
+            ["setup failed: intentional corpus setup failure"],
+        )
+        validate_result_document(result)
+
     def test_successful_run_reestablishes_state_and_records_immutable_trials(self) -> None:
         document = _scenario_set()
         document["scenarios"][0]["validation"]["stdout_json"]["record"] = [

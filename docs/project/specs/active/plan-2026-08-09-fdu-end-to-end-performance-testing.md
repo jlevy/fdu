@@ -94,7 +94,7 @@ Comparator acquisition under `fdu-k5t5` has cleared its executable-dependency po
 blocker but now waits only on the reviewed adapter implementation shown below.
 No current timing result supports a product claim.
 
-The portable harness now has 57 deterministic and adversarial tests, passes Python
+The portable harness now has 59 deterministic and adversarial tests, passes Python
 3.9 and the current interpreter, and is included in `make check` without a numeric
 timing assertion. See the [performance harness README](../../../../benchmarks/README.md)
 for its commands, manifest contract, mutation model, and cleanup rules.
@@ -117,6 +117,12 @@ The next Windows stage exposed an independent corpus portability defect: Python 
 the `follow_symlinks` keyword for `os.utime()` but raises `NotImplementedError` where a
 platform cannot honor `False`. `fdu-tqz1` centralizes capability-aware timestamp writes,
 rejects symlinks before the fallback, and emulates the unsupported platform in tests.
+The same run then reached the independent oracle and showed that Windows
+`DirEntry.stat()` zeros device, inode, and link-count fields. `fdu-gc6h` retains the
+efficient directory-entry path where its identity is authoritative and uses a fresh
+non-following path stat on Windows. `fdu-viyi` separately ensures a setup failure remains
+schema-valid evidence carrying the primary error instead of being masked by environment
+validation.
 
 ## Background
 
@@ -844,6 +850,8 @@ The planning bead retains the same stable IDs.
 | PEV-23 | Medium | The first 1M invocation spent more than twelve minutes in serial Python corpus setup before any probe child launched, making fresh generation per sample impractical for scheduled evidence | `fdu-6wu0` adds a keyed immutable base-corpus cache with capability-proven clone/reflink and safe copy fallback; trials still verify their own exact fingerprint-sensitive precondition and never hardlink mutable corpus files |
 | PEV-24 | High | Windows `DirEntry::metadata()` reuses directory-enumeration attributes that the platform permits to be non-current, producing a spurious warm-path update in both native and wheel CI | `fdu-k9zq` retains the measured `DirEntry` path on Unix, performs a fresh non-following stat on non-Unix platforms, and locks the boundary down with mutation-after-enumeration coverage |
 | PEV-25 | High | Python exposes `os.utime(..., follow_symlinks=False)` on Windows but raises `NotImplementedError` because that operation is unavailable, so every generated performance trial failed during setup | `fdu-tqz1` checks `os.supports_follow_symlinks`, keeps non-following writes where available, verifies that fallback targets are not symlinks, and tests the unsupported-capability path on every development platform |
+| PEV-26 | High | Windows `os.DirEntry.stat()` deliberately reports zero device, inode, and link-count fields, causing unrelated regular files to collapse into one false hardlink group in the independent oracle | `fdu-gc6h` uses fresh path identity on Windows, retains the cheaper authoritative Unix metadata path, and directly tests the non-authoritative boundary |
+| PEV-27 | High | A fallible corpus setup left the recorded environment empty, so result validation masked the primary setup failure with a secondary schema error | `fdu-viyi` establishes and tokenizes the declared environment before corpus creation and proves that a setup-failed trial remains immutable, schema-valid evidence without launching the timed child |
 
 ## Beads
 
@@ -863,6 +871,8 @@ research and plan, assemble this graph, and validate it through CI.
 | `fdu-s23t` | P1 | Use `DirEntry` metadata on Unix, with paired exact-oracle evidence | discovered by `fdu-oj25` |
 | `fdu-k9zq` | P0 | Keep Unix metadata speedups without trusting cached Windows enumeration attributes | discovered by cross-platform CI |
 | `fdu-tqz1` | P0 | Set deterministic corpus timestamps without unsupported Windows flags | discovered by cross-platform CI |
+| `fdu-gc6h` | P0 | Use authoritative file identity in the Windows corpus oracle | discovered by cross-platform CI |
+| `fdu-viyi` | P0 | Preserve primary setup failures as schema-valid trial evidence | discovered by cross-platform CI |
 | `fdu-pkyu` | P1 | Elide redundant path lookups and guaranteed no-op applies during reconciliation | discovered by `fdu-p2i1` |
 | `fdu-6wu0` | P1 | Reuse safely cloned and independently verified base corpora for large repeated trials | discovered by `fdu-p2i1` |
 | `fdu-849g` | P1 | Strict claim-grade build and anonymous host provenance manifests | `fdu-oj25` |
@@ -895,6 +905,7 @@ The implementation tasks remain open after this planning record closes.
 - [Performance-evidence research](../../research/research-2026-08-09-end-to-end-performance-evidence.md)
 - [Unix `DirEntry` metadata evidence](../../research/research-2026-08-09-portable-direntry-metadata.md)
 - [Reconciliation index fast-path evidence](../../research/research-2026-08-09-reconciliation-index-fast-path.md)
+- [Python `DirEntry.stat()` platform contract](https://docs.python.org/3/library/os.html#os.DirEntry.stat)
 - [fdu Phase 1 plan](plan-2026-08-08-fdu-phase-1.md)
 - [fdu file-roll-up engine research](../../research/research-2026-08-06-file-rollup-engine.md)
 - [fdu CLI golden-test plan](../done/plan-2026-08-09-fdu-cli-golden-tests.md)

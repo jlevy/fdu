@@ -11,6 +11,7 @@ from unittest import mock
 
 from benchmarks.corpus import (
     CorpusError,
+    _metadata_for_observation,
     _set_path_times_ns,
     apply_transition,
     cleanup_run_directory,
@@ -22,6 +23,28 @@ from benchmarks.corpus import (
 
 
 class CorpusGenerationTests(unittest.TestCase):
+    def test_non_authoritative_directory_identity_uses_a_fresh_path_stat(self) -> None:
+        class CachedEntry:
+            def __init__(self, path: Path) -> None:
+                self.path = str(path)
+
+            def stat(self, *, follow_symlinks: bool) -> os.stat_result:
+                raise AssertionError(
+                    "non-authoritative directory metadata must not be consulted"
+                )
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            path = Path(temporary_directory) / "identity.txt"
+            path.write_bytes(b"identity")
+            expected = path.lstat()
+            with mock.patch(
+                "benchmarks.corpus._DIRENTRY_METADATA_IS_AUTHORITATIVE", False
+            ):
+                observed = _metadata_for_observation(CachedEntry(path), path)
+
+        self.assertEqual(observed.st_ino, expected.st_ino)
+        self.assertEqual(observed.st_dev, expected.st_dev)
+
     def test_generation_omits_an_unsupported_no_follow_utime_flag(self) -> None:
         real_utime = os.utime
 

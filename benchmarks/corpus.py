@@ -32,6 +32,10 @@ MAX_JSON_BYTES = 8 * 1024 * 1024
 BASE_MTIME_SECONDS = 1_700_000_000
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
+# Windows directory-enumeration metadata omits file identity and may be stale. The
+# independent oracle needs fresh identity to distinguish hardlinks from unrelated files.
+_DIRENTRY_METADATA_IS_AUTHORITATIVE = os.name != "nt"
+
 _RECIPE_KEYS = {
     "default_target_entries",
     "fanout",
@@ -1079,17 +1083,24 @@ def _walk_corpus(root: Path) -> Iterator[Tuple[Path, str, os.stat_result]]:
                 if relative_directory == "."
                 else f"{relative_directory}/{entry.name}"
             )
+            path = Path(entry.path)
             try:
-                metadata = entry.stat(follow_symlinks=False)
+                metadata = _metadata_for_observation(entry, path)
             except OSError as error:
                 raise CorpusError(
                     f"cannot stat corpus entry {relative!r}: {error.strerror}"
                 ) from error
-            path = Path(entry.path)
             yield path, relative, metadata
             if stat.S_ISDIR(metadata.st_mode):
                 child_directories.append((path, relative))
         pending.extend(reversed(child_directories))
+
+
+def _metadata_for_observation(entry: Any, path: Path) -> os.stat_result:
+    """Return non-following metadata with authoritative file identity."""
+    if _DIRENTRY_METADATA_IS_AUTHORITATIVE:
+        return entry.stat(follow_symlinks=False)
+    return path.lstat()
 
 
 def _set_directory_mtimes(root: Path, seed: str) -> None:
@@ -1260,7 +1271,10 @@ def _assert_expected_matches_observed(
         "topology",
     ):
         if expected.get(field) != observed.get(field):
-            raise CorpusError(f"creation ledger disagrees with observation for {field}")
+            raise CorpusError(
+                f"creation ledger disagrees with observation for {field}: "
+                f"expected {expected.get(field)!r}, observed {observed.get(field)!r}"
+            )
     for field in ("entry_apparent_bytes", "unique_apparent_bytes"):
         if expected["sizes"].get(field) != observed["sizes"].get(field):
             raise CorpusError(

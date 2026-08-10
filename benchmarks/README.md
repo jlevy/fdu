@@ -190,6 +190,9 @@ those values change across valid regenerations.
 Timestamp writes request non-following behavior only where Python reports it available.
 On platforms such as Windows that reject that flag, the generator verifies that each
 owned timestamp target is not a symlink before using the ordinary path operation.
+The verifier likewise keeps directory-entry metadata only where it carries authoritative
+identity. On Windows it performs a fresh non-following path stat because Python's cached
+directory record deliberately zeros device, inode, and hardlink-count fields.
 The separate engine digest includes allocated size, ctime, inode, and device identity.
 It intentionally changes across valid corpus regeneration and is compared only to the
 probe that scanned that exact invocation. The portable semantic digest remains the
@@ -199,7 +202,8 @@ cross-run corpus identity.
 XOR, and modular-sum accumulators and hashes those components once more.
 This is stable regardless of filesystem enumeration order and uses constant digest
 memory. Generation builds the expected components from creation operations; a separate
-`scandir` and `lstat` walk must reproduce them before the manifest is accepted.
+`scandir` walk with authoritative non-following metadata must reproduce them before the
+manifest is accepted.
 
 ## Mutation Contract
 
