@@ -817,6 +817,8 @@ The planning bead retains the same stable IDs.
 | PEV-16 | High | Reporting only process wall time for component probes hid the target operation behind setup, exact validation, and JSON emission | Results and reports preserve external wall and explicit internal component duration separately; only product jobs may use external latency as the user-facing number |
 | PEV-17 | High | The exact contract corpus showed that retained symlinks and special nodes incremented regular-file counts and bytes despite the `RollUp` contract | `fdu-6x07` splits non-file contributions from regular-file roll-ups and adds kind-transition regression coverage before any sample is accepted |
 | PEV-18 | Medium | A portable semantic digest omits inode, ctime, device, and allocated size, so it cannot prove the exact fingerprint-sensitive index scanned in one trial | Manifests now carry a second per-run engine digest over pinned binary records; probe output must match it while cross-run compatibility continues to use the portable semantic digest |
+| PEV-19 | Low | Increasing observation batches looked like an easy way to reduce index and reconciliation overhead | A six-point 10k sweep from 64 through 65,536 ops showed no stable improvement, so the 1,024 default remains unchanged |
+| PEV-20 | Medium | The portable walker allocated and re-resolved an absolute path for every successful metadata lookup even though `ReadDir` already owned the directory context | `DirEntry::metadata()` preserves non-following semantics and improved alternating same-corpus 100k paired medians by 6.84-8.24% across producer, full-index, and revalidation jobs; the focused evidence and limits are recorded in the linked research note |
 
 ## Beads
 
@@ -857,6 +859,7 @@ The implementation tasks remain open after this planning record closes.
 ## References
 
 - [Performance-evidence research](../../research/research-2026-08-09-end-to-end-performance-evidence.md)
+- [Directory-entry-relative metadata evidence](../../research/research-2026-08-09-portable-direntry-metadata.md)
 - [fdu Phase 1 plan](plan-2026-08-08-fdu-phase-1.md)
 - [fdu file-roll-up engine research](../../research/research-2026-08-06-file-rollup-engine.md)
 - [fdu CLI golden-test plan](../done/plan-2026-08-09-fdu-cli-golden-tests.md)

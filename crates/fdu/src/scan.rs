@@ -302,7 +302,10 @@ pub fn scan(
             };
             let name = item.file_name();
             let rel_path = rel_dir.join(&name);
-            let meta = match fs::symlink_metadata(item.path()) {
+            // DirEntry::metadata is non-following and lets Unix use the directory
+            // handle retained by read_dir instead of resolving an allocated absolute
+            // path again for every entry.
+            let meta = match item.metadata() {
                 Ok(meta) => meta,
                 Err(e) => {
                     report.errors.push(Error::io(item.path(), e));
@@ -433,7 +436,7 @@ pub fn revalidate(
             seen.insert(name.clone());
             let rel_path = rel_dir.join(&name);
             let baseline = index.relaxed_expectation(&rel_path);
-            let meta = match fs::symlink_metadata(item.path()) {
+            let meta = match item.metadata() {
                 Ok(meta) => meta,
                 Err(e) => {
                     report.errors.push(Error::io(item.path(), e));
@@ -658,7 +661,7 @@ fn reconcile_target_inner(
                 Some(baseline) => baseline,
                 None => target.expectation(&rel_path)?,
             };
-            let meta = match fs::symlink_metadata(item.path()) {
+            let meta = match item.metadata() {
                 Ok(meta) => meta,
                 Err(error) => {
                     report.scan.errors.push(Error::io(item.path(), error));
@@ -1009,6 +1012,24 @@ mod tests {
         let src = index.rollup(Path::new("src")).expect("src");
         assert_eq!(src.files, 2);
         assert_eq!(src.dirs, 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn directory_entry_metadata_does_not_follow_symlinks() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempfile::tempdir().expect("root");
+        let outside = tempfile::tempdir().expect("outside");
+        write_file(&outside.path().join("must-not-be-scanned.txt"), b"outside");
+        symlink(outside.path(), root.path().join("link")).expect("symlink");
+
+        let (index, report) = scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
+
+        assert!(report.is_complete(), "unexpected errors: {:?}", report.errors);
+        assert_eq!(index.kind(Path::new("link")), Some(EntryKind::Symlink));
+        assert!(index.lookup(Path::new("link/must-not-be-scanned.txt")).is_none());
+        assert_eq!(index.total().files, 0);
     }
 
     #[test]
