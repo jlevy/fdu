@@ -1,0 +1,70 @@
+{
+  "optional_records": {
+    "hardlink": {
+      "hardlink_to": "nested/data.json",
+      "kind": "file",
+      "path": "zz-optional-hardlink.bin",
+      "size": 257
+    },
+    "symlink": {
+      "kind": "symlink",
+      "path": "zz-optional-symlink",
+      "target": "nested/data.json"
+    }
+  },
+  "required_directories": [
+    ".",
+    "empty",
+    "nested",
+    "nested/deeper"
+  ],
+  "required_extension_totals": {
+    ".bin": {
+      "apparent_bytes": 4096,
+      "count": 1
+    },
+    ".gz": {
+      "apparent_bytes": 64,
+      "count": 1
+    },
+    ".json": {
+      "apparent_bytes": 290,
+      "count": 2
+    },
+    ".md": {
+      "apparent_bytes": 1024,
+      "count": 1
+    },
+    ".py": {
+      "apparent_bytes": 7,
+      "count": 1
+    },
+    ".txt": {
+      "apparent_bytes": 17,
+      "count": 2
+    },
+    "<none>": {
+      "apparent_bytes": 16,
+      "count": 3
+    }
+  },
+  "required_files": {
+    ".hidden": 5,
+    "UPPER.JSON": 33,
+    "archive.tar.gz": 64,
+    "empty.txt": 0,
+    "nested/data.json": 257,
+    "nested/deeper/blob.bin": 4096,
+    "nested/deeper/zero": 0,
+    "nested/readme.md": 1024,
+    "no-extension": 11,
+    "space name.txt": 17,
+    "tiny.py": 7
+  },
+  "required_sizes": {
+    "entry_apparent_bytes": 5514,
+    "unique_apparent_bytes": 5514
+  },
+  "schema": "fdu-contract-expectations-v1",
+  "target_descendants": 14
+}

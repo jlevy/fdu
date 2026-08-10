@@ -69,14 +69,24 @@ This plan is independently actionable.
 ## Current Status
 
 The design and Flowmark synthesis are complete; planning bead `fdu-f0or` is closed.
-Epic `fdu-d5e1` and all six implementation/proof children remain open.
+The first implementation child, `fdu-rq5m`, is complete.
+Its standard-library-only corpus tool now generates and independently verifies all eight
+recipe families, applies deterministic local and distributed churn, and exposes
+structured create, verify, mutate, and cleanup commands.
+The other five implementation/proof children remain open under epic `fdu-d5e1`.
 
 The repository-wide correctness, supply-chain, and concurrency implementation gates are
 closed; final approval bead `fdu-sn43` is closed and PR #1 has merged.
-The performance work starts with `fdu-rq5m`, followed by `fdu-d8kq` and `fdu-oj25`.
-Comparator acquisition under `fdu-k5t5` has cleared its executable-dependency policy
-blocker but still waits on the corpus and runner prerequisites shown below.
+The next implementation step is `fdu-d8kq`, followed by `fdu-oj25`. Comparator
+acquisition under `fdu-k5t5` has cleared its executable-dependency policy blocker but
+still waits on the corpus and runner prerequisites shown below.
 No current timing result supports a product claim.
+
+The completed corpus slice has 27 deterministic and adversarial tests, runs at the 1k
+smoke scale in under one second locally, passes Python 3.9 and the current interpreter,
+and is included in `make check` without a numeric timing assertion.
+See the [performance harness README](../../../../benchmarks/README.md) for its commands,
+manifest contract, mutation model, and cleanup rules.
 
 ## Background
 
@@ -260,6 +270,11 @@ expected platform capabilities.
 Generation is idempotent only after an explicit run-directory reservation; it never
 deletes an unresolved or shared path.
 
+Create, verify, mutate, and cleanup serialize through one atomic per-run operation lock.
+Concurrent or stale-lock access fails closed instead of racing a state transition.
+The portable deep topology uses short path segments and a bounded directory depth so its
+committed recipe remains usable on narrower path-budget platforms.
+
 The first comprehensive matrix is:
 
 | Recipe family | Scale points | Shape and purpose |
@@ -296,6 +311,13 @@ observed manifest. It contains:
 - extension counts and byte totals for the contract corpus;
 - normalized record digest for every corpus small enough to enumerate into the oracle;
 - mutation-state id and the expected digest after each declared transition.
+
+The manifest also records a generator source hash and constant-memory
+`sha256-multiset-v1` components.
+Semantic records use normalized relative paths and nanosecond mtimes but omit inode and
+ctime so equivalent regeneration remains portable.
+The eventual probe records per-run fingerprint identity separately where a job needs
+those non-portable fields.
 
 The result record references the manifest hash.
 A trial whose precondition or postcondition no longer matches is invalid and is never
@@ -607,9 +629,9 @@ real consumer. Benchmarking alone is not a reason to stabilize an abstraction.
 
 ### Phase 1: Establish the Evidence Contract
 
-- [ ] `fdu-rq5m`: implement deterministic contract, scale, topology, metadata, and churn
+- [x] `fdu-rq5m`: implement deterministic contract, scale, topology, metadata, and churn
   recipes in unique safe run directories
-- [ ] `fdu-rq5m`: implement the independent observed-manifest verifier, mutation
+- [x] `fdu-rq5m`: implement the independent observed-manifest verifier, mutation
   transitions, and semantic digest
 - [ ] `fdu-d8kq`: commit strict scenario, corpus-manifest, and result schemas with
   valid, unknown-field, truncated, and incompatible-version fixtures
@@ -674,6 +696,13 @@ false engineering direction.
 - A deliberate no-op or narrowed fdu probe must fail the oracle even if it is faster.
 - Smoke tests run on Linux, macOS, and Windows where their declared capabilities exist;
   controlled-cold and comparator claims remain on the dedicated supported host.
+
+The implemented corpus suite additionally locks root-inclusive counts, the committed
+contract fixture, seed determinism, all recipe families, 1k bounded-manifest behavior,
+subsecond mtime detection, ordered local and distributed transitions, operation-path
+declarations, precondition tampering, manifest hashes and shapes, JSON size limits,
+atomic operation exclusion, failed-lock release, safe cleanup, and the Python 3.9
+surface. It remains a correctness gate, not a performance baseline.
 
 `make check` remains the handoff gate for code changes.
 Full benchmarks run separately because creating one million filesystem entries is not a
@@ -751,6 +780,10 @@ The planning bead retains the same stable IDs.
 | PEV-03 | Medium | Inheriting a developer shell makes locale, cache, thread, allocator, or tool configuration an invisible benchmark input | The runner passes and records a minimal normalized environment and strips unrelated variables |
 | PEV-04 | Medium | Peak RSS cannot by itself prove a 25-32-byte record layout | Record/arena accounting owns the layout gate; peak and retained RSS report whole-process memory separately |
 | PEV-05 | Low | TOML recipes would require a parser not present in the Python standard library on every supported interpreter | Scenarios, recipes, schemas, and adapters use strict versioned JSON |
+| PEV-06 | High | Whole-second corpus mtimes would miss changes that alter fdu’s nanosecond cache fingerprint | Semantic records and deterministic mutation timestamps retain nanoseconds; a subsecond-only tamper test must fail verification |
+| PEV-07 | High | Concurrent mutate, verify, or cleanup processes could race one run’s manifest and filesystem state | Every stateful operation acquires the same atomic run-directory lock; active and abandoned locks fail closed |
+| PEV-08 | Medium | Add, remove, and rename transitions could accidentally change corpus size, shape, extension mix, or fan-out and confound revalidation evidence | Every transition preserves and rechecks those aggregate invariants while chaining exact changed paths and semantic components |
+| PEV-09 | Medium | Long hashed directory segments made the nominally platform-safe deep corpus exceed narrower path budgets | Deep recipes use compact segments under an explicit tested relative-path budget while other seeded fields retain recipe variation |
 
 ## Beads
 
