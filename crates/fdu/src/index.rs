@@ -960,7 +960,7 @@ impl Index {
                 roll.dirs += 1;
                 roll
             }
-            EntryKind::File | EntryKind::Symlink | EntryKind::Other => {
+            EntryKind::File => {
                 let mut roll = RollUp {
                     files: 1,
                     dirs: 0,
@@ -974,6 +974,7 @@ impl Index {
                 }
                 roll
             }
+            EntryKind::Symlink | EntryKind::Other => RollUp::default(),
         }
     }
 
@@ -1796,6 +1797,41 @@ mod tests {
         assert_eq!(src.dirs, 0);
         assert_eq!(src.bytes, 300);
         assert_eq!(src.newest_mtime_ns, 20);
+    }
+
+    #[test]
+    fn symlinks_and_special_nodes_do_not_contribute_regular_file_tallies() {
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![
+            upsert("regular.txt", EntryKind::File, file_attrs(10, 10)),
+            upsert("link.rs", EntryKind::Symlink, file_attrs(99, 99)),
+            upsert("socket.md", EntryKind::Other, file_attrs(88, 88)),
+        ]));
+
+        let total = index.total();
+        assert_eq!(total.files, 1);
+        assert_eq!(total.bytes, 10);
+        assert_eq!(total.allocated, 512);
+        assert_eq!(total.newest_mtime_ns, 10);
+        assert_eq!(total.by_ext[".txt"], ExtTally { files: 1, bytes: 10 });
+        assert!(!total.by_ext.contains_key(".rs"));
+        assert!(!total.by_ext.contains_key(".md"));
+
+        index.apply_ok(&Observation::new(vec![upsert(
+            "link.rs",
+            EntryKind::File,
+            file_attrs(99, 99),
+        )]));
+        assert_eq!(index.total().files, 2);
+        assert_eq!(index.total().bytes, 109);
+
+        index.apply_ok(&Observation::new(vec![upsert(
+            "link.rs",
+            EntryKind::Symlink,
+            file_attrs(99, 99),
+        )]));
+        assert_eq!(index.total().files, 1);
+        assert_eq!(index.total().bytes, 10);
     }
 
     #[test]

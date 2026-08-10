@@ -19,9 +19,9 @@
   "tree": {
     "name": ".",
     "kind": "dir",
-    "bytes": 14,
-    "allocated": 14,
-    "files": 4,
+    "bytes": 9,
+    "allocated": 9,
+    "files": 2,
     "dirs": 1,
     "newest_mtime_ns": 5,
     "children": [
