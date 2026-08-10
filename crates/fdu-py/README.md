@@ -27,6 +27,21 @@ that same object is rejected rather than becoming an unsynchronized shared-index
 The wheel uses the core scan/cache surface and does not compile the optional watch
 dependency; no Python watcher API is implied yet.
 
+The wheel also exposes the native Rust CLI as the `fdu` console script.
+Argument parsing, help, streams, color, errors, broken-pipe handling, and exit status
+all use the same Rust process boundary as the Cargo-installed binary; there is no Python
+CLI reimplementation.
+`make python-smoke` installs the built wheel into an isolated environment and runs both
+the module contract and a direct local-wheel `uvx` check.
+
+After publication, an exact reviewed release can run without a persistent install:
+
+```shell
+uvx --from fdu==<version> fdu --help
+```
+
+That registry command is conditional until the first release is actually on PyPI.
+
 **Status: early scaffold**, not yet published to PyPI.
 
 License: MIT.

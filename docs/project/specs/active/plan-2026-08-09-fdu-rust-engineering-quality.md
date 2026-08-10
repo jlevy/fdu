@@ -4,7 +4,7 @@
 
 **Author:** fdu project
 
-**Status:** Active — PR #1 merge gate complete; later hardening queued
+**Status:** Active — PR #1 merged; CLI stack hardening in follow-up validation
 
 ## Overview
 
@@ -28,7 +28,7 @@ changes rather than replacing or rescoping them.
 ## Current Status
 
 The epic is `fdu-dxee`, a child of the Phase 1 epic `fdu-qfz6`. Every design,
-implementation, and validation node on the PR #1 merge path is closed:
+implementation, and validation node on the PR #1 merge path is closed and merged:
 
 - `fdu-ad45`: executable-dependency cool-off, provenance, and CI trust controls now fail
   closed in CI and the local handoff gate;
@@ -60,17 +60,19 @@ normal toolchain, watch-only feature lane, and test-running MSRV lane now rather
 after merge.
 
 The final merge-path bead `fdu-sn43` is closed.
-The complete local handoff gate passes: 145 all-feature library tests, two CLI unit
-tests, one CLI integration test, two doctests, 25 built-binary golden scenarios, 105
-core-only tests, 135 watch-only tests, exact-1.85.0 compilation and core tests, ten live
-supply-chain policy tests, Clippy, rustdoc, Cargo/npm audits, two Python concurrency
-tests, and an installed abi3 wheel smoke test.
+The original merge gate passed 145 all-feature library tests, two CLI unit tests, one
+CLI integration test, two doctests, and 25 built-binary golden scenarios.
+The focused CLI follow-up now passes 148 all-feature library tests, four CLI process
+tests, two doctests, 26 golden scenarios, 105 core-only tests, 135 watch-only tests,
+exact-1.85.0 compilation and core tests, ten live supply-chain policy tests, Clippy,
+rustdoc, Cargo/npm audits, two Python concurrency tests, installed abi3
+wheel/module/console smoke, and direct local-wheel `uvx` execution.
 Fresh [GitHub run 31339731585](https://github.com/jlevy/fdu/actions/runs/31339731585)
 passes the Linux, macOS, Windows, MSRV, feature-boundary, docs, audit, provenance,
-golden, and Python jobs, and the superseding senior review approves PR #1 for merge.
-The remaining P1 and P2 items protect later representation changes, performance
-evidence, and publishing; they are explicitly deferred rather than hidden merge
-blockers.
+golden, and Python jobs, and the superseding senior review approved the revision that
+merged through PR #1. The remaining P1 and P2 items protect later representation
+changes, performance evidence, and publishing; they are explicitly deferred rather than
+hidden merge blockers.
 
 ## Goals
 
@@ -159,7 +161,7 @@ more broad lints, or a rewrite of working test infrastructure.
 | --- | --- |
 | `rust-rules.md` | **Apply selectively.** Ownership, domain types, typed errors, module responsibility, safe Rust, and measured-performance rules are already strong. The malformed-observation, lock lifetime, bounded-worker-lifecycle, public-surface, documentation, `must_use`, and stable-fingerprint findings remain. |
 | `rust-project-setup.md` | **Applied.** The two-crate shape, feature boundaries, lint policy, lockfiles, local gate, and audits were already sound. `fdu-ad45` and `fdu-zga3` now provide toolchain reproducibility, cool-off enforcement, least privilege, cache-free pull-request jobs, and the feature/MSRV matrix. |
-| `rust-cli-rules.md` | **Mostly met.** The binary is thin, streams and exits are tested, redirected output is deterministic, broken pipes are quiet success, and golden tests own help/errors/cache behavior. Deep-tree stack safety remains; prompts, destructive dry-run, configuration files, paging, and completions are not current features. |
+| `rust-cli-rules.md` | **Mostly met.** The binary is thin, streams and exits are tested, redirected output is deterministic, broken pipes are quiet success, golden tests own help/errors/cache behavior, and explicit-stack renderers cover deep trees. Prompts, destructive dry-run, configuration files, paging, and completions are not current features. |
 | `rust-filesystem-rules.md` | **Apply to scan and cache boundaries.** Native path storage, non-following symlink policy, root boundaries, partial-error reporting, private temporary files, atomic replacement, and fail-closed parsing are present. Classification/Python path narrowing and injected snapshot failure-state tests remain. fdu does not mutate the scanned user tree. |
 | `rust-testing-rules.md` | **Apply selectively.** Test placement, isolated roots, exact goldens, cross-platform CI, doctests, failure cases, deterministic concurrency, MSRV tests, and watch-only coverage are strong. A reference model, broad corrupt-input coverage, injected commit failures, and minimum-Python wheel coverage remain distinct later evidence. |
 | `rust-release-rules.md` | **Prepare now, execute later.** No artifact is published, so channels and release credentials remain Phase 1 work. Package contents, one release identity, least privilege, compatibility policy, native artifact smoke tests, and incident/security documentation must be acceptance criteria for the existing publishing bead. |
@@ -377,7 +379,8 @@ fix.
 
 ### Phase 3: Harden Product and Distribution Boundaries
 
-- [ ] `fdu-zsdy`: make human and JSON rendering iterative and stack-safe
+- [x] `fdu-zsdy`: make human and JSON rendering iterative and stack-safe; the focused
+  CLI follow-up preserves exact output and adds a small-stack subprocess regression
 - [ ] `fdu-k8zw`: preserve native filesystem identity through classification and Python
   bindings
 - [ ] Complete package, compatibility, security, and artifact-smoke acceptance under the
@@ -483,7 +486,7 @@ concurrency review closes when this plan, its beads, and the PR record agree.
 | 1 | `fdu-zga3` | P1 | Pin Rust tooling and prove supported feature/MSRV contracts | `fdu-ad45` |
 | 2 | `fdu-o8r8` | P1 | Add a deterministic index/delta reference model | `fdu-nlh8`, `fdu-sn43` |
 | 2 | `fdu-471a` | P1 | Exercise snapshot parsing and commit failures as a state machine | `fdu-nlh8`, `fdu-sn43` |
-| 3 | `fdu-zsdy` | P2 | Make CLI rendering iterative and stack-safe | `fdu-sn43` |
+| 3 | `fdu-zsdy` | P2 | Make CLI rendering iterative and stack-safe (complete) | `fdu-sn43` |
 | 3 | `fdu-k8zw` | P2 | Preserve native identity through classification and Python | `fdu-s7wr` |
 
 The Phase 1 bead `fdu-sn43` depends on `fdu-ad45`, `fdu-gd6n`, `fdu-l8vc`, `fdu-83gl`,

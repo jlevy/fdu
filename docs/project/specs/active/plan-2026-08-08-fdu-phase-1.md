@@ -12,13 +12,13 @@ The detailed benchmark methodology and implementation graph are in
 
 ## Working on This
 
-Phase-0 work is on branch `claude/fdu-phase-0-scaffold`, open as
-[PR #1](https://github.com/jlevy/fdu/pull/1), with `main` holding only the initial
-commit. All P0, concurrency, and final-validation blockers in **Wave 0** below are
-closed. The assembled revision passes the complete local handoff gate and the fresh
+Phase 0 merged to `main` through [PR #1](https://github.com/jlevy/fdu/pull/1) at merge
+commit `92ee5ab`. All P0, concurrency, and final-validation blockers in **Wave 0** below
+are closed. The merged revision passed the complete local handoff gate and the fresh
 [Linux/macOS/Windows matrix](https://github.com/jlevy/fdu/actions/runs/31339731585). The
-superseding senior review approves PR #1 for merge; Phase 1 performance work remains
-separate and makes no claim about the portable walker.
+focused CLI UX, agent-skill, and wheel-entry-point follow-up is tracked by `fdu-6c8n` on
+a new branch from `origin/main`; Phase 1 performance work remains separate and makes no
+claim about the portable walker.
 
 Beads live on the `tbd-sync` branch and are visible from any clone (`tbd list`).
 `make check` is the handoff gate; `AGENTS.md` carries the conventions worth not
@@ -28,9 +28,9 @@ rediscovering.
 
 The Phase 0 product slice is implemented: the repository exists, the architecture is
 expressed in code, and the whole pipeline runs end to end.
-Phase 0 hardening is merge-complete: the local gate, fresh cross-platform matrix,
-automated review disposition, and tbd integrity/synchronization checks pass, and the
-final senior review records no unresolved blocker.
+Phase 0 hardening is merged: the local gate, fresh cross-platform matrix, automated
+review disposition, and tbd integrity/synchronization checks pass, and the final senior
+review records no unresolved blocker.
 What that means concretely, because “scaffold” is otherwise an unhelpful word:
 
 **Built and tested.**
@@ -43,9 +43,9 @@ What that means concretely, because “scaffold” is otherwise an unhelpful wor
 | Walk and reconcile | `scan.rs` | Scope-safe applying full/subtree reconciliation with explicit freshness and bounded producer batches; correct and portable, **not fast** |
 | Snapshot | `snapshot.rs` | Flat format v2 bootstrap; bounded streaming load, payload checksum, semantic scope, owner-only concurrent replacement |
 | Watch layer | `watch.rs` | notify-backed bounded I/O-free coalescer plus consuming-thread verification and apply/reconcile driver; sticky overflow invalidation, typed stop/panic, and joined cancellation; not started by `open()` or Python |
-| CLI | `cli.rs` | Human tree, schema-v2 JSON, exact kinds/errors, partial exit status, `NO_COLOR` |
-| Python bindings | `fdu-py` | Bulk API, retained scan scope, freshness/errors, explicit GIL release and same-object borrow exclusion, watch-independent installed-wheel smoke |
-| CI | `.github/workflows/ci.yml` | SHA-pinned Actions; locked three-OS tests, MSRV, docs, audit, and wheel smoke |
+| CLI | `cli.rs` | Human tree, schema-v2 JSON, exact kinds/errors, partial exit status, and deterministic color/stream behavior; the focused follow-up adds complete help and a portable skill |
+| Python bindings | `fdu-py` | Bulk API, retained scan scope, freshness/errors, explicit GIL release and same-object borrow exclusion; the focused follow-up adds the same Rust CLI as the wheel entry point |
+| CI | `.github/workflows/ci.yml` | SHA-pinned Actions; locked three-OS tests, MSRV, docs, audit, native goldens, and installed-wheel smoke |
 
 The workspace suite includes adversarial ordering and ABA arbitration, cache-scope,
 non-UTF-8 identity, snapshot integrity/resource/permission bounds, concurrent
@@ -127,7 +127,7 @@ merely to force a serial work queue.
 ```text
 Wave 0:  fdu-ad45 ──────────────────────────────────────┐
          fdu-nlh8 ──→ fdu-s7wr ──┐                   │
-         fdu-1j0b ────────────────├─→ fdu-gd6n ────────├─→ fdu-sn43 ─→ approve PR #1
+         fdu-1j0b ────────────────├─→ fdu-gd6n ────────├─→ fdu-sn43 ─→ PR #1 merged
          fdu-8jte ────────────────┘
 
 Wave 1:  trust/API safety and corpus/oracle → runner → probes/adapters
@@ -175,8 +175,8 @@ The [Rust quality plan](plan-2026-08-09-fdu-rust-engineering-quality.md) has alr
 pinned and proved the normal/MSRV feature matrix (`fdu-zga3`). It next adds the
 independent index model (`fdu-o8r8`) and snapshot fault-state suite (`fdu-471a`). The
 guard-free API is already closed in Wave 0. Stack-safe rendering (`fdu-zsdy`) is
-independent; lossless classification and Python identity (`fdu-k8zw`) follows the API
-work.
+implemented in the focused CLI follow-up and remains blocked only on its validation
+gate; lossless classification and Python identity (`fdu-k8zw`) follows the API work.
 
 In parallel, the
 [performance plan](plan-2026-08-09-fdu-end-to-end-performance-testing.md) builds one
@@ -325,6 +325,7 @@ the queued Phase 1 work.
 | --- | --- | --- | --- |
 | `fdu-qfz6` | Active | — | This Phase 1 plan |
 | `fdu-dxee` | Active; owns Wave 0 | — | [Rust engineering quality](plan-2026-08-09-fdu-rust-engineering-quality.md) |
+| `fdu-6c8n` | Active follow-up | `fdu-sn43` | [CLI UX and zero-install skill](plan-2026-08-09-fdu-cli-ux-and-agent-skill.md) |
 | `fdu-d5e1` | Queued | `fdu-sn43` | [End-to-end performance evidence](plan-2026-08-09-fdu-end-to-end-performance-testing.md) |
 | `fdu-x746` | Future | `fdu-9cf0` | [Post-Phase 1 roadmap](../future/plan-2026-08-09-fdu-post-phase-1-roadmap.md) |
 
@@ -335,7 +336,7 @@ blocker. The table below is the complete set owned directly by this plan.
 
 | Wave | Bead | Priority | Work | Direct blockers |
 | --- | --- | --- | --- | --- |
-| 0 | `fdu-sn43` | P0 | Close the PR #1 merge gate | `fdu-ad45`, `fdu-gd6n`, `fdu-l8vc`, `fdu-83gl`, `fdu-ie5z`, `fdu-b3qe`, `fdu-9xf7` |
+| 0 | `fdu-sn43` | P0 | Close the PR #1 merge gate (complete) | `fdu-ad45`, `fdu-gd6n`, `fdu-l8vc`, `fdu-83gl`, `fdu-ie5z`, `fdu-b3qe`, `fdu-9xf7` |
 | 2 | `fdu-gdrv` | P1 | Prove metric-vector atomic-refcount roll-up | `fdu-sn43` |
 | 2 | `fdu-p35d` | P1 | Measure gitignore tag-don’t-prune matching | `fdu-sn43` |
 | 2 | `fdu-odx6` | P1 | Ratify or amend goals 6 and 7 | `fdu-sn43` |
@@ -349,11 +350,11 @@ blocker. The table below is the complete set owned directly by this plan.
 | 3 | `fdu-xihx` | P1 | Implement the block snapshot format | `fdu-1vd0`, `fdu-1gbl`, `fdu-a6dz`, `fdu-471a`, `fdu-579b` |
 | 3 | `fdu-wbis` | P1 | Optimize revalidation and stream applied deltas | `fdu-p2i1`, `fdu-atqk` |
 | 3 | `fdu-r27g` | P2 | Measure index contention before changing synchronization | `fdu-s7wr`, `fdu-oj25` |
-| 4 | `fdu-oqoy` | P2 | Finish human CLI behavior | `fdu-zsdy` |
-| 4 | `fdu-jej9` | P2 | Finish agent CLI and schema behavior | `fdu-zsdy`, `fdu-k8zw` |
+| 4 | `fdu-oqoy` | P2 | Finish human CLI behavior | `fdu-zsdy`, `fdu-6c8n` |
+| 4 | `fdu-jej9` | P2 | Finish agent CLI and schema behavior | `fdu-zsdy`, `fdu-k8zw`, `fdu-6c8n` |
 | 4 | `fdu-v4lc` | P2 | Define native-unit compiled type rules | `fdu-k8zw`, `fdu-p35d`, `fdu-odx6` |
 | 4 | `fdu-lka2` | P2 | Harden watcher platform backends | `fdu-s7wr`, `fdu-8jte` |
-| 4 | `fdu-9cf0` | P2 | Publish crates and wheels after all release gates | `fdu-ad45`, `fdu-zga3`, `fdu-s7wr`, `fdu-k8zw`, `fdu-ywu0`, `fdu-oqoy`, `fdu-jej9`, `fdu-v4lc`, `fdu-lka2` |
+| 4 | `fdu-9cf0` | P2 | Publish crates and wheels after all release gates | `fdu-ad45`, `fdu-zga3`, `fdu-s7wr`, `fdu-k8zw`, `fdu-ywu0`, `fdu-6c8n`, `fdu-oqoy`, `fdu-jej9`, `fdu-v4lc`, `fdu-lka2` |
 
 The future epic owns `fdu-p02b`, `fdu-3dtq`, `fdu-3n8c`, and `fdu-ktka`; their explicit
 activation dependencies are recorded in the future roadmap rather than mixed into the

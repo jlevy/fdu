@@ -29,15 +29,16 @@ The full survey, with the techniques worth adapting and their sources, is in
 
 ```shell
 cargo install --path crates/fdu
+fdu --help
 ```
 
 ```shell
-make python-smoke          # build, install, and exercise the wheel in an isolated venv
+make python-smoke  # build the wheel; test its module, console script, and local uvx path
 ```
 
 Publishing is Phase 1 work.
-`cargo install fdu` and `uv add fdu` are future commands; neither package should be
-presented as available from crates.io or PyPI yet.
+`cargo install fdu` and `uvx --from fdu==<version> fdu` are future commands; neither
+package should be presented as available from crates.io or PyPI yet.
 
 ## Use it
 
@@ -46,6 +47,7 @@ fdu                        # summarize the current directory
 fdu -d 3 ~/src             # three levels deep
 fdu --by-type ~/Downloads  # break down by file extension
 fdu --json .               # stable, versioned JSON for agents and scripts
+fdu --skill                # print the self-contained agent skill
 ```
 
 ```text
@@ -56,6 +58,10 @@ fdu --json .               # stable, versioned JSON for agents and scripts
 ```
 
 `--help` is the complete source of truth.
+Human output uses restrained semantic color when its destination is a terminal;
+`--color auto|always|never`, `NO_COLOR`, and `FORCE_COLOR` make the policy explicit.
+Primary results go to stdout, while warnings and errors go to stderr.
+JSON and skill output never contain ANSI styling.
 JSON output carries a `schema` field (`fdu.tree/2`) that is versioned with the tool,
 plus freshness and per-path error details.
 Scan completeness, scan scope, and rendered-tree truncation are separate fields.
@@ -106,6 +112,10 @@ print(index.since(mark))      # exactly what changed, or truncated=True if you f
 
 Every method is bulk: it returns a whole structured result in one call.
 A million small zero-copy calls lose comfortably to one large call.
+The same wheel also installs an `fdu` console script backed by the native Rust CLI. Once
+a release is published, that makes an exact version directly runnable as
+`uvx --from fdu==<version> fdu`; the local wheel and `uvx` path are already exercised by
+`make python-smoke` without implying that a public release exists.
 
 ## How it works
 

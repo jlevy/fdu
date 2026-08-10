@@ -15,6 +15,7 @@
 //! indexes may run concurrently. Python dictionary/list conversion happens after native
 //! work returns and therefore runs with the GIL held.
 
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
 use pyo3::exceptions::{PyOSError, PyValueError};
@@ -251,12 +252,26 @@ fn scan(py: Python<'_>, root: &str, max_depth: Option<usize>) -> PyResult<PyInde
     Ok(PyIndex { inner: index, config, errors })
 }
 
+/// Run the native CLI using Python's process arguments.
+///
+/// The generated console-script wrapper adds its own executable path to `sys.argv`, so
+/// reading the process's native argument vector here would parse the wrapper twice.
+#[pyfunction]
+fn main(py: Python<'_>) -> PyResult<u8> {
+    // PyO3's OsString conversion round-trips Python's surrogateescaped Unix argv and
+    // native Windows wide strings. Narrowing here to String would make the wheel's
+    // console script reject paths the native Rust binary accepts.
+    let args: Vec<OsString> = py.import("sys")?.getattr("argv")?.extract()?;
+    Ok(py.detach(move || fdu::cli::run_process(args)))
+}
+
 #[pymodule]
 fn fdu_py(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     m.add_class::<PyIndex>()?;
     m.add_function(wrap_pyfunction!(open, m)?)?;
     m.add_function(wrap_pyfunction!(scan, m)?)?;
+    m.add_function(wrap_pyfunction!(main, m)?)?;
 
     Ok(())
 }
