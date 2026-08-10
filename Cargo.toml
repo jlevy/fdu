@@ -40,3 +40,13 @@ strip = true
 # profile's dependencies optimized so scans over large trees stay usable locally.
 [profile.dev.package."*"]
 opt-level = 2
+
+# Release code with symbols, for attributing time to functions. A sampling profiler
+# reading a stripped binary reports addresses, which is a way of not knowing where
+# the time went. Codegen matches release so the profile describes the shipped code;
+# only the symbol table differs. Timing decisions are still taken from `release`
+# builds, never from this one.
+[profile.profiling]
+inherits = "release"
+debug = 2
+strip = false

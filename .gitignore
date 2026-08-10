@@ -31,3 +31,6 @@ node_modules/
 # Editors
 .DS_Store
 *.swp
+
+# Real-tree benchmark scratch: clones of large external trees, kept out of git.
+benchmarks/corpus/realtree/

@@ -19,7 +19,9 @@ const PROBE_SCHEMA: &str = "fdu-perf-probe-v1";
 const DIGEST_ALGORITHM: &str = "fdu-index-record-v1/sha256-multiset-v1";
 
 fn main() -> ExitCode {
-    match Arguments::parse(env::args_os().skip(1)).and_then(|arguments| execute(&arguments)) {
+    match Arguments::parse(env::args_os().skip(1))
+        .and_then(|arguments| execute_repeated(&arguments))
+    {
         Ok(output) => {
             println!("{}", output.render());
             if output.summary.complete { ExitCode::SUCCESS } else { ExitCode::from(2) }
@@ -79,6 +81,7 @@ struct Arguments {
     snapshot: Option<PathBuf>,
     operations: usize,
     queries: usize,
+    repeat: usize,
     scan: ScanConfig,
 }
 
@@ -94,6 +97,7 @@ impl Arguments {
         let mut snapshot = None;
         let mut operations = 1_000_usize;
         let mut queries = 1_000_usize;
+        let mut repeat = 1_usize;
         let mut scan = ScanConfig::default();
         while let Some(flag) = arguments.next() {
             match flag.to_str() {
@@ -106,6 +110,9 @@ impl Arguments {
                 }
                 Some("--queries") => {
                     queries = next_usize(&mut arguments, "--queries")?;
+                }
+                Some("--repeat") => {
+                    repeat = next_usize(&mut arguments, "--repeat")?;
                 }
                 Some("--batch-size") => {
                     scan.batch_size = next_usize(&mut arguments, "--batch-size")?;
@@ -120,7 +127,10 @@ impl Arguments {
         if operations == 0 || queries == 0 {
             return Err(ProbeError("--operations and --queries must be nonzero".into()));
         }
-        Ok(Self { mode: Mode::parse(&mode)?, root, snapshot, operations, queries, scan })
+        if repeat == 0 {
+            return Err(ProbeError("--repeat must be nonzero".into()));
+        }
+        Ok(Self { mode: Mode::parse(&mode)?, root, snapshot, operations, queries, repeat, scan })
     }
 
     fn snapshot(&self) -> ProbeResult<&Path> {
@@ -141,6 +151,24 @@ fn next_usize(arguments: &mut impl Iterator<Item = OsString>, flag: &str) -> Pro
     let value = arguments.next().ok_or_else(|| ProbeError(format!("{flag} requires a value")))?;
     let value = value.to_str().ok_or_else(|| ProbeError(format!("{flag} must be Unicode")))?;
     value.parse().map_err(|_| ProbeError(format!("{flag} must be a positive integer")))
+}
+
+/// Run the measured component `--repeat` times and report the last iteration.
+///
+/// This exists for sampling profilers, not for timing. A single scan of a large tree
+/// finishes in a few hundred milliseconds, which at a 1 ms sampling interval is a few
+/// hundred stacks — enough to see the top frame and not much else. Repeating the work
+/// in one process buys resolution without changing what the code does.
+///
+/// Timing evidence never comes from a repeated run: by the second iteration the page
+/// cache, the allocator, and the branch predictors are all warmer than any real
+/// invocation would find them. The harness measures `--repeat 1` and profiles
+/// separately, and the two are reported separately.
+fn execute_repeated(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
+    for _ in 1..arguments.repeat {
+        black_box(execute(arguments)?);
+    }
+    execute(arguments)
 }
 
 fn execute(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
