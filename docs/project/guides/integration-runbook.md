@@ -253,8 +253,8 @@ Eyeballing two files is how a mismatch gets missed.
 Compare the fields mechanically:
 
 ```shell
-python3 scripts/verify_bead_sync.py <bead-id>     # one bead
-python3 scripts/verify_bead_sync.py --quiet       # every bead, mismatches only
+make verify-beads                                 # every bead, mismatches only
+python3 scripts/verify_bead_sync.py <bead-id>     # or just one
 ```
 
 The script resolves the sync path itself, parses the frontmatter and the body sections,
@@ -262,7 +262,11 @@ and compares `title`, `kind`, `status`, `priority`, `spec_path`, `labels`,
 `dependencies`, `description`, and `notes`. It writes nothing and exits non-zero on any
 difference, so it works in a pipeline as well as by hand.
 
-✅ `190/190 beads match origin/tbd-sync`, or the specific bead reports `ok`.
+✅ `N/N beads match origin/tbd-sync`, or the specific bead reports `ok`.
+
+`make verify-beads` fetches the sync branch first and is deliberately **not** part of
+`make check`: it compares against a branch other working copies push to independently, so
+a shared-branch race would fail a pull request for something the pull request did not do.
 
 A mismatch in `notes` or `labels` means metadata is being dropped somewhere in the round
 trip, which is worth stopping for — those fields are where the reasoning lives, and

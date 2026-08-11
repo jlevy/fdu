@@ -7,7 +7,7 @@ NPM ?= npm
 MSRV ?= 1.85.0
 NODE_INSTALL_STAMP := node_modules/.package-lock.json
 
-.PHONY: help build release test rust-test test-golden performance-probe test-performance golden-update check supply-chain fix fmt fmt-check clippy docs lib-only msrv audit npm-audit python-concurrency python-smoke clean cli perf-help
+.PHONY: help build release test rust-test test-golden performance-probe test-performance golden-update check supply-chain fix fmt fmt-check clippy docs lib-only msrv audit npm-audit python-concurrency python-smoke clean cli perf-help verify-beads
 
 help:
 	@echo "make build      Debug build of the core library and CLI, all features"
@@ -63,6 +63,15 @@ $(NODE_INSTALL_STAMP): package.json package-lock.json .npmrc
 
 # Everything CI enforces, in the order that fails fastest.
 check: supply-chain fmt-check clippy test docs lib-only msrv audit npm-audit python-concurrency python-smoke
+
+# Verify that synced beads match the local database, field by field.
+#
+# Deliberately outside `check`: it compares against `origin/tbd-sync`, a branch other
+# working copies push to independently, so a shared-branch race would fail a PR for
+# something the PR did not do. Run it before a handoff, or when a sync looked odd.
+verify-beads:
+	git fetch --quiet origin tbd-sync
+	python3 scripts/verify_bead_sync.py --quiet
 
 supply-chain:
 	$(NPM) run test:supply-chain
