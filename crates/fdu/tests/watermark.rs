@@ -1,41 +1,26 @@
 //! A report's `scan_started_at` must be usable as the watermark for the next query.
 //!
 //! This is the property that makes incremental follow-up work: feed a report's
-//! `scan_started_at` back as `--modified-since` and you get exactly what changed since,
-//! with no gap. The dangerous case is a write that lands *while* the walk is in flight.
-//! If the watermark were stamped when the walk finished, a file the walker had already
-//! passed would be older than the watermark and newer than nothing -- missed forever, and
-//! silently, because every later query would use a still-later watermark.
+//! `scan_started_at` back as `--modified-since` and the answer is exactly the entries at
+//! or after it. The contract is over mtimes, and the boundary is inclusive -- an entry
+//! stamped in the very nanosecond the walk began must be reported, because that is the
+//! side a mid-scan write lands on. An exclusive boundary, or a watermark taken when the
+//! walk *ended*, would both surface here as an entry inside the walk window going
+//! missing -- silently, since every later query uses a still-later watermark.
 //!
-//! Stamping before the walk makes the window inclusive rather than exclusive: a mid-scan
-//! write may be reported twice, which costs a caller nothing, instead of zero times.
+//! Earlier versions of this test raced a writer thread against the real walk. That
+//! exercised the machinery but proved less than it appeared to: from outside the
+//! process, a write that landed "mid-walk" cannot be told apart from one just after,
+//! so the assertions held under implementations that would lose real mid-scan writes
+//! (review finding R11). Setting mtimes to exact values derived from the report's own
+//! watermark pins the boundary at nanosecond precision with no dependence on timing,
+//! which is both stronger and faster.
 #![cfg(all(feature = "cli", not(target_os = "windows")))]
 
 use std::fs;
 use std::path::Path;
 use std::process::Command;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::thread;
-use std::time::Duration;
-
-/// Enough entries for the walk to take real time, and no more.
-///
-/// The tree used to be far larger, on the theory that a long walk was needed for a
-/// concurrent write to land inside it. The continuous writer removed that need, and the
-/// cost of building and deleting thousands of files dominated the test's runtime.
-const DIRECTORIES: usize = 40;
-const FILES_PER_DIRECTORY: usize = 4;
-
-/// Gap between the writer's repeated writes.
-///
-/// The writer rewrites its file on this cadence for as long as the scan runs, rather than
-/// sleeping once and hoping to land inside the walk. A single timed write cannot be relied
-/// on: process spawn alone costs tens of milliseconds, so a short delay fires before the
-/// scan starts and a long one fires after it ends, and which happens varies by machine.
-/// Writing throughout guarantees that at least one write lands mid-walk on any machine,
-/// without the test ever depending on how fast that machine is.
-const WRITE_CADENCE: Duration = Duration::from_millis(5);
+use std::time::{Duration, SystemTime};
 
 fn run(tree: &Path, args: &[&str]) -> String {
     let output =
@@ -57,48 +42,23 @@ fn field(report: &str, name: &str) -> String {
     rest[..end].to_string()
 }
 
+/// Create `name` under `tree` with its mtime pinned to an exact instant.
+fn file_stamped_at(tree: &Path, name: &str, mtime: SystemTime) {
+    let path = tree.join(name);
+    fs::write(&path, b"stamped").expect("write file");
+    let file = fs::File::options().write(true).open(&path).expect("open for timestamp");
+    file.set_modified(mtime).expect("set mtime");
+}
+
 #[test]
-fn a_reports_watermark_lists_everything_changed_since_it_began() {
+fn the_watermark_window_is_inclusive_at_exactly_scan_start() {
     let root = tempfile::tempdir().expect("tempdir");
     let tree = root.path();
+    fs::write(tree.join("seeded.txt"), b"seed").expect("seed file");
 
-    for directory in 0..DIRECTORIES {
-        let path = tree.join(format!("dir{directory:04}"));
-        fs::create_dir(&path).expect("create directory");
-        for file in 0..FILES_PER_DIRECTORY {
-            fs::write(path.join(format!("file{file}.txt")), b"seed").expect("seed file");
-        }
-    }
-
-    // A writer running for the whole duration of the scan, so some write provably lands
-    // while the walk is in flight. `--cache off` keeps this about the walk itself rather
-    // than about a snapshot.
-    let midscan = tree.join("midscan.txt");
-    let stop = Arc::new(AtomicBool::new(false));
-    let writer = {
-        let midscan = midscan.clone();
-        let stop = Arc::clone(&stop);
-        thread::spawn(move || {
-            while !stop.load(Ordering::Relaxed) {
-                fs::write(&midscan, b"written while the walk was in flight")
-                    .expect("mid-scan write");
-                thread::sleep(WRITE_CADENCE);
-            }
-        })
-    };
-
+    // One real scan produces the watermark under test. `--cache off` keeps the follow-up
+    // queries below answering from a fresh walk rather than a snapshot.
     let report = run(tree, &["--view", "summary", "--format", "json", "--cache", "off"]);
-    stop.store(true, Ordering::Relaxed);
-    writer.join().expect("writer thread");
-
-    // One write from this thread after the scan has definitely finished. The concurrent
-    // writer is what exercises the mid-walk case, but a starved thread could in principle
-    // get only its first write in before being stopped -- and a test that depends on the
-    // scheduler being fair is a test that fails on a loaded CI runner for no real reason.
-    // This makes the assertion below true by construction; the race above is what makes it
-    // *interesting*.
-    fs::write(&midscan, b"written after the walk finished").expect("post-scan write");
-
     let watermark = field(&report, "scan_started_at");
     let generated = field(&report, "generated_at");
     assert!(
@@ -106,23 +66,49 @@ fn a_reports_watermark_lists_everything_changed_since_it_began() {
         "the watermark must precede the report it came from: {watermark} > {generated}",
     );
 
-    // The round trip: everything modified since the walk began, per the report itself.
+    // Parse the watermark with the same grammar `--modified-since` uses, so the boundary
+    // files below sit at exactly the instant the query will compare against.
+    let now = SystemTime::now();
+    let at_watermark = fdu::query::parse_when(&watermark, now).expect("parse watermark");
+
+    // Three files, one per side of the boundary and one exactly on it. The on-boundary
+    // file is the mid-scan case in its sharpest form: an entry stamped in the same
+    // nanosecond the walk began. The just-before file is one nanosecond earlier, so any
+    // off-by-one in the comparison fails one of the two.
+    file_stamped_at(tree, "at-boundary.txt", at_watermark);
+    file_stamped_at(tree, "just-before.txt", at_watermark - Duration::from_nanos(1));
+    file_stamped_at(tree, "well-after.txt", at_watermark + Duration::from_secs(60));
+
     let listing = run(
         tree,
         &["--view", "files", "--format", "jsonl", "--cache", "off", "--modified-since", &watermark],
     );
 
     assert!(
-        listing.contains("midscan.txt"),
-        "a file written while the walk was in flight is missing from its own watermark \
-         query, so an incremental consumer would never see it. Watermark was {watermark}, \
-         listing was: {listing}",
+        listing.contains("at-boundary.txt"),
+        "an entry stamped at exactly scan start must be inside the window: --modified-since \
+         is inclusive precisely so a mid-scan write cannot fall through. Listing: {listing}",
+    );
+    assert!(
+        listing.contains("well-after.txt"),
+        "an entry changed after the watermark must be inside the window. Listing: {listing}",
+    );
+    assert!(
+        !listing.contains("just-before.txt"),
+        "an entry one nanosecond before the watermark must be outside the window, or the \
+         watermark reports history it did not promise. Listing: {listing}",
+    );
+    assert!(
+        !listing.contains("seeded.txt"),
+        "an entry that predates the walk must be outside the window, or the watermark is \
+         useless for incremental work. Listing: {listing}",
     );
 
-    // The window is bounded, not "everything": the seeded files predate the walk and must
-    // not come back, or the watermark would be useless for incremental work.
+    // The round trip composes: the boundary file's own report can seed the next query.
+    let second = run(tree, &["--view", "summary", "--format", "json", "--cache", "off"]);
+    let second_watermark = field(&second, "scan_started_at");
     assert!(
-        !listing.contains("file0.txt"),
-        "files that predate the walk must fall outside the watermark window: {listing}",
+        watermark <= second_watermark,
+        "watermarks must be monotonic across runs: {watermark} then {second_watermark}",
     );
 }
