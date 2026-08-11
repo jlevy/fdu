@@ -1,0 +1,24 @@
+[project]
+name = "fdu-benchmarks"
+version = "0.0.0"
+description = "Performance harness for fdu: measurement, profiling, and the experiment contract."
+requires-python = ">=3.11"
+
+# The harness itself is deliberately stdlib-only, so this list stays at one entry.
+# `experiment.py` compiles the soft-schema contract from a Pydantic model, and that is
+# the only thing outside the standard library the benchmarks need at runtime.
+dependencies = ["pydantic>=2.11.0,<3"]
+
+[dependency-groups]
+# The validator that enforces the experiment contract. Pinned rather than `@latest`
+# because it is the reproducibility boundary for committed evidence: an artifact that
+# validated yesterday must validate the same way today, and "whatever PyPI serves"
+# cannot promise that.
+dev = ["softschema==0.6.0"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["realtree"]

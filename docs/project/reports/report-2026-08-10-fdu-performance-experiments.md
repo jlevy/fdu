@@ -96,11 +96,11 @@ Candidate: four producer threads feeding one index consumer (--threads 4)
 | --- | ---: | ---: | ---: | --- |
 | wall (ms) | 621.8 | 310.8 | -50.03% | [-51.02%, -43.74%] |
 | component (ms) | 507.0 | 196.6 | -61.64% | [-62.78%, -54.77%] |
-| cpu (ms) | 612.0 | 973.6 | +58.05% (n.s.) | [+54.55%, +66.56%] |
-| user (ms) | 231.0 | 271.9 | +17.36% (n.s.) | [+16.39%, +22.58%] |
-| system (ms) | 379.4 | 702.6 | +83.50% (n.s.) | [+77.06%, +92.72%] |
+| cpu (ms) | 612.0 | 973.6 | +58.05% (regression) | [+54.55%, +66.56%] |
+| user (ms) | 231.0 | 271.9 | +17.36% (regression) | [+16.39%, +22.58%] |
+| system (ms) | 379.4 | 702.6 | +83.50% (regression) | [+77.06%, +92.72%] |
 | blocked (ms) | 8.1 | 0.0 | -100.00% | [-100.00%, -100.00%] |
-| peak rss (MiB) | 31.7 | 34.1 | +7.49% (n.s.) | [+6.21%, +9.83%] |
+| peak rss (MiB) | 31.7 | 34.1 | +7.49% (regression) | [+6.21%, +9.83%] |
 
 Other jobs, wall time: `cold-scan-producer` -50.7%, `warm-revalidate` +0.3% (n.s.).
 
@@ -189,7 +189,7 @@ Candidate: components borrowed from the caller's path; validation allocates noth
 | cpu (ms) | 810.5 | 747.3 | -10.01% | [-11.06%, -8.70%] |
 | user (ms) | 431.9 | 356.1 | -18.56% | [-18.86%, -17.94%] |
 | system (ms) | 380.3 | 390.3 | +0.04% (n.s.) | [-2.15%, +2.37%] |
-| blocked (ms) | 7.8 | 16.2 | +50.13% (n.s.) | [+4.94%, +129.75%] |
+| blocked (ms) | 7.8 | 16.2 | +50.13% (regression) | [+4.94%, +129.75%] |
 | peak rss (MiB) | 32.5 | 33.0 | +0.91% (n.s.) | [-0.22%, +1.64%] |
 
 Other jobs, wall time: `cold-scan-index` -1.1% (n.s.), `cold-snapshot-save` -0.7% (n.s.), `warm-snapshot-load` -17.8%.
@@ -246,11 +246,11 @@ Candidate: HEAD 954d27b: exp-001, exp-004 and exp-005 together
 | --- | ---: | ---: | ---: | --- |
 | wall (ms) | 630.7 | 320.9 | -48.91% | [-51.13%, -47.52%] |
 | component (ms) | 507.4 | 202.1 | -61.11% | [-61.90%, -59.29%] |
-| cpu (ms) | 612.5 | 1266.6 | +104.13% (n.s.) | [+100.93%, +108.56%] |
-| user (ms) | 231.7 | 253.2 | +8.81% (n.s.) | [+7.82%, +10.43%] |
-| system (ms) | 379.9 | 1006.4 | +161.31% (n.s.) | [+157.21%, +166.31%] |
+| cpu (ms) | 612.5 | 1266.6 | +104.13% (regression) | [+100.93%, +108.56%] |
+| user (ms) | 231.7 | 253.2 | +8.81% (regression) | [+7.82%, +10.43%] |
+| system (ms) | 379.9 | 1006.4 | +161.31% (regression) | [+157.21%, +166.31%] |
 | blocked (ms) | 11.1 | 0.0 | -100.00% | [-100.00%, -100.00%] |
-| peak rss (MiB) | 31.9 | 34.8 | +9.21% (n.s.) | [+8.85%, +9.56%] |
+| peak rss (MiB) | 31.9 | 34.8 | +9.21% (regression) | [+8.85%, +9.56%] |
 
 Other jobs, wall time: `cold-scan-producer` -51.6%, `cold-snapshot-save` -46.2%, `warm-revalidate` -14.7%, `warm-snapshot-load` -29.1%.
 
@@ -430,15 +430,15 @@ Candidate: breadth-first, the new default, so partial results are monotone lower
 | user (ms) | 242.7 | 245.7 | +0.49% (n.s.) | [-1.44%, +3.12%] |
 | system (ms) | 943.5 | 955.7 | +0.68% (n.s.) | [-1.12%, +4.30%] |
 | blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
-| peak rss (MiB) | 33.1 | 33.7 | +1.51% (n.s.) | [+0.84%, +2.88%] |
+| peak rss (MiB) | 33.1 | 33.7 | +1.51% (regression) | [+0.84%, +2.88%] |
 
 Other jobs, wall time: `cold-scan-producer` +1.5% (n.s.), `warm-revalidate` +0.0% (n.s.).
 
 Cost to carry: 153 lines; no new dependencies.
 
-Accepted on cost, not on speed: the value is that partial results become monotone lower bounds instead of a confidently wrong ranking, and this experiment establishes that the property is free. It also corrects an earlier six-sample median comparison that had suggested ~8% and was quoted in the plan before going through the accept rule - sixteen paired trials say the difference is not measurable. NOTE: the reference tree was reclaimed mid-session (disk at 100%) and re-cloned, so it is now 60,067 entries against the 59,654 used by exp-000..011; comparisons across that boundary are not valid.
+Accepted on cost, not on speed: the value is that partial results become monotone lower bounds instead of a confidently wrong ranking, and this experiment establishes that the property is cheap - not that it is free. It also corrects an earlier six-sample median comparison that had suggested ~8% and was quoted in the plan before going through the accept rule; sixteen paired trials say the wall-time difference is not measurable. Peak RSS and producer CPU did rise measurably and are recorded above. NOTE: the reference tree was reclaimed mid-session (disk at 100%) and re-cloned, so it is now 60,067 entries against the 59,654 used by exp-000..011; comparisons across that boundary are not valid.
 
-**Accepted:** Free on a complete scan (-0.58%, interval [-2.50%, +1.20%]) and unchanged in memory, so the ordering that makes partial results usable costs nothing to adopt as the default.
+**Accepted:** No detectable wall-time change on a complete scan (-0.58%, interval [-2.50%, +1.20%] - straddles zero, so this is 'not measurably different', not 'free'). Peak RSS rose measurably on all three jobs (+1.51% [+0.85, +2.88] cold-scan-index, +3.66% [+2.47, +4.72] cold-scan-producer, +1.17% [+0.36, +3.77] warm-revalidate), as did producer CPU (+2.50% [+1.48, +4.04]). Accepted on those costs, not on speed: monotone partial results are worth ~1 MiB of frontier and ~2% producer CPU on a 60k tree.
 
 Full record: [`exp-012-breadth-first-traversal-order.md`](../experiments/exp-012-breadth-first-traversal-order.md)
 

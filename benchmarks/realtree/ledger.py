@@ -36,8 +36,30 @@ REPORT_METRICS = (
 )
 
 
+def evidence_label(entry: Mapping[str, Any]) -> str:
+    """What one metric's interval actually says, in three words or fewer.
+
+    Derived from the interval rather than read from a stored flag, so artifacts
+    recorded before the fields were split render with the same honesty as new ones.
+    """
+    interval = entry.get("ci95_change_pct") or [None, None]
+    low, high = interval[0], interval[1]
+    if low is None or high is None:
+        return "—"
+    if high < 0:
+        return "improved"
+    if low > 0:
+        return "**regressed**"
+    return "unclear"
+
+
 def verdict(comparison: Mapping[str, Any], *, metric: str = "wall_ns") -> Dict[str, Any]:
-    """Decide accept/reject for one comparison on one metric."""
+    """Decide accept/reject for one comparison on one metric.
+
+    Note this asks only the accept question. Use :func:`evidence_label` when reporting
+    what a metric actually did: a metric can fail the accept rule by regressing, and
+    printing that as "no" is how a regression gets read as noise.
+    """
     entry = (comparison.get("metrics") or {}).get(metric)
     if not entry:
         return {
@@ -50,11 +72,19 @@ def verdict(comparison: Mapping[str, Any], *, metric: str = "wall_ns") -> Dict[s
     if change is None:
         return {"accepted": False, "reason": "no paired ratio", "change_pct": None}
     if not entry["significant"]:
+        # Two different failures, and saying "includes no change" for both is how a
+        # measured regression gets filed as noise.
+        regressed = interval and interval[0] is not None and interval[0] > 0
+        detail = (
+            "is a regression"
+            if regressed
+            else "includes no change"
+        )
         return {
             "accepted": False,
             "reason": (
-                f"{change:+.2f}% median, but the 95% interval "
-                f"[{interval[0]:+.2f}%, {interval[1]:+.2f}%] includes no change"
+                f"{change:+.2f}% median, and the 95% interval "
+                f"[{interval[0]:+.2f}%, {interval[1]:+.2f}%] {detail}"
             ),
             "change_pct": change,
         }
@@ -178,7 +208,7 @@ def render(document: Mapping[str, Any], *, profiles: Sequence[Mapping[str, Any]]
         for key, comparison in stats["comparisons"].items():
             lines.append(f"### Paired comparison: {key}")
             lines.append("")
-            lines.append("| metric | median change | 95% interval | significant |")
+            lines.append("| metric | median change | 95% interval | evidence |")
             lines.append("| --- | --- | --- | --- |")
             for metric, label, _unit in REPORT_METRICS:
                 entry = comparison["metrics"].get(metric)
@@ -192,7 +222,7 @@ def render(document: Mapping[str, Any], *, profiles: Sequence[Mapping[str, Any]]
                         if interval
                         else "—"
                     )
-                    + f" | {'yes' if entry['significant'] else 'no'} |"
+                    + f" | {evidence_label(entry)} |"
                 )
             decision = verdict(comparison)
             lines.append("")

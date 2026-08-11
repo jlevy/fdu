@@ -314,7 +314,7 @@ def _section(experiment: Mapping[str, Any]) -> List[str]:
                 f"| {label} ({unit}) "
                 f"| {_value(entry['control_median'], unit)} "
                 f"| {_value(entry['candidate_median'], unit)} "
-                f"| {entry['change_pct']:+.2f}%{'' if entry.get('significant') else ' (n.s.)'} "
+                f"| {entry['change_pct']:+.2f}%{_mark(low, high)} "
                 + (f"| [{low:+.2f}%, {high:+.2f}%] |" if low is not None else "| — |")
             )
         lines.append("")
@@ -333,9 +333,9 @@ def _section(experiment: Mapping[str, Any]) -> List[str]:
                     f"`{result['job']}` {entry['control_median'] / 1e6:.0f} ms"
                 )
             else:
-                mark = "" if entry.get("significant") else " (n.s.)"
                 summaries.append(
-                    f"`{result['job']}` {entry['change_pct']:+.1f}%{mark}"
+                    f"`{result['job']}` {entry['change_pct']:+.1f}%"
+                    + _mark(entry.get("ci95_low_pct"), entry.get("ci95_high_pct"))
                 )
         lines.append("Other jobs, wall time: " + ", ".join(summaries) + ".")
         lines.append("")
@@ -372,6 +372,22 @@ def _section(experiment: Mapping[str, Any]) -> List[str]:
     lines.append(f"Full record: [`{name}`](../experiments/{name})")
     lines.append("")
     return lines
+
+
+def _mark(low: Any, high: Any) -> str:
+    """Annotate a change with what its interval supports.
+
+    The old renderer printed "(n.s.)" for everything the one-sided accept rule
+    rejected, which labelled measured regressions as statistically silent. Derived
+    from the interval so pre-split artifacts render correctly too.
+    """
+    if low is None or high is None:
+        return " (n.s.)"
+    if high < 0:
+        return ""
+    if low > 0:
+        return " (regression)"
+    return " (n.s.)"
 
 
 def _value(value: float, unit: str) -> str:

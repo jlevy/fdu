@@ -177,19 +177,39 @@ $defs:
         default: null
         description: Lower bound of the 95% bootstrap interval on change_pct.
         title: Ci95 Low Pct
+      ci_excludes_zero:
+        default: false
+        description: Whether the interval is clear of zero in either direction, i.e. the measurement says something rather than nothing.
+        title: Ci Excludes Zero
+        type: boolean
       control_median:
         description: Control median, in the metric's own unit.
         title: Control Median
         type: number
+      direction:
+        default: unknown
+        description: Which way the evidence points, separate from whether we accept it.
+        enum:
+        - improved
+        - regressed
+        - unclear
+        - unknown
+        title: Direction
+        type: string
       pairs:
         default: 0
         description: Trial pairs behind the comparison.
         minimum: 0
         title: Pairs
         type: integer
+      passes_acceptance:
+        default: false
+        description: "Whether the whole interval lies below zero: the project's one-sided accept rule. False does NOT mean unchanged - a regression fails it too."
+        title: Passes Acceptance
+        type: boolean
       significant:
         default: false
-        description: Whether the whole interval lies below zero, i.e. the win is not noise.
+        description: Deprecated alias of passes_acceptance, kept so artifacts recorded before the fields were split still validate. Read passes_acceptance instead.
         title: Significant
         type: boolean
     required:
@@ -435,4 +455,4 @@ title: Experiment
 type: object
 x-softschema:
   contract: fdu.performance:Experiment/v1
-  schema_sha256: 17823e7b4a786b9d1087fe204d1a0878a11b19b711df86ed1eb4504eb9e95d1f
+  schema_sha256: 0059ae2d92a21313c57b819ec2f777552d7851ace5f092dcfde84b3e2fa33bce

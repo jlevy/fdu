@@ -122,14 +122,21 @@ sweep, and subtree reconciliation — take from the front or the back of one `Ve
 according to the policy; there is no second walker.
 
 Measured properly (exp-012: 60,067-entry tree, 16 interleaved paired trials per job),
-breadth-first is **free on a complete scan**: −0.58% wall on `cold-scan-index` with a
-95% interval of [−2.50%, +1.20%], and no effect on walk-only scanning or warm
-revalidation either.
-Peak RSS is unchanged at 11 MB, because the queue holds directories rather than entries.
+breadth-first costs **no measurable wall time and a little memory**.
+Wall on `cold-scan-index` is −0.58% with a 95% interval of [−2.50%, +1.20%]; the
+walk-only and warm-revalidation intervals straddle zero too, so the supported claim is
+"not measurably different", not "free".
+Peak RSS did rise, with intervals clear of zero: +1.51% [+0.85%, +2.88%] on
+`cold-scan-index` (about 34.7 MB to 35.4 MB), +3.66% on `cold-scan-producer`, +1.17% on
+`warm-revalidate`, alongside +2.50% producer CPU.
+The queue holds directories rather than entries, which is what keeps that cost
+proportional to the widest level rather than to the tree.
 
 An earlier six-sample median comparison suggested ~8%, and that figure was quoted here
 before it had been through the accept rule.
-It did not survive it.
+It did not survive it — and the correction then overshot in the other direction, calling
+the change free, because the harness printed metrics failing the one-sided accept rule
+as "n.s." regardless of which way they pointed.
 The correction matters beyond the number: it removes the only argument for giving the
 one-shot CLI a different default, so breadth-first is simply the default everywhere and
 `DepthFirst` exists for callers with a specific reason — a memory-constrained walk of a

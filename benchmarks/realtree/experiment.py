@@ -57,7 +57,28 @@ class MetricChange(Strict):
     )
     significant: bool = Field(
         default=False,
-        description="Whether the whole interval lies below zero, i.e. the win is not noise.",
+        description=(
+            "Deprecated alias of passes_acceptance, kept so artifacts recorded before "
+            "the fields were split still validate. Read passes_acceptance instead."
+        ),
+    )
+    passes_acceptance: bool = Field(
+        default=False,
+        description=(
+            "Whether the whole interval lies below zero: the project's one-sided "
+            "accept rule. False does NOT mean unchanged - a regression fails it too."
+        ),
+    )
+    ci_excludes_zero: bool = Field(
+        default=False,
+        description=(
+            "Whether the interval is clear of zero in either direction, i.e. the "
+            "measurement says something rather than nothing."
+        ),
+    )
+    direction: Literal["improved", "regressed", "unclear", "unknown"] = Field(
+        default="unknown",
+        description="Which way the evidence points, separate from whether we accept it.",
     )
     pairs: int = Field(default=0, ge=0, description="Trial pairs behind the comparison.")
 
@@ -298,6 +319,11 @@ def from_run(
                 "ci95_low_pct": interval[0],
                 "ci95_high_pct": interval[1],
                 "significant": bool(entry.get("significant", False)),
+                "passes_acceptance": bool(
+                    entry.get("passes_acceptance", entry.get("significant", False))
+                ),
+                "ci_excludes_zero": bool(entry.get("ci_excludes_zero", False)),
+                "direction": str(entry.get("direction", "unknown")),
                 "pairs": int(entry.get("pairs", 0)),
             }
         results.append(

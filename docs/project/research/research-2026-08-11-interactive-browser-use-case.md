@@ -154,25 +154,40 @@ A design with only one of them has a hole exactly where the other would have bee
 Breadth-first is now the default, and the trade was measured rather than assumed
 (exp-012: 60,067-entry tree, sixteen interleaved paired trials per job):
 
-| job | change, breadth-first vs depth-first | 95% interval | significant |
+Wall time, breadth-first versus depth-first:
+
+| job | median change | 95% interval | evidence |
 | --- | ---: | --- | --- |
-| `cold-scan-index` | −0.58% | [−2.50%, +1.20%] | no |
-| `cold-scan-producer` | +1.50% | [−3.50%, +3.13%] | no |
-| `warm-revalidate` | +0.03% | [−3.83%, +2.87%] | no |
+| `cold-scan-index` | −0.58% | [−2.50%, +1.20%] | unclear |
+| `cold-scan-producer` | +1.50% | [−3.50%, +3.13%] | unclear |
+| `warm-revalidate` | +0.03% | [−3.83%, +2.87%] | unclear |
 
-**Breadth-first is free.** Peak RSS is unchanged at 11 MB, because the queue holds
-directories rather than entries, and the engine digest is identical either way.
+**Breadth-first costs no measurable wall time, and a little memory.** Every wall-time
+interval straddles zero, so the honest statement is "not measurably different", not
+"free". The resources did move, with intervals clear of zero:
 
-This corrects an earlier reading of the same change.
-A six-sample median comparison suggested breadth-first cost about 8%, and that figure
-was written into the plan before it went through the accept rule; sixteen paired trials
-say the difference is not measurable.
-The episode is a small vindication of the loop’s own discipline — medians without
-intervals are how a project talks itself into a number — and it simplifies the design,
-because the only argument for giving the one-shot CLI a different default was a cost
-that turns out not to exist.
+| job | peak RSS | 95% interval |
+| --- | ---: | --- |
+| `cold-scan-index` | +1.51% | [+0.85%, +2.88%] |
+| `cold-scan-producer` | +3.66% | [+2.47%, +4.72%] |
+| `warm-revalidate` | +1.17% | [+0.36%, +3.77%] |
 
-Two caveats stated so nobody over-reads even the corrected result.
+On the primary job that is about 34.7 MB to 35.4 MB; producer CPU rose +2.50%
+[+1.48%, +4.04%]. The queue holds directories rather than entries, which is what keeps
+the frontier cost proportional to the widest level rather than to the tree, and the
+engine digest is identical either way.
+
+This corrects two earlier readings of the same change, in opposite directions.
+A six-sample median comparison suggested breadth-first cost about 8% of wall time, and
+that figure was written into the plan before it went through the accept rule; sixteen
+paired trials say the wall-time difference is not measurable.
+Then the corrected write-up overshot, calling the change "free" and "unchanged in
+memory" — because the harness rendered every metric that failed the one-sided accept
+rule as "n.s.", which made these RSS regressions read as statistical silence.
+Both episodes are the same lesson from different sides: a number without its interval,
+and an interval without its direction, are each how a project talks itself into a claim.
+
+Two caveats so nobody over-reads even the corrected result.
 This is one warm tree of 60k entries: the frontier width that could make breadth-first
 expensive in memory only appears on a tree with a very wide level, and a home folder
 with a million directories has not been measured for peak queue size.
