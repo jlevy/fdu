@@ -53,6 +53,9 @@ fails closed on every row, and why the full sweep remains the backstop on every 
   by the performance harness on both paths
 - Land the numbers through the performance loop as experiments, with the accept rule
   deciding
+- Choose the cheapest sound path per tree *automatically*, so a project-scale tree pays
+  no cache overhead at all and a home-folder-scale tree gets the journal — one
+  self-calibrating decision, not a flag the caller has to know to set
 
 ## Non-Goals
 
@@ -371,6 +374,100 @@ self-declared externs, and answers, on a real volume:
 - [ ] Findings are recorded by amending this spec’s gates and constants (G5/G6 defaults,
   G9 fraction) and noted in the experiment ledger; explicit go/no-go for Phase 2
 
+### Two regimes, one decision: when the journal is the right tool
+
+The spike’s cost numbers only make sense against the workload, and fdu has two that
+behave nothing alike.
+The dividing line is not a matter of taste — it is the operating system’s metadata cache
+capacity, which on this host is a hard ceiling:
+
+```
+kern.maxvnodes: 263168      kern.num_vnodes: 263168      (saturated)
+```
+
+Roughly a quarter of a million vnodes, on a 32 GiB machine.
+That single number splits the product:
+
+|  | **Project tree** (10k–200k entries) | **Home folder / whole drive** (1M–10M entries) |
+| --- | --- | --- |
+| Fits the metadata cache? | Yes — comfortably | No — not even close, by 10–40× |
+| So repeat scans are | genuinely warm | effectively cold, every time |
+| Measured rescan | **37 ms** at 60k (parallel, warm) | minutes |
+| Load + full stat sweep | 102 ms — *slower than rescanning* | minutes, plus the load |
+| Journal replay | 10–200 ms fixed — *also slower than rescanning* | ~0.1–2 s, independent of size |
+| Right answer | **rescan; ignore the cache** | **load + journal + scoped verify** |
+
+Read the two right-hand rows together and the strategy falls out.
+At project scale the fastest cache is no cache: a parallel rescan costs less than
+*either* verifying a snapshot or asking `fseventsd` what happened.
+At drive scale the rescan is the thing you cannot afford, and the journal’s fixed cost
+stops mattering because it is a rounding error against minutes.
+
+**A conclusion that reaches past this feature: for stat-tier queries the full sweep is
+dominated by rescanning, at every size.** The sweep performs the same enumeration and
+the same one-stat-per-entry as a cold scan, and then adds a snapshot load on top.
+It can never win.
+That makes the current default warm path — load, then verify everything
+— the wrong default for plain disk usage regardless of tree size, and it explains the
+measured “cache is 2.75× slower than no cache” without appealing to any implementation
+defect.
+
+The full sweep keeps two jobs it is genuinely the cheapest way to do, and they should be
+the only reasons it runs:
+
+- **Content-tier queries** (line counts, hashes).
+  The sweep’s N stats identify which files changed so only those are re-read; rescanning
+  would discard the derived data and re-read gigabytes.
+- **Change feeds.** Answering “what changed since my last run” needs the comparison, not
+  just the current totals.
+
+### The policy, and how it calibrates itself
+
+`open()` chooses before doing work, from the snapshot header alone (a bounded read that
+is already part of the format):
+
+```
+N              = entry count recorded in the snapshot header
+scan_per_entry = µs/entry this tree's own last scan achieved, recorded in the header
+capacity       = kern.maxvnodes (macOS) / dentry-state (Linux); N > capacity ⇒ cold regime
+
+estimated_rescan  = N × scan_per_entry × (cold_penalty if N > capacity else 1)
+estimated_journal = snapshot_load_cost(N) + replay_budget
+
+choose the cheaper, then apply the fail-closed gates
+```
+
+Two properties make this worth doing rather than hardcoding a threshold:
+
+- **The cache carries its own cost model.** Each run records the µs/entry it actually
+  achieved, so the next run predicts from this machine, this storage, this tree — not
+  from a constant calibrated on a laptop in 2026. A fresh snapshot with no recorded
+  timing uses a conservative default and corrects itself on the next run.
+- **G11’s replay budget stops being a magic number.** It is exactly
+  `estimated_rescan − snapshot_load_cost`: never spend longer replaying the journal than
+  rescanning from scratch would have taken.
+  On a 60k tree that budget is tens of milliseconds, so the gate declines the journal
+  automatically — which is the correct answer, reached by arithmetic rather than by a
+  hardcoded entry-count threshold.
+
+The vnode ceiling also retires an open question from the frontier research: the
+superlinear knee it observed between 500k and 1M entries (H36) sits exactly where
+`kern.maxvnodes` does on this host.
+The capacity signal the policy reads for its own decision is the same measurement that
+explains the knee, so the loop’s H36 experiment and this policy input are the same work.
+
+### What this means for platforms without a journal
+
+Linux has no persistent change journal, so its large-tree warm path is not “sweep
+instead” — the sweep is dominated there too.
+Linux gets the same policy with the journal branch unavailable, which means large trees
+fall back to **rescan**, and the lever that matters becomes raw scan speed (parallel
+traversal, `statx`, inode-ordered access).
+This is why the research calls the two investments complements: the journal caps macOS
+warm cost, and scan speed is what caps everyone else’s. Neither substitutes for the
+other, and the policy above is what routes each platform to its best available answer
+without the caller choosing.
+
 ### Phase 0 spike findings (2026-08-10, run on this host)
 
 The spike ran. Three assumptions held, two did not, and one of the failures changes the
@@ -456,6 +553,15 @@ Phase 2’s acceptance should be measured at 500k+ or on a cold cache.
 - [ ] `journal/mod.rs`: cursor types, gate decision table as a pure function,
   changed-set normalization; exhaustive unit tests for every gate row
 - [ ] Golden and round-trip tests: v2 loads as cursor-absent; v3 round-trips
+- [ ] Snapshot header records this tree’s observed scan cost (µs/entry) and entry count,
+  so the cache carries its own cost model; a header without timing falls back to a
+  conservative default
+- [ ] `CachePlan::choose()`: the pure decision function above (rescan vs load+journal vs
+  load+sweep), taking N, recorded scan cost, metadata-cache capacity, and the requested
+  reducer tier; unit-tested across both regimes with no platform APIs
+- [ ] Capacity probe: `kern.maxvnodes` on macOS, `fs/dentry-state` on Linux, a
+  conservative default elsewhere — the same signal the frontier research’s H36 knee
+  experiment needs
 
 ### Phase 2: Replay and scoped revalidation (macOS)
 

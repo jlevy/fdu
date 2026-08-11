@@ -327,7 +327,7 @@ The rules that make this trustworthy, stated so they hold under iteration:
 
 | Policy | Reads snapshot | Touches filesystem | Writes snapshot | Use |
 | --- | --- | --- | --- | --- |
-| `auto` (default) | yes | revalidates | on complete | fastest trustworthy answer |
+| `auto` (default) | when it is cheaper | the cheapest sound verification | on complete | fastest trustworthy answer |
 | `refresh` | no | full scan | on complete | forced cold start; benchmark control |
 | `read-only` | yes | revalidates | never | warm answer without touching the cache |
 | `only` | yes | never | no | instant answer from data on hand, labeled `freshness: stale` |
@@ -338,6 +338,28 @@ Disabling the always-write behavior is therefore a policy value, not a separate 
 
 Every report carries `source` (`cold_scan`, `warm_revalidate`, `cache_only`),
 `freshness`, and `complete`, in all formats, so no policy can silently lie.
+
+**`auto` is a cost decision, not a habit.** Measurement settled this: on a 60k-entry
+tree a parallel rescan costs 37 ms while loading the snapshot and verifying it costs 102
+ms, so reading the cache is a *loss* at project scale — and for stat-tier queries the
+full sweep is dominated by rescanning at every size, because it performs the same
+enumeration and the same one-stat-per-entry and then adds a load.
+At home-folder scale the reverse holds: the tree cannot fit the OS metadata cache
+(`kern.maxvnodes` is ~263k on a 32 GiB Mac), every scan is effectively cold, and the
+snapshot plus a journal resume is the only affordable answer.
+
+So `auto` estimates before it acts, from the snapshot header alone: entry count and the
+µs/entry that tree’s own last scan achieved, against the platform’s metadata-cache
+capacity and the reducer tier the requested views need.
+Small tree, stat-tier query: rescan and refresh the snapshot.
+Large tree with a usable journal: load, replay, verify only what changed.
+Content-tier query at any size: load and sweep, because the sweep’s stats are what avoid
+re-reading unchanged files.
+The decision function, its self-calibrating cost model, and the derived replay budget
+are specified in the
+[FSEvents-scoped revalidation plan](plan-2026-08-10-fdu-fsevents-scoped-revalidation.md)
+(bead `fdu-6ld9`); `refresh`, `read-only`, `only`, and `off` remain explicit overrides
+for anyone who wants a specific path rather than the cheapest one.
 
 **When the cache is written.** The policy axis decides *whether* a run may write; these
 rules decide *what and when*, and they are rules, not heuristics (Principle 5):
