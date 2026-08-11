@@ -657,6 +657,14 @@ it cannot be lost by being described only here:
 | Cache retention: nothing prunes snapshots or bounds total size (open question 5) | `fdu-558j` |
 | Open questions 1, 2, and 4 | `fdu-khu8` |
 | Automate the runbook's bead-sync check as a periodic guard | `fdu-qut8` |
+| Direct unit tests for the watch persistence state machine | `fdu-w8af` |
+
+`fdu-w8af` is worth its own line rather than being folded into general test debt.
+Two of the three defects review found on this branch were in the watch loop's save
+throttle and pending flag, and the second was a regression introduced by the fix for the
+first. Every test drives that logic end to end through the spawned binary, which can
+observe only whether a file changed on disk — it cannot enumerate the transitions. The
+logic is decisions, not I/O, and belongs under a table test.
 
 The watch goldens are the one entry whose absence is a *shape* problem rather than
 unwritten work. tryscript compares one command's completed output, and a watch process
