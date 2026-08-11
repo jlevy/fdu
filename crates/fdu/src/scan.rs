@@ -14,7 +14,7 @@
 //! work-stealing pool. Until that layer lands and the benchmark gate passes, no
 //! performance claim should be made for this crate.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
@@ -45,6 +45,37 @@ const TYPE_RULES_FINGERPRINT: u64 = 1;
 /// Identity of the fixed stat-tier reducer set.
 const REDUCERS_FINGERPRINT: u64 = 1;
 
+/// The order directories are visited in.
+///
+/// This changes *when* observations are produced, never *which* ones: both orders
+/// visit every entry exactly once and leave an identical index behind. It therefore
+/// stays out of [`ScanScope`] and cannot invalidate a cache, exactly like the worker
+/// count.
+///
+/// The choice only matters to a consumer that reads the index while the walk is still
+/// running, and there it matters a great deal.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum ScanOrder {
+    /// Shallow directories before deep ones.
+    ///
+    /// The default, because it is the only order whose partial results mean anything.
+    /// Roll-ups are maintained per directory as the walk proceeds, so a consumer that
+    /// looks mid-scan sees every top-level total as a lower bound that only grows —
+    /// bars fill, rankings converge. Interrupting early leaves a usefully complete
+    /// picture of the top of the tree.
+    #[default]
+    BreadthFirst,
+    /// One subtree to completion before starting the next.
+    ///
+    /// Lower peak memory, since the frontier is bounded by depth rather than by the
+    /// width of a level, and better locality within a subtree. The cost is that
+    /// partial results are actively misleading: one child of the root reads its final
+    /// total while its siblings read zero, so anything ranking by size mid-scan ranks
+    /// confidently and wrongly. Correct for a caller that only reads the finished
+    /// index and wants the smallest footprint.
+    DepthFirst,
+}
+
 /// Knobs for a scan.
 #[derive(Clone, Debug)]
 pub struct ScanConfig {
@@ -70,6 +101,8 @@ pub struct ScanConfig {
     /// observations are produced, never which observations they are. That is why it
     /// stays out of [`ScanScope`] and cannot invalidate a cache.
     pub threads: Option<usize>,
+    /// The order directories are visited in. See [`ScanOrder`].
+    pub order: ScanOrder,
 }
 
 impl Default for ScanConfig {
@@ -80,6 +113,7 @@ impl Default for ScanConfig {
             follow_symlinks: false,
             one_filesystem: false,
             threads: None,
+            order: ScanOrder::default(),
         }
     }
 }
@@ -324,11 +358,9 @@ pub fn scan(
         return Ok(report);
     }
     let mut batch: Vec<Op> = Vec::with_capacity(config.batch_size);
-    // Depth-first keeps the portable reference implementation small and locality-friendly.
-    // Traversal order becomes a measured choice once the parallel syscall layer lands.
-    let mut queue: Vec<(PathBuf, usize)> = vec![(PathBuf::new(), 0)];
+    let mut queue: VecDeque<(PathBuf, usize)> = VecDeque::from(vec![(PathBuf::new(), 0)]);
 
-    while let Some((rel_dir, depth)) = queue.pop() {
+    while let Some((rel_dir, depth)) = take_next(&mut queue, config.order) {
         let abs_dir = root.join(&rel_dir);
         let listing = match fs::read_dir(&abs_dir) {
             Ok(listing) => listing,
@@ -367,7 +399,7 @@ pub fn scan(
             }
 
             if should_descend(kind, attrs, depth, root_dev, config) {
-                queue.push((rel_path, depth + 1));
+                queue.push_back((rel_path, depth + 1));
             }
         }
     }
@@ -376,6 +408,17 @@ pub fn scan(
         sink(Observation::new(batch));
     }
     Ok(report)
+}
+
+/// Take the next directory in the configured order.
+///
+/// Both orders push to the back; only the end they are taken from differs, which is
+/// what keeps this a one-line policy rather than two walkers.
+fn take_next(queue: &mut VecDeque<(PathBuf, usize)>, order: ScanOrder) -> Option<(PathBuf, usize)> {
+    match order {
+        ScanOrder::BreadthFirst => queue.pop_front(),
+        ScanOrder::DepthFirst => queue.pop_back(),
+    }
 }
 
 /// Largest worker pool a caller may ask for explicitly.
@@ -421,7 +464,7 @@ fn scan_concurrent(
     sink: &mut dyn FnMut(Observation),
 ) -> ScanReport {
     let workers = config.worker_threads();
-    let queue = DirectoryQueue::new(vec![(PathBuf::new(), 0)]);
+    let queue = DirectoryQueue::new(vec![(PathBuf::new(), 0)], config.order);
     let (sender, receiver) = std::sync::mpsc::channel::<Observation>();
 
     let mut report = std::thread::scope(|scope| {
@@ -546,23 +589,25 @@ fn walk_worker(
 struct DirectoryQueue {
     state: std::sync::Mutex<DirectoryQueueState>,
     ready: std::sync::Condvar,
+    order: ScanOrder,
 }
 
 struct DirectoryQueueState {
-    pending: Vec<(PathBuf, usize)>,
+    pending: VecDeque<(PathBuf, usize)>,
     outstanding: usize,
     finished: bool,
 }
 
 impl DirectoryQueue {
-    fn new(initial: Vec<(PathBuf, usize)>) -> Self {
+    fn new(initial: Vec<(PathBuf, usize)>, order: ScanOrder) -> Self {
         Self {
             state: std::sync::Mutex::new(DirectoryQueueState {
-                pending: initial,
+                pending: VecDeque::from(initial),
                 outstanding: 0,
                 finished: false,
             }),
             ready: std::sync::Condvar::new(),
+            order,
         }
     }
 
@@ -573,8 +618,15 @@ impl DirectoryQueue {
         loop {
             if !state.pending.is_empty() {
                 let take = state.pending.len().min(DIR_CLAIM);
-                let start = state.pending.len() - take;
-                into.extend(state.pending.drain(start..));
+                match self.order {
+                    // Shallowest work first, so every worker is always advancing the
+                    // top of the tree rather than one deep spur of it.
+                    ScanOrder::BreadthFirst => into.extend(state.pending.drain(..take)),
+                    ScanOrder::DepthFirst => {
+                        let start = state.pending.len() - take;
+                        into.extend(state.pending.drain(start..));
+                    }
+                }
                 state.outstanding += 1;
                 return true;
             }
@@ -691,9 +743,9 @@ pub fn revalidate(
         }
         return Ok(report);
     }
-    let mut queue: Vec<(PathBuf, usize)> = vec![(PathBuf::new(), 0)];
+    let mut queue: VecDeque<(PathBuf, usize)> = VecDeque::from(vec![(PathBuf::new(), 0)]);
 
-    while let Some((rel_dir, depth)) = queue.pop() {
+    while let Some((rel_dir, depth)) = take_next(&mut queue, config.order) {
         let abs_dir = root.join(&rel_dir);
         let listing = match fs::read_dir(&abs_dir) {
             Ok(listing) => listing,
@@ -740,7 +792,7 @@ pub fn revalidate(
             }
 
             if should_descend(kind, attrs, depth, root_dev, config) {
-                queue.push((rel_path, depth + 1));
+                queue.push_back((rel_path, depth + 1));
             } else if kind.is_dir() {
                 if let Some(children) = index.children(&rel_path) {
                     for (child_name, _) in children {
@@ -920,8 +972,9 @@ fn reconcile_target_inner(
         }
     }
 
-    let mut queue = vec![(subtree.to_path_buf(), start_depth)];
-    while let Some((rel_dir, depth)) = queue.pop() {
+    let mut queue: VecDeque<(PathBuf, usize)> =
+        VecDeque::from(vec![(subtree.to_path_buf(), start_depth)]);
+    while let Some((rel_dir, depth)) = take_next(&mut queue, config.order) {
         let mut known = target.child_states(&rel_dir)?;
         let abs_dir = root.join(&rel_dir);
         let listing = match fs::read_dir(&abs_dir) {
@@ -973,7 +1026,7 @@ fn reconcile_target_inner(
             }
 
             if should_descend(kind, attrs, depth, root_dev, config) {
-                queue.push((rel_path, depth + 1));
+                queue.push_back((rel_path, depth + 1));
             } else if kind.is_dir() {
                 remove_known_children(
                     target,
@@ -1457,6 +1510,70 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn scan_order_never_changes_the_resulting_index() {
+        let dir = branching_tree();
+        let depth_first =
+            ScanConfig { order: ScanOrder::DepthFirst, threads: Some(1), ..ScanConfig::default() };
+        let (expected, expected_report) =
+            scan_into_index(dir.path(), &depth_first).expect("depth-first scan");
+
+        for (order, threads) in
+            [(ScanOrder::BreadthFirst, 1), (ScanOrder::BreadthFirst, 4), (ScanOrder::DepthFirst, 4)]
+        {
+            let config = ScanConfig { order, threads: Some(threads), ..ScanConfig::default() };
+            let (index, report) = scan_into_index(dir.path(), &config).expect("scan");
+            assert_eq!(report.entries, expected_report.entries, "{order:?}/{threads}");
+            assert_eq!(report.dirs_read, expected_report.dirs_read, "{order:?}/{threads}");
+            assert_eq!(index.total(), expected.total(), "{order:?}/{threads} roll-up");
+            assert_eq!(
+                index_fingerprint(&index),
+                index_fingerprint(&expected),
+                "{order:?}/{threads} produced a different index"
+            );
+        }
+    }
+
+    #[test]
+    fn breadth_first_visits_shallow_directories_before_deep_ones() {
+        // The property the browser use case depends on: at any prefix of the walk, no
+        // directory has been read before one that is closer to the root. Depth-first
+        // makes no such promise, which is what makes its partial results misleading.
+        let dir = branching_tree();
+        let config = ScanConfig {
+            order: ScanOrder::BreadthFirst,
+            threads: Some(1),
+            batch_size: 1,
+            ..ScanConfig::default()
+        };
+        let mut depths_in_order: Vec<usize> = Vec::new();
+        scan(dir.path(), &config, &mut |observation| {
+            for op in &observation.ops {
+                if let Op::Upsert { path, kind, .. } = &op.op {
+                    if kind.is_dir() {
+                        depths_in_order.push(path.components().count());
+                    }
+                }
+            }
+        })
+        .expect("scan");
+
+        assert!(depths_in_order.len() > 10, "fixture should have many directories");
+        assert!(
+            depths_in_order.windows(2).all(|pair| pair[0] <= pair[1]),
+            "directory depths were not non-decreasing: {depths_in_order:?}"
+        );
+    }
+
+    #[test]
+    fn scan_order_does_not_change_the_cache_scope() {
+        // Order is operational, like the worker count: it changes when observations
+        // appear, never which ones, so it must not be able to invalidate a snapshot.
+        let breadth = ScanConfig { order: ScanOrder::BreadthFirst, ..ScanConfig::default() };
+        let depth = ScanConfig { order: ScanOrder::DepthFirst, ..ScanConfig::default() };
+        assert_eq!(breadth.scope(), depth.scope());
     }
 
     #[test]

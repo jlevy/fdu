@@ -110,6 +110,74 @@ viewed. Cold, it is the background walk continuing to fill in.
 
 **Winner: the lazy format, plus fast walking as the fallback.**
 
+## Every use case, and what each actually needs
+
+The browser is one of four consumers, and they disagree about almost everything except
+correctness. Setting them side by side is what makes the design decisions fall out
+instead of being argued.
+
+|  | **One-shot CLI** (`fdu ~`) | **Interactive browser** | **Whole-drive audit** | **Resident watch** |
+| --- | --- | --- | --- | --- |
+| What is being optimised | time to *final* answer | time to *first useful* answer | time to complete, at 5M+ | steady-state per-event cost |
+| Partial results | invisible — nothing prints until the end | **the entire product** | progress reporting | n/a, index stays fresh |
+| Traversal order | irrelevant to output; prefers locality | **must be breadth-first** | irrelevant | n/a |
+| Tolerates labeled staleness | **no** — must verify before printing | **yes** — “as of 2 min ago, refreshing” | yes, with a caveat line | no, it is live |
+| Cache value | negative below ~150k entries | **decisive** — only it can paint at T0 | decisive | it *is* the cache |
+| FSEvents value | marginal; on the critical path | **high** — off the critical path | high | already covered by the live watcher |
+| Dominant cost | the walk | the *first paint*, then the walk | I/O latency; in-flight depth | escalation rarity |
+| Memory | bounded by tree | bounded by tree; also wants lazy load | 2.65 GB at 5.4M — matters | steady-state resident |
+
+Three things follow that were not obvious when only the CLI existed.
+
+**Staleness tolerance is the real axis, not tree size.** A one-shot command must verify
+before it prints, so every verification cost lands on the critical path and the cache
+must beat a rescan outright to be worth reading.
+A browser may paint cached values with an honest label and converge behind the user’s
+back, so the same cache and the same journal are worth far more to it.
+This single difference explains why FSEvents looked marginal in the CLI analysis and
+looks decisive here, without either conclusion being wrong.
+
+**Traversal order is a consumer contract, not an engine detail.** It cannot change the
+final index — proven by test, both orders produce identical engine digests — so it is
+purely a question of what a consumer sees *while* the walk runs.
+A CLI sees nothing, so it should take whichever order is cheapest.
+A browser sees everything, so it needs shallow-first.
+Hardcoding either one serves one consumer and taxes the other.
+
+**Progressive results and caching are complements, not substitutes.** The cache answers
+the second open; progressive results answer the first, and every cache miss, and every
+subtree the journal says changed.
+A design with only one of them has a hole exactly where the other would have been.
+
+## What order costs, measured
+
+Breadth-first is now the default, and the trade was measured rather than assumed
+(59,654-entry tree, six interleaved trials each):
+
+|  | complete-scan component | peak RSS | engine digest |
+| --- | ---: | ---: | --- |
+| breadth-first | 51.0 ms | 11 MB | identical |
+| depth-first | 47.2 ms | 11 MB | identical |
+
+So breadth-first costs about **8% on a complete scan** and, on this tree, **nothing in
+memory** — the frontier concern turned out not to bind, because the queue holds
+directories rather than entries and this tree has 7,341 of them.
+
+Eight percent is a real price and it is worth paying by default, because it buys the
+difference between partial results that are useful and partial results that are actively
+misleading.
+A consumer that genuinely only reads the finished index — the one-shot CLI, a
+batch job — should set `DepthFirst` and take the 8% back.
+That is why this ships as a policy rather than a replacement.
+
+Two caveats on the measurement, stated so nobody over-reads it.
+It is one warm tree of 60k entries: the frontier width that would make breadth-first
+expensive in memory only appears on a tree with a very wide level, and a home folder
+with a million directories has not been measured for peak queue size.
+And on a cold tree the ordering interacts with I/O locality differently than on a warm
+one, where the metadata cache absorbs the difference.
+Both belong in the loop before the 8% figure is quoted as general.
+
 ## Progressive results: why traversal order is the whole trick
 
 fdu is already closer to progressive rendering than it looks.
