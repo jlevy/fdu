@@ -5,7 +5,7 @@ title: "Spec: composable CLI and query surface (five axes)"
 kind: epic
 status: open
 priority: 1
-version: 23
+version: 24
 spec_path: docs/project/specs/active/plan-2026-08-10-fdu-composable-cli-surface.md
 labels: []
 dependencies: []
@@ -32,7 +32,8 @@ child_order_hints:
   - is-01kzqn5vw0t83yh77s92f6njf9
   - is-01kzqn66p0pmck4yg6pexhww2z
   - is-01kzqscchfxr2p8rnk9csrq8w3
+  - is-01kzqtb7a0va7ce09caacgd8s5
 created_at: 2026-08-11T05:33:27.826Z
-updated_at: 2026-08-11T06:50:25.710Z
+updated_at: 2026-08-11T07:07:16.159Z
 ---
 Reshape CLI and query layer around five orthogonal axes (scope, selection, view, format, mode) per the spec. One scan serves many views; views are pure readers over the index; the CLI parses flags into library types (Query, CachePolicy, Report) and invents nothing; formats are schema-versioned serializations; watch is the same query repeated, event-driven never polling. Four phases, one PR per phase; Phase 1 is the breaking-rename PR. Golden discipline per golden-testing-guidelines: every new surface gets tryscript coverage (sandbox, fixtures, pinned env, patterns for unstable fields) plus schema-bump tests.
