@@ -30,10 +30,10 @@ engine boundary belongs:
 
 | metabrowser mechanism | fdu equivalent |
 | --- | --- |
-| BFS queueing to `DEFAULT_FIRST_RENDER_DEPTH`, “so a request landing ~500 ms into boot finds the visible part of the tree already populated” | traversal order — **not currently offered**; fdu’s walker is depth-first |
+| BFS queueing to `DEFAULT_FIRST_RENDER_DEPTH`, “so a request landing ~500 ms into boot finds the visible part of the tree already populated” | `ScanOrder`, breadth-first by default — **landed on this branch**, though strict only with a single worker (see below) |
 | Post-order finalize via `pending_children_count` refcounting | `merge_upward` roll-ups — the same atomic-refcount design the original research took from dut |
 | Generation counters so stale writes lose, “race-free without locks” | `EntryId` generation plus revision counters, the ABA guard |
-| `max_files` 500,000 and `max_depth` 20, flipping status to `truncated` | no equivalent, and none needed |
+| `max_files` 500,000 and `max_depth` 20, flipping status to `truncated` | no equivalent today; whether a session needs bounded memory and a `Truncated` status is still open in the progressive-results plan |
 
 That last row is the tell.
 The caps are not a product decision; they are a Python walker’s speed limit made visible
@@ -120,7 +120,7 @@ instead of being argued.
 | --- | --- | --- | --- | --- |
 | What is being optimised | time to *final* answer | time to *first useful* answer | time to complete, at 5M+ | steady-state per-event cost |
 | Partial results | invisible — nothing prints until the end | **the entire product** | progress reporting | n/a, index stays fresh |
-| Traversal order | irrelevant to output; prefers locality | **must be breadth-first** | irrelevant | n/a |
+| Traversal order | irrelevant to output; prefers locality | **wants shallow-first** | irrelevant | n/a |
 | Tolerates labeled staleness | **no** — must verify before printing | **yes** — “as of 2 min ago, refreshing” | yes, with a caveat line | no, it is live |
 | Cache value | negative below ~150k entries | **decisive** — only it can paint at T0 | decisive | it *is* the cache |
 | FSEvents value | marginal; on the critical path | **high** — off the critical path | high | already covered by the live watcher |
@@ -154,25 +154,66 @@ A design with only one of them has a hole exactly where the other would have bee
 Breadth-first is now the default, and the trade was measured rather than assumed
 (exp-012: 60,067-entry tree, sixteen interleaved paired trials per job):
 
-| job | change, breadth-first vs depth-first | 95% interval | significant |
+Wall time, breadth-first versus depth-first:
+
+| job | median change | 95% interval | evidence |
 | --- | ---: | --- | --- |
-| `cold-scan-index` | −0.58% | [−2.50%, +1.20%] | no |
-| `cold-scan-producer` | +1.50% | [−3.50%, +3.13%] | no |
-| `warm-revalidate` | +0.03% | [−3.83%, +2.87%] | no |
+| `cold-scan-index` | −0.58% | [−2.50%, +1.20%] | unclear |
+| `cold-scan-producer` | +1.50% | [−3.50%, +3.13%] | unclear |
+| `warm-revalidate` | +0.03% | [−3.83%, +2.87%] | unclear |
 
-**Breadth-first is free.** Peak RSS is unchanged at 11 MB, because the queue holds
-directories rather than entries, and the engine digest is identical either way.
+**Breadth-first costs no measurable wall time, and a little memory.** Every wall-time
+interval straddles zero, so the honest statement is "not measurably different", not
+"free". The resources did move, with intervals clear of zero:
 
-This corrects an earlier reading of the same change.
-A six-sample median comparison suggested breadth-first cost about 8%, and that figure
-was written into the plan before it went through the accept rule; sixteen paired trials
-say the difference is not measurable.
-The episode is a small vindication of the loop’s own discipline — medians without
-intervals are how a project talks itself into a number — and it simplifies the design,
-because the only argument for giving the one-shot CLI a different default was a cost
-that turns out not to exist.
+| job | peak RSS | 95% interval |
+| --- | ---: | --- |
+| `cold-scan-index` | +1.51% | [+0.85%, +2.88%] |
+| `cold-scan-producer` | +3.66% | [+2.47%, +4.72%] |
+| `warm-revalidate` | +1.17% | [+0.36%, +3.77%] |
 
-Two caveats stated so nobody over-reads even the corrected result.
+On the primary job that is about 34.7 MB to 35.4 MB; producer CPU rose +2.50%
+[+1.48%, +4.04%]. The queue holds directories rather than entries, which is what keeps
+the frontier cost proportional to the widest level rather than to the tree, and the
+engine digest is identical either way.
+
+This corrects two earlier readings of the same change, in opposite directions.
+A six-sample median comparison suggested breadth-first cost about 8% of wall time, and
+that figure was written into the plan before it went through the accept rule; sixteen
+paired trials say the wall-time difference is not measurable.
+Then the corrected write-up overshot, calling the change "free" and "unchanged in
+memory" — because the harness rendered every metric that failed the one-sided accept
+rule as "n.s.", which made these RSS regressions read as statistical silence.
+Both episodes are the same lesson from different sides: a number without its interval,
+and an interval without its direction, are each how a project talks itself into a claim.
+
+**The ordering benefit initially failed to survive parallelism, and the scheduler was
+rebuilt so that it does.** Measured on the first implementation, breadth-first started 7
+of twelve top-level subtrees by the halfway mark against depth-first's 6 with one
+worker — and under the default worker count both landed at 7–8, the advantage gone. The
+cause was that a global FIFO orders the *queue* while claims stay unordered: several
+workers would grind through the same subtree while others sat untouched.
+
+Breadth-first is now **region-scheduled** (exp-013). Work is bucketed by top-level
+subtree, each free worker is handed a *different* bucket round-robin, and within a
+bucket the order is LIFO so locality and spine-bounded memory come back. No barrier
+exists anywhere: if only one region has work, every worker takes it.
+
+On twelve branching subtrees, the *least advanced* top-level subtree a quarter of the
+way through the walk holds **42 files at one worker and 33–37 at six** — against
+depth-first's **0 and 6**, where perfectly even would be ~46. A deep portion of the tree
+no longer delays the horizontal ones, at any worker count. Peak RSS fell −3.77%
+[−5.18%, −2.99%] in the process, more than reversing what exp-012 paid, and wall time
+did not move.
+
+Worker affinity is the part worth remembering. Keeping a worker inside its region for
+locality looks obviously right and is actively harmful: it pins each worker to one
+subtree, so with twelve subtrees and six workers only six ever advanced, and
+depth-first — whose four-directory claims happen to fan across the root's children —
+spread *wider* than breadth-first did. Locality has to come from the size of a claim,
+not from a worker refusing to leave.
+
+Two further caveats so nobody over-reads even the corrected result.
 This is one warm tree of 60k entries: the frontier width that could make breadth-first
 expensive in memory only appears on a tree with a very wide level, and a home folder
 with a million directories has not been measured for peak queue size.
@@ -191,23 +232,33 @@ writing.
 
 Traversal order decides whether partial results are useful or actively misleading:
 
-- **Depth-first** (fdu today, `pending.pop()` on a LIFO stack) finishes a few subtrees
-  completely and leaves the rest at zero.
+- **Depth-first** (`pending.pop()` on a LIFO stack, fdu's original and only behaviour
+  before this branch) finishes a few subtrees completely and leaves the rest at zero.
   Mid-scan, `wrk/` reads a complete 77 GiB while `Library/` reads 0 GiB. A user sorting
   by size sees a confident, wrong ranking.
-- **Breadth-first** grows every top-level directory together.
-  Every number is a lower bound, every bar only fills, and relative ordering becomes
-  meaningful early — which is exactly why metabrowser’s Python walker already queues
+- **Breadth-first** grows top-level directories together.
+  Numbers stay lower bounds, bars only fill, and relative ordering becomes meaningful
+  earlier — which is exactly why metabrowser’s Python walker already queues
   breadth-first to a first render depth.
 
-The change is small: `DirectoryQueue` already exists and is shared; making the claim
-order FIFO (or better, ordered by depth so shallow work is always preferred) turns the
-parallel walker breadth-first.
-The cost is memory — a BFS frontier at depth 3 of a home folder is wide — which is a
-bounded, measurable trade rather than a design risk.
+Note what supplies which property. **Monotonicity comes from the walk being additive,
+not from the order** — a depth-first scan's totals only grow too. What the order changes
+is *which* subtrees get to grow early, and therefore whether a mid-scan ranking compares
+partial values against each other or against zeros. Conflating the two overstates what
+choosing an order buys.
 
-Depth-first should stay available: it has better locality and lower memory, and it is
-the right default for a one-shot CLI that only prints at the end.
+The change itself was small: `DirectoryQueue` already existed and was shared, so taking
+from the front rather than the back turns the walk breadth-first.
+What that does **not** buy is a guarantee under the default worker count, as measured
+above — the claims are unordered even when the queue is not, so shallow-first is a
+preference there rather than a promise.
+The cost is memory — a BFS frontier at depth 3 of a home folder is wide — which is a
+bounded, measurable trade rather than a design risk, and the 60k measurement puts it at
+about +1.5% RSS.
+
+Depth-first stays available: it has better locality and lower memory. It is *not* the
+right default for the one-shot CLI, as an earlier draft argued — that argument rested on
+an 8% wall-time saving that did not survive the accept rule.
 This is a scan *policy*, chosen by the caller’s contract, in the same way the cache
 policy is.
 

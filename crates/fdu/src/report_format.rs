@@ -265,13 +265,24 @@ fn section_json(section: &Section, _indent: usize) -> String {
 /// One file row as a JSON object.
 fn file_json(row: &FileRow) -> String {
     format!(
-        "{{\"path\": {}, \"kind\": {}, \"bytes\": {}, \"allocated\": {}, \"mtime_ns\": {}}}",
+        "{{\"path\": {}{}, \"kind\": {}, \"bytes\": {}, \"allocated\": {}, \"mtime_ns\": {}}}",
         quote(&row.path.to_string_lossy()),
+        path_raw_field(&row.path),
         quote(kind_label(row.kind)),
         row.bytes,
         row.allocated,
         row.mtime_ns
     )
+}
+
+/// The `path_raw` field for a path that cannot survive `to_string_lossy`, or nothing.
+///
+/// Two names differing only in bytes that are not valid Unicode render as the same
+/// string, so without this a machine consumer cannot tell them apart -- and this is the
+/// output that drives tooling. Absent for the overwhelmingly common case, so a
+/// well-behaved tree pays nothing for the guarantee.
+fn path_raw_field(path: &Path) -> String {
+    raw_identity_json("path", path).map_or_else(String::new, |raw| format!(", {raw}"))
 }
 
 /// A summary row as a JSON object.
@@ -307,9 +318,10 @@ fn tree_json(node: &TreeNode) -> String {
             Step::Open(node) => {
                 let _ = write!(
                     out,
-                    "{{\"name\": {}, \"path\": {}, \"kind\": {}, \"bytes\": {}, \"allocated\": {}, \"files\": {}, \"dirs\": {}, \"newest_mtime_ns\": {}, \"truncated\": {}",
+                    "{{\"name\": {}, \"path\": {}{}, \"kind\": {}, \"bytes\": {}, \"allocated\": {}, \"files\": {}, \"dirs\": {}, \"newest_mtime_ns\": {}, \"truncated\": {}",
                     quote(&node.name),
                     quote(&node.path.to_string_lossy()),
+                    path_raw_field(&node.path),
                     quote(kind_label(node.kind)),
                     node.bytes,
                     node.allocated,

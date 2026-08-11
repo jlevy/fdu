@@ -1529,4 +1529,109 @@ mod tests {
             .join()
             .expect("deep-render thread");
     }
+
+    /// Two names that differ only in bytes `to_string_lossy` cannot represent must stay
+    /// distinguishable in machine output.
+    ///
+    /// This coverage was lost when the CLI moved to the five axes: `raw_identity_json`
+    /// survived the rewrite, its tests did not, and the merge from PR #6 is what surfaced
+    /// the gap. Retargeted here to the report path rather than restored to the old
+    /// `write_json`, because the guarantee belongs to the format, not to the flag that
+    /// used to select it.
+    fn assert_json_preserves_raw_identity(
+        root: PathBuf,
+        first: &OsStr,
+        second: &OsStr,
+        encoding: &str,
+        root_hex: &str,
+        first_hex: &str,
+        second_hex: &str,
+    ) {
+        // The premise: lossy rendering collapses these two into the same string, so a
+        // consumer with only `name` cannot tell them apart.
+        assert_eq!(first.to_string_lossy(), second.to_string_lossy());
+
+        let mut index = crate::Index::new(root);
+        index.apply_ok(&crate::Observation::new(vec![
+            crate::Op::Upsert {
+                path: PathBuf::from(first),
+                kind: EntryKind::File,
+                attrs: crate::Attrs { size: 1, allocated: 1, ..Default::default() },
+            },
+            crate::Op::Upsert {
+                path: PathBuf::from(second),
+                kind: EntryKind::File,
+                attrs: crate::Attrs { size: 1, allocated: 1, ..Default::default() },
+            },
+        ]));
+        index.set_initial_freshness(false);
+
+        let query = Cli { view: "files".to_string(), depth: "all".to_string(), ..cli() }
+            .parse_query()
+            .expect("query parses");
+        let provenance = Provenance {
+            scan_started_at: None,
+            generated_at: std::time::UNIX_EPOCH,
+            source: ReportSource::ColdScan,
+            complete: true,
+            errors: Vec::new(),
+        };
+        let report = crate::query::report(&index, &query, &provenance);
+        let rendered = report_format::render(&report, report_format::Format::Json, false);
+
+        let lossy = first.to_string_lossy();
+        assert_eq!(
+            rendered.matches(&format!("\"{lossy}\"")).count(),
+            2,
+            "both names render the same lossy text: {rendered}"
+        );
+        assert!(
+            rendered.contains(&format!(
+                "\"root_raw\": {{\"encoding\": \"{encoding}\", \"hex\": \"{root_hex}\"}}"
+            )),
+            "{rendered}"
+        );
+        for hex in [first_hex, second_hex] {
+            assert!(
+                rendered.contains(&format!(
+                    "\"path_raw\": {{\"encoding\": \"{encoding}\", \"hex\": \"{hex}\"}}"
+                )),
+                "a name that is not valid Unicode must carry its raw bytes: {rendered}"
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn json_preserves_distinct_non_unicode_unix_names() {
+        use std::ffi::OsString;
+        use std::os::unix::ffi::OsStringExt;
+
+        assert_json_preserves_raw_identity(
+            PathBuf::from(OsString::from_vec(vec![b'/', 0x80])),
+            &OsString::from_vec(vec![b'n', 0x80]),
+            &OsString::from_vec(vec![b'n', 0x81]),
+            "unix-bytes",
+            "2f80",
+            "6e80",
+            "6e81",
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn json_preserves_distinct_non_unicode_windows_names() {
+        use std::ffi::OsString;
+        use std::os::windows::ffi::OsStringExt;
+
+        assert_json_preserves_raw_identity(
+            PathBuf::from(OsString::from_wide(&[u16::from(b'R'), u16::from(b':'), 0xd800])),
+            &OsString::from_wide(&[u16::from(b'n'), 0xd800]),
+            &OsString::from_wide(&[u16::from(b'n'), 0xd801]),
+            "windows-wtf16le",
+            "52003a0000d8",
+            "6e0000d8",
+            "6e0001d8",
+        );
+    }
 }

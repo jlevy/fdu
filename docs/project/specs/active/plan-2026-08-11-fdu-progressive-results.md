@@ -15,7 +15,7 @@ requires, and it is independent of the FSEvents journal: everything here lands o
 platform, helps the first scan as much as the second, and is a precondition for the
 journal being worth anything rather than a consequence of it.
 
-Three changes, in dependency order:
+Four changes, in dependency order:
 
 1. **Traversal order as a policy** with breadth-first by default, so partial results
    mean something. *Landed with this plan.*
@@ -23,7 +23,7 @@ Three changes, in dependency order:
    growing roll-ups with per-path completeness while the walk proceeds.
 3. **Persisted roll-ups and lazy open** so the second open paints from the cache in
    milliseconds instead of materialising millions of records first.
-4. **Confidence on every value**, so a browser can paint slightly stale numbers
+4. **Provenance on every value**, so a browser can paint slightly stale numbers
    immediately, mark them approximate, and clear the marks as verification converges —
    which is the difference between a UI that shows something in 50 ms and one that shows
    nothing for eleven seconds.
@@ -117,19 +117,30 @@ pub enum ScanOrder { BreadthFirst, DepthFirst }   // default: BreadthFirst
 Both orders visit every entry exactly once and leave an identical index behind, so the
 policy sits beside `threads` and `batch_size` as operational, and stays out of
 `ScanScope` where it could otherwise invalidate a snapshot.
-All four traversal loops — the serial walk, the parallel worker queue, the revalidation
-sweep, and subtree reconciliation — take from the front or the back of one `VecDeque`
-according to the policy; there is no second walker.
+The serial walk, the revalidation sweep, and subtree reconciliation take from the front
+or the back of one `VecDeque` according to the policy. The parallel worker queue is
+region-scheduled under `BreadthFirst` (exp-013): work is bucketed by top-level subtree,
+each free worker is handed a different bucket round-robin, and within a bucket the order
+is LIFO. A global FIFO ordered the queue but not the claims, so workers clustered in one
+subtree; regions spread them by construction. There is still no second walker and no
+barrier anywhere.
 
 Measured properly (exp-012: 60,067-entry tree, 16 interleaved paired trials per job),
-breadth-first is **free on a complete scan**: −0.58% wall on `cold-scan-index` with a
-95% interval of [−2.50%, +1.20%], and no effect on walk-only scanning or warm
-revalidation either.
-Peak RSS is unchanged at 11 MB, because the queue holds directories rather than entries.
+breadth-first costs **no measurable wall time and a little memory**.
+Wall on `cold-scan-index` is −0.58% with a 95% interval of [−2.50%, +1.20%]; the
+walk-only and warm-revalidation intervals straddle zero too, so the supported claim is
+"not measurably different", not "free".
+Peak RSS did rise, with intervals clear of zero: +1.51% [+0.85%, +2.88%] on
+`cold-scan-index` (about 34.7 MB to 35.4 MB), +3.66% on `cold-scan-producer`, +1.17% on
+`warm-revalidate`, alongside +2.50% producer CPU.
+The queue holds directories rather than entries, which is what keeps that cost
+proportional to the widest level rather than to the tree.
 
 An earlier six-sample median comparison suggested ~8%, and that figure was quoted here
 before it had been through the accept rule.
-It did not survive it.
+It did not survive it — and the correction then overshot in the other direction, calling
+the change free, because the harness printed metrics failing the one-sided accept rule
+as "n.s." regardless of which way they pointed.
 The correction matters beyond the number: it removes the only argument for giving the
 one-shot CLI a different default, so breadth-first is simply the default everywhere and
 `DepthFirst` exists for callers with a specific reason — a memory-constrained walk of a
@@ -245,7 +256,7 @@ pub enum Source {
     /// subtree since the cursor. Deliberately weaker than `Revalidated`: the Phase 0
     /// spike found FSEvents can omit history without raising a flag, which is what the
     /// periodic full sweep bounds.
-    JournalConfirmed,
+    JournalScoped,
     /// Loaded from the snapshot and not re-checked.
     Cached,
 }
@@ -346,7 +357,7 @@ This reframes FSEvents more sharply than the earlier analysis did.
 Without a journal, every cached row is equally suspect on open, and clearing the
 indicators means verifying all of them — minutes at home-folder scale.
 With one, a ~200 ms replay names the few directories that could have changed, so
-**almost every row can move from `Cached` to `JournalConfirmed` at once** and only a
+**almost every row can move from `Cached` to `JournalScoped` at once** and only a
 handful keep their marks.
 The UI goes from entirely-approximate to almost-entirely-confirmed in a fraction of a
 second, and stat verification is scoped to what the journal named plus whatever the user
@@ -374,19 +385,24 @@ plans: everything else here works without it, on every platform.
 
 - [x] `ScanOrder` policy, breadth-first default, all four traversal loops, tests for
   index equality, depth monotonicity, and scope stability
-- [ ] `--order` on the CLI and the probe; the one-shot CLI defaults to `DepthFirst` for
-  its 8% since it prints nothing until the end
+- [x] `--order` on the probe. The one-shot CLI does **not** default to `DepthFirst`:
+  the 8% that would have justified it did not survive the accept rule (exp-012), so
+  breadth-first is the default everywhere and `DepthFirst` is for callers with a
+  specific memory or locality reason
 - [ ] `Session`: start/read/complete/cancel over `IndexHandle`, with documented
   monotonicity and per-path freshness; bounded-memory option
 - [ ] Python `Session` mirroring the Rust surface
 - [ ] Loop experiment: time-to-useful-top-level-ranking, breadth-first against
   depth-first, on a home-folder-scale tree — the metric this plan exists to move
 
-### Phase 2: Confidence and convergence
+### Phase 2: Provenance and convergence
 
-- [ ] `Confidence` per value, rolled up by minimum through the existing reducer path; a
+- [ ] `Provenance` per value, composed through the existing reducer path by weakest
+  source / oldest observation / worst status - note these aggregates are **not
+  invertible** under deletion or revalidation, so the design must specify the recompute
+  path (`fdu-fka6`); a
   snapshot-loaded index reports `Cached`, not `Fresh`
-- [ ] Confidence transitions on the session’s change stream, reporting confirmations as
+- [ ] Provenance transitions on the session’s change stream, reporting confirmations as
   well as corrections
 - [ ] `session.prioritize(path)` so verification follows the user’s attention
 - [ ] Surface confidence in `Report` rows and in every output format, per the

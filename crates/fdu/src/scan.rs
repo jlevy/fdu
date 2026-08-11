@@ -54,25 +54,59 @@ const REDUCERS_FINGERPRINT: u64 = 1;
 ///
 /// The choice only matters to a consumer that reads the index while the walk is still
 /// running, and there it matters a great deal.
+///
+/// # Strength of the guarantee
+///
+/// **These are scheduling preferences, not strict orders, whenever more than one worker
+/// is running** — which is the default.
+///
+/// The queue is ordered, but the *claims* are not. Workers take directories from the
+/// shared queue in the policy's order; a worker that finishes early can enqueue its
+/// children and another worker can claim them while a slower worker still holds
+/// unfinished work from a shallower level. Nothing releases a level barrier, because
+/// a barrier would idle every fast worker at each level boundary and give back most of
+/// the parallel producer's win.
+///
+/// So:
+///
+/// - With `threads: Some(1)`, [`ScanOrder::BreadthFirst`] is strict: no directory is
+///   read before one closer to the root.
+/// - With several workers it is *shallow-first*: shallow work is always preferred when
+///   a worker chooses, and deeper observations can still interleave.
+///
+/// That weaker property is what the browser use case actually needs — every top-level
+/// subtree starts filling early, so a mid-scan ranking is meaningful — and it is the
+/// property the tests pin. A caller that needs strict level order must ask for one
+/// worker and pay for it.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum ScanOrder {
     /// Shallow directories before deep ones.
     ///
-    /// The default, because it is the only order whose partial results mean anything.
+    /// The default, because it is the order whose partial results mean something.
     /// Roll-ups are maintained per directory as the walk proceeds, so a consumer that
-    /// looks mid-scan sees every top-level total as a lower bound that only grows —
-    /// bars fill, rankings converge. Interrupting early leaves a usefully complete
-    /// picture of the top of the tree.
+    /// looks mid-scan sees top-level totals grow together — bars fill, rankings
+    /// converge — instead of one subtree finishing while its siblings read zero.
+    /// Interrupting early leaves a usefully complete picture of the top of the tree.
+    ///
+    /// Under several workers this is a preference rather than a guarantee; see the
+    /// type-level note above.
+    ///
+    /// Note that totals only grow *while an additive walk is running*. Monotonicity
+    /// comes from the producer being additive, not from the order — the order decides
+    /// which subtrees get to grow early.
     #[default]
     BreadthFirst,
-    /// One subtree to completion before starting the next.
+    /// One subtree toward completion before starting the next.
     ///
     /// Lower peak memory, since the frontier is bounded by depth rather than by the
     /// width of a level, and better locality within a subtree. The cost is that
-    /// partial results are actively misleading: one child of the root reads its final
-    /// total while its siblings read zero, so anything ranking by size mid-scan ranks
-    /// confidently and wrongly. Correct for a caller that only reads the finished
-    /// index and wants the smallest footprint.
+    /// partial results are actively misleading: one child of the root approaches its
+    /// final total while its siblings read zero, so anything ranking by size mid-scan
+    /// ranks confidently and wrongly. Correct for a caller that only reads the
+    /// finished index and wants the smallest footprint.
+    ///
+    /// Under several workers this too is a preference: several subtrees will be in
+    /// flight at once, one per worker.
     DepthFirst,
 }
 
@@ -204,6 +238,8 @@ pub struct ScanReport {
     pub entries: u64,
     /// Paths that could not be read, with the reason.
     pub errors: Vec<Error>,
+    /// Where the walk's time went, summed across workers.
+    pub attribution: WalkAttribution,
 }
 
 impl ScanReport {
@@ -217,6 +253,75 @@ impl ScanReport {
         self.dirs_read += other.dirs_read;
         self.entries += other.entries;
         self.errors.extend(other.errors);
+        self.attribution.absorb(other.attribution);
+    }
+}
+
+/// Where a walk's time went, so "blocked" is never one undifferentiated number.
+///
+/// The performance loop's standing question is whether a walk is bound by disk I/O,
+/// by CPU, or by coordination, and process-level counters cannot answer it: user and
+/// system time say how much CPU was burned, but a fused "blocked" number cannot say
+/// whether workers were waiting on the filesystem, on the queue lock, or on nothing
+/// at all because the queue was empty. These counters split that out at the source.
+///
+/// Everything is measured in *chunks*, never per file: one timing pair per claimed
+/// run of directories, per contended lock, per batch handoff. On the 60k-entry
+/// reference tree that is a few thousand `Instant` reads against hundreds of
+/// milliseconds of walking — the instrumentation follows the same amortization rule
+/// it exists to verify.
+///
+/// In a parallel walk the fields sum over workers, so `wall_ns` is worker-seconds
+/// (it can exceed the scan's wall clock) and every other duration is a disjoint
+/// slice of it: `work_ns + starved_ns + lock_wait_ns + send_ns <= wall_ns`, with the
+/// remainder being uninstrumented odds and ends (uncontended lock ops, loop
+/// bookkeeping). A serial walk fills only `wall_ns`, `work_ns`, and `send_ns` —
+/// there is no coordination to attribute.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct WalkAttribution {
+    /// Total time workers spent in the walk loop, summed across workers.
+    pub wall_ns: u64,
+    /// Reading directories and stating entries — the real work, syscalls plus the
+    /// compute between them. Separating disk from CPU *within* this span needs the
+    /// process-level user/system counters alongside; per-syscall timing would break
+    /// the chunk-amortization rule.
+    pub work_ns: u64,
+    /// Waiting on the queue's condvar because no work was available. Starvation:
+    /// either the frontier is momentarily narrower than the worker pool, or the walk
+    /// is ending.
+    pub starved_ns: u64,
+    /// Waiting to acquire the queue lock when another worker held it. This is the
+    /// contention the shared-queue design bets stays negligible; now it is measured
+    /// instead of argued.
+    pub lock_wait_ns: u64,
+    /// Handing observation batches to the consumer: the channel send in a parallel
+    /// walk, the inline sink call — which is the consumer actually running — in a
+    /// serial one.
+    pub send_ns: u64,
+    /// Chunks of directories claimed from the queue.
+    pub claims: u64,
+    /// Queue lock acquisitions, contended or not.
+    pub lock_ops: u64,
+    /// Lock acquisitions that found the lock already held.
+    pub lock_contended: u64,
+}
+
+impl WalkAttribution {
+    /// Fold one worker's counters into the whole-walk totals.
+    fn absorb(&mut self, other: Self) {
+        self.wall_ns += other.wall_ns;
+        self.work_ns += other.work_ns;
+        self.starved_ns += other.starved_ns;
+        self.lock_wait_ns += other.lock_wait_ns;
+        self.send_ns += other.send_ns;
+        self.claims += other.claims;
+        self.lock_ops += other.lock_ops;
+        self.lock_contended += other.lock_contended;
+    }
+
+    /// Time attributed to a named cause, as opposed to `wall_ns`'s total.
+    pub fn accounted_ns(&self) -> u64 {
+        self.work_ns + self.starved_ns + self.lock_wait_ns + self.send_ns
     }
 }
 
@@ -357,6 +462,7 @@ pub fn scan(
     if config.max_depth == Some(0) {
         return Ok(report);
     }
+    let walk_started = std::time::Instant::now();
     let mut batch: Vec<Op> = Vec::with_capacity(config.batch_size);
     let mut queue: VecDeque<(PathBuf, usize)> = VecDeque::from(vec![(PathBuf::new(), 0)]);
 
@@ -394,7 +500,9 @@ pub fn scan(
             report.entries += 1;
             batch.push(Op::Upsert { path: rel_path.clone(), kind, attrs });
             if batch.len() >= config.batch_size {
+                let send_started = std::time::Instant::now();
                 sink(Observation::new(std::mem::take(&mut batch)));
+                report.attribution.send_ns += elapsed_ns(send_started);
                 batch.reserve(config.batch_size);
             }
 
@@ -405,8 +513,15 @@ pub fn scan(
     }
 
     if !batch.is_empty() {
+        let send_started = std::time::Instant::now();
         sink(Observation::new(batch));
+        report.attribution.send_ns += elapsed_ns(send_started);
     }
+    // A serial walk has no coordination to attribute: wall is the loop, "send" is the
+    // inline sink — which is the consumer actually running — and work is the rest.
+    report.attribution.wall_ns = elapsed_ns(walk_started);
+    report.attribution.work_ns =
+        report.attribution.wall_ns.saturating_sub(report.attribution.send_ns);
     Ok(report)
 }
 
@@ -464,7 +579,7 @@ fn scan_concurrent(
     sink: &mut dyn FnMut(Observation),
 ) -> ScanReport {
     let workers = config.worker_threads();
-    let queue = DirectoryQueue::new(vec![(PathBuf::new(), 0)], config.order);
+    let queue = DirectoryQueue::new((PathBuf::new(), 0), config.order);
     let (sender, receiver) = std::sync::mpsc::channel::<Observation>();
 
     let mut report = std::thread::scope(|scope| {
@@ -514,13 +629,20 @@ fn walk_worker(
     queue: &DirectoryQueue,
     sender: &std::sync::mpsc::Sender<Observation>,
 ) -> ScanReport {
+    let worker_started = std::time::Instant::now();
     let mut report = ScanReport::default();
     let mut batch: Vec<Op> = Vec::with_capacity(config.batch_size);
-    let mut claimed: Vec<(PathBuf, usize)> = Vec::with_capacity(DIR_CLAIM);
-    let mut discovered: Vec<(PathBuf, usize)> = Vec::new();
+    let mut claimed: Vec<(PathBuf, usize, RegionId)> = Vec::with_capacity(DIR_CLAIM);
+    let mut discovered: Vec<(PathBuf, usize, RegionId)> = Vec::new();
+    let mut consumer_gone = false;
 
-    while queue.claim(&mut claimed) {
-        for (rel_dir, depth) in claimed.drain(..) {
+    'walk: while queue.claim(&mut claimed, &mut report.attribution) {
+        // One timing pair per claimed chunk, never per entry: the chunk is the unit
+        // the amortization argument is made in, so it is the unit the evidence is
+        // collected in.
+        let chunk_started = std::time::Instant::now();
+        let mut chunk_send_ns: u64 = 0;
+        for (rel_dir, depth, region) in claimed.drain(..) {
             let abs_dir = root.join(&rel_dir);
             let listing = match fs::read_dir(&abs_dir) {
                 Ok(listing) => listing,
@@ -554,29 +676,64 @@ fn walk_worker(
                 report.entries += 1;
                 let descend = should_descend(kind, attrs, depth, root_dev, config);
                 batch.push(Op::Upsert { path: rel_path.clone(), kind, attrs });
-                if batch.len() >= config.batch_size
-                    && sender.send(Observation::new(std::mem::take(&mut batch))).is_err()
-                {
-                    // The consumer is gone; nothing further will be read.
-                    return report;
+                if batch.len() >= config.batch_size {
+                    let send_started = std::time::Instant::now();
+                    let sent = sender.send(Observation::new(std::mem::take(&mut batch))).is_ok();
+                    chunk_send_ns += elapsed_ns(send_started);
+                    if !sent {
+                        // The consumer is gone; nothing further will be read.
+                        consumer_gone = true;
+                        break 'walk;
+                    }
                 }
                 if descend {
-                    discovered.push((rel_path, depth + 1));
+                    // A child of the root seeds a new region; everything deeper
+                    // inherits its parent's. Region membership therefore costs one
+                    // integer copy and never inspects a path.
+                    let child_region = if depth == 0 { RegionId::UNASSIGNED } else { region };
+                    discovered.push((rel_path, depth + 1, child_region));
                 }
             }
         }
+        report.attribution.send_ns += chunk_send_ns;
+        report.attribution.work_ns += elapsed_ns(chunk_started).saturating_sub(chunk_send_ns);
         // Publish before releasing the claim so a worker that finds nothing new does
         // not hold work that others could be doing.
         if !discovered.is_empty() {
-            queue.extend(discovered.drain(..));
+            queue.extend(discovered.drain(..), &mut report.attribution);
         }
-        queue.release();
+        queue.release(&mut report.attribution);
     }
 
-    if !batch.is_empty() {
+    if !consumer_gone && !batch.is_empty() {
+        let send_started = std::time::Instant::now();
         let _ = sender.send(Observation::new(batch));
+        report.attribution.send_ns += elapsed_ns(send_started);
     }
+    report.attribution.wall_ns = elapsed_ns(worker_started);
     report
+}
+
+/// Nanoseconds since `started`, saturating rather than panicking on the absurd.
+fn elapsed_ns(started: std::time::Instant) -> u64 {
+    u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX)
+}
+
+/// A top-level subtree, used to spread workers across the breadth of the tree.
+///
+/// Every directory below the root belongs to the region seeded by its depth-1
+/// ancestor, inherited from its parent rather than recomputed from its path. The root
+/// itself is [`RegionId::ROOT`], which exists only to bootstrap.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+struct RegionId(usize);
+
+impl RegionId {
+    /// The root's own region, which exists only to bootstrap the walk.
+    const ROOT: Self = Self(0);
+    /// "Allocate a fresh region for this directory." Resolved by
+    /// [`DirectoryQueueState::push`], which is the only place holding the lock that
+    /// owns the region table.
+    const UNASSIGNED: Self = Self(usize::MAX);
 }
 
 /// Directories still to read, plus enough state to know when the walk is finished.
@@ -586,6 +743,24 @@ fn walk_worker(
 /// its children. So a worker holds a claim from the moment it takes work until the
 /// moment it has published everything that work produced, and the walk ends only when
 /// the queue is empty *and* no claim is outstanding.
+///
+/// # Why breadth-first is region-scheduled rather than a global FIFO
+///
+/// A global FIFO orders the *queue*, but claims are unordered: workers take whatever
+/// is at the front, which on a real tree means several workers grinding through the
+/// same top-level subtree while others sit untouched. Measured on the branching
+/// fixture, that left a global-FIFO walk starting the same 7–8 of 12 subtrees at the
+/// halfway mark as depth-first did — the ordering bought nothing a consumer could see.
+/// It also made the pending set hold a whole level of the tree, which is where the
+/// +1.5–3.7% peak RSS in exp-012 came from.
+///
+/// So breadth-first keeps work in per-region buckets and hands each free worker a
+/// *different* region, round-robin. Within a region the bucket is LIFO, which restores
+/// depth-first's locality and spine-bounded memory. Nothing waits on a level boundary:
+/// if only one region has work, every worker takes it. The result is a scheduler whose
+/// shallow preference is expressed in *which subtree a worker picks up*, not in the
+/// order a single queue drains — which is the property progressive consumers actually
+/// need.
 struct DirectoryQueue {
     state: std::sync::Mutex<DirectoryQueueState>,
     ready: std::sync::Condvar,
@@ -593,41 +768,128 @@ struct DirectoryQueue {
 }
 
 struct DirectoryQueueState {
-    pending: VecDeque<(PathBuf, usize)>,
+    /// Depth-first's single stack. Unused under breadth-first.
+    pending: VecDeque<(PathBuf, usize, RegionId)>,
+    /// Breadth-first's per-region work, indexed by [`RegionId`]. Each is a LIFO stack.
+    regions: Vec<Vec<(PathBuf, usize, RegionId)>>,
+    /// Regions with work, in round-robin order. A region appears at most once; the
+    /// flag array is what keeps that true without scanning the ring.
+    ready_ring: VecDeque<RegionId>,
+    /// Whether each region is currently in `ready_ring`.
+    enqueued: Vec<bool>,
     outstanding: usize,
     finished: bool,
 }
 
-impl DirectoryQueue {
-    fn new(initial: Vec<(PathBuf, usize)>, order: ScanOrder) -> Self {
-        Self {
-            state: std::sync::Mutex::new(DirectoryQueueState {
-                pending: VecDeque::from(initial),
-                outstanding: 0,
-                finished: false,
-            }),
-            ready: std::sync::Condvar::new(),
-            order,
+impl DirectoryQueueState {
+    /// Push one directory into the structure the order uses.
+    fn push(&mut self, item: (PathBuf, usize, RegionId), order: ScanOrder) {
+        match order {
+            ScanOrder::DepthFirst => self.pending.push_back(item),
+            ScanOrder::BreadthFirst => {
+                let region = if item.2 == RegionId::UNASSIGNED {
+                    // One region per top-level subtree, numbered as they are found.
+                    self.regions.len().max(1)
+                } else {
+                    item.2.0
+                };
+                if region >= self.regions.len() {
+                    self.regions.resize_with(region + 1, Vec::new);
+                    self.enqueued.resize(region + 1, false);
+                }
+                // Resolve the id *into* the item, so every directory discovered beneath
+                // this one inherits a concrete region instead of the sentinel. Without
+                // this the sentinel propagates and each directory allocates a region of
+                // its own, degenerating the scheduler into round-robin over the whole
+                // frontier.
+                let mut item = item;
+                item.2 = RegionId(region);
+                self.regions[region].push(item);
+                if !self.enqueued[region] {
+                    self.enqueued[region] = true;
+                    self.ready_ring.push_back(RegionId(region));
+                }
+            }
         }
+    }
+
+    /// Whether any work is available.
+    fn is_empty(&self, order: ScanOrder) -> bool {
+        match order {
+            ScanOrder::DepthFirst => self.pending.is_empty(),
+            ScanOrder::BreadthFirst => self.ready_ring.is_empty(),
+        }
+    }
+
+    /// Take up to `limit` directories from the next region in the round-robin ring.
+    ///
+    /// Every region holding work is in the ring exactly once, so popping it always
+    /// finds work and always moves to a *different* subtree than the previous claim.
+    /// An earlier version preferred the caller's previous region for locality, which
+    /// pinned each worker to one subtree: with twelve deep chains and six workers only
+    /// six subtrees ever advanced, and depth-first — whose four-directory claims
+    /// happen to fan across the root's children — spread wider than breadth-first did.
+    /// Locality still comes from the claim being a run of directories out of one
+    /// region; it must not come from a worker refusing to leave.
+    fn take(&mut self, limit: usize, order: ScanOrder, into: &mut Vec<(PathBuf, usize, RegionId)>) {
+        match order {
+            ScanOrder::DepthFirst => {
+                let take = self.pending.len().min(limit);
+                let start = self.pending.len() - take;
+                into.extend(self.pending.drain(start..));
+            }
+            ScanOrder::BreadthFirst => {
+                let Some(region) = self.ready_ring.pop_front() else { return };
+                self.enqueued[region.0] = false;
+                let bucket = &mut self.regions[region.0];
+                let take = bucket.len().min(limit);
+                let start = bucket.len() - take;
+                into.extend(bucket.drain(start..));
+                // Re-arm the region only if work remains and it is not already queued,
+                // so a busy region cannot appear twice and starve the others.
+                if !bucket.is_empty() && !self.enqueued[region.0] {
+                    self.enqueued[region.0] = true;
+                    self.ready_ring.push_back(region);
+                }
+            }
+        }
+    }
+}
+
+impl DirectoryQueue {
+    /// Seed the queue with the root, which is region zero until its children fan out.
+    fn new(root: (PathBuf, usize), order: ScanOrder) -> Self {
+        let mut state = DirectoryQueueState {
+            pending: VecDeque::new(),
+            regions: Vec::new(),
+            ready_ring: VecDeque::new(),
+            enqueued: Vec::new(),
+            outstanding: 0,
+            finished: false,
+        };
+        state.push((root.0, root.1, RegionId::ROOT), order);
+        Self { state: std::sync::Mutex::new(state), ready: std::sync::Condvar::new(), order }
     }
 
     /// Take up to [`DIR_CLAIM`] directories, blocking until there is work or the walk
     /// is over. Returns false once no more work will ever arrive.
-    fn claim(&self, into: &mut Vec<(PathBuf, usize)>) -> bool {
-        let mut state = self.lock();
+    ///
+    /// Time spent waiting is charged to `timing`: lock acquisition to `lock_wait_ns`
+    /// when contended, condvar waits to `starved_ns`. The condvar span includes the
+    /// lock re-acquisition on wake, which slightly overstates starvation rather than
+    /// understating contention — the fail-honest direction for the number that is
+    /// supposed to stay near zero.
+    fn claim(
+        &self,
+        into: &mut Vec<(PathBuf, usize, RegionId)>,
+        timing: &mut WalkAttribution,
+    ) -> bool {
+        let mut state = self.lock_timed(timing);
         loop {
-            if !state.pending.is_empty() {
-                let take = state.pending.len().min(DIR_CLAIM);
-                match self.order {
-                    // Shallowest work first, so every worker is always advancing the
-                    // top of the tree rather than one deep spur of it.
-                    ScanOrder::BreadthFirst => into.extend(state.pending.drain(..take)),
-                    ScanOrder::DepthFirst => {
-                        let start = state.pending.len() - take;
-                        into.extend(state.pending.drain(start..));
-                    }
-                }
+            if !state.is_empty(self.order) {
+                state.take(DIR_CLAIM, self.order, into);
                 state.outstanding += 1;
+                timing.claims += 1;
                 return true;
             }
             if state.finished {
@@ -638,25 +900,56 @@ impl DirectoryQueue {
                 self.ready.notify_all();
                 return false;
             }
+            let started = std::time::Instant::now();
             state = self.ready.wait(state).unwrap_or_else(std::sync::PoisonError::into_inner);
+            timing.starved_ns += elapsed_ns(started);
         }
     }
 
-    fn extend(&self, directories: impl Iterator<Item = (PathBuf, usize)>) {
-        let mut state = self.lock();
-        state.pending.extend(directories);
+    fn extend(
+        &self,
+        directories: impl Iterator<Item = (PathBuf, usize, RegionId)>,
+        timing: &mut WalkAttribution,
+    ) {
+        let mut state = self.lock_timed(timing);
+        for item in directories {
+            state.push(item, self.order);
+        }
         drop(state);
         self.ready.notify_all();
     }
 
     /// Give up a claim taken by [`claim`]. Wakes everyone if this was the last one.
-    fn release(&self) {
-        let mut state = self.lock();
+    fn release(&self, timing: &mut WalkAttribution) {
+        let mut state = self.lock_timed(timing);
         state.outstanding -= 1;
-        if state.outstanding == 0 && state.pending.is_empty() {
+        if state.outstanding == 0 && state.is_empty(self.order) {
             state.finished = true;
             drop(state);
             self.ready.notify_all();
+        }
+    }
+
+    /// Acquire the state lock, charging any contention to `timing`.
+    ///
+    /// The fast path is a `try_lock` that succeeds and costs one counter increment;
+    /// only the contended path pays for reading the clock. Poisoning is tolerated for
+    /// the same reason as [`Self::lock`].
+    fn lock_timed(
+        &self,
+        timing: &mut WalkAttribution,
+    ) -> std::sync::MutexGuard<'_, DirectoryQueueState> {
+        timing.lock_ops += 1;
+        match self.state.try_lock() {
+            Ok(guard) => guard,
+            Err(std::sync::TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
+            Err(std::sync::TryLockError::WouldBlock) => {
+                timing.lock_contended += 1;
+                let started = std::time::Instant::now();
+                let guard = self.lock();
+                timing.lock_wait_ns += elapsed_ns(started);
+                guard
+            }
         }
     }
 
@@ -1561,10 +1854,12 @@ mod tests {
     }
 
     #[test]
-    fn breadth_first_visits_shallow_directories_before_deep_ones() {
-        // The property the browser use case depends on: at any prefix of the walk, no
-        // directory has been read before one that is closer to the root. Depth-first
-        // makes no such promise, which is what makes its partial results misleading.
+    fn a_single_worker_breadth_first_walk_is_strictly_level_ordered() {
+        // The strict guarantee, which holds only with one worker. With several, the
+        // queue is ordered but the claims are not: a fast worker can enqueue and claim
+        // depth d+2 while a slow worker still holds depth d+1. See
+        // `breadth_first_starts_every_top_level_subtree_early` for the property the
+        // default configuration actually provides, which is the one consumers rely on.
         let dir = branching_tree();
         let config = ScanConfig {
             order: ScanOrder::BreadthFirst,
@@ -1588,6 +1883,228 @@ mod tests {
         assert!(
             depths_in_order.windows(2).all(|pair| pair[0] <= pair[1]),
             "directory depths were not non-decreasing: {depths_in_order:?}"
+        );
+    }
+
+    /// How many of the fixture's twelve top-level subtrees have received any file by
+    /// the time half the files have been emitted.
+    ///
+    /// This is the product metric — "is a mid-scan ranking meaningful?" — rather than
+    /// first-touch, which cannot distinguish the orders at all: reading the root
+    /// enumerates all twelve children at once either way. What a ranking needs is that
+    /// the subtrees grow *together*.
+    fn subtrees_started_at_halfway(order: ScanOrder, threads: usize, dir: &Path) -> usize {
+        let config =
+            ScanConfig { order, batch_size: 1, threads: Some(threads), ..ScanConfig::default() };
+
+        let mut files: Vec<PathBuf> = Vec::new();
+        scan(dir, &config, &mut |observation| {
+            for op in &observation.ops {
+                if let Op::Upsert { path, kind, .. } = &op.op {
+                    if !kind.is_dir() {
+                        files.push(path.clone());
+                    }
+                }
+            }
+        })
+        .expect("scan");
+
+        let halfway = files.len() / 2;
+        let mut started: BTreeSet<PathBuf> = BTreeSet::new();
+        for path in files.iter().take(halfway) {
+            if let Some(top) = path.components().next() {
+                started.insert(PathBuf::from(top.as_os_str()));
+            }
+        }
+        started.len()
+    }
+
+    #[test]
+    fn a_parallel_walk_accounts_for_where_its_time_went() {
+        // The attribution identity: every named cause is a disjoint slice of worker
+        // wall time, so the parts can never exceed the whole, and the counters that
+        // amortization depends on are actually incremented. This is the instrument
+        // the scheduler experiments will read; if it drifts, they measure noise.
+        let dir = branching_tree();
+        let config = ScanConfig { threads: Some(4), batch_size: 64, ..ScanConfig::default() };
+        let report = scan(dir.path(), &config, &mut |_| {}).expect("scan");
+        let a = report.attribution;
+
+        assert!(a.claims > 0, "a parallel walk claims chunks: {a:?}");
+        assert!(a.work_ns > 0, "reading directories takes time: {a:?}");
+        assert!(a.wall_ns > 0);
+        // claim() locks at least once per successful claim, and release() locks once
+        // per claim cycle too.
+        assert!(a.lock_ops >= a.claims * 2, "lock ops out of step with claims: {a:?}");
+        assert!(
+            a.accounted_ns() <= a.wall_ns,
+            "attributed slices are disjoint intervals inside worker wall: {a:?}"
+        );
+    }
+
+    #[test]
+    fn a_serial_walk_has_no_coordination_to_attribute() {
+        // Serial semantics: wall is the loop, "send" is the inline sink (the consumer
+        // actually running), work is the rest — and the coordination counters stay
+        // zero because there is no queue lock and no channel.
+        let dir = branching_tree();
+        let config = ScanConfig { threads: Some(1), batch_size: 64, ..ScanConfig::default() };
+        let mut observations = 0usize;
+        let report = scan(dir.path(), &config, &mut |_| observations += 1).expect("scan");
+        let a = report.attribution;
+
+        assert!(observations > 0, "the sink ran, so send_ns measured something real");
+        assert!(a.work_ns > 0 && a.wall_ns >= a.work_ns);
+        assert_eq!(
+            (a.claims, a.lock_ops, a.lock_contended, a.starved_ns, a.lock_wait_ns),
+            (0, 0, 0, 0, 0),
+            "no queue, no lock, nothing to wait on: {a:?}"
+        );
+    }
+
+    /// Twelve top-level subtrees, each a branching tree several levels deep.
+    ///
+    /// Branching matters: an earlier fixture gave every level exactly one child, which
+    /// pinned the frontier at twelve directories and made both orders behave
+    /// identically — a LIFO cannot dive when there is nothing to dive into. With two
+    /// children per level, depth-first pushes siblings and immediately descends into
+    /// the last one, which is the behaviour that leaves other subtrees behind.
+    ///
+    /// It is also deliberately uniform. A version using one deep spur beside shallow
+    /// siblings made the result depend on whether `readdir` returned the spur early:
+    /// it passed on APFS and failed on ext4.
+    fn deep_forest() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().expect("tempdir");
+        for top in 0..12 {
+            let mut level: Vec<PathBuf> = vec![dir.path().join(format!("t{top}"))];
+            for _ in 0..5 {
+                let mut next = Vec::new();
+                for parent in &level {
+                    for child in 0..2 {
+                        let path = parent.join(format!("c{child}"));
+                        for file in 0..3 {
+                            write_file(&path.join(format!("f{file}.dat")), b"xxxxxxxxxx");
+                        }
+                        next.push(path);
+                    }
+                }
+                level = next;
+            }
+        }
+        dir
+    }
+
+    /// Files accumulated by the *least advanced* top-level subtree in the first
+    /// quarter of the walk.
+    ///
+    /// Counting subtrees merely *started* cannot discriminate on a tree whose root
+    /// fans out twelve ways: every scheduler touches all twelve immediately, because
+    /// reading the root enumerates them. What differs is whether they then advance
+    /// together, so the question is how far behind the laggard is.
+    fn leanest_subtree_early(order: ScanOrder, threads: usize, dir: &Path) -> usize {
+        let config =
+            ScanConfig { order, batch_size: 1, threads: Some(threads), ..ScanConfig::default() };
+        let mut files: Vec<PathBuf> = Vec::new();
+        scan(dir, &config, &mut |observation| {
+            for op in &observation.ops {
+                if let Op::Upsert { path, kind, .. } = &op.op {
+                    if !kind.is_dir() {
+                        files.push(path.clone());
+                    }
+                }
+            }
+        })
+        .expect("scan");
+
+        let quarter = files.len() / 4;
+        let mut per_top: BTreeMap<PathBuf, usize> = BTreeMap::new();
+        for path in files.iter().take(quarter) {
+            if let Some(top) = path.components().next() {
+                *per_top.entry(PathBuf::from(top.as_os_str())).or_default() += 1;
+            }
+        }
+        (0..12)
+            .map(|top| per_top.get(&PathBuf::from(format!("t{top}"))).copied().unwrap_or(0))
+            .min()
+            .unwrap_or(0)
+    }
+
+    #[test]
+    fn deep_subtrees_do_not_delay_their_siblings() {
+        // The orientation property, and the reason breadth-first is the default: when
+        // every top-level subtree is deep, depth-first pours its early effort down
+        // whichever ones it picked up and leaves the rest at zero, while the region
+        // scheduler advances all twelve together. A user watching the top level fill
+        // in sees a meaningful ranking in the first case and a misleading one in the
+        // second.
+        //
+        // Checked at one worker and at the default pool, because the whole point of
+        // region scheduling is that the property survives parallelism — a global FIFO
+        // ordered the queue but let workers cluster in one subtree.
+        let dir = deep_forest();
+        for threads in [1usize, 6] {
+            let breadth = leanest_subtree_early(ScanOrder::BreadthFirst, threads, dir.path());
+            let depth = leanest_subtree_early(ScanOrder::DepthFirst, threads, dir.path());
+            assert!(
+                breadth > depth,
+                "at {threads} worker(s) breadth-first should leave its least advanced \
+                 top-level subtree further along: {breadth} files against {depth}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_region_scheduler_spreads_workers_over_distinct_subtrees() {
+        // The scheduler invariant, checked directly on the queue rather than through a
+        // walk: consecutive claims by *different* workers must land in different
+        // regions while several regions have work. This is what the round-robin ready
+        // ring buys, and it is the thing a global FIFO could not promise.
+        let queue = DirectoryQueue::new((PathBuf::new(), 0), ScanOrder::BreadthFirst);
+        let mut timing = WalkAttribution::default();
+
+        // Bootstrap: drain the root, then seed four top-level regions.
+        let mut claimed = Vec::new();
+        assert!(queue.claim(&mut claimed, &mut timing));
+        claimed.clear();
+        queue.extend(
+            (0..4).map(|top| (PathBuf::from(format!("t{top}")), 1, RegionId::UNASSIGNED)),
+            &mut timing,
+        );
+        queue.release(&mut timing);
+
+        // Four workers with no affinity must each be handed a different region.
+        let mut regions = BTreeSet::new();
+        for _ in 0..4 {
+            let mut claimed = Vec::new();
+            assert!(queue.claim(&mut claimed, &mut timing));
+            regions.insert(claimed[0].2.0);
+            assert_eq!(claimed.len(), 1, "one directory per region so far");
+        }
+        assert_eq!(regions.len(), 4, "each claim took a distinct region: {regions:?}");
+    }
+
+    #[test]
+    fn breadth_first_spreads_early_work_across_top_level_subtrees() {
+        // The justification for making breadth-first the default: at the halfway point
+        // more of the tree's top-level subtrees have started filling, so a consumer
+        // ranking by size mid-scan is comparing partial values rather than a mix of
+        // final values and zeros.
+        //
+        // Pinned with one worker, where the ordering guarantee is strict and the result
+        // is deterministic. The multi-worker case is deliberately NOT asserted here:
+        // measured on this fixture the advantage disappears under the default worker
+        // count (both orders start 7-8 subtrees, run to run), because emission order is
+        // then dominated by worker scheduling rather than by queue order. That is a
+        // real limitation of the current design, recorded in the plan and tracked
+        // rather than papered over with a test tuned until it passed.
+        let dir = branching_tree();
+        let breadth = subtrees_started_at_halfway(ScanOrder::BreadthFirst, 1, dir.path());
+        let depth = subtrees_started_at_halfway(ScanOrder::DepthFirst, 1, dir.path());
+
+        assert!(
+            breadth > depth,
+            "breadth-first should have more top-level subtrees underway at the halfway \
+             point, but started {breadth} against depth-first's {depth}"
         );
     }
 

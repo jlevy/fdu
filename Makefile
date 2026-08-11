@@ -139,7 +139,11 @@ PERF_TREE ?= benchmarks/corpus/realtree/metabrowser
 PERF_LABEL ?= $(notdir $(PERF_TREE))
 PERF_RELEASE := target/release/examples/perf_probe
 PERF_PROFILING := target/profiling/examples/perf_probe
-PERF_RUN := uv run --no-project python -m benchmarks.realtree
+# The harness runs from the repo root against a committed, frozen environment, so a
+# benchmark run resolves nothing at invocation time. `--project` (not `--directory`)
+# keeps the working directory here, which is what makes `-m benchmarks.realtree` work.
+PERF_UV := uv run --project benchmarks --frozen
+PERF_RUN := $(PERF_UV) python -m benchmarks.realtree
 
 .PHONY: perf-probe-release perf-probe-profiling perf-baseline perf-profile perf-compare perf-test perf-ledger perf-schema perf-schema-check
 
@@ -171,15 +175,18 @@ perf-compare: perf-probe-release
 		--name $(or $(NAME),adhoc)
 
 perf-test:
-	uv run --no-project --with pydantic python -m unittest discover -s benchmarks/realtree/tests -p 'test_*.py'
+	$(PERF_UV) python -m unittest discover -s benchmarks/realtree/tests -p 'test_*.py'
 
 # Regenerate the ledger from the committed experiment artifacts. Every number in it
 # is read back out of a validated artifact, so the report cannot drift from the record.
 perf-ledger:
-	uv run --no-project python -m benchmarks.realtree.summary
+	$(PERF_UV) python -m benchmarks.realtree.summary
 
 # The experiment contract is compiled from the Pydantic model; --check fails on drift.
-SOFTSCHEMA ?= uvx softschema@latest
+# Pinned in benchmarks/pyproject.toml, not `@latest`: this validator is the
+# reproducibility boundary for committed evidence, so an artifact that validated
+# yesterday must validate identically today.
+SOFTSCHEMA ?= $(PERF_UV) --group dev softschema
 SCHEMA_QUIET := python3 -c "import json,sys; d=json.load(sys.stdin); print('schema', d['out_path'], 'drift:', d['drift'])"
 
 perf-schema:

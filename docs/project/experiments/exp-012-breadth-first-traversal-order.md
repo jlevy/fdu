@@ -242,30 +242,79 @@ experiment:
     new_dependencies: []
     new_unsafe_blocks: 0
     new_failure_modes: []
-    notes: "Accepted on cost, not on speed: the value is that partial results become monotone lower bounds instead of a confidently wrong ranking, and this experiment establishes that the property is free. It also corrects an earlier six-sample median comparison that had suggested ~8% and was quoted in the plan before going through the accept rule - sixteen paired trials say the difference is not measurable. NOTE: the reference tree was reclaimed mid-session (disk at 100%) and re-cloned, so it is now 60,067 entries against the 59,654 used by exp-000..011; comparisons across that boundary are not valid."
+    notes: "Accepted on cost, not on speed: the value is that partial results become monotone lower bounds instead of a confidently wrong ranking, and this experiment establishes that the property is cheap - not that it is free. It also corrects an earlier six-sample median comparison that had suggested ~8% and was quoted in the plan before going through the accept rule; sixteen paired trials say the wall-time difference is not measurable. Peak RSS and producer CPU did rise measurably and are recorded above. NOTE: the reference tree was reclaimed mid-session (disk at 100%) and re-cloned, so it is now 60,067 entries against the 59,654 used by exp-000..011; comparisons across that boundary are not valid."
   verdict:
     decision: accepted
     primary_job: cold-scan-index
     primary_metric: wall_ns
     change_pct: -0.58
-    reason: "Free on a complete scan (-0.58%, interval [-2.50%, +1.20%]) and unchanged in memory, so the ordering that makes partial results usable costs nothing to adopt as the default"
+    reason: "No detectable wall-time change on a complete scan (-0.58%, interval [-2.50%, +1.20%] - straddles zero, so this is 'not measurably different', not 'free'). Peak RSS rose measurably on all three jobs (+1.51% [+0.85, +2.88] cold-scan-index, +3.66% [+2.47, +4.72] cold-scan-producer, +1.17% [+0.36, +3.77] warm-revalidate), as did producer CPU (+2.50% [+1.48, +4.04]). Accepted on those costs, not on speed: monotone partial results are worth ~1 MiB of frontier and ~2% producer CPU on a 60k tree"
     commit: fbc28f4
 ---
 # Breadth-first traversal order
 
 ## Hypothesis
 
-H48: _state what you expected to be slow, why,
-and which metric would move._
+H48: switching the walker's claim order from LIFO to FIFO will not change wall time on
+a complete scan, because the same directories are read either way and only their order
+differs — but it will raise peak memory, because a breadth-first frontier holds a whole
+level of directories where a depth-first stack holds one path from the root.
+
+The metric to watch is therefore `peak_rss_bytes`, not `wall_ns`. Wall time is the
+metric that decides whether the change is affordable; RSS is the one that decides
+whether it stays affordable on a tree with a very wide level.
 
 ## What was tried
 
-_The smallest change that tests the hypothesis._
+One policy enum threaded through the four places that pop pending work — the serial
+scan, the parallel `claim`, revalidate, and reconcile — selecting `pop_front` instead of
+`pop_back`. No new data structure: `DirectoryQueue` already held a `VecDeque`, and it
+holds directories rather than entries, which is why the frontier cost is bounded by the
+number of directories in the widest level rather than by the tree size.
 
 ## What the numbers said
 
-_Read the tables in the frontmatter. Say what surprised you._
+**Wall time did not move, and the interval is wide enough that "did not move" is the
+whole claim.** `cold-scan-index` is -0.58% with a 95% interval of [-2.50%, +1.20%].
+That interval straddles zero, so it is consistent with a 2.5% win and with a 1.2% loss
+alike. It does not license the word "free".
+
+**Memory moved, and the intervals are clear of zero.** Peak RSS rose +1.51%
+[+0.85%, +2.88%] on `cold-scan-index`, +3.66% [+2.47%, +4.72%] on
+`cold-scan-producer`, and +1.17% [+0.36%, +3.77%] on `warm-revalidate` — about 34.7 MB
+to 35.4 MB on the primary job. Producer CPU rose +2.50% [+1.48%, +4.04%]. These are
+small, but they are measured, and the hypothesis predicted the direction.
+
+The surprise was procedural rather than technical. An earlier six-sample median
+comparison had suggested breadth-first cost about 8% of wall time, and that number
+reached the plan before it went through the accept rule; sixteen paired trials say the
+wall-time difference is not measurable at all. The reporting then made the opposite
+error in the other direction — the harness rendered every metric failing the one-sided
+accept rule as "n.s.", so these RSS regressions printed as statistical silence and the
+first write-up of this experiment called the change "free" and "unchanged in memory".
+Both readings were wrong, and the second was the more dangerous one, because it
+converted a real cost into a claim of no cost. The harness now reports evidence
+direction separately from the accept rule.
+
+## Limitations
+
+This is one warm tree of 60,067 entries on one host, and the two conditions that would
+make breadth-first genuinely expensive are both absent from it:
+
+- **Frontier width.** A 60k tree has no level wide enough to stress the queue. A home
+  folder with a million directories has not been measured for peak queue size, and that
+  is where a +1.5% RSS delta could become a different number entirely.
+- **Cold I/O locality.** On a warm tree the metadata cache absorbs ordering effects.
+  Ordering interacts with readahead and seek locality differently on a genuinely cold
+  tree.
+
+Neither is a reason to reject the change; both are reasons not to quote this result as
+general. The wide-tree experiment is tracked separately.
 
 ## Verdict
 
-**ACCEPTED** — Free on a complete scan (-0.58%, interval [-2.50%, +1.20%]) and unchanged in memory, so the ordering that makes partial results usable costs nothing to adopt as the default
+**ACCEPTED, on cost rather than on speed.** Wall time is not measurably different;
+peak RSS and producer CPU are measurably but slightly worse. The change buys monotone
+partial results — every number a lower bound that only grows, instead of a confident
+and wrong early ranking — and roughly 1 MiB of frontier plus ~2% producer CPU on a 60k
+tree is a fair price for it.

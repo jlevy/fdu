@@ -206,6 +206,7 @@ fn scan_producer(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     summary.entries = summary.entries.saturating_add(1);
     summary.dirs = summary.dirs.saturating_add(1);
     summary.dirs_read = report.dirs_read;
+    summary.attribution = Some(report.attribution);
     summary.errors = u64::try_from(report.errors.len()).unwrap_or(u64::MAX);
     summary.complete = report.is_complete();
     if summary.complete {
@@ -247,6 +248,7 @@ fn scan_index(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     let component = started.elapsed();
     let mut summary = summarize_index(&index)?;
     summary.dirs_read = report.dirs_read;
+    summary.attribution = Some(report.attribution);
     summary.errors = u64::try_from(report.errors.len()).unwrap_or(u64::MAX);
     summary.complete = report.is_complete();
     Ok(ProbeOutput::new(arguments.mode, "scan", component, summary))
@@ -284,6 +286,10 @@ fn revalidate(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     let component = started.elapsed();
     let mut summary = summarize_index(&index)?;
     summary.dirs_read = report.scan.dirs_read;
+    // Deliberately left None: the reconcile sweep's walk is not instrumented yet
+    // (tracked in fdu-78wr), and an all-zero attribution object would read as
+    // measured evidence of no work rather than as an absent measurement. Null says
+    // "not instrumented"; zeros would lie.
     summary.errors = u64::try_from(report.scan.errors.len()).unwrap_or(u64::MAX);
     summary.complete = report.is_complete();
     summary.apply = ApplySummary {
@@ -377,6 +383,7 @@ struct ApplySummary {
 #[derive(Debug)]
 struct Summary {
     allocated_bytes: u128,
+    attribution: Option<fdu::scan::WalkAttribution>,
     apparent_bytes: u128,
     apply: ApplySummary,
     complete: bool,
@@ -398,6 +405,7 @@ impl Default for Summary {
     fn default() -> Self {
         Self {
             allocated_bytes: 0,
+            attribution: None,
             apparent_bytes: 0,
             apply: ApplySummary::default(),
             complete: true,
@@ -530,7 +538,7 @@ impl ProbeOutput {
         let snapshot_bytes = json_optional_u64(summary.snapshot_bytes);
         format!(
             concat!(
-                "{{\"component_ns\":{},\"mode\":\"{}\",\"schema\":\"{}\",",
+                "{{\"component_ns\":{},\"attribution\":{},\"mode\":\"{}\",\"schema\":\"{}\",",
                 "\"source\":\"{}\",\"summary\":{{",
                 "\"allocated_bytes\":{},\"apparent_bytes\":{},",
                 "\"apply\":{{\"inserted\":{},\"invalidated\":{},",
@@ -543,6 +551,7 @@ impl ProbeOutput {
                 "\"symlinks\":{}}}}}"
             ),
             self.component_ns,
+            json_attribution(self.summary.attribution.as_ref()),
             self.mode.name(),
             PROBE_SCHEMA,
             self.source,
@@ -569,6 +578,29 @@ impl ProbeOutput {
             summary.symlinks,
         )
     }
+}
+
+fn json_attribution(value: Option<&fdu::scan::WalkAttribution>) -> String {
+    value.map_or_else(
+        || "null".into(),
+        |a| {
+            format!(
+                concat!(
+                    "{{\"wall_ns\":{},\"work_ns\":{},\"starved_ns\":{},",
+                    "\"lock_wait_ns\":{},\"send_ns\":{},\"claims\":{},",
+                    "\"lock_ops\":{},\"lock_contended\":{}}}"
+                ),
+                a.wall_ns,
+                a.work_ns,
+                a.starved_ns,
+                a.lock_wait_ns,
+                a.send_ns,
+                a.claims,
+                a.lock_ops,
+                a.lock_contended,
+            )
+        },
+    )
 }
 
 fn json_optional_string(value: Option<&str>) -> String {
