@@ -110,8 +110,12 @@ pub struct Selection {
     pub depth: Bound,
     /// How many entries a view reports.
     pub limit: Bound,
-    /// Ordering key.
-    pub sort: SortKey,
+    /// Ordering key, or `None` to let each view apply its own default.
+    ///
+    /// Optional rather than defaulted here because the sensible default differs by view:
+    /// a tree and a type breakdown rank by size, while a flat file listing reads in name
+    /// order. One shared default would be wrong for one of them.
+    pub sort: Option<SortKey>,
     /// Whether the ordering is reversed.
     pub reverse: bool,
     /// Which size metric the report answers in.
