@@ -729,6 +729,14 @@ def summarize(document: Mapping[str, Any]) -> Dict[str, Any]:
                 comparisons[f"{variant}_vs_{control}"] = paired_comparison(
                     samples, job=job, control=control, candidate=variant
                 )
+            # Successive pairs, for stacked-change runs: variant i measured against
+            # variant i-1 isolates the i-th change, while everything still shares one
+            # interleaved schedule. Without this, a stack of three small changes could
+            # only be judged in aggregate or in three runs on a drifting machine.
+            for previous, current in zip(variants[1:], variants[2:]):
+                comparisons[f"{current}_vs_{previous}"] = paired_comparison(
+                    samples, job=job, control=previous, candidate=current
+                )
         statistics_document[job] = {
             "variants": per_variant,
             "comparisons": comparisons,
