@@ -20,7 +20,7 @@ use std::fs;
 use std::path::{Component, Path, PathBuf};
 
 use crate::ApplyStats;
-use crate::index::{Index, IndexHandle};
+use crate::index::{Index, IndexHandle, collect_child_expectations};
 use crate::types::{
     AppliedDelta, Attrs, EntryKind, Error, Observation, ObservationOp, Op, PathExpectation,
     PathState, Result, ScanScope,
@@ -232,7 +232,7 @@ impl ReconcileTarget<'_> {
 
     fn child_states(&self, path: &Path) -> Result<BTreeMap<OsString, PathExpectation>> {
         match self {
-            Self::Direct(index) => Ok(collect_child_states(index, path)),
+            Self::Direct(index) => Ok(collect_child_expectations(index, path)),
             Self::Shared(handle) => handle.child_states(path),
         }
     }
@@ -285,17 +285,6 @@ impl ReconcileTarget<'_> {
         }
         Ok(())
     }
-}
-
-fn collect_child_states(index: &Index, path: &Path) -> BTreeMap<OsString, PathExpectation> {
-    index.children(path).map_or_else(BTreeMap::new, |children| {
-        children
-            .map(|(name, _)| {
-                let child_path = path.join(name);
-                (name.to_os_string(), index.expectation(&child_path))
-            })
-            .collect()
-    })
 }
 
 #[cfg(unix)]

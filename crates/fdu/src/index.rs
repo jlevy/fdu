@@ -1180,7 +1180,17 @@ impl Index {
     }
 }
 
-fn collect_child_expectations(index: &Index, path: &Path) -> BTreeMap<OsString, PathExpectation> {
+/// Capture every child's expectation directly off its live entry, with no path work.
+///
+/// Both reconcile targets use this. The exclusive path once had a twin in `scan.rs`
+/// that re-derived each expectation by joining a `PathBuf` and descending from the
+/// root — two full descents and ~13 allocations per child to recover an `EntryId`
+/// the iterator already held. The equivalence test below is what lets the twin stay
+/// deleted.
+pub(crate) fn collect_child_expectations(
+    index: &Index,
+    path: &Path,
+) -> BTreeMap<OsString, PathExpectation> {
     index.children(path).map_or_else(BTreeMap::new, |children| {
         children
             .map(|(name, id)| {
