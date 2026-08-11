@@ -33,11 +33,11 @@ fn explicit_color_controls_human_output_but_never_json() {
     let root = tempfile::tempdir().expect("tempdir");
     let root = root.path().to_str().expect("temporary path is Unicode");
 
-    let always = run(&["--no-cache", "--color", "always", "--depth", "0", root]);
+    let always = run(&["--cache", "off", "--color", "always", "--depth", "0", root]);
     assert!(always.status.success());
     assert!(has_ansi(&always.stdout));
 
-    let never = run(&["--no-cache", "--color", "never", "--depth", "0", root]);
+    let never = run(&["--cache", "off", "--color", "never", "--depth", "0", root]);
     assert!(never.status.success());
     assert!(!has_ansi(&never.stdout));
 
@@ -45,7 +45,7 @@ fn explicit_color_controls_human_output_but_never_json() {
     // the output should never have to strip escape sequences first.
     for format in ["json", "jsonl", "yaml"] {
         let machine =
-            run(&["--no-cache", "--color", "always", "--format", format, "--depth", "0", root]);
+            run(&["--cache", "off", "--color", "always", "--format", format, "--depth", "0", root]);
         assert!(machine.status.success(), "{format} run failed");
         assert!(!has_ansi(&machine.stdout), "{format} output was colourized");
         assert!(machine.stderr.is_empty(), "{format} wrote to stderr");
@@ -74,7 +74,7 @@ fn explicit_color_also_controls_self_documenting_help() {
 fn automatic_color_honors_environment_with_documented_precedence() {
     let root = tempfile::tempdir().expect("tempdir");
     let root = root.path().to_str().expect("temporary path is Unicode");
-    let base = ["--no-cache", "--depth", "0", root];
+    let base = ["--cache", "off", "--depth", "0", root];
 
     let forced = run_with_color_env(&base, None, Some("1"));
     assert!(forced.status.success());
@@ -93,7 +93,7 @@ fn automatic_color_honors_environment_with_documented_precedence() {
     assert!(has_ansi(&empty_no_color_is_ignored.stdout));
 
     let explicit_always = run_with_color_env(
-        &["--color", "always", "--no-cache", "--depth", "0", root],
+        &["--color", "always", "--cache", "off", "--depth", "0", root],
         Some("1"),
         None,
     );
@@ -101,7 +101,7 @@ fn automatic_color_honors_environment_with_documented_precedence() {
     assert!(has_ansi(&explicit_always.stdout));
 
     let explicit_never = run_with_color_env(
-        &["--color", "never", "--no-cache", "--depth", "0", root],
+        &["--color", "never", "--cache", "off", "--depth", "0", root],
         None,
         Some("1"),
     );

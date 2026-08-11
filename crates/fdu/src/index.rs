@@ -689,6 +689,16 @@ impl Index {
         self.pending_invalidations.clear();
     }
 
+    /// Mark the whole index as not verified against the filesystem.
+    ///
+    /// Used by the cache-only open path: a snapshot records the freshness it had when it
+    /// was written, and replaying that verbatim would let an unverified answer claim
+    /// currency it has not earned.
+    pub(crate) fn mark_unverified(&mut self) {
+        self.freshness_marks.clear();
+        self.mark_unfresh(Path::new(""), Freshness::Stale);
+    }
+
     pub(crate) fn set_initial_freshness(&mut self, complete: bool) {
         self.freshness_marks.clear();
         if !complete {

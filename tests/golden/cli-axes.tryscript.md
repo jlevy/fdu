@@ -31,7 +31,7 @@ field stays visible in a diff, which is the point of a golden.
 ### Summary Is One Aggregate Row
 
 ```console
-$ fdu --no-cache --view summary --size apparent project
+$ fdu --cache off --view summary --size apparent project
      263 B  6 files, 3 directories
 ? 0
 ```
@@ -42,7 +42,7 @@ Compound extensions fold to their full tail, so `archive.tar.gz` is `.tar.gz` ra
 than `.gz`.
 
 ```console
-$ fdu --no-cache --view types --size apparent project
+$ fdu --cache off --view types --size apparent project
      128 B  .tar.gz      1 file
       71 B  .md          2 files
       36 B  .rs          2 files
@@ -54,7 +54,7 @@ $ fdu --no-cache --view types --size apparent project
 Nothing but paths, so the output pipes straight into another command.
 
 ```console
-$ fdu --no-cache --view files --kind file --size apparent project
+$ fdu --cache off --view files --kind file --size apparent project
 Makefile
 README.md
 dist/acorn-0.1.0.tar.gz
@@ -67,7 +67,7 @@ src/omega.rs
 ### Tree Reports Every Directory's Roll-Up
 
 ```console
-$ fdu --no-cache --view tree --size apparent --depth all project
+$ fdu --cache off --view tree --size apparent --depth all project
      263 B  . (6 files)
        128 B  dist (1 file)
         36 B  src (2 files)
@@ -78,7 +78,7 @@ $ fdu --no-cache --view tree --size apparent --depth all project
 ### Several Views Come Back in Request Order, From One Scan
 
 ```console
-$ fdu --no-cache --view summary,types --size apparent --limit 1 project
+$ fdu --cache off --view summary,types --size apparent --limit 1 project
      263 B  6 files, 3 directories
 
      128 B  .tar.gz      1 file
@@ -90,7 +90,7 @@ $ fdu --no-cache --view summary,types --size apparent --limit 1 project
 ### Include Narrows by Glob
 
 ```console
-$ fdu --no-cache --view files --include '*.rs' project
+$ fdu --cache off --view files --include '*.rs' project
 src/alpha.rs
 src/omega.rs
 ? 0
@@ -101,7 +101,7 @@ src/omega.rs
 A comma-split would shred `*.{md,rs}`, which is why only closed vocabularies are lists.
 
 ```console
-$ fdu --no-cache --view files --include '*.{md,rs}' project
+$ fdu --cache off --view files --include '*.{md,rs}' project
 README.md
 src/alpha.rs
 src/omega.rs
@@ -111,7 +111,7 @@ src/omega.rs
 ### Exclude Beats Include
 
 ```console
-$ fdu --no-cache --view files --include '*.{md,rs}' --exclude 'src/**' project
+$ fdu --cache off --view files --include '*.{md,rs}' --exclude 'src/**' project
 README.md
 ? 0
 ```
@@ -119,7 +119,7 @@ README.md
 ### Kind Selects What an Entry Is
 
 ```console
-$ fdu --no-cache --view files --kind dir project
+$ fdu --cache off --view files --kind dir project
 dist
 docs
 src
@@ -129,7 +129,7 @@ src
 ### Min-Size Follows the Selected Metric
 
 ```console
-$ fdu --no-cache --view files --kind file --min-size 100 --size apparent project
+$ fdu --cache off --view files --kind file --min-size 100 --size apparent project
 dist/acorn-0.1.0.tar.gz
 ? 0
 ```
@@ -137,7 +137,7 @@ dist/acorn-0.1.0.tar.gz
 ### Sort and Limit Compose Into a Top-N, With No Dedicated View
 
 ```console
-$ fdu --no-cache --view files --kind file --sort size --limit 2 --size apparent project
+$ fdu --cache off --view files --kind file --sort size --limit 2 --size apparent project
 dist/acorn-0.1.0.tar.gz
 README.md
 ? 0
@@ -146,7 +146,7 @@ README.md
 ### Reverse Flips Whatever Order Is in Effect
 
 ```console
-$ fdu --no-cache --view files --kind file --sort size --reverse --limit 2 --size apparent project
+$ fdu --cache off --view files --kind file --sort size --reverse --limit 2 --size apparent project
 src/omega.rs
 src/alpha.rs
 ? 0
@@ -157,7 +157,7 @@ src/alpha.rs
 `--depth 0` keeps du's meaning: totals for the root and nothing beneath it.
 
 ```console
-$ fdu --no-cache --view tree --depth 0 --size apparent project
+$ fdu --cache off --view tree --depth 0 --size apparent project
      263 B  . (6 files)
   …
 ? 0
@@ -168,7 +168,7 @@ $ fdu --no-cache --view tree --depth 0 --size apparent project
 ### JSON Carries the Versioned Envelope
 
 ```console
-$ fdu --no-cache --view summary --format json --size apparent project
+$ fdu --cache off --view summary --format json --size apparent project
 {
   "schema": "fdu.report/1",
   "generator": "fdu 0.0.1",
@@ -192,7 +192,7 @@ $ fdu --no-cache --view summary --format json --size apparent project
 ### JSONL Is One Document per Line
 
 ```console
-$ fdu --no-cache --view types --format jsonl --size apparent --limit 1 project
+$ fdu --cache off --view types --format jsonl --size apparent --limit 1 project
 {"schema": "fdu.report/1", "generator": "fdu 0.0.1", "root": "[SCAN_PATH]", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "source": "cold_scan", "freshness": "fresh", "complete": true, "errors": []}
 {"view": "types", "types": [{"extension": ".tar.gz", "files": 1, "bytes": 128, "allocated": [ALLOCATED]}]}
 ? 0
@@ -201,7 +201,7 @@ $ fdu --no-cache --view types --format jsonl --size apparent --limit 1 project
 ### YAML Quotes Only What Would Be Ambiguous
 
 ```console
-$ fdu --no-cache --view summary --format yaml --size apparent project
+$ fdu --cache off --view summary --format yaml --size apparent project
 schema: fdu.report/1
 generator: "fdu 0.0.1"
 root: [SCAN_PATH]/project
@@ -229,7 +229,7 @@ An agent should be able to correct a command from its rejection alone.
 ### An Unknown View Lists Every Valid One
 
 ```console
-$ fdu --no-cache --view bogus project
+$ fdu --cache off --view bogus project
 fdu: invalid --view "bogus": expected one of tree, types, files, summary
 ? 2
 ```
@@ -237,7 +237,7 @@ fdu: invalid --view "bogus": expected one of tree, types, files, summary
 ### A Repeated View Is a Typo, Not a No-Op
 
 ```console
-$ fdu --no-cache --view tree,tree project
+$ fdu --cache off --view tree,tree project
 fdu: invalid --view "tree,tree": "tree" appears more than once
 ? 2
 ```
@@ -245,7 +245,7 @@ fdu: invalid --view "tree,tree": "tree" appears more than once
 ### An Empty List Entry Is Rejected
 
 ```console
-$ fdu --no-cache --view tree,,types project
+$ fdu --cache off --view tree,,types project
 fdu: invalid --view "tree,,types": empty entry in the list
 ? 2
 ```
@@ -253,7 +253,7 @@ fdu: invalid --view "tree,,types": empty entry in the list
 ### An Unknown Format Lists Every Valid One
 
 ```console
-$ fdu --no-cache --format xml project
+$ fdu --cache off --format xml project
 fdu: invalid --format "xml": expected one of text, json, jsonl, yaml
 ? 2
 ```
@@ -261,7 +261,7 @@ fdu: invalid --format "xml": expected one of text, json, jsonl, yaml
 ### Fractional Ages Point at the Compound Spelling
 
 ```console
-$ fdu --no-cache --modified-since 1.5h project
+$ fdu --cache off --modified-since 1.5h project
 fdu: invalid time "1.5h": fractional ages are not supported; write them as compounds, as in `1h30m` rather than `1.5h`
 ? 2
 ```
@@ -269,7 +269,7 @@ fdu: invalid time "1.5h": fractional ages are not supported; write them as compo
 ### Calendar Units Point at Days
 
 ```console
-$ fdu --no-cache --modified-before 3months project
+$ fdu --cache off --modified-before 3months project
 fdu: invalid time "3months": calendar units are not supported because they are not a fixed length; use days, as in `30d` or `365d`
 ? 2
 ```
@@ -279,7 +279,7 @@ fdu: invalid time "3months": calendar units are not supported because they are n
 Guessing UTC would answer a prompt in another timezone hours off, in silence.
 
 ```console
-$ fdu --no-cache --modified-since 2026-08-10 project
+$ fdu --cache off --modified-since 2026-08-10 project
 fdu: invalid time "2026-08-10": local date and time are not supported yet because resolving one needs a time-zone database; write an RFC 3339 timestamp with an offset, as in `2026-08-10T12:30:00Z` or `2026-08-10T12:30:00-08:00`, or use `@` epoch seconds
 ? 2
 ```
@@ -287,7 +287,7 @@ fdu: invalid time "2026-08-10": local date and time are not supported yet becaus
 ### An Unknown Size Unit Lists the Accepted Ones
 
 ```console
-$ fdu --no-cache --min-size 10X project
+$ fdu --cache off --min-size 10X project
 fdu: invalid size "10X": unknown size unit "X"; use B, K/KB, M/MB, G/GB, T/TB, P/PB, or the binary forms KiB, MiB, GiB, TiB, PiB
 ? 2
 ```
@@ -295,7 +295,7 @@ fdu: invalid size "10X": unknown size unit "X"; use B, K/KB, M/MB, G/GB, T/TB, P
 ### A Malformed Glob Says Which Delimiter Is Unmatched
 
 ```console
-$ fdu --no-cache --include '{a,b' project
+$ fdu --cache off --include '{a,b' project
 fdu: invalid pattern "{a,b": unmatched `{` in pattern
 ? 2
 ```
@@ -303,7 +303,55 @@ fdu: invalid pattern "{a,b": unmatched `{` in pattern
 ### A Bad Bound Names Both Accepted Forms
 
 ```console
-$ fdu --no-cache --depth two project
+$ fdu --cache off --depth two project
 fdu: invalid --depth "two": expected a whole number or `all`
+? 2
+```
+
+## Mode: Cache Policy Is Explicit, and Never Silently Stale
+
+Every report says which tier answered it, so no policy can quietly serve old data.
+
+### A First Run Scans Cold and Leaves a Snapshot
+
+```console
+$ fdu --view summary --format jsonl --size apparent project
+{"schema": "fdu.report/1", "generator": "fdu [..]", "root": "[SCAN_PATH]", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "source": "cold_scan", "freshness": "fresh", "complete": true, "errors": []}
+{"view": "summary", "summary": {"files": 6, "dirs": 3, "bytes": 263, "allocated": [ALLOCATED], "newest_mtime_ns": [MTIME_NS]}}
+? 0
+```
+
+### The Next Run Revalidates It
+
+```console
+$ fdu --view summary --format jsonl --size apparent project
+{"schema": "fdu.report/1", "generator": "fdu [..]", "root": "[SCAN_PATH]", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "source": "warm_revalidate", "freshness": "fresh", "complete": true, "errors": []}
+{"view": "summary", "summary": {"files": 6, "dirs": 3, "bytes": 263, "allocated": [ALLOCATED], "newest_mtime_ns": [MTIME_NS]}}
+? 0
+```
+
+### Cache-Only Answers Without Touching the Tree, and Says It Is Stale
+
+```console
+$ fdu --cache only --view summary --format jsonl --size apparent project
+{"schema": "fdu.report/1", "generator": "fdu [..]", "root": "[SCAN_PATH]", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "source": "cache_only", "freshness": "stale", "complete": true, "errors": []}
+{"view": "summary", "summary": {"files": 6, "dirs": 3, "bytes": 263, "allocated": [ALLOCATED], "newest_mtime_ns": [MTIME_NS]}}
+? 0
+```
+
+### Refresh Ignores the Snapshot and Scans Cold Again
+
+```console
+$ fdu --cache refresh --view summary --format jsonl --size apparent project
+{"schema": "fdu.report/1", "generator": "fdu [..]", "root": "[SCAN_PATH]", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "source": "cold_scan", "freshness": "fresh", "complete": true, "errors": []}
+{"view": "summary", "summary": {"files": 6, "dirs": 3, "bytes": 263, "allocated": [ALLOCATED], "newest_mtime_ns": [MTIME_NS]}}
+? 0
+```
+
+### An Unknown Policy Lists Every Valid One
+
+```console
+$ fdu --cache sometimes project
+fdu: invalid --cache "sometimes": expected one of auto, refresh, read-only, only, off
 ? 2
 ```

@@ -21,7 +21,7 @@ use crate::query::{
     parse_size, parse_when, system_time_to_nanos,
 };
 use crate::report_format;
-use crate::{EntryKind, OpenConfig, ScanConfig, default_cache_path, open};
+use crate::{CachePolicy, EntryKind, OpenConfig, ScanConfig, default_cache_path, open};
 
 const SKILL_TEMPLATE: &str = include_str!("skills/SKILL.md");
 
@@ -38,7 +38,7 @@ const CLI_STYLES: Styles = Styles::styled()
     .valid(AnsiColor::Green.on_default())
     .invalid(AnsiColor::Yellow.on_default());
 
-const AFTER_HELP: &str = "Examples:\n  fdu\n  fdu --depth 3 --number 20 ~/src\n  fdu --by-type ~/Downloads\n  fdu --json --depth 1 --number 50 .\n\nOutput and automation:\n  Human output reports allocated disk space unless --apparent-size is set.\n  Results go to stdout; warnings and errors go to stderr.\n  JSON is schema-versioned, never colorized, and includes completeness and truncation.\n  For automation, check the exit status, complete, errors, tree_truncated, and scan_max_depth.\n  The command never prompts, pages, or animates progress.\n\nResult scope:\n  --depth and --number limit only the rendered view.\n  --max-depth limits the scan scope and retained index.\n\nCache:\n  Unless --no-cache is set, fdu reads and writes a snapshot in the user cache directory.\n\nColor:\n  --color overrides NO_COLOR and FORCE_COLOR. In auto mode, NO_COLOR disables color,\n  FORCE_COLOR enables it, and otherwise the destination must be a terminal.\n\nExit status:\n  0  Complete result, or a partial result accepted with --allow-partial\n  1  Fatal filesystem or cache error\n  2  Partial result, or command-line usage error";
+const AFTER_HELP: &str = "Examples:\n  fdu\n  fdu --view types ~/Downloads\n  fdu --view files --sort size --limit 20 ~/src\n  fdu --view files --modified-since 2h --format jsonl .\n  fdu --view summary,types --format json .\n\nFive axes, and every option belongs to exactly one:\n  Scope      PATH, --scan-depth        what is scanned and cached\n  Selection  --include, --exclude, --min-size, --modified-since, --modified-before,\n             --kind, --depth, --limit, --sort, --reverse, --size\n  View       --view tree,types,files,summary\n  Format     --format text|json|jsonl|yaml, --color\n  Mode       --cache auto|refresh|read-only|only|off\n\nScope versus selection:\n  --scan-depth limits what is scanned and retained; one cache then serves every query.\n  --depth and --limit bound only the rendered view, and never cost a rescan.\n  --depth 0 reports totals for the root and nothing beneath it.\n  --depth and --limit accept `all` for no bound.\n\nValues:\n  SIZE   512, 10k, 10M, 1.5GiB (decimal and binary units, case-insensitive)\n  WHEN   now, an age (45s, 2h, 1h30m), RFC 3339 with an offset, or @epoch seconds\n  --modified-since is inclusive; --modified-before is exclusive\n  --include and --exclude are repeatable globs; --view and --kind are comma lists\n\nCache:\n  auto       read, revalidate, and write back when complete (default)\n  refresh    ignore any snapshot, scan cold, and rewrite it\n  read-only  read and revalidate, but never write\n  only       answer from the snapshot without touching the tree; labeled stale,\n             and fails when no usable snapshot exists rather than scanning\n  off        ignore the snapshot and leave nothing behind\n\nOutput and automation:\n  Results go to stdout; warnings and errors go to stderr.\n  Machine formats are schema-versioned and never colorized.\n  Every report carries schema, source, freshness, complete, errors, and both timestamps.\n  Feed a report's scan_started_at back as --modified-since to list what changed since.\n  The command never prompts, pages, or animates progress.\n\nColor:\n  --color overrides NO_COLOR and FORCE_COLOR. In auto mode, NO_COLOR disables color,\n  FORCE_COLOR enables it, and otherwise the destination must be a terminal.\n\nExit status:\n  0  Complete result, or a partial result accepted with --allow-partial\n  1  Fatal filesystem or cache error\n  2  Partial result, or command-line usage error";
 
 /// When terminal styling should be enabled.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum)]
@@ -177,9 +177,9 @@ pub struct Cli {
     pub color: ColorWhen,
 
     // ---- mode: how the cache is used ----
-    /// Do not read or write the snapshot cache.
-    #[arg(long, action = ArgAction::SetTrue)]
-    pub no_cache: bool,
+    /// Cache policy: auto, refresh, read-only, only, or off.
+    #[arg(long, value_name = "POLICY", default_value = "auto")]
+    pub cache: String,
 
     /// Accept incomplete totals when paths cannot be read.
     #[arg(long, action = ArgAction::SetTrue)]
@@ -210,11 +210,11 @@ impl Cli {
         let format = self.parse_format().map_err(|error| usage(&error))?;
         let query = self.parse_query().map_err(|error| usage(&error))?;
 
-        let cache_path = if self.no_cache { None } else { default_cache_path(&self.path) };
+        let policy = self.parse_cache_policy().map_err(|error| usage(&error))?;
         let config = OpenConfig {
             scan: ScanConfig { max_depth: self.scan_depth, ..ScanConfig::default() },
-            cache_path,
-            save_on_open: !self.no_cache,
+            cache_path: default_cache_path(&self.path),
+            policy,
         };
 
         let scan_started_at = SystemTime::now();
@@ -226,6 +226,7 @@ impl Cli {
             source: match open_report.path_taken {
                 crate::OpenPath::ColdScan => ReportSource::ColdScan,
                 crate::OpenPath::WarmRevalidate => ReportSource::WarmRevalidate,
+                crate::OpenPath::CacheOnly => ReportSource::CacheOnly,
             },
             complete: open_report.is_complete(),
             errors: open_report.errors().iter().map(ToString::to_string).collect(),
@@ -263,6 +264,20 @@ impl Cli {
             report_format::Format::parse(&self.format),
             None | Some(report_format::Format::Text)
         )
+    }
+
+    /// Translate the cache-policy flag.
+    fn parse_cache_policy(&self) -> anyhow::Result<CachePolicy> {
+        match self.cache.trim().to_ascii_lowercase().as_str() {
+            "auto" => Ok(CachePolicy::Auto),
+            "refresh" => Ok(CachePolicy::Refresh),
+            "read-only" | "readonly" => Ok(CachePolicy::ReadOnly),
+            "only" => Ok(CachePolicy::Only),
+            "off" => Ok(CachePolicy::Off),
+            other => anyhow::bail!(
+                "invalid --cache {other:?}: expected one of auto, refresh, read-only, only, off"
+            ),
+        }
     }
 
     /// Translate the format flag, naming every accepted value on a miss.
@@ -657,7 +672,7 @@ mod tests {
             view: "tree".to_string(),
             format: "text".to_string(),
             color: ColorWhen::Auto,
-            no_cache: true,
+            cache: "off".to_string(),
             allow_partial: false,
             skill: false,
         }

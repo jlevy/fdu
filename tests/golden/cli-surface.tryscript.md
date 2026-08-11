@@ -41,7 +41,7 @@ Options:
       --view <LIST>             Views to report: tree, types, files, summary [default: tree]
       --format <FORMAT>         Output format: text, json, jsonl, or yaml [default: text]
       --color <WHEN>            Colorize human output: auto, always, or never [default: auto]
-      --no-cache                Do not read or write the snapshot cache
+      --cache <POLICY>          Cache policy: auto, refresh, read-only, only, or off [default: auto]
       --allow-partial           Accept incomplete totals when paths cannot be read
       --skill                   Print a portable agent skill to stdout
   -h, --help                    Print help
@@ -49,23 +49,45 @@ Options:
 
 Examples:
   fdu
-  fdu --depth 3 --number 20 ~/src
-  fdu --by-type ~/Downloads
-  fdu --json --depth 1 --number 50 .
+  fdu --view types ~/Downloads
+  fdu --view files --sort size --limit 20 ~/src
+  fdu --view files --modified-since 2h --format jsonl .
+  fdu --view summary,types --format json .
 
-Output and automation:
-  Human output reports allocated disk space unless --apparent-size is set.
-  Results go to stdout; warnings and errors go to stderr.
-  JSON is schema-versioned, never colorized, and includes completeness and truncation.
-  For automation, check the exit status, complete, errors, tree_truncated, and scan_max_depth.
-  The command never prompts, pages, or animates progress.
+Five axes, and every option belongs to exactly one:
+  Scope      PATH, --scan-depth        what is scanned and cached
+  Selection  --include, --exclude, --min-size, --modified-since, --modified-before,
+             --kind, --depth, --limit, --sort, --reverse, --size
+  View       --view tree,types,files,summary
+  Format     --format text|json|jsonl|yaml, --color
+  Mode       --cache auto|refresh|read-only|only|off
 
-Result scope:
-  --depth and --number limit only the rendered view.
-  --max-depth limits the scan scope and retained index.
+Scope versus selection:
+  --scan-depth limits what is scanned and retained; one cache then serves every query.
+  --depth and --limit bound only the rendered view, and never cost a rescan.
+  --depth 0 reports totals for the root and nothing beneath it.
+  --depth and --limit accept `all` for no bound.
+
+Values:
+  SIZE   512, 10k, 10M, 1.5GiB (decimal and binary units, case-insensitive)
+  WHEN   now, an age (45s, 2h, 1h30m), RFC 3339 with an offset, or @epoch seconds
+  --modified-since is inclusive; --modified-before is exclusive
+  --include and --exclude are repeatable globs; --view and --kind are comma lists
 
 Cache:
-  Unless --no-cache is set, fdu reads and writes a snapshot in the user cache directory.
+  auto       read, revalidate, and write back when complete (default)
+  refresh    ignore any snapshot, scan cold, and rewrite it
+  read-only  read and revalidate, but never write
+  only       answer from the snapshot without touching the tree; labeled stale,
+             and fails when no usable snapshot exists rather than scanning
+  off        ignore the snapshot and leave nothing behind
+
+Output and automation:
+  Results go to stdout; warnings and errors go to stderr.
+  Machine formats are schema-versioned and never colorized.
+  Every report carries schema, source, freshness, complete, errors, and both timestamps.
+  Feed a report's scan_started_at back as --modified-since to list what changed since.
+  The command never prompts, pages, or animates progress.
 
 Color:
   --color overrides NO_COLOR and FORCE_COLOR. In auto mode, NO_COLOR disables color,
@@ -87,8 +109,8 @@ name: fdu
 description: >-
   Inspect directory trees with hierarchical file counts, apparent and allocated sizes,
   recency, and extension tallies. Use when investigating disk usage, finding large
-  directories, summarizing file types, or collecting stable JSON filesystem roll-ups
-  for scripts and coding agents.
+  directories, summarizing file types, listing files by size or age, or collecting stable
+  JSON filesystem roll-ups for scripts and coding agents.
 ---
 # fdu Directory Roll-Ups
 
@@ -99,43 +121,94 @@ Use `fdu` to summarize a directory tree without modifying files in that tree.
 Use the local command when it is available:
 
 ```bash
-fdu --json --depth 2 --number 20 PATH
+fdu --format json --view tree --depth 2 --limit 20 PATH
 ```
 
 If no local command exists and this release is published on PyPI, use the exact reviewed
 version. Never use an unversioned `uvx` runner or `latest` in agent instructions:
 
 ```bash
-uvx --from fdu==0.0.1 fdu --json --depth 2 --number 20 PATH
+uvx --from fdu==0.0.1 fdu --format json --view tree PATH
 ```
 
-## Choose the View Deliberately
+## Compose the Request From Five Axes
 
-- Use the default human tree for terminal investigation.
-- Use `--by-type` for an extension summary.
-- Use `--json` for scripts and agents; it never contains ANSI color.
-- Use `--apparent-size` for logical bytes instead of allocated disk space.
-- Use `--no-cache` when the run must not read or write the user cache.
+Every option belongs to exactly one axis, and any axis composes with any other. There
+are no subcommands: the grammar is always "report on a path".
 
-`--depth` and `--number` limit only the returned view.
-`--max-depth` limits what is scanned and retained, so do not use it merely to reduce
-output.
+| Axis | Question | Options |
+| --- | --- | --- |
+| Scope | What is scanned and cached? | `PATH`, `--scan-depth N` |
+| Selection | Which entries does this query consider? | `--include`, `--exclude`, `--min-size`, `--modified-since`, `--modified-before`, `--kind`, `--depth`, `-n/--limit`, `--sort`, `--reverse`, `--size` |
+| View | Which roll-up is reported? | `--view tree,types,files,summary` |
+| Format | How is it serialized? | `--format text\|json\|jsonl\|yaml`, `--color` |
+| Mode | How is the cache used? | `--cache auto\|refresh\|read-only\|only\|off` |
+
+Scope versus selection is the distinction that matters: scope decides what is scanned
+and cached, so one cache serves every query, while selection filters the retained index
+at query time. Narrowing a selection never costs a rescan.
+
+## Pick the View, Then Shape It
+
+- `--view tree` (default) for per-directory roll-ups.
+- `--view types` for an extension breakdown.
+- `--view files` for a flat listing; in text output it prints one path per line and
+  nothing else, so it pipes directly into other commands.
+- `--view summary` for one aggregate row.
+- Several views in one run share one scan: `--view summary,types`.
+
+Common shapes are compositions rather than dedicated flags:
+
+```bash
+fdu --view files --sort size --limit 20 PATH          # largest files
+fdu --view files --modified-since 2h PATH             # changed in the last two hours
+fdu --view files --include '*.{rs,toml}' PATH         # by pattern
+fdu --view tree --sort mtime PATH                     # an activity map
+```
+
+`--depth` and `--limit` bound only the rendered view; `--scan-depth` bounds what is
+scanned and retained, so do not reach for it merely to shorten output.
+
+## Value Grammars
+
+- Sizes: `512`, `10k`, `10M`, `1.5GiB`. Decimal and binary units, case-insensitive.
+- Times: `now`, a compound age (`45s`, `2h`, `1h30m`), an RFC 3339 timestamp with an
+  offset (`2026-08-10T18:22:31Z`), or `@` epoch seconds. Calendar units and fractional
+  ages are rejected with the spelling to use instead; a bare local date-time is rejected
+  because resolving it needs a time-zone database.
+- `--modified-since` is inclusive and `--modified-before` is exclusive.
+
+## Use Timestamps as a Sync Watermark
+
+Every report carries `scan_started_at`. Feeding it back selects exactly what changed
+after that scan began, which is what makes incremental follow-up sound:
+
+```bash
+fdu --view summary --format json PATH                       # record scan_started_at
+fdu --view files --format jsonl --modified-since <that> PATH
+```
+
+Use the scan's *start*, not its end: a file modified mid-scan may have been observed
+before the modification, so only the start bound is conservative.
 
 ## Validate Every Automated Result
 
-Check the process exit status and these JSON fields:
+Check the process exit status and these fields:
 
-- `schema` before parsing fields
+- `schema` before parsing anything else
 - `complete` and `errors` before trusting totals
-- `tree_truncated` before treating the rendered tree as exhaustive
-- `scan_max_depth` before treating the scan scope as exhaustive
-- `freshness` before presenting cached or partial data as current
+- `freshness` and `source` before presenting data as current
+- `truncated` on a tree node before treating it as exhaustive
+
+`source` is `cold_scan`, `warm_revalidate`, or `cache_only`. Only `--cache only` can
+return `freshness: stale`, and it says so rather than implying currency; it fails
+outright when no usable snapshot exists rather than silently scanning.
 
 Exit 0 is accepted success, exit 1 is a fatal failure, and exit 2 is incomplete data or
 invalid usage. Do not discard useful stdout from exit 2; inspect the completeness fields
 and use `--allow-partial` only when incomplete totals are acceptable.
 
-Run `fdu --help` for the complete flag, stream, cache, color, scope, and exit contract.
+Run `fdu --help` for the complete flag, cache, color, scope, and exit contract.
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.
@@ -154,7 +227,7 @@ fdu 0.0.1
 ## The Default Root Works for an Empty Sandbox
 
 ```console
-$ fdu --no-cache --color never --size apparent --depth 0
+$ fdu --cache off --color never --size apparent --depth 0
        0 B  . (0 files)
 ? 0
 ```
@@ -176,7 +249,7 @@ $ fdu --definitely-not-an-option
 ## A Missing Root Is a Fatal Filesystem Error
 
 ```console
-$ fdu --no-cache missing
+$ fdu --cache off missing
 ! fdu: I/O error at missing: [OS_ERROR]
 !   caused by: [OS_ERROR]
 ? 1
@@ -194,7 +267,7 @@ $ node -e "require('node:fs').writeFileSync('plain-file', 'x')"
 ### Reject It as the Root
 
 ```console
-$ fdu --no-cache plain-file
+$ fdu --cache off plain-file
 ! fdu: I/O error at [SCAN_PATH]: scan root is not a directory
 !   caused by: scan root is not a directory
 ? 1

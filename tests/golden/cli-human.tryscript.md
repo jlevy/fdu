@@ -18,7 +18,7 @@ patterns:
 ## A Full Tree Has Stable Sizes, Ordering, Bars, and Indentation
 
 ```console
-$ fdu --no-cache --color never --size apparent --depth 2 --limit 10 project
+$ fdu --cache off --color never --size apparent --depth 2 --limit 10 project
      263 B  . (6 files)
        128 B  dist (1 file)
         36 B  src (2 files)
@@ -29,7 +29,7 @@ $ fdu --no-cache --color never --size apparent --depth 2 --limit 10 project
 ## Depth and Number Limit Only the Rendered View
 
 ```console
-$ fdu --no-cache --color never --size apparent --depth 1 --limit 2 project
+$ fdu --cache off --color never --size apparent --depth 1 --limit 2 project
      263 B  . (6 files)
   …
        128 B  dist (1 file)
@@ -42,7 +42,7 @@ $ fdu --no-cache --color never --size apparent --depth 1 --limit 2 project
 ## Type View Uses Apparent Bytes Consistently
 
 ```console
-$ fdu --no-cache --color never --view types --limit 10 project
+$ fdu --cache off --color never --view types --limit 10 project
    8.0 KiB  .md          2 files
    8.0 KiB  .rs          2 files
    4.0 KiB  .tar.gz      1 file

@@ -22,7 +22,7 @@ use pyo3::exceptions::{PyOSError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 
-use fdu::{EntryKind, Freshness, OpenConfig, RollUp, ScanConfig};
+use fdu::{CachePolicy, EntryKind, Freshness, OpenConfig, RollUp, ScanConfig};
 
 fn to_py_err(err: fdu::Error) -> PyErr {
     match err {
@@ -230,15 +230,33 @@ impl PyIndex {
     }
 }
 
-/// Open a directory tree, using the snapshot cache when one is usable.
+/// Translate a cache-policy string into its library value.
+///
+/// The same spellings the CLI accepts, so a capability reachable by flag is reachable by
+/// one typed call rather than by shelling out.
+fn parse_cache_policy(value: &str) -> PyResult<CachePolicy> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "auto" => Ok(CachePolicy::Auto),
+        "refresh" => Ok(CachePolicy::Refresh),
+        "read-only" | "readonly" => Ok(CachePolicy::ReadOnly),
+        "only" => Ok(CachePolicy::Only),
+        "off" => Ok(CachePolicy::Off),
+        other => Err(PyValueError::new_err(format!(
+            "invalid cache policy {other:?}: expected one of auto, refresh, read-only, only, off"
+        ))),
+    }
+}
+
+/// Open a directory tree, using the snapshot cache according to `cache`.
 #[pyfunction]
-#[pyo3(signature = (root, *, cache = true, max_depth = None))]
-fn open(py: Python<'_>, root: &str, cache: bool, max_depth: Option<usize>) -> PyResult<PyIndex> {
+#[pyo3(signature = (root, *, cache = "auto", max_depth = None))]
+fn open(py: Python<'_>, root: &str, cache: &str, max_depth: Option<usize>) -> PyResult<PyIndex> {
     let root = PathBuf::from(root);
+    let policy = parse_cache_policy(cache)?;
     let config = OpenConfig {
         scan: ScanConfig { max_depth, ..ScanConfig::default() },
-        cache_path: if cache { fdu::default_cache_path(&root) } else { None },
-        save_on_open: cache,
+        cache_path: fdu::default_cache_path(&root),
+        policy,
     };
 
     let opened = py.detach(|| fdu::open(&root, &config));

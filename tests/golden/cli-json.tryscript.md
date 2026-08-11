@@ -21,7 +21,7 @@ patterns:
 ## Full Output Exposes Scan and Projection Completeness Separately
 
 ```console
-$ fdu --no-cache --format json --size apparent --depth 2 --limit 10 project
+$ fdu --cache off --format json --size apparent --depth 2 --limit 10 project
 {
   "schema": "fdu.report/1",
   "generator": "fdu 0.0.1",
@@ -45,7 +45,7 @@ $ fdu --no-cache --format json --size apparent --depth 2 --limit 10 project
 ## Render Limits Mark the Projection as Truncated
 
 ```console
-$ fdu --no-cache --format json --size apparent --depth 1 --limit 2 project
+$ fdu --cache off --format json --size apparent --depth 1 --limit 2 project
 {
   "schema": "fdu.report/1",
   "generator": "fdu 0.0.1",
@@ -69,7 +69,7 @@ $ fdu --no-cache --format json --size apparent --depth 1 --limit 2 project
 ## Scan Depth Is an Explicit Complete Scope
 
 ```console
-$ fdu --no-cache --format json --size apparent --scan-depth 1 --depth 2 --limit 10 project
+$ fdu --cache off --format json --size apparent --scan-depth 1 --depth 2 --limit 10 project
 {
   "schema": "fdu.report/1",
   "generator": "fdu 0.0.1",
@@ -98,7 +98,7 @@ format are independent choices, so the combination is not just legal but require
 work — formats are serializations, not features.
 
 ```console
-$ fdu --no-cache --view types --format json --size apparent project
+$ fdu --cache off --view types --format json --size apparent project
 {
   "schema": "fdu.report/1",
   "generator": "fdu 0.0.1",

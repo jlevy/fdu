@@ -24,7 +24,7 @@ patterns:
 ### Scan Without a Cache
 
 ```console
-$ fdu --no-cache --format json --size apparent --depth 0 --limit 0 project
+$ fdu --cache off --format json --size apparent --depth 0 --limit 0 project
 {
   "schema": "fdu.report/1",
   "generator": "fdu 0.0.1",
