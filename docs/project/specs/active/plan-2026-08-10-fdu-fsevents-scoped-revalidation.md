@@ -468,6 +468,62 @@ warm cost, and scan speed is what caps everyone else’s. Neither substitutes fo
 other, and the policy above is what routes each platform to its best available answer
 without the caller choosing.
 
+### The first scan is the other half of the problem, and the journal cannot help it
+
+Measuring a real home folder made the large-tree regime concrete, and turned up
+something the journal work does not address at all.
+
+```
+/Users/…  4,366,510 files, 1,016,449 dirs, 224 GiB
+  791 s wall   15 s user   160 s system   2.65 GB peak RSS
+```
+
+Thirteen minutes, and the breakdown is the finding: **175 s of CPU against 791 s of wall
+— 78% of the run was spent blocked, and the achieved parallelism was 0.22×.** Six worker
+threads sat waiting on the SSD, 923,000 voluntary context switches deep.
+Memory landed at ~493 B/entry, matching the frontier research’s ~490 B/entry estimate
+almost exactly.
+
+The automatic worker cap is six, and it was chosen honestly: exp-001 measured 2, 4, 6
+and 8 threads on a warm 60k tree and found the knee at four, with eight *worse* than
+four. That verdict is correct and it does not generalize one step outside the state it
+was measured in. On a cold subtree of ~795k entries — large enough that the vnode cache
+cannot hold it — interleaved runs say the opposite:
+
+| workers | median | best |
+| ---: | ---: | ---: |
+| 6 | 33.7 s | 16.3 s |
+| 16 | **17.0 s** | 12.4 s |
+| 32 | 19.9 s | 14.3 s |
+
+Roughly **2× from raising in-flight depth alone**, on the exact workload the whole-drive
+use case cares about.
+(The variance is wide because the subtree is live and the machine was not quiet; the
+direction is unambiguous and consistent across all four rounds.)
+`MAX_SCAN_THREADS` is currently 32, so the top of the useful range has not even been
+probed.
+
+Two consequences, and the second is the important one:
+
+- **Worker count must be state-adaptive, exactly like the cache policy.** When the tree
+  fits the metadata cache the walk is syscall-bound and extra threads add contention;
+  when it does not, the walk is latency-bound and extra threads buy throughput almost
+  linearly until the device saturates.
+  The same capacity signal the cache policy reads (`kern.maxvnodes` versus recorded
+  entry count) selects the pool size, which is the frontier research’s H31 with a
+  concrete trigger rather than a calibration probe.
+- **This is worth more than journal resume for the motivating use case, and it is
+  orthogonal to it.** A first scan of a home folder can never be helped by a journal:
+  there is no cursor yet.
+  Halving thirteen minutes is a bigger, simpler win than anything the journal does, and
+  it lands on every platform rather than one.
+  The journal’s job is the *second* scan; in-flight depth’s job is the first, and the
+  product story for whole-drive usage needs both.
+
+That reorders the work: the adaptive pool (`fdu-6ld9`’s sibling) should land before
+scoped revalidation, because it is cheap, portable, and improves the case the journal is
+designed for without depending on any of it.
+
 ### Phase 0 spike findings (2026-08-10, run on this host)
 
 The spike ran. Three assumptions held, two did not, and one of the failures changes the
