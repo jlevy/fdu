@@ -88,6 +88,26 @@ differ is in the
 
 ## Design
 
+### The two data-structure principles
+
+Everything below follows from treating two properties as invariants of the data
+structures rather than features of any one surface:
+
+- **Delta-friendly** — the existing contract: every structure is modified only through
+  typed, clocked deltas, which is what keeps the in-memory index, the snapshot, and the
+  change feed from drifting apart.
+- **Partial-friendly** — its peer, made explicit by this plan: every structure is *valid
+  and useful while incomplete*, provided the boundary of incompleteness is knowable.
+  A partially walked tree is a real answer — every roll-up a correct lower bound, every
+  unvisited subtree identifiable — not a broken invariant awaiting repair.
+  Queries, serialization, sessions, and reducers must all accept a partial structure as
+  a first-class input, and anything that cannot must say so in its signature rather than
+  misbehave.
+
+The two compose: a delta stream applied to a partial structure yields another valid
+partial structure. That composition is what a progressive UI *is*, and it is why neither
+property can be bolted on at the edges.
+
 ### 1. Traversal order as a policy (landed)
 
 ```rust
@@ -195,9 +215,19 @@ pub struct Provenance {
     /// When the underlying filesystem observation was made. For `Cached`, this is
     /// when the snapshot captured it — the "as of" a UI shows.
     pub observed_at: SystemTime,
-    /// False while a walk beneath this path is still running, which makes the value a
-    /// lower bound rather than a point estimate.
-    pub complete: bool,
+    /// How settled the value is. An enum rather than a boolean, because "not
+    /// complete" already means at least two different things a consumer may need to
+    /// distinguish, and more are foreseeable.
+    pub status: Status,
+}
+
+#[non_exhaustive]
+pub enum Status {
+    /// The value covers everything beneath this path.
+    Complete,
+    /// A walk beneath this path is still running; the value is a lower bound that
+    /// only grows.
+    Partial,
 }
 
 pub enum Source {
@@ -225,8 +255,9 @@ Collapsed into one “not sure yet” state, a shrinking number would look like 
 
 A directory’s total is only as trustworthy as its least trustworthy descendant, so all
 three facts compose upward by monotone operations: `source` takes the weakest,
-`observed_at` the oldest, `complete` the logical AND. That is the same shape as every
-other roll-up fdu maintains, so it reuses `merge_upward` rather than adding machinery.
+`observed_at` the oldest, `status` the worst in its ordering.
+That is the same shape as every other roll-up fdu maintains, so it reuses `merge_upward`
+rather than adding machinery.
 A directory whose whole subtree is verified reports `Revalidated` and a UI drops the
 indicator for that row; one unchecked file deep inside keeps its ancestors honest all
 the way to the root, with the oldest `observed_at` explaining how stale the worst of it
