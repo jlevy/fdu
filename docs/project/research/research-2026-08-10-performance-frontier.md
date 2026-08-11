@@ -322,6 +322,38 @@ capability matrix must keep saying so.
 `getattrlistbulk`, and none sorts entries by inode before statting.
 Both are the top platform levers below; fdu can be first.
 
+**Maintainer testimony on scheduling, collected from primary sources (annotated list in
+the References), adds four warnings the surveys alone would miss:**
+
+- **A mutex-guarded work queue caps scaling at zero.** ripgrep’s `ignore` walker sat
+  behind an `Arc<Mutex<Vec<_>>>` and measured *flat* (~580 ms on Chromium) at 1, 6, 12,
+  and 24 threads; replacing it with a crossbeam work-stealing deque gave 5.5× at 24
+  threads (ripgrep PR #2591 — the core of fd v9’s 6–13× claim, with fd’s result-batching
+  PR #1422 as the other half).
+  fdu’s current parallel producer uses exactly the mutex-queue shape (`DirectoryQueue`,
+  exp-001); fine at 4 threads, but the thread-curve experiments must expect this wall
+  and the crossbeam-deque escalation is the known fix.
+- **Naive `par_bridge` is a trap, and ordering costs memory.** Tavian Barnes measured a
+  graph traversal at 34 s sequential, **16 m 44 s** under naive `par_bridge`, and 1.36 s
+  with proper thief-splitting; BurntSushi diagnosed ripgrep’s 1 GB memory peak as
+  *breadth-first order itself* (per-directory matcher state allocated for the whole
+  frontier before any file completes, ripgrep #1550). Queue-vs-stack choice controls
+  both ordering and peak resident state — one more reason fdu keeps ordering out of the
+  walker.
+- **Warm traversal parallelism saturates early even on Linux.** BurntSushi’s own
+  measurement (ripgrep discussion #2472): raw warm-cache traversal of Chromium was
+  fastest at 4 threads and *degraded* at 8; the optimum moves higher only when CPU-bound
+  work (glob matching) rides along.
+  Consistent with this document’s policy stance that worker count is a per-platform,
+  per-workload measurement, not a constant.
+- **Redundant syscalls can beat serialization.** Byron (dua, gitoxide) runs gitoxide’s
+  untracked-files dirwalk *concurrently* with the index-to-worktree check, deliberately
+  re-paying lstats that git’s serial `CE_UPTODATE` path avoids, and beats `git status`
+  by 1.44× on WebKit: “with today’s machines, it’s often faster to just perform them
+  anyway if it helps to run more in parallel.”
+  He also flags M1 efficiency cores as a real skew in work-stealing pools — the QoS
+  guidance above, observed independently.
+
 ### macOS: Batch Syscalls, Don’t Add Threads
 
 **`getattrlistbulk(2)` is the single largest cold+warm lever on APFS.** One syscall
@@ -334,6 +366,12 @@ decisively beating `readdir`+`lstat` once attributes are needed — and fdu alwa
 attributes; dumac (getattrlistbulk + 64-way bounded concurrency) measured **521 ms over
 409,500 files vs 3,330 ms for Apple `du`** (6.4×) and 1,342 ms for diskus, with 91% of
 remaining time in the kernel.
+One dissent to design the spike around: Tempelmann’s filesystem-dev follow-up found
+APFS’s `getattrlistbulk` implementation less efficient than HFS+’s (with `fts` fastest
+for local names-only walks in his 2019 data, pre-Apple-Silicon), while dumac’s 2025
+M-series numbers show bulk winning decisively — so the H26 spike must A/B bulk against
+`fts`/readdir+`fstatat` on modern APFS rather than assume, and the per-filesystem API
+choice belongs in the policy layer either way.
 Apple’s own modern `FileManager` rewrite in swift-foundation uses `fts` instead — i.e.
 even Apple’s current tooling leaves this on the table.
 Implementation cautions, all documented in the field: buffers ≥ 64 KB (Apple DTS calls
@@ -812,6 +850,14 @@ fast-but-wrong is a non-goal; fast-and-labeled is a feature).
    fresh; the performance frontier moves to per-event constants and escalation rarity —
    next section.
 
+The production magnitude of this ladder is now well documented by git’s builtin
+fsmonitor (the same inversion: OS names the changes, verify only those): on Chromium
+(393k files) `git status` fell from 17.6 s to 0.827 s, the lstat sweep alone ~500×, and
+a synthetic 2M-file repo went 85.1 s → 0.75 s. Equally instructive is the crossover Ben
+Peart measured in the original series: at 3k files warm, event-driven invalidation was a
+*regression* (0.05 s → 0.24 s — the hook/daemon round trip cost more than the stats it
+saved). Rung selection is size-dependent, and small trees should just sweep.
+
 The rungs degrade gracefully into each other, and every rung ends at the same place:
 correctness never depends on anything above rung 1.
 
@@ -1103,7 +1149,7 @@ the loop extensions in H36–H39 to be trusted globally.
 | H12 | Producer-side fingerprint comparison against a clock-stable baseline makes consumer work O(changes); the expectation machinery per unchanged entry is the warm bound (exp-002’s residue) | `warm-revalidate` wall −40% or more at 60k; falls below `cold-scan-index`; `user_cpu_ns` collapses | — |
 | H13 | Applying per *directory* (accumulate children locally, one ancestor merge per directory) cuts upward merges ~7× (7.3k dirs vs 52k files on the reference tree) | `user_cpu_ns` down on `cold-scan-index` and `warm-revalidate` | — |
 | H14 | Routing `ReconcileTarget::Direct` through `collect_child_expectations` (deleting `collect_child_states`) removes ~13 allocations and ~10 descents per unchanged entry; equivalence already test-locked | `warm-revalidate` `user_cpu_ns`, `minor_faults` down | — |
-| H15 | A directory whose stat fingerprint matches the snapshot can skip `read_dir` *membership discovery* (git untracked-cache trick); child stats still run | `system_cpu_ns` down modestly on unchanged trees, most on wide dirs | guardrail G1 |
+| H15 | A directory whose stat fingerprint matches the snapshot can skip `read_dir` *membership discovery* (git untracked-cache trick; plocate’s updatedb ships exactly this contract — “it won’t readdir() it. It will stat() it, though”); child stats still run | `system_cpu_ns` down modestly on unchanged trees, most on wide dirs | guardrail G1 |
 | H16 | On an unchanged tree, a one-shot CLI query can be served from snapshot roll-ups without building the index | new `warm-query` job wall → tens of ms | leverage 2, H33 |
 | H17 | Replacing the transient per-directory `BTreeMap<OsString, PathExpectation>` (~152 B/child) with a sorted merge-join against the parent’s existing children removes a build-and-tear-down map per directory (extends the loop’s H11) | `warm-revalidate` `user_cpu_ns`, `minor_faults` down | — |
 | H44 | A *labeled* structure-only revalidation (stat directories only; sizes of edited-in-place files may be stale, and the output says so) serves shape-tolerant queries at ~1/8 the stats | new labeled job ~8× fewer stats; never the default | change-propagation findings; G1 |
@@ -1180,6 +1226,16 @@ the loop extensions in H36–H39 to be trusted globally.
   timestamp granularity are *racily clean* — treat them as changed and re-verify (git’s
   rule). Any revalidation speedup must preserve this, and the snapshot must record the
   granularity it was captured under.
+  Two production mechanisms to copy: git *smudges* racily-clean entries by truncating
+  the cached size so a future mismatch is guaranteed (racy-git.txt measures the cost of
+  getting this wrong: 2.22 s vs 0.14 s on 20k files), and borg deliberately excludes
+  from its files cache any entry whose timestamp equals the newest in the archive — same
+  race, closed from the other side.
+  Fingerprint components also need per-filesystem trust: restic and borg both document
+  inode-unstable filesystems (FUSE, pCloud, mergerfs) where inode-bearing fingerprints
+  cause 100% false rescans and ctime churns on hardlink farms — the policy layer’s
+  conservative-per-filesystem degradation applies to the fingerprint itself, not only to
+  ordering.
 
 Explicit non-experiments, to bound scope: FIEMAP/HDD ordering (off-target hardware),
 io_uring before the H24–H27 walker exists (and expected-unavailable in containers), NUMA
@@ -1345,6 +1401,144 @@ Linux and cloud:
   · [statx STATX_CHANGE_COOKIE](https://man7.org/linux/man-pages/man2/statx.2.html)
 - [btrfs find-new](https://btrfs.readthedocs.io/en/latest/btrfs-subvolume.html) ·
   [dentry cache sizing incident](https://access.redhat.com/solutions/55818)
+
+### Primary Sources: Maintainer Deep Dives (Annotated)
+
+In-depth performance writing by the maintainers and kernel developers in this space,
+collected 2026-08-10; each annotation carries the load-bearing insight.
+
+**Kernel and VFS:**
+
+- [Chinner, “XFS: Adventures in Metadata Scalability” (LCA 2012 slides)](https://xfs.org/images/d/d1/Xfs-scalability-lca2012.pdf)
+  — the raw data behind the LWN piece: 8-thread create/traverse of 25M files/thread
+  stays near-flat on XFS while ext4 and btrfs collapse ~4–7×; parallel stat scaling is
+  filesystem-dependent, not just VFS-dependent.
+- [Corbet, “Introducing lockrefs” (LWN 2013)](https://lwn.net/Articles/565734/) —
+  packing spinlock+refcount into one cmpxchg word gave 6× on path-heavy workloads; why
+  hot parent dentries stopped serializing walkers.
+- [Brown, “Pathname lookup in Linux”](https://lwn.net/Articles/649115/) and
+  [“RCU-walk”](https://lwn.net/Articles/649729/) — the per-component cost inventory of
+  REF-walk and the write-nothing RCU-walk that makes warm lookups nearly free for
+  concurrent readers.
+- [Howells, statx RFC (2016)](https://lwn.net/Articles/685519/) — the mask and DONT_SYNC
+  design rationale from the syscall’s author.
+
+**Meta (Watchman / EdenFS / Sapling):**
+
+- [“Scaling Mercurial at Facebook” (2014)](https://engineering.fb.com/2014/01/07/core-infra/scaling-mercurial-at-facebook/)
+  — the canonical stop-walking-subscribe result (status >5× via Watchman), plus the
+  rollout discipline: months of shadow-comparing watch answers against real rescans.
+- [“Sapling” (2022)](https://engineering.fb.com/2022/11/15/open-source/sapling-source-control-scalable/)
+  and
+  [EdenFS Inodes.md](https://github.com/facebook/sapling/blob/main/eden/fs/docs/Inodes.md)
+  — scale with the working set, not the repo; a non-materialized directory still
+  carrying its source-control object ID is skipped wholesale during status — a persisted
+  unchanged-subtree shortcut, the inverse of fdu’s invalidation model.
+
+**Git developers:**
+
+- [racy-git.txt](https://git-scm.com/docs/racy-git) — the canonical racily-clean
+  analysis; smudging (truncate cached size) guarantees a future mismatch; 2.22 s vs 0.14
+  s on 20k files when handled wrong.
+- [Hostetler, builtin-fsmonitor RFC cover letter](https://lore.kernel.org/git/pull.923.git.1617291666.gitgitgadget@gmail.com/)
+  and
+  [GitHub blog write-up](https://github.blog/engineering/infrastructure/improve-git-monorepo-performance-with-a-file-system-monitor/)
+  — daemon design rationale and the shipped numbers (Chromium status 17.6 s → 0.827 s;
+  lstat sweep ~500×; dropped events → fresh token → one slow rescan).
+- [Nguyen, untracked-cache cover letter (2014)](https://lore.kernel.org/git/1399474320-6840-1-git-send-email-pclouds@gmail.com/)
+  — dir-mtime-keyed directory-listing cache (~80% off read_directory warm) with the
+  honest caveats that led to `--test-untracked-cache`: dir-mtime semantics vary by
+  filesystem, and racy timestamps disable the cache.
+- [Peart, fsmonitor-hook v1 series (2017)](https://public-inbox.org/git/20170515191347.1892-1-benpeart@microsoft.com/)
+  — 3M-file status 421 s → 18.6 s cold, and the crossover: at 3k files warm the hook is
+  a regression.
+- [index-format: UNTR/FSMN extensions](https://git-scm.com/docs/index-format) — how
+  validity bitmaps + tokens are serialized rather than re-derived on load.
+
+**Tavian Barnes (bfs):**
+
+- [“bfs from the ground up, part 1”](https://tavianator.com/2016/bfs_1.html) — d_type
+  stat-skipping (34k stats vs find’s 101k), BFS 2× slower cold / 15–25% faster warm, and
+  the refcount-priority dircache.
+- [“Parallelizing graph search with Rayon”](https://tavianator.com/2022/parallel_graph_search.html)
+  — sequential 34 s, naive `par_bridge` **16 m 44 s**, thief-splitting 1.36 s.
+- [“You could have invented futexes”](https://tavianator.com/2023/futex.html) — the
+  blocking/wakeup primitives under any custom work queue.
+- [“Bug hunting in Btrfs”](https://tavianator.com/2024/btrfs_bug.html) — parallel stat
+  as a filesystem race detector; a kernel UPTODATE race surfaced only under bfs’s thread
+  pool.
+- [tailfin](https://github.com/tavianator/tailfin) — his benchmark stabilizer:
+  turbo/SMT/ASLR off, frequency pinning, CPU/NUMA pinning; the checklist for claim-grade
+  runs.
+- [ripgrep PR #2591](https://github.com/BurntSushi/ripgrep/pull/2591) (+
+  [#2642](https://github.com/BurntSushi/ripgrep/pull/2642)) and
+  [fd PR #1422](https://github.com/sharkdp/fd/pull/1422) — the fd v9 6–13× mechanism:
+  mutex queue → crossbeam deque (flat → 5.5× at j24) plus batched result channels (2523
+  ms → 246 ms on 2.1M files).
+
+**Andrew Gallant (ripgrep / ignore / walkdir):**
+
+- [the ripgrep post](https://burntsushi.net/ripgrep/) — gitignore cost is matching, not
+  walking; compile all globs into one batch matcher.
+- [PR #223 (WalkParallel)](https://github.com/BurntSushi/ripgrep/pull/223) —
+  closure-per-worker so per-thread ignore state needs no locking.
+- [issue #1550](https://github.com/BurntSushi/ripgrep/issues/1550) — breadth-first order
+  itself caused a ~1 GB peak: per-directory state × frontier width.
+- [discussion #2472](https://github.com/BurntSushi/ripgrep/discussions/2472) — warm
+  traversal fastest at 4 threads, degrading at 8; optimum rises only with CPU-bound work
+  alongside.
+- [walkdir README](https://github.com/BurntSushi/walkdir/blob/master/README.md) — the
+  serial baseline’s claims and the `max_open` fd-budget tradeoff.
+
+**macOS and du-family maintainers:**
+
+- [Oakley, APFS fast directory sizing](https://eclecticlight.co/2019/02/06/how-big-is-that-folder-what-happened-to-apfs-fast-directory-sizing/)
+  — the on-disk format carries the recursive `total_size` fdu computes; no API reads it.
+  [His Spotlight-indexing instrumentation](https://eclecticlight.co/2025/08/04/a-deeper-dive-into-spotlight-indexing-and-local-search/)
+  bounds macOS’s own index freshness at ~7–8 s after a write.
+- [Tempelmann, directory-read benchmarks](http://blog.tempel.org/2019/04/dir-read-performance.html)
+  and
+  [his filesystem-dev post](https://www.mail-archive.com/filesystem-dev@lists.apple.com/msg00263.html)
+  — the per-filesystem API verdicts, including the APFS-bulk-slower-than-HFS+ dissent
+  the H26 spike must test.
+- [dust #375](https://github.com/bootandy/dust/issues/375) — rayon locks in a traversal
+  order the maintainer can’t change; 1 thread nearly matches `du` on HDD.
+- [Byron, dua #92](https://github.com/Byron/dua-cli/issues/92) — “anything dua does
+  pales in comparison to the fs syscalls”; M1 E-cores skew work-stealing pools.
+- [Byron, gitoxide discussion #1326](https://github.com/GitoxideLabs/gitoxide/discussions/1326)
+  — dirwalk concurrent with index check beats `git status` 1.44× by *re-paying* lstats:
+  redundant syscalls beat serialization on modern SSDs.
+- [pdu announcement](https://gist.github.com/KSXGitHub/b8dacc7753ae56ae51cd599e779014c1)
+  — author’s admission that his parallel walker beats `du` in CI but loses locally: wins
+  are environment-dependent.
+- [gdu discussion #114](https://github.com/dundee/gdu/discussions/114) — adaptive GC
+  against free-memory pressure; the in-memory-index vs persistent-store tension.
+
+**plocate and backup tools (fingerprints and index I/O):**
+
+- Gunderson’s plocate posts (originals offline; full text preserved via Planet Debian
+  snapshots:
+  [2020-10-12 capture](https://web.archive.org/web/20201012165143/https://planet.debian.org/),
+  [2020-12-06 capture](https://web.archive.org/web/20201206182416/https://planet.debian.org/))
+  — trigram index: 26M-file query 20.9 s → 0.008 s; io_uring gather-reads for posting
+  lists (cold query 200–400 ms → 40–60 ms), with the honesty note that drop_caches
+  “doesn’t actually always drop all the caches”; async `statx` to pre-warm the dentry
+  cache before `access()`; and updatedb’s merge contract — stat every directory, readdir
+  only the changed ones (H15’s production precedent).
+  [plocate NEWS](https://sources.debian.org/src/plocate/latest/NEWS/): a shared zstd
+  dictionary made the database 7% smaller *and* linear scans 20% faster.
+- [restic file-change detection](https://restic.readthedocs.io/en/stable/040_backup.html#file-change-detection),
+  [issue #2179](https://github.com/restic/restic/issues/2179) and
+  [PR #2212](https://github.com/restic/restic/pull/2212) — why ctime joined the
+  fingerprint (Debian tools restore mtime after content changes), why it is coupled to
+  inode identity, and the `--ignore-inode`/`--ignore-ctime` escape hatches for
+  inode-unstable filesystems and hardlink farms.
+- [borg FAQ on the files cache](https://borgbackup.readthedocs.io/en/stable/faq.html#it-always-chunks-all-my-files-even-unchanged-ones)
+  and
+  [internals](https://borgbackup.readthedocs.io/en/stable/internals/data-structures.html)
+  — every way (ctime, size, inode) fingerprints produce spurious rescans in practice;
+  the newest-timestamp exclusion that closes the racily-clean window; and the budget
+  anchor: ~240 B per file of cache state.
 
 fdu internals referenced: `crates/fdu/src/scan.rs`, `index.rs`, `snapshot.rs`,
 `watch.rs`, `types.rs`, `examples/perf_probe.rs`; the
