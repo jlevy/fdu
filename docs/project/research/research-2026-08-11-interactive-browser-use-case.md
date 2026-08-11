@@ -187,20 +187,23 @@ rule as "n.s.", which made these RSS regressions read as statistical silence.
 Both episodes are the same lesson from different sides: a number without its interval,
 and an interval without its direction, are each how a project talks itself into a claim.
 
-**And one caveat that goes beyond cost: the benefit itself is only proven serially.**
-Measuring the actual product metric — how many of a fixture's twelve top-level subtrees
-have started filling by the halfway point of a scan — breadth-first starts 7 against
-depth-first's 6 with one worker, deterministically. Under the *default* worker count
-both orders start 7–8, run to run, and the advantage disappears.
-The queue is ordered but the claims are not: once several workers are running, the order
-observations reach a consumer is dominated by worker scheduling rather than by queue
-order. So the ordering policy is a scheduling *preference* under the default
-configuration, not a guarantee, and the mid-scan-ranking benefit that justifies the
-default is currently demonstrated only in the single-worker case.
-That does not make breadth-first wrong — it is still the better default, and it is
-strictly better serially — but the progressive-results work should not assume emission
-order carries the property. Tracked as `fdu-bfxh`; a level-aware scheduler is the
-obvious fix if a real-tree measurement confirms the gap matters.
+**The ordering benefit initially failed to survive parallelism, and the scheduler was
+rebuilt so that it does.** Measured on the first implementation, breadth-first started 7
+of twelve top-level subtrees by the halfway mark against depth-first's 6 with one
+worker — and under the default worker count both landed at 7–8, the advantage gone. The
+cause was that a global FIFO orders the *queue* while claims stay unordered: several
+workers would grind through the same subtree while others sat untouched.
+
+Breadth-first is now **region-scheduled** (exp-013). Work is bucketed by top-level
+subtree, each free worker is handed a *different* bucket round-robin, and within a
+bucket the order is LIFO so locality and spine-bounded memory come back. No barrier
+exists anywhere: if only one region has work, every worker takes it.
+
+On a skewed tree — one 40-level spur holding most of the files beside eleven shallow
+siblings — the spur's share of the first quarter of the walk is **0–4% at every worker
+count**, against depth-first's 4–23%. A deep portion of the tree no longer delays the
+horizontal ones. Peak RSS fell −3.89% [−4.90%, −3.15%] in the process, more than
+reversing what exp-012 paid, and wall time did not move.
 
 Two further caveats so nobody over-reads even the corrected result.
 This is one warm tree of 60k entries: the frontier width that could make breadth-first

@@ -117,9 +117,13 @@ pub enum ScanOrder { BreadthFirst, DepthFirst }   // default: BreadthFirst
 Both orders visit every entry exactly once and leave an identical index behind, so the
 policy sits beside `threads` and `batch_size` as operational, and stays out of
 `ScanScope` where it could otherwise invalidate a snapshot.
-All four traversal loops — the serial walk, the parallel worker queue, the revalidation
-sweep, and subtree reconciliation — take from the front or the back of one `VecDeque`
-according to the policy; there is no second walker.
+The serial walk, the revalidation sweep, and subtree reconciliation take from the front
+or the back of one `VecDeque` according to the policy. The parallel worker queue is
+region-scheduled under `BreadthFirst` (exp-013): work is bucketed by top-level subtree,
+each free worker is handed a different bucket round-robin, and within a bucket the order
+is LIFO. A global FIFO ordered the queue but not the claims, so workers clustered in one
+subtree; regions spread them by construction. There is still no second walker and no
+barrier anywhere.
 
 Measured properly (exp-012: 60,067-entry tree, 16 interleaved paired trials per job),
 breadth-first costs **no measurable wall time and a little memory**.
