@@ -54,8 +54,10 @@ off decisively in the cases that beat that floor:
   hosts, whole-drive scans.
   There the snapshot is not an optimization; it is the only warm state available.
 - **Journal-assisted revalidation**, where the OS already recorded what changed.
-  On macOS the FSEvents journal turns a quiet tree’s warm start into O(changes) instead
-  of O(entries); see
+  Replaying the macOS FSEvents journal would make a quiet tree’s warm start cost
+  O(changes) rather than O(entries) — incremental on a warm laptop, decisive where no
+  sweep can be fast. It is designed but not built, and cross-restart replay is
+  Apple-documented yet unproven in shipping tools, so a spike validates it first; see
   [the FSEvents-scoped revalidation plan](docs/project/specs/active/plan-2026-08-10-fdu-fsevents-scoped-revalidation.md).
 - **Expensive derived metrics** such as line counts, where an unchanged fingerprint
   skips re-reading the file entirely.
