@@ -11,7 +11,7 @@
 use std::ffi::{OsStr, OsString};
 use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 
 use clap::builder::styling::{AnsiColor, Style as AnsiStyle, Styles};
 use clap::{ArgAction, ColorChoice, CommandFactory, FromArgMatches, Parser, ValueEnum};
@@ -452,11 +452,15 @@ impl Cli {
                 // arrived too soon after the last save would otherwise wait for the next
                 // change to persist it, and the next change may never come: a burst
                 // followed by silence is the single most likely way a watch session ends.
-                if dirty_since_save && last_save.elapsed().unwrap_or_default() >= interval {
-                    Self::report_save(Self::save_live(&session, config), diagnostic, color);
-                    dirty_since_save = false;
-                    last_save = SystemTime::now();
-                }
+                Self::save_if_pending(
+                    &session,
+                    config,
+                    &mut dirty_since_save,
+                    &mut last_save,
+                    interval,
+                    diagnostic,
+                    color,
+                );
                 continue;
             };
 
@@ -485,12 +489,46 @@ impl Cli {
             // pending flag is what guarantees a throttled change still reaches disk once
             // the tree goes quiet.
             dirty_since_save |= batch.dirty;
-            if dirty_since_save && last_save.elapsed().unwrap_or_default() >= interval {
-                Self::report_save(Self::save_live(&session, config), diagnostic, color);
-                dirty_since_save = false;
-                last_save = SystemTime::now();
-            }
+            Self::save_if_pending(
+                &session,
+                config,
+                &mut dirty_since_save,
+                &mut last_save,
+                interval,
+                diagnostic,
+                color,
+            );
         }
+    }
+
+    /// Persist a pending change, if one is due.
+    ///
+    /// The pending flag clears only when a snapshot actually reached disk. An index that
+    /// is not yet `Fresh`, a policy that forbids writes, and a failed write all leave the
+    /// change unpersisted, and clearing the flag for any of them would mean the idle
+    /// branch never retries -- which on a quiet tree is never at all.
+    #[cfg(feature = "watch")]
+    #[allow(clippy::too_many_arguments)]
+    fn save_if_pending(
+        session: &crate::session::Session,
+        config: &OpenConfig,
+        pending: &mut bool,
+        last_save: &mut SystemTime,
+        interval: Duration,
+        diagnostic: &mut dyn Write,
+        color: bool,
+    ) {
+        if !*pending || last_save.elapsed().unwrap_or_default() < interval {
+            return;
+        }
+        match Self::save_live(session, config) {
+            Ok(true) => *pending = false,
+            Ok(false) => {}
+            Err(error) => Self::warn_save_failed(&error, diagnostic, color),
+        }
+        // Throttled whether or not it worked, so a persistently failing save warns at the
+        // interval rather than spinning.
+        *last_save = SystemTime::now();
     }
 
     /// Warn about a failed save without disturbing the stream.
@@ -498,14 +536,9 @@ impl Cli {
     /// A save failure costs the next run its warm start and nothing else, so it must not
     /// interrupt a watch that is otherwise working.
     #[cfg(feature = "watch")]
-    fn report_save(result: anyhow::Result<()>, diagnostic: &mut dyn Write, color: bool) {
-        if let Err(error) = result {
-            let _ = writeln!(
-                diagnostic,
-                "{}",
-                paint(&format!("warning: {error}"), STYLE_WARNING, color)
-            );
-        }
+    fn warn_save_failed(error: &anyhow::Error, diagnostic: &mut dyn Write, color: bool) {
+        let _ =
+            writeln!(diagnostic, "{}", paint(&format!("warning: {error}"), STYLE_WARNING, color));
     }
 
     /// Persist a live session's index, when policy allows it.
@@ -514,19 +547,20 @@ impl Cli {
     /// exit. A failure here is a warning: the stream is still correct, and only the next
     /// run's warmth is lost.
     #[cfg(feature = "watch")]
-    fn save_live(session: &crate::session::Session, config: &OpenConfig) -> anyhow::Result<()> {
+    fn save_live(session: &crate::session::Session, config: &OpenConfig) -> anyhow::Result<bool> {
         let (Some(cache_path), true) = (config.cache_path.as_deref(), config.policy.writes())
         else {
-            return Ok(());
+            return Ok(false);
         };
         let index = session.index_snapshot()?;
         if index.freshness() != crate::Freshness::Fresh {
             // Only a trustworthy index is worth persisting; a partial one would be
-            // served as fact on the next run.
-            return Ok(());
+            // served as fact on the next run. Reported as "not written" so the caller
+            // keeps the change pending and tries again once the index settles.
+            return Ok(false);
         }
         crate::snapshot::save(&index, cache_path)?;
-        Ok(())
+        Ok(true)
     }
 
     /// Re-render the aggregate views of a live session.
