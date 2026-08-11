@@ -31,7 +31,7 @@ fn session(root: &Path, selection: Selection, views: Vec<ViewSpec>) -> Session {
 }
 
 /// Collect changes until `wanted` matches one, or the settle window expires.
-fn wait_for(session: &Session, wanted: impl Fn(&fdu::Change) -> bool) -> Option<fdu::Change> {
+fn wait_for(session: &mut Session, wanted: impl Fn(&fdu::Change) -> bool) -> Option<fdu::Change> {
     let deadline = Instant::now() + SETTLE;
     while Instant::now() < deadline {
         let Some(batch) = session.next_batch(Duration::from_millis(250)).expect("batch") else {
@@ -48,11 +48,11 @@ fn wait_for(session: &Session, wanted: impl Fn(&fdu::Change) -> bool) -> Option<
 fn a_created_file_arrives_as_an_upsert() {
     let dir = tempfile::tempdir().expect("tempdir");
     fs::write(dir.path().join("existing.txt"), b"hello").expect("seed");
-    let session = session(dir.path(), Selection::default(), vec![ViewSpec::Files]);
+    let mut session = session(dir.path(), Selection::default(), vec![ViewSpec::Files]);
 
     fs::write(dir.path().join("created.rs"), b"fn main() {}").expect("create");
 
-    let change = wait_for(&session, |change| change.path.ends_with("created.rs"))
+    let change = wait_for(&mut session, |change| change.path.ends_with("created.rs"))
         .expect("the created file should arrive");
     assert_eq!(change.kind, ChangeKind::Upsert);
     assert_eq!(change.bytes, Some(12));
@@ -63,11 +63,11 @@ fn a_created_file_arrives_as_an_upsert() {
 fn a_deleted_file_arrives_as_a_remove() {
     let dir = tempfile::tempdir().expect("tempdir");
     fs::write(dir.path().join("doomed.txt"), b"hello").expect("seed");
-    let session = session(dir.path(), Selection::default(), vec![ViewSpec::Files]);
+    let mut session = session(dir.path(), Selection::default(), vec![ViewSpec::Files]);
 
     fs::remove_file(dir.path().join("doomed.txt")).expect("remove");
 
-    let change = wait_for(&session, |change| change.path.ends_with("doomed.txt"))
+    let change = wait_for(&mut session, |change| change.path.ends_with("doomed.txt"))
         .expect("the deletion should arrive");
     assert_eq!(change.kind, ChangeKind::Remove);
     assert_eq!(change.bytes, None, "a removed entry has no attributes to report");
@@ -82,12 +82,12 @@ fn the_run_selection_filters_the_stream() {
         include: vec![fdu::query::Pattern::parse("*.rs").expect("pattern")],
         ..Selection::default()
     };
-    let session = session(dir.path(), selection, vec![ViewSpec::Files]);
+    let mut session = session(dir.path(), selection, vec![ViewSpec::Files]);
 
     fs::write(dir.path().join("ignored.txt"), b"no").expect("create");
     fs::write(dir.path().join("watched.rs"), b"yes").expect("create");
 
-    let change = wait_for(&session, |change| change.path.ends_with("watched.rs"))
+    let change = wait_for(&mut session, |change| change.path.ends_with("watched.rs"))
         .expect("the matching file should arrive");
     assert_eq!(change.kind, ChangeKind::Upsert);
 
@@ -109,7 +109,7 @@ fn an_idle_tree_yields_nothing_and_costs_nothing() {
     // no batches at all. A polling implementation would return work here.
     let dir = tempfile::tempdir().expect("tempdir");
     fs::write(dir.path().join("still.txt"), b"unchanged").expect("seed");
-    let session = session(dir.path(), Selection::default(), vec![ViewSpec::Summary]);
+    let mut session = session(dir.path(), Selection::default(), vec![ViewSpec::Summary]);
 
     for _ in 0..4 {
         assert!(
@@ -123,7 +123,7 @@ fn an_idle_tree_yields_nothing_and_costs_nothing() {
 fn a_live_report_is_the_same_query_re_evaluated() {
     let dir = tempfile::tempdir().expect("tempdir");
     fs::write(dir.path().join("a.txt"), b"12345").expect("seed");
-    let session = session(
+    let mut session = session(
         dir.path(),
         Selection { depth: Bound::All, ..Selection::default() },
         vec![ViewSpec::Summary],
@@ -139,7 +139,8 @@ fn a_live_report_is_the_same_query_re_evaluated() {
     assert_eq!(first.files, 1);
 
     fs::write(dir.path().join("b.txt"), b"678").expect("create");
-    wait_for(&session, |change| change.path.ends_with("b.txt")).expect("the change should arrive");
+    wait_for(&mut session, |change| change.path.ends_with("b.txt"))
+        .expect("the change should arrive");
 
     let after = session
         .report(&session.live_provenance(std::time::SystemTime::UNIX_EPOCH))

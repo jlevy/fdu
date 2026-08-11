@@ -73,6 +73,16 @@ Three artifacts and one contract:
 `scan.rs` and `watch.rs` are delta *producers*. `index.rs` and `snapshot.rs` are delta
 *consumers*. Nothing else mutates state.
 
+## Design
+
+The CLI and query layer follow
+[docs/project/guides/fdu-design-principles.md](docs/project/guides/fdu-design-principles.md):
+five orthogonal axes (scope, selection, view, format, mode), views as pure readers over
+the index, the CLI as a thin composition of library types, and formats as
+schema-versioned serializations.
+[docs/project/guides/cache-design.md](docs/project/guides/cache-design.md) covers the
+two cache layers and why verification cost depends on which question was asked.
+
 ## Conventions
 
 - **Do not add a mutation path that bypasses `Delta`.** The contract is what keeps the

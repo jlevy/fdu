@@ -32,8 +32,11 @@ _PLACEHOLDERS = {
     "snapshot_path",
 }
 _JOBS = {
+    "watch-stream",
+    "cli-files",
     "cli-human",
     "cli-json",
+    "cli-summary",
     "concurrent-query",
     "delta-apply",
     "python-open-query",
@@ -411,7 +414,7 @@ def _validate_job_state(
     path: str,
 ) -> None:
     if (
-        job in {"cli-human", "cli-json", "python-open-query"}
+        job in {"cli-human", "cli-json", "cli-summary", "cli-files", "watch-stream", "python-open-query"}
         and process_state != "new-process"
     ):
         raise SchemaError(f"{path}.process_state must be new-process for {job}")

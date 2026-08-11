@@ -274,6 +274,38 @@ def main() -> None:
     else:
         raise AssertionError("expected an invalid cache policy to be rejected")
 
+    # The watch feed: event-driven, and closable without hanging the interpreter.
+    watch_root = pathlib.Path(tempfile.mkdtemp())
+    (watch_root / "seed.txt").write_text("seed")
+    watch_index = fdu_py.scan(str(watch_root))
+    feed = watch_index.watch(interval=0.25, views=["files"])
+
+    (watch_root / "created.rs").write_text("fn main() {}")
+    seen = []
+    for _ in range(40):
+        seen.extend(next(feed))
+        if any(change["path"].endswith("created.rs") for change in seen):
+            break
+    assert any(change["path"].endswith("created.rs") for change in seen), seen
+    created = next(c for c in seen if c["path"].endswith("created.rs"))
+    assert created["op"] == "upsert", created
+    assert created["bytes"] == 12, created
+
+    # A closed feed is exhausted rather than an error, so a for-loop ends cleanly
+    # instead of raising something a caller has to special-case.
+    feed.close()
+    try:
+        next(feed)
+    except StopIteration:
+        pass
+    else:
+        raise AssertionError("a closed feed must stop iterating")
+    assert list(feed) == [], "iterating a closed feed yields nothing"
+
+    # And it works as a context manager.
+    with watch_index.watch(interval=0.1) as scoped:
+        assert next(scoped) is not None
+
     print(f"fdu_py {fdu_py.__version__} ok")
 
 

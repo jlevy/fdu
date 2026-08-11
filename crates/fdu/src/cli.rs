@@ -394,7 +394,7 @@ impl Cli {
         let has_aggregates = query.views.iter().any(|view| *view != ViewSpec::Files);
 
         let handle = crate::IndexHandle::new(index);
-        let session = Session::new(handle, config.scan.clone(), query, WatchConfig::default())?;
+        let mut session = Session::new(handle, config.scan.clone(), query, WatchConfig::default())?;
 
         // The initial answer, identical to a one-shot run's.
         let provenance = Provenance {

@@ -111,7 +111,10 @@ impl Session {
     ///
     /// Returns `None` when nothing arrived in the window, which is the idle case and
     /// costs no filesystem work.
-    pub fn next_batch(&self, timeout: Duration) -> Result<Option<Batch>> {
+    ///
+    /// Takes `&mut self` because consuming from the event queue is a mutation: two
+    /// callers draining one session would each see an arbitrary half of the stream.
+    pub fn next_batch(&mut self, timeout: Duration) -> Result<Option<Batch>> {
         let mut applied: Vec<AppliedDelta> = Vec::new();
         let outcome = self.watcher.apply_next(
             &self.index,

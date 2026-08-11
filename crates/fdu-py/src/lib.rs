@@ -26,8 +26,10 @@ use fdu::query::{
     Bound as Bound_, Pattern, Provenance, Query, Report, ReportSource, Section, Selection,
     SizeMetric, SortKey, SummaryRow, TreeNode, ViewSpec,
 };
-use fdu::{CachePolicy, EntryKind, Freshness, OpenConfig, RollUp, ScanConfig};
-use std::time::SystemTime;
+use fdu::session::{ChangeKind, Session};
+use fdu::watch::WatchConfig;
+use fdu::{CachePolicy, EntryKind, Freshness, IndexHandle, OpenConfig, RollUp, ScanConfig};
+use std::time::{Duration, SystemTime};
 
 fn to_py_err(err: fdu::Error) -> PyErr {
     match err {
@@ -211,6 +213,54 @@ impl PyIndex {
         };
         let report = fdu::query::report(&self.inner, &Query { selection, views }, &provenance);
         report_dict(py, &report)
+    }
+
+    /// Watch this tree, yielding batches of changes as they arrive.
+    ///
+    /// Detection is event-driven, so an idle tree costs nothing; `interval` bounds how
+    /// long a single wait blocks before yielding an empty batch.
+    #[pyo3(signature = (*, interval = 2.0, views = None, include = None, exclude = None, kind = None))]
+    fn watch(
+        &self,
+        interval: f64,
+        views: Option<Vec<String>>,
+        include: Option<Vec<String>>,
+        exclude: Option<Vec<String>>,
+        kind: Option<Vec<String>>,
+    ) -> PyResult<PyWatch> {
+        let mut selection = Selection::default();
+        for pattern in include.unwrap_or_default() {
+            selection.include.push(Pattern::parse(&pattern).map_err(to_py_err)?);
+        }
+        for pattern in exclude.unwrap_or_default() {
+            selection.exclude.push(Pattern::parse(&pattern).map_err(to_py_err)?);
+        }
+        for value in kind.unwrap_or_default() {
+            selection.kinds.push(parse_kind(&value)?);
+        }
+        let views = match views {
+            Some(values) => {
+                values.iter().map(|value| parse_view(value)).collect::<PyResult<Vec<_>>>()?
+            }
+            None => vec![ViewSpec::Files],
+        };
+
+        if !interval.is_finite() || interval <= 0.0 {
+            return Err(PyValueError::new_err("interval must be a positive number of seconds"));
+        }
+
+        // The index is cloned into the session: a watcher owns its own handle, so closing
+        // the feed cannot disturb the caller's index.
+        let handle = IndexHandle::new(self.inner.clone());
+        let session = Session::new(
+            handle,
+            self.config.clone(),
+            Query { selection, views },
+            WatchConfig::default(),
+        )
+        .map_err(to_py_err)?;
+
+        Ok(PyWatch { session: Some(session), timeout: Duration::from_secs_f64(interval) })
     }
 
     /// Roll-up totals for the whole tree.
@@ -502,6 +552,79 @@ fn parse_bound(value: &str, name: &str) -> PyResult<Bound_> {
     })
 }
 
+/// A live change feed over one index.
+///
+/// Iteration yields one list of changes per batch. A tick with no changes yields an
+/// empty list rather than blocking forever, so a caller can break out on its own terms
+/// and the interpreter can always exit — an iterator that blocks indefinitely inside a
+/// GIL-holding call is how a Python process becomes unkillable.
+// Unsendable because the event queue belongs to the thread that created it: sharing one
+// feed across threads would give each an arbitrary half of the stream, and Python is
+// better told that at the boundary than left to discover it.
+#[pyclass(name = "Watch", module = "fdu_py", unsendable)]
+struct PyWatch {
+    session: Option<Session>,
+    timeout: Duration,
+}
+
+#[pymethods]
+impl PyWatch {
+    fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        slf
+    }
+
+    /// Wait for the next batch, yielding a possibly empty list of changes.
+    fn __next__(&mut self, py: Python<'_>) -> PyResult<Option<Py<PyList>>> {
+        let Some(session) = self.session.as_mut() else {
+            // A closed feed is exhausted rather than an error, so `for ... in` ends
+            // cleanly after close().
+            return Ok(None);
+        };
+
+        // The GIL is released for the whole wait: this blocks for up to `timeout`, and
+        // holding the GIL across it would freeze every other Python thread.
+        let batch = py.detach(|| session.next_batch(self.timeout)).map_err(to_py_err)?;
+
+        let list = PyList::empty(py);
+        if let Some(batch) = batch {
+            for change in &batch.changes {
+                let dict = PyDict::new(py);
+                dict.set_item("path", change.path.display().to_string())?;
+                dict.set_item(
+                    "op",
+                    match change.kind {
+                        ChangeKind::Upsert => "upsert",
+                        ChangeKind::Remove => "remove",
+                        ChangeKind::Invalidate => "invalidate",
+                    },
+                )?;
+                dict.set_item("clock", change.clock)?;
+                dict.set_item("kind", change.entry_kind.map(entry_kind_label))?;
+                dict.set_item("bytes", change.bytes)?;
+                dict.set_item("allocated", change.allocated)?;
+                dict.set_item("mtime_ns", change.mtime_ns)?;
+                list.append(dict)?;
+            }
+        }
+        Ok(Some(list.unbind()))
+    }
+
+    /// Stop watching and release the backend registration.
+    fn close(&mut self) {
+        self.session = None;
+    }
+
+    fn __enter__(slf: Py<Self>) -> Py<Self> {
+        slf
+    }
+
+    #[pyo3(signature = (*_args))]
+    fn __exit__(&mut self, _args: &Bound<'_, pyo3::types::PyTuple>) -> bool {
+        self.close();
+        false
+    }
+}
+
 /// One cache file's status as a dict.
 fn cache_status_dict<'py>(
     py: Python<'py>,
@@ -617,6 +740,7 @@ fn main(py: Python<'_>) -> PyResult<u8> {
 fn fdu_py(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     m.add_class::<PyIndex>()?;
+    m.add_class::<PyWatch>()?;
     m.add_function(wrap_pyfunction!(open, m)?)?;
     m.add_function(wrap_pyfunction!(cache_path, m)?)?;
     m.add_function(wrap_pyfunction!(cache_status, m)?)?;
