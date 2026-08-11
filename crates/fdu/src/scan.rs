@@ -1527,7 +1527,31 @@ mod tests {
             let (index, report) = scan_into_index(dir.path(), &config).expect("scan");
             assert_eq!(report.entries, expected_report.entries, "{order:?}/{threads}");
             assert_eq!(report.dirs_read, expected_report.dirs_read, "{order:?}/{threads}");
-            assert_eq!(index.total(), expected.total(), "{order:?}/{threads} roll-up");
+            // Compare roll-ups through resolved extension names, not raw `RollUp`
+            // equality: interned `ExtId`s are assigned in first-encounter order, so
+            // two orders (or two thread counts) label the same tallies differently
+            // while meaning the same thing. Asserting on the raw map tests id
+            // assignment order, which is nondeterministic under a parallel walk.
+            let (totals, expected_totals) = (index.total(), expected.total());
+            assert_eq!(
+                (totals.files, totals.dirs, totals.bytes, totals.allocated),
+                (
+                    expected_totals.files,
+                    expected_totals.dirs,
+                    expected_totals.bytes,
+                    expected_totals.allocated
+                ),
+                "{order:?}/{threads} roll-up"
+            );
+            assert_eq!(
+                totals.newest_mtime_ns, expected_totals.newest_mtime_ns,
+                "{order:?}/{threads} newest mtime"
+            );
+            assert_eq!(
+                index.by_ext_named(totals),
+                expected.by_ext_named(expected_totals),
+                "{order:?}/{threads} extension tallies"
+            );
             assert_eq!(
                 index_fingerprint(&index),
                 index_fingerprint(&expected),
