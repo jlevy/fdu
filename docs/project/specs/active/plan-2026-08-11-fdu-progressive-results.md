@@ -15,7 +15,7 @@ requires, and it is independent of the FSEvents journal: everything here lands o
 platform, helps the first scan as much as the second, and is a precondition for the
 journal being worth anything rather than a consequence of it.
 
-Three changes, in dependency order:
+Four changes, in dependency order:
 
 1. **Traversal order as a policy** with breadth-first by default, so partial results
    mean something. *Landed with this plan.*
@@ -23,7 +23,7 @@ Three changes, in dependency order:
    growing roll-ups with per-path completeness while the walk proceeds.
 3. **Persisted roll-ups and lazy open** so the second open paints from the cache in
    milliseconds instead of materialising millions of records first.
-4. **Confidence on every value**, so a browser can paint slightly stale numbers
+4. **Provenance on every value**, so a browser can paint slightly stale numbers
    immediately, mark them approximate, and clear the marks as verification converges —
    which is the difference between a UI that shows something in 50 ms and one that shows
    nothing for eleven seconds.
@@ -381,19 +381,24 @@ plans: everything else here works without it, on every platform.
 
 - [x] `ScanOrder` policy, breadth-first default, all four traversal loops, tests for
   index equality, depth monotonicity, and scope stability
-- [ ] `--order` on the CLI and the probe; the one-shot CLI defaults to `DepthFirst` for
-  its 8% since it prints nothing until the end
+- [x] `--order` on the probe. The one-shot CLI does **not** default to `DepthFirst`:
+  the 8% that would have justified it did not survive the accept rule (exp-012), so
+  breadth-first is the default everywhere and `DepthFirst` is for callers with a
+  specific memory or locality reason
 - [ ] `Session`: start/read/complete/cancel over `IndexHandle`, with documented
   monotonicity and per-path freshness; bounded-memory option
 - [ ] Python `Session` mirroring the Rust surface
 - [ ] Loop experiment: time-to-useful-top-level-ranking, breadth-first against
   depth-first, on a home-folder-scale tree — the metric this plan exists to move
 
-### Phase 2: Confidence and convergence
+### Phase 2: Provenance and convergence
 
-- [ ] `Confidence` per value, rolled up by minimum through the existing reducer path; a
+- [ ] `Provenance` per value, composed through the existing reducer path by weakest
+  source / oldest observation / worst status - note these aggregates are **not
+  invertible** under deletion or revalidation, so the design must specify the recompute
+  path (`fdu-fka6`); a
   snapshot-loaded index reports `Cached`, not `Fresh`
-- [ ] Confidence transitions on the session’s change stream, reporting confirmations as
+- [ ] Provenance transitions on the session’s change stream, reporting confirmations as
   well as corrections
 - [ ] `session.prioritize(path)` so verification follows the user’s attention
 - [ ] Surface confidence in `Report` rows and in every output format, per the

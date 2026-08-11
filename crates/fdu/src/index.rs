@@ -1058,9 +1058,25 @@ impl Index {
     /// Built on demand from the entry's stored source and the index's timestamps
     /// rather than read from a field, because the timestamps are shared by nearly
     /// every entry and storing them per entry would cost far more than the
-    /// information is worth. For a directory this reports the *composed* provenance
-    /// of its whole subtree, so a directory is only as trustworthy as its least
-    /// trustworthy descendant.
+    /// information is worth.
+    ///
+    /// # Two limitations, both tracked
+    ///
+    /// **This reports the entry's own provenance, not its subtree's.** A directory
+    /// whose descendants are less trustworthy than itself will still report its own
+    /// source, so a `Complete`/`Revalidated` directory can contain `Cached` children.
+    /// Composition belongs in the roll-up, where it costs one merge rather than an
+    /// O(subtree) walk per query, and it is not implemented yet (`fdu-fka6`,
+    /// `fdu-b1ts`). Do not read a directory's provenance as a subtree guarantee.
+    ///
+    /// **Provenance transitions are not clocked.** A path moving `Cached` ->
+    /// `Revalidated` is visible by polling here, but it does not advance [`Clock`],
+    /// does not appear in `since()`, and does not reach the `AppliedDelta` sink,
+    /// because the sweep that caused it committed no change. A consumer following the
+    /// change feed therefore sees nothing while a consumer polling this sees a
+    /// transition. Making the two agree needs provenance to travel *on* the committed
+    /// operation, which is a delta-format change and a state machine rather than a
+    /// patch (`fdu-jxs0`, `fdu-livs`). Until then, treat this as a poll-only view.
     pub fn provenance(&self, path: &Path) -> Option<Provenance> {
         let id = self.lookup(path)?;
         Some(self.provenance_of(id))

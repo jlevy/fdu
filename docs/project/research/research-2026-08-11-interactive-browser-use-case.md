@@ -30,10 +30,10 @@ engine boundary belongs:
 
 | metabrowser mechanism | fdu equivalent |
 | --- | --- |
-| BFS queueing to `DEFAULT_FIRST_RENDER_DEPTH`, “so a request landing ~500 ms into boot finds the visible part of the tree already populated” | traversal order — **not currently offered**; fdu’s walker is depth-first |
+| BFS queueing to `DEFAULT_FIRST_RENDER_DEPTH`, “so a request landing ~500 ms into boot finds the visible part of the tree already populated” | `ScanOrder`, breadth-first by default — **landed on this branch**, though strict only with a single worker (see below) |
 | Post-order finalize via `pending_children_count` refcounting | `merge_upward` roll-ups — the same atomic-refcount design the original research took from dut |
 | Generation counters so stale writes lose, “race-free without locks” | `EntryId` generation plus revision counters, the ABA guard |
-| `max_files` 500,000 and `max_depth` 20, flipping status to `truncated` | no equivalent, and none needed |
+| `max_files` 500,000 and `max_depth` 20, flipping status to `truncated` | no equivalent today; whether a session needs bounded memory and a `Truncated` status is still open in the progressive-results plan |
 
 That last row is the tell.
 The caps are not a product decision; they are a Python walker’s speed limit made visible
@@ -120,7 +120,7 @@ instead of being argued.
 | --- | --- | --- | --- | --- |
 | What is being optimised | time to *final* answer | time to *first useful* answer | time to complete, at 5M+ | steady-state per-event cost |
 | Partial results | invisible — nothing prints until the end | **the entire product** | progress reporting | n/a, index stays fresh |
-| Traversal order | irrelevant to output; prefers locality | **must be breadth-first** | irrelevant | n/a |
+| Traversal order | irrelevant to output; prefers locality | **wants shallow-first** | irrelevant | n/a |
 | Tolerates labeled staleness | **no** — must verify before printing | **yes** — “as of 2 min ago, refreshing” | yes, with a caveat line | no, it is live |
 | Cache value | negative below ~150k entries | **decisive** — only it can paint at T0 | decisive | it *is* the cache |
 | FSEvents value | marginal; on the critical path | **high** — off the critical path | high | already covered by the live watcher |
@@ -221,23 +221,33 @@ writing.
 
 Traversal order decides whether partial results are useful or actively misleading:
 
-- **Depth-first** (fdu today, `pending.pop()` on a LIFO stack) finishes a few subtrees
-  completely and leaves the rest at zero.
+- **Depth-first** (`pending.pop()` on a LIFO stack, fdu's original and only behaviour
+  before this branch) finishes a few subtrees completely and leaves the rest at zero.
   Mid-scan, `wrk/` reads a complete 77 GiB while `Library/` reads 0 GiB. A user sorting
   by size sees a confident, wrong ranking.
-- **Breadth-first** grows every top-level directory together.
-  Every number is a lower bound, every bar only fills, and relative ordering becomes
-  meaningful early — which is exactly why metabrowser’s Python walker already queues
+- **Breadth-first** grows top-level directories together.
+  Numbers stay lower bounds, bars only fill, and relative ordering becomes meaningful
+  earlier — which is exactly why metabrowser’s Python walker already queues
   breadth-first to a first render depth.
 
-The change is small: `DirectoryQueue` already exists and is shared; making the claim
-order FIFO (or better, ordered by depth so shallow work is always preferred) turns the
-parallel walker breadth-first.
-The cost is memory — a BFS frontier at depth 3 of a home folder is wide — which is a
-bounded, measurable trade rather than a design risk.
+Note what supplies which property. **Monotonicity comes from the walk being additive,
+not from the order** — a depth-first scan's totals only grow too. What the order changes
+is *which* subtrees get to grow early, and therefore whether a mid-scan ranking compares
+partial values against each other or against zeros. Conflating the two overstates what
+choosing an order buys.
 
-Depth-first should stay available: it has better locality and lower memory, and it is
-the right default for a one-shot CLI that only prints at the end.
+The change itself was small: `DirectoryQueue` already existed and was shared, so taking
+from the front rather than the back turns the walk breadth-first.
+What that does **not** buy is a guarantee under the default worker count, as measured
+above — the claims are unordered even when the queue is not, so shallow-first is a
+preference there rather than a promise.
+The cost is memory — a BFS frontier at depth 3 of a home folder is wide — which is a
+bounded, measurable trade rather than a design risk, and the 60k measurement puts it at
+about +1.5% RSS.
+
+Depth-first stays available: it has better locality and lower memory. It is *not* the
+right default for the one-shot CLI, as an earlier draft argued — that argument rested on
+an 8% wall-time saving that did not survive the accept rule.
 This is a scan *policy*, chosen by the caller’s contract, in the same way the cache
 policy is.
 
