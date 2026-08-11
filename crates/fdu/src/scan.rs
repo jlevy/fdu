@@ -2038,19 +2038,24 @@ mod tests {
         // in sees a meaningful ranking in the first case and a misleading one in the
         // second.
         //
-        // Checked at one worker and at the default pool, because the whole point of
-        // region scheduling is that the property survives parallelism — a global FIFO
-        // ordered the queue but let workers cluster in one subtree.
+        // Asserted at one worker only, and that bound is deliberate. This metric reads
+        // *emission* order, and under several workers emission reflects which worker
+        // finished first as much as which region was claimed — so it varies with core
+        // count. Measured on a six-core machine the margin is wide (33-37 files against
+        // 6); on a CI runner with fewer cores both orders can report zero. That makes it
+        // a benchmark-grade observation, recorded in exp-013, not a unit-test assertion.
+        //
+        // The scheduling property itself *is* asserted deterministically, against the
+        // queue rather than through a walk, by
+        // `the_region_scheduler_spreads_workers_over_distinct_subtrees`.
         let dir = deep_forest();
-        for threads in [1usize, 6] {
-            let breadth = leanest_subtree_early(ScanOrder::BreadthFirst, threads, dir.path());
-            let depth = leanest_subtree_early(ScanOrder::DepthFirst, threads, dir.path());
-            assert!(
-                breadth > depth,
-                "at {threads} worker(s) breadth-first should leave its least advanced \
-                 top-level subtree further along: {breadth} files against {depth}"
-            );
-        }
+        let breadth = leanest_subtree_early(ScanOrder::BreadthFirst, 1, dir.path());
+        let depth = leanest_subtree_early(ScanOrder::DepthFirst, 1, dir.path());
+        assert!(
+            breadth > depth,
+            "breadth-first should leave its least advanced top-level subtree further \
+             along: {breadth} files against {depth}"
+        );
     }
 
     #[test]

@@ -281,12 +281,22 @@ subtree a quarter of the way through the walk (perfectly even would be ~46):
 | workers | region breadth-first | depth-first |
 | ---: | ---: | ---: |
 | 1 | 42 | 0 |
-| 6 | 33–37 | 6 |
+| 6 (this host) | 33–37 | 6 |
 
 Breadth-first lands near-even; depth-first leaves subtrees at or near zero while it
 drills elsewhere. A consumer ranking top-level directories mid-scan is comparing
 comparable partial numbers in the first case and partial numbers against zeros in the
 second.
+
+**The single-worker row is deterministic; the six-worker row is host-specific.** This
+metric reads *emission* order, and under several workers emission reflects which worker
+finished first as much as which region was claimed. On the six-core machine used here
+the margin is wide and stable across runs; on a CI runner with fewer cores both orders
+can report zero, which is how the first version of this test failed on macOS after
+passing locally. So the parallel row is a benchmark observation on one host, not a
+guarantee — the assertion in the test suite is limited to the deterministic single-worker
+case, and the scheduling property itself is pinned separately by an invariant test
+against the queue.
 
 Three things the measurement corrected along the way. The first implementation resolved
 the "allocate me a region" sentinel when choosing a bucket but never wrote it back into

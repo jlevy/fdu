@@ -220,9 +220,11 @@ bucket the order is LIFO so locality and spine-bounded memory come back. No barr
 exists anywhere: if only one region has work, every worker takes it.
 
 On twelve branching subtrees, the *least advanced* top-level subtree a quarter of the
-way through the walk holds **42 files at one worker and 33–37 at six** — against
-depth-first's **0 and 6**, where perfectly even would be ~46. A deep portion of the tree
-no longer delays the horizontal ones, at any worker count. Peak RSS fell −3.77%
+way through the walk holds **42 files at one worker** against depth-first's **0**, where
+perfectly even would be ~46. On a six-core machine the parallel margin is comparable
+(33–37 against 6), but that row is host-specific: the metric reads emission order, which
+under several workers reflects which worker finished first as much as which region was
+claimed, and on a CI runner with fewer cores both orders can report zero. Peak RSS fell −3.77%
 [−5.18%, −2.99%] in the process, more than reversing what exp-012 paid, and wall time
 did not move.
 
