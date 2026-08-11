@@ -1591,14 +1591,64 @@ mod tests {
             )),
             "{rendered}"
         );
+
+        // Pinned as the whole row rather than as a substring of it. A loose `contains`
+        // check on the `path_raw` object alone passed while the row around it was
+        // malformed -- the field was emitted with a duplicated separator and a newline
+        // inside a one-line object, so the document did not parse at all. Asserting the
+        // exact row is what makes the surrounding punctuation part of the contract.
         for hex in [first_hex, second_hex] {
+            let row = format!(
+                "{{\"path\": \"{lossy}\", \"path_raw\": {{\"encoding\": \"{encoding}\", \"hex\": \"{hex}\"}}, \
+                 \"kind\": \"file\", \"bytes\": 1, \"allocated\": 1, \"mtime_ns\": 0}}"
+            );
             assert!(
-                rendered.contains(&format!(
-                    "\"path_raw\": {{\"encoding\": \"{encoding}\", \"hex\": \"{hex}\"}}"
-                )),
-                "a name that is not valid Unicode must carry its raw bytes: {rendered}"
+                rendered.contains(&row),
+                "a name that is not valid Unicode must carry its raw bytes in a well-formed \
+                 row.\nexpected: {row}\nrendered: {rendered}"
             );
         }
+
+        // Cheap structural guard against the same class of mistake anywhere else in the
+        // document: an empty element is the signature of a separator emitted twice.
+        assert!(
+            !rendered.contains(", ,") && !rendered.contains(",,"),
+            "duplicated separator in machine output: {rendered}"
+        );
+
+        // The tree writer names entries too, and carried the identical defect. Pinning
+        // only the files view would have left half the fix untested. A tree lists
+        // directories, so the case has to be a directory whose own name is not valid
+        // Unicode rather than the files above.
+        let mut dirs = crate::Index::new(PathBuf::from("/tree-fixture"));
+        dirs.apply_ok(&crate::Observation::new(vec![
+            crate::Op::Upsert {
+                path: PathBuf::from(first),
+                kind: EntryKind::Dir,
+                attrs: crate::Attrs { size: 0, allocated: 0, ..Default::default() },
+            },
+            crate::Op::Upsert {
+                path: PathBuf::from(first).join("inside.txt"),
+                kind: EntryKind::File,
+                attrs: crate::Attrs { size: 1, allocated: 1, ..Default::default() },
+            },
+        ]));
+        dirs.set_initial_freshness(false);
+        let tree_query = Cli { view: "tree".to_string(), depth: "all".to_string(), ..cli() }
+            .parse_query()
+            .expect("query parses");
+        let tree = crate::query::report(&dirs, &tree_query, &provenance);
+        let tree_rendered = report_format::render(&tree, report_format::Format::Json, false);
+        assert!(
+            tree_rendered.contains(&format!(
+                ", \"path_raw\": {{\"encoding\": \"{encoding}\", \"hex\": \"{first_hex}\"}}, \"kind\":"
+            )),
+            "the tree view must carry raw identity in a well-formed node: {tree_rendered}"
+        );
+        assert!(
+            !tree_rendered.contains(", ,") && !tree_rendered.contains(",,"),
+            "duplicated separator in tree output: {tree_rendered}"
+        );
     }
 
     #[cfg(unix)]

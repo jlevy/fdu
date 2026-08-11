@@ -205,8 +205,8 @@ fn write_envelope_json(out: &mut String, report: &Report) {
     let _ = write!(out, "  \"schema\": {}", quote(REPORT_SCHEMA));
     let _ = write!(out, ",\n  \"generator\": {}", quote(&generator()));
     let _ = write!(out, ",\n  \"root\": {}", quote(&report.root.to_string_lossy()));
-    if let Some(raw) = raw_identity_json("root", &report.root) {
-        out.push_str(&raw);
+    if let Some(raw) = raw_identity_object(&report.root) {
+        let _ = write!(out, ",\n  \"root_raw\": {raw}");
     }
     let _ = write!(
         out,
@@ -282,7 +282,7 @@ fn file_json(row: &FileRow) -> String {
 /// output that drives tooling. Absent for the overwhelmingly common case, so a
 /// well-behaved tree pays nothing for the guarantee.
 fn path_raw_field(path: &Path) -> String {
-    raw_identity_json("path", path).map_or_else(String::new, |raw| format!(", {raw}"))
+    raw_identity_object(path).map_or_else(String::new, |raw| format!(", \"path_raw\": {raw}"))
 }
 
 /// A summary row as a JSON object.
@@ -709,13 +709,9 @@ fn hex_bytes(bytes: impl IntoIterator<Item = u8>) -> String {
 }
 
 /// Render the raw-identity companion for a path, when one is needed.
-fn raw_identity_json(label: &str, path: &Path) -> Option<String> {
+fn raw_identity_object(path: &Path) -> Option<String> {
     let (encoding, hex) = raw_os_identity(path.as_os_str())?;
-    Some(format!(
-        ",\n  \"{label}_raw\": {{\"encoding\": {}, \"hex\": {}}}",
-        quote(encoding),
-        quote(&hex)
-    ))
+    Some(format!("{{\"encoding\": {}, \"hex\": {}}}", quote(encoding), quote(&hex)))
 }
 
 /// Render cache status in a machine format.
