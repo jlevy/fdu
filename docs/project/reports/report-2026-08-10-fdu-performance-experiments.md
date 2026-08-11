@@ -8,7 +8,15 @@ How the numbers were produced, what each metric means, and the rule that decides
 
 ## Where it stands
 
-No claim-grade cumulative comparison is currently published. Legacy aggregate records remain below for audit history, not as current performance claims.
+The frozen candidate was measured against its declared true base in one interleaved run of 16 paired trials (exp-012, rejected).
+
+| job | before | after | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| `cold-scan-index` | 678 ms | 335 ms | **-50.9%** | [-52.3%, -49.0%] |
+| `cold-scan-producer` | 528 ms | 204 ms | **-61.2%** | [-63.1%, -60.4%] |
+| `cold-snapshot-save` | 712 ms | 383 ms | **-47.2%** | [-48.6%, -43.3%] |
+| `warm-revalidate` | 1014 ms | 627 ms | **-37.1%** | [-38.7%, -36.3%] |
+| `warm-snapshot-load` | 345 ms | 220 ms | **-36.7%** | [-39.6%, -34.8%] |
 
 ## Reproducing this
 
@@ -16,8 +24,8 @@ No claim-grade cumulative comparison is currently published. Legacy aggregate re
 
 - Label `reference-tree-60k`, 59,654 entries (7,341 directories, 52,291 files, 22 symlinks), max depth 19.
 - 1.01 GiB apparent, 1.14 GiB allocated.
-- Content digest `bf574331eca680372f7060d4f9ab3b3b175afd265ac27bda6b6dc67ed9c80798` (`fdu-index-record-v1`). Two trees with this digest are the same tree in the same state.
-- Archived identity `40406544ab635121…` is derived from the content digest; the operator's path hash is deliberately removed from the committed evidence.
+- Content digest `eb51259c3d468eeb470d0d9d43ebb199fcdde2031754cba94b29a983bc19cf46` (`fdu-index-record-v1`). Two trees with this digest are the same tree in the same state.
+- Archived identity `c8dea479163b8ed6…` is derived from the content digest; the operator's path hash is deliberately removed from the committed evidence.
 
 **The machine.**
 
@@ -26,9 +34,9 @@ No claim-grade cumulative comparison is currently published. Legacy aggregate re
 - Built with rustc 1.97.1 (8bab26f4f 2026-07-14), `release` profile.
 - OS page cache: warm-steady. Dropping it needs root, so runs that did not ask for that say so rather than implying a cold disk.
 
-All records are legacy evidence; they predate the full roll-up oracle and committed provenance contract and are not current performance claims.
+Claim-grade runs fingerprinted the tree before and after, preserved the raw paired samples, and checked every trial's entry and per-directory roll-up digests against an independent oracle. Legacy v1 runs below did not satisfy that full contract and are labeled accordingly.
 
-Evidence grade: **legacy**.
+Evidence grade: **claim-grade**.
 
 ## Every experiment, including the failures
 
@@ -48,6 +56,7 @@ The rejected ones are the reusable part: they stop the next person spending a da
 | 009 | [Single-pass checksum and parse on snapshot load](#exp009--singlepass-checksum-and-parse-on-snapshot-load) | H32 | `warm-snapshot-load` | -12.4% | ↩︎ superseded |
 | 010 | [Claim-list join and deferred path joins in reconcile](#exp010--claimlist-join-and-deferred-path-joins-in-reconcile) | H17 | `warm-revalidate` | -0.0% | ❌ rejected |
 | 011 | [One ancestor merge per same-parent insert run](#exp011--one-ancestor-merge-per-sameparent-insert-run) | H13 | `cold-scan-index` | -2.5% | ❌ rejected |
+| 012 | [Cumulative PR 3 review against the correctness-normalized base](#exp012--cumulative-pr-3-review-against-the-correctnessnormalized-base) | H1, H5, H10, H14, H18, H32 | `cold-scan-index` | -50.9% | ❌ rejected |
 
 ## The experiments
 
@@ -424,6 +433,45 @@ Reverted. The interaction is the finding: merge-batching and key-interning compe
 
 Full record: [`exp-011-one-ancestor-merge-per-same-parent-insert-run.md`](../experiments/exp-011-one-ancestor-merge-per-same-parent-insert-run.md)
 Raw paired samples: [`exp-011-run.json`](../experiments/evidence/exp-011-run.json)
+
+### exp-012 — Cumulative PR 3 review against the correctness-normalized base
+
+❌ rejected · 2026-08-11 · H1, H5, H10, H14, H18, H32 · commit `bd479aaee90263dea8c7dc5ce9d131368e749568`
+
+Control: PR base plus only the required non-file roll-up correction (c0ddcb9)
+
+Candidate: frozen reviewed implementation (bd479aa)
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 677.9 | 335.2 | -50.95% | [-52.31%, -49.02%] |
+| component (ms) | 550.6 | 203.8 | -63.57% | [-64.65%, -60.46%] |
+| cpu (ms) | 659.7 | 1201.8 | +83.11% (significant regression) | [+74.32%, +91.23%] |
+| user (ms) | 251.8 | 255.7 | +1.06% (n.s.) | [-1.64%, +2.29%] |
+| system (ms) | 408.3 | 948.1 | +136.67% (significant regression) | [+117.80%, +148.68%] |
+| peak rss (MiB) | 32.0 | 33.3 | +3.99% (significant regression) | [+2.81%, +6.42%] |
+
+Blocked time is omitted: aggregate process CPU across worker threads cannot be subtracted from wall time as an off-CPU measurement.
+
+Other jobs, wall time: `cold-scan-producer` -61.2%, `cold-snapshot-save` -47.2%, `warm-revalidate` -37.1%, `warm-snapshot-load` -36.7%.
+
+Latency gate: **passed**.
+
+Resource guardrails:
+
+- `cpu_ns`: **failed** (observed +83.11%; limit +10%) — 95% interval is wholly above the +10% limit.
+- `peak_rss_bytes`: **passed** (observed +3.99%; limit +10%) — no statistically established regression above +10%.
+
+Cost to carry: 981 lines; no new dependencies; new failure mode: higher cold-path CPU and scheduler contention; new failure mode: parallel cancellation and backpressure protocol.
+
+No dependency or unsafe-code expansion; the reviewed diff also repairs public API, cancellation, oracle, and snapshot fanout correctness.
+
+**Rejected:** Latency improved 50.95%, but cold-path CPU regressed 83.11% with the full interval above the 10% resource guardrail, so no universal-performance waiver is justified.
+
+Full record: [`exp-012-cumulative-pr-3-review-against-the-correctness-normalized-ba.md`](../experiments/exp-012-cumulative-pr-3-review-against-the-correctness-normalized-ba.md)
+Raw paired samples: [`exp-012-run.json`](../experiments/evidence/exp-012-run.json)
 
 
 <!-- This document follows common-doc-guidelines.md.

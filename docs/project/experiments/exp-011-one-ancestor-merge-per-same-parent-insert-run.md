@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-011
   title: One ancestor merge per same-parent insert run
-  date: 2026-08-11
+  date: "2026-08-11"
   hypotheses:
     - H13
   subject:
@@ -281,7 +281,9 @@ operations, leaving too little work for the added batching path to repay.
 
 ## Verdict
 
-**REJECTED** — Direction right but under the bar: -2.53% [-8.39%, +0.23%] on cold scan; H18 already removed the expensive part of each merge, so cutting ~520k merges to ~73k amortized work that had become a few integer adds
+**REJECTED** — Direction right but under the bar: -2.53% [-8.39%, +0.23%] on cold scan;
+H18 already removed the expensive part of each merge, so cutting ~520k merges to ~73k
+amortized work that had become a few integer adds
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

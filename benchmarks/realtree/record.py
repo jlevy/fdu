@@ -375,6 +375,17 @@ def _needs_quoting(text: str) -> bool:
         return True
     if text.lower() in _YAML_KEYWORDS:
         return True
+    if (
+        len(text) == 10
+        and text[4] == "-"
+        and text[7] == "-"
+        and text[:4].isdigit()
+        and text[5:7].isdigit()
+        and text[8:].isdigit()
+    ):
+        # YAML 1.1 readers promote a plain ISO date to a timestamp. The artifact
+        # contract deliberately carries a string so validators agree across versions.
+        return True
     if any(character in _YAML_SPECIAL for character in text):
         return True
     if text[0] in "-?%":
@@ -439,16 +450,16 @@ def _display_path(path: Path) -> str:
 
 
 def _validate(path: Path) -> int:
-    """Validate through the softschema CLI, if it is reachable."""
+    """Validate through the locked softschema CLI and fail closed if unavailable."""
     try:
         completed = subprocess.run(
-            ["uvx", "softschema@latest", "validate", str(path)],
+            ["softschema", "validate", str(path)],
             capture_output=True,
             timeout=300,
         )
     except (FileNotFoundError, subprocess.TimeoutExpired) as error:
-        print(f"skipped validation: {error}", file=sys.stderr)
-        return 0
+        print(f"validation failed: {error}", file=sys.stderr)
+        return 1
     stdout = completed.stdout.decode("utf-8", errors="replace")
     stderr = completed.stderr.decode("utf-8", errors="replace")
     if completed.returncode != 0:

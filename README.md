@@ -34,34 +34,41 @@ The full survey, with the techniques worth adapting and their sources, is in
 ## Speed and the Cache
 
 fdu can build an answer from a full scan, a revalidated snapshot, or an explicitly stale
-snapshot-only read, and it labels which path produced the result. A full stat-tier
-answer still has to enumerate and stat every entry unless a trustworthy change source
-narrows the work: an in-place file edit changes no directory’s mtime, not even its
-parent’s. A directory fingerprint can prove membership, not child bytes.
+snapshot-only read, and it labels which path produced the result.
+A full stat-tier answer still has to enumerate and stat every entry unless a trustworthy
+change source narrows the work: an in-place file edit changes no directory’s mtime, not
+even its parent’s. A directory fingerprint can prove membership, not child bytes.
 
 The evidence is narrower than the design space:
 
 | Case | What is known now |
 | --- | --- |
 | Warm APFS, roughly 60k entries, current stat-tier snapshot | Snapshot load plus full revalidation is slower than a cold scan in the measured experiments. |
-| Other filesystems, Windows, remote storage, cold metadata caches, and larger scales | Not yet measured; no benefit or loss is claimed. |
+| APFS snapshot load alone, 10k–1M generated entries | The reviewed loader remained oracle-correct and close to linear: 28.7 ms at 10k, 220.4 ms at 100k, 1.13 s at 500k, and 2.22 s at 1M. This is topology evidence, not evidence that reading and revalidating a cache beats a cold scan. |
+| Other filesystems, Windows, remote storage, cold metadata caches, and full revalidation at larger scales | Not yet measured; no benefit or loss is claimed. |
 | Snapshot-only read | Avoids tree I/O but is explicitly stale, so it serves a different contract rather than winning an exact comparison. |
 | macOS journal-scoped revalidation | Designed, not built; Apple documents persistent history, but the cross-restart correctness and performance spike is still required. |
 | Cached content analyzers such as line counts | Designed, not built; fingerprints could avoid rereading unchanged content, but no timing claim exists yet. |
 
 The cache is therefore not necessary for a correct one-shot stat roll-up, and it should
-not be read automatically where evidence says it loses. It remains useful infrastructure
-for cache-only answers, future applied journal boundaries, and future derived metrics.
+not be read automatically where evidence says it loses.
+It remains useful infrastructure for cache-only answers, future applied journal
+boundaries, and future derived metrics.
 The proposed `auto` policy selects a cached read only for a measured
-platform/filesystem/storage/scale cell; unknown cells use the cold path. Explicit
-refresh, read-only, cache-only, and off policies keep the decision under caller control.
-See the
+platform/filesystem/storage/scale cell; unknown cells use the cold path.
+Explicit refresh, read-only, cache-only, and off policies keep the decision under caller
+control. See the
 [composable CLI plan](docs/project/specs/active/plan-2026-08-10-fdu-composable-cli-surface.md)
 and the
 [FSEvents-scoped revalidation plan](docs/project/specs/active/plan-2026-08-10-fdu-fsevents-scoped-revalidation.md).
 
 Speed changes here are decided by paired, interleaved measurement against a real tree,
 with an independent oracle verifying that faster output is still identical output.
+The current claim-grade cumulative run cut 60k-entry APFS cold-scan wall time by 51%,
+but increased total CPU by 83%; it was therefore rejected as a universal performance win
+under the default resource guardrail.
+The parallel mechanism remains an explicit latency/resource tradeoff rather than proof
+of an everywhere-faster default.
 Every accepted and rejected experiment is recorded in
 [the experiment ledger](docs/project/reports/report-2026-08-10-fdu-performance-experiments.md);
 the protocol is [the performance loop](docs/project/guides/performance-loop.md).
@@ -120,9 +127,9 @@ raw identity.
 Exit status 2 means partial results; pass `--allow-partial` to accept those
 as success. Exit status 1 means the command failed.
 
-The next iteration of this surface — composable views, selection filters,
-modified-file candidate queries, cache policies, and a `tail -f`-style watch mode, all as
-orthogonal flags over one grammar — is designed in
+The next iteration of this surface — composable views, selection filters, modified-file
+candidate queries, cache policies, and a `tail -f`-style watch mode, all as orthogonal
+flags over one grammar — is designed in
 [the composable CLI and query surface plan](docs/project/specs/active/plan-2026-08-10-fdu-composable-cli-surface.md).
 
 ## As a Rust Library

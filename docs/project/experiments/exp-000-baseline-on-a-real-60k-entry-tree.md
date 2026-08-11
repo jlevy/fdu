@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-000
   title: Baseline on a real 60k-entry tree
-  date: 2026-08-10
+  date: "2026-08-10"
   hypotheses: []
   subject:
     tree_label: reference-tree-60k
@@ -391,24 +391,27 @@ experiment:
 
 ## Hypothesis
 
-This was a characterization run, not a candidate comparison. It established the cost
-of each product path on one warm APFS reference tree before the experiment series.
+This was a characterization run, not a candidate comparison.
+It established the cost of each product path on one warm APFS reference tree before the
+experiment series.
 
 ## What was tried
 
-One release probe ran every registered job for 12 measured ordinals after three
-warmups. The tree was fingerprinted before and after; variants were identical because
-the purpose was to establish distributions, not a delta.
+One release probe ran every registered job for 12 measured ordinals after three warmups.
+The tree was fingerprinted before and after; variants were identical because the purpose
+was to establish distributions, not a delta.
 
 ## What the numbers said
 
 Cold scan, warm revalidation, snapshot load, and snapshot save separated filesystem,
-index, and serialization costs. The raw v1 pairs are now archived, but this run predates
-the full per-directory roll-up oracle, build manifests, and exact schedule digest.
+index, and serialization costs.
+The raw v1 pairs are now archived, but this run predates the full per-directory roll-up
+oracle, build manifests, and exact schedule digest.
 
 ## Verdict
 
-**BASELINE** — Establishes the reference numbers every later experiment is measured against
+**BASELINE** — Establishes the reference numbers every later experiment is measured
+against
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

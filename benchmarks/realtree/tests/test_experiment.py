@@ -8,13 +8,15 @@ letting an artifact that no longer matches its contract contribute a row anyway.
 
 from __future__ import annotations
 
-import json
 import argparse
+import io
+import json
 import shutil
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from benchmarks.realtree import experiment as experiment_model
 from benchmarks.realtree import record, summary
@@ -357,6 +359,18 @@ class YamlScalarTests(unittest.TestCase):
         self.assertEqual(record._scalar("2026"), '"2026"')
         self.assertEqual(record._scalar("1.5"), '"1.5"')
 
+    def test_iso_dates_are_quoted_for_yaml_portability(self) -> None:
+        self.assertEqual(record._scalar("2026-08-11"), '"2026-08-11"')
+
+    def test_missing_validator_fails_closed(self) -> None:
+        error = io.StringIO()
+        with (
+            mock.patch.object(record.subprocess, "run", side_effect=FileNotFoundError("missing")),
+            mock.patch.object(record.sys, "stderr", error),
+        ):
+            self.assertEqual(record._validate(Path("missing.md")), 1)
+        self.assertIn("validation failed", error.getvalue())
+
     def test_boolean_and_null_lookalikes_are_quoted(self) -> None:
         for text in ("true", "False", "yes", "no", "null", "~", "on", "off"):
             self.assertTrue(
@@ -413,7 +427,7 @@ class RenderRoundTripTests(unittest.TestCase):
         destination.write_text(record._render(payload, "# body\n"), encoding="utf-8")
 
         completed = subprocess.run(
-            ["uvx", "softschema@latest", "validate", str(destination)],
+            ["softschema", "validate", str(destination)],
             capture_output=True,
             timeout=600,
         )

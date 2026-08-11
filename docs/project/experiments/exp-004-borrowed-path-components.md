@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-004
   title: Borrowed path components
-  date: 2026-08-11
+  date: "2026-08-11"
   hypotheses:
     - H5
   subject:
@@ -336,8 +336,9 @@ Path validation borrowed components from the caller rather than allocating owned
 ## What the numbers said
 
 The v1 run measured warm-revalidate wall 9.4% lower and snapshot-load wall 17.8% lower,
-with intervals below zero. The change deleted work and remained sensible, but this run
-did not preserve the claim-grade oracle, source manifests, toolchain, or schedule digest.
+with intervals below zero.
+The change deleted work and remained sensible, but this run did not preserve the
+claim-grade oracle, source manifests, toolchain, or schedule digest.
 
 ## Verdict
 

@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-003
   title: Skip journalling on the bootstrap apply path
-  date: 2026-08-11
+  date: "2026-08-11"
   hypotheses:
     - H8
   subject:
@@ -272,17 +272,20 @@ records that no initial caller consumed.
 ## What was tried
 
 The candidate added a bootstrap-only apply loop that omitted effective-op list and
-journal construction. The control used the ordinary live apply path.
+journal construction.
+The control used the ordinary live apply path.
 
 ## What the numbers said
 
-Removing roughly 120,000 path clones did not move cold-scan wall time. The measurement
-showed that filesystem and roll-up work dominated this allocation, so duplicating the
-arbitration logic would increase correctness risk without a product-visible benefit.
+Removing roughly 120,000 path clones did not move cold-scan wall time.
+The measurement showed that filesystem and roll-up work dominated this allocation, so
+duplicating the arbitration logic would increase correctness risk without a
+product-visible benefit.
 
 ## Verdict
 
-**REJECTED** — Removing roughly 120,000 path clones per scan produced no measurable change, so a duplicated arbitration loop was not worth carrying
+**REJECTED** — Removing roughly 120,000 path clones per scan produced no measurable
+change, so a duplicated arbitration loop was not worth carrying
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

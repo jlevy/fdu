@@ -42,9 +42,9 @@ research. It is written to feed the live
 [performance loop](../guides/performance-loop.md) and its
 [experiment ledger](../reports/report-2026-08-10-fdu-performance-experiments.md): the
 candidate backlog below continues the loop’s hypothesis registry, and the findings are
-reconciled against experiments exp-000 through exp-005. Line references are against the
-2026-08-10 working tree; the loop has since landed commits through `954d27b`, so line
-numbers may drift.
+reconciled against experiments exp-000 through exp-012. Line references in the original
+diagnostic are against the 2026-08-10 working tree; the exp-012 update below describes
+the frozen reviewed candidate at `bd479aa`, so those earlier line numbers may drift.
 
 ## Questions to Answer
 
@@ -118,8 +118,9 @@ Every job decomposes into four cost pools:
    a query over pre-computed roll-ups; unbounded if it re-walks.
 
 Illustrative floors this model and cited prior art imply for one million entries with
-full per-entry stats follow. They are not fdu measurements; each platform/filesystem,
-storage, cache-state, and scale cell still needs a paired experiment.
+full per-entry stats follow.
+They are not fdu measurements; each platform/filesystem, storage, cache-state, and scale
+cell still needs a paired experiment.
 
 | Job | Floor arithmetic | Floor |
 | --- | --- | --- |
@@ -134,24 +135,30 @@ Two consequences worth internalizing.
 First, **on a MacBook the walk is syscall-bound, not I/O-bound**: dumac’s flamegraph
 shows 91% of wall time inside syscalls after batching, so userland micro-optimization
 stops mattering there once batching is in place — the syscall count *is* the program.
-Second, the memory model predicts that **large cloud trees may not retain a warm metadata
-cache**: using the cited dentry/inode estimates, a 10M-file tree could require roughly
-12 GB of kernel metadata on a 4–16 GB runner. That is a motivation for cold/remote matrix
-rows, not evidence that the snapshot is faster: exact stat-tier revalidation still
-touches every entry until a journal or other complete change source narrows it.
+Second, the memory model predicts that **large cloud trees may not retain a warm
+metadata cache**: using the cited dentry/inode estimates, a 10M-file tree could require
+roughly 12 GB of kernel metadata on a 4–16 GB runner.
+That is a motivation for cold/remote matrix rows, not evidence that the snapshot is
+faster: exact stat-tier revalidation still touches every entry until a journal or other
+complete change source narrows it.
 
-### Where the Current Engine Spends Its Time
+### Where the Pre-remediation Engine Spent Its Time
 
-The realtree baseline — exp-000 in the
+The legacy realtree baseline — exp-000 in the
 [experiment ledger](../reports/report-2026-08-10-fdu-performance-experiments.md) (59,654
-entries, M1 Pro, warm cache; raw run artifacts are machine-local and gitignored) —
-decomposes as: cold-scan-producer 385.8 ms (~6.5 µs/entry — walk + stat),
-cold-scan-index 514.5 ms (index apply adds ~2.1 µs/entry on one thread), warm-revalidate
-472.3 ms, warm-snapshot-load 219.5 ms (~3.7 µs/record), cold-snapshot-save 36.9 ms.
+entries, M1 Pro, warm cache; its sanitized v1 raw bundle is committed for audit but is
+not claim-grade evidence) — decomposes as: cold-scan-producer 385.8 ms (~6.5 µs/entry —
+walk + stat), cold-scan-index 514.5 ms (index apply adds ~2.1 µs/entry on one thread),
+warm-revalidate 472.3 ms, warm-snapshot-load 219.5 ms (~3.7 µs/record),
+cold-snapshot-save 36.9 ms.
 Against the model: the warm sweep is ~82% syscall/walk and ~18% index work — but the
 index share is pure userland constant, and both shares have large known reductions.
 
-The line-level review found the losses concentrated in six places:
+The original line-level review found the losses concentrated in six places.
+Several descriptions below are intentionally historical: the reviewed candidate
+subsequently changed direct reconcile lookup, extension ownership, snapshot parent
+lookup, and the benchmark oracle.
+The exp-012 update after this list is the current disposition.
 
 1. **The exclusive reconcile path re-derives what it already holds.**
    `ReconcileTarget::Direct` still routes child expectations through
@@ -204,51 +211,32 @@ The line-level review found the losses concentrated in six places:
    ~40–60 B/entry; reaching the 25–32 B target additionally requires packing timestamps
    and dropping per-entry `dev`.
 
-**What the live experiment loop has since established (exp-000 through exp-005).** The
-loop has already tested parts of this analysis, and its verdicts sharpen it:
+**What the repaired loop now establishes (exp-012).** The earlier v1 acceptances remain
+useful exploratory history, but they do not independently carry current claims: they
+lacked the full named roll-up oracle, exact build provenance, and expanded schedule
+digest. The frozen candidate and correctness-normalized PR base were therefore rebuilt
+with the same v2 semantic probe and measured in one 16-pair interleaved run:
 
-- **exp-001 (H1, accepted, `a0cc981`):** a bounded parallel producer halved cold scan
-  (cold-scan-index wall 627 → 311 ms at 4 threads, digests identical).
-  Finding 2’s cold-path half is landed.
-  The cold critical path is now the *consumer*: cold-scan-index component (197 ms) sits
-  almost exactly on cold-scan-producer component (192 ms), so further producer threads
-  cannot help until apply gets cheaper or parallel.
-- **exp-002 (H9 attempt, rejected):** parallelizing the *revalidation* sweep gained only
-  2.6% at 60k entries on a warm-steady cache.
-  This is consistent with the cost model, not against it: with the metadata cache warm
-  the per-entry expectation machinery in the single consumer dominates. The historical
-  `wall - process CPU` “blocked” estimate is not evidence here: process CPU aggregates
-  the parallel workers and cannot be subtracted from wall time as off-CPU time.
-  The rejection is state- and scale-specific: the parallel sweep’s predicted wins are in
-  purge-cold, over-capacity (the knee), and network-storage states the loop does not yet
-  visit. Sequence flip: make the consumer O(changes) first (below), then re-test sweep
-  parallelism where there is latency to hide.
-- **exp-003 (H8, rejected):** removing ~120k bootstrap path clones changed nothing
-  measurable. This corrects finding 3’s emphasis: individual small allocations are nearly
-  free on this allocator at this scale; the paying work is *descents and extra passes*,
-  not clone counts. exp-004/005 confirm from the other side — they removed structural
-  work and won.
-- **exp-004 (H5, accepted, `bf7a05a`):** borrowed path components — warm-revalidate
-  −9.4% wall, snapshot load −17.8%, user CPU −18.6%. Finding 5’s normalize half is
-  landed; parent-id passing remains open.
-- **exp-005 (H10 partial, accepted, `954d27b`):** resolving each snapshot record through
-  its parent id cut load component −31% (to ~165 ms ≈ 2.8 µs/record at 60k). Finding 3
-  is partially landed; the remaining headroom is the single-pass CRC+parse, eliminating
-  the per-record `Observation`, persisted roll-ups, and eventually the block format.
-- **The loop’s headline defect (its H9) is architectural:** after exp-001,
-  warm-revalidate (~790–820 ms) costs ~2.6× cold-scan-index (~310 ms) on the same tree —
-  the cache currently costs more than it saves.
-  The highest-order leverage section below is organized around closing exactly this.
-- **The loop’s profile also hardened two blocked hypotheses:** after exp-001, `open` is
-  28% and `fstatat` 19% of cold self-time — the two costs that only the dirfd/openat and
-  bulk-stat work (its H2/H3) can remove.
-  Both are blocked on a dependency-policy decision, addressed in Recommendations.
+- cold scan into a complete index improved wall 50.95% [-52.31%, -49.02%], but total CPU
+  regressed 83.11% [74.32%, 91.23%] and system CPU regressed 136.67%;
+- warm revalidation improved wall and CPU about 37%, and snapshot load improved wall
+  36.71% and CPU 36.84% in the measured 60k-entry APFS cell;
+- the literal PR base is preserved as a diagnostic variant.
+  Its full-index samples fail the current oracle because that reducer counted 548
+  apparent bytes from non-files; the like-for-like index control adds only that
+  correctness fix, while the exact-base producer remains directly comparable and
+  performance-neutral to it;
+- the result is **rejected as a universal performance win** because the cold CPU
+  interval is wholly beyond the default 10% resource guardrail.
+  Parallel traversal is a real latency/resource tradeoff, not an unconditional speed
+  claim.
 
-One scope caution when reading loop verdicts: every experiment so far is one 60k-entry
-tree, one M1 Pro, warm-steady cache, unchanged-tree revalidation.
-The knee at 500k+, cold-cache behavior, churned warm runs, network storage, and Linux
-are all currently invisible to the loop, and at least one rejection (exp-002) is
-predicted to flip in states it has not visited.
+Paired verdict scope remains one 59,654-entry tree, one M1 Pro, warm-steady APFS, and
+zero churn. A separate oracle-checked wide snapshot-load curve now covers 10k through 1M
+entries (28.7 ms, 220.4 ms, 1.13 s, and 2.22 s) and is close to linear, validating the
+direct parent/name lookup at high fanout.
+It does **not** measure full revalidation, cold metadata caches, churn, remote storage,
+Linux, or Windows.
 
 **The superlinear knee is probably capacity, not algorithm.** The exploratory curve (72
 ms / 725 ms / 8.2 s / 62.9 s at 10k / 100k / 500k / 1M) has a local scaling exponent of
@@ -266,9 +254,8 @@ records the discriminators cheaply: run the 100k/500k/1M points with `--repeat 2
 in-process, record `minor_faults`, `kern.maxvnodes`, and off-CPU time from a real
 platform collector (not `wall - process CPU`). If iteration 2 is near-linear while
 iteration 1 keels over, the fix is the parallel sweep and syscall batching — not index
-micro-optimization.
-This experiment costs an afternoon and directs everything in Wave 3; it should run
-first.
+micro-optimization. This experiment costs an afternoon and directs everything in Wave 3;
+it should run first.
 
 One evidence correction that belongs on the record: the
 [reconciliation fast-path note](research-2026-08-09-reconciliation-index-fast-path.md)
@@ -395,12 +382,12 @@ tens of in-flight directories), and syscall batching is first-order — the mirr
 of Linux.
 
 **The FSEvents persistent journal could make warm work scale with changes instead of
-tree size.** fseventsd journals change events to disk across reboots. With `FileEvents`,
-callbacks name individual filesystem items, which a consumer can conservatively
-normalize into parent-directory relists and subtree invalidations. A scan can persist a
-pre-scan event boundary plus the volume UUID and later replay from that boundary instead
-of immediately sweeping every entry. This remains a hypothesis until the state machine
-is implemented and measured.
+tree size.** fseventsd journals change events to disk across reboots.
+With `FileEvents`, callbacks name individual filesystem items, which a consumer can
+conservatively normalize into parent-directory relists and subtree invalidations.
+A scan can persist a pre-scan event boundary plus the volume UUID and later replay from
+that boundary instead of immediately sweeping every entry.
+This remains a hypothesis until the state machine is implemented and measured.
 A source-level read of the two production precedents (below) sharpens the claim:
 Watchman’s `fsevents_try_resync` proves the *mechanics* — resume from a recorded event
 ID guarded by a `FSEventsCopyUUIDForDevice` equality check and an `EventIdsWrapped` veto
@@ -429,9 +416,9 @@ escalation shape: a null or mismatched UUID, unavailable full history, wrapped I
 dropped events, root/mount changes, or ambiguous paths force a full sweep;
 `MustScanSubDirs` without an unscoped drop signal maps to `InvalidateSubtree`. Apple
 documents the event list as advisory, so a bounded periodic full sweep is part of the
-contract and journal-scoped freshness remains distinguishable from full-sweep
-freshness. Nothing in the du-tool space has yet demonstrated this cross-restart design;
-it reuses the delta contract unchanged.
+contract and journal-scoped freshness remains distinguishable from full-sweep freshness.
+Nothing in the du-tool space has yet demonstrated this cross-restart design; it reuses
+the delta contract unchanged.
 Linux has no equivalent (confirmed below), which means the sweep must be fast there
 regardless — the two investments are complements, not alternatives.
 
@@ -481,11 +468,12 @@ settles how the journal-resume module should be built:
   failed resume as an ordinary fall-back-to-sweep, never an error.
 - **The first spike uses `fsevent-sys 4.1.0` plus a small first-party declaration
   surface.** That crate is already locked through `notify`; declaring
-  `FSEventStreamSetDispatchQueue`, `FSEventsCopyUUIDForDevice`, and the libdispatch calls
-  locally adds no dependency. Generated `objc2-core-services` plus
-  `objc2-core-foundation` and `dispatch2` is the complete, maintained fallback if the
-  hand-declared surface grows beyond this leaf module; adopting it would follow the
-  supply-chain cool-off like any other dependency change.
+  `FSEventStreamSetDispatchQueue`, `FSEventsCopyUUIDForDevice`, and the libdispatch
+  calls locally adds no dependency.
+  Generated `objc2-core-services` plus `objc2-core-foundation` and `dispatch2` is the
+  complete, maintained fallback if the hand-declared surface grows beyond this leaf
+  module; adopting it would follow the supply-chain cool-off like any other dependency
+  change.
 - **Reference configurations from production:** Watchman and git both run
   `NoDefer | WatchRoot | FileEvents` with plain path arrays; git hardcodes latency 0.001
   s (empirically tuned against event drops — 0.1 s dropped events under a 100k-file
@@ -501,27 +489,27 @@ settles how the journal-resume module should be built:
   and start a device-relative stream; persist that boundary only with the completed
   scan. At open, re-derive the device, re-check the UUID (mismatch or null ⇒ full sweep),
   and create a device-relative stream at the applied ID with the required
-  `FileEvents | WatchRoot | FullHistory` flags, schedule on a
-  private serial dispatch queue (batch ordering is what makes token persistence sound),
-  collect `(path, flags, id)` until `HistoryDone` (detected by flag — its
-  accompanying path is garbage), with a bounded wait; any dropped/`MustScanSubDirs` flag
-  combination with an unscoped degradation abandons replay, while a scoped
-  `MustScanSubDirs` alone becomes `InvalidateSubtree`. The new boundary—the maximum
-  pre-`HistoryDone` event ID captured inside the callback, initialized to the old
-  boundary—is persisted only after every corresponding scope is applied. A later
-  current-ID sample is never substituted. `FullHistory` is load-bearing, not optional:
-  Apple’s
-  header documents that without it, events near the sinceWhen boundary can be **silently
-  skipped** because history is stored in coalesced chunks; with it, replay is
-  overlapping and at-least-once, which fdu’s idempotent deltas absorb by design.
+  `FileEvents | WatchRoot | FullHistory` flags, schedule on a private serial dispatch
+  queue (batch ordering is what makes token persistence sound), collect
+  `(path, flags, id)` until `HistoryDone` (detected by flag — its accompanying path is
+  garbage), with a bounded wait; any dropped/`MustScanSubDirs` flag combination with an
+  unscoped degradation abandons replay, while a scoped `MustScanSubDirs` alone becomes
+  `InvalidateSubtree`. The new boundary—the maximum pre-`HistoryDone` event ID captured
+  inside the callback, initialized to the old boundary—is persisted only after every
+  corresponding scope is applied.
+  A later current-ID sample is never substituted.
+  `FullHistory` is load-bearing, not optional: Apple’s header documents that without it,
+  events near the sinceWhen boundary can be **silently skipped** because history is
+  stored in coalesced chunks; with it, replay is overlapping and at-least-once, which
+  fdu’s idempotent deltas absorb by design.
   Journal availability caveats to encode in the validation ladder: a NULL UUID means no
   history exists (read-only volumes); a volume can opt out entirely via
   `/.fseventsd/no_log`; FAT32/exFAT journals are unreliable; retention is bounded and
   unspecified — UUID match plus replay-through-HistoryDone is the applicability gate,
   not proof of an exact current tree, which is why freshness is labeled and the periodic
-  full sweep remains. `IgnoreSelf`/`MarkSelf` have no effect on historical events, so replay
-  includes fdu’s own past writes (harmless: the cache lives outside scanned roots).
-  TCC nuance: events can arrive for paths the process cannot stat — reconciling a
+  full sweep remains. `IgnoreSelf`/`MarkSelf` have no effect on historical events, so
+  replay includes fdu’s own past writes (harmless: the cache lives outside scanned
+  roots). TCC nuance: events can arrive for paths the process cannot stat — reconciling a
   flagged directory under `~/Library` etc.
   surfaces as ordinary partial errors without Full Disk Access, and the behavior is not
   Apple-documented, so it belongs in per-macOS-release tests.
@@ -630,9 +618,9 @@ precisely an ext4/XFS statement, and four analogs deserve the record:
   changelog forever, which is fdu’s architecture at HPC scale — and NetApp SnapDiff /
   OneFS changelists are the NAS equivalents.
   Useful precedent; none of it reaches local ext4.
-- **A statx change cookie is not a userspace option today.** Linux has a
-  kernel-internal `STATX_CHANGE_COOKIE`, but `fs/stat.c` masks it out of userspace
-  requests and the released UAPI `struct statx` exposes neither a field nor a mask bit.
+- **A statx change cookie is not a userspace option today.** Linux has a kernel-internal
+  `STATX_CHANGE_COOKIE`, but `fs/stat.c` masks it out of userspace requests and the
+  released UAPI `struct statx` exposes neither a field nor a mask bit.
   Treat it only as a possible future kernel interface: no fingerprint design may depend
   on it until an exported UAPI and filesystem support matrix exist.
 
@@ -831,18 +819,17 @@ fast-but-wrong is a non-goal; fast-and-labeled is a feature).
 1. **Parallel stat sweep (the floor, all platforms).** Load snapshot, sweep
    fingerprints, emit deltas.
    The cost-model estimate—not a result on fdu—is ~0.2–0.4 s per million entries on
-   Linux at 8 threads; on
-   macOS the sweep should itself use getattrlistbulk (batch-verify a whole directory in
-   one syscall against the snapshot’s children — which the directory-at-a-time reconcile
-   structure already matches).
+   Linux at 8 threads; on macOS the sweep should itself use getattrlistbulk
+   (batch-verify a whole directory in one syscall against the snapshot’s children —
+   which the directory-at-a-time reconcile structure already matches).
    Requires findings 1–2 fixed (allocation-free expectations, parallel sweep) to reach
    the floor.
 2. **Journal-assisted revalidation (macOS candidate; Windows later; not available on
    ordinary Linux filesystems).** The hypothesis is that FSEvents `sinceWhen` replay
-   reduces most opens to normalized changed scopes plus the validation ladder. Its
-   latency and scaling remain unmeasured. The snapshot format needs an applied event
-   boundary, volume UUID, capture time, and last-full-sweep time so the transaction and
-   advisory freshness are explicit.
+   reduces most opens to normalized changed scopes plus the validation ladder.
+   Its latency and scaling remain unmeasured.
+   The snapshot format needs an applied event boundary, volume UUID, capture time, and
+   last-full-sweep time so the transaction and advisory freshness are explicit.
    Why this rung must be an *operation log* and can never be a timestamp query:
    filesystems index by name, not time (`find -mmin` is itself a full N-stat walk), and
    even a hypothetical mtime-since-T index could not work — deletions have no mtime, so
@@ -873,8 +860,8 @@ The tier table shows content metrics (lines of code, words, paragraphs — inclu
 custom plugin analyzers) have the same N-stat verification floor as sizes, but their
 *re-derivation* cost is reading and parsing file bytes, potentially gigabytes for a
 large repository. This suggests better cache economics than stat-only roll-ups: a warm
-content run still pays the N-stat floor but may re-read only changed files. The H46
-experiment must establish the magnitude; no minutes-to-seconds claim exists yet.
+content run still pays the N-stat floor but may re-read only changed files.
+The H46 experiment must establish the magnitude; no minutes-to-seconds claim exists yet.
 The fingerprint rule is git’s: size + mtime + ctime + inode unchanged ⇒ content presumed
 unchanged, with the racily-clean guard (G5) — and this is unclaimed competitive ground,
 since scc and tokei, the best-in-class content counters, cache nothing and recompute
@@ -886,16 +873,18 @@ Design consequences replace the underspecified original
 - **The derived-data cache is a separate, additive layer, not part of the core
   snapshot.** The core snapshot must stay small and fast to open; per-analyzer results
   load lazily, accumulate as new analyzers run (“every run with more extensive roll-ups
-  saves that data”), and are independently purgeable and size-bounded. Atomic writes,
-  bounded parsing, and corrupt-as-absent handling match the core snapshot.
+  saves that data”), and are independently purgeable and size-bounded.
+  Atomic writes, bounded parsing, and corrupt-as-absent handling match the core
+  snapshot.
 - **The namespace is explicit.** Cache format, canonical root/snapshot identity, and the
-  full `ScanScope` select a namespace. An entry then includes volume/device identity,
-  root-relative raw path identity, size + mtime + ctime + inode, analyzer ID/version,
-  and a canonical digest of all output-affecting analyzer configuration. Equal inode
-  tuples in two roots or devices cannot collide.
+  full `ScanScope` select a namespace.
+  An entry then includes volume/device identity, root-relative raw path identity, size +
+  mtime + ctime + inode, analyzer ID/version, and a canonical digest of all
+  output-affecting analyzer configuration.
+  Equal inode tuples in two roots or devices cannot collide.
 - **Analysis closes its own race.** Stat before and after reading; if the fingerprints
-  differ, discard the result as racily computed. Fingerprints at the snapshot-time tick
-  retain the existing racily-clean treatment.
+  differ, discard the result as racily computed.
+  Fingerprints at the snapshot-time tick retain the existing racily-clean treatment.
 - **Per-directory content roll-ups persist per analyzer too**, so an unchanged subtree
   contributes its cached aggregate without touching per-file records — the same duc
   lesson applied one tier up.
@@ -1045,13 +1034,14 @@ Measure early, implement in ladder order.
 
 ## Key Insights
 
-1. **The engine is a few× from its floor at mid-scale and ~100× at 1M entries, and the
-   two gaps have different causes.** The mid-scale gap is userland constants — confirmed
-   and now partly recovered by the live loop (exp-001/004/005), whose own data locates
-   the remaining bound in the single index consumer on both paths.
-   The 100× tail is almost certainly the OS metadata cache being exceeded with zero
-   latency hiding; the knee experiment (H36) decides this for a day’s work and must run
-   before the tail is optimized on a guess.
+1. **The engine’s mid-scale latency improved, but its cold resource floor did not.**
+   Exp-012 measured a 51% cold wall-time improvement and an 83% CPU regression, so
+   syscall count and scheduler work remain the priority rather than adding more
+   parallelism. The historical ~100× 1M revalidation tail is still only an uncontrolled
+   capacity-knee observation; H36 must distinguish metadata-cache pressure from an
+   algorithmic effect before that tail is optimized.
+   Snapshot loading itself now has a separate near-linear, oracle-checked curve through
+   1M.
 2. **Each platform has one dominant lever, and they differ.** macOS: syscall count
    (getattrlistbulk, ~hundreds of entries per syscall; parallelism plateaus on the
    volume lock). Linux warm: parallelism (near-linear to ≥8 threads on XFS). Cloud cold:
@@ -1065,10 +1055,11 @@ Measure early, implement in ladder order.
    Both are privilege-free and low-risk.
 4. **Warm mechanisms split by platform, but their benefit is an evidence-table
    decision.** Ordinary Linux filesystems lack a persistent journal, so the parallel
-   sweep is the exact fallback. macOS exposes persistent FSEvents history, but
-   cross-restart use is not Watchman-proven and Apple calls events advisory; the spike
-   must establish a journal-scoped path plus periodic full sweeps. Build and measure
-   both, then let unknown or losing cells select cold.
+   sweep is the exact fallback.
+   macOS exposes persistent FSEvents history, but cross-restart use is not
+   Watchman-proven and Apple calls events advisory; the spike must establish a
+   journal-scoped path plus periodic full sweeps.
+   Build and measure both, then let unknown or losing cells select cold.
 5. **io_uring is correctly a footnote.** No getdents opcode, and seccomp-blocked in most
    of fdu’s own cloud targets.
    Probe-and-fallback later; never load-bearing.
@@ -1139,13 +1130,12 @@ These are the hills worth being on:
    streaming consumer at all and cold-scan-index converges on producer time.
    This is what `fdu-gdrv`/`fdu-aky1` are really for; packing (H19–H22) is what makes
    the splice cheap.
-5. **Move the loop beyond one warm 60k APFS tree before trusting global verdicts.**
-   Everything measured so far is one tree, one host, warm-steady cache, zero churn.
-   The 500k+ knee, cold caches, churned warm runs, network storage, and Linux are
-   invisible, and exp-002 is predicted to flip in several of those states.
-   The extensions are cheap because the generated-corpus harness already exists (recipes
-   for 100k–1M, churn transitions, `--purge`); they are backlog items H36–H39, and they
-   should interleave with code experiments rather than wait.
+5. **Move paired end-to-end comparisons beyond one warm 60k APFS tree before trusting
+   global verdicts.** Snapshot loading now has an oracle-checked 10k–1M topology curve,
+   but the 500k+ *revalidation* knee, cold caches, churned warm runs, network storage,
+   Linux, and Windows remain unmeasured.
+   The generated-corpus recipes, churn transitions, and `--purge` support make H36–H39
+   the next evidence work, not grounds for extrapolation.
 
 ## Candidate Experiment Backlog (Loop-Ready)
 
@@ -1275,8 +1265,8 @@ in the original research), and micro-tuning `readdir` batch sizes on the portabl
 3. **Treat the parallel sweep as the product’s spine on Linux and the backstop
    everywhere**; treat FSEvents journal resume as the macOS warm-open accelerator and
    reserve its snapshot fields (applied event boundary, volume UUID, capture time,
-   last-full-sweep time, and platform tag) in the block format now so the format survives
-   its arrival.
+   last-full-sweep time, and platform tag) in the block format now so the format
+   survives its arrival.
 4. **Finish the snapshot ladder in sequence** — single-pass parse (H32), persisted
    roll-ups (H33), bulk arena fill (H34) — ahead of the block format, which then
    inherits a loader worth having; exp-005 was the first step of this ladder.
@@ -1302,12 +1292,13 @@ in the original research), and micro-tuning `readdir` batch sizes on the portabl
 9. **Separate cache-read selection from cache-write permission.** `auto` reads a
    snapshot only when a versioned paired experiment wins for the matching
    platform/filesystem/storage/scale/cache-state/churn cell without violating CPU/RSS
-   guardrails; unknown cells run cold. Writing an eligible complete result is a separate
-   policy and may still preserve cache-only data, applied journal boundaries, or derived
-   results after a cold-selected run. Background serialization can contend and the join
-   affects completion, so measure both time to first output and completion rather than
-   calling it free or off-path. Keep explicit refresh, read-only, cache-only, off, purge,
-   corrupt-as-absent, and owner-only storage behavior.
+   guardrails; unknown cells run cold.
+   Writing an eligible complete result is a separate policy and may still preserve
+   cache-only data, applied journal boundaries, or derived results after a cold-selected
+   run. Background serialization can contend and the join affects completion, so measure
+   both time to first output and completion rather than calling it free or off-path.
+   Keep explicit refresh, read-only, cache-only, off, purge, corrupt-as-absent, and
+   owner-only storage behavior.
 
 ## Open Questions
 
@@ -1405,8 +1396,10 @@ Linux and cloud:
 - [zfs diff](https://openzfs.github.io/openzfs-docs/man/master/8/zfs-diff.8.html) ·
   [btrfs send](https://btrfs.readthedocs.io/en/latest/btrfs-send.html) ·
   [Robinhood Policy Engine (Lustre changelog consumer)](https://github.com/cea-hpc/robinhood)
-  · [kernel-internal change-cookie mask](https://github.com/torvalds/linux/blob/d58772d8520c7ef247c4b95c9bd76d3a25da9ff5/fs/stat.c#L753-L760)
-  · [userspace statx UAPI](https://github.com/torvalds/linux/blob/d58772d8520c7ef247c4b95c9bd76d3a25da9ff5/include/uapi/linux/stat.h#L94-L223)
+  ·
+  [kernel-internal change-cookie mask](https://github.com/torvalds/linux/blob/d58772d8520c7ef247c4b95c9bd76d3a25da9ff5/fs/stat.c#L753-L760)
+  ·
+  [userspace statx UAPI](https://github.com/torvalds/linux/blob/d58772d8520c7ef247c4b95c9bd76d3a25da9ff5/include/uapi/linux/stat.h#L94-L223)
 - [btrfs find-new](https://btrfs.readthedocs.io/en/latest/btrfs-subvolume.html) ·
   [dentry cache sizing incident](https://access.redhat.com/solutions/55818)
 

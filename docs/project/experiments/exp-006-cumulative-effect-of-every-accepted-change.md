@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-006
   title: Cumulative effect of every accepted change
-  date: 2026-08-11
+  date: "2026-08-11"
   hypotheses:
     - H1
     - H5
@@ -408,8 +408,9 @@ harness work.
 
 Cold-scan wall fell 48.9%, warm revalidation 14.7%, and snapshot load 29.1%. However,
 process CPU rose about 104%, system CPU about 161%, and RSS about 9%; the old renderer
-mislabelled those clear regressions as nonsignificant. More fundamentally, `b565882` was
-not PR #3's base `fdd9e523`, so these numbers never described the full branch delta.
+mislabelled those clear regressions as nonsignificant.
+More fundamentally, `b565882` was not PR #3’s base `fdd9e523`, so these numbers never
+described the full branch delta.
 
 ## Verdict
 

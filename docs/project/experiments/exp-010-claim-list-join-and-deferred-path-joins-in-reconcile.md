@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-010
   title: Claim-list join and deferred path joins in reconcile
-  date: 2026-08-11
+  date: "2026-08-11"
   hypotheses:
     - H17
   subject:
@@ -270,19 +270,21 @@ and lookup work during unchanged-tree reconciliation.
 
 ## What was tried
 
-The candidate replaced each directory's expectation map with a sorted list and joined a
-child path only when an operation or descent needed one. The control already contained
-H14's direct entry-ID expectation reads.
+The candidate replaced each directory’s expectation map with a sorted list and joined a
+child path only when an operation or descent needed one.
+The control already contained H14’s direct entry-ID expectation reads.
 
 ## What the numbers said
 
-Warm-revalidate wall changed by -0.03% with a tight interval spanning zero. After H14,
-the remaining allocation was negligible beside one metadata operation per entry, so the
-representation change added complexity without measurable benefit.
+Warm-revalidate wall changed by -0.03% with a tight interval spanning zero.
+After H14, the remaining allocation was negligible beside one metadata operation per
+entry, so the representation change added complexity without measurable benefit.
 
 ## Verdict
 
-**REJECTED** — Nothing there: -0.03% with a tight interval [-1.37%, +1.64%] over 16 quiet paired trials; after H14 the expectation map already read straight off entry ids, and the remaining allocations are noise next to one fstatat per entry
+**REJECTED** — Nothing there: -0.03% with a tight interval [-1.37%, +1.64%] over 16
+quiet paired trials; after H14 the expectation map already read straight off entry ids,
+and the remaining allocations are noise next to one fstatat per entry
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

@@ -69,7 +69,7 @@ def load_experiments(directory: Path) -> List[Dict[str, Any]]:
 
 def _read(path: Path) -> Dict[str, Any]:
     completed = subprocess.run(
-        ["uvx", "softschema@latest", "validate", str(path)],
+        ["softschema", "validate", str(path)],
         capture_output=True,
         timeout=600,
     )

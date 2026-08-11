@@ -12,11 +12,12 @@ tried, and why the number meant what we said it meant.
 
 That split is the soft-schema practice. Numbers are promoted into YAML because the
 ledger renderer consumes them; the reasoning stays prose because nothing consumes it
-but a person. See `uvx softschema@latest docs guide`.
+but a person. See `uv run --project benchmarks/realtree --frozen softschema docs guide`.
 
 The model here is the source of truth for the contract. Compile it with:
 
-    uvx softschema@latest compile benchmarks.realtree.experiment:Experiment \\
+    uv run --project benchmarks/realtree --frozen softschema compile \\
+      benchmarks.realtree.experiment:Experiment \\
       --out docs/project/experiments/experiment.schema.yaml \\
       --contract fdu.performance:Experiment/v1
 """

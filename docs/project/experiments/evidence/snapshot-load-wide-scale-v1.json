@@ -1,0 +1,799 @@
+{
+  "conditions": {
+    "filesystem_cache": "warm-steady",
+    "order": "ascending-scale-v1",
+    "schedule_seed": null,
+    "schedule_sha256": "20619662303beb40bd12a6aebe1efc3de02e653ca707f668114990846ba6f273",
+    "trials": 5,
+    "warmups": 1
+  },
+  "duration_seconds": 812.497,
+  "host": {
+    "arch": "arm64",
+    "cpu_count": 10,
+    "cpu_model": "Apple M1 Pro",
+    "efficiency_cores": 2,
+    "filesystem": "apfs",
+    "memory_bytes": 34359738368,
+    "performance_cores": 8,
+    "python": "3.14.6",
+    "release": "25.5.0",
+    "system": "Darwin",
+    "toolchain": "rustc 1.97.1 (8bab26f4f 2026-07-14)"
+  },
+  "scales": [
+    {
+      "corpus": {
+        "counts": {
+          "directories": 1251,
+          "files": 8750,
+          "hardlink_groups": 0,
+          "other": 0,
+          "symlinks": 0,
+          "total": 10001
+        },
+        "engine_digest": "bac48ee6b3edd7b1fe3de1671f3ec1201c7e28c3d3ce10ce2d166cddab3eeb30",
+        "manifest_hash": "043e5d1a42d110d506fa01f409ec786fc12c0ea43952db73c9622857768580b8",
+        "recipe_hash": "158e36a5c43c0d17f189204950ef273b5d0ae73b14f5e326f5caa5febc662ffe",
+        "recipe_id": "wide-snapshot",
+        "rollup_digest": "4cc12cde073747f697de792b1ab78cd79a6f06850e53764aa5a934674212b364"
+      },
+      "entries": 10000,
+      "invalid_samples": 0,
+      "samples": [
+        {
+          "metrics": {
+            "blocked_ns": 1786250,
+            "component_ns": 10940583,
+            "cpu_ns": 26219000,
+            "input_blocks": 0,
+            "involuntary_context_switches": 45,
+            "major_faults": 0,
+            "minor_faults": 627,
+            "output_blocks": 0,
+            "peak_rss_bytes": 7061504,
+            "system_cpu_ns": 2616000,
+            "user_cpu_ns": 23603000,
+            "voluntary_context_switches": 0,
+            "wall_ns": 28005250
+          },
+          "ordinal": -1,
+          "reasons": [],
+          "valid": true,
+          "warmup": true
+        },
+        {
+          "metrics": {
+            "blocked_ns": 1977375,
+            "component_ns": 11378167,
+            "cpu_ns": 26765000,
+            "input_blocks": 0,
+            "involuntary_context_switches": 43,
+            "major_faults": 0,
+            "minor_faults": 631,
+            "output_blocks": 0,
+            "peak_rss_bytes": 7127040,
+            "system_cpu_ns": 2308000,
+            "user_cpu_ns": 24457000,
+            "voluntary_context_switches": 0,
+            "wall_ns": 28742375
+          },
+          "ordinal": 0,
+          "reasons": [],
+          "valid": true,
+          "warmup": false
+        },
+        {
+          "metrics": {
+            "blocked_ns": 2414542,
+            "component_ns": 12055583,
+            "cpu_ns": 27426000,
+            "input_blocks": 0,
+            "involuntary_context_switches": 66,
+            "major_faults": 0,
+            "minor_faults": 630,
+            "output_blocks": 0,
+            "peak_rss_bytes": 7110656,
+            "system_cpu_ns": 2837000,
+            "user_cpu_ns": 24589000,
+            "voluntary_context_switches": 0,
+            "wall_ns": 29840542
+          },
+          "ordinal": 1,
+          "reasons": [],
+          "valid": true,
+          "warmup": false
+        },
+        {
+          "metrics": {
+            "blocked_ns": 1746208,
+            "component_ns": 10910542,
+            "cpu_ns": 26997000,
+            "input_blocks": 0,
+            "involuntary_context_switches": 34,
+            "major_faults": 0,
+            "minor_faults": 632,
+            "output_blocks": 0,
+            "peak_rss_bytes": 7143424,
+            "system_cpu_ns": 2813000,
+            "user_cpu_ns": 24184000,
+            "voluntary_context_switches": 0,
+            "wall_ns": 28743208
+          },
+          "ordinal": 2,
+          "reasons": [],
+          "valid": true,
+          "warmup": false
+        },
+        {
+          "metrics": {
+            "blocked_ns": 2235208,
+            "component_ns": 11315542,
+            "cpu_ns": 26437000,
+            "input_blocks": 0,
+            "involuntary_context_switches": 42,
+            "major_faults": 0,
+            "minor_faults": 635,
+            "output_blocks": 0,
+            "peak_rss_bytes": 7192576,
+            "system_cpu_ns": 2470000,
+            "user_cpu_ns": 23967000,
+            "voluntary_context_switches": 0,
+            "wall_ns": 28672208
+          },
+          "ordinal": 3,
+          "reasons": [],
+          "valid": true,
+          "warmup": false
+        },
+        {
+          "metrics": {
+            "blocked_ns": 2488291,
+            "component_ns": 11093458,
+            "cpu_ns": 26795000,
+            "input_blocks": 0,
+            "involuntary_context_switches": 45,
+            "major_faults": 0,
+            "minor_faults": 628,
+            "output_blocks": 0,
+            "peak_rss_bytes": 7077888,
+            "system_cpu_ns": 2700000,
+            "user_cpu_ns": 24095000,
+            "voluntary_context_switches": 0,
+            "wall_ns": 29283291
+          },
+          "ordinal": 4,
+          "reasons": [],
+          "valid": true,
+          "warmup": false
+        }
+      ],
+      "statistics": {
+        "component_ns": {
+          "count": 5,
+          "mad": 222084,
+          "max": 12055583,
+          "mean": 11350658.4,
+          "median": 11315542,
+          "min": 10910542,
+          "p90": 12055583,
+          "stdev": 435535.0
+        },
+        "cpu_ns": {
+          "count": 5,
+          "mad": 202000,
+          "max": 27426000,
+          "mean": 26884000.0,
+          "median": 26795000,
+          "min": 26437000,
+          "p90": 27426000,
+          "stdev": 363463.9
+        },
+        "peak_rss_bytes": {
+          "count": 5,
+          "mad": 16384,
+          "max": 7192576,
+          "mean": 7130316.8,
+          "median": 7127040,
+          "min": 7077888,
+          "p90": 7192576,
+          "stdev": 42408.9
+        },
+        "wall_ns": {
+          "count": 5,
+          "mad": 71000,
+          "max": 29840542,
+          "mean": 29056324.8,
+          "median": 28743208,
+          "min": 28672208,
+          "p90": 29840542,
+          "stdev": 502658.6
+        }
+      }
+    },
+    {
+      "corpus": {
+        "counts": {
+          "directories": 2049,
+          "files": 97952,
+          "hardlink_groups": 0,
+          "other": 0,
+          "symlinks": 0,
+          "total": 100001
+        },
+        "engine_digest": "916eec39cb3af1b653510f8ae3bb30161b1098d62c24c0ad82e733d808ab9f28",
+        "manifest_hash": "97323a22b79133472b3af70ac49fa36887b2272fdbaf1fb98e312c2cb6c0d715",
+        "recipe_hash": "d793701259d3e1877d20e1d9eedf0f59c4e0b8418308c2ba7c57894faefaf195",
+        "recipe_id": "wide-snapshot",
+        "rollup_digest": "c8184521a4c663f605206f4783678ef4a1292f90eb9f8960b34365e7890abff7"
+      },
+      "entries": 100000,
+      "invalid_samples": 0,
+      "samples": [
+        {
+          "metrics": {
+            "blocked_ns": 5039500,
+            "component_ns": 102706875,
+            "cpu_ns": 216713000,
+            "input_blocks": 0,
+            "involuntary_context_switches": 214,
+            "major_faults": 0,
+            "minor_faults": 3043,
+            "output_blocks": 0,
+            "peak_rss_bytes": 46596096,
+            "system_cpu_ns": 11809000,
+            "user_cpu_ns": 204904000,
+            "voluntary_context_switches": 0,
+            "wall_ns": 221752500
+          },
+          "ordinal": -1,
+          "reasons": [],
+          "valid": true,
+          "warmup": true
+        },
+        {
+          "metrics": {
+            "blocked_ns": 5415833,
+            "component_ns": 103538667,
+            "cpu_ns": 216284000,
+            "input_blocks": 0,
+            "involuntary_context_switches": 230,
+            "major_faults": 0,
+            "minor_faults": 3032,
+            "output_blocks": 0,
+            "peak_rss_bytes": 46415872,
+            "system_cpu_ns": 10972000,
+            "user_cpu_ns": 205312000,
+            "voluntary_context_switches": 0,
+            "wall_ns": 221699833
+          },
+          "ordinal": 0,
+          "reasons": [],
+          "valid": true,
+          "warmup": false
+        },
+        {
+          "metrics": {
+            "blocked_ns": 5055958,
+            "component_ns": 102492083,
+            "cpu_ns": 214190000,
+            "input_blocks": 0,
+            "involuntary_context_switches": 218,
+            "major_faults": 0,
+            "minor_faults": 3066,
+            "output_blocks": 0,
+            "peak_rss_bytes": 46972928,
+            "system_cpu_ns": 11090000,
+            "user_cpu_ns": 203100000,
+            "voluntary_context_switches": 0,
+            "wall_ns": 219245958
+          },
+          "ordinal": 1,
+          "reasons": [],
+          "valid": true,
+          "warmup": false
+        },
+        {
+          "metrics": {
+            "blocked_ns": 4938292,
+            "component_ns": 102727041,
+            "cpu_ns": 215444000,
+            "input_blocks": 0,
+            "involuntary_context_switches": 259,
+            "major_faults": 0,
+            "minor_faults": 3056,
+            "output_blocks": 0,
+            "peak_rss_bytes": 46809088,
+            "system_cpu_ns": 13102000,
+            "user_cpu_ns": 202342000,
+            "voluntary_context_switches": 0,
+            "wall_ns": 220382292
+          },
+          "ordinal": 2,
+          "reasons": [],
+          "valid": true,
+          "warmup": false
+        },
+        {
+          "metrics": {
+            "blocked_ns": 5106458,
+            "component_ns": 101422917,
+            "cpu_ns": 214059000,
+            "input_blocks": 0,
+            "involuntary_context_switches": 228,
+            "major_faults": 0,
+            "minor_faults": 3063,
+            "output_blocks": 0,
+            "peak_rss_bytes": 46923776,
+            "system_cpu_ns": 12731000,
+            "user_cpu_ns": 201328000,
+            "voluntary_context_switches": 0,
+            "wall_ns": 219165458
+          },
+          "ordinal": 3,
+          "reasons": [],
+          "valid": true,
+          "warmup": false
+        },
+        {
+          "metrics": {
+            "blocked_ns": 6438333,
+            "component_ns": 102957083,
+            "cpu_ns": 216094000,
+            "input_blocks": 0,
+            "involuntary_context_switches": 303,
+            "major_faults": 0,
+            "minor_faults": 3055,
+            "output_blocks": 0,
+            "peak_rss_bytes": 46792704,
+            "system_cpu_ns": 13352000,
+            "user_cpu_ns": 202742000,
+            "voluntary_context_switches": 0,
+            "wall_ns": 222532333
+          },
+          "ordinal": 4,
+          "reasons": [],
+          "valid": true,
+          "warmup": false
+        }
+      ],
+      "statistics": {
+        "component_ns": {
+          "count": 5,
+          "mad": 234958,
+          "max": 103538667,
+          "mean": 102627558.2,
+          "median": 102727041,
+          "min": 101422917,
+          "p90": 103538667,
+          "stdev": 777514.7
+        },
+        "cpu_ns": {
+          "count": 5,
+          "mad": 840000,
+          "max": 216284000,
+          "mean": 215214200.0,
+          "median": 215444000,
+          "min": 214059000,
+          "p90": 216284000,
+          "stdev": 1043408.0
+        },
+        "peak_rss_bytes": {
+          "count": 5,
+          "mad": 114688,
+          "max": 46972928,
+          "mean": 46782873.6,
+          "median": 46809088,
+          "min": 46415872,
+          "p90": 46972928,
+          "stdev": 218774.0
+        },
+        "wall_ns": {
+          "count": 5,
+          "mad": 1216834,
+          "max": 222532333,
+          "mean": 220605174.8,
+          "median": 220382292,
+          "min": 219165458,
+          "p90": 222532333,
+          "stdev": 1490146.5
+        }
+      }
+    },
+    {
+      "corpus": {
+        "counts": {
+          "directories": 2049,
+          "files": 497952,
+          "hardlink_groups": 0,
+          "other": 0,
+          "symlinks": 0,
+          "total": 500001
+        },
+        "engine_digest": "a1ee8a08b1ae5492a274b58512a3e985ede0166f68159fc3e01fd5cff6a2a387",
+        "manifest_hash": "6ffaf30f2dc8e2a61a174cecbbb7d36359cd00682077d51c65a241bb88a2e1c5",
+        "recipe_hash": "8edc4209d5596dbc255b0ee0def75599a088102234bef36d3de09bd13284376f",
+        "recipe_id": "wide-snapshot",
+        "rollup_digest": "03e20ed3b48af3d69c6d7413450a7eb3833db2b686bc2eb73e48aa52ce149b81"
+      },
+      "entries": 500000,
+      "invalid_samples": 0,
+      "samples": [
+        {
+          "metrics": {
+            "blocked_ns": 20847000,
+            "component_ns": 531588375,
+            "cpu_ns": 1075610000,
+            "input_blocks": 0,
+            "involuntary_context_switches": 1245,
+            "major_faults": 0,
+            "minor_faults": 13817,
+            "output_blocks": 0,
+            "peak_rss_bytes": 223019008,
+            "system_cpu_ns": 61653000,
+            "user_cpu_ns": 1013957000,
+            "voluntary_context_switches": 0,
+            "wall_ns": 1096457000
+          },
+          "ordinal": -1,
+          "reasons": [],
+          "valid": true,
+          "warmup": true
+        },
+        {
+          "metrics": {
+            "blocked_ns": 38394250,
+            "component_ns": 553084041,
+            "cpu_ns": 1102024000,
+            "input_blocks": 0,
+            "involuntary_context_switches": 1825,
+            "major_faults": 0,
+            "minor_faults": 13793,
+            "output_blocks": 0,
+            "peak_rss_bytes": 222625792,
+            "system_cpu_ns": 62182000,
+            "user_cpu_ns": 1039842000,
+            "voluntary_context_switches": 0,
+            "wall_ns": 1140418250
+          },
+          "ordinal": 0,
+          "reasons": [],
+          "valid": true,
+          "warmup": false
+        },
+        {
+          "metrics": {
+            "blocked_ns": 94487792,
+            "component_ns": 545174458,
+            "cpu_ns": 1104165000,
+            "input_blocks": 0,
+            "involuntary_context_switches": 2153,
+            "major_faults": 0,
+            "minor_faults": 13838,
+            "output_blocks": 0,
+            "peak_rss_bytes": 223363072,
+            "system_cpu_ns": 59910000,
+            "user_cpu_ns": 1044255000,
+            "voluntary_context_switches": 0,
+            "wall_ns": 1198652792
+          },
+          "ordinal": 1,
+          "reasons": [],
+          "valid": true,
+          "warmup": false
+        },
+        {
+          "metrics": {
+            "blocked_ns": 33622042,
+            "component_ns": 546352042,
+            "cpu_ns": 1097185000,
+            "input_blocks": 0,
+            "involuntary_context_switches": 1867,
+            "major_faults": 0,
+            "minor_faults": 13797,
+            "output_blocks": 0,
+            "peak_rss_bytes": 222691328,
+            "system_cpu_ns": 61313000,
+            "user_cpu_ns": 1035872000,
+            "voluntary_context_switches": 0,
+            "wall_ns": 1130807042
+          },
+          "ordinal": 2,
+          "reasons": [],
+          "valid": true,
+          "warmup": false
+        },
+        {
+          "metrics": {
+            "blocked_ns": 33064250,
+            "component_ns": 557212125,
+            "cpu_ns": 1096112000,
+            "input_blocks": 0,
+            "involuntary_context_switches": 1680,
+            "major_faults": 0,
+            "minor_faults": 13831,
+            "output_blocks": 0,
+            "peak_rss_bytes": 223248384,
+            "system_cpu_ns": 61856000,
+            "user_cpu_ns": 1034256000,
+            "voluntary_context_switches": 0,
+            "wall_ns": 1129176250
+          },
+          "ordinal": 3,
+          "reasons": [],
+          "valid": true,
+          "warmup": false
+        },
+        {
+          "metrics": {
+            "blocked_ns": 28918375,
+            "component_ns": 546012125,
+            "cpu_ns": 1088792000,
+            "input_blocks": 0,
+            "involuntary_context_switches": 1580,
+            "major_faults": 0,
+            "minor_faults": 13812,
+            "output_blocks": 0,
+            "peak_rss_bytes": 222937088,
+            "system_cpu_ns": 61026000,
+            "user_cpu_ns": 1027766000,
+            "voluntary_context_switches": 0,
+            "wall_ns": 1117710375
+          },
+          "ordinal": 4,
+          "reasons": [],
+          "valid": true,
+          "warmup": false
+        }
+      ],
+      "statistics": {
+        "component_ns": {
+          "count": 5,
+          "mad": 1177584,
+          "max": 557212125,
+          "mean": 549566958.2,
+          "median": 546352042,
+          "min": 545174458,
+          "p90": 557212125,
+          "stdev": 5317072.3
+        },
+        "cpu_ns": {
+          "count": 5,
+          "mad": 4839000,
+          "max": 1104165000,
+          "mean": 1097655600.0,
+          "median": 1097185000,
+          "min": 1088792000,
+          "p90": 1104165000,
+          "stdev": 5971238.9
+        },
+        "peak_rss_bytes": {
+          "count": 5,
+          "mad": 311296,
+          "max": 223363072,
+          "mean": 222973132.8,
+          "median": 222937088,
+          "min": 222625792,
+          "p90": 223363072,
+          "stdev": 327557.1
+        },
+        "wall_ns": {
+          "count": 5,
+          "mad": 9611208,
+          "max": 1198652792,
+          "mean": 1143352941.8,
+          "median": 1130807042,
+          "min": 1117710375,
+          "p90": 1198652792,
+          "stdev": 31947634.0
+        }
+      }
+    },
+    {
+      "corpus": {
+        "counts": {
+          "directories": 2049,
+          "files": 997952,
+          "hardlink_groups": 0,
+          "other": 0,
+          "symlinks": 0,
+          "total": 1000001
+        },
+        "engine_digest": "a653d9823079ab7dc7a019092c8594a274864723bd361cfa0d69295b93c765f5",
+        "manifest_hash": "c47cd1db4080510706afdbb9bf17b30157c6b83497af2758f643ea42530505e9",
+        "recipe_hash": "1b0a80b9700fbf7f62a8e02819751610a8a350de4d347dae8496a65ecd1ca156",
+        "recipe_id": "wide-snapshot",
+        "rollup_digest": "45d1b667b6cadc5b68316c0eb18f00c933964de86a391f704880bf3460f6872e"
+      },
+      "entries": 1000000,
+      "invalid_samples": 0,
+      "samples": [
+        {
+          "metrics": {
+            "blocked_ns": 119334917,
+            "component_ns": 1189335125,
+            "cpu_ns": 2246656000,
+            "input_blocks": 0,
+            "involuntary_context_switches": 6110,
+            "major_faults": 0,
+            "minor_faults": 26860,
+            "output_blocks": 0,
+            "peak_rss_bytes": 436649984,
+            "system_cpu_ns": 156499000,
+            "user_cpu_ns": 2090157000,
+            "voluntary_context_switches": 0,
+            "wall_ns": 2365990917
+          },
+          "ordinal": -1,
+          "reasons": [],
+          "valid": true,
+          "warmup": true
+        },
+        {
+          "metrics": {
+            "blocked_ns": 40975833,
+            "component_ns": 1094440125,
+            "cpu_ns": 2184462000,
+            "input_blocks": 0,
+            "involuntary_context_switches": 2396,
+            "major_faults": 0,
+            "minor_faults": 26908,
+            "output_blocks": 0,
+            "peak_rss_bytes": 437436416,
+            "system_cpu_ns": 137038000,
+            "user_cpu_ns": 2047424000,
+            "voluntary_context_switches": 0,
+            "wall_ns": 2225437833
+          },
+          "ordinal": 0,
+          "reasons": [],
+          "valid": true,
+          "warmup": false
+        },
+        {
+          "metrics": {
+            "blocked_ns": 36989250,
+            "component_ns": 1073433125,
+            "cpu_ns": 2192679000,
+            "input_blocks": 0,
+            "involuntary_context_switches": 2597,
+            "major_faults": 0,
+            "minor_faults": 26883,
+            "output_blocks": 0,
+            "peak_rss_bytes": 437026816,
+            "system_cpu_ns": 159708000,
+            "user_cpu_ns": 2032971000,
+            "voluntary_context_switches": 0,
+            "wall_ns": 2229668250
+          },
+          "ordinal": 1,
+          "reasons": [],
+          "valid": true,
+          "warmup": false
+        },
+        {
+          "metrics": {
+            "blocked_ns": 40478458,
+            "component_ns": 1079467750,
+            "cpu_ns": 2160650000,
+            "input_blocks": 0,
+            "involuntary_context_switches": 3187,
+            "major_faults": 0,
+            "minor_faults": 26862,
+            "output_blocks": 0,
+            "peak_rss_bytes": 436682752,
+            "system_cpu_ns": 125920000,
+            "user_cpu_ns": 2034730000,
+            "voluntary_context_switches": 0,
+            "wall_ns": 2201128458
+          },
+          "ordinal": 2,
+          "reasons": [],
+          "valid": true,
+          "warmup": false
+        },
+        {
+          "metrics": {
+            "blocked_ns": 38145917,
+            "component_ns": 1090504250,
+            "cpu_ns": 2166996000,
+            "input_blocks": 0,
+            "involuntary_context_switches": 2466,
+            "major_faults": 0,
+            "minor_faults": 26897,
+            "output_blocks": 0,
+            "peak_rss_bytes": 437256192,
+            "system_cpu_ns": 116787000,
+            "user_cpu_ns": 2050209000,
+            "voluntary_context_switches": 0,
+            "wall_ns": 2205141917
+          },
+          "ordinal": 3,
+          "reasons": [],
+          "valid": true,
+          "warmup": false
+        },
+        {
+          "metrics": {
+            "blocked_ns": 38047625,
+            "component_ns": 1092987834,
+            "cpu_ns": 2182320000,
+            "input_blocks": 0,
+            "involuntary_context_switches": 2314,
+            "major_faults": 0,
+            "minor_faults": 26898,
+            "output_blocks": 0,
+            "peak_rss_bytes": 437272576,
+            "system_cpu_ns": 132886000,
+            "user_cpu_ns": 2049434000,
+            "voluntary_context_switches": 0,
+            "wall_ns": 2220367625
+          },
+          "ordinal": 4,
+          "reasons": [],
+          "valid": true,
+          "warmup": false
+        }
+      ],
+      "statistics": {
+        "component_ns": {
+          "count": 5,
+          "mad": 3935875,
+          "max": 1094440125,
+          "mean": 1086166616.8,
+          "median": 1090504250,
+          "min": 1073433125,
+          "p90": 1094440125,
+          "stdev": 9230542.2
+        },
+        "cpu_ns": {
+          "count": 5,
+          "mad": 10359000,
+          "max": 2192679000,
+          "mean": 2177421400.0,
+          "median": 2182320000,
+          "min": 2160650000,
+          "p90": 2192679000,
+          "stdev": 13194028.1
+        },
+        "peak_rss_bytes": {
+          "count": 5,
+          "mad": 180224,
+          "max": 437436416,
+          "mean": 437134950.4,
+          "median": 437256192,
+          "min": 436682752,
+          "p90": 437436416,
+          "stdev": 291846.8
+        },
+        "wall_ns": {
+          "count": 5,
+          "mad": 9300625,
+          "max": 2229668250,
+          "mean": 2216348816.6,
+          "median": 2220367625,
+          "min": 2201128458,
+          "p90": 2229668250,
+          "stdev": 12583940.8
+        }
+      }
+    }
+  ],
+  "schema": "fdu-snapshot-load-scale-v1",
+  "started_utc": "2026-08-11T06:30:19Z",
+  "variant": {
+    "args": [],
+    "build_command": "cargo build --locked --release -p fdu --example perf_probe --no-default-features",
+    "build_profile": "release",
+    "engine_revision": "bd479aaee90263dea8c7dc5ce9d131368e749568",
+    "features": [],
+    "harness_revision": "bd479aaee90263dea8c7dc5ce9d131368e749568",
+    "harness_sha256": "62a986a614823a5b3c979fe681ce9f94ab83f50938b3c388243489f63d5826ee",
+    "kind": "fdu-probe",
+    "name": "candidate",
+    "notes": "",
+    "sha256": "4da08321bd34656d4addfe6dd87fc5e80d15125d3f822c02cba69491174efd05",
+    "size_bytes": 535888,
+    "target": "aarch64-apple-darwin"
+  }
+}

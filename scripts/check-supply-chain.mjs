@@ -707,15 +707,19 @@ async function main() {
     minimumAgeDays: policy.minimumAgeDays,
     exceptions: policy.exceptions,
   };
-  const [cargoText, npmText, uvText, workflows] = await Promise.all([
+  const uvLocks = [
+    path.join(ROOT, "crates", "fdu-py", "uv.lock"),
+    path.join(ROOT, "benchmarks", "realtree", "uv.lock"),
+  ];
+  const [cargoText, npmText, uvTexts, workflows] = await Promise.all([
     readFile(path.join(ROOT, "Cargo.lock"), "utf8"),
     readFile(path.join(ROOT, "package-lock.json"), "utf8"),
-    readFile(path.join(ROOT, "crates", "fdu-py", "uv.lock"), "utf8"),
+    Promise.all(uvLocks.map((lock) => readFile(lock, "utf8"))),
     workflowFiles(ROOT),
   ]);
   const cargo = parseCargoLock(cargoText);
   const npm = parseNpmLock(npmText);
-  const python = parseUvLock(uvText);
+  const python = uvTexts.flatMap((text) => parseUvLock(text));
   const actions = parseActionUses(workflows);
   validateWorkflowSecurity(workflows);
 

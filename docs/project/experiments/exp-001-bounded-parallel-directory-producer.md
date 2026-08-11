@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-001
   title: Bounded parallel directory producer
-  date: 2026-08-10
+  date: "2026-08-10"
   hypotheses:
     - H1
   subject:
@@ -268,16 +268,17 @@ applied observations to the index.
 
 ## What was tried
 
-The same release binary was measured with one and four producer threads. The candidate
-used a bounded directory queue and retained the single Delta consumer, isolating
-producer concurrency from index mutation.
+The same release binary was measured with one and four producer threads.
+The candidate used a bounded directory queue and retained the single Delta consumer,
+isolating producer concurrency from index mutation.
 
 ## What the numbers said
 
-Cold-scan wall fell about 50% in the v1 run. The result correctly motivated the worker
-pool, but the original implementation and evidence later proved incomplete: cancellation
-could hang, the observation channel was unbounded, and the v1 oracle did not cover every
-roll-up reducer. This branch repairs those contracts before remeasurement.
+Cold-scan wall fell about 50% in the v1 run.
+The result correctly motivated the worker pool, but the original implementation and
+evidence later proved incomplete: cancellation could hang, the observation channel was
+unbounded, and the v1 oracle did not cover every roll-up reducer.
+This branch repairs those contracts before remeasurement.
 
 ## Verdict
 

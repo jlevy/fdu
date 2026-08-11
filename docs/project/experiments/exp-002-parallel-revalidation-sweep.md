@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-002
   title: Parallel revalidation sweep
-  date: 2026-08-10
+  date: "2026-08-10"
   hypotheses:
     - H9
   subject:
@@ -271,14 +271,16 @@ would reduce warm-start wall time enough to justify another concurrent path.
 
 ## What was tried
 
-The control kept exp-001's parallel cold scan and serial revalidation. The candidate
-routed revalidation through the same pool, adding roughly 180 lines of concurrency.
+The control kept exp-001’s parallel cold scan and serial revalidation.
+The candidate routed revalidation through the same pool, adding roughly 180 lines of
+concurrency.
 
 ## What the numbers said
 
-Warm-revalidate wall improved 2.59% in the paired run. The direction was favorable, but
-the effect did not clear the predeclared 3% carrying-cost threshold; the extra machinery
-also did not change the N-stat verification floor.
+Warm-revalidate wall improved 2.59% in the paired run.
+The direction was favorable, but the effect did not clear the predeclared 3%
+carrying-cost threshold; the extra machinery also did not change the N-stat verification
+floor.
 
 ## Verdict
 

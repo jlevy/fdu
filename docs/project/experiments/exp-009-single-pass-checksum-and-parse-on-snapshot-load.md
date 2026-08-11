@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-009
   title: Single-pass checksum and parse on snapshot load
-  date: 2026-08-11
+  date: "2026-08-11"
   hypotheses:
     - H32
   subject:
@@ -211,7 +211,8 @@ avoidable bandwidth and should move the pre-registered snapshot component metric
 ## What was tried
 
 The parser folded CRC calculation over bytes as it consumed them and withheld the index
-until both the parse and final checksum succeeded. Corrupt data still failed closed.
+until both the parse and final checksum succeeded.
+Corrupt data still failed closed.
 
 ## What the numbers said
 

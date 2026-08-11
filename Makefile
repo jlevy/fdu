@@ -38,7 +38,7 @@ build:
 release:
 	$(CARGO) build --locked --release -p fdu --all-features
 
-test: rust-test test-golden test-performance
+test: rust-test test-golden test-performance perf-test
 
 rust-test:
 	$(CARGO) test --locked --all-features
@@ -119,9 +119,9 @@ cli:
 
 # --- Performance loop -------------------------------------------------------
 #
-# Deliberately outside `check`. This is a development workflow that needs a large
-# real tree and a quiet machine, neither of which CI has; a timing gate on a shared
-# runner measures the runner. See docs/project/guides/performance-loop.md.
+# Measurements are deliberately outside `check`: they need a large real tree and a
+# quiet machine, neither of which CI has. The deterministic harness/evidence unit tests
+# are part of `check`. See docs/project/guides/performance-loop.md.
 #
 # PERF_TREE names the reference tree. Clone a real checkout with `cp -cR` first so
 # the tree cannot change underneath a run.
@@ -130,7 +130,9 @@ PERF_TREE ?= benchmarks/corpus/realtree/metabrowser
 PERF_LABEL ?= $(notdir $(PERF_TREE))
 PERF_RELEASE := target/release/examples/perf_probe
 PERF_PROFILING := target/profiling/examples/perf_probe
-PERF_RUN := uv run --no-project python -m benchmarks.realtree
+PERF_PROJECT := benchmarks/realtree
+PERF_UV := uv run --project $(PERF_PROJECT) --frozen
+PERF_RUN := $(PERF_UV) python -m benchmarks.realtree
 
 .PHONY: perf-probe-release perf-probe-profiling perf-baseline perf-profile perf-compare perf-test perf-ledger perf-schema perf-schema-check
 
@@ -162,15 +164,15 @@ perf-compare: perf-probe-release
 		--name $(or $(NAME),adhoc)
 
 perf-test:
-	uv run --no-project python -m unittest discover -s benchmarks/realtree/tests -p 'test_*.py'
+	$(PERF_UV) python -m unittest discover -s benchmarks/realtree/tests -p 'test_*.py'
 
 # Regenerate the ledger from the committed experiment artifacts. Every number in it
 # is read back out of a validated artifact, so the report cannot drift from the record.
 perf-ledger:
-	uv run --no-project python -m benchmarks.realtree.summary
+	$(PERF_UV) python -m benchmarks.realtree.summary
 
 # The experiment contract is compiled from the Pydantic model; --check fails on drift.
-SOFTSCHEMA ?= uvx softschema@latest
+SOFTSCHEMA ?= $(PERF_UV) softschema
 SCHEMA_QUIET := python3 -c "import json,sys; d=json.load(sys.stdin); print('schema', d['out_path'], 'drift:', d['drift'])"
 
 perf-schema:

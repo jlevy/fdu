@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-005
   title: Snapshot load resolves through the parent
-  date: 2026-08-11
+  date: "2026-08-11"
   hypotheses:
     - H10
   subject:
@@ -276,9 +276,10 @@ branch replaces that scan with direct B-tree lookup.
 
 ## What the numbers said
 
-The real-tree v1 run measured snapshot-load wall 18.6% lower. It did not exercise the
-quadratic sibling lookup on wide directories, so it could not support a topology-general
-claim. The corrected loader is separately checked on 10k through 1M wide scale points.
+The real-tree v1 run measured snapshot-load wall 18.6% lower.
+It did not exercise the quadratic sibling lookup on wide directories, so it could not
+support a topology-general claim.
+The corrected loader is separately checked on 10k through 1M wide scale points.
 
 ## Verdict
 

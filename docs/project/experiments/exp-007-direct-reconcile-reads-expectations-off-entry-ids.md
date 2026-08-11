@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-007
   title: Direct reconcile reads expectations off entry ids
-  date: 2026-08-11
+  date: "2026-08-11"
   hypotheses:
     - H14
   subject:
@@ -211,8 +211,8 @@ IDs it already owned instead of joining paths and descending from the root again
 ## What was tried
 
 The exclusive reconcile path reused the existing entry-ID expectation collector and
-deleted its path-based twin. A noisy first run was followed by the recorded 20-pair
-quiet-machine run.
+deleted its path-based twin.
+A noisy first run was followed by the recorded 20-pair quiet-machine run.
 
 ## What the numbers said
 

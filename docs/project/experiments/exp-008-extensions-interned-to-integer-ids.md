@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-008
   title: Extensions interned to integer ids
-  date: 2026-08-11
+  date: "2026-08-11"
   hypotheses:
     - H18
   subject:
@@ -330,10 +330,11 @@ tallies a significant cold-build and snapshot-load cost.
 
 ## What was tried
 
-The candidate interned extension names to integer IDs inside the index. The original
-change also exposed those owner-local IDs through public `RollUp`, which made public
-results order-dependent and foreign roll-ups unsafe. This branch retains interning only
-behind a self-describing named public boundary and reclaims unused IDs.
+The candidate interned extension names to integer IDs inside the index.
+The original change also exposed those owner-local IDs through public `RollUp`, which
+made public results order-dependent and foreign roll-ups unsafe.
+This branch retains interning only behind a self-describing named public boundary and
+reclaims unused IDs.
 
 ## What the numbers said
 

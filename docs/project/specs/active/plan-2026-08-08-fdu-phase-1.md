@@ -112,6 +112,10 @@ they were not in the research:
   Direct expectation capture plus exclusive no-op elision improved nine alternating 100k
   pairs by a paired median 18.15%, but does not change the need for the syscall walker
   and bounded parallel sweep.
+- The reviewed snapshot loader has a separate exact-oracle wide-fanout curve: 28.7 ms at
+  10k, 220.4 ms at 100k, 1.13 s at 500k, and 2.22 s at 1M on APFS. This removes the
+  fanout-quadratic concern and does not satisfy the revalidation target: snapshot load
+  and full filesystem revalidation are different jobs.
 
 ## What Phase 1 Delivers
 
