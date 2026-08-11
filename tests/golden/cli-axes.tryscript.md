@@ -93,7 +93,7 @@ $ fdu --cache off --view summary,types --size apparent --limit 1 project
 ### Include Narrows by Glob
 
 ```console
-$ fdu --cache off --view files --include '*.rs' project
+$ fdu --cache off --view files --include "*.rs" project
 src[SEP]alpha.rs
 src[SEP]omega.rs
 ? 0
@@ -104,7 +104,7 @@ src[SEP]omega.rs
 A comma-split would shred `*.{md,rs}`, which is why only closed vocabularies are lists.
 
 ```console
-$ fdu --cache off --view files --include '*.{md,rs}' project
+$ fdu --cache off --view files --include "*.{md,rs}" project
 README.md
 src[SEP]alpha.rs
 src[SEP]omega.rs
@@ -114,7 +114,7 @@ src[SEP]omega.rs
 ### Exclude Beats Include
 
 ```console
-$ fdu --cache off --view files --include '*.{md,rs}' --exclude 'src/**' project
+$ fdu --cache off --view files --include "*.{md,rs}" --exclude "src/**" project
 README.md
 ? 0
 ```
@@ -207,7 +207,7 @@ $ fdu --cache off --view types --format jsonl --size apparent --limit 1 project
 $ fdu --cache off --view summary --format yaml --size apparent project
 schema: fdu.report/1
 generator: "fdu 0.0.1"
-root: [SCAN_PATH]/project
+root: [SCAN_PATH]
 scan_started_at: "[RFC3339]"
 generated_at: "[RFC3339]"
 source: cold_scan
@@ -298,7 +298,7 @@ fdu: invalid size "10X": unknown size unit "X"; use B, K/KB, M/MB, G/GB, T/TB, P
 ### A Malformed Glob Says Which Delimiter Is Unmatched
 
 ```console
-$ fdu --cache off --include '{a,b' project
+$ fdu --cache off --include "{a,b" project
 fdu: invalid pattern "{a,b": unmatched `{` in pattern
 ? 2
 ```

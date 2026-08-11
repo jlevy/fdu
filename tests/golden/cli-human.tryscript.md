@@ -39,13 +39,18 @@ $ fdu --cache off --color never --size apparent --depth 1 --limit 2 project
 ? 0
 ```
 
-## Type View Uses Apparent Bytes Consistently
+## Type View Honors the Selected Size Metric
+
+The old `--by-type` always reported apparent bytes, which made it the one view that
+ignored the size metric. Under the axis design `--size` applies to every view, so the
+type breakdown answers in whichever metric was asked for — and apparent bytes are
+filesystem-independent, which is what makes this block stable across platforms.
 
 ```console
-$ fdu --cache off --color never --view types --limit 10 project
-   8.0 KiB  .md          2 files
-   8.0 KiB  .rs          2 files
-   4.0 KiB  .tar.gz      1 file
+$ fdu --cache off --color never --view types --limit 10 --size apparent project
+     128 B  .tar.gz      1 file
+      71 B  .md          2 files
+      36 B  .rs          2 files
 ? 0
 ```
 
