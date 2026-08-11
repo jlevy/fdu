@@ -74,6 +74,46 @@ impl std::fmt::Display for UsageError {
 
 impl std::error::Error for UsageError {}
 
+/// The result of one attempt to persist a watching session's index.
+///
+/// Named rather than folded into a `Result<bool>` at the decision site, because the three
+/// cases update the loop's state differently and conflating any two of them has already
+/// caused a defect: an early return that wrote nothing was once indistinguishable from a
+/// completed write.
+#[cfg(feature = "watch")]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum SaveOutcome {
+    /// A snapshot reached disk.
+    Written,
+    /// Nothing was written: the index is not `Fresh` yet, or policy forbids writes.
+    Skipped,
+    /// The write was attempted and failed.
+    Failed,
+}
+
+/// Whether a throttled save is due.
+///
+/// Pure so the throttle can be tested without a filesystem, a clock, or a watcher. The
+/// case worth stating: a pending change that arrives inside the interval is *not* due
+/// now, but stays pending, and the caller's idle path is what eventually saves it. Losing
+/// that second half is what made a burst-then-quiet session never persist at all.
+#[cfg(feature = "watch")]
+fn save_is_due(pending: bool, since_last_save: Duration, interval: Duration) -> bool {
+    pending && since_last_save >= interval
+}
+
+/// Whether a change still needs persisting after an attempt.
+///
+/// Only a completed write clears the flag. A skip and a failure both leave the change
+/// unpersisted, and on a quiet tree the retry is the only thing that will ever save it.
+#[cfg(feature = "watch")]
+fn pending_after(outcome: SaveOutcome) -> bool {
+    match outcome {
+        SaveOutcome::Written => false,
+        SaveOutcome::Skipped | SaveOutcome::Failed => true,
+    }
+}
+
 /// Convert a parsed time bound to index nanoseconds, or reject the flag.
 ///
 /// `system_time_to_nanos` returns `None` for an instant outside the range the index can
@@ -518,14 +558,18 @@ impl Cli {
         diagnostic: &mut dyn Write,
         color: bool,
     ) {
-        if !*pending || last_save.elapsed().unwrap_or_default() < interval {
+        if !save_is_due(*pending, last_save.elapsed().unwrap_or_default(), interval) {
             return;
         }
-        match Self::save_live(session, config) {
-            Ok(true) => *pending = false,
-            Ok(false) => {}
-            Err(error) => Self::warn_save_failed(&error, diagnostic, color),
-        }
+        let outcome = match Self::save_live(session, config) {
+            Ok(true) => SaveOutcome::Written,
+            Ok(false) => SaveOutcome::Skipped,
+            Err(error) => {
+                Self::warn_save_failed(&error, diagnostic, color);
+                SaveOutcome::Failed
+            }
+        };
+        *pending = pending_after(outcome);
         // Throttled whether or not it worked, so a persistently failing save warns at the
         // interval rather than spinning.
         *last_save = SystemTime::now();
@@ -1062,6 +1106,69 @@ fn compose_skill_from(template: &str) -> String {
 mod tests {
     use super::*;
     use std::process::Command;
+
+    /// The watch loop's save throttle, as a table over every state that reaches it.
+    ///
+    /// Two of the three defects review found on this branch were transitions in here, and
+    /// the second was introduced by fixing the first. End-to-end tests could not catch
+    /// either: they observe whether a file changed on disk, which cannot distinguish "not
+    /// due yet" from "due and skipped", nor a cleared flag from a retained one.
+    #[cfg(feature = "watch")]
+    #[test]
+    fn a_save_is_due_only_when_a_change_is_pending_and_the_throttle_has_elapsed() {
+        let interval = Duration::from_secs(1);
+        let cases = [
+            // (pending, since last save, due, what this case is)
+            (true, Duration::from_secs(2), true, "pending and past the interval"),
+            (true, interval, true, "pending, exactly at the interval: inclusive"),
+            // The R5 case. Not due *now* -- and the flag stays set, which is the half that
+            // was missing: the idle path saves it once the interval passes.
+            (true, Duration::from_millis(1), false, "pending but throttled"),
+            (false, Duration::from_secs(60), false, "nothing pending, however long it has been"),
+            (false, Duration::ZERO, false, "nothing pending and just saved"),
+        ];
+
+        for (pending, since, want, case) in cases {
+            assert_eq!(save_is_due(pending, since, interval), want, "{case}");
+        }
+    }
+
+    /// A throttled change must survive every outcome except a completed write.
+    #[cfg(feature = "watch")]
+    #[test]
+    fn only_a_completed_write_clears_the_pending_change() {
+        // The R7 case is Skipped and Failed: clearing the flag for either means the idle
+        // path never retries, so on a quiet tree the change is never persisted at all.
+        assert!(!pending_after(SaveOutcome::Written), "a completed write persists the change");
+        assert!(
+            pending_after(SaveOutcome::Skipped),
+            "a skipped save wrote nothing, so the change is still owed to disk",
+        );
+        assert!(pending_after(SaveOutcome::Failed), "a failed save must be retried, not forgotten");
+    }
+
+    /// The sequence that defeated the feature in its most common shape.
+    #[cfg(feature = "watch")]
+    #[test]
+    fn a_burst_then_a_quiet_tree_still_persists() {
+        let interval = Duration::from_secs(1);
+
+        // A change arrives too soon after the last save, so nothing is written yet.
+        let mut pending = true;
+        assert!(!save_is_due(pending, Duration::from_millis(50), interval));
+        assert!(pending, "the throttle must not consume the change");
+
+        // The tree goes quiet: no further batches will ever arrive. The idle path is the
+        // only remaining caller, and once the interval passes the save must happen.
+        assert!(save_is_due(pending, Duration::from_secs(3), interval));
+
+        // A skip at that point keeps it pending for the next idle tick rather than
+        // silently dropping the session's work.
+        pending = pending_after(SaveOutcome::Skipped);
+        assert!(pending);
+        pending = pending_after(SaveOutcome::Written);
+        assert!(!pending, "once written, the loop stops rewriting an unchanged index");
+    }
 
     const DEEP_RENDER_CHILD_ENV: &str = "FDU_DEEP_RENDER_CHILD";
     const DEEP_RENDER_DEPTH: usize = 1_024;
