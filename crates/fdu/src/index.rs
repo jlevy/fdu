@@ -38,8 +38,15 @@ use std::sync::{Arc, RwLock};
 use crate::classify::derive_ext;
 use crate::types::{
     AppliedDelta, Attrs, Clock, EntryIdentity, EntryKind, Expectation, Freshness, InvalidateReason,
-    Observation, Op, PathExpectation, PathState, ScanScope,
+    Observation, Op, PathExpectation, PathState, Provenance, ScanScope, Source, Status,
 };
+
+/// Verification intervals kept before the oldest are dropped.
+///
+/// Bounds the memory a long-lived session can accumulate through repeated scoped
+/// reconciliation. Dropping an interval only ever moves a path back to reporting
+/// `Cached`, so the bound costs precision, never correctness.
+const MAX_VERIFIED_INTERVALS: usize = 256;
 
 /// Maximum number of effective operations retained for [`Index::since`].
 ///
@@ -177,6 +184,12 @@ struct Entry {
     /// for files without an extension. Precomputing it here is what lets
     /// `contribution` run without a string allocation or an interner borrow.
     ext_id: Option<ExtId>,
+    /// Where this entry's metadata came from.
+    ///
+    /// One byte, not a `Provenance` struct: the timestamps that complete the picture
+    /// are shared by nearly every entry in a tree, so they live once on the index
+    /// while only the source genuinely varies per entry. See `Index::provenance`.
+    source: Source,
     kind: EntryKind,
     attrs: Attrs,
     /// Populated for directories only.
@@ -276,6 +289,25 @@ pub struct Index {
     /// Oldest clock still represented in `journal`.
     journal_floor: Clock,
     pending_invalidations: Vec<(PathBuf, InvalidateReason)>,
+    /// Source recorded on entries that incoming deltas create or update.
+    ///
+    /// Producers do not carry provenance in the delta itself — an observation says
+    /// what it saw, not how much to trust it — so the consumer stamps it, and a
+    /// caller loading a snapshot sets this to `Cached` for the duration.
+    applying_source: Source,
+    /// When this session observed the filesystem, in nanoseconds since the epoch.
+    scanned_at_ns: i64,
+    /// When the snapshot this index was loaded from captured the tree. Zero when the
+    /// index was never loaded from one.
+    captured_at_ns: i64,
+    /// Subtrees a completed reconciliation has verified, with when it finished.
+    ///
+    /// Kept as intervals rather than per-entry flags because a sweep verifies
+    /// everything beneath a path at once, including entries the producer elided as
+    /// no-ops, and because one record per sweep costs nothing against millions of
+    /// entries. Nested and repeated sweeps collapse: a new record replaces any it
+    /// covers.
+    verified: Vec<(PathBuf, i64)>,
     /// Interner storage: id → name. Ids are indexes into this vector.
     ext_names: Vec<String>,
     /// Interner lookup: name → id.
@@ -494,6 +526,7 @@ impl Index {
             parent: None,
             name: OsString::new(),
             ext_id: None,
+            source: Source::Scanned,
             kind: EntryKind::Dir,
             attrs: Attrs::default(),
             children: BTreeMap::new(),
@@ -515,6 +548,10 @@ impl Index {
             pending_invalidations: Vec::new(),
             freshness_epoch: 0,
             freshness_marks: BTreeMap::new(),
+            applying_source: Source::Scanned,
+            scanned_at_ns: Self::now_unix_nanos(),
+            captured_at_ns: 0,
+            verified: Vec::new(),
             ext_names: Vec::new(),
             ext_ids: BTreeMap::new(),
         }
@@ -715,7 +752,37 @@ impl Index {
             .retain(|marked, mark| !marked.starts_with(path) || mark.epoch > started_at);
         if !complete {
             self.mark_unfresh(path, Freshness::Partial);
+            return;
         }
+        // A completed sweep stat'd every entry beneath `path`, including the ones the
+        // producer elided as no-ops before they ever reached a delta. Per-entry
+        // stamping cannot see those, so verification is recorded here as an interval
+        // instead: one record per reconciled subtree rather than a write to each of
+        // millions of entries. This is the same "store where it varies, derive where
+        // it does not" choice as the timestamps, and it keeps the elision — a measured
+        // 18% win on the warm path — intact.
+        let now = Self::now_unix_nanos();
+        self.verified.retain(|(verified_path, _)| !verified_path.starts_with(path));
+        self.verified.push((path.to_path_buf(), now));
+        // Repeated scoped sweeps of sibling subtrees — what a consumer revalidating
+        // per navigation produces — would otherwise grow this list without bound,
+        // since only records *under* the swept path are collapsed. Dropping the oldest
+        // is fail-safe: a path that loses its interval reports `Cached` rather than
+        // `Revalidated`, which under-claims trust rather than over-claiming it.
+        if self.verified.len() > MAX_VERIFIED_INTERVALS {
+            let excess = self.verified.len() - MAX_VERIFIED_INTERVALS;
+            self.verified.sort_by_key(|(_, at)| *at);
+            self.verified.drain(..excess);
+        }
+    }
+
+    /// When a completed reconciliation last covered this path, if one did.
+    fn verified_at(&self, path: &Path) -> Option<i64> {
+        self.verified
+            .iter()
+            .filter(|(covered, _)| path.starts_with(covered))
+            .map(|(_, at)| *at)
+            .max()
     }
 
     fn mark_unfresh(&mut self, path: &Path, state: Freshness) -> u64 {
@@ -993,6 +1060,93 @@ impl Index {
         self.live -= 1;
     }
 
+    /// Wall-clock now, in nanoseconds since the epoch, or zero if the clock is before
+    /// it. Provenance timestamps are for display, so a nonsensical clock reads as
+    /// "unknown" rather than propagating an error through every constructor.
+    fn now_unix_nanos() -> i64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .ok()
+            .and_then(|since| i64::try_from(since.as_nanos()).ok())
+            .unwrap_or(0)
+    }
+
+    /// Provenance of one path: where its value came from, when, and how settled.
+    ///
+    /// Built on demand from the entry's stored source and the index's timestamps
+    /// rather than read from a field, because the timestamps are shared by nearly
+    /// every entry and storing them per entry would cost far more than the
+    /// information is worth. For a directory this reports the *composed* provenance
+    /// of its whole subtree, so a directory is only as trustworthy as its least
+    /// trustworthy descendant.
+    pub fn provenance(&self, path: &Path) -> Option<Provenance> {
+        let id = self.lookup(path)?;
+        Some(self.provenance_of(id))
+    }
+
+    fn provenance_of(&self, id: EntryId) -> Provenance {
+        let entry = self.entry(id);
+        let status = self.status_of(id);
+        // A completed sweep over an ancestor verified this entry even if no delta ever
+        // named it, so an interval beats the entry's own stamp.
+        //
+        // Only while the index still considers the path fresh, though. An
+        // `InvalidateSubtree` marks paths `Stale` and a running sweep marks them
+        // `Reconciling`; in both cases trust has been withdrawn since the interval was
+        // recorded, and promoting anyway would produce the self-contradicting answer
+        // "partial, and verified".
+        if !entry.source.is_verified() {
+            if let Some(path) = self.path_of(id) {
+                if self.freshness_at(&path) == Freshness::Fresh {
+                    if let Some(verified_at) = self.verified_at(&path) {
+                        return Provenance {
+                            source: Source::Revalidated,
+                            observed_at_ns: verified_at,
+                            status,
+                        };
+                    }
+                }
+            }
+        }
+        Provenance { source: entry.source, observed_at_ns: self.observed_at(entry.source), status }
+    }
+
+    /// Whether this path's totals account for everything beneath it.
+    ///
+    /// Derived from the freshness marks rather than stored: an incomplete scan or a
+    /// reconciliation in progress both leave a value that can still grow.
+    fn status_of(&self, id: EntryId) -> Status {
+        let Some(path) = self.path_of(id) else {
+            return Status::Complete;
+        };
+        match self.freshness_at(&path) {
+            Freshness::Fresh => Status::Complete,
+            Freshness::Partial | Freshness::Reconciling | Freshness::Stale => Status::Partial,
+        }
+    }
+
+    /// When an entry with this source was observed.
+    const fn observed_at(&self, source: Source) -> i64 {
+        match source {
+            Source::Cached | Source::JournalConfirmed => self.captured_at_ns,
+            Source::Scanned | Source::Revalidated => self.scanned_at_ns,
+        }
+    }
+
+    /// Stamp deltas applied from here on with `source`, restoring the previous value
+    /// when the returned guard value is passed back.
+    ///
+    /// Used by snapshot loading, which is replaying observations that describe a tree
+    /// as it was, not as this process has seen it.
+    pub(crate) fn set_applying_source(&mut self, source: Source, captured_at_ns: i64) -> Source {
+        let previous = self.applying_source;
+        self.applying_source = source;
+        if captured_at_ns != 0 {
+            self.captured_at_ns = captured_at_ns;
+        }
+        previous
+    }
+
     /// Intern an extension name, returning its stable id within this index.
     fn intern_ext(&mut self, name: &str) -> ExtId {
         if let Some(id) = self.ext_ids.get(name) {
@@ -1125,6 +1279,7 @@ impl Index {
                 parent: Some(current),
                 name: (*part).to_os_string(),
                 ext_id: None,
+                source: self.applying_source,
                 kind: EntryKind::Dir,
                 attrs: Attrs::default(),
                 children: BTreeMap::new(),
@@ -1165,6 +1320,7 @@ impl Index {
             return true;
         };
 
+        let source = self.applying_source;
         let parent = self.ensure_dir_chain(ancestors, stats);
         let existing = self.entry(parent).children.get(*name).copied();
 
@@ -1172,6 +1328,12 @@ impl Index {
             let entry = self.entry(id);
             if entry.kind == kind {
                 if entry.attrs == attrs {
+                    // Nothing about the value changed, but a producer just looked at
+                    // it, and that is exactly what provenance records. Without this an
+                    // entry verified by a revalidation sweep keeps reporting the source
+                    // it was loaded with, and a consumer could never clear a
+                    // stale-value indicator no matter how much checking happened.
+                    self.entry_mut(id).source = source;
                     stats.unchanged += 1;
                     return false;
                 }
@@ -1180,6 +1342,7 @@ impl Index {
                     // so there is nothing to re-merge.
                     let entry = self.entry_mut(id);
                     entry.attrs = attrs;
+                    entry.source = source;
                     Self::bump_revision(entry);
                     stats.updated += 1;
                     return true;
@@ -1188,6 +1351,7 @@ impl Index {
                 self.unmerge_upward(Some(parent), &old);
                 let entry = self.entry_mut(id);
                 entry.attrs = attrs;
+                entry.source = source;
                 Self::bump_revision(entry);
                 let new = self.contribution(id);
                 self.merge_upward(Some(parent), &new);
@@ -1209,6 +1373,7 @@ impl Index {
             parent: Some(parent),
             name: (*name).to_os_string(),
             ext_id,
+            source,
             kind,
             attrs,
             children: BTreeMap::new(),
@@ -2354,5 +2519,58 @@ mod tests {
         assert_eq!(index.total().bytes, 30);
         assert!(index.lookup(&first).is_some());
         assert!(index.lookup(&second).is_some());
+    }
+
+    #[test]
+    fn withdrawn_trust_beats_a_verification_interval() {
+        // A verification interval records that a sweep once covered a path. If the
+        // index has since withdrawn trust — an InvalidateSubtree marking it Stale, or
+        // a sweep in progress marking it Reconciling — the interval must not promote
+        // it, or provenance answers "partial, and verified" in one breath.
+        let mut index = Index::new("/root");
+        // The entry arrives the way a snapshot load delivers it: unverified.
+        index.set_applying_source(Source::Cached, 1_000);
+        index.apply_baseline_ok(&Observation::new(vec![Op::Upsert {
+            path: PathBuf::from("a/file.txt"),
+            kind: EntryKind::File,
+            attrs: Attrs { size: 1, ..Attrs::default() },
+        }]));
+        assert_eq!(
+            index.provenance(Path::new("a/file.txt")).expect("present").source,
+            Source::Cached,
+            "nothing has checked it yet"
+        );
+        // A completed sweep then covers the whole tree.
+        index.finish_reconcile(Path::new(""), 0, true);
+        let path = Path::new("a/file.txt");
+        assert_eq!(
+            index.provenance(path).expect("present").source,
+            Source::Revalidated,
+            "a completed sweep covers this path"
+        );
+
+        // Now withdraw trust over the subtree.
+        index.mark_unfresh(Path::new("a"), Freshness::Stale);
+        let provenance = index.provenance(path).expect("present");
+        assert!(
+            !provenance.is_verified(),
+            "an invalidated path must not read as verified: {provenance:?}"
+        );
+        assert_eq!(provenance.status, Status::Partial);
+    }
+
+    #[test]
+    fn verification_intervals_stay_bounded() {
+        // Repeated scoped sweeps of sibling subtrees must not grow without bound;
+        // dropping the oldest only ever under-claims trust.
+        let mut index = Index::new("/root");
+        for which in 0..(MAX_VERIFIED_INTERVALS * 2) {
+            index.finish_reconcile(&PathBuf::from(format!("dir-{which}")), 0, true);
+        }
+        assert!(
+            index.verified.len() <= MAX_VERIFIED_INTERVALS,
+            "interval list grew to {}",
+            index.verified.len()
+        );
     }
 }

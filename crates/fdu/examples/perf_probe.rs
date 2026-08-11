@@ -13,7 +13,7 @@ use std::path::{Component, Path, PathBuf};
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
-use fdu::{Attrs, EntryId, EntryKind, Index, Observation, Op, ScanConfig};
+use fdu::{Attrs, EntryId, EntryKind, Index, Observation, Op, ScanConfig, ScanOrder};
 
 const PROBE_SCHEMA: &str = "fdu-perf-probe-v1";
 const DIGEST_ALGORITHM: &str = "fdu-index-record-v1/sha256-multiset-v1";
@@ -116,6 +116,16 @@ impl Arguments {
                 }
                 Some("--batch-size") => {
                     scan.batch_size = next_usize(&mut arguments, "--batch-size")?;
+                }
+                Some("--order") => {
+                    let value = arguments
+                        .next()
+                        .ok_or_else(|| ProbeError("--order requires a value".into()))?;
+                    scan.order = match value.to_str() {
+                        Some("breadth-first") => ScanOrder::BreadthFirst,
+                        Some("depth-first") => ScanOrder::DepthFirst,
+                        _ => return Err(ProbeError(format!("unknown order {value:?}"))),
+                    };
                 }
                 Some("--threads") => {
                     scan.threads = Some(next_usize(&mut arguments, "--threads")?);

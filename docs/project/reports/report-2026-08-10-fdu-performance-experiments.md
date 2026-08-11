@@ -24,9 +24,9 @@ Third-party tools on the same tree, for calibration only — they answer a sligh
 
 **The tree.** Pinned by content, not by name.
 
-- Label `metabrowser-clone`, 59,654 entries (7,341 directories, 52,291 files, 22 symlinks), max depth 19.
-- 1.01 GiB apparent, 1.14 GiB allocated.
-- Content digest `bf574331eca680372f7060d4f9ab3b3b175afd265ac27bda6b6dc67ed9c80798` (`fdu-index-record-v1`). Two trees with this digest are the same tree in the same state.
+- Label `metabrowser-clone`, 60,067 entries (7,350 directories, 52,695 files, 22 symlinks), max depth 19.
+- 1.01 GiB apparent, 1.15 GiB allocated.
+- Content digest `c631fbf39d7c7adace225d5c9935aaf991176d05da800abd7a69c56ceb0f3b0e` (`fdu-index-record-v1`). Two trees with this digest are the same tree in the same state.
 - Identified as `dbd79ed9c898f7a2…`, the SHA-256 of its path. The path itself is deliberately not recorded.
 
 **The machine.**
@@ -56,6 +56,7 @@ The rejected ones are the reusable part: they stop the next person spending a da
 | 009 | [Single-pass checksum and parse on snapshot load](#exp009--singlepass-checksum-and-parse-on-snapshot-load) | H32 | `warm-snapshot-load` | -12.4% | ✅ accepted |
 | 010 | [Claim-list join and deferred path joins in reconcile](#exp010--claimlist-join-and-deferred-path-joins-in-reconcile) | H17 | `warm-revalidate` | -0.0% | ❌ rejected |
 | 011 | [One ancestor merge per same-parent insert run](#exp011--one-ancestor-merge-per-sameparent-insert-run) | H13 | `cold-scan-index` | -2.5% | ❌ rejected |
+| 012 | [Breadth-first traversal order](#exp012--breadthfirst-traversal-order) | H48 | `cold-scan-index` | -0.6% | ✅ accepted |
 
 ## The experiments
 
@@ -410,6 +411,36 @@ Reverted. The interaction is the finding: merge-batching and key-interning compe
 **Rejected:** Direction right but under the bar: -2.53% [-8.39%, +0.23%] on cold scan; H18 already removed the expensive part of each merge, so cutting ~520k merges to ~73k amortized work that had become a few integer adds.
 
 Full record: [`exp-011-one-ancestor-merge-per-same-parent-insert-run.md`](../experiments/exp-011-one-ancestor-merge-per-same-parent-insert-run.md)
+
+### exp-012 — Breadth-first traversal order
+
+✅ accepted · 2026-08-11 · H48 · commit `fbc28f4`
+
+Control: the previous hardcoded LIFO walk
+
+Candidate: breadth-first, the new default, so partial results are monotone lower bounds
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 337.9 | 337.0 | -0.58% (n.s.) | [-2.50%, +1.20%] |
+| component (ms) | 216.3 | 211.2 | -0.07% (n.s.) | [-3.49%, +1.17%] |
+| cpu (ms) | 1178.2 | 1205.4 | +0.49% (n.s.) | [-0.71%, +3.49%] |
+| user (ms) | 242.7 | 245.7 | +0.49% (n.s.) | [-1.44%, +3.12%] |
+| system (ms) | 943.5 | 955.7 | +0.68% (n.s.) | [-1.12%, +4.30%] |
+| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
+| peak rss (MiB) | 33.1 | 33.7 | +1.51% (n.s.) | [+0.84%, +2.88%] |
+
+Other jobs, wall time: `cold-scan-producer` +1.5% (n.s.), `warm-revalidate` +0.0% (n.s.).
+
+Cost to carry: 153 lines; no new dependencies.
+
+Accepted on cost, not on speed: the value is that partial results become monotone lower bounds instead of a confidently wrong ranking, and this experiment establishes that the property is free. It also corrects an earlier six-sample median comparison that had suggested ~8% and was quoted in the plan before going through the accept rule - sixteen paired trials say the difference is not measurable. NOTE: the reference tree was reclaimed mid-session (disk at 100%) and re-cloned, so it is now 60,067 entries against the 59,654 used by exp-000..011; comparisons across that boundary are not valid.
+
+**Accepted:** Free on a complete scan (-0.58%, interval [-2.50%, +1.20%]) and unchanged in memory, so the ordering that makes partial results usable costs nothing to adopt as the default.
+
+Full record: [`exp-012-breadth-first-traversal-order.md`](../experiments/exp-012-breadth-first-traversal-order.md)
 
 
 <!-- This document follows common-doc-guidelines.md.

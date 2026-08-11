@@ -85,6 +85,15 @@ two cache layers and why verification cost depends on which question was asked.
 
 ## Conventions
 
+- **Data structures are partial-friendly as well as delta-friendly.** A partially walked
+  tree is a valid, useful answer as long as the boundary of incompleteness is knowable:
+  roll-ups are correct lower bounds, unvisited subtrees are identifiable, and per-value
+  provenance carries `status: Partial`. Queries, serialization, sessions, and reducers
+  accept partial structures as first-class inputs; code that genuinely requires
+  completeness must demand it explicitly, never assume it.
+  The two properties compose — a delta stream applied to a partial structure yields
+  another valid partial structure — and that composition is what progressive results
+  are.
 - **Do not add a mutation path that bypasses `Delta`.** The contract is what keeps the
   in-memory structure, the serialized form, and the change feed from drifting apart.
   A new producer emits deltas; it does not reach into the index.
@@ -102,6 +111,28 @@ two cache layers and why verification cost depends on which question was asked.
 - **The cache may never silently lie.** Fingerprints are size + mtime + ctime + inode.
   A corrupt or unrecognized snapshot is treated as absent, never as data.
   Producers that lose precision escalate with `InvalidateSubtree` rather than guessing.
+- **Fast without the OS’s help; faster with it.** Every platform API is an optional
+  accelerator layered on a portable path that is already fast on its own, and the
+  portable path is what correctness depends on.
+  Three tiers, in order: an explicit walk that is quick by itself, a cache that is quick
+  where a cache can help, and OS-specific enhancements that make the first two cheaper
+  where the platform offers them.
+  A feature that is unavailable, disabled, or degraded must fall back to the tier below
+  it and lose speed, never accuracy — so `getattrlistbulk`, `statx`, `io_uring`,
+  fanotify, and the FSEvents journal are all probe-and-fallback, never load-bearing.
+- **The journal’s job is bounding uncertainty, not replacing verification.** A change
+  journal’s real value on a multi-million-entry tree is that it identifies *where the
+  imprecision could be* in milliseconds, which a full walk can only do in minutes.
+  That is what makes near-real-time visibility possible at that scale, and it composes
+  with the rule above: the journal narrows what must be checked, the walk remains the
+  thing that checks it, and provenance records which of the two answered.
+- **Trade speed for certainty in the open, never in secret.** A verified answer over a
+  huge tree costs minutes and a cached one costs milliseconds, so the trade is
+  legitimate and often necessary — but only when every value carries its provenance:
+  where it came from, when it was observed, and whether it is final.
+  Label per value, not per run; a consumer rendering a thousand rows needs to know which
+  of them to trust. Anything that returns a number without that context is the silent lie
+  the rule above forbids.
 - **Never size an allocation from untrusted input.** Snapshot and journal parsers check
   declared counts against the bytes actually present first; a corrupt file must fail
   closed, not abort on an allocation.

@@ -43,6 +43,72 @@ fn wait_for_rewrite(cache_dir: &Path, before: Option<(u64, std::time::SystemTime
     false
 }
 
+/// Run `fdu` to completion and return stdout.
+fn report(tree: &Path, cache: &Path, args: &[&str]) -> String {
+    let output = Command::new(env!("CARGO_BIN_EXE_fdu"))
+        .args(args)
+        .arg(tree)
+        .env("XDG_CACHE_HOME", cache)
+        .output()
+        .expect("run fdu");
+    assert!(
+        output.status.success(),
+        "fdu {args:?} failed: {}",
+        String::from_utf8_lossy(&output.stderr),
+    );
+    String::from_utf8_lossy(&output.stdout).into_owned()
+}
+
+#[test]
+fn a_watch_started_from_a_warm_cache_still_persists_what_it_sees() {
+    // The cold path and the warm path reach the save through different index states, and
+    // only the cold one was covered. This matters now that a loaded index carries
+    // `Cached` provenance: if that were ever conflated with the `Freshness` the save gates
+    // on, a warm-started watch would silently stop persisting, and every existing test
+    // would still pass because they all start cold.
+    let root = tempfile::tempdir().expect("tempdir");
+    let cache = tempfile::tempdir().expect("cache tempdir");
+    let tree = root.path().join("tree");
+    fs::create_dir(&tree).expect("create tree");
+    fs::write(tree.join("first.txt"), b"first").expect("write first file");
+
+    // Two runs: the second must come from the cache, or this is not a warm start.
+    report(&tree, cache.path(), &["--view", "summary", "--format", "json"]);
+    let warm = report(&tree, cache.path(), &["--view", "summary", "--format", "json"]);
+    assert!(
+        warm.contains("warm_revalidate"),
+        "expected the second run to read the cache, got: {warm}",
+    );
+
+    let mut child = Command::new(env!("CARGO_BIN_EXE_fdu"))
+        .args(["--watch", "--view", "files", "--interval", "1s"])
+        .arg(&tree)
+        .env("XDG_CACHE_HOME", cache.path())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn watching fdu");
+
+    // Baseline *after* the watcher's own startup save, or that write is mistaken for the
+    // incremental one and the test passes without proving anything.
+    sleep(Duration::from_secs(3));
+    let initial = snapshot_fingerprint(cache.path());
+
+    fs::write(tree.join("second.txt"), b"second").expect("write second file");
+    let rewritten = wait_for_rewrite(cache.path(), initial);
+
+    let _ = child.kill();
+    let _ = child.wait();
+
+    assert!(rewritten, "a warm-started watch never rewrote the snapshot after a change");
+    let listed =
+        report(&tree, cache.path(), &["--view", "files", "--format", "jsonl", "--cache", "only"]);
+    assert!(
+        listed.contains("second.txt"),
+        "a warm-started watch did not persist what it observed. Listing was: {listed}",
+    );
+}
+
 #[test]
 fn a_killed_watch_still_leaves_a_warm_cache() {
     let root = tempfile::tempdir().expect("tempdir");
