@@ -1387,7 +1387,32 @@ mod tests {
             assert!(report.is_complete(), "{threads} threads reported errors");
             assert_eq!(report.entries, serial_report.entries, "{threads} threads");
             assert_eq!(report.dirs_read, serial_report.dirs_read, "{threads} threads");
-            assert_eq!(parallel.total(), serial.total(), "{threads} threads roll-up");
+            // Extension ids are interner handles assigned in first-seen order, which
+            // legitimately differs between serial and parallel arrival order; compare
+            // roll-ups through the named boundary, never by raw id.
+            let (serial_total, parallel_total) = (serial.total(), parallel.total());
+            assert_eq!(
+                (
+                    parallel_total.files,
+                    parallel_total.dirs,
+                    parallel_total.bytes,
+                    parallel_total.allocated,
+                    parallel_total.newest_mtime_ns,
+                ),
+                (
+                    serial_total.files,
+                    serial_total.dirs,
+                    serial_total.bytes,
+                    serial_total.allocated,
+                    serial_total.newest_mtime_ns,
+                ),
+                "{threads} threads roll-up"
+            );
+            assert_eq!(
+                parallel.by_ext_named(parallel_total),
+                serial.by_ext_named(serial_total),
+                "{threads} threads per-extension roll-up"
+            );
             assert_eq!(
                 index_fingerprint(&parallel),
                 index_fingerprint(&serial),
