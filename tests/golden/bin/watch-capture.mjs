@@ -58,6 +58,17 @@ let cursor = 0;
 const waiters = [];
 let failure = null;
 
+/// Fail every outstanding wait with the same reason.
+///
+/// Without this, a child that dies leaves the awaiting promise unsettled forever. Node
+/// then exits 13 reporting an "unsettled top-level await" and says nothing about the
+/// cause -- which is exactly how this script first failed on Windows CI, hiding whatever
+/// the child had actually done.
+function fail(reason) {
+  failure ??= reason;
+  while (waiters.length > 0) waiters.shift().reject(new Error(reason));
+}
+
 child.stdout.setEncoding("utf8");
 child.stdout.on("data", (chunk) => {
   pending += chunk;
@@ -70,7 +81,9 @@ child.stdout.on("data", (chunk) => {
     // satisfy at most the step that caused it.
     if (waiters.length > 0 && waiters[0].matches(line)) {
       cursor = lines.length;
-      waiters.shift().resolve(line);
+      const waiter = waiters.shift();
+      waiter.done?.();
+      waiter.resolve(line);
     }
   }
 });
@@ -81,11 +94,12 @@ child.stderr.on("data", (chunk) => {
   stderr += chunk;
 });
 child.on("error", (error) => {
-  failure = `could not start fdu: ${error.message}`;
+  fail(`could not start ${binary}: ${error.message}`);
 });
 child.on("exit", (code, signal) => {
-  if (failure === null && signal === null && code !== 0) {
-    failure = `fdu exited early with status ${code}: ${stderr.trim()}`;
+  // Any exit is a failure while steps remain: the watcher is supposed to outlive them.
+  if (waiters.length > 0 || !done) {
+    fail(`${binary} exited early with status ${code} (signal ${signal})`);
   }
 });
 
@@ -98,19 +112,27 @@ function waitFor(matches, description) {
     }
   }
   return new Promise((resolve, reject) => {
-    const waiter = { matches, resolve };
+    const waiter = { matches, resolve, reject };
     waiters.push(waiter);
-    setTimeout(() => {
+    // Deliberately not unref'd: this timer is what keeps the event loop alive while
+    // waiting, so a stalled step reports a timeout instead of letting the process fall
+    // out from under an unsettled await.
+    const timer = setTimeout(() => {
       const index = waiters.indexOf(waiter);
       if (index !== -1) {
         waiters.splice(index, 1);
         reject(new Error(`timed out waiting for ${description}`));
       }
-    }, STEP_TIMEOUT_MS).unref?.();
+    }, STEP_TIMEOUT_MS);
+    waiter.done = () => clearTimeout(timer);
   });
 }
 
 const isChange = (line) => line.includes('"record": "change"');
+
+// Set once every step has been captured, so the exit handler can tell a normal shutdown
+// from a child that died mid-capture.
+let done = false;
 
 try {
   // The initial report is a one-shot answer, identical to a run without --watch. Waiting
@@ -133,6 +155,7 @@ try {
   }
 
   if (failure) throw new Error(failure);
+  done = true;
 
   for (const { label, record } of captured) {
     console.log(`# ${label}`);
