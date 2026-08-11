@@ -129,10 +129,10 @@ ls "$XDG_CACHE_HOME"/fdu                 # a snapshot file exists, named by root
 
 ## 6. Watch mode by hand
 
-Watch is the surface goldens cover least well, because a golden captures one final
-output and watch is a stream that never ends. Integration tests cover the event
-semantics; this covers what only a human notices — that it is *idle* when nothing
-happens, and responsive when something does.
+The stream itself is goldened — `tests/golden/cli-watch.tryscript.md` drives a real
+watch session through the `watch-capture` helper — and integration tests cover event
+semantics and persistence. This section covers what only a human notices: that watch is
+*idle* when nothing happens, and responsive when something does.
 
 ```shell
 export XDG_CACHE_HOME="$(mktemp -d)"

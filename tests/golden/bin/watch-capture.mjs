@@ -31,18 +31,30 @@ if (!tree) {
 // Every scripted path stays at the top level of the tree: a nested path would render with
 // the platform's separator and split this golden into two platform-specific expectations.
 const steps = [
-  { label: "create a file", path: "added.txt", act: (p) => writeFileSync(p, "hello") },
-  { label: "change its size", path: "added.txt", act: (p) => writeFileSync(p, "hello, again") },
-  { label: "remove it", path: "added.txt", act: (p) => rmSync(p) },
-  { label: "create a directory", path: "sub", act: (p) => mkdirSync(p) },
+  { label: "create a file", path: "added.txt", op: "upsert", act: (p) => writeFileSync(p, "hello") },
+  {
+    label: "change its size",
+    path: "added.txt",
+    op: "upsert",
+    act: (p) => writeFileSync(p, "hello, again"),
+  },
+  { label: "remove it", path: "added.txt", op: "remove", act: (p) => rmSync(p) },
+  { label: "create a directory", path: "sub", op: "upsert", act: (p) => mkdirSync(p) },
 ];
 
-const child = spawn("fdu", ["--watch", "--view", "files", "--format", "jsonl", tree], {
+// Windows needs the extension spelled out: spawn does not apply PATHEXT resolution.
+const binary = process.platform === "win32" ? "fdu.exe" : "fdu";
+const child = spawn(binary, ["--watch", "--view", "files", "--format", "jsonl", tree], {
   stdio: ["ignore", "pipe", "pipe"],
 });
 
 let pending = "";
 const lines = [];
+// Records at an index below the cursor have already satisfied an earlier step. Without
+// this, a step's matcher can be satisfied by a record from a *previous* step -- the first
+// version of this script reported the create record three times for three different
+// actions, which is exactly the kind of silent wrongness a golden must not encode.
+let cursor = 0;
 const waiters = [];
 let failure = null;
 
@@ -54,13 +66,11 @@ child.stdout.on("data", (chunk) => {
   for (const line of parts) {
     if (!line.trim()) continue;
     lines.push(line);
-    // Resolve in order, so a waiter cannot be satisfied by a record that arrived before
-    // its own step ran.
-    for (let i = 0; i < waiters.length; i += 1) {
-      if (waiters[i].matches(line)) {
-        waiters.splice(i, 1)[0].resolve(line);
-        break;
-      }
+    // Only the oldest waiter may match: steps are strictly sequential, and a record can
+    // satisfy at most the step that caused it.
+    if (waiters.length > 0 && waiters[0].matches(line)) {
+      cursor = lines.length;
+      waiters.shift().resolve(line);
     }
   }
 });
@@ -79,10 +89,14 @@ child.on("exit", (code, signal) => {
   }
 });
 
-/** Wait for a line matching `matches`, or fail with `description`. */
+/** Wait for a line matching `matches` that arrived after the previous step, or fail. */
 function waitFor(matches, description) {
-  const existing = lines.find(matches);
-  if (existing) return Promise.resolve(existing);
+  for (let i = cursor; i < lines.length; i += 1) {
+    if (matches(lines[i])) {
+      cursor = i + 1;
+      return Promise.resolve(lines[i]);
+    }
+  }
   return new Promise((resolve, reject) => {
     const waiter = { matches, resolve };
     waiters.push(waiter);
@@ -109,8 +123,11 @@ try {
     if (failure) break;
     step.act(join(tree, step.path));
     const record = await waitFor(
-      (line) => isChange(line) && line.includes(`"path": "${step.path}"`),
-      `${step.label} (${step.path})`,
+      (line) =>
+        isChange(line) &&
+        line.includes(`"path": "${step.path}"`) &&
+        line.includes(`"op": "${step.op}"`),
+      `${step.label} (${step.op} ${step.path})`,
     );
     captured.push({ label: step.label, record });
   }

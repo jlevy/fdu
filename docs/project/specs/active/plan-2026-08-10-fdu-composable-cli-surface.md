@@ -687,7 +687,6 @@ it cannot be lost by being described only here:
 
 | Gap | Bead |
 | --- | --- |
-| Watch-streaming goldens with injected changes | `fdu-t9nv` |
 | `fdu.stream/1` schema-bump test (only `fdu.report/1` is pinned) | `fdu-rti1` |
 | Watermark round trip: `scan_started_at` → `--modified-since`, incl. a mid-scan write | `fdu-3vgt` |
 | `watch-stream` benchmark **runner** (only the job vocabulary is registered) | `fdu-g8ks` |
@@ -704,20 +703,16 @@ first. Every test drives that logic end to end through the spawned binary, which
 observe only whether a file changed on disk — it cannot enumerate the transitions. The
 logic is decisions, not I/O, and belongs under a table test.
 
-The watch goldens are the one entry whose absence is a *shape* problem rather than
-unwritten work. tryscript compares one command's completed output, and a watch process
-never exits, so there is nothing to compare until watching can be expressed as a command
-that terminates. The design recorded on `fdu-t9nv` is a Node helper — tryscript already
-requires Node, so this adds no dependency — that spawns `fdu --watch`, applies a scripted
-sequence of changes, collects the `fdu.stream/1` records, terminates the child, and
-prints the normalized stream. Golden discipline then applies unchanged.
-
-Until it lands, the watch surface is covered by `crates/fdu/tests/watch_session.rs` for
-event semantics and selection filtering, `crates/fdu/tests/watch_persistence.rs` for
-save-surviving-SIGKILL, goldens for the bounded parts (the `--help` contract, the
-scope-validation rejections), and section 6 of
-[the integration runbook](../../guides/integration-runbook.md) for the one property no
-automated test asserts well: that an idle tree costs 0% CPU.
+The watch stream is goldened (`fdu-t9nv`, closed): tryscript compares one command's
+completed output and a watch process never exits, so `tests/golden/bin/watch-capture.mjs`
+turns watching into a command that does — it spawns `fdu --watch`, applies a scripted
+change sequence, waits for each change's own record before making the next, and prints
+the captured stream. Determinism is causal, not timed. `tests/golden/cli-watch.tryscript.md`
+pins the schema on every record, the op vocabulary, per-op field presence, and the
+absent-not-null contract for removals. Alongside it: `crates/fdu/tests/watch_session.rs`
+for event semantics, `watch_persistence.rs` for save-surviving-SIGKILL (cold and warm
+start), and section 6 of [the integration runbook](../../guides/integration-runbook.md)
+for the one property no automated test asserts well: that an idle tree costs 0% CPU.
 
 ## Open Questions
 
