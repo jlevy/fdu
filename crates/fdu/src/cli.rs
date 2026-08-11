@@ -74,6 +74,21 @@ impl std::fmt::Display for UsageError {
 
 impl std::error::Error for UsageError {}
 
+/// Convert a parsed time bound to index nanoseconds, or reject the flag.
+///
+/// `system_time_to_nanos` returns `None` for an instant outside the range the index can
+/// represent (roughly 1677-2262). Storing that `None` would leave the bound unset, so the
+/// query would run with no time filter at all while the user believed one was active --
+/// a silently wrong answer, which is worse than a rejected flag.
+fn bound_nanos(input: &str, when: SystemTime, flag: &str) -> anyhow::Result<i64> {
+    system_time_to_nanos(when).ok_or_else(|| {
+        usage(&anyhow::anyhow!(
+            "invalid {flag} \"{input}\": that time is outside the range fdu can represent \
+             (about 1677 to 2262)"
+        ))
+    })
+}
+
 /// Re-tag an argument rejection so it exits like the usage error it is.
 fn usage(error: &anyhow::Error) -> anyhow::Error {
     anyhow::Error::new(UsageError(error.to_string()))
@@ -423,6 +438,7 @@ impl Cli {
         let mut dirty_since_render = false;
         let mut last_render = SystemTime::now();
         let mut last_save = SystemTime::now();
+        let mut dirty_since_save = false;
         loop {
             let Some(batch) = session.next_batch(interval)? else {
                 // Nothing arrived in the window. Repaint only if something is pending,
@@ -431,6 +447,15 @@ impl Cli {
                     Self::render_live(out, &session, format, color)?;
                     dirty_since_render = false;
                     last_render = SystemTime::now();
+                }
+                // The idle branch is where a throttled save has to land. A change that
+                // arrived too soon after the last save would otherwise wait for the next
+                // change to persist it, and the next change may never come: a burst
+                // followed by silence is the single most likely way a watch session ends.
+                if dirty_since_save && last_save.elapsed().unwrap_or_default() >= interval {
+                    Self::report_save(Self::save_live(&session, config), diagnostic, color);
+                    dirty_since_save = false;
+                    last_save = SystemTime::now();
                 }
                 continue;
             };
@@ -456,17 +481,30 @@ impl Cli {
             // Persist as we go rather than only at exit. A watch session ends by signal
             // far more often than it ends politely, and std offers no portable signal
             // handler, so an exit-time save would be the one that never runs. Throttled
-            // to the render interval so a churny tree does not rewrite constantly.
-            if batch.dirty && last_save.elapsed().unwrap_or_default() >= interval {
-                if let Err(error) = Self::save_live(&session, config) {
-                    let _ = writeln!(
-                        diagnostic,
-                        "{}",
-                        paint(&format!("warning: {error}"), STYLE_WARNING, color)
-                    );
-                }
+            // to the render interval so a churny tree does not rewrite constantly; the
+            // pending flag is what guarantees a throttled change still reaches disk once
+            // the tree goes quiet.
+            dirty_since_save |= batch.dirty;
+            if dirty_since_save && last_save.elapsed().unwrap_or_default() >= interval {
+                Self::report_save(Self::save_live(&session, config), diagnostic, color);
+                dirty_since_save = false;
                 last_save = SystemTime::now();
             }
+        }
+    }
+
+    /// Warn about a failed save without disturbing the stream.
+    ///
+    /// A save failure costs the next run its warm start and nothing else, so it must not
+    /// interrupt a watch that is otherwise working.
+    #[cfg(feature = "watch")]
+    fn report_save(result: anyhow::Result<()>, diagnostic: &mut dyn Write, color: bool) {
+        if let Err(error) = result {
+            let _ = writeln!(
+                diagnostic,
+                "{}",
+                paint(&format!("warning: {error}"), STYLE_WARNING, color)
+            );
         }
     }
 
@@ -651,10 +689,12 @@ impl Cli {
             selection.min_size = Some(parse_size(min_size)?);
         }
         if let Some(since) = &self.modified_since {
-            selection.modified.since = system_time_to_nanos(parse_when(since, now)?);
+            selection.modified.since =
+                Some(bound_nanos(since, parse_when(since, now)?, "--modified-since")?);
         }
         if let Some(before) = &self.modified_before {
-            selection.modified.before = system_time_to_nanos(parse_when(before, now)?);
+            selection.modified.before =
+                Some(bound_nanos(before, parse_when(before, now)?, "--modified-before")?);
         }
         if let Some(kinds) = &self.kind {
             selection.kinds = parse_list(kinds, "--kind", parse_kind)?;

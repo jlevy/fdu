@@ -115,10 +115,16 @@ fn an_idle_tree_yields_nothing_and_costs_nothing() {
     // happened just before the watcher was bound — that is arrival latency, not activity,
     // and asserting through it makes the test fail on a loaded machine rather than on a
     // real defect.
+    // Requires a *sustained* quiet period, not one empty poll. A single `None` can simply
+    // mean the backend has not delivered the seed event yet, and breaking on it lets that
+    // late batch land in the assertion below — a flake that looks like a polling bug.
     let settle = Instant::now() + Duration::from_secs(3);
-    while Instant::now() < settle {
+    let mut quiet_polls = 0;
+    while Instant::now() < settle && quiet_polls < 3 {
         if session.next_batch(Duration::from_millis(200)).expect("batch").is_none() {
-            break;
+            quiet_polls += 1;
+        } else {
+            quiet_polls = 0;
         }
     }
 

@@ -190,11 +190,11 @@ impl PyIndex {
         }
         if let Some(value) = modified_since {
             let at = fdu::query::parse_when(value, now).map_err(to_py_err)?;
-            selection.modified.since = fdu::query::system_time_to_nanos(at);
+            selection.modified.since = Some(bound_nanos(value, at, "modified_since")?);
         }
         if let Some(value) = modified_before {
             let at = fdu::query::parse_when(value, now).map_err(to_py_err)?;
-            selection.modified.before = fdu::query::system_time_to_nanos(at);
+            selection.modified.before = Some(bound_nanos(value, at, "modified_before")?);
         }
         for value in kind.unwrap_or_default() {
             selection.kinds.push(parse_kind(&value)?);
@@ -396,12 +396,35 @@ fn parse_cache_policy(value: &str) -> PyResult<CachePolicy> {
     }
 }
 
+/// Name a cache tier for Python callers, matching the CLI's machine output.
+fn source_label(source: fdu::query::ReportSource) -> &'static str {
+    match source {
+        fdu::query::ReportSource::ColdScan => "cold_scan",
+        fdu::query::ReportSource::WarmRevalidate => "warm_revalidate",
+        fdu::query::ReportSource::CacheOnly => "cache_only",
+    }
+}
+
+/// Convert a parsed time bound to index nanoseconds, or raise.
+///
+/// Mirrors the CLI: an instant the index cannot represent must be rejected, never stored
+/// as an absent bound, or the query silently runs with no time filter at all.
+fn bound_nanos(input: &str, when: std::time::SystemTime, field: &str) -> PyResult<i64> {
+    fdu::query::system_time_to_nanos(when).ok_or_else(|| {
+        pyo3::exceptions::PyValueError::new_err(format!(
+            "invalid {field} {input:?}: that time is outside the range fdu can represent \
+             (about 1677 to 2262)"
+        ))
+    })
+}
+
 /// Convert a report into the dict shape Python callers get.
 fn report_dict<'py>(py: Python<'py>, report: &Report) -> PyResult<Bound<'py, PyDict>> {
     let dict = PyDict::new(py);
     dict.set_item("root", report.root.display().to_string())?;
     dict.set_item("complete", report.complete)?;
     dict.set_item("errors", report.errors.clone())?;
+    dict.set_item("source", source_label(report.source))?;
     dict.set_item("freshness", freshness_label(report.freshness))?;
     dict.set_item("generated_at", fdu::query::format_rfc3339(report.generated_at))?;
     dict.set_item("scan_started_at", report.scan_started_at.map(fdu::query::format_rfc3339))?;

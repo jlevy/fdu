@@ -332,6 +332,17 @@ $ fdu --definitely-not-an-option
 ? 2
 ```
 
+## A Time Bound the Index Cannot Represent Is Rejected
+
+Silently dropping the bound would run the query with no time filter at all while the user
+believed one was active, which is worse than refusing the flag.
+
+```console
+$ fdu --modified-since 2300-01-01T00:00:00Z
+! fdu: invalid --modified-since "2300-01-01T00:00:00Z": that time is outside the range fdu can represent (about 1677 to 2262)
+? 2
+```
+
 ## Watching Rejects a Narrowed Scan Scope
 
 Both scope flags are refused under `--watch`, because events can land outside a narrowed
