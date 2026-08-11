@@ -32,6 +32,12 @@ class ReferenceTreeTests(unittest.TestCase):
         _write(self.root / "alpha.txt", b"hello")
         _write(self.root / "nested" / "beta.rs", b"fn main() {}")
         _write(self.root / "nested" / "deeper" / "gamma.json", b"{}")
+        stable_ns: int = 1_700_000_000_000_000_000
+        for path in sorted(
+            self.root.rglob("*"), key=lambda item: len(item.parts), reverse=True
+        ):
+            os.utime(path, ns=(stable_ns, stable_ns))
+        os.utime(self.root, ns=(stable_ns, stable_ns))
 
     def test_fingerprint_counts_every_entry_once(self) -> None:
         document = tree.fingerprint(self.root, label="fixture")

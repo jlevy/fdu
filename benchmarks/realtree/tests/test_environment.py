@@ -229,13 +229,14 @@ class EnvironmentIdentityTests(unittest.TestCase):
 
     def test_linux_filesystem_is_resolved_for_the_measured_root(self) -> None:
         completed = subprocess.CompletedProcess([], 0, stdout=b"ext4\n", stderr=b"")
+        measured_root: Path = Path("/measured")
         with (
             mock.patch.object(environment.sys, "platform", "linux"),
             mock.patch.object(environment.shutil, "which", return_value="/usr/bin/findmnt"),
             mock.patch.object(environment.subprocess, "run", return_value=completed) as run,
         ):
-            self.assertEqual(environment._filesystem_for_path(Path("/measured")), "ext4")
-        self.assertIn("/measured", run.call_args.args[0])
+            self.assertEqual(environment._filesystem_for_path(measured_root), "ext4")
+        self.assertEqual(run.call_args.args[0][-1], str(measured_root))
 
 
 class DecisionMatrixTests(unittest.TestCase):
