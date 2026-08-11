@@ -1465,8 +1465,8 @@ mod tests {
         assert_eq!(total.files, 3);
         assert_eq!(total.dirs, 2);
         assert_eq!(total.bytes, 5 + 12 + 9);
-        assert_eq!(total.by_ext[".rs"].files, 2);
-        assert_eq!(total.by_ext[".txt"].files, 1);
+        assert_eq!(index.by_ext_named(total)[".rs"].files, 2);
+        assert_eq!(index.by_ext_named(total)[".txt"].files, 1);
 
         let src = index.rollup(Path::new("src")).expect("src");
         assert_eq!(src.files, 2);
@@ -1755,8 +1755,8 @@ mod tests {
         let total = index.total();
         assert_eq!(total.files, 3);
         assert_eq!(total.bytes, 20 + 9 + 3);
-        assert!(!total.by_ext.contains_key(".txt"));
-        assert_eq!(total.by_ext[".md"].files, 1);
+        assert!(!index.by_ext_named(total).contains_key(".txt"));
+        assert_eq!(index.by_ext_named(total)[".md"].files, 1);
     }
 
     #[test]

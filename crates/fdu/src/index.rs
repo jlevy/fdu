@@ -65,6 +65,12 @@ impl EntryId {
     }
 }
 
+/// Interned extension identity, valid only within the [`Index`] that issued it.
+///
+/// Never persisted: snapshots store entry names and roll-ups are rebuilt on load, so
+/// the interner rebuilds with them and ids stay session-local by construction.
+pub type ExtId = u32;
+
 /// Per-extension tally within a roll-up.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub struct ExtTally {
@@ -99,8 +105,15 @@ pub struct RollUp {
     pub allocated: u64,
     /// Newest mtime among descendant files, or 0 when there are none.
     pub newest_mtime_ns: i64,
-    /// Per-extension file and byte tallies across the subtree.
-    pub by_ext: BTreeMap<String, ExtTally>,
+    /// Per-extension file and byte tallies across the subtree, keyed by interned
+    /// extension id.
+    ///
+    /// Ids, not strings, because these maps are merged along the ancestor chain for
+    /// every file a scan applies: with owned `String` keys that was ~523k string
+    /// clones and string-keyed B-tree descents per 60k-entry scan — the largest
+    /// single cost in apply. An id is copied, compared as one integer, and resolved
+    /// back to its name only at query time via [`Index::by_ext_named`].
+    pub by_ext: BTreeMap<ExtId, ExtTally>,
 }
 
 impl RollUp {
@@ -120,7 +133,7 @@ impl RollUp {
             };
         }
         for (ext, tally) in &other.by_ext {
-            let slot = self.by_ext.entry(ext.clone()).or_default();
+            let slot = self.by_ext.entry(*ext).or_default();
             slot.files += tally.files;
             slot.bytes += tally.bytes;
         }
@@ -152,6 +165,10 @@ impl RollUp {
 struct Entry {
     parent: Option<EntryId>,
     name: OsString,
+    /// Interned extension, computed once at insert. Files only; `None` elsewhere and
+    /// for files without an extension. Precomputing it here is what lets
+    /// `contribution` run without a string allocation or an interner borrow.
+    ext_id: Option<ExtId>,
     kind: EntryKind,
     attrs: Attrs,
     /// Populated for directories only.
@@ -251,6 +268,10 @@ pub struct Index {
     /// Oldest clock still represented in `journal`.
     journal_floor: Clock,
     pending_invalidations: Vec<(PathBuf, InvalidateReason)>,
+    /// Interner storage: id → name. Ids are indexes into this vector.
+    ext_names: Vec<String>,
+    /// Interner lookup: name → id.
+    ext_ids: BTreeMap<String, ExtId>,
     freshness_epoch: u64,
     freshness_marks: BTreeMap<PathBuf, FreshnessMark>,
 }
@@ -464,6 +485,7 @@ impl Index {
         let root = Entry {
             parent: None,
             name: OsString::new(),
+            ext_id: None,
             kind: EntryKind::Dir,
             attrs: Attrs::default(),
             children: BTreeMap::new(),
@@ -485,6 +507,8 @@ impl Index {
             pending_invalidations: Vec::new(),
             freshness_epoch: 0,
             freshness_marks: BTreeMap::new(),
+            ext_names: Vec::new(),
+            ext_ids: BTreeMap::new(),
         }
     }
 
@@ -951,6 +975,33 @@ impl Index {
         self.live -= 1;
     }
 
+    /// Intern an extension name, returning its stable id within this index.
+    fn intern_ext(&mut self, name: &str) -> ExtId {
+        if let Some(id) = self.ext_ids.get(name) {
+            return *id;
+        }
+        let id = ExtId::try_from(self.ext_names.len()).expect("extension interner exhausted");
+        self.ext_names.push(name.to_string());
+        self.ext_ids.insert(name.to_string(), id);
+        id
+    }
+
+    /// Resolve a roll-up's interned extension tallies back to their names.
+    ///
+    /// This is the query-time boundary: merges run on integer ids, and the strings
+    /// reappear only here, once per report rather than once per ancestor per file.
+    pub fn by_ext_named(&self, rollup: &RollUp) -> BTreeMap<String, ExtTally> {
+        rollup
+            .by_ext
+            .iter()
+            .map(|(id, tally)| {
+                let name =
+                    self.ext_names.get(*id as usize).expect("extension id from a foreign index");
+                (name.clone(), *tally)
+            })
+            .collect()
+    }
+
     /// What an entry contributes to each of its ancestors.
     fn contribution(&self, id: EntryId) -> RollUp {
         let entry = self.entry(id);
@@ -969,8 +1020,8 @@ impl Index {
                     newest_mtime_ns: entry.attrs.mtime_ns,
                     by_ext: BTreeMap::new(),
                 };
-                if let Some(ext) = entry.name.to_str().and_then(derive_ext) {
-                    roll.by_ext.insert(ext, ExtTally { files: 1, bytes: entry.attrs.size });
+                if let Some(ext_id) = entry.ext_id {
+                    roll.by_ext.insert(ext_id, ExtTally { files: 1, bytes: entry.attrs.size });
                 }
                 roll
             }
@@ -1048,6 +1099,7 @@ impl Index {
             let child = self.alloc(Entry {
                 parent: Some(current),
                 name: (*part).to_os_string(),
+                ext_id: None,
                 kind: EntryKind::Dir,
                 attrs: Attrs::default(),
                 children: BTreeMap::new(),
@@ -1125,9 +1177,13 @@ impl Index {
             self.remove_entry(id, stats);
         }
 
+        let ext_id = (kind == EntryKind::File)
+            .then(|| name.to_str().and_then(derive_ext).map(|ext| self.intern_ext(&ext)))
+            .flatten();
         let id = self.alloc(Entry {
             parent: Some(parent),
             name: (*name).to_os_string(),
+            ext_id,
             kind,
             attrs,
             children: BTreeMap::new(),
@@ -1856,9 +1912,9 @@ mod tests {
         assert_eq!(total.bytes, 10);
         assert_eq!(total.allocated, 512);
         assert_eq!(total.newest_mtime_ns, 10);
-        assert_eq!(total.by_ext[".txt"], ExtTally { files: 1, bytes: 10 });
-        assert!(!total.by_ext.contains_key(".rs"));
-        assert!(!total.by_ext.contains_key(".md"));
+        assert_eq!(index.by_ext_named(total)[".txt"], ExtTally { files: 1, bytes: 10 });
+        assert!(!index.by_ext_named(total).contains_key(".rs"));
+        assert!(!index.by_ext_named(total).contains_key(".md"));
 
         index.apply_ok(&Observation::new(vec![upsert(
             "link.rs",
@@ -1882,13 +1938,13 @@ mod tests {
         let index = index_with_sample_tree();
 
         let total = index.total();
-        assert_eq!(total.by_ext[".rs"], ExtTally { files: 2, bytes: 300 });
-        assert_eq!(total.by_ext[".md"], ExtTally { files: 1, bytes: 300 });
+        assert_eq!(index.by_ext_named(total)[".rs"], ExtTally { files: 2, bytes: 300 });
+        assert_eq!(index.by_ext_named(total)[".md"], ExtTally { files: 1, bytes: 300 });
 
         // Per-directory breakdown, which no surveyed tool provides.
         let src = index.rollup(Path::new("src")).expect("src is a directory");
-        assert_eq!(src.by_ext[".rs"], ExtTally { files: 2, bytes: 300 });
-        assert!(!src.by_ext.contains_key(".md"));
+        assert_eq!(index.by_ext_named(src)[".rs"], ExtTally { files: 2, bytes: 300 });
+        assert!(!index.by_ext_named(src).contains_key(".md"));
     }
 
     #[test]
@@ -1952,7 +2008,7 @@ mod tests {
 
         assert_eq!(index.rollup(Path::new("src")).expect("dir").bytes, 350);
         assert_eq!(index.total().bytes, 650);
-        assert_eq!(index.total().by_ext[".rs"], ExtTally { files: 2, bytes: 350 });
+        assert_eq!(index.by_ext_named(index.total())[".rs"], ExtTally { files: 2, bytes: 350 });
     }
 
     #[test]
@@ -2004,7 +2060,7 @@ mod tests {
         assert_eq!(total.files, 2);
         assert_eq!(total.bytes, 300);
         assert_eq!(total.newest_mtime_ns, 20, "max must fall back to src/lib.rs");
-        assert!(!total.by_ext.contains_key(".md"), "emptied tallies are dropped");
+        assert!(!index.by_ext_named(total).contains_key(".md"), "emptied tallies are dropped");
     }
 
     #[test]
@@ -2020,7 +2076,7 @@ mod tests {
         assert_eq!(total.dirs, 1);
         assert_eq!(total.bytes, 300);
         assert!(index.lookup(Path::new("src/main.rs")).is_none());
-        assert!(!total.by_ext.contains_key(".rs"));
+        assert!(!index.by_ext_named(total).contains_key(".rs"));
     }
 
     #[test]

@@ -215,7 +215,8 @@ impl Cli {
             // be apparent bytes too — sharing the allocated-bytes total used elsewhere
             // would print shares that never reach 100%.
             let by_type_total = total.bytes.max(1);
-            let mut kinds: Vec<_> = total.by_ext.iter().collect();
+            let named = index.by_ext_named(total);
+            let mut kinds: Vec<_> = named.iter().collect();
             kinds.sort_by(|a, b| b.1.bytes.cmp(&a.1.bytes).then_with(|| a.0.cmp(b.0)));
             for (ext, tally) in kinds.into_iter().take(self.number) {
                 let share = ratio(tally.bytes, by_type_total);
@@ -369,7 +370,8 @@ impl Cli {
         writeln!(out, "  ],")?;
 
         write!(out, "  \"by_extension\": {{")?;
-        let mut kinds: Vec<_> = total.by_ext.iter().collect();
+        let named = index.by_ext_named(total);
+        let mut kinds: Vec<_> = named.iter().collect();
         kinds.sort_by(|a, b| b.1.bytes.cmp(&a.1.bytes).then_with(|| a.0.cmp(b.0)));
         for (i, (ext, tally)) in kinds.iter().enumerate() {
             if i > 0 {

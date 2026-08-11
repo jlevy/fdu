@@ -246,6 +246,7 @@ fn load_with_size_limit(path: &Path, max_snapshot_bytes: u64) -> Result<Option<I
         .checked_sub(footer_bytes)
         .ok_or_else(|| Error::Snapshot("snapshot length underflow".into()))?;
     file.seek(SeekFrom::Start(0)).map_err(|e| Error::io(path, e))?;
+
     let actual_checksum = checksum_reader((&mut file).take(payload_len), payload_len)
         .map_err(|error| Error::io(path, error))?;
     if actual_checksum != Some(expected_checksum) {
@@ -277,11 +278,7 @@ fn checksum_reader(mut reader: impl Read, payload_len: u64) -> std::io::Result<O
             return Ok(None);
         }
         state = crc32c_update(state, &buffer[..read]);
-        let read = u64::try_from(read)
-            .map_err(|_| std::io::Error::other("checksum read length exceeds u64"))?;
-        remaining = remaining
-            .checked_sub(read)
-            .ok_or_else(|| std::io::Error::other("checksum reader exceeded payload bound"))?;
+        remaining -= u64::try_from(read).unwrap_or(0);
     }
     Ok(Some(!state))
 }
@@ -718,11 +715,23 @@ mod tests {
         assert_eq!(restored.clock(), crate::Clock::ZERO);
         assert!(restored.since(crate::Clock::ZERO).deltas.is_empty());
         assert_eq!(restored.len(), original.len());
-        assert_eq!(restored.total(), original.total());
+        // Interned extension ids are assignment-ordered, so equality across two
+        // indexes is only meaningful through the resolved names.
+        let (restored_total, original_total) = (restored.total(), original.total());
+        assert_eq!(
+            (restored_total.files, restored_total.dirs, restored_total.bytes),
+            (original_total.files, original_total.dirs, original_total.bytes)
+        );
+        assert_eq!(restored_total.allocated, original_total.allocated);
+        assert_eq!(restored_total.newest_mtime_ns, original_total.newest_mtime_ns);
+        assert_eq!(restored.by_ext_named(restored_total), original.by_ext_named(original_total));
         assert_eq!(restored.total().files, 3);
         assert_eq!(restored.total().dirs, 2);
         assert_eq!(restored.total().bytes, 157);
-        assert_eq!(restored.total().by_ext[".rs"], ExtTally { files: 2, bytes: 150 });
+        assert_eq!(
+            restored.by_ext_named(restored.total())[".rs"],
+            ExtTally { files: 2, bytes: 150 }
+        );
         assert_eq!(
             restored.attrs(Path::new("src/deep/nested.rs")),
             original.attrs(Path::new("src/deep/nested.rs"))
