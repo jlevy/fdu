@@ -359,9 +359,10 @@ replay “which directories changed since event X” instead of sweeping a milli
 A source-level read of the two production precedents (below) sharpens the claim:
 Watchman’s `fsevents_try_resync` proves the *mechanics* — resume from a recorded event
 ID guarded by a `FSEventsCopyUUIDForDevice` equality check and an `EventIdsWrapped` veto
-— but uses them only for **in-process** recovery after dropped events, off by default;
-across restarts both Watchman and git’s fsmonitor daemon start at `SinceNow` and force a
-fresh crawl through their own logical clocks.
+— but uses them only for **in-process** recovery after dropped events, off by default
+(briefly defaulted on, then reverted in December 2021 “due to possible correctness
+issues”); across restarts both Watchman and git’s fsmonitor daemon start at `SinceNow`
+and force a fresh crawl through their own logical clocks.
 Cross-restart replay is therefore Apple-documented and API-supported but unproven in
 major production tools — fdu would be pioneering it, which makes the backstop
 non-negotiable rather than merely prudent.
@@ -415,6 +416,8 @@ settles how the journal-resume module should be built:
   `FSEventsPurgeEventsForDeviceUpToEventId` (8.2.0 `fsevent.rs:487-489`), which
   truncates the device’s **on-disk journal**. A resume token persisted *after* the live
   watcher stops may point at purged history.
+  (Apple documents the purge call as root-only, so the hazard is sharpest for
+  root/daemon processes — but the ordering rule is cheap insurance regardless.)
   Ordering rule: persist the resume token before stopping the watcher, and treat a
   failed resume as an ordinary fall-back-to-sweep, never an error.
 - **The binding for a first-party resume module is `objc2-core-services`** (features
@@ -444,16 +447,34 @@ settles how the journal-resume module should be built:
   save, persist `(volume UUID via FSEventsCopyUUIDForDevice, event ID)` per volume; at
   open, re-derive the device, re-check the UUID (mismatch or null ⇒ full sweep), create
   a device-relative stream at the persisted ID with
-  `FileEvents | NoDefer | UseCFTypes | UseExtendedData`, schedule on a private serial
-  dispatch queue, collect `(path, inode, flags, id)` until `HistoryDone` (whose
-  accompanying path is garbage — ignore the path, not the event), with a bounded wait;
-  any dropped/`MustScanSubDirs` flag scopes an `InvalidateSubtree`, `EventIdsWrapped`
-  abandons replay entirely, and the new resume token is persisted only after the
-  corresponding deltas are applied — at-least-once, never skip-ahead.
+  `FileEvents | NoDefer | UseCFTypes | UseExtendedData | FullHistory`, schedule on a
+  private serial dispatch queue (batch ordering is what makes token persistence sound),
+  collect `(path, inode, flags, id)` until `HistoryDone` (detected by flag — its
+  accompanying path is garbage), with a bounded wait; any dropped/`MustScanSubDirs` flag
+  scopes an `InvalidateSubtree` (the dropped flags always accompany `MustScanSubDirs`,
+  so checking it alone suffices), `EventIdsWrapped` abandons replay entirely, and the
+  new resume token — the max of the per-event IDs captured *inside* the callback, not a
+  cross-thread `GetLatestEventId` read — is persisted only after the corresponding
+  deltas are applied. `FullHistory` (macOS 10.15+) is load-bearing, not optional: Apple’s
+  header documents that without it, events near the sinceWhen boundary can be **silently
+  skipped** because history is stored in coalesced chunks; with it, replay is
+  overlapping and at-least-once, which fdu’s idempotent deltas absorb by design.
+  Journal availability caveats to encode in the validation ladder: a NULL UUID means no
+  history exists (read-only volumes); a volume can opt out entirely via
+  `/.fseventsd/no_log`; FAT32/exFAT journals are unreliable; retention is bounded and
+  unspecified (days to weeks on busy volumes, flushed at major OS upgrades) — the UUID
+  match plus successful replay-through-HistoryDone is the only proof the journal served
+  the request. `IgnoreSelf`/`MarkSelf` have no effect on historical events, so replay
+  includes fdu’s own past writes (harmless: the cache lives outside scanned roots).
+  TCC nuance: events can arrive for paths the process cannot stat — reconciling a
+  flagged directory under `~/Library` etc.
+  surfaces as ordinary partial errors without Full Disk Access, and the behavior is not
+  Apple-documented, so it belongs in per-macOS-release tests.
   Threading rules copied from notify’s proven pattern: context via `Box::into_raw` freed
-  in the stream’s release callback, the raw stream pointer in a Send wrapper, never
-  invalidate from the callback thread, no panics across the FFI boundary, and
-  `OsStr::from_bytes` for paths (notify 8.2 panics on non-UTF-8 — a bug not to copy).
+  in the stream’s release callback, the raw stream pointer in a Send wrapper, stop →
+  invalidate → release in that order and never from the callback thread, no panics
+  across the FFI boundary, and `OsStr::from_bytes` for paths (notify 8.2 panics on
+  non-UTF-8 — a bug not to copy).
 
 ### Linux and the Cloud: Hide Latency, Order the Work, Trust Nothing Optional
 
