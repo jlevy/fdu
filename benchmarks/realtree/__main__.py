@@ -13,13 +13,16 @@ implement and the rule that decides whether a change is kept.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import subprocess
 import sys
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Sequence
 
 from benchmarks.realtree import compat, evidence, ledger, measure, profile, scale, tree
+from benchmarks.realtree import environment as benchmark_environment
 
 DEFAULT_RESULTS = Path("benchmarks/results/realtree")
 DEFAULT_SCRATCH = Path("benchmarks/corpus/realtree-scratch")
@@ -75,6 +78,24 @@ def main(argv: Sequence[str]) -> int:
     run.add_argument("--name", default="", help="short slug for the output files")
     run.add_argument("--note", default="")
     run.add_argument(
+        "--environment-cell",
+        help="stable path-free cell id, for example github-ubuntu-24.04-x64",
+    )
+    run.add_argument(
+        "--runner-class",
+        choices=benchmark_environment.RUNNER_CLASSES,
+        help="control grade of the runner; inferred as local or GitHub-hosted by default",
+    )
+    run.add_argument(
+        "--run-group",
+        help="stable id shared only by equivalent runs in different environments",
+    )
+    run.add_argument(
+        "--corpus-manifest",
+        type=Path,
+        help="verified observed-corpus.json whose portable identity binds this run",
+    )
+    run.add_argument(
         "--purge",
         action="store_true",
         help="drop the OS page cache before every trial; needs root",
@@ -125,6 +146,29 @@ def main(argv: Sequence[str]) -> int:
     scale_run.add_argument("--trials", type=int, default=5)
     scale_run.add_argument("--warmups", type=int, default=1)
 
+    matrix = subparsers.add_parser(
+        "environment-matrix",
+        help="compare decisions, not absolute timings, across equivalent environment cells",
+    )
+    matrix.add_argument("--run", action="append", required=True, type=Path)
+    matrix.add_argument("--id", required=True, dest="matrix_id", help="env-NNN")
+    matrix.add_argument("--control-variant", required=True)
+    matrix.add_argument("--candidate-variant", required=True)
+    matrix.add_argument("--output", required=True, type=Path)
+    matrix.add_argument("--report", type=Path)
+    matrix.add_argument("--max-cpu-regression-pct", type=float, default=10.0)
+    matrix.add_argument("--max-rss-regression-pct", type=float, default=10.0)
+
+    provenance = subparsers.add_parser(
+        "provenance", help="write one path-redacted claim-build manifest"
+    )
+    provenance.add_argument("--engine-revision", required=True)
+    provenance.add_argument("--harness-revision", required=True)
+    provenance.add_argument("--harness-source", required=True, type=Path)
+    provenance.add_argument("--build-command", required=True)
+    provenance.add_argument("--target")
+    provenance.add_argument("--output", required=True, type=Path)
+
     arguments = parser.parse_args(list(argv))
     if arguments.command == "baseline":
         return _baseline(arguments)
@@ -138,6 +182,10 @@ def main(argv: Sequence[str]) -> int:
         return _compat_probe(arguments)
     if arguments.command == "snapshot-scale":
         return _snapshot_scale(arguments)
+    if arguments.command == "environment-matrix":
+        return _environment_matrix(arguments)
+    if arguments.command == "provenance":
+        return _provenance(arguments)
     return _render(arguments)
 
 
@@ -187,6 +235,10 @@ def _measure(arguments: argparse.Namespace) -> int:
         baseline_fingerprint=baseline_document,
         purge=arguments.purge,
         note=arguments.note,
+        environment_cell=arguments.environment_cell,
+        runner_class=arguments.runner_class,
+        run_group=arguments.run_group,
+        corpus_manifest=arguments.corpus_manifest,
     )
 
     if references:
@@ -326,6 +378,98 @@ def _compat_probe(arguments: argparse.Namespace) -> int:
         raise SystemExit(str(error)) from error
     print(f"wrote {arguments.output}", file=sys.stderr)
     return 0
+
+
+def _environment_matrix(arguments: argparse.Namespace) -> int:
+    runs = []
+    for path in arguments.run:
+        encoded = path.read_bytes()
+        runs.append(
+            benchmark_environment.RunEvidence(
+                document=json.loads(encoded),
+                artifact_name=path.name,
+                artifact_sha256=hashlib.sha256(encoded).hexdigest(),
+            )
+        )
+    try:
+        matrix = benchmark_environment.build_matrix(
+            runs,
+            matrix_id=arguments.matrix_id,
+            control_variant=arguments.control_variant,
+            candidate_variant=arguments.candidate_variant,
+            maximum_cpu_regression_pct=arguments.max_cpu_regression_pct,
+            maximum_rss_regression_pct=arguments.max_rss_regression_pct,
+        )
+    except benchmark_environment.EnvironmentError as error:
+        raise SystemExit(str(error)) from error
+    arguments.output.parent.mkdir(parents=True, exist_ok=True)
+    arguments.output.write_text(
+        json.dumps(
+            matrix.model_dump(mode="json", by_alias=True), indent=2, sort_keys=True
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    if arguments.report:
+        arguments.report.parent.mkdir(parents=True, exist_ok=True)
+        arguments.report.write_text(
+            benchmark_environment.render_matrix(matrix), encoding="utf-8"
+        )
+    print(f"wrote {arguments.output}", file=sys.stderr)
+    if arguments.report:
+        print(f"wrote {arguments.report}", file=sys.stderr)
+    print(
+        json.dumps(
+            {
+                "all_cells_valid": matrix.all_cells_valid,
+                "decision_consistent": matrix.decision_consistent,
+                "divergent_jobs": matrix.divergent_jobs,
+            },
+            sort_keys=True,
+        )
+    )
+    return 0
+
+
+def _provenance(arguments: argparse.Namespace) -> int:
+    source_digest = hashlib.sha256(arguments.harness_source.read_bytes()).hexdigest()
+    manifest = {
+        "schema": measure.BINARY_PROVENANCE_SCHEMA,
+        "engine_revision": arguments.engine_revision,
+        "harness_revision": arguments.harness_revision,
+        "harness_sha256": source_digest,
+        "target": arguments.target or _rust_target(),
+        "build_profile": "release",
+        "features": [],
+        "build_command": arguments.build_command,
+    }
+    normalized = measure._validated_provenance(manifest)
+    arguments.output.parent.mkdir(parents=True, exist_ok=True)
+    arguments.output.write_text(
+        json.dumps(
+            {"schema": measure.BINARY_PROVENANCE_SCHEMA, **normalized},
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    print(f"wrote {arguments.output}", file=sys.stderr)
+    return 0
+
+
+def _rust_target() -> str:
+    try:
+        completed = subprocess.run(
+            ["rustc", "-vV"], capture_output=True, check=False, timeout=30
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired) as error:
+        raise SystemExit(f"cannot discover the Rust target: {error}") from error
+    if completed.returncode == 0:
+        for line in completed.stdout.decode("utf-8", errors="replace").splitlines():
+            if line.startswith("host: "):
+                return line.removeprefix("host: ").strip()
+    raise SystemExit("rustc -vV did not report a host target")
 
 
 def _snapshot_scale(arguments: argparse.Namespace) -> int:

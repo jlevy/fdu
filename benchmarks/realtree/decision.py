@@ -1,0 +1,106 @@
+"""Evaluate benchmark latency and resource gates from one paired comparison."""
+
+from __future__ import annotations
+
+from typing import Any, Dict, Mapping
+
+from benchmarks.realtree import ledger
+
+RESOURCE_METRICS = ("cpu_ns", "peak_rss_bytes")
+
+
+def resource_guardrail(
+    comparison: Mapping[str, Any],
+    *,
+    metric: str,
+    maximum_regression_pct: float,
+) -> Dict[str, Any]:
+    """Evaluate whether a paired resource regression is established above a limit."""
+    if metric not in RESOURCE_METRICS:
+        raise ValueError(f"unsupported resource guardrail metric {metric!r}")
+    if maximum_regression_pct < 0:
+        raise ValueError(f"{metric} regression threshold must be non-negative")
+    entry = (comparison.get("metrics") or {}).get(metric)
+    if not entry or entry.get("median_change_pct") is None:
+        return {
+            "metric": metric,
+            "maximum_regression_pct": maximum_regression_pct,
+            "observed_change_pct": None,
+            "ci95_low_pct": None,
+            "ci95_high_pct": None,
+            "status": "not-measured",
+            "reason": "no paired samples",
+        }
+    interval = entry.get("ci95_change_pct") or [None, None]
+    change = entry["median_change_pct"]
+    lower = interval[0]
+    failed = lower is not None and lower > maximum_regression_pct
+    return {
+        "metric": metric,
+        "maximum_regression_pct": maximum_regression_pct,
+        "observed_change_pct": change,
+        "ci95_low_pct": lower,
+        "ci95_high_pct": interval[1],
+        "status": "failed" if failed else "passed",
+        "reason": (
+            f"95% interval is wholly above the +{maximum_regression_pct:g}% limit"
+            if failed
+            else f"no statistically established regression above +{maximum_regression_pct:g}%"
+        ),
+    }
+
+
+def evaluate(
+    comparison: Mapping[str, Any],
+    *,
+    invalid_samples: int = 0,
+    tree_mutated: bool = False,
+    maximum_cpu_regression_pct: float = 10.0,
+    maximum_rss_regression_pct: float = 10.0,
+) -> Dict[str, Any]:
+    """Return the complete per-cell decision without granting a resource waiver."""
+    latency = ledger.verdict(comparison)
+    guardrails = [
+        resource_guardrail(
+            comparison,
+            metric="cpu_ns",
+            maximum_regression_pct=maximum_cpu_regression_pct,
+        ),
+        resource_guardrail(
+            comparison,
+            metric="peak_rss_bytes",
+            maximum_regression_pct=maximum_rss_regression_pct,
+        ),
+    ]
+    failed = [
+        gate["metric"]
+        for gate in guardrails
+        if gate["status"] in {"failed", "not-measured"}
+    ]
+    if tree_mutated or invalid_samples:
+        overall = "invalid"
+        reasons = []
+        if tree_mutated:
+            reasons.append("the workload changed during the run")
+        if invalid_samples:
+            reasons.append(f"{invalid_samples} selected sample(s) failed the oracle")
+        reason = "; ".join(reasons)
+    elif not latency["accepted"]:
+        overall = "rejected"
+        reason = f"latency gate: {latency['reason']}"
+    elif failed:
+        overall = "rejected"
+        reason = "resource guardrail failed or was not measured: " + ", ".join(failed)
+    else:
+        overall = "accepted"
+        reason = "latency gate and both resource guardrails passed"
+    return {
+        "latency_gate_passed": bool(latency["accepted"]),
+        "latency_reason": latency["reason"],
+        "resource_guardrails": guardrails,
+        "overall_decision": overall,
+        "reason": reason,
+    }
+
+
+__all__ = ["RESOURCE_METRICS", "evaluate", "resource_guardrail"]

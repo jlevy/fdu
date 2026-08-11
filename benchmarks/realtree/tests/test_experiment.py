@@ -242,6 +242,52 @@ class EvidenceContractTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "control_binary.features"):
             experiment_model.Experiment.model_validate(payload)
 
+    def test_v2_claim_grade_remains_backward_compatible(self) -> None:
+        payload = self._payload()
+        self.assertEqual(payload["method"]["run_schema"], "fdu-realtree-run-v2")
+        experiment_model.Experiment.model_validate(payload)
+
+    def test_v3_claim_grade_requires_an_environment_identity(self) -> None:
+        payload = self._payload()
+        payload["method"]["run_schema"] = "fdu-realtree-run-v3"
+        with self.assertRaisesRegex(ValueError, "subject.environment_cell"):
+            experiment_model.Experiment.model_validate(payload)
+
+    def test_v3_environment_identity_is_promoted_from_the_raw_run(self) -> None:
+        document = _run_document()
+        document["schema"] = "fdu-realtree-run-v3"
+        document["environment"] = {
+            "cell_id": "github-ubuntu-24.04-x64",
+            "fingerprint_sha256": "6" * 64,
+            "runner_class": "github-hosted-shared",
+        }
+        document["workload"] = {
+            "kind": "generated-corpus",
+            "portable_identity_sha256": "7" * 64,
+        }
+        payload = experiment_model.from_run(
+            document,
+            experiment_id="exp-042",
+            title="Cross environment",
+            hypotheses=["H1"],
+            control="before",
+            candidate="after",
+            complexity={"lines_changed": 10},
+            verdict={
+                "decision": "rejected",
+                "primary_job": "cold-scan-index",
+                "reason": "measured",
+            },
+            run_artifact="docs/project/experiments/evidence/exp-042-run.json",
+            run_artifact_sha256=_RUN_DIGEST,
+            evidence_grade="claim-grade",
+        )
+        validated = experiment_model.Experiment.model_validate(payload)
+        self.assertEqual(validated.subject.environment_cell, "github-ubuntu-24.04-x64")
+        self.assertEqual(
+            validated.subject.portable_workload_identity, "7" * 64
+        )
+
     def test_accepted_requires_latency_and_resource_gates(self) -> None:
         payload = self._payload(decision="accepted")
         with self.assertRaisesRegex(ValueError, "decision gates"):

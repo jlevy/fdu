@@ -402,6 +402,19 @@ $defs:
       state. The path is never recorded — ``tree_root_id`` is its SHA-256, enough to
       tell two trees apart without disclosing where either lives.
     properties:
+      environment_cell:
+        default: ''
+        description: Logical host/filesystem/runner cell used for policy decisions.
+        title: Environment Cell
+        type: string
+      environment_fingerprint:
+        anyOf:
+        - pattern: ^[0-9a-f]{64}$
+          type: string
+        - type: 'null'
+        default: null
+        description: Exact path-free hash of host, toolchain, image, and runner facts.
+        title: Environment Fingerprint
       filesystem:
         default: ''
         title: Filesystem
@@ -443,6 +456,18 @@ $defs:
         default: warm-steady
         description: Page-cache condition. Dropping it needs root, so say which it was.
         title: Os Cache
+        type: string
+      portable_workload_identity:
+        anyOf:
+        - pattern: ^[0-9a-f]{64}$
+          type: string
+        - type: 'null'
+        default: null
+        description: Cross-filesystem generated-corpus identity when one exists.
+        title: Portable Workload Identity
+      runner_class:
+        default: ''
+        title: Runner Class
         type: string
       tree_allocated_bytes:
         default: 0
@@ -492,6 +517,10 @@ $defs:
         minimum: 0
         title: Tree Symlinks
         type: integer
+      workload_kind:
+        default: real-tree
+        title: Workload Kind
+        type: string
     required:
     - tree_apparent_bytes
     - tree_directories
@@ -624,4 +653,4 @@ title: Experiment
 type: object
 x-softschema:
   contract: fdu.performance:Experiment/v1
-  schema_sha256: c475c4d33f6e9473d536f9ecc4db50470132a524c79bc8fb89b0109b6b6ebee2
+  schema_sha256: 6e60dd59f2734cbd2a68b3a16849fad93694e9aadac43027317c8a47bbadcb26

@@ -22,7 +22,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Sequence
 
-from benchmarks.realtree import evidence, experiment as experiment_model
+from benchmarks.realtree import decision, evidence, experiment as experiment_model
 
 EXPERIMENTS_DIR = Path("docs/project/experiments")
 SCHEMA_NAME = "experiment.schema.yaml"
@@ -222,12 +222,12 @@ def _verdict_evidence(
         )
 
     guardrails = [
-        _resource_guardrail(
+        decision.resource_guardrail(
             comparison,
             metric="cpu_ns",
             maximum_regression_pct=arguments.max_cpu_regression_pct,
         ),
-        _resource_guardrail(
+        decision.resource_guardrail(
             comparison,
             metric="peak_rss_bytes",
             maximum_regression_pct=arguments.max_rss_regression_pct,
@@ -254,41 +254,6 @@ def _verdict_evidence(
         "latency_gate_passed": latency_gate_passed,
         "resource_guardrails": guardrails,
         "resource_waiver_reason": waiver,
-    }
-
-
-def _resource_guardrail(
-    comparison: Any, *, metric: str, maximum_regression_pct: float
-) -> Dict[str, Any]:
-    if maximum_regression_pct < 0:
-        raise ValueError(f"{metric} regression threshold must be non-negative")
-    entry = (comparison or {}).get("metrics", {}).get(metric)
-    if not entry or entry.get("median_change_pct") is None:
-        return {
-            "metric": metric,
-            "maximum_regression_pct": maximum_regression_pct,
-            "observed_change_pct": None,
-            "ci95_low_pct": None,
-            "ci95_high_pct": None,
-            "status": "not-measured",
-            "reason": "no paired samples",
-        }
-    interval = entry.get("ci95_change_pct") or [None, None]
-    change = entry["median_change_pct"]
-    lower = interval[0]
-    failed = lower is not None and lower > maximum_regression_pct
-    return {
-        "metric": metric,
-        "maximum_regression_pct": maximum_regression_pct,
-        "observed_change_pct": change,
-        "ci95_low_pct": lower,
-        "ci95_high_pct": interval[1],
-        "status": "failed" if failed else "passed",
-        "reason": (
-            f"95% interval is wholly above the +{maximum_regression_pct:g}% limit"
-            if failed
-            else f"no statistically established regression above +{maximum_regression_pct:g}%"
-        ),
     }
 
 

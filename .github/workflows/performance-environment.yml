@@ -1,0 +1,149 @@
+name: Cache performance environments
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/performance-environment.yml"
+      - "benchmarks/**"
+      - "crates/fdu/**"
+      - "Cargo.lock"
+      - "Cargo.toml"
+
+permissions:
+  contents: read
+
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  supply-chain:
+    name: Supply-chain provenance
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.18.0
+      - run: node --test scripts/check-supply-chain.test.mjs
+      - run: node scripts/check-supply-chain.mjs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  linux-cell:
+    name: Linux cloud decision cell
+    needs: supply-chain
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # 1.97.1
+        with:
+          toolchain: 1.97.1
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          version: "0.11.28"
+          enable-cache: false
+
+      - name: Build the frozen corrected control and candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          work_root="${RUNNER_TEMP}/fdu-performance"
+          control_root="${work_root}/control"
+          candidate_root="${work_root}/candidate"
+          mkdir -p "${work_root}/metadata"
+          git worktree add --detach "${control_root}" c0ddcb9807dacd7190cfc6639104db8fc33be896
+          git worktree add --detach "${candidate_root}" bd479aaee90263dea8c7dc5ce9d131368e749568
+          uv run --project benchmarks/realtree --frozen python -m benchmarks.realtree \
+            compat-probe \
+            --source "${candidate_root}/crates/fdu/examples/perf_probe.rs" \
+            --output "${control_root}/crates/fdu/examples/perf_probe_review.rs"
+          CARGO_TARGET_DIR="${work_root}/control-target" \
+            cargo build --manifest-path "${control_root}/Cargo.toml" --locked --release \
+              -p fdu --example perf_probe_review --no-default-features
+          CARGO_TARGET_DIR="${work_root}/candidate-target" \
+            cargo build --manifest-path "${candidate_root}/Cargo.toml" --locked --release \
+              -p fdu --example perf_probe --no-default-features
+          uv run --project benchmarks/realtree --frozen python -m benchmarks.realtree \
+            provenance \
+            --engine-revision c0ddcb9807dacd7190cfc6639104db8fc33be896 \
+            --harness-revision bd479aaee90263dea8c7dc5ce9d131368e749568 \
+            --harness-source "${control_root}/crates/fdu/examples/perf_probe_review.rs" \
+            --build-command "cargo build --locked --release -p fdu --example perf_probe_review --no-default-features" \
+            --output "${work_root}/metadata/corrected.json"
+          uv run --project benchmarks/realtree --frozen python -m benchmarks.realtree \
+            provenance \
+            --engine-revision bd479aaee90263dea8c7dc5ce9d131368e749568 \
+            --harness-revision bd479aaee90263dea8c7dc5ce9d131368e749568 \
+            --harness-source "${candidate_root}/crates/fdu/examples/perf_probe.rs" \
+            --build-command "cargo build --locked --release -p fdu --example perf_probe --no-default-features" \
+            --output "${work_root}/metadata/candidate.json"
+          echo "FDU_PERF_WORK_ROOT=${work_root}" >> "${GITHUB_ENV}"
+
+      - name: Generate the portable 60k-entry workload
+        shell: bash
+        run: |
+          set -euo pipefail
+          corpus_result="$({ uv run --no-project python -m benchmarks.generate create \
+            --recipe balanced --entries 60000 \
+            --seed pr3-cache-cross-environment-v1 \
+            --work-dir "${FDU_PERF_WORK_ROOT}/corpora"; })"
+          corpus_root="$(jq -r .run_root <<< "${corpus_result}")"
+          test -d "${corpus_root}/corpus"
+          echo "FDU_PERF_CORPUS_ROOT=${corpus_root}" >> "${GITHUB_ENV}"
+
+      - name: Measure the Linux environment cell
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv run --project benchmarks/realtree --frozen python -m benchmarks.realtree measure \
+            --root "${FDU_PERF_CORPUS_ROOT}/corpus" \
+            --label generated-balanced-60k \
+            --corpus-manifest "${FDU_PERF_CORPUS_ROOT}/observed-corpus.json" \
+            --variant "corrected=${FDU_PERF_WORK_ROOT}/control-target/release/examples/perf_probe_review" \
+            --variant "candidate=${FDU_PERF_WORK_ROOT}/candidate-target/release/examples/perf_probe" \
+            --variant-metadata "corrected=${FDU_PERF_WORK_ROOT}/metadata/corrected.json" \
+            --variant-metadata "candidate=${FDU_PERF_WORK_ROOT}/metadata/candidate.json" \
+            --job cold-scan-index \
+            --job cold-scan-producer \
+            --job warm-revalidate \
+            --job warm-snapshot-load \
+            --job cold-snapshot-save \
+            --trials 12 --warmups 3 \
+            --environment-cell github-ubuntu-24.04-x64 \
+            --runner-class github-hosted-shared \
+            --run-group pr3-cache-balanced-60k-v1 \
+            --scratch "${FDU_PERF_WORK_ROOT}/scratch" \
+            --output-dir "${FDU_PERF_WORK_ROOT}/results" \
+            --name linux-cloud
+
+      - name: Archive path-free evidence and render its report
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence_dir="${FDU_PERF_WORK_ROOT}/evidence"
+          mkdir -p "${evidence_dir}"
+          uv run --project benchmarks/realtree --frozen python -m benchmarks.realtree archive \
+            --run "${FDU_PERF_WORK_ROOT}/results/run-linux-cloud.json" \
+            --output "${evidence_dir}/pr3-cache-linux-cloud-run.json" \
+            --tree-label generated-balanced-60k
+          uv run --project benchmarks/realtree --frozen python -m benchmarks.realtree render \
+            --run "${evidence_dir}/pr3-cache-linux-cloud-run.json" \
+            --output "${evidence_dir}/pr3-cache-linux-cloud-run.md"
+          cat "${evidence_dir}/pr3-cache-linux-cloud-run.md" >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Retain raw trials and the rendered report
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: pr3-cache-linux-cloud-${{ github.run_id }}
+          path: ${{ runner.temp }}/fdu-performance/evidence/
+          if-no-files-found: error
+          retention-days: 30

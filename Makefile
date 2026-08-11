@@ -179,11 +179,17 @@ perf-schema:
 	@PYTHONPATH=. $(SOFTSCHEMA) compile benchmarks.realtree.experiment:Experiment \
 		--out docs/project/experiments/experiment.schema.yaml \
 		--contract fdu.performance:Experiment/v1 | $(SCHEMA_QUIET)
+	@PYTHONPATH=. $(SOFTSCHEMA) compile benchmarks.realtree.environment:EnvironmentMatrix \
+		--out docs/project/experiments/environment-matrix.schema.yaml \
+		--contract fdu.performance:EnvironmentMatrix/v1 | $(SCHEMA_QUIET)
 
 perf-schema-check:
 	@PYTHONPATH=. $(SOFTSCHEMA) compile benchmarks.realtree.experiment:Experiment \
 		--out docs/project/experiments/experiment.schema.yaml \
 		--contract fdu.performance:Experiment/v1 --check | $(SCHEMA_QUIET)
+	@PYTHONPATH=. $(SOFTSCHEMA) compile benchmarks.realtree.environment:EnvironmentMatrix \
+		--out docs/project/experiments/environment-matrix.schema.yaml \
+		--contract fdu.performance:EnvironmentMatrix/v1 --check | $(SCHEMA_QUIET)
 
 clean:
 	$(CARGO) clean

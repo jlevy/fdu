@@ -205,6 +205,13 @@ It intentionally changes across valid corpus regeneration and is compared only t
 probe that scanned that exact invocation. The portable semantic digest remains the
 cross-run corpus identity.
 
+The paired real-tree loop can consume this same manifest with `--corpus-manifest` when
+the environment, rather than the candidate revision, is the independent variable. Its
+v3 runs keep the exact local engine oracle while an environment matrix compares only
+per-cell decisions. See the
+[performance loop](../docs/project/guides/performance-loop.md#cross-environment-cells)
+for the contract and hosted-Linux workflow.
+
 `sha256-multiset-v1` combines a SHA-256 leaf for each normalized record through count,
 XOR, and modular-sum accumulators and hashes those components once more.
 This is stable regardless of filesystem enumeration order and uses constant digest

@@ -16,7 +16,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import platform
 import re
 import shutil
 import signal
@@ -29,9 +28,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
+from benchmarks.realtree import environment as benchmark_environment
 from benchmarks.realtree import tree as reference_tree
 
-RUN_SCHEMA = "fdu-realtree-run-v2"
+RUN_SCHEMA = benchmark_environment.RUN_SCHEMA
 BINARY_PROVENANCE_SCHEMA = "fdu-benchmark-binary-v1"
 BOOTSTRAP_SEED = 0x5EED
 
@@ -266,6 +266,10 @@ def run(
     purge: bool = False,
     note: str = "",
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+    environment_cell: Optional[str] = None,
+    runner_class: Optional[str] = None,
+    run_group: Optional[str] = None,
+    corpus_manifest: Optional[Path] = None,
 ) -> Dict[str, Any]:
     """Measure every ``variant`` against every ``job``, interleaved, and return a run."""
     if not variants:
@@ -276,6 +280,19 @@ def run(
         raise MeasureError("trials must be at least 1")
 
     frozen_identities = _freeze_variant_identities(variants)
+    host = benchmark_environment.host_facts(root)
+    environment = benchmark_environment.environment_identity(
+        host,
+        cell_id=environment_cell,
+        runner_class=runner_class,
+    )
+    workload = benchmark_environment.workload_identity(root, corpus_manifest)
+    selected_run_group = run_group or (
+        f"generated-{workload['portable_identity_sha256'][:16]}"
+        if workload["portable"]
+        else "adhoc-real-tree"
+    )
+    benchmark_environment.validate_identifier(selected_run_group, field="run group")
     scratch.mkdir(parents=True, exist_ok=True)
     started = time.time()
 
@@ -317,7 +334,10 @@ def run(
         "started_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(started)),
         "duration_seconds": round(time.time() - started, 3),
         "note": note,
-        "host": host_facts(),
+        "run_group": selected_run_group,
+        "host": host,
+        "environment": environment,
+        "workload": workload,
         "conditions": {
             "os_cache": "purged-per-trial" if purge else "warm-steady",
             "trials": trials,
@@ -1022,64 +1042,6 @@ def _bootstrap_median_interval(
 # --------------------------------------------------------------------------------
 
 
-def host_facts() -> Dict[str, Any]:
-    """Machine facts that change timings. No hostname, no user, no paths."""
-    facts: Dict[str, Any] = {
-        "arch": platform.machine(),
-        "cpu_count": os.cpu_count(),
-        "python": platform.python_version(),
-        "system": platform.system(),
-        "release": platform.release(),
-        "toolchain": _toolchain(),
-    }
-    if sys.platform == "darwin":
-        facts["cpu_model"] = _sysctl("machdep.cpu.brand_string")
-        facts["memory_bytes"] = _sysctl_int("hw.memsize")
-        facts["performance_cores"] = _sysctl_int("hw.perflevel0.logicalcpu")
-        facts["efficiency_cores"] = _sysctl_int("hw.perflevel1.logicalcpu")
-        facts["filesystem"] = _darwin_filesystem()
-    return facts
-
-
-def _toolchain() -> str:
-    """The compiler that built the binaries, which changes the numbers as much as the code does."""
-    binary = shutil.which("rustc")
-    if binary is None:
-        return ""
-    completed = subprocess.run([binary, "--version"], capture_output=True)
-    if completed.returncode != 0:
-        return ""
-    return completed.stdout.decode("utf-8", errors="replace").strip()
-
-
-def _sysctl(name: str) -> Optional[str]:
-    binary = shutil.which("sysctl")
-    if binary is None:
-        return None
-    completed = subprocess.run([binary, "-n", name], capture_output=True)
-    if completed.returncode != 0:
-        return None
-    return completed.stdout.decode("utf-8", errors="replace").strip() or None
-
-
-def _sysctl_int(name: str) -> Optional[int]:
-    value = _sysctl(name)
-    try:
-        return int(value) if value is not None else None
-    except ValueError:
-        return None
-
-
-def _darwin_filesystem() -> Optional[str]:
-    binary = shutil.which("mount")
-    if binary is None:
-        return None
-    completed = subprocess.run([binary], capture_output=True)
-    if completed.returncode != 0:
-        return None
-    for line in completed.stdout.decode("utf-8", errors="replace").splitlines():
-        if " on / " in line:
-            start = line.find("(")
-            if start != -1:
-                return line[start + 1 :].split(",")[0]
-    return None
+def host_facts(root: Optional[Path] = None) -> Dict[str, Any]:
+    """Compatibility wrapper for callers that previously read facts from this module."""
+    return benchmark_environment.host_facts(root)

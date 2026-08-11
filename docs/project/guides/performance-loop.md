@@ -2,8 +2,9 @@
 
 How we make fdu faster without fooling ourselves.
 
-This is a development workflow, not a CI gate.
-Nothing here runs in `make check`, and nothing here blocks a merge.
+This is a development workflow, not a numeric CI gate.
+Nothing here runs in `make check`, and the hosted environment run is an on-demand
+evidence producer rather than a pass/fail speed threshold.
 It exists so that any contributor — human or agent — can pick the loop up months later,
 re-run it, and get numbers comparable to the ones already recorded.
 
@@ -88,8 +89,8 @@ Generated corpora are uniform; real trees have a `node_modules` with 6,800 tiny
 JavaScript files at depth 12 next to a `.git` with a handful of large packs, and the
 distribution is what stresses a walker.
 
-The loop therefore runs against a real directory the operator nominates, and treats it
-as immutable and confidential:
+Representative optimization work therefore runs against a real directory the operator
+nominates and treats it as immutable and confidential:
 
 - It is never written to.
   Snapshots go to a scratch directory outside it.
@@ -109,6 +110,38 @@ as immutable and confidential:
 - The tree is fingerprinted before and after every run.
   If it changed, the run says so and exits nonzero, because timings taken against two
   different trees are not comparable.
+
+Generated corpora serve the complementary purpose: they make the *same workload*
+recreatable on another filesystem. Their portable semantic digest excludes inode,
+ctime, device, and allocated blocks, while each invocation retains a second engine
+digest with those local fields for the exact probe oracle. A generated result does not
+replace the real-tree result; it isolates the environment axis that a private laptop
+tree cannot.
+
+## Cross-environment cells
+
+Every v3 run records two environment identities:
+
+- a logical cell such as `local-macos-apfs-arm64` or
+  `github-ubuntu-24.04-x64`, used to group repeated evidence; and
+- an exact SHA-256 over the path-free host, compiler, runner image, CPU, memory,
+  architecture, operating system, and filesystem facts, used to detect drift within
+  that logical cell.
+
+A decision matrix accepts runs only when their portable corpus identity, engine and
+probe revisions, variant flags, full job contracts, trial count, warmups, schedule,
+and page-cache condition match. Binary hashes and target triples are expected to differ
+across architectures. Absolute medians remain inside their own cell; the matrix compares
+only whether each cell passed the latency, CPU, RSS, and overall gates.
+
+Runner control is part of the claim. Local developer runs are `local-uncontrolled`.
+GitHub-hosted runners are `shared-cloud-exploratory`: their fresh VM gives a useful
+Linux/filesystem counterexample, but neighboring load and the underlying hardware are
+not controlled. GitHub documents the current hosted-runner hardware separately in its
+[runner reference](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).
+A platform default requires repetition on a `self-hosted-controlled` cell; a hosted
+result can support or challenge a hypothesis but cannot promote itself to product
+policy.
 
 ## The loop
 
@@ -239,8 +272,35 @@ uv run --project benchmarks/realtree --frozen python -m benchmarks.realtree meas
   --trials 12 --baseline-fingerprint benchmarks/results/realtree/tree-mytree.json \
   --name exp007-parallel-producer
 
+# Cross-environment run: generate the same portable workload on every host, then pass
+# the printed run_root to measure. Use the same seed, entries, run group, jobs, and
+# trial schedule in every cell.
+uv run --no-project python -m benchmarks.generate create \
+  --recipe balanced --entries 60000 --seed pr3-cache-cross-environment-v1 \
+  --work-dir /path/to/owned-scratch
+uv run --project benchmarks/realtree --frozen python -m benchmarks.realtree measure \
+  --root /printed/run_root/corpus --label generated-balanced-60k \
+  --corpus-manifest /printed/run_root/observed-corpus.json \
+  --variant corrected=/path/to/corrected --variant candidate=/path/to/candidate \
+  --variant-metadata corrected=/path/to/corrected.json \
+  --variant-metadata candidate=/path/to/candidate.json \
+  --job cold-scan-index --job warm-revalidate --trials 12 --warmups 3 \
+  --environment-cell local-macos-apfs-arm64 \
+  --runner-class local-uncontrolled --run-group pr3-cache-balanced-60k-v1 \
+  --name macos-local
+
+# After archiving each raw run, compare per-cell decisions. This fails closed if any
+# supposedly equivalent workload, source, flag, job, or schedule field differs.
+uv run --project benchmarks/realtree --frozen python -m benchmarks.realtree \
+  environment-matrix \
+  --run docs/project/experiments/evidence/pr3-cache-macos-local-run.json \
+  --run docs/project/experiments/evidence/pr3-cache-linux-cloud-run.json \
+  --id env-001 --control-variant corrected --candidate-variant candidate \
+  --output docs/project/experiments/evidence/env-001-matrix.json \
+  --report benchmarks/results/realtree/env-001-matrix.md
+
 # Archive and record the exact paired samples. `record` refuses an accepted result
-# without v2 provenance, an unchanged tree, zero invalid samples, a significant 3%
+# without v2/v3 provenance, an unchanged tree, zero invalid samples, a significant 3%
 # latency win, and passed or explicitly waived CPU/RSS guardrails.
 uv run --project benchmarks/realtree --frozen python -m benchmarks.realtree record \
   --run benchmarks/results/realtree/run-exp007-parallel-producer.json \
@@ -261,6 +321,13 @@ schedule digest, raw paired samples, invalid-sample reasons, binary identities, 
 toolchain. `make perf-ledger` resolves and verifies that bundle before rendering it.
 Legacy v1 bundles remain available for audit history but cannot validate as accepted or
 become the current cumulative headline.
+
+The `Cache performance environments` GitHub Actions workflow reruns the frozen
+generated-corpus comparison on Ubuntu 24.04 and retains the raw trials as a downloadable
+artifact. After it is merged to the default branch, use its manual dispatch for future
+Linux repetitions. Artifacts are convenient transport, not the durable record: a
+reviewed result is still archived under `docs/project/experiments/evidence/` with its
+content digest.
 
 The raw producer diagnostic is `cold-scan-producer-raw`. It intentionally omits the
 semantic digest and can attribute oracle overhead, but it is never claim-grade

@@ -1,0 +1,487 @@
+$defs:
+  CellDecision:
+    additionalProperties: false
+    properties:
+      invalid_samples:
+        minimum: 0
+        title: Invalid Samples
+        type: integer
+      latency_gate_passed:
+        title: Latency Gate Passed
+        type: boolean
+      latency_reason:
+        title: Latency Reason
+        type: string
+      metrics:
+        additionalProperties:
+          $ref: '#/$defs/MetricObservation'
+        title: Metrics
+        type: object
+      overall_decision:
+        enum:
+        - accepted
+        - rejected
+        - invalid
+        title: Overall Decision
+        type: string
+      reason:
+        title: Reason
+        type: string
+      resource_guardrails:
+        items:
+          $ref: '#/$defs/ResourceGate'
+        title: Resource Guardrails
+        type: array
+      valid:
+        title: Valid
+        type: boolean
+    required:
+    - invalid_samples
+    - latency_gate_passed
+    - latency_reason
+    - metrics
+    - overall_decision
+    - reason
+    - resource_guardrails
+    - valid
+    title: CellDecision
+    type: object
+  JobDecision:
+    additionalProperties: false
+    properties:
+      cells:
+        additionalProperties:
+          $ref: '#/$defs/CellDecision'
+        title: Cells
+        type: object
+      decision_consistent:
+        title: Decision Consistent
+        type: boolean
+      divergent_gates:
+        items:
+          type: string
+        title: Divergent Gates
+        type: array
+      job:
+        title: Job
+        type: string
+    required:
+    - cells
+    - decision_consistent
+    - divergent_gates
+    - job
+    title: JobDecision
+    type: object
+  MatrixCell:
+    additionalProperties: false
+    properties:
+      arch:
+        title: Arch
+        type: string
+      candidate_target:
+        title: Candidate Target
+        type: string
+      control_target:
+        title: Control Target
+        type: string
+      cpu_model:
+        title: Cpu Model
+        type: string
+      environment_fingerprint:
+        pattern: ^[0-9a-f]{64}$
+        title: Environment Fingerprint
+        type: string
+      evidence_grade:
+        enum:
+        - local-uncontrolled
+        - shared-cloud-exploratory
+        - controlled
+        title: Evidence Grade
+        type: string
+      filesystem:
+        title: Filesystem
+        type: string
+      id:
+        title: Id
+        type: string
+      logical_cores:
+        minimum: 0
+        title: Logical Cores
+        type: integer
+      memory_bytes:
+        minimum: 0
+        title: Memory Bytes
+        type: integer
+      release:
+        title: Release
+        type: string
+      run_artifact:
+        title: Run Artifact
+        type: string
+      run_artifact_sha256:
+        pattern: ^[0-9a-f]{64}$
+        title: Run Artifact Sha256
+        type: string
+      runner_class:
+        enum:
+        - local-uncontrolled
+        - github-hosted-shared
+        - self-hosted-controlled
+        title: Runner Class
+        type: string
+      system:
+        title: System
+        type: string
+      toolchain:
+        title: Toolchain
+        type: string
+      tree_engine_digest:
+        pattern: ^[0-9a-f]{64}$
+        title: Tree Engine Digest
+        type: string
+    required:
+    - arch
+    - candidate_target
+    - control_target
+    - cpu_model
+    - environment_fingerprint
+    - evidence_grade
+    - filesystem
+    - id
+    - logical_cores
+    - memory_bytes
+    - release
+    - run_artifact
+    - run_artifact_sha256
+    - runner_class
+    - system
+    - toolchain
+    - tree_engine_digest
+    title: MatrixCell
+    type: object
+  MatrixComparison:
+    additionalProperties: false
+    properties:
+      candidate:
+        $ref: '#/$defs/VariantSource'
+      control:
+        $ref: '#/$defs/VariantSource'
+      jobs:
+        items:
+          type: string
+        title: Jobs
+        type: array
+      os_cache:
+        title: Os Cache
+        type: string
+      schedule:
+        title: Schedule
+        type: string
+      schedule_sha256:
+        pattern: ^[0-9a-f]{64}$
+        title: Schedule Sha256
+        type: string
+      trials:
+        minimum: 1
+        title: Trials
+        type: integer
+      warmups:
+        minimum: 0
+        title: Warmups
+        type: integer
+    required:
+    - candidate
+    - control
+    - jobs
+    - os_cache
+    - schedule
+    - schedule_sha256
+    - trials
+    - warmups
+    title: MatrixComparison
+    type: object
+  MatrixWorkload:
+    additionalProperties: false
+    properties:
+      counts:
+        $ref: '#/$defs/WorkloadCounts'
+      generator_source_hash:
+        pattern: ^[0-9a-f]{64}$
+        title: Generator Source Hash
+        type: string
+      generator_version:
+        minimum: 1
+        title: Generator Version
+        type: integer
+      portable_identity_sha256:
+        pattern: ^[0-9a-f]{64}$
+        title: Portable Identity Sha256
+        type: string
+      recipe_hash:
+        pattern: ^[0-9a-f]{64}$
+        title: Recipe Hash
+        type: string
+      recipe_id:
+        title: Recipe Id
+        type: string
+      seed:
+        title: Seed
+        type: string
+      semantic_digest:
+        pattern: ^[0-9a-f]{64}$
+        title: Semantic Digest
+        type: string
+      state:
+        additionalProperties: true
+        title: State
+        type: object
+      target_entries:
+        minimum: 1
+        title: Target Entries
+        type: integer
+    required:
+    - counts
+    - generator_source_hash
+    - generator_version
+    - portable_identity_sha256
+    - recipe_hash
+    - recipe_id
+    - seed
+    - semantic_digest
+    - state
+    - target_entries
+    title: MatrixWorkload
+    type: object
+  MetricObservation:
+    additionalProperties: false
+    properties:
+      candidate_median:
+        title: Candidate Median
+        type: number
+      change_pct:
+        title: Change Pct
+        type: number
+      ci95_high_pct:
+        anyOf:
+        - type: number
+        - type: 'null'
+        default: null
+        title: Ci95 High Pct
+      ci95_low_pct:
+        anyOf:
+        - type: number
+        - type: 'null'
+        default: null
+        title: Ci95 Low Pct
+      control_median:
+        title: Control Median
+        type: number
+      direction:
+        enum:
+        - improvement
+        - regression
+        - unchanged
+        title: Direction
+        type: string
+      pairs:
+        minimum: 0
+        title: Pairs
+        type: integer
+    required:
+    - candidate_median
+    - change_pct
+    - control_median
+    - direction
+    - pairs
+    title: MetricObservation
+    type: object
+  ResourceGate:
+    additionalProperties: false
+    properties:
+      ci95_high_pct:
+        anyOf:
+        - type: number
+        - type: 'null'
+        default: null
+        title: Ci95 High Pct
+      ci95_low_pct:
+        anyOf:
+        - type: number
+        - type: 'null'
+        default: null
+        title: Ci95 Low Pct
+      maximum_regression_pct:
+        minimum: 0
+        title: Maximum Regression Pct
+        type: number
+      metric:
+        enum:
+        - cpu_ns
+        - peak_rss_bytes
+        title: Metric
+        type: string
+      observed_change_pct:
+        anyOf:
+        - type: number
+        - type: 'null'
+        default: null
+        title: Observed Change Pct
+      reason:
+        title: Reason
+        type: string
+      status:
+        enum:
+        - passed
+        - failed
+        - not-measured
+        title: Status
+        type: string
+    required:
+    - maximum_regression_pct
+    - metric
+    - reason
+    - status
+    title: ResourceGate
+    type: object
+  VariantSource:
+    additionalProperties: false
+    properties:
+      args:
+        items:
+          type: string
+        title: Args
+        type: array
+      build_command:
+        title: Build Command
+        type: string
+      build_profile:
+        title: Build Profile
+        type: string
+      engine_revision:
+        pattern: ^[0-9a-f]{40}$
+        title: Engine Revision
+        type: string
+      features:
+        items:
+          type: string
+        title: Features
+        type: array
+      harness_revision:
+        pattern: ^[0-9a-f]{40}$
+        title: Harness Revision
+        type: string
+      harness_sha256:
+        pattern: ^[0-9a-f]{64}$
+        title: Harness Sha256
+        type: string
+      name:
+        title: Name
+        type: string
+    required:
+    - args
+    - build_command
+    - build_profile
+    - engine_revision
+    - features
+    - harness_revision
+    - harness_sha256
+    - name
+    title: VariantSource
+    type: object
+  WorkloadCounts:
+    additionalProperties: false
+    properties:
+      directories:
+        minimum: 0
+        title: Directories
+        type: integer
+      files:
+        minimum: 0
+        title: Files
+        type: integer
+      hardlink_groups:
+        default: 0
+        minimum: 0
+        title: Hardlink Groups
+        type: integer
+      other:
+        default: 0
+        minimum: 0
+        title: Other
+        type: integer
+      symlinks:
+        default: 0
+        minimum: 0
+        title: Symlinks
+        type: integer
+      total:
+        minimum: 0
+        title: Total
+        type: integer
+    required:
+    - directories
+    - files
+    - total
+    title: WorkloadCounts
+    type: object
+$schema: https://json-schema.org/draft/2020-12/schema
+additionalProperties: false
+description: A portable workload with decisions evaluated independently in every cell.
+properties:
+  all_cells_valid:
+    title: All Cells Valid
+    type: boolean
+  cells:
+    items:
+      $ref: '#/$defs/MatrixCell'
+    title: Cells
+    type: array
+  comparison:
+    $ref: '#/$defs/MatrixComparison'
+  date:
+    pattern: ^\d{4}-\d{2}-\d{2}$
+    title: Date
+    type: string
+  decision_consistent:
+    title: Decision Consistent
+    type: boolean
+  divergent_jobs:
+    items:
+      type: string
+    title: Divergent Jobs
+    type: array
+  id:
+    pattern: ^env-\d{3}$
+    title: Id
+    type: string
+  jobs:
+    items:
+      $ref: '#/$defs/JobDecision'
+    title: Jobs
+    type: array
+  run_group:
+    title: Run Group
+    type: string
+  schema:
+    const: fdu-environment-decision-matrix-v1
+    default: fdu-environment-decision-matrix-v1
+    title: Schema
+    type: string
+  workload:
+    $ref: '#/$defs/MatrixWorkload'
+required:
+- all_cells_valid
+- cells
+- comparison
+- date
+- decision_consistent
+- divergent_jobs
+- id
+- jobs
+- run_group
+- workload
+title: EnvironmentMatrix
+type: object
+x-softschema:
+  contract: fdu.performance:EnvironmentMatrix/v1
+  schema_sha256: 418a61ba747eed36a58fbb00495bd6a652df067062855dedbf85c96968dd5e85

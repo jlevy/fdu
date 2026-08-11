@@ -39,6 +39,10 @@ Decision = Literal[
 Direction = Literal["improvement", "regression", "unchanged"]
 GuardrailStatus = Literal["passed", "failed", "not-measured", "waived"]
 EvidenceGrade = Literal["claim-grade", "legacy"]
+CLAIM_GRADE_RUN_SCHEMAS = {
+    "fdu-realtree-run-v2",
+    "fdu-realtree-run-v3",
+}
 
 
 class Strict(BaseModel):
@@ -192,6 +196,22 @@ class Subject(Strict):
     host_memory_bytes: int = Field(default=0, ge=0)
     host_system: str = Field(default="")
     filesystem: str = Field(default="")
+    environment_cell: str = Field(
+        default="",
+        description="Logical host/filesystem/runner cell used for policy decisions.",
+    )
+    environment_fingerprint: Optional[str] = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+        description="Exact path-free hash of host, toolchain, image, and runner facts.",
+    )
+    runner_class: str = Field(default="")
+    workload_kind: str = Field(default="real-tree")
+    portable_workload_identity: Optional[str] = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+        description="Cross-filesystem generated-corpus identity when one exists.",
+    )
     os_cache: str = Field(
         default="warm-steady",
         description="Page-cache condition. Dropping it needs root, so say which it was.",
@@ -324,8 +344,17 @@ class Experiment(Strict):
                 )
             return self
 
-        if self.method.run_schema != "fdu-realtree-run-v2":
-            missing.append("method.run_schema=fdu-realtree-run-v2")
+        if self.method.run_schema not in CLAIM_GRADE_RUN_SCHEMAS:
+            missing.append(
+                "method.run_schema in " + ", ".join(sorted(CLAIM_GRADE_RUN_SCHEMAS))
+            )
+        if self.method.run_schema == "fdu-realtree-run-v3":
+            if not self.subject.environment_cell:
+                missing.append("subject.environment_cell")
+            if not self.subject.environment_fingerprint:
+                missing.append("subject.environment_fingerprint")
+            if not self.subject.runner_class:
+                missing.append("subject.runner_class")
         if not self.method.toolchain:
             missing.append("method.toolchain")
         if not self.method.schedule or not self.method.schedule_sha256:
@@ -464,6 +493,8 @@ def from_run(
     tree = run["tree"]
     host = run["host"]
     conditions = run["conditions"]
+    environment = run.get("environment") or {}
+    workload = run.get("workload") or {}
 
     results: List[Dict[str, Any]] = []
     for job_id, job in run["jobs"].items():
@@ -552,6 +583,13 @@ def from_run(
             "host_memory_bytes": host.get("memory_bytes") or 0,
             "host_system": f"{host.get('system', '')} {host.get('release', '')}".strip(),
             "filesystem": host.get("filesystem") or "",
+            "environment_cell": environment.get("cell_id") or "",
+            "environment_fingerprint": environment.get("fingerprint_sha256"),
+            "runner_class": environment.get("runner_class") or "",
+            "workload_kind": workload.get("kind") or "real-tree",
+            "portable_workload_identity": workload.get(
+                "portable_identity_sha256"
+            ),
             "os_cache": conditions["os_cache"],
         },
         "method": {
