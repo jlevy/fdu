@@ -13,6 +13,9 @@ env:
   XDG_CACHE_HOME: .cache
 patterns:
   ALLOCATED: '\d+'
+  # Paths are reported with the platform's own separator, so the separator is matched
+  # rather than asserted. Every other character of the path still has to be exact.
+  SEP: '[/\\]'
   MTIME_NS: '-?\d+'
   SCAN_PATH: '[^\r\n]+'
   RFC3339: '\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{9}Z'
@@ -57,10 +60,10 @@ Nothing but paths, so the output pipes straight into another command.
 $ fdu --cache off --view files --kind file --size apparent project
 Makefile
 README.md
-dist/acorn-0.1.0.tar.gz
-docs/FAQ.MD
-src/alpha.rs
-src/omega.rs
+dist[SEP]acorn-0.1.0.tar.gz
+docs[SEP]FAQ.MD
+src[SEP]alpha.rs
+src[SEP]omega.rs
 ? 0
 ```
 
@@ -91,8 +94,8 @@ $ fdu --cache off --view summary,types --size apparent --limit 1 project
 
 ```console
 $ fdu --cache off --view files --include '*.rs' project
-src/alpha.rs
-src/omega.rs
+src[SEP]alpha.rs
+src[SEP]omega.rs
 ? 0
 ```
 
@@ -103,8 +106,8 @@ A comma-split would shred `*.{md,rs}`, which is why only closed vocabularies are
 ```console
 $ fdu --cache off --view files --include '*.{md,rs}' project
 README.md
-src/alpha.rs
-src/omega.rs
+src[SEP]alpha.rs
+src[SEP]omega.rs
 ? 0
 ```
 
@@ -130,7 +133,7 @@ src
 
 ```console
 $ fdu --cache off --view files --kind file --min-size 100 --size apparent project
-dist/acorn-0.1.0.tar.gz
+dist[SEP]acorn-0.1.0.tar.gz
 ? 0
 ```
 
@@ -138,7 +141,7 @@ dist/acorn-0.1.0.tar.gz
 
 ```console
 $ fdu --cache off --view files --kind file --sort size --limit 2 --size apparent project
-dist/acorn-0.1.0.tar.gz
+dist[SEP]acorn-0.1.0.tar.gz
 README.md
 ? 0
 ```
@@ -147,8 +150,8 @@ README.md
 
 ```console
 $ fdu --cache off --view files --kind file --sort size --reverse --limit 2 --size apparent project
-src/omega.rs
-src/alpha.rs
+src[SEP]omega.rs
+src[SEP]alpha.rs
 ? 0
 ```
 
