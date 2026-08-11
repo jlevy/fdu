@@ -98,14 +98,22 @@ constants; none can change the asymptotics, because the sweep must stat every en
 be sound. Only change information can — and `fseventsd` records it: directory-granular
 events, persisted to disk in per-volume journals, addressed by IDs from a machine-wide
 monotonic counter, replayable from a stored ID via `FSEventStreamCreate(sinceWhen:)`,
-with explicit flags for every way the history can be insufficient
+with flags for *several* of the ways history can be insufficient
 (`kFSEventStreamEventFlagMustScanSubDirs`, `UserDropped`, `KernelDropped`,
 `EventIdsWrapped`, `HistoryDone`, `RootChanged`, `Mount`, `Unmount`).
 
-Crucially, the journal’s directory granularity carries exactly the information directory
-mtimes do not: a content edit to `a/b/c/file.txt` produces an event naming `a/b/c`,
-because `fseventsd` logs operations rather than namespace timestamps.
-That is what makes subtree skipping sound here and unsound when inferred from mtimes.
+**Not for every way, and that gap is the single most important spike finding.** An
+earlier draft of this section claimed the flags covered every case. They do not: replay
+from an old cursor can deliver `HistoryDone` having silently omitted most of the
+intervening history, raising none of these flags. Every gate, every age bound, and the
+naming of [`Source::JournalScoped`] descends from that one observation.
+
+The journal’s directory granularity does carry exactly the information directory mtimes
+do not: a content edit to `a/b/c/file.txt` produces an event naming `a/b/c`, because
+`fseventsd` logs operations rather than namespace timestamps.
+That is what makes subtree skipping *informative* here and useless when inferred from
+mtimes — a strictly better signal, but still not a sound one, because being told the
+truth about what changed is not the same as being told the whole truth.
 
 ### What the journal is worth, honestly
 
@@ -229,8 +237,26 @@ layer needed it first.
 
 ### The gate
 
-The user-visible rule is “journal when provably applicable, sweep otherwise,” and the
-gate is a pure decision function so the whole table is unit-testable without
+The user-visible rule is **“journal when the risk is bounded and labelled, sweep
+otherwise.”**
+
+The word *provably* does not belong here, and an earlier draft of this plan used it.
+The Phase 0 spike established the opposite: an old `sinceWhen` can return `HistoryDone`
+after silently dropping most of its history, with no degradation flag to test.
+Scoped revalidation stats the paths the journal *names* and does not stat the rest, so
+the untouched majority of the tree is accepted on the journal’s completeness — the one
+property the spike showed cannot be checked. That is not a sound verification path, and
+calling it one would contradict the project rule that a platform journal narrows what
+must be checked but never replaces the checking.
+
+So this plan takes the **risk-bounded** contract deliberately, and the honesty is
+carried in the type rather than in prose: values the journal vouched for read as
+[`Source::JournalScoped`], never as verified, and a consumer that needs certainty can
+see the difference on every row. G5 and G12 below are **risk controls that bound how
+long a silent omission can persist** — they are not correctness gates, and no row of
+this table proves any individual journal answer right.
+
+The gate is a pure decision function so the whole table is unit-testable without
 CoreServices. Every row falls closed to the sweep:
 
 | # | Condition | Decision |

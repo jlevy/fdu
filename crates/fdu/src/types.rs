@@ -158,29 +158,48 @@ pub enum Source {
     /// Loaded from a snapshot and re-verified by a fresh stat this session.
     Revalidated,
     /// Loaded from a snapshot; a change journal reported nothing touching this subtree
-    /// since the cursor.
+    /// since the cursor, and nothing has re-checked it.
     ///
-    /// Deliberately weaker than [`Self::Revalidated`]: a journal can omit history
-    /// without saying so, which is why journal-assisted revalidation pairs this with a
-    /// periodic full sweep rather than treating it as proof.
-    JournalConfirmed,
+    /// Named for what actually happened — a journal *scoped* the work — rather than for
+    /// what a reader might wish it meant. Nothing here was confirmed against the
+    /// filesystem: a scoped revalidation stats the paths the journal names and does not
+    /// stat the rest, so this value rests on the journal having been complete.
+    ///
+    /// It is deliberately weaker than [`Self::Revalidated`] because that assumption is
+    /// known to fail. macOS FSEvents will report `HistoryDone` after silently dropping
+    /// history, with no degradation flag, which means a journal answer can be wrong
+    /// without announcing it. Journal-assisted revalidation therefore bounds exposure
+    /// with a maximum age and a periodic full sweep; those are risk controls, not
+    /// proofs, and they do not make any individual answer here verified.
+    JournalScoped,
     /// Loaded from a snapshot and not re-checked since.
     Cached,
 }
 
-/// How settled a value is.
+/// Whether a value covers everything beneath its path.
 ///
-/// An enum rather than a boolean because "not complete" already means more than one
-/// thing a consumer renders differently, and ordered worst-last so roll-ups combine by
-/// taking the maximum.
+/// This is the **structural coverage** axis, and only that. How far to *trust* what is
+/// covered is [`Source`], and the two are deliberately independent: a cached value
+/// covers the whole subtree but may be out of date, while a half-built one covers less
+/// than the subtree but every byte in it was just observed.
+///
+/// An enum rather than a boolean because coverage will gain more ways to be incomplete
+/// — truncated by a cap, cancelled, failed — and ordered worst-last so roll-ups combine
+/// by taking the maximum. Those variants are not here yet; see the progressive-results
+/// plan for the lifecycle they belong to.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Default)]
 #[non_exhaustive]
 pub enum Status {
-    /// The value accounts for everything beneath this path.
+    /// The value accounts for everything beneath this path that is in scope.
     #[default]
     Complete,
-    /// A walk beneath this path is still running, so the value is a lower bound that
-    /// can only grow.
+    /// The value does not account for everything beneath this path.
+    ///
+    /// **Not a promise of monotonicity.** A value being built by an additive walk only
+    /// grows, but one left incomplete by reconciliation errors can move either way once
+    /// the missing part is read. Monotonicity is a property of the *producer* that is
+    /// running, not of this status, and a consumer that needs it must know a walk is in
+    /// progress rather than infer it from here.
     Partial,
 }
 
@@ -191,11 +210,16 @@ pub enum Status {
 /// of entries the timestamps are shared by nearly all of them and a per-entry struct
 /// would cost more memory than the information is worth.
 ///
-/// The three facts are independent on purpose. A [`Status::Partial`] value is monotone
-/// and reads as "at least 3.2 GB, counting"; a [`Status::Complete`] but
-/// [`Source::Cached`] value is a point estimate that may move either way and reads as
-/// "about 3.2 GB, as of two minutes ago". Collapsing them would make a shrinking
-/// number look like a defect.
+/// The three facts are independent on purpose, because they answer different
+/// questions. [`Status`] asks how much of the subtree the number covers;
+/// [`Source`] asks how far to trust what it covers; `observed_at_ns` asks when.
+/// A [`Status::Complete`] but [`Source::Cached`] value is a point estimate that may
+/// move either way and reads as "about 3.2 GB, as of two minutes ago", while a
+/// [`Status::Partial`] value is missing part of its subtree and reads as "3.2 GB so
+/// far". Collapsing them would make a shrinking number look like a defect.
+///
+/// Note that "3.2 GB so far" is only a *lower bound that grows* while an additive walk
+/// is running. See [`Status::Partial`]: the status records coverage, not direction.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Provenance {
     /// Where the value came from.
@@ -648,8 +672,8 @@ mod provenance_tests {
     #[test]
     fn sources_order_from_most_to_least_trustworthy() {
         assert!(Source::Scanned < Source::Revalidated);
-        assert!(Source::Revalidated < Source::JournalConfirmed);
-        assert!(Source::JournalConfirmed < Source::Cached);
+        assert!(Source::Revalidated < Source::JournalScoped);
+        assert!(Source::JournalScoped < Source::Cached);
     }
 
     #[test]
@@ -685,8 +709,7 @@ mod provenance_tests {
         assert!(Provenance { source: Source::Revalidated, ..Provenance::scanned(1) }.is_verified());
         // The journal can omit history without saying so, so its word is not a check.
         assert!(
-            !Provenance { source: Source::JournalConfirmed, ..Provenance::scanned(1) }
-                .is_verified()
+            !Provenance { source: Source::JournalScoped, ..Provenance::scanned(1) }.is_verified()
         );
         assert!(!Provenance { source: Source::Cached, ..Provenance::scanned(1) }.is_verified());
     }

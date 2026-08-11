@@ -1077,7 +1077,19 @@ impl Index {
         // `Reconciling`; in both cases trust has been withdrawn since the interval was
         // recorded, and promoting anyway would produce the self-contradicting answer
         // "partial, and verified".
-        if !entry.source.is_verified() {
+        //
+        // This applies to entries a delta *did* name, too, not only the ones it
+        // skipped. Those were stamped `Revalidated` by the sweep, but their timestamp
+        // would otherwise come from `observed_at`, which dates `Revalidated` to when
+        // the index was constructed. One sweep would then report two different "as of"
+        // times for equally verified paths — the elided siblings dated correctly to the
+        // sweep, the touched entries dated to construction — and a consumer comparing
+        // two rows could not tell which discipline it was reading.
+        //
+        // `Scanned` is excluded because it is *stronger* than `Revalidated`: a path
+        // walked fresh this session is not improved by a sweep having covered it, and
+        // its own scan time is already the right answer.
+        if entry.source >= Source::Revalidated {
             if let Some(path) = self.path_of(id) {
                 if self.freshness_at(&path) == Freshness::Fresh {
                     if let Some(verified_at) = self.verified_at(&path) {
@@ -1095,22 +1107,30 @@ impl Index {
 
     /// Whether this path's totals account for everything beneath it.
     ///
-    /// Derived from the freshness marks rather than stored: an incomplete scan or a
-    /// reconciliation in progress both leave a value that can still grow.
+    /// Derived from the freshness marks rather than stored, and answering the coverage
+    /// question only. `Reconciling` and `Stale` describe values whose *trust* is in
+    /// doubt while their coverage is not: a cached subtree still accounts for every
+    /// entry it knows about, and saying otherwise would report a complete cached
+    /// baseline as if it were half-built. That distinction is [`Source`]'s job, and
+    /// collapsing the two axes is what let a value that may shrink advertise itself as
+    /// a lower bound that can only grow.
+    ///
+    /// Only [`Freshness::Partial`] — reconciliation errors left some of the subtree
+    /// unread — is genuinely missing coverage.
     fn status_of(&self, id: EntryId) -> Status {
         let Some(path) = self.path_of(id) else {
             return Status::Complete;
         };
         match self.freshness_at(&path) {
-            Freshness::Fresh => Status::Complete,
-            Freshness::Partial | Freshness::Reconciling | Freshness::Stale => Status::Partial,
+            Freshness::Fresh | Freshness::Reconciling | Freshness::Stale => Status::Complete,
+            Freshness::Partial => Status::Partial,
         }
     }
 
     /// When an entry with this source was observed.
     const fn observed_at(&self, source: Source) -> i64 {
         match source {
-            Source::Cached | Source::JournalConfirmed => self.captured_at_ns,
+            Source::Cached | Source::JournalScoped => self.captured_at_ns,
             Source::Scanned | Source::Revalidated => self.scanned_at_ns,
         }
     }
@@ -2467,6 +2487,56 @@ mod tests {
     }
 
     #[test]
+    fn one_sweep_reports_one_as_of_time_for_everything_it_verified() {
+        // Found by reviewing the PR #6 provenance work against the composable-CLI
+        // merge. A revalidation sweep elides entries whose attributes did not change,
+        // so within one pass some paths are named by a delta and some are not. Both
+        // were verified at the same moment and must say so identically: if the
+        // delta-touched entry dates itself to index construction while its untouched
+        // sibling dates itself to the sweep, a consumer sorting rows by age is
+        // comparing two different clocks and cannot tell.
+        let mut index = Index::new("/root");
+        index.set_applying_source(Source::Cached, 1_000);
+        index.apply_ok(&Observation::new(vec![
+            Op::Upsert {
+                path: "a/kept.txt".into(),
+                kind: EntryKind::File,
+                attrs: file_attrs(1, 1),
+            },
+            Op::Upsert {
+                path: "a/changed.txt".into(),
+                kind: EntryKind::File,
+                attrs: file_attrs(2, 2),
+            },
+        ]));
+
+        // A sweep re-observes both: one is unchanged and elided, one is updated.
+        index.set_applying_source(Source::Revalidated, 2_000);
+        index.begin_reconcile(Path::new(""));
+        index.apply_ok(&Observation::new(vec![
+            Op::Upsert {
+                path: "a/kept.txt".into(),
+                kind: EntryKind::File,
+                attrs: file_attrs(1, 1),
+            },
+            Op::Upsert {
+                path: "a/changed.txt".into(),
+                kind: EntryKind::File,
+                attrs: file_attrs(9, 2),
+            },
+        ]));
+        index.finish_reconcile(Path::new(""), 0, true);
+
+        let kept = index.provenance(Path::new("a/kept.txt")).expect("present");
+        let changed = index.provenance(Path::new("a/changed.txt")).expect("present");
+        assert!(kept.is_verified() && changed.is_verified(), "the sweep covered both");
+        assert_eq!(
+            kept.observed_at_ns, changed.observed_at_ns,
+            "one sweep, one as-of time: {kept:?} vs {changed:?}"
+        );
+    }
+
+    #[test]
     fn withdrawn_trust_beats_a_verification_interval() {
         // A verification interval records that a sweep once covered a path. If the
         // index has since withdrawn trust — an InvalidateSubtree marking it Stale, or
@@ -2501,7 +2571,14 @@ mod tests {
             !provenance.is_verified(),
             "an invalidated path must not read as verified: {provenance:?}"
         );
-        assert_eq!(provenance.status, Status::Partial);
+        assert_eq!(
+            provenance.status,
+            Status::Complete,
+            "withdrawing trust changes how far to believe the value, not how much of \
+             the subtree it covers: the cached total still accounts for every entry \
+             beneath this path, and reporting it as Partial would tell a consumer the \
+             number is still being built when it is merely unverified"
+        );
     }
 
     #[test]

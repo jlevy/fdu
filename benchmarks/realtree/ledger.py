@@ -71,7 +71,14 @@ def verdict(comparison: Mapping[str, Any], *, metric: str = "wall_ns") -> Dict[s
     interval = entry["ci95_change_pct"]
     if change is None:
         return {"accepted": False, "reason": "no paired ratio", "change_pct": None}
-    if not entry["significant"]:
+    # `passes_acceptance` is the field this decision belongs to; `significant` is its
+    # deprecated alias, still read so pre-split comparisons decide the same way. Neither
+    # is required: the interval alone determines the answer.
+    accepted = entry.get(
+        "passes_acceptance",
+        entry.get("significant", interval is not None and interval[1] is not None and interval[1] < 0),
+    )
+    if not accepted:
         # Two different failures, and saying "includes no change" for both is how a
         # measured regression gets filed as noise.
         regressed = interval and interval[0] is not None and interval[0] > 0

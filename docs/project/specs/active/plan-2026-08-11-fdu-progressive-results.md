@@ -252,7 +252,7 @@ pub enum Source {
     /// subtree since the cursor. Deliberately weaker than `Revalidated`: the Phase 0
     /// spike found FSEvents can omit history without raising a flag, which is what the
     /// periodic full sweep bounds.
-    JournalConfirmed,
+    JournalScoped,
     /// Loaded from the snapshot and not re-checked.
     Cached,
 }
@@ -353,7 +353,7 @@ This reframes FSEvents more sharply than the earlier analysis did.
 Without a journal, every cached row is equally suspect on open, and clearing the
 indicators means verifying all of them — minutes at home-folder scale.
 With one, a ~200 ms replay names the few directories that could have changed, so
-**almost every row can move from `Cached` to `JournalConfirmed` at once** and only a
+**almost every row can move from `Cached` to `JournalScoped` at once** and only a
 handful keep their marks.
 The UI goes from entirely-approximate to almost-entirely-confirmed in a fraction of a
 second, and stat verification is scoped to what the journal named plus whatever the user

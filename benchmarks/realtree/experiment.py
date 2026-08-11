@@ -258,6 +258,22 @@ LEDGER_METRICS = (
 )
 
 
+def _flags_from_interval(low: Any, high: Any) -> Dict[str, Any]:
+    """Evidence flags computed from the 95% interval alone.
+
+    Deriving rather than copying is what lets a run recorded before the fields were
+    split produce a correct artifact: the bounds are the ground truth, and the flags
+    are a reading of them.
+    """
+    if low is None or high is None:
+        return {"ci_excludes_zero": False, "direction": "unknown"}
+    if high < 0:
+        return {"ci_excludes_zero": True, "direction": "improved"}
+    if low > 0:
+        return {"ci_excludes_zero": True, "direction": "regressed"}
+    return {"ci_excludes_zero": False, "direction": "unclear"}
+
+
 def _binary(run: Mapping[str, Any], name: str) -> Dict[str, Any]:
     identity = (run.get("variants") or {}).get(name) or {}
     return {
@@ -322,8 +338,12 @@ def from_run(
                 "passes_acceptance": bool(
                     entry.get("passes_acceptance", entry.get("significant", False))
                 ),
-                "ci_excludes_zero": bool(entry.get("ci_excludes_zero", False)),
-                "direction": str(entry.get("direction", "unknown")),
+                # Derived from the interval, never defaulted. A run recorded before the
+                # fields were split carries neither key, and writing `false`/`unknown`
+                # into the artifact would contradict the very bounds sitting beside them
+                # — an artifact that validates while its own flags disagree with its own
+                # interval is worse than one that lacks the fields.
+                **_flags_from_interval(interval[0], interval[1]),
                 "pairs": int(entry.get("pairs", 0)),
             }
         results.append(
