@@ -102,6 +102,17 @@ Exit 0 is accepted success, exit 1 is a fatal failure, and exit 2 is incomplete 
 invalid usage. Do not discard useful stdout from exit 2; inspect the completeness fields
 and use `--allow-partial` only when incomplete totals are acceptable.
 
+## Cache Behavior
+
+The snapshot is one file per root under the user cache directory. `--cache-status` maps a
+hash-named file back to the tree it describes, and `--cache-clear` removes it; both run
+without scanning and never touch files this build cannot identify.
+
+Verification cost follows the question asked. Sizes and timestamps need one stat per
+entry, because an in-place edit changes a file without changing any directory. Questions
+answerable from names alone need only one stat per directory. Adding metrics within a
+tier is free; crossing a tier boundary is what costs.
+
 Run `fdu --help` for the complete flag, cache, color, scope, and exit contract.
 
 <!-- This document follows common-doc-guidelines.md.
