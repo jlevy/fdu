@@ -25,8 +25,8 @@ process exits and reboots.
 Storing the journal cursor in the snapshot and replaying “what changed since” turns a
 quiet tree’s revalidation from ~700 ms at 60k entries into an approximately
 size-independent tens of milliseconds — against today’s serial sweep; the Background
-section states the honest comparison against where rung-1 work will land, and where
-the journal is transformative rather than incremental.
+section states the honest comparison against where rung-1 work will land, and where the
+journal is transformative rather than incremental.
 
 This is rung 2 of the warm ladder in the
 [performance-frontier research](../../research/research-2026-08-10-performance-frontier.md)
@@ -236,12 +236,14 @@ CoreServices. Every row falls closed to the sweep:
 | G2 | Snapshot has no cursor (older format, or first save) | full sweep; write cursor on save |
 | G3 | Root’s current volume UUID ≠ stored UUID (moved disk, container change, UUID unreadable) | full sweep |
 | G4 | Stored event ID > current volume event ID (regression: journal purged, clock wrapped) | full sweep |
-| G5 | Snapshot older than `max_journal_age` (default 14 days) | full sweep — paranoia bound; Apple documents the journal as advisory |
-| G6 | Stream creation fails or replay exceeds `replay_timeout` (default 5 s) without `HistoryDone` | full sweep |
+| G5 | Snapshot older than `max_journal_age` (default **24 hours**) | full sweep — load-bearing, not paranoia: the spike showed history is purged *silently*, so age is the only protection |
+| G6 | Stream creation fails, or replay exceeds the G11 budget without `HistoryDone` | full sweep |
 | G7 | Replay reports `EventIdsWrapped`, `RootChanged`, `Mount`, `Unmount`, `UserDropped`, or `KernelDropped` | full sweep |
 | G8 | Replay reports `MustScanSubDirs(path)` | scoped: `InvalidateSubtree(path)`, journal continues for the rest |
 | G9 | Changed-dir set exceeds `max_changed_fraction` (default 25%) of the snapshot’s directories | full sweep — scoped work would approach sweep cost with worse locality |
 | G10 | Otherwise | scoped revalidation of the changed-dir set |
+| G11 | Replay wall exceeds a budget scaled to the estimated sweep cost (measured: replay runs ~200 ms typical, up to 2 s from an old cursor) | abandon replay, full sweep |
+| G12 | Every Nth warm open (default 20), regardless of what the journal reports | full sweep — bounds how long a silently-truncated replay can persist |
 
 The changed-dir set is normalized before G9: paths outside the root are dropped,
 descendants of a `MustScanSubDirs` subtree are absorbed into it, duplicates coalesce,
@@ -368,6 +370,84 @@ self-declared externs, and answers, on a real volume:
   paranoia to contract), and is exactly what the Watchman revert suggests looking for
 - [ ] Findings are recorded by amending this spec’s gates and constants (G5/G6 defaults,
   G9 fraction) and noted in the experiment ledger; explicit go/no-go for Phase 2
+
+### Phase 0 spike findings (2026-08-10, run on this host)
+
+The spike ran. Three assumptions held, two did not, and one of the failures changes the
+design rather than the schedule.
+
+**Confirmed.**
+
+- *The load-bearing granularity claim.* An in-place append to a file at depth 17 in the
+  59,654-entry reference tree changed **no** directory’s mtime and produced **exactly
+  one** FSEvents event, naming the file’s parent directory.
+  This is the whole basis of the feature: the journal carries what the namespace refuses
+  to.
+- *O(changes), not O(tree).* Creating 20 files and 2 directories produced 7
+  directory-level events; cloning a 257-entry, 24-directory subtree produced 47, every
+  directory named, flagged `ItemCloned`. Coalescing is per directory, as documented.
+- *The binding decision.* `fsevent-sys` from the existing lockfile plus six
+  self-declared externs (`FSEventStreamSetDispatchQueue`, `FSEventsCopyUUIDForDevice`,
+  `CFUUIDCreateString`, `dispatch_queue_create`/`_release`) compiles and links with zero
+  new crates. The non-deprecated dispatch-queue path works: create, set queue, start,
+  receive, `HistoryDone`, tear down.
+  Volume UUID resolves from `st_dev`, and `HistoryDone` arrives with a meaningless path,
+  as the plan assumed.
+
+**Refuted: replay is not free, and its cost grows with cursor age.**
+
+Empty replays on a quiet tree are bimodal — 17 trials split between ~9–33 ms and
+~193–487 ms, with no warm-up trend.
+Cost then grows with how far back the cursor reaches: roughly 150 ms at −1M event ids,
+1.8 s at −20M, and 2.0 s at −94M.
+
+This corrects this plan’s own headline.
+“Tens of milliseconds at 60k” was optimistic: a warm open would be snapshot load plus a
+replay that is often ~200 ms, against a full sweep of ~690 ms.
+Real, but incremental — exactly the calibration the frontier research already argued
+for, now measured rather than predicted.
+The transformative cases remain large trees, cold caches, and network storage, where the
+sweep grows and the replay does not.
+
+**Refuted, and this one is a correctness finding: insufficient history is silent.**
+
+Replaying the reference tree from `sinceWhen = 1` returned `HistoryDone` after **one**
+event — the recent edit — with no `MustScanSubDirs`, no `UserDropped`, and no other
+degradation flag. That tree was created by a clone of 7,341 directories hours earlier,
+which the clone experiment above proves would have logged on the order of ten thousand
+events. They are gone from the journal, and the API reported success.
+A cursor set far in the *future* likewise returned zero events and `HistoryDone` rather
+than any error.
+
+So the assumption that the journal fails loudly does not hold on this host.
+That is precisely the risk the frontier research flagged when it found Watchman had
+reverted resume-by-default “due to possible correctness issues”, and it promotes the
+plan’s paranoia bound from prudence to contract:
+
+- **G4 and G5 are load-bearing, not belt-and-braces.** They are the only protection
+  against a truncated replay, because the platform will not signal one.
+  G5’s default age bound tightens from 14 days to **24 hours**, and the reason changes
+  from “history might be purged” to “history *is* purged without saying so”.
+- **New G11: a replay budget.** Replay is abandoned for the full sweep when it exceeds a
+  deadline scaled to the estimated sweep cost — spending 2 s of replay to avoid a 690 ms
+  sweep is a loss. The deadline replaces the flat 5 s timeout, which the measurements
+  show is far too generous to be a safety net.
+- **New G12: mandatory periodic verification.** Every Nth warm open (default 20) and any
+  snapshot older than the age bound takes the full sweep regardless of what the journal
+  says, so a silently-truncated replay cannot persist indefinitely.
+  This is the “promoted from paranoia to contract” clause the bead anticipated.
+
+None of this changes the architecture: the journal still only chooses *where to look*,
+every path still verifies by fresh stat, and the sweep remains the backstop.
+What changed is that the gate now assumes the journal lies by omission, because on this
+host it does.
+
+**Go/no-go: go, with reduced expectations.** The mechanism works and the granularity
+claim is real.
+The value case moves from “warm opens become instant at any size” to “warm
+opens stop scaling with tree size”, which is still the only route past the per-entry
+stat floor — but the 60k-entry reference tree is now the wrong place to prove it, and
+Phase 2’s acceptance should be measured at 500k+ or on a cold cache.
 
 ### Phase 1: Format and gate (mergeable alone; unblocks the block-format spike)
 
