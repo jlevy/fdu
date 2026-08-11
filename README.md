@@ -126,10 +126,15 @@ raw identity.
 Exit status 2 means partial results; pass `--allow-partial` to accept those
 as success. Exit status 1 means the command failed.
 
-The next iteration of this surface — composable views, selection filters, time-window
-and watermark queries, cache policies, and a `tail -f`-style watch mode, all as
-orthogonal flags over one grammar — is designed in
+This surface — composable views, selection filters, time-window and watermark queries,
+cache policies, and a `tail -f`-style watch mode, all as orthogonal flags over one
+grammar — is designed in
 [the composable CLI and query surface plan](docs/project/specs/active/plan-2026-08-10-fdu-composable-cli-surface.md).
+The principles it settled on, written as rules for extending it rather than as a record
+of what was built, are in
+[the design principles](docs/project/guides/fdu-design-principles.md).
+Why the cache can be a speed-up or a cost depending on platform and view is in
+[the cache design](docs/project/guides/cache-design.md).
 
 ## As a Rust Library
 
@@ -258,6 +263,11 @@ Performance work has its own targets (`make perf-baseline`, `perf-profile`,
 shared CI runner measures the runner.
 Follow [the performance loop](docs/project/guides/performance-loop.md) before changing
 anything for speed.
+
+To set the project up from a fresh clone and prove the pieces work together by hand —
+including that issue tracking survives a sync round trip with its comments intact —
+follow [the integration runbook](docs/project/guides/integration-runbook.md).
+It covers what `make check` cannot: the workflow around the code.
 
 Read [the supply-chain policy](SUPPLY-CHAIN-SECURITY.md) before changing a dependency,
 toolchain, CI action, or bootstrap download.
