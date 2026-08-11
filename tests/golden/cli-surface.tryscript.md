@@ -23,31 +23,101 @@ A fast, incremental file roll-up engine: hierarchical tallies over large directo
 Usage: fdu [OPTIONS] [PATH]
 
 Arguments:
-  [PATH]  Directory to summarize [default: .]
+  [PATH]
+          Directory to summarize
+          
+          [default: .]
 
 Options:
-      --scan-depth <N>          Limit scanning and retention to N entry levels
-      --include <GLOB>          Report only entries matching this glob; repeatable
-      --exclude <GLOB>          Exclude entries matching this glob; repeatable, and wins over --include
-      --min-size <SIZE>         Report only entries at least this large, as 512, 10M, or 1.5GiB
-      --modified-since <WHEN>   Report only entries modified at or after this time, as 2h or an RFC 3339 stamp
-      --modified-before <WHEN>  Report only entries modified before this time
-      --kind <LIST>             Entry kinds to report: file, dir, symlink, other
-  -d, --depth <N>               Directory levels to show; does not limit scanning. Accepts `all` [default: 2]
-  -n, --limit <N>               Entries to show per directory. Accepts `all` [default: 10]
-      --sort <KEY>              Order results: size, count, mtime, or name
-      --reverse                 Reverse the ordering
-      --size <METRIC>           Which size metric to report: allocated or apparent [default: allocated]
-      --view <LIST>             Views to report: tree, types, files, summary [default: tree]
-      --format <FORMAT>         Output format: text, json, jsonl, or yaml [default: text]
-      --color <WHEN>            Colorize human output: auto, always, or never [default: auto]
-      --cache <POLICY>          Cache policy: auto, refresh, read-only, only, or off [default: auto]
-      --allow-partial           Accept incomplete totals when paths cannot be read
-      --cache-status[=<SCOPE>]  Report cache contents instead of scanning: root (default) or all
-      --cache-clear[=<SCOPE>]   Remove cached snapshots instead of scanning: root (default) or all
-      --skill                   Print a portable agent skill to stdout
-  -h, --help                    Print help
-  -V, --version                 Print version
+      --scan-depth <N>
+          Limit scanning and retention to N entry levels
+
+      --include <GLOB>
+          Report only entries matching this glob; repeatable
+
+      --exclude <GLOB>
+          Exclude entries matching this glob; repeatable, and wins over --include
+
+      --min-size <SIZE>
+          Report only entries at least this large, as 512, 10M, or 1.5GiB
+
+      --modified-since <WHEN>
+          Report only entries modified at or after this time, as 2h or an RFC 3339 stamp
+
+      --modified-before <WHEN>
+          Report only entries modified before this time
+
+      --kind <LIST>
+          Entry kinds to report: file, dir, symlink, other
+
+  -d, --depth <N>
+          Directory levels to show; does not limit scanning. Accepts `all`
+          
+          [default: 2]
+
+  -n, --limit <N>
+          Entries to show per directory. Accepts `all`
+          
+          [default: 10]
+
+      --sort <KEY>
+          Order results: size, count, mtime, or name
+
+      --reverse
+          Reverse the ordering
+
+      --size <METRIC>
+          Which size metric to report: allocated or apparent
+          
+          [default: allocated]
+
+      --view <LIST>
+          Views to report: tree, types, files, summary
+          
+          [default: tree]
+
+      --format <FORMAT>
+          Output format: text, json, jsonl, or yaml
+          
+          [default: text]
+
+      --color <WHEN>
+          Colorize human output: auto, always, or never
+          
+          [default: auto]
+
+      --cache <POLICY>
+          Cache policy: auto, refresh, read-only, only, or off
+          
+          [default: auto]
+
+      --allow-partial
+          Accept incomplete totals when paths cannot be read
+
+      --cache-status[=<SCOPE>]
+          Report cache contents instead of scanning: root (default) or all
+
+      --cache-clear[=<SCOPE>]
+          Remove cached snapshots instead of scanning: root (default) or all
+
+      --watch
+          Stream changes continuously instead of returning one report
+
+      --interval <DUR>
+          How often aggregate views re-render while watching, as a duration.
+          
+          Throttles rendering only; change detection is event-driven and unaffected.
+          
+          [default: 2s]
+
+      --skill
+          Print a portable agent skill to stdout
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version
 
 Examples:
   fdu

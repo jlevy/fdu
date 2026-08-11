@@ -609,6 +609,53 @@ pub fn is_lossy(path: &Path) -> bool {
     path.to_str().is_none()
 }
 
+/// Streaming-output schema identity.
+///
+/// Distinct from the one-shot schema on purpose: a stream is a sequence of tagged
+/// records over time, not one document, and a consumer should not have to discover which
+/// it is holding.
+pub const STREAM_SCHEMA: &str = "fdu.stream/1";
+
+/// Render one streamed change as a tagged record.
+#[cfg(feature = "watch")]
+pub fn render_change(change: &crate::Change, format: Format) -> String {
+    let kind = match change.kind {
+        crate::ChangeKind::Upsert => "upsert",
+        crate::ChangeKind::Remove => "remove",
+        crate::ChangeKind::Invalidate => "invalidate",
+    };
+
+    if format == Format::Text {
+        // Path first, so the stream stays greppable and cuts the same way a one-shot
+        // listing does; the operation follows on the same line.
+        return format!("{}\t{kind}", change.path.display());
+    }
+
+    let mut out = String::new();
+    let _ = write!(
+        out,
+        "{{\"schema\": {}, \"record\": \"change\", \"op\": {}, \"path\": {}, \"clock\": {}",
+        quote(STREAM_SCHEMA),
+        quote(kind),
+        quote(&change.path.to_string_lossy()),
+        change.clock
+    );
+    if let Some(entry_kind) = change.entry_kind {
+        let _ = write!(out, ", \"kind\": {}", quote(kind_label(entry_kind)));
+    }
+    if let Some(bytes) = change.bytes {
+        let _ = write!(out, ", \"bytes\": {bytes}");
+    }
+    if let Some(allocated) = change.allocated {
+        let _ = write!(out, ", \"allocated\": {allocated}");
+    }
+    if let Some(mtime) = change.mtime_ns {
+        let _ = write!(out, ", \"mtime_ns\": {mtime}");
+    }
+    out.push('}');
+    out
+}
+
 /// Lossless identity for a path that does not render as UTF-8.
 ///
 /// `to_string_lossy` replaces undecodable bytes with U+FFFD, so a consumer reading only

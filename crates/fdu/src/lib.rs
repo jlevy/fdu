@@ -65,6 +65,9 @@ pub mod cli;
 pub mod report_format;
 
 #[cfg(feature = "watch")]
+pub mod session;
+
+#[cfg(feature = "watch")]
 pub mod watch;
 
 pub use crate::cache::{
@@ -74,6 +77,8 @@ pub use crate::index::{
     ApplyOutcome, ApplyStats, ChildSnapshot, EntryId, ExtTally, Index, IndexHandle, RollUp, Since,
 };
 pub use crate::scan::{ReconcileReport, ScanConfig, ScanReport};
+#[cfg(feature = "watch")]
+pub use crate::session::{Batch, Change, ChangeKind, Session};
 pub use crate::types::{
     AppliedDelta, Attrs, Clock, EntryKind, Error, Expectation, Fingerprint, Freshness,
     InvalidateReason, Observation, ObservationOp, Op, PathExpectation, PathState, Result,

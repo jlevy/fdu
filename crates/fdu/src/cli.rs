@@ -195,6 +195,18 @@ pub struct Cli {
     #[arg(long, value_name = "SCOPE", num_args = 0..=1, require_equals = true, default_missing_value = "root")]
     pub cache_clear: Option<String>,
 
+    /// Stream changes continuously instead of returning one report.
+    #[cfg(feature = "watch")]
+    #[arg(long, action = ArgAction::SetTrue)]
+    pub watch: bool,
+
+    /// How often aggregate views re-render while watching, as a duration.
+    ///
+    /// Throttles rendering only; change detection is event-driven and unaffected.
+    #[cfg(feature = "watch")]
+    #[arg(long, value_name = "DUR", default_value = "2s")]
+    pub interval: String,
+
     /// Print a portable agent skill to stdout.
     #[arg(long, action = ArgAction::SetTrue)]
     pub skill: bool,
@@ -253,6 +265,31 @@ impl Cli {
             cache_path: default_cache_path(&self.path),
             policy,
         };
+
+        #[cfg(feature = "watch")]
+        if self.watch && self.scan_depth.is_some() {
+            // Scope narrows what is observed, and a watcher cannot filter raw backend
+            // events against that boundary yet. Selection flags stay legal with --watch
+            // precisely because they filter the retained index instead, and the message
+            // says so rather than only naming the conflict.
+            return Err(usage(&anyhow::anyhow!(concat!(
+                "--watch cannot be combined with --scan-depth: watching requires full scope. ",
+                "Selection flags such as --depth, --include, and --modified-since do work with ",
+                "--watch, because they filter the index rather than narrowing the scan"
+            ))));
+        }
+
+        #[cfg(feature = "watch")]
+        if self.watch {
+            let color = ColorContext::from_environment(
+                self.color,
+                self.machine_format(),
+                self.skill,
+                stdout_is_terminal,
+            )
+            .enabled();
+            return self.run_watch(out, diagnostic, format, query, &config, color);
+        }
 
         let scan_started_at = SystemTime::now();
         let (index, open_report, pending_save) = open_with_pending_save(&self.path, &config)?;
@@ -316,6 +353,111 @@ impl Cli {
             report_format::Format::parse(&self.format),
             None | Some(report_format::Format::Text)
         )
+    }
+
+    /// Run the query continuously, streaming changes as they arrive.
+    ///
+    /// The initial report is exactly what a one-shot run would print, and every later
+    /// render is the same query re-evaluated. Detection is event-driven throughout: an
+    /// idle tree costs no filesystem work, and `--interval` throttles only how often
+    /// aggregate views repaint.
+    #[cfg(feature = "watch")]
+    fn run_watch(
+        &self,
+        out: &mut dyn Write,
+        diagnostic: &mut dyn Write,
+        format: report_format::Format,
+        query: Query,
+        config: &OpenConfig,
+        color: bool,
+    ) -> anyhow::Result<RunOutcome> {
+        use crate::query::ViewSpec;
+        use crate::session::{ChangeKind, Session};
+        use crate::watch::WatchConfig;
+
+        let interval = parse_duration(&self.interval).map_err(|error| usage(&error))?;
+
+        let scan_started_at = SystemTime::now();
+        let (index, open_report, pending_save) = open_with_pending_save(&self.path, config)?;
+        if let Err(error) = pending_save.join() {
+            let _ = writeln!(
+                diagnostic,
+                "{}",
+                paint(&format!("warning: {error}"), STYLE_WARNING, color)
+            );
+        }
+
+        // A streaming run keeps only the views it can render incrementally plus the
+        // aggregates it repaints; both come from the same query, so nothing here is a
+        // second grammar.
+        let streams_changes = query.views.contains(&ViewSpec::Files);
+        let has_aggregates = query.views.iter().any(|view| *view != ViewSpec::Files);
+
+        let handle = crate::IndexHandle::new(index);
+        let session = Session::new(handle, config.scan.clone(), query, WatchConfig::default())?;
+
+        // The initial answer, identical to a one-shot run's.
+        let provenance = Provenance {
+            scan_started_at: Some(scan_started_at),
+            generated_at: SystemTime::now(),
+            source: match open_report.path_taken {
+                crate::OpenPath::ColdScan => ReportSource::ColdScan,
+                crate::OpenPath::WarmRevalidate => ReportSource::WarmRevalidate,
+                crate::OpenPath::CacheOnly => ReportSource::CacheOnly,
+            },
+            complete: open_report.is_complete(),
+            errors: open_report.errors().iter().map(ToString::to_string).collect(),
+        };
+        write!(out, "{}", report_format::render(&session.report(&provenance)?, format, color))?;
+        out.flush()?;
+
+        let mut dirty_since_render = false;
+        let mut last_render = SystemTime::now();
+        loop {
+            let Some(batch) = session.next_batch(interval)? else {
+                // Nothing arrived in the window. Repaint only if something is pending,
+                // so a quiet tree produces no output and no work at all.
+                if has_aggregates && dirty_since_render {
+                    Self::render_live(out, &session, format, color)?;
+                    dirty_since_render = false;
+                    last_render = SystemTime::now();
+                }
+                continue;
+            };
+
+            for change in &batch.changes {
+                if change.kind == ChangeKind::Invalidate {
+                    // Never dropped: an escalation says the consumer's view may have gaps.
+                    writeln!(out, "{}", report_format::render_change(change, format))?;
+                } else if streams_changes {
+                    writeln!(out, "{}", report_format::render_change(change, format))?;
+                }
+            }
+            out.flush()?;
+
+            dirty_since_render |= batch.dirty;
+            let elapsed = last_render.elapsed().unwrap_or_default();
+            if has_aggregates && dirty_since_render && elapsed >= interval {
+                Self::render_live(out, &session, format, color)?;
+                dirty_since_render = false;
+                last_render = SystemTime::now();
+            }
+        }
+    }
+
+    /// Re-render the aggregate views of a live session.
+    #[cfg(feature = "watch")]
+    fn render_live(
+        out: &mut dyn Write,
+        session: &crate::session::Session,
+        format: report_format::Format,
+        color: bool,
+    ) -> anyhow::Result<()> {
+        let provenance = session.live_provenance(SystemTime::now());
+        let report = session.report(&provenance)?;
+        write!(out, "{}", report_format::render(&report, format, color))?;
+        out.flush()?;
+        Ok(())
     }
 
     /// Run the cache lifecycle flags and report what they found or removed.
@@ -477,6 +619,19 @@ impl Cli {
 
         Ok(Query { selection, views: parse_list(&self.view, "--view", parse_view)? })
     }
+}
+
+/// Parse a render interval, reusing the age half of the shared time grammar.
+#[cfg(feature = "watch")]
+fn parse_duration(value: &str) -> anyhow::Result<std::time::Duration> {
+    // Expressed as an age before a fixed instant, so `2s` and `1h30m` mean here exactly
+    // what they mean in --modified-since rather than being a fourth spelling.
+    let anchor = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1 << 40);
+    let at = parse_when(value, anchor)
+        .map_err(|error| anyhow::anyhow!("invalid --interval {value:?}: {error}"))?;
+    anchor
+        .duration_since(at)
+        .map_err(|_| anyhow::anyhow!("invalid --interval {value:?}: expected a duration like `2s`"))
 }
 
 /// Pick the singular or plural noun for a count.
@@ -826,6 +981,10 @@ mod tests {
             cache: "off".to_string(),
             cache_status: None,
             cache_clear: None,
+            #[cfg(feature = "watch")]
+            watch: false,
+            #[cfg(feature = "watch")]
+            interval: "2s".to_string(),
             allow_partial: false,
             skill: false,
         }
