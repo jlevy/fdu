@@ -41,6 +41,13 @@ use crate::types::{
     Observation, Op, PathExpectation, PathState, Provenance, ScanScope, Source, Status,
 };
 
+/// Verification intervals kept before the oldest are dropped.
+///
+/// Bounds the memory a long-lived session can accumulate through repeated scoped
+/// reconciliation. Dropping an interval only ever moves a path back to reporting
+/// `Cached`, so the bound costs precision, never correctness.
+const MAX_VERIFIED_INTERVALS: usize = 256;
+
 /// Maximum number of effective operations retained for [`Index::since`].
 ///
 /// Bounded on purpose: an unbounded journal is a memory leak in a long-lived server. A
@@ -739,6 +746,16 @@ impl Index {
         let now = Self::now_unix_nanos();
         self.verified.retain(|(verified_path, _)| !verified_path.starts_with(path));
         self.verified.push((path.to_path_buf(), now));
+        // Repeated scoped sweeps of sibling subtrees — what a consumer revalidating
+        // per navigation produces — would otherwise grow this list without bound,
+        // since only records *under* the swept path are collapsed. Dropping the oldest
+        // is fail-safe: a path that loses its interval reports `Cached` rather than
+        // `Revalidated`, which under-claims trust rather than over-claiming it.
+        if self.verified.len() > MAX_VERIFIED_INTERVALS {
+            let excess = self.verified.len() - MAX_VERIFIED_INTERVALS;
+            self.verified.sort_by_key(|(_, at)| *at);
+            self.verified.drain(..excess);
+        }
     }
 
     /// When a completed reconciliation last covered this path, if one did.
@@ -1053,15 +1070,23 @@ impl Index {
         let entry = self.entry(id);
         let status = self.status_of(id);
         // A completed sweep over an ancestor verified this entry even if no delta ever
-        // named it, so an interval beats the entry's own stamp when it is newer.
+        // named it, so an interval beats the entry's own stamp.
+        //
+        // Only while the index still considers the path fresh, though. An
+        // `InvalidateSubtree` marks paths `Stale` and a running sweep marks them
+        // `Reconciling`; in both cases trust has been withdrawn since the interval was
+        // recorded, and promoting anyway would produce the self-contradicting answer
+        // "partial, and verified".
         if !entry.source.is_verified() {
             if let Some(path) = self.path_of(id) {
-                if let Some(verified_at) = self.verified_at(&path) {
-                    return Provenance {
-                        source: Source::Revalidated,
-                        observed_at_ns: verified_at,
-                        status,
-                    };
+                if self.freshness_at(&path) == Freshness::Fresh {
+                    if let Some(verified_at) = self.verified_at(&path) {
+                        return Provenance {
+                            source: Source::Revalidated,
+                            observed_at_ns: verified_at,
+                            status,
+                        };
+                    }
                 }
             }
         }
@@ -2433,5 +2458,58 @@ mod tests {
         assert_eq!(index.total().bytes, 30);
         assert!(index.lookup(&first).is_some());
         assert!(index.lookup(&second).is_some());
+    }
+
+    #[test]
+    fn withdrawn_trust_beats_a_verification_interval() {
+        // A verification interval records that a sweep once covered a path. If the
+        // index has since withdrawn trust — an InvalidateSubtree marking it Stale, or
+        // a sweep in progress marking it Reconciling — the interval must not promote
+        // it, or provenance answers "partial, and verified" in one breath.
+        let mut index = Index::new("/root");
+        // The entry arrives the way a snapshot load delivers it: unverified.
+        index.set_applying_source(Source::Cached, 1_000);
+        index.apply_baseline_ok(&Observation::new(vec![Op::Upsert {
+            path: PathBuf::from("a/file.txt"),
+            kind: EntryKind::File,
+            attrs: Attrs { size: 1, ..Attrs::default() },
+        }]));
+        assert_eq!(
+            index.provenance(Path::new("a/file.txt")).expect("present").source,
+            Source::Cached,
+            "nothing has checked it yet"
+        );
+        // A completed sweep then covers the whole tree.
+        index.finish_reconcile(Path::new(""), 0, true);
+        let path = Path::new("a/file.txt");
+        assert_eq!(
+            index.provenance(path).expect("present").source,
+            Source::Revalidated,
+            "a completed sweep covers this path"
+        );
+
+        // Now withdraw trust over the subtree.
+        index.mark_unfresh(Path::new("a"), Freshness::Stale);
+        let provenance = index.provenance(path).expect("present");
+        assert!(
+            !provenance.is_verified(),
+            "an invalidated path must not read as verified: {provenance:?}"
+        );
+        assert_eq!(provenance.status, Status::Partial);
+    }
+
+    #[test]
+    fn verification_intervals_stay_bounded() {
+        // Repeated scoped sweeps of sibling subtrees must not grow without bound;
+        // dropping the oldest only ever under-claims trust.
+        let mut index = Index::new("/root");
+        for which in 0..(MAX_VERIFIED_INTERVALS * 2) {
+            index.finish_reconcile(&PathBuf::from(format!("dir-{which}")), 0, true);
+        }
+        assert!(
+            index.verified.len() <= MAX_VERIFIED_INTERVALS,
+            "interval list grew to {}",
+            index.verified.len()
+        );
     }
 }
