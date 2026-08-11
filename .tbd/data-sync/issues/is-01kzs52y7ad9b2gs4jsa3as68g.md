@@ -3,14 +3,16 @@ type: is
 id: is-01kzs52y7ad9b2gs4jsa3as68g
 title: Watermark round-trip test for scan_started_at fed back as --modified-since
 kind: task
-status: open
+status: closed
 priority: 2
-version: 2
+version: 4
 spec_path: docs/project/specs/active/plan-2026-08-10-fdu-composable-cli-surface.md
 labels: []
 dependencies: []
 parent_id: is-01kzq1vqasq5aqd5g07357h76t
 created_at: 2026-08-11T19:34:13.480Z
-updated_at: 2026-08-11T19:37:37.647Z
+updated_at: 2026-08-11T20:59:33.849Z
+closed_at: 2026-08-11T20:59:33.848Z
+close_reason: Watermark round trip covered end to end through the binary, including a mid-walk write and the bounded-window property that seeded files stay out. Made deterministic rather than scheduler-dependent after two earlier versions proved timing-fragile.
 ---
 The spec's Testing Strategy asks for a watermark round trip: a report's scan_started_at fed back as --modified-since must list exactly the files touched after scan start, including one touched mid-scan. No such test exists. This is the property that makes incremental follow-up queries trustworthy, and the mid-scan case is the one that can silently drop a file - a walker that recorded a directory before a write and stamped scan_started_at after it would miss that write forever. Needs a scan with an injected pause so a file can be touched while the walk is in flight.
