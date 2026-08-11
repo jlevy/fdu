@@ -522,15 +522,18 @@ class CompatibilityProbeTests(unittest.TestCase):
 
 class ArgumentExpansionTests(unittest.TestCase):
     def test_placeholders_expand_and_extra_flags_append(self) -> None:
+        binary = Path("/bin/probe")
+        root = Path("/tmp/tree")
         expanded = measure._expand(
             ("{binary}", "scan-index", "--root", "{root}"),
-            binary=Path("/bin/probe"),
-            root=Path("/tmp/tree"),
+            binary=binary,
+            root=root,
             snapshot=None,
             extra=["--threads", "4"],
         )
         self.assertEqual(
-            expanded, ["/bin/probe", "scan-index", "--root", "/tmp/tree", "--threads", "4"]
+            expanded,
+            [str(binary), "scan-index", "--root", str(root), "--threads", "4"],
         )
 
     def test_a_missing_snapshot_is_an_error_not_an_empty_string(self) -> None:
