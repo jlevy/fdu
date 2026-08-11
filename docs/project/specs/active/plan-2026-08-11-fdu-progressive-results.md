@@ -158,72 +158,84 @@ The browser needs exactly what they provide: read the header and the top-level d
 records, paint, and load deeper blocks only as the user navigates.
 A browser displays a few hundred entries at a time and never needs millions resident.
 
-### 4. Confidence: approximate now beats exact later
+### 4. Provenance: every value says where it came from
 
 The browser’s strongest requirement is one the CLI never had: **a slightly stale number
 is far more useful than no number.** Reopening a large folder should paint immediately
-from the cache, mark every value as approximate, and then clear those marks as
-verification confirms them — converging visibly rather than blocking.
+from the cache, mark every value as approximate, and clear those marks as verification
+confirms them — converging visibly rather than blocking.
 
 This looks like it collides with the project’s hardest rule, “the cache may never
 silently lie”. It does not, and the distinction is the word *silently*. Serving a cached
-number **labelled** as cached is the honest version of exactly this; serving it as
-though it were verified is the thing the rule forbids.
+number **labelled with where it came from and when** is the honest version of exactly
+this; serving it as though it were freshly observed is the thing the rule forbids.
 The original research already staked this out — fast-but-wrong is a non-goal,
-fast-and-labelled is a feature — and this is that feature, generalised from a one-off
-mode into a property every value carries.
+fast-and-labelled is a feature — and this generalises it from a one-off mode into a
+property every value carries.
 
 #### The gap in what fdu models today
 
 `Freshness` is per-path and already distinguishes `Fresh`, `Reconciling`, `Stale` and
 `Partial`. But an index loaded from a snapshot reports **`Fresh`**, because the snapshot
-was complete when it was written.
-For a CLI that revalidates before printing, that is harmless.
-For a browser that paints on load, it is precisely backwards: nothing has been checked
-since the file was read, and the one signal the UI needs is missing.
+was complete when it was *written*. For a CLI that revalidates before printing, that is
+harmless. For a browser that paints on load it is precisely backwards: nothing has been
+checked since the file was read, and the one signal the UI needs is missing.
+`Freshness` also answers for the *run*, not for the value, so it cannot say that this
+directory is confirmed while that one is not.
 
-#### Confidence as a per-value property
+#### Three orthogonal facts, not one enum
+
+Provenance answers “where did this come from, when, and is it finished” — three
+independent questions that a single enum would tangle:
 
 ```rust
-pub enum Confidence {
-    /// Stat-verified against the filesystem during this session.
-    Verified,
-    /// The change journal reported nothing touching this subtree since the snapshot
-    /// cursor, and the journal gate accepted. Weaker than Verified: the Phase 0 spike
-    /// showed FSEvents can omit history without raising a flag, which is what the
-    /// periodic full sweep (G12) exists to bound.
-    JournalConfirmed { as_of: SystemTime },
-    /// Read from the snapshot and believed, but unchecked since load. A point-in-time
-    /// value: it may now be too high or too low.
-    Cached { as_of: SystemTime },
-    /// A walk is still in progress beneath this path. Strictly a lower bound — it can
-    /// only grow.
-    Partial,
+pub struct Provenance {
+    /// Where the value came from.
+    pub source: Source,
+    /// When the underlying filesystem observation was made. For `Cached`, this is
+    /// when the snapshot captured it — the "as of" a UI shows.
+    pub observed_at: SystemTime,
+    /// False while a walk beneath this path is still running, which makes the value a
+    /// lower bound rather than a point estimate.
+    pub complete: bool,
+}
+
+pub enum Source {
+    /// Observed from the filesystem by this process.
+    Scanned,
+    /// Loaded from the snapshot and re-verified by stat this session.
+    Revalidated,
+    /// Loaded from the snapshot; the change journal reported nothing touching this
+    /// subtree since the cursor. Deliberately weaker than `Revalidated`: the Phase 0
+    /// spike found FSEvents can omit history without raising a flag, which is what the
+    /// periodic full sweep bounds.
+    JournalConfirmed,
+    /// Loaded from the snapshot and not re-checked.
+    Cached,
 }
 ```
 
-The distinction between `Partial` and `Cached` is not pedantry, it is two different UI
-affordances. `Partial` is monotone and may be rendered as “≥ 3.2 GB, counting”; a
-progress bar only fills.
-`Cached` is a point estimate that may move in either direction, and is better rendered
-as “~3.2 GB, as of 2 minutes ago”.
-Collapsing them into one “not sure yet” state would let a shrinking number look like a
-bug.
+Splitting `complete` out of the source is what keeps two different UI affordances
+distinct. An incomplete value is monotone and reads as “≥ 3.2 GB, counting” — a bar that
+only fills. A complete `Cached` value is a point estimate that may move in either
+direction and reads as “~3.2 GB, as of 2 minutes ago”.
+Collapsed into one “not sure yet” state, a shrinking number would look like a bug.
 
-#### Confidence rolls up, and that is free
+#### Provenance rolls up, and that is nearly free
 
-A directory’s total is only as trustworthy as its least trustworthy descendant, so
-confidence composes upward by taking the minimum — which is the same shape as every
-other roll-up fdu maintains.
-It costs an ordered enum in the reducer set and reuses `merge_upward` unchanged.
-A directory whose entire subtree is verified reports `Verified` and the UI drops the
-indicator for that row; one unverified file deep inside keeps its ancestors honest all
-the way to the root.
+A directory’s total is only as trustworthy as its least trustworthy descendant, so all
+three facts compose upward by monotone operations: `source` takes the weakest,
+`observed_at` the oldest, `complete` the logical AND. That is the same shape as every
+other roll-up fdu maintains, so it reuses `merge_upward` rather than adding machinery.
+A directory whose whole subtree is verified reports `Revalidated` and a UI drops the
+indicator for that row; one unchecked file deep inside keeps its ancestors honest all
+the way to the root, with the oldest `observed_at` explaining how stale the worst of it
+is.
 
 #### Convergence has to be observable, not polled
 
 Clearing an indicator requires knowing *when* a value became trustworthy, so the session
-emits confidence transitions per path alongside the value changes it already produces.
+emits provenance transitions per path alongside the value changes it already produces.
 Two outcomes matter and both must be reported: verification that **confirms** a cached
 value (clear the mark, no visual jump) and verification that **corrects** it (update and
 clear, and the UI may want to draw attention).
@@ -241,9 +253,26 @@ session.prioritize(&path);   // the user just opened this — verify it next
 
 Verification is otherwise breadth-first like the walk, but a prioritised subtree jumps
 the queue. This is what makes convergence feel immediate rather than merely fast: the
-handful of rows a user is actually looking at are confirmed in milliseconds even while
-several million entries behind them are still unverified.
+handful of rows a user is actually looking at confirm in milliseconds even while
+millions of entries behind them are still unverified.
 Without it, a uniform sweep spends most of its effort on rows nobody is reading.
+
+#### It is a library property first, and a CLI feature because of that
+
+Provenance belongs on the value, not in a rendering layer, so every consumer gets it
+from the same place: `Report` rows carry it, all four output formats serialise it, and
+Python exposes the same struct.
+The CLI then displays it rather than inventing it, which is the project’s standing rule
+that the CLI invents nothing.
+
+For a one-shot command the common case stays quiet: it verifies before printing, so
+every row is `Scanned` or `Revalidated` and there is nothing to annotate.
+Provenance becomes visible exactly when it should — under `--cache only`, where every
+row is `Cached` and the header says as of when; under `--allow-partial`, where
+incomplete subtrees are marked; and in any future progress mode.
+The same data that lets a browser draw a small “approximate” glyph lets the CLI print an
+honest “as of” line, and lets an agent consuming JSON decide whether a number is good
+enough for what it is about to do.
 
 #### What this makes the journal worth
 
@@ -254,8 +283,8 @@ With one, a ~200 ms replay names the few directories that could have changed, so
 **almost every row can move from `Cached` to `JournalConfirmed` at once** and only a
 handful keep their marks.
 The UI goes from entirely-approximate to almost-entirely-confirmed in a fraction of a
-second, and the remaining stat verification is scoped to what the journal named plus
-whatever the user is looking at.
+second, and stat verification is scoped to what the journal named plus whatever the user
+is looking at.
 
 That is the journal’s real product value for this use case: not that it makes
 verification cheaper, but that it makes *most of the display trustworthy immediately*

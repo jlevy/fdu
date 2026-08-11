@@ -162,7 +162,7 @@ perf-compare: perf-probe-release
 		--name $(or $(NAME),adhoc)
 
 perf-test:
-	uv run --no-project python -m unittest discover -s benchmarks/realtree/tests -p 'test_*.py'
+	uv run --no-project --with pydantic python -m unittest discover -s benchmarks/realtree/tests -p 'test_*.py'
 
 # Regenerate the ledger from the committed experiment artifacts. Every number in it
 # is read back out of a validated artifact, so the report cannot drift from the record.
