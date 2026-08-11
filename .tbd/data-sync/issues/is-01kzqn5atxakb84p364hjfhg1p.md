@@ -3,9 +3,9 @@ type: is
 id: is-01kzqn5atxakb84p364hjfhg1p
 title: "P3: watch golden tests with injected changes"
 kind: task
-status: open
+status: in_progress
 priority: 1
-version: 5
+version: 6
 spec_path: docs/project/specs/active/plan-2026-08-10-fdu-composable-cli-surface.md
 labels: []
 dependencies:
@@ -13,7 +13,7 @@ dependencies:
     target: is-01kzqn66p0pmck4yg6pexhww2z
 parent_id: is-01kzqmzewkph9n0w5rzn2a9hyg
 created_at: 2026-08-11T05:36:40.284Z
-updated_at: 2026-08-11T19:33:55.481Z
+updated_at: 2026-08-11T21:01:45.462Z
 closed_at: 2026-08-11T17:08:48.099Z
 close_reason: Session composes IndexHandle+Watcher+Query; --watch loop with fdu.stream/1 tagged change records, dirty-gated aggregate repaint, and event-driven detection throughout. Selection filters the stream, with removals filtered only by path and escalations never filtered. --watch + --scan-depth is a usage error that teaches scope-vs-selection. watch joins default features while cli-only and no-default-features still build. 5 integration tests against real filesystem events, including the idle-cost contract.
 ---
