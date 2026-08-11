@@ -54,11 +54,12 @@ Clippy pedantic is clean with `unsafe_code = "deny"` on the core crate; the
 `--no-default-features` library path is built and tested in CI rather than assumed.
 
 **Deliberately not built.** The walker is still portable `read_dir` plus per-entry
-metadata, despite two measured constant-factor improvements. Nothing in this repository
-is claim-grade fast yet, and **no performance claim should be made until the syscall
-layer lands and the benchmark gate passes**. The snapshot format is a flat uncompressed
-image whose reader is bounded and streaming but whose writer still materializes the
-image. `open()` blocks until warm reconciliation finishes.
+metadata, despite two measured constant-factor improvements.
+Nothing in this repository is claim-grade fast yet, and **no performance claim should be
+made until the syscall layer lands and the benchmark gate passes**. The snapshot format
+is a flat uncompressed image whose reader is bounded and streaming but whose writer
+still materializes the image.
+`open()` blocks until warm reconciliation finishes.
 `IndexHandle` now seals the single-writer implementation behind focused owned queries,
 and snapshot serialization, watcher verification, callbacks, and Python conversion run
 after its locks are released.
@@ -106,10 +107,11 @@ they were not in the research:
   Newest-mtime reduction now uses file presence as its identity and preserves negative
   timestamps.
 - The first exact-oracle revalidation curve measured 72.258 ms at 10k, 725.023 ms at
-  100k, 8.186 s at 500k, and 62.906 s at 1M on one uncontrolled APFS host. The 500k
-  target is therefore not met. Direct expectation capture plus exclusive no-op elision
-  improved nine alternating 100k pairs by a paired median 18.15%, but does not change
-  the need for the syscall walker and bounded parallel sweep.
+  100k, 8.186 s at 500k, and 62.906 s at 1M on one uncontrolled APFS host.
+  The 500k target is therefore not met.
+  Direct expectation capture plus exclusive no-op elision improved nine alternating 100k
+  pairs by a paired median 18.15%, but does not change the need for the syscall walker
+  and bounded parallel sweep.
 
 ## What Phase 1 Delivers
 
@@ -223,8 +225,8 @@ depends on:
 - `fdu-xihx` implements the block snapshot only after its candidate spike, packed
   records, reducer encoding, and reusable persistence fault tests.
 - `fdu-wbis` implements optimized revalidation after the cost curve and syscall walker.
-  A matching directory fingerprint may avoid only `read_dir` membership discovery;
-  every known child is still statted and known directories are still traversed, because
+  A matching directory fingerprint may avoid only `read_dir` membership discovery; every
+  known child is still statted and known directories are still traversed, because
   in-place child edits do not change the parent directory mtime.
 - `fdu-r27g` measures the retained standard-library single-writer lock using the common
   probe before any synchronization redesign or dependency is considered.
@@ -253,7 +255,11 @@ owned by the
 Phase 1 is done when all of these hold, and not before:
 
 1. Cold scan within ~1.5x of dut on the same corpus, with full stats retained.
-2. Warm re-run (snapshot load + revalidation) well under 1 s for 500k entries.
+2. Warm re-run (snapshot load + revalidation) well under 1 s for 500k entries, **and
+   faster than a cold scan of the same tree and view** — a cache that loses to
+   rescanning is a defect, and cache benefit varies by platform and view tier (see
+   [research-2026-08-10-performance-frontier.md](../../research/research-2026-08-10-performance-frontier.md);
+   the first measured curve violated this, warm ~2.6× cold at 60k).
 3. Memory within ~25–32 bytes per file record.
 4. `fdu --help` is complete enough that an agent needs no other documentation, and the
    JSON schema is versioned and stable.

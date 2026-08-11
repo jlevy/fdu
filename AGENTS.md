@@ -84,6 +84,11 @@ Three artifacts and one contract:
   gate against dut and gdu passes.
   Benchmarks must report cold and warm separately, and raw-walk and with-stats
   separately, or they compare different jobs.
+  The cache is not assumed to be a speed-up: its benefit depends on platform and on
+  which reducer tiers a view uses (see
+  [research-2026-08-10-performance-frontier.md](docs/project/research/research-2026-08-10-performance-frontier.md)),
+  and a warm path that loses to a cold scan of the same view is a defect, not a
+  trade-off.
 - **The cache may never silently lie.** Fingerprints are size + mtime + ctime + inode.
   A corrupt or unrecognized snapshot is treated as absent, never as data.
   Producers that lose precision escalate with `InvalidateSubtree` rather than guessing.
