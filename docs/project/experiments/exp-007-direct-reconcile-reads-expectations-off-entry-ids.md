@@ -33,8 +33,8 @@ experiment:
     filesystem: apfs
     os_cache: warm-steady
   method:
-    trials: 14
-    warmups: 3
+    trials: 20
+    warmups: 4
     interleaved: true
     control: "HEAD c428fbd: exclusive reconcile re-derives child expectations through path joins and root descents"
     candidate: "ReconcileTarget::Direct routed through collect_child_expectations; the slow twin deleted"
@@ -50,251 +50,131 @@ experiment:
       args: []
     toolchain: rustc 1.97.1 (8bab26f4f 2026-07-14)
     build_profile: release
-    run_artifact: benchmarks/results/realtree/run-exp007-009-portable-stack.json
+    run_artifact: benchmarks/results/realtree/run-exp007-009-requiem.json
   results:
-    - job: cold-scan-index
-      start_state: cold
-      invalid_samples: 0
-      metrics:
-        wall_ns:
-          control_median: 508235063.0
-          candidate_median: 511332125.0
-          change_pct: 20.567
-          ci95_low_pct: -20.797
-          ci95_high_pct: 25.869
-          significant: false
-          pairs: 14
-        component_ns:
-          control_median: 289833979.5
-          candidate_median: 327129062.5
-          change_pct: 16.516
-          ci95_low_pct: -11.244
-          ci95_high_pct: 40.73
-          significant: false
-          pairs: 14
-        cpu_ns:
-          control_median: 1080453500.0
-          candidate_median: 1065645500.0
-          change_pct: -2.648
-          ci95_low_pct: -5.352
-          ci95_high_pct: 5.84
-          significant: false
-          pairs: 14
-        user_cpu_ns:
-          control_median: 265129000.0
-          candidate_median: 265170000.0
-          change_pct: 0.119
-          ci95_low_pct: -1.533
-          ci95_high_pct: 2.55
-          significant: false
-          pairs: 14
-        system_cpu_ns:
-          control_median: 821456000.0
-          candidate_median: 802061000.0
-          change_pct: -3.646
-          ci95_low_pct: -7.277
-          ci95_high_pct: 7.915
-          significant: false
-          pairs: 14
-        blocked_ns:
-          control_median: 0.0
-          candidate_median: 0.0
-          change_pct: 0.0
-          ci95_low_pct: null
-          ci95_high_pct: null
-          significant: false
-          pairs: 0
-        peak_rss_bytes:
-          control_median: 38076416.0
-          candidate_median: 38330368.0
-          change_pct: 3.251
-          ci95_low_pct: -0.473
-          ci95_high_pct: 12.022
-          significant: false
-          pairs: 14
-    - job: cold-scan-producer
-      start_state: cold
-      invalid_samples: 0
-      metrics:
-        wall_ns:
-          control_median: 526571688.0
-          candidate_median: 519887334.0
-          change_pct: 6.039
-          ci95_low_pct: -0.967
-          ci95_high_pct: 8.75
-          significant: false
-          pairs: 14
-        component_ns:
-          control_median: 208809500.0
-          candidate_median: 215709770.5
-          change_pct: 3.03
-          ci95_low_pct: -0.923
-          ci95_high_pct: 10.233
-          significant: false
-          pairs: 14
-        cpu_ns:
-          control_median: 2066768500.0
-          candidate_median: 2113609000.0
-          change_pct: 4.111
-          ci95_low_pct: -0.027
-          ci95_high_pct: 7.476
-          significant: false
-          pairs: 14
-        user_cpu_ns:
-          control_median: 331013000.0
-          candidate_median: 334253000.0
-          change_pct: 0.222
-          ci95_low_pct: -0.719
-          ci95_high_pct: 1.638
-          significant: false
-          pairs: 14
-        system_cpu_ns:
-          control_median: 1734306000.0
-          candidate_median: 1779819500.0
-          change_pct: 4.512
-          ci95_low_pct: -0.142
-          ci95_high_pct: 9.174
-          significant: false
-          pairs: 14
-        blocked_ns:
-          control_median: 0.0
-          candidate_median: 0.0
-          change_pct: 0.0
-          ci95_low_pct: null
-          ci95_high_pct: null
-          significant: false
-          pairs: 0
-        peak_rss_bytes:
-          control_median: 36913152.0
-          candidate_median: 37412864.0
-          change_pct: 1.081
-          ci95_low_pct: -0.758
-          ci95_high_pct: 2.94
-          significant: false
-          pairs: 14
     - job: warm-revalidate
       start_state: warm
       invalid_samples: 0
       metrics:
         wall_ns:
-          control_median: 1095792458.5
-          candidate_median: 1037379771.0
-          change_pct: -1.59
-          ci95_low_pct: -10.726
-          ci95_high_pct: 1.483
-          significant: false
-          pairs: 14
+          control_median: 712913291.5
+          candidate_median: 661987562.5
+          change_pct: -7.092
+          ci95_low_pct: -8.917
+          ci95_high_pct: -5.758
+          significant: true
+          pairs: 20
         component_ns:
-          control_median: 737713854.5
-          candidate_median: 636129708.5
-          change_pct: -5.917
-          ci95_low_pct: -11.664
-          ci95_high_pct: -2.995
+          control_median: 481543854.5
+          candidate_median: 431683625.0
+          change_pct: -9.355
+          ci95_low_pct: -12.817
+          ci95_high_pct: -8.306
           significant: true
-          pairs: 14
+          pairs: 20
         cpu_ns:
-          control_median: 848281500.0
-          candidate_median: 782870000.0
-          change_pct: -5.375
-          ci95_low_pct: -8.726
-          ci95_high_pct: -4.198
+          control_median: 701300000.0
+          candidate_median: 655901500.0
+          change_pct: -5.843
+          ci95_low_pct: -8.532
+          ci95_high_pct: -5.697
           significant: true
-          pairs: 14
+          pairs: 20
         user_cpu_ns:
-          control_median: 343678500.0
-          candidate_median: 288477500.0
-          change_pct: -14.009
-          ci95_low_pct: -15.659
-          ci95_high_pct: -13.148
+          control_median: 312068000.0
+          candidate_median: 265396500.0
+          change_pct: -15.097
+          ci95_low_pct: -15.43
+          ci95_high_pct: -14.384
           significant: true
-          pairs: 14
+          pairs: 20
         system_cpu_ns:
-          control_median: 504330500.0
-          candidate_median: 494191000.0
-          change_pct: 0.341
-          ci95_low_pct: -2.63
-          ci95_high_pct: 1.862
+          control_median: 387964000.0
+          candidate_median: 389797500.0
+          change_pct: 1.06
+          ci95_low_pct: -2.595
+          ci95_high_pct: 1.484
           significant: false
-          pairs: 14
+          pairs: 20
         blocked_ns:
-          control_median: 232111458.5
-          candidate_median: 240636271.0
-          change_pct: 18.18
-          ci95_low_pct: -35.857
-          ci95_high_pct: 39.174
-          significant: false
-          pairs: 14
+          control_median: 10677583.0
+          candidate_median: 7405229.0
+          change_pct: -31.944
+          ci95_low_pct: -39.474
+          ci95_high_pct: -19.853
+          significant: true
+          pairs: 20
         peak_rss_bytes:
-          control_median: 34635776.0
-          candidate_median: 34308096.0
-          change_pct: -0.621
-          ci95_low_pct: -1.559
-          ci95_high_pct: 0.72
+          control_median: 34021376.0
+          candidate_median: 33939456.0
+          change_pct: -0.338
+          ci95_low_pct: -0.767
+          ci95_high_pct: 0.46
           significant: false
-          pairs: 14
+          pairs: 20
     - job: warm-snapshot-load
       start_state: warm
       invalid_samples: 0
       metrics:
         wall_ns:
-          control_median: 286425937.0
-          candidate_median: 283683583.0
-          change_pct: 2.241
-          ci95_low_pct: -0.107
-          ci95_high_pct: 18.351
+          control_median: 331246374.5
+          candidate_median: 369856750.0
+          change_pct: 5.742
+          ci95_low_pct: -2.82
+          ci95_high_pct: 15.069
           significant: false
-          pairs: 14
+          pairs: 20
         component_ns:
-          control_median: 138619979.0
-          candidate_median: 133516541.5
-          change_pct: -2.374
-          ci95_low_pct: -5.633
-          ci95_high_pct: 5.448
+          control_median: 170653875.0
+          candidate_median: 183425646.0
+          change_pct: 1.58
+          ci95_low_pct: -7.447
+          ci95_high_pct: 16.934
           significant: false
-          pairs: 14
+          pairs: 20
         cpu_ns:
-          control_median: 243129500.0
-          candidate_median: 245301000.0
-          change_pct: 0.808
-          ci95_low_pct: -0.14
-          ci95_high_pct: 1.498
+          control_median: 256737000.0
+          candidate_median: 260348000.0
+          change_pct: 0.975
+          ci95_low_pct: -0.165
+          ci95_high_pct: 2.93
           significant: false
-          pairs: 14
+          pairs: 20
         user_cpu_ns:
-          control_median: 228887500.0
-          candidate_median: 230362500.0
-          change_pct: 0.654
-          ci95_low_pct: -0.585
-          ci95_high_pct: 1.285
+          control_median: 241632500.0
+          candidate_median: 242487000.0
+          change_pct: 0.53
+          ci95_low_pct: -0.505
+          ci95_high_pct: 2.545
           significant: false
-          pairs: 14
+          pairs: 20
         system_cpu_ns:
-          control_median: 14399500.0
-          candidate_median: 15133500.0
-          change_pct: 2.655
-          ci95_low_pct: -3.823
-          ci95_high_pct: 6.872
+          control_median: 15052500.0
+          candidate_median: 15889500.0
+          change_pct: 6.746
+          ci95_low_pct: -0.294
+          ci95_high_pct: 16.456
           significant: false
-          pairs: 14
+          pairs: 20
         blocked_ns:
-          control_median: 47391937.0
-          candidate_median: 38183083.0
-          change_pct: 27.62
-          ci95_low_pct: -11.928
-          ci95_high_pct: 71.329
+          control_median: 73839729.0
+          candidate_median: 105217375.0
+          change_pct: 16.256
+          ci95_low_pct: -6.185
+          ci95_high_pct: 81.16
           significant: false
-          pairs: 14
+          pairs: 20
         peak_rss_bytes:
-          control_median: 33095680.0
-          candidate_median: 33095680.0
-          change_pct: 0.0
-          ci95_low_pct: -1.299
-          ci95_high_pct: 0.852
+          control_median: 32751616.0
+          candidate_median: 32628736.0
+          change_pct: -0.398
+          ci95_low_pct: -0.926
+          ci95_high_pct: 0.172
           significant: false
-          pairs: 14
+          pairs: 20
   reference_tools:
     - name: dust
-      wall_ns_median: 220640562.5
+      wall_ns_median: 222827604.0
       argv:
         - "{binary}"
         - "-d"
@@ -306,13 +186,13 @@ experiment:
     new_dependencies: []
     new_unsafe_blocks: 0
     new_failure_modes: []
-    notes: A dispatch change. The shared-handle path has read expectations directly since abeb377; the equivalence test locking the two paths together is what lets the twin be deleted rather than maintained.
+    notes: "A net -10-line dispatch change; the equivalence test locking the two reconcile paths together is what lets the slow twin be deleted rather than maintained. First measured under load average 17 (interval spanned zero), committed then as a simplification, and confirmed as a real win on the quiet re-run."
   verdict:
-    decision: in-progress
+    decision: accepted
     primary_job: warm-revalidate
     primary_metric: wall_ns
-    change_pct: -1.59
-    reason: "Underpowered, not refuted: component median fell 737.7 to 636.1 ms but the wall interval spans zero at -1.59% [-10.73%, +1.48%] under load average 17 from concurrent builds; committed as a net -10-line simplification on the equivalence test's authority, with the focused re-measurement queued for a quiet machine"
+    change_pct: -7.092
+    reason: "Quiet-machine re-run: warm-revalidate wall -7.09% with 95% interval [-8.92%, -5.76%] over 20 paired trials; the first, load-average-17 run was underpowered, not wrong"
     commit: 92d6212
 ---
 # Direct reconcile reads expectations off entry ids
@@ -332,4 +212,4 @@ _Read the tables in the frontmatter. Say what surprised you._
 
 ## Verdict
 
-**IN-PROGRESS** — Underpowered, not refuted: component median fell 737.7 to 636.1 ms but the wall interval spans zero at -1.59% [-10.73%, +1.48%] under load average 17 from concurrent builds; committed as a net -10-line simplification on the equivalence test's authority, with the focused re-measurement queued for a quiet machine
+**ACCEPTED** — Quiet-machine re-run: warm-revalidate wall -7.09% with 95% interval [-8.92%, -5.76%] over 20 paired trials; the first, load-average-17 run was underpowered, not wrong

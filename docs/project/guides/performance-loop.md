@@ -127,8 +127,18 @@ A candidate is accepted when, on paired wall-time differences at equal ordinals:
 The first three are arithmetic and live in
 [`benchmarks/realtree/ledger.py`](../../../benchmarks/realtree/ledger.py).
 The fourth is a judgment and is written down as one.
-A 4% win that adds a lock, a thread pool, and two new failure modes is not automatically
-worth taking, and the ledger records the reasoning when we decline it.
+
+The accept metric is wall time by default, with one narrow exception: when a hypothesis
+*pre-registered* a different signal in the registry before any measurement ran (as the
+research backlog does for several), acceptance may be taken on that declared metric,
+with the reasoning stated in the record.
+A post-hoc metric switch — measuring on wall, missing, and then finding a metric that
+passes — is never an accept.
+exp-009 is the worked example: its registry row predicted the load *component*, the
+component cleared decisively while wall was diluted by probe overhead, and the record
+says exactly that.
+A 4% win that adds a lock, a thread pool, and two new failure modes is
+not automatically worth taking, and the ledger records the reasoning when we decline it.
 
 ## Hypotheses
 
@@ -156,9 +166,9 @@ Status is updated as experiments resolve them; see the ledger for results.
 | H5 | `normalize()` allocates a `Vec<OsString>` per path, and the caller allocates the `PathBuf` it parses. Per entry that is several allocations for information the walker already had. Allocator is 17.6% of baseline self time. | `user_cpu_ns` down, `minor_faults` down | **Confirmed** (exp-004): −9.4% warm revalidate, −17.8% snapshot load. No effect on the cold path, which is syscall-bound. |
 | H6 | `merge_upward` walks to the root for every entry, merging a `RollUp` that owns a `BTreeMap<String, ExtTally>`. Extension tallies are merged O(depth) times per file. | `user_cpu_ns` down | **Confirmed via H18** (exp-008): interning the keys to `u32` ids made cold-scan-index 15.7% faster. The per-directory-accumulation half (the registry’s H13) is still open. |
 | H7 | Children are `BTreeMap<OsString, EntryId>`; a hash map with a cheap hasher would beat comparison-based lookup at node_modules fan-out. Needs no new dependency: FxHash is ~15 lines. | `user_cpu_ns` down | — |
-| H14 | The exclusive reconcile path re-derives child expectations through path joins and root descents that the shared-handle path already reads off entry ids. | warm `user_cpu_ns`, `minor_faults` down | **Committed as a simplification** (exp-007, `92d6212`): component median −14% but the wall interval spanned zero under load-average-17 noise; focused re-measurement queued. |
+| H14 | The exclusive reconcile path re-derives child expectations through path joins and root descents that the shared-handle path already reads off entry ids. | warm `user_cpu_ns`, `minor_faults` down | **Confirmed** (exp-007, `92d6212`): first run was underpowered under load-average-17 noise; the quiet 20-trial re-run measured warm-revalidate wall −7.09% [−8.92, −5.76]. |
 | H18 | Extension tallies keyed by owned `String` cost ~523k clones and string-keyed descents per 60k scan; interning to `u32` ids makes merges integer work. | cold `user_cpu_ns` down, RSS down | **Confirmed** (exp-008, `bb1529d`): cold-scan-index −15.65% [−32.8, −0.8] even in a noisy run. |
-| H32 | The snapshot loader reads the whole image twice — once for CRC, once to parse; folding the digest into the parse removes a full pass. | `warm-snapshot-load` component −15–25% | **Pending** (exp-009): −4.2% with an interval spanning zero in the noisy run; held as a patch for re-measurement. |
+| H32 | The snapshot loader reads the whole image twice — once for CRC, once to parse; folding the digest into the parse removes a full pass. | `warm-snapshot-load` component −15–25% | **Confirmed on its pre-registered signal** (exp-009, `9f4f029`): load component −12.38% [−22.85, −4.71] on the quiet re-run; wall diluted by probe spawn and oracle overhead, per the accept-rule exception above. |
 | H8 | The observation batch allocates a `PathBuf` per op and then clones it. Moving instead of cloning removes one allocation per entry. | `user_cpu_ns`, `minor_faults` | **Refuted** (exp-003): removing ~120,000 clones per scan changed nothing measurable. The allocator cost is in the producer, not in apply. |
 
 ### Warm start

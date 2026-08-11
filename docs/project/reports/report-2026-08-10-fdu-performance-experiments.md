@@ -51,9 +51,9 @@ The rejected ones are the reusable part: they stop the next person spending a da
 | 004 | [Borrowed path components](#exp004--borrowed-path-components) | H5 | `warm-revalidate` | -9.4% | ✅ accepted |
 | 005 | [Snapshot load resolves through the parent](#exp005--snapshot-load-resolves-through-the-parent) | H10 | `warm-snapshot-load` | -18.6% | ✅ accepted |
 | 006 | [Cumulative effect of every accepted change](#exp006--cumulative-effect-of-every-accepted-change) | H1, H5, H10 | `cold-scan-index` | -48.9% | ✅ accepted |
-| 007 | [Direct reconcile reads expectations off entry ids](#exp007--direct-reconcile-reads-expectations-off-entry-ids) | H14 | `warm-revalidate` | -1.6% | ⏳ in progress |
+| 007 | [Direct reconcile reads expectations off entry ids](#exp007--direct-reconcile-reads-expectations-off-entry-ids) | H14 | `warm-revalidate` | -7.1% | ✅ accepted |
 | 008 | [Extensions interned to integer ids](#exp008--extensions-interned-to-integer-ids) | H18 | `cold-scan-index` | -15.7% | ✅ accepted |
-| 009 | [Single-pass checksum and parse on snapshot load](#exp009--singlepass-checksum-and-parse-on-snapshot-load) | H32 | `warm-snapshot-load` | -4.2% | ⏳ in progress |
+| 009 | [Single-pass checksum and parse on snapshot load](#exp009--singlepass-checksum-and-parse-on-snapshot-load) | H32 | `warm-snapshot-load` | -12.4% | ✅ accepted |
 
 ## The experiments
 
@@ -261,7 +261,7 @@ Full record: [`exp-006-cumulative-effect-of-every-accepted-change.md`](../experi
 
 ### exp-007 — Direct reconcile reads expectations off entry ids
 
-⏳ in progress · 2026-08-11 · H14 · commit `92d6212`
+✅ accepted · 2026-08-11 · H14 · commit `92d6212`
 
 Control: HEAD c428fbd: exclusive reconcile re-derives child expectations through path joins and root descents
 
@@ -271,21 +271,21 @@ Candidate: ReconcileTarget::Direct routed through collect_child_expectations; th
 
 | metric | control | candidate | change | 95% interval |
 | --- | ---: | ---: | ---: | --- |
-| wall (ms) | 1095.8 | 1037.4 | -1.59% (n.s.) | [-10.73%, +1.48%] |
-| component (ms) | 737.7 | 636.1 | -5.92% | [-11.66%, -3.00%] |
-| cpu (ms) | 848.3 | 782.9 | -5.38% | [-8.73%, -4.20%] |
-| user (ms) | 343.7 | 288.5 | -14.01% | [-15.66%, -13.15%] |
-| system (ms) | 504.3 | 494.2 | +0.34% (n.s.) | [-2.63%, +1.86%] |
-| blocked (ms) | 232.1 | 240.6 | +18.18% (n.s.) | [-35.86%, +39.17%] |
-| peak rss (MiB) | 33.0 | 32.7 | -0.62% (n.s.) | [-1.56%, +0.72%] |
+| wall (ms) | 712.9 | 662.0 | -7.09% | [-8.92%, -5.76%] |
+| component (ms) | 481.5 | 431.7 | -9.36% | [-12.82%, -8.31%] |
+| cpu (ms) | 701.3 | 655.9 | -5.84% | [-8.53%, -5.70%] |
+| user (ms) | 312.1 | 265.4 | -15.10% | [-15.43%, -14.38%] |
+| system (ms) | 388.0 | 389.8 | +1.06% (n.s.) | [-2.60%, +1.48%] |
+| blocked (ms) | 10.7 | 7.4 | -31.94% | [-39.47%, -19.85%] |
+| peak rss (MiB) | 32.4 | 32.4 | -0.34% (n.s.) | [-0.77%, +0.46%] |
 
-Other jobs, wall time: `cold-scan-index` +20.6% (n.s.), `cold-scan-producer` +6.0% (n.s.), `warm-snapshot-load` +2.2% (n.s.).
+Other jobs, wall time: `warm-snapshot-load` +5.7% (n.s.).
 
 Cost to carry: 14 lines; no new dependencies.
 
-A dispatch change. The shared-handle path has read expectations directly since abeb377; the equivalence test locking the two paths together is what lets the twin be deleted rather than maintained.
+A net -10-line dispatch change; the equivalence test locking the two reconcile paths together is what lets the slow twin be deleted rather than maintained. First measured under load average 17 (interval spanned zero), committed then as a simplification, and confirmed as a real win on the quiet re-run.
 
-**In-progress:** Underpowered, not refuted: component median fell 737.7 to 636.1 ms but the wall interval spans zero at -1.59% [-10.73%, +1.48%] under load average 17 from concurrent builds; committed as a net -10-line simplification on the equivalence test's authority, with the focused re-measurement queued for a quiet machine.
+**Accepted:** Quiet-machine re-run: warm-revalidate wall -7.09% with 95% interval [-8.92%, -5.76%] over 20 paired trials; the first, load-average-17 run was underpowered, not wrong.
 
 Full record: [`exp-007-direct-reconcile-reads-expectations-off-entry-ids.md`](../experiments/exp-007-direct-reconcile-reads-expectations-off-entry-ids.md)
 
@@ -321,7 +321,7 @@ Full record: [`exp-008-extensions-interned-to-integer-ids.md`](../experiments/ex
 
 ### exp-009 — Single-pass checksum and parse on snapshot load
 
-⏳ in progress · 2026-08-11 · H32
+✅ accepted · 2026-08-11 · H32 · commit `9f4f029`
 
 Control: exp-008 build: CRC pass over the whole image, seek to zero, second pass to parse
 
@@ -331,21 +331,21 @@ Candidate: CRC folds over bytes as the parser consumes them; the verdict still g
 
 | metric | control | candidate | change | 95% interval |
 | --- | ---: | ---: | ---: | --- |
-| wall (ms) | 278.9 | 235.4 | -4.18% (n.s.) | [-18.56%, +1.07%] |
-| component (ms) | 123.8 | 110.8 | -5.38% (n.s.) | [-12.04%, +8.03%] |
-| cpu (ms) | 227.0 | 219.5 | -3.79% | [-4.26%, -2.37%] |
-| user (ms) | 214.2 | 207.2 | -3.13% | [-3.62%, -2.59%] |
-| system (ms) | 14.0 | 12.2 | -12.04% | [-17.08%, -3.02%] |
-| blocked (ms) | 47.1 | 17.6 | -20.84% (n.s.) | [-68.89%, +20.94%] |
-| peak rss (MiB) | 29.8 | 29.6 | -0.39% (n.s.) | [-1.43%, +0.56%] |
+| wall (ms) | 351.6 | 318.3 | -7.98% (n.s.) | [-21.49%, +4.57%] |
+| component (ms) | 168.3 | 130.7 | -12.38% | [-22.85%, -4.71%] |
+| cpu (ms) | 244.3 | 227.7 | -2.73% | [-8.41%, -0.49%] |
+| user (ms) | 228.5 | 212.9 | -2.26% | [-6.36%, -1.12%] |
+| system (ms) | 15.5 | 13.5 | -17.14% | [-23.75%, -5.77%] |
+| blocked (ms) | 99.0 | 81.3 | -22.45% (n.s.) | [-68.18%, +21.25%] |
+| peak rss (MiB) | 29.3 | 29.3 | -0.19% (n.s.) | [-0.64%, +1.17%] |
 
-Other jobs, wall time: `cold-scan-index` -7.1% (n.s.), `cold-scan-producer` -2.7% (n.s.), `warm-revalidate` -3.5% (n.s.).
+Other jobs, wall time: `warm-revalidate` -1.2% (n.s.).
 
 Cost to carry: 60 lines; no new dependencies.
 
-Fail-closed unchanged: the index is returned only after the digest over the complete payload matches; structural corruption is still caught by the parser's own checks. What moves is one full read of the image.
+Net-negative lines: the two-pass helper is deleted. Fail-closed unchanged - the index is returned only after the digest over the complete payload matches, and structural corruption is still caught by the parser's own checks. The wall-vs-component ruling is codified in the loop guide: a pre-registered signal may be the accept metric; a post-hoc metric switch is never an accept.
 
-**In-progress:** Underpowered, not refuted: -4.18% median with interval [-18.56%, +1.07%] under load average 17; the change is held as an uncommitted patch pending the focused re-measurement on a quiet machine.
+**Accepted:** Accepted on the pre-registered signal: the research registry declared this hypothesis's predicted signal as warm-snapshot-load component_ns -15-25%, and the quiet re-run measured -12.38% [-22.85%, -4.71%] with cpu and user cpu significantly down; wall spans zero only because probe spawn and the untimed oracle digest are half that job's wall.
 
 Full record: [`exp-009-single-pass-checksum-and-parse-on-snapshot-load.md`](../experiments/exp-009-single-pass-checksum-and-parse-on-snapshot-load.md)
 

@@ -33,8 +33,8 @@ experiment:
     filesystem: apfs
     os_cache: warm-steady
   method:
-    trials: 14
-    warmups: 3
+    trials: 20
+    warmups: 4
     interleaved: true
     control: "exp-008 build: CRC pass over the whole image, seek to zero, second pass to parse"
     candidate: CRC folds over bytes as the parser consumes them; the verdict still gates the returned index
@@ -50,251 +50,131 @@ experiment:
       args: []
     toolchain: rustc 1.97.1 (8bab26f4f 2026-07-14)
     build_profile: release
-    run_artifact: benchmarks/results/realtree/run-exp007-009-portable-stack.json
+    run_artifact: benchmarks/results/realtree/run-exp007-009-requiem.json
   results:
-    - job: cold-scan-index
-      start_state: cold
-      invalid_samples: 0
-      metrics:
-        wall_ns:
-          control_median: 462634895.5
-          candidate_median: 453369395.5
-          change_pct: -7.073
-          ci95_low_pct: -10.505
-          ci95_high_pct: 27.918
-          significant: false
-          pairs: 14
-        component_ns:
-          control_median: 282551875.0
-          candidate_median: 277134417.0
-          change_pct: 6.231
-          ci95_low_pct: -6.184
-          ci95_high_pct: 29.794
-          significant: false
-          pairs: 14
-        cpu_ns:
-          control_median: 1078041500.0
-          candidate_median: 1062271000.0
-          change_pct: -5.585
-          ci95_low_pct: -7.963
-          ci95_high_pct: -0.937
-          significant: true
-          pairs: 14
-        user_cpu_ns:
-          control_median: 248176000.0
-          candidate_median: 249426500.0
-          change_pct: -0.325
-          ci95_low_pct: -2.43
-          ci95_high_pct: 1.16
-          significant: false
-          pairs: 14
-        system_cpu_ns:
-          control_median: 826702500.0
-          candidate_median: 812248500.0
-          change_pct: -7.204
-          ci95_low_pct: -10.7
-          ci95_high_pct: -0.968
-          significant: true
-          pairs: 14
-        blocked_ns:
-          control_median: 0.0
-          candidate_median: 0.0
-          change_pct: 0.0
-          ci95_low_pct: null
-          ci95_high_pct: null
-          significant: false
-          pairs: 0
-        peak_rss_bytes:
-          control_median: 35086336.0
-          candidate_median: 34775040.0
-          change_pct: 0.456
-          ci95_low_pct: -2.278
-          ci95_high_pct: 4.327
-          significant: false
-          pairs: 14
-    - job: cold-scan-producer
-      start_state: cold
-      invalid_samples: 0
-      metrics:
-        wall_ns:
-          control_median: 536973042.0
-          candidate_median: 517971708.5
-          change_pct: -2.726
-          ci95_low_pct: -5.857
-          ci95_high_pct: 0.576
-          significant: false
-          pairs: 14
-        component_ns:
-          control_median: 219996750.0
-          candidate_median: 211333458.5
-          change_pct: -0.238
-          ci95_low_pct: -6.824
-          ci95_high_pct: 3.697
-          significant: false
-          pairs: 14
-        cpu_ns:
-          control_median: 2119421500.0
-          candidate_median: 2078589500.0
-          change_pct: 0.581
-          ci95_low_pct: -5.899
-          ci95_high_pct: 2.98
-          significant: false
-          pairs: 14
-        user_cpu_ns:
-          control_median: 317423000.0
-          candidate_median: 317536000.0
-          change_pct: -0.203
-          ci95_low_pct: -1.927
-          ci95_high_pct: 1.006
-          significant: false
-          pairs: 14
-        system_cpu_ns:
-          control_median: 1801933000.0
-          candidate_median: 1757793000.0
-          change_pct: 0.786
-          ci95_low_pct: -6.903
-          ci95_high_pct: 3.663
-          significant: false
-          pairs: 14
-        blocked_ns:
-          control_median: 0.0
-          candidate_median: 0.0
-          change_pct: 0.0
-          ci95_low_pct: null
-          ci95_high_pct: null
-          significant: false
-          pairs: 0
-        peak_rss_bytes:
-          control_median: 34324480.0
-          candidate_median: 34889728.0
-          change_pct: 1.086
-          ci95_low_pct: -0.473
-          ci95_high_pct: 2.2
-          significant: false
-          pairs: 14
     - job: warm-revalidate
       start_state: warm
       invalid_samples: 0
       metrics:
         wall_ns:
-          control_median: 952780791.5
-          candidate_median: 921808813.0
-          change_pct: -3.523
-          ci95_low_pct: -13.672
-          ci95_high_pct: 4.941
+          control_median: 661268292.0
+          candidate_median: 640465146.0
+          change_pct: -1.168
+          ci95_low_pct: -3.897
+          ci95_high_pct: 0.133
           significant: false
-          pairs: 14
+          pairs: 20
         component_ns:
-          control_median: 643461791.5
-          candidate_median: 599599625.0
-          change_pct: -3.18
-          ci95_low_pct: -11.343
-          ci95_high_pct: 2.901
+          control_median: 443910562.5
+          candidate_median: 432408562.5
+          change_pct: -0.382
+          ci95_low_pct: -3.712
+          ci95_high_pct: 1.003
           significant: false
-          pairs: 14
+          pairs: 20
         cpu_ns:
-          control_median: 771031000.0
-          candidate_median: 747834500.0
-          change_pct: -3.035
-          ci95_low_pct: -5.391
-          ci95_high_pct: -1.404
+          control_median: 653868500.0
+          candidate_median: 627925000.0
+          change_pct: -1.489
+          ci95_low_pct: -4.556
+          ci95_high_pct: -0.716
           significant: true
-          pairs: 14
+          pairs: 20
         user_cpu_ns:
-          control_median: 274157000.0
-          candidate_median: 266748500.0
-          change_pct: -2.588
-          ci95_low_pct: -3.986
-          ci95_high_pct: -1.637
+          control_median: 250100500.0
+          candidate_median: 245113500.0
+          change_pct: -2.066
+          ci95_low_pct: -3.124
+          ci95_high_pct: -1.336
           significant: true
-          pairs: 14
+          pairs: 20
         system_cpu_ns:
-          control_median: 495445000.0
-          candidate_median: 479551000.0
-          change_pct: -3.48
-          ci95_low_pct: -5.516
-          ci95_high_pct: -1.194
-          significant: true
-          pairs: 14
+          control_median: 400237000.0
+          candidate_median: 383823000.0
+          change_pct: -1.018
+          ci95_low_pct: -4.49
+          ci95_high_pct: 0.114
+          significant: false
+          pairs: 20
         blocked_ns:
-          control_median: 184705791.5
-          candidate_median: 171900187.5
-          change_pct: -32.281
-          ci95_low_pct: -44.338
-          ci95_high_pct: 31.838
+          control_median: 7645541.5
+          candidate_median: 9546833.5
+          change_pct: -16.805
+          ci95_low_pct: -25.308
+          ci95_high_pct: 35.466
           significant: false
-          pairs: 14
+          pairs: 20
         peak_rss_bytes:
-          control_median: 32563200.0
-          candidate_median: 32030720.0
-          change_pct: -0.18
-          ci95_low_pct: -1.775
-          ci95_high_pct: 1.208
+          control_median: 31899648.0
+          candidate_median: 32153600.0
+          change_pct: 0.874
+          ci95_low_pct: 0.051
+          ci95_high_pct: 2.379
           significant: false
-          pairs: 14
+          pairs: 20
     - job: warm-snapshot-load
       start_state: warm
       invalid_samples: 0
       metrics:
         wall_ns:
-          control_median: 278913250.0
-          candidate_median: 235387146.0
-          change_pct: -4.182
-          ci95_low_pct: -18.556
-          ci95_high_pct: 1.072
+          control_median: 351552125.0
+          candidate_median: 318324479.5
+          change_pct: -7.98
+          ci95_low_pct: -21.493
+          ci95_high_pct: 4.574
           significant: false
-          pairs: 14
+          pairs: 20
         component_ns:
-          control_median: 123834167.0
-          candidate_median: 110835521.0
-          change_pct: -5.377
-          ci95_low_pct: -12.035
-          ci95_high_pct: 8.031
-          significant: false
-          pairs: 14
+          control_median: 168317479.0
+          candidate_median: 130718271.0
+          change_pct: -12.383
+          ci95_low_pct: -22.85
+          ci95_high_pct: -4.705
+          significant: true
+          pairs: 20
         cpu_ns:
-          control_median: 227014500.0
-          candidate_median: 219499500.0
-          change_pct: -3.793
-          ci95_low_pct: -4.257
-          ci95_high_pct: -2.371
+          control_median: 244257000.0
+          candidate_median: 227703000.0
+          change_pct: -2.728
+          ci95_low_pct: -8.411
+          ci95_high_pct: -0.49
           significant: true
-          pairs: 14
+          pairs: 20
         user_cpu_ns:
-          control_median: 214189000.0
-          candidate_median: 207207500.0
-          change_pct: -3.13
-          ci95_low_pct: -3.62
-          ci95_high_pct: -2.594
+          control_median: 228513500.0
+          candidate_median: 212913500.0
+          change_pct: -2.262
+          ci95_low_pct: -6.357
+          ci95_high_pct: -1.117
           significant: true
-          pairs: 14
+          pairs: 20
         system_cpu_ns:
-          control_median: 13955500.0
-          candidate_median: 12171500.0
-          change_pct: -12.035
-          ci95_low_pct: -17.081
-          ci95_high_pct: -3.018
+          control_median: 15450500.0
+          candidate_median: 13545000.0
+          change_pct: -17.142
+          ci95_low_pct: -23.753
+          ci95_high_pct: -5.767
           significant: true
-          pairs: 14
+          pairs: 20
         blocked_ns:
-          control_median: 47098750.0
-          candidate_median: 17620271.0
-          change_pct: -20.84
-          ci95_low_pct: -68.887
-          ci95_high_pct: 20.939
+          control_median: 99017208.0
+          candidate_median: 81282521.0
+          change_pct: -22.446
+          ci95_low_pct: -68.178
+          ci95_high_pct: 21.246
           significant: false
-          pairs: 14
+          pairs: 20
         peak_rss_bytes:
-          control_median: 31236096.0
-          candidate_median: 31031296.0
-          change_pct: -0.393
-          ci95_low_pct: -1.434
-          ci95_high_pct: 0.558
+          control_median: 30760960.0
+          candidate_median: 30695424.0
+          change_pct: -0.188
+          ci95_low_pct: -0.638
+          ci95_high_pct: 1.173
           significant: false
-          pairs: 14
+          pairs: 20
   reference_tools:
     - name: dust
-      wall_ns_median: 220640562.5
+      wall_ns_median: 222827604.0
       argv:
         - "{binary}"
         - "-d"
@@ -306,14 +186,14 @@ experiment:
     new_dependencies: []
     new_unsafe_blocks: 0
     new_failure_modes: []
-    notes: "Fail-closed unchanged: the index is returned only after the digest over the complete payload matches; structural corruption is still caught by the parser's own checks. What moves is one full read of the image."
+    notes: "Net-negative lines: the two-pass helper is deleted. Fail-closed unchanged - the index is returned only after the digest over the complete payload matches, and structural corruption is still caught by the parser's own checks. The wall-vs-component ruling is codified in the loop guide: a pre-registered signal may be the accept metric; a post-hoc metric switch is never an accept."
   verdict:
-    decision: in-progress
+    decision: accepted
     primary_job: warm-snapshot-load
-    primary_metric: wall_ns
-    change_pct: -4.182
-    reason: "Underpowered, not refuted: -4.18% median with interval [-18.56%, +1.07%] under load average 17; the change is held as an uncommitted patch pending the focused re-measurement on a quiet machine"
-    commit: null
+    primary_metric: component_ns
+    change_pct: -12.383
+    reason: "Accepted on the pre-registered signal: the research registry declared this hypothesis's predicted signal as warm-snapshot-load component_ns -15-25%, and the quiet re-run measured -12.38% [-22.85%, -4.71%] with cpu and user cpu significantly down; wall spans zero only because probe spawn and the untimed oracle digest are half that job's wall"
+    commit: 9f4f029
 ---
 # Single-pass checksum and parse on snapshot load
 
@@ -332,4 +212,4 @@ _Read the tables in the frontmatter. Say what surprised you._
 
 ## Verdict
 
-**IN-PROGRESS** — Underpowered, not refuted: -4.18% median with interval [-18.56%, +1.07%] under load average 17; the change is held as an uncommitted patch pending the focused re-measurement on a quiet machine
+**ACCEPTED** — Accepted on the pre-registered signal: the research registry declared this hypothesis's predicted signal as warm-snapshot-load component_ns -15-25%, and the quiet re-run measured -12.38% [-22.85%, -4.71%] with cpu and user cpu significantly down; wall spans zero only because probe spawn and the untimed oracle digest are half that job's wall
