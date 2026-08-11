@@ -302,6 +302,11 @@ def run(
         "tree_after_digest": after["engine_digest"],
         "tree_mutated_during_run": mutation,
         "baseline_drift": drift,
+        # The order variants were declared in, which is what makes the first one the
+        # control. `variants` is a mapping, and the run document is written with sorted
+        # keys so it diffs cleanly, so the declaration order has to be recorded
+        # separately or a reader recovers it alphabetically and inverts the comparison.
+        "variant_order": [variant.name for variant in variants],
         "variants": {variant.name: variant.identity() for variant in variants},
         "jobs": {
             job.id: {
@@ -851,6 +856,7 @@ def host_facts() -> Dict[str, Any]:
         "python": platform.python_version(),
         "system": platform.system(),
         "release": platform.release(),
+        "toolchain": _toolchain(),
     }
     if sys.platform == "darwin":
         facts["cpu_model"] = _sysctl("machdep.cpu.brand_string")
@@ -859,6 +865,17 @@ def host_facts() -> Dict[str, Any]:
         facts["efficiency_cores"] = _sysctl_int("hw.perflevel1.logicalcpu")
         facts["filesystem"] = _darwin_filesystem()
     return facts
+
+
+def _toolchain() -> str:
+    """The compiler that built the binaries, which changes the numbers as much as the code does."""
+    binary = shutil.which("rustc")
+    if binary is None:
+        return ""
+    completed = subprocess.run([binary, "--version"], capture_output=True)
+    if completed.returncode != 0:
+        return ""
+    return completed.stdout.decode("utf-8", errors="replace").strip()
 
 
 def _sysctl(name: str) -> Optional[str]:

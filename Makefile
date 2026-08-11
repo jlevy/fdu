@@ -30,6 +30,7 @@ help:
 	@echo "make perf-profile   Attribute time to functions on a symbol-bearing build"
 	@echo "make perf-compare   Measure a candidate against CONTROL, interleaved and paired"
 	@echo "make perf-test      Test the real-tree harness itself"
+	@echo "make perf-ledger    Regenerate the experiment ledger from its artifacts"
 
 build:
 	$(CARGO) build --locked -p fdu --all-features
@@ -131,7 +132,7 @@ PERF_RELEASE := target/release/examples/perf_probe
 PERF_PROFILING := target/profiling/examples/perf_probe
 PERF_RUN := uv run --no-project python -m benchmarks.realtree
 
-.PHONY: perf-probe-release perf-probe-profiling perf-baseline perf-profile perf-compare perf-test
+.PHONY: perf-probe-release perf-probe-profiling perf-baseline perf-profile perf-compare perf-test perf-ledger perf-schema perf-schema-check
 
 perf-probe-release:
 	$(CARGO) build --locked --release -p fdu --example perf_probe --no-default-features
@@ -162,6 +163,25 @@ perf-compare: perf-probe-release
 
 perf-test:
 	uv run --no-project python -m unittest discover -s benchmarks/realtree/tests -p 'test_*.py'
+
+# Regenerate the ledger from the committed experiment artifacts. Every number in it
+# is read back out of a validated artifact, so the report cannot drift from the record.
+perf-ledger:
+	uv run --no-project python -m benchmarks.realtree.summary
+
+# The experiment contract is compiled from the Pydantic model; --check fails on drift.
+SOFTSCHEMA ?= uvx softschema@latest
+SCHEMA_QUIET := python3 -c "import json,sys; d=json.load(sys.stdin); print('schema', d['out_path'], 'drift:', d['drift'])"
+
+perf-schema:
+	@PYTHONPATH=. $(SOFTSCHEMA) compile benchmarks.realtree.experiment:Experiment \
+		--out docs/project/experiments/experiment.schema.yaml \
+		--contract fdu.performance:Experiment/v1 | $(SCHEMA_QUIET)
+
+perf-schema-check:
+	@PYTHONPATH=. $(SOFTSCHEMA) compile benchmarks.realtree.experiment:Experiment \
+		--out docs/project/experiments/experiment.schema.yaml \
+		--contract fdu.performance:Experiment/v1 --check | $(SCHEMA_QUIET)
 
 clean:
 	$(CARGO) clean
