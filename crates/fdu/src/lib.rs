@@ -52,6 +52,7 @@
 
 pub mod classify;
 mod index;
+pub mod query;
 pub mod scan;
 pub mod snapshot;
 mod types;
