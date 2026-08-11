@@ -34,7 +34,9 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::index::{EntryId, Index, IndexHandle};
-use crate::types::{Attrs, EntryKind, Error, Freshness, Observation, Op, Result, ScanScope};
+use crate::types::{
+    Attrs, EntryKind, Error, Freshness, Observation, Op, Result, ScanScope, Source,
+};
 
 /// Leading magic. Distinguishes an fdu snapshot from any other file that lands here.
 const MAGIC: &[u8; 8] = b"FDUSNAP\x00";
@@ -255,8 +257,19 @@ fn load_with_size_limit(path: &Path, max_snapshot_bytes: u64) -> Result<Option<I
     // corruption: the parser may do work before the mismatch is known, and the
     // result is then discarded. Structural corruption is caught by the parser's own
     // bounds and consistency checks exactly as before, fail-closed either way.
+    // The tree was captured shortly before this file was written, so the file's own
+    // mtime is the closest "as of" available without a format change. It slightly
+    // overstates freshness — the walk began earlier — which is why format v3 should
+    // carry the true capture instant and this should read that instead.
+    let captured_at_ns = file
+        .metadata()
+        .ok()
+        .and_then(|metadata| metadata.modified().ok())
+        .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+        .and_then(|since| i64::try_from(since.as_nanos()).ok())
+        .unwrap_or(0);
     let mut reader = Crc32cReader::new(BufReader::new(file.take(payload_len)));
-    let outcome = parse_stream(&mut reader, payload_len);
+    let outcome = parse_stream(&mut reader, payload_len, captured_at_ns);
     match outcome {
         Ok(index) => {
             // A successful parse consumed every payload byte (the trailing-byte check
@@ -330,7 +343,11 @@ const fn make_crc32c_table() -> [u32; 256] {
 
 /// Parse a bounded payload. Records are applied one at a time so bootstrap paths are not
 /// retained in a second full-tree allocation.
-fn parse_stream(reader: &mut impl Read, payload_len: u64) -> ParseResult<Index> {
+fn parse_stream(
+    reader: &mut impl Read,
+    payload_len: u64,
+    captured_at_ns: i64,
+) -> ParseResult<Index> {
     if read_array::<_, 8>(reader)? != *MAGIC {
         return Err(ParseError::Invalid);
     }
@@ -354,6 +371,11 @@ fn parse_stream(reader: &mut impl Read, payload_len: u64) -> ParseResult<Index> 
     }
 
     let mut index = Index::new_with_scope(&root_path, scope);
+    // Everything this loader inserts describes the tree as the snapshot found it, not
+    // as this process has seen it. Stamping the entries `Cached` is what lets a
+    // consumer paint them immediately and label them honestly; without it a loaded
+    // index claims to be fresh when nothing has been checked since the file was read.
+    index.set_applying_source(Source::Cached, captured_at_ns);
     let mut ids: Vec<EntryId> = Vec::new();
     let mut parent_path_memo: Option<(u32, PathBuf)> = None;
     for slot in 0..count {
@@ -425,6 +447,8 @@ fn parse_stream(reader: &mut impl Read, payload_len: u64) -> ParseResult<Index> 
     if reader.read(&mut extra).map_err(ParseError::Io)? != 0 {
         return Err(ParseError::Invalid);
     }
+    // Anything applied after the load is this process observing the filesystem.
+    index.set_applying_source(Source::Scanned, 0);
     Ok(index)
 }
 
@@ -715,6 +739,34 @@ mod tests {
     #[test]
     fn crc32c_matches_the_standard_check_value() {
         assert_eq!(crc32c(b"123456789"), 0xe306_9283);
+    }
+
+    #[test]
+    fn a_loaded_index_reports_cached_provenance_not_fresh() {
+        // The gap that motivated the provenance model. A snapshot is complete when it
+        // is written, so a loaded index used to claim `Fresh` — true of when the file
+        // was made, and exactly backwards for a consumer painting on load, which needs
+        // to know nothing has been checked since.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("snapshot.fdu");
+        let original = sample_index();
+        save(&original, &path).expect("save");
+
+        let restored = load(&path).expect("load").expect("snapshot present");
+        let provenance =
+            restored.provenance(Path::new("src/main.rs")).expect("the loaded entry is present");
+        assert_eq!(provenance.source, crate::Source::Cached);
+        assert!(!provenance.is_verified(), "nothing has been stat'd since the load");
+        assert!(
+            provenance.observed_at_ns > 0,
+            "a cached value must say as of when, or a UI cannot label it"
+        );
+
+        // A freshly scanned index is the contrasting case.
+        assert_eq!(
+            original.provenance(Path::new("src/main.rs")).expect("present").source,
+            crate::Source::Scanned
+        );
     }
 
     #[test]

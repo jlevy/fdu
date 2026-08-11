@@ -146,6 +146,99 @@ pub struct ScanScope {
     pub reducers_fingerprint: u64,
 }
 
+/// Where a value came from, so a consumer can trade speed for certainty knowingly.
+///
+/// Ordered weakest-last: comparing two sources yields the one to trust less, which is
+/// what a roll-up needs when combining a subtree.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Default)]
+pub enum Source {
+    /// Observed from the filesystem by this process.
+    #[default]
+    Scanned,
+    /// Loaded from a snapshot and re-verified by a fresh stat this session.
+    Revalidated,
+    /// Loaded from a snapshot; a change journal reported nothing touching this subtree
+    /// since the cursor.
+    ///
+    /// Deliberately weaker than [`Self::Revalidated`]: a journal can omit history
+    /// without saying so, which is why journal-assisted revalidation pairs this with a
+    /// periodic full sweep rather than treating it as proof.
+    JournalConfirmed,
+    /// Loaded from a snapshot and not re-checked since.
+    Cached,
+}
+
+/// How settled a value is.
+///
+/// An enum rather than a boolean because "not complete" already means more than one
+/// thing a consumer renders differently, and ordered worst-last so roll-ups combine by
+/// taking the maximum.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Default)]
+#[non_exhaustive]
+pub enum Status {
+    /// The value accounts for everything beneath this path.
+    #[default]
+    Complete,
+    /// A walk beneath this path is still running, so the value is a lower bound that
+    /// can only grow.
+    Partial,
+}
+
+/// Everything a consumer needs to decide how far to trust one value.
+///
+/// A *view* type, built on demand rather than stored: the index keeps one [`Source`]
+/// byte per entry and its observation timestamps once, because on a tree of millions
+/// of entries the timestamps are shared by nearly all of them and a per-entry struct
+/// would cost more memory than the information is worth.
+///
+/// The three facts are independent on purpose. A [`Status::Partial`] value is monotone
+/// and reads as "at least 3.2 GB, counting"; a [`Status::Complete`] but
+/// [`Source::Cached`] value is a point estimate that may move either way and reads as
+/// "about 3.2 GB, as of two minutes ago". Collapsing them would make a shrinking
+/// number look like a defect.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Provenance {
+    /// Where the value came from.
+    pub source: Source,
+    /// When the underlying filesystem observation was made, in nanoseconds since the
+    /// Unix epoch. For [`Source::Cached`] this is when the snapshot captured it — the
+    /// "as of" a consumer displays. Zero when unknown.
+    pub observed_at_ns: i64,
+    /// How settled the value is.
+    pub status: Status,
+}
+
+impl Provenance {
+    /// Freshly observed by this process, complete.
+    pub const fn scanned(observed_at_ns: i64) -> Self {
+        Self { source: Source::Scanned, observed_at_ns, status: Status::Complete }
+    }
+
+    /// Combine with another value's provenance, taking the less trustworthy of each
+    /// fact.
+    ///
+    /// This is what makes a directory only as trustworthy as its least trustworthy
+    /// descendant: the weakest source, the oldest observation, and the worst status.
+    #[must_use]
+    pub fn combine(self, other: Self) -> Self {
+        Self {
+            source: self.source.max(other.source),
+            observed_at_ns: match (self.observed_at_ns, other.observed_at_ns) {
+                // Zero means unknown rather than 1970, so it must not win a min().
+                (0, other) => other,
+                (mine, 0) => mine,
+                (mine, other) => mine.min(other),
+            },
+            status: self.status.max(other.status),
+        }
+    }
+
+    /// Whether this value was checked against the filesystem during this session.
+    pub const fn is_verified(self) -> bool {
+        matches!(self.source, Source::Scanned | Source::Revalidated)
+    }
+}
+
 /// Trust state for an index or queried subtree.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum Freshness {
@@ -524,5 +617,52 @@ mod tests {
         // A ctime bump is, even when mtime was rolled back to look unchanged.
         let touched = Attrs { ctime_ns: 9, ..base };
         assert_ne!(base.fingerprint(), touched.fingerprint());
+    }
+}
+
+#[cfg(test)]
+mod provenance_tests {
+    use super::*;
+
+    #[test]
+    fn sources_order_from_most_to_least_trustworthy() {
+        assert!(Source::Scanned < Source::Revalidated);
+        assert!(Source::Revalidated < Source::JournalConfirmed);
+        assert!(Source::JournalConfirmed < Source::Cached);
+    }
+
+    #[test]
+    fn combining_takes_the_least_trustworthy_of_each_fact() {
+        let verified =
+            Provenance { source: Source::Scanned, observed_at_ns: 900, status: Status::Complete };
+        let stale =
+            Provenance { source: Source::Cached, observed_at_ns: 100, status: Status::Partial };
+        let combined = verified.combine(stale);
+        assert_eq!(combined.source, Source::Cached, "weakest source wins");
+        assert_eq!(combined.observed_at_ns, 100, "oldest observation wins");
+        assert_eq!(combined.status, Status::Partial, "worst status wins");
+        assert_eq!(combined, stale.combine(verified), "combination is commutative");
+    }
+
+    #[test]
+    fn an_unknown_timestamp_never_wins_the_oldest_comparison() {
+        // Zero means "unknown", not 1970; treating it as oldest would report every
+        // combination as ancient.
+        let known = Provenance::scanned(500);
+        let unknown = Provenance { observed_at_ns: 0, ..Provenance::scanned(0) };
+        assert_eq!(known.combine(unknown).observed_at_ns, 500);
+        assert_eq!(unknown.combine(known).observed_at_ns, 500);
+    }
+
+    #[test]
+    fn only_this_session_counts_as_verified() {
+        assert!(Provenance::scanned(1).is_verified());
+        assert!(Provenance { source: Source::Revalidated, ..Provenance::scanned(1) }.is_verified());
+        // The journal can omit history without saying so, so its word is not a check.
+        assert!(
+            !Provenance { source: Source::JournalConfirmed, ..Provenance::scanned(1) }
+                .is_verified()
+        );
+        assert!(!Provenance { source: Source::Cached, ..Provenance::scanned(1) }.is_verified());
     }
 }

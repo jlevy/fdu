@@ -257,6 +257,35 @@ only fills. A complete `Cached` value is a point estimate that may move in eithe
 direction and reads as “~3.2 GB, as of 2 minutes ago”.
 Collapsed into one “not sure yet” state, a shrinking number would look like a bug.
 
+#### Where provenance is stored, and why not per entry
+
+The obvious implementation — a `Provenance` struct on every `Entry` — is the wrong one,
+and the reason is the memory budget.
+Entries already cost ~493 B each (measured: 2.65 GB for the 5.4M-entry home folder), the
+frontier research wants that near 50 B, and one of its standing items is *removing* the
+64-byte `RollUp` from the ~88% of entries that are files.
+Adding 24 bytes per entry to every one of 5.4M would push in the wrong direction for a
+value that is nearly always the same across millions of neighbours.
+
+So provenance is stored where it varies, and derived where it does not:
+
+- **Per entry: one byte.** A `Source` discriminant, which fits in existing padding
+  beside `kind` and `ext_id`. That is the only fact that genuinely differs entry to
+  entry — this file was re-stat’d, that one came from the snapshot and was not.
+- **Per index: the timestamps.** `observed_at` for a scanned entry is when this
+  session’s scan ran; for a cached entry it is when the snapshot was captured.
+  Both are properties of the *index*, held once, not of each of five million entries.
+  An entry’s `observed_at` is looked up from its source, not stored beside it.
+- **Per directory: the composed value.** `RollUp` gains the worst-source, oldest-
+  observation and worst-status of its subtree — three small fields on a struct that
+  exists once per directory, which is where the interesting composition lives anyway.
+  This is also why the file-side `RollUp` removal and this feature must be designed
+  together rather than in either order.
+
+`Provenance` is therefore a *view type*: constructed on demand by
+`Index::provenance(path)` and by the query layer, never a field.
+Consumers get the whole struct; the index stores a byte and two clocks.
+
 #### Provenance rolls up, and that is nearly free
 
 A directory’s total is only as trustworthy as its least trustworthy descendant, so all

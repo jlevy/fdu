@@ -38,7 +38,7 @@ use std::sync::{Arc, RwLock};
 use crate::classify::derive_ext;
 use crate::types::{
     AppliedDelta, Attrs, Clock, EntryIdentity, EntryKind, Expectation, Freshness, InvalidateReason,
-    Observation, Op, PathExpectation, PathState, ScanScope,
+    Observation, Op, PathExpectation, PathState, Provenance, ScanScope, Source, Status,
 };
 
 /// Maximum number of effective operations retained for [`Index::since`].
@@ -169,6 +169,12 @@ struct Entry {
     /// for files without an extension. Precomputing it here is what lets
     /// `contribution` run without a string allocation or an interner borrow.
     ext_id: Option<ExtId>,
+    /// Where this entry's metadata came from.
+    ///
+    /// One byte, not a `Provenance` struct: the timestamps that complete the picture
+    /// are shared by nearly every entry in a tree, so they live once on the index
+    /// while only the source genuinely varies per entry. See `Index::provenance`.
+    source: Source,
     kind: EntryKind,
     attrs: Attrs,
     /// Populated for directories only.
@@ -268,6 +274,17 @@ pub struct Index {
     /// Oldest clock still represented in `journal`.
     journal_floor: Clock,
     pending_invalidations: Vec<(PathBuf, InvalidateReason)>,
+    /// Source recorded on entries that incoming deltas create or update.
+    ///
+    /// Producers do not carry provenance in the delta itself — an observation says
+    /// what it saw, not how much to trust it — so the consumer stamps it, and a
+    /// caller loading a snapshot sets this to `Cached` for the duration.
+    applying_source: Source,
+    /// When this session observed the filesystem, in nanoseconds since the epoch.
+    scanned_at_ns: i64,
+    /// When the snapshot this index was loaded from captured the tree. Zero when the
+    /// index was never loaded from one.
+    captured_at_ns: i64,
     /// Interner storage: id → name. Ids are indexes into this vector.
     ext_names: Vec<String>,
     /// Interner lookup: name → id.
@@ -486,6 +503,7 @@ impl Index {
             parent: None,
             name: OsString::new(),
             ext_id: None,
+            source: Source::Scanned,
             kind: EntryKind::Dir,
             attrs: Attrs::default(),
             children: BTreeMap::new(),
@@ -507,6 +525,9 @@ impl Index {
             pending_invalidations: Vec::new(),
             freshness_epoch: 0,
             freshness_marks: BTreeMap::new(),
+            applying_source: Source::Scanned,
+            scanned_at_ns: Self::now_unix_nanos(),
+            captured_at_ns: 0,
             ext_names: Vec::new(),
             ext_ids: BTreeMap::new(),
         }
@@ -975,6 +996,75 @@ impl Index {
         self.live -= 1;
     }
 
+    /// Wall-clock now, in nanoseconds since the epoch, or zero if the clock is before
+    /// it. Provenance timestamps are for display, so a nonsensical clock reads as
+    /// "unknown" rather than propagating an error through every constructor.
+    fn now_unix_nanos() -> i64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .ok()
+            .and_then(|since| i64::try_from(since.as_nanos()).ok())
+            .unwrap_or(0)
+    }
+
+    /// Provenance of one path: where its value came from, when, and how settled.
+    ///
+    /// Built on demand from the entry's stored source and the index's timestamps
+    /// rather than read from a field, because the timestamps are shared by nearly
+    /// every entry and storing them per entry would cost far more than the
+    /// information is worth. For a directory this reports the *composed* provenance
+    /// of its whole subtree, so a directory is only as trustworthy as its least
+    /// trustworthy descendant.
+    pub fn provenance(&self, path: &Path) -> Option<Provenance> {
+        let id = self.lookup(path)?;
+        Some(self.provenance_of(id))
+    }
+
+    fn provenance_of(&self, id: EntryId) -> Provenance {
+        let entry = self.entry(id);
+        Provenance {
+            source: entry.source,
+            observed_at_ns: self.observed_at(entry.source),
+            status: self.status_of(id),
+        }
+    }
+
+    /// Whether this path's totals account for everything beneath it.
+    ///
+    /// Derived from the freshness marks rather than stored: an incomplete scan or a
+    /// reconciliation in progress both leave a value that can still grow.
+    fn status_of(&self, id: EntryId) -> Status {
+        let Some(path) = self.path_of(id) else {
+            return Status::Complete;
+        };
+        match self.freshness_at(&path) {
+            Freshness::Fresh => Status::Complete,
+            Freshness::Partial | Freshness::Reconciling | Freshness::Stale => Status::Partial,
+        }
+    }
+
+    /// When an entry with this source was observed.
+    const fn observed_at(&self, source: Source) -> i64 {
+        match source {
+            Source::Cached | Source::JournalConfirmed => self.captured_at_ns,
+            Source::Scanned | Source::Revalidated => self.scanned_at_ns,
+        }
+    }
+
+    /// Stamp deltas applied from here on with `source`, restoring the previous value
+    /// when the returned guard value is passed back.
+    ///
+    /// Used by snapshot loading, which is replaying observations that describe a tree
+    /// as it was, not as this process has seen it.
+    pub(crate) fn set_applying_source(&mut self, source: Source, captured_at_ns: i64) -> Source {
+        let previous = self.applying_source;
+        self.applying_source = source;
+        if captured_at_ns != 0 {
+            self.captured_at_ns = captured_at_ns;
+        }
+        previous
+    }
+
     /// Intern an extension name, returning its stable id within this index.
     fn intern_ext(&mut self, name: &str) -> ExtId {
         if let Some(id) = self.ext_ids.get(name) {
@@ -1100,6 +1190,7 @@ impl Index {
                 parent: Some(current),
                 name: (*part).to_os_string(),
                 ext_id: None,
+                source: self.applying_source,
                 kind: EntryKind::Dir,
                 attrs: Attrs::default(),
                 children: BTreeMap::new(),
@@ -1184,6 +1275,7 @@ impl Index {
             parent: Some(parent),
             name: (*name).to_os_string(),
             ext_id,
+            source: self.applying_source,
             kind,
             attrs,
             children: BTreeMap::new(),
