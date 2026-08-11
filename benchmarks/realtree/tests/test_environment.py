@@ -71,6 +71,7 @@ def _run(
     target: str,
     candidate_wall: int,
     candidate_cpu: int,
+    constant_rss: bool = False,
 ) -> dict:
     host = {
         "arch": "arm64" if system == "Darwin" else "x86_64",
@@ -117,7 +118,7 @@ def _run(
                         "user_cpu_ns": cpu,
                         "system_cpu_ns": 0,
                         "blocked_ns": None,
-                        "peak_rss_bytes": 1_000,
+                        "peak_rss_bytes": 1_000 if constant_rss else 1_000 + ordinal,
                         "major_faults": 0,
                         "minor_faults": 10,
                         "involuntary_context_switches": 0,
@@ -271,6 +272,34 @@ class DecisionMatrixTests(unittest.TestCase):
         )
         self.assertFalse(matrix.decision_consistent)
         self.assertTrue(matrix.all_cells_valid)
+
+    def test_constant_runwide_rss_fails_the_resource_gate_closed(self) -> None:
+        document = _run(
+            "linux-cell",
+            system="Linux",
+            filesystem="ext4",
+            target="x86_64-unknown-linux-gnu",
+            candidate_wall=500,
+            candidate_cpu=900,
+            constant_rss=True,
+        )
+        matrix = environment.build_matrix(
+            [_evidence(document, "linux.json")],
+            matrix_id="env-001",
+            control_variant="corrected",
+            candidate_variant="candidate",
+        )
+
+        cell = matrix.jobs[0].cells["linux-cell"]
+        rss = next(
+            gate
+            for gate in cell.resource_guardrails
+            if gate.metric == "peak_rss_bytes"
+        )
+        self.assertEqual(rss.status, "not-measured")
+        self.assertIn("process-launcher floor", rss.reason)
+        self.assertEqual(cell.overall_decision, "rejected")
+        self.assertIn("process-launcher floor", environment.render_matrix(matrix))
 
     def test_absolute_binary_hashes_and_targets_may_differ_by_cell(self) -> None:
         mac = _run(

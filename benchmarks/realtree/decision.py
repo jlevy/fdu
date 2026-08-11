@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Mapping
+from typing import Any, Dict, Mapping, Optional
 
 from benchmarks.realtree import ledger
 
@@ -14,12 +14,23 @@ def resource_guardrail(
     *,
     metric: str,
     maximum_regression_pct: float,
+    unmeasured_reason: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Evaluate whether a paired resource regression is established above a limit."""
     if metric not in RESOURCE_METRICS:
         raise ValueError(f"unsupported resource guardrail metric {metric!r}")
     if maximum_regression_pct < 0:
         raise ValueError(f"{metric} regression threshold must be non-negative")
+    if unmeasured_reason:
+        return {
+            "metric": metric,
+            "maximum_regression_pct": maximum_regression_pct,
+            "observed_change_pct": None,
+            "ci95_low_pct": None,
+            "ci95_high_pct": None,
+            "status": "not-measured",
+            "reason": unmeasured_reason,
+        }
     entry = (comparison.get("metrics") or {}).get(metric)
     if not entry or entry.get("median_change_pct") is None:
         return {
@@ -57,19 +68,23 @@ def evaluate(
     tree_mutated: bool = False,
     maximum_cpu_regression_pct: float = 10.0,
     maximum_rss_regression_pct: float = 10.0,
+    unmeasured_resources: Optional[Mapping[str, str]] = None,
 ) -> Dict[str, Any]:
     """Return the complete per-cell decision without granting a resource waiver."""
+    measurement_errors = unmeasured_resources or {}
     latency = ledger.verdict(comparison)
     guardrails = [
         resource_guardrail(
             comparison,
             metric="cpu_ns",
             maximum_regression_pct=maximum_cpu_regression_pct,
+            unmeasured_reason=measurement_errors.get("cpu_ns"),
         ),
         resource_guardrail(
             comparison,
             metric="peak_rss_bytes",
             maximum_regression_pct=maximum_rss_regression_pct,
+            unmeasured_reason=measurement_errors.get("peak_rss_bytes"),
         ),
     ]
     failed = [

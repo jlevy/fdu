@@ -1,0 +1,822 @@
+{
+  "all_cells_valid": true,
+  "cells": [
+    {
+      "arch": "arm64",
+      "candidate_target": "aarch64-apple-darwin",
+      "control_target": "aarch64-apple-darwin",
+      "cpu_model": "Apple M1 Pro",
+      "environment_fingerprint": "00546a4fb5ab2e02994f692ca6f71703ccbf0f20f4530336b33200be92ccfe33",
+      "evidence_grade": "local-uncontrolled",
+      "filesystem": "apfs",
+      "id": "local-macos-apfs-arm64",
+      "logical_cores": 10,
+      "memory_bytes": 34359738368,
+      "release": "25.5.0",
+      "run_artifact": "env-001-macos-apfs-run.json",
+      "run_artifact_sha256": "6c6c1c6896e3da3bdfbca048992fe06b2e56455ae7a3619de2298379ea41311d",
+      "runner_class": "local-uncontrolled",
+      "system": "Darwin",
+      "toolchain": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+      "tree_engine_digest": "89c0de82643e9caa44db4ef8b041ddf580a777369b07ad1096a56d6de9b140fc"
+    },
+    {
+      "arch": "x86_64",
+      "candidate_target": "x86_64-unknown-linux-gnu",
+      "control_target": "x86_64-unknown-linux-gnu",
+      "cpu_model": "AMD EPYC 7763 64-Core Processor",
+      "environment_fingerprint": "6c4886a9c5b7d48bffdbb1414a819b0e138b0338f21c24f7bd9d38081912015b",
+      "evidence_grade": "shared-cloud-exploratory",
+      "filesystem": "ext4",
+      "id": "github-ubuntu-24.04-x64",
+      "logical_cores": 2,
+      "memory_bytes": 8323981312,
+      "release": "6.17.0-1020-azure",
+      "run_artifact": "env-001-linux-ext4-run.json",
+      "run_artifact_sha256": "f8ab814dfb25a9e822f5a0f5b3517fc6aff8437b8ef9bda64f96c0a15900b9e7",
+      "runner_class": "github-hosted-shared",
+      "system": "Linux",
+      "toolchain": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+      "tree_engine_digest": "77d5d3cb191e996f89333cd0949e30dcd1bcd1d7f6d67e1c506c6216f8dbab33"
+    }
+  ],
+  "comparison": {
+    "candidate": {
+      "args": [],
+      "build_command": "cargo build --locked --release -p fdu --example perf_probe --no-default-features",
+      "build_profile": "release",
+      "engine_revision": "bd479aaee90263dea8c7dc5ce9d131368e749568",
+      "features": [],
+      "harness_revision": "bd479aaee90263dea8c7dc5ce9d131368e749568",
+      "harness_sha256": "62a986a614823a5b3c979fe681ce9f94ab83f50938b3c388243489f63d5826ee",
+      "name": "candidate"
+    },
+    "control": {
+      "args": [],
+      "build_command": "cargo build --locked --release -p fdu --example perf_probe_review --no-default-features",
+      "build_profile": "release",
+      "engine_revision": "c0ddcb9807dacd7190cfc6639104db8fc33be896",
+      "features": [],
+      "harness_revision": "bd479aaee90263dea8c7dc5ce9d131368e749568",
+      "harness_sha256": "79332acd1cf1899c9265453e3fe48089fb14ca56c163c78ce1c7ff87ce043a6a",
+      "name": "corrected"
+    },
+    "jobs": [
+      "cold-scan-index",
+      "cold-scan-producer",
+      "cold-snapshot-save",
+      "warm-revalidate",
+      "warm-snapshot-load"
+    ],
+    "os_cache": "warm-steady",
+    "schedule": "round-robin-by-ordinal-v1",
+    "schedule_sha256": "494b459a95ca6f26faa6333731a514f37b185690bd8026f5c7f6ef02ffc00ec3",
+    "trials": 12,
+    "warmups": 3
+  },
+  "date": "2026-08-11",
+  "decision_consistent": false,
+  "divergent_jobs": [
+    "cold-scan-index",
+    "cold-scan-producer",
+    "cold-snapshot-save",
+    "warm-revalidate",
+    "warm-snapshot-load"
+  ],
+  "id": "env-001",
+  "jobs": [
+    {
+      "cells": {
+        "github-ubuntu-24.04-x64": {
+          "invalid_samples": 0,
+          "latency_gate_passed": true,
+          "latency_reason": "-33.31% median, 95% interval [-34.11%, -32.82%]",
+          "metrics": {
+            "component_ns": {
+              "candidate_median": 190776410.0,
+              "change_pct": -44.973,
+              "ci95_high_pct": -44.609,
+              "ci95_low_pct": -45.248,
+              "control_median": 346971657.5,
+              "direction": "improvement",
+              "pairs": 12
+            },
+            "cpu_ns": {
+              "candidate_median": 494682500.0,
+              "change_pct": 5.019,
+              "ci95_high_pct": 5.422,
+              "ci95_low_pct": 4.638,
+              "control_median": 470843000.0,
+              "direction": "regression",
+              "pairs": 12
+            },
+            "peak_rss_bytes": {
+              "candidate_median": 81678336.0,
+              "change_pct": 0.0,
+              "ci95_high_pct": 0.0,
+              "ci95_low_pct": 0.0,
+              "control_median": 81678336.0,
+              "direction": "unchanged",
+              "pairs": 12
+            },
+            "wall_ns": {
+              "candidate_median": 315399178.5,
+              "change_pct": -33.313,
+              "ci95_high_pct": -32.824,
+              "ci95_low_pct": -34.106,
+              "control_median": 471135878.0,
+              "direction": "improvement",
+              "pairs": 12
+            }
+          },
+          "overall_decision": "rejected",
+          "reason": "resource guardrail failed or was not measured: peak_rss_bytes",
+          "resource_guardrails": [
+            {
+              "ci95_high_pct": 5.422,
+              "ci95_low_pct": 4.638,
+              "maximum_regression_pct": 10.0,
+              "metric": "cpu_ns",
+              "observed_change_pct": 5.019,
+              "reason": "no statistically established regression above +10%",
+              "status": "passed"
+            },
+            {
+              "ci95_high_pct": null,
+              "ci95_low_pct": null,
+              "maximum_regression_pct": 10.0,
+              "metric": "peak_rss_bytes",
+              "observed_change_pct": null,
+              "reason": "identical peak RSS for every selected non-warmup sample across the run; the process-launcher floor may dominate this host measurement",
+              "status": "not-measured"
+            }
+          ],
+          "valid": true
+        },
+        "local-macos-apfs-arm64": {
+          "invalid_samples": 0,
+          "latency_gate_passed": true,
+          "latency_reason": "-44.46% median, 95% interval [-45.27%, -42.90%]",
+          "metrics": {
+            "component_ns": {
+              "candidate_median": 165403187.5,
+              "change_pct": -57.363,
+              "ci95_high_pct": -55.759,
+              "ci95_low_pct": -58.544,
+              "control_median": 386844479.5,
+              "direction": "improvement",
+              "pairs": 12
+            },
+            "cpu_ns": {
+              "candidate_median": 1111527000.0,
+              "change_pct": 125.588,
+              "ci95_high_pct": 132.656,
+              "ci95_low_pct": 120.286,
+              "control_median": 491373500.0,
+              "direction": "regression",
+              "pairs": 12
+            },
+            "peak_rss_bytes": {
+              "candidate_median": 32653312.0,
+              "change_pct": 2.003,
+              "ci95_high_pct": 2.362,
+              "ci95_low_pct": 1.151,
+              "control_median": 32219136.0,
+              "direction": "regression",
+              "pairs": 12
+            },
+            "wall_ns": {
+              "candidate_median": 274926416.5,
+              "change_pct": -44.458,
+              "ci95_high_pct": -42.901,
+              "ci95_low_pct": -45.274,
+              "control_median": 493532708.0,
+              "direction": "improvement",
+              "pairs": 12
+            }
+          },
+          "overall_decision": "rejected",
+          "reason": "resource guardrail failed or was not measured: cpu_ns",
+          "resource_guardrails": [
+            {
+              "ci95_high_pct": 132.656,
+              "ci95_low_pct": 120.286,
+              "maximum_regression_pct": 10.0,
+              "metric": "cpu_ns",
+              "observed_change_pct": 125.588,
+              "reason": "95% interval is wholly above the +10% limit",
+              "status": "failed"
+            },
+            {
+              "ci95_high_pct": 2.362,
+              "ci95_low_pct": 1.151,
+              "maximum_regression_pct": 10.0,
+              "metric": "peak_rss_bytes",
+              "observed_change_pct": 2.003,
+              "reason": "no statistically established regression above +10%",
+              "status": "passed"
+            }
+          ],
+          "valid": true
+        }
+      },
+      "decision_consistent": false,
+      "divergent_gates": [
+        "cpu",
+        "rss"
+      ],
+      "job": "cold-scan-index"
+    },
+    {
+      "cells": {
+        "github-ubuntu-24.04-x64": {
+          "invalid_samples": 0,
+          "latency_gate_passed": true,
+          "latency_reason": "-38.06% median, 95% interval [-38.66%, -37.59%]",
+          "metrics": {
+            "component_ns": {
+              "candidate_median": 219382174.5,
+              "change_pct": -38.763,
+              "ci95_high_pct": -38.273,
+              "ci95_low_pct": -39.273,
+              "control_median": 357281144.0,
+              "direction": "improvement",
+              "pairs": 12
+            },
+            "cpu_ns": {
+              "candidate_median": 429284000.0,
+              "change_pct": 18.311,
+              "ci95_high_pct": 19.365,
+              "ci95_low_pct": 17.596,
+              "control_median": 361773000.0,
+              "direction": "regression",
+              "pairs": 12
+            },
+            "peak_rss_bytes": {
+              "candidate_median": 81678336.0,
+              "change_pct": 0.0,
+              "ci95_high_pct": 0.0,
+              "ci95_low_pct": 0.0,
+              "control_median": 81678336.0,
+              "direction": "unchanged",
+              "pairs": 12
+            },
+            "wall_ns": {
+              "candidate_median": 224537093.0,
+              "change_pct": -38.062,
+              "ci95_high_pct": -37.588,
+              "ci95_low_pct": -38.662,
+              "control_median": 362129578.0,
+              "direction": "improvement",
+              "pairs": 12
+            }
+          },
+          "overall_decision": "rejected",
+          "reason": "resource guardrail failed or was not measured: cpu_ns, peak_rss_bytes",
+          "resource_guardrails": [
+            {
+              "ci95_high_pct": 19.365,
+              "ci95_low_pct": 17.596,
+              "maximum_regression_pct": 10.0,
+              "metric": "cpu_ns",
+              "observed_change_pct": 18.311,
+              "reason": "95% interval is wholly above the +10% limit",
+              "status": "failed"
+            },
+            {
+              "ci95_high_pct": null,
+              "ci95_low_pct": null,
+              "maximum_regression_pct": 10.0,
+              "metric": "peak_rss_bytes",
+              "observed_change_pct": null,
+              "reason": "identical peak RSS for every selected non-warmup sample across the run; the process-launcher floor may dominate this host measurement",
+              "status": "not-measured"
+            }
+          ],
+          "valid": true
+        },
+        "local-macos-apfs-arm64": {
+          "invalid_samples": 0,
+          "latency_gate_passed": true,
+          "latency_reason": "-58.33% median, 95% interval [-59.14%, -56.96%]",
+          "metrics": {
+            "component_ns": {
+              "candidate_median": 170390229.0,
+              "change_pct": -59.234,
+              "ci95_high_pct": -57.791,
+              "ci95_low_pct": -60.008,
+              "control_median": 413943854.5,
+              "direction": "improvement",
+              "pairs": 12
+            },
+            "cpu_ns": {
+              "candidate_median": 1068234000.0,
+              "change_pct": 154.163,
+              "ci95_high_pct": 161.463,
+              "ci95_low_pct": 148.737,
+              "control_median": 417509000.0,
+              "direction": "regression",
+              "pairs": 12
+            },
+            "peak_rss_bytes": {
+              "candidate_median": 14049280.0,
+              "change_pct": 19.504,
+              "ci95_high_pct": 20.696,
+              "ci95_low_pct": 18.076,
+              "control_median": 11804672.0,
+              "direction": "regression",
+              "pairs": 12
+            },
+            "wall_ns": {
+              "candidate_median": 176494208.5,
+              "change_pct": -58.334,
+              "ci95_high_pct": -56.959,
+              "ci95_low_pct": -59.139,
+              "control_median": 419867791.5,
+              "direction": "improvement",
+              "pairs": 12
+            }
+          },
+          "overall_decision": "rejected",
+          "reason": "resource guardrail failed or was not measured: cpu_ns, peak_rss_bytes",
+          "resource_guardrails": [
+            {
+              "ci95_high_pct": 161.463,
+              "ci95_low_pct": 148.737,
+              "maximum_regression_pct": 10.0,
+              "metric": "cpu_ns",
+              "observed_change_pct": 154.163,
+              "reason": "95% interval is wholly above the +10% limit",
+              "status": "failed"
+            },
+            {
+              "ci95_high_pct": 20.696,
+              "ci95_low_pct": 18.076,
+              "maximum_regression_pct": 10.0,
+              "metric": "peak_rss_bytes",
+              "observed_change_pct": 19.504,
+              "reason": "95% interval is wholly above the +10% limit",
+              "status": "failed"
+            }
+          ],
+          "valid": true
+        }
+      },
+      "decision_consistent": false,
+      "divergent_gates": [
+        "rss"
+      ],
+      "job": "cold-scan-producer"
+    },
+    {
+      "cells": {
+        "github-ubuntu-24.04-x64": {
+          "invalid_samples": 0,
+          "latency_gate_passed": true,
+          "latency_reason": "-31.66% median, 95% interval [-32.42%, -31.29%]",
+          "metrics": {
+            "component_ns": {
+              "candidate_median": 30551877.5,
+              "change_pct": 0.389,
+              "ci95_high_pct": 1.109,
+              "ci95_low_pct": -0.362,
+              "control_median": 30443597.5,
+              "direction": "regression",
+              "pairs": 12
+            },
+            "cpu_ns": {
+              "candidate_median": 540112000.0,
+              "change_pct": 4.37,
+              "ci95_high_pct": 4.852,
+              "ci95_low_pct": 3.195,
+              "control_median": 519755500.0,
+              "direction": "regression",
+              "pairs": 12
+            },
+            "peak_rss_bytes": {
+              "candidate_median": 81678336.0,
+              "change_pct": 0.0,
+              "ci95_high_pct": 0.0,
+              "ci95_low_pct": 0.0,
+              "control_median": 81678336.0,
+              "direction": "unchanged",
+              "pairs": 12
+            },
+            "wall_ns": {
+              "candidate_median": 353704325.0,
+              "change_pct": -31.659,
+              "ci95_high_pct": -31.294,
+              "ci95_low_pct": -32.418,
+              "control_median": 521901112.0,
+              "direction": "improvement",
+              "pairs": 12
+            }
+          },
+          "overall_decision": "rejected",
+          "reason": "resource guardrail failed or was not measured: peak_rss_bytes",
+          "resource_guardrails": [
+            {
+              "ci95_high_pct": 4.852,
+              "ci95_low_pct": 3.195,
+              "maximum_regression_pct": 10.0,
+              "metric": "cpu_ns",
+              "observed_change_pct": 4.37,
+              "reason": "no statistically established regression above +10%",
+              "status": "passed"
+            },
+            {
+              "ci95_high_pct": null,
+              "ci95_low_pct": null,
+              "maximum_regression_pct": 10.0,
+              "metric": "peak_rss_bytes",
+              "observed_change_pct": null,
+              "reason": "identical peak RSS for every selected non-warmup sample across the run; the process-launcher floor may dominate this host measurement",
+              "status": "not-measured"
+            }
+          ],
+          "valid": true
+        },
+        "local-macos-apfs-arm64": {
+          "invalid_samples": 0,
+          "latency_gate_passed": true,
+          "latency_reason": "-41.60% median, 95% interval [-42.79%, -40.66%]",
+          "metrics": {
+            "component_ns": {
+              "candidate_median": 25532229.5,
+              "change_pct": -1.256,
+              "ci95_high_pct": 4.048,
+              "ci95_low_pct": -5.726,
+              "control_median": 26104896.0,
+              "direction": "improvement",
+              "pairs": 12
+            },
+            "cpu_ns": {
+              "candidate_median": 1141723500.0,
+              "change_pct": 123.939,
+              "ci95_high_pct": 127.558,
+              "ci95_low_pct": 118.261,
+              "control_median": 513455500.0,
+              "direction": "regression",
+              "pairs": 12
+            },
+            "peak_rss_bytes": {
+              "candidate_median": 40968192.0,
+              "change_pct": -0.577,
+              "ci95_high_pct": 0.637,
+              "ci95_low_pct": -1.099,
+              "control_median": 41148416.0,
+              "direction": "improvement",
+              "pairs": 12
+            },
+            "wall_ns": {
+              "candidate_median": 303260604.0,
+              "change_pct": -41.605,
+              "ci95_high_pct": -40.658,
+              "ci95_low_pct": -42.786,
+              "control_median": 523331645.5,
+              "direction": "improvement",
+              "pairs": 12
+            }
+          },
+          "overall_decision": "rejected",
+          "reason": "resource guardrail failed or was not measured: cpu_ns",
+          "resource_guardrails": [
+            {
+              "ci95_high_pct": 127.558,
+              "ci95_low_pct": 118.261,
+              "maximum_regression_pct": 10.0,
+              "metric": "cpu_ns",
+              "observed_change_pct": 123.939,
+              "reason": "95% interval is wholly above the +10% limit",
+              "status": "failed"
+            },
+            {
+              "ci95_high_pct": 0.637,
+              "ci95_low_pct": -1.099,
+              "maximum_regression_pct": 10.0,
+              "metric": "peak_rss_bytes",
+              "observed_change_pct": -0.577,
+              "reason": "no statistically established regression above +10%",
+              "status": "passed"
+            }
+          ],
+          "valid": true
+        }
+      },
+      "decision_consistent": false,
+      "divergent_gates": [
+        "cpu",
+        "rss"
+      ],
+      "job": "cold-snapshot-save"
+    },
+    {
+      "cells": {
+        "github-ubuntu-24.04-x64": {
+          "invalid_samples": 0,
+          "latency_gate_passed": true,
+          "latency_reason": "-41.82% median, 95% interval [-42.22%, -41.38%]",
+          "metrics": {
+            "component_ns": {
+              "candidate_median": 215972863.0,
+              "change_pct": -51.771,
+              "ci95_high_pct": -51.341,
+              "ci95_low_pct": -52.061,
+              "control_median": 448188864.0,
+              "direction": "improvement",
+              "pairs": 12
+            },
+            "cpu_ns": {
+              "candidate_median": 426448500.0,
+              "change_pct": -41.824,
+              "ci95_high_pct": -41.418,
+              "ci95_low_pct": -42.236,
+              "control_median": 733523500.0,
+              "direction": "improvement",
+              "pairs": 12
+            },
+            "peak_rss_bytes": {
+              "candidate_median": 81678336.0,
+              "change_pct": 0.0,
+              "ci95_high_pct": 0.0,
+              "ci95_low_pct": 0.0,
+              "control_median": 81678336.0,
+              "direction": "unchanged",
+              "pairs": 12
+            },
+            "wall_ns": {
+              "candidate_median": 426757790.0,
+              "change_pct": -41.821,
+              "ci95_high_pct": -41.384,
+              "ci95_low_pct": -42.224,
+              "control_median": 733954160.0,
+              "direction": "improvement",
+              "pairs": 12
+            }
+          },
+          "overall_decision": "rejected",
+          "reason": "resource guardrail failed or was not measured: peak_rss_bytes",
+          "resource_guardrails": [
+            {
+              "ci95_high_pct": -41.418,
+              "ci95_low_pct": -42.236,
+              "maximum_regression_pct": 10.0,
+              "metric": "cpu_ns",
+              "observed_change_pct": -41.824,
+              "reason": "no statistically established regression above +10%",
+              "status": "passed"
+            },
+            {
+              "ci95_high_pct": null,
+              "ci95_low_pct": null,
+              "maximum_regression_pct": 10.0,
+              "metric": "peak_rss_bytes",
+              "observed_change_pct": null,
+              "reason": "identical peak RSS for every selected non-warmup sample across the run; the process-launcher floor may dominate this host measurement",
+              "status": "not-measured"
+            }
+          ],
+          "valid": true
+        },
+        "local-macos-apfs-arm64": {
+          "invalid_samples": 0,
+          "latency_gate_passed": true,
+          "latency_reason": "-26.68% median, 95% interval [-27.67%, -26.54%]",
+          "metrics": {
+            "component_ns": {
+              "candidate_median": 323684812.5,
+              "change_pct": -27.916,
+              "ci95_high_pct": -27.4,
+              "ci95_low_pct": -29.114,
+              "control_median": 448768937.5,
+              "direction": "improvement",
+              "pairs": 12
+            },
+            "cpu_ns": {
+              "candidate_median": 493050000.0,
+              "change_pct": -26.77,
+              "ci95_high_pct": -26.617,
+              "ci95_low_pct": -27.75,
+              "control_median": 676393000.0,
+              "direction": "improvement",
+              "pairs": 12
+            },
+            "peak_rss_bytes": {
+              "candidate_median": 30900224.0,
+              "change_pct": -8.547,
+              "ci95_high_pct": -7.406,
+              "ci95_low_pct": -8.825,
+              "control_median": 33824768.0,
+              "direction": "improvement",
+              "pairs": 12
+            },
+            "wall_ns": {
+              "candidate_median": 495329437.5,
+              "change_pct": -26.682,
+              "ci95_high_pct": -26.538,
+              "ci95_low_pct": -27.667,
+              "control_median": 679033333.5,
+              "direction": "improvement",
+              "pairs": 12
+            }
+          },
+          "overall_decision": "accepted",
+          "reason": "latency gate and both resource guardrails passed",
+          "resource_guardrails": [
+            {
+              "ci95_high_pct": -26.617,
+              "ci95_low_pct": -27.75,
+              "maximum_regression_pct": 10.0,
+              "metric": "cpu_ns",
+              "observed_change_pct": -26.77,
+              "reason": "no statistically established regression above +10%",
+              "status": "passed"
+            },
+            {
+              "ci95_high_pct": -7.406,
+              "ci95_low_pct": -8.825,
+              "maximum_regression_pct": 10.0,
+              "metric": "peak_rss_bytes",
+              "observed_change_pct": -8.547,
+              "reason": "no statistically established regression above +10%",
+              "status": "passed"
+            }
+          ],
+          "valid": true
+        }
+      },
+      "decision_consistent": false,
+      "divergent_gates": [
+        "rss",
+        "overall"
+      ],
+      "job": "warm-revalidate"
+    },
+    {
+      "cells": {
+        "github-ubuntu-24.04-x64": {
+          "invalid_samples": 0,
+          "latency_gate_passed": true,
+          "latency_reason": "-29.25% median, 95% interval [-29.75%, -28.84%]",
+          "metrics": {
+            "component_ns": {
+              "candidate_median": 93109139.5,
+              "change_pct": -45.45,
+              "ci95_high_pct": -44.923,
+              "ci95_low_pct": -46.08,
+              "control_median": 170653152.5,
+              "direction": "improvement",
+              "pairs": 12
+            },
+            "cpu_ns": {
+              "candidate_median": 209472000.0,
+              "change_pct": -29.275,
+              "ci95_high_pct": -28.857,
+              "ci95_low_pct": -29.809,
+              "control_median": 295927500.0,
+              "direction": "improvement",
+              "pairs": 12
+            },
+            "peak_rss_bytes": {
+              "candidate_median": 81678336.0,
+              "change_pct": 0.0,
+              "ci95_high_pct": 0.0,
+              "ci95_low_pct": 0.0,
+              "control_median": 81678336.0,
+              "direction": "unchanged",
+              "pairs": 12
+            },
+            "wall_ns": {
+              "candidate_median": 209736056.0,
+              "change_pct": -29.251,
+              "ci95_high_pct": -28.842,
+              "ci95_low_pct": -29.752,
+              "control_median": 296329436.0,
+              "direction": "improvement",
+              "pairs": 12
+            }
+          },
+          "overall_decision": "rejected",
+          "reason": "resource guardrail failed or was not measured: peak_rss_bytes",
+          "resource_guardrails": [
+            {
+              "ci95_high_pct": -28.857,
+              "ci95_low_pct": -29.809,
+              "maximum_regression_pct": 10.0,
+              "metric": "cpu_ns",
+              "observed_change_pct": -29.275,
+              "reason": "no statistically established regression above +10%",
+              "status": "passed"
+            },
+            {
+              "ci95_high_pct": null,
+              "ci95_low_pct": null,
+              "maximum_regression_pct": 10.0,
+              "metric": "peak_rss_bytes",
+              "observed_change_pct": null,
+              "reason": "identical peak RSS for every selected non-warmup sample across the run; the process-launcher floor may dominate this host measurement",
+              "status": "not-measured"
+            }
+          ],
+          "valid": true
+        },
+        "local-macos-apfs-arm64": {
+          "invalid_samples": 0,
+          "latency_gate_passed": true,
+          "latency_reason": "-25.89% median, 95% interval [-26.18%, -25.25%]",
+          "metrics": {
+            "component_ns": {
+              "candidate_median": 63267458.5,
+              "change_pct": -49.137,
+              "ci95_high_pct": -48.827,
+              "ci95_low_pct": -49.328,
+              "control_median": 124195145.5,
+              "direction": "improvement",
+              "pairs": 12
+            },
+            "cpu_ns": {
+              "candidate_median": 168539000.0,
+              "change_pct": -26.148,
+              "ci95_high_pct": -25.411,
+              "ci95_low_pct": -26.451,
+              "control_median": 227864500.0,
+              "direction": "improvement",
+              "pairs": 12
+            },
+            "peak_rss_bytes": {
+              "candidate_median": 30507008.0,
+              "change_pct": -6.307,
+              "ci95_high_pct": -6.196,
+              "ci95_low_pct": -6.484,
+              "control_median": 32538624.0,
+              "direction": "improvement",
+              "pairs": 12
+            },
+            "wall_ns": {
+              "candidate_median": 170686062.0,
+              "change_pct": -25.885,
+              "ci95_high_pct": -25.25,
+              "ci95_low_pct": -26.175,
+              "control_median": 230034083.5,
+              "direction": "improvement",
+              "pairs": 12
+            }
+          },
+          "overall_decision": "accepted",
+          "reason": "latency gate and both resource guardrails passed",
+          "resource_guardrails": [
+            {
+              "ci95_high_pct": -25.411,
+              "ci95_low_pct": -26.451,
+              "maximum_regression_pct": 10.0,
+              "metric": "cpu_ns",
+              "observed_change_pct": -26.148,
+              "reason": "no statistically established regression above +10%",
+              "status": "passed"
+            },
+            {
+              "ci95_high_pct": -6.196,
+              "ci95_low_pct": -6.484,
+              "maximum_regression_pct": 10.0,
+              "metric": "peak_rss_bytes",
+              "observed_change_pct": -6.307,
+              "reason": "no statistically established regression above +10%",
+              "status": "passed"
+            }
+          ],
+          "valid": true
+        }
+      },
+      "decision_consistent": false,
+      "divergent_gates": [
+        "rss",
+        "overall"
+      ],
+      "job": "warm-snapshot-load"
+    }
+  ],
+  "run_group": "pr3-cache-balanced-60k-v1",
+  "schema": "fdu-environment-decision-matrix-v1",
+  "workload": {
+    "counts": {
+      "directories": 7501,
+      "files": 52500,
+      "hardlink_groups": 0,
+      "other": 0,
+      "symlinks": 0,
+      "total": 60001
+    },
+    "generator_source_hash": "759c84a489b973f3da1157eed00610c68adef227e1bfd5362861f37b89a4adfe",
+    "generator_version": 2,
+    "portable_identity_sha256": "797ad1257352770608139731ac9a055f0ff6aa19b547bd77bf4cd289d3d777e7",
+    "recipe_hash": "e5c2532370888792fb84e657c40a655f7009947fd6a48b511087ab7faf55fae8",
+    "recipe_id": "balanced",
+    "seed": "pr3-cache-cross-environment-v1",
+    "semantic_digest": "f7ed40e64310fee3aaa7ad3dcbc41e78c9737da6d4cdc00981ea2aa51e1d2049",
+    "state": {
+      "id": "baseline",
+      "transition_index": 0
+    },
+    "target_entries": 60000
+  }
+}

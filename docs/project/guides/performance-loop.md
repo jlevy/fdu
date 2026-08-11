@@ -18,7 +18,18 @@ The current cumulative result is exp-012. Against the correctness-normalized PR 
 the reviewed candidate improved cold-scan wall time by 50.95% while regressing total CPU
 by 83.11%; the latency gate passed and the resource gate failed, so the experiment is
 rejected as a universal performance win.
-Warm revalidation and snapshot load both improved in that same 60k-entry APFS cell.
+Environment matrix env-001 then repeated the frozen comparison on equivalent generated
+60k-entry workloads on local macOS/APFS and hosted Linux/ext4. The cold-index decision
+diverged at the CPU gate: macOS rejected a 44.46% wall win because CPU rose 125.59%,
+while Linux paired a 33.31% wall win with a 5.02% CPU increase.
+Linux RSS was identical for all 150 samples, so the matrix now treats that resource
+signal as unmeasured and does not accept any Linux row.
+Warm revalidation and snapshot load improved in wall and CPU against the control in both
+cells. The hosted result is exploratory and the cells also differ in CPU count and
+architecture, so this is evidence that the verdict is environment-dependent, not that
+the filesystem alone caused the difference.
+See the
+[environment report](../reports/report-2026-08-11-fdu-cache-environment-matrix.md).
 The separate 10k–1M curve validates loader correctness and near-linear fanout behavior
 only; it does not select the cache read path.
 
@@ -112,32 +123,35 @@ nominates and treats it as immutable and confidential:
   different trees are not comparable.
 
 Generated corpora serve the complementary purpose: they make the *same workload*
-recreatable on another filesystem. Their portable semantic digest excludes inode,
-ctime, device, and allocated blocks, while each invocation retains a second engine
-digest with those local fields for the exact probe oracle. A generated result does not
-replace the real-tree result; it isolates the environment axis that a private laptop
-tree cannot.
+recreatable on another filesystem.
+Their portable semantic digest excludes inode, ctime, device, and allocated blocks,
+while each invocation retains a second engine digest with those local fields for the
+exact probe oracle.
+A generated result does not replace the real-tree result; it isolates
+the environment axis that a private laptop tree cannot.
 
 ## Cross-environment cells
 
 Every v3 run records two environment identities:
 
-- a logical cell such as `local-macos-apfs-arm64` or
-  `github-ubuntu-24.04-x64`, used to group repeated evidence; and
+- a logical cell such as `local-macos-apfs-arm64` or `github-ubuntu-24.04-x64`, used to
+  group repeated evidence; and
 - an exact SHA-256 over the path-free host, compiler, runner image, CPU, memory,
-  architecture, operating system, and filesystem facts, used to detect drift within
-  that logical cell.
+  architecture, operating system, and filesystem facts, used to detect drift within that
+  logical cell.
 
 A decision matrix accepts runs only when their portable corpus identity, engine and
-probe revisions, variant flags, full job contracts, trial count, warmups, schedule,
-and page-cache condition match. Binary hashes and target triples are expected to differ
-across architectures. Absolute medians remain inside their own cell; the matrix compares
-only whether each cell passed the latency, CPU, RSS, and overall gates.
+probe revisions, variant flags, full job contracts, trial count, warmups, schedule, and
+page-cache condition match.
+Binary hashes and target triples are expected to differ across architectures.
+Absolute medians remain inside their own cell; the matrix compares only whether each
+cell passed the latency, CPU, RSS, and overall gates.
 
-Runner control is part of the claim. Local developer runs are `local-uncontrolled`.
-GitHub-hosted runners are `shared-cloud-exploratory`: their fresh VM gives a useful
-Linux/filesystem counterexample, but neighboring load and the underlying hardware are
-not controlled. GitHub documents the current hosted-runner hardware separately in its
+Runner control is part of the claim.
+Local developer runs are `local-uncontrolled`. GitHub-hosted runners are
+`shared-cloud-exploratory`: their fresh VM gives a useful Linux/filesystem
+counterexample, but neighboring load and the underlying hardware are not controlled.
+GitHub documents the current hosted-runner hardware separately in its
 [runner reference](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).
 A platform default requires repetition on a `self-hosted-controlled` cell; a hosted
 result can support or challenge a hypothesis but cannot promote itself to product
@@ -210,7 +224,7 @@ Status is updated as experiments resolve them; see the ledger for results.
 
 | # | Hypothesis | Predicted effect | Status |
 | --- | --- | --- | --- |
-| H1 | The walk is serial, so it uses one core while the machine has ten. A bounded parallel producer feeding a single index consumer will cut wall time several-fold. | `wall_ns` down 3–4×, `cpu_ns` roughly flat or slightly up, `cpu_ns/wall_ns` from 1.0 to 4+ | **Latency confirmed, universal win rejected.** In exp-012 the repaired implementation cut cold-scan wall 50.95% but raised CPU 83.11%, failing the default resource guardrail. |
+| H1 | The walk is serial, so it uses one core while the machine has ten. A bounded parallel producer feeding a single index consumer will cut wall time several-fold. | `wall_ns` down 3–4×, `cpu_ns` roughly flat or slightly up, `cpu_ns/wall_ns` from 1.0 to 4+ | **Latency confirmed; CPU verdict is environment-dependent.** env-001 failed the cold-index CPU gate on 10-core macOS/APFS (+125.59%) but passed it on 2-core hosted Linux/ext4 (+5.02%). Degenerate Linux RSS makes the cloud overall verdict inconclusive/rejected, so the universal claim remains rejected. |
 | H2 | `fs::read_dir` opens each directory by absolute path, so the kernel re-resolves every component from the root. Opening relative to the parent’s fd (`openat`) would resolve one component. After H1 landed, `open` is the single largest cost in the cold profile at **28%** of self time. | `system_cpu_ns` down, biggest effect on deep trees | **Blocked**: needs `libc` as a runtime dependency and a scoped `unsafe` allowance. Not a decision to take without the supply-chain review in [SUPPLY-CHAIN-SECURITY.md](../../../SUPPLY-CHAIN-SECURITY.md). |
 | H3 | One `fstatat` per entry (19% of self time after H1) is the floor for a portable walker, but macOS `getattrlistbulk` and Linux `statx` batch metadata per directory. | `system_cpu_ns` down substantially | **Blocked** on the same dependency decision as H2. |
 | H4 | Depth-first traversal order has worse locality than breadth-first for a tree whose directories were written breadth-first. | `system_cpu_ns`, `minor_faults` | — |
@@ -233,7 +247,7 @@ Status is updated as experiments resolve them; see the ledger for results.
 
 | # | Hypothesis | Predicted effect | Status |
 | --- | --- | --- | --- |
-| H9 | Warm revalidation is currently *slower* than a cold scan. Reconciliation does a full walk plus expectation lookups plus a snapshot load, so the cache costs more than it saves. | `warm-revalidate` wall below `cold-scan-index` wall | **Open, and the largest outstanding defect.** exp-002 refuted the obvious fix: parallelising the sweep gained only 2.6%, because the warm path is bound by the single index consumer, not by traversal. |
+| H9 | Warm revalidation is currently *slower* than a cold scan. Reconciliation does a full walk plus expectation lookups plus a snapshot load, so the cache costs more than it saves. | `warm-revalidate` wall below `cold-scan-index` wall | **Open, and confirmed in both env-001 cells.** For the candidate, stat-tier warm revalidation took about 80% longer than cold on macOS and 35% longer on hosted Linux, although it used about 56% and 14% less CPU respectively. The current latency selector should choose cold for these cells. |
 | H10 | Snapshot load is ~320 ms of the warm start. A format whose on-disk layout can be used without rebuilding the tree would make the warm path open-latency-bound instead of parse-bound. | `warm-snapshot-load` wall down | **Partly addressed; old speed claim superseded.** Direct parent/name lookup removes the reviewed fanout-quadratic path; the new 10k–1M wide curve is the topology evidence, while the format change remains open. |
 | H11 | `revalidate` builds a `BTreeSet<OsString>` of seen names per directory, cloning every name. Comparing against the index’s existing sorted children directly would remove that. | `user_cpu_ns` down on warm jobs | — |
 
@@ -293,10 +307,10 @@ uv run --project benchmarks/realtree --frozen python -m benchmarks.realtree meas
 # supposedly equivalent workload, source, flag, job, or schedule field differs.
 uv run --project benchmarks/realtree --frozen python -m benchmarks.realtree \
   environment-matrix \
-  --run docs/project/experiments/evidence/pr3-cache-macos-local-run.json \
-  --run docs/project/experiments/evidence/pr3-cache-linux-cloud-run.json \
+  --run docs/project/experiments/evidence/env-001-macos-apfs-run.json \
+  --run docs/project/experiments/evidence/env-001-linux-ext4-run.json \
   --id env-001 --control-variant corrected --candidate-variant candidate \
-  --output docs/project/experiments/evidence/env-001-matrix.json \
+  --output docs/project/experiments/evidence/env-001-decision-matrix.json \
   --report benchmarks/results/realtree/env-001-matrix.md
 
 # Archive and record the exact paired samples. `record` refuses an accepted result
@@ -325,9 +339,10 @@ become the current cumulative headline.
 The `Cache performance environments` GitHub Actions workflow reruns the frozen
 generated-corpus comparison on Ubuntu 24.04 and retains the raw trials as a downloadable
 artifact. After it is merged to the default branch, use its manual dispatch for future
-Linux repetitions. Artifacts are convenient transport, not the durable record: a
-reviewed result is still archived under `docs/project/experiments/evidence/` with its
-content digest.
+Linux repetitions.
+Artifacts are convenient transport, not the durable record: a reviewed
+result is still archived under `docs/project/experiments/evidence/` with its content
+digest.
 
 The raw producer diagnostic is `cold-scan-producer-raw`. It intentionally omits the
 semantic digest and can attribute oracle overhead, but it is never claim-grade

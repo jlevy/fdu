@@ -236,7 +236,36 @@ zero churn. A separate oracle-checked wide snapshot-load curve now covers 10k th
 entries (28.7 ms, 220.4 ms, 1.13 s, and 2.22 s) and is close to linear, validating the
 direct parent/name lookup at high fanout.
 It does **not** measure full revalidation, cold metadata caches, churn, remote storage,
-Linux, or Windows.
+or Windows.
+
+**Cross-environment addendum (env-001).** The v3 harness regenerated one portable,
+oracle-checked 60,001-entry workload and repeated the frozen corrected-control versus
+candidate comparison on local macOS/APFS/arm64 and a GitHub-hosted Linux/ext4/x86-64
+cell. The full job contract, source revisions, semantic workload, 12-trial/3-warmup
+interleaving, and warm-steady page-cache condition matched, with zero invalid samples.
+The cold-index candidate passed latency in both cells but failed the CPU guardrail on
+the 10-core Mac (+125.59%) and passed it on the 2-core Linux host (+5.02%). Linux
+`wait4.ru_maxrss` reported exactly 81,678,336 bytes for all 150 samples across both
+variants and all five jobs.
+The matrix treats that non-discriminating signal as unmeasured, so no Linux row receives
+an overall acceptance.
+Both warm jobs improved in wall and CPU against the corrected control in both cells.
+This establishes that CPU behavior is environment-conditional while the complete Linux
+resource verdict remains open.
+It does not identify a filesystem cause: core count, architecture, OS, filesystem, and
+runner control all changed, and the shared cloud runner is exploratory.
+
+The cache-path question is separate from that revision comparison.
+Within the candidate, full stat-tier warm revalidation remained slower than its cold
+index scan in both cells: about 80% slower on macOS and 35% slower on Linux.
+It consumed about 56% and 14% less CPU respectively, while snapshot load alone remained
+faster than either full path.
+Thus the current latency-oriented `auto` selector still chooses cold for these unchanged
+generated cells. Persistence remains useful for explicit cache-only answers, journal
+boundaries, derived data, and a long-lived index; it is not evidence that a full stat
+sweep is the fastest one-shot read.
+The raw cells and recomputed decision matrix are summarized in the
+[env-001 report](../reports/report-2026-08-11-fdu-cache-environment-matrix.md).
 
 **The superlinear knee is probably capacity, not algorithm.** The exploratory curve (72
 ms / 725 ms / 8.2 s / 62.9 s at 10k / 100k / 500k / 1M) has a local scaling exponent of
@@ -1130,10 +1159,12 @@ These are the hills worth being on:
    streaming consumer at all and cold-scan-index converges on producer time.
    This is what `fdu-gdrv`/`fdu-aky1` are really for; packing (H19–H22) is what makes
    the splice cheap.
-5. **Move paired end-to-end comparisons beyond one warm 60k APFS tree before trusting
-   global verdicts.** Snapshot loading now has an oracle-checked 10k–1M topology curve,
-   but the 500k+ *revalidation* knee, cold caches, churned warm runs, network storage,
-   Linux, and Windows remain unmeasured.
+5. **Move paired end-to-end comparisons beyond the first two warm 60k cells before
+   trusting global verdicts.** env-001 adds a shared-runner Linux/ext4 counterexample to
+   the local macOS/APFS result, but it deliberately does not average unlike hosts or
+   establish which changed axis caused the divergence.
+   The 500k+ *revalidation* knee, cold caches, churned warm runs, network storage,
+   controlled Linux, and Windows remain unmeasured.
    The generated-corpus recipes, churn transitions, and `--purge` support make H36–H39
    the next evidence work, not grounds for extrapolation.
 
@@ -1278,8 +1309,8 @@ in the original research), and micro-tuning `readdir` batch sizes on the portabl
    the experiment loop cannot make for itself.
 6. **Extend the loop’s states and scales (H36–H39) in parallel with code experiments:**
    generated-corpus scale points, `--purge` runs, a churn job, a `warm-query` job, and
-   one Linux host — so rejections and acceptances generalize beyond one warm 60k APFS
-   tree.
+   controlled fixed-concurrency Mac/Linux repetitions — so the first two warm 60k cells
+   become a causal matrix rather than a platform-correlated observation.
 7. **Fold the platform findings into the benchmark protocol:** label purge-cold vs
    remount-cold on macOS; record volume type and burst state on cloud runners; run ext4
    and XFS; record `kern.maxvnodes` and fault counters with every revalidation curve;
