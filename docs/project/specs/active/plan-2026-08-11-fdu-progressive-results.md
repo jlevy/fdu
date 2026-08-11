@@ -130,11 +130,19 @@ breadth-first costs **no measurable wall time and a little memory**.
 Wall on `cold-scan-index` is −0.58% with a 95% interval of [−2.50%, +1.20%]; the
 walk-only and warm-revalidation intervals straddle zero too, so the supported claim is
 "not measurably different", not "free".
-Peak RSS did rise, with intervals clear of zero: +1.51% [+0.85%, +2.88%] on
-`cold-scan-index` (about 34.7 MB to 35.4 MB), +3.66% on `cold-scan-producer`, +1.17% on
-`warm-revalidate`, alongside +2.50% producer CPU.
-The queue holds directories rather than entries, which is what keeps that cost
-proportional to the widest level rather than to the tree.
+Peak RSS did rise in that first implementation, with intervals clear of zero: +1.51%
+[+0.85%, +2.88%] on `cold-scan-index` (about 34.7 MB to 35.4 MB), +3.66% on
+`cold-scan-producer`, +1.17% on `warm-revalidate`, alongside +2.50% producer CPU.
+
+Those costs no longer apply to the parallel walk. exp-013 replaced the global FIFO with
+a region scheduler, and exp-014 measured the shipped default against `DepthFirst`
+directly: `cold-scan-producer` wall −3.04% [−5.99%, −0.96%] and `cold-scan-index` peak
+RSS −1.76% [−2.63%, −0.74%] — breadth-first is now the cheaper of the two there.
+
+The warm sweep is the exception and is a known gap: `reconcile` walks with the serial
+`take_next`, so region scheduling never reached it and breadth-first costs +2.70%
+[+1.55%, +3.37%] on `warm-revalidate`, for an orientation benefit a one-shot CLI never
+reads. Tracked as `fdu-v71x`.
 
 An earlier six-sample median comparison suggested ~8%, and that figure was quoted here
 before it had been through the accept rule.
