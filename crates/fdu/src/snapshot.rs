@@ -29,7 +29,7 @@
 
 use std::ffi::{OsStr, OsString};
 use std::fs::{self, OpenOptions};
-use std::io::{BufReader, Read, Seek, SeekFrom, Write};
+use std::io::{self, BufReader, Read, Seek, SeekFrom, Write};
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -341,8 +341,38 @@ pub fn read_header(path: &Path) -> Result<Option<crate::cache::SnapshotInfo>> {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(Error::io(path, error)),
     };
+    if !has_intact_trailer(&file).map_err(|error| Error::io(path, error))? {
+        // Truncation removes the tail and leaves the prologue readable, so a
+        // header-only check would call a half-written file a snapshot.
+        return Ok(None);
+    }
+    // The trailer check left the cursor at the end; the header lives at the start.
+    let mut file = file;
+    file.seek(SeekFrom::Start(0)).map_err(|error| Error::io(path, error))?;
+
     let mut reader = BufReader::new(file);
     Ok(parse_header(&mut reader).ok())
+}
+
+/// Whether a file ends with the snapshot trailer.
+///
+/// Cheap enough for a status listing — one seek and eight bytes — and it is exactly what
+/// a truncated write destroys.
+fn has_intact_trailer(file: &fs::File) -> io::Result<bool> {
+    let footer_bytes = CHECKSUM_BYTES + TRAILER.len();
+    let file_len = file.metadata()?.len();
+    if file_len < u64::try_from(footer_bytes).unwrap_or(u64::MAX) {
+        return Ok(false);
+    }
+
+    let mut handle = file;
+    handle.seek(SeekFrom::End(-(i64::try_from(TRAILER.len()).unwrap_or(0))))?;
+    let mut trailer = [0u8; TRAILER.len()];
+    match handle.read_exact(&mut trailer) {
+        Ok(()) => Ok(&trailer == TRAILER),
+        Err(error) if error.kind() == io::ErrorKind::UnexpectedEof => Ok(false),
+        Err(error) => Err(error),
+    }
 }
 
 /// Parse the fixed prologue every snapshot begins with.

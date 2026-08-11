@@ -227,7 +227,11 @@ def main() -> None:
 
     # Selection narrows without rescanning, and every view is reachable.
     rust_only = index.report(views=["files"], include=["*.rs"], kind=["file"])
-    paths = sorted(row["path"] for row in rust_only["reports"][0]["files"])
+    # Reported paths carry native separators, so compare in a separator-agnostic way
+    # rather than narrowing what the engine reports to satisfy a string.
+    paths = sorted(
+        row["path"].replace(os.sep, "/") for row in rust_only["reports"][0]["files"]
+    )
     assert paths == ["src/lib.rs", "src/main.rs"], paths
 
     types = index.report(views=["types"])["reports"][0]["types"]

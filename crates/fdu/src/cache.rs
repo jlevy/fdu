@@ -161,8 +161,12 @@ mod tests {
         let path = cache.path().join("snap.fdu");
         seed(tree.path(), &path);
 
+        // Truncate by one byte, not by half: the header survives either way, and the
+        // one-byte case is the one that proves the check is not merely a size heuristic.
+        // (CI caught this: with a longer root path, half a file still held a full
+        // header, so the header-only check called it a snapshot.)
         let full = std::fs::read(&path).expect("read");
-        std::fs::write(&path, &full[..full.len() / 2]).expect("truncate");
+        std::fs::write(&path, &full[..full.len() - 1]).expect("truncate");
 
         let status = cache_status(&path).expect("status");
         assert!(!status.is_recognized());

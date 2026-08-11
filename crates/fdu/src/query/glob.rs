@@ -104,8 +104,17 @@ impl Pattern {
     /// component; both are supplied because which one applies depends on the pattern.
     pub fn matches(&self, relative: &Path, name: &str) -> bool {
         if self.anchored {
-            let path = relative.to_string_lossy();
-            let parts: Vec<&str> = path.split('/').filter(|part| !part.is_empty()).collect();
+            // Components, not a split on '/': Windows spells the separator differently,
+            // and splitting on one character would leave `src\\main.rs` as a single
+            // component so every anchored pattern silently failed to match there.
+            let parts: Vec<String> = relative
+                .components()
+                .filter_map(|component| match component {
+                    std::path::Component::Normal(part) => Some(part.to_string_lossy().into_owned()),
+                    _ => None,
+                })
+                .collect();
+            let parts: Vec<&str> = parts.iter().map(String::as_str).collect();
             self.alternatives.iter().any(|alt| match_components(&alt.components, &parts))
         } else {
             self.alternatives.iter().any(|alt| match_components(&alt.components, &[name]))
@@ -475,6 +484,20 @@ mod tests {
     fn runaway_brace_expansion_is_rejected_rather_than_allocated() {
         let bomb = "{a,b}".repeat(11);
         assert!(rejection(&bomb).contains("too many alternatives"));
+    }
+
+    #[test]
+    fn anchored_patterns_match_however_the_platform_spells_a_separator() {
+        // Built from components rather than a literal string, so this exercises the
+        // native separator. Splitting the path on '/' passed here on Unix and silently
+        // matched nothing on Windows, which CI caught and this test now pins.
+        let relative: PathBuf = ["src", "deep", "main.rs"].iter().collect();
+        let compiled = Pattern::parse("src/**/*.rs").expect("pattern compiles");
+        assert!(compiled.matches(&relative, "main.rs"));
+
+        let shallow: PathBuf = ["src", "main.rs"].iter().collect();
+        assert!(Pattern::parse("src/*.rs").expect("compiles").matches(&shallow, "main.rs"));
+        assert!(!Pattern::parse("other/*.rs").expect("compiles").matches(&shallow, "main.rs"));
     }
 
     #[test]
