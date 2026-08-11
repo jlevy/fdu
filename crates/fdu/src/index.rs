@@ -739,7 +739,7 @@ impl Index {
     pub fn lookup(&self, path: &Path) -> Option<EntryId> {
         let mut current = EntryId::ROOT;
         for part in normalize(path)? {
-            current = *self.entry(current).children.get(&part)?;
+            current = *self.entry(current).children.get(part)?;
         }
         Some(current)
     }
@@ -860,7 +860,7 @@ impl Index {
         let (_, ancestors) = parts.split_last()?;
         let mut current = EntryId::ROOT;
         for part in ancestors {
-            let Some(child) = self.entry(current).children.get(part).copied() else {
+            let Some(child) = self.entry(current).children.get(*part).copied() else {
                 break;
             };
             current = child;
@@ -1032,10 +1032,10 @@ impl Index {
     /// a tree may name ancestors the index has never seen. Creating them as directories
     /// with default attributes keeps the delta applicable; a later upsert or the
     /// revalidation sweep fills in their real attributes.
-    fn ensure_dir_chain(&mut self, parts: &[OsString], stats: &mut ApplyStats) -> EntryId {
+    fn ensure_dir_chain(&mut self, parts: &[&OsStr], stats: &mut ApplyStats) -> EntryId {
         let mut current = EntryId::ROOT;
         for part in parts {
-            if let Some(existing) = self.entry(current).children.get(part).copied() {
+            if let Some(existing) = self.entry(current).children.get(*part).copied() {
                 if self.entry(existing).kind.is_dir() {
                     current = existing;
                     continue;
@@ -1047,7 +1047,7 @@ impl Index {
             }
             let child = self.alloc(Entry {
                 parent: Some(current),
-                name: part.clone(),
+                name: (*part).to_os_string(),
                 kind: EntryKind::Dir,
                 attrs: Attrs::default(),
                 children: BTreeMap::new(),
@@ -1055,7 +1055,7 @@ impl Index {
                 revision: 0,
                 children_revision: 0,
             });
-            self.insert_child(current, part.clone(), child);
+            self.insert_child(current, (*part).to_os_string(), child);
             // A new empty directory contributes one to `dirs` all the way up.
             let contribution = RollUp { dirs: 1, ..RollUp::default() };
             self.merge_upward(Some(current), &contribution);
@@ -1089,7 +1089,7 @@ impl Index {
         };
 
         let parent = self.ensure_dir_chain(ancestors, stats);
-        let existing = self.entry(parent).children.get(name).copied();
+        let existing = self.entry(parent).children.get(*name).copied();
 
         if let Some(id) = existing {
             let entry = self.entry(id);
@@ -1127,7 +1127,7 @@ impl Index {
 
         let id = self.alloc(Entry {
             parent: Some(parent),
-            name: name.clone(),
+            name: (*name).to_os_string(),
             kind,
             attrs,
             children: BTreeMap::new(),
@@ -1135,7 +1135,7 @@ impl Index {
             revision: 0,
             children_revision: 0,
         });
-        self.insert_child(parent, name.clone(), id);
+        self.insert_child(parent, (*name).to_os_string(), id);
         let contribution = self.contribution(id);
         self.merge_upward(Some(parent), &contribution);
         stats.inserted += 1;
@@ -1201,11 +1201,19 @@ fn collect_child_expectations(index: &Index, path: &Path) -> BTreeMap<OsString, 
 /// Returns `None` for paths containing `..`, a root, or a prefix — an index keyed by
 /// relative path has no way to represent those, and silently normalizing them away would
 /// let a delta write outside the tree it claims to describe.
-fn normalize(path: &Path) -> Option<Vec<OsString>> {
+/// The components are borrowed from `path`, not copied out of it.
+///
+/// Owning them cost an allocation per component, and this runs twice for every
+/// operation in every batch — once to validate the path and once to apply it. On a
+/// tree averaging eight levels deep that was on the order of eighteen allocations per
+/// entry, all of them holding bytes that the caller's `PathBuf` already owned and
+/// outlives. Only the returned `Vec` allocates now, and only where a slice is
+/// genuinely needed.
+fn normalize(path: &Path) -> Option<Vec<&OsStr>> {
     let mut parts = Vec::new();
     for component in path.components() {
         match component {
-            Component::Normal(part) => parts.push(part.to_os_string()),
+            Component::Normal(part) => parts.push(part),
             Component::CurDir => {}
             Component::ParentDir | Component::RootDir | Component::Prefix(_) => return None,
         }
@@ -1213,10 +1221,19 @@ fn normalize(path: &Path) -> Option<Vec<OsString>> {
     Some(parts)
 }
 
+/// Whether a path can be represented by an index keyed on relative paths.
+///
+/// The same rule as [`normalize`] without building anything: validation asks a yes or
+/// no question, and answering it by constructing a component list and dropping it was
+/// pure allocation.
+fn path_is_representable(path: &Path) -> bool {
+    path.components().all(|component| matches!(component, Component::Normal(_) | Component::CurDir))
+}
+
 fn validate_observation(observation: &Observation) -> crate::Result<()> {
     for observed in &observation.ops {
         let path = observed.op.path();
-        if normalize(path).is_none() {
+        if !path_is_representable(path) {
             return Err(crate::Error::PathEscapesRoot(path.to_path_buf()));
         }
     }
