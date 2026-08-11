@@ -199,11 +199,19 @@ subtree, each free worker is handed a *different* bucket round-robin, and within
 bucket the order is LIFO so locality and spine-bounded memory come back. No barrier
 exists anywhere: if only one region has work, every worker takes it.
 
-On a skewed tree — one 40-level spur holding most of the files beside eleven shallow
-siblings — the spur's share of the first quarter of the walk is **0–4% at every worker
-count**, against depth-first's 4–23%. A deep portion of the tree no longer delays the
-horizontal ones. Peak RSS fell −3.89% [−4.90%, −3.15%] in the process, more than
-reversing what exp-012 paid, and wall time did not move.
+On twelve branching subtrees, the *least advanced* top-level subtree a quarter of the
+way through the walk holds **42 files at one worker and 33–37 at six** — against
+depth-first's **0 and 6**, where perfectly even would be ~46. A deep portion of the tree
+no longer delays the horizontal ones, at any worker count. Peak RSS fell −3.77%
+[−5.18%, −2.99%] in the process, more than reversing what exp-012 paid, and wall time
+did not move.
+
+Worker affinity is the part worth remembering. Keeping a worker inside its region for
+locality looks obviously right and is actively harmful: it pins each worker to one
+subtree, so with twelve subtrees and six workers only six ever advanced, and
+depth-first — whose four-directory claims happen to fan across the root's children —
+spread *wider* than breadth-first did. Locality has to come from the size of a claim,
+not from a worker refusing to leave.
 
 Two further caveats so nobody over-reads even the corrected result.
 This is one warm tree of 60k entries: the frontier width that could make breadth-first

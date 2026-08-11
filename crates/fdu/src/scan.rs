@@ -635,13 +635,8 @@ fn walk_worker(
     let mut claimed: Vec<(PathBuf, usize, RegionId)> = Vec::with_capacity(DIR_CLAIM);
     let mut discovered: Vec<(PathBuf, usize, RegionId)> = Vec::new();
     let mut consumer_gone = false;
-    // The region this worker is currently reading. Kept across claims so a worker
-    // stays inside one subtree while it has work there, and only consults the
-    // round-robin ring when its own region runs dry.
-    let mut affinity: Option<RegionId> = None;
 
-    'walk: while queue.claim(&mut claimed, affinity, &mut report.attribution) {
-        affinity = claimed.first().map(|(_, _, region)| *region);
+    'walk: while queue.claim(&mut claimed, &mut report.attribution) {
         // One timing pair per claimed chunk, never per entry: the chunk is the unit
         // the amortization argument is made in, so it is the unit the evidence is
         // collected in.
@@ -826,18 +821,17 @@ impl DirectoryQueueState {
         }
     }
 
-    /// Take up to `limit` directories, preferring `affinity` when it still has work.
+    /// Take up to `limit` directories from the next region in the round-robin ring.
     ///
-    /// Affinity is the cheap half of the design: a worker that stays in its region
-    /// keeps reading a contiguous subtree, and only a worker whose region ran dry pays
-    /// the ring. Both paths are O(1).
-    fn take(
-        &mut self,
-        limit: usize,
-        affinity: Option<RegionId>,
-        order: ScanOrder,
-        into: &mut Vec<(PathBuf, usize, RegionId)>,
-    ) {
+    /// Every region holding work is in the ring exactly once, so popping it always
+    /// finds work and always moves to a *different* subtree than the previous claim.
+    /// An earlier version preferred the caller's previous region for locality, which
+    /// pinned each worker to one subtree: with twelve deep chains and six workers only
+    /// six subtrees ever advanced, and depth-first — whose four-directory claims
+    /// happen to fan across the root's children — spread wider than breadth-first did.
+    /// Locality still comes from the claim being a run of directories out of one
+    /// region; it must not come from a worker refusing to leave.
+    fn take(&mut self, limit: usize, order: ScanOrder, into: &mut Vec<(PathBuf, usize, RegionId)>) {
         match order {
             ScanOrder::DepthFirst => {
                 let take = self.pending.len().min(limit);
@@ -845,18 +839,8 @@ impl DirectoryQueueState {
                 into.extend(self.pending.drain(start..));
             }
             ScanOrder::BreadthFirst => {
-                let region = match affinity {
-                    Some(RegionId(id)) if self.regions.get(id).is_some_and(|r| !r.is_empty()) => {
-                        RegionId(id)
-                    }
-                    _ => match self.ready_ring.pop_front() {
-                        Some(region) => {
-                            self.enqueued[region.0] = false;
-                            region
-                        }
-                        None => return,
-                    },
-                };
+                let Some(region) = self.ready_ring.pop_front() else { return };
+                self.enqueued[region.0] = false;
                 let bucket = &mut self.regions[region.0];
                 let take = bucket.len().min(limit);
                 let start = bucket.len() - take;
@@ -898,13 +882,12 @@ impl DirectoryQueue {
     fn claim(
         &self,
         into: &mut Vec<(PathBuf, usize, RegionId)>,
-        affinity: Option<RegionId>,
         timing: &mut WalkAttribution,
     ) -> bool {
         let mut state = self.lock_timed(timing);
         loop {
             if !state.is_empty(self.order) {
-                state.take(DIR_CLAIM, affinity, self.order, into);
+                state.take(DIR_CLAIM, self.order, into);
                 state.outstanding += 1;
                 timing.claims += 1;
                 return true;
@@ -1979,33 +1962,46 @@ mod tests {
         );
     }
 
-    /// A pathological deep spur beside many shallow siblings — the shape that makes
-    /// traversal order visible to a user.
-    fn skewed_tree() -> tempfile::TempDir {
+    /// Twelve top-level subtrees, each a branching tree several levels deep.
+    ///
+    /// Branching matters: an earlier fixture gave every level exactly one child, which
+    /// pinned the frontier at twelve directories and made both orders behave
+    /// identically — a LIFO cannot dive when there is nothing to dive into. With two
+    /// children per level, depth-first pushes siblings and immediately descends into
+    /// the last one, which is the behaviour that leaves other subtrees behind.
+    ///
+    /// It is also deliberately uniform. A version using one deep spur beside shallow
+    /// siblings made the result depend on whether `readdir` returned the spur early:
+    /// it passed on APFS and failed on ext4.
+    fn deep_forest() -> tempfile::TempDir {
         let dir = tempfile::tempdir().expect("tempdir");
-        let mut deep = dir.path().join("deep");
-        for level in 0..40 {
-            deep = deep.join(format!("lvl{level}"));
-            for file in 0..20 {
-                write_file(&deep.join(format!("f{file}.dat")), b"xxxxxxxxxx");
-            }
-        }
-        for top in 0..11 {
-            for middle in 0..4 {
-                for file in 0..20 {
-                    write_file(
-                        &dir.path().join(format!("wide{top}/m{middle}/f{file}.dat")),
-                        b"xxxxxxxxxx",
-                    );
+        for top in 0..12 {
+            let mut level: Vec<PathBuf> = vec![dir.path().join(format!("t{top}"))];
+            for _ in 0..5 {
+                let mut next = Vec::new();
+                for parent in &level {
+                    for child in 0..2 {
+                        let path = parent.join(format!("c{child}"));
+                        for file in 0..3 {
+                            write_file(&path.join(format!("f{file}.dat")), b"xxxxxxxxxx");
+                        }
+                        next.push(path);
+                    }
                 }
+                level = next;
             }
         }
         dir
     }
 
-    /// Files seen in the first quarter of a walk, split into the deep spur's share and
-    /// the number of distinct shallow siblings that have started.
-    fn early_progress(order: ScanOrder, threads: usize, dir: &Path) -> (usize, usize) {
+    /// Files accumulated by the *least advanced* top-level subtree in the first
+    /// quarter of the walk.
+    ///
+    /// Counting subtrees merely *started* cannot discriminate on a tree whose root
+    /// fans out twelve ways: every scheduler touches all twelve immediately, because
+    /// reading the root enumerates them. What differs is whether they then advance
+    /// together, so the question is how far behind the laggard is.
+    fn leanest_subtree_early(order: ScanOrder, threads: usize, dir: &Path) -> usize {
         let config =
             ScanConfig { order, batch_size: 1, threads: Some(threads), ..ScanConfig::default() };
         let mut files: Vec<PathBuf> = Vec::new();
@@ -2021,18 +2017,40 @@ mod tests {
         .expect("scan");
 
         let quarter = files.len() / 4;
-        let mut wide: BTreeSet<PathBuf> = BTreeSet::new();
-        let mut deep = 0usize;
+        let mut per_top: BTreeMap<PathBuf, usize> = BTreeMap::new();
         for path in files.iter().take(quarter) {
-            let Some(top) = path.components().next() else { continue };
-            let top = PathBuf::from(top.as_os_str());
-            if top.to_string_lossy().starts_with("wide") {
-                wide.insert(top);
-            } else {
-                deep += 1;
+            if let Some(top) = path.components().next() {
+                *per_top.entry(PathBuf::from(top.as_os_str())).or_default() += 1;
             }
         }
-        (100 * deep / quarter.max(1), wide.len())
+        (0..12)
+            .map(|top| per_top.get(&PathBuf::from(format!("t{top}"))).copied().unwrap_or(0))
+            .min()
+            .unwrap_or(0)
+    }
+
+    #[test]
+    fn deep_subtrees_do_not_delay_their_siblings() {
+        // The orientation property, and the reason breadth-first is the default: when
+        // every top-level subtree is deep, depth-first pours its early effort down
+        // whichever ones it picked up and leaves the rest at zero, while the region
+        // scheduler advances all twelve together. A user watching the top level fill
+        // in sees a meaningful ranking in the first case and a misleading one in the
+        // second.
+        //
+        // Checked at one worker and at the default pool, because the whole point of
+        // region scheduling is that the property survives parallelism — a global FIFO
+        // ordered the queue but let workers cluster in one subtree.
+        let dir = deep_forest();
+        for threads in [1usize, 6] {
+            let breadth = leanest_subtree_early(ScanOrder::BreadthFirst, threads, dir.path());
+            let depth = leanest_subtree_early(ScanOrder::DepthFirst, threads, dir.path());
+            assert!(
+                breadth > depth,
+                "at {threads} worker(s) breadth-first should leave its least advanced \
+                 top-level subtree further along: {breadth} files against {depth}"
+            );
+        }
     }
 
     #[test]
@@ -2046,7 +2064,7 @@ mod tests {
 
         // Bootstrap: drain the root, then seed four top-level regions.
         let mut claimed = Vec::new();
-        assert!(queue.claim(&mut claimed, None, &mut timing));
+        assert!(queue.claim(&mut claimed, &mut timing));
         claimed.clear();
         queue.extend(
             (0..4).map(|top| (PathBuf::from(format!("t{top}")), 1, RegionId::UNASSIGNED)),
@@ -2058,41 +2076,11 @@ mod tests {
         let mut regions = BTreeSet::new();
         for _ in 0..4 {
             let mut claimed = Vec::new();
-            assert!(queue.claim(&mut claimed, None, &mut timing));
+            assert!(queue.claim(&mut claimed, &mut timing));
             regions.insert(claimed[0].2.0);
             assert_eq!(claimed.len(), 1, "one directory per region so far");
         }
         assert_eq!(regions.len(), 4, "each claim took a distinct region: {regions:?}");
-    }
-
-    #[test]
-    fn a_deep_spur_does_not_crowd_out_the_shallow_siblings() {
-        // The orientation property, on the tree shape that actually tests it: one
-        // 40-level spur holding most of the files, beside eleven shallow siblings.
-        //
-        // Depth-first pours early effort down the spur — which is correct for
-        // throughput and useless for a user watching the top level fill in.
-        // Region-scheduled breadth-first spends that effort across the siblings
-        // instead, without any barrier: the spur is one region among twelve and gets
-        // one region's share of attention.
-        //
-        // Pinned at one worker, where both orders are deterministic. Measured across
-        // worker counts the gap narrows, because extra workers dilute depth-first's
-        // spur by accident rather than by design.
-        let dir = skewed_tree();
-        let (breadth_spur, breadth_wide) = early_progress(ScanOrder::BreadthFirst, 1, dir.path());
-        let (depth_spur, depth_wide) = early_progress(ScanOrder::DepthFirst, 1, dir.path());
-
-        assert!(
-            breadth_spur < depth_spur,
-            "breadth-first should spend less of its early walk in the deep spur: \
-             {breadth_spur}% against {depth_spur}%"
-        );
-        assert!(
-            breadth_wide > depth_wide,
-            "breadth-first should have more shallow siblings underway: \
-             {breadth_wide} against {depth_wide}"
-        );
     }
 
     #[test]

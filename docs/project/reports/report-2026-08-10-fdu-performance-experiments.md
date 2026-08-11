@@ -57,7 +57,7 @@ The rejected ones are the reusable part: they stop the next person spending a da
 | 010 | [Claim-list join and deferred path joins in reconcile](#exp010--claimlist-join-and-deferred-path-joins-in-reconcile) | H17 | `warm-revalidate` | -0.0% | ❌ rejected |
 | 011 | [One ancestor merge per same-parent insert run](#exp011--one-ancestor-merge-per-sameparent-insert-run) | H13 | `cold-scan-index` | -2.5% | ❌ rejected |
 | 012 | [Breadth-first traversal order](#exp012--breadthfirst-traversal-order) | H48 | `cold-scan-index` | -0.6% | ✅ accepted |
-| 013 | [Region-scheduled breadth-first traversal](#exp013--regionscheduled-breadthfirst-traversal) | H49: exp-012's RSS and CPU costs came from the global FIFO, not from preferring shallow work; per-region buckets with round-robin hand-off recover memory and locality while strengthening the shallow preference | `cold-scan-index` | -3.9% | ✅ accepted |
+| 013 | [Region-scheduled breadth-first traversal](#exp013--regionscheduled-breadthfirst-traversal) | H49: exp-012's RSS cost and its missing ordering benefit both came from the global FIFO, not from preferring shallow work; per-region buckets with round-robin hand-off recover memory while making the shallow preference survive parallelism | `cold-scan-index` | -3.8% | ✅ accepted |
 
 ## The experiments
 
@@ -445,31 +445,31 @@ Full record: [`exp-012-breadth-first-traversal-order.md`](../experiments/exp-012
 
 ### exp-013 — Region-scheduled breadth-first traversal
 
-✅ accepted · 2026-08-11 · H49: exp-012's RSS and CPU costs came from the global FIFO, not from preferring shallow work; per-region buckets with round-robin hand-off recover memory and locality while strengthening the shallow preference
+✅ accepted · 2026-08-11 · H49: exp-012's RSS cost and its missing ordering benefit both came from the global FIFO, not from preferring shallow work; per-region buckets with round-robin hand-off recover memory while making the shallow preference survive parallelism
 
 Control: global FIFO breadth-first (bbc9cca)
 
-Candidate: per-region LIFO buckets with a round-robin ready ring and worker affinity
+Candidate: per-region LIFO buckets with a round-robin ready ring
 
 **`cold-scan-index`** (cold start) — the comparison the verdict rests on
 
 | metric | control | candidate | change | 95% interval |
 | --- | ---: | ---: | ---: | --- |
-| wall (ms) | 314.4 | 306.7 | -1.91% (n.s.) | [-6.53%, +9.97%] |
-| component (ms) | 198.8 | 192.6 | -3.64% (n.s.) | [-9.81%, +14.77%] |
-| cpu (ms) | 1235.6 | 1174.9 | -5.46% (n.s.) | [-9.51%, +0.24%] |
-| user (ms) | 245.2 | 230.4 | -5.32% | [-7.68%, -0.87%] |
-| system (ms) | 989.5 | 941.7 | -5.36% (n.s.) | [-10.48%, +1.40%] |
+| wall (ms) | 308.7 | 297.0 | -4.83% (n.s.) | [-6.56%, +4.08%] |
+| component (ms) | 193.8 | 183.3 | -6.83% (n.s.) | [-9.38%, +7.57%] |
+| cpu (ms) | 1241.5 | 1174.0 | -4.85% (n.s.) | [-9.45%, +1.56%] |
+| user (ms) | 235.3 | 230.9 | -1.66% | [-3.70%, -0.57%] |
+| system (ms) | 1005.6 | 945.4 | -5.42% (n.s.) | [-10.57%, +2.11%] |
 | blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
-| peak rss (MiB) | 33.5 | 32.2 | -3.89% | [-4.90%, -3.15%] |
+| peak rss (MiB) | 33.3 | 32.1 | -3.77% | [-5.18%, -2.99%] |
 
-Other jobs, wall time: `warm-revalidate` -0.7% (n.s.).
+Other jobs, wall time: `warm-revalidate` -0.0% (n.s.).
 
-Cost to carry: 286 lines; no new dependencies.
+Cost to carry: 80 lines; no new dependencies.
 
-One queue, two shapes: DepthFirst keeps the single stack, BreadthFirst uses per-region buckets plus a ready ring and an enqueued flag array. No barrier, no new dependency, both claim paths O(1).
+One queue, two shapes: DepthFirst keeps the single stack, BreadthFirst uses per-region buckets plus a ready ring and an enqueued flag array. No barrier, no new dependency, claims O(1). Worker affinity was tried and removed: it pinned each worker to one subtree.
 
-**Accepted:** Peak RSS -3.89% [-4.90%, -3.15%] on cold-scan-index, the only interval clear of zero, reversing exp-012's +1.51%. Wall unchanged (-1.91% [-6.53%, +9.97%]); no metric regressed. The deep-spur share of early work drops to 0-4% at every worker count against depth-first's 4-23%, so the orientation property now survives parallelism.
+**Accepted:** Peak RSS -3.77% [-5.18%, -2.99%] on cold-scan-index, the only interval clear of zero, reversing exp-012's +1.51%. Wall unchanged (-4.83% [-6.56%, +4.08%]); nothing regressed. On twelve branching subtrees the least advanced one holds 42 files at one worker and 33-37 at six, against depth-first's 0 and 6, so the ordering benefit now survives parallelism.
 
 Full record: [`exp-013-region-scheduled-breadth-first-traversal.md`](../experiments/exp-013-region-scheduled-breadth-first-traversal.md)
 

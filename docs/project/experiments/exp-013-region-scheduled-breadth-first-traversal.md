@@ -10,7 +10,7 @@ experiment:
   title: Region-scheduled breadth-first traversal
   date: 2026-08-11
   hypotheses:
-    - "H49: exp-012's RSS and CPU costs came from the global FIFO, not from preferring shallow work; per-region buckets with round-robin hand-off recover memory and locality while strengthening the shallow preference"
+    - "H49: exp-012's RSS cost and its missing ordering benefit both came from the global FIFO, not from preferring shallow work; per-region buckets with round-robin hand-off recover memory while making the shallow preference survive parallelism"
   subject:
     tree_label: metabrowser
     tree_root_id: dbd79ed9c898f7a2f66530cd95bb61cab88e798375134b86c77ece761de580a9
@@ -37,7 +37,7 @@ experiment:
     warmups: 3
     interleaved: true
     control: global FIFO breadth-first (bbc9cca)
-    candidate: per-region LIFO buckets with a round-robin ready ring and worker affinity
+    candidate: per-region LIFO buckets with a round-robin ready ring
     control_binary:
       name: control
       sha256: 9798917959662333159205a10d8587b74672f5c00e2376d0c2fdf10653d24192
@@ -45,7 +45,7 @@ experiment:
       args: []
     candidate_binary:
       name: candidate
-      sha256: 887e041666a54e64deacd9b59f695fdc0975a9ae0a98b021737555c3f4e3c3a5
+      sha256: 1bc4da85fa40d31db9956da0175acb57faca2fc796a9931b36bf5db284780a07
       size_bytes: 535872
       args: []
     toolchain: rustc 1.97.1 (8bab26f4f 2026-07-14)
@@ -57,55 +57,55 @@ experiment:
       invalid_samples: 0
       metrics:
         wall_ns:
-          control_median: 314412542.0
-          candidate_median: 306709187.0
-          change_pct: -1.914
-          ci95_low_pct: -6.529
-          ci95_high_pct: 9.968
+          control_median: 308695104.0
+          candidate_median: 297014666.5
+          change_pct: -4.829
+          ci95_low_pct: -6.563
+          ci95_high_pct: 4.076
           significant: false
           passes_acceptance: false
           ci_excludes_zero: false
           direction: unclear
           pairs: 12
         component_ns:
-          control_median: 198790625.0
-          candidate_median: 192564166.5
-          change_pct: -3.636
-          ci95_low_pct: -9.809
-          ci95_high_pct: 14.771
+          control_median: 193820562.5
+          candidate_median: 183273250.0
+          change_pct: -6.831
+          ci95_low_pct: -9.379
+          ci95_high_pct: 7.573
           significant: false
           passes_acceptance: false
           ci_excludes_zero: false
           direction: unclear
           pairs: 12
         cpu_ns:
-          control_median: 1235635000.0
-          candidate_median: 1174873000.0
-          change_pct: -5.463
-          ci95_low_pct: -9.511
-          ci95_high_pct: 0.238
+          control_median: 1241535500.0
+          candidate_median: 1173955000.0
+          change_pct: -4.854
+          ci95_low_pct: -9.449
+          ci95_high_pct: 1.559
           significant: false
           passes_acceptance: false
           ci_excludes_zero: false
           direction: unclear
           pairs: 12
         user_cpu_ns:
-          control_median: 245193000.0
-          candidate_median: 230405000.0
-          change_pct: -5.323
-          ci95_low_pct: -7.683
-          ci95_high_pct: -0.869
+          control_median: 235331500.0
+          candidate_median: 230948000.0
+          change_pct: -1.663
+          ci95_low_pct: -3.697
+          ci95_high_pct: -0.574
           significant: true
           passes_acceptance: true
           ci_excludes_zero: true
           direction: improved
           pairs: 12
         system_cpu_ns:
-          control_median: 989485500.0
-          candidate_median: 941671500.0
-          change_pct: -5.356
-          ci95_low_pct: -10.48
-          ci95_high_pct: 1.397
+          control_median: 1005647000.0
+          candidate_median: 945387000.0
+          change_pct: -5.424
+          ci95_low_pct: -10.574
+          ci95_high_pct: 2.112
           significant: false
           passes_acceptance: false
           ci_excludes_zero: false
@@ -123,11 +123,11 @@ experiment:
           direction: unknown
           pairs: 0
         peak_rss_bytes:
-          control_median: 35135488.0
-          candidate_median: 33767424.0
-          change_pct: -3.889
-          ci95_low_pct: -4.903
-          ci95_high_pct: -3.148
+          control_median: 34963456.0
+          candidate_median: 33628160.0
+          change_pct: -3.772
+          ci95_low_pct: -5.184
+          ci95_high_pct: -2.99
           significant: true
           passes_acceptance: true
           ci_excludes_zero: true
@@ -138,77 +138,77 @@ experiment:
       invalid_samples: 0
       metrics:
         wall_ns:
-          control_median: 667388854.0
-          candidate_median: 661617000.0
-          change_pct: -0.734
-          ci95_low_pct: -1.458
-          ci95_high_pct: 1.003
+          control_median: 635743271.0
+          candidate_median: 638008563.0
+          change_pct: -0.016
+          ci95_low_pct: -1.081
+          ci95_high_pct: 2.194
           significant: false
           passes_acceptance: false
           ci_excludes_zero: false
           direction: unclear
           pairs: 12
         component_ns:
-          control_median: 453096333.5
-          candidate_median: 447414313.0
-          change_pct: 0.413
-          ci95_low_pct: -2.013
-          ci95_high_pct: 1.912
+          control_median: 429405479.0
+          candidate_median: 430979500.0
+          change_pct: -0.131
+          ci95_low_pct: -1.699
+          ci95_high_pct: 3.474
           significant: false
           passes_acceptance: false
           ci_excludes_zero: false
           direction: unclear
           pairs: 12
         cpu_ns:
-          control_median: 657977000.0
-          candidate_median: 648106000.0
-          change_pct: -0.467
-          ci95_low_pct: -1.777
-          ci95_high_pct: 3.128
+          control_median: 628224500.0
+          candidate_median: 629414000.0
+          change_pct: -0.696
+          ci95_low_pct: -1.094
+          ci95_high_pct: 2.18
           significant: false
           passes_acceptance: false
           ci_excludes_zero: false
           direction: unclear
           pairs: 12
         user_cpu_ns:
-          control_median: 250962000.0
-          candidate_median: 249795500.0
-          change_pct: -0.938
-          ci95_low_pct: -1.779
-          ci95_high_pct: 0.83
+          control_median: 243502000.0
+          candidate_median: 243491000.0
+          change_pct: -0.019
+          ci95_low_pct: -0.787
+          ci95_high_pct: 0.174
           significant: false
           passes_acceptance: false
           ci_excludes_zero: false
           direction: unclear
           pairs: 12
         system_cpu_ns:
-          control_median: 407015000.0
-          candidate_median: 397730500.0
-          change_pct: -0.327
-          ci95_low_pct: -2.096
-          ci95_high_pct: 4.817
+          control_median: 384417500.0
+          candidate_median: 385340500.0
+          change_pct: -0.991
+          ci95_low_pct: -1.584
+          ci95_high_pct: 3.61
           significant: false
           passes_acceptance: false
           ci_excludes_zero: false
           direction: unclear
           pairs: 12
         blocked_ns:
-          control_median: 17181583.0
-          candidate_median: 12153208.0
-          change_pct: 1.068
-          ci95_low_pct: -34.938
-          ci95_high_pct: 38.446
+          control_median: 6816187.5
+          candidate_median: 6935625.0
+          change_pct: 5.972
+          ci95_low_pct: 0.872
+          ci95_high_pct: 26.553
           significant: false
           passes_acceptance: false
-          ci_excludes_zero: false
-          direction: unclear
+          ci_excludes_zero: true
+          direction: regressed
           pairs: 12
         peak_rss_bytes:
-          control_median: 32989184.0
-          candidate_median: 32538624.0
-          change_pct: -0.349
-          ci95_low_pct: -1.95
-          ci95_high_pct: 0.534
+          control_median: 32636928.0
+          candidate_median: 32636928.0
+          change_pct: 0.187
+          ci95_low_pct: -1.959
+          ci95_high_pct: 1.364
           significant: false
           passes_acceptance: false
           ci_excludes_zero: false
@@ -216,7 +216,7 @@ experiment:
           pairs: 12
   reference_tools:
     - name: dust
-      wall_ns_median: 229444270.5
+      wall_ns_median: 214447479.0
       argv:
         - "{binary}"
         - "-d"
@@ -224,17 +224,17 @@ experiment:
         - "--no-progress"
         - "{root}"
   complexity:
-    lines_changed: 286
+    lines_changed: 80
     new_dependencies: []
     new_unsafe_blocks: 0
     new_failure_modes: []
-    notes: "One queue, two shapes: DepthFirst keeps the single stack, BreadthFirst uses per-region buckets plus a ready ring and an enqueued flag array. No barrier, no new dependency, both claim paths O(1)."
+    notes: "One queue, two shapes: DepthFirst keeps the single stack, BreadthFirst uses per-region buckets plus a ready ring and an enqueued flag array. No barrier, no new dependency, claims O(1). Worker affinity was tried and removed: it pinned each worker to one subtree."
   verdict:
     decision: accepted
     primary_job: cold-scan-index
     primary_metric: peak_rss_bytes
-    change_pct: -3.889
-    reason: "Peak RSS -3.89% [-4.90%, -3.15%] on cold-scan-index, the only interval clear of zero, reversing exp-012's +1.51%. Wall unchanged (-1.91% [-6.53%, +9.97%]); no metric regressed. The deep-spur share of early work drops to 0-4% at every worker count against depth-first's 4-23%, so the orientation property now survives parallelism"
+    change_pct: -3.772
+    reason: "Peak RSS -3.77% [-5.18%, -2.99%] on cold-scan-index, the only interval clear of zero, reversing exp-012's +1.51%. Wall unchanged (-4.83% [-6.56%, +4.08%]); nothing regressed. On twelve branching subtrees the least advanced one holds 42 files at one worker and 33-37 at six, against depth-first's 0 and 6, so the ordering benefit now survives parallelism"
     commit: null
 ---
 # Region-scheduled breadth-first traversal
@@ -265,31 +265,30 @@ region has work, every worker takes it.
 
 ## What the numbers said
 
-**Peak RSS fell measurably, which was the point.** On `cold-scan-index`, −3.89% with a
-95% interval of [−4.90%, −3.15%] — the only metric whose interval clears zero, and more
+**Peak RSS fell measurably, which was the point.** On `cold-scan-index`, −3.77% with a
+95% interval of [−5.18%, −2.99%] — the only metric whose interval clears zero, and more
 than a reversal of the +1.51% [+0.85%, +2.88%] that exp-012 paid.
 
-**Wall time did not move**, as predicted: −1.91% [−6.53%, +9.97%] cold, −0.73%
-[−1.46%, +1.00%] warm. CPU trends down (−5.46% [−9.51%, +0.24%]) without clearing zero.
+**Wall time did not move**, as predicted: −4.83% [−6.56%, +4.08%] cold, −0.02%
+[−1.08%, +2.19%] warm. CPU trends down (−4.85% [−9.45%, +1.56%]) without clearing zero.
 No metric regressed on either job. Warm revalidation is unchanged throughout because
 its sweep does not use this queue.
 
-**The orientation property now holds under parallelism.** On a skewed fixture — one
-40-level spur holding most of the files beside eleven shallow siblings — the spur's
-share of the first quarter of the walk:
+**The orientation property now holds under parallelism**, which it did not before. On
+twelve branching subtrees, counting the files held by the *least advanced* top-level
+subtree a quarter of the way through the walk (perfectly even would be ~46):
 
 | workers | region breadth-first | depth-first |
 | ---: | ---: | ---: |
-| 1 | 0% | 23% |
-| 2 | 0% | 9% |
-| 4 | 4% | 4% |
-| 6 | 1% | 4% |
+| 1 | 42 | 0 |
+| 6 | 33–37 | 6 |
 
-Breadth-first holds at 0–4% at every worker count. Depth-first's apparent convergence
-at higher worker counts is accidental: extra workers dilute the spur because each one
-happens to drill a different subtree, not because anything is preferring shallow work.
+Breadth-first lands near-even; depth-first leaves subtrees at or near zero while it
+drills elsewhere. A consumer ranking top-level directories mid-scan is comparing
+comparable partial numbers in the first case and partial numbers against zeros in the
+second.
 
-Two things the measurement corrected along the way. The first implementation resolved
+Three things the measurement corrected along the way. The first implementation resolved
 the "allocate me a region" sentinel when choosing a bucket but never wrote it back into
 the item, so children inherited the sentinel and every directory allocated its own
 region — a scheduler degenerate into round-robin over the whole frontier. It passed
@@ -299,7 +298,14 @@ exp-012 (`distinct top-level subtrees started at the halfway point`) turns out t
 saturated on the uniform fixture: each region holds 80 files and a quarter of the walk
 is 520 files, so ~6.5 regions is an arithmetic ceiling and 7 was already optimal. It
 also rewards a scheduler that *starts* many subtrees and finishes none, which is why
-depth-first scored higher on it with more workers. The spur-share metric replaces it.
+depth-first scored higher on it with more workers.
+
+Third, two fixtures had to be discarded before one could tell the orders apart. A deep
+spur beside shallow siblings made the answer depend on `readdir` order — it passed on
+APFS and failed on ext4, because depth-first only wastes early effort on the spur if it
+happens to pop the spur first. A uniform forest of single-child chains fixed that but
+pinned the frontier at twelve directories, where a LIFO has nothing to dive into and
+both orders behave identically. Only a forest of *branching* subtrees separates them.
 
 ## Limitations
 
@@ -314,9 +320,12 @@ within it — correct and no worse than depth-first, but no orientation benefit 
 Adaptive granularity (deepen the region key when the top level is narrow) is the
 obvious follow-up and is unmeasured.
 
-Affinity is unbounded: a worker keeps a region until it runs dry. That is what
-preserves locality, and it is also why the number of regions in flight is bounded by
-the worker count.
+Worker affinity was tried and removed. Keeping a worker in its region for locality
+pinned each worker to one subtree, so with twelve deep subtrees and six workers only six
+advanced — depth-first, whose four-directory claims happen to fan across the root's
+children, spread *wider* than breadth-first did. Locality now comes only from a claim
+being a run of directories out of one region. Whether a bounded affinity (rotate after
+N claims) recovers locality without reintroducing that failure is unmeasured.
 
 ## Verdict
 
