@@ -785,12 +785,23 @@ impl Cli {
     }
 }
 
+/// Anchor for reading an interval as an age.
+///
+/// Far enough past the epoch that any interval worth writing subtracts cleanly, and near
+/// enough to be representable everywhere. That second half is not theoretical: this was
+/// once 2^40 seconds, about 34,865 years, which is fine where `SystemTime` counts seconds
+/// and overflows on Windows, where it is 100-nanosecond FILETIME ticks. Roughly a
+/// thousand years is astronomically larger than any render interval and comfortable on
+/// every platform.
+#[cfg(feature = "watch")]
+const INTERVAL_ANCHOR_SECS: u64 = 1 << 35;
+
 /// Parse a render interval, reusing the age half of the shared time grammar.
 #[cfg(feature = "watch")]
 fn parse_duration(value: &str) -> anyhow::Result<std::time::Duration> {
     // Expressed as an age before a fixed instant, so `2s` and `1h30m` mean here exactly
     // what they mean in --modified-since rather than being a fourth spelling.
-    let anchor = SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1 << 40);
+    let anchor = SystemTime::UNIX_EPOCH + Duration::from_secs(INTERVAL_ANCHOR_SECS);
     let at = parse_when(value, anchor)
         .map_err(|error| anyhow::anyhow!("invalid --interval {value:?}: {error}"))?;
     anchor
@@ -1106,6 +1117,25 @@ fn compose_skill_from(template: &str) -> String {
 mod tests {
     use super::*;
     use std::process::Command;
+
+    /// Every `--watch` run parses an interval before anything else, so this must work on
+    /// every platform the binary ships to.
+    ///
+    /// Regression test. The anchor used to sit about 34,865 years past the epoch, which
+    /// `SystemTime` accepts where it counts seconds and rejects on Windows, where it
+    /// counts 100-nanosecond FILETIME ticks. Building it panicked before any input was
+    /// examined, so `fdu --watch` aborted on Windows regardless of arguments -- and
+    /// nothing caught it, because both watch integration tests are Unix-only and the
+    /// scope-validation goldens exit before the watch path is reached. A CLI golden
+    /// driving a real watch session on Windows CI is what finally surfaced it.
+    #[cfg(feature = "watch")]
+    #[test]
+    fn an_interval_parses_without_overflowing_any_platforms_clock() {
+        assert_eq!(parse_duration("2s").expect("seconds"), Duration::from_secs(2));
+        assert_eq!(parse_duration("1h30m").expect("compound"), Duration::from_secs(5_400));
+        assert_eq!(parse_duration("1w").expect("weeks"), Duration::from_secs(604_800));
+        assert!(parse_duration("banana").is_err(), "a non-duration must be rejected, not parsed");
+    }
 
     /// The watch loop's save throttle, as a table over every state that reaches it.
     ///
