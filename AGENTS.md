@@ -78,12 +78,22 @@ Three artifacts and one contract:
 - **Data structures are partial-friendly as well as delta-friendly.** A partially walked
   tree is a valid, useful answer as long as the boundary of incompleteness is knowable:
   roll-ups are correct lower bounds, unvisited subtrees are identifiable, and per-value
-  provenance carries `status: Partial`. Queries, serialization, sessions, and reducers
-  accept partial structures as first-class inputs; code that genuinely requires
-  completeness must demand it explicitly, never assume it.
+  provenance carries `status: Partial`. Queries, sessions, and reducers accept partial
+  structures as first-class inputs; code that genuinely requires completeness must demand
+  it explicitly, never assume it.
   The two properties compose — a delta stream applied to a partial structure yields
   another valid partial structure — and that composition is what progressive results
   are.
+  **Serialization is the documented exception, and it is an exception because no format
+  has been designed for it yet, not because partial snapshots are unwanted.** Saving
+  rejects a non-fresh index today: there is no encoding for an unfinished frontier,
+  unknown children, evicted nodes, or a cancelled walk, and inventing one silently would
+  produce a snapshot that reloads as if it were complete. Until a format version carries
+  a completeness boundary, `save` demands a complete index in its signature and says so
+  in its error rather than quietly writing a partial tree.
+  Note also that `Status::Partial` records *coverage*, not direction: a value is a
+  monotone lower bound only while an additive walk is running, and one truncated by
+  errors can move either way.
 - **Do not add a mutation path that bypasses `Delta`.** The contract is what keeps the
   in-memory structure, the serialized form, and the change feed from drifting apart.
   A new producer emits deltas; it does not reach into the index.

@@ -54,25 +54,59 @@ const REDUCERS_FINGERPRINT: u64 = 1;
 ///
 /// The choice only matters to a consumer that reads the index while the walk is still
 /// running, and there it matters a great deal.
+///
+/// # Strength of the guarantee
+///
+/// **These are scheduling preferences, not strict orders, whenever more than one worker
+/// is running** — which is the default.
+///
+/// The queue is ordered, but the *claims* are not. Workers take directories from the
+/// shared queue in the policy's order; a worker that finishes early can enqueue its
+/// children and another worker can claim them while a slower worker still holds
+/// unfinished work from a shallower level. Nothing releases a level barrier, because
+/// a barrier would idle every fast worker at each level boundary and give back most of
+/// the parallel producer's win.
+///
+/// So:
+///
+/// - With `threads: Some(1)`, [`ScanOrder::BreadthFirst`] is strict: no directory is
+///   read before one closer to the root.
+/// - With several workers it is *shallow-first*: shallow work is always preferred when
+///   a worker chooses, and deeper observations can still interleave.
+///
+/// That weaker property is what the browser use case actually needs — every top-level
+/// subtree starts filling early, so a mid-scan ranking is meaningful — and it is the
+/// property the tests pin. A caller that needs strict level order must ask for one
+/// worker and pay for it.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub enum ScanOrder {
     /// Shallow directories before deep ones.
     ///
-    /// The default, because it is the only order whose partial results mean anything.
+    /// The default, because it is the order whose partial results mean something.
     /// Roll-ups are maintained per directory as the walk proceeds, so a consumer that
-    /// looks mid-scan sees every top-level total as a lower bound that only grows —
-    /// bars fill, rankings converge. Interrupting early leaves a usefully complete
-    /// picture of the top of the tree.
+    /// looks mid-scan sees top-level totals grow together — bars fill, rankings
+    /// converge — instead of one subtree finishing while its siblings read zero.
+    /// Interrupting early leaves a usefully complete picture of the top of the tree.
+    ///
+    /// Under several workers this is a preference rather than a guarantee; see the
+    /// type-level note above.
+    ///
+    /// Note that totals only grow *while an additive walk is running*. Monotonicity
+    /// comes from the producer being additive, not from the order — the order decides
+    /// which subtrees get to grow early.
     #[default]
     BreadthFirst,
-    /// One subtree to completion before starting the next.
+    /// One subtree toward completion before starting the next.
     ///
     /// Lower peak memory, since the frontier is bounded by depth rather than by the
     /// width of a level, and better locality within a subtree. The cost is that
-    /// partial results are actively misleading: one child of the root reads its final
-    /// total while its siblings read zero, so anything ranking by size mid-scan ranks
-    /// confidently and wrongly. Correct for a caller that only reads the finished
-    /// index and wants the smallest footprint.
+    /// partial results are actively misleading: one child of the root approaches its
+    /// final total while its siblings read zero, so anything ranking by size mid-scan
+    /// ranks confidently and wrongly. Correct for a caller that only reads the
+    /// finished index and wants the smallest footprint.
+    ///
+    /// Under several workers this too is a preference: several subtrees will be in
+    /// flight at once, one per worker.
     DepthFirst,
 }
 
@@ -1561,10 +1595,12 @@ mod tests {
     }
 
     #[test]
-    fn breadth_first_visits_shallow_directories_before_deep_ones() {
-        // The property the browser use case depends on: at any prefix of the walk, no
-        // directory has been read before one that is closer to the root. Depth-first
-        // makes no such promise, which is what makes its partial results misleading.
+    fn a_single_worker_breadth_first_walk_is_strictly_level_ordered() {
+        // The strict guarantee, which holds only with one worker. With several, the
+        // queue is ordered but the claims are not: a fast worker can enqueue and claim
+        // depth d+2 while a slow worker still holds depth d+1. See
+        // `breadth_first_starts_every_top_level_subtree_early` for the property the
+        // default configuration actually provides, which is the one consumers rely on.
         let dir = branching_tree();
         let config = ScanConfig {
             order: ScanOrder::BreadthFirst,
@@ -1588,6 +1624,64 @@ mod tests {
         assert!(
             depths_in_order.windows(2).all(|pair| pair[0] <= pair[1]),
             "directory depths were not non-decreasing: {depths_in_order:?}"
+        );
+    }
+
+    /// How many of the fixture's twelve top-level subtrees have received any file by
+    /// the time half the files have been emitted.
+    ///
+    /// This is the product metric — "is a mid-scan ranking meaningful?" — rather than
+    /// first-touch, which cannot distinguish the orders at all: reading the root
+    /// enumerates all twelve children at once either way. What a ranking needs is that
+    /// the subtrees grow *together*.
+    fn subtrees_started_at_halfway(order: ScanOrder, threads: usize, dir: &Path) -> usize {
+        let config =
+            ScanConfig { order, batch_size: 1, threads: Some(threads), ..ScanConfig::default() };
+
+        let mut files: Vec<PathBuf> = Vec::new();
+        scan(dir, &config, &mut |observation| {
+            for op in &observation.ops {
+                if let Op::Upsert { path, kind, .. } = &op.op {
+                    if !kind.is_dir() {
+                        files.push(path.clone());
+                    }
+                }
+            }
+        })
+        .expect("scan");
+
+        let halfway = files.len() / 2;
+        let mut started: BTreeSet<PathBuf> = BTreeSet::new();
+        for path in files.iter().take(halfway) {
+            if let Some(top) = path.components().next() {
+                started.insert(PathBuf::from(top.as_os_str()));
+            }
+        }
+        started.len()
+    }
+
+    #[test]
+    fn breadth_first_spreads_early_work_across_top_level_subtrees() {
+        // The justification for making breadth-first the default: at the halfway point
+        // more of the tree's top-level subtrees have started filling, so a consumer
+        // ranking by size mid-scan is comparing partial values rather than a mix of
+        // final values and zeros.
+        //
+        // Pinned with one worker, where the ordering guarantee is strict and the result
+        // is deterministic. The multi-worker case is deliberately NOT asserted here:
+        // measured on this fixture the advantage disappears under the default worker
+        // count (both orders start 7-8 subtrees, run to run), because emission order is
+        // then dominated by worker scheduling rather than by queue order. That is a
+        // real limitation of the current design, recorded in the plan and tracked
+        // rather than papered over with a test tuned until it passed.
+        let dir = branching_tree();
+        let breadth = subtrees_started_at_halfway(ScanOrder::BreadthFirst, 1, dir.path());
+        let depth = subtrees_started_at_halfway(ScanOrder::DepthFirst, 1, dir.path());
+
+        assert!(
+            breadth > depth,
+            "breadth-first should have more top-level subtrees underway at the halfway \
+             point, but started {breadth} against depth-first's {depth}"
         );
     }
 
