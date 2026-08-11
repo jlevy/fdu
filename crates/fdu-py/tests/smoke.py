@@ -91,9 +91,12 @@ def main() -> None:
     cli_scan = subprocess.run(
         [
             entrypoint,
-            "--no-cache",
-            "--json",
-            "--apparent-size",
+            "--cache",
+            "off",
+            "--format",
+            "json",
+            "--size",
+            "apparent",
             "--depth",
             "1",
             str(root),
@@ -104,10 +107,14 @@ def main() -> None:
     )
     assert cli_scan.returncode == 0, cli_scan
     cli_data = json.loads(cli_scan.stdout)
-    assert cli_data["schema"] == "fdu.tree/2", cli_data
+    assert cli_data["schema"] == "fdu.report/1", cli_data
     assert cli_data["complete"] is True, cli_data
-    assert cli_data["tree_truncated"] is True, cli_data
-    assert cli_data["tree"]["bytes"] == 17, cli_data
+    tree = cli_data["reports"][0]["tree"]
+    assert tree["bytes"] == 17, cli_data
+    # Truncation is per node rather than one whole-tree flag: the root expanded its own
+    # level, and the child that was not expanded is the one that says so.
+    assert tree["truncated"] is False, cli_data
+    assert tree["children"][0]["truncated"] is True, cli_data
     assert cli_scan.stderr == "", cli_scan.stderr
 
     usage = subprocess.run(
@@ -136,7 +143,7 @@ def main() -> None:
             # APFS rejects this fixture, but passing the same bytes to fdu still proves
             # that Python argv reached Rust losslessly instead of raising in PyO3.
             raw_scan = subprocess.run(
-                [os.fsencode(entrypoint), b"--no-cache", b"--json", raw_root],
+                [os.fsencode(entrypoint), b"--cache", b"off", b"--format", b"json", raw_root],
                 check=False,
                 capture_output=True,
             )
@@ -147,7 +154,7 @@ def main() -> None:
             with open(raw_root + b"/data.bin", "wb") as raw_file:
                 raw_file.write(b"raw")
             raw_scan = subprocess.run(
-                [os.fsencode(entrypoint), b"--no-cache", b"--json", raw_root],
+                [os.fsencode(entrypoint), b"--cache", b"off", b"--format", b"json", raw_root],
                 check=False,
                 capture_output=True,
             )
@@ -205,6 +212,67 @@ def main() -> None:
         expected_kinds.update({"link": "symlink", "fifo": "other"})
     kinds = {child["name"]: child["kind"] for child in fdu_py.scan(str(kind_root)).children("")}
     assert kinds == expected_kinds, kinds
+
+    # The query surface: the same five axes the CLI exposes, as one typed call.
+    query_root = pathlib.Path(tempfile.mkdtemp())
+    (query_root / "src").mkdir()
+    (query_root / "src" / "main.rs").write_text("fn main() {}")
+    (query_root / "src" / "lib.rs").write_text("pub fn lib() {}")
+    (query_root / "notes.md").write_text("notes")
+    index = fdu_py.scan(str(query_root))
+
+    summary = index.report(views=["summary"])["reports"][0]["summary"]
+    assert summary["files"] == 3, summary
+    assert summary["dirs"] == 1, summary
+
+    # Selection narrows without rescanning, and every view is reachable.
+    rust_only = index.report(views=["files"], include=["*.rs"], kind=["file"])
+    paths = sorted(row["path"] for row in rust_only["reports"][0]["files"])
+    assert paths == ["src/lib.rs", "src/main.rs"], paths
+
+    types = index.report(views=["types"])["reports"][0]["types"]
+    extensions = sorted(row["extension"] for row in types)
+    assert extensions == [".md", ".rs"], extensions
+
+    tree = index.report(views=["tree"], depth="all")["reports"][0]["tree"]
+    assert tree["name"] == ".", tree
+    assert any(child["name"] == "src" for child in tree["children"]), tree
+
+    # Several views come back in request order, from one index.
+    ordered = index.report(views=["types", "summary"])["reports"]
+    assert [section["view"] for section in ordered] == ["types", "summary"], ordered
+
+    # Value grammars are shared, so a bad value is rejected the same way everywhere.
+    for bad in [
+        {"min_size": "10X"},
+        {"modified_since": "1.5h"},
+        {"views": ["bogus"]},
+        {"sort": "sideways"},
+    ]:
+        try:
+            index.report(**bad)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"expected {bad} to be rejected")
+
+    # Cache accessors mirror the library functions.
+    cache_root = pathlib.Path(tempfile.mkdtemp())
+    (cache_root / "a.txt").write_text("hello")
+    fdu_py.open(str(cache_root), cache="auto")
+    status = fdu_py.cache_status(str(cache_root))
+    assert status is not None and status["recognized"], status
+    assert status["root"] == str(cache_root.resolve()), status
+    assert fdu_py.clear_cache(str(cache_root)) is True
+    assert fdu_py.cache_status(str(cache_root))["recognized"] is False
+
+    # Cache policy is the same closed vocabulary the CLI accepts.
+    try:
+        fdu_py.open(str(cache_root), cache="sometimes")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("expected an invalid cache policy to be rejected")
 
     print(f"fdu_py {fdu_py.__version__} ok")
 

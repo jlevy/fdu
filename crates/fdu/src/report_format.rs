@@ -205,6 +205,9 @@ fn write_envelope_json(out: &mut String, report: &Report) {
     let _ = write!(out, "  \"schema\": {}", quote(REPORT_SCHEMA));
     let _ = write!(out, ",\n  \"generator\": {}", quote(&generator()));
     let _ = write!(out, ",\n  \"root\": {}", quote(&report.root.to_string_lossy()));
+    if let Some(raw) = raw_identity_json("root", &report.root) {
+        out.push_str(&raw);
+    }
     let _ = write!(
         out,
         ",\n  \"scan_started_at\": {}",
@@ -604,6 +607,56 @@ fn human_bytes(bytes: u64) -> String {
 /// raw-bytes companion field, and this is the predicate that decides when.
 pub fn is_lossy(path: &Path) -> bool {
     path.to_str().is_none()
+}
+
+/// Lossless identity for a path that does not render as UTF-8.
+///
+/// `to_string_lossy` replaces undecodable bytes with U+FFFD, so a consumer reading only
+/// `root` cannot tell two different names apart. Machine output therefore carries the
+/// native bytes alongside, and only when they are actually needed.
+fn raw_os_identity(value: &std::ffi::OsStr) -> Option<(&'static str, String)> {
+    if value.to_str().is_some() {
+        return None;
+    }
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStrExt;
+
+        Some(("unix-bytes", hex_bytes(value.as_bytes().iter().copied())))
+    }
+
+    #[cfg(windows)]
+    {
+        use std::os::windows::ffi::OsStrExt;
+
+        Some(("windows-wtf16le", hex_bytes(value.encode_wide().flat_map(u16::to_le_bytes))))
+    }
+
+    #[cfg(not(any(unix, windows)))]
+    {
+        None
+    }
+}
+
+/// Hex-encode bytes for the raw identity field.
+#[cfg(any(unix, windows))]
+fn hex_bytes(bytes: impl IntoIterator<Item = u8>) -> String {
+    let mut out = String::new();
+    for byte in bytes {
+        let _ = write!(out, "{byte:02x}");
+    }
+    out
+}
+
+/// Render the raw-identity companion for a path, when one is needed.
+fn raw_identity_json(label: &str, path: &Path) -> Option<String> {
+    let (encoding, hex) = raw_os_identity(path.as_os_str())?;
+    Some(format!(
+        ",\n  \"{label}_raw\": {{\"encoding\": {}, \"hex\": {}}}",
+        quote(encoding),
+        quote(&hex)
+    ))
 }
 
 /// Render cache status in a machine format.

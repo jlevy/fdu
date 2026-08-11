@@ -22,7 +22,12 @@ use pyo3::exceptions::{PyOSError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 
+use fdu::query::{
+    Bound as Bound_, Pattern, Provenance, Query, Report, ReportSource, Section, Selection,
+    SizeMetric, SortKey, SummaryRow, TreeNode, ViewSpec,
+};
 use fdu::{CachePolicy, EntryKind, Freshness, OpenConfig, RollUp, ScanConfig};
+use std::time::SystemTime;
 
 fn to_py_err(err: fdu::Error) -> PyErr {
     match err {
@@ -118,6 +123,94 @@ impl PyIndex {
     /// Number of entries held, including the root.
     fn __len__(&self) -> usize {
         usize::try_from(self.inner.len()).unwrap_or(usize::MAX)
+    }
+
+    /// Build a report over this index.
+    ///
+    /// The same five axes the CLI exposes, as one typed call: a capability reachable by
+    /// flag has to be reachable from the library, or the CLI has become a second
+    /// implementation. String values accept exactly the CLI grammars.
+    #[pyo3(signature = (
+        *,
+        views = None,
+        include = None,
+        exclude = None,
+        min_size = None,
+        modified_since = None,
+        modified_before = None,
+        kind = None,
+        depth = None,
+        limit = None,
+        sort = None,
+        reverse = false,
+        size = "allocated"
+    ))]
+    #[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
+    fn report<'py>(
+        &self,
+        py: Python<'py>,
+        views: Option<Vec<String>>,
+        include: Option<Vec<String>>,
+        exclude: Option<Vec<String>>,
+        min_size: Option<&str>,
+        modified_since: Option<&str>,
+        modified_before: Option<&str>,
+        kind: Option<Vec<String>>,
+        depth: Option<&str>,
+        limit: Option<&str>,
+        sort: Option<&str>,
+        reverse: bool,
+        size: &str,
+    ) -> PyResult<Bound<'py, PyDict>> {
+        let now = SystemTime::now();
+        let mut selection =
+            Selection { reverse, size: parse_size_metric(size)?, ..Selection::default() };
+        if let Some(value) = depth {
+            selection.depth = parse_bound(value, "depth")?;
+        }
+        if let Some(value) = limit {
+            selection.limit = parse_bound(value, "limit")?;
+        }
+        for pattern in include.unwrap_or_default() {
+            selection.include.push(Pattern::parse(&pattern).map_err(to_py_err)?);
+        }
+        for pattern in exclude.unwrap_or_default() {
+            selection.exclude.push(Pattern::parse(&pattern).map_err(to_py_err)?);
+        }
+        if let Some(value) = min_size {
+            selection.min_size = Some(fdu::query::parse_size(value).map_err(to_py_err)?);
+        }
+        if let Some(value) = modified_since {
+            let at = fdu::query::parse_when(value, now).map_err(to_py_err)?;
+            selection.modified.since = fdu::query::system_time_to_nanos(at);
+        }
+        if let Some(value) = modified_before {
+            let at = fdu::query::parse_when(value, now).map_err(to_py_err)?;
+            selection.modified.before = fdu::query::system_time_to_nanos(at);
+        }
+        for value in kind.unwrap_or_default() {
+            selection.kinds.push(parse_kind(&value)?);
+        }
+        if let Some(value) = sort {
+            selection.sort = Some(parse_sort(value)?);
+        }
+
+        let views = match views {
+            Some(values) => {
+                values.iter().map(|value| parse_view(value)).collect::<PyResult<Vec<_>>>()?
+            }
+            None => vec![ViewSpec::Tree],
+        };
+
+        let provenance = Provenance {
+            scan_started_at: None,
+            generated_at: now,
+            source: ReportSource::WarmRevalidate,
+            complete: self.errors.is_empty(),
+            errors: self.errors.clone(),
+        };
+        let report = fdu::query::report(&self.inner, &Query { selection, views }, &provenance);
+        report_dict(py, &report)
     }
 
     /// Roll-up totals for the whole tree.
@@ -247,6 +340,236 @@ fn parse_cache_policy(value: &str) -> PyResult<CachePolicy> {
     }
 }
 
+/// Convert a report into the dict shape Python callers get.
+fn report_dict<'py>(py: Python<'py>, report: &Report) -> PyResult<Bound<'py, PyDict>> {
+    let dict = PyDict::new(py);
+    dict.set_item("root", report.root.display().to_string())?;
+    dict.set_item("complete", report.complete)?;
+    dict.set_item("errors", report.errors.clone())?;
+    dict.set_item("freshness", freshness_label(report.freshness))?;
+    dict.set_item("generated_at", fdu::query::format_rfc3339(report.generated_at))?;
+    dict.set_item("scan_started_at", report.scan_started_at.map(fdu::query::format_rfc3339))?;
+
+    let sections = PyList::empty(py);
+    for section in &report.sections {
+        let entry = PyDict::new(py);
+        match section {
+            Section::Summary(row) => {
+                entry.set_item("view", "summary")?;
+                entry.set_item("summary", summary_dict(py, row)?)?;
+            }
+            Section::Types(rows) => {
+                entry.set_item("view", "types")?;
+                let list = PyList::empty(py);
+                for row in rows {
+                    let item = PyDict::new(py);
+                    item.set_item("extension", &row.extension)?;
+                    item.set_item("files", row.files)?;
+                    item.set_item("bytes", row.bytes)?;
+                    item.set_item("allocated", row.allocated)?;
+                    list.append(item)?;
+                }
+                entry.set_item("types", list)?;
+            }
+            Section::Files(rows) => {
+                entry.set_item("view", "files")?;
+                let list = PyList::empty(py);
+                for row in rows {
+                    let item = PyDict::new(py);
+                    item.set_item("path", row.path.display().to_string())?;
+                    item.set_item("kind", entry_kind_label(row.kind))?;
+                    item.set_item("bytes", row.bytes)?;
+                    item.set_item("allocated", row.allocated)?;
+                    item.set_item("mtime_ns", row.mtime_ns)?;
+                    list.append(item)?;
+                }
+                entry.set_item("files", list)?;
+            }
+            Section::Tree(root) => {
+                entry.set_item("view", "tree")?;
+                entry.set_item("tree", tree_dict(py, root)?)?;
+            }
+        }
+        sections.append(entry)?;
+    }
+    dict.set_item("reports", sections)?;
+    Ok(dict)
+}
+
+/// One summary row as a dict.
+fn summary_dict<'py>(py: Python<'py>, row: &SummaryRow) -> PyResult<Bound<'py, PyDict>> {
+    let dict = PyDict::new(py);
+    dict.set_item("files", row.files)?;
+    dict.set_item("dirs", row.dirs)?;
+    dict.set_item("bytes", row.bytes)?;
+    dict.set_item("allocated", row.allocated)?;
+    dict.set_item("newest_mtime_ns", row.newest_mtime_ns)?;
+    Ok(dict)
+}
+
+/// One tree node as a nested dict.
+///
+/// Built with an explicit stack: the tree can be deeper than the interpreter's recursion
+/// budget, and a report that aborts on a deep tree fails where it is most useful.
+fn tree_dict<'py>(py: Python<'py>, root: &TreeNode) -> PyResult<Bound<'py, PyDict>> {
+    fn node_dict<'py>(py: Python<'py>, node: &TreeNode) -> PyResult<Bound<'py, PyDict>> {
+        let dict = PyDict::new(py);
+        dict.set_item("name", &node.name)?;
+        dict.set_item("path", node.path.display().to_string())?;
+        dict.set_item("bytes", node.bytes)?;
+        dict.set_item("allocated", node.allocated)?;
+        dict.set_item("files", node.files)?;
+        dict.set_item("dirs", node.dirs)?;
+        dict.set_item("newest_mtime_ns", node.newest_mtime_ns)?;
+        dict.set_item("truncated", node.truncated)?;
+        dict.set_item("children", PyList::empty(py))?;
+        Ok(dict)
+    }
+
+    let built = node_dict(py, root)?;
+    let mut stack: Vec<(&TreeNode, Bound<'py, PyDict>)> = vec![(root, built.clone())];
+    while let Some((node, dict)) = stack.pop() {
+        let children = dict.get_item("children")?.expect("children present");
+        let children: Bound<'py, PyList> =
+            children.cast_into().map_err(|_| PyValueError::new_err("children is not a list"))?;
+        for child in &node.children {
+            let child_dict = node_dict(py, child)?;
+            children.append(child_dict.clone())?;
+            stack.push((child, child_dict));
+        }
+    }
+    Ok(built)
+}
+
+/// Parse a view name.
+fn parse_view(value: &str) -> PyResult<ViewSpec> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "tree" => Ok(ViewSpec::Tree),
+        "types" => Ok(ViewSpec::Types),
+        "files" => Ok(ViewSpec::Files),
+        "summary" => Ok(ViewSpec::Summary),
+        other => Err(PyValueError::new_err(format!(
+            "invalid view {other:?}: expected one of tree, types, files, summary"
+        ))),
+    }
+}
+
+/// Parse an entry-kind name.
+fn parse_kind(value: &str) -> PyResult<EntryKind> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "file" => Ok(EntryKind::File),
+        "dir" => Ok(EntryKind::Dir),
+        "symlink" => Ok(EntryKind::Symlink),
+        "other" => Ok(EntryKind::Other),
+        other => Err(PyValueError::new_err(format!(
+            "invalid kind {other:?}: expected one of file, dir, symlink, other"
+        ))),
+    }
+}
+
+/// Parse a sort key.
+fn parse_sort(value: &str) -> PyResult<SortKey> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "size" => Ok(SortKey::Size),
+        "count" => Ok(SortKey::Count),
+        "mtime" => Ok(SortKey::Mtime),
+        "name" => Ok(SortKey::Name),
+        other => Err(PyValueError::new_err(format!(
+            "invalid sort {other:?}: expected one of size, count, mtime, name"
+        ))),
+    }
+}
+
+/// Parse a size metric.
+fn parse_size_metric(value: &str) -> PyResult<SizeMetric> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "allocated" => Ok(SizeMetric::Allocated),
+        "apparent" => Ok(SizeMetric::Apparent),
+        other => Err(PyValueError::new_err(format!(
+            "invalid size {other:?}: expected allocated or apparent"
+        ))),
+    }
+}
+
+/// Parse a bound that accepts `all`.
+fn parse_bound(value: &str, name: &str) -> PyResult<Bound_> {
+    let value = value.trim();
+    if value.eq_ignore_ascii_case("all") {
+        return Ok(Bound_::All);
+    }
+    value.parse::<usize>().map(Bound_::Limit).map_err(|_| {
+        PyValueError::new_err(format!("invalid {name} {value:?}: expected a whole number or `all`"))
+    })
+}
+
+/// One cache file's status as a dict.
+fn cache_status_dict<'py>(
+    py: Python<'py>,
+    status: &fdu::CacheStatus,
+) -> PyResult<Bound<'py, PyDict>> {
+    let dict = PyDict::new(py);
+    dict.set_item("path", status.path.display().to_string())?;
+    dict.set_item("bytes", status.bytes)?;
+    dict.set_item("recognized", status.is_recognized())?;
+    if let Some(info) = &status.snapshot {
+        dict.set_item("root", info.root.display().to_string())?;
+        dict.set_item("entries", info.entries)?;
+    } else {
+        dict.set_item("root", py.None())?;
+        dict.set_item("entries", py.None())?;
+    }
+    Ok(dict)
+}
+
+/// The cache directory this build would use for a root.
+#[pyfunction]
+fn cache_path(root: &str) -> Option<String> {
+    fdu::default_cache_path(Path::new(root)).map(|path| path.display().to_string())
+}
+
+/// Status of the snapshot for one root.
+#[pyfunction]
+fn cache_status<'py>(py: Python<'py>, root: &str) -> PyResult<Option<Bound<'py, PyDict>>> {
+    let Some(path) = fdu::default_cache_path(Path::new(root)) else {
+        return Ok(None);
+    };
+    let status = fdu::cache_status(&path).map_err(to_py_err)?;
+    Ok(Some(cache_status_dict(py, &status)?))
+}
+
+/// Every cache file this build can see, recognized or not.
+#[pyfunction]
+fn list_caches<'py>(py: Python<'py>, root: &str) -> PyResult<Bound<'py, PyList>> {
+    let list = PyList::empty(py);
+    let Some(dir) =
+        fdu::default_cache_path(Path::new(root)).and_then(|p| p.parent().map(Path::to_path_buf))
+    else {
+        return Ok(list);
+    };
+    for status in fdu::list_caches(&dir).map_err(to_py_err)? {
+        list.append(cache_status_dict(py, &status)?)?;
+    }
+    Ok(list)
+}
+
+/// Remove the snapshot for one root. Returns whether a file was removed.
+#[pyfunction]
+fn clear_cache(root: &str) -> PyResult<bool> {
+    match fdu::default_cache_path(Path::new(root)) {
+        Some(path) => fdu::clear_cache(&path).map_err(to_py_err),
+        None => Ok(false),
+    }
+}
+
+/// Remove every recognized snapshot, leaving unrecognized files alone.
+#[pyfunction]
+fn clear_all_caches(root: &str) -> PyResult<usize> {
+    match fdu::default_cache_path(Path::new(root)).and_then(|p| p.parent().map(Path::to_path_buf)) {
+        Some(dir) => fdu::clear_all_caches(&dir).map_err(to_py_err),
+        None => Ok(0),
+    }
+}
+
 /// Open a directory tree, using the snapshot cache according to `cache`.
 #[pyfunction]
 #[pyo3(signature = (root, *, cache = "auto", max_depth = None))]
@@ -295,6 +618,11 @@ fn fdu_py(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     m.add_class::<PyIndex>()?;
     m.add_function(wrap_pyfunction!(open, m)?)?;
+    m.add_function(wrap_pyfunction!(cache_path, m)?)?;
+    m.add_function(wrap_pyfunction!(cache_status, m)?)?;
+    m.add_function(wrap_pyfunction!(list_caches, m)?)?;
+    m.add_function(wrap_pyfunction!(clear_cache, m)?)?;
+    m.add_function(wrap_pyfunction!(clear_all_caches, m)?)?;
     m.add_function(wrap_pyfunction!(scan, m)?)?;
     m.add_function(wrap_pyfunction!(main, m)?)?;
 
