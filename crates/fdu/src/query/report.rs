@@ -72,7 +72,7 @@ pub enum ReportSource {
 /// Passed in rather than sampled inside [`report`] so the view layer stays a pure
 /// function of its inputs: the same index and query must always produce the same report,
 /// which is what makes the goldens meaningful and the tests deterministic.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct Provenance {
     /// When the walk or revalidation behind this index began.
     ///
@@ -86,6 +86,11 @@ pub struct Provenance {
     pub source: ReportSource,
     /// Whether every path in scope was read successfully.
     pub complete: bool,
+    /// Per-path failures that made this result partial, already rendered.
+    ///
+    /// Rendered strings rather than error values: this crosses into serialization, and a
+    /// report is evidence about a run, not a place to re-handle its errors.
+    pub errors: Vec<String>,
 }
 
 /// One directory's row in a tree view.
@@ -207,6 +212,8 @@ pub struct Report {
     pub source: ReportSource,
     /// Whether every path in scope was read successfully.
     pub complete: bool,
+    /// Per-path failures that made this result partial.
+    pub errors: Vec<String>,
     /// How current the index is.
     pub freshness: Freshness,
     /// The immutable scan scope the index represents.
@@ -243,6 +250,7 @@ pub fn report(index: &Index, query: &Query, provenance: &Provenance) -> Report {
         generated_at: provenance.generated_at,
         source: provenance.source,
         complete: provenance.complete,
+        errors: provenance.errors.clone(),
         freshness: index.freshness(),
         scope: index.scope(),
         root: index.root_path().to_path_buf(),
@@ -743,6 +751,7 @@ mod tests {
             generated_at: UNIX_EPOCH + Duration::from_secs(1_001),
             source: ReportSource::ColdScan,
             complete: true,
+            errors: Vec::new(),
         }
     }
 

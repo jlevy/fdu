@@ -15,11 +15,19 @@
 use std::fmt::Write as _;
 use std::path::Path;
 
+use clap::builder::styling::{AnsiColor, Style as AnsiStyle};
+
 use crate::query::{
     FileRow, Report, ReportSource, Section, SizeMetric, SummaryRow, TreeNode, TypeRow, ViewSpec,
     format_rfc3339,
 };
 use crate::types::{EntryKind, Freshness};
+
+/// Directory names in a tree, so structure reads at a glance.
+const STYLE_DIRECTORY: AnsiStyle = AnsiColor::Cyan.on_default();
+
+/// Extensions in a type breakdown.
+const STYLE_TYPE: AnsiStyle = AnsiColor::Green.on_default();
 
 /// Machine-output schema identity.
 ///
@@ -58,27 +66,35 @@ impl Format {
 }
 
 /// Render a report in the requested format.
-pub fn render(report: &Report, format: Format) -> String {
+///
+/// `color` applies to the text form only: machine output is never colourized, because a
+/// consumer parsing JSON should never have to strip escape sequences first.
+pub fn render(report: &Report, format: Format, color: bool) -> String {
     match format {
-        Format::Text => render_text(report),
+        Format::Text => render_text(report, color),
         Format::Json => render_json(report),
         Format::Jsonl => render_jsonl(report),
         Format::Yaml => render_yaml(report),
     }
 }
 
+/// Wrap text in a style when colour is on.
+fn paint(text: &str, style: AnsiStyle, color: bool) -> String {
+    if color { format!("{style}{text}{style:#}") } else { text.to_string() }
+}
+
 // ---- text ----
 
 /// Render the human-facing form.
-fn render_text(report: &Report) -> String {
+fn render_text(report: &Report, color: bool) -> String {
     let mut out = String::new();
     for (index, section) in report.sections.iter().enumerate() {
         if index > 0 {
             out.push('\n');
         }
         match section {
-            Section::Tree(root) => render_text_tree(&mut out, root, report.size),
-            Section::Types(rows) => render_text_types(&mut out, rows, report.size),
+            Section::Tree(root) => render_text_tree(&mut out, root, report.size, color),
+            Section::Types(rows) => render_text_types(&mut out, rows, report.size, color),
             // A flat listing prints one path per line and nothing else, so it pipes
             // straight into xargs and diffs cleanly against another run.
             Section::Files(rows) => {
@@ -95,7 +111,7 @@ fn render_text(report: &Report) -> String {
 /// Render a tree section as an indented outline.
 ///
 /// Iterative for the same reason the expansion is: a deep tree must render, not panic.
-fn render_text_tree(out: &mut String, root: &TreeNode, size: SizeMetric) {
+fn render_text_tree(out: &mut String, root: &TreeNode, size: SizeMetric, color: bool) {
     // Children are pushed in reverse so they pop back in their sorted order.
     let mut stack: Vec<(&TreeNode, usize)> = vec![(root, 0)];
     while let Some((node, depth)) = stack.pop() {
@@ -104,7 +120,7 @@ fn render_text_tree(out: &mut String, root: &TreeNode, size: SizeMetric) {
             out,
             "{indent}{:>10}  {} ({} {})",
             human_bytes(pick(size, node.bytes, node.allocated)),
-            node.name,
+            paint(&node.name, STYLE_DIRECTORY, color),
             node.files,
             plural(node.files, "file", "files"),
         );
@@ -118,13 +134,13 @@ fn render_text_tree(out: &mut String, root: &TreeNode, size: SizeMetric) {
 }
 
 /// Render a types section as aligned rows.
-fn render_text_types(out: &mut String, rows: &[TypeRow], size: SizeMetric) {
+fn render_text_types(out: &mut String, rows: &[TypeRow], size: SizeMetric, color: bool) {
     for row in rows {
         let _ = writeln!(
             out,
             "{:>10}  {:<12} {} {}",
             human_bytes(pick(size, row.bytes, row.allocated)),
-            row.extension,
+            paint(&row.extension, STYLE_TYPE, color),
             row.files,
             plural(row.files, "file", "files"),
         );
@@ -198,6 +214,11 @@ fn write_envelope_json(out: &mut String, report: &Report) {
     let _ = write!(out, ",\n  \"source\": {}", quote(source_label(report.source)));
     let _ = write!(out, ",\n  \"freshness\": {}", quote(freshness_label(report.freshness)));
     let _ = write!(out, ",\n  \"complete\": {}", report.complete);
+    let _ = write!(out, ",\n  \"errors\": [");
+    for (index, error) in report.errors.iter().enumerate() {
+        let _ = write!(out, "{}\n    {}", if index > 0 { "," } else { "" }, quote(error));
+    }
+    out.push_str(if report.errors.is_empty() { "]" } else { "\n  ]" });
 }
 
 /// One section as a JSON object.
@@ -300,12 +321,15 @@ fn tree_json(node: &TreeNode) -> String {
                     continue;
                 }
                 out.push_str(", \"children\": [");
+                // The stack pops in reverse, so pushes run last-to-first: closer, then
+                // each child followed by the separator that precedes it. Getting this
+                // backwards emits `[{a}{b},]` — balanced, and not valid JSON.
                 stack.push(Step::Text("]}"));
                 for (index, child) in node.children.iter().enumerate().rev() {
+                    stack.push(Step::Open(child));
                     if index > 0 {
                         stack.push(Step::Text(","));
                     }
-                    stack.push(Step::Open(child));
                 }
             }
         }
@@ -331,6 +355,14 @@ fn render_yaml(report: &Report) -> String {
     let _ = writeln!(out, "source: {}", yaml_scalar(source_label(report.source)));
     let _ = writeln!(out, "freshness: {}", yaml_scalar(freshness_label(report.freshness)));
     let _ = writeln!(out, "complete: {}", report.complete);
+    if report.errors.is_empty() {
+        out.push_str("errors: []\n");
+    } else {
+        out.push_str("errors:\n");
+        for error in &report.errors {
+            let _ = writeln!(out, "  - {}", yaml_scalar(error));
+        }
+    }
     out.push_str("reports:\n");
 
     for section in &report.sections {
@@ -455,8 +487,13 @@ fn indent(block: &str, pad: usize) -> String {
 }
 
 /// Collapse a pretty-printed JSON fragment onto one line.
+///
+/// Joining with a space and then tidying is what keeps the one-line form readable, but
+/// the tidying has to cover both bracket kinds: `[ {` in a JSONL record is the kind of
+/// cosmetic difference that makes two equivalent documents fail a byte-exact golden.
 fn collapse(block: &str) -> String {
-    block.lines().map(str::trim).collect::<Vec<_>>().join(" ").replace("{ ", "{").replace(" }", "}")
+    let joined = block.lines().map(str::trim).collect::<Vec<_>>().join(" ");
+    joined.replace("{ ", "{").replace(" }", "}").replace("[ ", "[").replace(" ]", "]")
 }
 
 /// Quote and escape a string as a JSON scalar.
@@ -573,7 +610,7 @@ pub fn is_lossy(path: &Path) -> bool {
 mod tests {
     use super::*;
     use crate::Index;
-    use crate::query::{Provenance, Query, Selection, report};
+    use crate::query::{Bound, Provenance, Query, Selection, report};
     use crate::types::{Attrs, Observation, Op, ScanScope};
     use std::path::PathBuf;
     use std::time::{Duration, UNIX_EPOCH};
@@ -618,6 +655,7 @@ mod tests {
                 generated_at: UNIX_EPOCH + Duration::from_secs(1_786_386_152),
                 source: ReportSource::ColdScan,
                 complete: true,
+                errors: Vec::new(),
             },
         )
     }
@@ -659,7 +697,7 @@ mod tests {
         for view in [ViewSpec::Tree, ViewSpec::Types, ViewSpec::Files, ViewSpec::Summary] {
             let report = fixture(&[view]);
             for format in [Format::Text, Format::Json, Format::Jsonl, Format::Yaml] {
-                let rendered = render(&report, format);
+                let rendered = render(&report, format, false);
                 assert!(!rendered.trim().is_empty(), "{view:?} in {format:?} rendered nothing");
             }
         }
@@ -668,19 +706,82 @@ mod tests {
     #[test]
     fn json_output_is_well_formed_for_every_view() {
         for view in [ViewSpec::Tree, ViewSpec::Types, ViewSpec::Files, ViewSpec::Summary] {
-            let json = render(&fixture(&[view]), Format::Json);
+            let json = render(&fixture(&[view]), Format::Json, false);
             assert!(is_valid_json(&json), "unbalanced JSON for {view:?}:\n{json}");
         }
         let all = render(
             &fixture(&[ViewSpec::Tree, ViewSpec::Types, ViewSpec::Files, ViewSpec::Summary]),
             Format::Json,
+            false,
         );
         assert!(is_valid_json(&all), "unbalanced JSON for a multi-view report:\n{all}");
     }
 
     #[test]
+    fn nested_json_separates_siblings_without_a_trailing_comma() {
+        // The original fixture had no directory with two children, so a balanced-but-
+        // invalid `[{a}{b},]` passed the structural check. Sibling separators need a
+        // case that actually has siblings, at more than one level.
+        let mut index = Index::new_with_scope("/root", ScanScope::default());
+        index
+            .apply(&Observation::new(vec![
+                Op::Upsert {
+                    path: PathBuf::from("a"),
+                    kind: EntryKind::Dir,
+                    attrs: Attrs::default(),
+                },
+                Op::Upsert {
+                    path: PathBuf::from("b"),
+                    kind: EntryKind::Dir,
+                    attrs: Attrs::default(),
+                },
+                Op::Upsert {
+                    path: PathBuf::from("c"),
+                    kind: EntryKind::Dir,
+                    attrs: Attrs::default(),
+                },
+                Op::Upsert {
+                    path: PathBuf::from("a/inner"),
+                    kind: EntryKind::Dir,
+                    attrs: Attrs::default(),
+                },
+                Op::Upsert {
+                    path: PathBuf::from("a/other"),
+                    kind: EntryKind::Dir,
+                    attrs: Attrs::default(),
+                },
+            ]))
+            .expect("apply");
+        let report = report(
+            &index,
+            &Query {
+                selection: Selection { depth: Bound::All, ..Selection::default() },
+                views: vec![ViewSpec::Tree],
+            },
+            &Provenance {
+                scan_started_at: None,
+                generated_at: UNIX_EPOCH,
+                source: ReportSource::ColdScan,
+                complete: true,
+                errors: Vec::new(),
+            },
+        );
+
+        let json = render(&report, Format::Json, false);
+        assert!(is_valid_json(&json), "{json}");
+        assert!(!json.contains("}{"), "siblings must be separated:\n{json}");
+        assert!(!json.contains(",]"), "no trailing comma before a close:\n{json}");
+        assert!(!json.contains("[,"), "no leading comma after an open:\n{json}");
+        // Three top-level siblings and two nested ones must all be present.
+        for name in ["\"a\"", "\"b\"", "\"c\"", "\"inner\"", "\"other\""] {
+            assert!(json.contains(name), "missing {name} in:\n{json}");
+        }
+    }
+
+    #[test]
     fn jsonl_emits_one_document_per_line() {
-        let rendered = render(&fixture(&[ViewSpec::Types, ViewSpec::Summary]), Format::Jsonl);
+        let rendered =
+            render(&fixture(&[ViewSpec::Types, ViewSpec::Summary]), Format::Jsonl, false);
         let lines: Vec<&str> = rendered.lines().collect();
         assert_eq!(lines.len(), 3, "one envelope plus one line per section");
         for line in &lines {
@@ -691,7 +792,7 @@ mod tests {
 
     #[test]
     fn machine_output_carries_the_schema_and_provenance() {
-        let json = render(&fixture(&[ViewSpec::Summary]), Format::Json);
+        let json = render(&fixture(&[ViewSpec::Summary]), Format::Json, false);
         assert!(json.contains("\"schema\": \"fdu.report/1\""));
         assert!(json.contains("\"source\": \"cold_scan\""));
         assert!(json.contains("\"complete\": true"));
@@ -710,7 +811,7 @@ mod tests {
     #[test]
     fn a_files_view_prints_one_path_per_line_and_nothing_else() {
         // The property that makes `fdu --view files | xargs` work.
-        let text = render(&fixture(&[ViewSpec::Files]), Format::Text);
+        let text = render(&fixture(&[ViewSpec::Files]), Format::Text, false);
         for line in text.lines() {
             assert!(!line.contains(' '), "text files output must be bare paths, got {line:?}");
         }

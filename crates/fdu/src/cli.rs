@@ -52,6 +52,36 @@ pub enum ColorWhen {
     Never,
 }
 
+/// Marker attached to a rejected argument value.
+///
+/// Clap exits 2 for a malformed command line; a value clap accepted but this crate's own
+/// grammar rejected is the same class of mistake, so it must exit the same way. Without
+/// the marker these surfaced as exit 1, which tells a script "the filesystem failed"
+/// when the truth is "fix your flag".
+#[derive(Debug)]
+struct UsageError(String);
+
+impl std::fmt::Display for UsageError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Carries the message rather than wrapping it: a context layer would make the
+        // outermost error read "usage" and bury the grammar's suggestion under a
+        // "caused by", which is exactly the text the user needs first.
+        write!(f, "{}", self.0)
+    }
+}
+
+impl std::error::Error for UsageError {}
+
+/// Re-tag an argument rejection so it exits like the usage error it is.
+fn usage(error: &anyhow::Error) -> anyhow::Error {
+    anyhow::Error::new(UsageError(error.to_string()))
+}
+
+/// Whether an error was raised by argument validation.
+fn is_usage_error(error: &anyhow::Error) -> bool {
+    error.chain().any(|cause| cause.downcast_ref::<UsageError>().is_some())
+}
+
 /// Successful command outcome. Partial results are rendered before the caller returns
 /// exit status 2, so scripts can opt into them without confusing them with complete data.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -177,8 +207,8 @@ impl Cli {
         // Parse the whole request before touching the filesystem, so a typo in a glob or a
         // time costs nothing and reports its own spelling rather than a scan's worth of
         // waiting followed by an error.
-        let format = self.parse_format()?;
-        let query = self.parse_query()?;
+        let format = self.parse_format().map_err(|error| usage(&error))?;
+        let query = self.parse_query().map_err(|error| usage(&error))?;
 
         let cache_path = if self.no_cache { None } else { default_cache_path(&self.path) };
         let config = OpenConfig {
@@ -198,10 +228,18 @@ impl Cli {
                 crate::OpenPath::WarmRevalidate => ReportSource::WarmRevalidate,
             },
             complete: open_report.is_complete(),
+            errors: open_report.errors().iter().map(ToString::to_string).collect(),
         };
         let report = crate::query::report(&index, &query, &provenance);
 
-        write!(out, "{}", report_format::render(&report, format))?;
+        let color = ColorContext::from_environment(
+            self.color,
+            self.machine_format(),
+            self.skill,
+            stdout_is_terminal,
+        )
+        .enabled();
+        write!(out, "{}", report_format::render(&report, format, color))?;
 
         if format == report_format::Format::Text && !open_report.is_complete() {
             let color =
@@ -215,7 +253,6 @@ impl Cli {
                 );
             }
         }
-        let _ = stdout_is_terminal;
 
         Ok(if open_report.is_complete() { RunOutcome::Complete } else { RunOutcome::Partial })
     }
@@ -464,6 +501,10 @@ fn finish(
         Ok(RunOutcome::Partial) if allow_partial => 0,
         Ok(RunOutcome::Partial) => 2,
         Err(error) if is_broken_pipe(&error) => 0,
+        Err(error) if is_usage_error(&error) => {
+            let _ = writeln!(diagnostic, "{} {error}", paint("fdu:", STYLE_ERROR, color));
+            2
+        }
         Err(error) => {
             let _ = writeln!(diagnostic, "{} {error}", paint("fdu:", STYLE_ERROR, color));
             for cause in error.chain().skip(1) {
@@ -886,6 +927,7 @@ mod tests {
                     generated_at: SystemTime::UNIX_EPOCH,
                     source: ReportSource::ColdScan,
                     complete: true,
+                    errors: Vec::new(),
                 };
                 let report = crate::query::report(&index, &query, &provenance);
                 for format in [
@@ -894,7 +936,7 @@ mod tests {
                     report_format::Format::Jsonl,
                     report_format::Format::Yaml,
                 ] {
-                    let rendered = report_format::render(&report, format);
+                    let rendered = report_format::render(&report, format, false);
                     assert!(!rendered.is_empty(), "{format:?} rendered nothing for a deep tree");
                 }
             })

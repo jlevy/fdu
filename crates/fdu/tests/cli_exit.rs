@@ -15,7 +15,7 @@ fn partial_results_use_exit_two_unless_explicitly_allowed() {
 
     let run = |allow_partial: bool| {
         let mut command = Command::new(env!("CARGO_BIN_EXE_fdu"));
-        command.args(["--no-cache", "--json"]);
+        command.args(["--no-cache", "--format", "json"]);
         if allow_partial {
             command.arg("--allow-partial");
         }

@@ -26,18 +26,26 @@ Arguments:
   [PATH]  Directory to summarize [default: .]
 
 Options:
-  -d, --depth <N>      Directory levels to show; does not limit scanning [default: 2]
-  -n, --number <N>     Entries to show per directory, largest first [default: 10]
-  -a, --apparent-size  Use apparent bytes instead of allocated disk space
-      --by-type        Group totals by file extension instead of directory
-      --json           Write schema-versioned JSON to stdout
-      --no-cache       Do not read or write the snapshot cache
-      --max-depth <N>  Limit scanning and retention to N entry levels
-      --color <WHEN>   Colorize human output: auto, always, or never [default: auto]
-      --allow-partial  Accept incomplete totals when paths cannot be read
-      --skill          Print a portable agent skill to stdout
-  -h, --help           Print help
-  -V, --version        Print version
+      --scan-depth <N>          Limit scanning and retention to N entry levels
+      --include <GLOB>          Report only entries matching this glob; repeatable
+      --exclude <GLOB>          Exclude entries matching this glob; repeatable, and wins over --include
+      --min-size <SIZE>         Report only entries at least this large, as 512, 10M, or 1.5GiB
+      --modified-since <WHEN>   Report only entries modified at or after this time, as 2h or an RFC 3339 stamp
+      --modified-before <WHEN>  Report only entries modified before this time
+      --kind <LIST>             Entry kinds to report: file, dir, symlink, other
+  -d, --depth <N>               Directory levels to show; does not limit scanning. Accepts `all` [default: 2]
+  -n, --limit <N>               Entries to show per directory. Accepts `all` [default: 10]
+      --sort <KEY>              Order results: size, count, mtime, or name
+      --reverse                 Reverse the ordering
+      --size <METRIC>           Which size metric to report: allocated or apparent [default: allocated]
+      --view <LIST>             Views to report: tree, types, files, summary [default: tree]
+      --format <FORMAT>         Output format: text, json, jsonl, or yaml [default: text]
+      --color <WHEN>            Colorize human output: auto, always, or never [default: auto]
+      --no-cache                Do not read or write the snapshot cache
+      --allow-partial           Accept incomplete totals when paths cannot be read
+      --skill                   Print a portable agent skill to stdout
+  -h, --help                    Print help
+  -V, --version                 Print version
 
 Examples:
   fdu
@@ -146,8 +154,8 @@ fdu 0.0.1
 ## The Default Root Works for an Empty Sandbox
 
 ```console
-$ fdu --no-cache --color never --apparent-size --depth 0
-[SCAN_PATH]  0 files, 0 dirs, 0 B
+$ fdu --no-cache --color never --size apparent --depth 0
+       0 B  . (0 files)
 ? 0
 ```
 

@@ -41,10 +41,15 @@ fn explicit_color_controls_human_output_but_never_json() {
     assert!(never.status.success());
     assert!(!has_ansi(&never.stdout));
 
-    let json = run(&["--no-cache", "--color", "always", "--json", "--depth", "0", root]);
-    assert!(json.status.success());
-    assert!(!has_ansi(&json.stdout));
-    assert!(json.stderr.is_empty());
+    // Every machine format stays plain even when colour is forced: a consumer parsing
+    // the output should never have to strip escape sequences first.
+    for format in ["json", "jsonl", "yaml"] {
+        let machine =
+            run(&["--no-cache", "--color", "always", "--format", format, "--depth", "0", root]);
+        assert!(machine.status.success(), "{format} run failed");
+        assert!(!has_ansi(&machine.stdout), "{format} output was colourized");
+        assert!(machine.stderr.is_empty(), "{format} wrote to stderr");
+    }
 
     let skill = run(&["--color", "always", "--skill"]);
     assert!(skill.status.success());
