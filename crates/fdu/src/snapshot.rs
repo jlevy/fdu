@@ -343,6 +343,7 @@ fn parse_stream(reader: &mut impl Read, payload_len: u64) -> ParseResult<Index> 
 
     let mut index = Index::new_with_scope(&root_path, scope);
     let mut ids: Vec<EntryId> = Vec::new();
+    let mut parent_path_memo: Option<(u32, PathBuf)> = None;
     for slot in 0..count {
         let parent_slot = read_u32(reader)?;
         let kind = EntryKind::from_u8(read_u8(reader)?).ok_or(ParseError::Invalid)?;
@@ -377,15 +378,34 @@ fn parse_stream(reader: &mut impl Read, payload_len: u64) -> ParseResult<Index> 
         if index.kind_of(parent) != Some(EntryKind::Dir) || !is_snapshot_name(&name) {
             return Err(ParseError::Invalid);
         }
-        let mut path = index.path_of(parent).ok_or(ParseError::Invalid)?;
-        path.push(name);
-        if index.lookup(&path).is_some() {
+        // Records arrive grouped by parent, so rebuilding the parent's path from its
+        // ancestors for every child walked the same chain over and over. Remember the
+        // last one. A miss costs exactly what the old code paid every time.
+        let parent_path = match &parent_path_memo {
+            Some((memo_slot, memo_path)) if *memo_slot == parent_slot => memo_path,
+            _ => {
+                let resolved = index.path_of(parent).ok_or(ParseError::Invalid)?;
+                &parent_path_memo.insert((parent_slot, resolved)).1
+            }
+        };
+        let path = parent_path.join(&name);
+
+        // A snapshot naming the same path twice is corrupt, and a corrupt snapshot is
+        // treated as absent rather than as data. The check used to be a lookup before
+        // the insert; the insert already reports whether it created an entry, so the
+        // same guarantee costs nothing.
+        let stats = index
+            .apply_baseline(&Observation::new(vec![Op::Upsert { path, kind, attrs }]))
+            .map_err(|_| ParseError::Invalid)?;
+        if stats.inserted != 1 {
             return Err(ParseError::Invalid);
         }
-        index
-            .apply_baseline(&Observation::new(vec![Op::Upsert { path: path.clone(), kind, attrs }]))
-            .map_err(|_| ParseError::Invalid)?;
-        let id = index.lookup(&path).ok_or(ParseError::Invalid)?;
+        // The entry is a child of a parent we already hold, so its id comes from that
+        // parent's children rather than from resolving the whole path from the root.
+        let id = index
+            .children_of(parent)
+            .and_then(|mut children| children.find_map(|(child, id)| (child == name).then_some(id)))
+            .ok_or(ParseError::Invalid)?;
         ids.push(id);
     }
 
