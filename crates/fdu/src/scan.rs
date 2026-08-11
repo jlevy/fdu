@@ -401,6 +401,16 @@ const DEFAULT_SCAN_THREADS_CAP: usize = 6;
 /// starve the others by hoarding the queue.
 const DIR_CLAIM: usize = 4;
 
+/// Maximum number of complete producer batches retained ahead of the consumer per
+/// worker. This bounds queued path ownership while leaving enough slack for workers to
+/// overlap directory I/O with index application.
+const OBSERVATION_BATCHES_PER_WORKER: usize = 2;
+
+/// Poll interval used only while a bounded channel is full. `SyncSender` has no
+/// cancellation-aware blocking send, so the worker periodically checks the shared
+/// abort bit instead of becoming impossible to join.
+const SEND_RETRY_INTERVAL: std::time::Duration = std::time::Duration::from_millis(1);
+
 /// A parallel directory walk that produces exactly the observations the serial walk does.
 ///
 /// The shape is deliberate. Workers read directories and *produce* observations; they
@@ -422,14 +432,20 @@ fn scan_concurrent(
 ) -> ScanReport {
     let workers = config.worker_threads();
     let queue = DirectoryQueue::new(vec![(PathBuf::new(), 0)]);
-    let (sender, receiver) = std::sync::mpsc::channel::<Observation>();
+    let channel_capacity = workers.saturating_mul(OBSERVATION_BATCHES_PER_WORKER).max(1);
+    let (sender, receiver) = std::sync::mpsc::sync_channel::<Observation>(channel_capacity);
 
     let mut report = std::thread::scope(|scope| {
         let handles: Vec<_> = (0..workers)
             .map(|_| {
                 let sender = sender.clone();
                 let queue = &queue;
-                scope.spawn(move || walk_worker(root, config, root_dev, queue, &sender))
+                scope.spawn(move || {
+                    let mut panic_guard = WorkerAbortGuard::new(queue);
+                    let report = walk_worker(root, config, root_dev, queue, &sender);
+                    panic_guard.complete();
+                    report
+                })
             })
             .collect();
         // The loop below ends when every sender is gone, so this one must go first.
@@ -469,14 +485,14 @@ fn walk_worker(
     config: &ScanConfig,
     root_dev: u64,
     queue: &DirectoryQueue,
-    sender: &std::sync::mpsc::Sender<Observation>,
+    sender: &std::sync::mpsc::SyncSender<Observation>,
 ) -> ScanReport {
     let mut report = ScanReport::default();
     let mut batch: Vec<Op> = Vec::with_capacity(config.batch_size);
     let mut claimed: Vec<(PathBuf, usize)> = Vec::with_capacity(DIR_CLAIM);
     let mut discovered: Vec<(PathBuf, usize)> = Vec::new();
 
-    while queue.claim(&mut claimed) {
+    while let Some(_claim) = queue.claim(&mut claimed) {
         for (rel_dir, depth) in claimed.drain(..) {
             let abs_dir = root.join(&rel_dir);
             let listing = match fs::read_dir(&abs_dir) {
@@ -512,7 +528,11 @@ fn walk_worker(
                 let descend = should_descend(kind, attrs, depth, root_dev, config);
                 batch.push(Op::Upsert { path: rel_path.clone(), kind, attrs });
                 if batch.len() >= config.batch_size
-                    && sender.send(Observation::new(std::mem::take(&mut batch))).is_err()
+                    && !send_observation(
+                        sender,
+                        queue,
+                        Observation::new(std::mem::take(&mut batch)),
+                    )
                 {
                     // The consumer is gone; nothing further will be read.
                     return report;
@@ -527,13 +547,37 @@ fn walk_worker(
         if !discovered.is_empty() {
             queue.extend(discovered.drain(..));
         }
-        queue.release();
     }
 
     if !batch.is_empty() {
-        let _ = sender.send(Observation::new(batch));
+        let _sent = send_observation(sender, queue, Observation::new(batch));
     }
     report
+}
+
+/// Publish one batch without losing the ability to cancel while the bounded channel is
+/// full. Returns false after either queue-wide abort or consumer disconnection.
+fn send_observation(
+    sender: &std::sync::mpsc::SyncSender<Observation>,
+    queue: &DirectoryQueue,
+    mut observation: Observation,
+) -> bool {
+    loop {
+        if queue.is_aborted() {
+            return false;
+        }
+        match sender.try_send(observation) {
+            Ok(()) => return true,
+            Err(std::sync::mpsc::TrySendError::Full(returned)) => {
+                observation = returned;
+                std::thread::park_timeout(SEND_RETRY_INTERVAL);
+            }
+            Err(std::sync::mpsc::TrySendError::Disconnected(_)) => {
+                queue.abort();
+                return false;
+            }
+        }
+    }
 }
 
 /// Directories still to read, plus enough state to know when the walk is finished.
@@ -552,6 +596,44 @@ struct DirectoryQueueState {
     pending: Vec<(PathBuf, usize)>,
     outstanding: usize,
     finished: bool,
+    aborted: bool,
+}
+
+/// One outstanding queue claim. Dropping it is the only release path, including early
+/// return and panic unwinding.
+struct DirectoryClaim<'a> {
+    queue: &'a DirectoryQueue,
+}
+
+impl Drop for DirectoryClaim<'_> {
+    fn drop(&mut self) {
+        self.queue.release();
+    }
+}
+
+/// Turns an unwinding worker into a queue-wide abort before scoped joining waits on its
+/// peers. Normal and cooperatively cancelled workers disarm it on return.
+struct WorkerAbortGuard<'a> {
+    queue: &'a DirectoryQueue,
+    armed: bool,
+}
+
+impl<'a> WorkerAbortGuard<'a> {
+    fn new(queue: &'a DirectoryQueue) -> Self {
+        Self { queue, armed: true }
+    }
+
+    fn complete(&mut self) {
+        self.armed = false;
+    }
+}
+
+impl Drop for WorkerAbortGuard<'_> {
+    fn drop(&mut self) {
+        if self.armed {
+            self.queue.abort();
+        }
+    }
 }
 
 impl DirectoryQueue {
@@ -561,6 +643,7 @@ impl DirectoryQueue {
                 pending: initial,
                 outstanding: 0,
                 finished: false,
+                aborted: false,
             }),
             ready: std::sync::Condvar::new(),
         }
@@ -568,23 +651,26 @@ impl DirectoryQueue {
 
     /// Take up to [`DIR_CLAIM`] directories, blocking until there is work or the walk
     /// is over. Returns false once no more work will ever arrive.
-    fn claim(&self, into: &mut Vec<(PathBuf, usize)>) -> bool {
+    fn claim<'a>(&'a self, into: &mut Vec<(PathBuf, usize)>) -> Option<DirectoryClaim<'a>> {
         let mut state = self.lock();
         loop {
+            if state.aborted {
+                return None;
+            }
             if !state.pending.is_empty() {
                 let take = state.pending.len().min(DIR_CLAIM);
                 let start = state.pending.len() - take;
                 into.extend(state.pending.drain(start..));
                 state.outstanding += 1;
-                return true;
+                return Some(DirectoryClaim { queue: self });
             }
             if state.finished {
-                return false;
+                return None;
             }
             if state.outstanding == 0 {
                 state.finished = true;
                 self.ready.notify_all();
-                return false;
+                return None;
             }
             state = self.ready.wait(state).unwrap_or_else(std::sync::PoisonError::into_inner);
         }
@@ -592,14 +678,31 @@ impl DirectoryQueue {
 
     fn extend(&self, directories: impl Iterator<Item = (PathBuf, usize)>) {
         let mut state = self.lock();
-        state.pending.extend(directories);
+        if !state.aborted {
+            state.pending.extend(directories);
+        }
         drop(state);
         self.ready.notify_all();
+    }
+
+    /// Stop accepting or assigning work and wake every waiter.
+    fn abort(&self) {
+        let mut state = self.lock();
+        state.aborted = true;
+        state.finished = true;
+        state.pending.clear();
+        drop(state);
+        self.ready.notify_all();
+    }
+
+    fn is_aborted(&self) -> bool {
+        self.lock().aborted
     }
 
     /// Give up a claim taken by [`claim`]. Wakes everyone if this was the last one.
     fn release(&self) {
         let mut state = self.lock();
+        debug_assert!(state.outstanding > 0, "queue claim released twice");
         state.outstanding -= 1;
         if state.outstanding == 0 && state.pending.is_empty() {
             state.finished = true;
@@ -1314,6 +1417,83 @@ mod tests {
     }
 
     #[test]
+    fn full_observation_channel_stops_after_abort() {
+        let queue = std::sync::Arc::new(DirectoryQueue::new(Vec::new()));
+        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+        sender.send(Observation::default()).expect("fill channel");
+
+        let worker_queue = queue.clone();
+        let (done_sender, done_receiver) = std::sync::mpsc::sync_channel(1);
+        std::thread::spawn(move || {
+            let sent = send_observation(&sender, &worker_queue, Observation::default());
+            done_sender.send(sent).expect("publish result");
+        });
+
+        queue.abort();
+        assert_eq!(done_receiver.recv_timeout(std::time::Duration::from_secs(1)), Ok(false));
+        drop(receiver);
+    }
+
+    #[test]
+    fn disconnected_observation_consumer_aborts_the_queue() {
+        let queue = DirectoryQueue::new(Vec::new());
+        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+        drop(receiver);
+
+        assert!(!send_observation(&sender, &queue, Observation::default()));
+        assert!(queue.is_aborted());
+    }
+
+    #[test]
+    fn slow_observation_consumer_applies_backpressure_without_losing_the_batch() {
+        let queue = std::sync::Arc::new(DirectoryQueue::new(Vec::new()));
+        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+        sender.send(Observation::default()).expect("fill channel");
+
+        let worker_queue = queue.clone();
+        let (done_sender, done_receiver) = std::sync::mpsc::sync_channel(1);
+        std::thread::spawn(move || {
+            let sent = send_observation(&sender, &worker_queue, Observation::default());
+            done_sender.send(sent).expect("publish result");
+        });
+
+        assert!(matches!(
+            done_receiver.recv_timeout(std::time::Duration::from_millis(25)),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout)
+        ));
+        receiver.recv().expect("release one channel slot");
+        assert_eq!(done_receiver.recv_timeout(std::time::Duration::from_secs(1)), Ok(true));
+        receiver.recv().expect("the blocked batch was retained");
+    }
+
+    #[test]
+    fn worker_panic_aborts_waiting_claims() {
+        let queue = std::sync::Arc::new(DirectoryQueue::new(vec![(PathBuf::new(), 0)]));
+        let mut claimed = Vec::new();
+        let active_claim = queue.claim(&mut claimed).expect("initial claim");
+
+        let waiter_queue = queue.clone();
+        let (waiter_sender, waiter_receiver) = std::sync::mpsc::sync_channel(1);
+        let waiter = std::thread::spawn(move || {
+            let mut waiting_claim = Vec::new();
+            let stopped = waiter_queue.claim(&mut waiting_claim).is_none();
+            waiter_sender.send(stopped).expect("publish waiter result");
+        });
+
+        let panicking_queue = queue.clone();
+        let panicked = std::thread::spawn(move || {
+            let _panic_guard = WorkerAbortGuard::new(&panicking_queue);
+            panic!("injected worker panic");
+        })
+        .join();
+        assert!(panicked.is_err());
+        assert_eq!(waiter_receiver.recv_timeout(std::time::Duration::from_secs(1)), Ok(true));
+
+        drop(active_claim);
+        waiter.join().expect("waiting worker exits");
+    }
+
+    #[test]
     fn fingerprint_metadata_observes_mutation_after_directory_enumeration() {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("changing.bin");
@@ -1387,9 +1567,6 @@ mod tests {
             assert!(report.is_complete(), "{threads} threads reported errors");
             assert_eq!(report.entries, serial_report.entries, "{threads} threads");
             assert_eq!(report.dirs_read, serial_report.dirs_read, "{threads} threads");
-            // Extension ids are interner handles assigned in first-seen order, which
-            // legitimately differs between serial and parallel arrival order; compare
-            // roll-ups through the named boundary, never by raw id.
             let (serial_total, parallel_total) = (serial.total(), parallel.total());
             assert_eq!(
                 (
@@ -1409,8 +1586,7 @@ mod tests {
                 "{threads} threads roll-up"
             );
             assert_eq!(
-                parallel.by_ext_named(parallel_total),
-                serial.by_ext_named(serial_total),
+                parallel_total.by_ext, serial_total.by_ext,
                 "{threads} threads per-extension roll-up"
             );
             assert_eq!(
@@ -1490,8 +1666,8 @@ mod tests {
         assert_eq!(total.files, 3);
         assert_eq!(total.dirs, 2);
         assert_eq!(total.bytes, 5 + 12 + 9);
-        assert_eq!(index.by_ext_named(total)[".rs"].files, 2);
-        assert_eq!(index.by_ext_named(total)[".txt"].files, 1);
+        assert_eq!(total.by_ext[".rs"].files, 2);
+        assert_eq!(total.by_ext[".txt"].files, 1);
 
         let src = index.rollup(Path::new("src")).expect("src");
         assert_eq!(src.files, 2);
@@ -1712,7 +1888,7 @@ mod tests {
         }
 
         assert_eq!(unchanged, 5, "3 files + 2 dirs all already known");
-        assert_eq!(index.total(), &before);
+        assert_eq!(index.total(), before);
     }
 
     #[test]
@@ -1732,7 +1908,7 @@ mod tests {
         assert_eq!(report.apply.unchanged, 5, "3 files + 2 dirs all already known");
         assert!(deltas.is_empty());
         assert_eq!(index.clock(), before_clock);
-        assert_eq!(index.total(), &before_total);
+        assert_eq!(index.total(), before_total);
     }
 
     #[test]
@@ -1780,8 +1956,8 @@ mod tests {
         let total = index.total();
         assert_eq!(total.files, 3);
         assert_eq!(total.bytes, 20 + 9 + 3);
-        assert!(!index.by_ext_named(total).contains_key(".txt"));
-        assert_eq!(index.by_ext_named(total)[".md"].files, 1);
+        assert!(!total.by_ext.contains_key(".txt"));
+        assert_eq!(total.by_ext[".md"].files, 1);
     }
 
     #[test]

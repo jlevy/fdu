@@ -12,8 +12,8 @@ experiment:
   hypotheses:
     - H8
   subject:
-    tree_label: metabrowser-clone
-    tree_root_id: dbd79ed9c898f7a2f66530cd95bb61cab88e798375134b86c77ece761de580a9
+    tree_label: reference-tree-60k
+    tree_root_id: 40406544ab63512154d1962a5c6bbe3bee60c1d3c6315f3b267b99871d03d825
     tree_engine_digest: bf574331eca680372f7060d4f9ab3b3b175afd265ac27bda6b6dc67ed9c80798
     tree_entries: 59654
     tree_directories: 7341
@@ -50,7 +50,13 @@ experiment:
       args: []
     toolchain: ""
     build_profile: release
-    run_artifact: benchmarks/results/realtree/run-exp003-baseline-apply.json
+    evidence_grade: legacy
+    run_schema: fdu-realtree-run-v1
+    schedule: round-robin-by-ordinal-v1
+    schedule_sha256: null
+    schedule_seed: null
+    run_artifact: docs/project/experiments/evidence/exp-003-run.json
+    run_artifact_sha256: 3aa061b8d3f6c478c931ac0796296360a3fbbd6d68ebc0fc36c2deacaef45d31
   results:
     - job: cold-scan-index
       start_state: cold
@@ -260,17 +266,24 @@ experiment:
 
 ## Hypothesis
 
-H8: _state what you expected to be slow, why,
-and which metric would move._
+H8 predicted that bootstrap scans paid meaningful cost by building live-change journal
+records that no initial caller consumed.
 
 ## What was tried
 
-_The smallest change that tests the hypothesis._
+The candidate added a bootstrap-only apply loop that omitted effective-op list and
+journal construction. The control used the ordinary live apply path.
 
 ## What the numbers said
 
-_Read the tables in the frontmatter. Say what surprised you._
+Removing roughly 120,000 path clones did not move cold-scan wall time. The measurement
+showed that filesystem and roll-up work dominated this allocation, so duplicating the
+arbitration logic would increase correctness risk without a product-visible benefit.
 
 ## Verdict
 
 **REJECTED** — Removing roughly 120,000 path clones per scan produced no measurable change, so a duplicated arbitration loop was not worth carrying
+
+<!-- This document follows common-doc-guidelines.md.
+See github.com/jlevy/practical-prose and review guidelines before editing.
+-->

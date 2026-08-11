@@ -9,6 +9,7 @@ letting an artifact that no longer matches its contract contribute a row anyway.
 from __future__ import annotations
 
 import json
+import argparse
 import shutil
 import subprocess
 import tempfile
@@ -17,6 +18,23 @@ from pathlib import Path
 
 from benchmarks.realtree import experiment as experiment_model
 from benchmarks.realtree import record, summary
+
+_REVISION = "1" * 40
+_SOURCE_DIGEST = "2" * 64
+_RUN_DIGEST = "3" * 64
+_SCHEDULE_DIGEST = "4" * 64
+
+
+def _provenance() -> dict:
+    return {
+        "engine_revision": _REVISION,
+        "harness_revision": _REVISION,
+        "harness_sha256": _SOURCE_DIGEST,
+        "target": "aarch64-apple-darwin",
+        "build_profile": "release",
+        "features": [],
+        "build_command": "cargo build --release --no-default-features --example perf_probe",
+    }
 
 
 def _metric(median: float) -> dict:
@@ -35,7 +53,7 @@ def _metric(median: float) -> dict:
 def _run_document() -> dict:
     """A minimal but realistic measurement run, with sorted variant keys."""
     return {
-        "schema": "fdu-realtree-run-v1",
+        "schema": "fdu-realtree-run-v2",
         "started_utc": "2026-08-10T12:00:00Z",
         "note": "",
         "host": {
@@ -44,6 +62,7 @@ def _run_document() -> dict:
             "system": "Darwin",
             "release": "25.5.0",
             "filesystem": "apfs",
+            "toolchain": "rustc 1.97.1 (test)",
         },
         "conditions": {
             "os_cache": "warm-steady",
@@ -51,6 +70,8 @@ def _run_document() -> dict:
             "warmups": 3,
             "interleaved": True,
             "schedule": "round-robin-by-ordinal-v1",
+            "schedule_sha256": _SCHEDULE_DIGEST,
+            "schedule_seed": None,
         },
         "tree": {
             "label": "fixture",
@@ -58,14 +79,15 @@ def _run_document() -> dict:
             "counts": {"total": 100, "directories": 10, "files": 88, "symlinks": 2, "other": 0},
             "sizes": {"apparent_bytes": 4096, "allocated_bytes": 8192},
             "max_depth": 4,
+            "engine_digest": "5" * 64,
         },
         "tree_mutated_during_run": [],
         # Deliberately alphabetical, which is the order that would invert the
         # comparison if declaration order were not recorded separately.
         "variant_order": ["control", "candidate"],
         "variants": {
-            "candidate": {"kind": "fdu-probe", "name": "candidate", "notes": "", "sha256": "b" * 64, "size_bytes": 1, "args": []},
-            "control": {"kind": "fdu-probe", "name": "control", "notes": "", "sha256": "c" * 64, "size_bytes": 1, "args": []},
+            "candidate": {"kind": "fdu-probe", "name": "candidate", "notes": "", "sha256": "b" * 64, "size_bytes": 1, "args": [], **_provenance()},
+            "control": {"kind": "fdu-probe", "name": "control", "notes": "", "sha256": "c" * 64, "size_bytes": 1, "args": [], **_provenance()},
         },
         "jobs": {
             "cold-scan-index": {
@@ -123,6 +145,9 @@ class FromRunTests(unittest.TestCase):
                 "primary_job": "cold-scan-index",
                 "reason": "faster",
             },
+            "run_artifact": "docs/project/experiments/evidence/exp-042-run.json",
+            "run_artifact_sha256": _RUN_DIGEST,
+            "evidence_grade": "claim-grade",
         }
         arguments.update(overrides)
         return experiment_model.from_run(_run_document(), **arguments)
@@ -189,6 +214,141 @@ class FromRunTests(unittest.TestCase):
         self.assertIn("{root}", payload["reference_tools"][0]["argv"])
 
 
+class EvidenceContractTests(unittest.TestCase):
+    def _payload(self, *, decision: str = "rejected") -> dict:
+        return experiment_model.from_run(
+            _run_document(),
+            experiment_id="exp-042",
+            title="Evidence contract",
+            hypotheses=["H1"],
+            control="before",
+            candidate="after",
+            complexity={"lines_changed": 10},
+            verdict={
+                "decision": decision,
+                "primary_job": "cold-scan-index",
+                "reason": "measured",
+            },
+            run_artifact="docs/project/experiments/evidence/exp-042-run.json",
+            run_artifact_sha256=_RUN_DIGEST,
+            evidence_grade="claim-grade",
+        )
+
+    def test_claim_grade_requires_explicit_feature_provenance(self) -> None:
+        payload = self._payload()
+        del payload["method"]["control_binary"]["features"]
+        with self.assertRaisesRegex(ValueError, "control_binary.features"):
+            experiment_model.Experiment.model_validate(payload)
+
+    def test_accepted_requires_latency_and_resource_gates(self) -> None:
+        payload = self._payload(decision="accepted")
+        with self.assertRaisesRegex(ValueError, "decision gates"):
+            experiment_model.Experiment.model_validate(payload)
+
+        payload["verdict"].update(
+            {
+                "latency_gate_passed": True,
+                "resource_guardrails": [
+                    {
+                        "metric": "cpu_ns",
+                        "maximum_regression_pct": 10.0,
+                        "status": "passed",
+                        "reason": "inside limit",
+                    },
+                    {
+                        "metric": "peak_rss_bytes",
+                        "maximum_regression_pct": 10.0,
+                        "status": "passed",
+                        "reason": "inside limit",
+                    },
+                ],
+            }
+        )
+        experiment_model.Experiment.model_validate(payload)
+
+
+class RecordHeadlineTests(unittest.TestCase):
+    @staticmethod
+    def _arguments(**overrides):
+        values = {
+            "primary_job": "cold-scan-index",
+            "primary_metric": "wall_ns",
+            "control_variant": None,
+            "candidate_variant": None,
+            "decision": "rejected",
+            "max_cpu_regression_pct": 10.0,
+            "max_rss_regression_pct": 10.0,
+            "resource_waiver": None,
+        }
+        values.update(overrides)
+        return argparse.Namespace(**values)
+
+    def test_multi_variant_run_requires_an_explicit_pair(self) -> None:
+        document = _run_document()
+        comparisons = document["statistics"]["cold-scan-index"]["comparisons"]
+        comparisons["third_vs_control"] = comparisons["candidate_vs_control"]
+        with self.assertRaisesRegex(ValueError, "requires --control-variant"):
+            record._headline(document, self._arguments())
+
+    def test_reversed_explicit_pair_selects_only_that_comparison(self) -> None:
+        document = _run_document()
+        comparisons = document["statistics"]["cold-scan-index"]["comparisons"]
+        reverse = json.loads(json.dumps(comparisons["candidate_vs_control"]))
+        reverse["control"] = "candidate"
+        reverse["candidate"] = "control"
+        reverse["metrics"]["wall_ns"]["median_change_pct"] = 42.0
+        comparisons["control_vs_candidate"] = reverse
+
+        headline = record._headline(
+            document,
+            self._arguments(
+                control_variant="candidate", candidate_variant="control"
+            ),
+        )
+        self.assertEqual(headline, 42.0)
+
+    def test_unknown_explicit_pair_fails_instead_of_falling_back(self) -> None:
+        with self.assertRaisesRegex(ValueError, "has no comparison"):
+            record._headline(
+                _run_document(),
+                self._arguments(
+                    control_variant="candidate", candidate_variant="missing"
+                ),
+            )
+
+    def test_accepted_latency_win_requires_resource_guardrails_or_a_waiver(self) -> None:
+        document = _run_document()
+        statistics = document["statistics"]["cold-scan-index"]
+        statistics["variants"]["control"]["metrics"].update(
+            {"cpu_ns": _metric(100.0), "peak_rss_bytes": _metric(100.0)}
+        )
+        statistics["variants"]["candidate"]["metrics"].update(
+            {"cpu_ns": _metric(220.0), "peak_rss_bytes": _metric(105.0)}
+        )
+        comparison = statistics["comparisons"]["candidate_vs_control"]["metrics"]
+        comparison["cpu_ns"] = {
+            "median_change_pct": 120.0,
+            "ci95_change_pct": [110.0, 130.0],
+        }
+        comparison["peak_rss_bytes"] = {
+            "median_change_pct": 5.0,
+            "ci95_change_pct": [4.0, 6.0],
+        }
+        arguments = self._arguments(decision="accepted")
+        headline = record._headline(document, arguments)
+
+        with self.assertRaisesRegex(ValueError, "resource guardrails"):
+            record._verdict_evidence(document, arguments, headline)
+
+        arguments.resource_waiver = "latency is the product priority"
+        evidence = record._verdict_evidence(document, arguments, headline)
+        self.assertTrue(evidence["latency_gate_passed"])
+        self.assertEqual(
+            [guardrail["status"] for guardrail in evidence["resource_guardrails"]],
+            ["waived", "passed"],
+        )
+
+
 class YamlScalarTests(unittest.TestCase):
     """A string has to come back as a string, or the schema rejects it downstream."""
 
@@ -241,6 +401,9 @@ class RenderRoundTripTests(unittest.TestCase):
                 "primary_job": "cold-scan-index",
                 "reason": "faster",
             },
+            run_artifact="docs/project/experiments/evidence/exp-042-run.json",
+            run_artifact_sha256=_RUN_DIGEST,
+            evidence_grade="claim-grade",
         )
         schema = Path("docs/project/experiments/experiment.schema.yaml").resolve()
         if not schema.is_file():
@@ -281,6 +444,9 @@ class SummaryRenderTests(unittest.TestCase):
                 "change_pct": -30.0,
                 "reason": "faster",
             },
+            run_artifact="docs/project/experiments/evidence/exp-042-run.json",
+            run_artifact_sha256=_RUN_DIGEST,
+            evidence_grade="claim-grade",
         )
         payload["_path"] = "docs/project/experiments/exp-042-test.md"
         payload.update(overrides)
@@ -314,6 +480,43 @@ class SummaryRenderTests(unittest.TestCase):
     def test_no_dependency_is_stated_positively(self) -> None:
         text = summary.render([self._experiment()])
         self.assertIn("no new dependencies", text)
+
+    def test_significant_resource_regression_is_not_rendered_as_noise(self) -> None:
+        experiment = self._experiment()
+        experiment["results"][0]["metrics"]["cpu_ns"] = {
+            "control_median": 100.0,
+            "candidate_median": 204.0,
+            "change_pct": 104.0,
+            "ci95_low_pct": 100.9,
+            "ci95_high_pct": 108.6,
+            "direction": "regression",
+            "ci_excludes_zero": True,
+            "significant_improvement": False,
+            "significant": True,
+            "pairs": 12,
+        }
+        text = summary.render([experiment])
+        self.assertIn("+104.00% (significant regression)", text)
+
+    def test_latency_and_resource_decisions_are_rendered_separately(self) -> None:
+        experiment = self._experiment()
+        experiment["verdict"].update(
+            {
+                "latency_gate_passed": True,
+                "resource_guardrails": [
+                    {
+                        "metric": "cpu_ns",
+                        "maximum_regression_pct": 10.0,
+                        "observed_change_pct": 104.0,
+                        "status": "waived",
+                        "reason": "waived: interactive latency is the product priority",
+                    }
+                ],
+            }
+        )
+        text = summary.render([experiment])
+        self.assertIn("Latency gate: **passed**", text)
+        self.assertIn("`cpu_ns`: **waived**", text)
 
 
 if __name__ == "__main__":

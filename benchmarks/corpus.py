@@ -18,15 +18,16 @@ from typing import Any, Dict, Iterator, List, Mapping, Optional, Sequence, Tuple
 
 
 RECIPE_SCHEMA = "fdu-corpus-recipes-v1"
-MANIFEST_SCHEMA = "fdu-observed-corpus-v1"
+MANIFEST_SCHEMA = "fdu-observed-corpus-v2"
 MARKER_SCHEMA = "fdu-perf-run-v1"
-GENERATOR_VERSION = 1
+GENERATOR_VERSION = 2
 MARKER_NAME = ".fdu-perf-run-v1"
 MANIFEST_NAME = "observed-corpus.json"
 CORPUS_NAME = "corpus"
 RUN_PREFIX = "fdu-perf-"
 SEMANTIC_DIGEST_ALGORITHM = "sha256-multiset-v1"
 ENGINE_DIGEST_ALGORITHM = "fdu-index-record-v1/sha256-multiset-v1"
+ROLLUP_DIGEST_ALGORITHM = "fdu-rollup-record-v1/sha256-multiset-v1"
 MAX_TARGET_ENTRIES = 10_000_000
 DETAIL_ENTRY_LIMIT = 512
 MAX_JSON_BYTES = 8 * 1024 * 1024
@@ -50,7 +51,7 @@ _RECIPE_KEYS = {
     "transitions",
 }
 _TOPOLOGIES = {"balanced", "contract", "deep", "wide"}
-_METADATA_PROFILES = {"contract", "mixed", "partial", "standard"}
+_METADATA_PROFILES = {"contract", "empty", "mixed", "partial", "standard"}
 _OPTIONAL_LINKS = {"hardlink", "symlink"}
 _TRANSITIONS = {"mixed-1pct", "modify-1pct", "one-change"}
 
@@ -167,6 +168,56 @@ class _SemanticAccumulator:
         digest.update(bytes(self._xor))
         digest.update(self._sum.to_bytes(32, "big"))
         return digest.hexdigest()
+
+
+class _RollupAccumulator:
+    """Independently derive every directory reducer from observed filesystem data."""
+
+    def __init__(self) -> None:
+        self._directories: Dict[str, Dict[str, Any]] = {".": _empty_rollup()}
+
+    def add(self, relative: str, kind: str, metadata: os.stat_result) -> None:
+        if kind == "directory":
+            self._directories.setdefault(relative, _empty_rollup())
+            for ancestor in _ancestor_directories(relative):
+                self._directories.setdefault(ancestor, _empty_rollup())["dirs"] += 1
+            return
+        if kind != "file":
+            return
+
+        size = int(metadata.st_size)
+        allocated = (
+            int(metadata.st_blocks) * 512
+            if os.name == "posix" and hasattr(metadata, "st_blocks")
+            else size
+        )
+        extension = _rollup_extension(relative)
+        for ancestor in _ancestor_directories(relative):
+            rollup = self._directories.setdefault(ancestor, _empty_rollup())
+            rollup["files"] += 1
+            rollup["bytes"] += size
+            rollup["allocated"] += allocated
+            newest = rollup["newest_mtime_ns"]
+            rollup["newest_mtime_ns"] = (
+                int(metadata.st_mtime_ns)
+                if newest is None
+                else max(newest, int(metadata.st_mtime_ns))
+            )
+            if extension is not None:
+                tally = rollup["by_ext"].setdefault(
+                    extension, {"bytes": 0, "files": 0}
+                )
+                tally["files"] += 1
+                tally["bytes"] += size
+
+    def summary(self) -> Dict[str, Any]:
+        digest = _SemanticAccumulator(algorithm=ROLLUP_DIGEST_ALGORITHM)
+        for path, rollup in sorted(self._directories.items()):
+            digest.add_bytes(_rollup_record_bytes(path, rollup))
+        return {
+            "rollup_digest": digest.finish(),
+            "rollup_digest_components": digest.components(),
+        }
 
 
 @dataclass
@@ -360,6 +411,11 @@ def _create_corpus_unlocked(
             "engine_digest_components": observed_summary[
                 "engine_digest_components"
             ],
+            "rollup_digest": observed_summary["rollup_digest"],
+            "rollup_digest_algorithm": ROLLUP_DIGEST_ALGORITHM,
+            "rollup_digest_components": observed_summary[
+                "rollup_digest_components"
+            ],
             "root_inclusive": True,
             "semantic_components": observed_summary["semantic_components"],
         },
@@ -421,6 +477,10 @@ def refresh_copied_corpus(
         refreshed["oracle"]["engine_digest_components"] = observed[
             "engine_digest_components"
         ]
+        refreshed["oracle"]["rollup_digest"] = observed["rollup_digest"]
+        refreshed["oracle"]["rollup_digest_components"] = observed[
+            "rollup_digest_components"
+        ]
         refreshed["manifest_hash"] = _manifest_hash(refreshed)
         _atomic_write_json(resolved_run_root / MANIFEST_NAME, refreshed)
         return _verify_corpus_unlocked(resolved_run_root)
@@ -457,6 +517,14 @@ def _verify_corpus_unlocked(run_root: Path) -> Dict[str, Any]:
         "engine_digest_components"
     ):
         raise CorpusError("corpus verification failed for engine digest components")
+    if manifest.get("oracle", {}).get("rollup_digest") != observed.get(
+        "rollup_digest"
+    ):
+        raise CorpusError("corpus verification failed for roll-up digest")
+    if manifest.get("oracle", {}).get("rollup_digest_components") != observed.get(
+        "rollup_digest_components"
+    ):
+        raise CorpusError("corpus verification failed for roll-up digest components")
     return manifest
 
 
@@ -750,6 +818,8 @@ def _updated_transition_manifest(
         {
             "engine_digest": observed["engine_digest"],
             "engine_digest_components": observed["engine_digest_components"],
+            "rollup_digest": observed["rollup_digest"],
+            "rollup_digest_components": observed["rollup_digest_components"],
             "semantic_components": observed["semantic_components"],
             "transition_matches_observation": True,
         }
@@ -984,6 +1054,7 @@ def _observe_corpus(
     builder = _ManifestBuilder(capture_records=capture_records)
     engine_digest = _SemanticAccumulator(algorithm=ENGINE_DIGEST_ALGORITHM)
     engine_digest.add_bytes(_engine_record_bytes(".", "directory", None))
+    rollups = _RollupAccumulator()
     root_metadata = root.lstat()
     if not stat.S_ISDIR(root_metadata.st_mode):
         raise CorpusError("corpus root changed while it was being observed")
@@ -1039,11 +1110,13 @@ def _observe_corpus(
         engine_digest.add_bytes(
             _engine_record_bytes(relative, engine_kind, metadata)
         )
+        rollups.add(relative, engine_kind, metadata)
         builder.add(record)
 
     summary = builder.summary()
     summary["engine_digest"] = engine_digest.finish()
     summary["engine_digest_components"] = engine_digest.components()
+    summary.update(rollups.summary())
     summary["sizes"].update(
         {
             "entry_allocated_bytes": entry_allocated_bytes
@@ -1104,6 +1177,77 @@ def _engine_record_bytes(
             struct.pack(">QQqqQQ", *attrs),
         )
     )
+
+
+def _empty_rollup() -> Dict[str, Any]:
+    return {
+        "allocated": 0,
+        "by_ext": {},
+        "bytes": 0,
+        "dirs": 0,
+        "files": 0,
+        "newest_mtime_ns": None,
+    }
+
+
+def _ancestor_directories(relative: str) -> Iterator[str]:
+    current = str(PurePosixPath(relative).parent)
+    while True:
+        yield current
+        if current == ".":
+            return
+        current = str(PurePosixPath(current).parent)
+
+
+def _rollup_extension(relative: str) -> Optional[str]:
+    name = PurePosixPath(relative).name
+    searchable = name[1:] if name.startswith(".") else name
+    dot = searchable.rfind(".")
+    if dot < 0:
+        return None
+    stem = searchable[:dot]
+    last = searchable[dot:]
+    if len(last) <= 1:
+        return None
+    inner_dot = stem.rfind(".")
+    if inner_dot >= 0 and stem[inner_dot:].lower() == ".tar":
+        return f".tar{last.lower()}"
+    return last.lower()
+
+
+def _rollup_record_bytes(relative: str, rollup: Mapping[str, Any]) -> bytes:
+    path_bytes = relative.encode("utf-8")
+    if len(path_bytes) > (1 << 32) - 1:
+        raise CorpusError("roll-up oracle path exceeds its u32 encoding")
+    extensions = rollup["by_ext"]
+    if len(extensions) > (1 << 32) - 1:
+        raise CorpusError("roll-up oracle extension count exceeds u32")
+    newest = rollup["newest_mtime_ns"]
+    parts = [
+        struct.pack(">I", len(path_bytes)),
+        path_bytes,
+        struct.pack(
+            ">QQQQqI",
+            rollup["files"],
+            rollup["dirs"],
+            rollup["bytes"],
+            rollup["allocated"],
+            0 if newest is None else newest,
+            len(extensions),
+        ),
+    ]
+    for extension, tally in sorted(extensions.items()):
+        extension_bytes = extension.encode("utf-8")
+        if len(extension_bytes) > (1 << 32) - 1:
+            raise CorpusError("roll-up oracle extension exceeds u32")
+        parts.extend(
+            (
+                struct.pack(">I", len(extension_bytes)),
+                extension_bytes,
+                struct.pack(">QQ", tally["files"], tally["bytes"]),
+            )
+        )
+    return b"".join(parts)
 
 
 def _walk_corpus(root: Path) -> Iterator[Tuple[Path, str, os.stat_result]]:
@@ -1258,6 +1402,8 @@ def _file_extension(recipe: Recipe, index: int) -> str:
 
 
 def _file_size(recipe: Recipe, index: int) -> int:
+    if recipe.metadata_profile == "empty":
+        return 0
     if recipe.metadata_profile == "mixed":
         choices = (0, 1, 7, 64, 1_024, 4_096, 65_537, 1_048_576)
     else:
@@ -1456,6 +1602,8 @@ def _validate_manifest_shape(manifest: Mapping[str, Any]) -> None:
         raise CorpusError("observed corpus manifest digest algorithm is unsupported")
     if oracle.get("engine_digest_algorithm") != ENGINE_DIGEST_ALGORITHM:
         raise CorpusError("observed corpus manifest engine digest is unsupported")
+    if oracle.get("rollup_digest_algorithm") != ROLLUP_DIGEST_ALGORITHM:
+        raise CorpusError("observed corpus manifest roll-up digest is unsupported")
     components = oracle.get("semantic_components")
     accumulator = _SemanticAccumulator(
         components if isinstance(components, Mapping) else None
@@ -1475,6 +1623,15 @@ def _validate_manifest_shape(manifest: Mapping[str, Any]) -> None:
         raise CorpusError("observed corpus engine digest components are malformed")
     if engine_accumulator.finish() != oracle.get("engine_digest"):
         raise CorpusError("observed corpus engine digest does not match its components")
+    rollup_components = oracle.get("rollup_digest_components")
+    rollup_accumulator = _SemanticAccumulator(
+        rollup_components if isinstance(rollup_components, Mapping) else None,
+        algorithm=ROLLUP_DIGEST_ALGORITHM,
+    )
+    if not isinstance(rollup_components, Mapping):
+        raise CorpusError("observed corpus roll-up digest components are malformed")
+    if rollup_accumulator.finish() != oracle.get("rollup_digest"):
+        raise CorpusError("observed corpus roll-up digest does not match its components")
     records = manifest.get("records")
     if records is not None and not isinstance(records, list):
         raise CorpusError("observed corpus manifest records must be an array")

@@ -13,9 +13,11 @@ independently computed medians.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import platform
+import re
 import shutil
 import signal
 import statistics
@@ -29,7 +31,9 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from benchmarks.realtree import tree as reference_tree
 
-RUN_SCHEMA = "fdu-realtree-run-v1"
+RUN_SCHEMA = "fdu-realtree-run-v2"
+BINARY_PROVENANCE_SCHEMA = "fdu-benchmark-binary-v1"
+BOOTSTRAP_SEED = 0x5EED
 
 #: A measured command inherits nothing from the operator's shell. Locale and timezone
 #: change how much work formatting does; an inherited PATH changes which binary runs.
@@ -76,6 +80,9 @@ class Job:
     description: str
     needs_snapshot: bool = False
     verify_oracle: bool = True
+    #: Process CPU is summed across threads. For jobs that may run in parallel,
+    #: ``wall - process CPU`` is not off-CPU time and must not be reported as such.
+    process_cpu_can_exceed_wall: bool = False
     #: The job writes the snapshot itself, so it needs a path but not a prepared
     #: file — and the path must be empty at the start of every trial, or the job
     #: would be measured overwriting rather than creating.
@@ -95,12 +102,11 @@ class Variant:
     #: count, a batch size — which is both fairer and far quicker than building a
     #: binary per setting.
     extra_args: List[str] = field(default_factory=list)
+    provenance: Mapping[str, Any] = field(default_factory=dict)
 
     def identity(self) -> Dict[str, Any]:
-        import hashlib
-
         digest = hashlib.sha256(self.path.read_bytes()).hexdigest()
-        return {
+        identity = {
             "args": list(self.extra_args),
             "kind": self.kind,
             "name": self.name,
@@ -108,6 +114,8 @@ class Variant:
             "sha256": digest,
             "size_bytes": self.path.stat().st_size,
         }
+        identity.update(_validated_provenance(self.provenance))
+        return identity
 
 
 @dataclass
@@ -153,15 +161,28 @@ PROBE_JOBS: Dict[str, Job] = {
         argv=("{binary}", "scan-index", "--root", "{root}"),
         start_state="cold",
         description="Full walk with metadata into a complete index. No snapshot.",
+        process_cpu_can_exceed_wall=True,
     ),
     "cold-scan-producer": Job(
         id="cold-scan-producer",
         argv=("{binary}", "scan-producer", "--root", "{root}"),
         start_state="cold",
         description=(
-            "Walk and metadata only, no index build. Isolates the syscall layer. "
-            "Wall time includes an untimed exact validation scan; read component_ns."
+            "Walk and metadata only, no index build. The measured component hashes "
+            "the exact records emitted by the producer for independent validation."
         ),
+        process_cpu_can_exceed_wall=True,
+    ),
+    "cold-scan-producer-raw": Job(
+        id="cold-scan-producer-raw",
+        argv=("{binary}", "scan-producer-raw", "--root", "{root}"),
+        start_state="cold",
+        description=(
+            "Counts-only producer diagnostic without digest-oracle instrumentation. "
+            "Useful for attributing overhead; never claim-grade correctness evidence."
+        ),
+        verify_oracle=False,
+        process_cpu_can_exceed_wall=True,
     ),
     "warm-revalidate": Job(
         id="warm-revalidate",
@@ -172,6 +193,7 @@ PROBE_JOBS: Dict[str, Job] = {
             "component_ns is reconciliation; wall_ns is the whole warm start."
         ),
         needs_snapshot=True,
+        process_cpu_can_exceed_wall=True,
     ),
     "warm-snapshot-load": Job(
         id="warm-snapshot-load",
@@ -200,6 +222,7 @@ PROBE_JOBS: Dict[str, Job] = {
         start_state="cold",
         description="Serialize a populated index. Wall includes the untimed setup scan.",
         writes_snapshot=True,
+        process_cpu_can_exceed_wall=True,
     ),
 }
 
@@ -214,6 +237,7 @@ REFERENCE_JOBS: Dict[str, Job] = {
         start_state="cold",
         description="Third-party whole-tree size roll-up, for context only.",
         verify_oracle=False,
+        process_cpu_can_exceed_wall=True,
     ),
 }
 
@@ -251,6 +275,7 @@ def run(
     if trials < 1:
         raise MeasureError("trials must be at least 1")
 
+    frozen_identities = _freeze_variant_identities(variants)
     scratch.mkdir(parents=True, exist_ok=True)
     started = time.time()
 
@@ -265,6 +290,7 @@ def run(
 
     samples: List[Sample] = []
     schedule = _interleave(variants, jobs, trials, warmups)
+    schedule_sha256 = _schedule_sha256(schedule)
     total = len(schedule)
     for position, (variant, job, ordinal, warmup) in enumerate(schedule, start=1):
         if purge:
@@ -284,6 +310,7 @@ def run(
 
     after = reference_tree.fingerprint(root, label=label)
     mutation = reference_tree.compare(after, before)
+    _assert_variants_unchanged(variants, frozen_identities)
 
     document = {
         "schema": RUN_SCHEMA,
@@ -297,6 +324,9 @@ def run(
             "warmups": warmups,
             "interleaved": True,
             "schedule": "round-robin-by-ordinal-v1",
+            "schedule_sha256": schedule_sha256,
+            "schedule_seed": None,
+            "bootstrap_seed": BOOTSTRAP_SEED,
         },
         "tree": before,
         "tree_after_digest": after["engine_digest"],
@@ -307,11 +337,12 @@ def run(
         # keys so it diffs cleanly, so the declaration order has to be recorded
         # separately or a reader recovers it alphabetically and inverts the comparison.
         "variant_order": [variant.name for variant in variants],
-        "variants": {variant.name: variant.identity() for variant in variants},
+        "variants": frozen_identities,
         "jobs": {
             job.id: {
                 "argv": list(job.argv),
                 "description": job.description,
+                "process_cpu_can_exceed_wall": job.process_cpu_can_exceed_wall,
                 "start_state": job.start_state,
             }
             for job in jobs
@@ -390,6 +421,98 @@ def _interleave(
     return schedule
 
 
+def _schedule_sha256(schedule: Sequence[tuple]) -> str:
+    """Digest the exact expanded order without recording any filesystem path."""
+    rows = [
+        {
+            "job": job.id,
+            "ordinal": ordinal,
+            "variant": variant.name,
+            "warmup": warmup,
+        }
+        for variant, job, ordinal, warmup in schedule
+    ]
+    encoded = json.dumps(rows, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _validated_provenance(provenance: Mapping[str, Any]) -> Dict[str, Any]:
+    """Return a normalized claim-build manifest or an empty ad-hoc identity."""
+    if not provenance:
+        return {}
+    if provenance.get("schema") != BINARY_PROVENANCE_SCHEMA:
+        raise MeasureError(
+            f"binary provenance must use schema {BINARY_PROVENANCE_SCHEMA!r}"
+        )
+    normalized: Dict[str, Any] = {}
+    for field_name, length in (
+        ("engine_revision", 40),
+        ("harness_revision", 40),
+        ("harness_sha256", 64),
+    ):
+        value = provenance.get(field_name)
+        if not isinstance(value, str) or len(value) != length:
+            raise MeasureError(f"binary provenance needs {field_name} ({length} hex chars)")
+        try:
+            int(value, 16)
+        except ValueError as error:
+            raise MeasureError(f"binary provenance {field_name} is not hexadecimal") from error
+        normalized[field_name] = value.lower()
+    for field_name in ("target", "build_profile", "build_command"):
+        value = provenance.get(field_name)
+        if not isinstance(value, str) or not value.strip():
+            raise MeasureError(f"binary provenance needs non-empty {field_name}")
+        if field_name == "build_command" and _contains_absolute_path(value):
+            raise MeasureError(f"binary provenance {field_name} must be path-redacted")
+        normalized[field_name] = value
+    features = provenance.get("features")
+    if not isinstance(features, list) or not all(
+        isinstance(feature, str) and feature for feature in features
+    ):
+        raise MeasureError("binary provenance features must be a string list")
+    normalized["features"] = sorted(set(features))
+    if normalized["build_profile"] != "release":
+        raise MeasureError("claim-grade timing binaries must use the release profile")
+    return normalized
+
+
+_ABSOLUTE_PATH = re.compile(
+    r"(?:^|[\s='\"])(?:~[/\\]|/(?!/)|[A-Za-z]:[/\\])"
+)
+
+
+def _contains_absolute_path(value: str) -> bool:
+    """Recognize absolute path tokens without mistaking URL path components for them."""
+    return bool(_ABSOLUTE_PATH.search(value))
+
+
+def _freeze_variant_identities(
+    variants: Sequence[Variant],
+) -> Dict[str, Dict[str, Any]]:
+    """Validate and hash every binary before any measured work starts."""
+    identities: Dict[str, Dict[str, Any]] = {}
+    for variant in variants:
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", variant.name):
+            raise MeasureError(
+                f"variant name {variant.name!r} must be a path-safe identifier"
+            )
+        if variant.name in identities:
+            raise MeasureError(f"variant name {variant.name!r} was supplied twice")
+        identities[variant.name] = variant.identity()
+    return identities
+
+
+def _assert_variants_unchanged(
+    variants: Sequence[Variant], frozen: Mapping[str, Mapping[str, Any]]
+) -> None:
+    """Reject a run if a measured binary changed after its identity was frozen."""
+    for variant in variants:
+        if variant.identity() != frozen.get(variant.name):
+            raise MeasureError(
+                f"variant {variant.name!r} changed while the measurement was running"
+            )
+
+
 def _measure_once(
     *,
     variant: Variant,
@@ -426,22 +549,19 @@ def _measure_once(
         component_ns = probe.get("component_ns")
         if job.verify_oracle and probe:
             disagreement = reference_tree.probe_agrees(
-                fingerprint_document, probe.get("summary")
+                fingerprint_document,
+                probe.get("summary"),
+                mode=probe.get("mode"),
             )
             if disagreement is not None:
                 reasons.append(disagreement)
 
-    metrics = dict(result["resources"])
-    metrics["wall_ns"] = result["wall_ns"]
+    metrics = _process_metrics(
+        result["resources"],
+        wall_ns=result["wall_ns"],
+        process_cpu_can_exceed_wall=job.process_cpu_can_exceed_wall,
+    )
     metrics["component_ns"] = component_ns
-    user = metrics.get("user_cpu_ns")
-    system = metrics.get("system_cpu_ns")
-    if user is not None and system is not None:
-        metrics["cpu_ns"] = user + system
-        metrics["blocked_ns"] = max(0, result["wall_ns"] - user - system)
-    else:
-        metrics["cpu_ns"] = None
-        metrics["blocked_ns"] = None
 
     return Sample(
         variant=variant.name,
@@ -459,6 +579,34 @@ def _measure_once(
     )
 
 
+def _process_metrics(
+    resources: Mapping[str, Optional[int]],
+    *,
+    wall_ns: int,
+    process_cpu_can_exceed_wall: bool,
+) -> Dict[str, Optional[int]]:
+    """Complete process metrics without inventing off-CPU time.
+
+    ``getrusage`` process CPU accumulates across threads. Subtracting that aggregate
+    from elapsed wall time is meaningful only for work known to be single-threaded.
+    """
+    metrics = dict(resources)
+    metrics["wall_ns"] = wall_ns
+    user = metrics.get("user_cpu_ns")
+    system = metrics.get("system_cpu_ns")
+    if user is not None and system is not None:
+        metrics["cpu_ns"] = user + system
+        metrics["blocked_ns"] = (
+            None
+            if process_cpu_can_exceed_wall
+            else max(0, wall_ns - user - system)
+        )
+    else:
+        metrics["cpu_ns"] = None
+        metrics["blocked_ns"] = None
+    return metrics
+
+
 def _read_probe_output(stdout: bytes):
     reasons: List[str] = []
     text = stdout.decode("utf-8", errors="replace").strip()
@@ -470,7 +618,7 @@ def _read_probe_output(stdout: bytes):
         return {}, [f"probe output was not JSON: {error}"]
     if not isinstance(document, dict):
         return {}, ["probe output was not a JSON object"]
-    if document.get("schema") != "fdu-perf-probe-v1":
+    if document.get("schema") != "fdu-perf-probe-v2":
         reasons.append(f"unexpected probe schema {document.get('schema')!r}")
     summary = document.get("summary")
     if isinstance(summary, dict):
@@ -687,7 +835,7 @@ def summarize(document: Mapping[str, Any]) -> Dict[str, Any]:
         Sample(**{**sample, "reasons": list(sample["reasons"])})
         for sample in document["samples"]
     ]
-    variants = list(document["variants"])
+    variants = list(document.get("variant_order") or document["variants"])
     jobs = list(document["jobs"])
     statistics_document: Dict[str, Any] = {}
     for job in jobs:
@@ -785,6 +933,18 @@ def paired_comparison(
         ]
         median_ratio = statistics.median(ratios) if ratios else None
         low, high = _bootstrap_median_interval(ratios) if ratios else (None, None)
+        direction = (
+            "improvement"
+            if median_ratio is not None and median_ratio < 0
+            else "regression"
+            if median_ratio is not None and median_ratio > 0
+            else "unchanged"
+        )
+        ci_excludes_zero = (
+            low is not None
+            and high is not None
+            and (high < 0 or low > 0)
+        )
         result["metrics"][metric] = {
             "pairs": len(pairs),
             "median_delta": statistics.median(deltas),
@@ -795,7 +955,13 @@ def paired_comparison(
             if low is not None
             else None,
             "improved": median_ratio is not None and median_ratio < 0,
-            "significant": low is not None and high is not None and high < 0,
+            "direction": direction,
+            "ci_excludes_zero": ci_excludes_zero,
+            "significant_improvement": ci_excludes_zero
+            and direction == "improvement",
+            # Compatibility for older readers. Unlike the former one-sided value,
+            # this now means statistical significance in either direction.
+            "significant": ci_excludes_zero,
         }
     return result
 
@@ -828,7 +994,7 @@ def _pairs(
 
 
 def _bootstrap_median_interval(
-    values: Sequence[float], *, resamples: int = 2000, seed: int = 0x5EED
+    values: Sequence[float], *, resamples: int = 2000, seed: int = BOOTSTRAP_SEED
 ):
     """A deterministic percentile bootstrap of the median.
 

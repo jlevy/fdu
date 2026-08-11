@@ -12,8 +12,8 @@ experiment:
   hypotheses:
     - H32
   subject:
-    tree_label: metabrowser-clone
-    tree_root_id: dbd79ed9c898f7a2f66530cd95bb61cab88e798375134b86c77ece761de580a9
+    tree_label: reference-tree-60k
+    tree_root_id: 40406544ab63512154d1962a5c6bbe3bee60c1d3c6315f3b267b99871d03d825
     tree_engine_digest: bf574331eca680372f7060d4f9ab3b3b175afd265ac27bda6b6dc67ed9c80798
     tree_entries: 59654
     tree_directories: 7341
@@ -50,7 +50,13 @@ experiment:
       args: []
     toolchain: rustc 1.97.1 (8bab26f4f 2026-07-14)
     build_profile: release
-    run_artifact: benchmarks/results/realtree/run-exp007-009-requiem.json
+    evidence_grade: legacy
+    run_schema: fdu-realtree-run-v1
+    schedule: round-robin-by-ordinal-v1
+    schedule_sha256: null
+    schedule_seed: null
+    run_artifact: docs/project/experiments/evidence/exp-009-run.json
+    run_artifact_sha256: 2ff07f9994f50f591e15a4b499b609147f8fb4af003f37d03e9d7343d634e10f
   results:
     - job: warm-revalidate
       start_state: warm
@@ -188,28 +194,37 @@ experiment:
     new_failure_modes: []
     notes: "Net-negative lines: the two-pass helper is deleted. Fail-closed unchanged - the index is returned only after the digest over the complete payload matches, and structural corruption is still caught by the parser's own checks. The wall-vs-component ruling is codified in the loop guide: a pre-registered signal may be the accept metric; a post-hoc metric switch is never an accept."
   verdict:
-    decision: accepted
+    decision: superseded
     primary_job: warm-snapshot-load
     primary_metric: component_ns
     change_pct: -12.383
-    reason: "Accepted on the pre-registered signal: the research registry declared this hypothesis's predicted signal as warm-snapshot-load component_ns -15-25%, and the quiet re-run measured -12.38% [-22.85%, -4.71%] with cpu and user cpu significantly down; wall spans zero only because probe spawn and the untimed oracle digest are half that job's wall"
+    reason: "The pre-registered component result remains useful legacy evidence, but the v1 run lacks exact build manifests and the full roll-up oracle required for acceptance; exp-012 carries the final cumulative disposition"
     commit: 9f4f029
 ---
 # Single-pass checksum and parse on snapshot load
 
 ## Hypothesis
 
-H32: _state what you expected to be slow, why,
-and which metric would move._
+H32 predicted that reading the complete snapshot once for CRC and again for parsing was
+avoidable bandwidth and should move the pre-registered snapshot component metric.
 
 ## What was tried
 
-_The smallest change that tests the hypothesis._
+The parser folded CRC calculation over bytes as it consumed them and withheld the index
+until both the parse and final checksum succeeded. Corrupt data still failed closed.
 
 ## What the numbers said
 
-_Read the tables in the frontmatter. Say what surprised you._
+The quiet v1 rerun measured `warm-snapshot-load` component time 12.38% lower with an
+interval below zero; process wall included enough spawn/oracle overhead to span zero.
+The local signal is useful, but the run lacks the present source-manifest and v2 oracle
+contract.
 
 ## Verdict
 
-**ACCEPTED** — Accepted on the pre-registered signal: the research registry declared this hypothesis's predicted signal as warm-snapshot-load component_ns -15-25%, and the quiet re-run measured -12.38% [-22.85%, -4.71%] with cpu and user cpu significantly down; wall spans zero only because probe spawn and the untimed oracle digest are half that job's wall
+**SUPERSEDED** — exp-012 supplies the current cumulative disposition with complete raw
+evidence and provenance.
+
+<!-- This document follows common-doc-guidelines.md.
+See github.com/jlevy/practical-prose and review guidelines before editing.
+-->

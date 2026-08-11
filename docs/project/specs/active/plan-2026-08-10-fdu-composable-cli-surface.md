@@ -12,8 +12,9 @@ Reshape the fdu command line and the library query layer around a small set of
 orthogonal, reusable concepts instead of accumulating per-feature flags.
 One invocation composes five axes — scan scope, selection, views, format, and mode —
 over the same engine, so one command grammar covers what du, dust, dut, diskus, fd, and
-find each do separately, plus a `tail -f`-style change feed and timestamp-watermark
-queries reliable enough to drive backup and sync tooling.
+find each do separately, plus a `tail -f`-style change feed and timestamp-window
+queries useful for finding modification candidates. Exact backup and sync require a
+complete-manifest diff or a durable operation log; an mtime filter is not one.
 The same concepts appear as typed values in the Rust API and the Python API, so the CLI
 is a thin composition of the library rather than a second implementation.
 
@@ -53,11 +54,13 @@ removed from this design by exactly that test.
 5. **Fastest answer the data allows, never silently stale.** Cache behavior is one
    explicit policy axis, and every report labels its `source`, `freshness`, and
    `complete` status (Goal 7 of the research).
-   Warm, cold, and cache-only runs are user choices, not heuristics; incremental update
-   (warm revalidation, watch deltas) is the default path, not an opt-in mode.
+   Explicit policies select warm, cold, or cache-only behavior. `auto` is an
+   evidence-backed selector: it chooses a warm path only for a measured environment and
+   workload cell where that path is beneficial, and chooses a cold scan for unknown
+   cells. No selector changes the freshness contract.
 6. **Same concepts at every level; the CLI invents nothing.** `Query`, `View`, `Report`,
-   and `CachePolicy` are typed values in the Rust library; the CLI parses flags into
-   them and renders `Report`s; Python exposes the same types.
+   `CacheReadPolicy`, and `CacheWritePolicy` are typed values in the Rust library; the
+   CLI parses flags into them and renders `Report`s; Python exposes the same types.
    Any logic beyond flag parsing, terminal handling, and exit codes belongs in the
    library, where Rust and Python callers get it too.
    A capability that exists in one surface and not the others is unfinished, and
@@ -145,7 +148,7 @@ flowmark’s *surface* patterns, not its storage.
 | **Selection** | Which retained entries does this query consider, and how are results shaped? | `--include <GLOB>`, `--exclude <GLOB>`, `--min-size <SIZE>`, `--modified-since <WHEN>`, `--modified-before <WHEN>`, `--kind <LIST>` of `file\|dir\|symlink`, `--depth <N>`, `-n/--limit <N>`, `--sort <size\|count\|mtime\|name>`, `--reverse`, `--size <allocated\|apparent>` | View-time filter over the index; never part of the cache key |
 | **View** | Which roll-ups or listings are reported? | `--view <LIST>` — comma-delimited from `tree`, `types`, `files`, `summary`; default `tree` | Pure projections over `Index` |
 | **Format** | How is the report serialized? | `--format <text\|json\|jsonl\|yaml>`, `--color <auto\|always\|never>` | Serializers over `Report`; schema-versioned |
-| **Mode** | One answer or a live feed, and how is the cache used? | one-shot (default) vs `--watch [--interval <DUR>]`; `--cache <auto\|refresh\|only\|off>`; `--allow-partial` | `open()` path selection; `watch::Watcher` driving the same query |
+| **Mode** | One answer or a live feed, and how is the cache used? | one-shot (default) vs `--watch [--interval <DUR>]`; `--cache <auto\|refresh\|read-only\|only\|off>`; `--allow-partial` | independent cache-read and cache-write policies in `open()`; `watch::Watcher` driving the same query |
 
 Scope versus selection is the load-bearing distinction, and it is why filters are cheap:
 scope determines what is scanned and cached (one cache serves every query), while
@@ -179,7 +182,7 @@ Representative compositions, which double as the subsumption checklist (Principl
 | live dashboard poll | `fdu --watch --view tree,types --interval 2s` | aggregate views re-render when dirty |
 | forced cold measurement | `fdu --cache refresh` | ignores and rewrites the snapshot |
 | answer from cache alone | `fdu --cache only` | never touches the tree; labeled stale |
-| incremental backup sync | `fdu --view summary`, then later `fdu --view files --modified-since <scan_started_at>` | exact-timestamp watermark; see below |
+| modified-file candidates | `fdu --view files --modified-since <scan_started_at>` | conservative for ordinary forward-mtime modifications only; see below |
 
 Grammar conventions, applied uniformly so every flag behaves the way its neighbors do:
 
@@ -191,7 +194,7 @@ Grammar conventions, applied uniformly so every flag behaves the way its neighbo
   lists, because glob brace syntax (`*.{rs,toml}`) contains commas.
 - **Humane value grammars, shared with the API**: sizes accept `10M`/`1.5GiB`; times
   accept ages (`45s`, `2h`, `1h30m`), absolute timestamps, `@epoch`, or `now`, per the
-  single `WHEN` grammar defined under Timestamps and Sync Watermarks.
+  single `WHEN` grammar defined under Timestamps and Modified-File Candidates.
   Bounded values accept `all` for unbounded (`-n all`, `--depth all`); `--depth 0` keeps
   du’s meaning of “root totals only.”
 - **Lifecycle flags take optional values** (`--cache-status[=root|all]`), defaulting to
@@ -245,7 +248,7 @@ Both are milliseconds warm; neither touches the filesystem.
 `ExtTally` gains an `allocated` field so the `types` view honors `--size allocated`
 instead of silently switching metrics.
 
-### Timestamps and Sync Watermarks
+### Timestamps and Modified-File Candidates
 
 Every report carries two instants in every format: `scan_started_at` (when the walk or
 revalidation began) and `generated_at` (when the report was rendered), as RFC 3339 UTC
@@ -296,86 +299,111 @@ The rules that keep it well defined:
 `--modified-since` is inclusive and `--modified-before` is exclusive, forming the
 half-open window `[since, before)`.
 
-Those two pieces compose into a reliable incremental-sync watermark with no new
-machinery:
+Those two pieces compose into a useful modified-file candidate query:
 
 ```text
-fdu /data --view summary --format json   # record scan_started_at, back everything up
+fdu /data --view summary --format json   # record scan_started_at
 # ... later ...
 fdu /data --view files --format jsonl \
-    --modified-since 2026-08-10T18:22:31.482919114Z   # exactly what needs re-sync
+    --modified-since 2026-08-10T18:22:31.482919114Z   # modification candidates
 ```
 
-The rules that make this trustworthy, stated so they hold under iteration:
+The limits are part of the contract:
 
-- The watermark is the *previous scan’s start*, not its end: a file modified mid-scan
-  may have been observed before the modification, and only the start bound is
-  conservative.
-- The boundary is inclusive, so a file whose mtime equals the watermark re-lists.
-  For sync, duplicates are safe and omissions are not.
+- Use the *previous scan’s start*, not its end: for ordinary forward-moving mtimes, a
+  file modified mid-scan may have been observed before the modification, so the earlier
+  bound is the conservative candidate boundary.
+- The boundary is inclusive, so a file whose mtime equals the cutoff re-lists.
+  Duplicate candidates are preferable to missing a same-tick modification.
 - The follow-up query answers from a revalidated index under the default `--cache auto`;
   under `--cache only` it answers from the snapshot alone and says so (Principle 5).
-- mtime-window queries trust mtimes, exactly as find and rsync do; a backdated mtime is
-  invisible to all of them.
-  The live exact feed is `--watch` (clocked deltas, no mtime trust); a durable
-  cross-restart journal that upgrades one-shot queries to exact deltas is future work
-  owned by `fdu-3dtq`, and this schema leaves room for it rather than pre-building it.
+- An mtime window cannot report a deletion, a rename that preserves mtime, a backdated
+  content change, or any operation omitted by an interrupted run. It must never be
+  described as an exact change set or sync watermark.
+- Exact cross-run sync requires either diffing two complete manifests, including path
+  identities and removals, or consuming a durable, clocked operation log that records
+  creates, updates, renames, and removes together with a completeness token. `--watch`
+  is exact only while its producer remains alive and reports no invalidation; the future
+  persistent-journal work may provide the durable form.
 
 ### Cache Policy and Utilities
 
-`--cache <POLICY>` replaces the single `--no-cache` boolean:
+`--cache <POLICY>` replaces the single `--no-cache` boolean, but the implementation
+keeps read-path selection and write permission independent:
 
-| Policy | Reads snapshot | Touches filesystem | Writes snapshot | Use |
-| --- | --- | --- | --- | --- |
-| `auto` (default) | yes | revalidates | on complete | fastest trustworthy answer |
-| `refresh` | no | full scan | on complete | forced cold start; benchmark control |
-| `read-only` | yes | revalidates | never | warm answer without touching the cache |
-| `only` | yes | never | no | instant answer from data on hand, labeled `freshness: stale` |
-| `off` | no | full scan | no | leave no trace |
+| CLI policy | Read path | Write policy | Use |
+| --- | --- | --- | --- |
+| `auto` (default) | evidence selector | write eligible complete result | fastest measured trustworthy path for a known cell; cold scan when unknown |
+| `refresh` | cold full scan | write eligible complete result | forced cold start; benchmark control and cache refresh |
+| `read-only` | evidence selector | never | selected answer without touching the cache |
+| `only` | snapshot only; never touches tree | never | data on hand, explicitly labeled stale |
+| `off` | cold full scan | never | leave no trace |
 
-Disabling the always-write behavior is therefore a policy value, not a separate flag:
-`read-only` keeps the warm read path and suppresses the write, `off` suppresses both.
+The library models these as `CacheReadPolicy` and `CacheWritePolicy`; the five CLI values
+are stable mappings onto those two values. This prevents a future read-path decision
+from accidentally changing persistence. In particular, `auto` may select a cold scan
+and still write its complete result for later cache-only use, journal resume, derived
+data, or a newly measured cell.
 
 Every report carries `source` (`cold_scan`, `warm_revalidate`, `cache_only`),
 `freshness`, and `complete`, in all formats, so no policy can silently lie.
 
-**When the cache is written.** The policy axis decides *whether* a run may write; these
-rules decide *what and when*, and they are rules, not heuristics (Principle 5):
+**How `auto` chooses.** The selector is a versioned evidence table, not a general claim
+that a cache is faster. A row identifies platform, filesystem, storage class, scale
+bucket, metadata-cache state, churn class, engine fingerprint, and benchmark job. A
+warm path is eligible only when a paired experiment shows a significant latency win
+without failing CPU or RSS guardrails. An absent, stale, or ambiguous row selects the
+cold stat scan. Explicit `refresh`, `only`, and `off` always override the table.
+
+The required matrix covers APFS; Linux ext4, XFS, btrfs, and overlayfs; Windows NTFS;
+local and remote storage where available; hot and cold metadata-cache conditions;
+10k, 100k, 500k, and 1M-entry scales; and unchanged plus representative churn. Unknown
+cells stay unknown rather than inheriting an APFS result. Every row measures both time
+to first output and time to process completion, plus CPU and peak RSS.
+
+**When the cache is written.** The write policy decides *whether* a run may write; these
+rules decide *what and when*:
 
 - The core snapshot is written by `auto` and `refresh` only when the scan is complete
-  and the index is `Fresh` (the existing invariant), and **on a background thread
-  overlapped with rendering** — once producers finish, the index is read-only, so
-  serialization and rendering are two concurrent readers.
-  The save never delays first output; the process joins the save thread before exit so a
-  write is never abandoned, and the save still completes when rendering ends early
+  and its freshness permits persistence (the existing invariant), on a background
+  thread that may overlap rendering — once producers finish, serialization and
+  rendering are two concurrent readers. The process joins the save thread before exit
+  so a write is never abandoned, and the save still completes when rendering ends early
   (broken pipe must not discard a finished scan’s work).
+  Background work can still contend for CPU, memory bandwidth, and storage, and the join
+  affects completion time. It therefore makes no “off the hot path” guarantee: both
+  first-output and completion metrics include the save policy, and a regression changes
+  the policy or selector.
   A failed save (read-only cache dir, quota) is a stderr warning, never a changed exit
   code.
-- It is written on every platform, for every tier of query, whenever complete —
-  including pure stat roll-ups.
-  The tempting refinement “stat-only runs skip the write” is rejected on the
-  [performance frontier research](../../research/research-2026-08-10-performance-frontier.md):
-  the write is tens of milliseconds off the hot path, while the stat-tier snapshot is
-  exactly what the two decisive warm paths consume — on cloud runners the snapshot is
-  the *only* possible warm state (the OS metadata cache does not fit in RAM), and on
-  macOS the planned FSEvents journal resume (O(changes) warm opens) anchors on
-  snapshot-carried resume tokens.
-  What makes the cache feel unnecessary on a warm laptop today is the measured
-  warm-costs-more-than-cold defect (the loop’s H9 family), which is owned by the
-  performance loop, not by write policy.
+- Writing is platform-neutral and independent of whether `auto` selected a cached read.
+  The current evidence shows that stat-tier snapshot load plus full revalidation is
+  slower than a cold scan on the one measured warm APFS tree; other platform and storage
+  cells remain unknown. Persistence still has distinct uses—cache-only answers,
+  journal boundaries, and future derived data—but each read optimization must earn its
+  own matrix row.
 - The snapshot format reserves the journal-resume fields (event ID, volume UUID,
   platform tag) now, per that research, so the macOS rung can land without a format
   break.
 
-**Two cache layers.** Content-derived metrics (line counts and future analyzers — where
-the user-visible payback is largest, minutes cold to seconds warm) live in a
-**derived-data layer, not the core snapshot**: separate per-analyzer files keyed by
-`(fingerprint, analyzer id, analyzer version)`, written whenever an analyzer ran under a
-writing policy, loaded lazily, invalidated per analyzer without touching tree truth,
-size-bounded, and purgeable via `--cache-clear`. The core snapshot stays small and fast
-to open; runs that request richer roll-ups enrich the derived layer additively.
-No analyzer ships under this plan, but the layer’s shape is fixed here so the content
-tier arrives without a format break.
+**Two cache layers.** Content-derived metrics (line counts and future analyzers) live in
+a **derived-data layer, not the core snapshot**. Its namespace is the cache format,
+canonical root/snapshot identity, and complete `ScanScope`. Within that namespace, an
+entry key contains the volume/device identity, root-relative raw path identity, the full
+file fingerprint (size, mtime, ctime, inode), analyzer ID and version, and a canonical
+digest of every analyzer configuration value that can affect output. Two roots or
+devices therefore cannot collide merely because they expose the same inode tuple.
+
+The analyzer stats the file before and after reading it; if either fingerprint differs,
+the result is discarded rather than caching a racily computed value. Hard-linked paths
+retain separate path mappings, while an immutable result blob may be shared only within
+one device and one full fingerprint. Files are written atomically, corrupt or
+unrecognized entries are treated as absent, and declared lengths/counts are bounded
+before allocation. Garbage collection enforces a configurable total-size cap with LRU
+eviction and removes orphaned root/scope and analyzer-version namespaces; manual
+`--cache-clear` remains available. The core snapshot stays small and opens independently.
+No analyzer ships under this plan, but these identity, race, corruption, and lifecycle
+rules are fixed before the content tier arrives.
 
 **Verification cost follows the query.** Under `auto`, “revalidates” means the cheapest
 *sound* verification for the reducers the requested views actually use, per the frontier
@@ -451,7 +479,8 @@ pub struct Query {
 
 pub fn report(index: &Index, query: &Query) -> Report;   // pure; never scans
 
-pub enum CachePolicy { Auto, Refresh, ReadOnly, Only, Off }   // consumed by open()
+pub enum CacheReadPolicy { Auto, Cold, SnapshotOnly }         // consumed by open()
+pub enum CacheWritePolicy { Complete, Never }                 // independent of reads
 
 pub struct Report { /* scan_started_at, generated_at, source, freshness,
                        complete, scope, one section per view */ }
@@ -467,8 +496,9 @@ callers and tests control the reference instant.
 
 `Report` and its sections derive `serde::Serialize`; `text` rendering and the
 JSON/JSONL/YAML serializers live in the CLI feature.
-`cli.rs` shrinks to parsing flags into `(ScanConfig, CachePolicy, Query, Format)` and
-routing streams — the current private rendering methods on `Cli` move behind
+`cli.rs` shrinks to parsing flags into `(ScanConfig, CacheReadPolicy,
+CacheWritePolicy, Query, Format)` and routing streams — the current private rendering
+methods on `Cli` move behind
 `query`/`format` types with their own unit tests.
 Watch composes the same pieces: a `Session` owning `IndexHandle` + `Watcher` yields
 batches already filtered through the `Selection`, and the CLI loop is a thin consumer.
@@ -476,9 +506,9 @@ batches already filtered through the `Selection`, and the CLI loop is a thin con
 The parity test for Principle 6 is mechanical: the CLI’s five axes map one-to-one onto
 these library types, so any capability reachable by flags is reachable as one typed
 call, with the same defaults.
-If implementing a flag ever requires logic that does not fit `Query`, `CachePolicy`, or
-a `Report` serializer, the library types are wrong and get fixed first; each phase ends
-with an explicit review of what, if anything, lives only in `cli.rs`.
+If implementing a flag ever requires logic that does not fit `Query`, the two cache
+policies, or a `Report` serializer, the library types are wrong and get fixed first;
+each phase ends with an explicit review of what, if anything, lives only in `cli.rs`.
 
 Supply-chain note: `serde` (derive) enters the core crate; YAML requires care because
 `serde_yaml` is unmaintained.
@@ -494,7 +524,7 @@ Mirror, not wrapper-of-CLI:
 idx, report = fdu_py.open(root, cache="auto", scan_depth=None)
 r = idx.report(views=["types", "tree"], include=["*.rs"], min_size="10M")
 changed = idx.report(views=["files"], modified_since="2h")      # or a datetime
-resync = idx.report(views=["files"], modified_since=r.scan_started_at)
+recent_candidates = idx.report(views=["files"], modified_since=r.scan_started_at)
 for batch in idx.watch(views=["files"], interval=2.0):   # iterator of batches
     ...
 ```
@@ -548,8 +578,12 @@ shared process boundary, as today.
 
 ### Phase 2: Cache Policy and Utilities
 
-- [ ] `CachePolicy` in `open()` covering auto/refresh/only/off, with `only` failing
-  closed when no usable snapshot exists
+- [ ] Independent `CacheReadPolicy` and `CacheWritePolicy` in `open()`, with stable
+  mappings for auto/refresh/read-only/only/off and `only` failing closed when no usable
+  snapshot exists
+- [ ] Versioned evidence selector and matrix fixtures: unknown cells choose cold;
+  accepted rows match platform/filesystem/storage/scale/cache-state/churn and expire on
+  engine-fingerprint change
 - [ ] Snapshot write ordering and failure semantics: save on a background thread
   overlapped with rendering, only when complete and `Fresh`, joined before exit,
   completing even on broken-pipe rendering; a failed save warns on stderr without
@@ -560,6 +594,9 @@ shared process boundary, as today.
 - [ ] Document the two-layer cache design and the tier-derived verification contract in
   help, SKILL.md, and the schema docs (implementation of tiered verification lands with
   the reducer registry, cross-plan)
+- [ ] Derived-cache identity, before/after-stat race rejection, atomic/corrupt handling,
+  cross-root/device separation, hard-link sharing bounds, and size-cap/LRU/orphan GC
+  tests land before the first analyzer
 - [ ] Library `cache_status`, `list_caches`, `clear_cache`, `clear_all_caches` with
   bounded header reads and never-delete-unrecognized semantics
 - [ ] `--cache-status[=root|all]` and `--cache-clear[=root|all]` lifecycle flags
@@ -604,10 +641,14 @@ shared process boundary, as today.
   `now`, covering every accepted form (`now`, compound ages, RFC 3339, local
   date/datetime under a pinned `TZ`, `@epoch` with fraction) and every rejection with
   its suggestion (months/years → days, fractional ages → compounds, natural language);
-  boundary inclusivity at exact-equal mtimes; a watermark round-trip proving a report’s
-  `scan_started_at` fed back as `--modified-since` lists exactly the files touched after
-  scan start, including one touched mid-scan; timestamp fields are normalized in
-  goldens.
+  boundary inclusivity at exact-equal mtimes; a candidate round-trip showing an ordinary
+  forward-mtime edit during a scan is included. Negative tests prove that deletion,
+  rename with retained mtime, a backdated edit, and an interrupted run cannot form an
+  exact change set; manifest diff or a complete operation log is required for those
+  cases. Timestamp fields are normalized in goldens.
+- Cache-policy tests cover every CLI-to-read/write mapping, unknown evidence cells,
+  writer behavior after a cold `auto` selection, first-output and completion accounting,
+  and CPU/RSS guardrails across the supported matrix fixtures.
 - The existing partial-result, non-UTF-8 identity, broken-pipe, and stack-depth process
   tests are retargeted, not weakened; deep-tree rendering stays iterative.
 - `make check` remains the handoff gate, including `--no-default-features` (the `query`
@@ -635,10 +676,9 @@ No publishing; `fdu-9cf0` gates remain.
 4. Whether a general `--group-by` ever surfaces once the reducer registry lands
    (generalizing `types`), or named views remain the entire vocabulary and new groupings
    arrive only as new views.
-5. Cache retention: nothing yet prunes snapshots for roots that are never queried again
-   or bounds the derived-data layer’s total size.
-   Age-based GC, size caps, or manual-only (`--cache-clear`) needs a decision before the
-   derived layer ships.
+5. The default derived-cache size cap and retention age. The mechanism is decided—LRU
+   under a hard cap plus orphan cleanup and manual clear—but the default values require
+   measurement before the first analyzer ships.
 
 Resolved by composition rather than by new surface, recorded so they stay resolved:
 suppressing watch’s initial report is `--modified-since now --watch`, and top-N

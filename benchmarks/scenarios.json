@@ -34,7 +34,7 @@
         "stdout_json": {
           "equals": {
             "mode": "scan-producer",
-            "schema": "fdu-perf-probe-v1",
+            "schema": "fdu-perf-probe-v2",
             "source": "scan",
             "summary.complete": true,
             "summary.errors": 0
@@ -93,7 +93,7 @@
         "stdout_json": {
           "equals": {
             "mode": "scan-index",
-            "schema": "fdu-perf-probe-v1",
+            "schema": "fdu-perf-probe-v2",
             "source": "scan",
             "summary.complete": true,
             "summary.errors": 0
@@ -102,6 +102,7 @@
             "summary.apparent_bytes": "sizes.entry_apparent_bytes",
             "summary.dirs": "counts.directories",
             "summary.engine_digest": "oracle.engine_digest",
+            "summary.rollup_digest": "oracle.rollup_digest",
             "summary.entries": "counts.total",
             "summary.files": "counts.files",
             "summary.index_len": "counts.total",
@@ -155,7 +156,7 @@
         "stdout_json": {
           "equals": {
             "mode": "snapshot-save",
-            "schema": "fdu-perf-probe-v1",
+            "schema": "fdu-perf-probe-v2",
             "source": "scan",
             "summary.complete": true,
             "summary.errors": 0
@@ -163,6 +164,7 @@
           "matches_manifest": {
             "summary.apparent_bytes": "sizes.entry_apparent_bytes",
             "summary.engine_digest": "oracle.engine_digest",
+            "summary.rollup_digest": "oracle.rollup_digest",
             "summary.entries": "counts.total",
             "summary.index_len": "counts.total"
           },
@@ -223,7 +225,7 @@
         "stdout_json": {
           "equals": {
             "mode": "snapshot-load",
-            "schema": "fdu-perf-probe-v1",
+            "schema": "fdu-perf-probe-v2",
             "source": "snapshot",
             "summary.complete": true,
             "summary.errors": 0
@@ -231,6 +233,7 @@
           "matches_manifest": {
             "summary.apparent_bytes": "sizes.entry_apparent_bytes",
             "summary.engine_digest": "oracle.engine_digest",
+            "summary.rollup_digest": "oracle.rollup_digest",
             "summary.entries": "counts.total",
             "summary.index_len": "counts.total"
           },
@@ -291,7 +294,7 @@
         "stdout_json": {
           "equals": {
             "mode": "revalidate",
-            "schema": "fdu-perf-probe-v1",
+            "schema": "fdu-perf-probe-v2",
             "source": "snapshot",
             "summary.apply.inserted": 0,
             "summary.apply.invalidated": 0,
@@ -304,6 +307,7 @@
           "matches_manifest": {
             "summary.apparent_bytes": "sizes.entry_apparent_bytes",
             "summary.engine_digest": "oracle.engine_digest",
+            "summary.rollup_digest": "oracle.rollup_digest",
             "summary.entries": "counts.total",
             "summary.index_len": "counts.total"
           },
@@ -369,7 +373,7 @@
         "stdout_json": {
           "equals": {
             "mode": "revalidate",
-            "schema": "fdu-perf-probe-v1",
+            "schema": "fdu-perf-probe-v2",
             "source": "snapshot",
             "summary.apply.stale": 0,
             "summary.complete": true,
@@ -378,6 +382,7 @@
           "matches_manifest": {
             "summary.apparent_bytes": "sizes.entry_apparent_bytes",
             "summary.engine_digest": "oracle.engine_digest",
+            "summary.rollup_digest": "oracle.rollup_digest",
             "summary.entries": "counts.total",
             "summary.index_len": "counts.total"
           },
@@ -436,7 +441,7 @@
         "stdout_json": {
           "equals": {
             "mode": "delta-apply",
-            "schema": "fdu-perf-probe-v1",
+            "schema": "fdu-perf-probe-v2",
             "source": "synthetic",
             "summary.allocated_bytes": 4096000,
             "summary.apparent_bytes": 499500,
@@ -454,6 +459,7 @@
             "summary.files": 1000,
             "summary.index_len": 1002,
             "summary.other": 0,
+            "summary.rollup_digest": "51e85f354aade6156ec90fb3c7c021b2fe52774719ba853c3768120473ee8a0a",
             "summary.symlinks": 0
           },
           "matches_manifest": {},
@@ -516,7 +522,7 @@
         "stdout_json": {
           "equals": {
             "mode": "query",
-            "schema": "fdu-perf-probe-v1",
+            "schema": "fdu-perf-probe-v2",
             "source": "snapshot",
             "summary.complete": true,
             "summary.errors": 0,
@@ -524,6 +530,7 @@
           },
           "matches_manifest": {
             "summary.engine_digest": "oracle.engine_digest",
+            "summary.rollup_digest": "oracle.rollup_digest",
             "summary.entries": "counts.total",
             "summary.index_len": "counts.total"
           },

@@ -12,8 +12,8 @@ experiment:
   hypotheses:
     - H1
   subject:
-    tree_label: metabrowser-clone
-    tree_root_id: dbd79ed9c898f7a2f66530cd95bb61cab88e798375134b86c77ece761de580a9
+    tree_label: reference-tree-60k
+    tree_root_id: 40406544ab63512154d1962a5c6bbe3bee60c1d3c6315f3b267b99871d03d825
     tree_engine_digest: bf574331eca680372f7060d4f9ab3b3b175afd265ac27bda6b6dc67ed9c80798
     tree_entries: 59654
     tree_directories: 7341
@@ -54,7 +54,13 @@ experiment:
         - "4"
     toolchain: ""
     build_profile: release
-    run_artifact: benchmarks/results/realtree/run-exp001-parallel-producer.json
+    evidence_grade: legacy
+    run_schema: fdu-realtree-run-v1
+    schedule: round-robin-by-ordinal-v1
+    schedule_sha256: null
+    schedule_seed: null
+    run_artifact: docs/project/experiments/evidence/exp-001-run.json
+    run_artifact_sha256: 2296447b9e3f7eb045c055630089803a83a6d08a90f9914cf4eef144acb4e5ea
   results:
     - job: cold-scan-index
       start_state: cold
@@ -245,28 +251,39 @@ experiment:
       - a worker panic is now reported as a partial scan rather than propagating
     notes: "std threads, one mutex-guarded work list, one channel. Producers still never touch the index. The sweep also measured 2, 6 and 8 threads: 6 matched 4 within noise and 8 was 4% worse, which is where the automatic cap of 6 comes from."
   verdict:
-    decision: accepted
+    decision: superseded
     primary_job: cold-scan-index
     primary_metric: wall_ns
     change_pct: -50.033
-    reason: "Halved cold-scan wall time with a 95% interval entirely below zero, no new dependency, and byte-identical engine digests at every thread count"
+    reason: "Legacy v1 evidence measured the latency win but did not preserve the full roll-up oracle, exact toolchain, source manifests, or schedule digest required for an accepted claim; exp-012 supersedes the cumulative performance decision"
     commit: a0cc981
 ---
 # Bounded parallel directory producer
 
 ## Hypothesis
 
-H1: _state what you expected to be slow, why,
-and which metric would move._
+H1 predicted that filesystem observation had enough independent directory work for a
+bounded producer pool to reduce cold-scan wall time, even though one consumer still
+applied observations to the index.
 
 ## What was tried
 
-_The smallest change that tests the hypothesis._
+The same release binary was measured with one and four producer threads. The candidate
+used a bounded directory queue and retained the single Delta consumer, isolating
+producer concurrency from index mutation.
 
 ## What the numbers said
 
-_Read the tables in the frontmatter. Say what surprised you._
+Cold-scan wall fell about 50% in the v1 run. The result correctly motivated the worker
+pool, but the original implementation and evidence later proved incomplete: cancellation
+could hang, the observation channel was unbounded, and the v1 oracle did not cover every
+roll-up reducer. This branch repairs those contracts before remeasurement.
 
 ## Verdict
 
-**ACCEPTED** — Halved cold-scan wall time with a 95% interval entirely below zero, no new dependency, and byte-identical engine digests at every thread count
+**SUPERSEDED** — the latency observation remains historical evidence; exp-012 applies
+the full oracle, provenance, and resource gates to the true-base cumulative candidate.
+
+<!-- This document follows common-doc-guidelines.md.
+See github.com/jlevy/practical-prose and review guidelines before editing.
+-->

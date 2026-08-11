@@ -12,8 +12,8 @@ experiment:
   hypotheses:
     - H13
   subject:
-    tree_label: metabrowser-clone
-    tree_root_id: dbd79ed9c898f7a2f66530cd95bb61cab88e798375134b86c77ece761de580a9
+    tree_label: reference-tree-60k
+    tree_root_id: 40406544ab63512154d1962a5c6bbe3bee60c1d3c6315f3b267b99871d03d825
     tree_engine_digest: bf574331eca680372f7060d4f9ab3b3b175afd265ac27bda6b6dc67ed9c80798
     tree_entries: 59654
     tree_directories: 7341
@@ -50,7 +50,13 @@ experiment:
       args: []
     toolchain: rustc 1.97.1 (8bab26f4f 2026-07-14)
     build_profile: release
-    run_artifact: benchmarks/results/realtree/run-exp010-011-warm-join-and-grouped-merges.json
+    evidence_grade: legacy
+    run_schema: fdu-realtree-run-v1
+    schedule: round-robin-by-ordinal-v1
+    schedule_sha256: null
+    schedule_seed: null
+    run_artifact: docs/project/experiments/evidence/exp-011-run.json
+    run_artifact_sha256: d1f2515e9534f3ea38cbb398ea9530cb4cde246c922e45b977dca861f725807a
   results:
     - job: cold-scan-index
       start_state: cold
@@ -259,17 +265,24 @@ experiment:
 
 ## Hypothesis
 
-H13: _state what you expected to be slow, why,
-and which metric would move._
+H13 predicted that grouping consecutive same-parent inserts could collapse hundreds of
+thousands of repeated upward roll-up merges during index construction.
 
 ## What was tried
 
-_The smallest change that tests the hypothesis._
+The candidate accumulated contributions within a same-parent run and merged once into
+ancestors. It was measured as the next variant after H17 in the same interleaved stack.
 
 ## What the numbers said
 
-_Read the tables in the frontmatter. Say what surprised you._
+Cold-scan wall moved -2.53%, but the 95% interval crossed zero and the median missed the
+3% bar. Extension interning had already reduced each remaining merge to a few integer
+operations, leaving too little work for the added batching path to repay.
 
 ## Verdict
 
 **REJECTED** — Direction right but under the bar: -2.53% [-8.39%, +0.23%] on cold scan; H18 already removed the expensive part of each merge, so cutting ~520k merges to ~73k amortized work that had become a few integer adds
+
+<!-- This document follows common-doc-guidelines.md.
+See github.com/jlevy/practical-prose and review guidelines before editing.
+-->

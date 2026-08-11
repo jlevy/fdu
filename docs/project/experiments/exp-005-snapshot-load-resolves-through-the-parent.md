@@ -12,8 +12,8 @@ experiment:
   hypotheses:
     - H10
   subject:
-    tree_label: metabrowser-clone
-    tree_root_id: dbd79ed9c898f7a2f66530cd95bb61cab88e798375134b86c77ece761de580a9
+    tree_label: reference-tree-60k
+    tree_root_id: 40406544ab63512154d1962a5c6bbe3bee60c1d3c6315f3b267b99871d03d825
     tree_engine_digest: bf574331eca680372f7060d4f9ab3b3b175afd265ac27bda6b6dc67ed9c80798
     tree_entries: 59654
     tree_directories: 7341
@@ -50,7 +50,13 @@ experiment:
       args: []
     toolchain: ""
     build_profile: release
-    run_artifact: benchmarks/results/realtree/run-exp005-snapshot-load.json
+    evidence_grade: legacy
+    run_schema: fdu-realtree-run-v1
+    schedule: round-robin-by-ordinal-v1
+    schedule_sha256: null
+    schedule_seed: null
+    run_artifact: docs/project/experiments/evidence/exp-005-run.json
+    run_artifact_sha256: d7e0a43963d44dc5ea2c39d25b5e7562a6e8cc4575438c4e426a4a82d6be4bcc
   results:
     - job: cold-scan-index
       start_state: cold
@@ -248,28 +254,37 @@ experiment:
     new_failure_modes: []
     notes: "The machine was busier during this run than the previous one: every absolute number moved by roughly 30%, including the third-party reference tool's. Paired interleaving is what keeps the comparison usable, and the jobs that should not have moved correctly reported no change with intervals wide enough to say so."
   verdict:
-    decision: accepted
+    decision: superseded
     primary_job: warm-snapshot-load
     primary_metric: wall_ns
     change_pct: -18.597
-    reason: "Snapshot load 18.6% faster with an interval entirely below zero, by using the parent id the format already provided instead of four ancestor walks per entry"
+    reason: "The v1 run predates the full roll-up oracle and claim-build provenance contract, and its real-tree topology did not establish wide-fanout scaling; exp-012 and the committed scale curve supersede the general claim"
     commit: 954d27b
 ---
 # Snapshot load resolves through the parent
 
 ## Hypothesis
 
-H10: _state what you expected to be slow, why,
-and which metric would move._
+H10 predicted that rebuilding and resolving each snapshot record from the root repeated
+ancestor walks even though pre-order serialization already identified the parent.
 
 ## What was tried
 
-_The smallest change that tests the hypothesis._
+The loader memoized the parent ID, inserted below it, and resolved the child from that
+parent. The original implementation then scanned siblings to recover the child ID; this
+branch replaces that scan with direct B-tree lookup.
 
 ## What the numbers said
 
-_Read the tables in the frontmatter. Say what surprised you._
+The real-tree v1 run measured snapshot-load wall 18.6% lower. It did not exercise the
+quadratic sibling lookup on wide directories, so it could not support a topology-general
+claim. The corrected loader is separately checked on 10k through 1M wide scale points.
 
 ## Verdict
 
-**ACCEPTED** — Snapshot load 18.6% faster with an interval entirely below zero, by using the parent id the format already provided instead of four ancestor walks per entry
+**SUPERSEDED** — exp-012 and the committed wide-fanout curve replace the earlier general
+performance claim.
+
+<!-- This document follows common-doc-guidelines.md.
+See github.com/jlevy/practical-prose and review guidelines before editing.
+-->

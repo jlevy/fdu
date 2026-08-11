@@ -65,11 +65,8 @@ impl EntryId {
     }
 }
 
-/// Interned extension identity, valid only within the [`Index`] that issued it.
-///
-/// Never persisted: snapshots store entry names and roll-ups are rebuilt on load, so
-/// the interner rebuilds with them and ids stay session-local by construction.
-pub type ExtId = u32;
+/// Index-private extension identity.
+type ExtId = u32;
 
 /// Per-extension tally within a roll-up.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
@@ -105,21 +102,26 @@ pub struct RollUp {
     pub allocated: u64,
     /// Newest mtime among descendant files, or 0 when there are none.
     pub newest_mtime_ns: i64,
-    /// Per-extension file and byte tallies across the subtree, keyed by interned
-    /// extension id.
-    ///
-    /// Ids, not strings, because these maps are merged along the ancestor chain for
-    /// every file a scan applies: with owned `String` keys that was ~523k string
-    /// clones and string-keyed B-tree descents per 60k-entry scan — the largest
-    /// single cost in apply. An id is copied, compared as one integer, and resolved
-    /// back to its name only at query time via [`Index::by_ext_named`].
-    pub by_ext: BTreeMap<ExtId, ExtTally>,
+    /// Per-extension file and byte tallies across the subtree.
+    pub by_ext: BTreeMap<String, ExtTally>,
 }
 
-impl RollUp {
+/// Hot-path aggregate state. Integer keys are meaningful only to the owning index and
+/// never cross a public ownership boundary.
+#[derive(Clone, PartialEq, Eq, Debug, Default)]
+struct InternedRollUp {
+    files: u64,
+    dirs: u64,
+    bytes: u64,
+    allocated: u64,
+    newest_mtime_ns: i64,
+    by_ext: BTreeMap<ExtId, ExtTally>,
+}
+
+impl InternedRollUp {
     /// Fold another roll-up into this one. Commutative and associative, which is what
     /// lets the walk merge subtrees in whatever order threads finish them.
-    fn merge(&mut self, other: &RollUp) {
+    fn merge(&mut self, other: &InternedRollUp) {
         let had_files = self.files > 0;
         self.files += other.files;
         self.dirs += other.dirs;
@@ -144,7 +146,7 @@ impl RollUp {
     /// Only the invertible reducers are corrected here. `newest_mtime_ns` is left stale
     /// on purpose and repaired by [`Index::recompute_newest_upward`], because a max
     /// cannot be un-merged without knowing what else contributed it.
-    fn unmerge(&mut self, other: &RollUp) {
+    fn unmerge(&mut self, other: &InternedRollUp) {
         self.files = self.files.saturating_sub(other.files);
         self.dirs = self.dirs.saturating_sub(other.dirs);
         self.bytes = self.bytes.saturating_sub(other.bytes);
@@ -174,7 +176,7 @@ struct Entry {
     /// Populated for directories only.
     children: BTreeMap<OsString, EntryId>,
     /// Meaningful for directories only.
-    rollup: RollUp,
+    rollup: InternedRollUp,
     /// Changes on direct metadata updates. Together with the arena generation this
     /// detects present-state ABA races.
     revision: u64,
@@ -268,10 +270,14 @@ pub struct Index {
     /// Oldest clock still represented in `journal`.
     journal_floor: Clock,
     pending_invalidations: Vec<(PathBuf, InvalidateReason)>,
-    /// Interner storage: id → name. Ids are indexes into this vector.
-    ext_names: Vec<String>,
+    /// Interner storage: id → live name. Vacant slots are reusable.
+    ext_names: Vec<Option<String>>,
     /// Interner lookup: name → id.
     ext_ids: BTreeMap<String, ExtId>,
+    /// Number of live file entries using each extension id.
+    ext_refcounts: Vec<u64>,
+    /// Vacant ids available for reuse after the last matching file is removed.
+    free_ext_ids: Vec<ExtId>,
     freshness_epoch: u64,
     freshness_marks: BTreeMap<PathBuf, FreshnessMark>,
 }
@@ -344,12 +350,12 @@ impl IndexHandle {
 
     /// Owned roll-up totals for the whole tree.
     pub fn total(&self) -> crate::Result<RollUp> {
-        Ok(self.read_index()?.total().clone())
+        Ok(self.read_index()?.total())
     }
 
     /// Owned roll-up state for a relative directory path.
     pub fn rollup(&self, path: &Path) -> crate::Result<Option<RollUp>> {
-        Ok(self.read_index()?.rollup(path).cloned())
+        Ok(self.read_index()?.rollup(path))
     }
 
     /// Owned metadata for a relative path.
@@ -392,7 +398,7 @@ impl IndexHandle {
                         name: name.to_os_string(),
                         kind: entry.kind,
                         attrs: entry.attrs,
-                        rollup: entry.kind.is_dir().then(|| entry.rollup.clone()),
+                        rollup: entry.kind.is_dir().then(|| index.named_rollup(&entry.rollup)),
                     }
                 })
                 .collect(),
@@ -489,7 +495,7 @@ impl Index {
             kind: EntryKind::Dir,
             attrs: Attrs::default(),
             children: BTreeMap::new(),
-            rollup: RollUp::default(),
+            rollup: InternedRollUp::default(),
             revision: 0,
             children_revision: 0,
         };
@@ -509,6 +515,8 @@ impl Index {
             freshness_marks: BTreeMap::new(),
             ext_names: Vec::new(),
             ext_ids: BTreeMap::new(),
+            ext_refcounts: Vec::new(),
+            free_ext_ids: Vec::new(),
         }
     }
 
@@ -557,9 +565,9 @@ impl Index {
         self.live <= 1
     }
 
-    /// Roll-up state for the whole tree.
-    pub fn total(&self) -> &RollUp {
-        &self.entry(EntryId::ROOT).rollup
+    /// Owned, self-describing roll-up state for the whole tree.
+    pub fn total(&self) -> RollUp {
+        self.named_rollup(&self.entry(EntryId::ROOT).rollup)
     }
 
     /// Arbitrate a producer observation and commit its effective mutations.
@@ -768,11 +776,11 @@ impl Index {
         Some(current)
     }
 
-    /// Roll-up state for a directory, by relative path. The empty path is the root.
-    pub fn rollup(&self, path: &Path) -> Option<&RollUp> {
+    /// Owned, self-describing roll-up state for a directory by relative path.
+    pub fn rollup(&self, path: &Path) -> Option<RollUp> {
         let id = self.lookup(path)?;
         let entry = self.entry(id);
-        entry.kind.is_dir().then_some(&entry.rollup)
+        entry.kind.is_dir().then(|| self.named_rollup(&entry.rollup))
     }
 
     /// Attributes for any entry, by relative path.
@@ -810,6 +818,11 @@ impl Index {
         Some(self.try_entry(id)?.children.iter().map(|(name, child)| (name.as_os_str(), *child)))
     }
 
+    /// Resolve one direct child without scanning the parent's siblings.
+    pub(crate) fn child_id(&self, parent: EntryId, name: &OsStr) -> Option<EntryId> {
+        self.try_entry(parent)?.children.get(name).copied()
+    }
+
     /// Reconstruct an entry's path relative to the root by walking parent pointers.
     pub fn path_of(&self, id: EntryId) -> Option<PathBuf> {
         let mut parts = Vec::new();
@@ -825,10 +838,10 @@ impl Index {
         Some(parts.iter().collect())
     }
 
-    /// Roll-up state for an entry id, if it is a directory.
-    pub fn rollup_of(&self, id: EntryId) -> Option<&RollUp> {
+    /// Owned, self-describing roll-up state for an entry id, if it is a directory.
+    pub fn rollup_of(&self, id: EntryId) -> Option<RollUp> {
         let entry = self.try_entry(id)?;
-        entry.kind.is_dir().then_some(&entry.rollup)
+        entry.kind.is_dir().then(|| self.named_rollup(&entry.rollup))
     }
 
     /// Attributes for an entry id, or `None` when the handle is stale.
@@ -975,35 +988,70 @@ impl Index {
         self.live -= 1;
     }
 
-    /// Intern an extension name, returning its stable id within this index.
+    /// Intern an extension name and retain one live file reference.
     fn intern_ext(&mut self, name: &str) -> ExtId {
-        if let Some(id) = self.ext_ids.get(name) {
-            return *id;
+        if let Some(&id) = self.ext_ids.get(name) {
+            let refcount =
+                self.ext_refcounts.get_mut(id as usize).expect("live extension id has a refcount");
+            *refcount = refcount.checked_add(1).expect("extension reference count exhausted");
+            return id;
         }
-        let id = ExtId::try_from(self.ext_names.len()).expect("extension interner exhausted");
-        self.ext_names.push(name.to_string());
+        let id = if let Some(id) = self.free_ext_ids.pop() {
+            let index = id as usize;
+            self.ext_names[index] = Some(name.to_string());
+            self.ext_refcounts[index] = 1;
+            id
+        } else {
+            let id = ExtId::try_from(self.ext_names.len()).expect("extension interner exhausted");
+            self.ext_names.push(Some(name.to_string()));
+            self.ext_refcounts.push(1);
+            id
+        };
         self.ext_ids.insert(name.to_string(), id);
         id
     }
 
-    /// Resolve a roll-up's interned extension tallies back to their names.
-    ///
-    /// This is the query-time boundary: merges run on integer ids, and the strings
-    /// reappear only here, once per report rather than once per ancestor per file.
-    pub fn by_ext_named(&self, rollup: &RollUp) -> BTreeMap<String, ExtTally> {
-        rollup
+    /// Release one file reference and make the id reusable after the last one.
+    fn release_ext(&mut self, id: ExtId) {
+        let index = id as usize;
+        let refcount = self.ext_refcounts.get_mut(index).expect("live extension id has a count");
+        debug_assert!(*refcount > 0, "extension reference released twice");
+        *refcount -= 1;
+        if *refcount != 0 {
+            return;
+        }
+        let name = self.ext_names[index].take().expect("live extension id has a name");
+        let removed = self.ext_ids.remove(&name);
+        debug_assert_eq!(removed, Some(id));
+        self.free_ext_ids.push(id);
+    }
+
+    /// Resolve hot-path integer keys exactly once at a public query boundary.
+    fn named_rollup(&self, rollup: &InternedRollUp) -> RollUp {
+        let by_ext = rollup
             .by_ext
             .iter()
             .map(|(id, tally)| {
-                let name =
-                    self.ext_names.get(*id as usize).expect("extension id from a foreign index");
+                let name = self
+                    .ext_names
+                    .get(*id as usize)
+                    .and_then(Option::as_ref)
+                    .expect("roll-up extension id must be live");
                 (name.clone(), *tally)
             })
-            .collect()
+            .collect();
+        RollUp {
+            files: rollup.files,
+            dirs: rollup.dirs,
+            bytes: rollup.bytes,
+            allocated: rollup.allocated,
+            newest_mtime_ns: rollup.newest_mtime_ns,
+            by_ext,
+        }
     }
 
     /// What an entry contributes to each of its ancestors.
-    fn contribution(&self, id: EntryId) -> RollUp {
+    fn contribution(&self, id: EntryId) -> InternedRollUp {
         let entry = self.entry(id);
         match entry.kind {
             EntryKind::Dir => {
@@ -1012,7 +1060,7 @@ impl Index {
                 roll
             }
             EntryKind::File => {
-                let mut roll = RollUp {
+                let mut roll = InternedRollUp {
                     files: 1,
                     dirs: 0,
                     bytes: entry.attrs.size,
@@ -1025,11 +1073,11 @@ impl Index {
                 }
                 roll
             }
-            EntryKind::Symlink | EntryKind::Other => RollUp::default(),
+            EntryKind::Symlink | EntryKind::Other => InternedRollUp::default(),
         }
     }
 
-    fn merge_upward(&mut self, from_parent: Option<EntryId>, contribution: &RollUp) {
+    fn merge_upward(&mut self, from_parent: Option<EntryId>, contribution: &InternedRollUp) {
         let mut current = from_parent;
         while let Some(id) = current {
             let entry = self.entry_mut(id);
@@ -1038,7 +1086,7 @@ impl Index {
         }
     }
 
-    fn unmerge_upward(&mut self, from_parent: Option<EntryId>, contribution: &RollUp) {
+    fn unmerge_upward(&mut self, from_parent: Option<EntryId>, contribution: &InternedRollUp) {
         let mut current = from_parent;
         while let Some(id) = current {
             let entry = self.entry_mut(id);
@@ -1103,13 +1151,13 @@ impl Index {
                 kind: EntryKind::Dir,
                 attrs: Attrs::default(),
                 children: BTreeMap::new(),
-                rollup: RollUp::default(),
+                rollup: InternedRollUp::default(),
                 revision: 0,
                 children_revision: 0,
             });
             self.insert_child(current, (*part).to_os_string(), child);
             // A new empty directory contributes one to `dirs` all the way up.
-            let contribution = RollUp { dirs: 1, ..RollUp::default() };
+            let contribution = InternedRollUp { dirs: 1, ..InternedRollUp::default() };
             self.merge_upward(Some(current), &contribution);
             stats.inserted += 1;
             current = child;
@@ -1187,7 +1235,7 @@ impl Index {
             kind,
             attrs,
             children: BTreeMap::new(),
-            rollup: RollUp::default(),
+            rollup: InternedRollUp::default(),
             revision: 0,
             children_revision: 0,
         });
@@ -1226,7 +1274,11 @@ impl Index {
         let mut queue = vec![id];
         while let Some(node) = queue.pop() {
             let children: Vec<EntryId> = self.entry(node).children.values().copied().collect();
+            let ext_id = self.entry(node).ext_id;
             queue.extend(children);
+            if let Some(ext_id) = ext_id {
+                self.release_ext(ext_id);
+            }
             self.free(node);
             stats.removed += 1;
         }
@@ -1484,7 +1536,7 @@ mod tests {
                         "reader did not observe batch completion before the deadline"
                     );
                     let image: Index = reader.snapshot().expect("coherent reader snapshot");
-                    let total: &RollUp = image.total();
+                    let total: RollUp = image.total();
                     match total.files {
                         0 => {
                             assert_eq!(total.bytes, 0);
@@ -1558,7 +1610,7 @@ mod tests {
         assert!(matches!(error, crate::Error::ClockExhausted));
         assert_eq!(index.clock(), Clock(u64::MAX));
         assert_eq!(index.len(), before_len);
-        assert_eq!(index.total(), &before_total);
+        assert_eq!(index.total(), before_total);
         assert!(index.lookup(Path::new("too-late.txt")).is_none());
     }
 
@@ -1597,7 +1649,7 @@ mod tests {
         assert!(stale.applied.is_none());
         assert_eq!(index.clock(), Clock(u64::MAX));
         assert_eq!(index.len(), before_len);
-        assert_eq!(index.total(), &before_total);
+        assert_eq!(index.total(), before_total);
         assert_eq!(index.journal, before_journal);
     }
 
@@ -1841,7 +1893,7 @@ mod tests {
                 );
                 assert_eq!(index.clock, before_clock);
                 assert_eq!(index.live, before_live);
-                assert_eq!(index.total(), &before_total);
+                assert_eq!(index.total(), before_total);
                 assert_eq!(index.journal, before_journal);
                 assert_eq!(index.journal_ops, before_journal_ops);
                 assert_eq!(index.journal_floor, before_journal_floor);
@@ -1912,9 +1964,9 @@ mod tests {
         assert_eq!(total.bytes, 10);
         assert_eq!(total.allocated, 512);
         assert_eq!(total.newest_mtime_ns, 10);
-        assert_eq!(index.by_ext_named(total)[".txt"], ExtTally { files: 1, bytes: 10 });
-        assert!(!index.by_ext_named(total).contains_key(".rs"));
-        assert!(!index.by_ext_named(total).contains_key(".md"));
+        assert_eq!(total.by_ext[".txt"], ExtTally { files: 1, bytes: 10 });
+        assert!(!total.by_ext.contains_key(".rs"));
+        assert!(!total.by_ext.contains_key(".md"));
 
         index.apply_ok(&Observation::new(vec![upsert(
             "link.rs",
@@ -1938,13 +1990,64 @@ mod tests {
         let index = index_with_sample_tree();
 
         let total = index.total();
-        assert_eq!(index.by_ext_named(total)[".rs"], ExtTally { files: 2, bytes: 300 });
-        assert_eq!(index.by_ext_named(total)[".md"], ExtTally { files: 1, bytes: 300 });
+        assert_eq!(total.by_ext[".rs"], ExtTally { files: 2, bytes: 300 });
+        assert_eq!(total.by_ext[".md"], ExtTally { files: 1, bytes: 300 });
 
         // Per-directory breakdown, which no surveyed tool provides.
         let src = index.rollup(Path::new("src")).expect("src is a directory");
-        assert_eq!(index.by_ext_named(src)[".rs"], ExtTally { files: 2, bytes: 300 });
-        assert!(!index.by_ext_named(src).contains_key(".md"));
+        assert_eq!(src.by_ext[".rs"], ExtTally { files: 2, bytes: 300 });
+        assert!(!src.by_ext.contains_key(".md"));
+    }
+
+    #[test]
+    fn public_rollups_are_self_describing_across_indexes_and_handles() {
+        let left = index_with_sample_tree();
+        let mut right = Index::new("/other");
+        right.apply_ok(&Observation::new(vec![
+            upsert("first.md", EntryKind::File, file_attrs(7, 1)),
+            upsert("second.rs", EntryKind::File, file_attrs(11, 2)),
+        ]));
+
+        let left_total = left.total();
+        let right_total = right.total();
+        assert_eq!(left_total.by_ext[".rs"], ExtTally { files: 2, bytes: 300 });
+        assert_eq!(right_total.by_ext[".rs"], ExtTally { files: 1, bytes: 11 });
+
+        let handle = IndexHandle::new(left);
+        assert_eq!(
+            handle.total().expect("handle total").by_ext[".md"],
+            ExtTally { files: 1, bytes: 300 }
+        );
+        let children = handle.children(Path::new("src")).expect("handle query").expect("src");
+        assert!(children.iter().all(|child| child.rollup.is_none()));
+    }
+
+    #[test]
+    fn child_id_uses_the_parent_and_name_directly() {
+        let index = index_with_sample_tree();
+        let src = index.lookup(Path::new("src")).expect("src");
+        assert_eq!(
+            index.child_id(src, OsStr::new("main.rs")),
+            index.lookup(Path::new("src/main.rs"))
+        );
+        assert_eq!(index.child_id(src, OsStr::new("missing.rs")), None);
+    }
+
+    #[test]
+    fn extension_interner_reuses_slots_after_unique_extension_churn() {
+        let mut index = Index::new("/root");
+        for sequence in 0..128 {
+            let path = PathBuf::from(format!("file.ext-{sequence}"));
+            index.apply_ok(&Observation::new(vec![Op::Upsert {
+                path: path.clone(),
+                kind: EntryKind::File,
+                attrs: file_attrs(1, sequence),
+            }]));
+            index.apply_ok(&Observation::new(vec![Op::Remove { path }]));
+        }
+
+        assert!(index.ext_ids.is_empty());
+        assert_eq!(index.ext_names.len(), 1, "dead names reuse one interner slot");
     }
 
     #[test]
@@ -1961,7 +2064,7 @@ mod tests {
 
         assert_eq!(stats.unchanged, 1);
         assert_eq!(stats.updated, 0);
-        assert_eq!(index.total(), &before);
+        assert_eq!(index.total(), before);
         assert_eq!(index.clock(), mark);
         assert!(index.since(mark).deltas.is_empty());
     }
@@ -1993,7 +2096,7 @@ mod tests {
         let stats = index.apply_ok(&delta);
 
         assert_eq!(stats.unchanged, 2);
-        assert_eq!(index.total(), &after_first);
+        assert_eq!(index.total(), after_first);
         assert_eq!(index.len(), 3);
     }
 
@@ -2008,7 +2111,7 @@ mod tests {
 
         assert_eq!(index.rollup(Path::new("src")).expect("dir").bytes, 350);
         assert_eq!(index.total().bytes, 650);
-        assert_eq!(index.by_ext_named(index.total())[".rs"], ExtTally { files: 2, bytes: 350 });
+        assert_eq!(index.total().by_ext[".rs"], ExtTally { files: 2, bytes: 350 });
     }
 
     #[test]
@@ -2060,7 +2163,7 @@ mod tests {
         assert_eq!(total.files, 2);
         assert_eq!(total.bytes, 300);
         assert_eq!(total.newest_mtime_ns, 20, "max must fall back to src/lib.rs");
-        assert!(!index.by_ext_named(total).contains_key(".md"), "emptied tallies are dropped");
+        assert!(!total.by_ext.contains_key(".md"), "emptied tallies are dropped");
     }
 
     #[test]
@@ -2076,7 +2179,7 @@ mod tests {
         assert_eq!(total.dirs, 1);
         assert_eq!(total.bytes, 300);
         assert!(index.lookup(Path::new("src/main.rs")).is_none());
-        assert!(!index.by_ext_named(total).contains_key(".rs"));
+        assert!(!total.by_ext.contains_key(".rs"));
     }
 
     #[test]

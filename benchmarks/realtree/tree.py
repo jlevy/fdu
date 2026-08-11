@@ -28,7 +28,9 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from benchmarks.corpus import (
     ENGINE_DIGEST_ALGORITHM,
+    ROLLUP_DIGEST_ALGORITHM,
     CorpusError,
+    _RollupAccumulator,
     _engine_record_bytes,
     _SemanticAccumulator,
 )
@@ -62,6 +64,7 @@ def fingerprint(root: Path, *, label: str) -> Dict[str, Any]:
 
     engine = _SemanticAccumulator(algorithm=ENGINE_DIGEST_ALGORITHM)
     engine.add_bytes(_engine_record_bytes(".", "directory", None))
+    rollups = _RollupAccumulator()
 
     counts = {"directories": 1, "files": 0, "other": 0, "symlinks": 0, "total": 1}
     apparent_bytes = 0
@@ -93,6 +96,7 @@ def fingerprint(root: Path, *, label: str) -> Dict[str, Any]:
         depths[bucket] = depths.get(bucket, 0) + 1
         max_depth = max(max_depth, depth)
         engine.add_bytes(_engine_record_bytes(relative, kind, metadata))
+        rollups.add(relative, kind, metadata)
 
     if unreadable:
         raise ReferenceTreeError(
@@ -100,7 +104,7 @@ def fingerprint(root: Path, *, label: str) -> Dict[str, Any]:
             "cannot prove the tree is unchanged"
         )
 
-    return {
+    document = {
         "counts": counts,
         "engine_digest": engine.finish(),
         "engine_digest_algorithm": ENGINE_DIGEST_ALGORITHM,
@@ -116,6 +120,9 @@ def fingerprint(root: Path, *, label: str) -> Dict[str, Any]:
         },
         "depth_histogram": {str(key): depths[key] for key in sorted(depths)},
     }
+    document.update(rollups.summary())
+    document["rollup_digest_algorithm"] = ROLLUP_DIGEST_ALGORITHM
+    return document
 
 
 def root_id(root: Path) -> str:
@@ -140,7 +147,12 @@ def compare(current: Dict[str, Any], baseline: Dict[str, Any]) -> List[str]:
     return reasons
 
 
-def probe_agrees(fingerprint_document: Dict[str, Any], summary: Any) -> Optional[str]:
+def probe_agrees(
+    fingerprint_document: Dict[str, Any],
+    summary: Any,
+    *,
+    mode: Optional[str] = None,
+) -> Optional[str]:
     """Return why a probe summary disagrees with the oracle, or ``None`` if it does not.
 
     The probe walks the tree itself and reports what it found. If that disagrees with
@@ -160,6 +172,8 @@ def probe_agrees(fingerprint_document: Dict[str, Any], summary: Any) -> Optional
         "allocated_bytes": fingerprint_document["sizes"]["allocated_bytes"],
         "engine_digest": fingerprint_document["engine_digest"],
     }
+    if mode not in {"scan-producer", "scan-producer-raw"}:
+        expected["rollup_digest"] = fingerprint_document["rollup_digest"]
     for field, want in expected.items():
         got = summary.get(field)
         if got != want:

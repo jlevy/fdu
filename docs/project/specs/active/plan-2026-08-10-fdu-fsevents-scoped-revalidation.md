@@ -8,9 +8,9 @@
 
 ## Overview
 
-Make a warm start on macOS cost O(changes) instead of O(tree) by replaying the FSEvents
-persistent journal since the snapshot was written, and revalidating only the directories
-it names.
+Make a warm start on macOS cost O(changes) instead of O(tree) by replaying a
+device-relative FSEvents stream from the last boundary whose work was applied, then
+revalidating only normalized filesystem scopes.
 
 Today a warm start is a strict superset of a cold scan: load the snapshot, build the
 index, then walk the entire tree again to prove the snapshot still describes it.
@@ -20,13 +20,11 @@ edit is invisible to every ancestor directory, including its immediate parent (v
 empirically on APFS; see the
 [change-propagation analysis](../../research/research-2026-08-10-performance-frontier.md)).
 Beating the per-entry stat floor therefore requires an operation log, and macOS has one
-on disk already: `fseventsd` journals directory-level change events persistently, across
+on disk already: `fseventsd` journals change events persistently, across
 process exits and reboots.
-Storing the journal cursor in the snapshot and replaying “what changed since” turns a
-quiet tree’s revalidation from ~700 ms at 60k entries into an approximately
-size-independent tens of milliseconds — against today’s serial sweep; the Background
-section states the honest comparison against where rung-1 work will land, and where
-the journal is transformative rather than incremental.
+Storing an applied journal boundary in the snapshot can avoid most of that sweep. This
+is a hypothesis until the corrected state machine is implemented and measured; no
+size-independent latency claim follows from the current experiments.
 
 This is rung 2 of the warm ladder in the
 [performance-frontier research](../../research/research-2026-08-10-performance-frontier.md)
@@ -43,14 +41,19 @@ fails closed on every row, and why the full sweep remains the backstop on every 
 
 ## Goals
 
-- Persist an FSEvents journal cursor (platform tag, volume UUID, event ID, capture time)
-  in the snapshot, on macOS, at save time
+- Persist an FSEvents boundary (platform tag, volume UUID, applied event ID, capture
+  time, last full-sweep time) with the scan or replay transaction that established it
 - On load, when a strict gate passes, replay the journal since the cursor and revalidate
   only the named directories, emitting ordinary conditional deltas
+- Use `FSEventStreamCreateRelativeToDevice` with `FullHistory`, `FileEvents`, and
+  `WatchRoot`; normalize item events into directory relists or subtree invalidations
 - Map every journal degradation signal onto the existing escalation vocabulary: scoped
   `InvalidateSubtree` where the flag is scoped, full sweep where it is not
-- Keep correctness identical to the sweep: same oracle, same digests, verified per trial
-  by the performance harness on both paths
+- Persist only the maximum replay boundary whose scopes were applied; never sample a
+  newer current ID during save
+- Keep journal-scoped freshness distinct from full-sweep freshness, and require
+  periodic full sweeps because Apple documents the event list as advisory
+- Compare both paths with the same entry and roll-up oracle in every trial
 - Land the numbers through the performance loop as experiments, with the accept rule
   deciding
 
@@ -92,17 +95,20 @@ snapshot cache a net loss for a one-shot query today.
 Three experiments (exp-002, exp-004, exp-005 in the
 [ledger](../../reports/report-2026-08-10-fdu-performance-experiments.md)) improved
 constants; none can change the asymptotics, because the sweep must stat every entry to
-be sound. Only change information can — and `fseventsd` records it: directory-granular
-events, persisted to disk in per-volume journals, addressed by IDs from a machine-wide
-monotonic counter, replayable from a stored ID via `FSEventStreamCreate(sinceWhen:)`,
-with explicit flags for every way the history can be insufficient
+be sound. Only change information can — and `fseventsd` records it in persistent
+per-volume journals. For persistent software Apple recommends a per-disk stream created
+with `FSEventStreamCreateRelativeToDevice`; IDs share a system-wide sequence, but the
+stream, UUID, and retained history are volume-bound. Replay uses a stored ID as
+`sinceWhen`, with explicit flags for every way the history can be insufficient
 (`kFSEventStreamEventFlagMustScanSubDirs`, `UserDropped`, `KernelDropped`,
 `EventIdsWrapped`, `HistoryDone`, `RootChanged`, `Mount`, `Unmount`).
 
-Crucially, the journal’s directory granularity carries exactly the information directory
-mtimes do not: a content edit to `a/b/c/file.txt` produces an event naming `a/b/c`,
-because `fseventsd` logs operations rather than namespace timestamps.
-That is what makes subtree skipping sound here and unsound when inferred from mtimes.
+This design deliberately requests `FileEvents`, so callbacks name filesystem items,
+not changed directories. File and symlink events normalize to a parent-directory
+relist. Directory create/remove/rename events normalize to a parent relist plus a
+subtree invalidation when the directory still exists. Ambiguous item flags fall back
+to the full sweep. That normalization—not an assumption about callback granularity—is
+what supplies revalidation scopes.
 
 ### What the journal is worth, honestly
 
@@ -117,14 +123,10 @@ at 60k today, and ~0.2–0.4 s per million entries on a warm cache.
 Measured against *that* baseline, the journal at 60k-warm is an incremental win, not a
 transformative one.
 
-Where it is transformative is everywhere the sweep cannot be fast: cold metadata caches
-(cloud hosts whose RAM cannot hold the inodes — the snapshot is the only warm state
-there), network storage (each avoided stat is a saved round trip against an IOPS
-budget), and very large local trees — the research’s whole-drive scenario (H45: 2–5M
-entries, where dust takes 30–60 minutes and the journal plus persisted roll-ups target a
-seconds-scale recheck).
-At drive scale the journal is not an optimization of the sweep; it is the difference
-between a tool that can be part of a working loop and one that cannot.
+The largest plausible wins are cold metadata caches, remote storage, and very large
+local trees, because each avoided stat may avoid a real I/O or round trip. Those cells
+have not been measured. They remain explicit matrix hypotheses, including the
+whole-drive scenario (H45), rather than supporting claims today.
 
 Both documents draw the same conclusion from opposite ends: the sweep must stay fast
 regardless, because the journal degrades into it (gate rows G3–G9), and the journal must
@@ -175,21 +177,24 @@ Replay semantics that the implementation and its tests must honor, from Apple’
 documentation and Watchman’s source (mechanics only — see the Overview’s honesty note on
 how far its production use actually goes):
 
-- `sinceWhen` delivers events with IDs *strictly greater than* the stored ID, so the
-  cursor is `FSEventsGetCurrentEventId()` captured at save time.
+- The required stream flags are `FullHistory | FileEvents | WatchRoot`.
+  `FullHistory` deliberately permits the first historical chunk to overlap the stored
+  boundary, including events whose IDs are less than or equal to `sinceWhen`, so replay
+  must be idempotent and must not assume strict-greater delivery.
 - The end of history is a sentinel event flagged `HistoryDone` whose path is meaningless
-  and must be ignored.
+  and must be ignored. Events after that sentinel belong to the live stream and are not
+  part of this replay transaction.
 - Event IDs are allocated from a machine-wide monotonic counter, but the journals they
   index — and their retention — are per-volume.
-  Both facts drive the gate: G4 compares the cursor against the machine-wide current ID,
-  and the volume UUID (from `FSEventsCopyUUIDForDevice(st_dev)`, never `st_dev` itself,
-  which is not stable across reboots) pins which volume’s journal the cursor belongs to.
-  Wrap is signalled by `EventIdsWrapped` (G7).
+  A boundary is therefore useful only together with the volume UUID (from
+  `FSEventsCopyUUIDForDevice(st_dev)`, never `st_dev` itself, which is not stable across
+  reboots). `FSEventsGetCurrentEventId()` supplies an initial system-wide fence; it is
+  not a per-volume retention test. UUID loss or change and `EventIdsWrapped` fail closed.
 - Stream `latency` may be 0 for replay; coalescing within the historical log has already
   happened.
 - Callbacks arrive on the dispatch queue with C types; the callback marshals into a
-  plain `Vec<(PathBuf, flags)>` behind a channel and does nothing else — all logic stays
-  in safe code on the calling thread.
+  plain `Vec<(PathBuf, flags, event_id)>` behind a channel and does nothing else — all
+  logic stays in safe code on the calling thread.
 
 ## Design
 
@@ -202,7 +207,7 @@ never of state.** Nothing new mutates the index.
 snapshot.load ──► index          (as today)
       │
       ▼
-journal gate ──► pass ──► replay since cursor ──► changed-dir set
+journal gate ──► pass ──► replay applied boundary ──► changed-dir set
       │                                              │
       └─► fail ──► full sweep (as today)             ▼
                                      scoped revalidate: re-list + stat
@@ -213,7 +218,7 @@ journal gate ──► pass ──► replay since cursor ──► changed-dir 
                                      index.apply  (unchanged contract)
                                               │
                                               ▼
-                                     snapshot.save with new cursor
+                                     snapshot.save with applied boundary
 ```
 
 The scoped revalidation reuses the sweep’s own emission logic bounded to a directory
@@ -224,6 +229,35 @@ A `MustScanSubDirs` flag on a path becomes `InvalidateSubtree(path)` resolved by
 existing subtree reconcile; the escalation vocabulary already fits because the watch
 layer needed it first.
 
+The initial snapshot and warm replay are explicit transactions:
+
+1. Canonicalize the root, obtain its device and volume UUID, and reject a null UUID or
+   a scope that crossed devices.
+2. Immediately before the population scan, capture `B0 =
+   FSEventsGetCurrentEventId()` and bind it to that UUID. The macOS implementation also
+   creates and starts the device-relative stream before walking, following Apple’s
+   scan-then-replay guidance; callbacks may queue while the scan runs.
+3. Complete the full scan and persist its result together with `B0`. Never sample a
+   replacement boundary during snapshot serialization. Any mutation racing the scan is
+   at or after the fence and is reverified on the next open.
+4. On a warm open, create a device-relative stream for the root’s volume and root path,
+   starting at the stored boundary with `FullHistory | FileEvents | WatchRoot`.
+5. Collect through `HistoryDone`. Harmless overlap at or before the stored boundary is
+   normalized and revalidated along with newer events. Initialize the candidate applied
+   boundary to the stored value and advance it only to the maximum non-sentinel event ID
+   included before `HistoryDone`.
+6. Apply every normalized scope through ordinary deltas. Only after all applications
+   succeed may the snapshot persist that candidate boundary. A crash or error preserves
+   the older boundary; an event arriving after `HistoryDone`, during revalidation or
+   save, remains beyond the applied boundary and is replayed on the following open.
+
+Item normalization is conservative. A file, symlink, or hard-link event relists its
+parent. A directory create, remove, or rename relists its parent and invalidates the
+existing or newly visible subtree. A scoped `MustScanSubDirs` without a dropped-event
+flag invalidates that subtree. An undecodable or out-of-root path, contradictory item
+flags, root change, mount transition, journal drop, wrap, or other unscoped ambiguity
+forces a full sweep.
+
 ### The gate
 
 The user-visible rule is “journal when provably applicable, sweep otherwise,” and the
@@ -233,15 +267,15 @@ CoreServices. Every row falls closed to the sweep:
 | # | Condition | Decision |
 | --- | --- | --- |
 | G1 | Not macOS, feature off, or `--revalidate=full` | full sweep |
-| G2 | Snapshot has no cursor (older format, or first save) | full sweep; write cursor on save |
-| G3 | Root’s current volume UUID ≠ stored UUID (moved disk, container change, UUID unreadable) | full sweep |
-| G4 | Stored event ID > current volume event ID (regression: journal purged, clock wrapped) | full sweep |
-| G5 | Snapshot older than `max_journal_age` (default 14 days) | full sweep — paranoia bound; Apple documents the journal as advisory |
+| G2 | Snapshot has no applied boundary (older format, or first save) | full sweep; capture the next boundary before scanning |
+| G3 | Volume UUID is null or differs, or the root scope crosses devices | full sweep |
+| G4 | `FullHistory` or a device-relative stream is unavailable on this macOS version | full sweep |
+| G5 | Last verified full sweep is older than `max_full_sweep_interval` (default 24 hours) | full sweep — Apple documents events as advisory |
 | G6 | Stream creation fails or replay exceeds `replay_timeout` (default 5 s) without `HistoryDone` | full sweep |
-| G7 | Replay reports `EventIdsWrapped`, `RootChanged`, `Mount`, `Unmount`, `UserDropped`, or `KernelDropped` | full sweep |
-| G8 | Replay reports `MustScanSubDirs(path)` | scoped: `InvalidateSubtree(path)`, journal continues for the rest |
+| G7 | Replay reports `EventIdsWrapped`, `RootChanged`, `Mount`, `Unmount`, `UserDropped`, `KernelDropped`, unavailable history, an undecodable/out-of-root path, or ambiguous flags | full sweep |
+| G8 | Replay reports `MustScanSubDirs(path)` without an unscoped G7 signal | scoped: `InvalidateSubtree(path)`, journal continues for the rest |
 | G9 | Changed-dir set exceeds `max_changed_fraction` (default 25%) of the snapshot’s directories | full sweep — scoped work would approach sweep cost with worse locality |
-| G10 | Otherwise | scoped revalidation of the changed-dir set |
+| G10 | Otherwise | scoped revalidation; report journal-scoped rather than full-sweep freshness |
 
 The changed-dir set is normalized before G9: paths outside the root are dropped,
 descendants of a `MustScanSubDirs` subtree are absorbed into it, duplicates coalesce,
@@ -249,10 +283,22 @@ and paths are mapped root-relative against the same canonicalized root the scan 
 uses.
 
 Volume identity is the UUID, not `st_dev` — device numbers are not stable across
-reboots. The research doc’s sharding observation applies: journals, event IDs, and UUIDs
-are per-volume, and a snapshot that spans a mount boundary cannot use a single cursor.
+reboots. Event IDs come from a system-wide sequence, while stream history and UUID are
+volume-bound, and a snapshot that spans a mount boundary cannot use a single boundary.
 Phase 1 sidesteps this by combining the gate with the existing `one_filesystem` scope
-information: a snapshot whose scan crossed devices simply never carries a cursor (G2).
+information: a snapshot whose scan crossed devices simply never carries a boundary
+(G2/G3). There is intentionally no “stored ID versus current volume ID” gate: the API
+does not provide such a per-volume value, and the system-wide current ID says nothing
+about whether one volume retained the requested history.
+
+Because Apple calls the event list advisory, journal-scoped replay does not earn the
+same freshness label as a complete stat sweep. The snapshot records
+`last_full_sweep_at`; the default automatic policy performs a full sweep at least every
+24 hours. Until Phase 0 validates a product-appropriate advisory mode, an interface that
+promises exact current state must continue to select the full sweep. A later opt-in
+journal mode may expose
+`Freshness::JournalScoped { applied_through, last_full_sweep_at }` explicitly rather
+than silently calling it fresh.
 
 ### Snapshot format
 
@@ -262,13 +308,15 @@ information: a snapshot whose scan crossed devices simply never carries a cursor
 journal_cursor: u8 tag        0 = none, 1 = fsevents-v1  (room for usn-v1 = 2)
 if fsevents-v1:
   volume_uuid: 16 bytes
-  event_id:    u64            FSEventsGetCurrentEventId() at save time
-  captured_at: i64 ns         wall clock at save, for G5
+  applied_event_id: u64       initial pre-scan fence or max replay ID actually applied
+  captured_at: i64 ns         wall clock when that boundary transaction began
+  last_full_sweep_at: i64 ns  wall clock of the most recent complete stat sweep
 ```
 
-The cursor is captured **before** the scan that populates the index begins, not after it
-ends: events for mutations that race the scan then replay on the next open and are
-re-verified, which double-checks work rather than losing it.
+The initial boundary is captured **before** the scan that populates the index begins,
+not after it ends. Replay advances it only after every normalized scope through that ID
+has been applied. Snapshot serialization receives this metadata from the completed scan
+or replay session; it never calls FSEvents itself.
 A v2 snapshot loads as cursor-absent (G2), not as invalid — the usual
 corrupt-fails-closed rules are unchanged, and a corrupt cursor section discards the
 snapshot like any other parse failure.
@@ -279,15 +327,17 @@ snapshot like any other parse failure.
   (encode/decode), `GateDecision`, the gate function, changed-set normalization.
   Compiles everywhere; no FFI.
 - `crates/fdu/src/journal/fsevents.rs` — `#[cfg(target_os = "macos")]`, feature
-  `journal`. The FFI module: current event ID, volume UUID for a device, and historical
-  replay via the non-deprecated dispatch-queue API (create stream with `sinceWhen`,
+  `journal`. The FFI module: initial system-wide fence, volume UUID for a device, and
+  historical replay via the non-deprecated dispatch-queue API (create a
+  device-relative stream with the required flags and `sinceWhen`,
   `FSEventStreamSetDispatchQueue` onto a private queue, start, receive marshalled
-  `(path, flags)` pairs over a channel until `HistoryDone` or the G6 deadline, then
+  `(path, flags, event_id)` tuples over a channel until `HistoryDone` or the G6 deadline, then
   stop/invalidate/release).
   The only module in the workspace allowed `unsafe`.
 - `crates/fdu/src/scan.rs` — `revalidate_dirs(index, dirs, config, sink)`: the bounded
   sweep. Reuses the existing per-directory emission; no new op kinds.
-- `crates/fdu/src/snapshot.rs` — format v3 fields, cursor capture on save.
+- `crates/fdu/src/snapshot.rs` — format v3 fields supplied by the completed scan or
+  replay session; no platform cursor capture inside serialization.
 - `crates/fdu/src/cli.rs` — wire the gate into the cached path; `--revalidate=auto|full`
   (default `auto`; `full` forces the sweep).
   `--no-cache` is untouched.
@@ -299,9 +349,16 @@ snapshot like any other parse failure.
 
 ### API changes
 
-Additive only. `snapshot::save`/`load` signatures unchanged (cursor handled internally).
-New public surface: `JournalCursor`, `GateDecision`, and `scan::revalidate_dirs`, all
-documented as macOS-accelerator plumbing with the sweep as the portable contract.
+Additive, but not signature-free. Saving cannot capture a correct boundary internally:
+the value must be bound to the scan or replay whose effects are present in the index.
+Add a `SnapshotMetadata` (or equivalently named scan-session result) carrying the
+optional `AppliedJournalBoundary`, `last_full_sweep_at`, and freshness. A new
+`snapshot::save_with_metadata` accepts it; the existing `snapshot::save` remains a
+compatibility wrapper that writes no journal boundary. Loading returns the metadata
+alongside the index through a new API while the compatibility load path may discard it.
+The other new public surface is `JournalCursor`, `GateDecision`, and
+`scan::revalidate_dirs`, documented as accelerator plumbing with the sweep as the
+portable contract.
 
 ### Packaging and platform fallback
 
@@ -349,10 +406,10 @@ self-declared externs, and answers, on a real volume:
 - [ ] Dispatch-queue delivery works as designed: stream created with `sinceWhen`,
   `FSEventStreamSetDispatchQueue` onto a private queue, events arrive, the `HistoryDone`
   sentinel arrives, teardown is clean, and a deadline abort works (gate G6’s mechanism)
-- [ ] Replay semantics hold: IDs are strictly greater than `sinceWhen`; a content edit
-  deep in the tree produces an event naming the file’s *parent directory* (the
-  load-bearing granularity claim); deletions and renames appear; replay of an hour-old
-  and a week-old cursor completes quickly
+- [ ] Replay semantics hold: `FullHistory` overlap at or before `sinceWhen` is harmless;
+  `FileEvents` names individual items; file edits, directory create/remove/rename,
+  symlinks, and hard links all normalize to the expected parent relists or subtree
+  invalidations; replay of an hour-old and a week-old boundary completes quickly
 - [ ] Degradation is observable: a `sinceWhen` predating journal retention produces
   `MustScanSubDirs` (or equivalent) rather than silent emptiness — the G7/G8 inputs are
   real
@@ -366,13 +423,17 @@ self-declared externs, and answers, on a real volume:
   replay must name. Any observed loss that arrives *without* a degradation flag is a
   finding that changes the design (a mandatory periodic full sweep gets promoted from
   paranoia to contract), and is exactly what the Watchman revert suggests looking for
+- [ ] Events racing the initial scan, historical replay, scoped revalidation, and
+  snapshot save are each observed on the next applicable transaction; no test advances
+  the stored boundary beyond applied work
 - [ ] Findings are recorded by amending this spec’s gates and constants (G5/G6 defaults,
   G9 fraction) and noted in the experiment ledger; explicit go/no-go for Phase 2
 
 ### Phase 1: Format and gate (mergeable alone; unblocks the block-format spike)
 
-- [ ] Snapshot format v3: cursor section, save-side capture stub (writes `none` on all
-  platforms), load-side decode, corrupt-cursor fails closed
+- [ ] Snapshot format v3: boundary section and full-sweep timestamp, metadata-aware save
+  API (writes `none` without session metadata), load-side decode, corrupt section fails
+  closed
 - [ ] `journal/mod.rs`: cursor types, gate decision table as a pure function,
   changed-set normalization; exhaustive unit tests for every gate row
 - [ ] Golden and round-trip tests: v2 loads as cursor-absent; v3 round-trips
@@ -382,10 +443,17 @@ self-declared externs, and answers, on a real volume:
 - [ ] `journal/fsevents.rs`: FFI declarations, current-event-id, volume UUID, historical
   replay with deadline; scoped `#[allow(unsafe_code)]` with per-call safety comments
 - [ ] `revalidate_dirs` in scan.rs, plus `InvalidateSubtree` resolution for G8
-- [ ] CLI: gate wiring, `--revalidate` flag, save-side cursor capture on macOS
+- [ ] CLI: gate wiring, `--revalidate` flag, initial pre-scan fence, and applied-boundary
+  propagation on macOS
 - [ ] Integration tests (macOS CI leg): mutate-then-journal-revalidate equals fresh scan
-  by engine digest; UUID mismatch, event-ID regression, and forced `MustScanSubDirs`
-  each degrade correctly
+  by the full per-directory roll-up digest; UUID mismatch/null, crossed devices,
+  unavailable history, `EventIdsWrapped`, dropped events, root/mount changes, permission
+  failure, replay deadline, and forced `MustScanSubDirs` each degrade correctly
+- [ ] Race tests cover initial scan, replay collection, scoped apply, and snapshot save;
+  a crash before apply completion preserves the older boundary, and a mutation after
+  `HistoryDone` is replayed on the next open
+- [ ] Periodic-sweep tests prove the 24-hour limit and the distinction between
+  full-sweep and journal-scoped freshness
 - [ ] Cross-platform packaging: target-conditional dependency, `journal` feature
   compiling on every platform with the G1 fallback, ubuntu CI leg running the fallback
   end-to-end with digest equality, wheel smoke exercising a warm open through Python on
@@ -403,11 +471,12 @@ APIs involved.
 Replay is integration-tested only on macOS (`#[cfg]`-gated, running in the
 existing macos-latest CI leg): each test mutates a real temp tree between snapshot and
 reopen, then asserts the journal-scoped index equals a fresh scan’s by engine digest —
-the same equality the parallel-walker tests pin.
-Degradations are forced, not simulated: a wrong stored UUID, a stored event ID above
-current, an undersized `max_changed_fraction`. The performance harness needs no changes
-to verify correctness: its oracle already digests every trial’s index, so a journal-path
-trial that skips a real change fails the run loudly.
+the same full per-directory roll-up equality the benchmark oracle and parallel-walker
+tests pin. Degradations are forced: null/wrong UUID, crossed volume, unavailable history,
+every dropped/wrapped/root/mount flag, bad path decoding, timeout, stale full-sweep
+timestamp, and an undersized `max_changed_fraction`. Race tests place mutations on each
+side of every boundary transition. The performance harness needs no oracle changes: a
+journal-path trial that skips a real change fails the run loudly.
 Linux and Windows CI prove the feature compiles away cleanly.
 
 ## Rollout Plan
@@ -419,9 +488,9 @@ no-unmeasured-claims convention.
 
 ## Open Questions
 
-- Does `fseventsd` directory granularity hold under high-frequency mixed workloads (the
-  research doc’s open question 3)? The churn experiment answers it empirically; G9
-  bounds the damage if the answer is unfavorable.
+- How much does `FileEvents` expand under high-frequency mixed workloads after
+  conservative parent/subtree normalization? The churn experiment answers it
+  empirically; G9 bounds the damage if the answer is unfavorable.
 - Cursor-per-volume for multi-volume scans: deferred behind G2 + `one_filesystem` now;
   the tag byte leaves room for a multi-cursor section later.
 - Should `--revalidate=journal` exist (fail rather than sweep when the gate refuses)?
@@ -435,6 +504,8 @@ no-unmeasured-claims convention.
 - [Performance loop guide](../../guides/performance-loop.md) and
   [experiment ledger](../../reports/report-2026-08-10-fdu-performance-experiments.md)
 - [FSEvents Programming Guide (persistent event IDs)](https://developer.apple.com/library/archive/documentation/Darwin/Conceptual/FSEvents_ProgGuide/UsingtheFSEventsFramework/UsingtheFSEventsFramework.html)
+- [FSEventStreamCreateFlagFullHistory](https://developer.apple.com/documentation/coreservices/kfseventstreamcreateflagfullhistory)
+- [FSEventStreamCreateRelativeToDevice](https://developer.apple.com/documentation/coreservices/1443980-fseventstreamcreaterelativetodevice)
 - [FSEventStreamSetDispatchQueue](https://developer.apple.com/documentation/coreservices/1444164-fseventstreamsetdispatchqueue)
   — the non-deprecated scheduling API;
   [`ScheduleWithRunLoop` deprecation reports](https://github.com/fsnotify/fsevents/issues/59)

@@ -12,8 +12,8 @@ experiment:
   hypotheses:
     - H14
   subject:
-    tree_label: metabrowser-clone
-    tree_root_id: dbd79ed9c898f7a2f66530cd95bb61cab88e798375134b86c77ece761de580a9
+    tree_label: reference-tree-60k
+    tree_root_id: 40406544ab63512154d1962a5c6bbe3bee60c1d3c6315f3b267b99871d03d825
     tree_engine_digest: bf574331eca680372f7060d4f9ab3b3b175afd265ac27bda6b6dc67ed9c80798
     tree_entries: 59654
     tree_directories: 7341
@@ -50,7 +50,13 @@ experiment:
       args: []
     toolchain: rustc 1.97.1 (8bab26f4f 2026-07-14)
     build_profile: release
-    run_artifact: benchmarks/results/realtree/run-exp007-009-requiem.json
+    evidence_grade: legacy
+    run_schema: fdu-realtree-run-v1
+    schedule: round-robin-by-ordinal-v1
+    schedule_sha256: null
+    schedule_seed: null
+    run_artifact: docs/project/experiments/evidence/exp-007-run.json
+    run_artifact_sha256: 2ff07f9994f50f591e15a4b499b609147f8fb4af003f37d03e9d7343d634e10f
   results:
     - job: warm-revalidate
       start_state: warm
@@ -188,28 +194,37 @@ experiment:
     new_failure_modes: []
     notes: "A net -10-line dispatch change; the equivalence test locking the two reconcile paths together is what lets the slow twin be deleted rather than maintained. First measured under load average 17 (interval spanned zero), committed then as a simplification, and confirmed as a real win on the quiet re-run."
   verdict:
-    decision: accepted
+    decision: superseded
     primary_job: warm-revalidate
     primary_metric: wall_ns
     change_pct: -7.092
-    reason: "Quiet-machine re-run: warm-revalidate wall -7.09% with 95% interval [-8.92%, -5.76%] over 20 paired trials; the first, load-average-17 run was underpowered, not wrong"
+    reason: "The quiet v1 run preserved useful raw pairs and its toolchain, but not the full roll-up oracle, exact build manifests, or schedule digest required for a current acceptance; exp-012 carries the cumulative disposition"
     commit: 92d6212
 ---
 # Direct reconcile reads expectations off entry ids
 
 ## Hypothesis
 
-H14: _state what you expected to be slow, why,
-and which metric would move._
+H14 predicted that direct reconciliation should read child expectations from the entry
+IDs it already owned instead of joining paths and descending from the root again.
 
 ## What was tried
 
-_The smallest change that tests the hypothesis._
+The exclusive reconcile path reused the existing entry-ID expectation collector and
+deleted its path-based twin. A noisy first run was followed by the recorded 20-pair
+quiet-machine run.
 
 ## What the numbers said
 
-_Read the tables in the frontmatter. Say what surprised you._
+Warm-revalidate wall fell 7.09% with a 95% interval of [-8.92%, -5.76%]. The raw pairs
+and toolchain are now committed, but the run predates source manifests, schedule digest,
+and the v2 full roll-up oracle.
 
 ## Verdict
 
-**ACCEPTED** — Quiet-machine re-run: warm-revalidate wall -7.09% with 95% interval [-8.92%, -5.76%] over 20 paired trials; the first, load-average-17 run was underpowered, not wrong
+**SUPERSEDED** — retained as useful local evidence; exp-012 owns the current cumulative
+performance disposition.
+
+<!-- This document follows common-doc-guidelines.md.
+See github.com/jlevy/practical-prose and review guidelines before editing.
+-->

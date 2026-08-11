@@ -196,7 +196,7 @@ impl Cli {
         // Extension tallies retain apparent bytes only. Treat `--by-type` as an
         // apparent-size view end to end so its summary, rows, bars, and percentages
         // cannot disagree about the selected measure.
-        let selected_total = if self.by_type { total.bytes } else { self.size_of(total) };
+        let selected_total = if self.by_type { total.bytes } else { self.size_of(&total) };
         let grand = selected_total.max(1);
 
         writeln!(
@@ -215,8 +215,7 @@ impl Cli {
             // be apparent bytes too — sharing the allocated-bytes total used elsewhere
             // would print shares that never reach 100%.
             let by_type_total = total.bytes.max(1);
-            let named = index.by_ext_named(total);
-            let mut kinds: Vec<_> = named.iter().collect();
+            let mut kinds: Vec<_> = total.by_ext.iter().collect();
             kinds.sort_by(|a, b| b.1.bytes.cmp(&a.1.bytes).then_with(|| a.0.cmp(b.0)));
             for (ext, tally) in kinds.into_iter().take(self.number) {
                 let share = ratio(tally.bytes, by_type_total);
@@ -325,7 +324,7 @@ impl Cli {
                 let attrs = index.attrs_of(id).expect("tree handle is live");
                 if self.apparent_size { attrs.size } else { attrs.allocated }
             },
-            |roll| self.size_of(roll),
+            |roll| self.size_of(&roll),
         )
     }
 
@@ -370,8 +369,7 @@ impl Cli {
         writeln!(out, "  ],")?;
 
         write!(out, "  \"by_extension\": {{")?;
-        let named = index.by_ext_named(total);
-        let mut kinds: Vec<_> = named.iter().collect();
+        let mut kinds: Vec<_> = total.by_ext.iter().collect();
         kinds.sort_by(|a, b| b.1.bytes.cmp(&a.1.bytes).then_with(|| a.0.cmp(b.0)));
         for (i, (ext, tally)) in kinds.iter().enumerate() {
             if i > 0 {

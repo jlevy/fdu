@@ -20,7 +20,7 @@ class ScenarioSchemaTests(unittest.TestCase):
     def test_committed_json_schemas_are_versioned_and_strict(self) -> None:
         schema_directory = Path(__file__).resolve().parents[1] / "schema"
         expected = {
-            "observed-corpus-v1.schema.json": "fdu-observed-corpus-v1",
+            "observed-corpus-v2.schema.json": "fdu-observed-corpus-v2",
             "result-v1.schema.json": "fdu-performance-result-v1",
             "scenario-v1.schema.json": "fdu-performance-scenarios-v1",
         }

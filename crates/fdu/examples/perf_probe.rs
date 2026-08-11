@@ -5,6 +5,7 @@
 //! completed. The parent harness owns authoritative process timing and exact corpus
 //! validation.
 
+use std::collections::BTreeSet;
 use std::env;
 use std::ffi::OsString;
 use std::fmt::Write as _;
@@ -13,10 +14,11 @@ use std::path::{Component, Path, PathBuf};
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
-use fdu::{Attrs, EntryId, EntryKind, Index, Observation, Op, ScanConfig};
+use fdu::{Attrs, EntryId, EntryKind, Index, Observation, Op, RollUp, ScanConfig};
 
-const PROBE_SCHEMA: &str = "fdu-perf-probe-v1";
+const PROBE_SCHEMA: &str = "fdu-perf-probe-v2";
 const DIGEST_ALGORITHM: &str = "fdu-index-record-v1/sha256-multiset-v1";
+const ROLLUP_DIGEST_ALGORITHM: &str = "fdu-rollup-record-v1/sha256-multiset-v1";
 
 fn main() -> ExitCode {
     match Arguments::parse(env::args_os().skip(1))
@@ -40,6 +42,7 @@ enum Mode {
     Revalidate,
     ScanIndex,
     ScanProducer,
+    ScanProducerRaw,
     SnapshotLoad,
     SnapshotSave,
     ValidateIndex,
@@ -53,6 +56,7 @@ impl Mode {
             "revalidate" => Ok(Self::Revalidate),
             "scan-index" => Ok(Self::ScanIndex),
             "scan-producer" => Ok(Self::ScanProducer),
+            "scan-producer-raw" => Ok(Self::ScanProducerRaw),
             "snapshot-load" => Ok(Self::SnapshotLoad),
             "snapshot-save" => Ok(Self::SnapshotSave),
             "validate-index" => Ok(Self::ValidateIndex),
@@ -67,6 +71,7 @@ impl Mode {
             Self::Revalidate => "revalidate",
             Self::ScanIndex => "scan-index",
             Self::ScanProducer => "scan-producer",
+            Self::ScanProducerRaw => "scan-producer-raw",
             Self::SnapshotLoad => "snapshot-load",
             Self::SnapshotSave => "snapshot-save",
             Self::ValidateIndex => "validate-index",
@@ -177,6 +182,7 @@ fn execute_repeated(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
 fn execute(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     match arguments.mode {
         Mode::ScanProducer => scan_producer(arguments),
+        Mode::ScanProducerRaw => scan_producer_raw(arguments),
         Mode::ScanIndex | Mode::ValidateIndex => scan_index(arguments),
         Mode::SnapshotSave => snapshot_save(arguments),
         Mode::SnapshotLoad => snapshot_load(arguments),
@@ -188,6 +194,54 @@ fn execute(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
 
 fn scan_producer(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     let mut summary = Summary::default();
+    let mut digest = MultisetDigest::default();
+    let root_attrs = Attrs::default();
+    digest.add(&engine_record(".", EntryKind::Dir, &root_attrs)?);
+    let mut seen = BTreeSet::from([String::from(".")]);
+    let mut validation_error = None;
+    let started = Instant::now();
+    let report = fdu::scan::scan(&arguments.root, &arguments.scan, &mut |observation| {
+        if validation_error.is_none() {
+            validation_error =
+                observe_producer(&mut summary, &mut digest, &mut seen, &observation).err();
+        }
+    })?;
+    let component = started.elapsed();
+    if let Some(error) = validation_error {
+        return Err(error);
+    }
+    summary.entries = summary.entries.saturating_add(1);
+    summary.dirs = summary.dirs.saturating_add(1);
+    summary.dirs_read = report.dirs_read;
+    summary.errors = u64::try_from(report.errors.len()).unwrap_or(u64::MAX);
+    summary.complete = report.is_complete();
+    summary.engine_digest = Some(digest.finish());
+    summary.index_len = Some(summary.entries);
+    Ok(ProbeOutput::new(arguments.mode, "scan", component, summary))
+}
+
+fn observe_producer(
+    summary: &mut Summary,
+    digest: &mut MultisetDigest,
+    seen: &mut BTreeSet<String>,
+    observation: &Observation,
+) -> ProbeResult<()> {
+    for observed in &observation.ops {
+        let Op::Upsert { path, kind, attrs } = &observed.op else {
+            return Err(ProbeError("scan producer emitted a non-upsert operation".into()));
+        };
+        let normalized = normalized_path(path)?;
+        if !seen.insert(normalized.clone()) {
+            return Err(ProbeError(format!("scan producer emitted duplicate path {normalized:?}")));
+        }
+        digest.add(&engine_record(&normalized, *kind, attrs)?);
+    }
+    summary.observe(observation);
+    Ok(())
+}
+
+fn scan_producer_raw(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
+    let mut summary = Summary::default();
     let started = Instant::now();
     let report = fdu::scan::scan(&arguments.root, &arguments.scan, &mut |observation| {
         summary.observe(&observation);
@@ -198,37 +252,7 @@ fn scan_producer(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     summary.dirs_read = report.dirs_read;
     summary.errors = u64::try_from(report.errors.len()).unwrap_or(u64::MAX);
     summary.complete = report.is_complete();
-    if summary.complete {
-        // The exact oracle is deliberately outside the component timer. A producer
-        // summary that is faster because it skipped, duplicated, or misclassified an
-        // entry must never become an accepted performance sample.
-        let (validation_index, validation_report) =
-            fdu::scan::scan_into_index(&arguments.root, &arguments.scan)?;
-        if !validation_report.is_complete() {
-            return Err(ProbeError("scan-producer validation scan was partial".into()));
-        }
-        let validation = summarize_index(&validation_index)?;
-        validate_producer_summary(&summary, &validation)?;
-        summary.engine_digest = validation.engine_digest;
-        summary.index_len = validation.index_len;
-    }
     Ok(ProbeOutput::new(arguments.mode, "scan", component, summary))
-}
-
-fn validate_producer_summary(producer: &Summary, validation: &Summary) -> ProbeResult<()> {
-    let matches = producer.entries == validation.entries
-        && producer.files == validation.files
-        && producer.dirs == validation.dirs
-        && producer.symlinks == validation.symlinks
-        && producer.other == validation.other
-        && producer.apparent_bytes == validation.apparent_bytes
-        && producer.allocated_bytes == validation.allocated_bytes;
-    if !matches {
-        return Err(ProbeError(
-            "scan-producer compact summary disagreed with exact validation".into(),
-        ));
-    }
-    Ok(())
 }
 
 fn scan_index(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
@@ -380,6 +404,7 @@ struct Summary {
     other: u64,
     query_iterations: u64,
     query_observations: u64,
+    rollup_digest: Option<String>,
     snapshot_bytes: Option<u64>,
     symlinks: u64,
 }
@@ -401,6 +426,7 @@ impl Default for Summary {
             other: 0,
             query_iterations: 0,
             query_observations: 0,
+            rollup_digest: None,
             snapshot_bytes: None,
             symlinks: 0,
         }
@@ -432,6 +458,7 @@ impl Summary {
 fn summarize_index(index: &Index) -> ProbeResult<Summary> {
     let mut summary = Summary::default();
     let mut digest = MultisetDigest::default();
+    let mut rollup_digest = MultisetDigest::default();
     let mut stack = vec![EntryId::ROOT];
     while let Some(id) = stack.pop() {
         let kind = index
@@ -448,7 +475,13 @@ fn summarize_index(index: &Index) -> ProbeResult<Summary> {
         summary.entries = summary.entries.saturating_add(1);
         match kind {
             EntryKind::File => summary.files = summary.files.saturating_add(1),
-            EntryKind::Dir => summary.dirs = summary.dirs.saturating_add(1),
+            EntryKind::Dir => {
+                summary.dirs = summary.dirs.saturating_add(1);
+                let rollup = index
+                    .rollup_of(id)
+                    .ok_or_else(|| ProbeError("directory had no roll-up".into()))?;
+                rollup_digest.add(&rollup_record(&normalized, &rollup)?);
+            }
             EntryKind::Symlink => summary.symlinks = summary.symlinks.saturating_add(1),
             EntryKind::Other => summary.other = summary.other.saturating_add(1),
         }
@@ -462,6 +495,7 @@ fn summarize_index(index: &Index) -> ProbeResult<Summary> {
     summary.allocated_bytes = total.allocated.into();
     summary.index_len = Some(index.len());
     summary.engine_digest = Some(digest.finish());
+    summary.rollup_digest = Some(rollup_digest.finish_with(ROLLUP_DIGEST_ALGORITHM));
     Ok(summary)
 }
 
@@ -501,6 +535,31 @@ fn engine_record(path: &str, kind: EntryKind, attrs: &Attrs) -> ProbeResult<Vec<
     Ok(record)
 }
 
+fn rollup_record(path: &str, rollup: &RollUp) -> ProbeResult<Vec<u8>> {
+    let path_len = u32::try_from(path.len())
+        .map_err(|_| ProbeError("roll-up digest path exceeds u32".into()))?;
+    let extension_count = u32::try_from(rollup.by_ext.len())
+        .map_err(|_| ProbeError("roll-up digest extension count exceeds u32".into()))?;
+    let mut record = Vec::new();
+    record.extend_from_slice(&path_len.to_be_bytes());
+    record.extend_from_slice(path.as_bytes());
+    record.extend_from_slice(&rollup.files.to_be_bytes());
+    record.extend_from_slice(&rollup.dirs.to_be_bytes());
+    record.extend_from_slice(&rollup.bytes.to_be_bytes());
+    record.extend_from_slice(&rollup.allocated.to_be_bytes());
+    record.extend_from_slice(&rollup.newest_mtime_ns.to_be_bytes());
+    record.extend_from_slice(&extension_count.to_be_bytes());
+    for (extension, tally) in &rollup.by_ext {
+        let extension_len = u32::try_from(extension.len())
+            .map_err(|_| ProbeError("roll-up digest extension exceeds u32".into()))?;
+        record.extend_from_slice(&extension_len.to_be_bytes());
+        record.extend_from_slice(extension.as_bytes());
+        record.extend_from_slice(&tally.files.to_be_bytes());
+        record.extend_from_slice(&tally.bytes.to_be_bytes());
+    }
+    Ok(record)
+}
+
 struct ProbeOutput {
     component_ns: u128,
     mode: Mode,
@@ -516,6 +575,7 @@ impl ProbeOutput {
     fn render(&self) -> String {
         let summary = &self.summary;
         let digest = json_optional_string(summary.engine_digest.as_deref());
+        let rollup_digest = json_optional_string(summary.rollup_digest.as_deref());
         let index_len = json_optional_u64(summary.index_len);
         let snapshot_bytes = json_optional_u64(summary.snapshot_bytes);
         format!(
@@ -529,6 +589,7 @@ impl ProbeOutput {
                 "\"engine_digest\":{},\"entries\":{},\"errors\":{},",
                 "\"files\":{},\"index_len\":{},\"other\":{},",
                 "\"query_iterations\":{},\"query_observations\":{},",
+                "\"rollup_digest\":{},",
                 "\"snapshot_bytes\":{},",
                 "\"symlinks\":{}}}}}"
             ),
@@ -555,6 +616,7 @@ impl ProbeOutput {
             summary.other,
             summary.query_iterations,
             summary.query_observations,
+            rollup_digest,
             snapshot_bytes,
             summary.symlinks,
         )
@@ -610,8 +672,12 @@ impl MultisetDigest {
     }
 
     fn finish(self) -> String {
-        let mut final_record = Vec::with_capacity(DIGEST_ALGORITHM.len() + 73);
-        final_record.extend_from_slice(DIGEST_ALGORITHM.as_bytes());
+        self.finish_with(DIGEST_ALGORITHM)
+    }
+
+    fn finish_with(self, algorithm: &str) -> String {
+        let mut final_record = Vec::with_capacity(algorithm.len() + 73);
+        final_record.extend_from_slice(algorithm.as_bytes());
         final_record.push(0);
         final_record.extend_from_slice(&self.count.to_be_bytes());
         final_record.extend_from_slice(&self.xor);
@@ -833,6 +899,7 @@ impl From<std::io::Error> for ProbeError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use fdu::ExtTally;
 
     #[test]
     fn sha256_matches_standard_vectors() {
@@ -858,12 +925,48 @@ mod tests {
     }
 
     #[test]
+    fn producer_digest_rejects_duplicate_emitted_paths() {
+        let attrs = Attrs::default();
+        let observation = Observation::new(vec![
+            Op::Upsert { path: PathBuf::from("duplicate.txt"), kind: EntryKind::File, attrs },
+            Op::Upsert { path: PathBuf::from("duplicate.txt"), kind: EntryKind::File, attrs },
+        ]);
+        let error = observe_producer(
+            &mut Summary::default(),
+            &mut MultisetDigest::default(),
+            &mut BTreeSet::from([String::from(".")]),
+            &observation,
+        )
+        .expect_err("a duplicate producer record must invalidate the run");
+        assert!(error.0.contains("duplicate path"));
+    }
+
+    #[test]
+    fn rollup_digest_covers_named_extension_tallies() {
+        let mut first = RollUp { files: 1, bytes: 7, ..RollUp::default() };
+        first.by_ext.insert(".rs".into(), ExtTally { files: 1, bytes: 7 });
+        let mut second = first.clone();
+        second.by_ext.clear();
+        second.by_ext.insert(".py".into(), ExtTally { files: 1, bytes: 7 });
+
+        let mut first_digest = MultisetDigest::default();
+        first_digest.add(&rollup_record(".", &first).expect("first record"));
+        let mut second_digest = MultisetDigest::default();
+        second_digest.add(&rollup_record(".", &second).expect("second record"));
+        assert_ne!(
+            first_digest.finish_with(ROLLUP_DIGEST_ALGORITHM),
+            second_digest.finish_with(ROLLUP_DIGEST_ALGORITHM)
+        );
+    }
+
+    #[test]
     fn json_render_is_one_complete_object() {
         let rendered =
             ProbeOutput::new(Mode::ScanIndex, "scan", Duration::from_nanos(7), Summary::default())
                 .render();
         assert!(rendered.starts_with("{\"component_ns\":7,"));
         assert!(rendered.ends_with('}'));
-        assert!(rendered.contains("\"schema\":\"fdu-perf-probe-v1\""));
+        assert!(rendered.contains("\"schema\":\"fdu-perf-probe-v2\""));
+        assert!(rendered.contains("\"rollup_digest\":null"));
     }
 }

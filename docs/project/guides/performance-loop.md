@@ -45,13 +45,15 @@ machine. Every run therefore records all of these, per trial:
 | Total CPU | `cpu_ns` | user + system; the real cost of the work |
 | User CPU | `user_cpu_ns` | Time in our code: allocation, hashing, tree building |
 | System CPU | `system_cpu_ns` | Time in the kernel: `getdirentries`, `stat`, `open` |
-| Blocked | `blocked_ns` | `wall - cpu`; I/O waits and scheduler delay |
+| Blocked residual | `blocked_ns` | `wall - process CPU` for known single-threaded jobs only; null for parallel jobs |
 | Peak RSS | `peak_rss_bytes` | Whether a speedup was bought with memory |
 | Page faults | `minor_faults`, `major_faults` | Allocation churn; major faults mean real disk |
 | Context switches | `voluntary_*`, `involuntary_*` | Contention, and whether threads are thrashing |
 
 `cpu_ns / wall_ns` is the parallelism actually achieved, and it is the number that
-explains most surprises.
+explains most surprises. Process CPU accumulates across threads, so subtracting it from
+wall time is not an off-CPU measurement when a job can run in parallel. Those jobs
+record `blocked_ns: null` unless the harness gains a real off-CPU collector.
 
 Two axes cross these dimensions:
 
@@ -122,11 +124,15 @@ A candidate is accepted when, on paired wall-time differences at equal ordinals:
 - the median change is at least **3% faster**, and
 - the 95% bootstrap interval of that change lies entirely below zero, and
 - no sample was invalidated by the oracle, and
+- CPU and peak-RSS regressions each stay within the default 10% guardrail, or the
+  record carries an explicit product rationale waiving that guardrail, and
 - the complexity is worth it.
 
-The first three are arithmetic and live in
+The first four are arithmetic and live in
 [`benchmarks/realtree/ledger.py`](../../../benchmarks/realtree/ledger.py).
-The fourth is a judgment and is written down as one.
+The fifth is a judgment and is written down as one. Latency and resource guardrails
+are recorded separately: a latency win bought with twice the CPU is never hidden by a
+single “accepted” label.
 
 The accept metric is wall time by default, with one narrow exception: when a hypothesis
 *pre-registered* a different signal in the registry before any measurement ran (as the

@@ -345,7 +345,7 @@
       "type": "object"
     }
   },
-  "$id": "observed-corpus-v1.schema.json",
+  "$id": "observed-corpus-v2.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
@@ -366,7 +366,7 @@
       "type": "string"
     },
     "generator_version": {
-      "const": 1
+      "const": 2
     },
     "manifest_hash": {
       "pattern": "^[0-9a-f]{64}$",
@@ -391,6 +391,16 @@
         "engine_digest_components": {
           "$ref": "#/$defs/digest_components"
         },
+        "rollup_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "rollup_digest_algorithm": {
+          "const": "fdu-rollup-record-v1/sha256-multiset-v1"
+        },
+        "rollup_digest_components": {
+          "$ref": "#/$defs/digest_components"
+        },
         "root_inclusive": {
           "const": true
         },
@@ -407,6 +417,9 @@
         "engine_digest",
         "engine_digest_algorithm",
         "engine_digest_components",
+        "rollup_digest",
+        "rollup_digest_algorithm",
+        "rollup_digest_components",
         "root_inclusive",
         "semantic_components"
       ],
@@ -489,7 +502,7 @@
       "type": "array"
     },
     "schema": {
-      "const": "fdu-observed-corpus-v1"
+      "const": "fdu-observed-corpus-v2"
     },
     "semantic_digest": {
       "pattern": "^[0-9a-f]{64}$",

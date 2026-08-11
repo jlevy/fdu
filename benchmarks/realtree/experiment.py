@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Literal, Mapping, Optional, Sequence
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 CONTRACT = "fdu.performance:Experiment/v1"
 
@@ -35,6 +35,9 @@ CONTRACT = "fdu.performance:Experiment/v1"
 Decision = Literal[
     "accepted", "rejected", "superseded", "blocked", "in-progress", "baseline"
 ]
+Direction = Literal["improvement", "regression", "unchanged"]
+GuardrailStatus = Literal["passed", "failed", "not-measured", "waived"]
+EvidenceGrade = Literal["claim-grade", "legacy"]
 
 
 class Strict(BaseModel):
@@ -55,9 +58,20 @@ class MetricChange(Strict):
     ci95_high_pct: Optional[float] = Field(
         default=None, description="Upper bound of the 95% bootstrap interval."
     )
-    significant: bool = Field(
-        default=False,
-        description="Whether the whole interval lies below zero, i.e. the win is not noise.",
+    direction: Optional[Direction] = Field(
+        default=None, description="Direction of the paired median change."
+    )
+    ci_excludes_zero: Optional[bool] = Field(
+        default=None,
+        description="Whether the 95% interval excludes zero in either direction.",
+    )
+    significant_improvement: Optional[bool] = Field(
+        default=None,
+        description="One-sided acceptance fact: a significant change below zero.",
+    )
+    significant: Optional[bool] = Field(
+        default=None,
+        description="Compatibility alias for ci_excludes_zero in newly recorded data.",
     )
     pairs: int = Field(default=0, ge=0, description="Trial pairs behind the comparison.")
 
@@ -94,6 +108,18 @@ class Complexity(Strict):
     notes: str = Field(default="", description="Anything else that argues for or against.")
 
 
+class ResourceGuardrail(Strict):
+    """One explicit resource-cost bound evaluated beside the latency gate."""
+
+    metric: Literal["cpu_ns", "peak_rss_bytes"]
+    maximum_regression_pct: float = Field(ge=0)
+    observed_change_pct: Optional[float] = None
+    ci95_low_pct: Optional[float] = None
+    ci95_high_pct: Optional[float] = None
+    status: GuardrailStatus
+    reason: str
+
+
 class Verdict(Strict):
     """The decision, the number it rests on, and the reason in one sentence."""
 
@@ -109,6 +135,18 @@ class Verdict(Strict):
     reason: str = Field(description="One sentence. Why this decision and not the other.")
     commit: Optional[str] = Field(
         default=None, description="Commit that landed it, or reverted it."
+    )
+    latency_gate_passed: Optional[bool] = Field(
+        default=None,
+        description="Whether the primary latency metric cleared significance and threshold.",
+    )
+    resource_guardrails: List[ResourceGuardrail] = Field(
+        default_factory=list,
+        description="CPU and RSS decisions evaluated separately from latency.",
+    )
+    resource_waiver_reason: Optional[str] = Field(
+        default=None,
+        description="Explicit product rationale when an accepted change waives a guardrail.",
     )
 
 
@@ -169,6 +207,34 @@ class Binary(Strict):
         default_factory=list,
         description="Flags this variant carried, e.g. a thread count.",
     )
+    engine_revision: Optional[str] = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{40}$",
+        description="Exact engine source commit, independent of harness source.",
+    )
+    harness_revision: Optional[str] = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{40}$",
+        description="Exact commit containing the probe source used for this build.",
+    )
+    harness_sha256: Optional[str] = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+        description="Content digest of the probe source compiled into this binary.",
+    )
+    target: Optional[str] = Field(
+        default=None, description="Rust target triple used for the measured binary."
+    )
+    build_profile: Optional[str] = Field(
+        default=None, description="Cargo profile used to build this exact binary."
+    )
+    features: List[str] = Field(
+        default_factory=list, description="Sorted Cargo feature set; empty means none."
+    )
+    build_command: Optional[str] = Field(
+        default=None,
+        description="Path-redacted command sufficient to reproduce the build.",
+    )
 
 
 class Method(Strict):
@@ -188,8 +254,32 @@ class Method(Strict):
         default="release",
         description="Cargo profile. Timing evidence only ever comes from release.",
     )
+    evidence_grade: EvidenceGrade = Field(
+        default="legacy",
+        description="Claim-grade satisfies the enforced provenance and raw-evidence contract.",
+    )
+    run_schema: str = Field(
+        default="", description="Schema identifier of the archived raw measurement run."
+    )
+    schedule: str = Field(
+        default="", description="Named interleaving algorithm used by the runner."
+    )
+    schedule_sha256: Optional[str] = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+        description="Digest of the exact expanded variant/job/ordinal schedule.",
+    )
+    schedule_seed: Optional[int] = Field(
+        default=None,
+        description="Random seed, or null when the named schedule is deterministic.",
+    )
     run_artifact: Optional[str] = Field(
         default=None, description="Path to the raw run JSON this was derived from."
+    )
+    run_artifact_sha256: Optional[str] = Field(
+        default=None,
+        pattern=r"^[0-9a-f]{64}$",
+        description="Content digest of the archived raw run JSON.",
     )
 
 
@@ -218,6 +308,87 @@ class Experiment(Strict):
     complexity: Complexity
     verdict: Verdict
 
+    @model_validator(mode="after")
+    def evidence_and_acceptance_contracts_are_enforced(self) -> "Experiment":
+        """Keep claim-grade and accepted labels stronger than prose assertions."""
+        missing: List[str] = []
+        claim_grade = self.method.evidence_grade == "claim-grade"
+        if self.verdict.decision == "accepted" and not claim_grade:
+            missing.append("method.evidence_grade=claim-grade")
+        if not claim_grade:
+            if missing:
+                raise ValueError(
+                    "accepted experiment lacks claim-grade evidence: "
+                    + ", ".join(missing)
+                )
+            return self
+
+        if self.method.run_schema != "fdu-realtree-run-v2":
+            missing.append("method.run_schema=fdu-realtree-run-v2")
+        if not self.method.toolchain:
+            missing.append("method.toolchain")
+        if not self.method.schedule or not self.method.schedule_sha256:
+            missing.append("method.schedule/schedule_sha256")
+        if not self.method.run_artifact or not self.method.run_artifact_sha256:
+            missing.append("method.run_artifact/run_artifact_sha256")
+        for role, binary in (
+            ("control", self.method.control_binary),
+            ("candidate", self.method.candidate_binary),
+        ):
+            if binary is None:
+                missing.append(f"method.{role}_binary")
+                continue
+            required = {
+                "sha256": binary.sha256,
+                "engine_revision": binary.engine_revision,
+                "harness_revision": binary.harness_revision,
+                "harness_sha256": binary.harness_sha256,
+                "target": binary.target,
+                "build_profile": binary.build_profile,
+                "build_command": binary.build_command,
+            }
+            missing.extend(
+                f"method.{role}_binary.{name}"
+                for name, value in required.items()
+                if not value
+            )
+            if "features" not in binary.model_fields_set:
+                missing.append(f"method.{role}_binary.features")
+            if binary.build_profile != "release":
+                missing.append(f"method.{role}_binary.build_profile=release")
+        if not self.subject.tree_engine_digest:
+            missing.append("subject.tree_engine_digest")
+        if self.subject.tree_mutated_during_run:
+            missing.append("unchanged tree across the run")
+        if any(result.invalid_samples for result in self.results):
+            missing.append("zero invalid samples")
+        if missing:
+            raise ValueError(
+                "claim-grade experiment lacks required evidence: " + ", ".join(missing)
+            )
+
+        if self.verdict.decision == "accepted":
+            acceptance_missing: List[str] = []
+            if self.verdict.latency_gate_passed is not True:
+                acceptance_missing.append("verdict.latency_gate_passed=true")
+            by_metric = {
+                guardrail.metric: guardrail for guardrail in self.verdict.resource_guardrails
+            }
+            for metric in ("cpu_ns", "peak_rss_bytes"):
+                guardrail = by_metric.get(metric)
+                if guardrail is None:
+                    acceptance_missing.append(f"{metric} resource guardrail")
+                elif guardrail.status not in {"passed", "waived"}:
+                    acceptance_missing.append(f"{metric} resource guardrail passed or waived")
+                elif guardrail.status == "waived" and not self.verdict.resource_waiver_reason:
+                    acceptance_missing.append("verdict.resource_waiver_reason")
+            if acceptance_missing:
+                raise ValueError(
+                    "accepted experiment lacks enforced decision gates: "
+                    + ", ".join(acceptance_missing)
+                )
+        return self
+
 
 # --------------------------------------------------------------------------------
 # Building an artifact from a measurement run
@@ -239,12 +410,24 @@ LEDGER_METRICS = (
 
 def _binary(run: Mapping[str, Any], name: str) -> Dict[str, Any]:
     identity = (run.get("variants") or {}).get(name) or {}
-    return {
+    binary = {
         "name": name,
         "sha256": identity.get("sha256", ""),
         "size_bytes": identity.get("size_bytes", 0),
         "args": list(identity.get("args") or []),
     }
+    for field_name in (
+        "engine_revision",
+        "harness_revision",
+        "harness_sha256",
+        "target",
+        "build_profile",
+        "features",
+        "build_command",
+    ):
+        if field_name in identity:
+            binary[field_name] = identity[field_name]
+    return binary
 
 
 def from_run(
@@ -258,6 +441,8 @@ def from_run(
     complexity: Mapping[str, Any],
     verdict: Mapping[str, Any],
     run_artifact: Optional[str] = None,
+    run_artifact_sha256: Optional[str] = None,
+    evidence_grade: EvidenceGrade = "legacy",
     control_variant: Optional[str] = None,
     candidate_variant: Optional[str] = None,
 ) -> Dict[str, Any]:
@@ -291,13 +476,32 @@ def from_run(
                 continue
             entry = (comparison or {}).get("metrics", {}).get(metric) or {}
             interval = entry.get("ci95_change_pct") or [None, None]
+            change = float(entry.get("median_change_pct") or 0.0)
+            direction = entry.get("direction") or (
+                "improvement" if change < 0 else "regression" if change > 0 else "unchanged"
+            )
+            ci_excludes_zero = entry.get("ci_excludes_zero")
+            if ci_excludes_zero is None:
+                ci_excludes_zero = bool(
+                    interval[0] is not None
+                    and interval[1] is not None
+                    and (interval[1] < 0 or interval[0] > 0)
+                )
             metrics[metric] = {
                 "control_median": float(control_summary["median"]),
                 "candidate_median": float(candidate_summary["median"]),
-                "change_pct": float(entry.get("median_change_pct") or 0.0),
+                "change_pct": change,
                 "ci95_low_pct": interval[0],
                 "ci95_high_pct": interval[1],
-                "significant": bool(entry.get("significant", False)),
+                "direction": direction,
+                "ci_excludes_zero": ci_excludes_zero,
+                "significant_improvement": bool(
+                    entry.get(
+                        "significant_improvement",
+                        ci_excludes_zero and direction == "improvement",
+                    )
+                ),
+                "significant": ci_excludes_zero,
                 "pairs": int(entry.get("pairs", 0)),
             }
         results.append(
@@ -359,7 +563,13 @@ def from_run(
             "candidate_binary": _binary(run, candidate_name),
             "toolchain": host.get("toolchain", ""),
             "build_profile": "release",
+            "evidence_grade": evidence_grade,
+            "run_schema": run.get("schema", ""),
+            "schedule": conditions.get("schedule", ""),
+            "schedule_sha256": conditions.get("schedule_sha256"),
+            "schedule_seed": conditions.get("schedule_seed"),
             "run_artifact": run_artifact,
+            "run_artifact_sha256": run_artifact_sha256,
         },
         "results": results,
         "reference_tools": references,

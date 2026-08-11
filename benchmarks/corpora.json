@@ -89,6 +89,17 @@
       "seed": "fdu-wide-v1",
       "topology": "wide",
       "transitions": []
+    },
+    "wide-snapshot": {
+      "default_target_entries": 10000,
+      "fanout": 2048,
+      "max_depth": 2,
+      "metadata_profile": "empty",
+      "optional_links": [],
+      "scale_points": [10000, 100000, 500000, 1000000],
+      "seed": "fdu-wide-snapshot-v1",
+      "topology": "wide",
+      "transitions": []
     }
   },
   "schema": "fdu-corpus-recipes-v1"

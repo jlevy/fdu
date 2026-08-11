@@ -9,6 +9,50 @@ $defs:
           type: string
         title: Args
         type: array
+      build_command:
+        anyOf:
+        - type: string
+        - type: 'null'
+        default: null
+        description: Path-redacted command sufficient to reproduce the build.
+        title: Build Command
+      build_profile:
+        anyOf:
+        - type: string
+        - type: 'null'
+        default: null
+        description: Cargo profile used to build this exact binary.
+        title: Build Profile
+      engine_revision:
+        anyOf:
+        - pattern: ^[0-9a-f]{40}$
+          type: string
+        - type: 'null'
+        default: null
+        description: Exact engine source commit, independent of harness source.
+        title: Engine Revision
+      features:
+        description: Sorted Cargo feature set; empty means none.
+        items:
+          type: string
+        title: Features
+        type: array
+      harness_revision:
+        anyOf:
+        - pattern: ^[0-9a-f]{40}$
+          type: string
+        - type: 'null'
+        default: null
+        description: Exact commit containing the probe source used for this build.
+        title: Harness Revision
+      harness_sha256:
+        anyOf:
+        - pattern: ^[0-9a-f]{64}$
+          type: string
+        - type: 'null'
+        default: null
+        description: Content digest of the probe source compiled into this binary.
+        title: Harness Sha256
       name:
         title: Name
         type: string
@@ -22,6 +66,13 @@ $defs:
         minimum: 0
         title: Size Bytes
         type: integer
+      target:
+        anyOf:
+        - type: string
+        - type: 'null'
+        default: null
+        description: Rust target triple used for the measured binary.
+        title: Target
     required:
     - name
     title: Binary
@@ -119,6 +170,14 @@ $defs:
         - $ref: '#/$defs/Binary'
         - type: 'null'
         default: null
+      evidence_grade:
+        default: legacy
+        description: Claim-grade satisfies the enforced provenance and raw-evidence contract.
+        enum:
+        - claim-grade
+        - legacy
+        title: Evidence Grade
+        type: string
       interleaved:
         default: true
         description: Variants alternated per ordinal rather than run in blocks.
@@ -131,6 +190,39 @@ $defs:
         default: null
         description: Path to the raw run JSON this was derived from.
         title: Run Artifact
+      run_artifact_sha256:
+        anyOf:
+        - pattern: ^[0-9a-f]{64}$
+          type: string
+        - type: 'null'
+        default: null
+        description: Content digest of the archived raw run JSON.
+        title: Run Artifact Sha256
+      run_schema:
+        default: ''
+        description: Schema identifier of the archived raw measurement run.
+        title: Run Schema
+        type: string
+      schedule:
+        default: ''
+        description: Named interleaving algorithm used by the runner.
+        title: Schedule
+        type: string
+      schedule_seed:
+        anyOf:
+        - type: integer
+        - type: 'null'
+        default: null
+        description: Random seed, or null when the named schedule is deterministic.
+        title: Schedule Seed
+      schedule_sha256:
+        anyOf:
+        - pattern: ^[0-9a-f]{64}$
+          type: string
+        - type: 'null'
+        default: null
+        description: Digest of the exact expanded variant/job/ordinal schedule.
+        title: Schedule Sha256
       toolchain:
         default: ''
         description: Compiler version the binaries were built with.
@@ -177,10 +269,28 @@ $defs:
         default: null
         description: Lower bound of the 95% bootstrap interval on change_pct.
         title: Ci95 Low Pct
+      ci_excludes_zero:
+        anyOf:
+        - type: boolean
+        - type: 'null'
+        default: null
+        description: Whether the 95% interval excludes zero in either direction.
+        title: Ci Excludes Zero
       control_median:
         description: Control median, in the metric's own unit.
         title: Control Median
         type: number
+      direction:
+        anyOf:
+        - enum:
+          - improvement
+          - regression
+          - unchanged
+          type: string
+        - type: 'null'
+        default: null
+        description: Direction of the paired median change.
+        title: Direction
       pairs:
         default: 0
         description: Trial pairs behind the comparison.
@@ -188,10 +298,19 @@ $defs:
         title: Pairs
         type: integer
       significant:
-        default: false
-        description: Whether the whole interval lies below zero, i.e. the win is not noise.
+        anyOf:
+        - type: boolean
+        - type: 'null'
+        default: null
+        description: Compatibility alias for ci_excludes_zero in newly recorded data.
         title: Significant
-        type: boolean
+      significant_improvement:
+        anyOf:
+        - type: boolean
+        - type: 'null'
+        default: null
+        description: 'One-sided acceptance fact: a significant change below zero.'
+        title: Significant Improvement
     required:
     - candidate_median
     - change_pct
@@ -217,6 +336,56 @@ $defs:
     - name
     - wall_ns_median
     title: ReferenceTool
+    type: object
+  ResourceGuardrail:
+    additionalProperties: false
+    description: One explicit resource-cost bound evaluated beside the latency gate.
+    properties:
+      ci95_high_pct:
+        anyOf:
+        - type: number
+        - type: 'null'
+        default: null
+        title: Ci95 High Pct
+      ci95_low_pct:
+        anyOf:
+        - type: number
+        - type: 'null'
+        default: null
+        title: Ci95 Low Pct
+      maximum_regression_pct:
+        minimum: 0
+        title: Maximum Regression Pct
+        type: number
+      metric:
+        enum:
+        - cpu_ns
+        - peak_rss_bytes
+        title: Metric
+        type: string
+      observed_change_pct:
+        anyOf:
+        - type: number
+        - type: 'null'
+        default: null
+        title: Observed Change Pct
+      reason:
+        title: Reason
+        type: string
+      status:
+        enum:
+        - passed
+        - failed
+        - not-measured
+        - waived
+        title: Status
+        type: string
+    required:
+    - maximum_regression_pct
+    - metric
+    - reason
+    - status
+    title: ResourceGuardrail
     type: object
   Subject:
     additionalProperties: false
@@ -360,6 +529,13 @@ $defs:
         - baseline
         title: Decision
         type: string
+      latency_gate_passed:
+        anyOf:
+        - type: boolean
+        - type: 'null'
+        default: null
+        description: Whether the primary latency metric cleared significance and threshold.
+        title: Latency Gate Passed
       primary_job:
         description: The job the decision was taken on.
         title: Primary Job
@@ -372,6 +548,19 @@ $defs:
         description: One sentence. Why this decision and not the other.
         title: Reason
         type: string
+      resource_guardrails:
+        description: CPU and RSS decisions evaluated separately from latency.
+        items:
+          $ref: '#/$defs/ResourceGuardrail'
+        title: Resource Guardrails
+        type: array
+      resource_waiver_reason:
+        anyOf:
+        - type: string
+        - type: 'null'
+        default: null
+        description: Explicit product rationale when an accepted change waives a guardrail.
+        title: Resource Waiver Reason
       threshold_pct:
         default: -3.0
         description: The bar a change had to clear to be worth carrying.
@@ -435,4 +624,4 @@ title: Experiment
 type: object
 x-softschema:
   contract: fdu.performance:Experiment/v1
-  schema_sha256: 17823e7b4a786b9d1087fe204d1a0878a11b19b711df86ed1eb4504eb9e95d1f
+  schema_sha256: c475c4d33f6e9473d536f9ecc4db50470132a524c79bc8fb89b0109b6b6ebee2

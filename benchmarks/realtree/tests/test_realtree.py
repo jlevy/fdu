@@ -16,7 +16,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from benchmarks.realtree import ledger, measure, profile, tree
+from benchmarks.realtree import compat, evidence, ledger, measure, profile, scale, tree
 
 
 def _write(path: Path, contents: bytes = b"x") -> None:
@@ -103,16 +103,34 @@ class ReferenceTreeTests(unittest.TestCase):
             "apparent_bytes": document["sizes"]["apparent_bytes"],
             "allocated_bytes": document["sizes"]["allocated_bytes"],
             "engine_digest": document["engine_digest"],
+            "rollup_digest": document["rollup_digest"],
         }
-        self.assertIsNone(tree.probe_agrees(document, agreeing))
+        self.assertIsNone(tree.probe_agrees(document, agreeing, mode="scan-index"))
 
-        for field in ("entries", "files", "apparent_bytes", "engine_digest"):
+        for field in (
+            "entries",
+            "files",
+            "apparent_bytes",
+            "engine_digest",
+            "rollup_digest",
+        ):
             wrong = dict(agreeing)
-            wrong[field] = "wrong" if field == "engine_digest" else 0
+            wrong[field] = (
+                "wrong" if field in {"engine_digest", "rollup_digest"} else 0
+            )
             self.assertIsNotNone(
-                tree.probe_agrees(document, wrong),
+                tree.probe_agrees(document, wrong, mode="scan-index"),
                 f"a probe reporting the wrong {field} was accepted",
             )
+
+        producer = dict(agreeing)
+        producer.pop("rollup_digest")
+        self.assertIsNone(
+            tree.probe_agrees(document, producer, mode="scan-producer")
+        )
+        self.assertIsNotNone(
+            tree.probe_agrees(document, producer, mode="scan-index")
+        )
 
     def test_missing_summary_is_a_disagreement(self) -> None:
         document = tree.fingerprint(self.root, label="fixture")
@@ -155,6 +173,9 @@ class StatisticsTests(unittest.TestCase):
         )
         entry = comparison["metrics"]["wall_ns"]
         self.assertAlmostEqual(entry["median_change_pct"], -30.0, places=3)
+        self.assertEqual(entry["direction"], "improvement")
+        self.assertTrue(entry["ci_excludes_zero"])
+        self.assertTrue(entry["significant_improvement"])
         self.assertTrue(entry["significant"])
         self.assertTrue(ledger.verdict(comparison)["accepted"])
 
@@ -189,7 +210,30 @@ class StatisticsTests(unittest.TestCase):
         comparison = measure.paired_comparison(
             samples, job="job", control="control", candidate="candidate"
         )
-        self.assertFalse(ledger.verdict(comparison)["accepted"])
+        entry = comparison["metrics"]["wall_ns"]
+        self.assertEqual(entry["direction"], "regression")
+        self.assertTrue(entry["ci_excludes_zero"])
+        self.assertFalse(entry["significant_improvement"])
+        self.assertTrue(entry["significant"])
+        decision = ledger.verdict(comparison)
+        self.assertFalse(decision["accepted"])
+        self.assertIn("statistically significant regression", decision["reason"])
+
+    def test_parallel_process_cpu_does_not_invent_blocked_time(self) -> None:
+        resources = {"user_cpu_ns": 80, "system_cpu_ns": 40}
+        parallel = measure._process_metrics(
+            resources,
+            wall_ns=100,
+            process_cpu_can_exceed_wall=True,
+        )
+        serial = measure._process_metrics(
+            resources,
+            wall_ns=200,
+            process_cpu_can_exceed_wall=False,
+        )
+        self.assertEqual(parallel["cpu_ns"], 120)
+        self.assertIsNone(parallel["blocked_ns"])
+        self.assertEqual(serial["blocked_ns"], 80)
 
     def test_warmups_and_invalid_samples_never_reach_the_comparison(self) -> None:
         samples = self._samples("job", "control", [1000] * 12)
@@ -299,6 +343,181 @@ class ScheduleTests(unittest.TestCase):
             self._variants(1), [measure.PROBE_JOBS["cold-scan-index"]], trials=3, warmups=2
         )
         self.assertEqual(sum(1 for *_rest, warmup in schedule if warmup), 2)
+
+    def test_exact_schedule_has_a_stable_content_digest(self) -> None:
+        variants = self._variants(2)
+        jobs = [measure.PROBE_JOBS["cold-scan-index"]]
+        schedule = measure._interleave(variants, jobs, trials=4, warmups=1)
+        self.assertEqual(
+            measure._schedule_sha256(schedule), measure._schedule_sha256(schedule)
+        )
+        self.assertNotEqual(
+            measure._schedule_sha256(schedule),
+            measure._schedule_sha256(list(reversed(schedule))),
+        )
+
+
+class EvidenceArchiveTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.scratch = Path(tempfile.mkdtemp(prefix="fdu-evidence-test-"))
+        self.addCleanup(shutil.rmtree, self.scratch, ignore_errors=True)
+
+    def test_archive_redacts_operator_tree_identity_but_preserves_samples(self) -> None:
+        document = {
+            "schema": measure.RUN_SCHEMA,
+            "tree": {
+                "label": "private-checkout",
+                "root_id": "a" * 64,
+                "engine_digest": "b" * 64,
+            },
+            "samples": [{"ordinal": 3, "metrics": {"wall_ns": 42}}],
+        }
+        destination = self.scratch / "run.json"
+        archived, digest = evidence.archive_run(
+            document,
+            destination=destination,
+            tree_label="reference-tree-60k",
+        )
+        self.assertEqual(archived["tree"]["label"], "reference-tree-60k")
+        self.assertNotEqual(archived["tree"]["root_id"], document["tree"]["root_id"])
+        self.assertEqual(archived["samples"], document["samples"])
+        self.assertEqual(len(digest), 64)
+
+    def test_archive_rejects_an_absolute_path_anywhere(self) -> None:
+        document = {
+            "tree": {"engine_digest": "b" * 64},
+            "note": "/private/reference-tree",
+        }
+        with self.assertRaises(evidence.EvidenceError):
+            evidence.archive_run(
+                document,
+                destination=self.scratch / "run.json",
+                tree_label="reference-tree",
+            )
+
+    def test_archive_rejects_an_embedded_absolute_path(self) -> None:
+        document = {
+            "tree": {"engine_digest": "b" * 64},
+            "note": "probe failed at /private/reference-tree/file.txt",
+        }
+        with self.assertRaises(evidence.EvidenceError):
+            evidence.archive_run(
+                document,
+                destination=self.scratch / "run.json",
+                tree_label="reference-tree",
+            )
+
+    def test_archive_never_overwrites_different_evidence(self) -> None:
+        destination = self.scratch / "run.json"
+        first = {"tree": {"engine_digest": "a" * 64}, "samples": []}
+        second = {"tree": {"engine_digest": "b" * 64}, "samples": []}
+        evidence.archive_run(first, destination=destination, tree_label="reference-tree")
+        with self.assertRaisesRegex(evidence.EvidenceError, "immutable evidence"):
+            evidence.archive_run(
+                second, destination=destination, tree_label="reference-tree"
+            )
+
+
+class BinaryProvenanceTests(unittest.TestCase):
+    def test_claim_manifest_is_normalized_into_binary_identity(self) -> None:
+        provenance = {
+            "schema": measure.BINARY_PROVENANCE_SCHEMA,
+            "engine_revision": "a" * 40,
+            "harness_revision": "b" * 40,
+            "harness_sha256": "c" * 64,
+            "target": "aarch64-apple-darwin",
+            "build_profile": "release",
+            "features": ["watch", "watch"],
+            "build_command": "cargo build --release --example perf_probe",
+        }
+        normalized = measure._validated_provenance(provenance)
+        self.assertEqual(normalized["features"], ["watch"])
+        self.assertEqual(normalized["engine_revision"], "a" * 40)
+
+    def test_incomplete_claim_manifest_is_rejected(self) -> None:
+        with self.assertRaises(measure.MeasureError):
+            measure._validated_provenance(
+                {"schema": measure.BINARY_PROVENANCE_SCHEMA}
+            )
+
+    def test_embedded_absolute_build_path_is_rejected(self) -> None:
+        provenance = {
+            "schema": measure.BINARY_PROVENANCE_SCHEMA,
+            "engine_revision": "a" * 40,
+            "harness_revision": "b" * 40,
+            "harness_sha256": "c" * 64,
+            "target": "aarch64-apple-darwin",
+            "build_profile": "release",
+            "features": [],
+            "build_command": "cargo build --manifest-path /private/repo/Cargo.toml",
+        }
+        with self.assertRaisesRegex(measure.MeasureError, "path-redacted"):
+            measure._validated_provenance(provenance)
+
+    def test_variant_binary_is_frozen_across_a_run(self) -> None:
+        scratch = Path(tempfile.mkdtemp(prefix="fdu-variant-freeze-test-"))
+        self.addCleanup(shutil.rmtree, scratch, ignore_errors=True)
+        binary = scratch / "probe"
+        binary.write_bytes(b"before")
+        variant = measure.Variant(name="candidate", path=binary)
+        frozen = measure._freeze_variant_identities([variant])
+        binary.write_bytes(b"after")
+        with self.assertRaisesRegex(measure.MeasureError, "changed"):
+            measure._assert_variants_unchanged([variant], frozen)
+
+    def test_variant_name_must_be_path_safe_and_unique(self) -> None:
+        variant = measure.Variant(name="../candidate", path=Path(__file__))
+        with self.assertRaisesRegex(measure.MeasureError, "path-safe"):
+            measure._freeze_variant_identities([variant])
+
+
+class SnapshotScaleTests(unittest.TestCase):
+    def test_oracle_covers_the_full_rollup_digest(self) -> None:
+        manifest = {
+            "counts": {"total": 3},
+            "sizes": {"entry_apparent_bytes": 7},
+            "oracle": {"engine_digest": "a" * 64, "rollup_digest": "b" * 64},
+        }
+        probe = {
+            "mode": "snapshot-load",
+            "source": "snapshot",
+            "summary": {
+                "entries": 3,
+                "index_len": 3,
+                "apparent_bytes": 7,
+                "engine_digest": "a" * 64,
+                "rollup_digest": "c" * 64,
+            },
+        }
+        reasons = scale._oracle_reasons(manifest, probe, mode="snapshot-load")
+        self.assertEqual(len(reasons), 1)
+        self.assertIn("rollup_digest", reasons[0])
+
+
+class CompatibilityProbeTests(unittest.TestCase):
+    def test_generator_removes_only_the_threads_parser_arm(self) -> None:
+        scratch = Path(tempfile.mkdtemp(prefix="fdu-compat-probe-test-"))
+        self.addCleanup(shutil.rmtree, scratch, ignore_errors=True)
+        source = scratch / "source.rs"
+        destination = scratch / "generated.rs"
+        source.write_text(
+            "before\n"
+            "                Some(\"--threads\") => {\n"
+            "                    scan.threads = Some(next_usize(&mut arguments, \"--threads\")?);\n"
+            "                }\n"
+            "after\n",
+            encoding="utf-8",
+        )
+        compat.write_pr2_base_probe(source, destination)
+        self.assertEqual(destination.read_text(encoding="utf-8"), "before\nafter\n")
+
+    def test_generator_fails_when_the_expected_source_drifted(self) -> None:
+        scratch = Path(tempfile.mkdtemp(prefix="fdu-compat-probe-test-"))
+        self.addCleanup(shutil.rmtree, scratch, ignore_errors=True)
+        source = scratch / "source.rs"
+        source.write_text("different\n", encoding="utf-8")
+        with self.assertRaises(compat.CompatibilityError):
+            compat.write_pr2_base_probe(source, scratch / "generated.rs")
 
 
 class ArgumentExpansionTests(unittest.TestCase):

@@ -19,7 +19,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Sequence
 
-from benchmarks.realtree import ledger, measure, profile, tree
+from benchmarks.realtree import compat, evidence, ledger, measure, profile, scale, tree
 
 DEFAULT_RESULTS = Path("benchmarks/results/realtree")
 DEFAULT_SCRATCH = Path("benchmarks/corpus/realtree-scratch")
@@ -45,6 +45,13 @@ def main(argv: Sequence[str]) -> int:
         required=True,
         metavar="NAME=PATH[:NOTES]",
         help="a probe binary under test; repeat, control first",
+    )
+    run.add_argument(
+        "--variant-metadata",
+        action="append",
+        default=[],
+        metavar="NAME=JSON",
+        help="claim-build provenance manifest for a named variant",
     )
     run.add_argument(
         "--reference",
@@ -94,6 +101,30 @@ def main(argv: Sequence[str]) -> int:
     rendered.add_argument("--profiles", type=Path)
     rendered.add_argument("--output", type=Path)
 
+    archived = subparsers.add_parser(
+        "archive", help="commit-safe copy of a raw run with paired samples"
+    )
+    archived.add_argument("--run", required=True, type=Path)
+    archived.add_argument("--output", required=True, type=Path)
+    archived.add_argument("--tree-label", required=True)
+
+    compatible = subparsers.add_parser(
+        "compat-probe", help="generate the v2 probe for the pre-threads PR base"
+    )
+    compatible.add_argument("--source", required=True, type=Path)
+    compatible.add_argument("--output", required=True, type=Path)
+
+    scale_run = subparsers.add_parser(
+        "snapshot-scale", help="measure v2 snapshot load on wide 10k-1M corpora"
+    )
+    scale_run.add_argument("--variant", required=True, metavar="NAME=PATH")
+    scale_run.add_argument("--variant-metadata", required=True, metavar="NAME=JSON")
+    scale_run.add_argument("--work-dir", required=True, type=Path)
+    scale_run.add_argument("--output", required=True, type=Path)
+    scale_run.add_argument("--scale", action="append", type=int, dest="scales")
+    scale_run.add_argument("--trials", type=int, default=5)
+    scale_run.add_argument("--warmups", type=int, default=1)
+
     arguments = parser.parse_args(list(argv))
     if arguments.command == "baseline":
         return _baseline(arguments)
@@ -101,6 +132,12 @@ def main(argv: Sequence[str]) -> int:
         return _measure(arguments)
     if arguments.command == "profile":
         return _profile(arguments)
+    if arguments.command == "archive":
+        return _archive(arguments)
+    if arguments.command == "compat-probe":
+        return _compat_probe(arguments)
+    if arguments.command == "snapshot-scale":
+        return _snapshot_scale(arguments)
     return _render(arguments)
 
 
@@ -117,7 +154,16 @@ def _baseline(arguments: argparse.Namespace) -> int:
 
 
 def _measure(arguments: argparse.Namespace) -> int:
-    variants = [_variant(item, kind="fdu-probe") for item in arguments.variant]
+    metadata = _variant_metadata(arguments.variant_metadata)
+    variants = [
+        _variant(item, kind="fdu-probe", provenance=metadata.get(_variant_name(item), {}))
+        for item in arguments.variant
+    ]
+    unknown_metadata = sorted(set(metadata) - {variant.name for variant in variants})
+    if unknown_metadata:
+        raise SystemExit(
+            "variant metadata names no measured variant: " + ", ".join(unknown_metadata)
+        )
     references = [_variant(item, kind="reference") for item in arguments.reference]
     jobs = [
         measure.PROBE_JOBS[job]
@@ -262,7 +308,56 @@ def _render(arguments: argparse.Namespace) -> int:
     return 0
 
 
-def _variant(specification: str, *, kind: str) -> measure.Variant:
+def _archive(arguments: argparse.Namespace) -> int:
+    document = json.loads(arguments.run.read_text(encoding="utf-8"))
+    _archived, digest = evidence.archive_run(
+        document,
+        destination=arguments.output,
+        tree_label=arguments.tree_label,
+    )
+    print(f"wrote {arguments.output}\nsha256 {digest}", file=sys.stderr)
+    return 0
+
+
+def _compat_probe(arguments: argparse.Namespace) -> int:
+    try:
+        compat.write_pr2_base_probe(arguments.source, arguments.output)
+    except compat.CompatibilityError as error:
+        raise SystemExit(str(error)) from error
+    print(f"wrote {arguments.output}", file=sys.stderr)
+    return 0
+
+
+def _snapshot_scale(arguments: argparse.Namespace) -> int:
+    metadata = _variant_metadata([arguments.variant_metadata])
+    name = _variant_name(arguments.variant)
+    if set(metadata) != {name}:
+        raise SystemExit("snapshot-scale metadata name must match its variant")
+    variant = _variant(
+        arguments.variant,
+        kind="fdu-probe",
+        provenance=metadata[name],
+    )
+    document = scale.run(
+        variant=variant,
+        work_directory=arguments.work_dir,
+        scales=arguments.scales or scale.DEFAULT_SCALES,
+        trials=arguments.trials,
+        warmups=arguments.warmups,
+    )
+    arguments.output.parent.mkdir(parents=True, exist_ok=True)
+    arguments.output.write_text(
+        json.dumps(document, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    invalid = sum(row["invalid_samples"] for row in document["scales"])
+    print(f"wrote {arguments.output}; invalid samples: {invalid}", file=sys.stderr)
+    return 0 if invalid == 0 else 2
+
+
+def _variant(
+    specification: str, *, kind: str, provenance: Dict[str, Any] | None = None
+) -> measure.Variant:
     """Parse ``NAME=PATH[ ARG...][:NOTES]``.
 
     Flags after the path let one binary be measured under several configurations in
@@ -285,7 +380,33 @@ def _variant(specification: str, *, kind: str) -> measure.Variant:
         kind=kind,
         notes=notes,
         extra_args=parts[1:],
+        provenance=provenance or {},
     )
+
+
+def _variant_name(specification: str) -> str:
+    name, separator, _remainder = specification.partition("=")
+    if not separator or not name:
+        raise SystemExit(f"variant {specification!r} must be NAME=PATH")
+    return name
+
+
+def _variant_metadata(specifications: Sequence[str]) -> Dict[str, Dict[str, Any]]:
+    metadata: Dict[str, Dict[str, Any]] = {}
+    for specification in specifications:
+        name, separator, path_text = specification.partition("=")
+        if not separator or not name or not path_text:
+            raise SystemExit(f"variant metadata {specification!r} must be NAME=JSON")
+        if name in metadata:
+            raise SystemExit(f"variant metadata for {name!r} was supplied twice")
+        path = Path(path_text)
+        if not path.is_file():
+            raise SystemExit(f"variant metadata file does not exist: {path}")
+        document = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(document, dict):
+            raise SystemExit(f"variant metadata for {name!r} must be a JSON object")
+        metadata[name] = document
+    return metadata
 
 
 def _print_headline(document: Dict[str, Any]) -> None:

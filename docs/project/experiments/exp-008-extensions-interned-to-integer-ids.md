@@ -12,8 +12,8 @@ experiment:
   hypotheses:
     - H18
   subject:
-    tree_label: metabrowser-clone
-    tree_root_id: dbd79ed9c898f7a2f66530cd95bb61cab88e798375134b86c77ece761de580a9
+    tree_label: reference-tree-60k
+    tree_root_id: 40406544ab63512154d1962a5c6bbe3bee60c1d3c6315f3b267b99871d03d825
     tree_engine_digest: bf574331eca680372f7060d4f9ab3b3b175afd265ac27bda6b6dc67ed9c80798
     tree_entries: 59654
     tree_directories: 7341
@@ -50,7 +50,13 @@ experiment:
       args: []
     toolchain: rustc 1.97.1 (8bab26f4f 2026-07-14)
     build_profile: release
-    run_artifact: benchmarks/results/realtree/run-exp007-009-portable-stack.json
+    evidence_grade: legacy
+    run_schema: fdu-realtree-run-v1
+    schedule: round-robin-by-ordinal-v1
+    schedule_sha256: null
+    schedule_seed: null
+    run_artifact: docs/project/experiments/evidence/exp-008-run.json
+    run_artifact_sha256: 4a85580b51418f829d6a805e56ac4905f5ae23499946a28a556f519ad2d651e3
   results:
     - job: cold-scan-index
       start_state: cold
@@ -308,28 +314,38 @@ experiment:
     new_failure_modes: []
     notes: "Ids are session-local by construction (snapshots store names; roll-ups rebuild on load), so the format is untouched. Cross-index RollUp equality now goes through by_ext_named — the one call site the type change forced honest. The run was noisy (load average 17, other agents building concurrently); the accept stands because the interval cleared zero anyway, and the cumulative re-measurement will confirm on a quiet machine."
   verdict:
-    decision: accepted
+    decision: superseded
     primary_job: cold-scan-index
     primary_metric: wall_ns
     change_pct: -15.652
-    reason: "cold-scan-index -15.65% [-32.77%, -0.78%] and warm-snapshot-load -6.90% [-14.79%, -4.24%], significant even in a run whose variance was inflated several-fold by machine load, with the placebo job unmoved"
+    reason: "The changed extension reducer was outside the v1 oracle and the public index-local ID design was unsound; the replacement keeps IDs private and exp-012 remeasures the final candidate with named roll-ups"
     commit: bb1529d
 ---
 # Extensions interned to integer ids
 
 ## Hypothesis
 
-H18: _state what you expected to be slow, why,
-and which metric would move._
+H18 predicted that cloning extension strings at every ancestor merge made extension
+tallies a significant cold-build and snapshot-load cost.
 
 ## What was tried
 
-_The smallest change that tests the hypothesis._
+The candidate interned extension names to integer IDs inside the index. The original
+change also exposed those owner-local IDs through public `RollUp`, which made public
+results order-dependent and foreign roll-ups unsafe. This branch retains interning only
+behind a self-describing named public boundary and reclaims unused IDs.
 
 ## What the numbers said
 
-_Read the tables in the frontmatter. Say what surprised you._
+The v1 run measured cold-scan wall 15.65% lower and snapshot-load wall 6.90% lower, but
+its oracle did not hash named per-directory extension tallies—the exact reducer that
+changed. That omission and subsequent cross-index/CI failures invalidate acceptance.
 
 ## Verdict
 
-**ACCEPTED** — cold-scan-index -15.65% [-32.77%, -0.78%] and warm-snapshot-load -6.90% [-14.79%, -4.24%], significant even in a run whose variance was inflated several-fold by machine load, with the placebo job unmoved
+**SUPERSEDED** — the public contract and oracle are corrected, and exp-012 measures the
+replacement rather than relying on this result.
+
+<!-- This document follows common-doc-guidelines.md.
+See github.com/jlevy/practical-prose and review guidelines before editing.
+-->

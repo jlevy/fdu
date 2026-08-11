@@ -170,6 +170,7 @@ class CorpusGenerationTests(unittest.TestCase):
             "mixed-metadata",
             "partial",
             "wide",
+            "wide-snapshot",
         )
         with tempfile.TemporaryDirectory() as temporary_directory:
             work_directory = Path(temporary_directory)
@@ -431,6 +432,26 @@ class CorpusSafetyTests(unittest.TestCase):
             manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
             with self.assertRaisesRegex(CorpusError, "manifest field 'oracle'"):
+                verify_corpus(run_root)
+
+    def test_manifest_rejects_forged_rollup_components_with_a_matching_hash(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            run_root = reserve_run_directory(Path(temporary_directory))
+            create_corpus(run_root, "balanced", target_entries=10)
+            manifest_path = run_root / "observed-corpus.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["oracle"]["rollup_digest_components"]["count"] += 1
+            manifest.pop("manifest_hash")
+            canonical = json.dumps(
+                manifest,
+                ensure_ascii=True,
+                separators=(",", ":"),
+                sort_keys=True,
+            ).encode("utf-8")
+            manifest["manifest_hash"] = hashlib.sha256(canonical).hexdigest()
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+            with self.assertRaisesRegex(CorpusError, "roll-up digest does not match"):
                 verify_corpus(run_root)
 
     def test_oversized_manifest_is_rejected_before_json_allocation(self) -> None:

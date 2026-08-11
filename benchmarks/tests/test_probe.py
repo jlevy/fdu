@@ -87,6 +87,13 @@ class FduProbeTests(unittest.TestCase):
         ] = "counts.files"
         cases.append(wrong_count)
 
+        wrong_rollup = copy.deepcopy(scan)
+        wrong_rollup["id"] = "negative/wrong-rollup"
+        wrong_rollup["validation"]["stdout_json"]["matches_manifest"][
+            "summary.rollup_digest"
+        ] = "oracle.engine_digest"
+        cases.append(wrong_rollup)
+
         wrong_source = copy.deepcopy(scan)
         wrong_source["id"] = "negative/wrong-source"
         wrong_source["validation"]["stdout_json"]["equals"]["source"] = "snapshot"
@@ -129,6 +136,7 @@ class FduProbeTests(unittest.TestCase):
         }
         self.assertIn("manifest mismatch", reasons_by_id["negative/wrong-digest"])
         self.assertIn("manifest mismatch", reasons_by_id["negative/wrong-count"])
+        self.assertIn("manifest mismatch", reasons_by_id["negative/wrong-rollup"])
         self.assertIn("value mismatch", reasons_by_id["negative/wrong-source"])
         self.assertIn(
             "snapshot postcondition", reasons_by_id["negative/wrong-snapshot-postcondition"]

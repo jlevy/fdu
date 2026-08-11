@@ -22,7 +22,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Sequence
 
-from benchmarks.realtree import experiment as experiment_model
+from benchmarks.realtree import evidence, experiment as experiment_model
 
 EXPERIMENTS_DIR = Path("docs/project/experiments")
 SCHEMA_NAME = "experiment.schema.yaml"
@@ -54,12 +54,44 @@ def main(argv: Sequence[str]) -> int:
     parser.add_argument("--complexity-note", default="")
     parser.add_argument("--control-variant", default=None)
     parser.add_argument("--candidate-variant", default=None)
+    parser.add_argument("--max-cpu-regression-pct", type=float, default=10.0)
+    parser.add_argument("--max-rss-regression-pct", type=float, default=10.0)
+    parser.add_argument(
+        "--resource-waiver",
+        default=None,
+        help="Product rationale for accepting a failed or unmeasured CPU/RSS guardrail.",
+    )
     parser.add_argument("--body", type=Path, help="Markdown body file; a stub is written otherwise")
     parser.add_argument("--output-dir", type=Path, default=EXPERIMENTS_DIR)
+    parser.add_argument(
+        "--evidence-grade",
+        choices=("claim-grade", "legacy"),
+        default="claim-grade",
+    )
+    parser.add_argument(
+        "--evidence-tree-label",
+        default="reference-tree",
+        help="Public, path-free label stored in the archived raw run.",
+    )
     parser.add_argument("--no-validate", action="store_true")
     arguments = parser.parse_args(list(argv))
 
     run = json.loads(arguments.run.read_text(encoding="utf-8"))
+    try:
+        headline = _headline(run, arguments)
+        verdict_evidence = _verdict_evidence(run, arguments, headline)
+    except ValueError as error:
+        parser.error(str(error))
+    evidence_path = arguments.output_dir / "evidence" / f"{arguments.id}-run.json"
+    try:
+        run, evidence_digest = evidence.archive_run(
+            run,
+            destination=evidence_path,
+            tree_label=arguments.evidence_tree_label,
+        )
+    except evidence.EvidenceError as error:
+        parser.error(str(error))
+
     payload = experiment_model.from_run(
         run,
         experiment_id=arguments.id,
@@ -67,7 +99,9 @@ def main(argv: Sequence[str]) -> int:
         hypotheses=arguments.hypotheses,
         control=arguments.control,
         candidate=arguments.candidate,
-        run_artifact=str(arguments.run),
+        run_artifact=_display_path(evidence_path),
+        run_artifact_sha256=evidence_digest,
+        evidence_grade=arguments.evidence_grade,
         control_variant=arguments.control_variant,
         candidate_variant=arguments.candidate_variant,
         complexity={
@@ -81,11 +115,16 @@ def main(argv: Sequence[str]) -> int:
             "decision": arguments.decision,
             "primary_job": arguments.primary_job,
             "primary_metric": arguments.primary_metric,
-            "change_pct": _headline(run, arguments),
+            "change_pct": headline,
             "reason": arguments.reason,
             "commit": arguments.commit,
+            **verdict_evidence,
         },
     )
+    try:
+        experiment_model.Experiment.model_validate(payload)
+    except ValueError as error:
+        parser.error(str(error))
 
     body = (
         arguments.body.read_text(encoding="utf-8")
@@ -109,22 +148,148 @@ def _headline(run: Mapping[str, Any], arguments: argparse.Namespace) -> Any:
     would report the wrong pair — the two-thread result for a four-thread experiment,
     say. The recorded variant names are the ones that decide.
     """
+    comparison = _selected_comparison(run, arguments)
+    if comparison is None:
+        return None
+    entry = comparison["metrics"].get(arguments.primary_metric)
+    if entry:
+        return entry["median_change_pct"]
+    return None
+
+
+def _selected_comparison(
+    run: Mapping[str, Any], arguments: argparse.Namespace
+) -> Any:
+    """Return exactly the comparison named by the recording arguments."""
     statistics = run["statistics"].get(arguments.primary_job)
     if not statistics:
         return None
     comparisons = statistics["comparisons"]
-    if arguments.control_variant and arguments.candidate_variant:
+    explicit = bool(arguments.control_variant) or bool(arguments.candidate_variant)
+    if explicit and not (
+        arguments.control_variant and arguments.candidate_variant
+    ):
+        raise ValueError(
+            "--control-variant and --candidate-variant must be supplied together"
+        )
+    if len(comparisons) > 1 and not explicit:
+        raise ValueError(
+            "a run with multiple comparisons requires --control-variant and "
+            "--candidate-variant"
+        )
+    if explicit:
         key = f"{arguments.candidate_variant}_vs_{arguments.control_variant}"
         comparison = comparisons.get(key)
-        if comparison:
-            entry = comparison["metrics"].get(arguments.primary_metric)
-            return entry["median_change_pct"] if entry else None
+        if comparison is None:
+            raise ValueError(f"run has no comparison named {key!r}")
+    elif len(comparisons) == 1:
+        comparison = next(iter(comparisons.values()))
+    else:
         return None
-    for comparison in comparisons.values():
-        entry = comparison["metrics"].get(arguments.primary_metric)
-        if entry:
-            return entry["median_change_pct"]
-    return None
+    return comparison
+
+
+def _verdict_evidence(
+    run: Mapping[str, Any], arguments: argparse.Namespace, headline: Any
+) -> Dict[str, Any]:
+    """Evaluate latency and resource costs as two explicit decision gates."""
+    if arguments.decision == "baseline":
+        return {
+            "latency_gate_passed": None,
+            "resource_guardrails": [],
+            "resource_waiver_reason": None,
+        }
+
+    comparison = _selected_comparison(run, arguments)
+    primary = (
+        (comparison or {}).get("metrics", {}).get(arguments.primary_metric) or {}
+    )
+    primary_interval = primary.get("ci95_change_pct") or [None, None]
+    significant_improvement = primary.get("significant_improvement")
+    if significant_improvement is None:
+        significant_improvement = bool(
+            primary_interval[1] is not None and primary_interval[1] < 0
+        )
+    latency_gate_passed = bool(
+        significant_improvement
+        and headline is not None
+        and headline <= -3.0
+    )
+    if arguments.decision == "accepted" and not latency_gate_passed:
+        raise ValueError(
+            "an accepted verdict requires a significant primary-metric improvement "
+            "of at least 3%"
+        )
+
+    guardrails = [
+        _resource_guardrail(
+            comparison,
+            metric="cpu_ns",
+            maximum_regression_pct=arguments.max_cpu_regression_pct,
+        ),
+        _resource_guardrail(
+            comparison,
+            metric="peak_rss_bytes",
+            maximum_regression_pct=arguments.max_rss_regression_pct,
+        ),
+    ]
+    disqualifying = [
+        guardrail
+        for guardrail in guardrails
+        if guardrail["status"] in {"failed", "not-measured"}
+    ]
+    waiver = arguments.resource_waiver
+    if arguments.decision == "accepted" and disqualifying and not waiver:
+        metrics = ", ".join(guardrail["metric"] for guardrail in disqualifying)
+        raise ValueError(
+            f"accepted verdict has failed or unmeasured resource guardrails ({metrics}); "
+            "supply --resource-waiver with the product rationale"
+        )
+    if arguments.decision == "accepted" and waiver:
+        for guardrail in disqualifying:
+            guardrail["status"] = "waived"
+            guardrail["reason"] = f"waived: {waiver}"
+
+    return {
+        "latency_gate_passed": latency_gate_passed,
+        "resource_guardrails": guardrails,
+        "resource_waiver_reason": waiver,
+    }
+
+
+def _resource_guardrail(
+    comparison: Any, *, metric: str, maximum_regression_pct: float
+) -> Dict[str, Any]:
+    if maximum_regression_pct < 0:
+        raise ValueError(f"{metric} regression threshold must be non-negative")
+    entry = (comparison or {}).get("metrics", {}).get(metric)
+    if not entry or entry.get("median_change_pct") is None:
+        return {
+            "metric": metric,
+            "maximum_regression_pct": maximum_regression_pct,
+            "observed_change_pct": None,
+            "ci95_low_pct": None,
+            "ci95_high_pct": None,
+            "status": "not-measured",
+            "reason": "no paired samples",
+        }
+    interval = entry.get("ci95_change_pct") or [None, None]
+    change = entry["median_change_pct"]
+    lower = interval[0]
+    failed = lower is not None and lower > maximum_regression_pct
+    return {
+        "metric": metric,
+        "maximum_regression_pct": maximum_regression_pct,
+        "observed_change_pct": change,
+        "ci95_low_pct": lower,
+        "ci95_high_pct": interval[1],
+        "status": "failed" if failed else "passed",
+        "reason": (
+            f"95% interval is wholly above the +{maximum_regression_pct:g}% limit"
+            if failed
+            else f"no statistically established regression above +{maximum_regression_pct:g}%"
+        ),
+    }
 
 
 def _render(payload: Mapping[str, Any], body: str) -> str:
@@ -234,25 +399,43 @@ def _slug(title: str) -> str:
 
 def _stub_body(payload: Mapping[str, Any]) -> str:
     verdict = payload["verdict"]
+    change = verdict.get("change_pct")
+    measured = "not comparative" if change is None else f"{change:+.2f}%"
     return f"""# {payload["title"]}
 
 ## Hypothesis
 
-{", ".join(payload["hypotheses"]) or "—"}: _state what you expected to be slow, why,
-and which metric would move._
+This run tested {", ".join(payload["hypotheses"]) or "a baseline measurement"} on the
+declared primary job and metric.
 
 ## What was tried
 
-_The smallest change that tests the hypothesis._
+Control: {payload["method"]["control"]}
+
+Candidate: {payload["method"]["candidate"]}
 
 ## What the numbers said
 
-_Read the tables in the frontmatter. Say what surprised you._
+The paired primary change was {measured}. The archived run contains the exact trial
+order, raw samples, invalid-sample reasons, and bootstrap inputs.
 
 ## Verdict
 
 **{verdict["decision"].upper()}** — {verdict["reason"]}
+
+<!-- This document follows common-doc-guidelines.md.
+See github.com/jlevy/practical-prose and review guidelines before editing.
+-->
 """
+
+
+def _display_path(path: Path) -> str:
+    """Prefer a repository-relative evidence link and never record a personal path."""
+    resolved = path.resolve()
+    try:
+        return str(resolved.relative_to(Path.cwd().resolve()))
+    except ValueError:
+        return f"evidence/{path.name}"
 
 
 def _validate(path: Path) -> int:

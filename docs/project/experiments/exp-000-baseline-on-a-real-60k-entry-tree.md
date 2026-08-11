@@ -11,8 +11,8 @@ experiment:
   date: 2026-08-10
   hypotheses: []
   subject:
-    tree_label: metabrowser-clone
-    tree_root_id: dbd79ed9c898f7a2f66530cd95bb61cab88e798375134b86c77ece761de580a9
+    tree_label: reference-tree-60k
+    tree_root_id: 40406544ab63512154d1962a5c6bbe3bee60c1d3c6315f3b267b99871d03d825
     tree_engine_digest: bf574331eca680372f7060d4f9ab3b3b175afd265ac27bda6b6dc67ed9c80798
     tree_entries: 59654
     tree_directories: 7341
@@ -49,7 +49,13 @@ experiment:
       args: []
     toolchain: ""
     build_profile: release
-    run_artifact: benchmarks/results/realtree/run-exp000-baseline.json
+    evidence_grade: legacy
+    run_schema: fdu-realtree-run-v1
+    schedule: round-robin-by-ordinal-v1
+    schedule_sha256: null
+    schedule_seed: null
+    run_artifact: docs/project/experiments/evidence/exp-000-run.json
+    run_artifact_sha256: 11e3ed935f0e7ffc2d2133f9b96b12fffda34dbcb2c0347865a148561d2c9605
   results:
     - job: cold-scan-index
       start_state: cold
@@ -385,17 +391,25 @@ experiment:
 
 ## Hypothesis
 
-—: _state what you expected to be slow, why,
-and which metric would move._
+This was a characterization run, not a candidate comparison. It established the cost
+of each product path on one warm APFS reference tree before the experiment series.
 
 ## What was tried
 
-_The smallest change that tests the hypothesis._
+One release probe ran every registered job for 12 measured ordinals after three
+warmups. The tree was fingerprinted before and after; variants were identical because
+the purpose was to establish distributions, not a delta.
 
 ## What the numbers said
 
-_Read the tables in the frontmatter. Say what surprised you._
+Cold scan, warm revalidation, snapshot load, and snapshot save separated filesystem,
+index, and serialization costs. The raw v1 pairs are now archived, but this run predates
+the full per-directory roll-up oracle, build manifests, and exact schedule digest.
 
 ## Verdict
 
 **BASELINE** — Establishes the reference numbers every later experiment is measured against
+
+<!-- This document follows common-doc-guidelines.md.
+See github.com/jlevy/practical-prose and review guidelines before editing.
+-->

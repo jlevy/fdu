@@ -12,8 +12,8 @@ experiment:
   hypotheses:
     - H9
   subject:
-    tree_label: metabrowser-clone
-    tree_root_id: dbd79ed9c898f7a2f66530cd95bb61cab88e798375134b86c77ece761de580a9
+    tree_label: reference-tree-60k
+    tree_root_id: 40406544ab63512154d1962a5c6bbe3bee60c1d3c6315f3b267b99871d03d825
     tree_engine_digest: bf574331eca680372f7060d4f9ab3b3b175afd265ac27bda6b6dc67ed9c80798
     tree_entries: 59654
     tree_directories: 7341
@@ -50,7 +50,13 @@ experiment:
       args: []
     toolchain: ""
     build_profile: release
-    run_artifact: benchmarks/results/realtree/run-exp002-parallel-revalidation.json
+    evidence_grade: legacy
+    run_schema: fdu-realtree-run-v1
+    schedule: round-robin-by-ordinal-v1
+    schedule_sha256: null
+    schedule_seed: null
+    run_artifact: docs/project/experiments/evidence/exp-002-run.json
+    run_artifact_sha256: 48c303d73f2c9f1e0b6c20173ad0a80b7c606a3cd6b75dd9a7914692995d9aea
   results:
     - job: cold-scan-index
       start_state: cold
@@ -260,17 +266,24 @@ experiment:
 
 ## Hypothesis
 
-H9: _state what you expected to be slow, why,
-and which metric would move._
+H9 predicted that applying the producer pool to the unchanged-tree revalidation sweep
+would reduce warm-start wall time enough to justify another concurrent path.
 
 ## What was tried
 
-_The smallest change that tests the hypothesis._
+The control kept exp-001's parallel cold scan and serial revalidation. The candidate
+routed revalidation through the same pool, adding roughly 180 lines of concurrency.
 
 ## What the numbers said
 
-_Read the tables in the frontmatter. Say what surprised you._
+Warm-revalidate wall improved 2.59% in the paired run. The direction was favorable, but
+the effect did not clear the predeclared 3% carrying-cost threshold; the extra machinery
+also did not change the N-stat verification floor.
 
 ## Verdict
 
 **REJECTED** — A real 2.59% but under the 3% bar, for roughly 180 lines of concurrency
+
+<!-- This document follows common-doc-guidelines.md.
+See github.com/jlevy/practical-prose and review guidelines before editing.
+-->

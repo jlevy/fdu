@@ -8,26 +8,16 @@ How the numbers were produced, what each metric means, and the rule that decides
 
 ## Where it stands
 
-Every accepted change together, measured against the pre-work baseline in one interleaved run of 16 paired trials (exp-006).
-
-| job | before | after | change | 95% interval |
-| --- | ---: | ---: | ---: | --- |
-| `cold-scan-index` | 631 ms | 321 ms | **-48.9%** | [-51.1%, -47.5%] |
-| `cold-scan-producer` | 959 ms | 465 ms | **-51.6%** | [-52.3%, -50.2%] |
-| `cold-snapshot-save` | 647 ms | 352 ms | **-46.2%** | [-48.6%, -45.1%] |
-| `warm-revalidate` | 804 ms | 688 ms | **-14.7%** | [-15.8%, -12.7%] |
-| `warm-snapshot-load` | 324 ms | 230 ms | **-29.1%** | [-29.6%, -28.1%] |
-
-Third-party tools on the same tree, for calibration only — they answer a slightly different question with different guarantees, and never enter the accept rule: `du` 350 ms, `dust` 220 ms.
+No claim-grade cumulative comparison is currently published. Legacy aggregate records remain below for audit history, not as current performance claims.
 
 ## Reproducing this
 
 **The tree.** Pinned by content, not by name.
 
-- Label `metabrowser-clone`, 59,654 entries (7,341 directories, 52,291 files, 22 symlinks), max depth 19.
+- Label `reference-tree-60k`, 59,654 entries (7,341 directories, 52,291 files, 22 symlinks), max depth 19.
 - 1.01 GiB apparent, 1.14 GiB allocated.
 - Content digest `bf574331eca680372f7060d4f9ab3b3b175afd265ac27bda6b6dc67ed9c80798` (`fdu-index-record-v1`). Two trees with this digest are the same tree in the same state.
-- Identified as `dbd79ed9c898f7a2…`, the SHA-256 of its path. The path itself is deliberately not recorded.
+- Archived identity `40406544ab635121…` is derived from the content digest; the operator's path hash is deliberately removed from the committed evidence.
 
 **The machine.**
 
@@ -36,7 +26,9 @@ Third-party tools on the same tree, for calibration only — they answer a sligh
 - Built with rustc 1.97.1 (8bab26f4f 2026-07-14), `release` profile.
 - OS page cache: warm-steady. Dropping it needs root, so runs that did not ask for that say so rather than implying a cold disk.
 
-Every run fingerprinted the tree before and after and confirmed it unchanged, and every trial's engine digest was checked against an independent oracle.
+All records are legacy evidence; they predate the full roll-up oracle and committed provenance contract and are not current performance claims.
+
+Evidence grade: **legacy**.
 
 ## Every experiment, including the failures
 
@@ -45,15 +37,15 @@ The rejected ones are the reusable part: they stop the next person spending a da
 | # | experiment | tests | primary job | change | verdict |
 | --- | --- | --- | --- | ---: | --- |
 | 000 | [Baseline on a real 60k-entry tree](#exp000--baseline-on-a-real-60kentry-tree) | — | `cold-scan-index` | — | 📏 baseline |
-| 001 | [Bounded parallel directory producer](#exp001--bounded-parallel-directory-producer) | H1 | `cold-scan-index` | -50.0% | ✅ accepted |
+| 001 | [Bounded parallel directory producer](#exp001--bounded-parallel-directory-producer) | H1 | `cold-scan-index` | -50.0% | ↩︎ superseded |
 | 002 | [Parallel revalidation sweep](#exp002--parallel-revalidation-sweep) | H9 | `warm-revalidate` | -2.6% | ❌ rejected |
 | 003 | [Skip journalling on the bootstrap apply path](#exp003--skip-journalling-on-the-bootstrap-apply-path) | H8 | `cold-scan-index` | +1.0% | ❌ rejected |
-| 004 | [Borrowed path components](#exp004--borrowed-path-components) | H5 | `warm-revalidate` | -9.4% | ✅ accepted |
-| 005 | [Snapshot load resolves through the parent](#exp005--snapshot-load-resolves-through-the-parent) | H10 | `warm-snapshot-load` | -18.6% | ✅ accepted |
-| 006 | [Cumulative effect of every accepted change](#exp006--cumulative-effect-of-every-accepted-change) | H1, H5, H10 | `cold-scan-index` | -48.9% | ✅ accepted |
-| 007 | [Direct reconcile reads expectations off entry ids](#exp007--direct-reconcile-reads-expectations-off-entry-ids) | H14 | `warm-revalidate` | -7.1% | ✅ accepted |
-| 008 | [Extensions interned to integer ids](#exp008--extensions-interned-to-integer-ids) | H18 | `cold-scan-index` | -15.7% | ✅ accepted |
-| 009 | [Single-pass checksum and parse on snapshot load](#exp009--singlepass-checksum-and-parse-on-snapshot-load) | H32 | `warm-snapshot-load` | -12.4% | ✅ accepted |
+| 004 | [Borrowed path components](#exp004--borrowed-path-components) | H5 | `warm-revalidate` | -9.4% | ↩︎ superseded |
+| 005 | [Snapshot load resolves through the parent](#exp005--snapshot-load-resolves-through-the-parent) | H10 | `warm-snapshot-load` | -18.6% | ↩︎ superseded |
+| 006 | [Cumulative effect of every accepted change](#exp006--cumulative-effect-of-every-accepted-change) | H1, H5, H10 | `cold-scan-index` | -48.9% | ↩︎ superseded |
+| 007 | [Direct reconcile reads expectations off entry ids](#exp007--direct-reconcile-reads-expectations-off-entry-ids) | H14 | `warm-revalidate` | -7.1% | ↩︎ superseded |
+| 008 | [Extensions interned to integer ids](#exp008--extensions-interned-to-integer-ids) | H18 | `cold-scan-index` | -15.7% | ↩︎ superseded |
+| 009 | [Single-pass checksum and parse on snapshot load](#exp009--singlepass-checksum-and-parse-on-snapshot-load) | H32 | `warm-snapshot-load` | -12.4% | ↩︎ superseded |
 | 010 | [Claim-list join and deferred path joins in reconcile](#exp010--claimlist-join-and-deferred-path-joins-in-reconcile) | H17 | `warm-revalidate` | -0.0% | ❌ rejected |
 | 011 | [One ancestor merge per same-parent insert run](#exp011--one-ancestor-merge-per-sameparent-insert-run) | H13 | `cold-scan-index` | -2.5% | ❌ rejected |
 
@@ -72,18 +64,20 @@ The rejected ones are the reusable part: they stop the next person spending a da
 | cpu (ms) | 605.3 |
 | user (ms) | 231.4 |
 | system (ms) | 373.6 |
-| blocked (ms) | 11.3 |
 | peak rss (MiB) | 32.0 |
+
+Blocked time is omitted: aggregate process CPU across worker threads cannot be subtracted from wall time as an off-CPU measurement.
 
 Other jobs, wall time: `cold-scan-producer` 932 ms, `cold-snapshot-save` 643 ms, `warm-revalidate` 795 ms, `warm-snapshot-load` 336 ms.
 
 **Baseline:** Establishes the reference numbers every later experiment is measured against.
 
 Full record: [`exp-000-baseline-on-a-real-60k-entry-tree.md`](../experiments/exp-000-baseline-on-a-real-60k-entry-tree.md)
+Raw paired samples: [`exp-000-run.json`](../experiments/evidence/exp-000-run.json)
 
 ### exp-001 — Bounded parallel directory producer
 
-✅ accepted · 2026-08-10 · H1 · commit `a0cc981`
+↩︎ superseded · 2026-08-10 · H1 · commit `a0cc981`
 
 Control: serial read_dir walker (--threads 1)
 
@@ -95,11 +89,12 @@ Candidate: four producer threads feeding one index consumer (--threads 4)
 | --- | ---: | ---: | ---: | --- |
 | wall (ms) | 621.8 | 310.8 | -50.03% | [-51.02%, -43.74%] |
 | component (ms) | 507.0 | 196.6 | -61.64% | [-62.78%, -54.77%] |
-| cpu (ms) | 612.0 | 973.6 | +58.05% (n.s.) | [+54.55%, +66.56%] |
-| user (ms) | 231.0 | 271.9 | +17.36% (n.s.) | [+16.39%, +22.58%] |
-| system (ms) | 379.4 | 702.6 | +83.50% (n.s.) | [+77.06%, +92.72%] |
-| blocked (ms) | 8.1 | 0.0 | -100.00% | [-100.00%, -100.00%] |
-| peak rss (MiB) | 31.7 | 34.1 | +7.49% (n.s.) | [+6.21%, +9.83%] |
+| cpu (ms) | 612.0 | 973.6 | +58.05% (significant regression) | [+54.55%, +66.56%] |
+| user (ms) | 231.0 | 271.9 | +17.36% (significant regression) | [+16.39%, +22.58%] |
+| system (ms) | 379.4 | 702.6 | +83.50% (significant regression) | [+77.06%, +92.72%] |
+| peak rss (MiB) | 31.7 | 34.1 | +7.49% (significant regression) | [+6.21%, +9.83%] |
+
+Blocked time is omitted: aggregate process CPU across worker threads cannot be subtracted from wall time as an off-CPU measurement.
 
 Other jobs, wall time: `cold-scan-producer` -50.7%, `warm-revalidate` +0.3% (n.s.).
 
@@ -107,9 +102,10 @@ Cost to carry: 210 lines; no new dependencies; new failure mode: a worker panic 
 
 std threads, one mutex-guarded work list, one channel. Producers still never touch the index. The sweep also measured 2, 6 and 8 threads: 6 matched 4 within noise and 8 was 4% worse, which is where the automatic cap of 6 comes from.
 
-**Accepted:** Halved cold-scan wall time with a 95% interval entirely below zero, no new dependency, and byte-identical engine digests at every thread count.
+**Superseded:** Legacy v1 evidence measured the latency win but did not preserve the full roll-up oracle, exact toolchain, source manifests, or schedule digest required for an accepted claim; exp-012 supersedes the cumulative performance decision.
 
 Full record: [`exp-001-bounded-parallel-directory-producer.md`](../experiments/exp-001-bounded-parallel-directory-producer.md)
+Raw paired samples: [`exp-001-run.json`](../experiments/evidence/exp-001-run.json)
 
 ### exp-002 — Parallel revalidation sweep
 
@@ -128,8 +124,9 @@ Candidate: revalidation sweep parallelized with the same worker pool
 | cpu (ms) | 801.1 | 780.5 | -2.36% (n.s.) | [-4.02%, +0.05%] |
 | user (ms) | 427.6 | 416.6 | -2.31% | [-3.31%, -1.79%] |
 | system (ms) | 371.8 | 365.3 | -1.64% (n.s.) | [-4.63%, +2.33%] |
-| blocked (ms) | 8.0 | 5.1 | -34.33% (n.s.) | [-69.52%, +11.33%] |
 | peak rss (MiB) | 32.3 | 32.5 | -0.05% (n.s.) | [-0.19%, +2.81%] |
+
+Blocked time is omitted: aggregate process CPU across worker threads cannot be subtracted from wall time as an off-CPU measurement.
 
 Other jobs, wall time: `cold-scan-index` -1.3% (n.s.), `warm-snapshot-load` -2.4%.
 
@@ -140,6 +137,7 @@ Reverted. The negative result is the value: it located the warm-path bottleneck 
 **Rejected:** A real 2.59% but under the 3% bar, for roughly 180 lines of concurrency.
 
 Full record: [`exp-002-parallel-revalidation-sweep.md`](../experiments/exp-002-parallel-revalidation-sweep.md)
+Raw paired samples: [`exp-002-run.json`](../experiments/evidence/exp-002-run.json)
 
 ### exp-003 — Skip journalling on the bootstrap apply path
 
@@ -158,8 +156,9 @@ Candidate: bootstrap applies directly, with no effective-op list and no journal 
 | cpu (ms) | 1283.5 | 1258.6 | -1.01% (n.s.) | [-5.47%, +4.70%] |
 | user (ms) | 282.5 | 270.3 | -3.27% | [-4.13%, -2.46%] |
 | system (ms) | 1002.2 | 978.1 | -0.26% (n.s.) | [-5.67%, +7.38%] |
-| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
 | peak rss (MiB) | 35.1 | 33.8 | -3.97% | [-4.81%, -2.64%] |
+
+Blocked time is omitted: aggregate process CPU across worker threads cannot be subtracted from wall time as an off-CPU measurement.
 
 Other jobs, wall time: `cold-snapshot-save` -4.9% (n.s.), `warm-revalidate` -2.3%.
 
@@ -170,10 +169,11 @@ Reverted. Useful negative result: the allocator cost the profile showed is in th
 **Rejected:** Removing roughly 120,000 path clones per scan produced no measurable change, so a duplicated arbitration loop was not worth carrying.
 
 Full record: [`exp-003-skip-journalling-on-the-bootstrap-apply-path.md`](../experiments/exp-003-skip-journalling-on-the-bootstrap-apply-path.md)
+Raw paired samples: [`exp-003-run.json`](../experiments/evidence/exp-003-run.json)
 
 ### exp-004 — Borrowed path components
 
-✅ accepted · 2026-08-11 · H5 · commit `bf7a05a`
+↩︎ superseded · 2026-08-11 · H5 · commit `bf7a05a`
 
 Control: HEAD a0cc981, components copied into owned OsStrings twice per operation
 
@@ -188,8 +188,9 @@ Candidate: components borrowed from the caller's path; validation allocates noth
 | cpu (ms) | 810.5 | 747.3 | -10.01% | [-11.06%, -8.70%] |
 | user (ms) | 431.9 | 356.1 | -18.56% | [-18.86%, -17.94%] |
 | system (ms) | 380.3 | 390.3 | +0.04% (n.s.) | [-2.15%, +2.37%] |
-| blocked (ms) | 7.8 | 16.2 | +50.13% (n.s.) | [+4.94%, +129.75%] |
 | peak rss (MiB) | 32.5 | 33.0 | +0.91% (n.s.) | [-0.22%, +1.64%] |
+
+Blocked time is omitted: aggregate process CPU across worker threads cannot be subtracted from wall time as an off-CPU measurement.
 
 Other jobs, wall time: `cold-scan-index` -1.1% (n.s.), `cold-snapshot-save` -0.7% (n.s.), `warm-snapshot-load` -17.8%.
 
@@ -197,13 +198,14 @@ Cost to carry: 38 lines; no new dependencies.
 
 A net simplification: one function returns borrowed slices, and one new predicate replaces an allocating check. The cold path did not move, which is the right result and a check on the story — after exp-001 it is bound by open and stat, so consumer work cannot show up there.
 
-**Accepted:** Warm revalidation 9.4% faster and snapshot load 17.8% faster, both with intervals entirely below zero, by deleting work rather than adding machinery.
+**Superseded:** The v1 run remains useful local evidence, but it lacks the full roll-up oracle, exact toolchain, source manifests, and schedule digest now required for an accepted claim; exp-012 supplies the true-base cumulative decision.
 
 Full record: [`exp-004-borrowed-path-components.md`](../experiments/exp-004-borrowed-path-components.md)
+Raw paired samples: [`exp-004-run.json`](../experiments/evidence/exp-004-run.json)
 
 ### exp-005 — Snapshot load resolves through the parent
 
-✅ accepted · 2026-08-11 · H10 · commit `954d27b`
+↩︎ superseded · 2026-08-11 · H10 · commit `954d27b`
 
 Control: HEAD bf7a05a, each record's path rebuilt and resolved from the root
 
@@ -227,13 +229,14 @@ Cost to carry: 34 lines; no new dependencies.
 
 The machine was busier during this run than the previous one: every absolute number moved by roughly 30%, including the third-party reference tool's. Paired interleaving is what keeps the comparison usable, and the jobs that should not have moved correctly reported no change with intervals wide enough to say so.
 
-**Accepted:** Snapshot load 18.6% faster with an interval entirely below zero, by using the parent id the format already provided instead of four ancestor walks per entry.
+**Superseded:** The v1 run predates the full roll-up oracle and claim-build provenance contract, and its real-tree topology did not establish wide-fanout scaling; exp-012 and the committed scale curve supersede the general claim.
 
 Full record: [`exp-005-snapshot-load-resolves-through-the-parent.md`](../experiments/exp-005-snapshot-load-resolves-through-the-parent.md)
+Raw paired samples: [`exp-005-run.json`](../experiments/evidence/exp-005-run.json)
 
 ### exp-006 — Cumulative effect of every accepted change
 
-✅ accepted · 2026-08-11 · H1, H5, H10 · commit `954d27b`
+↩︎ superseded · 2026-08-11 · H1, H5, H10 · commit `954d27b`
 
 Control: main @ b565882, before any of this work
 
@@ -245,11 +248,12 @@ Candidate: HEAD 954d27b: exp-001, exp-004 and exp-005 together
 | --- | ---: | ---: | ---: | --- |
 | wall (ms) | 630.7 | 320.9 | -48.91% | [-51.13%, -47.52%] |
 | component (ms) | 507.4 | 202.1 | -61.11% | [-61.90%, -59.29%] |
-| cpu (ms) | 612.5 | 1266.6 | +104.13% (n.s.) | [+100.93%, +108.56%] |
-| user (ms) | 231.7 | 253.2 | +8.81% (n.s.) | [+7.82%, +10.43%] |
-| system (ms) | 379.9 | 1006.4 | +161.31% (n.s.) | [+157.21%, +166.31%] |
-| blocked (ms) | 11.1 | 0.0 | -100.00% | [-100.00%, -100.00%] |
-| peak rss (MiB) | 31.9 | 34.8 | +9.21% (n.s.) | [+8.85%, +9.56%] |
+| cpu (ms) | 612.5 | 1266.6 | +104.13% (significant regression) | [+100.93%, +108.56%] |
+| user (ms) | 231.7 | 253.2 | +8.81% (significant regression) | [+7.82%, +10.43%] |
+| system (ms) | 379.9 | 1006.4 | +161.31% (significant regression) | [+157.21%, +166.31%] |
+| peak rss (MiB) | 31.9 | 34.8 | +9.21% (significant regression) | [+8.85%, +9.56%] |
+
+Blocked time is omitted: aggregate process CPU across worker threads cannot be subtracted from wall time as an off-CPU measurement.
 
 Other jobs, wall time: `cold-scan-producer` -51.6%, `cold-snapshot-save` -46.2%, `warm-revalidate` -14.7%, `warm-snapshot-load` -29.1%.
 
@@ -257,13 +261,14 @@ Cost to carry: 282 lines; no new dependencies.
 
 Not a change of its own: this is the three accepted changes measured together against the pre-work baseline, which is the only comparison that can honestly be called a total. Summing the individual experiments would not be, since each had a different control on a differently loaded machine.
 
-**Accepted:** Every measured job improved significantly in one interleaved run against the original baseline, with no sample rejected by the oracle.
+**Superseded:** This control was b565882 rather than the PR base fdd9e523, covered only three later changes, hid significant resource regressions, and used the v1 oracle; exp-012 is the replacement true-base cumulative record.
 
 Full record: [`exp-006-cumulative-effect-of-every-accepted-change.md`](../experiments/exp-006-cumulative-effect-of-every-accepted-change.md)
+Raw paired samples: [`exp-006-run.json`](../experiments/evidence/exp-006-run.json)
 
 ### exp-007 — Direct reconcile reads expectations off entry ids
 
-✅ accepted · 2026-08-11 · H14 · commit `92d6212`
+↩︎ superseded · 2026-08-11 · H14 · commit `92d6212`
 
 Control: HEAD c428fbd: exclusive reconcile re-derives child expectations through path joins and root descents
 
@@ -278,8 +283,9 @@ Candidate: ReconcileTarget::Direct routed through collect_child_expectations; th
 | cpu (ms) | 701.3 | 655.9 | -5.84% | [-8.53%, -5.70%] |
 | user (ms) | 312.1 | 265.4 | -15.10% | [-15.43%, -14.38%] |
 | system (ms) | 388.0 | 389.8 | +1.06% (n.s.) | [-2.60%, +1.48%] |
-| blocked (ms) | 10.7 | 7.4 | -31.94% | [-39.47%, -19.85%] |
 | peak rss (MiB) | 32.4 | 32.4 | -0.34% (n.s.) | [-0.77%, +0.46%] |
+
+Blocked time is omitted: aggregate process CPU across worker threads cannot be subtracted from wall time as an off-CPU measurement.
 
 Other jobs, wall time: `warm-snapshot-load` +5.7% (n.s.).
 
@@ -287,13 +293,14 @@ Cost to carry: 14 lines; no new dependencies.
 
 A net -10-line dispatch change; the equivalence test locking the two reconcile paths together is what lets the slow twin be deleted rather than maintained. First measured under load average 17 (interval spanned zero), committed then as a simplification, and confirmed as a real win on the quiet re-run.
 
-**Accepted:** Quiet-machine re-run: warm-revalidate wall -7.09% with 95% interval [-8.92%, -5.76%] over 20 paired trials; the first, load-average-17 run was underpowered, not wrong.
+**Superseded:** The quiet v1 run preserved useful raw pairs and its toolchain, but not the full roll-up oracle, exact build manifests, or schedule digest required for a current acceptance; exp-012 carries the cumulative disposition.
 
 Full record: [`exp-007-direct-reconcile-reads-expectations-off-entry-ids.md`](../experiments/exp-007-direct-reconcile-reads-expectations-off-entry-ids.md)
+Raw paired samples: [`exp-007-run.json`](../experiments/evidence/exp-007-run.json)
 
 ### exp-008 — Extensions interned to integer ids
 
-✅ accepted · 2026-08-11 · H18 · commit `bb1529d`
+↩︎ superseded · 2026-08-11 · H18 · commit `bb1529d`
 
 Control: exp-007 build: by_ext keyed by owned String, cloned at every ancestor merge
 
@@ -308,8 +315,9 @@ Candidate: by_ext keyed by u32 ExtId; names interned once per index at insert, r
 | cpu (ms) | 1065.6 | 1078.0 | -0.17% (n.s.) | [-2.54%, +5.79%] |
 | user (ms) | 265.2 | 248.2 | -6.31% | [-9.03%, -5.53%] |
 | system (ms) | 802.1 | 826.7 | +1.43% (n.s.) | [-1.90%, +9.86%] |
-| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
 | peak rss (MiB) | 36.6 | 33.5 | -10.22% | [-14.06%, -7.10%] |
+
+Blocked time is omitted: aggregate process CPU across worker threads cannot be subtracted from wall time as an off-CPU measurement.
 
 Other jobs, wall time: `cold-scan-producer` -3.1% (n.s.), `warm-revalidate` -4.5% (n.s.), `warm-snapshot-load` -6.9%.
 
@@ -317,13 +325,14 @@ Cost to carry: 120 lines; no new dependencies.
 
 Ids are session-local by construction (snapshots store names; roll-ups rebuild on load), so the format is untouched. Cross-index RollUp equality now goes through by_ext_named — the one call site the type change forced honest. The run was noisy (load average 17, other agents building concurrently); the accept stands because the interval cleared zero anyway, and the cumulative re-measurement will confirm on a quiet machine.
 
-**Accepted:** cold-scan-index -15.65% [-32.77%, -0.78%] and warm-snapshot-load -6.90% [-14.79%, -4.24%], significant even in a run whose variance was inflated several-fold by machine load, with the placebo job unmoved.
+**Superseded:** The changed extension reducer was outside the v1 oracle and the public index-local ID design was unsound; the replacement keeps IDs private and exp-012 remeasures the final candidate with named roll-ups.
 
 Full record: [`exp-008-extensions-interned-to-integer-ids.md`](../experiments/exp-008-extensions-interned-to-integer-ids.md)
+Raw paired samples: [`exp-008-run.json`](../experiments/evidence/exp-008-run.json)
 
 ### exp-009 — Single-pass checksum and parse on snapshot load
 
-✅ accepted · 2026-08-11 · H32 · commit `9f4f029`
+↩︎ superseded · 2026-08-11 · H32 · commit `9f4f029`
 
 Control: exp-008 build: CRC pass over the whole image, seek to zero, second pass to parse
 
@@ -347,9 +356,10 @@ Cost to carry: 60 lines; no new dependencies.
 
 Net-negative lines: the two-pass helper is deleted. Fail-closed unchanged - the index is returned only after the digest over the complete payload matches, and structural corruption is still caught by the parser's own checks. The wall-vs-component ruling is codified in the loop guide: a pre-registered signal may be the accept metric; a post-hoc metric switch is never an accept.
 
-**Accepted:** Accepted on the pre-registered signal: the research registry declared this hypothesis's predicted signal as warm-snapshot-load component_ns -15-25%, and the quiet re-run measured -12.38% [-22.85%, -4.71%] with cpu and user cpu significantly down; wall spans zero only because probe spawn and the untimed oracle digest are half that job's wall.
+**Superseded:** The pre-registered component result remains useful legacy evidence, but the v1 run lacks exact build manifests and the full roll-up oracle required for acceptance; exp-012 carries the final cumulative disposition.
 
 Full record: [`exp-009-single-pass-checksum-and-parse-on-snapshot-load.md`](../experiments/exp-009-single-pass-checksum-and-parse-on-snapshot-load.md)
+Raw paired samples: [`exp-009-run.json`](../experiments/evidence/exp-009-run.json)
 
 ### exp-010 — Claim-list join and deferred path joins in reconcile
 
@@ -368,8 +378,9 @@ Candidate: sorted claim-list with binary search; the path join deferred until an
 | cpu (ms) | 694.3 | 691.2 | -0.05% (n.s.) | [-1.32%, +1.14%] |
 | user (ms) | 280.1 | 276.4 | -1.41% | [-1.81%, -0.28%] |
 | system (ms) | 414.4 | 415.2 | +1.03% (n.s.) | [-1.00%, +2.19%] |
-| blocked (ms) | 4.5 | 4.5 | +4.07% (n.s.) | [-14.30%, +18.67%] |
 | peak rss (MiB) | 30.5 | 30.6 | +0.54% (n.s.) | [-1.00%, +1.87%] |
+
+Blocked time is omitted: aggregate process CPU across worker threads cannot be subtracted from wall time as an off-CPU measurement.
 
 Other jobs, wall time: `cold-scan-index` +1.5% (n.s.), `cold-scan-producer` -0.9% (n.s.).
 
@@ -380,6 +391,7 @@ Reverted. Useful negative: the portable warm path's userland slack is spent - wh
 **Rejected:** Nothing there: -0.03% with a tight interval [-1.37%, +1.64%] over 16 quiet paired trials; after H14 the expectation map already read straight off entry ids, and the remaining allocations are noise next to one fstatat per entry.
 
 Full record: [`exp-010-claim-list-join-and-deferred-path-joins-in-reconcile.md`](../experiments/exp-010-claim-list-join-and-deferred-path-joins-in-reconcile.md)
+Raw paired samples: [`exp-010-run.json`](../experiments/evidence/exp-010-run.json)
 
 ### exp-011 — One ancestor merge per same-parent insert run
 
@@ -398,8 +410,9 @@ Candidate: consecutive same-parent inserts accumulate contributions locally; one
 | cpu (ms) | 1256.9 | 1204.0 | -2.14% | [-5.42%, -0.29%] |
 | user (ms) | 282.1 | 271.6 | -3.66% | [-4.95%, -1.61%] |
 | system (ms) | 968.7 | 933.4 | -1.83% (n.s.) | [-6.62%, +0.46%] |
-| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
 | peak rss (MiB) | 33.0 | 32.6 | -1.47% (n.s.) | [-2.22%, +0.14%] |
+
+Blocked time is omitted: aggregate process CPU across worker threads cannot be subtracted from wall time as an off-CPU measurement.
 
 Other jobs, wall time: `cold-scan-producer` -0.3% (n.s.), `warm-revalidate` -0.7%.
 
@@ -410,6 +423,7 @@ Reverted. The interaction is the finding: merge-batching and key-interning compe
 **Rejected:** Direction right but under the bar: -2.53% [-8.39%, +0.23%] on cold scan; H18 already removed the expensive part of each merge, so cutting ~520k merges to ~73k amortized work that had become a few integer adds.
 
 Full record: [`exp-011-one-ancestor-merge-per-same-parent-insert-run.md`](../experiments/exp-011-one-ancestor-merge-per-same-parent-insert-run.md)
+Raw paired samples: [`exp-011-run.json`](../experiments/evidence/exp-011-run.json)
 
 
 <!-- This document follows common-doc-guidelines.md.

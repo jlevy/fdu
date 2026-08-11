@@ -15,6 +15,7 @@ instead of quietly contributing a wrong row.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import subprocess
 import sys
@@ -42,6 +43,14 @@ _DECISION_MARK = {
     "superseded": "↩︎ superseded",
     "in-progress": "⏳ in progress",
     "baseline": "📏 baseline",
+}
+
+_PARALLEL_CPU_JOBS = {
+    "cold-scan-index",
+    "cold-scan-producer",
+    "cold-scan-producer-raw",
+    "cold-snapshot-save",
+    "warm-revalidate",
 }
 
 
@@ -78,7 +87,90 @@ def _read(path: Path) -> Dict[str, Any]:
     payload = document.get("values")
     if not isinstance(payload, dict) or "verdict" not in payload:
         raise SummaryError(f"{path}: no experiment payload")
+    _verify_archived_evidence(payload, path)
     return payload
+
+
+def _verify_archived_evidence(payload: Mapping[str, Any], artifact: Path) -> None:
+    """Claim-grade records must resolve to the exact committed raw sample bundle."""
+    method = payload.get("method") or {}
+    if method.get("evidence_grade") != "claim-grade":
+        return
+    display_path = method.get("run_artifact")
+    expected_digest = method.get("run_artifact_sha256")
+    if not display_path or not expected_digest:
+        raise SummaryError(f"{artifact}: claim-grade record has no archived run digest")
+    path = Path(display_path)
+    if path.is_absolute() or ".." in path.parts:
+        raise SummaryError(f"{artifact}: archived run path must be repository-relative")
+    if path.parts[:3] != ("docs", "project", "experiments") or "evidence" not in path.parts:
+        raise SummaryError(f"{artifact}: archived run must live under experiment evidence")
+    if not path.is_file():
+        raise SummaryError(f"{artifact}: archived run does not resolve: {path}")
+    actual_digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    if actual_digest != expected_digest:
+        raise SummaryError(f"{artifact}: archived run digest does not match {path}")
+    run = json.loads(path.read_text(encoding="utf-8"))
+    if run.get("schema") != method.get("run_schema"):
+        raise SummaryError(f"{artifact}: archived run schema does not match frontmatter")
+    conditions = run.get("conditions") or {}
+    if conditions.get("schedule_sha256") != method.get("schedule_sha256"):
+        raise SummaryError(f"{artifact}: archived schedule digest does not match frontmatter")
+    if _schedule_sha256(run.get("samples") or []) != conditions.get("schedule_sha256"):
+        raise SummaryError(f"{artifact}: archived sample order does not match its schedule digest")
+    if conditions.get("schedule") != method.get("schedule"):
+        raise SummaryError(f"{artifact}: archived schedule algorithm does not match frontmatter")
+    for field_name in ("trials", "warmups"):
+        if conditions.get(field_name) != method.get(field_name):
+            raise SummaryError(f"{artifact}: archived {field_name} does not match frontmatter")
+    if (run.get("host") or {}).get("toolchain") != method.get("toolchain"):
+        raise SummaryError(f"{artifact}: archived toolchain does not match frontmatter")
+
+    subject = payload.get("subject") or {}
+    tree = run.get("tree") or {}
+    if tree.get("engine_digest") != subject.get("tree_engine_digest"):
+        raise SummaryError(f"{artifact}: archived tree digest does not match frontmatter")
+    if bool(run.get("tree_mutated_during_run")) != bool(
+        subject.get("tree_mutated_during_run")
+    ):
+        raise SummaryError(f"{artifact}: archived tree-mutation state does not match frontmatter")
+    if run.get("baseline_drift"):
+        raise SummaryError(f"{artifact}: claim-grade run drifted from its declared baseline")
+
+    variants = run.get("variants") or {}
+    for role in ("control", "candidate"):
+        binary = method.get(f"{role}_binary") or {}
+        identity = variants.get(binary.get("name")) or {}
+        for field_name in (
+            "sha256",
+            "size_bytes",
+            "args",
+            "engine_revision",
+            "harness_revision",
+            "harness_sha256",
+            "target",
+            "build_profile",
+            "features",
+            "build_command",
+        ):
+            if identity.get(field_name) != binary.get(field_name):
+                raise SummaryError(
+                    f"{artifact}: archived {role} {field_name} does not match frontmatter"
+                )
+
+
+def _schedule_sha256(samples: Sequence[Mapping[str, Any]]) -> str:
+    rows = [
+        {
+            "job": sample.get("job"),
+            "ordinal": sample.get("ordinal"),
+            "variant": sample.get("variant"),
+            "warmup": sample.get("warmup"),
+        }
+        for sample in samples
+    ]
+    encoded = json.dumps(rows, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def render(experiments: Sequence[Mapping[str, Any]]) -> str:
@@ -129,16 +221,25 @@ def _headline(experiments: Sequence[Mapping[str, Any]]) -> List[str]:
     against a different control on a differently loaded machine.
     """
     cumulative = [
-        item for item in experiments if "cumulative" in item["title"].lower()
+        item
+        for item in experiments
+        if "cumulative" in item["title"].lower()
+        and item.get("method", {}).get("evidence_grade") == "claim-grade"
     ]
     if not cumulative:
-        return []
+        return [
+            "## Where it stands",
+            "",
+            "No claim-grade cumulative comparison is currently published. Legacy aggregate "
+            "records remain below for audit history, not as current performance claims.",
+            "",
+        ]
     latest = cumulative[-1]
     lines = ["## Where it stands", ""]
     lines.append(
-        f"Every accepted change together, measured against the pre-work baseline in "
-        f"one interleaved run of {latest['method']['trials']} paired trials "
-        f"({latest['id']})."
+        f"The frozen candidate was measured against its declared true base in one "
+        f"interleaved run of {latest['method']['trials']} paired trials "
+        f"({latest['id']}, {latest['verdict']['decision']})."
     )
     lines.append("")
     lines.append("| job | before | after | change | 95% interval |")
@@ -198,8 +299,9 @@ def _conditions(experiments: Sequence[Mapping[str, Any]]) -> List[str]:
             "in the same state."
         )
     lines.append(
-        f"- Identified as `{subject['tree_root_id'][:16]}…`, the SHA-256 of its path. "
-        "The path itself is deliberately not recorded."
+        f"- Archived identity `{subject['tree_root_id'][:16]}…` is derived from the "
+        "content digest; the operator's path hash is deliberately removed from the "
+        "committed evidence."
     )
     lines.append("")
     lines.append("**The machine.**")
@@ -231,12 +333,24 @@ def _conditions(experiments: Sequence[Mapping[str, Any]]) -> List[str]:
             f"**The tree changed mid-run for {', '.join(mutated)}; those numbers are "
             "not comparable.**"
         )
+    elif any(
+        item.get("method", {}).get("evidence_grade") == "claim-grade"
+        for item in experiments
+    ):
+        lines.append(
+            "Claim-grade runs fingerprinted the tree before and after, preserved the "
+            "raw paired samples, and checked every trial's entry and per-directory "
+            "roll-up digests against an independent oracle. Legacy v1 runs below did "
+            "not satisfy that full contract and are labeled accordingly."
+        )
     else:
         lines.append(
-            "Every run fingerprinted the tree before and after and confirmed it "
-            "unchanged, and every trial's engine digest was checked against an "
-            "independent oracle."
+            "All records are legacy evidence; they predate the full roll-up oracle and "
+            "committed provenance contract and are not current performance claims."
         )
+    lines.append("")
+    grade = method.get("evidence_grade", "legacy")
+    lines.append(f"Evidence grade: **{grade}**.")
     lines.append("")
     return lines
 
@@ -303,6 +417,8 @@ def _section(experiment: Mapping[str, Any]) -> List[str]:
             lines.append("| metric | control | candidate | change | 95% interval |")
             lines.append("| --- | ---: | ---: | ---: | --- |")
         for key, label, unit in METRIC_COLUMNS:
+            if key == "blocked_ns" and primary["job"] in _PARALLEL_CPU_JOBS:
+                continue
             entry = primary["metrics"].get(key)
             if not entry:
                 continue
@@ -314,10 +430,16 @@ def _section(experiment: Mapping[str, Any]) -> List[str]:
                 f"| {label} ({unit}) "
                 f"| {_value(entry['control_median'], unit)} "
                 f"| {_value(entry['candidate_median'], unit)} "
-                f"| {entry['change_pct']:+.2f}%{'' if entry.get('significant') else ' (n.s.)'} "
+                f"| {entry['change_pct']:+.2f}%{_statistical_suffix(entry)} "
                 + (f"| [{low:+.2f}%, {high:+.2f}%] |" if low is not None else "| — |")
             )
         lines.append("")
+        if primary["job"] in _PARALLEL_CPU_JOBS:
+            lines.append(
+                "Blocked time is omitted: aggregate process CPU across worker threads "
+                "cannot be subtracted from wall time as an off-CPU measurement."
+            )
+            lines.append("")
 
     others = [
         r
@@ -333,7 +455,7 @@ def _section(experiment: Mapping[str, Any]) -> List[str]:
                     f"`{result['job']}` {entry['control_median'] / 1e6:.0f} ms"
                 )
             else:
-                mark = "" if entry.get("significant") else " (n.s.)"
+                mark = _statistical_suffix(entry)
                 summaries.append(
                     f"`{result['job']}` {entry['change_pct']:+.1f}%{mark}"
                 )
@@ -349,6 +471,26 @@ def _section(experiment: Mapping[str, Any]) -> List[str]:
         lines.append("")
 
     if not is_baseline:
+        latency_gate = verdict.get("latency_gate_passed")
+        if latency_gate is not None:
+            lines.append(
+                "Latency gate: " + ("**passed**." if latency_gate else "**failed**.")
+            )
+            lines.append("")
+        guardrails = verdict.get("resource_guardrails") or []
+        if guardrails:
+            lines.append("Resource guardrails:")
+            lines.append("")
+            for guardrail in guardrails:
+                change = guardrail.get("observed_change_pct")
+                observed = "unmeasured" if change is None else f"{change:+.2f}%"
+                lines.append(
+                    f"- `{guardrail['metric']}`: **{guardrail['status']}** "
+                    f"(observed {observed}; limit "
+                    f"+{guardrail['maximum_regression_pct']:g}%) — "
+                    f"{guardrail['reason']}."
+                )
+            lines.append("")
         complexity = experiment["complexity"]
         cost = [f"{complexity['lines_changed']} lines"]
         cost.append(
@@ -370,8 +512,35 @@ def _section(experiment: Mapping[str, Any]) -> List[str]:
     lines.append("")
     name = Path(experiment["_path"]).name
     lines.append(f"Full record: [`{name}`](../experiments/{name})")
+    if method.get("run_artifact"):
+        raw_name = Path(method["run_artifact"]).name
+        lines.append(
+            f"Raw paired samples: [`{raw_name}`](../experiments/evidence/{raw_name})"
+        )
     lines.append("")
     return lines
+
+
+def _statistical_suffix(entry: Mapping[str, Any]) -> str:
+    """Render significance without treating a clear regression as noise."""
+    change = entry.get("change_pct")
+    direction = entry.get("direction") or (
+        "improvement" if change is not None and change < 0
+        else "regression" if change is not None and change > 0
+        else "unchanged"
+    )
+    ci_excludes_zero = entry.get("ci_excludes_zero")
+    if ci_excludes_zero is None:
+        low = entry.get("ci95_low_pct")
+        high = entry.get("ci95_high_pct")
+        ci_excludes_zero = (
+            low is not None and high is not None and (high < 0 or low > 0)
+        )
+    if not ci_excludes_zero:
+        return " (n.s.)"
+    if direction == "regression":
+        return " (significant regression)"
+    return ""
 
 
 def _value(value: float, unit: str) -> str:

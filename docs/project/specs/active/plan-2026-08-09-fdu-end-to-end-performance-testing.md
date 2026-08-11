@@ -260,7 +260,7 @@ benchmarks/
 ├── corpora.json              parametric recipes and scale points
 ├── schema/
 │   ├── scenario-v1.schema.json
-│   ├── observed-corpus-v1.schema.json
+│   ├── observed-corpus-v2.schema.json
 │   └── result-v1.schema.json
 ├── generate.py               deterministic corpus creation and transition application
 ├── run.py                    direct-argv state-machine runner and collectors

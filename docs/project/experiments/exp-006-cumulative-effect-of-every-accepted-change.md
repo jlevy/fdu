@@ -14,8 +14,8 @@ experiment:
     - H5
     - H10
   subject:
-    tree_label: metabrowser-clone
-    tree_root_id: dbd79ed9c898f7a2f66530cd95bb61cab88e798375134b86c77ece761de580a9
+    tree_label: reference-tree-60k
+    tree_root_id: 40406544ab63512154d1962a5c6bbe3bee60c1d3c6315f3b267b99871d03d825
     tree_engine_digest: bf574331eca680372f7060d4f9ab3b3b175afd265ac27bda6b6dc67ed9c80798
     tree_entries: 59654
     tree_directories: 7341
@@ -52,7 +52,13 @@ experiment:
       args: []
     toolchain: ""
     build_profile: release
-    run_artifact: benchmarks/results/realtree/run-exp006-cumulative.json
+    evidence_grade: legacy
+    run_schema: fdu-realtree-run-v1
+    schedule: round-robin-by-ordinal-v1
+    schedule_sha256: null
+    schedule_seed: null
+    run_artifact: docs/project/experiments/evidence/exp-006-run.json
+    run_artifact_sha256: dc7240af98dcfc0178156d2a05cbe3f7d920a6ecda74f1dd1a5af43351ac49dc
   results:
     - job: cold-scan-index
       start_state: cold
@@ -377,28 +383,39 @@ experiment:
     new_failure_modes: []
     notes: "Not a change of its own: this is the three accepted changes measured together against the pre-work baseline, which is the only comparison that can honestly be called a total. Summing the individual experiments would not be, since each had a different control on a differently loaded machine."
   verdict:
-    decision: accepted
+    decision: superseded
     primary_job: cold-scan-index
     primary_metric: wall_ns
     change_pct: -48.909
-    reason: "Every measured job improved significantly in one interleaved run against the original baseline, with no sample rejected by the oracle"
+    reason: "This control was b565882 rather than the PR base fdd9e523, covered only three later changes, hid significant resource regressions, and used the v1 oracle; exp-012 is the replacement true-base cumulative record"
     commit: 954d27b
 ---
 # Cumulative effect of every accepted change
 
 ## Hypothesis
 
-H1, H5, H10: _state what you expected to be slow, why,
-and which metric would move._
+H1, H5, and H10 predicted that the bounded producer, borrowed path components, and
+parent-relative snapshot load would improve the product paths together rather than
+merely shifting work among components.
 
 ## What was tried
 
-_The smallest change that tests the hypothesis._
+One interleaved run compared `b565882` with `954d27b`. The candidate contained exactly
+the three changes above; the control already included other post-PR-base performance and
+harness work.
 
 ## What the numbers said
 
-_Read the tables in the frontmatter. Say what surprised you._
+Cold-scan wall fell 48.9%, warm revalidation 14.7%, and snapshot load 29.1%. However,
+process CPU rose about 104%, system CPU about 161%, and RSS about 9%; the old renderer
+mislabelled those clear regressions as nonsignificant. More fundamentally, `b565882` was
+not PR #3's base `fdd9e523`, so these numbers never described the full branch delta.
 
 ## Verdict
 
-**ACCEPTED** — Every measured job improved significantly in one interleaved run against the original baseline, with no sample rejected by the oracle
+**SUPERSEDED** — wrong baseline, incomplete change scope, v1 oracle, and unadjudicated
+resource regressions make this an audit record rather than a current headline.
+
+<!-- This document follows common-doc-guidelines.md.
+See github.com/jlevy/practical-prose and review guidelines before editing.
+-->

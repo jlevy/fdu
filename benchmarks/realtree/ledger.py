@@ -49,7 +49,29 @@ def verdict(comparison: Mapping[str, Any], *, metric: str = "wall_ns") -> Dict[s
     interval = entry["ci95_change_pct"]
     if change is None:
         return {"accepted": False, "reason": "no paired ratio", "change_pct": None}
-    if not entry["significant"]:
+    direction = entry.get("direction") or (
+        "improvement" if change < 0 else "regression" if change > 0 else "unchanged"
+    )
+    ci_excludes_zero = entry.get("ci_excludes_zero")
+    if ci_excludes_zero is None:
+        ci_excludes_zero = bool(
+            interval
+            and (interval[1] < 0 or interval[0] > 0)
+        )
+    significant_improvement = entry.get("significant_improvement")
+    if significant_improvement is None:
+        significant_improvement = ci_excludes_zero and direction == "improvement"
+    if direction != "improvement":
+        qualifier = "statistically significant regression" if ci_excludes_zero else "regression"
+        return {
+            "accepted": False,
+            "reason": (
+                f"{change:+.2f}% {qualifier}, 95% interval "
+                f"[{interval[0]:+.2f}%, {interval[1]:+.2f}%]"
+            ),
+            "change_pct": change,
+        }
+    if not significant_improvement:
         return {
             "accepted": False,
             "reason": (
@@ -75,6 +97,24 @@ def verdict(comparison: Mapping[str, Any], *, metric: str = "wall_ns") -> Dict[s
         ),
         "change_pct": change,
     }
+
+
+def significance_label(entry: Mapping[str, Any]) -> str:
+    """Describe statistical evidence in either direction."""
+    change = entry.get("median_change_pct")
+    interval = entry.get("ci95_change_pct")
+    direction = entry.get("direction") or (
+        "improvement" if change is not None and change < 0
+        else "regression" if change is not None and change > 0
+        else "unchanged"
+    )
+    ci_excludes_zero = entry.get("ci_excludes_zero")
+    if ci_excludes_zero is None:
+        ci_excludes_zero = bool(
+            interval
+            and (interval[1] < 0 or interval[0] > 0)
+        )
+    return f"significant {direction}" if ci_excludes_zero else "not significant"
 
 
 def render(document: Mapping[str, Any], *, profiles: Sequence[Mapping[str, Any]] = ()) -> str:
@@ -178,7 +218,7 @@ def render(document: Mapping[str, Any], *, profiles: Sequence[Mapping[str, Any]]
         for key, comparison in stats["comparisons"].items():
             lines.append(f"### Paired comparison: {key}")
             lines.append("")
-            lines.append("| metric | median change | 95% interval | significant |")
+            lines.append("| metric | median change | 95% interval | result |")
             lines.append("| --- | --- | --- | --- |")
             for metric, label, _unit in REPORT_METRICS:
                 entry = comparison["metrics"].get(metric)
@@ -192,7 +232,7 @@ def render(document: Mapping[str, Any], *, profiles: Sequence[Mapping[str, Any]]
                         if interval
                         else "—"
                     )
-                    + f" | {'yes' if entry['significant'] else 'no'} |"
+                    + f" | {significance_label(entry)} |"
                 )
             decision = verdict(comparison)
             lines.append("")

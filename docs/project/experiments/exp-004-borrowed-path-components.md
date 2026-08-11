@@ -12,8 +12,8 @@ experiment:
   hypotheses:
     - H5
   subject:
-    tree_label: metabrowser-clone
-    tree_root_id: dbd79ed9c898f7a2f66530cd95bb61cab88e798375134b86c77ece761de580a9
+    tree_label: reference-tree-60k
+    tree_root_id: 40406544ab63512154d1962a5c6bbe3bee60c1d3c6315f3b267b99871d03d825
     tree_engine_digest: bf574331eca680372f7060d4f9ab3b3b175afd265ac27bda6b6dc67ed9c80798
     tree_entries: 59654
     tree_directories: 7341
@@ -50,7 +50,13 @@ experiment:
       args: []
     toolchain: ""
     build_profile: release
-    run_artifact: benchmarks/results/realtree/run-exp004-borrowed-path-components.json
+    evidence_grade: legacy
+    run_schema: fdu-realtree-run-v1
+    schedule: round-robin-by-ordinal-v1
+    schedule_sha256: null
+    schedule_seed: null
+    run_artifact: docs/project/experiments/evidence/exp-004-run.json
+    run_artifact_sha256: f76e03977fc309b7b37515aadc4139a3ec44bfe42d659059ede0579e2091121c
   results:
     - job: cold-scan-index
       start_state: cold
@@ -308,28 +314,36 @@ experiment:
     new_failure_modes: []
     notes: "A net simplification: one function returns borrowed slices, and one new predicate replaces an allocating check. The cold path did not move, which is the right result and a check on the story — after exp-001 it is bound by open and stat, so consumer work cannot show up there."
   verdict:
-    decision: accepted
+    decision: superseded
     primary_job: warm-revalidate
     primary_metric: wall_ns
     change_pct: -9.4
-    reason: "Warm revalidation 9.4% faster and snapshot load 17.8% faster, both with intervals entirely below zero, by deleting work rather than adding machinery"
+    reason: "The v1 run remains useful local evidence, but it lacks the full roll-up oracle, exact toolchain, source manifests, and schedule digest now required for an accepted claim; exp-012 supplies the true-base cumulative decision"
     commit: bf7a05a
 ---
 # Borrowed path components
 
 ## Hypothesis
 
-H5: _state what you expected to be slow, why,
-and which metric would move._
+H5 predicted that repeated normalization copied every path component during lookup and
+validation, inflating both warm reconciliation and snapshot reconstruction.
 
 ## What was tried
 
-_The smallest change that tests the hypothesis._
+Path validation borrowed components from the caller rather than allocating owned
+`OsString`s. No new cache, dependency, or mutation path was introduced.
 
 ## What the numbers said
 
-_Read the tables in the frontmatter. Say what surprised you._
+The v1 run measured warm-revalidate wall 9.4% lower and snapshot-load wall 17.8% lower,
+with intervals below zero. The change deleted work and remained sensible, but this run
+did not preserve the claim-grade oracle, source manifests, toolchain, or schedule digest.
 
 ## Verdict
 
-**ACCEPTED** — Warm revalidation 9.4% faster and snapshot load 17.8% faster, both with intervals entirely below zero, by deleting work rather than adding machinery
+**SUPERSEDED** — exp-012 re-evaluates the final stack from the actual PR base under the
+current evidence contract.
+
+<!-- This document follows common-doc-guidelines.md.
+See github.com/jlevy/practical-prose and review guidelines before editing.
+-->
