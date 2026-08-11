@@ -286,7 +286,10 @@ fn revalidate(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     let component = started.elapsed();
     let mut summary = summarize_index(&index)?;
     summary.dirs_read = report.scan.dirs_read;
-    summary.attribution = Some(report.scan.attribution);
+    // Deliberately left None: the reconcile sweep's walk is not instrumented yet
+    // (tracked in fdu-78wr), and an all-zero attribution object would read as
+    // measured evidence of no work rather than as an absent measurement. Null says
+    // "not instrumented"; zeros would lie.
     summary.errors = u64::try_from(report.scan.errors.len()).unwrap_or(u64::MAX);
     summary.complete = report.is_complete();
     summary.apply = ApplySummary {
