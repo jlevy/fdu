@@ -54,6 +54,8 @@ The rejected ones are the reusable part: they stop the next person spending a da
 | 007 | [Direct reconcile reads expectations off entry ids](#exp007--direct-reconcile-reads-expectations-off-entry-ids) | H14 | `warm-revalidate` | -7.1% | ✅ accepted |
 | 008 | [Extensions interned to integer ids](#exp008--extensions-interned-to-integer-ids) | H18 | `cold-scan-index` | -15.7% | ✅ accepted |
 | 009 | [Single-pass checksum and parse on snapshot load](#exp009--singlepass-checksum-and-parse-on-snapshot-load) | H32 | `warm-snapshot-load` | -12.4% | ✅ accepted |
+| 010 | [Claim-list join and deferred path joins in reconcile](#exp010--claimlist-join-and-deferred-path-joins-in-reconcile) | H17 | `warm-revalidate` | -0.0% | ❌ rejected |
+| 011 | [One ancestor merge per same-parent insert run](#exp011--one-ancestor-merge-per-sameparent-insert-run) | H13 | `cold-scan-index` | -2.5% | ❌ rejected |
 
 ## The experiments
 
@@ -348,6 +350,66 @@ Net-negative lines: the two-pass helper is deleted. Fail-closed unchanged - the 
 **Accepted:** Accepted on the pre-registered signal: the research registry declared this hypothesis's predicted signal as warm-snapshot-load component_ns -15-25%, and the quiet re-run measured -12.38% [-22.85%, -4.71%] with cpu and user cpu significantly down; wall spans zero only because probe spawn and the untimed oracle digest are half that job's wall.
 
 Full record: [`exp-009-single-pass-checksum-and-parse-on-snapshot-load.md`](../experiments/exp-009-single-pass-checksum-and-parse-on-snapshot-load.md)
+
+### exp-010 — Claim-list join and deferred path joins in reconcile
+
+❌ rejected · 2026-08-11 · H17
+
+Control: HEAD eb1c884: per-directory BTreeMap of child expectations, PathBuf join per entry
+
+Candidate: sorted claim-list with binary search; the path join deferred until an op or descent needs it
+
+**`warm-revalidate`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 698.5 | 695.6 | -0.03% (n.s.) | [-1.37%, +1.64%] |
+| component (ms) | 458.6 | 455.8 | -0.10% (n.s.) | [-1.95%, +1.50%] |
+| cpu (ms) | 694.3 | 691.2 | -0.05% (n.s.) | [-1.32%, +1.14%] |
+| user (ms) | 280.1 | 276.4 | -1.41% | [-1.81%, -0.28%] |
+| system (ms) | 414.4 | 415.2 | +1.03% (n.s.) | [-1.00%, +2.19%] |
+| blocked (ms) | 4.5 | 4.5 | +4.07% (n.s.) | [-14.30%, +18.67%] |
+| peak rss (MiB) | 30.5 | 30.6 | +0.54% (n.s.) | [-1.00%, +1.87%] |
+
+Other jobs, wall time: `cold-scan-index` +1.5% (n.s.), `cold-scan-producer` -0.9% (n.s.).
+
+Cost to carry: 90 lines; no new dependencies.
+
+Reverted. Useful negative: the portable warm path's userland slack is spent - what remains is the syscall floor (blocked on the rustix decision) and the structural H12 parallel form.
+
+**Rejected:** Nothing there: -0.03% with a tight interval [-1.37%, +1.64%] over 16 quiet paired trials; after H14 the expectation map already read straight off entry ids, and the remaining allocations are noise next to one fstatat per entry.
+
+Full record: [`exp-010-claim-list-join-and-deferred-path-joins-in-reconcile.md`](../experiments/exp-010-claim-list-join-and-deferred-path-joins-in-reconcile.md)
+
+### exp-011 — One ancestor merge per same-parent insert run
+
+❌ rejected · 2026-08-11 · H13
+
+Control: exp-010 build
+
+Candidate: consecutive same-parent inserts accumulate contributions locally; one upward merge per run instead of per file
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 483.1 | 447.7 | -2.53% (n.s.) | [-8.39%, +0.23%] |
+| component (ms) | 304.1 | 282.3 | -7.01% | [-11.45%, -1.63%] |
+| cpu (ms) | 1256.9 | 1204.0 | -2.14% | [-5.42%, -0.29%] |
+| user (ms) | 282.1 | 271.6 | -3.66% | [-4.95%, -1.61%] |
+| system (ms) | 968.7 | 933.4 | -1.83% (n.s.) | [-6.62%, +0.46%] |
+| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
+| peak rss (MiB) | 33.0 | 32.6 | -1.47% (n.s.) | [-2.22%, +0.14%] |
+
+Other jobs, wall time: `cold-scan-producer` -0.3% (n.s.), `warm-revalidate` -0.7%.
+
+Cost to carry: 80 lines; no new dependencies.
+
+Reverted. The interaction is the finding: merge-batching and key-interning compete for the same cost, and interning alone captured it. Re-test only if by_ext grows heavy again (content-tier reducers).
+
+**Rejected:** Direction right but under the bar: -2.53% [-8.39%, +0.23%] on cold scan; H18 already removed the expensive part of each merge, so cutting ~520k merges to ~73k amortized work that had become a few integer adds.
+
+Full record: [`exp-011-one-ancestor-merge-per-same-parent-insert-run.md`](../experiments/exp-011-one-ancestor-merge-per-same-parent-insert-run.md)
 
 
 <!-- This document follows common-doc-guidelines.md.
