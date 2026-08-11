@@ -247,17 +247,48 @@ fn load_with_size_limit(path: &Path, max_snapshot_bytes: u64) -> Result<Option<I
         .ok_or_else(|| Error::Snapshot("snapshot length underflow".into()))?;
     file.seek(SeekFrom::Start(0)).map_err(|e| Error::io(path, e))?;
 
-    let actual_checksum = checksum_reader((&mut file).take(payload_len), payload_len)
-        .map_err(|error| Error::io(path, error))?;
-    if actual_checksum != Some(expected_checksum) {
-        return Ok(None);
-    }
-    file.seek(SeekFrom::Start(0)).map_err(|e| Error::io(path, e))?;
-    let mut reader = BufReader::new(file.take(payload_len));
-    match parse_stream(&mut reader, payload_len) {
-        Ok(index) => Ok(Some(index)),
+    // One pass, not two: the checksum accumulates as the parser consumes, instead of
+    // a separate full read of the image before parsing begins. The verdict still
+    // gates the data — the parsed index is returned only after the digest over the
+    // complete payload matches, so nothing is ever served from bytes that failed
+    // their checksum. What changes is the failure mode for structurally-valid
+    // corruption: the parser may do work before the mismatch is known, and the
+    // result is then discarded. Structural corruption is caught by the parser's own
+    // bounds and consistency checks exactly as before, fail-closed either way.
+    let mut reader = Crc32cReader::new(BufReader::new(file.take(payload_len)));
+    let outcome = parse_stream(&mut reader, payload_len);
+    match outcome {
+        Ok(index) => {
+            // A successful parse consumed every payload byte (the trailing-byte check
+            // proves it), so the running digest covers the whole image.
+            if reader.finish() == expected_checksum { Ok(Some(index)) } else { Ok(None) }
+        }
         Err(ParseError::Invalid) => Ok(None),
         Err(ParseError::Io(source)) => Err(Error::io(path, source)),
+    }
+}
+
+/// A reader that folds CRC-32C over every byte the caller consumes.
+struct Crc32cReader<R> {
+    inner: R,
+    state: u32,
+}
+
+impl<R: Read> Crc32cReader<R> {
+    fn new(inner: R) -> Self {
+        Self { inner, state: u32::MAX }
+    }
+
+    fn finish(&self) -> u32 {
+        !self.state
+    }
+}
+
+impl<R: Read> Read for Crc32cReader<R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let read = self.inner.read(buf)?;
+        self.state = crc32c_update(self.state, &buf[..read]);
+        Ok(read)
     }
 }
 
@@ -265,22 +296,6 @@ fn read_footer_checksum(reader: &mut impl Read) -> std::io::Result<u32> {
     let mut bytes = [0u8; CHECKSUM_BYTES];
     reader.read_exact(&mut bytes)?;
     Ok(u32::from_le_bytes(bytes))
-}
-
-fn checksum_reader(mut reader: impl Read, payload_len: u64) -> std::io::Result<Option<u32>> {
-    let mut state = u32::MAX;
-    let mut remaining = payload_len;
-    let mut buffer = [0u8; 8 * 1024];
-    while remaining > 0 {
-        let wanted = usize::try_from(remaining).unwrap_or(usize::MAX).min(buffer.len());
-        let read = reader.read(&mut buffer[..wanted])?;
-        if read == 0 {
-            return Ok(None);
-        }
-        state = crc32c_update(state, &buffer[..read]);
-        remaining -= u64::try_from(read).unwrap_or(0);
-    }
-    Ok(Some(!state))
 }
 
 fn crc32c(bytes: &[u8]) -> u32 {
