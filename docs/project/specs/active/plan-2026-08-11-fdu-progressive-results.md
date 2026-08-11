@@ -23,6 +23,10 @@ Three changes, in dependency order:
    growing roll-ups with per-path completeness while the walk proceeds.
 3. **Persisted roll-ups and lazy open** so the second open paints from the cache in
    milliseconds instead of materialising millions of records first.
+4. **Confidence on every value**, so a browser can paint slightly stale numbers
+   immediately, mark them approximate, and clear the marks as verification converges —
+   which is the difference between a UI that shows something in 50 ms and one that shows
+   nothing for eleven seconds.
 
 The motivating measurements, all on this host: a home folder of **4,366,510 files and
 1,016,449 directories, 224 GiB** walks cold in **791 seconds**, and a warm snapshot of
@@ -39,6 +43,8 @@ faster fixes either one on its own.
 - Starting a scan returns control immediately; roll-ups and per-path completeness are
   readable throughout
 - A warm open paints the top of a multi-million-entry tree without materialising it
+- Every value a consumer reads carries its own confidence, so approximate answers can be
+  shown immediately and labelled honestly, then converge to verified
 - Every mechanism degrades to the current behaviour rather than replacing it
 
 ## Non-Goals
@@ -152,15 +158,120 @@ The browser needs exactly what they provide: read the header and the top-level d
 records, paint, and load deeper blocks only as the user navigates.
 A browser displays a few hundred entries at a time and never needs millions resident.
 
-### How the three compose
+### 4. Confidence: approximate now beats exact later
+
+The browser’s strongest requirement is one the CLI never had: **a slightly stale number
+is far more useful than no number.** Reopening a large folder should paint immediately
+from the cache, mark every value as approximate, and then clear those marks as
+verification confirms them — converging visibly rather than blocking.
+
+This looks like it collides with the project’s hardest rule, “the cache may never
+silently lie”. It does not, and the distinction is the word *silently*. Serving a cached
+number **labelled** as cached is the honest version of exactly this; serving it as
+though it were verified is the thing the rule forbids.
+The original research already staked this out — fast-but-wrong is a non-goal,
+fast-and-labelled is a feature — and this is that feature, generalised from a one-off
+mode into a property every value carries.
+
+#### The gap in what fdu models today
+
+`Freshness` is per-path and already distinguishes `Fresh`, `Reconciling`, `Stale` and
+`Partial`. But an index loaded from a snapshot reports **`Fresh`**, because the snapshot
+was complete when it was written.
+For a CLI that revalidates before printing, that is harmless.
+For a browser that paints on load, it is precisely backwards: nothing has been checked
+since the file was read, and the one signal the UI needs is missing.
+
+#### Confidence as a per-value property
+
+```rust
+pub enum Confidence {
+    /// Stat-verified against the filesystem during this session.
+    Verified,
+    /// The change journal reported nothing touching this subtree since the snapshot
+    /// cursor, and the journal gate accepted. Weaker than Verified: the Phase 0 spike
+    /// showed FSEvents can omit history without raising a flag, which is what the
+    /// periodic full sweep (G12) exists to bound.
+    JournalConfirmed { as_of: SystemTime },
+    /// Read from the snapshot and believed, but unchecked since load. A point-in-time
+    /// value: it may now be too high or too low.
+    Cached { as_of: SystemTime },
+    /// A walk is still in progress beneath this path. Strictly a lower bound — it can
+    /// only grow.
+    Partial,
+}
+```
+
+The distinction between `Partial` and `Cached` is not pedantry, it is two different UI
+affordances. `Partial` is monotone and may be rendered as “≥ 3.2 GB, counting”; a
+progress bar only fills.
+`Cached` is a point estimate that may move in either direction, and is better rendered
+as “~3.2 GB, as of 2 minutes ago”.
+Collapsing them into one “not sure yet” state would let a shrinking number look like a
+bug.
+
+#### Confidence rolls up, and that is free
+
+A directory’s total is only as trustworthy as its least trustworthy descendant, so
+confidence composes upward by taking the minimum — which is the same shape as every
+other roll-up fdu maintains.
+It costs an ordered enum in the reducer set and reuses `merge_upward` unchanged.
+A directory whose entire subtree is verified reports `Verified` and the UI drops the
+indicator for that row; one unverified file deep inside keeps its ancestors honest all
+the way to the root.
+
+#### Convergence has to be observable, not polled
+
+Clearing an indicator requires knowing *when* a value became trustworthy, so the session
+emits confidence transitions per path alongside the value changes it already produces.
+Two outcomes matter and both must be reported: verification that **confirms** a cached
+value (clear the mark, no visual jump) and verification that **corrects** it (update and
+clear, and the UI may want to draw attention).
+A consumer that only learns about corrections cannot tell “still checking” from “checked
+and fine”.
+
+#### Verification should follow the user’s attention
+
+The browser knows which directories are on screen; fdu does not.
+So the session takes a hint:
+
+```rust
+session.prioritize(&path);   // the user just opened this — verify it next
+```
+
+Verification is otherwise breadth-first like the walk, but a prioritised subtree jumps
+the queue. This is what makes convergence feel immediate rather than merely fast: the
+handful of rows a user is actually looking at are confirmed in milliseconds even while
+several million entries behind them are still unverified.
+Without it, a uniform sweep spends most of its effort on rows nobody is reading.
+
+#### What this makes the journal worth
+
+This reframes FSEvents more sharply than the earlier analysis did.
+Without a journal, every cached row is equally suspect on open, and clearing the
+indicators means verifying all of them — minutes at home-folder scale.
+With one, a ~200 ms replay names the few directories that could have changed, so
+**almost every row can move from `Cached` to `JournalConfirmed` at once** and only a
+handful keep their marks.
+The UI goes from entirely-approximate to almost-entirely-confirmed in a fraction of a
+second, and the remaining stat verification is scoped to what the journal named plus
+whatever the user is looking at.
+
+That is the journal’s real product value for this use case: not that it makes
+verification cheaper, but that it makes *most of the display trustworthy immediately*
+while honestly flagging the rest.
+
+### How these compose
 
 |  | first open (cold) | second open (warm) |
 | --- | --- | --- |
 | first paint | skeletons immediately; breadth-first fills top-level totals within the first seconds | persisted roll-ups read from the snapshot header — milliseconds |
 | convergence | the walk continues; totals grow monotonically | verify what changed (journal where available, else a sweep or rescan by the adaptive policy) |
 | navigating deeper | already walked, or walking | lazy block load per directory |
+| what the UI shows | lower bounds that only grow, marked “counting” | cached values marked “approximate”, marks clearing as confirmation arrives |
 
-The journal appears once, in one cell, which is the point of separating these plans.
+The journal appears in one cell of one row, which is the point of separating these
+plans: everything else here works without it, on every platform.
 
 ## Implementation Plan
 
@@ -176,7 +287,17 @@ The journal appears once, in one cell, which is the point of separating these pl
 - [ ] Loop experiment: time-to-useful-top-level-ranking, breadth-first against
   depth-first, on a home-folder-scale tree — the metric this plan exists to move
 
-### Phase 2: Instant warm open
+### Phase 2: Confidence and convergence
+
+- [ ] `Confidence` per value, rolled up by minimum through the existing reducer path; a
+  snapshot-loaded index reports `Cached`, not `Fresh`
+- [ ] Confidence transitions on the session’s change stream, reporting confirmations as
+  well as corrections
+- [ ] `session.prioritize(path)` so verification follows the user’s attention
+- [ ] Surface confidence in `Report` rows and in every output format, per the
+  composable-CLI plan’s rule that no policy may silently lie
+
+### Phase 3: Instant warm open
 
 - [ ] Persist per-directory reducer state in the snapshot (H33)
 - [ ] Bulk arena load, no per-record observation replay (H34)
