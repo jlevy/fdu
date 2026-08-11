@@ -166,7 +166,7 @@ pub enum Source {
     /// stat the rest, so this value rests on the journal having been complete.
     ///
     /// It is deliberately weaker than [`Self::Revalidated`] because that assumption is
-    /// known to fail. macOS FSEvents will report `HistoryDone` after silently dropping
+    /// known to fail. macOS `FSEvents` will report `HistoryDone` after silently dropping
     /// history, with no degradation flag, which means a journal answer can be wrong
     /// without announcing it. Journal-assisted revalidation therefore bounds exposure
     /// with a maximum age and a periodic full sweep; those are risk controls, not
