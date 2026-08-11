@@ -152,31 +152,33 @@ A design with only one of them has a hole exactly where the other would have bee
 ## What order costs, measured
 
 Breadth-first is now the default, and the trade was measured rather than assumed
-(59,654-entry tree, six interleaved trials each):
+(exp-012: 60,067-entry tree, sixteen interleaved paired trials per job):
 
-|  | complete-scan component | peak RSS | engine digest |
-| --- | ---: | ---: | --- |
-| breadth-first | 51.0 ms | 11 MB | identical |
-| depth-first | 47.2 ms | 11 MB | identical |
+| job | change, breadth-first vs depth-first | 95% interval | significant |
+| --- | ---: | --- | --- |
+| `cold-scan-index` | −0.58% | [−2.50%, +1.20%] | no |
+| `cold-scan-producer` | +1.50% | [−3.50%, +3.13%] | no |
+| `warm-revalidate` | +0.03% | [−3.83%, +2.87%] | no |
 
-So breadth-first costs about **8% on a complete scan** and, on this tree, **nothing in
-memory** — the frontier concern turned out not to bind, because the queue holds
-directories rather than entries and this tree has 7,341 of them.
+**Breadth-first is free.** Peak RSS is unchanged at 11 MB, because the queue holds
+directories rather than entries, and the engine digest is identical either way.
 
-Eight percent is a real price and it is worth paying by default, because it buys the
-difference between partial results that are useful and partial results that are actively
-misleading.
-A consumer that genuinely only reads the finished index — the one-shot CLI, a
-batch job — should set `DepthFirst` and take the 8% back.
-That is why this ships as a policy rather than a replacement.
+This corrects an earlier reading of the same change.
+A six-sample median comparison suggested breadth-first cost about 8%, and that figure
+was written into the plan before it went through the accept rule; sixteen paired trials
+say the difference is not measurable.
+The episode is a small vindication of the loop’s own discipline — medians without
+intervals are how a project talks itself into a number — and it simplifies the design,
+because the only argument for giving the one-shot CLI a different default was a cost
+that turns out not to exist.
 
-Two caveats on the measurement, stated so nobody over-reads it.
-It is one warm tree of 60k entries: the frontier width that would make breadth-first
+Two caveats stated so nobody over-reads even the corrected result.
+This is one warm tree of 60k entries: the frontier width that could make breadth-first
 expensive in memory only appears on a tree with a very wide level, and a home folder
 with a million directories has not been measured for peak queue size.
-And on a cold tree the ordering interacts with I/O locality differently than on a warm
-one, where the metadata cache absorbs the difference.
-Both belong in the loop before the 8% figure is quoted as general.
+And on a cold tree, ordering interacts with I/O locality differently than on a warm one,
+where the metadata cache absorbs the difference.
+Both belong in the loop before this is quoted as general.
 
 ## Progressive results: why traversal order is the whole trick
 

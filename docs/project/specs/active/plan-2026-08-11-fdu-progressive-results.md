@@ -121,17 +121,23 @@ All four traversal loops — the serial walk, the parallel worker queue, the rev
 sweep, and subtree reconciliation — take from the front or the back of one `VecDeque`
 according to the policy; there is no second walker.
 
-Measured on a 59,654-entry tree over six interleaved trials each: breadth-first costs
-**~8% on a complete scan** (51.0 ms against 47.2 ms) and **nothing measurable in
-memory** (11 MB either way), because the queue holds directories and this tree has 7,341
-of them. Three tests pin the contract: identical engine digests across both orders and
-several worker counts, non-decreasing directory depth in emission order under
-breadth-first, and scope equality between the two orders.
+Measured properly (exp-012: 60,067-entry tree, 16 interleaved paired trials per job),
+breadth-first is **free on a complete scan**: −0.58% wall on `cold-scan-index` with a
+95% interval of [−2.50%, +1.20%], and no effect on walk-only scanning or warm
+revalidation either.
+Peak RSS is unchanged at 11 MB, because the queue holds directories rather than entries.
 
-Eight percent is the right default price: it buys the difference between partial results
-that are useful and partial results that mislead.
-Consumers that only read the finished index — the one-shot CLI, batch jobs — select
-`DepthFirst` and take it back.
+An earlier six-sample median comparison suggested ~8%, and that figure was quoted here
+before it had been through the accept rule.
+It did not survive it.
+The correction matters beyond the number: it removes the only argument for giving the
+one-shot CLI a different default, so breadth-first is simply the default everywhere and
+`DepthFirst` exists for callers with a specific reason — a memory-constrained walk of a
+very wide tree — rather than as a performance escape hatch.
+
+Three tests pin the contract: identical engine digests across both orders and several
+worker counts, non-decreasing directory depth in emission order under breadth-first, and
+scope equality between the two orders.
 
 ### 2. Streaming session API
 
