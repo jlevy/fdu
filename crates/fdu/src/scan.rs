@@ -238,6 +238,8 @@ pub struct ScanReport {
     pub entries: u64,
     /// Paths that could not be read, with the reason.
     pub errors: Vec<Error>,
+    /// Where the walk's time went, summed across workers.
+    pub attribution: WalkAttribution,
 }
 
 impl ScanReport {
@@ -251,6 +253,75 @@ impl ScanReport {
         self.dirs_read += other.dirs_read;
         self.entries += other.entries;
         self.errors.extend(other.errors);
+        self.attribution.absorb(other.attribution);
+    }
+}
+
+/// Where a walk's time went, so "blocked" is never one undifferentiated number.
+///
+/// The performance loop's standing question is whether a walk is bound by disk I/O,
+/// by CPU, or by coordination, and process-level counters cannot answer it: user and
+/// system time say how much CPU was burned, but a fused "blocked" number cannot say
+/// whether workers were waiting on the filesystem, on the queue lock, or on nothing
+/// at all because the queue was empty. These counters split that out at the source.
+///
+/// Everything is measured in *chunks*, never per file: one timing pair per claimed
+/// run of directories, per contended lock, per batch handoff. On the 60k-entry
+/// reference tree that is a few thousand `Instant` reads against hundreds of
+/// milliseconds of walking — the instrumentation follows the same amortization rule
+/// it exists to verify.
+///
+/// In a parallel walk the fields sum over workers, so `wall_ns` is worker-seconds
+/// (it can exceed the scan's wall clock) and every other duration is a disjoint
+/// slice of it: `work_ns + starved_ns + lock_wait_ns + send_ns <= wall_ns`, with the
+/// remainder being uninstrumented odds and ends (uncontended lock ops, loop
+/// bookkeeping). A serial walk fills only `wall_ns`, `work_ns`, and `send_ns` —
+/// there is no coordination to attribute.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct WalkAttribution {
+    /// Total time workers spent in the walk loop, summed across workers.
+    pub wall_ns: u64,
+    /// Reading directories and stating entries — the real work, syscalls plus the
+    /// compute between them. Separating disk from CPU *within* this span needs the
+    /// process-level user/system counters alongside; per-syscall timing would break
+    /// the chunk-amortization rule.
+    pub work_ns: u64,
+    /// Waiting on the queue's condvar because no work was available. Starvation:
+    /// either the frontier is momentarily narrower than the worker pool, or the walk
+    /// is ending.
+    pub starved_ns: u64,
+    /// Waiting to acquire the queue lock when another worker held it. This is the
+    /// contention the shared-queue design bets stays negligible; now it is measured
+    /// instead of argued.
+    pub lock_wait_ns: u64,
+    /// Handing observation batches to the consumer: the channel send in a parallel
+    /// walk, the inline sink call — which is the consumer actually running — in a
+    /// serial one.
+    pub send_ns: u64,
+    /// Chunks of directories claimed from the queue.
+    pub claims: u64,
+    /// Queue lock acquisitions, contended or not.
+    pub lock_ops: u64,
+    /// Lock acquisitions that found the lock already held.
+    pub lock_contended: u64,
+}
+
+impl WalkAttribution {
+    /// Fold one worker's counters into the whole-walk totals.
+    fn absorb(&mut self, other: Self) {
+        self.wall_ns += other.wall_ns;
+        self.work_ns += other.work_ns;
+        self.starved_ns += other.starved_ns;
+        self.lock_wait_ns += other.lock_wait_ns;
+        self.send_ns += other.send_ns;
+        self.claims += other.claims;
+        self.lock_ops += other.lock_ops;
+        self.lock_contended += other.lock_contended;
+    }
+
+    /// Time attributed to a named cause, as opposed to `wall_ns`'s total.
+    pub fn accounted_ns(&self) -> u64 {
+        self.work_ns + self.starved_ns + self.lock_wait_ns + self.send_ns
     }
 }
 
@@ -391,6 +462,7 @@ pub fn scan(
     if config.max_depth == Some(0) {
         return Ok(report);
     }
+    let walk_started = std::time::Instant::now();
     let mut batch: Vec<Op> = Vec::with_capacity(config.batch_size);
     let mut queue: VecDeque<(PathBuf, usize)> = VecDeque::from(vec![(PathBuf::new(), 0)]);
 
@@ -428,7 +500,9 @@ pub fn scan(
             report.entries += 1;
             batch.push(Op::Upsert { path: rel_path.clone(), kind, attrs });
             if batch.len() >= config.batch_size {
+                let send_started = std::time::Instant::now();
                 sink(Observation::new(std::mem::take(&mut batch)));
+                report.attribution.send_ns += elapsed_ns(send_started);
                 batch.reserve(config.batch_size);
             }
 
@@ -439,8 +513,15 @@ pub fn scan(
     }
 
     if !batch.is_empty() {
+        let send_started = std::time::Instant::now();
         sink(Observation::new(batch));
+        report.attribution.send_ns += elapsed_ns(send_started);
     }
+    // A serial walk has no coordination to attribute: wall is the loop, "send" is the
+    // inline sink — which is the consumer actually running — and work is the rest.
+    report.attribution.wall_ns = elapsed_ns(walk_started);
+    report.attribution.work_ns =
+        report.attribution.wall_ns.saturating_sub(report.attribution.send_ns);
     Ok(report)
 }
 
@@ -548,12 +629,19 @@ fn walk_worker(
     queue: &DirectoryQueue,
     sender: &std::sync::mpsc::Sender<Observation>,
 ) -> ScanReport {
+    let worker_started = std::time::Instant::now();
     let mut report = ScanReport::default();
     let mut batch: Vec<Op> = Vec::with_capacity(config.batch_size);
     let mut claimed: Vec<(PathBuf, usize)> = Vec::with_capacity(DIR_CLAIM);
     let mut discovered: Vec<(PathBuf, usize)> = Vec::new();
+    let mut consumer_gone = false;
 
-    while queue.claim(&mut claimed) {
+    'walk: while queue.claim(&mut claimed, &mut report.attribution) {
+        // One timing pair per claimed chunk, never per entry: the chunk is the unit
+        // the amortization argument is made in, so it is the unit the evidence is
+        // collected in.
+        let chunk_started = std::time::Instant::now();
+        let mut chunk_send_ns: u64 = 0;
         for (rel_dir, depth) in claimed.drain(..) {
             let abs_dir = root.join(&rel_dir);
             let listing = match fs::read_dir(&abs_dir) {
@@ -588,29 +676,43 @@ fn walk_worker(
                 report.entries += 1;
                 let descend = should_descend(kind, attrs, depth, root_dev, config);
                 batch.push(Op::Upsert { path: rel_path.clone(), kind, attrs });
-                if batch.len() >= config.batch_size
-                    && sender.send(Observation::new(std::mem::take(&mut batch))).is_err()
-                {
-                    // The consumer is gone; nothing further will be read.
-                    return report;
+                if batch.len() >= config.batch_size {
+                    let send_started = std::time::Instant::now();
+                    let sent = sender.send(Observation::new(std::mem::take(&mut batch))).is_ok();
+                    chunk_send_ns += elapsed_ns(send_started);
+                    if !sent {
+                        // The consumer is gone; nothing further will be read.
+                        consumer_gone = true;
+                        break 'walk;
+                    }
                 }
                 if descend {
                     discovered.push((rel_path, depth + 1));
                 }
             }
         }
+        report.attribution.send_ns += chunk_send_ns;
+        report.attribution.work_ns += elapsed_ns(chunk_started).saturating_sub(chunk_send_ns);
         // Publish before releasing the claim so a worker that finds nothing new does
         // not hold work that others could be doing.
         if !discovered.is_empty() {
-            queue.extend(discovered.drain(..));
+            queue.extend(discovered.drain(..), &mut report.attribution);
         }
-        queue.release();
+        queue.release(&mut report.attribution);
     }
 
-    if !batch.is_empty() {
+    if !consumer_gone && !batch.is_empty() {
+        let send_started = std::time::Instant::now();
         let _ = sender.send(Observation::new(batch));
+        report.attribution.send_ns += elapsed_ns(send_started);
     }
+    report.attribution.wall_ns = elapsed_ns(worker_started);
     report
+}
+
+/// Nanoseconds since `started`, saturating rather than panicking on the absurd.
+fn elapsed_ns(started: std::time::Instant) -> u64 {
+    u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX)
 }
 
 /// Directories still to read, plus enough state to know when the walk is finished.
@@ -647,8 +749,14 @@ impl DirectoryQueue {
 
     /// Take up to [`DIR_CLAIM`] directories, blocking until there is work or the walk
     /// is over. Returns false once no more work will ever arrive.
-    fn claim(&self, into: &mut Vec<(PathBuf, usize)>) -> bool {
-        let mut state = self.lock();
+    ///
+    /// Time spent waiting is charged to `timing`: lock acquisition to `lock_wait_ns`
+    /// when contended, condvar waits to `starved_ns`. The condvar span includes the
+    /// lock re-acquisition on wake, which slightly overstates starvation rather than
+    /// understating contention — the fail-honest direction for the number that is
+    /// supposed to stay near zero.
+    fn claim(&self, into: &mut Vec<(PathBuf, usize)>, timing: &mut WalkAttribution) -> bool {
+        let mut state = self.lock_timed(timing);
         loop {
             if !state.pending.is_empty() {
                 let take = state.pending.len().min(DIR_CLAIM);
@@ -662,6 +770,7 @@ impl DirectoryQueue {
                     }
                 }
                 state.outstanding += 1;
+                timing.claims += 1;
                 return true;
             }
             if state.finished {
@@ -672,25 +781,54 @@ impl DirectoryQueue {
                 self.ready.notify_all();
                 return false;
             }
+            let started = std::time::Instant::now();
             state = self.ready.wait(state).unwrap_or_else(std::sync::PoisonError::into_inner);
+            timing.starved_ns += elapsed_ns(started);
         }
     }
 
-    fn extend(&self, directories: impl Iterator<Item = (PathBuf, usize)>) {
-        let mut state = self.lock();
+    fn extend(
+        &self,
+        directories: impl Iterator<Item = (PathBuf, usize)>,
+        timing: &mut WalkAttribution,
+    ) {
+        let mut state = self.lock_timed(timing);
         state.pending.extend(directories);
         drop(state);
         self.ready.notify_all();
     }
 
     /// Give up a claim taken by [`claim`]. Wakes everyone if this was the last one.
-    fn release(&self) {
-        let mut state = self.lock();
+    fn release(&self, timing: &mut WalkAttribution) {
+        let mut state = self.lock_timed(timing);
         state.outstanding -= 1;
         if state.outstanding == 0 && state.pending.is_empty() {
             state.finished = true;
             drop(state);
             self.ready.notify_all();
+        }
+    }
+
+    /// Acquire the state lock, charging any contention to `timing`.
+    ///
+    /// The fast path is a `try_lock` that succeeds and costs one counter increment;
+    /// only the contended path pays for reading the clock. Poisoning is tolerated for
+    /// the same reason as [`Self::lock`].
+    fn lock_timed(
+        &self,
+        timing: &mut WalkAttribution,
+    ) -> std::sync::MutexGuard<'_, DirectoryQueueState> {
+        timing.lock_ops += 1;
+        match self.state.try_lock() {
+            Ok(guard) => guard,
+            Err(std::sync::TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
+            Err(std::sync::TryLockError::WouldBlock) => {
+                timing.lock_contended += 1;
+                let started = std::time::Instant::now();
+                let guard = self.lock();
+                timing.lock_wait_ns += elapsed_ns(started);
+                guard
+            }
         }
     }
 
@@ -1658,6 +1796,49 @@ mod tests {
             }
         }
         started.len()
+    }
+
+    #[test]
+    fn a_parallel_walk_accounts_for_where_its_time_went() {
+        // The attribution identity: every named cause is a disjoint slice of worker
+        // wall time, so the parts can never exceed the whole, and the counters that
+        // amortization depends on are actually incremented. This is the instrument
+        // the scheduler experiments will read; if it drifts, they measure noise.
+        let dir = branching_tree();
+        let config = ScanConfig { threads: Some(4), batch_size: 64, ..ScanConfig::default() };
+        let report = scan(dir.path(), &config, &mut |_| {}).expect("scan");
+        let a = report.attribution;
+
+        assert!(a.claims > 0, "a parallel walk claims chunks: {a:?}");
+        assert!(a.work_ns > 0, "reading directories takes time: {a:?}");
+        assert!(a.wall_ns > 0);
+        // claim() locks at least once per successful claim, and release() locks once
+        // per claim cycle too.
+        assert!(a.lock_ops >= a.claims * 2, "lock ops out of step with claims: {a:?}");
+        assert!(
+            a.accounted_ns() <= a.wall_ns,
+            "attributed slices are disjoint intervals inside worker wall: {a:?}"
+        );
+    }
+
+    #[test]
+    fn a_serial_walk_has_no_coordination_to_attribute() {
+        // Serial semantics: wall is the loop, "send" is the inline sink (the consumer
+        // actually running), work is the rest — and the coordination counters stay
+        // zero because there is no queue lock and no channel.
+        let dir = branching_tree();
+        let config = ScanConfig { threads: Some(1), batch_size: 64, ..ScanConfig::default() };
+        let mut observations = 0usize;
+        let report = scan(dir.path(), &config, &mut |_| observations += 1).expect("scan");
+        let a = report.attribution;
+
+        assert!(observations > 0, "the sink ran, so send_ns measured something real");
+        assert!(a.work_ns > 0 && a.wall_ns >= a.work_ns);
+        assert_eq!(
+            (a.claims, a.lock_ops, a.lock_contended, a.starved_ns, a.lock_wait_ns),
+            (0, 0, 0, 0, 0),
+            "no queue, no lock, nothing to wait on: {a:?}"
+        );
     }
 
     #[test]
