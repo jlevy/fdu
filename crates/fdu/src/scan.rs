@@ -2038,19 +2038,30 @@ mod tests {
         // in sees a meaningful ranking in the first case and a misleading one in the
         // second.
         //
-        // Checked at one worker and at the default pool, because the whole point of
-        // region scheduling is that the property survives parallelism — a global FIFO
-        // ordered the queue but let workers cluster in one subtree.
+        // Checked with one worker, where the walk order is fully determined by the
+        // queue policy and the comparison therefore means something.
+        //
+        // It used to also run at six workers, and that assertion failed on macOS CI while
+        // passing twelve times in a row locally. The reason is structural rather than
+        // environmental: with a pool, both sides of `breadth > depth` are samples from a
+        // nondeterministic schedule. Six depth-first workers start in six different
+        // subtrees and can leave a respectable laggard, while one unlucky breadth-first
+        // worker can depress its own -- so the inequality is a coin flip weighted by load,
+        // and a contended runner is exactly where it lands wrong.
+        //
+        // Nothing is lost by dropping it. The mechanism that makes the property survive
+        // parallelism is the round-robin ready ring, and
+        // `the_region_scheduler_spreads_workers_over_distinct_subtrees` proves that
+        // directly on the queue, deterministically, with no threads at all. Proving it
+        // twice -- once soundly and once by race -- only buys flakes.
         let dir = deep_forest();
-        for threads in [1usize, 6] {
-            let breadth = leanest_subtree_early(ScanOrder::BreadthFirst, threads, dir.path());
-            let depth = leanest_subtree_early(ScanOrder::DepthFirst, threads, dir.path());
-            assert!(
-                breadth > depth,
-                "at {threads} worker(s) breadth-first should leave its least advanced \
-                 top-level subtree further along: {breadth} files against {depth}"
-            );
-        }
+        let breadth = leanest_subtree_early(ScanOrder::BreadthFirst, 1, dir.path());
+        let depth = leanest_subtree_early(ScanOrder::DepthFirst, 1, dir.path());
+        assert!(
+            breadth > depth,
+            "breadth-first should leave its least advanced top-level subtree further \
+             along: {breadth} files against {depth}"
+        );
     }
 
     #[test]
