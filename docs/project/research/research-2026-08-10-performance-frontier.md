@@ -366,11 +366,24 @@ and force a fresh crawl through their own logical clocks.
 Cross-restart replay is therefore Apple-documented and API-supported but unproven in
 major production tools — fdu would be pioneering it, which makes the backstop
 non-negotiable rather than merely prudent.
-The validation ladder is exactly fdu’s existing escalation shape: UUID mismatch, event
-ID regression, `kFSEventStreamEventFlagEventIdsWrapped`, or
-`MustScanSubDirs`/dropped-event flags each map to `InvalidateSubtree` (scoped or root)
-and the sweep runs as the backstop; Apple documents the journal as advisory, so a
-periodic paranoia sweep remains.
+
+Implementation findings from the follow-up spec work (2026-08-10), recorded here so the
+platform picture stays in one place: the run-loop scheduling every older example uses
+(`FSEventStreamScheduleWithRunLoop`, including `notify` 8.2’s backend) is deprecated
+since macOS 13; the supported path is `FSEventStreamSetDispatchQueue` (available since
+10.6), which also suits one-shot historical replay better — no parked run-loop thread,
+no cross-thread stop.
+`fsevent-sys 4.1.0` is already in `Cargo.lock` via `notify`, so a journal-resume
+implementation adds zero new crates; the two functions it leaves undeclared
+(`FSEventStreamSetDispatchQueue`, `FSEventsCopyUUIDForDevice`) are self-declared
+externs, with the generated `objc2-core-services` bindings verified complete as the
+fallback route. H43 is now specced with a validation spike as its first phase:
+[plan-2026-08-10-fdu-fsevents-scoped-revalidation.md](../specs/active/plan-2026-08-10-fdu-fsevents-scoped-revalidation.md)
+(beads `fdu-2cdv` → `fdu-hs10`). The validation ladder is exactly fdu’s existing
+escalation shape: UUID mismatch, event ID regression,
+`kFSEventStreamEventFlagEventIdsWrapped`, or `MustScanSubDirs`/dropped-event flags each
+map to `InvalidateSubtree` (scoped or root) and the sweep runs as the backstop; Apple
+documents the journal as advisory, so a periodic paranoia sweep remains.
 Nothing in the du-tool space does this; it converts fdu’s warm-open story on macOS from
 “fast sweep” to “no sweep,” and it reuses the delta contract unchanged.
 Linux has no equivalent (confirmed below), which means the sweep must be fast there
@@ -640,6 +653,9 @@ upward at most one level, and for the most common change, zero levels.** Precise
   Grandparents observe nothing.
 - A **content edit** updates only the file’s own mtime/ctime — *not even its immediate
   parent’s*. Directory mtime describes the name list, not the files the names point to.
+  (Verified empirically on this host’s APFS during the FSEvents spec work: an in-place
+  append changed no ancestor directory’s mtime; a create changed exactly one level;
+  recorded as refuted hypothesis H47 in the loop guide.)
 - A **metadata change** (chmod, chown) updates only the file’s ctime.
 
 No mainstream filesystem maintains recursive modification times or recursive sizes.

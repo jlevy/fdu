@@ -24,14 +24,22 @@ on disk already: `fseventsd` journals directory-level change events persistently
 process exits and reboots.
 Storing the journal cursor in the snapshot and replaying “what changed since” turns a
 quiet tree’s revalidation from ~700 ms at 60k entries into an approximately
-size-independent tens of milliseconds.
+size-independent tens of milliseconds — against today’s serial sweep; the Background
+section states the honest comparison against where rung-1 work will land, and where
+the journal is transformative rather than incremental.
 
 This is rung 2 of the warm ladder in the
 [performance-frontier research](../../research/research-2026-08-10-performance-frontier.md)
-(backlog item H43) and the production design of Watchman (`fsevents_try_resync`) and
-git’s fsmonitor daemon.
-The full sweep remains the backstop on every platform and the only rung correctness ever
-depends on.
+(backlog item H43). One honesty note that research’s source-level read established and
+this plan inherits: Watchman’s `fsevents_try_resync` proves the *mechanics* (resume from
+a recorded event ID, UUID-guarded, wrap-vetoed) but uses them only for in-process
+recovery, off by default — and across restarts both Watchman and git’s fsmonitor daemon
+start at `SinceNow` and re-crawl.
+Cross-restart replay is Apple-documented and API-supported but unproven in major
+production tools; fdu would be pioneering it.
+That is why the validation spike is Phase 0 rather than an afterthought, why the gate
+fails closed on every row, and why the full sweep remains the backstop on every platform
+— the only rung correctness ever depends on.
 
 ## Goals
 
@@ -85,15 +93,50 @@ Three experiments (exp-002, exp-004, exp-005 in the
 [ledger](../../reports/report-2026-08-10-fdu-performance-experiments.md)) improved
 constants; none can change the asymptotics, because the sweep must stat every entry to
 be sound. Only change information can — and `fseventsd` records it: directory-granular
-events, persisted to disk, addressed by a monotonic per-volume event ID, replayable from
-a stored ID via `FSEventStreamCreate(sinceWhen:)`, with explicit flags for every way the
-history can be insufficient (`kFSEventStreamEventFlagMustScanSubDirs`, `UserDropped`,
-`KernelDropped`, `EventIdsWrapped`, `HistoryDone`, `RootChanged`, `Mount`, `Unmount`).
+events, persisted to disk in per-volume journals, addressed by IDs from a machine-wide
+monotonic counter, replayable from a stored ID via `FSEventStreamCreate(sinceWhen:)`,
+with explicit flags for every way the history can be insufficient
+(`kFSEventStreamEventFlagMustScanSubDirs`, `UserDropped`, `KernelDropped`,
+`EventIdsWrapped`, `HistoryDone`, `RootChanged`, `Mount`, `Unmount`).
 
 Crucially, the journal’s directory granularity carries exactly the information directory
 mtimes do not: a content edit to `a/b/c/file.txt` produces an event naming `a/b/c`,
 because `fseventsd` logs operations rather than namespace timestamps.
 That is what makes subtree skipping sound here and unsound when inferred from mtimes.
+
+### What the journal is worth, honestly
+
+Against today’s serial sweep the journal looks overwhelming: ~690 ms → tens of
+milliseconds on a quiet 60k tree.
+That comparison flatters it, and the
+[frontier research’s calibration](../../research/research-2026-08-10-performance-frontier.md)
+is the honest one. Rung 1 of the warm ladder — producer-side no-op elision (the
+registry’s H12), the parallel sweep, and eventually bulk stat (H26) — is expected to
+bring a warm-cache revalidation down toward parallel-producer time on its own: ~190 ms
+at 60k today, and ~0.2–0.4 s per million entries on a warm cache.
+Measured against *that* baseline, the journal at 60k-warm is an incremental win, not a
+transformative one.
+
+Where it is transformative is everywhere the sweep cannot be fast: cold metadata caches
+(cloud hosts whose RAM cannot hold the inodes — the snapshot is the only warm state
+there), network storage (each avoided stat is a saved round trip against an IOPS
+budget), and very large local trees — the research’s whole-drive scenario (H45: 2–5M
+entries, where dust takes 30–60 minutes and the journal plus persisted roll-ups target a
+seconds-scale recheck).
+At drive scale the journal is not an optimization of the sweep; it is the difference
+between a tool that can be part of a working loop and one that cannot.
+
+Both documents draw the same conclusion from opposite ends: the sweep must stay fast
+regardless, because the journal degrades into it (gate rows G3–G9), and the journal must
+exist, because no sweep reaches O(changes).
+The loop’s accept rule will judge Phase 2 against the rung-1 baseline current at
+measurement time, not against today’s serial sweep.
+
+Scoped revalidation also composes with the platform work rather than competing with it:
+once bulk stat lands (H26), re-verifying a named changed directory is one
+`getattrlistbulk` call — the research’s whole-drive composition is journal resume (H43)
+naming the directories, bulk re-scan (H26) verifying them, and persisted roll-ups
+(H33/H16) rendering the rest untouched.
 
 ### How modern Rust talks to FSEvents (researched 2026-08-10)
 
@@ -129,15 +172,19 @@ else. This is a far smaller decision than the still-blocked `libc`-for-`openat` 
 feature on one platform.
 
 Replay semantics that the implementation and its tests must honor, from Apple’s
-documentation and Watchman’s production use:
+documentation and Watchman’s source (mechanics only — see the Overview’s honesty note on
+how far its production use actually goes):
 
 - `sinceWhen` delivers events with IDs *strictly greater than* the stored ID, so the
   cursor is `FSEventsGetCurrentEventId()` captured at save time.
 - The end of history is a sentinel event flagged `HistoryDone` whose path is meaningless
   and must be ignored.
-- Event IDs are machine-wide and monotonic but can wrap (`EventIdsWrapped`); volume
-  identity comes from `FSEventsCopyUUIDForDevice(st_dev)`, never from `st_dev` itself,
-  which is not stable across reboots.
+- Event IDs are allocated from a machine-wide monotonic counter, but the journals they
+  index — and their retention — are per-volume.
+  Both facts drive the gate: G4 compares the cursor against the machine-wide current ID,
+  and the volume UUID (from `FSEventsCopyUUIDForDevice(st_dev)`, never `st_dev` itself,
+  which is not stable across reboots) pins which volume’s journal the cursor belongs to.
+  Wrap is signalled by `EventIdsWrapped` (G7).
 - Stream `latency` may be 0 for replay; coalescing within the historical log has already
   happened.
 - Callbacks arrive on the dispatch queue with C types; the callback marshals into a
@@ -256,7 +303,71 @@ Additive only. `snapshot::save`/`load` signatures unchanged (cursor handled inte
 New public surface: `JournalCursor`, `GateDecision`, and `scan::revalidate_dirs`, all
 documented as macOS-accelerator plumbing with the sweep as the portable contract.
 
+### Packaging and platform fallback
+
+One source tree, one feature name, correct behavior on every platform without the
+consumer doing anything:
+
+- The `journal` feature exists on **all** platforms.
+  On macOS it compiles the FFI module and the gate can return scoped decisions;
+  elsewhere it compiles only the platform-neutral gate, whose first row (G1) answers
+  “full sweep.” Enabling the feature is therefore never a build error and never changes
+  non-macOS behavior — the fallback is the same code path Linux runs today, not a stub.
+- The dependency is target-conditional:
+  `[target.'cfg(target_os = "macos")'.dependencies] fsevent-sys = { version = "4.1", optional = true }`.
+  Linux and Windows builds with `--features journal` pull no new crates at all.
+- **Cargo consumers**: `default-features = false` builds are unaffected; the CLI build
+  turns the feature on once the evidence gate passes.
+- **PyPI / uv consumers**: `fdu-py` wheels are built per-platform by maturin, so the
+  macOS wheels carry the journal path and the manylinux wheels carry the fallback, from
+  the same source with no Python-side conditionals, extras, or environment markers.
+  `uv pip install fdu` (or `uvx fdu`) gets the right behavior on either OS because the
+  platform selection already happened at wheel-build time — the same mechanism that
+  ships every other platform difference today.
+- Both distribution channels are exercised in CI: the existing test matrix
+  (ubuntu/macos/windows) proves the feature compiles and falls back everywhere, and the
+  wheel legs install the built wheel and run the warm-path smoke on each OS.
+
 ## Implementation Plan
+
+Sequencing follows the research’s optimization ladder rather than jumping it.
+That ladder places journal resume in its final rung — every accelerator needs the lower
+rungs as its fallback — while its measurement principle is “measure early, implement in
+ladder order,” and it explicitly recommends reserving the snapshot fields now.
+So the cheap, information-producing phases run immediately (the spike measures, the
+format phase reserves), and the full implementation lands when the loop’s rung-1 warm
+work (H12/H14) has produced the clean baseline Phase 2 must be judged against.
+
+### Phase 0: Validation spike (macOS, throwaway)
+
+Every load-bearing implementation assumption is validated by a disposable probe before
+real code depends on it.
+The spike binary lives outside the shipped surfaces (an uncommitted scratch crate or a
+gitignored example), links `fsevent-sys` from the existing lockfile plus the
+self-declared externs, and answers, on a real volume:
+
+- [ ] Dispatch-queue delivery works as designed: stream created with `sinceWhen`,
+  `FSEventStreamSetDispatchQueue` onto a private queue, events arrive, the `HistoryDone`
+  sentinel arrives, teardown is clean, and a deadline abort works (gate G6’s mechanism)
+- [ ] Replay semantics hold: IDs are strictly greater than `sinceWhen`; a content edit
+  deep in the tree produces an event naming the file’s *parent directory* (the
+  load-bearing granularity claim); deletions and renames appear; replay of an hour-old
+  and a week-old cursor completes quickly
+- [ ] Degradation is observable: a `sinceWhen` predating journal retention produces
+  `MustScanSubDirs` (or equivalent) rather than silent emptiness — the G7/G8 inputs are
+  real
+- [ ] Volume identity works: `FSEventsCopyUUIDForDevice` for the root’s current `st_dev`
+  returns a stable UUID across remount; the self-declared extern links
+- [ ] Permission surface is understood: what a plain user process sees for its own trees
+  without Full Disk Access, and whether any TCC prompt appears
+- [ ] Cross-restart reliability is probed directly, because this is the unproven part:
+  cursor written by one process, replay by a fresh process; replay after logout or
+  reboot where practical; mutations made while no fdu process exists are the ones the
+  replay must name. Any observed loss that arrives *without* a degradation flag is a
+  finding that changes the design (a mandatory periodic full sweep gets promoted from
+  paranoia to contract), and is exactly what the Watchman revert suggests looking for
+- [ ] Findings are recorded by amending this spec’s gates and constants (G5/G6 defaults,
+  G9 fraction) and noted in the experiment ledger; explicit go/no-go for Phase 2
 
 ### Phase 1: Format and gate (mergeable alone; unblocks the block-format spike)
 
@@ -275,9 +386,15 @@ documented as macOS-accelerator plumbing with the sweep as the portable contract
 - [ ] Integration tests (macOS CI leg): mutate-then-journal-revalidate equals fresh scan
   by engine digest; UUID mismatch, event-ID regression, and forced `MustScanSubDirs`
   each degrade correctly
-- [ ] Performance loop: new `warm-revalidate-journal` job; experiments for the quiet
-  tree (expect tens of ms vs ~690 ms) and a churn transition (expect cost ∝ changes, not
-  size); ledger entries either way
+- [ ] Cross-platform packaging: target-conditional dependency, `journal` feature
+  compiling on every platform with the G1 fallback, ubuntu CI leg running the fallback
+  end-to-end with digest equality, wheel smoke exercising a warm open through Python on
+  both OSes
+- [ ] Performance loop: new `warm-revalidate-journal` job; the one-deep-edit acceptance
+  scenario on the reference tree (quiet, one-file-touched at depth ≥ 10, and
+  one-file-deleted rows, full sweep as the paired control) and a churn transition
+  (expect cost ∝ changes, not size — H43/H38); ledger entries either way; feature stays
+  off by default until the loop accepts
 
 ## Testing Strategy
 

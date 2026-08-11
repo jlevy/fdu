@@ -517,7 +517,9 @@ shared process boundary, as today.
 - The interface remains pre-release; no aliases for replaced flags.
 - Library compatibility: existing `Index`, `scan`, `snapshot`, and `watch` contracts are
   preserved; `query` is additive, `ExtTally` gains a field (semver-minor while
-  unpublished), and snapshot format v2 is unchanged.
+  unpublished), and this plan makes no snapshot format changes — the v2 → v3 cursor
+  section is owned by the
+  [FSEvents-scoped revalidation plan](plan-2026-08-10-fdu-fsevents-scoped-revalidation.md).
 - Benchmark identity: `cli-human` and `cli-json` job definitions are re-pointed at the
   new argument vectors in the same change, and `cli-summary`, `cli-files`, and
   `watch-stream` become named jobs when their surfaces land (Principle 11).
@@ -551,8 +553,10 @@ shared process boundary, as today.
 - [ ] Snapshot write ordering and failure semantics: save on a background thread
   overlapped with rendering, only when complete and `Fresh`, joined before exit,
   completing even on broken-pipe rendering; a failed save warns on stderr without
-  changing the exit code; `read-only` policy suppresses the write entirely; reserve the
-  journal-resume fields (event ID, volume UUID, platform tag) in the format
+  changing the exit code; `read-only` policy suppresses the write entirely.
+  The journal-resume fields (event ID, volume UUID, platform tag) are reserved by the
+  [FSEvents-scoped revalidation plan](plan-2026-08-10-fdu-fsevents-scoped-revalidation.md)
+  as snapshot format v3 (bead `fdu-2cdv`), not duplicated here
 - [ ] Document the two-layer cache design and the tier-derived verification contract in
   help, SKILL.md, and the schema docs (implementation of tiered verification lands with
   the reducer registry, cross-plan)

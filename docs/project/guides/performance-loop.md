@@ -133,6 +133,10 @@ worth taking, and the ledger records the reasoning when we decline it.
 ## Hypotheses
 
 Kept as a live list.
+Numbering is shared with the
+[performance-frontier research](../research/research-2026-08-10-performance-frontier.md),
+whose backlog owns H12–H46; new hypotheses from any source take the next free number
+(currently H48) so no id ever means two things.
 Each is stated so it can be wrong, with the metric that would show it.
 Status is updated as experiments resolve them; see the ledger for results.
 
