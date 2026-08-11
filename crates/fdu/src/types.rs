@@ -676,11 +676,7 @@ mod provenance_tests {
         let unknown = Provenance { observed_at_ns: 0, ..Provenance::scanned(0) };
         assert_eq!(known.combine(unknown).observed_at_ns, 0);
         assert_eq!(unknown.combine(known).observed_at_ns, 0);
-        assert_eq!(
-            known.combine(unknown),
-            unknown.combine(known),
-            "combination stays commutative"
-        );
+        assert_eq!(known.combine(unknown), unknown.combine(known), "combination stays commutative");
     }
 
     #[test]
