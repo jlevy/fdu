@@ -16,7 +16,8 @@ use std::fmt::Write as _;
 use std::path::Path;
 
 use crate::query::{
-    FileRow, Report, ReportSource, Section, SummaryRow, TreeNode, TypeRow, ViewSpec, format_rfc3339,
+    FileRow, Report, ReportSource, Section, SizeMetric, SummaryRow, TreeNode, TypeRow, ViewSpec,
+    format_rfc3339,
 };
 use crate::types::{EntryKind, Freshness};
 
@@ -76,8 +77,8 @@ fn render_text(report: &Report) -> String {
             out.push('\n');
         }
         match section {
-            Section::Tree(root) => render_text_tree(&mut out, root),
-            Section::Types(rows) => render_text_types(&mut out, rows),
+            Section::Tree(root) => render_text_tree(&mut out, root, report.size),
+            Section::Types(rows) => render_text_types(&mut out, rows, report.size),
             // A flat listing prints one path per line and nothing else, so it pipes
             // straight into xargs and diffs cleanly against another run.
             Section::Files(rows) => {
@@ -85,41 +86,44 @@ fn render_text(report: &Report) -> String {
                     let _ = writeln!(out, "{}", row.path.display());
                 }
             }
-            Section::Summary(row) => render_text_summary(&mut out, row),
+            Section::Summary(row) => render_text_summary(&mut out, row, report.size),
         }
     }
     out
 }
 
 /// Render a tree section as an indented outline.
-fn render_text_tree(out: &mut String, root: &TreeNode) {
-    fn walk(out: &mut String, node: &TreeNode, depth: usize) {
+///
+/// Iterative for the same reason the expansion is: a deep tree must render, not panic.
+fn render_text_tree(out: &mut String, root: &TreeNode, size: SizeMetric) {
+    // Children are pushed in reverse so they pop back in their sorted order.
+    let mut stack: Vec<(&TreeNode, usize)> = vec![(root, 0)];
+    while let Some((node, depth)) = stack.pop() {
         let indent = "  ".repeat(depth);
         let _ = writeln!(
             out,
             "{indent}{:>10}  {} ({} {})",
-            human_bytes(node.bytes),
+            human_bytes(pick(size, node.bytes, node.allocated)),
             node.name,
             node.files,
             plural(node.files, "file", "files"),
         );
-        for child in &node.children {
-            walk(out, child, depth + 1);
-        }
         if node.truncated {
             let _ = writeln!(out, "{indent}  …");
         }
+        for child in node.children.iter().rev() {
+            stack.push((child, depth + 1));
+        }
     }
-    walk(out, root, 0);
 }
 
 /// Render a types section as aligned rows.
-fn render_text_types(out: &mut String, rows: &[TypeRow]) {
+fn render_text_types(out: &mut String, rows: &[TypeRow], size: SizeMetric) {
     for row in rows {
         let _ = writeln!(
             out,
             "{:>10}  {:<12} {} {}",
-            human_bytes(row.bytes),
+            human_bytes(pick(size, row.bytes, row.allocated)),
             row.extension,
             row.files,
             plural(row.files, "file", "files"),
@@ -128,11 +132,11 @@ fn render_text_types(out: &mut String, rows: &[TypeRow]) {
 }
 
 /// Render a summary section as one line.
-fn render_text_summary(out: &mut String, row: &SummaryRow) {
+fn render_text_summary(out: &mut String, row: &SummaryRow, size: SizeMetric) {
     let _ = writeln!(
         out,
         "{:>10}  {} {}, {} {}",
-        human_bytes(row.bytes),
+        human_bytes(pick(size, row.bytes, row.allocated)),
         row.files,
         plural(row.files, "file", "files"),
         row.dirs,
@@ -259,32 +263,52 @@ fn summary_json(row: &SummaryRow) -> String {
 }
 
 /// A tree node as a nested JSON object.
+///
+/// Built with an explicit work stack rather than recursion, so nesting depth costs heap
+/// rather than stack and a deep tree serializes instead of aborting.
 fn tree_json(node: &TreeNode) -> String {
+    /// One step of the serialization.
+    enum Step<'a> {
+        /// Open a node and queue its children.
+        Open(&'a TreeNode),
+        /// Emit literal text, for separators and closers.
+        Text(&'static str),
+    }
+
     let mut out = String::new();
-    let _ = write!(
-        out,
-        "{{\"name\": {}, \"path\": {}, \"kind\": {}, \"bytes\": {}, \"allocated\": {}, \"files\": {}, \"dirs\": {}, \"newest_mtime_ns\": {}, \"truncated\": {}",
-        quote(&node.name),
-        quote(&node.path.to_string_lossy()),
-        quote(kind_label(node.kind)),
-        node.bytes,
-        node.allocated,
-        node.files,
-        node.dirs,
-        node.newest_mtime_ns.map_or_else(|| "null".to_string(), |value| value.to_string()),
-        node.truncated
-    );
-    if node.children.is_empty() {
-        out.push_str(", \"children\": []}");
-    } else {
-        out.push_str(", \"children\": [");
-        for (index, child) in node.children.iter().enumerate() {
-            if index > 0 {
-                out.push(',');
+    let mut stack: Vec<Step<'_>> = vec![Step::Open(node)];
+    while let Some(step) = stack.pop() {
+        match step {
+            Step::Text(text) => out.push_str(text),
+            Step::Open(node) => {
+                let _ = write!(
+                    out,
+                    "{{\"name\": {}, \"path\": {}, \"kind\": {}, \"bytes\": {}, \"allocated\": {}, \"files\": {}, \"dirs\": {}, \"newest_mtime_ns\": {}, \"truncated\": {}",
+                    quote(&node.name),
+                    quote(&node.path.to_string_lossy()),
+                    quote(kind_label(node.kind)),
+                    node.bytes,
+                    node.allocated,
+                    node.files,
+                    node.dirs,
+                    node.newest_mtime_ns
+                        .map_or_else(|| "null".to_string(), |value| value.to_string()),
+                    node.truncated
+                );
+                if node.children.is_empty() {
+                    out.push_str(", \"children\": []}");
+                    continue;
+                }
+                out.push_str(", \"children\": [");
+                stack.push(Step::Text("]}"));
+                for (index, child) in node.children.iter().enumerate().rev() {
+                    if index > 0 {
+                        stack.push(Step::Text(","));
+                    }
+                    stack.push(Step::Open(child));
+                }
             }
-            let _ = write!(out, "\n{}", indent(&tree_json(child), 2));
         }
-        out.push_str("\n]}");
     }
     out
 }
@@ -363,29 +387,34 @@ fn render_yaml(report: &Report) -> String {
 }
 
 /// Render a tree node as YAML at a given indent.
-fn yaml_tree(out: &mut String, node: &TreeNode, pad: usize) {
-    let indent = " ".repeat(pad);
-    let _ = writeln!(out, "{indent}name: {}", yaml_scalar(&node.name));
-    let _ = writeln!(out, "{indent}path: {}", yaml_scalar(&node.path.to_string_lossy()));
-    let _ = writeln!(out, "{indent}kind: {}", yaml_scalar(kind_label(node.kind)));
-    let _ = writeln!(out, "{indent}bytes: {}", node.bytes);
-    let _ = writeln!(out, "{indent}allocated: {}", node.allocated);
-    let _ = writeln!(out, "{indent}files: {}", node.files);
-    let _ = writeln!(out, "{indent}dirs: {}", node.dirs);
-    let _ = writeln!(out, "{indent}newest_mtime_ns: {}", yaml_option(node.newest_mtime_ns));
-    let _ = writeln!(out, "{indent}truncated: {}", node.truncated);
-    if node.children.is_empty() {
-        let _ = writeln!(out, "{indent}children: []");
-    } else {
-        let _ = writeln!(out, "{indent}children:");
-        for child in &node.children {
-            let _ = writeln!(out, "{indent}  - name: {}", yaml_scalar(&child.name));
-            let mut nested = String::new();
-            yaml_tree(&mut nested, child, 0);
-            // The name line is already written as the sequence marker, so skip its repeat.
-            for line in nested.lines().skip(1) {
-                let _ = writeln!(out, "{indent}    {line}");
-            }
+///
+/// Iterative, matching the other two renderers: nesting lives on the heap.
+fn yaml_tree(out: &mut String, root: &TreeNode, pad: usize) {
+    let mut stack: Vec<(&TreeNode, usize, bool)> = vec![(root, pad, false)];
+    while let Some((node, indent_width, as_item)) = stack.pop() {
+        let indent = " ".repeat(indent_width);
+        let (lead, rest) = if as_item {
+            (format!("{indent}- "), format!("{indent}  "))
+        } else {
+            (indent.clone(), indent.clone())
+        };
+        let _ = writeln!(out, "{lead}name: {}", yaml_scalar(&node.name));
+        let _ = writeln!(out, "{rest}path: {}", yaml_scalar(&node.path.to_string_lossy()));
+        let _ = writeln!(out, "{rest}kind: {}", yaml_scalar(kind_label(node.kind)));
+        let _ = writeln!(out, "{rest}bytes: {}", node.bytes);
+        let _ = writeln!(out, "{rest}allocated: {}", node.allocated);
+        let _ = writeln!(out, "{rest}files: {}", node.files);
+        let _ = writeln!(out, "{rest}dirs: {}", node.dirs);
+        let _ = writeln!(out, "{rest}newest_mtime_ns: {}", yaml_option(node.newest_mtime_ns));
+        let _ = writeln!(out, "{rest}truncated: {}", node.truncated);
+        if node.children.is_empty() {
+            let _ = writeln!(out, "{rest}children: []");
+            continue;
+        }
+        let _ = writeln!(out, "{rest}children:");
+        let child_indent = rest.len() + 2;
+        for child in node.children.iter().rev() {
+            stack.push((child, child_indent, true));
         }
     }
 }
@@ -492,6 +521,14 @@ fn kind_label(kind: EntryKind) -> &'static str {
         EntryKind::Dir => "dir",
         EntryKind::Symlink => "symlink",
         EntryKind::Other => "other",
+    }
+}
+
+/// The byte count for the metric a report answers in.
+fn pick(size: SizeMetric, apparent: u64, allocated: u64) -> u64 {
+    match size {
+        SizeMetric::Apparent => apparent,
+        SizeMetric::Allocated => allocated,
     }
 }
 

@@ -9,25 +9,23 @@
 //!   interactive surprises.
 
 use std::ffi::{OsStr, OsString};
-use std::fmt::Write as _;
 use std::io::{self, IsTerminal, Write};
 use std::path::PathBuf;
+use std::time::SystemTime;
 
 use clap::builder::styling::{AnsiColor, Style as AnsiStyle, Styles};
 use clap::{ArgAction, ColorChoice, CommandFactory, FromArgMatches, Parser, ValueEnum};
 
-use crate::index::{EntryId, Index};
-use crate::{EntryKind, Freshness, OpenConfig, OpenPath, ScanConfig, default_cache_path, open};
-
-/// The JSON schema identifier. Bump the version on any breaking shape change so an
-/// agent can tell what it is parsing without guessing from the payload.
-const JSON_SCHEMA: &str = "fdu.tree/2";
+use crate::query::{
+    Bound, Pattern, Provenance, Query, ReportSource, Selection, SizeMetric, SortKey, ViewSpec,
+    parse_size, parse_when, system_time_to_nanos,
+};
+use crate::report_format;
+use crate::{EntryKind, OpenConfig, ScanConfig, default_cache_path, open};
 
 const SKILL_TEMPLATE: &str = include_str!("skills/SKILL.md");
 
 const STYLE_HEADING: AnsiStyle = AnsiColor::Cyan.on_default().bold();
-const STYLE_DIRECTORY: AnsiStyle = AnsiColor::Cyan.on_default();
-const STYLE_BAR: AnsiStyle = AnsiColor::Green.on_default();
 const STYLE_WARNING: AnsiStyle = AnsiColor::Yellow.on_default().bold();
 const STYLE_ERROR: AnsiStyle = AnsiColor::Red.on_default().bold();
 const STYLE_CAUSE: AnsiStyle = AnsiStyle::new().dimmed();
@@ -80,62 +78,85 @@ pub enum RunOutcome {
 // user actually types.
 #[allow(clippy::struct_excessive_bools)]
 pub struct Cli {
+    // ---- scope: what the engine observes and retains ----
     /// Directory to summarize.
     #[arg(default_value = ".")]
     pub path: PathBuf,
 
-    /// Directory levels to show; does not limit scanning.
-    #[arg(short, long, default_value_t = 2, value_name = "N")]
-    pub depth: usize,
-
-    /// Entries to show per directory, largest first.
-    #[arg(short = 'n', long, default_value_t = 10, value_name = "N")]
-    pub number: usize,
-
-    /// Use apparent bytes instead of allocated disk space.
-    #[arg(short = 'a', long, action = ArgAction::SetTrue)]
-    pub apparent_size: bool,
-
-    /// Group totals by file extension instead of directory.
-    #[arg(long, action = ArgAction::SetTrue, conflicts_with = "json")]
-    pub by_type: bool,
-
-    /// Write schema-versioned JSON to stdout.
-    #[arg(long, action = ArgAction::SetTrue)]
-    pub json: bool,
-
-    /// Do not read or write the snapshot cache.
-    #[arg(long, action = ArgAction::SetTrue)]
-    pub no_cache: bool,
-
     /// Limit scanning and retention to N entry levels.
     #[arg(long, value_name = "N")]
-    pub max_depth: Option<usize>,
+    pub scan_depth: Option<usize>,
+
+    // ---- selection: which retained entries this query considers ----
+    /// Report only entries matching this glob; repeatable.
+    #[arg(long, value_name = "GLOB")]
+    pub include: Vec<String>,
+
+    /// Exclude entries matching this glob; repeatable, and wins over --include.
+    #[arg(long, value_name = "GLOB")]
+    pub exclude: Vec<String>,
+
+    /// Report only entries at least this large, as 512, 10M, or 1.5GiB.
+    #[arg(long, value_name = "SIZE")]
+    pub min_size: Option<String>,
+
+    /// Report only entries modified at or after this time, as 2h or an RFC 3339 stamp.
+    #[arg(long, value_name = "WHEN")]
+    pub modified_since: Option<String>,
+
+    /// Report only entries modified before this time.
+    #[arg(long, value_name = "WHEN")]
+    pub modified_before: Option<String>,
+
+    /// Entry kinds to report: file, dir, symlink, other.
+    #[arg(long, value_name = "LIST")]
+    pub kind: Option<String>,
+
+    /// Directory levels to show; does not limit scanning. Accepts `all`.
+    #[arg(short, long, default_value = "2", value_name = "N")]
+    pub depth: String,
+
+    /// Entries to show per directory. Accepts `all`.
+    #[arg(short = 'n', long, default_value = "10", value_name = "N")]
+    pub limit: String,
+
+    /// Order results: size, count, mtime, or name.
+    #[arg(long, value_name = "KEY")]
+    pub sort: Option<String>,
+
+    /// Reverse the ordering.
+    #[arg(long, action = ArgAction::SetTrue)]
+    pub reverse: bool,
+
+    /// Which size metric to report: allocated or apparent.
+    #[arg(long, value_name = "METRIC", default_value = "allocated")]
+    pub size: String,
+
+    // ---- view: which roll-ups are reported ----
+    /// Views to report: tree, types, files, summary.
+    #[arg(long, value_name = "LIST", default_value = "tree")]
+    pub view: String,
+
+    // ---- format: how the report is serialized ----
+    /// Output format: text, json, jsonl, or yaml.
+    #[arg(long, value_name = "FORMAT", default_value = "text")]
+    pub format: String,
 
     /// Colorize human output: auto, always, or never.
     #[arg(long, value_name = "WHEN", default_value = "auto", hide_possible_values = true)]
     pub color: ColorWhen,
+
+    // ---- mode: how the cache is used ----
+    /// Do not read or write the snapshot cache.
+    #[arg(long, action = ArgAction::SetTrue)]
+    pub no_cache: bool,
 
     /// Accept incomplete totals when paths cannot be read.
     #[arg(long, action = ArgAction::SetTrue)]
     pub allow_partial: bool,
 
     /// Print a portable agent skill to stdout.
-    #[arg(
-        long,
-        action = ArgAction::SetTrue,
-        conflicts_with_all = [
-            "path",
-            "depth",
-            "number",
-            "apparent_size",
-            "by_type",
-            "json",
-            "no_cache",
-            "max_depth",
-            "allow_partial"
-        ]
-    )]
+    #[arg(long, action = ArgAction::SetTrue)]
     pub skill: bool,
 }
 
@@ -153,373 +174,193 @@ impl Cli {
             return Ok(RunOutcome::Complete);
         }
 
+        // Parse the whole request before touching the filesystem, so a typo in a glob or a
+        // time costs nothing and reports its own spelling rather than a scan's worth of
+        // waiting followed by an error.
+        let format = self.parse_format()?;
+        let query = self.parse_query()?;
+
         let cache_path = if self.no_cache { None } else { default_cache_path(&self.path) };
         let config = OpenConfig {
-            scan: ScanConfig { max_depth: self.max_depth, ..ScanConfig::default() },
+            scan: ScanConfig { max_depth: self.scan_depth, ..ScanConfig::default() },
             cache_path,
             save_on_open: !self.no_cache,
         };
 
-        let (index, report) = open(&self.path, &config)?;
+        let scan_started_at = SystemTime::now();
+        let (index, open_report) = open(&self.path, &config)?;
 
-        if self.json {
-            self.write_json(out, &index, &report)?;
-        } else {
-            self.write_human(
-                out,
-                diagnostic,
-                &index,
-                &report,
-                stdout_is_terminal,
-                stderr_is_terminal,
-            )?;
-        }
-        Ok(if report.is_complete() { RunOutcome::Complete } else { RunOutcome::Partial })
-    }
-
-    fn size_of(&self, roll: &crate::RollUp) -> u64 {
-        if self.apparent_size { roll.bytes } else { roll.allocated }
-    }
-
-    fn write_human(
-        &self,
-        out: &mut dyn Write,
-        diagnostic: &mut dyn Write,
-        index: &Index,
-        report: &crate::OpenReport,
-        stdout_is_terminal: bool,
-        stderr_is_terminal: bool,
-    ) -> anyhow::Result<()> {
-        let color = self.use_color(stdout_is_terminal);
-        let diagnostic_color = self.use_color(stderr_is_terminal);
-        let total = index.total();
-        // Extension tallies retain apparent bytes only. Treat `--by-type` as an
-        // apparent-size view end to end so its summary, rows, bars, and percentages
-        // cannot disagree about the selected measure.
-        let selected_total = if self.by_type { total.bytes } else { self.size_of(total) };
-        let grand = selected_total.max(1);
-
-        writeln!(
-            out,
-            "{}  {} {}, {} {}, {}",
-            paint(&index.root_path().display().to_string(), STYLE_HEADING, color),
-            total.files,
-            plural(total.files, "file", "files"),
-            total.dirs,
-            plural(total.dirs, "dir", "dirs"),
-            human_bytes(selected_total),
-        )?;
-
-        if self.by_type {
-            // Per-extension tallies only carry apparent bytes, so the denominator has to
-            // be apparent bytes too — sharing the allocated-bytes total used elsewhere
-            // would print shares that never reach 100%.
-            let by_type_total = total.bytes.max(1);
-            let named = index.by_ext_named(total);
-            let mut kinds: Vec<_> = named.iter().collect();
-            kinds.sort_by(|a, b| b.1.bytes.cmp(&a.1.bytes).then_with(|| a.0.cmp(b.0)));
-            for (ext, tally) in kinds.into_iter().take(self.number) {
-                let share = ratio(tally.bytes, by_type_total);
-                writeln!(
-                    out,
-                    "{:>10}  {}  {:>4.0}%  {}  {} {}",
-                    human_bytes(tally.bytes),
-                    bar(share, color),
-                    share * 100.0,
-                    paint(ext, STYLE_DIRECTORY, color),
-                    tally.files,
-                    plural(tally.files, "file", "files"),
-                )?;
-            }
-        } else {
-            self.write_dir(out, index, EntryId::ROOT, 0, grand, color)?;
-        }
-
-        if !report.scan.is_complete() {
-            let shown = report.scan.errors.len().min(3);
-            writeln!(
-                diagnostic,
-                "{} {} {} could not be read; totals are incomplete",
-                paint("warning:", STYLE_WARNING, diagnostic_color),
-                report.scan.errors.len(),
-                if report.scan.errors.len() == 1 { "path" } else { "paths" }
-            )?;
-            for err in report.scan.errors.iter().take(shown) {
-                writeln!(diagnostic, "  {err}")?;
-            }
-        }
-        Ok(())
-    }
-
-    fn write_dir(
-        &self,
-        out: &mut dyn Write,
-        index: &Index,
-        id: EntryId,
-        depth: usize,
-        grand: u64,
-        color: bool,
-    ) -> anyhow::Result<()> {
-        if depth >= self.depth {
-            return Ok(());
-        }
-
-        let mut stack: Vec<_> = self
-            .human_rows(index, id)
-            .into_iter()
-            .rev()
-            .map(|(size, name, child, is_dir)| (size, name, child, is_dir, depth))
-            .collect();
-
-        while let Some((size, name, child, is_dir, row_depth)) = stack.pop() {
-            let share = ratio(size, grand);
-            let display_name = name.to_string_lossy();
-            let label = if is_dir {
-                paint(&format!("{display_name}/"), STYLE_DIRECTORY, color)
-            } else {
-                display_name.into_owned()
-            };
-            writeln!(
-                out,
-                "{:>10}  {}  {:>4.0}%  {}{}",
-                human_bytes(size),
-                bar(share, color),
-                share * 100.0,
-                "  ".repeat(row_depth),
-                label,
-            )?;
-            if is_dir && row_depth + 1 < self.depth {
-                stack.extend(self.human_rows(index, child).into_iter().rev().map(
-                    |(child_size, child_name, child_id, child_is_dir)| {
-                        (child_size, child_name, child_id, child_is_dir, row_depth + 1)
-                    },
-                ));
-            }
-        }
-        Ok(())
-    }
-
-    fn human_rows<'a>(
-        &self,
-        index: &'a Index,
-        id: EntryId,
-    ) -> Vec<(u64, &'a OsStr, EntryId, bool)> {
-        let mut rows: Vec<_> = index
-            .children_of(id)
-            .into_iter()
-            .flatten()
-            .map(|(name, child)| {
-                let is_dir = index.kind_of(child).expect("child handle is live").is_dir();
-                let size = self.entry_size(index, child);
-                (size, name, child, is_dir)
-            })
-            .collect();
-        rows.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(b.1)));
-        rows.truncate(self.number);
-        rows
-    }
-
-    fn entry_size(&self, index: &Index, id: EntryId) -> u64 {
-        index.rollup_of(id).map_or_else(
-            || {
-                let attrs = index.attrs_of(id).expect("tree handle is live");
-                if self.apparent_size { attrs.size } else { attrs.allocated }
+        let provenance = Provenance {
+            scan_started_at: Some(scan_started_at),
+            generated_at: SystemTime::now(),
+            source: match open_report.path_taken {
+                crate::OpenPath::ColdScan => ReportSource::ColdScan,
+                crate::OpenPath::WarmRevalidate => ReportSource::WarmRevalidate,
             },
-            |roll| self.size_of(roll),
+            complete: open_report.is_complete(),
+        };
+        let report = crate::query::report(&index, &query, &provenance);
+
+        write!(out, "{}", report_format::render(&report, format))?;
+
+        if format == report_format::Format::Text && !open_report.is_complete() {
+            let color =
+                ColorContext::from_environment(self.color, false, false, stderr_is_terminal)
+                    .enabled();
+            for error in open_report.errors() {
+                let _ = writeln!(
+                    diagnostic,
+                    "{}",
+                    paint(&format!("warning: {error}"), STYLE_WARNING, color)
+                );
+            }
+        }
+        let _ = stdout_is_terminal;
+
+        Ok(if open_report.is_complete() { RunOutcome::Complete } else { RunOutcome::Partial })
+    }
+
+    /// Whether the requested format is a machine format, which is never colorized.
+    fn machine_format(&self) -> bool {
+        !matches!(
+            report_format::Format::parse(&self.format),
+            None | Some(report_format::Format::Text)
         )
     }
 
-    fn write_json(
-        &self,
-        out: &mut dyn Write,
-        index: &Index,
-        report: &crate::OpenReport,
-    ) -> anyhow::Result<()> {
-        let total = index.total();
-        writeln!(out, "{{")?;
-        writeln!(out, "  \"schema\": {},", quote(JSON_SCHEMA))?;
-        writeln!(
-            out,
-            "  \"generator\": {},",
-            quote(&format!("fdu {}", env!("CARGO_PKG_VERSION")))
-        )?;
-        writeln!(out, "  \"root\": {},", quote(&index.root_path().display().to_string()))?;
-        write_raw_os_field(out, 2, "root_raw", index.root_path().as_os_str())?;
-        writeln!(
-            out,
-            "  \"source\": {},",
-            quote(match report.path_taken {
-                OpenPath::ColdScan => "cold_scan",
-                OpenPath::WarmRevalidate => "warm_revalidate",
-            })
-        )?;
-        writeln!(out, "  \"complete\": {},", report.is_complete())?;
-        writeln!(out, "  \"display_depth\": {},", self.depth)?;
-        writeln!(out, "  \"entries_per_directory\": {},", self.number)?;
-        match self.max_depth {
-            Some(max_depth) => writeln!(out, "  \"scan_max_depth\": {max_depth},")?,
-            None => writeln!(out, "  \"scan_max_depth\": null,")?,
-        }
-        writeln!(out, "  \"tree_truncated\": {},", self.tree_is_truncated(index))?;
-        writeln!(out, "  \"freshness\": {},", quote(freshness_label(index.freshness())))?;
-        writeln!(out, "  \"errors\": [")?;
-        for (position, error) in report.errors().iter().enumerate() {
-            let comma = if position + 1 == report.errors().len() { "" } else { "," };
-            writeln!(out, "    {}{comma}", quote(&error.to_string()))?;
-        }
-        writeln!(out, "  ],")?;
-
-        write!(out, "  \"by_extension\": {{")?;
-        let named = index.by_ext_named(total);
-        let mut kinds: Vec<_> = named.iter().collect();
-        kinds.sort_by(|a, b| b.1.bytes.cmp(&a.1.bytes).then_with(|| a.0.cmp(b.0)));
-        for (i, (ext, tally)) in kinds.iter().enumerate() {
-            if i > 0 {
-                write!(out, ",")?;
-            }
-            write!(
-                out,
-                "\n    {}: {{\"files\": {}, \"bytes\": {}}}",
-                quote(ext),
-                tally.files,
-                tally.bytes
-            )?;
-        }
-        if kinds.is_empty() {
-            writeln!(out, "}},")?;
-        } else {
-            writeln!(out, "\n  }},")?;
-        }
-
-        write!(out, "  \"tree\": ")?;
-        self.write_json_tree(out, index)?;
-        writeln!(out)?;
-        writeln!(out, "}}")?;
-        Ok(())
+    /// Translate the format flag, naming every accepted value on a miss.
+    fn parse_format(&self) -> anyhow::Result<report_format::Format> {
+        report_format::Format::parse(&self.format).ok_or_else(|| {
+            anyhow::anyhow!(
+                "invalid --format {:?}: expected one of {}",
+                self.format,
+                report_format::Format::ALL.join(", ")
+            )
+        })
     }
 
-    /// Return whether the rendered tree omits any entry retained in `index`.
-    fn tree_is_truncated(&self, index: &Index) -> bool {
-        let mut stack = vec![(EntryId::ROOT, 0_usize)];
-        while let Some((id, depth)) = stack.pop() {
-            let Some(children) = index.children_of(id) else {
-                continue;
-            };
-            let child_count = children.len();
-            if child_count > 0 && (depth >= self.depth || child_count > self.number) {
-                return true;
-            }
-            stack.extend(children.filter_map(|(_, child)| {
-                index.kind_of(child).is_some_and(EntryKind::is_dir).then_some((child, depth + 1))
-            }));
+    /// Translate every selection and view flag into the library's own types.
+    ///
+    /// This is all the CLI does: parse flags into `Query`, hand it to the library, and
+    /// serialize what comes back. Any logic beyond that belongs in the library, where
+    /// Rust and Python callers get it too.
+    fn parse_query(&self) -> anyhow::Result<Query> {
+        let now = SystemTime::now();
+
+        let mut selection = Selection {
+            depth: parse_bound(&self.depth, "--depth")?,
+            limit: parse_bound(&self.limit, "--limit")?,
+            reverse: self.reverse,
+            size: parse_size_metric(&self.size)?,
+            ..Selection::default()
+        };
+
+        for pattern in &self.include {
+            selection.include.push(Pattern::parse(pattern)?);
         }
-        false
-    }
-
-    fn write_json_tree(&self, out: &mut dyn Write, index: &Index) -> anyhow::Result<()> {
-        let mut stack = vec![JsonAction::Node {
-            id: EntryId::ROOT,
-            name: OsStr::new("."),
-            depth: 0,
-            indent: 2,
-            prefix_indent: None,
-        }];
-
-        while let Some(action) = stack.pop() {
-            match action {
-                JsonAction::Node { id, name, depth, indent, prefix_indent } => {
-                    if let Some(prefix_indent) = prefix_indent {
-                        write!(out, "{}", " ".repeat(prefix_indent))?;
-                    }
-                    let pad = " ".repeat(indent);
-                    let attrs = index.attrs_of(id).expect("tree handle is live");
-                    let kind = index.kind_of(id).expect("tree handle is live");
-
-                    writeln!(out, "{{")?;
-                    writeln!(out, "{pad}  \"name\": {},", quote(&name.to_string_lossy()))?;
-                    write_raw_os_field(out, indent + 2, "name_raw", name)?;
-                    writeln!(out, "{pad}  \"kind\": {},", quote(entry_kind_label(kind)))?;
-
-                    if let Some(roll) = index.rollup_of(id) {
-                        writeln!(out, "{pad}  \"bytes\": {},", roll.bytes)?;
-                        writeln!(out, "{pad}  \"allocated\": {},", roll.allocated)?;
-                        writeln!(out, "{pad}  \"files\": {},", roll.files)?;
-                        writeln!(out, "{pad}  \"dirs\": {},", roll.dirs)?;
-                        write!(out, "{pad}  \"newest_mtime_ns\": {}", roll.newest_mtime_ns)?;
-                    } else {
-                        writeln!(out, "{pad}  \"bytes\": {},", attrs.size)?;
-                        writeln!(out, "{pad}  \"allocated\": {},", attrs.allocated)?;
-                        write!(out, "{pad}  \"newest_mtime_ns\": {}", attrs.mtime_ns)?;
-                    }
-
-                    let rows = if kind.is_dir() && depth < self.depth {
-                        self.json_rows(index, id)
-                    } else {
-                        Vec::new()
-                    };
-                    if rows.is_empty() {
-                        writeln!(out)?;
-                        write!(out, "{pad}}}")?;
-                    } else {
-                        writeln!(out, ",")?;
-                        writeln!(out, "{pad}  \"children\": [")?;
-                        stack.push(JsonAction::CloseNode { indent });
-                        stack.push(JsonAction::CloseChildren { indent });
-                        let row_count = rows.len();
-                        for (position, (_, child_name, child)) in rows.into_iter().enumerate().rev()
-                        {
-                            stack.push(JsonAction::FinishChild { comma: position + 1 < row_count });
-                            stack.push(JsonAction::Node {
-                                id: child,
-                                name: child_name,
-                                depth: depth + 1,
-                                indent: indent + 4,
-                                prefix_indent: Some(indent + 4),
-                            });
-                        }
-                    }
-                }
-                JsonAction::FinishChild { comma } => {
-                    if comma {
-                        write!(out, ",")?;
-                    }
-                    writeln!(out)?;
-                }
-                JsonAction::CloseChildren { indent } => {
-                    write!(out, "{}  ]", " ".repeat(indent))?;
-                }
-                JsonAction::CloseNode { indent } => {
-                    writeln!(out)?;
-                    write!(out, "{}}}", " ".repeat(indent))?;
-                }
-            }
+        for pattern in &self.exclude {
+            selection.exclude.push(Pattern::parse(pattern)?);
         }
-        Ok(())
-    }
+        if let Some(min_size) = &self.min_size {
+            selection.min_size = Some(parse_size(min_size)?);
+        }
+        if let Some(since) = &self.modified_since {
+            selection.modified.since = system_time_to_nanos(parse_when(since, now)?);
+        }
+        if let Some(before) = &self.modified_before {
+            selection.modified.before = system_time_to_nanos(parse_when(before, now)?);
+        }
+        if let Some(kinds) = &self.kind {
+            selection.kinds = parse_list(kinds, "--kind", parse_kind)?;
+        }
+        if let Some(sort) = &self.sort {
+            selection.sort = Some(parse_sort(sort)?);
+        }
 
-    fn json_rows<'a>(&self, index: &'a Index, id: EntryId) -> Vec<(u64, &'a OsStr, EntryId)> {
-        let mut rows: Vec<_> = index
-            .children_of(id)
-            .into_iter()
-            .flatten()
-            .map(|(name, child)| (self.entry_size(index, child), name, child))
-            .collect();
-        rows.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(b.1)));
-        rows.truncate(self.number);
-        rows
-    }
-
-    fn use_color(&self, stdout_is_terminal: bool) -> bool {
-        ColorContext::from_environment(self.color, self.json, self.skill, stdout_is_terminal)
-            .enabled()
+        Ok(Query { selection, views: parse_list(&self.view, "--view", parse_view)? })
     }
 }
 
-enum JsonAction<'a> {
-    Node { id: EntryId, name: &'a OsStr, depth: usize, indent: usize, prefix_indent: Option<usize> },
-    FinishChild { comma: bool },
-    CloseChildren { indent: usize },
-    CloseNode { indent: usize },
+/// Split a comma-delimited list of closed identifiers.
+///
+/// Closed vocabularies are comma lists and open pattern values are repeatable flags,
+/// because glob brace syntax (`*.{rs,toml}`) contains commas and would be shredded by a
+/// split. Duplicates are an error rather than a silent no-op: repeating a view is far
+/// more likely to be a typo than an intention.
+fn parse_list<T: PartialEq>(
+    value: &str,
+    flag: &str,
+    parse: impl Fn(&str, &str) -> anyhow::Result<T>,
+) -> anyhow::Result<Vec<T>> {
+    let mut parsed = Vec::new();
+    for token in value.split(',') {
+        let token = token.trim();
+        if token.is_empty() {
+            anyhow::bail!("invalid {flag} {value:?}: empty entry in the list");
+        }
+        let item = parse(token, flag)?;
+        if parsed.contains(&item) {
+            anyhow::bail!("invalid {flag} {value:?}: {token:?} appears more than once");
+        }
+        parsed.push(item);
+    }
+    Ok(parsed)
+}
+
+/// Parse one `--view` token.
+fn parse_view(token: &str, flag: &str) -> anyhow::Result<ViewSpec> {
+    match token.to_ascii_lowercase().as_str() {
+        "tree" => Ok(ViewSpec::Tree),
+        "types" => Ok(ViewSpec::Types),
+        "files" => Ok(ViewSpec::Files),
+        "summary" => Ok(ViewSpec::Summary),
+        _ => anyhow::bail!("invalid {flag} {token:?}: expected one of tree, types, files, summary"),
+    }
+}
+
+/// Parse one `--kind` token.
+fn parse_kind(token: &str, flag: &str) -> anyhow::Result<EntryKind> {
+    match token.to_ascii_lowercase().as_str() {
+        "file" => Ok(EntryKind::File),
+        "dir" => Ok(EntryKind::Dir),
+        "symlink" => Ok(EntryKind::Symlink),
+        "other" => Ok(EntryKind::Other),
+        _ => anyhow::bail!("invalid {flag} {token:?}: expected one of file, dir, symlink, other"),
+    }
+}
+
+/// Parse a bound that accepts `all` for unbounded.
+fn parse_bound(value: &str, flag: &str) -> anyhow::Result<Bound> {
+    let value = value.trim();
+    if value.eq_ignore_ascii_case("all") {
+        return Ok(Bound::All);
+    }
+    value
+        .parse::<usize>()
+        .map(Bound::Limit)
+        .map_err(|_| anyhow::anyhow!("invalid {flag} {value:?}: expected a whole number or `all`"))
+}
+
+/// Parse the `--sort` key.
+fn parse_sort(value: &str) -> anyhow::Result<SortKey> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "size" => Ok(SortKey::Size),
+        "count" => Ok(SortKey::Count),
+        "mtime" => Ok(SortKey::Mtime),
+        "name" => Ok(SortKey::Name),
+        other => {
+            anyhow::bail!("invalid --sort {other:?}: expected one of size, count, mtime, name")
+        }
+    }
+}
+
+/// Parse the `--size` metric.
+fn parse_size_metric(value: &str) -> anyhow::Result<SizeMetric> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "allocated" => Ok(SizeMetric::Allocated),
+        "apparent" => Ok(SizeMetric::Apparent),
+        other => anyhow::bail!("invalid --size {other:?}: expected allocated or apparent"),
+    }
 }
 
 /// Run `fdu` through its real process boundary and return its stable numeric exit code.
@@ -594,9 +435,13 @@ fn run_with_io(
             out.flush()?;
             Ok(outcome)
         });
-    let diagnostic_color =
-        ColorContext::from_environment(cli.color, cli.json, cli.skill, stderr_is_terminal)
-            .enabled();
+    let diagnostic_color = ColorContext::from_environment(
+        cli.color,
+        cli.machine_format(),
+        cli.skill,
+        stderr_is_terminal,
+    )
+    .enabled();
     finish(result, cli.allow_partial, diagnostic, diagnostic_color)
 }
 
@@ -711,10 +556,6 @@ fn paint(text: &str, style: AnsiStyle, color: bool) -> String {
     if color { format!("{style}{text}{style:#}") } else { text.to_string() }
 }
 
-fn plural<'a>(count: u64, singular: &'a str, plural: &'a str) -> &'a str {
-    if count == 1 { singular } else { plural }
-}
-
 fn compose_skill() -> String {
     compose_skill_from(SKILL_TEMPLATE)
 }
@@ -726,142 +567,15 @@ fn compose_skill_from(template: &str) -> String {
     template.replace("\r\n", "\n").replace("__FDU_VERSION__", env!("CARGO_PKG_VERSION"))
 }
 
-fn entry_kind_label(kind: EntryKind) -> &'static str {
-    match kind {
-        EntryKind::File => "file",
-        EntryKind::Dir => "dir",
-        EntryKind::Symlink => "symlink",
-        EntryKind::Other => "other",
-    }
-}
-
-fn freshness_label(freshness: Freshness) -> &'static str {
-    match freshness {
-        Freshness::Fresh => "fresh",
-        Freshness::Reconciling => "reconciling",
-        Freshness::Stale => "stale",
-        Freshness::Partial => "partial",
-    }
-}
-
-fn ratio(part: u64, whole: u64) -> f64 {
-    if whole == 0 {
-        return 0.0;
-    }
-    #[allow(clippy::cast_precision_loss)]
-    let r = part as f64 / whole as f64;
-    r.clamp(0.0, 1.0)
-}
-
 // Rounding a fraction to one of eleven bar widths is exactly the case where float-cast
 // lints have nothing to protect: the value is clamped to [0, 1] before the cast and the
 // result is clamped to WIDTH after it.
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_precision_loss)]
-fn bar(share: f64, color: bool) -> String {
-    const WIDTH: usize = 10;
-    let filled = ((share.clamp(0.0, 1.0) * WIDTH as f64).round() as usize).min(WIDTH);
-    let rendered = format!("{}{}", "█".repeat(filled), "░".repeat(WIDTH - filled));
-    paint(&rendered, STYLE_BAR, color)
-}
-
 /// Format a byte count the way a person reads it.
-fn human_bytes(bytes: u64) -> String {
-    const UNITS: [&str; 6] = ["B", "KiB", "MiB", "GiB", "TiB", "PiB"];
-    if bytes < 1024 {
-        return format!("{bytes} B");
-    }
-    #[allow(clippy::cast_precision_loss)]
-    let mut value = bytes as f64;
-    let mut unit = 0;
-    while value >= 1024.0 && unit + 1 < UNITS.len() {
-        value /= 1024.0;
-        unit += 1;
-    }
-    if value >= 100.0 {
-        format!("{value:.0} {}", UNITS[unit])
-    } else {
-        format!("{value:.1} {}", UNITS[unit])
-    }
-}
-
 /// Encode a string as a JSON string literal.
-fn quote(text: &str) -> String {
-    let mut out = String::with_capacity(text.len() + 2);
-    out.push('"');
-    for ch in text.chars() {
-        match ch {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            c if (c as u32) < 0x20 => {
-                let _ = write!(out, "\\u{:04x}", c as u32);
-            }
-            c => out.push(c),
-        }
-    }
-    out.push('"');
-    out
-}
-
 /// Write lossless identity metadata when an operating-system string cannot be represented
 /// by the display-oriented JSON string beside it.
-fn write_raw_os_field(
-    out: &mut dyn Write,
-    indent: usize,
-    field: &str,
-    value: &OsStr,
-) -> io::Result<()> {
-    let Some((encoding, hex)) = raw_os_identity(value) else {
-        return Ok(());
-    };
-    let pad = " ".repeat(indent);
-    writeln!(
-        out,
-        "{pad}{}: {{\"encoding\": {}, \"hex\": {}}},",
-        quote(field),
-        quote(encoding),
-        quote(&hex)
-    )
-}
-
-fn raw_os_identity(value: &OsStr) -> Option<(&'static str, String)> {
-    if value.to_str().is_some() {
-        return None;
-    }
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::ffi::OsStrExt;
-
-        Some(("unix-bytes", hex_bytes(value.as_bytes().iter().copied())))
-    }
-
-    #[cfg(windows)]
-    {
-        use std::os::windows::ffi::OsStrExt;
-
-        Some(("windows-wtf16le", hex_bytes(value.encode_wide().flat_map(u16::to_le_bytes))))
-    }
-
-    #[cfg(not(any(unix, windows)))]
-    {
-        None
-    }
-}
-
 #[cfg(any(unix, windows))]
-fn hex_bytes(bytes: impl IntoIterator<Item = u8>) -> String {
-    const DIGITS: &[u8; 16] = b"0123456789abcdef";
-    let mut encoded = String::new();
-    for byte in bytes {
-        encoded.push(char::from(DIGITS[usize::from(byte >> 4)]));
-        encoded.push(char::from(DIGITS[usize::from(byte & 0x0f)]));
-    }
-    encoded
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -883,102 +597,161 @@ mod tests {
         }
     }
 
-    fn schema_fixture() -> (Cli, Index, crate::OpenReport) {
-        let cli = Cli {
-            path: PathBuf::from("/fixture"),
-            depth: 2,
-            number: 10,
-            apparent_size: true,
-            by_type: false,
-            json: true,
+    /// A CLI with every axis at its default, so a test can vary exactly one.
+    fn cli() -> Cli {
+        Cli {
+            path: PathBuf::from("."),
+            scan_depth: None,
+            include: Vec::new(),
+            exclude: Vec::new(),
+            min_size: None,
+            modified_since: None,
+            modified_before: None,
+            kind: None,
+            depth: "2".to_string(),
+            limit: "10".to_string(),
+            sort: None,
+            reverse: false,
+            size: "allocated".to_string(),
+            view: "tree".to_string(),
+            format: "text".to_string(),
+            color: ColorWhen::Auto,
             no_cache: true,
-            max_depth: None,
-            color: ColorWhen::Never,
             allow_partial: false,
             skill: false,
-        };
-        let attrs = |size, mtime_ns| crate::Attrs {
-            size,
-            allocated: size,
-            mtime_ns,
-            ctime_ns: mtime_ns,
-            inode: u64::try_from(mtime_ns).expect("positive fixture time"),
-            dev: 1,
-        };
-        let mut index = Index::new("/fixture");
-        index.apply_ok(&crate::Observation::new(vec![
-            crate::Op::Upsert {
-                path: PathBuf::from("directory"),
-                kind: EntryKind::Dir,
-                attrs: attrs(0, 1),
-            },
-            crate::Op::Upsert {
-                path: PathBuf::from("directory/nested.bin"),
-                kind: EntryKind::File,
-                attrs: attrs(5, 5),
-            },
-            crate::Op::Upsert {
-                path: PathBuf::from("file.txt"),
-                kind: EntryKind::File,
-                attrs: attrs(4, 4),
-            },
-            crate::Op::Upsert {
-                path: PathBuf::from("link"),
-                kind: EntryKind::Symlink,
-                attrs: attrs(3, 3),
-            },
-            crate::Op::Upsert {
-                path: PathBuf::from("special"),
-                kind: EntryKind::Other,
-                attrs: attrs(2, 2),
-            },
-        ]));
-        index.set_initial_freshness(false);
-        let report = crate::OpenReport {
-            path_taken: OpenPath::ColdScan,
-            scan: crate::ScanReport {
-                dirs_read: 1,
-                entries: 5,
-                errors: vec![crate::Error::io(
-                    "/fixture/denied",
-                    std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied"),
-                )],
-            },
-        };
-        (cli, index, report)
+        }
+    }
+
+    fn query_error(cli: &Cli) -> String {
+        cli.parse_query().expect_err("expected a rejection").to_string()
+    }
+
+    // ---- the five axes translate into library types, and nothing else ----
+
+    #[test]
+    fn views_parse_as_an_ordered_comma_list() {
+        let parsed = Cli { view: "types,tree,summary".to_string(), ..cli() }
+            .parse_query()
+            .expect("views parse");
+        assert_eq!(parsed.views, vec![ViewSpec::Types, ViewSpec::Tree, ViewSpec::Summary]);
     }
 
     #[test]
-    fn bytes_render_at_human_scale() {
-        assert_eq!(human_bytes(0), "0 B");
-        assert_eq!(human_bytes(999), "999 B");
-        assert_eq!(human_bytes(1024), "1.0 KiB");
-        assert_eq!(human_bytes(1536), "1.5 KiB");
-        assert_eq!(human_bytes(1024 * 1024), "1.0 MiB");
-        assert_eq!(human_bytes(150 * 1024 * 1024), "150 MiB");
+    fn an_unknown_view_names_every_valid_value() {
+        let message = query_error(&Cli { view: "bogus".to_string(), ..cli() });
+        assert!(message.contains("tree, types, files, summary"), "{message}");
     }
 
     #[test]
-    fn bars_saturate_rather_than_overflow() {
-        assert_eq!(bar(0.0, false).chars().filter(|c| *c == '█').count(), 0);
-        assert_eq!(bar(1.0, false).chars().filter(|c| *c == '█').count(), 10);
-        assert_eq!(bar(2.0, false).chars().filter(|c| *c == '█').count(), 10);
-        assert_eq!(bar(0.5, false).chars().filter(|c| *c == '█').count(), 5);
+    fn a_repeated_view_is_a_typo_not_a_no_op() {
+        let message = query_error(&Cli { view: "tree,tree".to_string(), ..cli() });
+        assert!(message.contains("appears more than once"), "{message}");
     }
 
     #[test]
-    fn ratio_is_safe_against_an_empty_tree() {
-        assert!((ratio(5, 0) - 0.0).abs() < f64::EPSILON);
-        assert!((ratio(1, 2) - 0.5).abs() < f64::EPSILON);
+    fn an_empty_list_entry_is_rejected() {
+        let message = query_error(&Cli { view: "tree,,types".to_string(), ..cli() });
+        assert!(message.contains("empty entry"), "{message}");
     }
 
     #[test]
-    fn json_strings_escape_control_and_quote_characters() {
-        assert_eq!(quote("plain"), "\"plain\"");
-        assert_eq!(quote("say \"hi\""), "\"say \\\"hi\\\"\"");
-        assert_eq!(quote("back\\slash"), "\"back\\\\slash\"");
-        assert_eq!(quote("line\nbreak"), "\"line\\nbreak\"");
-        assert_eq!(quote("bell\u{7}"), "\"bell\\u0007\"");
+    fn bounds_accept_all_as_well_as_a_number() {
+        let parsed = Cli { depth: "all".to_string(), limit: "3".to_string(), ..cli() }
+            .parse_query()
+            .expect("bounds parse");
+        assert_eq!(parsed.selection.depth, Bound::All);
+        assert_eq!(parsed.selection.limit, Bound::Limit(3));
+        // du's meaning of depth 0 survives the rename from --max-depth.
+        let zero = Cli { depth: "0".to_string(), ..cli() }.parse_query().expect("parses");
+        assert_eq!(zero.selection.depth, Bound::Limit(0));
+    }
+
+    #[test]
+    fn patterns_are_repeatable_flags_so_brace_globs_survive() {
+        // Comma-splitting these would shred `*.{rs,toml}`, which is why open-valued flags
+        // are repeatable and only closed vocabularies are lists.
+        let parsed = Cli {
+            include: vec!["*.{rs,toml}".to_string(), "docs/**".to_string()],
+            exclude: vec!["**/target/**".to_string()],
+            ..cli()
+        }
+        .parse_query()
+        .expect("patterns parse");
+        assert_eq!(parsed.selection.include.len(), 2);
+        assert_eq!(parsed.selection.exclude.len(), 1);
+    }
+
+    #[test]
+    fn value_grammars_reach_the_cli_with_their_suggestions_intact() {
+        // The CLI must not restate the grammar; it hands the string to the library and
+        // surfaces the library's own message, suggestion and all.
+        let fractional = query_error(&Cli { modified_since: Some("1.5h".to_string()), ..cli() });
+        assert!(fractional.contains("1h30m"), "{fractional}");
+        let calendar = query_error(&Cli { modified_before: Some("3months".to_string()), ..cli() });
+        assert!(calendar.contains("use days"), "{calendar}");
+        let size = query_error(&Cli { min_size: Some("10X".to_string()), ..cli() });
+        assert!(size.contains("unknown size unit"), "{size}");
+    }
+
+    #[test]
+    fn the_modified_window_reaches_the_selection_as_nanoseconds() {
+        let parsed = Cli {
+            modified_since: Some("@1000".to_string()),
+            modified_before: Some("@2000".to_string()),
+            ..cli()
+        }
+        .parse_query()
+        .expect("window parses");
+        assert_eq!(parsed.selection.modified.since, Some(1_000_000_000_000));
+        assert_eq!(parsed.selection.modified.before, Some(2_000_000_000_000));
+    }
+
+    #[test]
+    fn kinds_sort_and_size_translate_to_their_library_values() {
+        let parsed = Cli {
+            kind: Some("file,dir".to_string()),
+            sort: Some("mtime".to_string()),
+            size: "apparent".to_string(),
+            reverse: true,
+            ..cli()
+        }
+        .parse_query()
+        .expect("parses");
+        assert_eq!(parsed.selection.kinds, vec![EntryKind::File, EntryKind::Dir]);
+        assert_eq!(parsed.selection.sort, Some(SortKey::Mtime));
+        assert_eq!(parsed.selection.size, SizeMetric::Apparent);
+        assert!(parsed.selection.reverse);
+    }
+
+    #[test]
+    fn formats_parse_and_machine_formats_are_never_colorized() {
+        for (value, expected) in [
+            ("text", report_format::Format::Text),
+            ("json", report_format::Format::Json),
+            ("jsonl", report_format::Format::Jsonl),
+            ("yaml", report_format::Format::Yaml),
+        ] {
+            let cli = Cli { format: value.to_string(), ..cli() };
+            assert_eq!(cli.parse_format().expect("format parses"), expected);
+            assert_eq!(cli.machine_format(), value != "text");
+        }
+        let message = Cli { format: "xml".to_string(), ..cli() }
+            .parse_format()
+            .expect_err("rejected")
+            .to_string();
+        assert!(message.contains("text, json, jsonl, yaml"), "{message}");
+    }
+
+    #[test]
+    fn an_unparseable_request_costs_no_filesystem_work() {
+        // Parsing precedes open(), so a typo reports itself instead of arriving after a
+        // scan of a large tree.
+        let message = query_error(&Cli {
+            path: PathBuf::from("/nonexistent-root-that-should-not-be-scanned"),
+            view: "bogus".to_string(),
+            ..cli()
+        });
+        assert!(message.contains("expected one of"), "{message}");
     }
 
     #[test]
@@ -1062,68 +835,6 @@ mod tests {
     }
 
     #[test]
-    fn schema_v2_golden_covers_kinds_and_partial_errors() {
-        let (cli, index, report) = schema_fixture();
-        let mut output = Vec::new();
-        cli.write_json(&mut output, &index, &report).expect("render JSON");
-        let rendered = String::from_utf8(output).expect("UTF-8 fixture");
-        assert_eq!(rendered, include_str!("testdata/tree-schema-v2.json"));
-    }
-
-    #[test]
-    fn json_child_order_uses_the_selected_size_measure() {
-        let (mut cli, mut index, report) = schema_fixture();
-        cli.apparent_size = false;
-        index.apply_ok(&crate::Observation::new(vec![
-            crate::Op::Upsert {
-                path: PathBuf::from("apparent-heavy"),
-                kind: EntryKind::File,
-                attrs: crate::Attrs { size: 1_000, allocated: 1, ..Default::default() },
-            },
-            crate::Op::Upsert {
-                path: PathBuf::from("allocated-heavy"),
-                kind: EntryKind::File,
-                attrs: crate::Attrs { size: 1, allocated: 2_000, ..Default::default() },
-            },
-        ]));
-
-        let mut output = Vec::new();
-        cli.write_json(&mut output, &index, &report).expect("render JSON");
-        let rendered = String::from_utf8(output).expect("UTF-8 fixture");
-        let allocated = rendered.find("\"name\": \"allocated-heavy\"").expect("allocated file");
-        let apparent = rendered.find("\"name\": \"apparent-heavy\"").expect("apparent file");
-
-        assert!(allocated < apparent);
-    }
-
-    #[test]
-    fn tree_truncation_distinguishes_exact_fit_from_hidden_entries() {
-        let (mut cli, index, _) = schema_fixture();
-
-        cli.depth = 2;
-        cli.number = 10;
-        assert!(!cli.tree_is_truncated(&index));
-
-        cli.depth = 1;
-        assert!(cli.tree_is_truncated(&index));
-
-        cli.depth = 2;
-        cli.number = 4;
-        assert!(!cli.tree_is_truncated(&index));
-
-        cli.number = 3;
-        assert!(cli.tree_is_truncated(&index));
-
-        cli.depth = 0;
-        cli.number = 10;
-        assert!(cli.tree_is_truncated(&index));
-
-        cli.depth = 2;
-        cli.number = 0;
-        assert!(cli.tree_is_truncated(&index));
-    }
-
-    #[test]
     fn deep_rendering_is_stack_safe() {
         if std::env::var_os(DEEP_RENDER_CHILD_ENV).is_some() {
             run_deep_render_child();
@@ -1145,11 +856,9 @@ mod tests {
     }
 
     fn run_deep_render_child() {
-        let (mut cli, _, report) = schema_fixture();
-        cli.depth = DEEP_RENDER_DEPTH + 1;
-        cli.number = 1;
-
-        let mut index = Index::new("/fixture");
+        // A deep tree must render, not abort: expansion and all three renderers use
+        // explicit stacks, and this proves it on a 64 KiB stack where recursion would die.
+        let mut index = crate::Index::new("/fixture");
         let mut path = PathBuf::new();
         for depth in 0..DEEP_RENDER_DEPTH {
             path.push("d");
@@ -1168,105 +877,29 @@ mod tests {
             .name("deep-render".to_string())
             .stack_size(DEEP_RENDER_STACK_BYTES)
             .spawn(move || {
-                let mut human = Vec::new();
-                let mut diagnostic = Vec::new();
-                cli.write_human(&mut human, &mut diagnostic, &index, &report, false, false)
-                    .expect("render human tree");
-                assert!(!cli.tree_is_truncated(&index));
-
-                let mut json = Vec::new();
-                cli.write_json(&mut json, &index, &report).expect("render JSON tree");
+                let query = Query {
+                    selection: Selection { depth: Bound::All, ..Selection::default() },
+                    views: vec![ViewSpec::Tree],
+                };
+                let provenance = Provenance {
+                    scan_started_at: None,
+                    generated_at: SystemTime::UNIX_EPOCH,
+                    source: ReportSource::ColdScan,
+                    complete: true,
+                };
+                let report = crate::query::report(&index, &query, &provenance);
+                for format in [
+                    report_format::Format::Text,
+                    report_format::Format::Json,
+                    report_format::Format::Jsonl,
+                    report_format::Format::Yaml,
+                ] {
+                    let rendered = report_format::render(&report, format);
+                    assert!(!rendered.is_empty(), "{format:?} rendered nothing for a deep tree");
+                }
             })
             .expect("spawn deep-render thread")
             .join()
             .expect("deep-render thread");
-    }
-
-    fn assert_json_preserves_raw_identity(
-        root: PathBuf,
-        first: &OsStr,
-        second: &OsStr,
-        encoding: &str,
-        root_hex: &str,
-        first_hex: &str,
-        second_hex: &str,
-    ) {
-        assert_eq!(first.to_string_lossy(), second.to_string_lossy());
-
-        let (mut cli, _, _) = schema_fixture();
-        cli.depth = 1;
-        let mut index = Index::new(root);
-        index.apply_ok(&crate::Observation::new(vec![
-            crate::Op::Upsert {
-                path: PathBuf::from(first),
-                kind: EntryKind::File,
-                attrs: crate::Attrs { size: 1, allocated: 1, ..Default::default() },
-            },
-            crate::Op::Upsert {
-                path: PathBuf::from(second),
-                kind: EntryKind::File,
-                attrs: crate::Attrs { size: 1, allocated: 1, ..Default::default() },
-            },
-        ]));
-        index.set_initial_freshness(false);
-        let report = crate::OpenReport {
-            path_taken: OpenPath::ColdScan,
-            scan: crate::ScanReport { dirs_read: 1, entries: 2, errors: Vec::new() },
-        };
-
-        let mut output = Vec::new();
-        cli.write_json(&mut output, &index, &report).expect("render JSON");
-        let rendered = String::from_utf8(output).expect("JSON is UTF-8");
-        let lossy_name = quote(&first.to_string_lossy());
-
-        assert_eq!(rendered.matches(&format!("\"name\": {lossy_name}")).count(), 2);
-        assert!(
-            rendered.contains(&format!(
-                "\"root_raw\": {{\"encoding\": \"{encoding}\", \"hex\": \"{root_hex}\"}}"
-            )),
-            "{rendered}"
-        );
-        for hex in [first_hex, second_hex] {
-            assert!(
-                rendered.contains(&format!(
-                    "\"name_raw\": {{\"encoding\": \"{encoding}\", \"hex\": \"{hex}\"}}"
-                )),
-                "{rendered}"
-            );
-        }
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn json_preserves_distinct_non_utf8_unix_names() {
-        use std::ffi::OsString;
-        use std::os::unix::ffi::OsStringExt;
-
-        assert_json_preserves_raw_identity(
-            PathBuf::from(OsString::from_vec(vec![b'/', b'r', 0x80])),
-            &OsString::from_vec(vec![b'n', 0x80]),
-            &OsString::from_vec(vec![b'n', 0x81]),
-            "unix-bytes",
-            "2f7280",
-            "6e80",
-            "6e81",
-        );
-    }
-
-    #[cfg(windows)]
-    #[test]
-    fn json_preserves_distinct_non_unicode_windows_names() {
-        use std::ffi::OsString;
-        use std::os::windows::ffi::OsStringExt;
-
-        assert_json_preserves_raw_identity(
-            PathBuf::from(OsString::from_wide(&[u16::from(b'R'), u16::from(b':'), 0xd800])),
-            &OsString::from_wide(&[u16::from(b'n'), 0xd800]),
-            &OsString::from_wide(&[u16::from(b'n'), 0xd801]),
-            "windows-wtf16le",
-            "52003a0000d8",
-            "6e0000d8",
-            "6e0001d8",
-        );
     }
 }

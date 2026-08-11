@@ -113,6 +113,21 @@ pub struct TreeNode {
     pub truncated: bool,
 }
 
+impl Drop for TreeNode {
+    /// Release children iteratively.
+    ///
+    /// The derived drop glue recurses once per level, so a deeply nested tree would
+    /// exhaust the stack on release even after every renderer was made iterative — the
+    /// same hazard the index avoids when freeing a subtree. Taking the children out first
+    /// turns that recursion into a loop.
+    fn drop(&mut self) {
+        let mut pending = std::mem::take(&mut self.children);
+        while let Some(mut node) = pending.pop() {
+            pending.extend(std::mem::take(&mut node.children));
+        }
+    }
+}
+
 /// One extension's row in a types view.
 #[derive(Clone, Debug)]
 pub struct TypeRow {
@@ -198,6 +213,12 @@ pub struct Report {
     pub scope: ScanScope,
     /// Absolute path of the indexed root.
     pub root: PathBuf,
+    /// Which size metric this report answers in.
+    ///
+    /// Carried on the report so a renderer shows the same number the ordering used;
+    /// printing apparent bytes beside an allocated-bytes ranking looks like a sorting
+    /// bug and is worse than either metric alone.
+    pub size: SizeMetric,
     /// One section per requested view, in request order.
     pub sections: Vec<Section>,
 }
@@ -225,6 +246,7 @@ pub fn report(index: &Index, query: &Query, provenance: &Provenance) -> Report {
         freshness: index.freshness(),
         scope: index.scope(),
         root: index.root_path().to_path_buf(),
+        size: query.selection.size,
         sections,
     }
 }
@@ -475,23 +497,100 @@ fn tree_node(index: &Index, query: &Query, walked: Option<&Walked>) -> TreeNode 
 }
 
 /// Attach a node's children, honoring the depth and per-directory limit bounds.
+///
+/// Iterative rather than recursive: this engine indexes trees deep enough that recursive
+/// expansion would exhaust the stack, and a report that panics on a deep tree fails
+/// exactly where the tool is most useful. Nodes are built flat with parent links in
+/// pre-order, then folded together from the leaves up.
 fn expand(
+    index: &Index,
+    query: &Query,
+    walked: Option<&Walked>,
+    root_id: EntryId,
+    root_path: &Path,
+    node: &mut TreeNode,
+    start_depth: usize,
+) {
+    /// One node awaiting its children.
+    struct Pending {
+        node: TreeNode,
+        id: EntryId,
+        depth: usize,
+        parent: Option<usize>,
+    }
+
+    let mut built = vec![Pending {
+        // Only identity and bounds matter while expanding; the caller keeps the
+        // populated root and receives its children back at the end.
+        node: TreeNode {
+            path: root_path.to_path_buf(),
+            name: node.name.clone(),
+            kind: node.kind,
+            bytes: node.bytes,
+            allocated: node.allocated,
+            files: node.files,
+            dirs: node.dirs,
+            newest_mtime_ns: node.newest_mtime_ns,
+            children: Vec::new(),
+            truncated: false,
+        },
+        id: root_id,
+        depth: start_depth,
+        parent: None,
+    }];
+
+    let mut cursor = 0;
+    while cursor < built.len() {
+        let (id, depth) = (built[cursor].id, built[cursor].depth);
+        let path = built[cursor].node.path.clone();
+
+        if !query.selection.depth.admits(depth) {
+            // `--depth 0` keeps du's meaning: totals for this node, nothing beneath it.
+            built[cursor].node.truncated =
+                index.children_of(id).is_some_and(|mut kids| kids.next().is_some());
+            cursor += 1;
+            continue;
+        }
+
+        let mut rows = child_rows(index, query, walked, id, &path);
+        let kept = query.selection.limit.limit().unwrap_or(rows.len()).min(rows.len());
+        built[cursor].node.truncated = kept < rows.len();
+        rows.truncate(kept);
+
+        for (child_node, child_id) in rows {
+            built.push(Pending {
+                node: child_node,
+                id: child_id,
+                depth: depth + 1,
+                parent: Some(cursor),
+            });
+        }
+        cursor += 1;
+    }
+
+    // Fold from the end: every parent index is smaller than its child's, so removing the
+    // last element never disturbs an index still to be used.
+    for position in (1..built.len()).rev() {
+        let child = built.remove(position);
+        let parent = child.parent.expect("only the root has no parent");
+        built[parent].node.children.insert(0, child.node);
+    }
+
+    let mut root = built.pop().expect("the root is always present");
+    node.children = std::mem::take(&mut root.node.children);
+    node.truncated = root.node.truncated;
+}
+
+/// The directory children of one node, shaped and sorted but not yet expanded.
+fn child_rows(
     index: &Index,
     query: &Query,
     walked: Option<&Walked>,
     id: EntryId,
     path: &Path,
-    node: &mut TreeNode,
-    depth: usize,
-) {
-    if !query.selection.depth.admits(depth) {
-        // `--depth 0` keeps du's meaning: totals for the root and nothing beneath it.
-        node.truncated = index.children_of(id).is_some_and(|mut kids| kids.next().is_some());
-        return;
-    }
-
+) -> Vec<(TreeNode, EntryId)> {
     let Some(children) = index.children_of(id) else {
-        return;
+        return Vec::new();
     };
     let children: Vec<(PathBuf, EntryId)> =
         children.map(|(name, child)| (path.join(name), child)).collect();
@@ -501,8 +600,8 @@ fn expand(
         let Some(kind) = index.kind_of(child) else {
             continue;
         };
-        // The tree view is a directory hierarchy: files contribute their bytes to the
-        // directory that holds them rather than each appearing as a row.
+        // The tree view is a directory hierarchy: a file contributes its bytes to the
+        // directory holding it rather than appearing as its own row.
         if kind != EntryKind::Dir {
             continue;
         }
@@ -543,16 +642,7 @@ fn expand(
         |(row, _)| row.newest_mtime_ns,
         |(row, _)| row.name.clone(),
     );
-
-    let kept = query.selection.limit.limit().unwrap_or(rows.len()).min(rows.len());
-    node.truncated = kept < rows.len();
-    rows.truncate(kept);
-
-    for (mut child_node, child_id) in rows {
-        let child_path = child_node.path.clone();
-        expand(index, query, walked, child_id, &child_path, &mut child_node, depth + 1);
-        node.children.push(child_node);
-    }
+    rows
 }
 
 /// Trim a row list to the configured limit.
