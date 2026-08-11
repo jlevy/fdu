@@ -328,6 +328,43 @@ const fn make_crc32c_table() -> [u32; 256] {
     table
 }
 
+/// Read only a snapshot's header, without materializing its index.
+///
+/// Returns `None` for anything this build cannot identify — absent, truncated, foreign,
+/// a different format version, or a mismatched engine fingerprint. Corrupt equals
+/// absent here exactly as it does on the load path: a caller asking what is in the cache
+/// must not be stopped by one unreadable file, and a file this code cannot identify is
+/// not a file it should later delete.
+pub fn read_header(path: &Path) -> Result<Option<crate::cache::SnapshotInfo>> {
+    let file = match fs::File::open(path) {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(Error::io(path, error)),
+    };
+    let mut reader = BufReader::new(file);
+    Ok(parse_header(&mut reader).ok())
+}
+
+/// Parse the fixed prologue every snapshot begins with.
+fn parse_header(reader: &mut impl Read) -> ParseResult<crate::cache::SnapshotInfo> {
+    if read_array::<_, 8>(reader)? != *MAGIC {
+        return Err(ParseError::Invalid);
+    }
+    if read_u32(reader)? != FORMAT_VERSION || read_u64(reader)? != engine_fingerprint() {
+        return Err(ParseError::Invalid);
+    }
+    if read_u8(reader)? != path_encoding() {
+        return Err(ParseError::Invalid);
+    }
+    let scope = read_scope(reader)?;
+    let root = PathBuf::from(read_os_string(reader)?);
+    let entries = read_u64(reader)?;
+    if entries == 0 || entries > MAX_SNAPSHOT_ENTRIES {
+        return Err(ParseError::Invalid);
+    }
+    Ok(crate::cache::SnapshotInfo { root, scope, entries })
+}
+
 /// Parse a bounded payload. Records are applied one at a time so bootstrap paths are not
 /// retained in a second full-tree allocation.
 fn parse_stream(reader: &mut impl Read, payload_len: u64) -> ParseResult<Index> {

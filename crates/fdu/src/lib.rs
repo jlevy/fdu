@@ -50,6 +50,7 @@
 //! - `watch` — the OS-native watch layer. Strictly additive: without it everything else
 //!   works, just without live updates.
 
+pub mod cache;
 pub mod classify;
 mod index;
 pub mod query;
@@ -66,6 +67,9 @@ pub mod report_format;
 #[cfg(feature = "watch")]
 pub mod watch;
 
+pub use crate::cache::{
+    CacheStatus, SnapshotInfo, cache_status, clear_all_caches, clear_cache, list_caches,
+};
 pub use crate::index::{
     ApplyOutcome, ApplyStats, ChildSnapshot, EntryId, ExtTally, Index, IndexHandle, RollUp, Since,
 };

@@ -43,6 +43,8 @@ Options:
       --color <WHEN>            Colorize human output: auto, always, or never [default: auto]
       --cache <POLICY>          Cache policy: auto, refresh, read-only, only, or off [default: auto]
       --allow-partial           Accept incomplete totals when paths cannot be read
+      --cache-status[=<SCOPE>]  Report cache contents instead of scanning: root (default) or all
+      --cache-clear[=<SCOPE>]   Remove cached snapshots instead of scanning: root (default) or all
       --skill                   Print a portable agent skill to stdout
   -h, --help                    Print help
   -V, --version                 Print version

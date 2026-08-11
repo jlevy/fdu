@@ -10,7 +10,7 @@
 
 use std::ffi::{OsStr, OsString};
 use std::io::{self, IsTerminal, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use clap::builder::styling::{AnsiColor, Style as AnsiStyle, Styles};
@@ -187,9 +187,36 @@ pub struct Cli {
     #[arg(long, action = ArgAction::SetTrue)]
     pub allow_partial: bool,
 
+    /// Report cache contents instead of scanning: root (default) or all.
+    #[arg(long, value_name = "SCOPE", num_args = 0..=1, require_equals = true, default_missing_value = "root")]
+    pub cache_status: Option<String>,
+
+    /// Remove cached snapshots instead of scanning: root (default) or all.
+    #[arg(long, value_name = "SCOPE", num_args = 0..=1, require_equals = true, default_missing_value = "root")]
+    pub cache_clear: Option<String>,
+
     /// Print a portable agent skill to stdout.
     #[arg(long, action = ArgAction::SetTrue)]
     pub skill: bool,
+}
+
+/// Which caches a lifecycle flag applies to.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum CacheScope {
+    /// Only the snapshot for the resolved path.
+    Root,
+    /// Every snapshot in the cache directory.
+    All,
+}
+
+impl CacheScope {
+    fn parse(value: &str, flag: &str) -> anyhow::Result<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "root" => Ok(Self::Root),
+            "all" => Ok(Self::All),
+            other => anyhow::bail!("invalid {flag} {other:?}: expected root or all"),
+        }
+    }
 }
 
 impl Cli {
@@ -204,6 +231,14 @@ impl Cli {
         if self.skill {
             write!(out, "{}", compose_skill())?;
             return Ok(RunOutcome::Complete);
+        }
+
+        // Lifecycle flags run before scan validation, so they need no readable tree, and
+        // they suppress the report entirely: a run that inspects or clears the cache is
+        // not also a run that scans. Clear runs first so a combined invocation reports
+        // the state it left behind.
+        if self.cache_clear.is_some() || self.cache_status.is_some() {
+            return self.run_cache_lifecycle(out);
         }
 
         // Parse the whole request before touching the filesystem, so a typo in a glob or a
@@ -283,6 +318,100 @@ impl Cli {
         )
     }
 
+    /// Run the cache lifecycle flags and report what they found or removed.
+    fn run_cache_lifecycle(&self, out: &mut dyn Write) -> anyhow::Result<RunOutcome> {
+        let cache_dir = crate::default_cache_path(&self.path)
+            .and_then(|path| path.parent().map(Path::to_path_buf));
+
+        if let Some(scope) = &self.cache_clear {
+            let scope = CacheScope::parse(scope, "--cache-clear").map_err(|e| usage(&e))?;
+            match (scope, &cache_dir) {
+                (CacheScope::All, Some(dir)) => {
+                    // Echo the directory before acting, so a destructive flag always says
+                    // where it is pointed.
+                    writeln!(out, "Cache directory: {}", dir.display())?;
+                    let removed = crate::clear_all_caches(dir)?;
+                    writeln!(
+                        out,
+                        "{}",
+                        if removed == 0 {
+                            "Cache already empty.".to_string()
+                        } else {
+                            format!(
+                                "Cache cleared: {removed} {}.",
+                                plural(removed, "snapshot", "snapshots")
+                            )
+                        }
+                    )?;
+                }
+                (CacheScope::Root, _) => {
+                    let path = crate::default_cache_path(&self.path);
+                    let removed = match &path {
+                        Some(path) => crate::clear_cache(path)?,
+                        None => false,
+                    };
+                    if let Some(path) = &path {
+                        writeln!(out, "Cache file: {}", path.display())?;
+                    }
+                    writeln!(
+                        out,
+                        "{}",
+                        if removed { "Cache cleared." } else { "Cache already empty." }
+                    )?;
+                }
+                (CacheScope::All, None) => writeln!(out, "Cache already empty.")?,
+            }
+        }
+
+        if let Some(scope) = &self.cache_status {
+            let scope = CacheScope::parse(scope, "--cache-status").map_err(|e| usage(&e))?;
+            let statuses = match (scope, &cache_dir) {
+                (CacheScope::All, Some(dir)) => crate::list_caches(dir)?,
+                (CacheScope::All, None) => Vec::new(),
+                (CacheScope::Root, _) => match crate::default_cache_path(&self.path) {
+                    Some(path) => vec![crate::cache_status(&path)?],
+                    None => Vec::new(),
+                },
+            };
+            self.write_cache_status(out, &statuses)?;
+        }
+
+        Ok(RunOutcome::Complete)
+    }
+
+    /// Render cache status through the format axis, like any other output.
+    fn write_cache_status(
+        &self,
+        out: &mut dyn Write,
+        statuses: &[crate::CacheStatus],
+    ) -> anyhow::Result<()> {
+        let format = self.parse_format().map_err(|e| usage(&e))?;
+        if format == report_format::Format::Text {
+            if statuses.iter().all(|status| !status.is_recognized()) {
+                writeln!(out, "No cached snapshots.")?;
+                return Ok(());
+            }
+            for status in statuses {
+                match &status.snapshot {
+                    Some(info) => writeln!(
+                        out,
+                        "{}  {} entries, {} bytes  {}",
+                        status.path.display(),
+                        info.entries,
+                        status.bytes,
+                        info.root.display()
+                    )?,
+                    None => writeln!(out, "{}  unrecognized", status.path.display())?,
+                }
+            }
+            return Ok(());
+        }
+
+        // Machine output gets the same facts under the schema envelope's conventions.
+        writeln!(out, "{}", report_format::render_cache_status(statuses, format))?;
+        Ok(())
+    }
+
     /// Translate the cache-policy flag.
     fn parse_cache_policy(&self) -> anyhow::Result<CachePolicy> {
         match self.cache.trim().to_ascii_lowercase().as_str() {
@@ -348,6 +477,11 @@ impl Cli {
 
         Ok(Query { selection, views: parse_list(&self.view, "--view", parse_view)? })
     }
+}
+
+/// Pick the singular or plural noun for a count.
+fn plural<'a>(count: usize, singular: &'a str, plural: &'a str) -> &'a str {
+    if count == 1 { singular } else { plural }
 }
 
 /// Split a comma-delimited list of closed identifiers.
@@ -690,6 +824,8 @@ mod tests {
             format: "text".to_string(),
             color: ColorWhen::Auto,
             cache: "off".to_string(),
+            cache_status: None,
+            cache_clear: None,
             allow_partial: false,
             skill: false,
         }

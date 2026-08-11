@@ -606,6 +606,64 @@ pub fn is_lossy(path: &Path) -> bool {
     path.to_str().is_none()
 }
 
+/// Render cache status in a machine format.
+///
+/// A separate entry point rather than a `Report` section: cache status is a fact about
+/// the cache directory, not about a tree, and folding it into the report schema would
+/// make every consumer parse a variant that is empty on every normal run.
+pub fn render_cache_status(statuses: &[crate::CacheStatus], format: Format) -> String {
+    let row = |status: &crate::CacheStatus| match &status.snapshot {
+        Some(info) => format!(
+            "{{\"path\": {}, \"bytes\": {}, \"recognized\": true, \"root\": {}, \"entries\": {}}}",
+            quote(&status.path.to_string_lossy()),
+            status.bytes,
+            quote(&info.root.to_string_lossy()),
+            info.entries
+        ),
+        None => format!(
+            "{{\"path\": {}, \"bytes\": {}, \"recognized\": false}}",
+            quote(&status.path.to_string_lossy()),
+            status.bytes
+        ),
+    };
+
+    match format {
+        Format::Jsonl => statuses.iter().map(row).collect::<Vec<_>>().join("\n"),
+        Format::Yaml => {
+            let mut out = String::from("caches:");
+            for status in statuses {
+                let _ = write!(out, "\n  - path: {}", yaml_scalar(&status.path.to_string_lossy()));
+                let _ = write!(out, "\n    bytes: {}", status.bytes);
+                match &status.snapshot {
+                    Some(info) => {
+                        let _ = write!(out, "\n    recognized: true");
+                        let _ = write!(
+                            out,
+                            "\n    root: {}",
+                            yaml_scalar(&info.root.to_string_lossy())
+                        );
+                        let _ = write!(out, "\n    entries: {}", info.entries);
+                    }
+                    None => {
+                        let _ = write!(out, "\n    recognized: false");
+                    }
+                }
+            }
+            out
+        }
+        // Text is rendered by the CLI, which owns the human layout; JSON is the default
+        // machine shape here.
+        Format::Json | Format::Text => {
+            let rows = statuses.iter().map(row).collect::<Vec<_>>().join(",\n    ");
+            if statuses.is_empty() {
+                "{\n  \"caches\": []\n}".to_string()
+            } else {
+                format!("{{\n  \"caches\": [\n    {rows}\n  ]\n}}")
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
