@@ -119,6 +119,10 @@ pub struct Cli {
     #[arg(long, value_name = "N")]
     pub scan_depth: Option<usize>,
 
+    /// Stay on the filesystem the root lives on.
+    #[arg(long, action = ArgAction::SetTrue)]
+    pub one_filesystem: bool,
+
     // ---- selection: which retained entries this query considers ----
     /// Report only entries matching this glob; repeatable.
     #[arg(long, value_name = "GLOB")]
@@ -261,19 +265,24 @@ impl Cli {
 
         let policy = self.parse_cache_policy().map_err(|error| usage(&error))?;
         let config = OpenConfig {
-            scan: ScanConfig { max_depth: self.scan_depth, ..ScanConfig::default() },
+            scan: ScanConfig {
+                max_depth: self.scan_depth,
+                one_filesystem: self.one_filesystem,
+                ..ScanConfig::default()
+            },
             cache_path: default_cache_path(&self.path),
             policy,
         };
 
         #[cfg(feature = "watch")]
-        if self.watch && self.scan_depth.is_some() {
+        if self.watch && (self.scan_depth.is_some() || self.one_filesystem) {
             // Scope narrows what is observed, and a watcher cannot filter raw backend
             // events against that boundary yet. Selection flags stay legal with --watch
             // precisely because they filter the retained index instead, and the message
             // says so rather than only naming the conflict.
             return Err(usage(&anyhow::anyhow!(concat!(
-                "--watch cannot be combined with --scan-depth: watching requires full scope. ",
+                "--watch cannot be combined with --scan-depth or --one-filesystem: watching ",
+                "requires full scope. ",
                 "Selection flags such as --depth, --include, and --modified-since do work with ",
                 "--watch, because they filter the index rather than narrowing the scan"
             ))));
@@ -413,6 +422,7 @@ impl Cli {
 
         let mut dirty_since_render = false;
         let mut last_render = SystemTime::now();
+        let mut last_save = SystemTime::now();
         loop {
             let Some(batch) = session.next_batch(interval)? else {
                 // Nothing arrived in the window. Repaint only if something is pending,
@@ -442,7 +452,43 @@ impl Cli {
                 dirty_since_render = false;
                 last_render = SystemTime::now();
             }
+
+            // Persist as we go rather than only at exit. A watch session ends by signal
+            // far more often than it ends politely, and std offers no portable signal
+            // handler, so an exit-time save would be the one that never runs. Throttled
+            // to the render interval so a churny tree does not rewrite constantly.
+            if batch.dirty && last_save.elapsed().unwrap_or_default() >= interval {
+                if let Err(error) = Self::save_live(&session, config) {
+                    let _ = writeln!(
+                        diagnostic,
+                        "{}",
+                        paint(&format!("warning: {error}"), STYLE_WARNING, color)
+                    );
+                }
+                last_save = SystemTime::now();
+            }
         }
+    }
+
+    /// Persist a live session's index, when policy allows it.
+    ///
+    /// Keeps the warm cache current during a long watch instead of betting on a clean
+    /// exit. A failure here is a warning: the stream is still correct, and only the next
+    /// run's warmth is lost.
+    #[cfg(feature = "watch")]
+    fn save_live(session: &crate::session::Session, config: &OpenConfig) -> anyhow::Result<()> {
+        let (Some(cache_path), true) = (config.cache_path.as_deref(), config.policy.writes())
+        else {
+            return Ok(());
+        };
+        let index = session.index_snapshot()?;
+        if index.freshness() != crate::Freshness::Fresh {
+            // Only a trustworthy index is worth persisting; a partial one would be
+            // served as fact on the next run.
+            return Ok(());
+        }
+        crate::snapshot::save(&index, cache_path)?;
+        Ok(())
     }
 
     /// Re-render the aggregate views of a live session.
@@ -964,6 +1010,7 @@ mod tests {
         Cli {
             path: PathBuf::from("."),
             scan_depth: None,
+            one_filesystem: false,
             include: Vec::new(),
             exclude: Vec::new(),
             min_size: None,

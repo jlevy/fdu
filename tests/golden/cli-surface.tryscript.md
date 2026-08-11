@@ -32,6 +32,9 @@ Options:
       --scan-depth <N>
           Limit scanning and retention to N entry levels
 
+      --one-filesystem
+          Stay on the filesystem the root lives on
+
       --include <GLOB>
           Report only entries matching this glob; repeatable
 
@@ -326,6 +329,24 @@ $ fdu --definitely-not-an-option
 ! Usage: fdu [OPTIONS] [PATH]
 !
 ! For more information, try '--help'.
+? 2
+```
+
+## Watching Rejects a Narrowed Scan Scope
+
+Both scope flags are refused under `--watch`, because events can land outside a narrowed
+scan and the index would silently diverge from the tree. Selection flags are not
+refused: they filter what a full index reports.
+
+```console
+$ fdu --watch --scan-depth 2
+! fdu: --watch cannot be combined with --scan-depth or --one-filesystem: watching requires full scope. Selection flags such as --depth, --include, and --modified-since do work with --watch, because they filter the index rather than narrowing the scan
+? 2
+```
+
+```console
+$ fdu --watch --one-filesystem
+! fdu: --watch cannot be combined with --scan-depth or --one-filesystem: watching requires full scope. Selection flags such as --depth, --include, and --modified-since do work with --watch, because they filter the index rather than narrowing the scan
 ? 2
 ```
 

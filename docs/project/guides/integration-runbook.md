@@ -120,7 +120,53 @@ ls "$XDG_CACHE_HOME"/fdu                 # a snapshot file exists, named by root
 
 ✅ Exactly one snapshot for the root you scanned.
 
-## 6. Python wheel
+## 6. Watch mode by hand
+
+Watch is the surface goldens cover least well, because a golden captures one final
+output and watch is a stream that never ends. Integration tests cover the event
+semantics; this covers what only a human notices — that it is *idle* when nothing
+happens, and responsive when something does.
+
+```shell
+export XDG_CACHE_HOME="$(mktemp -d)"
+tree="$(mktemp -d)" && touch "$tree/first.txt"
+./target/debug/fdu --watch --view files --format jsonl "$tree"
+```
+
+✅ An initial batch of records, then **nothing**. In another terminal, `touch
+"$tree/second.txt"` and a single record appears within a second or so.
+
+The silence is the point. `--watch` is event-driven — FSEvents on macOS, inotify on
+Linux, `ReadDirectoryChangesW` on Windows — so an idle tree costs nothing. Watch the
+process in `top`: it should sit at 0% CPU between changes. Steady CPU on an idle tree
+means something is polling, which is a bug, not a tuning question.
+
+`--interval` throttles *rendering* only; it never introduces a scan. It takes whole
+units (`1s`, `5m`) — there is no sub-second unit, because a render faster than a human
+can read is not a feature.
+
+```shell
+# In the watch terminal: Ctrl-C, or from elsewhere, kill -9 the process.
+ls "$XDG_CACHE_HOME"/fdu
+./target/debug/fdu --view summary --format json --cache only "$tree"
+```
+
+✅ A snapshot exists and the cache-only read succeeds, reporting `"source":
+"cache_only"`. A watch session persists as it goes rather than only at exit, so even an
+abrupt kill leaves the next run warm. `crates/fdu/tests/watch_persistence.rs` pins this
+automatically; running it by hand is how you confirm it against a real signal.
+
+Scope flags are rejected under `--watch`:
+
+```shell
+./target/debug/fdu --watch --scan-depth 2 "$tree"       # exit 2
+./target/debug/fdu --watch --one-filesystem "$tree"     # exit 2
+```
+
+✅ Both fail with a usage error explaining that watching requires full scope. A partial
+tree cannot be kept correct against events that may land outside it.
+
+## 7. Python wheel
 
 ```shell
 make wheel                               # or: uv build / maturin build
@@ -131,7 +177,7 @@ uv run --with dist/fdu-*.whl python crates/fdu-py/tests/smoke.py
 This is the only step that proves packaging: import paths, the `watch` feature actually
 being absent from the wheel, and the console entry point all break here first.
 
-## 7. Benchmarks (optional, and never a pass/fail gate)
+## 8. Benchmarks (optional, and never a pass/fail gate)
 
 ```shell
 uv run --no-project python -m benchmarks.realtree baseline --root <tree> --label mytree
@@ -146,7 +192,7 @@ A timing number from a run whose digest disagreed is not a result — it is a bu
 
 Benchmarks are a development loop, not CI. Nothing here blocks a merge.
 
-## 8. Issue tracking: the synchronization round trip
+## 9. Issue tracking: the synchronization round trip
 
 This is the step most easily assumed rather than verified.
 Beads carry more than a title: status, priority, labels, parent and blocker edges, a
@@ -157,7 +203,7 @@ working from two clones are working from two different plans.
 **This step writes to the shared `tbd-sync` branch.** It is safe and idempotent, but it
 is not local-only.
 
-### 8.1 Write metadata locally
+### 9.1 Write metadata locally
 
 ```shell
 tbd update <bead-id> \
@@ -167,7 +213,7 @@ tbd update <bead-id> \
 
 ✅ `✓ Updated <bead-id>`.
 
-### 8.2 Push it
+### 9.2 Push it
 
 ```shell
 tbd sync
@@ -176,69 +222,51 @@ tbd sync
 ✅ `✓ Synced: sent N updated`. A failure here saves to an outbox rather than losing the
 change; re-run after fixing the cause rather than re-entering the note.
 
-### 8.3 Read the local side
-
-```shell
-tbd show <bead-id> --json > scratch-local-bead.json
-```
-
-### 8.4 Read the other side, out of git
+### 9.3 See what the other side actually holds
 
 Beads live on the `tbd-sync` branch as one Markdown file per issue, with YAML
 frontmatter for the structured fields and a `## Notes` section for the comment stream.
-Read the file straight out of the branch — this is what another clone will pull:
+Read one straight out of the branch — this is what another clone will pull:
 
 ```shell
 git fetch origin tbd-sync
-git show origin/tbd-sync --stat | head            # find the file your sync touched
-git show origin/tbd-sync:.tbd/data-sync/issues/<internal-id>.md > scratch-remote-bead.md
+git show origin/tbd-sync:.tbd/data-sync/issues/<internal-id>.md
 ```
 
-✅ The frontmatter shows your `labels`, `status`, `priority`, `spec_path`, `parent_id`,
-`dependencies`, and `close_reason`; the body shows the description and a `## Notes`
-section holding the note you just wrote.
+Get `<internal-id>` from `tbd show <bead-id> --json` (the `id` field; the `fdu-xxxx` form
+is a display alias).
 
-### 8.5 Prove both sides match
+✅ The frontmatter shows your `labels`, `status`, `priority`, `spec_path`, and
+`dependencies`; the body shows the description followed by a `## Notes` section holding
+the note you just wrote.
+
+### 9.4 Prove both sides match
 
 Eyeballing two files is how a mismatch gets missed.
 Compare the fields mechanically:
 
 ```shell
-python3 scripts/compare_bead_sync.py     # see below; or inline the equivalent
+python3 scripts/verify_bead_sync.py <bead-id>     # one bead
+python3 scripts/verify_bead_sync.py --quiet       # every bead, mismatches only
 ```
 
-✅ Every compared field reports `OK` and the script prints `both sides match`. A mismatch
-in `notes` or `labels` means metadata is being dropped somewhere in the round trip,
-which is a tooling bug worth stopping for — those fields are where the reasoning lives,
-and losing them silently is worse than failing to sync at all.
+The script resolves the sync path itself, parses the frontmatter and the body sections,
+and compares `title`, `kind`, `status`, `priority`, `spec_path`, `labels`,
+`dependencies`, `description`, and `notes`. It writes nothing and exits non-zero on any
+difference, so it works in a pipeline as well as by hand.
 
-The comparison this runbook was validated with, kept small on purpose:
+✅ `190/190 beads match origin/tbd-sync`, or the specific bead reports `ok`.
 
-```python
-import json, pathlib, re
+A mismatch in `notes` or `labels` means metadata is being dropped somewhere in the round
+trip, which is worth stopping for — those fields are where the reasoning lives, and
+losing them silently is worse than failing to sync at all. Far more often it just means
+`tbd sync` has not run since the last edit; run it and re-check before investigating.
 
-remote = pathlib.Path("scratch-remote-bead.md").read_text()
-parsed = json.loads(pathlib.Path("scratch-local-bead.json").read_text())
-local = parsed if isinstance(parsed, dict) else parsed[0]
+Timestamps and `version` are deliberately not compared: sync rewrites them by design, so
+including them would report a difference on every run and train the reader to ignore the
+output.
 
-frontmatter = remote.split("---")[1]
-notes_remote = remote.split("## Notes", 1)[1].strip() if "## Notes" in remote else ""
-
-checks = {
-    "title": (local["title"], re.search(r'title: "(.*)"', frontmatter).group(1)),
-    "status": (local["status"], re.search(r"status: (\S+)", frontmatter).group(1)),
-    "priority": (str(local["priority"]), re.search(r"priority: (\S+)", frontmatter).group(1)),
-    "labels": (",".join(local.get("labels") or []),
-               ",".join(re.findall(r"^  - (\S+)$", frontmatter, re.M))),
-    "notes": ((local.get("notes") or "").strip(), notes_remote),
-}
-mismatches = [field for field, (lhs, rhs) in checks.items() if lhs != rhs]
-for field, (lhs, rhs) in checks.items():
-    print(f"{'OK      ' if lhs == rhs else 'MISMATCH'} {field}: {lhs[:58]!r}")
-print("\nRESULT:", "both sides match" if not mismatches else f"MISMATCHES: {mismatches}")
-```
-
-### 8.6 Prove a second clone agrees
+### 9.5 Prove a second clone agrees
 
 The strongest form of the check, and the one that catches a stale local database:
 
@@ -248,17 +276,17 @@ tbd sync                                  # pull
 tbd show <bead-id>
 ```
 
-✅ The note, the label, and the status read the same as they did in step 8.3. Two working
-copies now agree, which is the property the whole tracking system rests on.
+✅ The note, the label, and the status read the same as they did on the side you wrote
+them. Two working copies now agree, which is the property the whole tracking system
+rests on.
 
-### 8.7 Clean up
+### 9.6 Clean up
 
 ```shell
-rm -f scratch-local-bead.json scratch-remote-bead.md
 tbd update <bead-id> --remove-label runbook-verified   # optional
 ```
 
-## 9. The handoff gate
+## 10. The handoff gate
 
 ```shell
 make check

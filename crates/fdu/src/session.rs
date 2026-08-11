@@ -107,6 +107,13 @@ impl Session {
         Ok(report(&index, &self.query, provenance))
     }
 
+    /// A consistent copy of the current index.
+    ///
+    /// Used to persist a live session without holding a lock across the write.
+    pub fn index_snapshot(&self) -> Result<crate::Index> {
+        self.index.snapshot()
+    }
+
     /// Wait for the next batch of changes, up to `timeout`.
     ///
     /// Returns `None` when nothing arrived in the window, which is the idle case and

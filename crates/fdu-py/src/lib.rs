@@ -88,6 +88,12 @@ pub struct PyIndex {
     inner: fdu::Index,
     config: ScanConfig,
     errors: Vec<String>,
+    /// Which cache tier produced this index.
+    ///
+    /// Carried rather than assumed: reporting `warm_revalidate` for an index built by a
+    /// cold scan would be a small lie in exactly the field a caller consults to decide
+    /// whether to trust the answer.
+    source: ReportSource,
 }
 
 #[pymethods]
@@ -207,7 +213,7 @@ impl PyIndex {
         let provenance = Provenance {
             scan_started_at: None,
             generated_at: now,
-            source: ReportSource::WarmRevalidate,
+            source: self.source,
             complete: self.errors.is_empty(),
             errors: self.errors.clone(),
         };
@@ -708,7 +714,12 @@ fn open(py: Python<'_>, root: &str, cache: &str, max_depth: Option<usize>) -> Py
     let opened = py.detach(|| fdu::open(&root, &config));
     let (index, report) = opened.map_err(to_py_err)?;
     let errors = report.errors().iter().map(ToString::to_string).collect();
-    Ok(PyIndex { inner: index, config: config.scan, errors })
+    let source = match report.path_taken {
+        fdu::OpenPath::ColdScan => ReportSource::ColdScan,
+        fdu::OpenPath::WarmRevalidate => ReportSource::WarmRevalidate,
+        fdu::OpenPath::CacheOnly => ReportSource::CacheOnly,
+    };
+    Ok(PyIndex { inner: index, config: config.scan, errors, source })
 }
 
 /// Walk a tree with no cache at all and return the index.
@@ -720,7 +731,8 @@ fn scan(py: Python<'_>, root: &str, max_depth: Option<usize>) -> PyResult<PyInde
     let scanned = py.detach(|| fdu::scan::scan_into_index(&root, &config));
     let (index, report) = scanned.map_err(to_py_err)?;
     let errors = report.errors.iter().map(ToString::to_string).collect();
-    Ok(PyIndex { inner: index, config, errors })
+    // A bare scan never consults the cache, so it is always cold.
+    Ok(PyIndex { inner: index, config, errors, source: ReportSource::ColdScan })
 }
 
 /// Run the native CLI using Python's process arguments.
@@ -772,6 +784,7 @@ mod tests {
                     inner: fdu::Index::new("/unused"),
                     config: ScanConfig::default(),
                     errors: Vec::new(),
+                    source: ReportSource::ColdScan,
                 },
             )
             .expect("allocate Python index");
