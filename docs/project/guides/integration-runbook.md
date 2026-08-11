@@ -69,6 +69,13 @@ Worth knowing when a failure looks strange:
   on macOS CI and passes locally, which is exactly how that bug was found.
 - Timestamps in tests come from injected constants, never `SystemTime::now()`. A test
   that reads the clock is a test that fails at midnight or in another timezone.
+- A test that spawns the `fdu` binary needs a `[[test]]` entry in `crates/fdu/Cargo.toml`
+  declaring `required-features = ["cli", ...]`. Without one, cargo auto-discovers it with
+  no requirements and runs it under `--no-default-features`, where the binary is never
+  built. This is the one failure mode `make check` can miss: a stale `target/debug/fdu`
+  from an earlier full-feature build makes the spawn succeed locally, and a clean CI
+  checkout has no such binary. If a feature-boundary job fails on a test that passes for
+  you, run `cargo clean` before believing your local result.
 
 ## 4. Golden CLI tests
 
