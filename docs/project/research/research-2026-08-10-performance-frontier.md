@@ -559,6 +559,44 @@ btrfs’s root-only `find-new` (generation numbers), which misses deletions.
 fdu’s snapshot + revalidation design is therefore not a workaround on Linux; it is the
 only possible architecture, and the parallel sweep is its hot path.
 
+**Why no Linux journal exists, and the partial analogs that do.** The absence is policy,
+not oversight: a persistent change journal taxes every write so occasional readers can
+replay history — NTFS and APFS accepted that tax at the OS level; the Linux answer to
+“changed since” has consistently been *live* delivery (the superblock-watch patches
+became fanotify’s filesystem marks), and ext4’s jbd2 journal is crash-consistency
+machinery with seconds of retention and no API. So the “no journal” statement is
+precisely an ext4/XFS statement, and four analogs deserve the record:
+
+- **CoW snapshot diff (btrfs, ZFS) — the one real candidate accelerator.** `zfs diff`
+  and `btrfs send --no-data -p old new` yield a *complete* change set — creates,
+  deletes, and renames included, unlike `find-new`, which misses deletions.
+  The cursor design maps exactly onto the FSEvents plan’s shape: at snapshot save,
+  create a cheap read-only CoW snapshot (the snapshot *is* the cursor); at open, diff
+  against it, revalidate only named paths, rotate the snapshot; same
+  gate-and-fall-back-to-sweep structure.
+  Caveats that keep it an opt-in niche: requires btrfs/ZFS (some desktops and NAS,
+  rarely CI), privileges for send/diff, and subvolume-scoped roots (H47).
+- **fdu’s own delta journal is the honest general answer.** No production tool resumes
+  Linux watches across restarts because there is nothing to resume from — Watchman
+  recrawls on restart here too.
+  But fdu’s planned append-only journal of applied deltas (cache option B) *is* a
+  persistent change log — valid for exactly the periods a watcher was alive, degrading
+  to the sweep for the gaps.
+  On Linux, rung 2 is something fdu builds rather than something the OS provides.
+- **The pattern is proven where vendors control the whole stack.** Lustre’s persistent
+  ChangeLog feeds Robinhood Policy Engine — scan once into a database, then consume the
+  changelog forever, which is fdu’s architecture at HPC scale — and NetApp SnapDiff /
+  OneFS changelists are the NAS equivalents.
+  Useful precedent; none of it reaches local ext4.
+- **`STATX_CHANGE_COOKIE` (kernel ≥ 6.6)** is a per-inode change counter: it cannot beat
+  the sweep (still one statx per entry) but hardens fingerprints against timestamp
+  forgery and granularity races at zero cost inside the existing mask.
+
+Rejected for the record: dm-era/LVM thin-snapshot deltas (block-level; mapping blocks to
+files requires parsing the filesystem), auditd or eBPF write-logging (a resident
+privileged daemon with heavier overhead — strictly dominated by fdu’s own watcher), and
+the ext4 journal itself (no retention, no API).
+
 **Overlayfs (CI rootfs) is a distinct worst case:** readdir re-merges every layer per
 open directory stream, lookups probe layers top-down, `st_ino`/`d_ino` are synthetic
 unless xino applies (weakening both inode sorting and inode-based identity — record
@@ -1122,6 +1160,7 @@ the loop extensions in H36–H39 to be trusted globally.
 | H43 | FSEvents `sinceWhen` journal resume revalidates a quiet tree in tens of ms at any scale, with the sweep as backstop (validation ladder: UUID, ID regression, drop flags); cross-restart replay is Apple-documented but unproven in production tools, so the spike must prove it | macOS warm open O(changes); correctness identical to sweep every trial | snapshot fields; first-party objc2-core-services module (notify cannot express resume) |
 | H45 | Whole-drive macOS spike: per-volume shards + journal resume + persisted roll-ups turn a 30–60 min dust-class drive scan into a seconds-scale recheck at realistic churn | cold first-scan minutes; hour/day-churn recheck seconds; shard rewrite bounded by changed volume | H26, H33, H43 |
 | H46 | A fingerprint-keyed derived-data cache (line counts over a real repo) turns minutes-cold content summarization into seconds-warm: N stats + re-derive changed files only | cached rerun ~10–100× faster than cold; 1%-churn rerun ∝ churn; scc/tokei as cold-every-time references | tier findings; G5 |
+| H47 | On btrfs/ZFS, a CoW snapshot held as the cache cursor and diffed at open (`btrfs send --no-data -p` / `zfs diff`) yields a complete change set — deletes and renames included — making Linux warm runs O(changes) with the same gate-and-fallback shape as FSEvents resume | quiet-tree warm revalidate in seconds→ms on btrfs/ZFS roots; sweep-identical digests; privilege and subvolume-scope caveats recorded | niche/privileged; fsevents-plan gate pattern |
 
 **Guardrails, so a fast-looking result cannot be a wrong one:**
 
@@ -1300,6 +1339,10 @@ Linux and cloud:
 - [overlayfs kernel doc](https://docs.kernel.org/filesystems/overlayfs.html) ·
   [cgroup throttling (Luu)](https://danluu.com/cgroup-throttling/) ·
   [EBS gp2/gp3 characteristics](https://docs.aws.amazon.com/ebs/latest/userguide/general-purpose.html)
+- [zfs diff](https://openzfs.github.io/openzfs-docs/man/master/8/zfs-diff.8.html) ·
+  [btrfs send](https://btrfs.readthedocs.io/en/latest/btrfs-send.html) ·
+  [Robinhood Policy Engine (Lustre changelog consumer)](https://github.com/cea-hpc/robinhood)
+  · [statx STATX_CHANGE_COOKIE](https://man7.org/linux/man-pages/man2/statx.2.html)
 - [btrfs find-new](https://btrfs.readthedocs.io/en/latest/btrfs-subvolume.html) ·
   [dentry cache sizing incident](https://access.redhat.com/solutions/55818)
 
