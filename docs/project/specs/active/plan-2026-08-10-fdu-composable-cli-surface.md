@@ -409,6 +409,15 @@ get cache observability without a second schema style.
 
 ### Watch Mode
 
+Change detection is event-driven, never polling: the watcher binds the native OS backend
+through `notify` (FSEvents on macOS, inotify on Linux, ReadDirectoryChangesW on
+Windows), coalesces kernel-pushed events, and verifies each coalesced path with one
+fresh stat — idle cost is zero filesystem work.
+`--interval` below throttles only how often *aggregate views re-render*; it plays no
+part in detection. Polling exists solely as the deliberate fallback for filesystems
+without native events (NFS/FUSE/SMB), selected per-filesystem by the watch-hardening
+work (`fdu-lka2`).
+
 `--watch` runs the same query continuously (Principle 9):
 
 1. Open the index per the cache policy and emit the initial report exactly as a one-shot
