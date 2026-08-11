@@ -364,6 +364,53 @@ class RecordHeadlineTests(unittest.TestCase):
                 ),
             )
 
+    def test_non_baseline_missing_comparison_reports_validation_error(self) -> None:
+        document = _run_document()
+        document["statistics"]["cold-scan-index"]["comparisons"] = {}
+
+        with self.assertRaisesRegex(ValueError, "no comparison.*cold-scan-index"):
+            record._verdict_evidence(document, self._arguments(), None)
+
+    def test_constant_runwide_rss_is_unmeasured_when_recording(self) -> None:
+        document = _run_document()
+        comparison = document["statistics"]["cold-scan-index"]["comparisons"][
+            "candidate_vs_control"
+        ]["metrics"]
+        comparison["cpu_ns"] = {
+            "median_change_pct": 0.0,
+            "ci95_change_pct": [0.0, 0.0],
+        }
+        comparison["peak_rss_bytes"] = {
+            "median_change_pct": 0.0,
+            "ci95_change_pct": [0.0, 0.0],
+        }
+        constant_rss_bytes: int = 1_000
+        document["samples"] = [
+            {
+                "variant": variant,
+                "warmup": False,
+                "valid": True,
+                "metrics": {"peak_rss_bytes": constant_rss_bytes},
+            }
+            for _ordinal in range(2)
+            for variant in ("control", "candidate")
+        ]
+        arguments = self._arguments(decision="accepted")
+        headline = record._headline(document, arguments)
+
+        with self.assertRaisesRegex(ValueError, "resource guardrails"):
+            record._verdict_evidence(document, arguments, headline)
+
+        arguments.decision = "rejected"
+        evidence = record._verdict_evidence(document, arguments, headline)
+        rss = next(
+            guardrail
+            for guardrail in evidence["resource_guardrails"]
+            if guardrail["metric"] == "peak_rss_bytes"
+        )
+        self.assertEqual(rss["status"], "not-measured")
+        self.assertIn("process-launcher floor", rss["reason"])
+
     def test_accepted_latency_win_requires_resource_guardrails_or_a_waiver(self) -> None:
         document = _run_document()
         statistics = document["statistics"]["cold-scan-index"]

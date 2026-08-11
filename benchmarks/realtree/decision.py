@@ -2,11 +2,43 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Mapping, Optional
+from typing import Any, Dict, Mapping, Optional, Sequence
 
 from benchmarks.realtree import ledger
 
 RESOURCE_METRICS = ("cpu_ns", "peak_rss_bytes")
+MIN_DEGENERATE_RESOURCE_SAMPLES = 4
+
+
+def resource_measurement_errors(
+    document: Mapping[str, Any], *, selected_variants: Sequence[str]
+) -> Dict[str, str]:
+    """Reject a resource signal that cannot distinguish selected child processes.
+
+    On some Linux launch paths, ``wait4.ru_maxrss`` can be pinned to the Python
+    launcher's pre-exec high-water mark. A single exact value across every job and both
+    variants is therefore not evidence that their memory use is equal.
+    """
+    selected = set(selected_variants)
+    peak_rss = [
+        (sample.get("metrics") or {}).get("peak_rss_bytes")
+        for sample in document.get("samples") or []
+        if sample.get("variant") in selected
+        and sample.get("valid") is True
+        and sample.get("warmup") is False
+    ]
+    measured = [value for value in peak_rss if type(value) is int and value >= 0]
+    if (
+        len(measured) >= MIN_DEGENERATE_RESOURCE_SAMPLES
+        and len(set(measured)) == 1
+    ):
+        return {
+            "peak_rss_bytes": (
+                "identical peak RSS for every selected non-warmup sample across the "
+                "run; the process-launcher floor may dominate this host measurement"
+            )
+        }
+    return {}
 
 
 def resource_guardrail(
@@ -118,4 +150,10 @@ def evaluate(
     }
 
 
-__all__ = ["RESOURCE_METRICS", "evaluate", "resource_guardrail"]
+__all__ = [
+    "MIN_DEGENERATE_RESOURCE_SAMPLES",
+    "RESOURCE_METRICS",
+    "evaluate",
+    "resource_guardrail",
+    "resource_measurement_errors",
+]

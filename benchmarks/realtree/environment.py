@@ -683,7 +683,7 @@ def _cell_decision(
         tree_mutated=tree_mutated,
         maximum_cpu_regression_pct=maximum_cpu_regression_pct,
         maximum_rss_regression_pct=maximum_rss_regression_pct,
-        unmeasured_resources=_resource_measurement_errors(
+        unmeasured_resources=decision.resource_measurement_errors(
             document,
             selected_variants=(control_variant, candidate_variant),
         ),
@@ -729,34 +729,6 @@ def _divergent_gates(cells: Mapping[str, CellDecision]) -> List[str]:
         "overall": {cell.overall_decision for cell in cells.values()},
     }
     return [gate for gate, outcomes in values.items() if len(outcomes) > 1]
-
-
-def _resource_measurement_errors(
-    document: Mapping[str, Any], *, selected_variants: Sequence[str]
-) -> Dict[str, str]:
-    """Reject a resource signal that cannot distinguish any selected child process.
-
-    On some Linux launch paths, ``wait4.ru_maxrss`` can be pinned to the Python
-    launcher's pre-exec high-water mark. A single exact value across every job and both
-    variants is therefore not evidence that their memory use is equal.
-    """
-    selected = set(selected_variants)
-    peak_rss = [
-        (sample.get("metrics") or {}).get("peak_rss_bytes")
-        for sample in document.get("samples") or []
-        if sample.get("variant") in selected
-        and sample.get("valid") is True
-        and sample.get("warmup") is False
-    ]
-    measured = [value for value in peak_rss if type(value) is int and value >= 0]
-    if len(measured) >= 4 and len(set(measured)) == 1:
-        return {
-            "peak_rss_bytes": (
-                "identical peak RSS for every selected non-warmup sample across the "
-                "run; the process-launcher floor may dominate this host measurement"
-            )
-        }
-    return {}
 
 
 def _gate_status(cell: CellDecision, metric: str) -> str:

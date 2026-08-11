@@ -201,8 +201,12 @@ def _verdict_evidence(
         }
 
     comparison = _selected_comparison(run, arguments)
+    if comparison is None:
+        raise ValueError(
+            f"run has no comparison for primary job {arguments.primary_job!r}"
+        )
     primary = (
-        (comparison or {}).get("metrics", {}).get(arguments.primary_metric) or {}
+        comparison.get("metrics", {}).get(arguments.primary_metric) or {}
     )
     primary_interval = primary.get("ci95_change_pct") or [None, None]
     significant_improvement = primary.get("significant_improvement")
@@ -221,16 +225,28 @@ def _verdict_evidence(
             "of at least 3%"
         )
 
+    control_variant = comparison.get("control")
+    candidate_variant = comparison.get("candidate")
+    if not isinstance(control_variant, str) or not isinstance(candidate_variant, str):
+        raise ValueError(
+            "selected comparison lacks control and candidate variant names"
+        )
+    measurement_errors = decision.resource_measurement_errors(
+        run,
+        selected_variants=(control_variant, candidate_variant),
+    )
     guardrails = [
         decision.resource_guardrail(
             comparison,
             metric="cpu_ns",
             maximum_regression_pct=arguments.max_cpu_regression_pct,
+            unmeasured_reason=measurement_errors.get("cpu_ns"),
         ),
         decision.resource_guardrail(
             comparison,
             metric="peak_rss_bytes",
             maximum_regression_pct=arguments.max_rss_regression_pct,
+            unmeasured_reason=measurement_errors.get("peak_rss_bytes"),
         ),
     ]
     disqualifying = [
