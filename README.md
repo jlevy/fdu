@@ -1,31 +1,85 @@
 # fdu
 
-**Fast, incremental file roll-up engine** — `fd` + `du`, read as “fast du”.
+**Fast, incremental file roll-up engine** — `fd` and `du`, read as “fast du”.
 
 fdu answers, for *every* directory in a tree at once: how big is it, how many files does
 it hold, what changed most recently, and what kinds of files live in it.
 One walk, many metrics, cached between runs.
 
-> **Status: early scaffold.** The observation/commit contract, bounded in-process change
+> **Status: pre-release.** The observation/commit contract, bounded in-process change
 > feed, cache lifecycle, applying reconciler, CLI, and Python wheel are tested end to
-> end. The fast walker is not — the current one is a portable `read_dir` +
-> `symlink_metadata` implementation, and **no performance claim should be made for this
-> crate until the syscall layer lands and the benchmark gate passes**. See
-> [the Phase 1 plan](docs/project/specs/active/plan-2026-08-08-fdu-phase-1.md) and the
-> [performance-evidence plan](docs/project/specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md).
+> end, and the measured-improvement loop described below is running.
+> The syscall layer is not built yet: the walker is a bounded parallel pool over
+> portable `read_dir` and `symlink_metadata`, so **no release-grade performance claim
+> should be made for this crate until that layer lands and the benchmark gate against
+> other tools passes**. See
+> [the Phase 1 plan](docs/project/specs/active/plan-2026-08-08-fdu-phase-1.md).
 
 ## Why
 
-Of a dozen surveyed tools in this space (`du`, `ncdu`, `dust`, `dua`, `gdu`, `dut`,
-`duc`, `fsearch`, `bfs`, `fd`, `scc`, `tokei`), exactly one persists anything, exactly
-one carries multiple metrics per pass, **none** does per-directory type tallies, and
-**none** does mtime-based incremental revalidation.
+Of a dozen surveyed tools in this space ([du](https://www.gnu.org/software/coreutils/),
+[ncdu](https://dev.yorhel.nl/ncdu), [dust](https://github.com/bootandy/dust),
+[dua](https://github.com/Byron/dua-cli), [gdu](https://github.com/dundee/gdu),
+[dut](https://codeberg.org/201984/dut), [duc](https://github.com/zevv/duc),
+[fsearch](https://github.com/cboxdoerfer/fsearch),
+[bfs](https://github.com/tavianator/bfs), [fd](https://github.com/sharkdp/fd),
+[scc](https://github.com/boyter/scc), [tokei](https://github.com/XAMPPRocky/tokei)),
+exactly one persists anything, exactly one carries multiple metrics per pass, **none**
+does per-directory type tallies, and **none** does mtime-based incremental revalidation.
 The combination is unoccupied ground, and it is what a live file browser actually needs.
 
 The full survey, with the techniques worth adapting and their sources, is in
-[docs/project/research/research-2026-08-06-file-rollup-engine.md](docs/project/research/research-2026-08-06-file-rollup-engine.md).
+[the file roll-up engine research](docs/project/research/research-2026-08-06-file-rollup-engine.md).
 
-## Build locally
+## Speed and the Cache
+
+fdu has two paths to an answer, and it labels which one you got.
+
+**Without a usable cache, it is a fast walk and roll-up.** Every entry is enumerated and
+statted once, and per-directory roll-ups accumulate as the walk proceeds.
+That is the same job `du` does, plus the extra metrics, and it is bounded by syscall
+count and storage latency.
+
+**With a usable cache, it can be much faster** — but only where the cache can supply
+something the filesystem will not.
+This is worth stating plainly, because it is where naive du-caches go wrong: change
+information does not propagate up a directory tree.
+An in-place file edit changes no directory’s mtime, not even its parent’s, so a
+directory fingerprint proves that no entry was *added, removed, or renamed*, and nothing
+about any child’s bytes.
+The trustworthy floor for a warm run is therefore one stat per entry, and the cache pays
+off decisively in the cases that beat that floor:
+
+- **Environments where the OS metadata cache cannot hold the tree** — CI runners, cloud
+  hosts, whole-drive scans.
+  There the snapshot is not an optimization; it is the only warm state available.
+- **Journal-assisted revalidation**, where the OS already recorded what changed.
+  On macOS the FSEvents journal turns a quiet tree’s warm start into O(changes) instead
+  of O(entries); see
+  [the FSEvents-scoped revalidation plan](docs/project/specs/active/plan-2026-08-10-fdu-fsevents-scoped-revalidation.md).
+- **Expensive derived metrics** such as line counts, where an unchanged fingerprint
+  skips re-reading the file entirely.
+
+On a warm laptop against a mid-size tree, none of those apply, and a warm run is
+currently *slower* than a cold one.
+That inversion is measured rather than assumed, and closing it is the current work.
+
+Speed changes here are decided by paired, interleaved measurement against a real tree,
+with an independent oracle verifying that faster output is still identical output.
+Every accepted and rejected experiment is recorded in
+[the experiment ledger](docs/project/reports/report-2026-08-10-fdu-performance-experiments.md);
+the protocol is [the performance loop](docs/project/guides/performance-loop.md).
+The cost model, the platform levers that change constants by integer factors, and the
+ranked backlog are in
+[the performance frontier research](docs/project/research/research-2026-08-10-performance-frontier.md),
+which draws on source review of bfs, dut,
+[pdu](https://github.com/KSXGitHub/parallel-disk-usage),
+[diskus](https://github.com/sharkdp/diskus), and
+[jwalk](https://github.com/jessegrosjean/jwalk), plus
+[dumac](https://healeycodes.com/maybe-the-fastest-disk-usage-program-on-macos)’s
+measurements of the macOS bulk-attribute path.
+
+## Build Locally
 
 ```shell
 cargo install --path crates/fdu
@@ -40,7 +94,7 @@ Publishing is Phase 1 work.
 `cargo install fdu` and `uvx --from fdu==<version> fdu` are future commands; neither
 package should be presented as available from crates.io or PyPI yet.
 
-## Use it
+## Use It
 
 ```shell
 fdu                        # summarize the current directory
@@ -70,7 +124,12 @@ raw identity.
 Exit status 2 means partial results; pass `--allow-partial` to accept those
 as success. Exit status 1 means the command failed.
 
-## As a Rust library
+The next iteration of this surface — composable views, selection filters, time-window
+and watermark queries, cache policies, and a `tail -f`-style watch mode, all as
+orthogonal flags over one grammar — is designed in
+[the composable CLI and query surface plan](docs/project/specs/active/plan-2026-08-10-fdu-composable-cli-surface.md).
+
+## As a Rust Library
 
 ```toml
 [dependencies]
@@ -95,7 +154,7 @@ if let Some(src) = index.rollup(Path::new("src")) {
 # Ok::<(), fdu::Error>(())
 ```
 
-## As a Python module
+## As a Python Module
 
 ```python
 import fdu_py
@@ -117,7 +176,7 @@ a release is published, that makes an exact version directly runnable as
 `uvx --from fdu==<version> fdu`; the local wheel and `uvx` path are already exercised by
 `make python-smoke` without implying that a public release exists.
 
-## How it works
+## How It Works
 
 Three artifacts and one contract:
 
@@ -157,7 +216,7 @@ commit; it is not a filesystem transaction.
 
 Two invariants are non-negotiable, because a cache that lies is worse than no cache:
 
-- Content-reuse fingerprints are **size + mtime + ctime + inode**, not mtime alone.
+- Content-reuse fingerprints are **size, mtime, ctime, and inode**, not mtime alone.
   mtime is user-settable and some applications roll it back after writing; ctime is
   kernel-controlled. All observed stat fields are still compared when updating stored
   state, so allocated-byte or device changes cannot leave query results stale.
@@ -175,31 +234,41 @@ Two invariants are non-negotiable, because a cache that lies is worse than no ca
 ## Development
 
 ```shell
-npm ci          # install the exact development-only golden-test toolchain
+npm ci             # install the exact development-only golden-test toolchain
 make supply-chain  # verify release age, provenance, exact pins, and CI trust controls
-make build      # debug build, all features
-make test       # Rust tests plus the end-to-end CLI golden contract
-make test-golden  # build and compare only the four CLI sessions
-make check      # tests, audits, docs, and installed-wheel smoke — the handoff gate
-make fix        # apply formatting
+make build         # debug build, all features
+make test          # Rust tests plus the end-to-end CLI golden contract
+make test-golden   # build and compare only the CLI sessions
+make check         # tests, audits, docs, and installed-wheel smoke — the handoff gate
+make fix           # apply formatting
 ```
 
-The golden sessions are executable Markdown under `tests/golden/`. After an intentional
-CLI output change, run `make golden-update`; it regenerates affected blocks and
-immediately reruns comparison.
+The golden sessions are executable Markdown under `tests/golden/`, run by
+[tryscript](https://github.com/jlevy/tryscript).
+After an intentional CLI output change, run `make golden-update`; it regenerates
+affected blocks and immediately reruns comparison.
 Review the Markdown diff before committing.
 The scenario design and the small set of permitted dynamic patterns are documented in
 [the completed CLI golden-test plan](docs/project/specs/done/plan-2026-08-09-fdu-cli-golden-tests.md).
+
+Performance work has its own targets (`make perf-baseline`, `perf-profile`,
+`perf-compare`, `perf-ledger`), deliberately outside `make check` — a timing gate on a
+shared CI runner measures the runner.
+Follow [the performance loop](docs/project/guides/performance-loop.md) before changing
+anything for speed.
+
 Read [the supply-chain policy](SUPPLY-CHAIN-SECURITY.md) before changing a dependency,
 toolchain, CI action, or bootstrap download.
+[AGENTS.md](AGENTS.md) carries the conventions worth not rediscovering.
 
 ## License
 
 MIT. See [LICENSE](LICENSE).
 
-Designs adapted from GPL-licensed tools (`dut`’s atomic-refcount roll-up, `fsearch`’s
-record layout) are clean reimplementations written from the descriptions in the research
-doc, not transliterated from their source.
+Designs adapted from GPL-licensed tools ([dut](https://codeberg.org/201984/dut)’s
+atomic-refcount roll-up, [fsearch](https://github.com/cboxdoerfer/fsearch)’s record
+layout) are clean reimplementations written from the descriptions in the research doc,
+not transliterated from their source.
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.
