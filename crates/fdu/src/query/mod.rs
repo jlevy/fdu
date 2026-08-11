@@ -6,6 +6,10 @@
 //! API, and the Python bindings all compose the same types rather than reimplementing
 //! selection three times — and so a report can never quietly become a producer of state.
 
+mod glob;
 mod parse;
+mod selection;
 
+pub use glob::Pattern;
 pub use parse::{parse_size, parse_when, system_time_to_nanos};
+pub use selection::{Bound, Candidate, ModifiedWindow, Selection, SizeMetric, SortKey};
