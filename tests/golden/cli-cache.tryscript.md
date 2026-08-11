@@ -18,9 +18,6 @@ patterns:
 ---
 # CLI Cache Lifecycle
 
-<!-- Equivalent cached invocations use textually distinct option spellings so tryscript
-0.1.7 can update each block safely. See github.com/jlevy/tryscript/issues/47. -->
-
 ## No-Cache Is a Cold Scan Without a Side Effect
 
 ### Scan Without a Cache
@@ -114,7 +111,7 @@ snapshot present
 ## An Unchanged Second Open Revalidates the Snapshot
 
 ```console
-$ fdu --json --apparent-size --depth=0 --number 0 project
+$ fdu --json --apparent-size --depth 0 --number 0 project
 {
   "schema": "fdu.tree/2",
   "generator": "fdu 0.0.1",
@@ -159,7 +156,7 @@ fixture expanded
 ### Revalidate the Changed Tree
 
 ```console
-$ fdu --json --apparent-size --depth 0 --number=0 project
+$ fdu --json --apparent-size --depth 0 --number 0 project
 {
   "schema": "fdu.tree/2",
   "generator": "fdu 0.0.1",
@@ -237,7 +234,7 @@ snapshot corrupted
 ### Recover with a Cold Scan
 
 ```console
-$ fdu --json --apparent-size --max-depth=1 --depth 0 --number 0 project
+$ fdu --json --apparent-size --max-depth 1 --depth 0 --number 0 project
 {
   "schema": "fdu.tree/2",
   "generator": "fdu 0.0.1",

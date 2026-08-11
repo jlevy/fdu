@@ -1,0 +1,403 @@
+{
+  "$defs": {
+    "argv": {
+      "items": {
+        "maxLength": 4096,
+        "minLength": 1,
+        "type": "string"
+      },
+      "minItems": 1,
+      "prefixItems": [
+        {
+          "const": "{executable}"
+        }
+      ],
+      "type": "array"
+    },
+    "command": {
+      "additionalProperties": false,
+      "properties": {
+        "argv": {
+          "$ref": "#/$defs/argv"
+        },
+        "environment": {
+          "$ref": "#/$defs/environment"
+        }
+      },
+      "required": [
+        "argv",
+        "environment"
+      ],
+      "type": "object"
+    },
+    "corpus": {
+      "additionalProperties": false,
+      "properties": {
+        "recipe_id": {
+          "pattern": "^[a-z0-9][a-z0-9._/-]*$",
+          "type": "string"
+        },
+        "seed": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "state": {
+          "enum": [
+            "baseline",
+            "one-change",
+            "modify-1pct",
+            "mixed-1pct"
+          ]
+        },
+        "target_entries": {
+          "maximum": 10000000,
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "recipe_id",
+        "seed",
+        "state",
+        "target_entries"
+      ],
+      "type": "object"
+    },
+    "environment": {
+      "additionalProperties": false,
+      "properties": {
+        "set": {
+          "additionalProperties": {
+            "maxLength": 4096,
+            "type": "string"
+          },
+          "propertyNames": {
+            "pattern": "^[A-Z_][A-Z0-9_]*$"
+          },
+          "type": "object"
+        },
+        "unset": {
+          "items": {
+            "pattern": "^[A-Z_][A-Z0-9_]*$",
+            "type": "string"
+          },
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "set",
+        "unset"
+      ],
+      "type": "object"
+    },
+    "method": {
+      "additionalProperties": false,
+      "properties": {
+        "order_group": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z0-9][a-z0-9._/-]*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "required_resources": {
+          "items": {
+            "enum": [
+              "input_blocks",
+              "involuntary_context_switches",
+              "major_faults",
+              "minor_faults",
+              "output_blocks",
+              "peak_rss_bytes",
+              "read_bytes",
+              "retained_rss_bytes",
+              "syscalls",
+              "system_cpu_ns",
+              "user_cpu_ns",
+              "voluntary_context_switches",
+              "write_bytes"
+            ]
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "timeout_seconds": {
+          "maximum": 3600,
+          "minimum": 0.01,
+          "type": "number"
+        },
+        "trials": {
+          "maximum": 1000,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "warmups": {
+          "maximum": 100,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "order_group",
+        "required_resources",
+        "timeout_seconds",
+        "trials",
+        "warmups"
+      ],
+      "type": "object"
+    },
+    "preparation": {
+      "additionalProperties": false,
+      "properties": {
+        "filesystem_cache_argv": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/argv"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "snapshot_argv": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/argv"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "filesystem_cache_argv",
+        "snapshot_argv"
+      ],
+      "type": "object"
+    },
+    "scenario": {
+      "additionalProperties": false,
+      "properties": {
+        "adapter": {
+          "pattern": "^[a-z0-9][a-z0-9._/-]*$",
+          "type": "string"
+        },
+        "command": {
+          "$ref": "#/$defs/command"
+        },
+        "corpus": {
+          "$ref": "#/$defs/corpus"
+        },
+        "filesystem_cache_state": {
+          "enum": [
+            "uncontrolled",
+            "verified-warm",
+            "controlled-cold"
+          ]
+        },
+        "id": {
+          "pattern": "^[a-z0-9][a-z0-9._/-]*$",
+          "type": "string"
+        },
+        "job": {
+          "enum": [
+            "scan-producer",
+            "scan-index",
+            "snapshot-save",
+            "snapshot-load",
+            "revalidate-unchanged",
+            "revalidate-churn",
+            "cli-human",
+            "cli-json",
+            "python-open-query",
+            "query",
+            "delta-apply",
+            "concurrent-query"
+          ]
+        },
+        "method": {
+          "$ref": "#/$defs/method"
+        },
+        "output_sink": {
+          "enum": [
+            "output-digest",
+            "output-file"
+          ]
+        },
+        "preparation": {
+          "$ref": "#/$defs/preparation"
+        },
+        "process_state": {
+          "enum": [
+            "new-process",
+            "same-process"
+          ]
+        },
+        "snapshot_state": {
+          "enum": [
+            "absent",
+            "compatible-unchanged",
+            "compatible-changed",
+            "corrupt",
+            "incompatible-scope",
+            "incompatible-engine"
+          ]
+        },
+        "validation": {
+          "$ref": "#/$defs/validation"
+        }
+      },
+      "required": [
+        "adapter",
+        "command",
+        "corpus",
+        "filesystem_cache_state",
+        "id",
+        "job",
+        "method",
+        "output_sink",
+        "preparation",
+        "process_state",
+        "snapshot_state",
+        "validation"
+      ],
+      "type": "object"
+    },
+    "stdout_json": {
+      "additionalProperties": false,
+      "properties": {
+        "equals": {
+          "type": "object"
+        },
+        "matches_manifest": {
+          "additionalProperties": {
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*$",
+            "type": "string"
+          },
+          "propertyNames": {
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*$"
+          },
+          "type": "object"
+        },
+        "record": {
+          "items": {
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*$",
+            "type": "string"
+          },
+          "maxItems": 64,
+          "type": "array",
+          "uniqueItems": true
+        }
+      },
+      "required": [
+        "equals",
+        "matches_manifest",
+        "record"
+      ],
+      "type": "object"
+    },
+    "validation": {
+      "additionalProperties": false,
+      "properties": {
+        "allowed_exit_codes": {
+          "items": {
+            "maximum": 255,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "corpus": {
+          "enum": [
+            "unchanged",
+            "declared"
+          ]
+        },
+        "snapshot": {
+          "enum": [
+            "any",
+            "exists",
+            "absent"
+          ]
+        },
+        "stderr": {
+          "enum": [
+            "empty",
+            "ignore"
+          ]
+        },
+        "stdout_json": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/stdout_json"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "stdout_nonempty": {
+          "type": "boolean"
+        },
+        "stdout_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "allowed_exit_codes",
+        "corpus",
+        "snapshot",
+        "stderr",
+        "stdout_json",
+        "stdout_nonempty",
+        "stdout_sha256"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "scenario-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "scenarios": {
+      "items": {
+        "$ref": "#/$defs/scenario"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "schema": {
+      "const": "fdu-performance-scenarios-v1"
+    }
+  },
+  "required": [
+    "scenarios",
+    "schema"
+  ],
+  "title": "fdu performance scenario set v1",
+  "type": "object"
+}

@@ -12,7 +12,6 @@ env:
   TZ: UTC
 patterns:
   ALLOCATED: '\d+'
-  BLANK_LINE: '\n'
   MTIME_NS: '-?\d+'
   SCAN_PATH: '[^\r\n]+'
 ---
@@ -263,8 +262,10 @@ $ fdu --no-cache --json --apparent-size --max-depth 1 --depth 2 --number 10 proj
 
 ```console
 $ fdu --no-cache --by-type --json project
-! error: the argument '--by-type' cannot be used with '--json'[BLANK_LINE]
-! Usage: fdu --no-cache --by-type <PATH>[BLANK_LINE]
+! error: the argument '--by-type' cannot be used with '--json'
+!
+! Usage: fdu --no-cache --by-type <PATH>
+!
 ! For more information, try '--help'.
 ? 2
 ```

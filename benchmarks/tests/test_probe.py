@@ -1,0 +1,141 @@
+from __future__ import annotations
+
+import copy
+import os
+import tempfile
+import unittest
+from pathlib import Path
+from typing import Any, Dict, List
+
+from benchmarks.runner import run_scenario_set
+from benchmarks.schema import load_scenario_set
+
+
+REPOSITORY = Path(__file__).resolve().parents[2]
+SCENARIOS = REPOSITORY / "benchmarks" / "scenarios.json"
+
+
+def _probe_path() -> Path:
+    target = Path(os.environ.get("CARGO_TARGET_DIR", REPOSITORY / "target"))
+    if not target.is_absolute():
+        target = REPOSITORY / target
+    suffix = ".exe" if os.name == "nt" else ""
+    return (target / "debug" / "examples" / f"perf_probe{suffix}").resolve()
+
+
+class FduProbeTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.probe = _probe_path()
+        if not cls.probe.is_file():
+            raise AssertionError(
+                f"performance probe is missing at {cls.probe}; "
+                "run `make performance-probe`"
+            )
+
+    def test_every_committed_probe_job_passes_end_to_end(self) -> None:
+        scenarios = load_scenario_set(SCENARIOS)
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            result = run_scenario_set(
+                scenarios,
+                executables={"fdu-probe": [str(self.probe)]},
+                work_directory=root / "work",
+                output_directory=root / "results",
+                order_seed="probe-smoke-v1",
+            )
+
+        self.assertEqual(len(result["trials"]), 8)
+        self.assertTrue(
+            all(trial["validation"]["valid"] for trial in result["trials"])
+        )
+        self.assertTrue(
+            all("component_ns" in trial["probe_metrics"] for trial in result["trials"])
+        )
+        self.assertTrue(
+            all(
+                trial["probe_metrics"]["component_ns"]
+                <= trial["timing"]["wall_ns"]
+                for trial in result["trials"]
+            )
+        )
+        if os.name == "posix" and hasattr(os, "wait4"):
+            self.assertTrue(
+                all(
+                    trial["resources"]["collector"] == "posix-wait4-rusage-v1"
+                    for trial in result["trials"]
+                )
+            )
+
+    def test_wrong_probe_evidence_and_snapshot_states_are_rejected(self) -> None:
+        committed = load_scenario_set(SCENARIOS)["scenarios"]
+        scan = committed[1]
+        snapshot_load = committed[3]
+        cases: List[Dict[str, Any]] = []
+
+        wrong_digest = copy.deepcopy(scan)
+        wrong_digest["id"] = "negative/wrong-digest"
+        wrong_digest["validation"]["stdout_json"]["matches_manifest"][
+            "summary.engine_digest"
+        ] = "semantic_digest"
+        cases.append(wrong_digest)
+
+        wrong_count = copy.deepcopy(scan)
+        wrong_count["id"] = "negative/wrong-count"
+        wrong_count["validation"]["stdout_json"]["matches_manifest"][
+            "summary.entries"
+        ] = "counts.files"
+        cases.append(wrong_count)
+
+        wrong_source = copy.deepcopy(scan)
+        wrong_source["id"] = "negative/wrong-source"
+        wrong_source["validation"]["stdout_json"]["equals"]["source"] = "snapshot"
+        cases.append(wrong_source)
+
+        wrong_snapshot = copy.deepcopy(scan)
+        wrong_snapshot["id"] = "negative/wrong-snapshot-postcondition"
+        wrong_snapshot["validation"]["snapshot"] = "exists"
+        cases.append(wrong_snapshot)
+
+        corrupt_snapshot = copy.deepcopy(snapshot_load)
+        corrupt_snapshot["id"] = "negative/corrupt-snapshot"
+        corrupt_snapshot["snapshot_state"] = "corrupt"
+        corrupt_snapshot["preparation"]["snapshot_argv"] = None
+        cases.append(corrupt_snapshot)
+
+        missing_snapshot = copy.deepcopy(snapshot_load)
+        missing_snapshot["id"] = "negative/missing-snapshot"
+        missing_snapshot["snapshot_state"] = "absent"
+        missing_snapshot["preparation"]["snapshot_argv"] = None
+        missing_snapshot["validation"]["snapshot"] = "absent"
+        cases.append(missing_snapshot)
+
+        for scenario in cases:
+            scenario["method"]["order_group"] = "negative-probe-contract"
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            result = run_scenario_set(
+                {"scenarios": cases, "schema": "fdu-performance-scenarios-v1"},
+                executables={"fdu-probe": [str(self.probe)]},
+                work_directory=root / "work",
+                output_directory=root / "results",
+                order_seed="negative-probe-v1",
+            )
+
+        self.assertEqual(len(result["trials"]), len(cases))
+        reasons_by_id = {
+            trial["scenario_id"]: "\n".join(trial["validation"]["reasons"])
+            for trial in result["trials"]
+        }
+        self.assertIn("manifest mismatch", reasons_by_id["negative/wrong-digest"])
+        self.assertIn("manifest mismatch", reasons_by_id["negative/wrong-count"])
+        self.assertIn("value mismatch", reasons_by_id["negative/wrong-source"])
+        self.assertIn(
+            "snapshot postcondition", reasons_by_id["negative/wrong-snapshot-postcondition"]
+        )
+        self.assertIn("unexpected exit code", reasons_by_id["negative/corrupt-snapshot"])
+        self.assertIn("unexpected exit code", reasons_by_id["negative/missing-snapshot"])
+
+
+if __name__ == "__main__":
+    unittest.main()

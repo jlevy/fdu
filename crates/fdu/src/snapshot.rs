@@ -246,17 +246,49 @@ fn load_with_size_limit(path: &Path, max_snapshot_bytes: u64) -> Result<Option<I
         .checked_sub(footer_bytes)
         .ok_or_else(|| Error::Snapshot("snapshot length underflow".into()))?;
     file.seek(SeekFrom::Start(0)).map_err(|e| Error::io(path, e))?;
-    let actual_checksum = checksum_reader((&mut file).take(payload_len), payload_len)
-        .map_err(|error| Error::io(path, error))?;
-    if actual_checksum != Some(expected_checksum) {
-        return Ok(None);
-    }
-    file.seek(SeekFrom::Start(0)).map_err(|e| Error::io(path, e))?;
-    let mut reader = BufReader::new(file.take(payload_len));
-    match parse_stream(&mut reader, payload_len) {
-        Ok(index) => Ok(Some(index)),
+
+    // One pass, not two: the checksum accumulates as the parser consumes, instead of
+    // a separate full read of the image before parsing begins. The verdict still
+    // gates the data — the parsed index is returned only after the digest over the
+    // complete payload matches, so nothing is ever served from bytes that failed
+    // their checksum. What changes is the failure mode for structurally-valid
+    // corruption: the parser may do work before the mismatch is known, and the
+    // result is then discarded. Structural corruption is caught by the parser's own
+    // bounds and consistency checks exactly as before, fail-closed either way.
+    let mut reader = Crc32cReader::new(BufReader::new(file.take(payload_len)));
+    let outcome = parse_stream(&mut reader, payload_len);
+    match outcome {
+        Ok(index) => {
+            // A successful parse consumed every payload byte (the trailing-byte check
+            // proves it), so the running digest covers the whole image.
+            if reader.finish() == expected_checksum { Ok(Some(index)) } else { Ok(None) }
+        }
         Err(ParseError::Invalid) => Ok(None),
         Err(ParseError::Io(source)) => Err(Error::io(path, source)),
+    }
+}
+
+/// A reader that folds CRC-32C over every byte the caller consumes.
+struct Crc32cReader<R> {
+    inner: R,
+    state: u32,
+}
+
+impl<R: Read> Crc32cReader<R> {
+    fn new(inner: R) -> Self {
+        Self { inner, state: u32::MAX }
+    }
+
+    fn finish(&self) -> u32 {
+        !self.state
+    }
+}
+
+impl<R: Read> Read for Crc32cReader<R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let read = self.inner.read(buf)?;
+        self.state = crc32c_update(self.state, &buf[..read]);
+        Ok(read)
     }
 }
 
@@ -264,26 +296,6 @@ fn read_footer_checksum(reader: &mut impl Read) -> std::io::Result<u32> {
     let mut bytes = [0u8; CHECKSUM_BYTES];
     reader.read_exact(&mut bytes)?;
     Ok(u32::from_le_bytes(bytes))
-}
-
-fn checksum_reader(mut reader: impl Read, payload_len: u64) -> std::io::Result<Option<u32>> {
-    let mut state = u32::MAX;
-    let mut remaining = payload_len;
-    let mut buffer = [0u8; 8 * 1024];
-    while remaining > 0 {
-        let wanted = usize::try_from(remaining).unwrap_or(usize::MAX).min(buffer.len());
-        let read = reader.read(&mut buffer[..wanted])?;
-        if read == 0 {
-            return Ok(None);
-        }
-        state = crc32c_update(state, &buffer[..read]);
-        let read = u64::try_from(read)
-            .map_err(|_| std::io::Error::other("checksum read length exceeds u64"))?;
-        remaining = remaining
-            .checked_sub(read)
-            .ok_or_else(|| std::io::Error::other("checksum reader exceeded payload bound"))?;
-    }
-    Ok(Some(!state))
 }
 
 fn crc32c(bytes: &[u8]) -> u32 {
@@ -343,6 +355,7 @@ fn parse_stream(reader: &mut impl Read, payload_len: u64) -> ParseResult<Index> 
 
     let mut index = Index::new_with_scope(&root_path, scope);
     let mut ids: Vec<EntryId> = Vec::new();
+    let mut parent_path_memo: Option<(u32, PathBuf)> = None;
     for slot in 0..count {
         let parent_slot = read_u32(reader)?;
         let kind = EntryKind::from_u8(read_u8(reader)?).ok_or(ParseError::Invalid)?;
@@ -377,15 +390,34 @@ fn parse_stream(reader: &mut impl Read, payload_len: u64) -> ParseResult<Index> 
         if index.kind_of(parent) != Some(EntryKind::Dir) || !is_snapshot_name(&name) {
             return Err(ParseError::Invalid);
         }
-        let mut path = index.path_of(parent).ok_or(ParseError::Invalid)?;
-        path.push(name);
-        if index.lookup(&path).is_some() {
+        // Records arrive grouped by parent, so rebuilding the parent's path from its
+        // ancestors for every child walked the same chain over and over. Remember the
+        // last one. A miss costs exactly what the old code paid every time.
+        let parent_path = match &parent_path_memo {
+            Some((memo_slot, memo_path)) if *memo_slot == parent_slot => memo_path,
+            _ => {
+                let resolved = index.path_of(parent).ok_or(ParseError::Invalid)?;
+                &parent_path_memo.insert((parent_slot, resolved)).1
+            }
+        };
+        let path = parent_path.join(&name);
+
+        // A snapshot naming the same path twice is corrupt, and a corrupt snapshot is
+        // treated as absent rather than as data. The check used to be a lookup before
+        // the insert; the insert already reports whether it created an entry, so the
+        // same guarantee costs nothing.
+        let stats = index
+            .apply_baseline(&Observation::new(vec![Op::Upsert { path, kind, attrs }]))
+            .map_err(|_| ParseError::Invalid)?;
+        if stats.inserted != 1 {
             return Err(ParseError::Invalid);
         }
-        index
-            .apply_baseline(&Observation::new(vec![Op::Upsert { path: path.clone(), kind, attrs }]))
-            .map_err(|_| ParseError::Invalid)?;
-        let id = index.lookup(&path).ok_or(ParseError::Invalid)?;
+        // The entry is a child of a parent we already hold, so its id comes from that
+        // parent's children rather than from resolving the whole path from the root.
+        let id = index
+            .children_of(parent)
+            .and_then(|mut children| children.find_map(|(child, id)| (child == name).then_some(id)))
+            .ok_or(ParseError::Invalid)?;
         ids.push(id);
     }
 
@@ -698,11 +730,23 @@ mod tests {
         assert_eq!(restored.clock(), crate::Clock::ZERO);
         assert!(restored.since(crate::Clock::ZERO).deltas.is_empty());
         assert_eq!(restored.len(), original.len());
-        assert_eq!(restored.total(), original.total());
+        // Interned extension ids are assignment-ordered, so equality across two
+        // indexes is only meaningful through the resolved names.
+        let (restored_total, original_total) = (restored.total(), original.total());
+        assert_eq!(
+            (restored_total.files, restored_total.dirs, restored_total.bytes),
+            (original_total.files, original_total.dirs, original_total.bytes)
+        );
+        assert_eq!(restored_total.allocated, original_total.allocated);
+        assert_eq!(restored_total.newest_mtime_ns, original_total.newest_mtime_ns);
+        assert_eq!(restored.by_ext_named(restored_total), original.by_ext_named(original_total));
         assert_eq!(restored.total().files, 3);
         assert_eq!(restored.total().dirs, 2);
         assert_eq!(restored.total().bytes, 157);
-        assert_eq!(restored.total().by_ext[".rs"], ExtTally { files: 2, bytes: 150 });
+        assert_eq!(
+            restored.by_ext_named(restored.total())[".rs"],
+            ExtTally { files: 2, bytes: 150 }
+        );
         assert_eq!(
             restored.attrs(Path::new("src/deep/nested.rs")),
             original.attrs(Path::new("src/deep/nested.rs"))

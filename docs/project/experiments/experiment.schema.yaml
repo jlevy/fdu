@@ -1,0 +1,438 @@
+$defs:
+  Binary:
+    additionalProperties: false
+    description: A measured artifact, identified by content rather than by where it sat.
+    properties:
+      args:
+        description: Flags this variant carried, e.g. a thread count.
+        items:
+          type: string
+        title: Args
+        type: array
+      name:
+        title: Name
+        type: string
+      sha256:
+        default: ''
+        description: Of the binary itself, not its source.
+        title: Sha256
+        type: string
+      size_bytes:
+        default: 0
+        minimum: 0
+        title: Size Bytes
+        type: integer
+    required:
+    - name
+    title: Binary
+    type: object
+  Complexity:
+    additionalProperties: false
+    description: What the change costs to carry, which the accept rule cannot compute.
+    properties:
+      lines_changed:
+        description: Net lines of production code touched.
+        minimum: 0
+        title: Lines Changed
+        type: integer
+      new_dependencies:
+        description: Crates or packages added. Empty is the goal.
+        items:
+          type: string
+        title: New Dependencies
+        type: array
+      new_failure_modes:
+        description: Ways this can now go wrong that it could not before.
+        items:
+          type: string
+        title: New Failure Modes
+        type: array
+      new_unsafe_blocks:
+        default: 0
+        minimum: 0
+        title: New Unsafe Blocks
+        type: integer
+      notes:
+        default: ''
+        description: Anything else that argues for or against.
+        title: Notes
+        type: string
+    required:
+    - lines_changed
+    title: Complexity
+    type: object
+  JobResult:
+    additionalProperties: false
+    description: What one measured job did, across every metric.
+    properties:
+      invalid_samples:
+        default: 0
+        description: Trials the independent oracle rejected. Nonzero invalidates the job.
+        minimum: 0
+        title: Invalid Samples
+        type: integer
+      job:
+        description: Job id, for example cold-scan-index.
+        title: Job
+        type: string
+      metrics:
+        additionalProperties:
+          $ref: '#/$defs/MetricChange'
+        description: Keyed by metric name, e.g. wall_ns.
+        title: Metrics
+        type: object
+      start_state:
+        description: Whether a compatible fdu snapshot existed before the timed work.
+        enum:
+        - cold
+        - warm
+        title: Start State
+        type: string
+    required:
+    - job
+    - start_state
+    title: JobResult
+    type: object
+  Method:
+    additionalProperties: false
+    properties:
+      build_profile:
+        default: release
+        description: Cargo profile. Timing evidence only ever comes from release.
+        title: Build Profile
+        type: string
+      candidate:
+        description: What changed.
+        title: Candidate
+        type: string
+      candidate_binary:
+        anyOf:
+        - $ref: '#/$defs/Binary'
+        - type: 'null'
+        default: null
+      control:
+        description: What the candidate was compared against.
+        title: Control
+        type: string
+      control_binary:
+        anyOf:
+        - $ref: '#/$defs/Binary'
+        - type: 'null'
+        default: null
+      interleaved:
+        default: true
+        description: Variants alternated per ordinal rather than run in blocks.
+        title: Interleaved
+        type: boolean
+      run_artifact:
+        anyOf:
+        - type: string
+        - type: 'null'
+        default: null
+        description: Path to the raw run JSON this was derived from.
+        title: Run Artifact
+      toolchain:
+        default: ''
+        description: Compiler version the binaries were built with.
+        title: Toolchain
+        type: string
+      trials:
+        minimum: 1
+        title: Trials
+        type: integer
+      warmups:
+        minimum: 0
+        title: Warmups
+        type: integer
+    required:
+    - candidate
+    - control
+    - trials
+    - warmups
+    title: Method
+    type: object
+  MetricChange:
+    additionalProperties: false
+    description: One metric's paired comparison between the control and the candidate.
+    properties:
+      candidate_median:
+        description: Candidate median, same unit.
+        title: Candidate Median
+        type: number
+      change_pct:
+        description: Paired median change, negative meaning the candidate is faster.
+        title: Change Pct
+        type: number
+      ci95_high_pct:
+        anyOf:
+        - type: number
+        - type: 'null'
+        default: null
+        description: Upper bound of the 95% bootstrap interval.
+        title: Ci95 High Pct
+      ci95_low_pct:
+        anyOf:
+        - type: number
+        - type: 'null'
+        default: null
+        description: Lower bound of the 95% bootstrap interval on change_pct.
+        title: Ci95 Low Pct
+      control_median:
+        description: Control median, in the metric's own unit.
+        title: Control Median
+        type: number
+      pairs:
+        default: 0
+        description: Trial pairs behind the comparison.
+        minimum: 0
+        title: Pairs
+        type: integer
+      significant:
+        default: false
+        description: Whether the whole interval lies below zero, i.e. the win is not noise.
+        title: Significant
+        type: boolean
+    required:
+    - candidate_median
+    - change_pct
+    - control_median
+    title: MetricChange
+    type: object
+  ReferenceTool:
+    additionalProperties: false
+    description: A third-party tool measured on the same tree, for calibration only.
+    properties:
+      argv:
+        items:
+          type: string
+        title: Argv
+        type: array
+      name:
+        title: Name
+        type: string
+      wall_ns_median:
+        title: Wall Ns Median
+        type: number
+    required:
+    - name
+    - wall_ns_median
+    title: ReferenceTool
+    type: object
+  Subject:
+    additionalProperties: false
+    description: |-
+      What was measured, and on what.
+
+      This is the reproducibility record. Someone re-running the experiment in a year
+      needs to know whether they are looking at the same tree on comparable hardware,
+      and a timing without that context is a number without a claim attached.
+
+      The tree is pinned by content, not by name: ``tree_engine_digest`` is the
+      `fdu-index-record-v1` digest over every entry's path, kind, size, mtime, ctime,
+      inode, and device. Two trees with that digest are the same tree in the same
+      state. The path is never recorded — ``tree_root_id`` is its SHA-256, enough to
+      tell two trees apart without disclosing where either lives.
+    properties:
+      filesystem:
+        default: ''
+        title: Filesystem
+        type: string
+      host_arch:
+        default: ''
+        title: Host Arch
+        type: string
+      host_cores:
+        default: 0
+        minimum: 0
+        title: Host Cores
+        type: integer
+      host_cpu:
+        default: ''
+        title: Host Cpu
+        type: string
+      host_efficiency_cores:
+        default: 0
+        minimum: 0
+        title: Host Efficiency Cores
+        type: integer
+      host_memory_bytes:
+        default: 0
+        minimum: 0
+        title: Host Memory Bytes
+        type: integer
+      host_performance_cores:
+        default: 0
+        description: Big cores, where they are distinguishable.
+        minimum: 0
+        title: Host Performance Cores
+        type: integer
+      host_system:
+        default: ''
+        title: Host System
+        type: string
+      os_cache:
+        default: warm-steady
+        description: Page-cache condition. Dropping it needs root, so say which it was.
+        title: Os Cache
+        type: string
+      tree_allocated_bytes:
+        default: 0
+        minimum: 0
+        title: Tree Allocated Bytes
+        type: integer
+      tree_apparent_bytes:
+        minimum: 0
+        title: Tree Apparent Bytes
+        type: integer
+      tree_directories:
+        minimum: 0
+        title: Tree Directories
+        type: integer
+      tree_engine_digest:
+        default: ''
+        description: fdu-index-record-v1 digest of the whole tree; pins exact content.
+        title: Tree Engine Digest
+        type: string
+      tree_entries:
+        minimum: 0
+        title: Tree Entries
+        type: integer
+      tree_files:
+        default: 0
+        minimum: 0
+        title: Tree Files
+        type: integer
+      tree_label:
+        title: Tree Label
+        type: string
+      tree_max_depth:
+        minimum: 0
+        title: Tree Max Depth
+        type: integer
+      tree_mutated_during_run:
+        default: false
+        description: True invalidates the whole experiment; the tree moved mid-run.
+        title: Tree Mutated During Run
+        type: boolean
+      tree_root_id:
+        description: SHA-256 of the tree's path. Never the path.
+        title: Tree Root Id
+        type: string
+      tree_symlinks:
+        default: 0
+        minimum: 0
+        title: Tree Symlinks
+        type: integer
+    required:
+    - tree_apparent_bytes
+    - tree_directories
+    - tree_entries
+    - tree_label
+    - tree_max_depth
+    - tree_root_id
+    title: Subject
+    type: object
+  Verdict:
+    additionalProperties: false
+    description: The decision, the number it rests on, and the reason in one sentence.
+    properties:
+      change_pct:
+        anyOf:
+        - type: number
+        - type: 'null'
+        default: null
+        description: The headline paired median change.
+        title: Change Pct
+      commit:
+        anyOf:
+        - type: string
+        - type: 'null'
+        default: null
+        description: Commit that landed it, or reverted it.
+        title: Commit
+      decision:
+        enum:
+        - accepted
+        - rejected
+        - superseded
+        - blocked
+        - in-progress
+        - baseline
+        title: Decision
+        type: string
+      primary_job:
+        description: The job the decision was taken on.
+        title: Primary Job
+        type: string
+      primary_metric:
+        default: wall_ns
+        title: Primary Metric
+        type: string
+      reason:
+        description: One sentence. Why this decision and not the other.
+        title: Reason
+        type: string
+      threshold_pct:
+        default: -3.0
+        description: The bar a change had to clear to be worth carrying.
+        title: Threshold Pct
+        type: number
+    required:
+    - decision
+    - primary_job
+    - reason
+    title: Verdict
+    type: object
+$schema: https://json-schema.org/draft/2020-12/schema
+additionalProperties: false
+description: One turn of the performance loop, from hypothesis to verdict.
+properties:
+  complexity:
+    $ref: '#/$defs/Complexity'
+  date:
+    pattern: ^\d{4}-\d{2}-\d{2}$
+    title: Date
+    type: string
+  hypotheses:
+    description: Hypothesis ids from the performance-loop guide, e.g. H1.
+    items:
+      type: string
+    title: Hypotheses
+    type: array
+  id:
+    description: Stable identifier, e.g. exp-002.
+    pattern: ^exp-\d{3}$
+    title: Id
+    type: string
+  method:
+    $ref: '#/$defs/Method'
+  reference_tools:
+    items:
+      $ref: '#/$defs/ReferenceTool'
+    title: Reference Tools
+    type: array
+  results:
+    items:
+      $ref: '#/$defs/JobResult'
+    title: Results
+    type: array
+  subject:
+    $ref: '#/$defs/Subject'
+  title:
+    title: Title
+    type: string
+  verdict:
+    $ref: '#/$defs/Verdict'
+required:
+- complexity
+- date
+- id
+- method
+- subject
+- title
+- verdict
+title: Experiment
+type: object
+x-softschema:
+  contract: fdu.performance:Experiment/v1
+  schema_sha256: 17823e7b4a786b9d1087fe204d1a0878a11b19b711df86ed1eb4504eb9e95d1f

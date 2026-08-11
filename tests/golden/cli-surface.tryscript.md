@@ -9,7 +9,6 @@ env:
   NO_COLOR: "1"
   TZ: UTC
 patterns:
-  BLANK_LINE: '\n'
   OS_ERROR: '[^\r\n]+'
   SCAN_PATH: '[^\r\n]+'
 ---
@@ -156,9 +155,12 @@ $ fdu --no-cache --color never --apparent-size --depth 0
 
 ```console
 $ fdu --definitely-not-an-option
-! error: unexpected argument '--definitely-not-an-option' found[BLANK_LINE]
-!   tip: to pass '--definitely-not-an-option' as a value, use '-- --definitely-not-an-option'[BLANK_LINE]
-! Usage: fdu [OPTIONS] [PATH][BLANK_LINE]
+! error: unexpected argument '--definitely-not-an-option' found
+!
+!   tip: to pass '--definitely-not-an-option' as a value, use '-- --definitely-not-an-option'
+!
+! Usage: fdu [OPTIONS] [PATH]
+!
 ! For more information, try '--help'.
 ? 2
 ```

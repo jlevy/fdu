@@ -31,7 +31,13 @@ fn to_py_err(err: fdu::Error) -> PyErr {
     }
 }
 
-fn rollup_dict<'py>(py: Python<'py>, roll: &RollUp) -> PyResult<Bound<'py, PyDict>> {
+/// Extension tallies carry interned ids internally, so the owning index resolves
+/// them back to names at this boundary — Python callers always see extension strings.
+fn rollup_dict<'py>(
+    py: Python<'py>,
+    index: &fdu::Index,
+    roll: &RollUp,
+) -> PyResult<Bound<'py, PyDict>> {
     let dict = PyDict::new(py);
     dict.set_item("files", roll.files)?;
     dict.set_item("dirs", roll.dirs)?;
@@ -40,7 +46,7 @@ fn rollup_dict<'py>(py: Python<'py>, roll: &RollUp) -> PyResult<Bound<'py, PyDic
     dict.set_item("newest_mtime_ns", roll.newest_mtime_ns)?;
 
     let by_ext = PyDict::new(py);
-    for (ext, tally) in &roll.by_ext {
+    for (ext, tally) in index.by_ext_named(roll) {
         let entry = PyDict::new(py);
         entry.set_item("files", tally.files)?;
         entry.set_item("bytes", tally.bytes)?;
@@ -115,14 +121,14 @@ impl PyIndex {
 
     /// Roll-up totals for the whole tree.
     fn total<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
-        rollup_dict(py, self.inner.total())
+        rollup_dict(py, &self.inner, self.inner.total())
     }
 
     /// Roll-up totals for one directory, or `None` if it is absent or not a directory.
     #[pyo3(signature = (path))]
     fn rollup<'py>(&self, py: Python<'py>, path: &str) -> PyResult<Option<Bound<'py, PyDict>>> {
         match self.inner.rollup(Path::new(path)) {
-            Some(roll) => Ok(Some(rollup_dict(py, roll)?)),
+            Some(roll) => Ok(Some(rollup_dict(py, &self.inner, roll)?)),
             None => Ok(None),
         }
     }
@@ -144,7 +150,7 @@ impl PyIndex {
             let kind = self.inner.kind_of(id).expect("child handle is live");
             entry.set_item("kind", entry_kind_label(kind))?;
             if let Some(roll) = self.inner.rollup_of(id) {
-                entry.set_item("rollup", rollup_dict(py, roll)?)?;
+                entry.set_item("rollup", rollup_dict(py, &self.inner, roll)?)?;
             } else {
                 let attrs = self.inner.attrs_of(id).expect("child handle is live");
                 entry.set_item("bytes", attrs.size)?;

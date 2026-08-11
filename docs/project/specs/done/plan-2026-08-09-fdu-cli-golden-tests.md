@@ -18,8 +18,9 @@ The suite uses four session files and one portable fixture.
 Exact output is the default.
 Patterns are limited to values the test does not control: sandbox paths, filesystem
 timestamps, allocated block counts, and operating-system error text.
-One exact-newline pattern bridges a tryscript parser limitation for blank stderr lines;
-it does not accept variable content.
+Tryscript 0.2.0 expresses exact blank stderr lines directly and rewrites duplicate
+blocks by source position, so the suite needs neither a newline regex nor distinct
+option spellings as updater workarounds.
 Focused Rust tests remain authoritative for behavior that cannot be represented portably
 by a shell-driven golden test, including permission failures, non-UTF-8 names, terminal
 detection, and broken pipes.
@@ -73,8 +74,8 @@ ordering and limits, cache transitions, or cross-platform behavior.
 ### Tryscript Findings
 
 The implementation and documentation at
-[jlevy/tryscript](https://github.com/jlevy/tryscript) were reviewed at release `0.1.7`
-and source commit `0a79ba856407eebfc5e6a15d077f7f5acac06b20`.
+[jlevy/tryscript](https://github.com/jlevy/tryscript) were reviewed at release `0.2.0`
+and source commit `58172b585e16a9a79605a4e04fdbfe9a11ebe02a`.
 
 The features this design relies on are:
 
@@ -92,11 +93,6 @@ The relevant limitations are:
 - Output matching strips ANSI escapes, so it cannot prove that color was emitted
 - Filesystem allocation and timestamp values are inherently platform-dependent
 - Temporary paths differ by run and JSON escapes Windows path separators
-- A bare `!` is parsed as stdout, while the `! ` spelling needed for an empty stderr
-  line relies on fragile trailing whitespace
-- Multiple `$` prompts in one console fence are silently concatenated as one command
-- `--update` finds blocks by raw text, so repeated identical commands in a stateful file
-  can receive another invocation’s captured output
 - `--update` replaces a failing block’s named patterns with one run’s literal values,
   making the next sandbox fail even after an intentional stable-output update
 
@@ -104,15 +100,13 @@ The suite therefore uses committed fixtures and `node -e` only for the two state
 that must occur between commands: modifying a fixture file and corrupting a generated
 snapshot. Node is already the runtime executing tryscript.
 Every invocation has its own console fence.
-Exact blank stderr lines use a named pattern whose regular expression is one newline,
-pending [tryscript issue 45](https://github.com/jlevy/tryscript/issues/45). The
-multi-command hazard is tracked in
-[tryscript issue 46](https://github.com/jlevy/tryscript/issues/46). Stateful invocations
-use equivalent but textually distinct option spellings until the updater is fixed in
-[tryscript issue 47](https://github.com/jlevy/tryscript/issues/47). The immediate
-comparison after `make golden-update` fails safely if update mode literalizes an
-approved pattern; reviewers restore only the named unstable fields and rerun the suite.
-Preserving those patterns automatically is tracked in
+Release 0.2.0 resolves the exact blank-stderr, multiple-prompt, and duplicate-block
+hazards reported in [tryscript issue 45](https://github.com/jlevy/tryscript/issues/45),
+[issue 46](https://github.com/jlevy/tryscript/issues/46), and
+[issue 47](https://github.com/jlevy/tryscript/issues/47). The immediate comparison after
+`make golden-update` still fails safely if update mode literalizes an approved pattern;
+reviewers restore only the named unstable fields and rerun the suite.
+Preserving those patterns automatically remains tracked in
 [tryscript issue 49](https://github.com/jlevy/tryscript/issues/49).
 
 ## Behavioral Contract
@@ -270,7 +264,6 @@ The complete suite sets:
 | `MTIME_NS` | Checkout and fixture-copy times change | JSON key, numeric shape, ordering, and aggregates |
 | `ALLOCATED` | Filesystem block accounting differs | Apparent sizes and every non-allocation field |
 | `OS_ERROR` | Kernel error wording and numeric suffix differ | Error class, failing path, cause structure, stream, and exit status |
-| `BLANK_LINE` | Tryscript cannot spell an empty stderr line without trailing whitespace | Exactly one newline; no content is elided |
 
 No generic multiline elision is used.
 Stable version numbers, schema identifiers, flags, counts, sizes, ordering, percentages,
@@ -295,7 +288,8 @@ These tests supplement rather than repeat the full transcripts.
 
 ## Tooling and Supply Chain
 
-- Pin tryscript exactly at `0.1.7`, which predates the 14-day dependency cool-off
+- Pin tryscript exactly at `0.2.0` under the maintainer-approved, expiring first-party
+  exception, and pin `tsx`’s `esbuild` edge to the audited `0.28.1` release
 - Add a root private `package.json` and committed `package-lock.json`; do not use
   `tryscript@latest` or an unpinned zero-install runner
 - Disable npm lifecycle scripts through repository configuration and `npm ci`
@@ -341,6 +335,8 @@ graph or published artifacts.
   coverage
 - [x] `fdu-12q9`: replace the opaque byte-token corpus with a documented project fixture
   while preserving the same behavioral coverage
+- [x] `fdu-ytvu`: upgrade to tryscript 0.2.0, remove released workarounds, and prove
+  ordinary and update-mode execution against the exact locked install
 
 ## Issue Ledger
 
@@ -358,9 +354,9 @@ design decision and acceptance behavior.
 | ANSI stripping and non-terminal subprocesses prevent tryscript from proving color behavior | Keep a focused deterministic color-decision contract test | `fdu-qqpt` | Fixed |
 | The current binary integration suite covers only the Unix partial-result path | Add four portable end-to-end sessions and retain narrow platform tests | `fdu-ijz4` | Fixed |
 | The documented workspace build links the PyO3 `cdylib` directly and fails on macOS outside maturin | Build the core CLI directly and keep maturin as the binding artifact gate | `fdu-f4o2` | Fixed |
-| Tryscript cannot express an exact blank stderr line without fragile trailing whitespace | Accept bare `!` as an empty stderr line; use an exact newline pattern until released | `fdu-ms3k` | Reported as [tryscript 45](https://github.com/jlevy/tryscript/issues/45) |
-| Tryscript concatenates multiple `$` prompts in one fence into one command | Reject the second prompt or parse it as an independent invocation | `fdu-lz5o` | Reported as [tryscript 46](https://github.com/jlevy/tryscript/issues/46) |
-| Tryscript `--update` misassigns results among identical raw blocks | Replace blocks by source range; keep stateful command spellings distinct until released | `fdu-hs0l` | Reported as [tryscript 47](https://github.com/jlevy/tryscript/issues/47) |
+| Tryscript cannot express an exact blank stderr line without fragile trailing whitespace | Accept bare `!` as an empty stderr line | `fdu-ms3k` | Resolved and adopted in tryscript 0.2.0 |
+| Tryscript concatenates multiple `$` prompts in one fence into one command | Reject the second prompt with a located parse error | `fdu-lz5o` | Resolved and adopted in tryscript 0.2.0 |
+| Tryscript `--update` misassigns results among identical raw blocks | Replace blocks by source range | `fdu-hs0l` | Resolved and adopted in tryscript 0.2.0 |
 | Tryscript `--update` replaces named unstable patterns with literal values | Preserve matching named patterns while updating stable neighbors; fail the immediate comparison until restored | `fdu-gwe8` | Reported as [tryscript 49](https://github.com/jlevy/tryscript/issues/49) |
 | POSIX single quotes in npm scripts become literal on Windows | Quote the transcript glob portably for Unix shells and `cmd.exe` | `fdu-p7wj` | Fixed |
 | Git could convert the size-sensitive fixture from LF to CRLF on Windows | Pin every golden input to LF in `.gitattributes` | `fdu-p7wj` | Fixed |
@@ -387,6 +383,7 @@ Epic: **fdu-a0w0** — Specify and harden the fdu CLI with golden tests.
 | `fdu-p7wj` | Portable npm glob quoting and fixture line endings on Windows | — |
 | `fdu-xuq9` | Make, CI, npm audit, and review workflow | All behavior slices |
 | `fdu-12q9` | Self-explanatory project corpus with equivalent exact coverage | — |
+| `fdu-ytvu` | Tryscript 0.2.0 upgrade and released-workaround removal | — |
 
 ## Acceptance Criteria
 
@@ -427,6 +424,13 @@ GitHub Actions [run 31329423861](https://github.com/jlevy/fdu/actions/runs/31329
 passes the complete Linux, macOS, Windows, MSRV, documentation, dependency, and wheel
 matrix; Windows runs the same 25 golden scenarios against LF-pinned fixtures and
 portable npm glob quoting.
+
+The 2026-08-09 maintenance pass upgrades the exact lock to tryscript 0.2.0 and exercises
+all 26 current scenarios after a clean `npm ci`. Ordinary comparison and update mode
+both pass; update mode leaves every transcript byte-for-byte unchanged.
+The online provenance gate verifies the release integrity, its expiring first-party
+exception, and the audited `esbuild` override, and `npm audit` reports no
+vulnerabilities.
 
 ## Rollout Plan
 

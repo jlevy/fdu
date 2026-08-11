@@ -33,6 +33,26 @@ If it passes, CI should.
 It runs the same feature combinations CI does — notably `--no-default-features`, which
 is how library consumers build and is otherwise never exercised locally.
 
+## Performance work
+
+Speed changes are decided by measurement, never by argument.
+The loop, the metrics, and the rule that decides whether a change is kept are in
+[docs/project/guides/performance-loop.md](docs/project/guides/performance-loop.md);
+every experiment and its verdict is in
+[the experiment ledger](docs/project/reports/report-2026-08-10-fdu-performance-experiments.md).
+
+- Profile before changing anything.
+  Intuition about where a walker spends its time is reliably wrong, and the ledger has
+  the rejected experiments to prove it.
+- Measure with `make perf-compare` against a real tree, interleaved and paired.
+  A change is kept only when the median improves at least 3% *and* the 95% interval lies
+  entirely below zero.
+- Record every experiment, including the ones that failed, with
+  `python -m benchmarks.realtree.record`. The negative results are the most reusable
+  part of the ledger: they stop the next person re-running a dead end.
+- None of this is in `make check`. A timing gate on a shared CI runner measures the
+  runner.
+
 ## Architecture
 
 Read
@@ -64,6 +84,11 @@ Three artifacts and one contract:
   gate against dut and gdu passes.
   Benchmarks must report cold and warm separately, and raw-walk and with-stats
   separately, or they compare different jobs.
+  The cache is not assumed to be a speed-up: its benefit depends on platform and on
+  which reducer tiers a view uses (see
+  [research-2026-08-10-performance-frontier.md](docs/project/research/research-2026-08-10-performance-frontier.md)),
+  and a warm path that loses to a cold scan of the same view is a defect, not a
+  trade-off.
 - **The cache may never silently lie.** Fingerprints are size + mtime + ctime + inode.
   A corrupt or unrecognized snapshot is treated as absent, never as data.
   Producers that lose precision escalate with `InvalidateSubtree` rather than guessing.
@@ -96,8 +121,12 @@ Three artifacts and one contract:
 
 Read [SUPPLY-CHAIN-SECURITY.md](SUPPLY-CHAIN-SECURITY.md) and
 `tbd guidelines supply-chain-hardening` before any dependency change.
-Preserve the 14-day cool-off; first-party tools (tbd, flowmark) are the documented
-exceptions. Commit `Cargo.lock` when dependencies change, and keep the core crate’s
+Preserve the 14-day cool-off; first-party tools (tbd, flowmark, softschema) are the
+documented exceptions, recorded as `exclude-newer-package` entries in
+[crates/fdu-py/uv.toml](crates/fdu-py/uv.toml).
+The cool-off exists so a compromised upstream release is noticed by somebody else before
+we take it, and that argument does not apply to a package this project’s own authors
+publish. Commit `Cargo.lock` when dependencies change, and keep the core crate’s
 always-on dependency list short — `deny.toml` documents the policy.
 
 ## Git

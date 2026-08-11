@@ -85,6 +85,10 @@ jobs:
         run: cargo build --locked -p fdu --all-features
       - name: Compare the CLI golden contract
         run: npm run test:golden
+      - name: Build the repository-only performance probe
+        run: cargo build --locked -p fdu --example perf_probe --no-default-features
+      - name: Prove the performance harness and every fdu probe job
+        run: python -m unittest discover -s benchmarks/tests -p 'test_*.py'
 
   test-lib-only:
     name: Test library feature boundaries

@@ -1,0 +1,95 @@
+{
+  "recipes": {
+    "balanced": {
+      "default_target_entries": 10000,
+      "fanout": 8,
+      "max_depth": 8,
+      "metadata_profile": "standard",
+      "optional_links": [],
+      "scale_points": [1000, 10000, 100000, 500000, 1000000],
+      "seed": "fdu-balanced-v1",
+      "topology": "balanced",
+      "transitions": []
+    },
+    "churn-distributed": {
+      "default_target_entries": 100000,
+      "fanout": 8,
+      "max_depth": 8,
+      "metadata_profile": "standard",
+      "optional_links": [],
+      "scale_points": [100000, 500000],
+      "seed": "fdu-churn-distributed-v1",
+      "topology": "balanced",
+      "transitions": ["one-change", "modify-1pct", "mixed-1pct"],
+      "mutation_locality": "distributed"
+    },
+    "churn-local": {
+      "default_target_entries": 100000,
+      "fanout": 8,
+      "max_depth": 8,
+      "metadata_profile": "standard",
+      "optional_links": [],
+      "scale_points": [100000, 500000],
+      "seed": "fdu-churn-local-v1",
+      "topology": "balanced",
+      "transitions": ["one-change", "modify-1pct", "mixed-1pct"],
+      "mutation_locality": "local"
+    },
+    "contract": {
+      "default_target_entries": 14,
+      "fanout": 8,
+      "max_depth": 3,
+      "metadata_profile": "contract",
+      "optional_links": ["hardlink", "symlink"],
+      "scale_points": [14],
+      "seed": "fdu-contract-v1",
+      "topology": "contract",
+      "transitions": []
+    },
+    "deep": {
+      "default_target_entries": 10000,
+      "fanout": 4,
+      "max_depth": 48,
+      "metadata_profile": "standard",
+      "optional_links": [],
+      "scale_points": [10000, 100000],
+      "seed": "fdu-deep-v1",
+      "topology": "deep",
+      "transitions": []
+    },
+    "mixed-metadata": {
+      "default_target_entries": 100000,
+      "fanout": 8,
+      "max_depth": 8,
+      "metadata_profile": "mixed",
+      "optional_links": ["hardlink", "symlink"],
+      "scale_points": [100000, 500000],
+      "seed": "fdu-mixed-metadata-v1",
+      "topology": "balanced",
+      "transitions": []
+    },
+    "partial": {
+      "default_target_entries": 100,
+      "fanout": 4,
+      "max_depth": 4,
+      "metadata_profile": "partial",
+      "optional_links": [],
+      "scale_points": [100],
+      "seed": "fdu-partial-v1",
+      "topology": "balanced",
+      "transitions": []
+    },
+    "wide": {
+      "default_target_entries": 10000,
+      "fanout": 2048,
+      "max_depth": 2,
+      "metadata_profile": "standard",
+      "optional_links": [],
+      "scale_points": [10000, 100000, 500000, 1000000],
+      "seed": "fdu-wide-v1",
+      "topology": "wide",
+      "transitions": []
+    }
+  },
+  "schema": "fdu-corpus-recipes-v1"
+}

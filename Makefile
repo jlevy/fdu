@@ -7,13 +7,14 @@ NPM ?= npm
 MSRV ?= 1.85.0
 NODE_INSTALL_STAMP := node_modules/.package-lock.json
 
-.PHONY: help build release test rust-test test-golden golden-update check supply-chain fix fmt fmt-check clippy docs lib-only msrv audit npm-audit python-concurrency python-smoke clean cli
+.PHONY: help build release test rust-test test-golden performance-probe test-performance golden-update check supply-chain fix fmt fmt-check clippy docs lib-only msrv audit npm-audit python-concurrency python-smoke clean cli perf-help
 
 help:
 	@echo "make build      Debug build of the core library and CLI, all features"
 	@echo "make release    Optimized build of the core library and CLI"
-	@echo "make test       Run Rust tests and the CLI golden contract"
+	@echo "make test       Run Rust, CLI golden, and performance-harness tests"
 	@echo "make test-golden  Build and compare the CLI golden contract"
+	@echo "make test-performance  Test the performance harness and every fdu probe job"
 	@echo "make golden-update  Regenerate intentional golden changes, then compare"
 	@echo "make check      Handoff gate: tests, audits, docs, and installed-wheel smoke"
 	@echo "make supply-chain  Verify release age, provenance, pins, and CI trust controls"
@@ -23,6 +24,13 @@ help:
 	@echo "make python-concurrency  Prove Python GIL release and runtime borrow exclusion"
 	@echo "make python-smoke  Build, install, and smoke-test the locked Python wheel"
 	@echo "make cli        Build and run the CLI against this repo"
+	@echo ""
+	@echo "Performance loop (not part of check; see docs/project/guides/performance-loop.md)"
+	@echo "make perf-baseline  Fingerprint the reference tree named by PERF_TREE"
+	@echo "make perf-profile   Attribute time to functions on a symbol-bearing build"
+	@echo "make perf-compare   Measure a candidate against CONTROL, interleaved and paired"
+	@echo "make perf-test      Test the real-tree harness itself"
+	@echo "make perf-ledger    Regenerate the experiment ledger from its artifacts"
 
 build:
 	$(CARGO) build --locked -p fdu --all-features
@@ -30,13 +38,19 @@ build:
 release:
 	$(CARGO) build --locked --release -p fdu --all-features
 
-test: rust-test test-golden
+test: rust-test test-golden test-performance
 
 rust-test:
 	$(CARGO) test --locked --all-features
 
 test-golden: build $(NODE_INSTALL_STAMP)
 	$(NPM) run test:golden
+
+performance-probe:
+	$(CARGO) build --locked -p fdu --example perf_probe --no-default-features
+
+test-performance: performance-probe
+	uv run --no-project python -m unittest discover -s benchmarks/tests -p 'test_*.py'
 
 # Tryscript returns nonzero when it updates a previously failing block. The immediate
 # comparison is authoritative and catches execution failures or incomplete updates.
@@ -102,6 +116,72 @@ python-smoke:
 
 cli:
 	$(CARGO) run --locked --release --bin fdu -- --no-cache -d 2 .
+
+# --- Performance loop -------------------------------------------------------
+#
+# Deliberately outside `check`. This is a development workflow that needs a large
+# real tree and a quiet machine, neither of which CI has; a timing gate on a shared
+# runner measures the runner. See docs/project/guides/performance-loop.md.
+#
+# PERF_TREE names the reference tree. Clone a real checkout with `cp -cR` first so
+# the tree cannot change underneath a run.
+
+PERF_TREE ?= benchmarks/corpus/realtree/metabrowser
+PERF_LABEL ?= $(notdir $(PERF_TREE))
+PERF_RELEASE := target/release/examples/perf_probe
+PERF_PROFILING := target/profiling/examples/perf_probe
+PERF_RUN := uv run --no-project python -m benchmarks.realtree
+
+.PHONY: perf-probe-release perf-probe-profiling perf-baseline perf-profile perf-compare perf-test perf-ledger perf-schema perf-schema-check
+
+perf-probe-release:
+	$(CARGO) build --locked --release -p fdu --example perf_probe --no-default-features
+
+perf-probe-profiling:
+	$(CARGO) build --locked --profile profiling -p fdu --example perf_probe --no-default-features
+
+# Record what the tree looks like now, so later runs can prove they measured the same one.
+perf-baseline:
+	$(PERF_RUN) baseline --root $(PERF_TREE) --label $(PERF_LABEL)
+
+# Where does the time go? Attribution only; never a timing claim.
+perf-profile: perf-probe-profiling
+	$(PERF_RUN) profile --root $(PERF_TREE) --binary $(PERF_PROFILING) \
+		--job cold-scan-index --job warm-revalidate --label $(or $(NAME),latest)
+
+# Is the candidate faster than the control? Set CONTROL to a saved reference binary.
+CONTROL ?= $(PERF_RELEASE)
+perf-compare: perf-probe-release
+	$(PERF_RUN) measure --root $(PERF_TREE) --label $(PERF_LABEL) \
+		--variant "control=$(CONTROL)" \
+		--variant "candidate=$(PERF_RELEASE)" \
+		--reference dust=$(shell command -v dust 2>/dev/null || echo /usr/bin/du) \
+		--job cold-scan-index --job warm-revalidate \
+		--trials $(or $(TRIALS),12) \
+		--baseline-fingerprint benchmarks/results/realtree/tree-$(PERF_LABEL).json \
+		--name $(or $(NAME),adhoc)
+
+perf-test:
+	uv run --no-project python -m unittest discover -s benchmarks/realtree/tests -p 'test_*.py'
+
+# Regenerate the ledger from the committed experiment artifacts. Every number in it
+# is read back out of a validated artifact, so the report cannot drift from the record.
+perf-ledger:
+	uv run --no-project python -m benchmarks.realtree.summary
+
+# The experiment contract is compiled from the Pydantic model; --check fails on drift.
+SOFTSCHEMA ?= uvx softschema@latest
+SCHEMA_QUIET := python3 -c "import json,sys; d=json.load(sys.stdin); print('schema', d['out_path'], 'drift:', d['drift'])"
+
+perf-schema:
+	@PYTHONPATH=. $(SOFTSCHEMA) compile benchmarks.realtree.experiment:Experiment \
+		--out docs/project/experiments/experiment.schema.yaml \
+		--contract fdu.performance:Experiment/v1 | $(SCHEMA_QUIET)
+
+perf-schema-check:
+	@PYTHONPATH=. $(SOFTSCHEMA) compile benchmarks.realtree.experiment:Experiment \
+		--out docs/project/experiments/experiment.schema.yaml \
+		--contract fdu.performance:Experiment/v1 --check | $(SCHEMA_QUIET)
 
 clean:
 	$(CARGO) clean

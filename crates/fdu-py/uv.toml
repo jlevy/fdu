@@ -1,3 +1,9 @@
 # Resolve only packages that have cleared the repository's supply-chain cool-off.
 exclude-newer = "14 days"
-exclude-newer-package = {}
+
+# First-party tooling is exempt, as documented in SUPPLY-CHAIN-SECURITY.md: the cool-off
+# exists to let a compromised upstream release be noticed by somebody else before we
+# take it, and that argument does not apply to a package this project's own authors
+# publish. These are developer tools, never a runtime dependency of the shipped crate.
+[exclude-newer-package]
+softschema = "2099-12-31"

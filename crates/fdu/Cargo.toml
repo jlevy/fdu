@@ -11,7 +11,13 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-exclude = [".github/", "docs/", "attic/", "benchmarks/"]
+exclude = [
+    ".github/",
+    "docs/",
+    "attic/",
+    "benchmarks/",
+    "examples/perf_probe.rs",
+]
 
 [lib]
 name = "fdu"

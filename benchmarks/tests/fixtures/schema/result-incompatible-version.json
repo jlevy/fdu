@@ -1,0 +1,13 @@
+{
+  "executables": {},
+  "harness": {},
+  "host_class": {},
+  "identity": {},
+  "invocation_order": [],
+  "method": {},
+  "result_hash": "",
+  "scenario_definitions": [],
+  "schema": "fdu-performance-result-v99",
+  "source": {},
+  "trials": []
+}
