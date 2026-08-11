@@ -1,8 +1,9 @@
 ---
 sandbox: true
+fixtures:
+  - bin
 path:
   - $TRYSCRIPT_GIT_ROOT/target/debug
-  - $TRYSCRIPT_GIT_ROOT/tests/golden/bin
 env:
   FORCE_COLOR: "0"
   LANG: C
@@ -43,7 +44,7 @@ $ node -e "require('node:fs').mkdirSync('tree'); require('node:fs').writeFileSyn
 ```
 
 ```console
-$ node "$TRYSCRIPT_GIT_ROOT/tests/golden/bin/watch-capture.mjs" tree
+$ node bin/watch-capture.mjs tree
 # create a file
 {"schema": "fdu.stream/1", "record": "change", "op": "upsert", "path": "added.txt", "clock": [CLOCK], "kind": "file", "bytes": 5, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS]}
 # change its size
