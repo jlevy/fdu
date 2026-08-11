@@ -208,6 +208,14 @@ pub struct Provenance {
     pub status: Status,
 }
 
+impl Source {
+    /// Whether a value from this source was checked against the filesystem during
+    /// this session.
+    pub const fn is_verified(self) -> bool {
+        matches!(self, Self::Scanned | Self::Revalidated)
+    }
+}
+
 impl Provenance {
     /// Freshly observed by this process, complete.
     pub const fn scanned(observed_at_ns: i64) -> Self {
@@ -235,7 +243,7 @@ impl Provenance {
 
     /// Whether this value was checked against the filesystem during this session.
     pub const fn is_verified(self) -> bool {
-        matches!(self.source, Source::Scanned | Source::Revalidated)
+        self.source.is_verified()
     }
 }
 

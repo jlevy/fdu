@@ -447,8 +447,9 @@ fn parse_stream(
     if reader.read(&mut extra).map_err(ParseError::Io)? != 0 {
         return Err(ParseError::Invalid);
     }
-    // Anything applied after the load is this process observing the filesystem.
-    index.set_applying_source(Source::Scanned, 0);
+    // Anything applied after the load is this process checking what the snapshot
+    // claimed, which is a revalidation rather than a first sighting.
+    index.set_applying_source(Source::Revalidated, 0);
     Ok(index)
 }
 
@@ -767,6 +768,46 @@ mod tests {
             original.provenance(Path::new("src/main.rs")).expect("present").source,
             crate::Source::Scanned
         );
+    }
+
+    #[test]
+    fn revalidating_a_loaded_index_promotes_entries_out_of_cached() {
+        // The failure a reviewer caught on PR #6: entries were stamped only when
+        // allocated, so a warm sweep could stat every entry and leave them all
+        // reporting `Cached`. A consumer could then never clear a stale-value
+        // indicator no matter how much verification ran, which defeats the point.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let tree = dir.path().join("tree");
+        std::fs::create_dir_all(tree.join("sub")).expect("create dirs");
+        std::fs::write(tree.join("sub/file.txt"), b"contents").expect("write");
+        let snapshot_path = dir.path().join("snapshot.fdu");
+
+        let config = crate::ScanConfig::default();
+        let (original, report) = crate::scan::scan_into_index(&tree, &config).expect("scan");
+        assert!(report.is_complete());
+        save(&original, &snapshot_path).expect("save");
+
+        let mut restored = load(&snapshot_path).expect("load").expect("present");
+        let target = Path::new("sub/file.txt");
+        assert_eq!(
+            restored.provenance(target).expect("present").source,
+            crate::Source::Cached,
+            "straight off disk, nothing has been checked"
+        );
+
+        // A sweep that finds nothing changed still verified every entry it stat'd.
+        let reconciled =
+            crate::scan::reconcile(&mut restored, &config, &mut |_| {}).expect("reconcile");
+        assert!(reconciled.is_complete());
+        assert_eq!(reconciled.apply.updated, 0, "the tree did not change");
+
+        let provenance = restored.provenance(target).expect("present");
+        assert_eq!(
+            provenance.source,
+            crate::Source::Revalidated,
+            "an unchanged entry that was freshly stat'd has still been verified"
+        );
+        assert!(provenance.is_verified());
     }
 
     #[test]

@@ -285,6 +285,14 @@ pub struct Index {
     /// When the snapshot this index was loaded from captured the tree. Zero when the
     /// index was never loaded from one.
     captured_at_ns: i64,
+    /// Subtrees a completed reconciliation has verified, with when it finished.
+    ///
+    /// Kept as intervals rather than per-entry flags because a sweep verifies
+    /// everything beneath a path at once, including entries the producer elided as
+    /// no-ops, and because one record per sweep costs nothing against millions of
+    /// entries. Nested and repeated sweeps collapse: a new record replaces any it
+    /// covers.
+    verified: Vec<(PathBuf, i64)>,
     /// Interner storage: id → name. Ids are indexes into this vector.
     ext_names: Vec<String>,
     /// Interner lookup: name → id.
@@ -528,6 +536,7 @@ impl Index {
             applying_source: Source::Scanned,
             scanned_at_ns: Self::now_unix_nanos(),
             captured_at_ns: 0,
+            verified: Vec::new(),
             ext_names: Vec::new(),
             ext_ids: BTreeMap::new(),
         }
@@ -718,7 +727,27 @@ impl Index {
             .retain(|marked, mark| !marked.starts_with(path) || mark.epoch > started_at);
         if !complete {
             self.mark_unfresh(path, Freshness::Partial);
+            return;
         }
+        // A completed sweep stat'd every entry beneath `path`, including the ones the
+        // producer elided as no-ops before they ever reached a delta. Per-entry
+        // stamping cannot see those, so verification is recorded here as an interval
+        // instead: one record per reconciled subtree rather than a write to each of
+        // millions of entries. This is the same "store where it varies, derive where
+        // it does not" choice as the timestamps, and it keeps the elision — a measured
+        // 18% win on the warm path — intact.
+        let now = Self::now_unix_nanos();
+        self.verified.retain(|(verified_path, _)| !verified_path.starts_with(path));
+        self.verified.push((path.to_path_buf(), now));
+    }
+
+    /// When a completed reconciliation last covered this path, if one did.
+    fn verified_at(&self, path: &Path) -> Option<i64> {
+        self.verified
+            .iter()
+            .filter(|(covered, _)| path.starts_with(covered))
+            .map(|(_, at)| *at)
+            .max()
     }
 
     fn mark_unfresh(&mut self, path: &Path, state: Freshness) -> u64 {
@@ -1022,11 +1051,21 @@ impl Index {
 
     fn provenance_of(&self, id: EntryId) -> Provenance {
         let entry = self.entry(id);
-        Provenance {
-            source: entry.source,
-            observed_at_ns: self.observed_at(entry.source),
-            status: self.status_of(id),
+        let status = self.status_of(id);
+        // A completed sweep over an ancestor verified this entry even if no delta ever
+        // named it, so an interval beats the entry's own stamp when it is newer.
+        if !entry.source.is_verified() {
+            if let Some(path) = self.path_of(id) {
+                if let Some(verified_at) = self.verified_at(&path) {
+                    return Provenance {
+                        source: Source::Revalidated,
+                        observed_at_ns: verified_at,
+                        status,
+                    };
+                }
+            }
         }
+        Provenance { source: entry.source, observed_at_ns: self.observed_at(entry.source), status }
     }
 
     /// Whether this path's totals account for everything beneath it.
@@ -1231,6 +1270,7 @@ impl Index {
             return true;
         };
 
+        let source = self.applying_source;
         let parent = self.ensure_dir_chain(ancestors, stats);
         let existing = self.entry(parent).children.get(*name).copied();
 
@@ -1238,6 +1278,12 @@ impl Index {
             let entry = self.entry(id);
             if entry.kind == kind {
                 if entry.attrs == attrs {
+                    // Nothing about the value changed, but a producer just looked at
+                    // it, and that is exactly what provenance records. Without this an
+                    // entry verified by a revalidation sweep keeps reporting the source
+                    // it was loaded with, and a consumer could never clear a
+                    // stale-value indicator no matter how much checking happened.
+                    self.entry_mut(id).source = source;
                     stats.unchanged += 1;
                     return false;
                 }
@@ -1246,6 +1292,7 @@ impl Index {
                     // so there is nothing to re-merge.
                     let entry = self.entry_mut(id);
                     entry.attrs = attrs;
+                    entry.source = source;
                     Self::bump_revision(entry);
                     stats.updated += 1;
                     return true;
@@ -1254,6 +1301,7 @@ impl Index {
                 self.unmerge_upward(Some(parent), &old);
                 let entry = self.entry_mut(id);
                 entry.attrs = attrs;
+                entry.source = source;
                 Self::bump_revision(entry);
                 let new = self.contribution(id);
                 self.merge_upward(Some(parent), &new);
@@ -1275,7 +1323,7 @@ impl Index {
             parent: Some(parent),
             name: (*name).to_os_string(),
             ext_id,
-            source: self.applying_source,
+            source,
             kind,
             attrs,
             children: BTreeMap::new(),
