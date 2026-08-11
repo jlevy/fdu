@@ -745,7 +745,7 @@ mod tests {
         assert_eq!(restored.total().bytes, 157);
         assert_eq!(
             restored.by_ext_named(restored.total())[".rs"],
-            ExtTally { files: 2, bytes: 150 }
+            ExtTally { files: 2, bytes: 150, allocated: 1024 }
         );
         assert_eq!(
             restored.attrs(Path::new("src/deep/nested.rs")),

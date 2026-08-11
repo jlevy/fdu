@@ -78,6 +78,12 @@ pub struct ExtTally {
     pub files: u64,
     /// Apparent bytes across those files.
     pub bytes: u64,
+    /// Allocated bytes across those files.
+    ///
+    /// Carried alongside `bytes` so a per-type report can answer in either metric. A
+    /// tally that tracked only apparent size would force a report asked for allocated
+    /// bytes to either switch metrics silently or drop the breakdown.
+    pub allocated: u64,
 }
 
 /// Pre-computed aggregate state for one directory's entire subtree.
@@ -136,6 +142,7 @@ impl RollUp {
             let slot = self.by_ext.entry(*ext).or_default();
             slot.files += tally.files;
             slot.bytes += tally.bytes;
+            slot.allocated += tally.allocated;
         }
     }
 
@@ -153,7 +160,8 @@ impl RollUp {
             if let Some(slot) = self.by_ext.get_mut(ext) {
                 slot.files = slot.files.saturating_sub(tally.files);
                 slot.bytes = slot.bytes.saturating_sub(tally.bytes);
-                if slot.files == 0 && slot.bytes == 0 {
+                slot.allocated = slot.allocated.saturating_sub(tally.allocated);
+                if slot.files == 0 && slot.bytes == 0 && slot.allocated == 0 {
                     self.by_ext.remove(ext);
                 }
             }
@@ -1021,7 +1029,14 @@ impl Index {
                     by_ext: BTreeMap::new(),
                 };
                 if let Some(ext_id) = entry.ext_id {
-                    roll.by_ext.insert(ext_id, ExtTally { files: 1, bytes: entry.attrs.size });
+                    roll.by_ext.insert(
+                        ext_id,
+                        ExtTally {
+                            files: 1,
+                            bytes: entry.attrs.size,
+                            allocated: entry.attrs.allocated,
+                        },
+                    );
                 }
                 roll
             }
@@ -1912,7 +1927,10 @@ mod tests {
         assert_eq!(total.bytes, 10);
         assert_eq!(total.allocated, 512);
         assert_eq!(total.newest_mtime_ns, 10);
-        assert_eq!(index.by_ext_named(total)[".txt"], ExtTally { files: 1, bytes: 10 });
+        assert_eq!(
+            index.by_ext_named(total)[".txt"],
+            ExtTally { files: 1, bytes: 10, allocated: 512 }
+        );
         assert!(!index.by_ext_named(total).contains_key(".rs"));
         assert!(!index.by_ext_named(total).contains_key(".md"));
 
@@ -1938,13 +1956,43 @@ mod tests {
         let index = index_with_sample_tree();
 
         let total = index.total();
-        assert_eq!(index.by_ext_named(total)[".rs"], ExtTally { files: 2, bytes: 300 });
-        assert_eq!(index.by_ext_named(total)[".md"], ExtTally { files: 1, bytes: 300 });
+        assert_eq!(
+            index.by_ext_named(total)[".rs"],
+            ExtTally { files: 2, bytes: 300, allocated: 1024 }
+        );
+        assert_eq!(
+            index.by_ext_named(total)[".md"],
+            ExtTally { files: 1, bytes: 300, allocated: 512 }
+        );
 
         // Per-directory breakdown, which no surveyed tool provides.
         let src = index.rollup(Path::new("src")).expect("src is a directory");
-        assert_eq!(index.by_ext_named(src)[".rs"], ExtTally { files: 2, bytes: 300 });
+        assert_eq!(
+            index.by_ext_named(src)[".rs"],
+            ExtTally { files: 2, bytes: 300, allocated: 1024 }
+        );
         assert!(!index.by_ext_named(src).contains_key(".md"));
+    }
+
+    #[test]
+    fn per_extension_allocated_tracks_apparent_bytes_separately() {
+        // Both size metrics ride in the same tally, so a report asked for allocated bytes
+        // keeps its per-type breakdown instead of silently answering in apparent bytes.
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![
+            // Two small files: apparent bytes are tiny, allocation rounds each to a block.
+            upsert("a.rs", EntryKind::File, file_attrs(1, 10)),
+            upsert("b.rs", EntryKind::File, file_attrs(2, 20)),
+        ]));
+
+        let rs = index.by_ext_named(index.total())[".rs"];
+        assert_eq!((rs.files, rs.bytes), (2, 3));
+        assert_eq!(rs.allocated, 1024, "each file occupies one 512-byte block");
+
+        // Removing one file withdraws its allocation from the tally, not just its bytes.
+        index.apply_ok(&Observation::new(vec![Op::Remove { path: PathBuf::from("b.rs") }]));
+        let rs = index.by_ext_named(index.total())[".rs"];
+        assert_eq!((rs.files, rs.bytes, rs.allocated), (1, 1, 512));
     }
 
     #[test]
@@ -2008,7 +2056,10 @@ mod tests {
 
         assert_eq!(index.rollup(Path::new("src")).expect("dir").bytes, 350);
         assert_eq!(index.total().bytes, 650);
-        assert_eq!(index.by_ext_named(index.total())[".rs"], ExtTally { files: 2, bytes: 350 });
+        assert_eq!(
+            index.by_ext_named(index.total())[".rs"],
+            ExtTally { files: 2, bytes: 350, allocated: 1024 }
+        );
     }
 
     #[test]

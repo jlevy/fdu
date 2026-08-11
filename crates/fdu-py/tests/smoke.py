@@ -46,8 +46,14 @@ def main() -> None:
     assert total["files"] == 2, total
     assert total["dirs"] == 1, total
     assert total["bytes"] == 17, total
-    assert total["by_extension"][".txt"] == {"files": 1, "bytes": 5}, total
-    assert total["by_extension"][".rs"] == {"files": 1, "bytes": 12}, total
+    # Allocated rides alongside apparent bytes per type, so a report asked for allocated
+    # sizes keeps its per-type breakdown instead of switching metrics.
+    txt = total["by_extension"][".txt"]
+    rs = total["by_extension"][".rs"]
+    assert (txt["files"], txt["bytes"]) == (1, 5), total
+    assert (rs["files"], rs["bytes"]) == (1, 12), total
+    assert txt["allocated"] >= txt["bytes"], total
+    assert rs["allocated"] >= rs["bytes"], total
 
     # Per-directory roll-ups, which is the thing no surveyed tool provides.
     src = index.rollup("src")

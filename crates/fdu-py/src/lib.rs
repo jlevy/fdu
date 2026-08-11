@@ -50,6 +50,7 @@ fn rollup_dict<'py>(
         let entry = PyDict::new(py);
         entry.set_item("files", tally.files)?;
         entry.set_item("bytes", tally.bytes)?;
+        entry.set_item("allocated", tally.allocated)?;
         by_ext.set_item(ext, entry)?;
     }
     dict.set_item("by_extension", by_ext)?;
