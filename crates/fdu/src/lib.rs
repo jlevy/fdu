@@ -146,6 +146,48 @@ pub enum OpenPath {
     CacheOnly,
 }
 
+/// A snapshot write running alongside rendering.
+///
+/// The index is read-only by the time this starts, so the writer and the renderer are
+/// two readers of the same data. The handle exists so the process can join before it
+/// exits: an abandoned write would leave a half-written snapshot for the next run to
+/// reject, turning a warm start into a cold one for no reason.
+#[derive(Debug)]
+#[must_use = "join the save before exiting or the snapshot may be abandoned"]
+pub struct PendingSave {
+    worker: Option<std::thread::JoinHandle<Result<()>>>,
+}
+
+impl PendingSave {
+    /// Nothing to wait for.
+    fn none() -> Self {
+        Self { worker: None }
+    }
+
+    /// Wait for the write to finish, returning its result.
+    ///
+    /// A failed save is the caller's to report, not to die on: the answer already
+    /// rendered is still correct, and only the next run's warmth is lost.
+    pub fn join(mut self) -> Result<()> {
+        match self.worker.take() {
+            Some(worker) => worker
+                .join()
+                .unwrap_or_else(|_| Err(Error::Snapshot("snapshot writer panicked".to_string()))),
+            None => Ok(()),
+        }
+    }
+}
+
+impl Drop for PendingSave {
+    fn drop(&mut self) {
+        // A dropped handle still waits: losing the write silently would be worse than
+        // the brief delay, and this only happens on a path that forgot to join.
+        if let Some(worker) = self.worker.take() {
+            let _ = worker.join();
+        }
+    }
+}
+
 /// What [`open`] did.
 #[derive(Debug)]
 pub struct OpenReport {
@@ -174,6 +216,19 @@ impl OpenReport {
 /// complete snapshot is left untouched; callers must inspect [`OpenReport::is_complete`]
 /// or [`Index::freshness`] before treating totals as complete.
 pub fn open(root: &Path, config: &OpenConfig) -> Result<(Index, OpenReport)> {
+    let (index, report, pending) = open_with_pending_save(root, config)?;
+    pending.join()?;
+    Ok((index, report))
+}
+
+/// Open a tree, returning the snapshot write for the caller to join.
+///
+/// The blocking [`open`] is the right default; a caller that renders its own output can
+/// use this to overlap the write with rendering and join before exiting.
+pub fn open_with_pending_save(
+    root: &Path,
+    config: &OpenConfig,
+) -> Result<(Index, OpenReport, PendingSave)> {
     let root = root.canonicalize().map_err(|e| Error::io(root, e))?;
     let policy = config.policy;
 
@@ -198,30 +253,48 @@ pub fn open(root: &Path, config: &OpenConfig) -> Result<(Index, OpenReport)> {
         return Ok((
             index,
             OpenReport { path_taken: OpenPath::CacheOnly, scan: ScanReport::default() },
+            PendingSave::none(),
         ));
     }
 
     if let Some(mut index) = loaded {
         let scan_report = scan::reconcile(&mut index, &config.scan, &mut |_| {})?.scan;
         index.establish_baseline();
-        if policy.writes() && scan_report.is_complete() {
-            save_snapshot(&index, config.cache_path.as_deref())?;
-        }
-        return Ok((index, OpenReport { path_taken: OpenPath::WarmRevalidate, scan: scan_report }));
+        let pending = spawn_save(&index, config, scan_report.is_complete());
+        return Ok((
+            index,
+            OpenReport { path_taken: OpenPath::WarmRevalidate, scan: scan_report },
+            pending,
+        ));
     }
 
     let (index, scan_report) = scan::scan_into_index(&root, &config.scan)?;
-    if policy.writes() && scan_report.is_complete() {
-        save_snapshot(&index, config.cache_path.as_deref())?;
-    }
-    Ok((index, OpenReport { path_taken: OpenPath::ColdScan, scan: scan_report }))
+    let pending = spawn_save(&index, config, scan_report.is_complete());
+    Ok((index, OpenReport { path_taken: OpenPath::ColdScan, scan: scan_report }, pending))
 }
 
-/// Persist a snapshot when a destination exists.
-fn save_snapshot(index: &Index, cache_path: Option<&Path>) -> Result<()> {
-    match cache_path {
-        Some(cache_path) => snapshot::save(index, cache_path),
-        None => Ok(()),
+/// Start a snapshot write, when policy and completeness allow one.
+///
+/// Only a complete scan is written: a snapshot recording a partial view would be served
+/// as fact on the next run, and the existing complete snapshot is better than that.
+fn spawn_save(index: &Index, config: &OpenConfig, complete: bool) -> PendingSave {
+    let (Some(cache_path), true, true) =
+        (config.cache_path.clone(), config.policy.writes(), complete)
+    else {
+        return PendingSave::none();
+    };
+
+    // The index is read-only from here, so the writer's clone and the caller's rendering
+    // are two readers. Cloning is what buys that independence.
+    let snapshot_source = index.clone();
+    match std::thread::Builder::new()
+        .name("fdu-snapshot".to_string())
+        .spawn(move || snapshot::save(&snapshot_source, &cache_path))
+    {
+        Ok(worker) => PendingSave { worker: Some(worker) },
+        // A machine that cannot spawn a thread can still answer; it just answers cold
+        // next time.
+        Err(_) => PendingSave::none(),
     }
 }
 
@@ -578,5 +651,105 @@ mod tests {
             Some(PathBuf::from(home).join(".cache"))
         );
         assert_eq!(windows_cache_dir(None, None, None), None);
+    }
+}
+
+#[cfg(test)]
+mod save_tests {
+    use super::*;
+    use std::fs;
+
+    fn write_file(path: &Path, contents: &[u8]) {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).expect("create parent");
+        }
+        fs::write(path, contents).expect("write");
+    }
+
+    fn config(snapshot_path: &Path, policy: CachePolicy) -> OpenConfig {
+        OpenConfig {
+            cache_path: Some(snapshot_path.to_path_buf()),
+            policy,
+            ..OpenConfig::default()
+        }
+    }
+
+    #[test]
+    fn a_pending_save_completes_when_joined() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let cache = tempfile::tempdir().expect("cache dir");
+        let snapshot_path = cache.path().join("snap.fdu");
+        write_file(&dir.path().join("a.txt"), b"hello");
+
+        let (_index, _report, pending) =
+            open_with_pending_save(dir.path(), &config(&snapshot_path, CachePolicy::Auto))
+                .expect("open");
+        pending.join().expect("save succeeds");
+        assert!(snapshot_path.exists(), "a joined save must have landed");
+    }
+
+    #[test]
+    fn a_dropped_save_still_lands() {
+        // Dropping without joining is a caller mistake, not a reason to lose the write:
+        // the next run would otherwise pay for a cold scan this one already did.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let cache = tempfile::tempdir().expect("cache dir");
+        let snapshot_path = cache.path().join("snap.fdu");
+        write_file(&dir.path().join("a.txt"), b"hello");
+
+        {
+            let (_index, _report, _pending) =
+                open_with_pending_save(dir.path(), &config(&snapshot_path, CachePolicy::Auto))
+                    .expect("open");
+        }
+        assert!(snapshot_path.exists());
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_partial_scan_leaves_the_previous_snapshot_alone() {
+        // Writing a partial view would serve it as fact on the next run, and the
+        // existing complete snapshot is better than that.
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let cache = tempfile::tempdir().expect("cache dir");
+        let snapshot_path = cache.path().join("snap.fdu");
+        write_file(&dir.path().join("a.txt"), b"hello");
+
+        let settings = config(&snapshot_path, CachePolicy::Auto);
+        open(dir.path(), &settings).expect("seed a complete snapshot");
+        let complete_len = fs::metadata(&snapshot_path).expect("exists").len();
+
+        let denied = dir.path().join("denied");
+        fs::create_dir(&denied).expect("create");
+        write_file(&denied.join("hidden.txt"), b"hidden");
+        fs::set_permissions(&denied, fs::Permissions::from_mode(0o000)).expect("deny");
+
+        let opened = open(dir.path(), &settings);
+        fs::set_permissions(&denied, fs::Permissions::from_mode(0o700)).expect("restore");
+        let (_index, report) = opened.expect("partial open still returns a result");
+
+        assert!(!report.is_complete(), "the scan should be partial");
+        assert_eq!(
+            fs::metadata(&snapshot_path).expect("still there").len(),
+            complete_len,
+            "a partial scan must not overwrite a complete snapshot"
+        );
+    }
+
+    #[test]
+    fn no_snapshot_is_written_when_the_policy_forbids_it() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let cache = tempfile::tempdir().expect("cache dir");
+        let snapshot_path = cache.path().join("snap.fdu");
+        write_file(&dir.path().join("a.txt"), b"hello");
+
+        for policy in [CachePolicy::ReadOnly, CachePolicy::Off] {
+            let (_index, _report, pending) =
+                open_with_pending_save(dir.path(), &config(&snapshot_path, policy)).expect("open");
+            pending.join().expect("nothing to join");
+            assert!(!snapshot_path.exists(), "{policy:?} wrote a snapshot");
+        }
     }
 }

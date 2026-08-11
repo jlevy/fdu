@@ -21,7 +21,9 @@ use crate::query::{
     parse_size, parse_when, system_time_to_nanos,
 };
 use crate::report_format;
-use crate::{CachePolicy, EntryKind, OpenConfig, ScanConfig, default_cache_path, open};
+use crate::{
+    CachePolicy, EntryKind, OpenConfig, ScanConfig, default_cache_path, open_with_pending_save,
+};
 
 const SKILL_TEMPLATE: &str = include_str!("skills/SKILL.md");
 
@@ -218,7 +220,7 @@ impl Cli {
         };
 
         let scan_started_at = SystemTime::now();
-        let (index, open_report) = open(&self.path, &config)?;
+        let (index, open_report, pending_save) = open_with_pending_save(&self.path, &config)?;
 
         let provenance = Provenance {
             scan_started_at: Some(scan_started_at),
@@ -240,7 +242,22 @@ impl Cli {
             stdout_is_terminal,
         )
         .enabled();
-        write!(out, "{}", report_format::render(&report, format, color))?;
+        // The write is already running; rendering is the other reader. Whether output
+        // finishes first or the save does, both complete.
+        let rendered = report_format::render(&report, format, color);
+        let render_result = write!(out, "{rendered}");
+
+        // Joined before returning, and before the render error is raised: a broken pipe
+        // must not abandon a finished scan's snapshot, because the next run would then
+        // pay for a cold scan that this one had already done.
+        if let Err(error) = pending_save.join() {
+            let _ = writeln!(
+                diagnostic,
+                "{}",
+                paint(&format!("warning: {error}"), STYLE_WARNING, stderr_is_terminal)
+            );
+        }
+        render_result?;
 
         if format == report_format::Format::Text && !open_report.is_complete() {
             let color =
