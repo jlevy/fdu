@@ -60,6 +60,9 @@ mod types;
 #[cfg(feature = "cli")]
 pub mod cli;
 
+#[cfg(feature = "cli")]
+pub mod report_format;
+
 #[cfg(feature = "watch")]
 pub mod watch;
 

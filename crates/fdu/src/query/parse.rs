@@ -15,6 +15,9 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::types::{Error, Result};
 
+/// Nanoseconds in one second.
+const NANOS_PER_SEC: u32 = 1_000_000_000;
+
 /// The most fractional digits an `@epoch` value can carry before the rest is ignored.
 const MAX_FRACTION_DIGITS: usize = 9;
 
@@ -71,6 +74,52 @@ pub fn parse_size(input: &str) -> Result<u64> {
     scale_decimal(number, factor).ok_or_else(|| {
         size_error(input, "size is not a number this machine can represent in bytes")
     })
+}
+
+/// Render an instant as an RFC 3339 timestamp in UTC, with nanosecond precision.
+///
+/// The exact inverse of the RFC 3339 branch of [`parse_when`], so a report's
+/// `scan_started_at` can be fed straight back as a watermark and select precisely the
+/// files touched after that scan began.
+pub fn format_rfc3339(time: SystemTime) -> String {
+    let (seconds, nanos) = match time.duration_since(UNIX_EPOCH) {
+        Ok(after) => (i64::try_from(after.as_secs()).unwrap_or(i64::MAX), after.subsec_nanos()),
+        Err(before) => {
+            let magnitude = before.duration();
+            let subsec = magnitude.subsec_nanos();
+            let secs = i64::try_from(magnitude.as_secs()).unwrap_or(i64::MAX);
+            // Nanoseconds always run forward from the second, so an instant before the
+            // epoch is the next second down plus a forward fraction.
+            if subsec == 0 { (-secs, 0) } else { (-secs - 1, NANOS_PER_SEC - subsec) }
+        }
+    };
+
+    let days = seconds.div_euclid(86_400);
+    let time_of_day = seconds.rem_euclid(86_400);
+    let (year, month, day) = civil_from_days(days);
+    let (hour, minute, second) =
+        (time_of_day / 3_600, (time_of_day % 3_600) / 60, time_of_day % 60);
+
+    format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}.{nanos:09}Z")
+}
+
+/// The proleptic Gregorian date some number of days from the Unix epoch.
+///
+/// Howard Hinnant's `civil_from_days`, the inverse of [`days_from_civil`].
+fn civil_from_days(days: i64) -> (i64, u32, u32) {
+    let shifted = days + 719_468;
+    let era = if shifted >= 0 { shifted } else { shifted - 146_096 } / 146_097;
+    let day_of_era = shifted - era * 146_097;
+    let year_of_era =
+        (day_of_era - day_of_era / 1_460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let year = year_of_era + era * 400;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let shifted_month = (5 * day_of_year + 2) / 153;
+    let day = u32::try_from(day_of_year - (153 * shifted_month + 2) / 5 + 1).unwrap_or(1);
+    let month =
+        u32::try_from(if shifted_month < 10 { shifted_month + 3 } else { shifted_month - 9 })
+            .unwrap_or(1);
+    (if month <= 2 { year + 1 } else { year }, month, day)
 }
 
 /// Convert an instant to nanoseconds since the Unix epoch, negative before it.
@@ -633,6 +682,37 @@ mod tests {
         assert!(size_rejection("1.2.3M").contains("not a number"));
         // A size that cannot fit in a byte count is rejected, never wrapped.
         assert!(size_rejection("99999999P").contains("not a number"));
+    }
+
+    #[test]
+    fn formatting_is_the_exact_inverse_of_parsing() {
+        // The watermark contract: a rendered scan_started_at must parse back to the same
+        // instant, or an incremental follow-up query silently shifts its window.
+        for value in [
+            "2026-08-10T18:22:31.482919114Z",
+            "1970-01-01T00:00:00.000000000Z",
+            "1969-12-31T23:59:59.000000000Z",
+            "2024-02-29T12:00:00.000000000Z",
+            "1999-12-31T23:59:59.999999999Z",
+            "2100-03-01T00:00:00.000000000Z",
+        ] {
+            let parsed = parse_when(value, now()).expect("parses");
+            assert_eq!(format_rfc3339(parsed), value, "round trip for {value}");
+        }
+    }
+
+    #[test]
+    fn formatting_covers_dates_across_leap_and_century_boundaries() {
+        let at = |secs: i64| {
+            if secs >= 0 {
+                UNIX_EPOCH + Duration::from_secs(secs.unsigned_abs())
+            } else {
+                UNIX_EPOCH - Duration::from_secs(secs.unsigned_abs())
+            }
+        };
+        assert_eq!(format_rfc3339(at(0)), "1970-01-01T00:00:00.000000000Z");
+        assert_eq!(format_rfc3339(at(-86_400)), "1969-12-31T00:00:00.000000000Z");
+        assert_eq!(format_rfc3339(at(951_782_400)), "2000-02-29T00:00:00.000000000Z");
     }
 
     #[test]

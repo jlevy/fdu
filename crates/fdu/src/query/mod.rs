@@ -12,7 +12,7 @@ mod report;
 mod selection;
 
 pub use glob::Pattern;
-pub use parse::{parse_size, parse_when, system_time_to_nanos};
+pub use parse::{format_rfc3339, parse_size, parse_when, system_time_to_nanos};
 pub use report::{
     FileRow, Provenance, Query, Report, ReportSource, Section, SummaryRow, TreeNode, TypeRow,
     ViewSpec, report,
