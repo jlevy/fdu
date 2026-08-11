@@ -227,14 +227,27 @@ impl Provenance {
     ///
     /// This is what makes a directory only as trustworthy as its least trustworthy
     /// descendant: the weakest source, the oldest observation, and the worst status.
+    ///
+    /// Every fact fails closed, including time: an unknown `observed_at_ns` is
+    /// absorbing rather than skipped, so a subtree with one contributor of unknown age
+    /// reports an unknown age instead of a precise time it cannot prove.
+    ///
+    /// There is deliberately **no identity element**. Because unknown is absorbing, it
+    /// cannot double as the seed of a fold, and a caller aggregating a possibly-empty
+    /// set must represent emptiness separately (`Option<Provenance>`) rather than
+    /// seeding with a zero timestamp — otherwise every roll-up would come out unknown.
     #[must_use]
     pub fn combine(self, other: Self) -> Self {
         Self {
             source: self.source.max(other.source),
             observed_at_ns: match (self.observed_at_ns, other.observed_at_ns) {
-                // Zero means unknown rather than 1970, so it must not win a min().
-                (0, other) => other,
-                (mine, 0) => mine,
+                // Unknown is contagious, not skipped. Zero means "we cannot say when",
+                // and the honest combination of a known time with an unknown one is
+                // still unknown: a parent that drops the unknown contributor would
+                // advertise a precise "as of" it cannot prove for the whole subtree.
+                // Unknown is not the identity for "oldest observation" — it is the
+                // absorbing element.
+                (0, _) | (_, 0) => 0,
                 (mine, other) => mine.min(other),
             },
             status: self.status.max(other.status),
@@ -653,13 +666,21 @@ mod provenance_tests {
     }
 
     #[test]
-    fn an_unknown_timestamp_never_wins_the_oldest_comparison() {
-        // Zero means "unknown", not 1970; treating it as oldest would report every
-        // combination as ancient.
+    fn an_unknown_timestamp_makes_the_combination_unknown() {
+        // Fail closed. Zero means "we cannot say when", so a subtree containing one
+        // contributor of unknown age has an unknown age too. Returning the known
+        // timestamp instead would let a directory advertise a precise "as of" that is
+        // wrong for part of what it summarises — the silent lie the provenance model
+        // exists to prevent.
         let known = Provenance::scanned(500);
         let unknown = Provenance { observed_at_ns: 0, ..Provenance::scanned(0) };
-        assert_eq!(known.combine(unknown).observed_at_ns, 500);
-        assert_eq!(unknown.combine(known).observed_at_ns, 500);
+        assert_eq!(known.combine(unknown).observed_at_ns, 0);
+        assert_eq!(unknown.combine(known).observed_at_ns, 0);
+        assert_eq!(
+            known.combine(unknown),
+            unknown.combine(known),
+            "combination stays commutative"
+        );
     }
 
     #[test]

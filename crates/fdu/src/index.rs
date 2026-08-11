@@ -1282,20 +1282,26 @@ impl Index {
         let Some(parts) = normalize(path) else {
             return false;
         };
+        let source = self.applying_source;
+
         let Some((name, ancestors)) = parts.split_last() else {
-            // The root itself: only its own attributes can change.
+            // The root itself: only its own attributes can change. Its source is
+            // stamped on both paths for the same reason every other entry's is — a
+            // producer just looked at it — and the root is the entry where getting this
+            // wrong costs the most, because the whole-tree totals hang off it and a
+            // consumer reads its provenance to label the headline number.
             if self.entry(EntryId::ROOT).attrs == attrs {
+                self.entry_mut(EntryId::ROOT).source = source;
                 stats.unchanged += 1;
                 return false;
             }
             let root = self.entry_mut(EntryId::ROOT);
             root.attrs = attrs;
+            root.source = source;
             Self::bump_revision(root);
             stats.updated += 1;
             return true;
         };
-
-        let source = self.applying_source;
         let parent = self.ensure_dir_chain(ancestors, stats);
         let existing = self.entry(parent).children.get(*name).copied();
 

@@ -771,6 +771,28 @@ mod tests {
     }
 
     #[test]
+    fn a_loaded_root_reports_cached_provenance_not_fresh() {
+        // The root is the one entry the child-only test above cannot cover, and it is
+        // the one that matters most: whole-tree totals hang off it, so `fdu ~` reads
+        // the root's provenance to label its headline number. `apply_upsert` handles
+        // the root in a separate branch, and that branch used to skip the source stamp
+        // entirely — leaving a snapshot-loaded root claiming `Scanned` and
+        // `is_verified()`, the precise silent lie the model exists to prevent.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("snapshot.fdu");
+        save(&sample_index(), &path).expect("save");
+
+        let restored = load(&path).expect("load").expect("snapshot present");
+        let provenance = restored.provenance(Path::new("")).expect("the root is always present");
+        assert_eq!(provenance.source, crate::Source::Cached, "the root came off disk too");
+        assert!(!provenance.is_verified(), "nothing has been stat'd since the load");
+        assert!(
+            provenance.observed_at_ns > 0,
+            "a cached total must say as of when, or a UI cannot label it"
+        );
+    }
+
+    #[test]
     fn revalidating_a_loaded_index_promotes_entries_out_of_cached() {
         // The failure a reviewer caught on PR #6: entries were stamped only when
         // allocated, so a warm sweep could stat every entry and leave them all
