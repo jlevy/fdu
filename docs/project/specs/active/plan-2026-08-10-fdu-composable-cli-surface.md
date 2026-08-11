@@ -540,63 +540,70 @@ shared process boundary, as today.
 
 ### Phase 1: Query and Report Core
 
-- [ ] Add `query` module: `Selection`, `ViewSpec` (tree/types/files/summary), `Query`,
+- [x] Add `query` module: `Selection`, `ViewSpec` (tree/types/files/summary), `Query`,
   `Report`, pure `report()` with unit tests per view × selection, including the roll-up
   fast path vs traversal tier
-- [ ] Implement the shared value grammars (`parse_when`, `parse_size`) and the
+- [x] Implement the shared value grammars (`parse_when`, `parse_size`) and the
   `--modified-since`/`--modified-before` half-open window; stamp `scan_started_at` and
-  `generated_at` on every report
-- [ ] Add `allocated` to `ExtTally` and thread the size metric through all views
-- [ ] Serde-derive `Report`; implement `text`, `json`, `jsonl`, `yaml` formatters and
+  `generated_at` on every report. Local date-times are rejected pending a time-zone
+  decision (`fdu-f6dn`); the watermark round-trip test is still owed (`fdu-3vgt`)
+- [x] Add `allocated` to `ExtTally` and thread the size metric through all views
+- [x] Serde-derive `Report`; implement `text`, `json`, `jsonl`, `yaml` formatters and
   the `fdu.report/1` golden + schema-bump tests; resolve the YAML dependency per the
-  supply-chain note
-- [ ] Rework CLI parsing to the five axes (view list parsing, replaced flags, exit
+  supply-chain note. `fdu.stream/1` has no equivalent schema-bump test yet (`fdu-rti1`)
+- [x] Rework CLI parsing to the five axes (view list parsing, replaced flags, exit
   contract), update SKILL.md, `AFTER_HELP`, README, tryscript goldens, and the benchmark
   job manifests together
-- [ ] Python `Index.report(...)` with the same defaults and names
+- [x] Python `Index.report(...)` with the same defaults and names
 
 ### Phase 2: Cache Policy and Utilities
 
-- [ ] `CachePolicy` in `open()` covering auto/refresh/only/off, with `only` failing
+- [x] `CachePolicy` in `open()` covering auto/refresh/only/off, with `only` failing
   closed when no usable snapshot exists
-- [ ] Snapshot write ordering and failure semantics: save on a background thread
+- [x] Snapshot write ordering and failure semantics: save on a background thread
   overlapped with rendering, only when complete and `Fresh`, joined before exit,
   completing even on broken-pipe rendering; a failed save warns on stderr without
   changing the exit code; `read-only` policy suppresses the write entirely.
   The journal-resume fields (event ID, volume UUID, platform tag) are reserved by the
   [FSEvents-scoped revalidation plan](plan-2026-08-10-fdu-fsevents-scoped-revalidation.md)
   as snapshot format v3 (bead `fdu-2cdv`), not duplicated here
-- [ ] Document the two-layer cache design and the tier-derived verification contract in
+- [x] Document the two-layer cache design and the tier-derived verification contract in
   help, SKILL.md, and the schema docs (implementation of tiered verification lands with
   the reducer registry, cross-plan)
-- [ ] Library `cache_status`, `list_caches`, `clear_cache`, `clear_all_caches` with
+- [x] Library `cache_status`, `list_caches`, `clear_cache`, `clear_all_caches` with
   bounded header reads and never-delete-unrecognized semantics
-- [ ] `--cache-status[=root|all]` and `--cache-clear[=root|all]` lifecycle flags
+- [x] `--cache-status[=root|all]` and `--cache-clear[=root|all]` lifecycle flags
   rendering through the format axis, running before scan validation; tryscript coverage
   per flowmark’s cache-behavior suite
-- [ ] Python `cache` accessors mirroring the library functions
+- [x] Python `cache` accessors mirroring the library functions
 
 ### Phase 3: Watch Mode
 
-- [ ] `Session` API composing `IndexHandle`, `Watcher`, and `Query`; batch filtering
+- [x] `Session` API composing `IndexHandle`, `Watcher`, and `Query`; batch filtering
   through `Selection`
-- [ ] `--watch`/`--interval` CLI loop: initial report, streamed `files` records,
-  dirty-gated aggregate re-render, explicit invalidation records, `fdu.stream/1` schema
-  and goldens, signal handling and final save
-- [ ] Scope validation errors for `--watch` + `--scan-depth`/`--one-filesystem`
-- [ ] Python `Index.watch(...)` iterator with deterministic shutdown tests
-- [ ] `watch-stream` benchmark job registration
+- [x] `--watch`/`--interval` CLI loop: initial report, streamed `files` records,
+  dirty-gated aggregate re-render, explicit invalidation records, `fdu.stream/1` schema,
+  and a persisting save. Delivered as a save after each dirty batch rather than a signal
+  handler: std has no portable one, and a watch session ends by signal far more often
+  than it ends politely, so an exit-time save would be the one that never runs.
+  Pinned by `crates/fdu/tests/watch_persistence.rs`, which SIGKILLs the real binary
+- [ ] **Not delivered:** goldens for the streamed records — needs a bounded capture
+  command first (`fdu-t9nv`, see [Remaining work](#remaining-work))
+- [x] Scope validation errors for `--watch` + `--scan-depth`/`--one-filesystem`
+- [x] Python `Index.watch(...)` iterator with deterministic shutdown tests
+- [x] `watch-stream` benchmark job registration — the job vocabulary only, which is
+  what this item asked for; the runner is `fdu-g8ks`
 
 ### Phase 4: Design Principles Documentation
 
-- [ ] Distill the Goals and Design Principles of this spec — as actually implemented,
+- [x] Distill the Goals and Design Principles of this spec — as actually implemented,
   with any amendments iteration forced — into a durable design doc at
   `docs/project/guides/fdu-design-principles.md`, following common-doc-guidelines: the
   five axes, the delta contract, cache honesty, the CLI-invents-nothing parity rule, and
   the subsumption checklist
-- [ ] Run the end-of-plan parity review (what, if anything, lives only in `cli.rs`) and
+- [x] Run the end-of-plan parity review (what, if anything, lives only in `cli.rs`) and
   record its outcome in the design doc
-- [ ] Point AGENTS.md, README, and the architecture references at the design doc; move
+- [x] Point AGENTS.md, README, and the architecture references at the design doc; move
   this spec to done and reconcile the subsumed beads (Open Question 4)
 
 ## Testing Strategy
@@ -607,6 +614,9 @@ shared process boundary, as today.
 - Golden tryscript sessions per axis: view lists, each format, cache policies (using a
   scratch `XDG_CACHE_HOME`), cache utilities, and watch streaming with injected changes;
   goldens are byte-stable (integer formatting, no floats in text output).
+  Everything here except watch streaming is delivered (68 blocks).
+  Watch streaming needs a bounded capture command before it can be goldened at all — see
+  [Remaining work](#remaining-work).
 - Schema tests: `fdu.report/1` and `fdu.stream/1` fixtures that fail on unversioned
   change.
 - Time-window tests: table-driven `parse_when`/`parse_size` grammar units with injected
@@ -630,6 +640,38 @@ SKILL.md, goldens, and benchmark manifests happens once.
 Phase 4 is small but not optional: the principles must land in `docs/project/guides/` so
 they govern future work, not just this plan.
 No publishing; `fdu-9cf0` gates remain.
+
+## Remaining work
+
+The four phases are implemented and every leaf bead is closed.
+What an end-to-end audit on 2026-08-11 found still outstanding, each mapped to a bead so
+it cannot be lost by being described only here:
+
+| Gap | Bead |
+| --- | --- |
+| Watch-streaming goldens with injected changes | `fdu-t9nv` |
+| `fdu.stream/1` schema-bump test (only `fdu.report/1` is pinned) | `fdu-rti1` |
+| Watermark round trip: `scan_started_at` → `--modified-since`, incl. a mid-scan write | `fdu-3vgt` |
+| `watch-stream` benchmark **runner** (only the job vocabulary is registered) | `fdu-g8ks` |
+| Local date-times in `parse_when`, pending a time-zone decision | `fdu-f6dn` |
+| Cache retention: nothing prunes snapshots or bounds total size (open question 5) | `fdu-558j` |
+| Open questions 1, 2, and 4 | `fdu-khu8` |
+| Automate the runbook's bead-sync check as a periodic guard | `fdu-qut8` |
+
+The watch goldens are the one entry whose absence is a *shape* problem rather than
+unwritten work. tryscript compares one command's completed output, and a watch process
+never exits, so there is nothing to compare until watching can be expressed as a command
+that terminates. The design recorded on `fdu-t9nv` is a Node helper — tryscript already
+requires Node, so this adds no dependency — that spawns `fdu --watch`, applies a scripted
+sequence of changes, collects the `fdu.stream/1` records, terminates the child, and
+prints the normalized stream. Golden discipline then applies unchanged.
+
+Until it lands, the watch surface is covered by `crates/fdu/tests/watch_session.rs` for
+event semantics and selection filtering, `crates/fdu/tests/watch_persistence.rs` for
+save-surviving-SIGKILL, goldens for the bounded parts (the `--help` contract, the
+scope-validation rejections), and section 6 of
+[the integration runbook](../../guides/integration-runbook.md) for the one property no
+automated test asserts well: that an idle tree costs 0% CPU.
 
 ## Open Questions
 
