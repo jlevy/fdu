@@ -973,7 +973,9 @@ mod tests {
         for line in text.lines() {
             assert!(!line.contains(' '), "text files output must be bare paths, got {line:?}");
         }
-        assert!(text.lines().any(|line| line == "src/main.rs"), "{text}");
+        let expected: PathBuf = ["src", "main.rs"].iter().collect();
+        let expected = expected.display().to_string();
+        assert!(text.lines().any(|line| line == expected), "{text}");
     }
 
     #[test]

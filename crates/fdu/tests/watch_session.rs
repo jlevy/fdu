@@ -111,6 +111,19 @@ fn an_idle_tree_yields_nothing_and_costs_nothing() {
     fs::write(dir.path().join("still.txt"), b"unchanged").expect("seed");
     let mut session = session(dir.path(), Selection::default(), vec![ViewSpec::Summary]);
 
+    // Drain first. A backend may still be delivering events for the seed write, which
+    // happened just before the watcher was bound — that is arrival latency, not activity,
+    // and asserting through it makes the test fail on a loaded machine rather than on a
+    // real defect.
+    let settle = Instant::now() + Duration::from_secs(3);
+    while Instant::now() < settle {
+        if session.next_batch(Duration::from_millis(200)).expect("batch").is_none() {
+            break;
+        }
+    }
+
+    // Now nothing is changing, so nothing should arrive. A polling implementation would
+    // still return work here.
     for _ in 0..4 {
         assert!(
             session.next_batch(Duration::from_millis(250)).expect("batch").is_none(),

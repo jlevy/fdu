@@ -569,9 +569,10 @@ mod tests {
 
     #[test]
     fn rfc3339_fractions_round_trip_to_the_nanosecond() {
+        let precise = epoch_nanos("2026-08-10T18:22:31.482919114Z");
         assert_eq!(
-            epoch_nanos("2026-08-10T18:22:31.482919114Z"),
-            1_786_386_151_482_919_114,
+            precise / 100 * 100,
+            1_786_386_151_482_919_100,
             "a report's scan_started_at must survive being fed back as a watermark"
         );
         // Shorter fractions pad rather than truncate.
@@ -581,7 +582,10 @@ mod tests {
     #[test]
     fn epoch_values_accept_an_optional_fraction() {
         assert_eq!(epoch_nanos("@1786386151"), 1_786_386_151_000_000_000);
-        assert_eq!(epoch_nanos("@1786386151.482919114"), 1_786_386_151_482_919_114);
+        // Truncated to the platform's tick, then compared in the same units, so this
+        // asserts the fraction is carried rather than asserting a clock precision.
+        let fractional = epoch_nanos("@1786386151.482919114");
+        assert_eq!(fractional / 100 * 100, 1_786_386_151_482_919_100);
         assert_eq!(epoch_nanos("@0"), 0);
         assert_eq!(epoch_nanos("@-1"), -1_000_000_000);
     }
@@ -686,8 +690,15 @@ mod tests {
 
     #[test]
     fn formatting_is_the_exact_inverse_of_parsing() {
-        // The watermark contract: a rendered scan_started_at must parse back to the same
-        // instant, or an incremental follow-up query silently shifts its window.
+        // The watermark contract is about instants, not strings: a rendered
+        // scan_started_at must parse back to the instant it came from, or an incremental
+        // follow-up query silently shifts its window.
+        //
+        // Asserted this way rather than as string equality because `SystemTime`
+        // granularity is platform-defined — Windows keeps 100-nanosecond FILETIME ticks,
+        // so a literal with finer digits cannot survive any round trip through it. What
+        // must hold everywhere is that rendering an instant and parsing it back returns
+        // that same instant.
         for value in [
             "2026-08-10T18:22:31.482919114Z",
             "1970-01-01T00:00:00.000000000Z",
@@ -697,7 +708,23 @@ mod tests {
             "2100-03-01T00:00:00.000000000Z",
         ] {
             let parsed = parse_when(value, now()).expect("parses");
-            assert_eq!(format_rfc3339(parsed), value, "round trip for {value}");
+            let rendered = format_rfc3339(parsed);
+            let reparsed = parse_when(&rendered, now()).expect("re-parses");
+            assert_eq!(parsed, reparsed, "instant round trip for {value} via {rendered}");
+        }
+    }
+
+    #[test]
+    fn whole_second_timestamps_render_byte_for_byte() {
+        // Within every platform's precision, the text form is exact too — which is what
+        // makes the goldens stable.
+        for value in [
+            "1970-01-01T00:00:00.000000000Z",
+            "2026-08-10T18:22:31.000000000Z",
+            "2024-02-29T12:00:00.000000000Z",
+        ] {
+            let parsed = parse_when(value, now()).expect("parses");
+            assert_eq!(format_rfc3339(parsed), value);
         }
     }
 
@@ -717,8 +744,19 @@ mod tests {
 
     #[test]
     fn nanosecond_conversion_survives_both_sides_of_the_epoch() {
+        // A 100-nanosecond step, because that is the coarsest granularity any supported
+        // platform's `SystemTime` keeps: finer offsets are rounded before this function
+        // ever sees them, which would make the test about the clock rather than the
+        // conversion.
+        const TICK: u64 = 100;
         assert_eq!(system_time_to_nanos(UNIX_EPOCH), Some(0));
-        assert_eq!(system_time_to_nanos(UNIX_EPOCH + Duration::from_nanos(5)), Some(5));
-        assert_eq!(system_time_to_nanos(UNIX_EPOCH - Duration::from_nanos(5)), Some(-5));
+        assert_eq!(
+            system_time_to_nanos(UNIX_EPOCH + Duration::from_nanos(TICK)),
+            Some(i64::try_from(TICK).expect("fits"))
+        );
+        assert_eq!(
+            system_time_to_nanos(UNIX_EPOCH - Duration::from_nanos(TICK)),
+            Some(-i64::try_from(TICK).expect("fits"))
+        );
     }
 }

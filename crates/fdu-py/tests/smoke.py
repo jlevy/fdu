@@ -266,7 +266,9 @@ def main() -> None:
     fdu_py.open(str(cache_root), cache="auto")
     status = fdu_py.cache_status(str(cache_root))
     assert status is not None and status["recognized"], status
-    assert status["root"] == str(cache_root.resolve()), status
+    # Rust keeps Windows verbatim paths (\\?\); compare filesystem identity rather than
+    # weakening native long-path behavior to satisfy a string.
+    assert os.path.samefile(status["root"], cache_root), status
     assert fdu_py.clear_cache(str(cache_root)) is True
     assert fdu_py.cache_status(str(cache_root))["recognized"] is False
 

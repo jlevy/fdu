@@ -837,9 +837,16 @@ mod tests {
         let index = sample();
         let selection = Selection { include: vec![pattern("*.rs")], ..Selection::default() };
         let rows = files_of(&run(&index, &query(&[ViewSpec::Files], selection)));
-        let paths: Vec<String> =
-            rows.iter().map(|row| row.path.to_string_lossy().into_owned()).collect();
-        assert_eq!(paths, vec!["src/deep/nested.rs", "src/lib.rs", "src/main.rs"]);
+        // Built from components so the expectation carries the native separator: a
+        // literal "src/main.rs" passes on Unix and fails on Windows for a reason that
+        // has nothing to do with the view under test.
+        let paths: Vec<PathBuf> = rows.iter().map(|row| row.path.clone()).collect();
+        let expected: Vec<PathBuf> = [["src", "deep", "nested.rs"].iter().collect::<PathBuf>()]
+            .into_iter()
+            .chain([["src", "lib.rs"].iter().collect::<PathBuf>()])
+            .chain([["src", "main.rs"].iter().collect::<PathBuf>()])
+            .collect();
+        assert_eq!(paths, expected);
     }
 
     #[test]
