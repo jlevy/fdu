@@ -33,6 +33,7 @@ Third-party tools on the same tree, for calibration only — they answer a sligh
 
 - Apple M1 Pro, arm64, 10 logical cores (8 performance, 2 efficiency), 32 GiB RAM.
 - Darwin 25.5.0, apfs filesystem.
+- Built with rustc 1.97.1 (8bab26f4f 2026-07-14), `release` profile.
 - OS page cache: warm-steady. Dropping it needs root, so runs that did not ask for that say so rather than implying a cold disk.
 
 Every run fingerprinted the tree before and after and confirmed it unchanged, and every trial's engine digest was checked against an independent oracle.
@@ -50,6 +51,9 @@ The rejected ones are the reusable part: they stop the next person spending a da
 | 004 | [Borrowed path components](#exp004--borrowed-path-components) | H5 | `warm-revalidate` | -9.4% | ✅ accepted |
 | 005 | [Snapshot load resolves through the parent](#exp005--snapshot-load-resolves-through-the-parent) | H10 | `warm-snapshot-load` | -18.6% | ✅ accepted |
 | 006 | [Cumulative effect of every accepted change](#exp006--cumulative-effect-of-every-accepted-change) | H1, H5, H10 | `cold-scan-index` | -48.9% | ✅ accepted |
+| 007 | [Direct reconcile reads expectations off entry ids](#exp007--direct-reconcile-reads-expectations-off-entry-ids) | H14 | `warm-revalidate` | -1.6% | ⏳ in progress |
+| 008 | [Extensions interned to integer ids](#exp008--extensions-interned-to-integer-ids) | H18 | `cold-scan-index` | -15.7% | ✅ accepted |
+| 009 | [Single-pass checksum and parse on snapshot load](#exp009--singlepass-checksum-and-parse-on-snapshot-load) | H32 | `warm-snapshot-load` | -4.2% | ⏳ in progress |
 
 ## The experiments
 
@@ -254,6 +258,96 @@ Not a change of its own: this is the three accepted changes measured together ag
 **Accepted:** Every measured job improved significantly in one interleaved run against the original baseline, with no sample rejected by the oracle.
 
 Full record: [`exp-006-cumulative-effect-of-every-accepted-change.md`](../experiments/exp-006-cumulative-effect-of-every-accepted-change.md)
+
+### exp-007 — Direct reconcile reads expectations off entry ids
+
+⏳ in progress · 2026-08-11 · H14 · commit `92d6212`
+
+Control: HEAD c428fbd: exclusive reconcile re-derives child expectations through path joins and root descents
+
+Candidate: ReconcileTarget::Direct routed through collect_child_expectations; the slow twin deleted
+
+**`warm-revalidate`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 1095.8 | 1037.4 | -1.59% (n.s.) | [-10.73%, +1.48%] |
+| component (ms) | 737.7 | 636.1 | -5.92% | [-11.66%, -3.00%] |
+| cpu (ms) | 848.3 | 782.9 | -5.38% | [-8.73%, -4.20%] |
+| user (ms) | 343.7 | 288.5 | -14.01% | [-15.66%, -13.15%] |
+| system (ms) | 504.3 | 494.2 | +0.34% (n.s.) | [-2.63%, +1.86%] |
+| blocked (ms) | 232.1 | 240.6 | +18.18% (n.s.) | [-35.86%, +39.17%] |
+| peak rss (MiB) | 33.0 | 32.7 | -0.62% (n.s.) | [-1.56%, +0.72%] |
+
+Other jobs, wall time: `cold-scan-index` +20.6% (n.s.), `cold-scan-producer` +6.0% (n.s.), `warm-snapshot-load` +2.2% (n.s.).
+
+Cost to carry: 14 lines; no new dependencies.
+
+A dispatch change. The shared-handle path has read expectations directly since abeb377; the equivalence test locking the two paths together is what lets the twin be deleted rather than maintained.
+
+**In-progress:** Underpowered, not refuted: component median fell 737.7 to 636.1 ms but the wall interval spans zero at -1.59% [-10.73%, +1.48%] under load average 17 from concurrent builds; committed as a net -10-line simplification on the equivalence test's authority, with the focused re-measurement queued for a quiet machine.
+
+Full record: [`exp-007-direct-reconcile-reads-expectations-off-entry-ids.md`](../experiments/exp-007-direct-reconcile-reads-expectations-off-entry-ids.md)
+
+### exp-008 — Extensions interned to integer ids
+
+✅ accepted · 2026-08-11 · H18 · commit `bb1529d`
+
+Control: exp-007 build: by_ext keyed by owned String, cloned at every ancestor merge
+
+Candidate: by_ext keyed by u32 ExtId; names interned once per index at insert, resolved only at query time
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 511.3 | 462.6 | -15.65% | [-32.77%, -0.78%] |
+| component (ms) | 327.1 | 282.6 | -17.51% | [-29.65%, -8.05%] |
+| cpu (ms) | 1065.6 | 1078.0 | -0.17% (n.s.) | [-2.54%, +5.79%] |
+| user (ms) | 265.2 | 248.2 | -6.31% | [-9.03%, -5.53%] |
+| system (ms) | 802.1 | 826.7 | +1.43% (n.s.) | [-1.90%, +9.86%] |
+| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
+| peak rss (MiB) | 36.6 | 33.5 | -10.22% | [-14.06%, -7.10%] |
+
+Other jobs, wall time: `cold-scan-producer` -3.1% (n.s.), `warm-revalidate` -4.5% (n.s.), `warm-snapshot-load` -6.9%.
+
+Cost to carry: 120 lines; no new dependencies.
+
+Ids are session-local by construction (snapshots store names; roll-ups rebuild on load), so the format is untouched. Cross-index RollUp equality now goes through by_ext_named — the one call site the type change forced honest. The run was noisy (load average 17, other agents building concurrently); the accept stands because the interval cleared zero anyway, and the cumulative re-measurement will confirm on a quiet machine.
+
+**Accepted:** cold-scan-index -15.65% [-32.77%, -0.78%] and warm-snapshot-load -6.90% [-14.79%, -4.24%], significant even in a run whose variance was inflated several-fold by machine load, with the placebo job unmoved.
+
+Full record: [`exp-008-extensions-interned-to-integer-ids.md`](../experiments/exp-008-extensions-interned-to-integer-ids.md)
+
+### exp-009 — Single-pass checksum and parse on snapshot load
+
+⏳ in progress · 2026-08-11 · H32
+
+Control: exp-008 build: CRC pass over the whole image, seek to zero, second pass to parse
+
+Candidate: CRC folds over bytes as the parser consumes them; the verdict still gates the returned index
+
+**`warm-snapshot-load`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 278.9 | 235.4 | -4.18% (n.s.) | [-18.56%, +1.07%] |
+| component (ms) | 123.8 | 110.8 | -5.38% (n.s.) | [-12.04%, +8.03%] |
+| cpu (ms) | 227.0 | 219.5 | -3.79% | [-4.26%, -2.37%] |
+| user (ms) | 214.2 | 207.2 | -3.13% | [-3.62%, -2.59%] |
+| system (ms) | 14.0 | 12.2 | -12.04% | [-17.08%, -3.02%] |
+| blocked (ms) | 47.1 | 17.6 | -20.84% (n.s.) | [-68.89%, +20.94%] |
+| peak rss (MiB) | 29.8 | 29.6 | -0.39% (n.s.) | [-1.43%, +0.56%] |
+
+Other jobs, wall time: `cold-scan-index` -7.1% (n.s.), `cold-scan-producer` -2.7% (n.s.), `warm-revalidate` -3.5% (n.s.).
+
+Cost to carry: 60 lines; no new dependencies.
+
+Fail-closed unchanged: the index is returned only after the digest over the complete payload matches; structural corruption is still caught by the parser's own checks. What moves is one full read of the image.
+
+**In-progress:** Underpowered, not refuted: -4.18% median with interval [-18.56%, +1.07%] under load average 17; the change is held as an uncommitted patch pending the focused re-measurement on a quiet machine.
+
+Full record: [`exp-009-single-pass-checksum-and-parse-on-snapshot-load.md`](../experiments/exp-009-single-pass-checksum-and-parse-on-snapshot-load.md)
 
 
 <!-- This document follows common-doc-guidelines.md.
