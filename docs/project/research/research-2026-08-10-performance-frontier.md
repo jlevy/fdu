@@ -356,8 +356,15 @@ of Linux.
 fseventsd journals directory-level change events to disk, surviving reboots; a run can
 persist its last `FSEventStreamEventId` plus the volume UUID and, on the next open,
 replay “which directories changed since event X” instead of sweeping a million stats.
-This is Watchman’s production design (`fsevents_try_resync`), and git’s fsmonitor daemon
-layers the same idea over stat fingerprints.
+A source-level read of the two production precedents (below) sharpens the claim:
+Watchman’s `fsevents_try_resync` proves the *mechanics* — resume from a recorded event
+ID guarded by a `FSEventsCopyUUIDForDevice` equality check and an `EventIdsWrapped` veto
+— but uses them only for **in-process** recovery after dropped events, off by default;
+across restarts both Watchman and git’s fsmonitor daemon start at `SinceNow` and force a
+fresh crawl through their own logical clocks.
+Cross-restart replay is therefore Apple-documented and API-supported but unproven in
+major production tools — fdu would be pioneering it, which makes the backstop
+non-negotiable rather than merely prudent.
 The validation ladder is exactly fdu’s existing escalation shape: UUID mismatch, event
 ID regression, `kFSEventStreamEventFlagEventIdsWrapped`, or
 `MustScanSubDirs`/dropped-event flags each map to `InvalidateSubtree` (scoped or root)
@@ -384,6 +391,69 @@ confirmed dead in practice — Apple never wired it up, Finder declined to adopt
 it cannot be enabled retroactively on existing directories.
 fdu’s persistent roll-up cache is precisely the feature Apple abandoned; there is no
 kernel shortcut to steal.
+
+### FSEvents From Rust: What notify Can and Cannot Carry
+
+A dedicated source review (notify 8.2.0 and 9.0.0-rc.4 under `attic/notify`, fsevent-sys
+4.1.0, objc2-core-services 0.3.2, Watchman’s and git fsmonitor’s FSEvents watchers)
+settles how the journal-resume module should be built:
+
+- **notify — fdu’s pinned live-watch backend — cannot express journal resume, in any
+  version.** The 8.2.0 backend receives per-event IDs and discards them (`_event_ids`,
+  `fsevent.rs:532`); `since_when` is a private field hardcoded to
+  `kFSEventStreamEventIdSinceNow` (`fsevent.rs:66,299`); `HistoryDone` is recognized and
+  swallowed without emitting anything (`fsevent.rs:108-110`); `EventIdsWrapped` is
+  declared but never checked; scheduling still uses the deprecated
+  `FSEventStreamScheduleWithRunLoop` (with an open initialization-deadlock report,
+  notify #942). The 9.0 RC line migrates to objc2 bindings (PR #726) but changes none of
+  this, and upstream has *never discussed* exposing event IDs or `sinceWhen` — no
+  rejected proposal, no in-flight work.
+  What notify does surface — `MustScanSubDirs`+dropped flags as `Flag::Rescan` — is
+  exactly what fdu’s watch layer already consumes, so notify remains the right live
+  backend; resume is simply outside its model.
+- **One live hazard at the seam:** notify’s shutdown path calls
+  `FSEventsPurgeEventsForDeviceUpToEventId` (8.2.0 `fsevent.rs:487-489`), which
+  truncates the device’s **on-disk journal**. A resume token persisted *after* the live
+  watcher stops may point at purged history.
+  Ordering rule: persist the resume token before stopping the watcher, and treat a
+  failed resume as an ordinary fall-back-to-sweep, never an error.
+- **The binding for a first-party resume module is `objc2-core-services`** (features
+  `FSEvents`, `libc`, `dispatch2`). It is the only current binding with the complete
+  surface: `FSEventsCopyUUIDForDevice` (the UUID validation call — literally commented
+  out of fsevent-sys, which also lacks `FSEventStreamSetDispatchQueue` and has
+  deprecated itself in objc2’s favor), `FSEventStreamCreateRelativeToDevice`
+  (volume-scoped streams, matching the per-volume sharding the whole-drive design
+  already requires), and the non-deprecated dispatch-queue scheduling.
+  notify 9.0 itself migrated to this stack, so fdu would converge on one binding family.
+  One generator gap to handle locally: the extended-data dictionary keys (`"path"`,
+  `"fileID"`) are C string macros the bindings don’t emit — define them in the module.
+  The dependency addition (objc2-core-services, objc2-core-foundation, dispatch2;
+  macOS-only, unsafe confined to generated externs) goes through the supply-chain
+  process and cool-off like any other.
+- **Reference configurations from production:** Watchman and git both run
+  `NoDefer | WatchRoot | FileEvents` with plain path arrays; git hardcodes latency 0.001
+  s (empirically tuned against event drops — 0.1 s dropped events under a 100k-file
+  storm), Watchman defaults 0.01 s configurable; git switched to
+  `FSEventStreamSetDispatchQueue` in v2.40 precisely because the runloop API is
+  deprecated; `FSEventStreamSetExclusionPaths` is capped at 8 paths by the API (Watchman
+  uses it; git filters in the callback).
+  `kFSEventStreamCreateFlagUseExtendedData` — which delivers the file **inode** with
+  each event, joining replay events directly against fdu’s inode-bearing fingerprints —
+  is used by neither and is a genuine improvement available to fdu.
+- **The resume module’s shape** (macOS-only, feature-gated, ~one file): at snapshot
+  save, persist `(volume UUID via FSEventsCopyUUIDForDevice, event ID)` per volume; at
+  open, re-derive the device, re-check the UUID (mismatch or null ⇒ full sweep), create
+  a device-relative stream at the persisted ID with
+  `FileEvents | NoDefer | UseCFTypes | UseExtendedData`, schedule on a private serial
+  dispatch queue, collect `(path, inode, flags, id)` until `HistoryDone` (whose
+  accompanying path is garbage — ignore the path, not the event), with a bounded wait;
+  any dropped/`MustScanSubDirs` flag scopes an `InvalidateSubtree`, `EventIdsWrapped`
+  abandons replay entirely, and the new resume token is persisted only after the
+  corresponding deltas are applied — at-least-once, never skip-ahead.
+  Threading rules copied from notify’s proven pattern: context via `Box::into_raw` freed
+  in the stream’s release callback, the raw stream pointer in a Send wrapper, never
+  invalidate from the callback thread, no panics across the FFI boundary, and
+  `OsStr::from_bytes` for paths (notify 8.2 panics on non-UTF-8 — a bug not to copy).
 
 ### Linux and the Cloud: Hide Latency, Order the Work, Trust Nothing Optional
 
@@ -1012,7 +1082,7 @@ the loop extensions in H36–H39 to be trusted globally.
 | H40 | Stitching unpaired renames by `(dev, inode)` turns a `mv` from a full-root reconcile into an O(1) move | resident-mode `mv` cost at 60k/1M | — |
 | H41 | Collapsing invalidation roots in O(k log k) and batching subtree reconciles bounds `git clone`-burst cost | burst reconcile count and wall down | — |
 | H42 | A first-K-operations calibration probe classifies cache state and storage latency well enough to set order/depth at runtime | misclassification rate; cold wall on gp3 vs static defaults | — |
-| H43 | FSEvents `sinceWhen` journal resume revalidates a quiet tree in tens of ms at any scale, with the sweep as backstop (validation ladder: UUID, ID regression, drop flags) | macOS warm open O(changes); correctness identical to sweep every trial | snapshot fields |
+| H43 | FSEvents `sinceWhen` journal resume revalidates a quiet tree in tens of ms at any scale, with the sweep as backstop (validation ladder: UUID, ID regression, drop flags); cross-restart replay is Apple-documented but unproven in production tools, so the spike must prove it | macOS warm open O(changes); correctness identical to sweep every trial | snapshot fields; first-party objc2-core-services module (notify cannot express resume) |
 | H45 | Whole-drive macOS spike: per-volume shards + journal resume + persisted roll-ups turn a 30–60 min dust-class drive scan into a seconds-scale recheck at realistic churn | cold first-scan minutes; hour/day-churn recheck seconds; shard rewrite bounded by changed volume | H26, H33, H43 |
 | H46 | A fingerprint-keyed derived-data cache (line counts over a real repo) turns minutes-cold content summarization into seconds-warm: N stats + re-derive changed files only | cached rerun ~10–100× faster than cold; 1%-churn rerun ∝ churn; scc/tokei as cold-every-time references | tier findings; G5 |
 
@@ -1161,6 +1231,19 @@ macOS:
   [QoS and core types (eclecticlight)](https://eclecticlight.co/2024/12/17/tune-for-performance-core-types/)
   ·
   [setiopolicy_np(3) — dataless files](https://keith.github.io/xcode-man-pages/setiopolicy_np.3.html)
+- FSEvents from Rust:
+  [notify fsevent backend](https://github.com/notify-rs/notify/blob/main/notify/src/fsevent.rs)
+  (read at tags `notify-8.2.0` and `notify-9.0.0-rc.4` under `attic/notify`) ·
+  [notify PR #726 — objc2 migration](https://github.com/notify-rs/notify/pull/726) ·
+  [notify #942 — runloop init deadlock](https://github.com/notify-rs/notify/issues/942)
+  ·
+  [objc2-core-services](https://docs.rs/objc2-core-services/latest/objc2_core_services/)
+  ·
+  [Watchman fsevents watcher](https://github.com/facebook/watchman/blob/main/watchman/watcher/fsevents.cpp)
+  ·
+  [git fsm-listen-darwin.c](https://github.com/git/git/blob/master/compat/fsmonitor/fsm-listen-darwin.c)
+  and
+  [git b0226007 — dispatch-queue migration](https://github.com/git/git/commit/b0226007f0aa)
 
 Linux and cloud:
 
