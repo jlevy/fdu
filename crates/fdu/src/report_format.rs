@@ -966,6 +966,79 @@ mod tests {
         assert_eq!(REPORT_SCHEMA, "fdu.report/1");
     }
 
+    /// The change stream carries the same promise the report does.
+    ///
+    /// A constant assertion alone would not: it pins the version string while leaving the
+    /// record's shape free to change underneath it, which is the failure the promise
+    /// exists to prevent. This pins the whole record, so adding, renaming, or reordering
+    /// a field fails here and forces a deliberate version bump.
+    #[cfg(feature = "watch")]
+    #[test]
+    fn a_stream_record_is_pinned_field_by_field() {
+        use crate::{Change, ChangeKind};
+
+        assert_eq!(STREAM_SCHEMA, "fdu.stream/1");
+
+        let upsert = Change {
+            path: ["src", "main.rs"].iter().collect(),
+            kind: ChangeKind::Upsert,
+            entry_kind: Some(EntryKind::File),
+            bytes: Some(2_048),
+            allocated: Some(4_096),
+            mtime_ns: Some(1_700_000_000_000_000_000),
+            clock: 7,
+        };
+        // Path separators differ by platform, so the expectation is built the same way
+        // the renderer builds it rather than hardcoding a slash.
+        let path = upsert.path.to_string_lossy().replace('\\', "\\\\");
+        assert_eq!(
+            render_change(&upsert, Format::Json),
+            format!(
+                "{{\"schema\": \"fdu.stream/1\", \"record\": \"change\", \"op\": \"upsert\", \
+                 \"path\": \"{path}\", \"clock\": 7, \"kind\": \"file\", \"bytes\": 2048, \
+                 \"allocated\": 4096, \"mtime_ns\": 1700000000000000000}}"
+            )
+        );
+
+        // A removal has no metadata to report, and the optional fields must be absent
+        // rather than null: a consumer distinguishes "gone" from "unknown" by their
+        // absence.
+        let removed = Change {
+            path: PathBuf::from("gone.txt"),
+            kind: ChangeKind::Remove,
+            entry_kind: None,
+            bytes: None,
+            allocated: None,
+            mtime_ns: None,
+            clock: 8,
+        };
+        assert_eq!(
+            render_change(&removed, Format::Json),
+            "{\"schema\": \"fdu.stream/1\", \"record\": \"change\", \"op\": \"remove\", \
+             \"path\": \"gone.txt\", \"clock\": 8}"
+        );
+
+        // An invalidation says the consumer's view may have gaps. It is the one record
+        // that must never be dropped, so its shape is pinned too.
+        let invalidated = Change {
+            path: PathBuf::from("subtree"),
+            kind: ChangeKind::Invalidate,
+            entry_kind: None,
+            bytes: None,
+            allocated: None,
+            mtime_ns: None,
+            clock: 9,
+        };
+        assert_eq!(
+            render_change(&invalidated, Format::Json),
+            "{\"schema\": \"fdu.stream/1\", \"record\": \"change\", \"op\": \"invalidate\", \
+             \"path\": \"subtree\", \"clock\": 9}"
+        );
+
+        // Text is the greppable form: path first, operation second, tab-separated.
+        assert_eq!(render_change(&removed, Format::Text), "gone.txt\tremove");
+    }
+
     #[test]
     fn a_files_view_prints_one_path_per_line_and_nothing_else() {
         // The property that makes `fdu --view files | xargs` work.
