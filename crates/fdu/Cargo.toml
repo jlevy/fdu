@@ -38,6 +38,12 @@ name = "cli_exit"
 path = "tests/cli_exit.rs"
 required-features = ["cli"]
 
+# Drives the real binary, so the binary has to exist.
+[[test]]
+name = "watermark"
+path = "tests/watermark.rs"
+required-features = ["cli"]
+
 # Drives the real binary in watch mode, so it needs both features, not either one.
 [[test]]
 name = "watch_persistence"
