@@ -12,11 +12,11 @@ Every accepted change together, measured against the pre-work baseline in one in
 
 | job | before | after | change | 95% interval |
 | --- | ---: | ---: | ---: | --- |
-| `cold-scan-index` | 584 ms | 270 ms | **-53.6%** | [-54.4%, -53.3%] |
-| `cold-scan-producer` | 945 ms | 397 ms | **-57.9%** | [-58.4%, -56.9%] |
-| `cold-snapshot-save` | 619 ms | 303 ms | **-51.3%** | [-51.9%, -50.5%] |
-| `warm-revalidate` | 799 ms | 375 ms | **-54.3%** | [-56.0%, -52.6%] |
-| `warm-snapshot-load` | 330 ms | 214 ms | **-35.2%** | [-35.9%, -33.8%] |
+| `cold-scan-index` | 635 ms | 290 ms | **-54.5%** | [-55.3%, -53.7%] |
+| `cold-scan-producer` | 1219 ms | 457 ms | **-60.0%** | [-62.2%, -58.7%] |
+| `cold-snapshot-save` | 737 ms | 333 ms | **-52.4%** | [-56.6%, -51.0%] |
+| `warm-revalidate` | 902 ms | 442 ms | **-52.0%** | [-54.1%, -50.1%] |
+| `warm-snapshot-load` | 321 ms | 207 ms | **-35.7%** | [-36.2%, -35.3%] |
 
 ## Reproducing the cumulative comparison
 
@@ -74,7 +74,7 @@ The rejected ones are the reusable part: they stop the next person spending a da
 | 029 | [Increase macOS bulk metadata buffer to 256 KiB](#exp029--increase-macos-bulk-metadata-buffer-to-256-kib) | H55 | `cold-scan-index` | -1.8% | ❌ rejected |
 | 030 | [Elide unchanged entries in bounded parallel reconciliation waves](#exp030--elide-unchanged-entries-in-bounded-parallel-reconciliation-waves) | H12, H9 | `warm-revalidate` | -59.5% | ✅ accepted |
 | 031 | [Increase immutable-baseline reconciliation waves to 4096 directories](#exp031--increase-immutablebaseline-reconciliation-waves-to-4096-directories) | H56 | `warm-revalidate` | +1.6% | ❌ rejected |
-| 032 | [Cumulative effect through bounded parallel reconciliation](#exp032--cumulative-effect-through-bounded-parallel-reconciliation) | H1, H5, H10, H14, H18, H32, H48, H49, H31, H3, H26, H53, H12, H9 | `cold-scan-index` | -53.6% | ✅ accepted |
+| 032 | [Cumulative effect through bounded parallel reconciliation](#exp032--cumulative-effect-through-bounded-parallel-reconciliation) | H1, H5, H10, H14, H18, H32, H48, H49, H31, H3, H26, H53, H12, H9 | `cold-scan-index` | -54.5% | ✅ accepted |
 
 ## The experiments
 
@@ -1022,27 +1022,27 @@ Full record: [`exp-031-increase-immutable-baseline-reconciliation-waves-to-4096-
 
 Control: b565882 before the iterative performance campaign
 
-Candidate: current code through exp-030, including accepted cold, snapshot, BFS, bulk metadata, and bounded parallel reconciliation changes
+Candidate: final Rust-1.85-compatible code through exp-030, including accepted cold, snapshot, BFS, bulk metadata, and bounded parallel reconciliation changes
 
 **`cold-scan-index`** (cold start) — the comparison the verdict rests on
 
 | metric | control | candidate | change | 95% interval |
 | --- | ---: | ---: | ---: | --- |
-| wall (ms) | 584.4 | 270.3 | -53.59% | [-54.38%, -53.27%] |
-| component (ms) | 474.6 | 159.7 | -66.25% | [-67.18%, -65.97%] |
-| cpu (ms) | 578.7 | 1090.4 | +88.21% (regression) | [+84.62%, +90.41%] |
-| user (ms) | 227.7 | 192.2 | -15.76% | [-15.91%, -15.14%] |
-| system (ms) | 350.9 | 897.2 | +155.32% (regression) | [+148.53%, +158.46%] |
-| blocked (ms) | 4.1 | 0.0 | -100.00% | [-100.00%, -100.00%] |
-| peak rss (MiB) | 31.9 | 32.7 | +2.40% (regression) | [+2.11%, +2.69%] |
+| wall (ms) | 635.4 | 289.6 | -54.53% | [-55.33%, -53.72%] |
+| component (ms) | 520.9 | 173.4 | -66.74% | [-67.45%, -65.70%] |
+| cpu (ms) | 629.7 | 1142.7 | +82.43% (regression) | [+73.39%, +86.30%] |
+| user (ms) | 236.3 | 223.7 | -5.08% | [-8.16%, -3.41%] |
+| system (ms) | 391.3 | 933.2 | +133.84% (regression) | [+122.04%, +142.88%] |
+| blocked (ms) | 6.9 | 0.0 | -100.00% | [-100.00%, -100.00%] |
+| peak rss (MiB) | 32.0 | 33.4 | +4.04% (regression) | [+3.42%, +6.80%] |
 
-Other jobs, wall time: `cold-scan-producer` -57.9%, `cold-snapshot-save` -51.3%, `warm-revalidate` -54.3%, `warm-snapshot-load` -35.2%.
+Other jobs, wall time: `cold-scan-producer` -60.0%, `cold-snapshot-save` -52.4%, `warm-revalidate` -52.0%, `warm-snapshot-load` -35.7%.
 
 Cost to carry: 0 lines; no new dependencies.
 
 measurement-only cumulative anchor; complexity belongs to the individual accepted experiments
 
-**Accepted:** Against the original binary, current code improves cold index 53.59%, producer 57.87%, snapshot save 51.33%, warm revalidation 54.26%, and snapshot load 35.25%; all exact oracles passed.
+**Accepted:** Against the original binary, final code improves cold index 54.53%, producer 60.05%, snapshot save 52.41%, warm revalidation 51.99%, and snapshot load 35.66%; all exact oracles passed.
 
 Full record: [`exp-032-cumulative-effect-through-bounded-parallel-reconciliation.md`](../experiments/exp-032-cumulative-effect-through-bounded-parallel-reconciliation.md)
 

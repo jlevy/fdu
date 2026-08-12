@@ -105,8 +105,8 @@ with flags for *several* of the ways history can be insufficient
 `EventIdsWrapped`, `HistoryDone`, `RootChanged`, `Mount`, `Unmount`).
 
 The iterative loop has since improved those constants without changing that shape.
-On the current 60,067-entry subject, exp-032 measures about 270 ms for cold index and
-214 ms for snapshot load.
+On the current 60,067-entry subject, exp-032 measures about 290 ms for cold index and
+207 ms for snapshot load.
 exp-026 wires the exp-022 `getattrlistbulk` reader into full reconciliation, and exp-030
 then compares bounded directory waves against an immutable baseline so exact no-ops
 never reach the index consumer.
