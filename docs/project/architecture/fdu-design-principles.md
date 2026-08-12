@@ -170,8 +170,10 @@ here rather than the original intent.
 
 The governing aspiration: the design should fit the contours of the real problem — no
 more complexity, but no less either.
-Simple things stay simple (`fdu` alone is a good answer) and complex things stay
-possible, because any axis composes with any other.
+Simple things stay simple (`fdu .` is a good answer) and complex things stay possible,
+because any axis composes with any other.
+Bare `fdu` is safe discovery: it prints help and never assumes that the current
+directory, which may contain millions of entries, was meant to be scanned.
 The concrete test for “no more complexity”: before adding a view or a flag, show it
 cannot be expressed as a composition of what exists.
 `largest` and `recent` were removed from the design by exactly that test; they are
@@ -202,7 +204,9 @@ tagging ignored entries rather than pruning them.
 
 There are no subcommands.
 The grammar is always “report on a path”, so a path argument can never be shadowed by a
-verb. `--help` documents each axis, its values, and its defaults plainly enough that the
+verb. A report requires that path explicitly; `fdu .` is the short opt-in to the current
+directory, while bare `fdu` prints help without touching the filesystem.
+`--help` documents each axis, its values, and its defaults plainly enough that the
 design is legible from the help text alone.
 
 ### One Scan, Many Views
@@ -266,15 +270,15 @@ Each of these must be one invocation:
 
 | Instead of | Run |
 | --- | --- |
-| `dust`, `dut` | `fdu` |
-| `du -sh`, `diskus` | `fdu --view summary` |
-| `du -a --max-depth 3` | `fdu --depth 3 -n all` |
-| `fd -e rs`, `find -name` | `fdu --view files --include '*.rs'` |
-| biggest files | `fdu --view files --sort size -n 100` |
-| `find -mmin -60` | `fdu --view files --modified-since 1h` |
-| `du` by type | `fdu --view types` |
-| two reports, one scan | `fdu --view types,tree` |
-| `tail -f` for a tree | `fdu --watch --view files --format jsonl` |
+| `dust`, `dut` | `fdu PATH` |
+| `du -sh`, `diskus` | `fdu --view summary PATH` |
+| `du -a --max-depth 3` | `fdu --depth 3 -n all PATH` |
+| `fd -e rs`, `find -name` | `fdu --view files --include '*.rs' PATH` |
+| biggest files | `fdu --view files --sort size -n 100 PATH` |
+| `find -mmin -60` | `fdu --view files --modified-since 1h PATH` |
+| `du` by type | `fdu --view types PATH` |
+| two reports, one scan | `fdu --view types,tree PATH` |
+| `tail -f` for a tree | `fdu --watch --view files --format jsonl PATH` |
 
 An interactive TUI is a recorded non-goal, not an omission: it would be a consumer of
 the same `Query`/`Report` layer.
@@ -308,6 +312,8 @@ caller was watching; and an escalation is never filtered at all.
 
 `--cache-status` and `--cache-clear` run before scan validation, need no readable tree,
 and suppress the report.
+A missing path is allowed only for these lifecycle operations and discovery surfaces; it
+never creates an implicit report scan.
 A report run never deletes anything.
 Clearing echoes its target before acting, and never removes a file this build cannot
 identify.

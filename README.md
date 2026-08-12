@@ -99,28 +99,30 @@ package should be presented as available from crates.io or PyPI yet.
 ## Use It
 
 ```shell
-fdu                        # summarize the current directory
-fdu -d 3 ~/src             # three levels deep
-fdu --by-type ~/Downloads  # break down by file extension
-fdu --json .               # stable, versioned JSON for agents and scripts
-fdu --skill                # print the self-contained agent skill
+fdu .                                      # summarize an explicitly chosen directory
+fdu --depth 3 ~/src                        # render three levels deep
+fdu --view types ~/Downloads               # break down by file extension
+fdu --format json .                        # stable, versioned machine output
+fdu --view files --sort size -n 20 ~/src   # compose a largest-files query
+fdu --skill                                # print the self-contained agent skill
 ```
 
 ```text
-/workspace/fdu/crates  12 files, 4 dirs, 156 KiB
-   140 KiB  █████████░    90%  fdu/
-   136 KiB  █████████░    87%    src/
-   4.0 KiB  ░░░░░░░░░░     3%    Cargo.toml
+   156 KiB  ██████████   100%  . (12 files)
+   140 KiB  █████████░    90%    fdu (10 files)
+   136 KiB  █████████░    87%      src (8 files)
 ```
 
+Reports never infer `.`: bare `fdu` prints the same help as `fdu --help` and performs no
+scan, while `fdu .` opts into the current directory explicitly.
 `--help` is the complete source of truth.
 Human output uses restrained semantic color when its destination is a terminal;
 `--color auto|always|never`, `NO_COLOR`, and `FORCE_COLOR` make the policy explicit.
 Primary results go to stdout, while warnings and errors go to stderr.
-JSON and skill output never contain ANSI styling.
-JSON output carries a `schema` field (`fdu.tree/2`) that is versioned with the tool,
-plus freshness and per-path error details.
-Scan completeness, scan scope, and rendered-tree truncation are separate fields.
+Machine and skill output never contain ANSI styling.
+Machine reports carry the versioned `fdu.report/1` schema plus source, freshness,
+completeness, errors, the conservative scan watermark, and generation time.
+Scan completeness and each tree node’s rendered truncation are separate fields.
 Invalid-Unicode paths retain their display string and add a lossless, platform-tagged
 raw identity.
 Exit status 2 means partial results; pass `--allow-partial` to accept those

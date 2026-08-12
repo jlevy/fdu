@@ -24,7 +24,7 @@ help:
 	@echo "make python-concurrency  Prove Python GIL release and runtime borrow exclusion"
 	@echo "make python-smoke  Build, install, and smoke-test the locked Python wheel"
 	@echo "make cli        Build and run the CLI against this repo"
-	@echo "make docs-format  Auto-format hand-written Markdown with flowmark"
+	@echo "make docs-format  Auto-format all Markdown with flowmark"
 	@echo ""
 	@echo "Performance loop (not part of check; see docs/project/guides/performance-loop.md)"
 	@echo "make perf-baseline  Fingerprint the reference tree named by PERF_TREE"
@@ -125,12 +125,13 @@ python-smoke:
 		uvx --isolated --no-index --from "$$wheel_path" fdu --version
 
 cli:
-	$(CARGO) run --locked --release --bin fdu -- --no-cache -d 2 .
+	$(CARGO) run --locked --release --bin fdu -- --cache off -d 2 .
 
 # --- Documentation ----------------------------------------------------------
 #
-# `--auto` owns file discovery, applicable cleanups, and generated-file exclusions. The
-# committed tooling lock pins the native Rust formatter used locally and in CI.
+# `--auto` owns repository-wide file discovery and applicable cleanups. The committed
+# tooling lock pins the native Rust formatter used locally and in CI. Generated Markdown
+# uses this same path after generation, so regenerating it cannot create format drift.
 FLOWMARK := uv run --project benchmarks --frozen --only-group docs flowmark
 
 docs-format:
@@ -202,6 +203,7 @@ perf-test:
 # validator lives in that group.
 perf-ledger:
 	$(PERF_UV) --group dev python -m benchmarks.realtree.summary
+	$(MAKE) docs-format
 
 # The experiment contract is compiled from the Pydantic model; --check fails on drift.
 # Pinned in benchmarks/pyproject.toml, not `@latest`: this validator is the

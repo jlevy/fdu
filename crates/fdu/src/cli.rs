@@ -40,7 +40,7 @@ const CLI_STYLES: Styles = Styles::styled()
     .valid(AnsiColor::Green.on_default())
     .invalid(AnsiColor::Yellow.on_default());
 
-const AFTER_HELP: &str = "Examples:\n  fdu\n  fdu --view types ~/Downloads\n  fdu --view files --sort size --limit 20 ~/src\n  fdu --view files --modified-since 2h --format jsonl .\n  fdu --view summary,types --format json .\n\nFive axes, and every option belongs to exactly one:\n  Scope      PATH, --scan-depth        what is scanned and cached\n  Selection  --include, --exclude, --min-size, --modified-since, --modified-before,\n             --kind, --depth, --limit, --sort, --reverse, --size\n  View       --view tree,types,files,summary\n  Format     --format text|json|jsonl|yaml, --color\n  Mode       --cache auto|refresh|read-only|only|off\n\nScope versus selection:\n  --scan-depth limits what is scanned and retained; one cache then serves every query.\n  --depth and --limit bound only the rendered view, and never cost a rescan.\n  --depth 0 reports totals for the root and nothing beneath it.\n  --depth and --limit accept `all` for no bound.\n\nValues:\n  SIZE   512, 10k, 10M, 1.5GiB (decimal and binary units, case-insensitive)\n  WHEN   now, an age (45s, 2h, 1h30m), RFC 3339 with an offset, or @epoch seconds\n  --modified-since is inclusive; --modified-before is exclusive\n  --include and --exclude are repeatable globs; --view and --kind are comma lists\n\nCache:\n  auto       read, revalidate, and write back when complete (default)\n  refresh    ignore any snapshot, scan cold, and rewrite it\n  read-only  read and revalidate, but never write\n  only       answer from the snapshot without touching the tree; labeled stale,\n             and fails when no usable snapshot exists rather than scanning\n  off        ignore the snapshot and leave nothing behind\n\nOutput and automation:\n  Results go to stdout; warnings and errors go to stderr.\n  Machine formats are schema-versioned and never colorized.\n  Every report carries schema, source, freshness, complete, errors, and both timestamps.\n  Feed a report's scan_started_at back as --modified-since to list what changed since.\n  The command never prompts, pages, or animates progress.\n\nColor:\n  --color overrides NO_COLOR and FORCE_COLOR. In auto mode, NO_COLOR disables color,\n  FORCE_COLOR enables it, and otherwise the destination must be a terminal.\n\nExit status:\n  0  Complete result, or a partial result accepted with --allow-partial\n  1  Fatal filesystem or cache error\n  2  Partial result, or command-line usage error";
+const AFTER_HELP: &str = "Examples:\n  fdu .\n  fdu --view types ~/Downloads\n  fdu --view files --sort size --limit 20 ~/src\n  fdu --view files --modified-since 2h --format jsonl .\n  fdu --view summary,types --format json .\n\nFive axes, and every option belongs to exactly one:\n  Scope      PATH, --scan-depth        what is scanned and cached\n  Selection  --include, --exclude, --min-size, --modified-since, --modified-before,\n             --kind, --depth, --limit, --sort, --reverse, --size\n  View       --view tree,types,files,summary\n  Format     --format text|json|jsonl|yaml, --color\n  Mode       --cache auto|refresh|read-only|only|off\n\nScope versus selection:\n  Reports require PATH; bare `fdu` prints this help and never scans the current directory.\n  --scan-depth limits what is scanned and retained; one cache then serves every query.\n  --depth and --limit bound only the rendered view, and never cost a rescan.\n  --depth 0 reports totals for the root and nothing beneath it.\n  --depth and --limit accept `all` for no bound.\n\nValues:\n  SIZE   512, 10k, 10M, 1.5GiB (decimal and binary units, case-insensitive)\n  WHEN   now, an age (45s, 2h, 1h30m), RFC 3339 with an offset, or @epoch seconds\n  --modified-since is inclusive; --modified-before is exclusive\n  --include and --exclude are repeatable globs; --view and --kind are comma lists\n\nCache:\n  auto       read, revalidate, and write back when complete (default)\n  refresh    ignore any snapshot, scan cold, and rewrite it\n  read-only  read and revalidate, but never write\n  only       answer from the snapshot without touching the tree; labeled stale,\n             and fails when no usable snapshot exists rather than scanning\n  off        ignore the snapshot and leave nothing behind\n\nOutput and automation:\n  Results go to stdout; warnings and errors go to stderr.\n  Machine formats are schema-versioned and never colorized.\n  Every report carries schema, source, freshness, complete, errors, and both timestamps.\n  Feed a report's scan_started_at back as --modified-since to list what changed since.\n  The command never prompts, pages, or animates progress.\n\nColor:\n  --color overrides NO_COLOR and FORCE_COLOR. In auto mode, NO_COLOR disables color,\n  FORCE_COLOR enables it, and otherwise the destination must be a terminal.\n\nExit status:\n  0  Complete result, or a partial result accepted with --allow-partial\n  1  Fatal filesystem or cache error\n  2  Partial result, or command-line usage error";
 
 /// When terminal styling should be enabled.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum)]
@@ -160,7 +160,9 @@ pub enum RunOutcome {
     about,
     long_about = None,
     styles = CLI_STYLES,
-    after_help = AFTER_HELP
+    after_help = AFTER_HELP,
+    arg_required_else_help = true,
+    override_usage = "fdu [OPTIONS] <PATH>\n       fdu [PATH] --cache-status[=<SCOPE>] [--cache-clear[=<SCOPE>]]\n       fdu [PATH] --cache-clear[=<SCOPE>]\n       fdu --skill"
 )]
 // A command line is a flat bag of independent switches. Folding these into enums to
 // satisfy the lint would obscure the one thing this struct exists to mirror: the flags a
@@ -168,9 +170,9 @@ pub enum RunOutcome {
 #[allow(clippy::struct_excessive_bools)]
 pub struct Cli {
     // ---- scope: what the engine observes and retains ----
-    /// Directory to summarize.
-    #[arg(default_value = ".")]
-    pub path: PathBuf,
+    /// Report root; optional only for cache lifecycle operations.
+    #[arg(required_unless_present_any = ["skill", "cache_status", "cache_clear"])]
+    pub path: Option<PathBuf>,
 
     /// Limit scanning and retention to N entry levels.
     #[arg(long, value_name = "N")]
@@ -319,6 +321,11 @@ impl Cli {
         // waiting followed by an error.
         let format = self.parse_format().map_err(|error| usage(&error))?;
         let query = self.parse_query().map_err(|error| usage(&error))?;
+        let path = self.path.as_deref().ok_or_else(|| {
+            usage(&anyhow::anyhow!(
+                "missing PATH: specify the directory to summarize, for example `fdu .`"
+            ))
+        })?;
 
         let policy = self.parse_cache_policy().map_err(|error| usage(&error))?;
         let config = OpenConfig {
@@ -327,7 +334,7 @@ impl Cli {
                 one_filesystem: self.one_filesystem,
                 ..ScanConfig::default()
             },
-            cache_path: default_cache_path(&self.path),
+            cache_path: default_cache_path(path),
             policy,
         };
 
@@ -358,7 +365,7 @@ impl Cli {
         }
 
         let scan_started_at = SystemTime::now();
-        let (index, open_report, pending_save) = open_with_pending_save(&self.path, &config)?;
+        let (index, open_report, pending_save) = open_with_pending_save(path, &config)?;
 
         let provenance = Provenance {
             scan_started_at: Some(scan_started_at),
@@ -441,10 +448,11 @@ impl Cli {
         use crate::session::{ChangeKind, Session};
         use crate::watch::WatchConfig;
 
+        let path = self.path.as_deref().expect("run() validates the report path first");
         let interval = parse_duration(&self.interval).map_err(|error| usage(&error))?;
 
         let scan_started_at = SystemTime::now();
-        let (index, open_report, pending_save) = open_with_pending_save(&self.path, config)?;
+        let (index, open_report, pending_save) = open_with_pending_save(path, config)?;
         if let Err(error) = pending_save.join() {
             let _ = writeln!(
                 diagnostic,
@@ -626,8 +634,12 @@ impl Cli {
 
     /// Run the cache lifecycle flags and report what they found or removed.
     fn run_cache_lifecycle(&self, out: &mut dyn Write) -> anyhow::Result<RunOutcome> {
-        let cache_dir = crate::default_cache_path(&self.path)
-            .and_then(|path| path.parent().map(Path::to_path_buf));
+        // Lifecycle commands do not scan. With no PATH they retain their existing
+        // current-root meaning so `--cache-status=all` and `--cache-clear=all` remain
+        // useful discovery/maintenance actions without weakening report safety.
+        let root = self.path.as_deref().unwrap_or_else(|| Path::new("."));
+        let cache_dir =
+            crate::default_cache_path(root).and_then(|path| path.parent().map(Path::to_path_buf));
 
         if let Some(scope) = &self.cache_clear {
             let scope = CacheScope::parse(scope, "--cache-clear").map_err(|e| usage(&e))?;
@@ -651,7 +663,7 @@ impl Cli {
                     )?;
                 }
                 (CacheScope::Root, _) => {
-                    let path = crate::default_cache_path(&self.path);
+                    let path = crate::default_cache_path(root);
                     let removed = match &path {
                         Some(path) => crate::clear_cache(path)?,
                         None => false,
@@ -674,7 +686,7 @@ impl Cli {
             let statuses = match (scope, &cache_dir) {
                 (CacheScope::All, Some(dir)) => crate::list_caches(dir)?,
                 (CacheScope::All, None) => Vec::new(),
-                (CacheScope::Root, _) => match crate::default_cache_path(&self.path) {
+                (CacheScope::Root, _) => match crate::default_cache_path(root) {
                     Some(path) => vec![crate::cache_status(&path)?],
                     None => Vec::new(),
                 },
@@ -925,6 +937,16 @@ fn run_with_io(
     stdout_is_terminal: bool,
     stderr_is_terminal: bool,
 ) -> u8 {
+    // A bare invocation is the long-help discovery surface, byte for byte. Rewriting it
+    // before parsing also gives it `--help`'s stdout and exit-0 behavior, rather than
+    // Clap's shorter missing-argument rendering on stderr.
+    let implicit_help;
+    let args = if args.len() == 1 {
+        implicit_help = vec![args[0].clone(), OsString::from("--help")];
+        implicit_help.as_slice()
+    } else {
+        args
+    };
     let requested_color = requested_color(args);
     let json_requested = flag_is_present(args, "--json");
     let skill_requested = flag_is_present(args, "--skill");
@@ -985,7 +1007,14 @@ fn write_styled(
     rendered: &clap::builder::StyledStr,
     color: bool,
 ) -> io::Result<()> {
-    if color { write!(out, "{}", rendered.ansi()) } else { write!(out, "{rendered}") }
+    let rendered = if color { rendered.ansi().to_string() } else { rendered.to_string() };
+    for line in rendered.split_inclusive('\n') {
+        let (content, newline) =
+            line.strip_suffix('\n').map_or((line, ""), |content| (content, "\n"));
+        out.write_all(content.trim_end_matches([' ', '\t']).as_bytes())?;
+        out.write_all(newline.as_bytes())?;
+    }
+    Ok(())
 }
 
 fn finish(
@@ -1106,14 +1135,6 @@ fn compose_skill_from(template: &str) -> String {
     template.replace("\r\n", "\n").replace("__FDU_VERSION__", env!("CARGO_PKG_VERSION"))
 }
 
-// Rounding a fraction to one of eleven bar widths is exactly the case where float-cast
-// lints have nothing to protect: the value is clamped to [0, 1] before the cast and the
-// result is clamped to WIDTH after it.
-#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_precision_loss)]
-/// Format a byte count the way a person reads it.
-/// Encode a string as a JSON string literal.
-/// Write lossless identity metadata when an operating-system string cannot be represented
-/// by the display-oriented JSON string beside it.
 #[cfg(any(unix, windows))]
 #[cfg(test)]
 mod tests {
@@ -1221,7 +1242,7 @@ mod tests {
     /// A CLI with every axis at its default, so a test can vary exactly one.
     fn cli() -> Cli {
         Cli {
-            path: PathBuf::from("."),
+            path: Some(PathBuf::from(".")),
             scan_depth: None,
             one_filesystem: false,
             include: Vec::new(),
@@ -1252,6 +1273,44 @@ mod tests {
 
     fn query_error(cli: &Cli) -> String {
         cli.parse_query().expect_err("expected a rejection").to_string()
+    }
+
+    #[test]
+    fn a_bare_invocation_prints_help_instead_of_scanning_the_current_directory() {
+        let mut bare_out = Vec::new();
+        let mut bare_err = Vec::new();
+        let bare = [OsString::from("fdu")];
+        let status = run_with_io(&bare, &mut bare_out, &mut bare_err, false, false);
+
+        let mut help_out = Vec::new();
+        let mut help_err = Vec::new();
+        let help = [OsString::from("fdu"), OsString::from("--help")];
+        let help_status = run_with_io(&help, &mut help_out, &mut help_err, false, false);
+
+        assert_eq!(status, 0, "showing help is a successful discovery action");
+        assert_eq!(help_status, 0);
+        assert_eq!(bare_out, help_out, "bare fdu should be exactly the long-help surface");
+        assert!(bare_err.is_empty(), "help belongs on stdout");
+        assert!(help_err.is_empty());
+        let bare_help = String::from_utf8(bare_out).expect("help is UTF-8");
+        assert!(bare_help.contains("Usage: fdu"));
+        assert!(
+            bare_help.lines().all(|line| line.trim_end() == line),
+            "help should not pad blank lines with invisible whitespace"
+        );
+    }
+
+    #[test]
+    fn report_options_do_not_make_the_scan_path_optional() {
+        let error = Cli::command()
+            .color(ColorChoice::Never)
+            .try_get_matches_from(["fdu", "--view", "summary"])
+            .expect_err("a report without PATH must never fall back to the current directory");
+
+        assert_eq!(error.kind(), clap::error::ErrorKind::MissingRequiredArgument);
+        assert_eq!(error.exit_code(), 2);
+        assert!(error.use_stderr());
+        assert!(error.to_string().contains("<PATH>"));
     }
 
     // ---- the five axes translate into library types, and nothing else ----
@@ -1375,7 +1434,7 @@ mod tests {
         // Parsing precedes open(), so a typo reports itself instead of arriving after a
         // scan of a large tree.
         let message = query_error(&Cli {
-            path: PathBuf::from("/nonexistent-root-that-should-not-be-scanned"),
+            path: Some(PathBuf::from("/nonexistent-root-that-should-not-be-scanned")),
             view: "bogus".to_string(),
             ..cli()
         });

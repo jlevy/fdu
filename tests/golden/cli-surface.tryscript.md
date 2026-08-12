@@ -24,13 +24,14 @@ patterns:
 $ fdu --help
 A fast, incremental file roll-up engine: hierarchical tallies over large directory trees
 
-Usage: fdu [OPTIONS] [PATH]
+Usage: fdu [OPTIONS] <PATH>
+       fdu [PATH] --cache-status[=<SCOPE>] [--cache-clear[=<SCOPE>]]
+       fdu [PATH] --cache-clear[=<SCOPE>]
+       fdu --skill
 
 Arguments:
   [PATH]
-          Directory to summarize
-
-          [default: .]
+          Report root; optional only for cache lifecycle operations
 
 Options:
       --scan-depth <N>
@@ -127,7 +128,7 @@ Options:
           Print version
 
 Examples:
-  fdu
+  fdu .
   fdu --view types ~/Downloads
   fdu --view files --sort size --limit 20 ~/src
   fdu --view files --modified-since 2h --format jsonl .
@@ -142,6 +143,7 @@ Five axes, and every option belongs to exactly one:
   Mode       --cache auto|refresh|read-only|only|off
 
 Scope versus selection:
+  Reports require PATH; bare `fdu` prints this help and never scans the current directory.
   --scan-depth limits what is scanned and retained; one cache then serves every query.
   --depth and --limit bound only the rendered view, and never cost a rescan.
   --depth 0 reports totals for the root and nothing beneath it.
@@ -194,6 +196,8 @@ description: >-
 # fdu Directory Roll-Ups
 
 Use `fdu` to summarize a directory tree without modifying files in that tree.
+Every report requires an explicit `PATH`; bare `fdu` prints help instead of scanning the
+current directory.
 
 ## Run fdu
 
@@ -319,10 +323,10 @@ fdu 0.0.1[DEV_REVISION]
 ? 0
 ```
 
-## The Default Root Works for an Empty Sandbox
+## An Explicit Current Root Works for an Empty Sandbox
 
 ```console
-$ fdu --cache off --color never --size apparent --depth 0
+$ fdu --cache off --color never --size apparent --depth 0 .
        0 B  ░░░░░░░░░░     0%  . (0 files)
 ? 0
 ```
@@ -335,7 +339,10 @@ $ fdu --definitely-not-an-option
 !
 !   tip: to pass '--definitely-not-an-option' as a value, use '-- --definitely-not-an-option'
 !
-! Usage: fdu [OPTIONS] [PATH]
+! Usage: fdu [OPTIONS] <PATH>
+!        fdu [PATH] --cache-status[=<SCOPE>] [--cache-clear[=<SCOPE>]]
+!        fdu [PATH] --cache-clear[=<SCOPE>]
+!        fdu --skill
 !
 ! For more information, try '--help'.
 ? 2
@@ -347,7 +354,7 @@ Silently dropping the bound would run the query with no time filter at all while
 user believed one was active, which is worse than refusing the flag.
 
 ```console
-$ fdu --modified-since 2300-01-01T00:00:00Z
+$ fdu --modified-since 2300-01-01T00:00:00Z .
 ! fdu: invalid --modified-since "2300-01-01T00:00:00Z": that time is outside the range fdu can represent (about 1677 to 2262)
 ? 2
 ```
@@ -359,13 +366,13 @@ scan and the index would silently diverge from the tree.
 Selection flags are not refused: they filter what a full index reports.
 
 ```console
-$ fdu --watch --scan-depth 2
+$ fdu --watch --scan-depth 2 .
 ! fdu: --watch cannot be combined with --scan-depth or --one-filesystem: watching requires full scope. Selection flags such as --depth, --include, and --modified-since do work with --watch, because they filter the index rather than narrowing the scan
 ? 2
 ```
 
 ```console
-$ fdu --watch --one-filesystem
+$ fdu --watch --one-filesystem .
 ! fdu: --watch cannot be combined with --scan-depth or --one-filesystem: watching requires full scope. Selection flags such as --depth, --include, and --modified-since do work with --watch, because they filter the index rather than narrowing the scan
 ? 2
 ```

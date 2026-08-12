@@ -4,9 +4,10 @@
 //! A build from a checkout reports `0.0.1-dev+g<rev>` (with a `.dirty` suffix when the
 //! tree has uncommitted changes); a build without git metadata — a published crate, a
 //! source tarball — reports the plain semver, which for those artifacts is the truth.
-//! The `.dirty` marker describes the tree the binary was built from. It can only go
-//! stale in one direction: editing a file that is not compiled into the crate (a doc,
-//! a test fixture) will not trigger a rebuild, so the marker lags until the next one.
+//! The `.dirty` marker describes the checkout the binary was built from. Cargo watches
+//! the whole packaged crate plus the Git references, so both source edits and moving
+//! `HEAD` refresh it. An edit elsewhere in the workspace can still wait until the next
+//! crate build, because it is not an input to this package.
 
 use std::process::Command;
 
@@ -24,9 +25,15 @@ fn main() {
 
     let version = match git(&["rev-parse", "--short=9", "HEAD"]) {
         Some(rev) => {
-            // Rebuild when the checked-out commit moves. HEAD is resolved through the
-            // git dir rather than assumed at `../../.git`, because worktrees keep it
-            // elsewhere; when HEAD is a symbolic ref, track the ref file too.
+            // Any rerun directive disables Cargo's default whole-package tracking. Keep
+            // that default explicitly so an ordinary source edit or cleanup refreshes
+            // `.dirty`, then add Git metadata so a commit with no package-content change
+            // still refreshes the revision. A directory path is recursive by Cargo's
+            // documented build-script contract.
+            println!("cargo:rerun-if-changed=.");
+
+            // HEAD is resolved through the git dir rather than assumed at `../../.git`,
+            // because worktrees keep it elsewhere; when HEAD is symbolic, track its ref.
             if let Some(git_dir) = git(&["rev-parse", "--absolute-git-dir"]) {
                 println!("cargo:rerun-if-changed={git_dir}/HEAD");
                 if let Some(head_ref) = git(&["symbolic-ref", "-q", "HEAD"]) {

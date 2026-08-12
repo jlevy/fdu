@@ -9,6 +9,8 @@ description: >-
 # fdu Directory Roll-Ups
 
 Use `fdu` to summarize a directory tree without modifying files in that tree.
+Every report requires an explicit `PATH`; bare `fdu` prints help instead of scanning the
+current directory.
 
 ## Run fdu
 

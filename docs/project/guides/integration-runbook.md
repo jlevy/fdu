@@ -84,8 +84,8 @@ The golden suite is the text contract for the CLI: every human and machine surfa
 exit codes, and its cache behavior.
 
 ```shell
-npx tryscript@latest docs        # syntax reference, if you are editing the goldens
-make golden                      # or the project's documented golden target
+./node_modules/.bin/tryscript docs  # syntax reference from the pinned local tool
+make test-golden                    # build and compare every committed CLI contract
 ```
 
 ✅ Every block matches.
@@ -113,8 +113,8 @@ model concrete.
 
 ```shell
 export XDG_CACHE_HOME="$(mktemp -d)"     # never touch your real cache while testing
-./target/debug/fdu --json . | head -20   # first run
-./target/debug/fdu --json . | head -20   # second run
+./target/debug/fdu --format json . | head -20   # first run
+./target/debug/fdu --format json . | head -20   # second run
 ```
 
 ✅ The first run reports `"source": "cold_scan"`; the second reports `"warm_revalidate"`.
