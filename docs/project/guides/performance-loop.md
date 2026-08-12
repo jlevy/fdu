@@ -146,7 +146,7 @@ Kept as a live list.
 Numbering is shared with the
 [performance-frontier research](../research/research-2026-08-10-performance-frontier.md),
 whose backlog owns H12–H46; new hypotheses from any source take the next free number
-(currently H52) so no id ever means two things.
+(currently H53) so no id ever means two things.
 Each is stated so it can be wrong, with the metric that would show it.
 Status is updated as experiments resolve them; see the ledger for results.
 
@@ -155,10 +155,11 @@ Status is updated as experiments resolve them; see the ledger for results.
 | # | Hypothesis | Predicted effect | Status |
 | --- | --- | --- | --- |
 | H1 | The walk is serial, so it uses one core while the machine has ten. A bounded parallel producer feeding a single index consumer will cut wall time several-fold. | `wall_ns` down 3–4×, `cpu_ns` roughly flat or slightly up, `cpu_ns/wall_ns` from 1.0 to 4+ | **Confirmed** (exp-001, −50.0%) |
-| H2 | `fs::read_dir` opens each directory by absolute path, so the kernel re-resolves every component from the root. Opening relative to a retained dirfd (`openat`) removes repeated prefix resolution. After H26 landed, `open` is the largest remaining cold cost at **33.86%** of self time. | `system_cpu_ns` down, biggest effect on deep trees | **Ready**: exp-022 completed the supply-chain review and established the narrow target-specific `libc`/unsafe boundary. Re-profiled after H26; test next. |
+| H2 | `fs::read_dir` opens each directory by absolute path, so the kernel re-resolves every component from the root. Opening relative to a retained dirfd (`openat`) removes repeated prefix resolution. After H26 landed, `open` is the largest remaining cold cost at **33.86%** of self time. | `system_cpu_ns` down, biggest effect on deep trees | **Refuted for one retained root fd** (exp-024): 720k cold-index wall −0.07% [−4.06%, +1.53%], with indexed and producer system CPU neutral. Parent/ancestor dirfds remain a distinct H24/H29 design problem. |
 | H3 | One `fstatat` per entry (20.08% of post-adaptive self time) is the floor for a portable walker, but macOS `getattrlistbulk` batches enumeration and complete stat-tier metadata per directory. | `system_cpu_ns` down substantially | **Confirmed on macOS** (exp-022): 720k cold-index wall −30.13%, producer wall −41.60%, system CPU −46.62%/−61.40%; 60k wall −5.22%/−9.25%. Linux `statx` remains open. |
 | H4 | Depth-first traversal order has worse locality than breadth-first for a tree whose directories were written breadth-first. | `system_cpu_ns`, `minor_faults` | — |
 | H31 | A latency-bound walk needs more in-flight metadata operations than the six-worker warm-small knee. Calibrating aggregate chunk service time over the first 16k entries should select sixteen workers in the slow state and retain six in the fast state. | slow cold wall down 5–10%; fast wall and resources unchanged | **Confirmed** (exp-015–021): explicit sixteen workers established the opportunity. Pre-created reserves and two scale triggers were rejected. Service-time calibration improved 720k cold-index wall 5.31% [−8.37%, −2.70%] and producer wall 10.09%, while 120k wall, CPU, faults, and RSS remained unclear. Activated cold-index CPU rose 51% and RSS 1.43%. |
+| H52 | H26 removed the per-entry metadata wait that made sixteen workers the pre-bulk 720k knee. On the bulk backend, six workers should now match or beat deeper fixed pools while using less CPU and memory, and the H31 service-time trigger should remain inactive. | 6-worker large-tree wall no worse than 8/12/16; CPU, context switches, and RSS lower | **Ready on macOS**: run the post-H26 fixed-depth curve before retuning the adaptive policy. |
 
 ### Index and allocation
 

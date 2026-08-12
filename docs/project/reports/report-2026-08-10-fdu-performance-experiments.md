@@ -66,6 +66,7 @@ The rejected ones are the reusable part: they stop the next person spending a da
 | 021 | [Calibrate adaptive workers from initial filesystem service time](#exp021--calibrate-adaptive-workers-from-initial-filesystem-service-time) | H31 | `cold-scan-index` | -5.3% | ✅ accepted |
 | 022 | [Batch macOS scan metadata with getattrlistbulk](#exp022--batch-macos-scan-metadata-with-getattrlistbulk) | H3, H26 | `cold-scan-index` | -30.1% | ✅ accepted |
 | 023 | [Cumulative effect through adaptive scanning and macOS bulk metadata](#exp023--cumulative-effect-through-adaptive-scanning-and-macos-bulk-metadata) | H1, H5, H10, H14, H18, H32, H48, H49, H31, H3, H26 | `cold-scan-index` | -53.5% | ✅ accepted |
+| 024 | [Open macOS directories relative to one retained root fd](#exp024--open-macos-directories-relative-to-one-retained-root-fd) | H2, H24 | `cold-scan-index` | -0.1% | ❌ rejected |
 
 ## The experiments
 
@@ -772,6 +773,36 @@ measurement-only cumulative anchor; complexity belongs to the individual accepte
 **Accepted:** Against the original pre-work baseline, current code improved cold-index wall 53.49%, producer wall 58.20%, snapshot-save wall 51.32%, warm revalidation 20.60%, and snapshot load 36.08%; all oracle checks passed.
 
 Full record: [`exp-023-cumulative-effect-through-adaptive-scanning-and-macos-bulk-m.md`](../experiments/exp-023-cumulative-effect-through-adaptive-scanning-and-macos-bulk-m.md)
+
+### exp-024 — Open macOS directories relative to one retained root fd
+
+❌ rejected · 2026-08-12 · H2, H24
+
+Control: exp-022 macOS bulk reader with absolute directory opens
+
+Candidate: one retained root fd per worker and root-relative openat
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 3685.7 | 3625.6 | -0.07% (n.s.) | [-4.06%, +1.53%] |
+| component (ms) | 2335.4 | 2251.5 | -0.09% (n.s.) | [-6.88%, +1.05%] |
+| cpu (ms) | 11396.8 | 10831.6 | -0.42% (n.s.) | [-2.79%, +1.07%] |
+| user (ms) | 2420.3 | 2415.9 | +1.37% (n.s.) | [-0.69%, +1.99%] |
+| system (ms) | 8938.7 | 8428.1 | -1.03% (n.s.) | [-3.75%, +0.85%] |
+| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
+| peak rss (MiB) | 311.1 | 312.2 | +0.30% (regression) | [+0.17%, +0.44%] |
+
+Other jobs, wall time: `cold-scan-producer` -6.3%.
+
+Cost to carry: 69 lines; no new dependencies; 1 unsafe blocks; new failure mode: root open, path conversion, or openat failure sends the directory through the portable reread path; new failure mode: one additional root directory descriptor remains live per active worker.
+
+macOS only; 50 insertions and 19 deletions, one retained fd per worker, one CString conversion per directory, and a second unsafe block
+
+**Rejected:** Indexed wall was neutral at -0.07% [-4.06%, +1.53%] and the pre-registered system-CPU signal was also neutral; a producer-only wall win did not justify the extra descriptor, conversion, and unsafe boundary.
+
+Full record: [`exp-024-open-macos-directories-relative-to-one-retained-root-fd.md`](../experiments/exp-024-open-macos-directories-relative-to-one-retained-root-fd.md)
 
 
 <!-- This document follows common-doc-guidelines.md.
