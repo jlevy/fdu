@@ -1508,20 +1508,19 @@ fn reconcile_target_inner(
         }
     }
 
-    if subtree.as_os_str().is_empty()
-        && config.reconciliation_worker_threads() > 1
-        && let ReconcileTarget::Direct(index) = target
-    {
-        match reconcile_direct_parallel(
-            index,
-            &root,
-            root_dev,
-            config,
-            MAX_DEFERRED_RECONCILE_OPS,
-            sink,
-        )? {
-            DirectParallelOutcome::Complete(parallel) => return Ok(parallel),
-            DirectParallelOutcome::RetrySerial(prefix) => report.apply = prefix,
+    if subtree.as_os_str().is_empty() && config.reconciliation_worker_threads() > 1 {
+        if let ReconcileTarget::Direct(index) = target {
+            match reconcile_direct_parallel(
+                index,
+                &root,
+                root_dev,
+                config,
+                MAX_DEFERRED_RECONCILE_OPS,
+                sink,
+            )? {
+                DirectParallelOutcome::Complete(parallel) => return Ok(parallel),
+                DirectParallelOutcome::RetrySerial(prefix) => report.apply = prefix,
+            }
         }
     }
 
