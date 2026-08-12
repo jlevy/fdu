@@ -318,6 +318,24 @@ class SummaryRenderTests(unittest.TestCase):
         text = summary.render([self._experiment()])
         self.assertIn("no new dependencies", text)
 
+    def test_reproduction_conditions_stay_with_the_cumulative_comparison(self) -> None:
+        cumulative = self._experiment(title="Cumulative effect of accepted changes")
+        later = self._experiment(title="Later experiment on another tree")
+        later["subject"] = dict(
+            later["subject"],
+            tree_label="other-tree",
+            tree_entries=999,
+        )
+
+        text = summary.render([cumulative, later])
+        conditions = text.split("## Reproducing the cumulative comparison", 1)[1].split(
+            "## Every experiment", 1
+        )[0]
+
+        self.assertIn("Label `fixture`, 100 entries", conditions)
+        self.assertNotIn("other-tree", conditions)
+        self.assertNotIn("999 entries", conditions)
+
 
 if __name__ == "__main__":
     unittest.main()
