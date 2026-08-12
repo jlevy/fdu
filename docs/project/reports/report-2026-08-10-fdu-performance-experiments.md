@@ -67,6 +67,7 @@ The rejected ones are the reusable part: they stop the next person spending a da
 | 022 | [Batch macOS scan metadata with getattrlistbulk](#exp022--batch-macos-scan-metadata-with-getattrlistbulk) | H3, H26 | `cold-scan-index` | -30.1% | ✅ accepted |
 | 023 | [Cumulative effect through adaptive scanning and macOS bulk metadata](#exp023--cumulative-effect-through-adaptive-scanning-and-macos-bulk-metadata) | H1, H5, H10, H14, H18, H32, H48, H49, H31, H3, H26 | `cold-scan-index` | -53.5% | ✅ accepted |
 | 024 | [Open macOS directories relative to one retained root fd](#exp024--open-macos-directories-relative-to-one-retained-root-fd) | H2, H24 | `cold-scan-index` | -0.1% | ❌ rejected |
+| 025 | [Revisit worker depth after macOS bulk metadata](#exp025--revisit-worker-depth-after-macos-bulk-metadata) | H52 | `cold-scan-index` | +19.2% | ❌ rejected |
 
 ## The experiments
 
@@ -803,6 +804,36 @@ macOS only; 50 insertions and 19 deletions, one retained fd per worker, one CStr
 **Rejected:** Indexed wall was neutral at -0.07% [-4.06%, +1.53%] and the pre-registered system-CPU signal was also neutral; a producer-only wall win did not justify the extra descriptor, conversion, and unsafe boundary.
 
 Full record: [`exp-024-open-macos-directories-relative-to-one-retained-root-fd.md`](../experiments/exp-024-open-macos-directories-relative-to-one-retained-root-fd.md)
+
+### exp-025 — Revisit worker depth after macOS bulk metadata
+
+❌ rejected · 2026-08-12 · H52
+
+Control: six fixed workers on the exp-022 bulk backend
+
+Candidate: the pre-H26 sixteen-worker large-tree target
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 3700.5 | 4374.3 | +19.19% (regression) | [+11.81%, +25.00%] |
+| component (ms) | 2338.4 | 2987.0 | +28.39% (regression) | [+18.74%, +38.00%] |
+| cpu (ms) | 11127.6 | 23309.3 | +107.02% (regression) | [+98.70%, +122.91%] |
+| user (ms) | 2443.1 | 2730.0 | +11.82% (regression) | [+9.83%, +14.01%] |
+| system (ms) | 8574.6 | 20601.6 | +135.38% (regression) | [+125.96%, +153.35%] |
+| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
+| peak rss (MiB) | 311.7 | 415.9 | +33.46% (regression) | [+31.53%, +35.57%] |
+
+Other jobs, wall time: `cold-scan-producer` +12.7% (regression).
+
+Cost to carry: 0 lines; no new dependencies.
+
+configuration-only reproduction using one exact binary; no code, dependency, or unsafe change
+
+**Rejected:** Sixteen workers regressed 720k indexed wall 19.19% and producer wall 12.65%, while roughly doubling CPU and adding about one-third RSS; the exploratory 6/8/12/16 curve found no smaller retune above the acceptance bar.
+
+Full record: [`exp-025-revisit-worker-depth-after-macos-bulk-metadata.md`](../experiments/exp-025-revisit-worker-depth-after-macos-bulk-metadata.md)
 
 
 <!-- This document follows common-doc-guidelines.md.
