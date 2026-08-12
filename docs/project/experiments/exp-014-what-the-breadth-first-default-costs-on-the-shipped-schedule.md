@@ -371,6 +371,15 @@ let the sweep default to depth-first and take breadth-first only from a caller t
 reads progressively. The second is closer to the project's own position that traversal
 order is a consumer contract rather than an engine setting.
 
+**Reviewed and deliberately not chased.** 2.7% of one job is below the 3% bar this
+project applies to changes worth added complexity, and the same effort is worth far more
+elsewhere: the adaptive worker pool is estimated at roughly 2x on cold large trees
+(`fdu-tt2j`), persisted roll-ups and lazy open turn an 11-second warm load into a first
+paint (`fdu-1vd0`), and `open` still accounts for about 28% of cold self-time. Fixing a
+2.7% warm regression ahead of any of those would be optimising the wrong thing. It stays
+recorded so it is a decision rather than an oversight, and tracked at low priority as
+`fdu-v71x`.
+
 ## Limitations
 
 One tree, one host. The warm sweep's cost is a locality effect and locality is exactly

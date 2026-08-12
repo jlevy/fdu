@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping, Sequence
 
 from benchmarks.realtree import experiment as experiment_model
+from benchmarks.realtree.summary import _validator
 
 EXPERIMENTS_DIR = Path("docs/project/experiments")
 SCHEMA_NAME = "experiment.schema.yaml"
@@ -259,7 +260,7 @@ def _validate(path: Path) -> int:
     """Validate through the softschema CLI, if it is reachable."""
     try:
         completed = subprocess.run(
-            ["uvx", "softschema@latest", "validate", str(path)],
+            [*_validator(), "validate", str(path)],
             capture_output=True,
             timeout=300,
         )

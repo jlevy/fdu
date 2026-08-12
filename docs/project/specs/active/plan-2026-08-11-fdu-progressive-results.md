@@ -142,7 +142,13 @@ RSS −1.76% [−2.63%, −0.74%] — breadth-first is now the cheaper of the tw
 The warm sweep is the exception and is a known gap: `reconcile` walks with the serial
 `take_next`, so region scheduling never reached it and breadth-first costs +2.70%
 [+1.55%, +3.37%] on `warm-revalidate`, for an orientation benefit a one-shot CLI never
-reads. Tracked as `fdu-v71x`.
+reads.
+
+That cost is accepted rather than outstanding. It sits below the project's own 3% bar
+for changes worth added complexity, and the queue ahead of it is worth far more — the
+adaptive worker pool (`fdu-tt2j`) is estimated at roughly 2x on cold large trees, and
+persisted roll-ups with lazy open (`fdu-1vd0`) turn an 11-second warm load into a first
+paint. Tracked at low priority as `fdu-v71x` so the decision stays visible.
 
 An earlier six-sample median comparison suggested ~8%, and that figure was quoted here
 before it had been through the accept rule.
