@@ -3,9 +3,9 @@ type: is
 id: is-01kzpvt1vamkqp8fffnpwhd93v
 title: Profile and optimize snapshot-absent real-tree traversal
 kind: task
-status: in_progress
+status: closed
 priority: 1
-version: 14
+version: 15
 spec_path: docs/project/specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md
 labels: []
 dependencies:
@@ -20,7 +20,9 @@ child_order_hints:
   - is-01kztzfvcgsf3nd7tt5z3mh9fr
   - is-01kztzsap3wvna2dg5kf03qgfe
 created_at: 2026-08-10T22:13:36.233Z
-updated_at: 2026-08-12T12:40:04.546Z
+updated_at: 2026-08-12T13:24:49.688Z
+closed_at: 2026-08-12T13:24:49.687Z
+close_reason: "Cold real-tree loop complete through exp-032: exact cumulative cold-index wall -53.59% and producer -57.87% versus b565882. Accepted H31 adaptive depth and H3/H26 macOS bulk metadata; post-BFS root-openat, excessive workers, staging reuse, and larger buffers were measured and rejected. Remaining material work is platform-specific Linux evidence or a bounded parent-dirfd design, not another unprofiled constant tweak."
 ---
 Using the mutation-detecting real-tree baseline, profile snapshot-absent scan production, scan plus index, and end-to-end CLI completion separately. Attribute time to enumeration, metadata, allocation/index application, sorting/rendering, and process startup with OS-native profiles and phase probes. For each candidate, run interleaved before/after trials, require exact oracle parity, commit one accepted improvement at a time, and record rejected changes when gains are within noise or complexity is disproportionate. Do not call normal filesystem-cache state cold; controlled-cold requires the dedicated-host protocol.
 
