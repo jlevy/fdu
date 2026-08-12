@@ -5,7 +5,7 @@ title: "Composable CLI and query surface (five axes: scope, selection, view, for
 kind: epic
 status: open
 priority: 1
-version: 13
+version: 16
 spec_path: docs/project/specs/active/plan-2026-08-10-fdu-composable-cli-surface.md
 labels: []
 dependencies: []
@@ -22,7 +22,10 @@ child_order_hints:
   - is-01kzsjn8rgp71n66hyt2mzq6ne
   - is-01kzvbc3ga8r0myf3mn9hhybc6
   - is-01kzvbc3wa6yvdtv12smd9x3j4
+  - is-01kzvcfz2m5y717jr4b0z0kh39
+  - is-01kzvcfz345yns5b77nhhkr4cb
+  - is-01kzvdjn5d5wfn19secsh1jhmf
 created_at: 2026-08-10T23:59:16.842Z
-updated_at: 2026-08-12T16:02:34.505Z
+updated_at: 2026-08-12T16:41:05.964Z
 ---
 Reshape CLI + library query layer around five orthogonal axes per the spec. Subsumes the JSONL/sorting/summary scope of fdu-jej9 and parts of fdu-oqoy; reconciliation of those beads is Open Question 4 in the spec and needs maintainer sign-off.
