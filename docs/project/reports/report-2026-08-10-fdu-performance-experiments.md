@@ -70,6 +70,7 @@ The rejected ones are the reusable part: they stop the next person spending a da
 | 025 | [Revisit worker depth after macOS bulk metadata](#exp025--revisit-worker-depth-after-macos-bulk-metadata) | H52 | `cold-scan-index` | +19.2% | ❌ rejected |
 | 026 | [Reuse macOS bulk metadata during full reconciliation](#exp026--reuse-macos-bulk-metadata-during-full-reconciliation) | H53, H26 | `warm-revalidate` | -34.4% | ✅ accepted |
 | 027 | [Cumulative effect through bulk reconciliation](#exp027--cumulative-effect-through-bulk-reconciliation) | H1, H5, H10, H14, H18, H32, H48, H49, H31, H3, H26, H53 | `cold-scan-index` | -52.8% | ✅ accepted |
+| 028 | [Reuse macOS bulk directory staging allocations](#exp028--reuse-macos-bulk-directory-staging-allocations) | H54 | `cold-scan-index` | +0.2% | ❌ rejected |
 
 ## The experiments
 
@@ -894,6 +895,36 @@ measurement-only cumulative anchor; complexity belongs to the individual accepte
 **Accepted:** Against the original baseline, current code improved cold index 52.84%, producer 58.29%, snapshot save 51.13%, warm revalidation 34.78%, and snapshot load 32.69%; all oracle checks passed.
 
 Full record: [`exp-027-cumulative-effect-through-bulk-reconciliation.md`](../experiments/exp-027-cumulative-effect-through-bulk-reconciliation.md)
+
+### exp-028 — Reuse macOS bulk directory staging allocations
+
+❌ rejected · 2026-08-12 · H54
+
+Control: exp-026 bulk reader with one fresh entry vector per directory
+
+Candidate: one retained entry vector per bulk reader, drained after complete validation
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 382.2 | 307.8 | +0.21% (n.s.) | [-7.09%, +3.88%] |
+| component (ms) | 261.1 | 192.0 | -2.20% (n.s.) | [-12.10%, +5.74%] |
+| cpu (ms) | 1384.3 | 1183.4 | -2.81% (n.s.) | [-20.03%, +1.10%] |
+| user (ms) | 225.8 | 225.6 | -0.76% (n.s.) | [-3.33%, +4.16%] |
+| system (ms) | 1169.9 | 956.0 | -3.64% (n.s.) | [-23.26%, +2.29%] |
+| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
+| peak rss (MiB) | 33.7 | 33.2 | -1.29% (n.s.) | [-2.42%, +1.34%] |
+
+Other jobs, wall time: `cold-scan-producer` +1.3% (regression), `warm-revalidate` -0.8% (n.s.).
+
+Cost to carry: 20 lines; no new dependencies; new failure mode: each reader retains the largest directory entry-vector capacity it encounters until the worker or reconciliation ends.
+
+14 insertions and 6 deletions; no dependency or unsafe change; 720k confirmation was gated on a promising 60k result and did not run
+
+**Rejected:** Cold-index wall was +0.21%, producer regressed 1.32%, and warm wall was -0.85%; predicted user-CPU and fault reductions were absent while producer RSS and faults regressed.
+
+Full record: [`exp-028-reuse-macos-bulk-directory-staging-allocations.md`](../experiments/exp-028-reuse-macos-bulk-directory-staging-allocations.md)
 
 
 <!-- This document follows common-doc-guidelines.md.
