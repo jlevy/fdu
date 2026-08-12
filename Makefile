@@ -175,12 +175,14 @@ perf-compare: perf-probe-release
 		--name $(or $(NAME),adhoc)
 
 perf-test:
-	$(PERF_UV) python -m unittest discover -s benchmarks/realtree/tests -p 'test_*.py'
+	$(PERF_UV) --group dev python -m unittest discover -s benchmarks/realtree/tests -p 'test_*.py'
 
 # Regenerate the ledger from the committed experiment artifacts. Every number in it
 # is read back out of a validated artifact, so the report cannot drift from the record.
+# --group dev because the ledger validates every artifact on the way in, and the
+# validator lives in that group.
 perf-ledger:
-	$(PERF_UV) python -m benchmarks.realtree.summary
+	$(PERF_UV) --group dev python -m benchmarks.realtree.summary
 
 # The experiment contract is compiled from the Pydantic model; --check fails on drift.
 # Pinned in benchmarks/pyproject.toml, not `@latest`: this validator is the

@@ -15,6 +15,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from benchmarks.realtree.summary import _validator
 from benchmarks.realtree import experiment as experiment_model
 from benchmarks.realtree import record, summary
 
@@ -222,8 +223,10 @@ class RenderRoundTripTests(unittest.TestCase):
     """The artifact must validate against its own compiled contract."""
 
     def setUp(self) -> None:
-        if shutil.which("uvx") is None:
-            self.skipTest("uvx is not available")
+        try:
+            self.validator = _validator()
+        except Exception:  # noqa: BLE001 - the harness reports its own reason
+            self.skipTest("softschema is not available; run through `make perf-test`")
         self.scratch = Path(tempfile.mkdtemp(prefix="fdu-exp-test-"))
         self.addCleanup(shutil.rmtree, self.scratch, ignore_errors=True)
 
@@ -250,7 +253,7 @@ class RenderRoundTripTests(unittest.TestCase):
         destination.write_text(record._render(payload, "# body\n"), encoding="utf-8")
 
         completed = subprocess.run(
-            ["uvx", "softschema@latest", "validate", str(destination)],
+            [*self.validator, "validate", str(destination)],
             capture_output=True,
             timeout=600,
         )

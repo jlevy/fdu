@@ -162,9 +162,9 @@ Wall time, breadth-first versus depth-first:
 | `cold-scan-producer` | +1.50% | [−3.50%, +3.13%] | unclear |
 | `warm-revalidate` | +0.03% | [−3.83%, +2.87%] | unclear |
 
-**Breadth-first costs no measurable wall time, and a little memory.** Every wall-time
-interval straddles zero, so the honest statement is "not measurably different", not
-"free". The resources did move, with intervals clear of zero:
+**Breadth-first cost no measurable wall time, and — as first built — a little memory.**
+Every wall-time interval straddles zero, so the honest statement is "not measurably
+different", not "free". The resources did move, with intervals clear of zero:
 
 | job | peak RSS | 95% interval |
 | --- | ---: | --- |
@@ -172,10 +172,30 @@ interval straddles zero, so the honest statement is "not measurably different", 
 | `cold-scan-producer` | +3.66% | [+2.47%, +4.72%] |
 | `warm-revalidate` | +1.17% | [+0.36%, +3.77%] |
 
-On the primary job that is about 34.7 MB to 35.4 MB; producer CPU rose +2.50%
-[+1.48%, +4.04%]. The queue holds directories rather than entries, which is what keeps
-the frontier cost proportional to the widest level rather than to the tree, and the
-engine digest is identical either way.
+On the primary job that was about 34.7 MB to 35.4 MB; producer CPU rose +2.50%
+[+1.48%, +4.04%]. The engine digest is identical either way.
+
+**Those costs are historical, not current.** They measured a single global FIFO, since
+replaced by region scheduling (exp-013). Measured on the shipped code against
+depth-first (exp-014, twenty interleaved paired trials, same binary both arms):
+
+| job | scheduler | wall | 95% interval |
+| --- | --- | ---: | --- |
+| `cold-scan-producer` | region | −3.04% | [−5.99%, −0.96%] |
+| `cold-scan-index` | region | +0.50% | [−1.39%, +1.98%] |
+| `warm-revalidate` | serial FIFO | **+2.70%** | [+1.55%, +3.37%] |
+
+Peak RSS on `cold-scan-index` is −1.76% [−2.63%, −0.74%]. So where region scheduling
+reaches, breadth-first is now *cheaper* than depth-first on memory and on producer
+throughput, having cost memory in exp-012.
+
+**Where it does not reach, it still costs.** `reconcile` walks with the serial
+`take_next` rather than the shared queue, so the warm sweep runs the same front-popping
+FIFO exp-013 replaced elsewhere and pays +2.70% for it — while a one-shot CLI reads none
+of the orientation benefit, because it prints only after reconciliation completes. That
+asymmetry is tracked (`fdu-v71x`); the choice is between extending region scheduling to
+the sweep and letting the sweep default to depth-first, which is closer to this
+document's own position that traversal order is a consumer contract.
 
 This corrects two earlier readings of the same change, in opposite directions.
 A six-sample median comparison suggested breadth-first cost about 8% of wall time, and
@@ -200,9 +220,11 @@ bucket the order is LIFO so locality and spine-bounded memory come back. No barr
 exists anywhere: if only one region has work, every worker takes it.
 
 On twelve branching subtrees, the *least advanced* top-level subtree a quarter of the
-way through the walk holds **42 files at one worker and 33–37 at six** — against
-depth-first's **0 and 6**, where perfectly even would be ~46. A deep portion of the tree
-no longer delays the horizontal ones, at any worker count. Peak RSS fell −3.77%
+way through the walk holds **42 files at one worker** against depth-first's **0**, where
+perfectly even would be ~46. On a six-core machine the parallel margin is comparable
+(33–37 against 6), but that row is host-specific: the metric reads emission order, which
+under several workers reflects which worker finished first as much as which region was
+claimed, and on a CI runner with fewer cores both orders can report zero. Peak RSS fell −3.77%
 [−5.18%, −2.99%] in the process, more than reversing what exp-012 paid, and wall time
 did not move.
 
@@ -247,14 +269,15 @@ is *which* subtrees get to grow early, and therefore whether a mid-scan ranking 
 partial values against each other or against zeros. Conflating the two overstates what
 choosing an order buys.
 
-The change itself was small: `DirectoryQueue` already existed and was shared, so taking
-from the front rather than the back turns the walk breadth-first.
-What that does **not** buy is a guarantee under the default worker count, as measured
-above — the claims are unordered even when the queue is not, so shallow-first is a
-preference there rather than a promise.
-The cost is memory — a BFS frontier at depth 3 of a home folder is wide — which is a
-bounded, measurable trade rather than a design risk, and the 60k measurement puts it at
-about +1.5% RSS.
+The first change was small: `DirectoryQueue` already existed and was shared, so taking
+from the front rather than the back turned the walk breadth-first.
+What that did **not** buy was any guarantee under the default worker count — the claims
+are unordered even when the queue is not — and it made the pending set hold an entire
+level of the tree.
+Region scheduling (exp-013) fixed both: work is bucketed per top-level subtree and each
+free worker takes a different bucket, so the frontier is bounded by the number of
+regions plus a run of directories rather than by the widest level, and workers are
+spread across subtrees by construction.
 
 Depth-first stays available: it has better locality and lower memory. It is *not* the
 right default for the one-shot CLI, as an earlier draft argued — that argument rested on

@@ -2038,22 +2038,16 @@ mod tests {
         // in sees a meaningful ranking in the first case and a misleading one in the
         // second.
         //
-        // Checked with one worker, where the walk order is fully determined by the
-        // queue policy and the comparison therefore means something.
+        // Asserted at one worker only, and that bound is deliberate. This metric reads
+        // *emission* order, and under several workers emission reflects which worker
+        // finished first as much as which region was claimed — so it varies with core
+        // count. Measured on a six-core machine the margin is wide (33-37 files against
+        // 6); on a CI runner with fewer cores both orders can report zero. That makes it
+        // a benchmark-grade observation, recorded in exp-013, not a unit-test assertion.
         //
-        // It used to also run at six workers, and that assertion failed on macOS CI while
-        // passing twelve times in a row locally. The reason is structural rather than
-        // environmental: with a pool, both sides of `breadth > depth` are samples from a
-        // nondeterministic schedule. Six depth-first workers start in six different
-        // subtrees and can leave a respectable laggard, while one unlucky breadth-first
-        // worker can depress its own -- so the inequality is a coin flip weighted by load,
-        // and a contended runner is exactly where it lands wrong.
-        //
-        // Nothing is lost by dropping it. The mechanism that makes the property survive
-        // parallelism is the round-robin ready ring, and
-        // `the_region_scheduler_spreads_workers_over_distinct_subtrees` proves that
-        // directly on the queue, deterministically, with no threads at all. Proving it
-        // twice -- once soundly and once by race -- only buys flakes.
+        // The scheduling property itself *is* asserted deterministically, against the
+        // queue rather than through a walk, by
+        // `the_region_scheduler_spreads_workers_over_distinct_subtrees`.
         let dir = deep_forest();
         let breadth = leanest_subtree_early(ScanOrder::BreadthFirst, 1, dir.path());
         let depth = leanest_subtree_early(ScanOrder::DepthFirst, 1, dir.path());

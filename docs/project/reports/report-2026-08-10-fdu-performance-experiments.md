@@ -58,6 +58,7 @@ The rejected ones are the reusable part: they stop the next person spending a da
 | 011 | [One ancestor merge per same-parent insert run](#exp011--one-ancestor-merge-per-sameparent-insert-run) | H13 | `cold-scan-index` | -2.5% | ❌ rejected |
 | 012 | [Breadth-first traversal order](#exp012--breadthfirst-traversal-order) | H48 | `cold-scan-index` | -0.6% | ✅ accepted |
 | 013 | [Region-scheduled breadth-first traversal](#exp013--regionscheduled-breadthfirst-traversal) | H49: exp-012's RSS cost and its missing ordering benefit both came from the global FIFO, not from preferring shallow work; per-region buckets with round-robin hand-off recover memory while making the shallow preference survive parallelism | `cold-scan-index` | -3.8% | ✅ accepted |
+| 014 | [What the breadth-first default costs, on the shipped scheduler](#exp014--what-the-breadthfirst-default-costs-on-the-shipped-scheduler) | H50: exp-012 measured a scheduler that no longer exists and exp-013 compared two breadth-first schedulers, so what the shipped default costs against depth-first is unmeasured | `cold-scan-producer` | -3.0% | 📏 baseline |
 
 ## The experiments
 
@@ -472,6 +473,28 @@ One queue, two shapes: DepthFirst keeps the single stack, BreadthFirst uses per-
 **Accepted:** Peak RSS -3.77% [-5.18%, -2.99%] on cold-scan-index, the only interval clear of zero, reversing exp-012's +1.51%. Wall unchanged (-4.83% [-6.56%, +4.08%]); nothing regressed. On twelve branching subtrees the least advanced one holds 42 files at one worker and 33-37 at six, against depth-first's 0 and 6, so the ordering benefit now survives parallelism.
 
 Full record: [`exp-013-region-scheduled-breadth-first-traversal.md`](../experiments/exp-013-region-scheduled-breadth-first-traversal.md)
+
+### exp-014 — What the breadth-first default costs, on the shipped scheduler
+
+📏 baseline · 2026-08-11 · H50: exp-012 measured a scheduler that no longer exists and exp-013 compared two breadth-first schedulers, so what the shipped default costs against depth-first is unmeasured
+
+**`cold-scan-producer`** (cold start) — measured
+
+| metric | value |
+| --- | ---: |
+| wall (ms) | 489.4 |
+| component (ms) | 192.0 |
+| cpu (ms) | 2122.0 |
+| user (ms) | 312.5 |
+| system (ms) | 1812.2 |
+| blocked (ms) | 0.0 |
+| peak rss (MiB) | 33.0 |
+
+Other jobs, wall time: `cold-scan-index` 322 ms, `warm-revalidate` 624 ms.
+
+**Baseline:** Same binary both arms, 20 interleaved paired trials. Breadth-first is now cheaper where region scheduling reaches: cold-scan-producer wall -3.04% [-5.99%, -0.96%], cold-scan-index peak RSS -1.76% [-2.63%, -0.74%]. warm-revalidate regressed +2.70% [+1.55%, +3.37%] because reconcile walks with the serial take_next and region scheduling never reached it. No code changed; the warm asymmetry is tracked as fdu-v71x.
+
+Full record: [`exp-014-what-the-breadth-first-default-costs-on-the-shipped-schedule.md`](../experiments/exp-014-what-the-breadth-first-default-costs-on-the-shipped-schedule.md)
 
 
 <!-- This document follows common-doc-guidelines.md.
