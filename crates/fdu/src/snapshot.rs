@@ -104,6 +104,27 @@ const MAX_SNAPSHOT_BYTES: u64 = 64 * GIBIBYTE;
 /// Process-local discriminator for exclusive sibling temporary files.
 static NEXT_TEMP_FILE: AtomicU64 = AtomicU64::new(0);
 
+/// Per-process entropy mixed into temporary file names.
+///
+/// Correctness never depended on this: `O_EXCL` is what guarantees one creator wins,
+/// and the counter above is what keeps two threads of this process from even trying the
+/// same name. Randomness closes two gaps the counter cannot.
+///
+/// A killed writer leaves its temporary behind and nothing reaps it. With a
+/// pid-and-counter name, a later process that recycles that pid restarts its counter at
+/// zero and collides with the corpse on every run — correct, because it retries, but it
+/// accumulates litter and in the pathological case walks the whole retry budget. And
+/// the names are otherwise entirely predictable, which matters because
+/// [`MAX_TEMP_CREATE_ATTEMPTS`] exists specifically to survive a hostile directory: an
+/// attacker who can guess the names can pre-create the whole budget and deny every save.
+///
+/// Seeded from `RandomState`, whose keys the standard library takes from the operating
+/// system, so this needs no dependency and no clock.
+static TEMP_FILE_ENTROPY: std::sync::LazyLock<u64> = std::sync::LazyLock::new(|| {
+    use std::hash::{BuildHasher, Hasher};
+    std::collections::hash_map::RandomState::new().build_hasher().finish()
+});
+
 /// Stale files can survive a killed writer. Try enough unique sequence values to step
 /// over them without turning an attacker-controlled directory into an unbounded loop.
 const MAX_TEMP_CREATE_ATTEMPTS: usize = 1024;
@@ -657,7 +678,7 @@ fn create_temp_file(path: &Path, parent: &Path) -> Result<(PathBuf, fs::File)> {
         let sequence = NEXT_TEMP_FILE.fetch_add(1, Ordering::Relaxed);
         let mut name = OsString::from(".");
         name.push(path.file_name().unwrap_or_else(|| OsStr::new("snapshot")));
-        name.push(format!(".tmp.{}.{}", std::process::id(), sequence));
+        name.push(format!(".tmp.{}.{:016x}.{}", std::process::id(), *TEMP_FILE_ENTROPY, sequence));
         let tmp = parent.join(name);
         let mut options = OpenOptions::new();
         options.write(true).create_new(true);
@@ -1045,6 +1066,46 @@ mod tests {
             .filter(|name| name != "snap.fdu")
             .collect();
         assert!(leftovers.is_empty(), "temp files left behind: {leftovers:?}");
+    }
+
+    #[test]
+    fn a_stale_temporary_does_not_block_a_later_write() {
+        // A killed writer leaves its temporary behind and nothing reaps it, so a later
+        // process — particularly one that recycled its pid — can find a corpse sitting
+        // exactly where it wants to write. `O_EXCL` plus the retry loop is what makes
+        // that safe: the collision is detected and stepped over, never shared.
+        //
+        // Note this test passes with or without the per-process entropy in the name,
+        // and deliberately so. Entropy does not make this case *correct* — the retry
+        // loop already does. It makes the collision not happen in the first place, and
+        // makes the names unguessable in a directory where an attacker could otherwise
+        // pre-create the whole retry budget. Neither of those is reachable from a unit
+        // test in one process, so they rest on the argument recorded at
+        // `TEMP_FILE_ENTROPY` rather than on an assertion here.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("snap.fdu");
+
+        // The name this process would produce if entropy were removed and the counter
+        // happened to be at zero.
+        let mut stale = OsString::from(".snap.fdu.tmp.");
+        stale.push(std::process::id().to_string());
+        stale.push(".0");
+        fs::write(dir.path().join(&stale), b"corpse").expect("plant a stale temporary");
+
+        write_atomically(&path, b"payload").expect("write past a stale temporary");
+        assert_eq!(fs::read(&path).expect("read back"), b"payload");
+
+        let survivors: Vec<_> = fs::read_dir(dir.path())
+            .expect("read_dir")
+            .filter_map(std::result::Result::ok)
+            .map(|entry| entry.file_name())
+            .filter(|name| name != "snap.fdu")
+            .collect();
+        assert_eq!(
+            survivors,
+            vec![stale],
+            "the write must leave nothing behind but the corpse it stepped over"
+        );
     }
 
     #[test]
