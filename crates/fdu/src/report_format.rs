@@ -26,6 +26,9 @@ use crate::types::{EntryKind, Freshness};
 /// Directory names in a tree, so structure reads at a glance.
 const STYLE_DIRECTORY: AnsiStyle = AnsiColor::Cyan.on_default();
 
+/// Relative-size bars in a tree.
+const STYLE_BAR: AnsiStyle = AnsiColor::Green.on_default();
+
 /// Extensions in a type breakdown.
 const STYLE_TYPE: AnsiStyle = AnsiColor::Green.on_default();
 
@@ -108,27 +111,50 @@ fn render_text(report: &Report, color: bool) -> String {
     out
 }
 
-/// Render a tree section as an indented outline.
+/// Render a tree section with fixed size, bar, and percentage columns.
 ///
 /// Iterative for the same reason the expansion is: a deep tree must render, not panic.
 fn render_text_tree(out: &mut String, root: &TreeNode, size: SizeMetric, color: bool) {
-    // Children are pushed in reverse so they pop back in their sorted order.
-    let mut stack: Vec<(&TreeNode, usize)> = vec![(root, 0)];
-    while let Some((node, depth)) = stack.pop() {
-        let indent = "  ".repeat(depth);
-        let _ = writeln!(
-            out,
-            "{indent}{:>10}  {} ({} {})",
-            human_bytes(pick(size, node.bytes, node.allocated)),
-            paint(&node.name, STYLE_DIRECTORY, color),
-            node.files,
-            plural(node.files, "file", "files"),
-        );
-        if node.truncated {
-            let _ = writeln!(out, "{indent}  …");
-        }
-        for child in node.children.iter().rev() {
-            stack.push((child, depth + 1));
+    enum Row<'a> {
+        Node(&'a TreeNode, usize),
+        Truncation(usize),
+    }
+
+    let grand = pick(size, root.bytes, root.allocated);
+    // Children are pushed in reverse so they pop back in their sorted order. A
+    // truncation row is pushed first so it appears after the retained children.
+    let mut stack = vec![Row::Node(root, 0)];
+    while let Some(row) = stack.pop() {
+        match row {
+            Row::Node(node, depth) => {
+                let bytes = pick(size, node.bytes, node.allocated);
+                let share = ratio(bytes, grand);
+                let indent = "  ".repeat(depth);
+                let _ = writeln!(
+                    out,
+                    "{:>10}  {}  {:>4.0}%  {indent}{} ({} {})",
+                    human_bytes(bytes),
+                    bar(share, color),
+                    share * 100.0,
+                    paint(&node.name, STYLE_DIRECTORY, color),
+                    node.files,
+                    plural(node.files, "file", "files"),
+                );
+                // Reaching the requested depth is visible from the outline itself and
+                // marking every boundary directory overwhelms a real tree with dots.
+                // Retained children plus truncation means the sibling list hit its
+                // limit; that omission gets one marker after the rows that were kept.
+                if node.truncated && !node.children.is_empty() {
+                    stack.push(Row::Truncation(depth + 1));
+                }
+                for child in node.children.iter().rev() {
+                    stack.push(Row::Node(child, depth + 1));
+                }
+            }
+            Row::Truncation(depth) => {
+                let indent = "  ".repeat(depth);
+                let _ = writeln!(out, "{:>10}  {:10}  {:>5}  {indent}…", "", "", "");
+            }
         }
     }
 }
@@ -589,6 +615,27 @@ fn plural<'a>(count: u64, singular: &'a str, plural: &'a str) -> &'a str {
     if count == 1 { singular } else { plural }
 }
 
+/// A bounded share for the human size bar and percentage.
+fn ratio(part: u64, whole: u64) -> f64 {
+    if whole == 0 {
+        return 0.0;
+    }
+    #[allow(clippy::cast_precision_loss)]
+    let share = part as f64 / whole as f64;
+    share.clamp(0.0, 1.0)
+}
+
+// Rounding a fraction to one of eleven bar widths is exactly the case where float-cast
+// lints have nothing to protect: the value is clamped to [0, 1] before the cast and the
+// result is clamped to WIDTH after it.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::cast_precision_loss)]
+fn bar(share: f64, color: bool) -> String {
+    const WIDTH: usize = 10;
+    let filled = ((share.clamp(0.0, 1.0) * WIDTH as f64).round() as usize).min(WIDTH);
+    let rendered = format!("{}{}", "█".repeat(filled), "░".repeat(WIDTH - filled));
+    paint(&rendered, STYLE_BAR, color)
+}
+
 /// Render a byte count at human scale.
 fn human_bytes(bytes: u64) -> String {
     const UNITS: [&str; 6] = ["B", "KiB", "MiB", "GiB", "TiB", "PiB"];
@@ -870,6 +917,22 @@ mod tests {
     }
 
     #[test]
+    fn text_tree_restores_compact_bars_and_keeps_structural_indent_in_the_name_column() {
+        let text = render(&fixture(&[ViewSpec::Tree]), Format::Text, false);
+        assert_eq!(
+            text,
+            concat!(
+                "     120 B  ██████████   100%  . (2 files)\n",
+                "     100 B  ████████░░    83%    src (1 file)\n",
+            )
+        );
+
+        let lines: Vec<&str> = text.lines().collect();
+        assert_eq!(lines[0].find("120 B"), lines[1].find("100 B"));
+        assert_eq!(lines[0].find('█'), lines[1].find('█'));
+    }
+
+    #[test]
     fn json_output_is_well_formed_for_every_view() {
         for view in [ViewSpec::Tree, ViewSpec::Types, ViewSpec::Files, ViewSpec::Summary] {
             let json = render(&fixture(&[view]), Format::Json, false);
@@ -1094,5 +1157,13 @@ mod tests {
         assert_eq!(human_bytes(512), "512 B");
         assert_eq!(human_bytes(1024), "1.0 KiB");
         assert_eq!(human_bytes(1024 * 1024 * 20), "20 MiB");
+    }
+
+    #[test]
+    fn bars_are_fixed_at_ten_cells_and_saturate() {
+        assert_eq!(bar(0.0, false), "░░░░░░░░░░");
+        assert_eq!(bar(0.5, false), "█████░░░░░");
+        assert_eq!(bar(2.0, false), "██████████");
+        assert!((ratio(5, 0) - 0.0).abs() < f64::EPSILON);
     }
 }

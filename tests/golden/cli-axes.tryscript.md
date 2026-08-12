@@ -22,12 +22,11 @@ patterns:
   SOURCE: 'cold_scan|warm_revalidate'
   HUMAN_SIZE: '\s*[\d.]+ (B|KiB|MiB|GiB)'
 ---
-
 # The Five Axes Compose
 
-Each axis is exercised on its own, then in combination. Sizes and timestamps vary by
-filesystem and clock, so they are matched by named patterns rather than elided — the
-field stays visible in a diff, which is the point of a golden.
+Each axis is exercised on its own, then in combination.
+Sizes and timestamps vary by filesystem and clock, so they are matched by named patterns
+rather than elided — the field stays visible in a diff, which is the point of a golden.
 
 ## View: One Scan, Four Shapes
 
@@ -67,14 +66,14 @@ src[SEP]omega.rs
 ? 0
 ```
 
-### Tree Reports Every Directory's Roll-Up
+### Tree Reports Every Directory’s Roll-Up
 
 ```console
 $ fdu --cache off --view tree --size apparent --depth all project
-     263 B  . (6 files)
-       128 B  dist (1 file)
-        36 B  src (2 files)
-        23 B  docs (1 file)
+     263 B  ██████████   100%  . (6 files)
+     128 B  █████░░░░░    49%    dist (1 file)
+      36 B  █░░░░░░░░░    14%    src (2 files)
+      23 B  █░░░░░░░░░     9%    docs (1 file)
 ? 0
 ```
 
@@ -157,12 +156,11 @@ src[SEP]alpha.rs
 
 ### Depth Bounds the Rendered Tree, Not the Scan
 
-`--depth 0` keeps du's meaning: totals for the root and nothing beneath it.
+`--depth 0` keeps du’s meaning: totals for the root and nothing beneath it.
 
 ```console
 $ fdu --cache off --view tree --depth 0 --size apparent project
-     263 B  . (6 files)
-  …
+     263 B  ██████████   100%  . (6 files)
 ? 0
 ```
 

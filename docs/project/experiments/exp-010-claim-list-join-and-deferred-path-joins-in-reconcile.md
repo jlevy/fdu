@@ -259,17 +259,19 @@ experiment:
 
 ## Hypothesis
 
-H17: _state what you expected to be slow, why,
-and which metric would move._
+H17: *state what you expected to be slow, why, and which metric would move.*
 
 ## What was tried
 
-_The smallest change that tests the hypothesis._
+*The smallest change that tests the hypothesis.*
 
 ## What the numbers said
 
-_Read the tables in the frontmatter. Say what surprised you._
+*Read the tables in the frontmatter.
+Say what surprised you.*
 
 ## Verdict
 
-**REJECTED** — Nothing there: -0.03% with a tight interval [-1.37%, +1.64%] over 16 quiet paired trials; after H14 the expectation map already read straight off entry ids, and the remaining allocations are noise next to one fstatat per entry
+**REJECTED** — Nothing there: -0.03% with a tight interval [-1.37%, +1.64%] over 16
+quiet paired trials; after H14 the expectation map already read straight off entry ids,
+and the remaining allocations are noise next to one fstatat per entry

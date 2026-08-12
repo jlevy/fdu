@@ -16,6 +16,10 @@ dependencies = ["pydantic>=2.11.0,<3"]
 # cannot promise that.
 dev = ["softschema==0.6.0"]
 
+# Repository-wide Markdown formatting. This is the native Rust implementation, pinned
+# so local formatting and CI always apply the same normal form.
+docs = ["flowmark-rs==0.3.2"]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

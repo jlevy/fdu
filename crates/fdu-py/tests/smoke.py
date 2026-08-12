@@ -118,10 +118,10 @@ def main() -> None:
     assert cli_data["complete"] is True, cli_data
     tree = cli_data["reports"][0]["tree"]
     assert tree["bytes"] == 17, cli_data
-    # Truncation is per node rather than one whole-tree flag: the root expanded its own
-    # level, and the child that was not expanded is the one that says so.
+    # Truncation describes omitted tree rows. A file is already represented in its
+    # directory's totals, so reaching the depth bound at a file-only leaf omits nothing.
     assert tree["truncated"] is False, cli_data
-    assert tree["children"][0]["truncated"] is True, cli_data
+    assert tree["children"][0]["truncated"] is False, cli_data
     assert cli_scan.stderr == "", cli_scan.stderr
 
     usage = subprocess.run(

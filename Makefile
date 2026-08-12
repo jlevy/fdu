@@ -129,33 +129,17 @@ cli:
 
 # --- Documentation ----------------------------------------------------------
 #
-# Hand-written Markdown only. Generated artifacts are excluded because their
-# generators own their layout and would overwrite any formatting applied here:
-# the experiment artifacts and the ledger come from `benchmarks.realtree`, and the
-# tryscript goldens are compared byte for byte against recorded CLI output.
-FLOWMARK ?= flowmark
-FLOWMARK_OPTS := --semantic --cleanups --smartquotes --width 88
-DOC_FILES := README.md AGENTS.md CLAUDE.md CHANGELOG.md SUPPLY-CHAIN-SECURITY.md \
-	benchmarks/README.md crates/fdu/README.md crates/fdu-py/README.md \
-	$(shell find docs -name '*.md' -not -path 'docs/project/experiments/*' -not -path 'docs/project/reports/*' 2>/dev/null)
+# `--auto` owns file discovery, applicable cleanups, and generated-file exclusions. The
+# committed tooling lock pins the native Rust formatter used locally and in CI.
+FLOWMARK := uv run --project benchmarks --frozen --only-group docs flowmark
 
 docs-format:
-	@$(FLOWMARK) $(FLOWMARK_OPTS) --inplace --nobackup $(DOC_FILES) && echo "formatted $(words $(DOC_FILES)) documents"
+	@$(FLOWMARK) --auto .
 
 # Fails when a document is not in normal form, so drift is caught rather than
 # accumulating until someone reformats a file and buries a real change in noise.
 docs-format-check:
-	@command -v $(FLOWMARK) >/dev/null 2>&1 || { \
-		echo "skipping documentation format check: $(FLOWMARK) is not installed"; \
-		exit 0; \
-	}; \
-	fail=0; for doc in $(DOC_FILES); do \
-		$(FLOWMARK) $(FLOWMARK_OPTS) -o "$$doc.formatted" "$$doc" >/dev/null 2>&1; \
-		if ! cmp -s "$$doc" "$$doc.formatted"; then echo "not formatted: $$doc"; fail=1; fi; \
-		rm -f "$$doc.formatted"; \
-	done; \
-	if [ "$$fail" = 1 ]; then echo "run: make docs-format"; exit 1; fi; \
-	echo "documentation formatting is clean"
+	@$(FLOWMARK) --auto --check .
 
 # --- Performance loop -------------------------------------------------------
 #

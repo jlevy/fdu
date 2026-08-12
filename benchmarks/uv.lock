@@ -57,12 +57,29 @@ dependencies = [
 dev = [
     { name = "softschema" },
 ]
+docs = [
+    { name = "flowmark-rs" },
+]
 
 [package.metadata]
 requires-dist = [{ name = "pydantic", specifier = ">=2.11.0,<3" }]
 
 [package.metadata.requires-dev]
 dev = [{ name = "softschema", specifier = "==0.6.0" }]
+docs = [{ name = "flowmark-rs", specifier = "==0.3.2" }]
+
+[[package]]
+name = "flowmark-rs"
+version = "0.3.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/be/78/00fc07529ecf48dabcf65cc4e1fbe8ea2fc5e503ca5771ea81bf1666ada4/flowmark_rs-0.3.2.tar.gz", hash = "sha256:d7d05b06ad2cef2b123cafe8b05e2545d29f474d455a26ab824fcdf0b5b557e2", size = 374915, upload-time = "2026-07-15T05:50:24.365Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/68/65/c051311f86bc6bd30583b6fc4f0c481d0a86d1bf17c9bf5fb4295c6081d1/flowmark_rs-0.3.2-py3-none-macosx_10_12_x86_64.whl", hash = "sha256:d820fbc6b0adca47a0892dbf4a9248cc6ebb148732387416d70b05dd01afb6ed", size = 2815519, upload-time = "2026-07-15T05:50:16.62Z" },
+    { url = "https://files.pythonhosted.org/packages/7b/0f/29a5c40555322db0c480e47c6e9fa77e1426bd83fe9f06d0916c599ac803/flowmark_rs-0.3.2-py3-none-macosx_11_0_arm64.whl", hash = "sha256:db811288727bc051fff75eb6d52397ab03107ddbf2cbf866102e910ea093bfe8", size = 2574019, upload-time = "2026-07-15T05:50:18.249Z" },
+    { url = "https://files.pythonhosted.org/packages/d7/ab/e97f7e4203f83e90426770253197079f6df79236601e1477d30580e3fa4d/flowmark_rs-0.3.2-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:61fde87d6620f38db65eb2f2e57349da526f776c672c09d67937792ec189ec41", size = 2817602, upload-time = "2026-07-15T05:50:19.631Z" },
+    { url = "https://files.pythonhosted.org/packages/98/bc/9ed0d3034e80e919a98e3ec1a916e5720bf1a3cb23054b72a805df43b9ce/flowmark_rs-0.3.2-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:79c0587bc60fc4383fcf99b87976e4522a6f78c8bbb8e9aa355497151092fb2c", size = 2979874, upload-time = "2026-07-15T05:50:21.121Z" },
+    { url = "https://files.pythonhosted.org/packages/bd/5a/9368905084915089fbd47f3ba40b37a3c235e7e807f767cf869268d8fe53/flowmark_rs-0.3.2-py3-none-win_amd64.whl", hash = "sha256:53c31c0e1eed048fdba4484a7ff32628ccf03a543643d4ea1bd5067ca6bb00db", size = 2722379, upload-time = "2026-07-15T05:50:22.661Z" },
+]
 
 [[package]]
 name = "frontmatter-format"

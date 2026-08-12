@@ -199,17 +199,21 @@ experiment:
 
 ## Hypothesis
 
-H32: _state what you expected to be slow, why,
-and which metric would move._
+H32: *state what you expected to be slow, why, and which metric would move.*
 
 ## What was tried
 
-_The smallest change that tests the hypothesis._
+*The smallest change that tests the hypothesis.*
 
 ## What the numbers said
 
-_Read the tables in the frontmatter. Say what surprised you._
+*Read the tables in the frontmatter.
+Say what surprised you.*
 
 ## Verdict
 
-**ACCEPTED** — Accepted on the pre-registered signal: the research registry declared this hypothesis's predicted signal as warm-snapshot-load component_ns -15-25%, and the quiet re-run measured -12.38% [-22.85%, -4.71%] with cpu and user cpu significantly down; wall spans zero only because probe spawn and the untimed oracle digest are half that job's wall
+**ACCEPTED** — Accepted on the pre-registered signal: the research registry declared
+this hypothesis’s predicted signal as warm-snapshot-load component_ns -15-25%, and the
+quiet re-run measured -12.38% [-22.85%, -4.71%] with cpu and user cpu significantly
+down; wall spans zero only because probe spawn and the untimed oracle digest are half
+that job’s wall

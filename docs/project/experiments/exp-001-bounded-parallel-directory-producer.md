@@ -256,17 +256,18 @@ experiment:
 
 ## Hypothesis
 
-H1: _state what you expected to be slow, why,
-and which metric would move._
+H1: *state what you expected to be slow, why, and which metric would move.*
 
 ## What was tried
 
-_The smallest change that tests the hypothesis._
+*The smallest change that tests the hypothesis.*
 
 ## What the numbers said
 
-_Read the tables in the frontmatter. Say what surprised you._
+*Read the tables in the frontmatter.
+Say what surprised you.*
 
 ## Verdict
 
-**ACCEPTED** — Halved cold-scan wall time with a 95% interval entirely below zero, no new dependency, and byte-identical engine digests at every thread count
+**ACCEPTED** — Halved cold-scan wall time with a 95% interval entirely below zero, no
+new dependency, and byte-identical engine digests at every thread count

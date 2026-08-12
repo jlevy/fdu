@@ -30,8 +30,8 @@ in the active performance plan.
 
 ## Scenario Statistics
 
-Only valid timed samples contribute. Warmups and invalid trials remain in the raw-trial
-table below.
+Only valid timed samples contribute.
+Warmups and invalid trials remain in the raw-trial table below.
 
 | Scenario | Valid | Invalid | External median | Component median | CPU median | Peak RSS | MAD | P95 | Min | Max | Mean | Stddev | CV | External entries/s | Component entries/s |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |

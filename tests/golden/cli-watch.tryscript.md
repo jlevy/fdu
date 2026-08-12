@@ -17,24 +17,25 @@ patterns:
   ALLOCATED: '\d+'
   MTIME_NS: '\d+'
 ---
-
 # The Watch Change Stream
 
-`--watch` streams one `fdu.stream/1` record per applied change. A watch process never
-exits, so it cannot be goldened directly; the `watch-capture` helper turns it into a
-command that does. It starts `fdu --watch`, applies a scripted sequence of filesystem
-changes, waits for each change's own record before making the next, and prints the
-captured records. The sequencing is causal, not timed: nothing here depends on how fast
-the machine or the events backend is.
+`--watch` streams one `fdu.stream/1` record per applied change.
+A watch process never exits, so it cannot be goldened directly; the `watch-capture`
+helper turns it into a command that does.
+It starts `fdu --watch`, applies a scripted sequence of filesystem changes, waits for
+each change’s own record before making the next, and prints the captured records.
+The sequencing is causal, not timed: nothing here depends on how fast the machine or the
+events backend is.
 
 What this pins: the stream schema on every record, the op vocabulary, which fields are
 present per op, and that removal records carry no metadata — a consumer distinguishes
-"gone" from "unknown" by the fields being absent.
+“gone” from “unknown” by the fields being absent.
 
 The clock is a named pattern rather than a literal because its starting value depends on
 how the initial scan batched its observations, which is not part of the stream contract.
-Ordering is pinned by the record sequence itself. Directory sizes and allocated bytes
-are filesystem-dependent; file byte counts are exact.
+Ordering is pinned by the record sequence itself.
+Directory sizes and allocated bytes are filesystem-dependent; file byte counts are
+exact.
 
 ## Build a Tree and Capture a Watch Session
 

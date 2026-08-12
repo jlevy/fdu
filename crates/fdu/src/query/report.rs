@@ -554,8 +554,12 @@ fn expand(
 
         if !query.selection.depth.admits(depth) {
             // `--depth 0` keeps du's meaning: totals for this node, nothing beneath it.
-            built[cursor].node.truncated =
-                index.children_of(id).is_some_and(|mut kids| kids.next().is_some());
+            // Files are already represented in this directory's totals and never become
+            // tree rows. Only a directory child hidden by the depth bound makes the
+            // rendered hierarchy incomplete.
+            built[cursor].node.truncated = index.children_of(id).is_some_and(|mut children| {
+                children.any(|(_, child)| index.kind_of(child) == Some(EntryKind::Dir))
+            });
             cursor += 1;
             continue;
         }
@@ -928,6 +932,23 @@ mod tests {
         assert_eq!(tree.bytes, 657, "totals still cover the whole tree");
         assert!(tree.children.is_empty(), "but nothing below the root is listed");
         assert!(tree.truncated, "and the report says so rather than implying emptiness");
+    }
+
+    #[test]
+    fn a_depth_bound_marks_only_hidden_directory_rows_as_truncated() {
+        let index = sample();
+        let selection = Selection { depth: Bound::Limit(1), ..Selection::default() };
+        let tree = tree_of(&run(&index, &query(&[ViewSpec::Tree], selection)));
+
+        let src = tree.children.iter().find(|child| child.name == "src").expect("src");
+        assert!(src.truncated, "src with a hidden directory child is truncated");
+
+        let docs = tree.children.iter().find(|child| child.name == "docs").expect("docs");
+        assert!(docs.children.is_empty());
+        assert!(
+            !docs.truncated,
+            "file children contribute to a directory row; they are not hidden tree rows"
+        );
     }
 
     #[test]

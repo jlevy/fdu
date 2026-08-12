@@ -27,8 +27,8 @@ uvx --from fdu==__FDU_VERSION__ fdu --format json --view tree PATH
 
 ## Compose the Request From Five Axes
 
-Every option belongs to exactly one axis, and any axis composes with any other. There
-are no subcommands: the grammar is always "report on a path".
+Every option belongs to exactly one axis, and any axis composes with any other.
+There are no subcommands: the grammar is always “report on a path”.
 
 | Axis | Question | Options |
 | --- | --- | --- |
@@ -67,9 +67,9 @@ scanned and retained, so do not reach for it merely to shorten output.
 
 - Sizes: `512`, `10k`, `10M`, `1.5GiB`. Decimal and binary units, case-insensitive.
 - Times: `now`, a compound age (`45s`, `2h`, `1h30m`), an RFC 3339 timestamp with an
-  offset (`2026-08-10T18:22:31Z`), or `@` epoch seconds. Calendar units and fractional
-  ages are rejected with the spelling to use instead; a bare local date-time is rejected
-  because resolving it needs a time-zone database.
+  offset (`2026-08-10T18:22:31Z`), or `@` epoch seconds.
+  Calendar units and fractional ages are rejected with the spelling to use instead; a
+  bare local date-time is rejected because resolving it needs a time-zone database.
 - `--modified-since` is inclusive and `--modified-before` is exclusive.
 
 ## Use Timestamps as a Sync Watermark
@@ -82,7 +82,7 @@ fdu --view summary --format json PATH                       # record scan_starte
 fdu --view files --format jsonl --modified-since <that> PATH
 ```
 
-Use the scan's *start*, not its end: a file modified mid-scan may have been observed
+Use the scan’s *start*, not its end: a file modified mid-scan may have been observed
 before the modification, so only the start bound is conservative.
 
 ## Validate Every Automated Result
@@ -104,14 +104,16 @@ and use `--allow-partial` only when incomplete totals are acceptable.
 
 ## Cache Behavior
 
-The snapshot is one file per root under the user cache directory. `--cache-status` maps a
-hash-named file back to the tree it describes, and `--cache-clear` removes it; both run
-without scanning and never touch files this build cannot identify.
+The snapshot is one file per root under the user cache directory.
+`--cache-status` maps a hash-named file back to the tree it describes, and
+`--cache-clear` removes it; both run without scanning and never touch files this build
+cannot identify.
 
-Verification cost follows the question asked. Sizes and timestamps need one stat per
-entry, because an in-place edit changes a file without changing any directory. Questions
-answerable from names alone need only one stat per directory. Adding metrics within a
-tier is free; crossing a tier boundary is what costs.
+Verification cost follows the question asked.
+Sizes and timestamps need one stat per entry, because an in-place edit changes a file
+without changing any directory.
+Questions answerable from names alone need only one stat per directory.
+Adding metrics within a tier is free; crossing a tier boundary is what costs.
 
 Run `fdu --help` for the complete flag, cache, color, scope, and exit contract.
 

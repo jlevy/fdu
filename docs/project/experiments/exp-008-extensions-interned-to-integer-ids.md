@@ -319,17 +319,19 @@ experiment:
 
 ## Hypothesis
 
-H18: _state what you expected to be slow, why,
-and which metric would move._
+H18: *state what you expected to be slow, why, and which metric would move.*
 
 ## What was tried
 
-_The smallest change that tests the hypothesis._
+*The smallest change that tests the hypothesis.*
 
 ## What the numbers said
 
-_Read the tables in the frontmatter. Say what surprised you._
+*Read the tables in the frontmatter.
+Say what surprised you.*
 
 ## Verdict
 
-**ACCEPTED** — cold-scan-index -15.65% [-32.77%, -0.78%] and warm-snapshot-load -6.90% [-14.79%, -4.24%], significant even in a run whose variance was inflated several-fold by machine load, with the placebo job unmoved
+**ACCEPTED** — cold-scan-index -15.65% [-32.77%, -0.78%] and warm-snapshot-load -6.90%
+[-14.79%, -4.24%], significant even in a run whose variance was inflated several-fold by
+machine load, with the placebo job unmoved

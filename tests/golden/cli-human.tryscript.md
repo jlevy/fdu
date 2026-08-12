@@ -19,10 +19,10 @@ patterns:
 
 ```console
 $ fdu --cache off --color never --size apparent --depth 2 --limit 10 project
-     263 B  . (6 files)
-       128 B  dist (1 file)
-        36 B  src (2 files)
-        23 B  docs (1 file)
+     263 B  ██████████   100%  . (6 files)
+     128 B  █████░░░░░    49%    dist (1 file)
+      36 B  █░░░░░░░░░    14%    src (2 files)
+      23 B  █░░░░░░░░░     9%    docs (1 file)
 ? 0
 ```
 
@@ -30,21 +30,20 @@ $ fdu --cache off --color never --size apparent --depth 2 --limit 10 project
 
 ```console
 $ fdu --cache off --color never --size apparent --depth 1 --limit 2 project
-     263 B  . (6 files)
-  …
-       128 B  dist (1 file)
-    …
-        36 B  src (2 files)
-    …
+     263 B  ██████████   100%  . (6 files)
+     128 B  █████░░░░░    49%    dist (1 file)
+      36 B  █░░░░░░░░░    14%    src (2 files)
+                                 …
 ? 0
 ```
 
 ## Type View Honors the Selected Size Metric
 
 The old `--by-type` always reported apparent bytes, which made it the one view that
-ignored the size metric. Under the axis design `--size` applies to every view, so the
-type breakdown answers in whichever metric was asked for — and apparent bytes are
-filesystem-independent, which is what makes this block stable across platforms.
+ignored the size metric.
+Under the axis design `--size` applies to every view, so the type breakdown answers in
+whichever metric was asked for — and apparent bytes are filesystem-independent, which is
+what makes this block stable across platforms.
 
 ```console
 $ fdu --cache off --color never --view types --limit 10 --size apparent project

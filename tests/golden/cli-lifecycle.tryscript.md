@@ -17,12 +17,12 @@ patterns:
   CACHE_DIR: '[^\r\n]+'
   SCAN_PATH: '[^\r\n]+'
 ---
-
 # Cache Lifecycle Flags
 
 Inspecting and clearing the cache are explicit flags on the same grammar, never side
-effects of a report. They run before scan validation, so they need no readable tree, and
-they suppress the report entirely.
+effects of a report.
+They run before scan validation, so they need no readable tree, and they suppress the
+report entirely.
 
 ## Status Before Anything Is Cached
 
@@ -43,7 +43,8 @@ $ fdu --view summary --size apparent project
 ## Status Maps a Hash-Named File Back to Its Tree
 
 Cache files are named by a hash of their root, which keeps two trees from colliding but
-leaves a directory of opaque names. The header carries the answer.
+leaves a directory of opaque names.
+The header carries the answer.
 
 ```console
 $ fdu --cache-status project

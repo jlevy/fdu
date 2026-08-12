@@ -59,7 +59,7 @@ $ fdu --cache off --format json --size apparent --depth 1 --limit 2 project
   "reports": [
     {
       "view": "tree",
-      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 263, "allocated": [ALLOCATED], "files": 6, "dirs": 3, "newest_mtime_ns": [MTIME_NS], "truncated": true, "children": [{"name": "dist", "path": "dist", "kind": "dir", "bytes": 128, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "newest_mtime_ns": [MTIME_NS], "truncated": true, "children": []},{"name": "src", "path": "src", "kind": "dir", "bytes": 36, "allocated": [ALLOCATED], "files": 2, "dirs": 0, "newest_mtime_ns": [MTIME_NS], "truncated": true, "children": []}]}
+      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 263, "allocated": [ALLOCATED], "files": 6, "dirs": 3, "newest_mtime_ns": [MTIME_NS], "truncated": true, "children": [{"name": "dist", "path": "dist", "kind": "dir", "bytes": 128, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "children": []},{"name": "src", "path": "src", "kind": "dir", "bytes": 36, "allocated": [ALLOCATED], "files": 2, "dirs": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "children": []}]}
     }
   ]
 }
@@ -93,9 +93,9 @@ $ fdu --cache off --format json --size apparent --scan-depth 1 --depth 2 --limit
 ## Every View Serializes in Every Format
 
 This block previously asserted the opposite: `--by-type` conflicted with `--json`,
-because the type breakdown was a human-only feature. Under the axis design a view and a
-format are independent choices, so the combination is not just legal but required to
-work — formats are serializations, not features.
+because the type breakdown was a human-only feature.
+Under the axis design a view and a format are independent choices, so the combination is
+not just legal but required to work — formats are serializations, not features.
 
 ```console
 $ fdu --cache off --view types --format json --size apparent project
