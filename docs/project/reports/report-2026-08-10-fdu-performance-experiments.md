@@ -71,6 +71,7 @@ The rejected ones are the reusable part: they stop the next person spending a da
 | 026 | [Reuse macOS bulk metadata during full reconciliation](#exp026--reuse-macos-bulk-metadata-during-full-reconciliation) | H53, H26 | `warm-revalidate` | -34.4% | ✅ accepted |
 | 027 | [Cumulative effect through bulk reconciliation](#exp027--cumulative-effect-through-bulk-reconciliation) | H1, H5, H10, H14, H18, H32, H48, H49, H31, H3, H26, H53 | `cold-scan-index` | -52.8% | ✅ accepted |
 | 028 | [Reuse macOS bulk directory staging allocations](#exp028--reuse-macos-bulk-directory-staging-allocations) | H54 | `cold-scan-index` | +0.2% | ❌ rejected |
+| 029 | [Increase macOS bulk metadata buffer to 256 KiB](#exp029--increase-macos-bulk-metadata-buffer-to-256-kib) | H55 | `cold-scan-index` | -1.8% | ❌ rejected |
 
 ## The experiments
 
@@ -925,6 +926,36 @@ Cost to carry: 20 lines; no new dependencies; new failure mode: each reader reta
 **Rejected:** Cold-index wall was +0.21%, producer regressed 1.32%, and warm wall was -0.85%; predicted user-CPU and fault reductions were absent while producer RSS and faults regressed.
 
 Full record: [`exp-028-reuse-macos-bulk-directory-staging-allocations.md`](../experiments/exp-028-reuse-macos-bulk-directory-staging-allocations.md)
+
+### exp-029 — Increase macOS bulk metadata buffer to 256 KiB
+
+❌ rejected · 2026-08-12 · H55
+
+Control: exp-026 64 KiB macOS bulk metadata buffer
+
+Candidate: 256 KiB macOS bulk metadata buffer
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 311.0 | 321.5 | -1.80% (n.s.) | [-5.95%, +5.45%] |
+| component (ms) | 190.8 | 194.0 | -3.04% (n.s.) | [-6.90%, +9.61%] |
+| cpu (ms) | 1061.7 | 1112.1 | +1.15% (n.s.) | [-4.43%, +8.81%] |
+| user (ms) | 229.4 | 233.4 | +3.65% (n.s.) | [-5.07%, +7.68%] |
+| system (ms) | 832.5 | 883.7 | +3.36% (n.s.) | [-7.16%, +10.72%] |
+| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
+| peak rss (MiB) | 33.6 | 34.2 | +2.38% (regression) | [+0.25%, +3.11%] |
+
+Other jobs, wall time: `cold-scan-producer` +1.8% (n.s.), `warm-revalidate` -0.0% (n.s.).
+
+Cost to carry: 1 lines; no new dependencies; new failure mode: each active reader reserves an additional 192 KiB of syscall buffer capacity.
+
+one constant change; no dependency or unsafe change; the preregistered 720k gate was not triggered
+
+**Rejected:** Cold-index wall was -1.80% with an interval spanning -5.95% to +5.45%; producer and warm paths were neutral, system CPU did not corroborate a gain, and cold RSS plus faults regressed.
+
+Full record: [`exp-029-increase-macos-bulk-metadata-buffer-to-256-kib.md`](../experiments/exp-029-increase-macos-bulk-metadata-buffer-to-256-kib.md)
 
 
 <!-- This document follows common-doc-guidelines.md.
