@@ -5,7 +5,7 @@ title: Profile and optimize snapshot-absent real-tree traversal
 kind: task
 status: in_progress
 priority: 1
-version: 8
+version: 10
 spec_path: docs/project/specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md
 labels: []
 dependencies:
@@ -14,8 +14,10 @@ dependencies:
 parent_id: is-01kzpvshmzfp0804ywk18v4pzr
 child_order_hints:
   - is-01kztqevexz07mgpf4hcb4ztc9
+  - is-01kztvyt9245vp768sgav6dxrx
+  - is-01kztwwfnvta9x0vjq9znwpcp4
 created_at: 2026-08-10T22:13:36.233Z
-updated_at: 2026-08-12T11:29:19.192Z
+updated_at: 2026-08-12T11:49:22.234Z
 ---
 Using the mutation-detecting real-tree baseline, profile snapshot-absent scan production, scan plus index, and end-to-end CLI completion separately. Attribute time to enumeration, metadata, allocation/index application, sorting/rendering, and process startup with OS-native profiles and phase probes. For each candidate, run interleaved before/after trials, require exact oracle parity, commit one accepted improvement at a time, and record rejected changes when gains are within noise or complexity is disproportionate. Do not call normal filesystem-cache state cold; controlled-cold requires the dedicated-host protocol.
 
