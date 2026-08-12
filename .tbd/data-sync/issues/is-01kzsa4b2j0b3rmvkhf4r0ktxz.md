@@ -5,7 +5,7 @@ title: "Address review: PR #6 — senior engineering review, code and design"
 kind: task
 status: open
 priority: 1
-version: 18
+version: 21
 labels: []
 dependencies: []
 child_order_hints:
@@ -26,6 +26,9 @@ child_order_hints:
   - is-01kzsb3q4wbps8tsndgpg6wjwd
   - is-01kzsb3qc7bv2crk2a809bg6sz
   - is-01kzsbja5qc5496wzbde67w6ee
+  - is-01kzt7d6pak3phy4mnhwbtg2en
+  - is-01kzt7d70km4apzv80f8z7ask8
+  - is-01kzt7d78remd9rawjk1a8scty
 created_at: 2026-08-11T21:02:22.289Z
-updated_at: 2026-08-11T21:27:28.694Z
+updated_at: 2026-08-12T05:34:02.007Z
 ---
