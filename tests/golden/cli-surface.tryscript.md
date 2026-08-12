@@ -11,6 +11,10 @@ env:
 patterns:
   OS_ERROR: '[^\r\n]+'
   SCAN_PATH: '[^\r\n]+'
+  # Dev builds carry the git revision (and a dirty marker when the tree has local
+  # edits); a build without git metadata reports the bare semver. The semver itself
+  # is still asserted exactly — only the build metadata varies.
+  DEV_REVISION: '(-dev\+g[0-9a-f]{7,12}(\.dirty)?)?'
 ---
 # CLI Surface
 
@@ -304,9 +308,12 @@ See github.com/jlevy/practical-prose and review guidelines before editing.
 
 ## Version Is Exact
 
+The semver is asserted exactly; the dev-build revision after it varies with the
+checkout and is matched by pattern.
+
 ```console
 $ fdu --version
-fdu 0.0.1
+fdu 0.0.1[DEV_REVISION]
 ? 0
 ```
 

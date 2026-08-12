@@ -154,7 +154,9 @@ pub enum RunOutcome {
 #[derive(Parser, Debug)]
 #[command(
     name = "fdu",
-    version,
+    // Set by build.rs: the package semver plus the git revision on dev builds, so a
+    // binary built from a checkout never impersonates the published release.
+    version = env!("FDU_BUILD_VERSION"),
     about,
     long_about = None,
     styles = CLI_STYLES,

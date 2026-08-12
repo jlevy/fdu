@@ -18,6 +18,7 @@ import errno
 import json
 import os
 import pathlib
+import re
 import subprocess
 import sys
 import tempfile
@@ -76,7 +77,13 @@ def main() -> None:
 
     version = subprocess.run([entrypoint, "--version"], check=False, capture_output=True, text=True)
     assert version.returncode == 0, version
-    assert version.stdout == f"fdu {fdu_py.__version__}\n", version.stdout
+    # A wheel built from a checkout carries the git revision as semver build metadata;
+    # one built without git metadata reports the bare semver. Either way the semver
+    # itself must match the module's exactly.
+    version_pattern = (
+        rf"fdu {re.escape(fdu_py.__version__)}(-dev\+g[0-9a-f]{{7,12}}(\.dirty)?)?\n"
+    )
+    assert re.fullmatch(version_pattern, version.stdout), version.stdout
     assert version.stderr == "", version.stderr
 
     help_result = subprocess.run(
