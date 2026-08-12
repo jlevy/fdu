@@ -68,6 +68,7 @@ The rejected ones are the reusable part: they stop the next person spending a da
 | 023 | [Cumulative effect through adaptive scanning and macOS bulk metadata](#exp023--cumulative-effect-through-adaptive-scanning-and-macos-bulk-metadata) | H1, H5, H10, H14, H18, H32, H48, H49, H31, H3, H26 | `cold-scan-index` | -53.5% | ✅ accepted |
 | 024 | [Open macOS directories relative to one retained root fd](#exp024--open-macos-directories-relative-to-one-retained-root-fd) | H2, H24 | `cold-scan-index` | -0.1% | ❌ rejected |
 | 025 | [Revisit worker depth after macOS bulk metadata](#exp025--revisit-worker-depth-after-macos-bulk-metadata) | H52 | `cold-scan-index` | +19.2% | ❌ rejected |
+| 026 | [Reuse macOS bulk metadata during full reconciliation](#exp026--reuse-macos-bulk-metadata-during-full-reconciliation) | H53, H26 | `warm-revalidate` | -34.4% | ✅ accepted |
 
 ## The experiments
 
@@ -834,6 +835,34 @@ configuration-only reproduction using one exact binary; no code, dependency, or 
 **Rejected:** Sixteen workers regressed 720k indexed wall 19.19% and producer wall 12.65%, while roughly doubling CPU and adding about one-third RSS; the exploratory 6/8/12/16 curve found no smaller retune above the acceptance bar.
 
 Full record: [`exp-025-revisit-worker-depth-after-macos-bulk-metadata.md`](../experiments/exp-025-revisit-worker-depth-after-macos-bulk-metadata.md)
+
+### exp-026 — Reuse macOS bulk metadata during full reconciliation
+
+✅ accepted · 2026-08-12 · H53, H26
+
+Control: exp-022/025 current code with portable full reconciliation
+
+Candidate: the existing macOS bulk metadata reader reused by direct, shared, and scoped reconciliation
+
+**`warm-revalidate`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 21161.5 | 14014.3 | -34.39% | [-37.66%, -29.50%] |
+| component (ms) | 18591.3 | 11505.3 | -39.05% | [-41.61%, -33.85%] |
+| cpu (ms) | 13628.1 | 7659.5 | -44.06% | [-46.41%, -39.94%] |
+| user (ms) | 3171.0 | 2844.4 | -11.11% | [-13.82%, -7.49%] |
+| system (ms) | 10421.8 | 4814.1 | -53.97% | [-56.29%, -50.38%] |
+| blocked (ms) | 7537.6 | 6195.5 | -16.96% | [-21.33%, -13.38%] |
+| peak rss (MiB) | 341.3 | 341.7 | +0.06% (n.s.) | [-0.03%, +0.18%] |
+
+Cost to carry: 139 lines; no new dependencies; new failure mode: an unsupported or malformed bulk directory is discarded before application and reread through the portable reconciliation path; new failure mode: warm reconciliation now shares H26 whole-directory staging, so an extremely wide directory delays its entries and temporarily uses memory proportional to that directory.
+
+macOS-only reuse of the existing 64 KiB reader and audited FFI boundary; reconciliation remains serial and other platforms plus explicit one-worker configurations remain portable
+
+**Accepted:** Warm-open wall improved 34.39% at 720k and 18.97% at 60k; large-tree total CPU fell 44.06% and system CPU 53.97%, RSS was neutral, and all oracle checks passed.
+
+Full record: [`exp-026-reuse-macos-bulk-metadata-during-full-reconciliation.md`](../experiments/exp-026-reuse-macos-bulk-metadata-during-full-reconciliation.md)
 
 
 <!-- This document follows common-doc-guidelines.md.

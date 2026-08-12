@@ -79,7 +79,8 @@ The loop, its metrics, and the rule that decides whether a change is kept are in
 verdict is in
 [the experiment ledger](../../reports/report-2026-08-10-fdu-performance-experiments.md).
 
-What it found, against a 59,654-entry checkout on a 10-core machine:
+What it found, first against a roughly 60k-entry checkout and then against a
+720,805-entry cache-pressure subject on a 10-core machine:
 
 - **The gap to `dust` was parallelism, not efficiency.** At baseline fdu was three times
   slower in wall time while using *half* the total CPU — 541 ms against 1047 ms.
@@ -87,17 +88,20 @@ What it found, against a 59,654-entry checkout on a 10-core machine:
   A bounded parallel producer feeding the single index consumer halved cold-scan wall
   time, and the shipped CLI is now level with `dust` on the same tree and 1.6× faster
   than `du`.
-- **The warm path is the outstanding defect.** Using the snapshot cache is currently
-  *slower* than not using it — measured at 753 ms against 167 ms for the same tree.
-  The cache costs more than it saves, which makes the headline feature a pessimization.
-  Two experiments have chipped at it and the structural fix is still open.
-- **The next largest cold-path lever is blocked on a dependency decision.** After
-  parallelisation, `open` is the single biggest cost at 28% of self time, because
-  `fs::read_dir` opens each directory by absolute path and the kernel re-resolves every
-  component from the root.
-  `openat` would resolve one.
-  It needs `libc` as a runtime dependency and a scoped `unsafe` allowance, which is a
-  supply-chain decision rather than an implementation one.
+- **The accepted cold stack is 53.49% faster end to end.** Region-scheduled
+  breadth-first traversal, cheaper index work, service-time-adaptive workers, and the
+  macOS `getattrlistbulk` backend compose to improve producer wall 58.20% against the
+  original build (exp-023). The platform backend alone improves 720k cold-index wall
+  30.13% and producer wall 41.60% (exp-022).
+- **The warm path is still the outstanding structural defect, but its full sweep is
+  materially cheaper.** Reusing the audited bulk reader during reconciliation improves
+  warm-open wall 18.97% at 60k and 34.39% at 720k, with large-tree system CPU down
+  53.97% (exp-026). At 60k the resulting roughly-500-ms warm open still loses to the
+  roughly-296-ms cold index; journal scoping and persisted roll-ups remain necessary.
+- **Recent BFS-sensitive ideas were explicitly rechecked.** Root-relative `openat` was
+  neutral for indexed scans and reverted (exp-024). The old pre-bulk sixteen-worker
+  large-tree knee now regresses indexed wall 19.19%, CPU 107%, and RSS 33%; the existing
+  service-time trigger correctly keeps the bulk path at six workers (exp-025).
 
 Two of the five experiments so far were rejected and reverted, and that is the point of
 writing them down: parallelising the revalidation sweep bought 2.6% for 180 lines of

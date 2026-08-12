@@ -1470,43 +1470,27 @@ fn reconcile_target_inner(
 
     let mut queue: VecDeque<(PathBuf, usize)> =
         VecDeque::from(vec![(subtree.to_path_buf(), start_depth)]);
+    #[cfg(target_os = "macos")]
+    let mut bulk_reader = (config.worker_threads() > 1).then(macos_bulk::Reader::new);
     while let Some((rel_dir, depth)) = take_next(&mut queue, config.order) {
         let mut known = target.child_states(&rel_dir)?;
         let abs_dir = root.join(&rel_dir);
-        let listing = match fs::read_dir(&abs_dir) {
-            Ok(listing) => listing,
-            Err(error) => {
-                report.scan.errors.push(Error::io(abs_dir, error));
-                continue;
-            }
-        };
-        report.scan.dirs_read += 1;
         let mut listing_complete = true;
-
-        for item in listing {
-            let item = match item {
-                Ok(item) => item,
-                Err(error) => {
-                    listing_complete = false;
-                    report.scan.errors.push(Error::io(&abs_dir, error));
-                    continue;
-                }
-            };
-            let name = item.file_name();
+        let process_entry = |name: OsString,
+                             kind: EntryKind,
+                             attrs: Attrs,
+                             target: &mut ReconcileTarget<'_>,
+                             known: &mut BTreeMap<OsString, PathExpectation>,
+                             queue: &mut VecDeque<(PathBuf, usize)>,
+                             batch: &mut Vec<ObservationOp>,
+                             sink: &mut dyn FnMut(&AppliedDelta),
+                             report: &mut ReconcileReport|
+         -> Result<()> {
             let rel_path = rel_dir.join(&name);
             let baseline = match known.remove(&name) {
                 Some(baseline) => baseline,
                 None => target.expectation(&rel_path)?,
             };
-            let meta = match metadata_for_fingerprint(&item) {
-                Ok(meta) => meta,
-                Err(error) => {
-                    report.scan.errors.push(Error::io(item.path(), error));
-                    continue;
-                }
-            };
-            let kind = kind_from(&meta);
-            let attrs = attrs_from(&meta);
             report.scan.entries += 1;
             push_reconcile_upsert(
                 target,
@@ -1514,23 +1498,80 @@ fn reconcile_target_inner(
                 kind,
                 attrs,
                 baseline,
-                &mut batch,
+                batch,
                 &mut report.apply,
             );
             if batch.len() >= config.batch_size.max(1) {
-                flush_reconcile_batch(target, &mut batch, sink, &mut report.apply)?;
+                flush_reconcile_batch(target, batch, sink, &mut report.apply)?;
             }
 
             if should_descend(kind, attrs, depth, root_dev, config) {
                 queue.push_back((rel_path, depth + 1));
             } else if kind.is_dir() {
-                remove_known_children(
+                remove_known_children(target, &rel_path, config, batch, sink, &mut report.apply)?;
+            }
+            Ok(())
+        };
+
+        #[cfg(target_os = "macos")]
+        let used_bulk =
+            if let Some(entries) = bulk_reader.as_mut().and_then(|reader| reader.read(&abs_dir)) {
+                report.scan.dirs_read += 1;
+                for entry in entries {
+                    process_entry(
+                        entry.name,
+                        entry.kind,
+                        entry.attrs,
+                        target,
+                        &mut known,
+                        &mut queue,
+                        &mut batch,
+                        sink,
+                        &mut report,
+                    )?;
+                }
+                true
+            } else {
+                false
+            };
+        #[cfg(not(target_os = "macos"))]
+        let used_bulk = false;
+
+        if !used_bulk {
+            let listing = match fs::read_dir(&abs_dir) {
+                Ok(listing) => listing,
+                Err(error) => {
+                    report.scan.errors.push(Error::io(abs_dir, error));
+                    continue;
+                }
+            };
+            report.scan.dirs_read += 1;
+            for item in listing {
+                let item = match item {
+                    Ok(item) => item,
+                    Err(error) => {
+                        listing_complete = false;
+                        report.scan.errors.push(Error::io(&abs_dir, error));
+                        continue;
+                    }
+                };
+                let meta = match metadata_for_fingerprint(&item) {
+                    Ok(meta) => meta,
+                    Err(error) => {
+                        report.scan.errors.push(Error::io(item.path(), error));
+                        continue;
+                    }
+                };
+                process_entry(
+                    item.file_name(),
+                    kind_from(&meta),
+                    attrs_from(&meta),
                     target,
-                    &rel_path,
-                    config,
+                    &mut known,
+                    &mut queue,
                     &mut batch,
                     sink,
-                    &mut report.apply,
+                    &mut report,
                 )?;
             }
         }
@@ -2651,6 +2692,36 @@ mod tests {
         assert!(deltas.is_empty());
         assert_eq!(index.clock(), before_clock);
         assert_eq!(index.total(), &before_total);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn bulk_and_portable_reconciliation_produce_the_same_index() {
+        let dir = sample_tree();
+        let portable_config =
+            ScanConfig { threads: Some(1), batch_size: 2, ..ScanConfig::default() };
+        let (mut portable, _) =
+            scan_into_index(dir.path(), &portable_config).expect("portable baseline");
+        let mut bulk = portable.clone();
+
+        fs::remove_file(dir.path().join("a.txt")).expect("remove file");
+        write_file(&dir.path().join("src/main.rs"), b"fn main() { much longer }");
+        write_file(&dir.path().join("src/added.md"), b"new file");
+
+        let portable_report = reconcile(&mut portable, &portable_config, &mut |_| {})
+            .expect("portable reconciliation");
+        let bulk_config = ScanConfig { threads: Some(2), ..portable_config };
+        let bulk_report =
+            reconcile(&mut bulk, &bulk_config, &mut |_| {}).expect("bulk reconciliation");
+
+        assert!(portable_report.is_complete());
+        assert!(bulk_report.is_complete());
+        assert_eq!(bulk_report.scan.entries, portable_report.scan.entries);
+        assert_eq!(bulk_report.scan.dirs_read, portable_report.scan.dirs_read);
+        assert_eq!(bulk_report.apply, portable_report.apply);
+        assert_eq!(index_fingerprint(&bulk), index_fingerprint(&portable));
+        assert_eq!(bulk.total(), portable.total());
+        assert_eq!(bulk.by_ext_named(bulk.total()), portable.by_ext_named(portable.total()));
     }
 
     #[test]

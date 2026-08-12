@@ -92,7 +92,7 @@ numbers may drift.
 ### Loop Update: 2026-08-12
 
 The original research above scoped out implementation; the performance loop has since
-tested its highest-ranked ideas through exp-025. The durable changes are:
+tested its highest-ranked ideas through exp-026. The durable changes are:
 
 - warm reconciliation and snapshot constants improved through borrowed path components,
   direct child expectations, extension interning, and single-pass checksum/parse;
@@ -111,8 +111,10 @@ faster for full warm revalidation, and 36.08% faster for snapshot load on the cu
 720,805-entry cold-index job 30.13% and producer wall 41.60% over the adaptive portable
 control (exp-022). These are warm-steady operating-system-cache results, not
 controlled-cold claims.
-H26 is implemented only for cold scans; using the same reader for full or
-FSEvents-scoped reconciliation remains open.
+H26 now covers cold scans and full reconciliation.
+exp-026 improves warm-open wall 18.97% at 60k and 34.39% at 720k while cutting
+large-tree system CPU 53.97%; using the same reader for a future FSEvents-scoped
+changed-directory set remains open.
 The smallest H24 follow-up did not help: retaining one root descriptor per worker and
 opening descendants relative to it left 720k indexed wall and system CPU neutral in
 exp-024. Parent- or ancestor-relative handles remain architecturally distinct, but must
@@ -1146,10 +1148,11 @@ These are the hills worth being on:
    samples. exp-024 then showed that resolving descendants relative to one retained root
    fd does not reduce that residue: indexed wall was −0.07% and both system-CPU
    intervals included zero.
-   Revisit H24 only with a bounded parent/ancestor-handle design; carry the bulk reader
-   into reconciliation next.
-   Linux `statx`/`getdents64` still needs its own binding and host evidence rather than
-   inheriting the macOS verdict.
+   Revisit H24 only with a bounded parent/ancestor-handle design.
+   exp-026 completed the next syscall-rung step for full and subtree reconciliation,
+   improving warm wall 18.97% at 60k and 34.39% at 720k; FSEvents-scoped orchestration
+   remains open. Linux `statx`/`getdents64` still needs its own binding and host evidence
+   rather than inheriting the macOS verdict.
 4. **Parallelize index construction by subtree merge, not a faster funnel.** exp-001/002
    establish the single consumer as both paths’ ceiling (cold component 197 ms vs
    producer 192 ms). Cheaper apply (H6/H7, backlog below) raises the ceiling; the
@@ -1206,7 +1209,7 @@ the loop extensions in H36–H39 to be trusted globally.
 | --- | --- | --- | --- |
 | H24 | `openat` relative to a retained dirfd removes repeated path-prefix resolution (`open` = 33.86% of post-H26 cold self-time) | `system_cpu_ns` down, most on deep trees | **Root-dirfd variant refuted** (exp-024); parent/ancestor-relative variant untested and requires bounded descriptor lifetime |
 | H25 | Linux `statx` with `STATX_BASIC_STATS` only, `AT_STATX_DONT_SYNC` on network mounts | `system_cpu_ns` down modestly; NFS dramatically | rustix |
-| H26 | macOS `getattrlistbulk` (64 KiB buffers, drain-then-descend) replaces one `fstatat` per entry with one syscall per many entries | **Confirmed for cold scans (exp-022):** 720k producer wall −41.60%, system CPU −61.40%; 60k producer wall −9.25%. exp-025 confirms the batched backend should remain at six workers rather than the portable path’s sixteen-worker high-latency knee. Reconciliation integration remains open. | landed cold backend |
+| H26 | macOS `getattrlistbulk` (64 KiB buffers, drain-then-descend) replaces one `fstatat` per entry with one syscall per many entries | **Confirmed for cold and full reconciliation** (exp-022/026): 720k cold producer wall −41.60% and warm wall −34.39%; 60k cold producer wall −9.25% and warm wall −18.97%. exp-025 confirms the batched cold backend should remain at six workers rather than the portable path’s sixteen-worker high-latency knee. | landed macOS backend; journal-scoped orchestration open |
 | H27 | Raw `getdents64` with a 256 KB–1 MB per-thread buffer beats libc’s 32 KB `readdir` batching on wide directories | `system_cpu_ns` down on Linux; neutral macOS | rustix |
 | H28 | Statting in `d_ino` order on ext4 turns random inode-table reads ~N/16 sequential | drop_caches-cold wall 2–6× down on ext4; neutral warm; neutral XFS | rustix; Linux host |
 | H29 | An LRU of ancestor dirfds sized from `RLIMIT_NOFILE` keeps H24 effective at depth | `system_cpu_ns` flat vs depth | H24 |

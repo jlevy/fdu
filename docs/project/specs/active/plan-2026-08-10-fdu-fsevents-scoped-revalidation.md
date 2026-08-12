@@ -104,12 +104,12 @@ with flags for *several* of the ways history can be insufficient
 `EventIdsWrapped`, `HistoryDone`, `RootChanged`, `Mount`, `Unmount`).
 
 The iterative loop has since improved those constants without changing that shape.
-On the current 60,067-entry subject, exp-023 measures about 296 ms for cold index, 201
-ms for snapshot load, and 632 ms for load plus full revalidation.
-More importantly, exp-022 proves that `getattrlistbulk` can remove the per-entry
-metadata syscall on the cold producer: 9.25% wall improvement at 60k and 41.60% at 720k,
-with substantially lower system CPU. That backend is not yet wired into reconciliation,
-so these are cold-scan results, not an unmeasured warm-path claim.
+On the current 60,067-entry subject, exp-023 measures about 296 ms for cold index and
+201 ms for snapshot load.
+exp-026 then wires the exp-022 `getattrlistbulk` reader into full reconciliation:
+warm-open wall falls from about 616 ms to 500 ms at 60k and from 21.16 seconds to 14.01
+seconds at 720k. The large-tree run cuts system CPU 53.97% with neutral RSS. This
+improves the full-sweep fallback without changing its O(tree) shape.
 
 **Not for every way, and that gap is the single most important spike finding.** An
 earlier draft of this section claimed the flags covered every case.
@@ -131,14 +131,13 @@ Against today’s serial sweep the journal looks overwhelming: ~690 ms → tens 
 milliseconds on a quiet 60k tree.
 That comparison flatters it, and the
 [frontier research’s calibration](../../research/research-2026-08-10-performance-frontier.md)
-is the honest one.
-One part of rung 1 has now been measured: H26’s bulk reader brings the
-60k producer component to about 170 ms, but only the cold walker uses it today.
-Producer-side no-op elision (H12), a parallel sweep where misses justify it, and reuse
-of the bulk reader in reconciliation are still expected to bring a warm-cache
-revalidation down toward producer time.
-The current full warm path remains about 632 ms at 60k. Measured against *that*
-baseline, the journal at 60k-warm is an incremental win, not a transformative one.
+is the honest one. Two parts of rung 1 have now been measured: H26’s bulk reader brings
+the 60k cold producer component to about 170 ms, and exp-026 reuses it to bring full
+warm reconciliation to about 297 ms plus snapshot load.
+Producer-side no-op elision (H12) and a parallel sweep where misses justify it can still
+move revalidation toward producer time.
+Measured against the current roughly-500-ms full warm open, the journal at 60k-warm is
+an incremental win, not a transformative one.
 
 Where it is transformative is everywhere the sweep cannot be fast: cold metadata caches
 (cloud hosts whose RAM cannot hold the inodes — the snapshot is the only warm state
@@ -156,9 +155,10 @@ The loop’s accept rule will judge Phase 2 against the rung-1 baseline current 
 measurement time, not against today’s serial sweep.
 
 Scoped revalidation also composes with the platform work rather than competing with it.
-The cold-scan half of H26 has landed; the remaining integration is to reuse that reader
-so a named changed directory is verified with `getattrlistbulk` rather than one stat per
-entry. The research’s whole-drive composition remains journal resume (H43) naming the
+Both the cold-scan and full-reconciliation halves of H26 have landed.
+The remaining integration is orchestration: feed journal-named changed directories into
+the existing bulk-backed subtree reconciler.
+The research’s whole-drive composition remains journal resume (H43) naming the
 directories, bulk re-scan (H26) verifying them, and persisted roll-ups (H33/H16)
 rendering the rest untouched.
 
@@ -191,9 +191,10 @@ new supply-chain entries for ~6 declarations today.
 
 The workspace denies `unsafe_code`; the one FFI module carries a scoped
 `#[allow(unsafe_code)]` with every call site documented, and no unsafe appears anywhere
-else. This is a far smaller decision than the still-blocked `libc`-for-`openat` question
-(H2/H24): same locked crate set, unsafe confined to one leaf module behind a non-default
-feature on one platform.
+else. The exp-022/026 `getattrlistbulk` work has since established the same pattern for
+the scan boundary: an exact already-locked binding, unsafe confined to one leaf module,
+and byte-for-byte portable parity tests.
+The FSEvents module remains behind a non-default feature on one platform.
 
 Replay semantics that the implementation and its tests must honor, from Apple’s
 documentation and Watchman’s source (mechanics only — see the Overview’s honesty note on
@@ -695,8 +696,8 @@ Phase 2’s acceptance should be measured at 500k+ or on a cold cache.
 
 - [ ] `journal/fsevents.rs`: FFI declarations, current-event-id, volume UUID, historical
   replay with deadline; scoped `#[allow(unsafe_code)]` with per-call safety comments
-- [ ] `revalidate_dirs` in scan.rs, reusing the exp-022 bulk reader on macOS, plus
-  `InvalidateSubtree` resolution for G8
+- [ ] `revalidate_dirs` orchestration in scan.rs, feeding changed roots into exp-026’s
+  bulk-backed subtree reconciler, plus `InvalidateSubtree` resolution for G8
 - [ ] CLI: gate wiring, `--revalidate` flag, save-side cursor capture on macOS
 - [ ] Integration tests (macOS CI leg): mutate-then-journal-revalidate equals fresh scan
   by engine digest; UUID mismatch, event-ID regression, and forced `MustScanSubDirs`

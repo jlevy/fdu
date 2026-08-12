@@ -156,6 +156,12 @@ the 60k jobs improve 5.22% and 9.25%. Against the original pre-optimization buil
 complete accepted stack is 53.49% faster for cold index and 58.20% faster for
 producer-only scans (exp-023). The earlier roughly-2× cold private-tree observation
 remains context; exp-023 is now the claim-grade reproduction.
+The same audited bulk reader now serves full macOS reconciliation as well.
+exp-026 improves warm-open wall 18.97% on the 60k subject and 34.39% on the 720k
+subject, with large-tree system CPU down 53.97% and RSS neutral.
+Reconciliation stays serial, so this does not change the breadth-first partial-result
+contract; it removes filesystem work from the sound cache fallback and composes with
+future FSEvents scoping.
 Persisted roll-ups with lazy open (`fdu-1vd0`) turn an 11-second warm load into a first
 paint. Tracked at low priority as `fdu-v71x` so the decision stays visible.
 
