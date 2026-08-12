@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping, Sequence
 
 from benchmarks.realtree import experiment as experiment_model
-from benchmarks.realtree.summary import _validator
+from benchmarks.realtree.summary import SummaryError, _validator
 
 EXPERIMENTS_DIR = Path("docs/project/experiments")
 SCHEMA_NAME = "experiment.schema.yaml"
@@ -264,7 +264,11 @@ def _validate(path: Path) -> int:
             capture_output=True,
             timeout=300,
         )
-    except (FileNotFoundError, subprocess.TimeoutExpired) as error:
+    except (SummaryError, FileNotFoundError, subprocess.TimeoutExpired) as error:
+        # SummaryError is what `_validator` raises when it cannot find softschema at
+        # all. It belongs here rather than propagating: the validator lives in the dev
+        # group, `record` is normally invoked without it, and recording an experiment
+        # must not fail because the optional post-write check is unavailable.
         print(f"skipped validation: {error}", file=sys.stderr)
         return 0
     stdout = completed.stdout.decode("utf-8", errors="replace")

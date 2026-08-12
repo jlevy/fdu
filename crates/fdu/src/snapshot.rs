@@ -668,7 +668,7 @@ fn os_string_from_bytes(bytes: &[u8]) -> Option<OsString> {
 /// or the whole new one. The temporary must be a sibling for that to hold — a rename
 /// across filesystems is a copy, and copies are not atomic.
 fn write_atomically(path: &Path, bytes: &[u8]) -> Result<()> {
-    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let parent = parent_dir(path);
     fs::create_dir_all(parent).map_err(|e| Error::io(parent, e))?;
 
     let (tmp, mut file) = create_temp_file(path, parent)?;
@@ -725,13 +725,35 @@ fn temp_prefix(path: &Path) -> Option<OsString> {
     Some(prefix)
 }
 
+/// The directory a target lives in, as a path that can actually be opened.
+///
+/// A bare relative target such as `snap.fdu` has an *empty* parent rather than none, and
+/// the empty path is not the current directory: `create_dir_all` and `rename` tolerate
+/// it, but `read_dir` does not — which silently disabled the reaper for exactly those
+/// targets while the write itself kept working.
+fn parent_dir(path: &Path) -> &Path {
+    match path.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => parent,
+        _ => Path::new("."),
+    }
+}
+
+/// The temporary name this process uses for `path` at `sequence`.
+///
+/// Split out so a test can plant a collision at a name the writer will actually try.
+/// Guessing the shape does not work — the entropy is per process — and getting that
+/// wrong is how the first version of the stale-temporary test came to exercise nothing.
+fn temp_name(path: &Path, sequence: u64) -> OsString {
+    let mut name = OsString::from(".");
+    name.push(path.file_name().unwrap_or_else(|| OsStr::new("snapshot")));
+    name.push(format!(".tmp.{}.{:016x}.{}", std::process::id(), *TEMP_FILE_ENTROPY, sequence));
+    name
+}
+
 fn create_temp_file(path: &Path, parent: &Path) -> Result<(PathBuf, fs::File)> {
     for _ in 0..MAX_TEMP_CREATE_ATTEMPTS {
         let sequence = NEXT_TEMP_FILE.fetch_add(1, Ordering::Relaxed);
-        let mut name = OsString::from(".");
-        name.push(path.file_name().unwrap_or_else(|| OsStr::new("snapshot")));
-        name.push(format!(".tmp.{}.{:016x}.{}", std::process::id(), *TEMP_FILE_ENTROPY, sequence));
-        let tmp = parent.join(name);
+        let tmp = parent.join(temp_name(path, sequence));
         let mut options = OpenOptions::new();
         options.write(true).create_new(true);
         #[cfg(unix)]
@@ -1165,41 +1187,69 @@ mod tests {
 
     #[test]
     fn a_stale_temporary_does_not_block_a_later_write() {
-        // A killed writer leaves its temporary behind and nothing reaps it, so a later
-        // process — particularly one that recycled its pid — can find a corpse sitting
-        // exactly where it wants to write. `O_EXCL` plus the retry loop is what makes
-        // that safe: the collision is detected and stepped over, never shared.
+        // A killed writer leaves its temporary behind and nothing reaps it until it is
+        // a day old, so a later write can find a corpse sitting exactly where it wants
+        // to go. `O_EXCL` plus the retry loop is what makes that safe: the collision is
+        // detected and stepped over, never shared.
         //
-        // Note this test passes with or without the per-process entropy in the name,
-        // and deliberately so. Entropy does not make this case *correct* — the retry
-        // loop already does. It makes the collision not happen in the first place, and
-        // makes the names unguessable in a directory where an attacker could otherwise
-        // pre-create the whole retry budget. Neither of those is reachable from a unit
-        // test in one process, so they rest on the argument recorded at
-        // `TEMP_FILE_ENTROPY` rather than on an assertion here.
+        // The corpse is planted at names this process will really try, via `temp_name`.
+        // An earlier version of this test guessed the shape and planted
+        // `.snap.fdu.tmp.{pid}.0`, which the entropy in the name means the writer can
+        // never generate — so it collided with nothing and proved nothing, while
+        // reading as though it had.
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("snap.fdu");
 
-        // The name this process would produce if entropy were removed and the counter
-        // happened to be at zero.
-        let mut stale = OsString::from(".snap.fdu.tmp.");
-        stale.push(std::process::id().to_string());
-        stale.push(".0");
-        fs::write(dir.path().join(&stale), b"corpse").expect("plant a stale temporary");
+        // Block a window of upcoming sequence values. A window rather than one name
+        // because the counter is process-global and other tests draw from it too;
+        // whichever value this write lands on, it starts inside the blocked range.
+        let first = NEXT_TEMP_FILE.load(Ordering::Relaxed);
+        let planted: Vec<OsString> =
+            (first..first + 32).map(|sequence| temp_name(&path, sequence)).collect();
+        for name in &planted {
+            fs::write(dir.path().join(name), b"corpse").expect("plant a stale temporary");
+        }
 
-        write_atomically(&path, b"payload").expect("write past a stale temporary");
+        write_atomically(&path, b"payload").expect("write past the stale temporaries");
         assert_eq!(fs::read(&path).expect("read back"), b"payload");
 
-        let survivors: Vec<_> = fs::read_dir(dir.path())
+        // Every corpse survives: the writer stepped over them rather than reusing or
+        // removing one, and they are far too young for the reaper.
+        let mut survivors: Vec<_> = fs::read_dir(dir.path())
             .expect("read_dir")
             .filter_map(std::result::Result::ok)
             .map(|entry| entry.file_name())
             .filter(|name| name != "snap.fdu")
             .collect();
-        assert_eq!(
-            survivors,
-            vec![stale],
-            "the write must leave nothing behind but the corpse it stepped over"
+        survivors.sort();
+        let mut expected = planted;
+        expected.sort();
+        assert_eq!(survivors, expected, "the write must step over corpses, not consume them");
+    }
+
+    #[test]
+    fn a_bare_filename_target_resolves_to_an_openable_directory() {
+        // `Path::parent` returns `Some("")` for a bare name, not `None`, so an
+        // `unwrap_or(".")` fallback never fires. The write still worked — `rename`
+        // accepts the empty path — but `read_dir("")` fails, so the reaper returned
+        // immediately and collected nothing for those targets.
+        assert_eq!(parent_dir(Path::new("snap.fdu")), Path::new("."));
+        assert!(fs::read_dir(parent_dir(Path::new("snap.fdu"))).is_ok(), "must be openable");
+        assert_eq!(parent_dir(Path::new("/cache/snap.fdu")), Path::new("/cache"));
+        assert_eq!(parent_dir(Path::new("cache/snap.fdu")), Path::new("cache"));
+    }
+
+    #[test]
+    fn a_temporary_name_is_unique_per_sequence_and_carries_process_entropy() {
+        // The two components that make a corpse unreachable by a future process, and a
+        // writer unable to collide with itself.
+        let path = Path::new("/cache/snap.fdu");
+        assert_ne!(temp_name(path, 0), temp_name(path, 1), "the counter separates files");
+        let name = temp_name(path, 0).to_string_lossy().into_owned();
+        assert!(name.starts_with(".snap.fdu.tmp."), "reaper prefix must match: {name}");
+        assert!(
+            name.contains(&format!("{:016x}", *TEMP_FILE_ENTROPY)),
+            "entropy must be in the name, or a recycled pid regenerates a corpse: {name}"
         );
     }
 
