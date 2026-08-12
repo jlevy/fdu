@@ -147,10 +147,15 @@ reads.
 
 That cost is accepted rather than outstanding.
 It sits below the project’s own 3% bar for changes worth added complexity, and the queue
-ahead of it is worth far more — the adaptive worker pool (`fdu-tt2j`) now improves a
-reproducible 720k cold-index run 5.31% [−8.37%, −2.70%] while retaining the 120k
-boundary result. The earlier roughly-2× cold private-tree observation remains context,
-not the claim attached to the implementation.
+ahead of it has proved worth far more.
+The adaptive worker pool (`fdu-tt2j`) improves a reproducible 720k cold-index run 5.31%
+[−8.37%, −2.70%] while retaining the 120k boundary result.
+The macOS bulk-metadata backend then composes with that pool: exp-022 improves the same
+720k cold-index job another 30.13% [−32.19%, −25.11%] and producer wall 41.60%, while
+the 60k jobs improve 5.22% and 9.25%. Against the original pre-optimization build, the
+complete accepted stack is 53.49% faster for cold index and 58.20% faster for
+producer-only scans (exp-023). The earlier roughly-2× cold private-tree observation
+remains context; exp-023 is now the claim-grade reproduction.
 Persisted roll-ups with lazy open (`fdu-1vd0`) turn an 11-second warm load into a first
 paint. Tracked at low priority as `fdu-v71x` so the decision stays visible.
 
@@ -411,6 +416,9 @@ plans: everything else here works without it, on every platform.
 - [x] Adaptive cold-scan workers: begin at the warm-small knee, calibrate the first 16k
   entries from existing chunk attribution, and spawn bounded reserves only for slow
   filesystem service (exp-015–021, `fdu-tt2j`)
+- [x] macOS bulk metadata: replace directory enumeration plus one metadata syscall per
+  entry with fail-closed `getattrlistbulk`, retaining the portable backend elsewhere and
+  at mount/firmlink boundaries (exp-022)
 - [ ] `Session`: start/read/complete/cancel over `IndexHandle`, with documented
   monotonicity and per-path freshness; bounded-memory option
 - [ ] Python `Session` mirroring the Rust surface

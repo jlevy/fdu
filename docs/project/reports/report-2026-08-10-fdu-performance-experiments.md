@@ -8,31 +8,30 @@ How the numbers were produced, what each metric means, and the rule that decides
 
 ## Where it stands
 
-Every accepted change together, measured against the pre-work baseline in one interleaved run of 16 paired trials (exp-006).
+Every accepted change together, measured against the pre-work baseline in one interleaved run of 12 paired trials (exp-023).
 
 | job | before | after | change | 95% interval |
 | --- | ---: | ---: | ---: | --- |
-| `cold-scan-index` | 631 ms | 321 ms | **-48.9%** | [-51.1%, -47.5%] |
-| `cold-scan-producer` | 959 ms | 465 ms | **-51.6%** | [-52.3%, -50.2%] |
-| `cold-snapshot-save` | 647 ms | 352 ms | **-46.2%** | [-48.6%, -45.1%] |
-| `warm-revalidate` | 804 ms | 688 ms | **-14.7%** | [-15.8%, -12.7%] |
-| `warm-snapshot-load` | 324 ms | 230 ms | **-29.1%** | [-29.6%, -28.1%] |
-
-Third-party tools on the same tree, for calibration only — they answer a slightly different question with different guarantees, and never enter the accept rule: `du` 350 ms, `dust` 220 ms.
+| `cold-scan-index` | 625 ms | 296 ms | **-53.5%** | [-55.2%, -52.2%] |
+| `cold-scan-producer` | 991 ms | 413 ms | **-58.2%** | [-59.1%, -56.5%] |
+| `cold-snapshot-save` | 645 ms | 315 ms | **-51.3%** | [-52.3%, -50.2%] |
+| `warm-revalidate` | 797 ms | 632 ms | **-20.6%** | [-21.1%, -20.2%] |
+| `warm-snapshot-load` | 315 ms | 201 ms | **-36.1%** | [-36.4%, -35.8%] |
 
 ## Reproducing the cumulative comparison
 
 **The tree.** Pinned by content, not by name.
 
-- Label `metabrowser-clone`, 59,654 entries (7,341 directories, 52,291 files, 22 symlinks), max depth 19.
-- 1.01 GiB apparent, 1.14 GiB allocated.
-- Content digest `bf574331eca680372f7060d4f9ab3b3b175afd265ac27bda6b6dc67ed9c80798` (`fdu-index-record-v1`). Two trees with this digest are the same tree in the same state.
+- Label `metabrowser`, 60,067 entries (7,350 directories, 52,695 files, 22 symlinks), max depth 19.
+- 1.01 GiB apparent, 1.15 GiB allocated.
+- Content digest `ce5a7430e152412a519ee9f9776c2fec73e59c58fa553aa3e9c2f8c085d26619` (`fdu-index-record-v1`). Two trees with this digest are the same tree in the same state.
 - Identified as `dbd79ed9c898f7a2…`, the SHA-256 of its path. The path itself is deliberately not recorded.
 
 **The machine.**
 
 - Apple M1 Pro, arm64, 10 logical cores (8 performance, 2 efficiency), 32 GiB RAM.
 - Darwin 25.5.0, apfs filesystem.
+- Built with rustc 1.97.1 (8bab26f4f 2026-07-14), `release` profile.
 - OS page cache: warm-steady. Dropping it needs root, so runs that did not ask for that say so rather than implying a cold disk.
 
 Every run fingerprinted the tree before and after and confirmed it unchanged, and every trial's engine digest was checked against an independent oracle.
@@ -65,6 +64,8 @@ The rejected ones are the reusable part: they stop the next person spending a da
 | 019 | [Adaptive worker threshold at the first crossing scale](#exp019--adaptive-worker-threshold-at-the-first-crossing-scale) | H31 | `cold-scan-index` | +1.2% | ❌ rejected |
 | 020 | [Delay adaptive workers until metadata-cache capacity](#exp020--delay-adaptive-workers-until-metadatacache-capacity) | H31 | `cold-scan-index` | -1.7% | ❌ rejected |
 | 021 | [Calibrate adaptive workers from initial filesystem service time](#exp021--calibrate-adaptive-workers-from-initial-filesystem-service-time) | H31 | `cold-scan-index` | -5.3% | ✅ accepted |
+| 022 | [Batch macOS scan metadata with getattrlistbulk](#exp022--batch-macos-scan-metadata-with-getattrlistbulk) | H3, H26 | `cold-scan-index` | -30.1% | ✅ accepted |
+| 023 | [Cumulative effect through adaptive scanning and macOS bulk metadata](#exp023--cumulative-effect-through-adaptive-scanning-and-macos-bulk-metadata) | H1, H5, H10, H14, H18, H32, H48, H49, H31, H3, H26 | `cold-scan-index` | -53.5% | ✅ accepted |
 
 ## The experiments
 
@@ -711,6 +712,66 @@ No dependency, unsafe code, polling, or per-entry clocks; explicit thread counts
 **Accepted:** Latency calibration improved 720k cold-index wall 5.31% and producer wall 10.09%, while the separate 120k boundary left wall, CPU, faults, and RSS unchanged.
 
 Full record: [`exp-021-calibrate-adaptive-workers-from-initial-filesystem-service-t.md`](../experiments/exp-021-calibrate-adaptive-workers-from-initial-filesystem-service-t.md)
+
+### exp-022 — Batch macOS scan metadata with getattrlistbulk
+
+✅ accepted · 2026-08-12 · H3, H26
+
+Control: portable read_dir plus one metadata syscall per entry, with adaptive workers
+
+Candidate: macOS getattrlistbulk names and complete stat-tier metadata, with portable directory fallback
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 6478.7 | 4537.0 | -30.13% | [-32.19%, -25.11%] |
+| component (ms) | 4990.0 | 3077.7 | -38.98% | [-44.88%, -31.77%] |
+| cpu (ms) | 29818.1 | 15046.7 | -43.56% | [-60.05%, -34.03%] |
+| user (ms) | 3371.1 | 2688.9 | -19.60% | [-21.06%, -17.74%] |
+| system (ms) | 26468.6 | 12039.1 | -46.62% | [-65.75%, -36.63%] |
+| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
+| peak rss (MiB) | 315.2 | 317.5 | +2.71% (n.s.) | [-1.42%, +37.00%] |
+
+Other jobs, wall time: `cold-scan-producer` -41.6%.
+
+Cost to carry: 542 lines; dependencies: libc 0.2.189 (macOS-only direct dependency, already locked transitively); 1 unsafe blocks; new failure mode: a malformed or unsupported bulk response causes that directory to be discarded and reread through the portable backend; new failure mode: one worker buffers a complete directory before publishing it, increasing peak memory and delaying progress within extremely wide directories.
+
+macOS-only accelerator; one bounds-audited FFI call, per-record returned-attribute validation, mount/firmlink-boundary fallback, 64 KiB buffer per worker, and unchanged portable implementation elsewhere
+
+**Accepted:** Current code improved 720k end-to-end wall 30.13% and producer wall 41.60%, while the separate 60k run improved them 5.22% and 9.25%; all oracle checks passed and CPU fell at both scales.
+
+Full record: [`exp-022-batch-macos-scan-metadata-with-getattrlistbulk.md`](../experiments/exp-022-batch-macos-scan-metadata-with-getattrlistbulk.md)
+
+### exp-023 — Cumulative effect through adaptive scanning and macOS bulk metadata
+
+✅ accepted · 2026-08-12 · H1, H5, H10, H14, H18, H32, H48, H49, H31, H3, H26
+
+Control: b565882 before the iterative performance work
+
+Candidate: current code through exp-022: accepted traversal, index, snapshot, BFS scheduling, adaptive-depth, and macOS bulk-metadata changes
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 625.2 | 295.5 | -53.49% | [-55.22%, -52.22%] |
+| component (ms) | 506.1 | 175.3 | -65.66% | [-67.04%, -64.89%] |
+| cpu (ms) | 617.3 | 1068.9 | +64.87% (regression) | [+62.60%, +92.64%] |
+| user (ms) | 240.4 | 228.5 | -4.22% | [-7.60%, -0.53%] |
+| system (ms) | 376.0 | 839.7 | +111.31% (regression) | [+102.85%, +149.98%] |
+| blocked (ms) | 9.5 | 0.0 | -100.00% | [-100.00%, -100.00%] |
+| peak rss (MiB) | 32.0 | 33.6 | +4.66% (regression) | [+3.40%, +6.49%] |
+
+Other jobs, wall time: `cold-scan-producer` -58.2%, `cold-snapshot-save` -51.3%, `warm-revalidate` -20.6%, `warm-snapshot-load` -36.1%.
+
+Cost to carry: 0 lines; no new dependencies.
+
+measurement-only cumulative anchor; complexity belongs to the individual accepted experiments
+
+**Accepted:** Against the original pre-work baseline, current code improved cold-index wall 53.49%, producer wall 58.20%, snapshot-save wall 51.32%, warm revalidation 20.60%, and snapshot load 36.08%; all oracle checks passed.
+
+Full record: [`exp-023-cumulative-effect-through-adaptive-scanning-and-macos-bulk-m.md`](../experiments/exp-023-cumulative-effect-through-adaptive-scanning-and-macos-bulk-m.md)
 
 
 <!-- This document follows common-doc-guidelines.md.

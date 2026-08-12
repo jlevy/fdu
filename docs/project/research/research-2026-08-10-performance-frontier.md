@@ -89,6 +89,31 @@ numbers may drift.
   fallback) is explicitly out of scope: the target hardware is MacBook internal SSDs and
   cloud storage, for interactive use and agent/CI workloads.
 
+### Loop Update: 2026-08-12
+
+The original research above scoped out implementation; the performance loop has since
+tested its highest-ranked ideas through exp-023. The durable changes are:
+
+- warm reconciliation and snapshot constants improved through borrowed path components,
+  direct child expectations, extension interning, and single-pass checksum/parse;
+- breadth-first traversal was reworked into a region scheduler and remeasured against
+  depth-first, removing the original parallel queue’s wall and RSS concern;
+- service-time calibration now retains six workers on fast small trees and activates up
+  to sixteen only after the first 16k entries demonstrate a slow filesystem path; and
+- the macOS cold walker now batches enumeration and complete stat-tier metadata through
+  `getattrlistbulk`, falling back for a complete directory on any malformed response,
+  unsupported filesystem, mount point, or firmlink.
+
+The current stack versus the pre-work binary is 53.49% faster for cold indexed scans,
+58.20% faster for producer-only scans, 51.32% faster through snapshot save, 20.60%
+faster for full warm revalidation, and 36.08% faster for snapshot load on the current
+60,067-entry APFS subject (exp-023). The platform accelerator itself improves the
+720,805-entry cold-index job 30.13% and producer wall 41.60% over the adaptive portable
+control (exp-022). These are warm-steady operating-system-cache results, not
+controlled-cold claims.
+H26 is implemented only for cold scans; using the same reader for full or
+FSEvents-scoped reconciliation remains open.
+
 ## Findings
 
 ### A First-Principles Cost Model
@@ -1105,17 +1130,14 @@ These are the hills worth being on:
    Sequence: persisted roll-ups → single-pass load → lazy block format (`fdu-xihx`),
    each independently measurable in the loop’s `warm-snapshot-load` and a new
    `warm-query` job.
-3. **Unblock the syscall rung deliberately — it gates half the backlog.** The loop’s two
-   largest measured cold costs (`open` 28%, `fstatat` 19% of self-time after exp-001)
-   are both behind its blocked H2/H3, which is a dependency-policy decision, not an
-   experiment. Recommendation: evaluate `rustix` under the supply-chain process rather
-   than raw `libc` calls — it is the std-ecosystem’s own low-level binding (no libc
-   linkage on Linux, unsafe wrapped internally and audited once,
-   `openat`/`statx`/getdents provided, macOS syscalls available) and it keeps
-   `unsafe_code = "deny"` intact in fdu itself.
-   Until this lands, the syscall hypotheses below (H24–H30) are untestable; after it
-   lands, the single biggest step is macOS `getattrlistbulk` (its H3), which the
-   platform evidence predicts at 2–6× on the producer.
+3. **Continue through the now-unblocked syscall rung.** exp-022 completed the dependency
+   review and put direct `libc` plus the sole unsafe call behind a macOS-only module.
+   `getattrlistbulk` removed per-entry `fstatat` from the cold profile and improved 720k
+   producer wall 41.60%; directory `open` is now the largest residue at 33.86% of cold
+   samples. Test H24 next inside the same audited boundary, then carry the bulk reader
+   into reconciliation.
+   Linux `statx`/`getdents64` still needs its own binding and host evidence rather than
+   inheriting the macOS verdict.
 4. **Parallelize index construction by subtree merge, not a faster funnel.** exp-001/002
    establish the single consumer as both paths’ ceiling (cold component 197 ms vs
    producer 192 ms). Cheaper apply (H6/H7, backlog below) raises the ceiling; the
@@ -1125,10 +1147,11 @@ These are the hills worth being on:
    streaming consumer at all and cold-scan-index converges on producer time.
    This is what `fdu-gdrv`/`fdu-aky1` are really for; packing (H19–H22) is what makes
    the splice cheap.
-5. **Move the loop beyond one warm 60k APFS tree before trusting global verdicts.**
-   Everything measured so far is one tree, one host, warm-steady cache, zero churn.
-   The 500k+ knee, cold caches, churned warm runs, network storage, and Linux are
-   invisible, and exp-002 is predicted to flip in several of those states.
+5. **Keep moving the loop beyond one warm 60k APFS tree before trusting global
+   verdicts.** The adaptive-depth and bulk-metadata work now includes 120k boundary and
+   720k cache-pressure subjects, but controlled-cold caches, churned warm runs, network
+   storage, and Linux are still invisible.
+   exp-002 is predicted to flip in several of those states.
    The extensions are cheap because the generated-corpus harness already exists (recipes
    for 100k–1M, churn transitions, `--purge`); they are backlog items H36–H39, and they
    should interleave with code experiments rather than wait.
@@ -1165,13 +1188,13 @@ the loop extensions in H36–H39 to be trusted globally.
 | H22 | `EntryId` with a niche (`u32::MAX` sentinel) and `u32` revisions shrinks parent links from 24 B to 8 B and halves ABA overhead | `peak_rss` down ~24–32 B/entry | — |
 | H23 | Carrying the parent `EntryId` in the op (walker and loader both know it) makes `ensure_dir_chain` O(1) instead of a root descent per entry | `cold-scan-index` `user_cpu_ns` down | — |
 
-**Syscall and in-flight rung (H24–H30 blocked on the binding decision — leverage 3):**
+**Syscall and in-flight rung (macOS binding established by exp-022 — leverage 3):**
 
 | # | Hypothesis | Predicted signal | Prereq |
 | --- | --- | --- | --- |
-| H24 | `openat` relative to the parent dirfd removes per-component path re-resolution (`open` = 28% of cold self-time) | `system_cpu_ns` down, most on deep trees | rustix |
+| H24 | `openat` relative to a retained dirfd removes repeated path-prefix resolution (`open` = 33.86% of post-H26 cold self-time) | `system_cpu_ns` down, most on deep trees | **Ready on macOS**; exp-022 boundary |
 | H25 | Linux `statx` with `STATX_BASIC_STATS` only, `AT_STATX_DONT_SYNC` on network mounts | `system_cpu_ns` down modestly; NFS dramatically | rustix |
-| H26 | macOS `getattrlistbulk` (≥64 KB buffers, drain-then-descend) replaces one `fstatat` per entry with one syscall per ~hundreds of entries | `cold-scan-producer` and `warm-revalidate` `system_cpu_ns` −40–70% on APFS | rustix |
+| H26 | macOS `getattrlistbulk` (64 KiB buffers, drain-then-descend) replaces one `fstatat` per entry with one syscall per many entries | **Confirmed for cold scans (exp-022):** 720k producer wall −41.60%, system CPU −61.40%; 60k producer wall −9.25%. Reconciliation integration remains open. | landed cold backend |
 | H27 | Raw `getdents64` with a 256 KB–1 MB per-thread buffer beats libc’s 32 KB `readdir` batching on wide directories | `system_cpu_ns` down on Linux; neutral macOS | rustix |
 | H28 | Statting in `d_ino` order on ext4 turns random inode-table reads ~N/16 sequential | drop_caches-cold wall 2–6× down on ext4; neutral warm; neutral XFS | rustix; Linux host |
 | H29 | An LRU of ancestor dirfds sized from `RLIMIT_NOFILE` keeps H24 effective at depth | `system_cpu_ns` flat vs depth | H24 |
@@ -1266,10 +1289,12 @@ in the original research), and micro-tuning `readdir` batch sizes on the portabl
    inherits a loader worth having; exp-005 was the first step of this ladder.
    Persisted roll-ups also unlock the index-free warm CLI query (H16), the strongest
    product-latency result available on any platform.
-5. **Put the `rustix`-vs-`libc` decision through the supply-chain process now.** It is
-   the gate on H24–H31 — including the single largest predicted win on the primary
-   interactive platform (H26, getattrlistbulk) — and it is a maintainer policy decision
-   the experiment loop cannot make for itself.
+5. **Reuse the established platform boundary deliberately.** exp-022 chose an exact,
+   macOS-only `libc` dependency already present in the lockfile, passed the supply-chain
+   review, and confines unsafe code to one bounds-audited module.
+   H24 and the reconciliation half of H26 should extend that boundary rather than adding
+   a second binding abstraction without measured need.
+   Linux remains a separate review.
 6. **Extend the loop’s states and scales (H36–H39) in parallel with code experiments:**
    generated-corpus scale points, `--purge` runs, a churn job, a `warm-query` job, and
    one Linux host — so rejections and acceptances generalize beyond one warm 60k APFS
@@ -1325,7 +1350,8 @@ in the original research), and micro-tuning `readdir` batch sizes on the portabl
   registry so ledger verdicts accumulate against one numbering.
   Suggested first round: H14, H12, H18, H13 (warm architecture and apply cost), with H36
   run alongside to establish the scale states.
-- Put the `rustix` evaluation through the supply-chain review to unblock H24–H30.
+- Test H24 inside exp-022’s macOS boundary, then reuse the bulk reader for full and
+  journal-scoped reconciliation; evaluate Linux bindings separately for H25/H27–H29.
 - Extend the loop with the H36–H39 states/scales and a `warm-query` job.
 - Correct the applies-to-which-path wording in the reconciliation fast-path research
   note.

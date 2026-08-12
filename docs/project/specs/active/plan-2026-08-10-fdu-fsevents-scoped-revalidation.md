@@ -82,7 +82,8 @@ fails closed on every row, and why the full sweep remains the backstop on every 
 
 ## Background
 
-Measured on a 59,654-entry real checkout (Apple M1 Pro, APFS, warm page cache):
+The plan’s original baseline was measured on a 59,654-entry real checkout (Apple M1 Pro,
+APFS, warm page cache):
 
 | path | wall | of which |
 | --- | ---: | --- |
@@ -101,6 +102,14 @@ monotonic counter, replayable from a stored ID via `FSEventStreamCreate(sinceWhe
 with flags for *several* of the ways history can be insufficient
 (`kFSEventStreamEventFlagMustScanSubDirs`, `UserDropped`, `KernelDropped`,
 `EventIdsWrapped`, `HistoryDone`, `RootChanged`, `Mount`, `Unmount`).
+
+The iterative loop has since improved those constants without changing that shape.
+On the current 60,067-entry subject, exp-023 measures about 296 ms for cold index, 201
+ms for snapshot load, and 632 ms for load plus full revalidation.
+More importantly, exp-022 proves that `getattrlistbulk` can remove the per-entry
+metadata syscall on the cold producer: 9.25% wall improvement at 60k and 41.60% at 720k,
+with substantially lower system CPU. That backend is not yet wired into reconciliation,
+so these are cold-scan results, not an unmeasured warm-path claim.
 
 **Not for every way, and that gap is the single most important spike finding.** An
 earlier draft of this section claimed the flags covered every case.
@@ -122,12 +131,14 @@ Against today’s serial sweep the journal looks overwhelming: ~690 ms → tens 
 milliseconds on a quiet 60k tree.
 That comparison flatters it, and the
 [frontier research’s calibration](../../research/research-2026-08-10-performance-frontier.md)
-is the honest one. Rung 1 of the warm ladder — producer-side no-op elision (the
-registry’s H12), the parallel sweep, and eventually bulk stat (H26) — is expected to
-bring a warm-cache revalidation down toward parallel-producer time on its own: ~190 ms
-at 60k today, and ~0.2–0.4 s per million entries on a warm cache.
-Measured against *that* baseline, the journal at 60k-warm is an incremental win, not a
-transformative one.
+is the honest one.
+One part of rung 1 has now been measured: H26’s bulk reader brings the
+60k producer component to about 170 ms, but only the cold walker uses it today.
+Producer-side no-op elision (H12), a parallel sweep where misses justify it, and reuse
+of the bulk reader in reconciliation are still expected to bring a warm-cache
+revalidation down toward producer time.
+The current full warm path remains about 632 ms at 60k. Measured against *that*
+baseline, the journal at 60k-warm is an incremental win, not a transformative one.
 
 Where it is transformative is everywhere the sweep cannot be fast: cold metadata caches
 (cloud hosts whose RAM cannot hold the inodes — the snapshot is the only warm state
@@ -144,11 +155,12 @@ exist, because no sweep reaches O(changes).
 The loop’s accept rule will judge Phase 2 against the rung-1 baseline current at
 measurement time, not against today’s serial sweep.
 
-Scoped revalidation also composes with the platform work rather than competing with it:
-once bulk stat lands (H26), re-verifying a named changed directory is one
-`getattrlistbulk` call — the research’s whole-drive composition is journal resume (H43)
-naming the directories, bulk re-scan (H26) verifying them, and persisted roll-ups
-(H33/H16) rendering the rest untouched.
+Scoped revalidation also composes with the platform work rather than competing with it.
+The cold-scan half of H26 has landed; the remaining integration is to reuse that reader
+so a named changed directory is verified with `getattrlistbulk` rather than one stat per
+entry. The research’s whole-drive composition remains journal resume (H43) naming the
+directories, bulk re-scan (H26) verifying them, and persisted roll-ups (H33/H16)
+rendering the rest untouched.
 
 ### How modern Rust talks to FSEvents (researched 2026-08-10)
 
@@ -683,7 +695,8 @@ Phase 2’s acceptance should be measured at 500k+ or on a cold cache.
 
 - [ ] `journal/fsevents.rs`: FFI declarations, current-event-id, volume UUID, historical
   replay with deadline; scoped `#[allow(unsafe_code)]` with per-call safety comments
-- [ ] `revalidate_dirs` in scan.rs, plus `InvalidateSubtree` resolution for G8
+- [ ] `revalidate_dirs` in scan.rs, reusing the exp-022 bulk reader on macOS, plus
+  `InvalidateSubtree` resolution for G8
 - [ ] CLI: gate wiring, `--revalidate` flag, save-side cursor capture on macOS
 - [ ] Integration tests (macOS CI leg): mutate-then-journal-revalidate equals fresh scan
   by engine digest; UUID mismatch, event-ID regression, and forced `MustScanSubDirs`

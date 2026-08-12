@@ -7,12 +7,12 @@
 //!
 //! # Status
 //!
-//! This is the portable `read_dir` + `symlink_metadata` implementation. It is correct
-//! and it is the reference the fast path must match, but it is **not** the walker the
-//! performance goal calls for: raw `getdents64` into a large reused per-thread buffer,
-//! dirfd-relative `statx` with a narrow field mask, `d_type` stat-avoidance, and a
-//! work-stealing pool. Until that layer lands and the benchmark gate passes, no
-//! performance claim should be made for this crate.
+//! The serial walk is the portable `read_dir` plus non-following metadata reference.
+//! Parallel scans use the same path on most platforms; on macOS they first try a
+//! measured `getattrlistbulk` backend that returns directory entries and stat-tier
+//! metadata together. Unsupported filesystems, malformed results, mount points, and
+//! firmlinks fail closed to the portable path for the complete containing directory.
+//! Every backend produces the same [`Observation`] contract.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::ffi::OsString;
@@ -25,6 +25,13 @@ use crate::types::{
     AppliedDelta, Attrs, EntryKind, Error, Observation, ObservationOp, Op, PathExpectation,
     PathState, Result, ScanScope,
 };
+
+// Keep the FFI exception at the platform boundary. The rest of the engine, including
+// every consumer of these observations, remains under the workspace's unsafe-code
+// denial.
+#[cfg(target_os = "macos")]
+#[allow(unsafe_code)]
+mod macos_bulk;
 
 /// How many ops accumulate before an observation is handed to the sink.
 ///
@@ -733,6 +740,8 @@ fn walk_worker(
     let mut claimed: Vec<(PathBuf, usize, RegionId)> = Vec::with_capacity(DIR_CLAIM);
     let mut discovered: Vec<(PathBuf, usize, RegionId)> = Vec::new();
     let mut consumer_gone = false;
+    #[cfg(target_os = "macos")]
+    let mut bulk_reader = macos_bulk::Reader::new();
 
     'walk: while queue.claim(&mut claimed, &mut report.attribution) {
         // One timing pair per claimed chunk, never per entry: the chunk is the unit
@@ -743,6 +752,32 @@ fn walk_worker(
         let entries_before = report.entries;
         for (rel_dir, depth, region) in claimed.drain(..) {
             let abs_dir = root.join(&rel_dir);
+            #[cfg(target_os = "macos")]
+            if let Some(entries) = bulk_reader.read(&abs_dir) {
+                report.dirs_read += 1;
+                for entry in entries {
+                    if !record_walk_entry(
+                        &rel_dir,
+                        depth,
+                        region,
+                        entry.name,
+                        entry.kind,
+                        entry.attrs,
+                        root_dev,
+                        config,
+                        &mut batch,
+                        &mut discovered,
+                        &mut report,
+                        sender,
+                        &mut chunk_send_ns,
+                    ) {
+                        consumer_gone = true;
+                        break 'walk;
+                    }
+                }
+                continue;
+            }
+
             let listing = match fs::read_dir(&abs_dir) {
                 Ok(listing) => listing,
                 Err(e) => {
@@ -761,7 +796,6 @@ fn walk_worker(
                     }
                 };
                 let name = item.file_name();
-                let rel_path = rel_dir.join(&name);
                 let meta = match metadata_for_fingerprint(&item) {
                     Ok(meta) => meta,
                     Err(e) => {
@@ -772,29 +806,24 @@ fn walk_worker(
 
                 let attrs = attrs_from(&meta);
                 let kind = kind_from(&meta);
-                report.entries += 1;
-                let descend = should_descend(kind, attrs, depth, root_dev, config);
-                batch.push(Op::Upsert { path: rel_path.clone(), kind, attrs });
-                if batch.len() >= config.batch_size {
-                    let send_started = std::time::Instant::now();
-                    let sent = sender
-                        .send(WalkMessage::Observation(Observation::new(std::mem::take(
-                            &mut batch,
-                        ))))
-                        .is_ok();
-                    chunk_send_ns += elapsed_ns(send_started);
-                    if !sent {
-                        // The consumer is gone; nothing further will be read.
-                        consumer_gone = true;
-                        break 'walk;
-                    }
-                }
-                if descend {
-                    // A child of the root seeds a new region; everything deeper
-                    // inherits its parent's. Region membership therefore costs one
-                    // integer copy and never inspects a path.
-                    let child_region = if depth == 0 { RegionId::UNASSIGNED } else { region };
-                    discovered.push((rel_path, depth + 1, child_region));
+                if !record_walk_entry(
+                    &rel_dir,
+                    depth,
+                    region,
+                    name,
+                    kind,
+                    attrs,
+                    root_dev,
+                    config,
+                    &mut batch,
+                    &mut discovered,
+                    &mut report,
+                    sender,
+                    &mut chunk_send_ns,
+                ) {
+                    // The consumer is gone; nothing further will be read.
+                    consumer_gone = true;
+                    break 'walk;
                 }
             }
         }
@@ -826,6 +855,45 @@ fn walk_worker(
     }
     report.attribution.wall_ns = elapsed_ns(worker_started);
     report
+}
+
+#[allow(clippy::too_many_arguments)]
+fn record_walk_entry(
+    rel_dir: &Path,
+    depth: usize,
+    region: RegionId,
+    name: OsString,
+    kind: EntryKind,
+    attrs: Attrs,
+    root_dev: u64,
+    config: &ScanConfig,
+    batch: &mut Vec<Op>,
+    discovered: &mut Vec<(PathBuf, usize, RegionId)>,
+    report: &mut ScanReport,
+    sender: &std::sync::mpsc::Sender<WalkMessage>,
+    chunk_send_ns: &mut u64,
+) -> bool {
+    let rel_path = rel_dir.join(name);
+    let descend = should_descend(kind, attrs, depth, root_dev, config);
+    report.entries += 1;
+    batch.push(Op::Upsert { path: rel_path.clone(), kind, attrs });
+    if batch.len() >= config.batch_size {
+        let send_started = std::time::Instant::now();
+        let sent =
+            sender.send(WalkMessage::Observation(Observation::new(std::mem::take(batch)))).is_ok();
+        *chunk_send_ns += elapsed_ns(send_started);
+        if !sent {
+            return false;
+        }
+    }
+    if descend {
+        // A child of the root seeds a new region; everything deeper inherits its
+        // parent's. Region membership therefore costs one integer copy and never
+        // inspects a path.
+        let child_region = if depth == 0 { RegionId::UNASSIGNED } else { region };
+        discovered.push((rel_path, depth + 1, child_region));
+    }
+    true
 }
 
 /// Nanoseconds since `started`, saturating rather than panicking on the absurd.
