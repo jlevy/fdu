@@ -3,14 +3,16 @@ type: is
 id: is-01kzsa17y59ny39nyjrz9wk8kc
 title: "PR #6 provenance: three unaddressed defects found via the merge into PR #5"
 kind: task
-status: open
+status: closed
 priority: 1
-version: 2
+version: 3
 spec_path: docs/project/specs/active/plan-2026-08-11-fdu-progressive-results.md
 labels: []
 dependencies: []
 created_at: 2026-08-11T21:00:40.772Z
-updated_at: 2026-08-11T21:07:13.933Z
+updated_at: 2026-08-12T16:51:54.240Z
+closed_at: 2026-08-12T16:51:54.239Z
+close_reason: "Reconciled after PR #6 merged. R9 now uses the completed verification interval for every revalidated entry, and R10 stamps the root source on both unchanged and changed upserts. R8 was resolved for the shipped surface by narrowing Index::provenance's documented contract: it is per-entry, not an O(subtree) promise; efficient subtree composition remains explicitly tracked by fdu-fka6/fdu-b1ts in the progressive-results plan. The obsolete PR #6 merge blocker no longer applies."
 ---
 Cursor Bugbot reviewed PR #5 after PR #6 was merged into it and found three defects in the incoming provenance work. All three verified by reading the merged code; none are addressed on origin/fsevents-scoped-revalidation as of this writing. Filed rather than fixed in PR #5, because editing that branch's code from another branch would conflict with its author's in-flight work - these should land in PR #6.
 
