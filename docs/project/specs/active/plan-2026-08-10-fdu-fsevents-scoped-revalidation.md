@@ -104,12 +104,12 @@ with flags for *several* of the ways history can be insufficient
 `EventIdsWrapped`, `HistoryDone`, `RootChanged`, `Mount`, `Unmount`).
 
 The iterative loop has since improved those constants without changing that shape.
-On the current 60,067-entry subject, exp-023 measures about 296 ms for cold index and
-201 ms for snapshot load.
-exp-026 then wires the exp-022 `getattrlistbulk` reader into full reconciliation:
-warm-open wall falls from about 616 ms to 500 ms at 60k and from 21.16 seconds to 14.01
-seconds at 720k. The large-tree run cuts system CPU 53.97% with neutral RSS. This
-improves the full-sweep fallback without changing its O(tree) shape.
+On the current 60,067-entry subject, exp-027 measures about 275 ms for cold index and
+261 ms for snapshot load.
+exp-026 wires the exp-022 `getattrlistbulk` reader into full reconciliation: warm-open
+wall falls from about 616 ms to 500 ms at 60k and from 21.16 seconds to 14.01 seconds at
+720k. The large-tree run cuts system CPU 53.97% with neutral RSS. This improves the
+full-sweep fallback without changing its O(tree) shape.
 
 **Not for every way, and that gap is the single most important spike finding.** An
 earlier draft of this section claimed the flags covered every case.

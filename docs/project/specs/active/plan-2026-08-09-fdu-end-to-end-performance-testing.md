@@ -88,10 +88,10 @@ What it found, first against a roughly 60k-entry checkout and then against a
   A bounded parallel producer feeding the single index consumer halved cold-scan wall
   time, and the shipped CLI is now level with `dust` on the same tree and 1.6× faster
   than `du`.
-- **The accepted cold stack is 53.49% faster end to end.** Region-scheduled
+- **The accepted cold stack is 52.84% faster end to end.** Region-scheduled
   breadth-first traversal, cheaper index work, service-time-adaptive workers, and the
-  macOS `getattrlistbulk` backend compose to improve producer wall 58.20% against the
-  original build (exp-023). The platform backend alone improves 720k cold-index wall
+  macOS `getattrlistbulk` backend compose to improve producer wall 58.29% against the
+  original build (exp-027). The platform backend alone improves 720k cold-index wall
   30.13% and producer wall 41.60% (exp-022).
 - **The warm path is still the outstanding structural defect, but its full sweep is
   materially cheaper.** Reusing the audited bulk reader during reconciliation improves

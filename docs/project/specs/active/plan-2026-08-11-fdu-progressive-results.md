@@ -153,12 +153,13 @@ The adaptive worker pool (`fdu-tt2j`) improves a reproducible 720k cold-index ru
 The macOS bulk-metadata backend then composes with that pool: exp-022 improves the same
 720k cold-index job another 30.13% [−32.19%, −25.11%] and producer wall 41.60%, while
 the 60k jobs improve 5.22% and 9.25%. Against the original pre-optimization build, the
-complete accepted stack is 53.49% faster for cold index and 58.20% faster for
-producer-only scans (exp-023). The earlier roughly-2× cold private-tree observation
-remains context; exp-023 is now the claim-grade reproduction.
+complete accepted stack is 52.84% faster for cold index and 58.29% faster for
+producer-only scans (exp-027). The earlier roughly-2× cold private-tree observation
+remains context; exp-027 is now the claim-grade reproduction.
 The same audited bulk reader now serves full macOS reconciliation as well.
 exp-026 improves warm-open wall 18.97% on the 60k subject and 34.39% on the 720k
 subject, with large-tree system CPU down 53.97% and RSS neutral.
+Cumulatively, warm-open wall is now 34.78% below the original build (exp-027).
 Reconciliation stays serial, so this does not change the breadth-first partial-result
 contract; it removes filesystem work from the sound cache fallback and composes with
 future FSEvents scoping.

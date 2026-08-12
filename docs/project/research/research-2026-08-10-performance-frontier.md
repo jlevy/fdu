@@ -104,10 +104,10 @@ tested its highest-ranked ideas through exp-026. The durable changes are:
   `getattrlistbulk`, falling back for a complete directory on any malformed response,
   unsupported filesystem, mount point, or firmlink.
 
-The current stack versus the pre-work binary is 53.49% faster for cold indexed scans,
-58.20% faster for producer-only scans, 51.32% faster through snapshot save, 20.60%
-faster for full warm revalidation, and 36.08% faster for snapshot load on the current
-60,067-entry APFS subject (exp-023). The platform accelerator itself improves the
+The current stack versus the pre-work binary is 52.84% faster for cold indexed scans,
+58.29% faster for producer-only scans, 51.13% faster through snapshot save, 34.78%
+faster for full warm revalidation, and 32.69% faster for snapshot load on the current
+60,067-entry APFS subject (exp-027). The platform accelerator itself improves the
 720,805-entry cold-index job 30.13% and producer wall 41.60% over the adaptive portable
 control (exp-022). These are warm-steady operating-system-cache results, not
 controlled-cold claims.

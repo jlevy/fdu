@@ -8,21 +8,21 @@ How the numbers were produced, what each metric means, and the rule that decides
 
 ## Where it stands
 
-Every accepted change together, measured against the pre-work baseline in one interleaved run of 12 paired trials (exp-023).
+Every accepted change together, measured against the pre-work baseline in one interleaved run of 12 paired trials (exp-027).
 
 | job | before | after | change | 95% interval |
 | --- | ---: | ---: | ---: | --- |
-| `cold-scan-index` | 625 ms | 296 ms | **-53.5%** | [-55.2%, -52.2%] |
-| `cold-scan-producer` | 991 ms | 413 ms | **-58.2%** | [-59.1%, -56.5%] |
-| `cold-snapshot-save` | 645 ms | 315 ms | **-51.3%** | [-52.3%, -50.2%] |
-| `warm-revalidate` | 797 ms | 632 ms | **-20.6%** | [-21.1%, -20.2%] |
-| `warm-snapshot-load` | 315 ms | 201 ms | **-36.1%** | [-36.4%, -35.8%] |
+| `cold-scan-index` | 587 ms | 275 ms | **-52.8%** | [-53.4%, -52.6%] |
+| `cold-scan-producer` | 903 ms | 376 ms | **-58.3%** | [-58.5%, -58.1%] |
+| `cold-snapshot-save` | 610 ms | 296 ms | **-51.1%** | [-51.8%, -50.7%] |
+| `warm-revalidate` | 826 ms | 537 ms | **-34.8%** | [-37.2%, -31.0%] |
+| `warm-snapshot-load` | 384 ms | 261 ms | **-32.7%** | [-38.8%, -30.8%] |
 
 ## Reproducing the cumulative comparison
 
 **The tree.** Pinned by content, not by name.
 
-- Label `metabrowser`, 60,067 entries (7,350 directories, 52,695 files, 22 symlinks), max depth 19.
+- Label `metabrowser-20260812`, 60,067 entries (7,350 directories, 52,695 files, 22 symlinks), max depth 19.
 - 1.01 GiB apparent, 1.15 GiB allocated.
 - Content digest `ce5a7430e152412a519ee9f9776c2fec73e59c58fa553aa3e9c2f8c085d26619` (`fdu-index-record-v1`). Two trees with this digest are the same tree in the same state.
 - Identified as `dbd79ed9c898f7a2…`, the SHA-256 of its path. The path itself is deliberately not recorded.
@@ -69,6 +69,7 @@ The rejected ones are the reusable part: they stop the next person spending a da
 | 024 | [Open macOS directories relative to one retained root fd](#exp024--open-macos-directories-relative-to-one-retained-root-fd) | H2, H24 | `cold-scan-index` | -0.1% | ❌ rejected |
 | 025 | [Revisit worker depth after macOS bulk metadata](#exp025--revisit-worker-depth-after-macos-bulk-metadata) | H52 | `cold-scan-index` | +19.2% | ❌ rejected |
 | 026 | [Reuse macOS bulk metadata during full reconciliation](#exp026--reuse-macos-bulk-metadata-during-full-reconciliation) | H53, H26 | `warm-revalidate` | -34.4% | ✅ accepted |
+| 027 | [Cumulative effect through bulk reconciliation](#exp027--cumulative-effect-through-bulk-reconciliation) | H1, H5, H10, H14, H18, H32, H48, H49, H31, H3, H26, H53 | `cold-scan-index` | -52.8% | ✅ accepted |
 
 ## The experiments
 
@@ -863,6 +864,36 @@ macOS-only reuse of the existing 64 KiB reader and audited FFI boundary; reconci
 **Accepted:** Warm-open wall improved 34.39% at 720k and 18.97% at 60k; large-tree total CPU fell 44.06% and system CPU 53.97%, RSS was neutral, and all oracle checks passed.
 
 Full record: [`exp-026-reuse-macos-bulk-metadata-during-full-reconciliation.md`](../experiments/exp-026-reuse-macos-bulk-metadata-during-full-reconciliation.md)
+
+### exp-027 — Cumulative effect through bulk reconciliation
+
+✅ accepted · 2026-08-12 · H1, H5, H10, H14, H18, H32, H48, H49, H31, H3, H26, H53
+
+Control: b565882 before the iterative performance work
+
+Candidate: current code through exp-026, including accepted traversal, index, snapshot, BFS scheduling, adaptive-depth, and macOS bulk cold/warm changes
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 586.9 | 275.4 | -52.84% | [-53.43%, -52.60%] |
+| component (ms) | 475.8 | 165.4 | -65.42% | [-66.22%, -64.61%] |
+| cpu (ms) | 582.7 | 1113.6 | +91.36% (regression) | [+89.21%, +92.77%] |
+| user (ms) | 228.9 | 195.3 | -14.53% | [-15.90%, -6.57%] |
+| system (ms) | 352.7 | 917.0 | +160.21% (regression) | [+154.24%, +163.66%] |
+| blocked (ms) | 4.3 | 0.0 | -100.00% | [-100.00%, -100.00%] |
+| peak rss (MiB) | 32.0 | 32.9 | +2.62% (regression) | [+2.03%, +3.42%] |
+
+Other jobs, wall time: `cold-scan-producer` -58.3%, `cold-snapshot-save` -51.1%, `warm-revalidate` -34.8%, `warm-snapshot-load` -32.7%.
+
+Cost to carry: 0 lines; no new dependencies.
+
+measurement-only cumulative anchor; complexity belongs to the individual accepted experiments
+
+**Accepted:** Against the original baseline, current code improved cold index 52.84%, producer 58.29%, snapshot save 51.13%, warm revalidation 34.78%, and snapshot load 32.69%; all oracle checks passed.
+
+Full record: [`exp-027-cumulative-effect-through-bulk-reconciliation.md`](../experiments/exp-027-cumulative-effect-through-bulk-reconciliation.md)
 
 
 <!-- This document follows common-doc-guidelines.md.
