@@ -73,6 +73,7 @@ The rejected ones are the reusable part: they stop the next person spending a da
 | 028 | [Reuse macOS bulk directory staging allocations](#exp028--reuse-macos-bulk-directory-staging-allocations) | H54 | `cold-scan-index` | +0.2% | ❌ rejected |
 | 029 | [Increase macOS bulk metadata buffer to 256 KiB](#exp029--increase-macos-bulk-metadata-buffer-to-256-kib) | H55 | `cold-scan-index` | -1.8% | ❌ rejected |
 | 030 | [Elide unchanged entries in bounded parallel reconciliation waves](#exp030--elide-unchanged-entries-in-bounded-parallel-reconciliation-waves) | H12, H9 | `warm-revalidate` | -59.5% | ✅ accepted |
+| 031 | [Increase immutable-baseline reconciliation waves to 4096 directories](#exp031--increase-immutablebaseline-reconciliation-waves-to-4096-directories) | H56 | `warm-revalidate` | +1.6% | ❌ rejected |
 
 ## The experiments
 
@@ -985,6 +986,34 @@ Cost to carry: 419 lines; no new dependencies; new failure mode: a panicking rec
 **Accepted:** Warm-open wall improved 30.25% at 60k and 59.53% at 720k; reconciliation component improved 50.31% and 72.55%, exact oracles passed, and RSS stayed within the preregistered bound.
 
 Full record: [`exp-030-elide-unchanged-entries-in-bounded-parallel-reconciliation-w.md`](../experiments/exp-030-elide-unchanged-entries-in-bounded-parallel-reconciliation-w.md)
+
+### exp-031 — Increase immutable-baseline reconciliation waves to 4096 directories
+
+❌ rejected · 2026-08-12 · H56
+
+Control: exp-030 1024-directory immutable-baseline waves
+
+Candidate: 4096-directory immutable-baseline waves
+
+**`warm-revalidate`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 477.6 | 482.5 | +1.64% (n.s.) | [-3.88%, +10.07%] |
+| component (ms) | 194.2 | 220.2 | +13.24% (n.s.) | [-0.47%, +19.56%] |
+| cpu (ms) | 866.9 | 884.9 | +4.87% (n.s.) | [-2.17%, +10.10%] |
+| user (ms) | 277.5 | 275.5 | +1.33% (n.s.) | [-3.38%, +5.17%] |
+| system (ms) | 585.5 | 613.6 | +5.34% (n.s.) | [-1.08%, +13.88%] |
+| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
+| peak rss (MiB) | 32.4 | 32.2 | -0.46% (n.s.) | [-2.06%, +1.40%] |
+
+Cost to carry: 1 lines; no new dependencies; new failure mode: effective changed-tree deltas may wait behind four times as many directory reads.
+
+one constant change; no dependency or unsafe change; the preregistered 720k gate was not triggered
+
+**Rejected:** Warm wall was +1.64% with an interval spanning -3.88% to +10.07%, component was +13.24%, and CPU plus context-switch signals did not show the predicted startup amortization.
+
+Full record: [`exp-031-increase-immutable-baseline-reconciliation-waves-to-4096-dir.md`](../experiments/exp-031-increase-immutable-baseline-reconciliation-waves-to-4096-dir.md)
 
 
 <!-- This document follows common-doc-guidelines.md.
