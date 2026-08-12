@@ -163,8 +163,9 @@ Wall time, breadth-first versus depth-first:
 | `warm-revalidate` | +0.03% | [−3.83%, +2.87%] | unclear |
 
 **Breadth-first cost no measurable wall time, and — as first built — a little memory.**
-Every wall-time interval straddles zero, so the honest statement is "not measurably
-different", not "free". The resources did move, with intervals clear of zero:
+Every wall-time interval straddles zero, so the honest statement is “not measurably
+different”, not “free”.
+The resources did move, with intervals clear of zero:
 
 | job | peak RSS | 95% interval |
 | --- | ---: | --- |
@@ -192,48 +193,48 @@ throughput, having cost memory in exp-012.
 **Where it does not reach, it still costs.** `reconcile` walks with the serial
 `take_next` rather than the shared queue, so the warm sweep runs the same front-popping
 FIFO exp-013 replaced elsewhere and pays +2.70% for it — while a one-shot CLI reads none
-of the orientation benefit, because it prints only after reconciliation completes. That
-asymmetry is tracked (`fdu-v71x`); the choice is between extending region scheduling to
-the sweep and letting the sweep default to depth-first, which is closer to this
-document's own position that traversal order is a consumer contract.
+of the orientation benefit, because it prints only after reconciliation completes.
+That asymmetry is tracked (`fdu-v71x`); the choice is between extending region
+scheduling to the sweep and letting the sweep default to depth-first, which is closer to
+this document’s own position that traversal order is a consumer contract.
 
 This corrects two earlier readings of the same change, in opposite directions.
 A six-sample median comparison suggested breadth-first cost about 8% of wall time, and
 that figure was written into the plan before it went through the accept rule; sixteen
 paired trials say the wall-time difference is not measurable.
-Then the corrected write-up overshot, calling the change "free" and "unchanged in
-memory" — because the harness rendered every metric that failed the one-sided accept
-rule as "n.s.", which made these RSS regressions read as statistical silence.
+Then the corrected write-up overshot, calling the change “free” and “unchanged in
+memory” — because the harness rendered every metric that failed the one-sided accept
+rule as “n.s.”, which made these RSS regressions read as statistical silence.
 Both episodes are the same lesson from different sides: a number without its interval,
 and an interval without its direction, are each how a project talks itself into a claim.
 
 **The ordering benefit initially failed to survive parallelism, and the scheduler was
 rebuilt so that it does.** Measured on the first implementation, breadth-first started 7
-of twelve top-level subtrees by the halfway mark against depth-first's 6 with one
-worker — and under the default worker count both landed at 7–8, the advantage gone. The
-cause was that a global FIFO orders the *queue* while claims stay unordered: several
+of twelve top-level subtrees by the halfway mark against depth-first’s 6 with one worker
+— and under the default worker count both landed at 7–8, the advantage gone.
+The cause was that a global FIFO orders the *queue* while claims stay unordered: several
 workers would grind through the same subtree while others sat untouched.
 
 Breadth-first is now **region-scheduled** (exp-013). Work is bucketed by top-level
 subtree, each free worker is handed a *different* bucket round-robin, and within a
-bucket the order is LIFO so locality and spine-bounded memory come back. No barrier
-exists anywhere: if only one region has work, every worker takes it.
+bucket the order is LIFO so locality and spine-bounded memory come back.
+No barrier exists anywhere: if only one region has work, every worker takes it.
 
 On twelve branching subtrees, the *least advanced* top-level subtree a quarter of the
-way through the walk holds **42 files at one worker** against depth-first's **0**, where
+way through the walk holds **42 files at one worker** against depth-first’s **0**, where
 perfectly even would be ~46. On a six-core machine the parallel margin is comparable
 (33–37 against 6), but that row is host-specific: the metric reads emission order, which
 under several workers reflects which worker finished first as much as which region was
-claimed, and on a CI runner with fewer cores both orders can report zero. Peak RSS fell −3.77%
-[−5.18%, −2.99%] in the process, more than reversing what exp-012 paid, and wall time
-did not move.
+claimed, and on a CI runner with fewer cores both orders can report zero.
+Peak RSS fell −3.77% [−5.18%, −2.99%] in the process, more than reversing what exp-012
+paid, and wall time did not move.
 
-Worker affinity is the part worth remembering. Keeping a worker inside its region for
-locality looks obviously right and is actively harmful: it pins each worker to one
-subtree, so with twelve subtrees and six workers only six ever advanced, and
-depth-first — whose four-directory claims happen to fan across the root's children —
-spread *wider* than breadth-first did. Locality has to come from the size of a claim,
-not from a worker refusing to leave.
+Worker affinity is the part worth remembering.
+Keeping a worker inside its region for locality looks obviously right and is actively
+harmful: it pins each worker to one subtree, so with twelve subtrees and six workers
+only six ever advanced, and depth-first — whose four-directory claims happen to fan
+across the root’s children — spread *wider* than breadth-first did.
+Locality has to come from the size of a claim, not from a worker refusing to leave.
 
 Two further caveats so nobody over-reads even the corrected result.
 This is one warm tree of 60k entries: the frontier width that could make breadth-first
@@ -254,7 +255,7 @@ writing.
 
 Traversal order decides whether partial results are useful or actively misleading:
 
-- **Depth-first** (`pending.pop()` on a LIFO stack, fdu's original and only behaviour
+- **Depth-first** (`pending.pop()` on a LIFO stack, fdu’s original and only behaviour
   before this branch) finishes a few subtrees completely and leaves the rest at zero.
   Mid-scan, `wrk/` reads a complete 77 GiB while `Library/` reads 0 GiB. A user sorting
   by size sees a confident, wrong ranking.
@@ -263,25 +264,26 @@ Traversal order decides whether partial results are useful or actively misleadin
   earlier — which is exactly why metabrowser’s Python walker already queues
   breadth-first to a first render depth.
 
-Note what supplies which property. **Monotonicity comes from the walk being additive,
-not from the order** — a depth-first scan's totals only grow too. What the order changes
-is *which* subtrees get to grow early, and therefore whether a mid-scan ranking compares
-partial values against each other or against zeros. Conflating the two overstates what
-choosing an order buys.
+Note what supplies which property.
+**Monotonicity comes from the walk being additive, not from the order** — a depth-first
+scan’s totals only grow too.
+What the order changes is *which* subtrees get to grow early, and therefore whether a
+mid-scan ranking compares partial values against each other or against zeros.
+Conflating the two overstates what choosing an order buys.
 
 The first change was small: `DirectoryQueue` already existed and was shared, so taking
 from the front rather than the back turned the walk breadth-first.
 What that did **not** buy was any guarantee under the default worker count — the claims
 are unordered even when the queue is not — and it made the pending set hold an entire
 level of the tree.
-Region scheduling (exp-013) fixed both: work is bucketed per top-level subtree and each
-free worker takes a different bucket, so the frontier is bounded by the number of
-regions plus a run of directories rather than by the widest level, and workers are
-spread across subtrees by construction.
+Region scheduling (exp-013) fixed both: work is bucketed per top-level
+subtree and each free worker takes a different bucket, so the frontier is bounded by the
+number of regions plus a run of directories rather than by the widest level, and workers
+are spread across subtrees by construction.
 
-Depth-first stays available: it has better locality and lower memory. It is *not* the
-right default for the one-shot CLI, as an earlier draft argued — that argument rested on
-an 8% wall-time saving that did not survive the accept rule.
+Depth-first stays available: it has better locality and lower memory.
+It is *not* the right default for the one-shot CLI, as an earlier draft argued — that
+argument rested on an 8% wall-time saving that did not survive the accept rule.
 This is a scan *policy*, chosen by the caller’s contract, in the same way the cache
 policy is.
 
