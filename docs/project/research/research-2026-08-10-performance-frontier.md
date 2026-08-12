@@ -1113,7 +1113,7 @@ These are the hills worth being on:
    linkage on Linux, unsafe wrapped internally and audited once,
    `openat`/`statx`/getdents provided, macOS syscalls available) and it keeps
    `unsafe_code = "deny"` intact in fdu itself.
-   Until this lands, every syscall hypothesis below (H24–H31) is untestable; after it
+   Until this lands, the syscall hypotheses below (H24–H30) are untestable; after it
    lands, the single biggest step is macOS `getattrlistbulk` (its H3), which the
    platform evidence predicts at 2–6× on the producer.
 4. **Parallelize index construction by subtree merge, not a faster funnel.** exp-001/002
@@ -1165,7 +1165,7 @@ the loop extensions in H36–H39 to be trusted globally.
 | H22 | `EntryId` with a niche (`u32::MAX` sentinel) and `u32` revisions shrinks parent links from 24 B to 8 B and halves ABA overhead | `peak_rss` down ~24–32 B/entry | — |
 | H23 | Carrying the parent `EntryId` in the op (walker and loader both know it) makes `ensure_dir_chain` O(1) instead of a root descent per entry | `cold-scan-index` `user_cpu_ns` down | — |
 
-**Syscall rung (all blocked on the rustix/libc decision — leverage 3):**
+**Syscall and in-flight rung (H24–H30 blocked on the binding decision — leverage 3):**
 
 | # | Hypothesis | Predicted signal | Prereq |
 | --- | --- | --- | --- |
@@ -1176,7 +1176,7 @@ the loop extensions in H36–H39 to be trusted globally.
 | H28 | Statting in `d_ino` order on ext4 turns random inode-table reads ~N/16 sequential | drop_caches-cold wall 2–6× down on ext4; neutral warm; neutral XFS | rustix; Linux host |
 | H29 | An LRU of ancestor dirfds sized from `RLIMIT_NOFILE` keeps H24 effective at depth | `system_cpu_ns` flat vs depth | H24 |
 | H30 | Worker QoS `USER_INITIATED` on macOS protects throughput under background load | wall variance down under load; neutral idle | — |
-| H31 | In-flight depth from measured first-K operation latency (Little’s law) beats any fixed thread count across storage classes | cold wall down on network storage; neutral local | calibration probe (H42) |
+| H31 | In-flight depth from measured first-K operation latency (Little’s law) beats any fixed thread count across storage classes | **Confirmed by exp-015–021 on portable chunk timing:** 720k cold-index wall −5.31% and producer wall −10.09%; 120k wall and resources neutral | — |
 
 **Snapshot (sequenced; leverage 2):**
 
@@ -1325,7 +1325,7 @@ in the original research), and micro-tuning `readdir` batch sizes on the portabl
   registry so ledger verdicts accumulate against one numbering.
   Suggested first round: H14, H12, H18, H13 (warm architecture and apply cost), with H36
   run alongside to establish the scale states.
-- Put the `rustix` evaluation through the supply-chain review to unblock H24–H31.
+- Put the `rustix` evaluation through the supply-chain review to unblock H24–H30.
 - Extend the loop with the H36–H39 states/scales and a `warm-query` job.
 - Correct the applies-to-which-path wording in the reconciliation fast-path research
   note.

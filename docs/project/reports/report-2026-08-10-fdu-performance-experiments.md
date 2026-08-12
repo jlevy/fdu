@@ -20,20 +20,19 @@ Every accepted change together, measured against the pre-work baseline in one in
 
 Third-party tools on the same tree, for calibration only — they answer a slightly different question with different guarantees, and never enter the accept rule: `du` 350 ms, `dust` 220 ms.
 
-## Reproducing this
+## Reproducing the cumulative comparison
 
 **The tree.** Pinned by content, not by name.
 
-- Label `metabrowser`, 60,067 entries (7,350 directories, 52,695 files, 22 symlinks), max depth 19.
-- 1.01 GiB apparent, 1.15 GiB allocated.
-- Content digest `c631fbf39d7c7adace225d5c9935aaf991176d05da800abd7a69c56ceb0f3b0e` (`fdu-index-record-v1`). Two trees with this digest are the same tree in the same state.
+- Label `metabrowser-clone`, 59,654 entries (7,341 directories, 52,291 files, 22 symlinks), max depth 19.
+- 1.01 GiB apparent, 1.14 GiB allocated.
+- Content digest `bf574331eca680372f7060d4f9ab3b3b175afd265ac27bda6b6dc67ed9c80798` (`fdu-index-record-v1`). Two trees with this digest are the same tree in the same state.
 - Identified as `dbd79ed9c898f7a2…`, the SHA-256 of its path. The path itself is deliberately not recorded.
 
 **The machine.**
 
 - Apple M1 Pro, arm64, 10 logical cores (8 performance, 2 efficiency), 32 GiB RAM.
 - Darwin 25.5.0, apfs filesystem.
-- Built with rustc 1.97.1 (8bab26f4f 2026-07-14), `release` profile.
 - OS page cache: warm-steady. Dropping it needs root, so runs that did not ask for that say so rather than implying a cold disk.
 
 Every run fingerprinted the tree before and after and confirmed it unchanged, and every trial's engine digest was checked against an independent oracle.
@@ -59,6 +58,13 @@ The rejected ones are the reusable part: they stop the next person spending a da
 | 012 | [Breadth-first traversal order](#exp012--breadthfirst-traversal-order) | H48 | `cold-scan-index` | -0.6% | ✅ accepted |
 | 013 | [Region-scheduled breadth-first traversal](#exp013--regionscheduled-breadthfirst-traversal) | H49: exp-012's RSS cost and its missing ordering benefit both came from the global FIFO, not from preferring shallow work; per-region buckets with round-robin hand-off recover memory while making the shallow preference survive parallelism | `cold-scan-index` | -3.8% | ✅ accepted |
 | 014 | [What the breadth-first default costs, on the shipped scheduler](#exp014--what-the-breadthfirst-default-costs-on-the-shipped-scheduler) | H50: exp-012 measured a scheduler that no longer exists and exp-013 compared two breadth-first schedulers, so what the shipped default costs against depth-first is unmeasured | `cold-scan-producer` | -3.0% | 📏 baseline |
+| 015 | [Post-BFS worker depth under metadata-cache pressure](#exp015--postbfs-worker-depth-under-metadatacache-pressure) | H31 | `cold-scan-index` | -11.7% | ✅ accepted |
+| 016 | [Move cold-scan producer paths instead of cloning](#exp016--move-coldscan-producer-paths-instead-of-cloning) | H51 | `cold-scan-index` | -0.4% | ❌ rejected |
+| 017 | [Pre-create dormant workers for adaptive scan depth](#exp017--precreate-dormant-workers-for-adaptive-scan-depth) | H31 | `cold-scan-producer` | +2.0% | ❌ rejected |
+| 018 | [Spawn reserve workers only after observed scan scale](#exp018--spawn-reserve-workers-only-after-observed-scan-scale) | H31 | `cold-scan-index` | -4.0% | ↩︎ superseded |
+| 019 | [Adaptive worker threshold at the first crossing scale](#exp019--adaptive-worker-threshold-at-the-first-crossing-scale) | H31 | `cold-scan-index` | +1.2% | ❌ rejected |
+| 020 | [Delay adaptive workers until metadata-cache capacity](#exp020--delay-adaptive-workers-until-metadatacache-capacity) | H31 | `cold-scan-index` | -1.7% | ❌ rejected |
+| 021 | [Calibrate adaptive workers from initial filesystem service time](#exp021--calibrate-adaptive-workers-from-initial-filesystem-service-time) | H31 | `cold-scan-index` | -5.3% | ✅ accepted |
 
 ## The experiments
 
@@ -495,6 +501,216 @@ Other jobs, wall time: `cold-scan-index` 322 ms, `warm-revalidate` 624 ms.
 **Baseline:** Same binary both arms, 20 interleaved paired trials. Breadth-first is now cheaper where region scheduling reaches: cold-scan-producer wall -3.04% [-5.99%, -0.96%], cold-scan-index peak RSS -1.76% [-2.63%, -0.74%]. warm-revalidate regressed +2.70% [+1.55%, +3.37%] because reconcile walks with the serial take_next and region scheduling never reached it. No code changed; the warm asymmetry is tracked as fdu-v71x.
 
 Full record: [`exp-014-what-the-breadth-first-default-costs-on-the-shipped-schedule.md`](../experiments/exp-014-what-the-breadth-first-default-costs-on-the-shipped-schedule.md)
+
+### exp-015 — Post-BFS worker depth under metadata-cache pressure
+
+✅ accepted · 2026-08-12 · H31
+
+Control: six workers, the current automatic ceiling
+
+Candidate: sixteen workers on a tree larger than the vnode cache
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 7238.6 | 6231.9 | -11.72% | [-16.83%, -2.42%] |
+| component (ms) | 5795.7 | 4846.9 | -16.04% | [-20.28%, -5.38%] |
+| cpu (ms) | 22555.6 | 32602.3 | +42.64% (regression) | [+28.82%, +52.30%] |
+| user (ms) | 3079.2 | 3353.4 | +7.79% (regression) | [+5.97%, +12.62%] |
+| system (ms) | 19523.9 | 29249.9 | +47.67% (regression) | [+31.73%, +59.69%] |
+| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
+| peak rss (MiB) | 310.4 | 315.1 | +1.55% (regression) | [+1.41%, +1.95%] |
+
+Other jobs, wall time: `cold-scan-producer` -9.3%.
+
+Cost to carry: 0 lines; no new dependencies.
+
+Configuration experiment only; establishes the large-tree target and the need for a scale-sensitive trigger.
+
+**Accepted:** Sixteen workers improved large-tree end-to-end wall 11.72% and producer wall 9.27%, while the separate 60k run showed why the default must adapt rather than rise globally.
+
+Full record: [`exp-015-post-bfs-worker-depth-under-metadata-cache-pressure.md`](../experiments/exp-015-post-bfs-worker-depth-under-metadata-cache-pressure.md)
+
+### exp-016 — Move cold-scan producer paths instead of cloning
+
+❌ rejected · 2026-08-12 · H51
+
+Control: current region-scheduled breadth-first producer
+
+Candidate: move non-directory relative paths into observation ops
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 336.0 | 339.9 | -0.44% (n.s.) | [-5.30%, +1.52%] |
+| component (ms) | 217.0 | 221.7 | -0.87% (n.s.) | [-7.76%, +2.30%] |
+| cpu (ms) | 1198.5 | 1217.5 | +0.92% (n.s.) | [-3.81%, +5.84%] |
+| user (ms) | 251.0 | 251.0 | -1.16% (n.s.) | [-2.73%, +2.27%] |
+| system (ms) | 947.3 | 963.9 | +1.18% (n.s.) | [-5.18%, +7.95%] |
+| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
+| peak rss (MiB) | 32.6 | 33.8 | +3.88% (regression) | [+1.50%, +4.78%] |
+
+Other jobs, wall time: `cold-scan-producer` +1.4% (n.s.).
+
+Cost to carry: 5 lines; no new dependencies.
+
+Reverted; transferring ownership changes which allocation remains live in each batch but did not reduce the measured work.
+
+**Rejected:** Wall and CPU were unchanged while peak RSS and minor faults regressed about 4%, so the ownership rewrite is not worth carrying.
+
+Full record: [`exp-016-move-cold-scan-producer-paths-instead-of-cloning.md`](../experiments/exp-016-move-cold-scan-producer-paths-instead-of-cloning.md)
+
+### exp-017 — Pre-create dormant workers for adaptive scan depth
+
+❌ rejected · 2026-08-12 · H31
+
+Control: fixed six-worker automatic pool
+
+Candidate: six active workers plus ten dormant reserve threads
+
+**`cold-scan-producer`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 494.2 | 500.7 | +2.01% (n.s.) | [-1.86%, +5.59%] |
+| component (ms) | 204.6 | 207.7 | +0.88% (n.s.) | [-5.32%, +5.07%] |
+| cpu (ms) | 2041.1 | 2116.9 | +5.67% (regression) | [+1.33%, +8.44%] |
+| user (ms) | 307.9 | 320.3 | +3.33% (regression) | [+2.47%, +5.03%] |
+| system (ms) | 1733.5 | 1791.6 | +5.57% (regression) | [+0.95%, +9.41%] |
+| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
+| peak rss (MiB) | 32.5 | 33.0 | +1.40% (regression) | [+0.53%, +2.77%] |
+
+Other jobs, wall time: `cold-scan-index` -2.2% (n.s.).
+
+Cost to carry: 126 lines; no new dependencies; new failure mode: reserve-thread wakeup must stay synchronized with queue completion.
+
+Superseded in the working tree by threshold-triggered spawning; no dormant reserve is needed.
+
+**Rejected:** Small-tree wall was unclear, but dormant reserves measurably added 5.67% CPU, 2.38% minor faults, and 1.40% peak RSS before ever activating.
+
+Full record: [`exp-017-pre-create-dormant-workers-for-adaptive-scan-depth.md`](../experiments/exp-017-pre-create-dormant-workers-for-adaptive-scan-depth.md)
+
+### exp-018 — Spawn reserve workers only after observed scan scale
+
+↩︎ superseded · 2026-08-12 · H31
+
+Control: fixed six-worker automatic pool
+
+Candidate: start at six and spawn up to sixteen after 100k observed entries
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 6517.9 | 6238.3 | -4.04% | [-5.56%, -1.85%] |
+| component (ms) | 5148.9 | 4854.2 | -5.42% | [-7.17%, -2.89%] |
+| cpu (ms) | 22952.0 | 32294.3 | +41.24% (regression) | [+37.73%, +44.26%] |
+| user (ms) | 2951.3 | 3368.8 | +13.84% (regression) | [+11.40%, +14.51%] |
+| system (ms) | 20003.2 | 28918.4 | +45.12% (regression) | [+41.54%, +48.81%] |
+| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
+| peak rss (MiB) | 309.9 | 314.9 | +1.56% (regression) | [+1.31%, +1.79%] |
+
+Other jobs, wall time: `cold-scan-producer` -4.6% (n.s.).
+
+Cost to carry: 128 lines; no new dependencies; new failure mode: a threshold control message must create the reserve exactly once without extending channel lifetime.
+
+No dependency or unsafe code; explicit thread counts remain fixed. Large-tree latency trades for roughly 41% more CPU and 1.56% RSS.
+
+**Superseded:** The 720k endpoint passed, but exp-019 found needless RSS and fault regressions just above the 100k trigger; service-time calibration supersedes scale alone.
+
+Full record: [`exp-018-spawn-reserve-workers-only-after-observed-scan-scale.md`](../experiments/exp-018-spawn-reserve-workers-only-after-observed-scan-scale.md)
+
+### exp-019 — Adaptive worker threshold at the first crossing scale
+
+❌ rejected · 2026-08-12 · H31
+
+Control: fixed six-worker automatic pool
+
+Candidate: spawn ten reserve workers after 100k observed entries
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 634.2 | 637.5 | +1.23% (n.s.) | [-1.85%, +3.80%] |
+| component (ms) | 408.1 | 407.2 | +0.81% (n.s.) | [-3.19%, +4.29%] |
+| cpu (ms) | 2622.3 | 2701.1 | +1.70% (n.s.) | [-2.05%, +8.04%] |
+| user (ms) | 491.8 | 498.3 | +3.39% (regression) | [+0.10%, +5.98%] |
+| system (ms) | 2161.3 | 2213.6 | +0.95% (n.s.) | [-2.83%, +9.12%] |
+| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
+| peak rss (MiB) | 60.2 | 61.0 | +1.64% (regression) | [+0.52%, +2.32%] |
+
+Other jobs, wall time: `cold-scan-producer` -2.7% (n.s.).
+
+Cost to carry: 0 lines; no new dependencies.
+
+Boundary validation of exp-018; raise the trigger toward metadata-cache capacity and remeasure both endpoints.
+
+**Rejected:** At 120k entries the threshold added no wall benefit but measurably regressed RSS and minor faults, so 100k activates before enough work remains.
+
+Full record: [`exp-019-adaptive-worker-threshold-at-the-first-crossing-scale.md`](../experiments/exp-019-adaptive-worker-threshold-at-the-first-crossing-scale.md)
+
+### exp-020 — Delay adaptive workers until metadata-cache capacity
+
+❌ rejected · 2026-08-12 · H31
+
+Control: fixed six-worker automatic pool
+
+Candidate: spawn reserve workers after 262144 observed entries
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 6185.8 | 6036.8 | -1.71% (n.s.) | [-2.90%, +1.05%] |
+| component (ms) | 4847.5 | 4654.8 | -2.82% | [-4.52%, -0.63%] |
+| cpu (ms) | 22821.8 | 31111.4 | +35.58% (regression) | [+9.01%, +43.22%] |
+| user (ms) | 2879.1 | 3184.0 | +11.41% (regression) | [+5.60%, +14.50%] |
+| system (ms) | 19960.6 | 27890.0 | +38.75% (regression) | [+9.57%, +47.64%] |
+| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
+| peak rss (MiB) | 310.1 | 313.8 | +1.19% (regression) | [+0.91%, +1.29%] |
+
+Other jobs, wall time: `cold-scan-producer` -4.2%.
+
+Cost to carry: 0 lines; no new dependencies.
+
+Scale alone cannot distinguish a cached medium tree from a latency-bound large one early enough; supersede with first-chunk service-time calibration.
+
+**Rejected:** The safer trigger removed the 120k activation but improved 720k end-to-end wall only 1.71% with an interval crossing zero, below the bar.
+
+Full record: [`exp-020-delay-adaptive-workers-until-metadata-cache-capacity.md`](../experiments/exp-020-delay-adaptive-workers-until-metadata-cache-capacity.md)
+
+### exp-021 — Calibrate adaptive workers from initial filesystem service time
+
+✅ accepted · 2026-08-12 · H31
+
+Control: fixed six-worker automatic pool
+
+Candidate: measure the first 16k entries and expand only above 30 microseconds of worker service per entry
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 6300.4 | 6056.1 | -5.31% | [-8.37%, -2.70%] |
+| component (ms) | 4915.4 | 4672.5 | -7.11% | [-11.06%, -2.98%] |
+| cpu (ms) | 22674.6 | 34479.0 | +51.16% (regression) | [+43.81%, +55.44%] |
+| user (ms) | 2953.8 | 3328.4 | +12.93% (regression) | [+11.13%, +15.11%] |
+| system (ms) | 19734.9 | 31109.0 | +56.75% (regression) | [+48.33%, +60.64%] |
+| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
+| peak rss (MiB) | 310.6 | 314.5 | +1.43% (regression) | [+0.85%, +1.64%] |
+
+Other jobs, wall time: `cold-scan-producer` -10.1%.
+
+Cost to carry: 181 lines; no new dependencies; new failure mode: a noisy first 16k entries can choose the wrong fixed pool for the remainder of one scan.
+
+No dependency, unsafe code, polling, or per-entry clocks; explicit thread counts remain fixed. Activated scans trade wall latency for 51% more aggregate CPU and 1.43% RSS.
+
+**Accepted:** Latency calibration improved 720k cold-index wall 5.31% and producer wall 10.09%, while the separate 120k boundary left wall, CPU, faults, and RSS unchanged.
+
+Full record: [`exp-021-calibrate-adaptive-workers-from-initial-filesystem-service-t.md`](../experiments/exp-021-calibrate-adaptive-workers-from-initial-filesystem-service-t.md)
 
 
 <!-- This document follows common-doc-guidelines.md.

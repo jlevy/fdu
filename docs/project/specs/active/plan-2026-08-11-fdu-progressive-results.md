@@ -147,10 +147,12 @@ reads.
 
 That cost is accepted rather than outstanding.
 It sits below the project’s own 3% bar for changes worth added complexity, and the queue
-ahead of it is worth far more — the adaptive worker pool (`fdu-tt2j`) is estimated at
-roughly 2x on cold large trees, and persisted roll-ups with lazy open (`fdu-1vd0`) turn
-an 11-second warm load into a first paint.
-Tracked at low priority as `fdu-v71x` so the decision stays visible.
+ahead of it is worth far more — the adaptive worker pool (`fdu-tt2j`) now improves a
+reproducible 720k cold-index run 5.31% [−8.37%, −2.70%] while retaining the 120k
+boundary result. The earlier roughly-2× cold private-tree observation remains context,
+not the claim attached to the implementation.
+Persisted roll-ups with lazy open (`fdu-1vd0`) turn an 11-second warm load into a first
+paint. Tracked at low priority as `fdu-v71x` so the decision stays visible.
 
 An earlier six-sample median comparison suggested ~8%, and that figure was quoted here
 before it had been through the accept rule.
@@ -406,6 +408,9 @@ plans: everything else here works without it, on every platform.
   justified it did not survive the accept rule (exp-012), so breadth-first is the
   default everywhere and `DepthFirst` is for callers with a specific memory or locality
   reason
+- [x] Adaptive cold-scan workers: begin at the warm-small knee, calibrate the first 16k
+  entries from existing chunk attribution, and spawn bounded reserves only for slow
+  filesystem service (exp-015–021, `fdu-tt2j`)
 - [ ] `Session`: start/read/complete/cancel over `IndexHandle`, with documented
   monotonicity and per-path freshness; bounded-memory option
 - [ ] Python `Session` mirroring the Rust surface

@@ -129,7 +129,9 @@ pub struct ScanConfig {
     /// scales with threads far better than most work does. One means the serial
     /// walker, which stays the reference implementation and the thing every result is
     /// checked against. [`None`] asks for a bounded default derived from the
-    /// machine's available parallelism.
+    /// machine's available parallelism. The automatic pool starts conservatively and
+    /// unlocks more latency-hiding workers only when initial chunk timing identifies a
+    /// slow filesystem path.
     ///
     /// This is an operational knob, not a semantic one: it changes how fast the same
     /// observations are produced, never which observations they are. That is why it
@@ -165,16 +167,18 @@ impl ScanConfig {
         }
     }
 
-    /// Resolve [`Self::threads`] to a concrete, bounded worker count.
-    ///
-    /// A machine that will not report its parallelism gets one thread rather than a
-    /// guess: the serial walker is always correct, and silently choosing a pool size
-    /// out of thin air is how a benchmark ends up measuring the guess.
+    /// Resolve [`Self::threads`] to the workers active when a scan begins.
     fn worker_threads(&self) -> usize {
+        self.worker_pool().initial
+    }
+
+    /// Resolve the initial and maximum worker counts for one scan.
+    fn worker_pool(&self) -> WorkerPool {
         match self.threads {
-            Some(threads) => threads.clamp(1, MAX_SCAN_THREADS),
-            None => std::thread::available_parallelism()
-                .map_or(1, |value| value.get().clamp(1, DEFAULT_SCAN_THREADS_CAP)),
+            Some(threads) => WorkerPool::fixed(threads.clamp(1, MAX_SCAN_THREADS)),
+            None => automatic_worker_pool(
+                std::thread::available_parallelism().map_or(1, std::num::NonZero::get),
+            ),
         }
     }
 
@@ -542,7 +546,7 @@ fn take_next(queue: &mut VecDeque<(PathBuf, usize)>, order: ScanOrder) -> Option
 /// count from something silly cannot spawn thousands of threads.
 const MAX_SCAN_THREADS: usize = 32;
 
-/// Ceiling on the pool size chosen automatically.
+/// Ceiling on the workers active at the start of an automatic scan.
 ///
 /// Measured, not guessed. On a 10-core machine walking a 60k-entry `node_modules`
 /// tree, wall time fell 37% at two workers and 50% at four, then stopped improving:
@@ -551,6 +555,85 @@ const MAX_SCAN_THREADS: usize = 32;
 /// contention and efficiency-core scheduling rather than throughput. See
 /// `docs/project/reports/report-2026-08-10-fdu-performance-experiments.md`.
 const DEFAULT_SCAN_THREADS_CAP: usize = 6;
+
+/// Ceiling an automatic scan may unlock after it establishes that the tree is large.
+///
+/// Sixteen was the knee on the 720k-entry cache-pressure corpus in exp-015. Thirty-two
+/// did not improve on it and spent substantially more worker time waiting at the end.
+const ADAPTIVE_SCAN_THREADS_CAP: usize = 16;
+
+/// Maximum reserve depth relative to the host's reported parallelism.
+const ADAPTIVE_SCAN_PARALLELISM_MULTIPLIER: usize = 2;
+
+/// Entries used to calibrate the initial workers' filesystem service time.
+const ADAPTIVE_SCAN_CALIBRATION_ENTRIES: u64 = 16 * 1024;
+
+/// Average worker time per observed entry that identifies a latency-bound scan.
+///
+/// Whole-run attribution separated the measured regimes: roughly 18 microseconds on
+/// the 60k tree, 22 on the 120k boundary, and 42 or more on the 720k cache-pressure
+/// tree. Thirty leaves margin between them. The calibration uses the same chunk timing
+/// already collected for attribution, so it adds no per-entry clock reads.
+const ADAPTIVE_SCAN_SLOW_WORK_NS_PER_ENTRY: u64 = 30_000;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct WorkerPool {
+    initial: usize,
+    maximum: usize,
+    calibration: Option<WorkerCalibration>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct WorkerCalibration {
+    minimum_entries: u64,
+    slow_work_ns_per_entry: u64,
+    entries: u64,
+    work_ns: u64,
+}
+
+enum WalkMessage {
+    Observation(Observation),
+    ScaleUp(std::sync::mpsc::Sender<Self>),
+}
+
+impl WorkerPool {
+    const fn fixed(workers: usize) -> Self {
+        Self { initial: workers, maximum: workers, calibration: None }
+    }
+}
+
+impl WorkerCalibration {
+    const fn new(minimum_entries: u64, slow_work_ns_per_entry: u64) -> Self {
+        Self { minimum_entries, slow_work_ns_per_entry, entries: 0, work_ns: 0 }
+    }
+
+    fn observe(&mut self, entries: u64, work_ns: u64) -> Option<bool> {
+        self.entries = self.entries.saturating_add(entries);
+        self.work_ns = self.work_ns.saturating_add(work_ns);
+        (self.entries >= self.minimum_entries)
+            .then(|| self.work_ns / self.entries >= self.slow_work_ns_per_entry)
+    }
+}
+
+fn automatic_worker_pool(available: usize) -> WorkerPool {
+    let initial = available.clamp(1, DEFAULT_SCAN_THREADS_CAP);
+    // Preserve the serial fallback when the platform cannot report more than one
+    // available processor. There is no measured basis for inventing parallelism there.
+    if initial == 1 {
+        return WorkerPool::fixed(1);
+    }
+    let maximum = available
+        .saturating_mul(ADAPTIVE_SCAN_PARALLELISM_MULTIPLIER)
+        .clamp(initial, ADAPTIVE_SCAN_THREADS_CAP);
+    WorkerPool {
+        initial,
+        maximum,
+        calibration: (maximum > initial).then_some(WorkerCalibration::new(
+            ADAPTIVE_SCAN_CALIBRATION_ENTRIES,
+            ADAPTIVE_SCAN_SLOW_WORK_NS_PER_ENTRY,
+        )),
+    }
+}
 
 /// Directories handed to a worker in one go.
 ///
@@ -578,12 +661,12 @@ fn scan_concurrent(
     root_dev: u64,
     sink: &mut dyn FnMut(Observation),
 ) -> ScanReport {
-    let workers = config.worker_threads();
-    let queue = DirectoryQueue::new((PathBuf::new(), 0), config.order);
-    let (sender, receiver) = std::sync::mpsc::channel::<Observation>();
+    let pool = config.worker_pool();
+    let queue = DirectoryQueue::new((PathBuf::new(), 0), config.order, pool.calibration);
+    let (sender, receiver) = std::sync::mpsc::channel::<WalkMessage>();
 
     let mut report = std::thread::scope(|scope| {
-        let handles: Vec<_> = (0..workers)
+        let mut handles: Vec<_> = (0..pool.initial)
             .map(|_| {
                 let sender = sender.clone();
                 let queue = &queue;
@@ -593,8 +676,23 @@ fn scan_concurrent(
         // The loop below ends when every sender is gone, so this one must go first.
         drop(sender);
 
-        for observation in receiver {
-            sink(observation);
+        let mut scaled_up = false;
+        for message in receiver {
+            match message {
+                WalkMessage::Observation(observation) => sink(observation),
+                WalkMessage::ScaleUp(sender) if !scaled_up => {
+                    scaled_up = true;
+                    for _ in pool.initial..pool.maximum {
+                        let sender = sender.clone();
+                        let queue = &queue;
+                        handles
+                            .push(scope.spawn(move || {
+                                walk_worker(root, config, root_dev, queue, &sender)
+                            }));
+                    }
+                }
+                WalkMessage::ScaleUp(_) => {}
+            }
         }
 
         let mut report = ScanReport::default();
@@ -627,7 +725,7 @@ fn walk_worker(
     config: &ScanConfig,
     root_dev: u64,
     queue: &DirectoryQueue,
-    sender: &std::sync::mpsc::Sender<Observation>,
+    sender: &std::sync::mpsc::Sender<WalkMessage>,
 ) -> ScanReport {
     let worker_started = std::time::Instant::now();
     let mut report = ScanReport::default();
@@ -642,6 +740,7 @@ fn walk_worker(
         // collected in.
         let chunk_started = std::time::Instant::now();
         let mut chunk_send_ns: u64 = 0;
+        let entries_before = report.entries;
         for (rel_dir, depth, region) in claimed.drain(..) {
             let abs_dir = root.join(&rel_dir);
             let listing = match fs::read_dir(&abs_dir) {
@@ -678,7 +777,11 @@ fn walk_worker(
                 batch.push(Op::Upsert { path: rel_path.clone(), kind, attrs });
                 if batch.len() >= config.batch_size {
                     let send_started = std::time::Instant::now();
-                    let sent = sender.send(Observation::new(std::mem::take(&mut batch))).is_ok();
+                    let sent = sender
+                        .send(WalkMessage::Observation(Observation::new(std::mem::take(
+                            &mut batch,
+                        ))))
+                        .is_ok();
                     chunk_send_ns += elapsed_ns(send_started);
                     if !sent {
                         // The consumer is gone; nothing further will be read.
@@ -696,18 +799,29 @@ fn walk_worker(
             }
         }
         report.attribution.send_ns += chunk_send_ns;
-        report.attribution.work_ns += elapsed_ns(chunk_started).saturating_sub(chunk_send_ns);
+        let chunk_work_ns = elapsed_ns(chunk_started).saturating_sub(chunk_send_ns);
+        report.attribution.work_ns += chunk_work_ns;
         // Publish before releasing the claim so a worker that finds nothing new does
         // not hold work that others could be doing.
         if !discovered.is_empty() {
             queue.extend(discovered.drain(..), &mut report.attribution);
         }
-        queue.release(&mut report.attribution);
+        if queue.release(
+            report.entries.saturating_sub(entries_before),
+            chunk_work_ns,
+            &mut report.attribution,
+        ) {
+            // Carry a sender in-band so the consumer can create the reserve workers
+            // without retaining a channel endpoint that would keep a small scan alive.
+            // Only the release that completes a slow calibration returns true, so one
+            // message expands the pool exactly once.
+            let _ = sender.send(WalkMessage::ScaleUp(sender.clone()));
+        }
     }
 
     if !consumer_gone && !batch.is_empty() {
         let send_started = std::time::Instant::now();
-        let _ = sender.send(Observation::new(batch));
+        let _ = sender.send(WalkMessage::Observation(Observation::new(batch)));
         report.attribution.send_ns += elapsed_ns(send_started);
     }
     report.attribution.wall_ns = elapsed_ns(worker_started);
@@ -779,6 +893,7 @@ struct DirectoryQueueState {
     enqueued: Vec<bool>,
     outstanding: usize,
     finished: bool,
+    calibration: Option<WorkerCalibration>,
 }
 
 impl DirectoryQueueState {
@@ -858,7 +973,11 @@ impl DirectoryQueueState {
 
 impl DirectoryQueue {
     /// Seed the queue with the root, which is region zero until its children fan out.
-    fn new(root: (PathBuf, usize), order: ScanOrder) -> Self {
+    fn new(
+        root: (PathBuf, usize),
+        order: ScanOrder,
+        calibration: Option<WorkerCalibration>,
+    ) -> Self {
         let mut state = DirectoryQueueState {
             pending: VecDeque::new(),
             regions: Vec::new(),
@@ -866,6 +985,7 @@ impl DirectoryQueue {
             enqueued: Vec::new(),
             outstanding: 0,
             finished: false,
+            calibration,
         };
         state.push((root.0, root.1, RegionId::ROOT), order);
         Self { state: std::sync::Mutex::new(state), ready: std::sync::Condvar::new(), order }
@@ -920,13 +1040,28 @@ impl DirectoryQueue {
     }
 
     /// Give up a claim taken by [`claim`]. Wakes everyone if this was the last one.
-    fn release(&self, timing: &mut WalkAttribution) {
+    fn release(
+        &self,
+        observed_entries: u64,
+        observed_work_ns: u64,
+        timing: &mut WalkAttribution,
+    ) -> bool {
         let mut state = self.lock_timed(timing);
+        let decision = state
+            .calibration
+            .as_mut()
+            .and_then(|value| value.observe(observed_entries, observed_work_ns));
+        if decision.is_some() {
+            state.calibration = None;
+        }
         state.outstanding -= 1;
         if state.outstanding == 0 && state.is_empty(self.order) {
             state.finished = true;
             drop(state);
             self.ready.notify_all();
+            false
+        } else {
+            decision.unwrap_or(false)
         }
     }
 
@@ -2064,7 +2199,7 @@ mod tests {
         // walk: consecutive claims by *different* workers must land in different
         // regions while several regions have work. This is what the round-robin ready
         // ring buys, and it is the thing a global FIFO could not promise.
-        let queue = DirectoryQueue::new((PathBuf::new(), 0), ScanOrder::BreadthFirst);
+        let queue = DirectoryQueue::new((PathBuf::new(), 0), ScanOrder::BreadthFirst, None);
         let mut timing = WalkAttribution::default();
 
         // Bootstrap: drain the root, then seed four top-level regions.
@@ -2075,7 +2210,7 @@ mod tests {
             (0..4).map(|top| (PathBuf::from(format!("t{top}")), 1, RegionId::UNASSIGNED)),
             &mut timing,
         );
-        queue.release(&mut timing);
+        assert!(!queue.release(0, 0, &mut timing));
 
         // Four workers with no affinity must each be handed a different region.
         let mut regions = BTreeSet::new();
@@ -2132,6 +2267,58 @@ mod tests {
         // the measured knee is far below the core count on a large machine.
         let automatic = ScanConfig { threads: None, ..ScanConfig::default() };
         assert!((1..=DEFAULT_SCAN_THREADS_CAP).contains(&automatic.worker_threads()));
+    }
+
+    #[test]
+    fn automatic_worker_pool_keeps_a_conservative_start_and_bounded_reserve() {
+        assert_eq!(automatic_worker_pool(1), WorkerPool::fixed(1));
+        assert_eq!(
+            automatic_worker_pool(4),
+            WorkerPool {
+                initial: 4,
+                maximum: 8,
+                calibration: Some(WorkerCalibration::new(
+                    ADAPTIVE_SCAN_CALIBRATION_ENTRIES,
+                    ADAPTIVE_SCAN_SLOW_WORK_NS_PER_ENTRY,
+                )),
+            }
+        );
+        assert_eq!(
+            automatic_worker_pool(10),
+            WorkerPool {
+                initial: DEFAULT_SCAN_THREADS_CAP,
+                maximum: ADAPTIVE_SCAN_THREADS_CAP,
+                calibration: Some(WorkerCalibration::new(
+                    ADAPTIVE_SCAN_CALIBRATION_ENTRIES,
+                    ADAPTIVE_SCAN_SLOW_WORK_NS_PER_ENTRY,
+                )),
+            }
+        );
+    }
+
+    #[test]
+    fn automatic_queue_activates_its_reserve_only_for_slow_initial_work() {
+        let slow = WorkerCalibration::new(3, 10);
+        let queue = DirectoryQueue::new((PathBuf::new(), 0), ScanOrder::BreadthFirst, Some(slow));
+        let mut timing = WalkAttribution::default();
+        let mut claimed = Vec::new();
+
+        assert!(queue.claim(&mut claimed, &mut timing));
+        queue.extend([(PathBuf::from("child"), 1, RegionId::UNASSIGNED)].into_iter(), &mut timing);
+        assert!(!queue.release(2, 20, &mut timing));
+
+        claimed.clear();
+        assert!(queue.claim(&mut claimed, &mut timing));
+        queue.extend([(PathBuf::from("grandchild"), 2, claimed[0].2)].into_iter(), &mut timing);
+        assert!(queue.release(1, 10, &mut timing));
+
+        let fast = WorkerCalibration::new(3, 11);
+        let queue = DirectoryQueue::new((PathBuf::new(), 0), ScanOrder::BreadthFirst, Some(fast));
+        let mut timing = WalkAttribution::default();
+        let mut claimed = Vec::new();
+        assert!(queue.claim(&mut claimed, &mut timing));
+        assert!(!queue.release(3, 30, &mut timing));
+        assert!(queue.lock().calibration.is_none(), "calibration decides only once");
     }
 
     #[test]

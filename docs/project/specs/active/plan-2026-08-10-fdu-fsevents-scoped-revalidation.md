@@ -529,18 +529,49 @@ Roughly **2× from raising in-flight depth alone**, on the exact workload the wh
 use case cares about.
 (The variance is wide because the subtree is live and the machine was not quiet; the
 direction is unambiguous and consistent across all four rounds.)
-`MAX_SCAN_THREADS` is currently 32, so the top of the useful range has not even been
-probed.
+`MAX_SCAN_THREADS` was 32, so the initial calibration included that upper bound rather
+than assuming sixteen was the knee.
+
+The post-breadth-first campaign turned that private observation into reproducible
+evidence. Exp-015 built an immutable 720,805-entry cache-pressure subject from twelve
+APFS clones of the pinned 60k tree.
+On that subject, explicit sixteen workers improved end-to-end cold-index wall 11.72%
+[−16.83%, −2.42%] against six; on the original 60,067-entry tree they instead regressed
+it 5.64% [+2.08%, +7.96%]. Thirty-two did not improve on sixteen in calibration.
+The old result survived the scheduler change, but it also confirmed that no fixed count
+is right for both regimes.
+
+Exp-018 through exp-021 then tested the shipped adaptive path.
+Pre-creating dormant reserves added small-tree CPU, faults, and RSS, so it was rejected.
+Creating them after 100,000 observed entries passed the 60k and 720k endpoints, but a
+post-review 120k boundary run found no wall benefit and measurable RSS and fault
+regressions.
+Moving the trigger to metadata-cache capacity avoided that boundary but left
+only a 1.71% unclear end-to-end gain at 720k.
+
+The accepted selector measures the state directly.
+Automatic scans aggregate the chunk work timing already collected for attribution and
+make one decision after 16,384 entries.
+At 30 microseconds of worker service per entry or more, one in-band control message
+causes the consumer to create reserve workers, bounded by twice available parallelism
+and sixteen overall.
+There are no reserve threads, per-entry clocks, or polling before that point, and
+explicit thread counts never adapt.
+The 720k cold-index job improved 5.31% [−8.37%, −2.70%] and producer wall 10.09%; on the
+120k boundary, wall, total CPU, faults, and RSS all remained unclear.
+After activation, the large index job traded latency for 51% more aggregate CPU and
+1.43% more RSS. These are warm-steady OS-cache measurements, not a controlled-cold
+claim; the private roughly-2× observation remains motivating context.
 
 Two consequences, and the second is the important one:
 
 - **Worker count must be state-adaptive, exactly like the cache policy.** When the tree
   fits the metadata cache the walk is syscall-bound and extra threads add contention;
-  when it does not, the walk is latency-bound and extra threads buy throughput almost
-  linearly until the device saturates.
-  The same capacity signal the cache policy reads (`kern.maxvnodes` versus recorded
-  entry count) selects the pool size, which is the frontier research’s H31 with a
-  concrete trigger rather than a calibration probe.
+  when it does not, the walk is latency-bound and extra threads buy throughput until the
+  device saturates. A first scan has no recorded entry count, so it begins conservatively
+  and calibrates from its own initial chunk service time.
+  This direct signal adapts across storage states without waiting to discover that the
+  tree is large.
 - **This is worth more than journal resume for the motivating use case, and it is
   orthogonal to it.** A first scan of a home folder can never be helped by a journal:
   there is no cursor yet.
@@ -549,9 +580,9 @@ Two consequences, and the second is the important one:
   The journal’s job is the *second* scan; in-flight depth’s job is the first, and the
   product story for whole-drive usage needs both.
 
-That reorders the work: the adaptive pool (`fdu-6ld9`’s sibling) should land before
-scoped revalidation, because it is cheap, portable, and improves the case the journal is
-designed for without depending on any of it.
+That reordered the work: the adaptive pool (`fdu-tt2j`) now precedes scoped
+revalidation. It is portable and improves the case the journal is designed for without
+depending on any of it.
 
 ### Phase 0 spike findings (2026-08-10, run on this host)
 

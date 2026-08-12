@@ -146,7 +146,7 @@ Kept as a live list.
 Numbering is shared with the
 [performance-frontier research](../research/research-2026-08-10-performance-frontier.md),
 whose backlog owns H12–H46; new hypotheses from any source take the next free number
-(currently H48) so no id ever means two things.
+(currently H52) so no id ever means two things.
 Each is stated so it can be wrong, with the metric that would show it.
 Status is updated as experiments resolve them; see the ledger for results.
 
@@ -158,6 +158,7 @@ Status is updated as experiments resolve them; see the ledger for results.
 | H2 | `fs::read_dir` opens each directory by absolute path, so the kernel re-resolves every component from the root. Opening relative to the parent’s fd (`openat`) would resolve one component. After H1 landed, `open` is the single largest cost in the cold profile at **28%** of self time. | `system_cpu_ns` down, biggest effect on deep trees | **Blocked**: needs `libc` as a runtime dependency and a scoped `unsafe` allowance. Not a decision to take without the supply-chain review in [SUPPLY-CHAIN-SECURITY.md](../../../SUPPLY-CHAIN-SECURITY.md). |
 | H3 | One `fstatat` per entry (19% of self time after H1) is the floor for a portable walker, but macOS `getattrlistbulk` and Linux `statx` batch metadata per directory. | `system_cpu_ns` down substantially | **Blocked** on the same dependency decision as H2. |
 | H4 | Depth-first traversal order has worse locality than breadth-first for a tree whose directories were written breadth-first. | `system_cpu_ns`, `minor_faults` | — |
+| H31 | A latency-bound walk needs more in-flight metadata operations than the six-worker warm-small knee. Calibrating aggregate chunk service time over the first 16k entries should select sixteen workers in the slow state and retain six in the fast state. | slow cold wall down 5–10%; fast wall and resources unchanged | **Confirmed** (exp-015–021): explicit sixteen workers established the opportunity. Pre-created reserves and two scale triggers were rejected. Service-time calibration improved 720k cold-index wall 5.31% [−8.37%, −2.70%] and producer wall 10.09%, while 120k wall, CPU, faults, and RSS remained unclear. Activated cold-index CPU rose 51% and RSS 1.43%. |
 
 ### Index and allocation
 
@@ -172,6 +173,7 @@ Status is updated as experiments resolve them; see the ledger for results.
 | H17 | Replacing the transient per-directory expectation map with a sorted claim-list (and deferring path joins) removes per-entry allocation on the warm sweep. | warm `user_cpu_ns`, `minor_faults` down | **Refuted at 60k-warm** (exp-010): −0.03% [−1.37, +1.64]. After H14 the map already read straight off entry ids; the residue is noise next to one `fstatat` per entry. |
 | H13 | Accumulating consecutive same-parent insert contributions and merging once per run cuts upward merges ~7×. | cold `user_cpu_ns` down | **Refuted after H18** (exp-011): −2.53% [−8.39, +0.23]. Interning had already removed the expensive part of each merge — the two hypotheses competed for the same cost, and interning captured it alone. Re-test if content-tier reducers make roll-ups heavy again. |
 | H8 | The observation batch allocates a `PathBuf` per op and then clones it. Moving instead of cloning removes one allocation per entry. | `user_cpu_ns`, `minor_faults` | **Refuted** (exp-003): removing ~120,000 clones per scan changed nothing measurable. The allocator cost is in the producer, not in apply. |
+| H51 | The portable producer clones every relative `PathBuf` into its observation even though non-directory entries can transfer ownership; retaining a second path is necessary only for directories added to the frontier. | cold producer `user_cpu_ns`, `minor_faults`, then wall | **Refuted** (exp-016): cold-index wall −0.44% [−5.30%, +1.52%], with CPU also unclear; peak RSS and minor faults instead regressed about 4%. The allocator can reuse the short-lived original buffer, so moving it changes which allocation stays live without reducing measured work. |
 
 ### Warm start
 
