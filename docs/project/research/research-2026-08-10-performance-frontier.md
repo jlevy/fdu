@@ -106,10 +106,10 @@ tested its highest-ranked ideas through exp-030. The durable changes are:
 - exclusive full reconciliation now compares bounded region-aware waves against an
   immutable baseline, discarding exact no-ops before the delta consumer.
 
-The current stack versus the pre-work binary is 52.84% faster for cold indexed scans,
-58.29% faster for producer-only scans, 51.13% faster through snapshot save, 34.78%
-faster for full warm revalidation, and 32.69% faster for snapshot load on the current
-60,067-entry APFS subject (exp-027). The platform accelerator itself improves the
+The current stack versus the pre-work binary is 53.59% faster for cold indexed scans,
+57.87% faster for producer-only scans, 51.33% faster through snapshot save, 54.26%
+faster for full warm revalidation, and 35.25% faster for snapshot load on the current
+60,067-entry APFS subject (exp-032). The platform accelerator itself improves the
 720,805-entry cold-index job 30.13% and producer wall 41.60% over the adaptive portable
 control (exp-022). These are warm-steady operating-system-cache results, not
 controlled-cold claims.

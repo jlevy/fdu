@@ -8,15 +8,15 @@ How the numbers were produced, what each metric means, and the rule that decides
 
 ## Where it stands
 
-Every accepted change together, measured against the pre-work baseline in one interleaved run of 12 paired trials (exp-027).
+Every accepted change together, measured against the pre-work baseline in one interleaved run of 12 paired trials (exp-032).
 
 | job | before | after | change | 95% interval |
 | --- | ---: | ---: | ---: | --- |
-| `cold-scan-index` | 587 ms | 275 ms | **-52.8%** | [-53.4%, -52.6%] |
-| `cold-scan-producer` | 903 ms | 376 ms | **-58.3%** | [-58.5%, -58.1%] |
-| `cold-snapshot-save` | 610 ms | 296 ms | **-51.1%** | [-51.8%, -50.7%] |
-| `warm-revalidate` | 826 ms | 537 ms | **-34.8%** | [-37.2%, -31.0%] |
-| `warm-snapshot-load` | 384 ms | 261 ms | **-32.7%** | [-38.8%, -30.8%] |
+| `cold-scan-index` | 584 ms | 270 ms | **-53.6%** | [-54.4%, -53.3%] |
+| `cold-scan-producer` | 945 ms | 397 ms | **-57.9%** | [-58.4%, -56.9%] |
+| `cold-snapshot-save` | 619 ms | 303 ms | **-51.3%** | [-51.9%, -50.5%] |
+| `warm-revalidate` | 799 ms | 375 ms | **-54.3%** | [-56.0%, -52.6%] |
+| `warm-snapshot-load` | 330 ms | 214 ms | **-35.2%** | [-35.9%, -33.8%] |
 
 ## Reproducing the cumulative comparison
 
@@ -74,6 +74,7 @@ The rejected ones are the reusable part: they stop the next person spending a da
 | 029 | [Increase macOS bulk metadata buffer to 256 KiB](#exp029--increase-macos-bulk-metadata-buffer-to-256-kib) | H55 | `cold-scan-index` | -1.8% | ❌ rejected |
 | 030 | [Elide unchanged entries in bounded parallel reconciliation waves](#exp030--elide-unchanged-entries-in-bounded-parallel-reconciliation-waves) | H12, H9 | `warm-revalidate` | -59.5% | ✅ accepted |
 | 031 | [Increase immutable-baseline reconciliation waves to 4096 directories](#exp031--increase-immutablebaseline-reconciliation-waves-to-4096-directories) | H56 | `warm-revalidate` | +1.6% | ❌ rejected |
+| 032 | [Cumulative effect through bounded parallel reconciliation](#exp032--cumulative-effect-through-bounded-parallel-reconciliation) | H1, H5, H10, H14, H18, H32, H48, H49, H31, H3, H26, H53, H12, H9 | `cold-scan-index` | -53.6% | ✅ accepted |
 
 ## The experiments
 
@@ -1014,6 +1015,36 @@ one constant change; no dependency or unsafe change; the preregistered 720k gate
 **Rejected:** Warm wall was +1.64% with an interval spanning -3.88% to +10.07%, component was +13.24%, and CPU plus context-switch signals did not show the predicted startup amortization.
 
 Full record: [`exp-031-increase-immutable-baseline-reconciliation-waves-to-4096-dir.md`](../experiments/exp-031-increase-immutable-baseline-reconciliation-waves-to-4096-dir.md)
+
+### exp-032 — Cumulative effect through bounded parallel reconciliation
+
+✅ accepted · 2026-08-12 · H1, H5, H10, H14, H18, H32, H48, H49, H31, H3, H26, H53, H12, H9
+
+Control: b565882 before the iterative performance campaign
+
+Candidate: current code through exp-030, including accepted cold, snapshot, BFS, bulk metadata, and bounded parallel reconciliation changes
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 584.4 | 270.3 | -53.59% | [-54.38%, -53.27%] |
+| component (ms) | 474.6 | 159.7 | -66.25% | [-67.18%, -65.97%] |
+| cpu (ms) | 578.7 | 1090.4 | +88.21% (regression) | [+84.62%, +90.41%] |
+| user (ms) | 227.7 | 192.2 | -15.76% | [-15.91%, -15.14%] |
+| system (ms) | 350.9 | 897.2 | +155.32% (regression) | [+148.53%, +158.46%] |
+| blocked (ms) | 4.1 | 0.0 | -100.00% | [-100.00%, -100.00%] |
+| peak rss (MiB) | 31.9 | 32.7 | +2.40% (regression) | [+2.11%, +2.69%] |
+
+Other jobs, wall time: `cold-scan-producer` -57.9%, `cold-snapshot-save` -51.3%, `warm-revalidate` -54.3%, `warm-snapshot-load` -35.2%.
+
+Cost to carry: 0 lines; no new dependencies.
+
+measurement-only cumulative anchor; complexity belongs to the individual accepted experiments
+
+**Accepted:** Against the original binary, current code improves cold index 53.59%, producer 57.87%, snapshot save 51.33%, warm revalidation 54.26%, and snapshot load 35.25%; all exact oracles passed.
+
+Full record: [`exp-032-cumulative-effect-through-bounded-parallel-reconciliation.md`](../experiments/exp-032-cumulative-effect-through-bounded-parallel-reconciliation.md)
 
 
 <!-- This document follows common-doc-guidelines.md.
