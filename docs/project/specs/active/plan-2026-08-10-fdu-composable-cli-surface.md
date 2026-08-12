@@ -99,7 +99,8 @@ removed from this design by exactly that test.
     and flags are part of benchmark identity: renaming one means updating the job
     manifests in the same change.
 
-These principles graduate into a standalone design doc under `docs/project/guides/` once
+These principles graduate into
+[the standalone design doc](../../architecture/fdu-design-principles.md) once
 implementation has validated them (Phase 4), so they outlive this spec.
 
 ## Non-Goals
@@ -583,8 +584,9 @@ shared process boundary, as today.
   fast path vs traversal tier
 - [x] Implement the shared value grammars (`parse_when`, `parse_size`) and the
   `--modified-since`/`--modified-before` half-open window; stamp `scan_started_at` and
-  `generated_at` on every report. Local date-times are rejected pending a time-zone
-  decision (`fdu-f6dn`); the watermark round-trip test is still owed (`fdu-3vgt`)
+  `generated_at` on every report.
+  Local date-times are rejected pending a time-zone decision (`fdu-f6dn`); the watermark
+  round-trip test is still owed (`fdu-3vgt`)
 - [x] Add `allocated` to `ExtTally` and thread the size metric through all views
 - [x] Serde-derive `Report`; implement `text`, `json`, `jsonl`, `yaml` formatters and
   the `fdu.report/1` golden + schema-bump tests; resolve the YAML dependency per the
@@ -621,28 +623,32 @@ shared process boundary, as today.
   through `Selection`
 - [x] `--watch`/`--interval` CLI loop: initial report, streamed `files` records,
   dirty-gated aggregate re-render, explicit invalidation records, `fdu.stream/1` schema,
-  and a persisting save. Delivered as a save after each dirty batch rather than a signal
-  handler: std has no portable one, and a watch session ends by signal far more often
-  than it ends politely, so an exit-time save would be the one that never runs.
+  and a persisting save.
+  Delivered as a save after each dirty batch rather than a signal handler: std has no
+  portable one, and a watch session ends by signal far more often than it ends politely,
+  so an exit-time save would be the one that never runs.
   Pinned by `crates/fdu/tests/watch_persistence.rs`, which SIGKILLs the real binary
 - [ ] **Not delivered:** goldens for the streamed records — needs a bounded capture
   command first (`fdu-t9nv`, see [Remaining work](#remaining-work))
 - [x] Scope validation errors for `--watch` + `--scan-depth`/`--one-filesystem`
 - [x] Python `Index.watch(...)` iterator with deterministic shutdown tests
-- [x] `watch-stream` benchmark job registration — the job vocabulary only, which is
-  what this item asked for; the runner is `fdu-g8ks`
+- [x] `watch-stream` benchmark job registration — the job vocabulary only, which is what
+  this item asked for; the runner is `fdu-g8ks`
 
 ### Phase 4: Design Principles Documentation
 
 - [x] Distill the Goals and Design Principles of this spec — as actually implemented,
-  with any amendments iteration forced — into a durable design doc at
-  `docs/project/guides/fdu-design-principles.md`, following common-doc-guidelines: the
-  five axes, the delta contract, cache honesty, the CLI-invents-nothing parity rule, and
-  the subsumption checklist
+  with any amendments iteration forced — into
+  [the design doc](../../architecture/fdu-design-principles.md), following
+  common-doc-guidelines: the five axes, the CLI-invents-nothing parity rule, and the
+  subsumption checklist.
+  The doc already carried the engine principles, including the delta contract and cache
+  honesty; the CLI-specific axes were first distilled on this branch and folded into it
+  when the two histories merged
 - [x] Run the end-of-plan parity review (what, if anything, lives only in `cli.rs`) and
   record its outcome in the design doc
-- [x] Point AGENTS.md, README, and the architecture references at the design doc; move
-  this spec to done and reconcile the subsumed beads (Open Question 4)
+- [x] Point AGENTS.md, README, and the architecture references at the design doc
+- [ ] Move this spec to done and reconcile the subsumed beads (Open Question 4)
 
 ## Testing Strategy
 
@@ -693,26 +699,28 @@ it cannot be lost by being described only here:
 | Local date-times in `parse_when`, pending a time-zone decision | `fdu-f6dn` |
 | Cache retention: nothing prunes snapshots or bounds total size (open question 5) | `fdu-558j` |
 | Open questions 1, 2, and 4 | `fdu-khu8` |
-| Automate the runbook's bead-sync check as a periodic guard | `fdu-qut8` |
+| Automate the runbook’s bead-sync check as a periodic guard | `fdu-qut8` |
 | Direct unit tests for the watch persistence state machine | `fdu-w8af` |
 
 `fdu-w8af` is worth its own line rather than being folded into general test debt.
-Two of the three defects review found on this branch were in the watch loop's save
+Two of the three defects review found on this branch were in the watch loop’s save
 throttle and pending flag, and the second was a regression introduced by the fix for the
 first. Every test drives that logic end to end through the spawned binary, which can
-observe only whether a file changed on disk — it cannot enumerate the transitions. The
-logic is decisions, not I/O, and belongs under a table test.
+observe only whether a file changed on disk — it cannot enumerate the transitions.
+The logic is decisions, not I/O, and belongs under a table test.
 
-The watch stream is goldened (`fdu-t9nv`, closed): tryscript compares one command's
-completed output and a watch process never exits, so `tests/golden/bin/watch-capture.mjs`
-turns watching into a command that does — it spawns `fdu --watch`, applies a scripted
-change sequence, waits for each change's own record before making the next, and prints
-the captured stream. Determinism is causal, not timed. `tests/golden/cli-watch.tryscript.md`
-pins the schema on every record, the op vocabulary, per-op field presence, and the
-absent-not-null contract for removals. Alongside it: `crates/fdu/tests/watch_session.rs`
-for event semantics, `watch_persistence.rs` for save-surviving-SIGKILL (cold and warm
-start), and section 6 of [the integration runbook](../../guides/integration-runbook.md)
-for the one property no automated test asserts well: that an idle tree costs 0% CPU.
+The watch stream is goldened (`fdu-t9nv`, closed): tryscript compares one command’s
+completed output and a watch process never exits, so
+`tests/golden/bin/watch-capture.mjs` turns watching into a command that does — it spawns
+`fdu --watch`, applies a scripted change sequence, waits for each change’s own record
+before making the next, and prints the captured stream.
+Determinism is causal, not timed.
+`tests/golden/cli-watch.tryscript.md` pins the schema on every record, the op
+vocabulary, per-op field presence, and the absent-not-null contract for removals.
+Alongside it: `crates/fdu/tests/watch_session.rs` for event semantics,
+`watch_persistence.rs` for save-surviving-SIGKILL (cold and warm start), and section 6
+of [the integration runbook](../../guides/integration-runbook.md) for the one property
+no automated test asserts well: that an idle tree costs 0% CPU.
 
 ## Open Questions
 

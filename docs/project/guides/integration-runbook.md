@@ -69,13 +69,14 @@ Worth knowing when a failure looks strange:
   on macOS CI and passes locally, which is exactly how that bug was found.
 - Timestamps in tests come from injected constants, never `SystemTime::now()`. A test
   that reads the clock is a test that fails at midnight or in another timezone.
-- A test that spawns the `fdu` binary needs a `[[test]]` entry in `crates/fdu/Cargo.toml`
-  declaring `required-features = ["cli", ...]`. Without one, cargo auto-discovers it with
-  no requirements and runs it under `--no-default-features`, where the binary is never
-  built. This is the one failure mode `make check` can miss: a stale `target/debug/fdu`
-  from an earlier full-feature build makes the spawn succeed locally, and a clean CI
-  checkout has no such binary. If a feature-boundary job fails on a test that passes for
-  you, run `cargo clean` before believing your local result.
+- A test that spawns the `fdu` binary needs a `[[test]]` entry in
+  `crates/fdu/Cargo.toml` declaring `required-features = ["cli", ...]`. Without one,
+  cargo auto-discovers it with no requirements and runs it under
+  `--no-default-features`, where the binary is never built.
+  This is the one failure mode `make check` can miss: a stale `target/debug/fdu` from an
+  earlier full-feature build makes the spawn succeed locally, and a clean CI checkout
+  has no such binary. If a feature-boundary job fails on a test that passes for you, run
+  `cargo clean` before believing your local result.
 
 ## 4. Golden CLI tests
 
@@ -131,8 +132,9 @@ ls "$XDG_CACHE_HOME"/fdu                 # a snapshot file exists, named by root
 
 The stream itself is goldened — `tests/golden/cli-watch.tryscript.md` drives a real
 watch session through the `watch-capture` helper — and integration tests cover event
-semantics and persistence. This section covers what only a human notices: that watch is
-*idle* when nothing happens, and responsive when something does.
+semantics and persistence.
+This section covers what only a human notices: that watch is *idle* when nothing
+happens, and responsive when something does.
 
 ```shell
 export XDG_CACHE_HOME="$(mktemp -d)"
@@ -140,17 +142,19 @@ tree="$(mktemp -d)" && touch "$tree/first.txt"
 ./target/debug/fdu --watch --view files --format jsonl "$tree"
 ```
 
-✅ An initial batch of records, then **nothing**. In another terminal, `touch
-"$tree/second.txt"` and a single record appears within a second or so.
+✅ An initial batch of records, then **nothing**. In another terminal,
+`touch "$tree/second.txt"` and a single record appears within a second or so.
 
-The silence is the point. `--watch` is event-driven — FSEvents on macOS, inotify on
-Linux, `ReadDirectoryChangesW` on Windows — so an idle tree costs nothing. Watch the
-process in `top`: it should sit at 0% CPU between changes. Steady CPU on an idle tree
-means something is polling, which is a bug, not a tuning question.
+The silence is the point.
+`--watch` is event-driven — FSEvents on macOS, inotify on Linux, `ReadDirectoryChangesW`
+on Windows — so an idle tree costs nothing.
+Watch the process in `top`: it should sit at 0% CPU between changes.
+Steady CPU on an idle tree means something is polling, which is a bug, not a tuning
+question.
 
-`--interval` throttles *rendering* only; it never introduces a scan. It takes whole
-units (`1s`, `5m`) — there is no sub-second unit, because a render faster than a human
-can read is not a feature.
+`--interval` throttles *rendering* only; it never introduces a scan.
+It takes whole units (`1s`, `5m`) — there is no sub-second unit, because a render faster
+than a human can read is not a feature.
 
 ```shell
 # In the watch terminal: Ctrl-C, or from elsewhere, kill -9 the process.
@@ -158,10 +162,11 @@ ls "$XDG_CACHE_HOME"/fdu
 ./target/debug/fdu --view summary --format json --cache only "$tree"
 ```
 
-✅ A snapshot exists and the cache-only read succeeds, reporting `"source":
-"cache_only"`. A watch session persists as it goes rather than only at exit, so even an
-abrupt kill leaves the next run warm. `crates/fdu/tests/watch_persistence.rs` pins this
-automatically; running it by hand is how you confirm it against a real signal.
+✅ A snapshot exists and the cache-only read succeeds, reporting
+`"source": "cache_only"`. A watch session persists as it goes rather than only at exit,
+so even an abrupt kill leaves the next run warm.
+`crates/fdu/tests/watch_persistence.rs` pins this automatically; running it by hand is
+how you confirm it against a real signal.
 
 Scope flags are rejected under `--watch`:
 
@@ -170,8 +175,8 @@ Scope flags are rejected under `--watch`:
 ./target/debug/fdu --watch --one-filesystem "$tree"     # exit 2
 ```
 
-✅ Both fail with a usage error explaining that watching requires full scope. A partial
-tree cannot be kept correct against events that may land outside it.
+✅ Both fail with a usage error explaining that watching requires full scope.
+A partial tree cannot be kept correct against events that may land outside it.
 
 ## 7. Python wheel
 
@@ -240,8 +245,8 @@ git fetch origin tbd-sync
 git show origin/tbd-sync:.tbd/data-sync/issues/<internal-id>.md
 ```
 
-Get `<internal-id>` from `tbd show <bead-id> --json` (the `id` field; the `fdu-xxxx` form
-is a display alias).
+Get `<internal-id>` from `tbd show <bead-id> --json` (the `id` field; the `fdu-xxxx`
+form is a display alias).
 
 ✅ The frontmatter shows your `labels`, `status`, `priority`, `spec_path`, and
 `dependencies`; the body shows the description followed by a `## Notes` section holding
@@ -265,13 +270,15 @@ difference, so it works in a pipeline as well as by hand.
 ✅ `N/N beads match origin/tbd-sync`, or the specific bead reports `ok`.
 
 `make verify-beads` fetches the sync branch first and is deliberately **not** part of
-`make check`: it compares against a branch other working copies push to independently, so
-a shared-branch race would fail a pull request for something the pull request did not do.
+`make check`: it compares against a branch other working copies push to independently,
+so a shared-branch race would fail a pull request for something the pull request did not
+do.
 
 A mismatch in `notes` or `labels` means metadata is being dropped somewhere in the round
 trip, which is worth stopping for — those fields are where the reasoning lives, and
-losing them silently is worse than failing to sync at all. Far more often it just means
-`tbd sync` has not run since the last edit; run it and re-check before investigating.
+losing them silently is worse than failing to sync at all.
+Far more often it just means `tbd sync` has not run since the last edit; run it and
+re-check before investigating.
 
 Timestamps and `version` are deliberately not compared: sync rewrites them by design, so
 including them would report a difference on every run and train the reader to ignore the
@@ -288,8 +295,9 @@ tbd show <bead-id>
 ```
 
 ✅ The note, the label, and the status read the same as they did on the side you wrote
-them. Two working copies now agree, which is the property the whole tracking system
-rests on.
+them.
+Two working copies now agree, which is the property the whole tracking system rests
+on.
 
 ### 9.6 Clean up
 

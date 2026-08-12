@@ -74,12 +74,13 @@ merged through PR #1. The remaining P1 and P2 items protect later representation
 changes, performance evidence, and publishing; they are explicitly deferred rather than
 hidden merge blockers.
 
-The maintainer has now selected Python 3.12 as the minimum for the unpublished wheel
-and repository-owned Python tooling. `fdu-c7z2` owns the pending PyO3 ABI, package
-metadata, uv lock, CI, and documentation update. The first-party
-`jlevy/simple-modern-uv` v0.4.0 template was inspected as a conventions source; fdu will
-adopt its relevant uv and supported-version practices without applying its pure-Python
-migration structure to this Cargo workspace and maturin extension.
+The maintainer has now selected Python 3.12 as the minimum for the unpublished wheel and
+repository-owned Python tooling.
+`fdu-c7z2` owns the pending PyO3 ABI, package metadata, uv lock, CI, and documentation
+update. The first-party `jlevy/simple-modern-uv` v0.4.0 template was inspected as a
+conventions source; fdu will adopt its relevant uv and supported-version practices
+without applying its pure-Python migration structure to this Cargo workspace and maturin
+extension.
 
 ## Goals
 
@@ -390,8 +391,8 @@ fix.
   CLI follow-up preserves exact output and adds a small-stack subprocess regression
 - [ ] `fdu-k8zw`: preserve native filesystem identity through classification and Python
   bindings
-- [ ] `fdu-c7z2`: raise the wheel and tooling minimum to Python 3.12 and align PyO3,
-  uv, CI, and documentation
+- [ ] `fdu-c7z2`: raise the wheel and tooling minimum to Python 3.12 and align PyO3, uv,
+  CI, and documentation
 - [ ] Complete package, compatibility, security, and artifact-smoke acceptance under the
   existing publishing bead `fdu-9cf0`
 

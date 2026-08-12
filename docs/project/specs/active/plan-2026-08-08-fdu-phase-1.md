@@ -21,8 +21,9 @@ a new branch from `origin/main`; Phase 1 performance work remains separate and m
 claim about the portable walker.
 
 Beads live on the `tbd-sync` branch and are visible from any clone (`tbd list`).
-`make check` is the handoff gate; `AGENTS.md` carries the conventions worth not
-rediscovering.
+`make check` is the handoff gate;
+[the design and principles doc](../../architecture/fdu-design-principles.md) carries the
+rules worth not rediscovering.
 
 ## Where This Stands
 

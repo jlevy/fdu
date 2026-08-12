@@ -3,8 +3,8 @@
 This directory contains the repository-owned tooling that creates reproducible
 performance evidence.
 The current implementation generates deterministic filesystem corpora, verifies them
-with an implementation independent of fdu, applies exact churn transitions, and runs
-the repository-only Rust component probe through a strict evidence state machine.
+with an implementation independent of fdu, applies exact churn transitions, and runs the
+repository-only Rust component probe through a strict evidence state machine.
 It does not contain a claim-grade performance result and does not show that the current
 portable walker is fast.
 
@@ -55,9 +55,9 @@ make test-performance
 ```
 
 This builds the excluded `perf_probe` example and runs the corpus, schema, runner,
-report, collector, and eight-job probe smoke suite. The suite has no numeric speed
-assertion and is included in `make check`. Large-corpus measurements remain separate
-from that correctness gate.
+report, collector, and eight-job probe smoke suite.
+The suite has no numeric speed assertion and is included in `make check`. Large-corpus
+measurements remain separate from that correctness gate.
 
 ## Execute and Validate Evidence
 
@@ -67,7 +67,8 @@ nonzero status for an invalid request or incompatible comparison.
 
 The committed [scenario set](scenarios.json) covers scan production, scan plus index,
 snapshot save/load, unchanged and changed revalidation, deterministic delta application,
-and steady query work. Build and execute it with:
+and steady query work.
+Build and execute it with:
 
 ```shell
 cargo build --locked --release -p fdu --example perf_probe --no-default-features
@@ -80,16 +81,18 @@ uv run --no-project python -m benchmarks.run execute \
   --order-seed documented-seed
 ```
 
-An executable mapping is a direct argument-vector prefix. Repeat an adapter name for an
-interpreter plus script; no command passes through a shell.
+An executable mapping is a direct argument-vector prefix.
+Repeat an adapter name for an interpreter plus script; no command passes through a
+shell.
 
 One verified base is generated per effective recipe, seed, and scale within a result
 run. Each warmup and timed invocation receives an independent clone or bounded copy of
-that base plus freshly prepared snapshot and filesystem-cache state. APFS `clonefile`
-and Linux `FICLONE` are used only after a live probe proves copy-on-write independence;
-the fallback refuses more than 8 GiB of logical copying. Internal hardlinks are
-re-created only within the trial and never connect mutable trial files to the base.
-The runner independently refreshes and verifies every trial's exact filesystem identity.
+that base plus freshly prepared snapshot and filesystem-cache state.
+APFS `clonefile` and Linux `FICLONE` are used only after a live probe proves
+copy-on-write independence; the fallback refuses more than 8 GiB of logical copying.
+Internal hardlinks are re-created only within the trial and never connect mutable trial
+files to the base. The runner independently refreshes and verifies every trial’s exact
+filesystem identity.
 Base generation, verification, clone/copy counts, copied bytes, strategy-probe time, and
 total setup time are recorded separately and excluded from the measured command.
 The runner uses a minimal environment, kills the child process group on a timeout,
@@ -130,13 +133,15 @@ of the measured product job.
 Both modes record byte count, digest, first-output latency, and completion latency.
 
 External wall time includes process startup, setup performed by the command, compact
-JSON emission, and pipe draining. Component probes additionally record their explicit
-`component_ns` boundary; reports show the two timings separately and never substitute a
-component duration for product latency. On POSIX, per-child `wait4` evidence records
-user/system CPU, peak RSS, page faults, block operations, and context switches. Metrics
-that `rusage` cannot establish—byte I/O, retained RSS, and syscall count—remain `null`
-with a reason. A scenario may require named metrics; collector unavailability then
-invalidates that scenario only.
+JSON emission, and pipe draining.
+Component probes additionally record their explicit `component_ns` boundary; reports
+show the two timings separately and never substitute a component duration for product
+latency. On POSIX, per-child `wait4` evidence records user/system CPU, peak RSS, page
+faults, block operations, and context switches.
+Metrics that `rusage` cannot establish—byte I/O, retained RSS, and syscall count—remain
+`null` with a reason.
+A scenario may require named metrics; collector unavailability then invalidates that
+scenario only.
 
 The strict contracts are versioned under `schema/`. Runtime validation rejects unknown
 fields and cross-checks the declared schedule, scenario states, environment, corpus,
@@ -198,12 +203,12 @@ Timestamp writes request non-following behavior only where Python reports it ava
 On platforms such as Windows that reject that flag, the generator verifies that each
 owned timestamp target is not a symlink before using the ordinary path operation.
 The verifier likewise keeps directory-entry metadata only where it carries authoritative
-identity. On Windows it performs a fresh non-following path stat because Python's cached
+identity. On Windows it performs a fresh non-following path stat because Python’s cached
 directory record deliberately zeros device, inode, and hardlink-count fields.
 The separate engine digest includes allocated size, ctime, inode, and device identity.
 It intentionally changes across valid corpus regeneration and is compared only to the
-probe that scanned that exact invocation. The portable semantic digest remains the
-cross-run corpus identity.
+probe that scanned that exact invocation.
+The portable semantic digest remains the cross-run corpus identity.
 
 `sha256-multiset-v1` combines a SHA-256 leaf for each normalized record through count,
 XOR, and modular-sum accumulators and hashes those components once more.
