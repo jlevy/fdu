@@ -65,11 +65,11 @@ pub mod watch;
 pub use crate::index::{
     ApplyOutcome, ApplyStats, ChildSnapshot, EntryId, ExtTally, Index, IndexHandle, RollUp, Since,
 };
-pub use crate::scan::{ReconcileReport, ScanConfig, ScanReport};
+pub use crate::scan::{ReconcileReport, ScanConfig, ScanOrder, ScanReport};
 pub use crate::types::{
     AppliedDelta, Attrs, Clock, EntryKind, Error, Expectation, Fingerprint, Freshness,
-    InvalidateReason, Observation, ObservationOp, Op, PathExpectation, PathState, Result,
-    ScanScope,
+    InvalidateReason, Observation, ObservationOp, Op, PathExpectation, PathState, Provenance,
+    Result, ScanScope, Source, Status,
 };
 
 use std::ffi::OsString;

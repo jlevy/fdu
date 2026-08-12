@@ -146,6 +146,144 @@ pub struct ScanScope {
     pub reducers_fingerprint: u64,
 }
 
+/// Where a value came from, so a consumer can trade speed for certainty knowingly.
+///
+/// Ordered weakest-last: comparing two sources yields the one to trust less, which is
+/// what a roll-up needs when combining a subtree.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Default)]
+pub enum Source {
+    /// Observed from the filesystem by this process.
+    #[default]
+    Scanned,
+    /// Loaded from a snapshot and re-verified by a fresh stat this session.
+    Revalidated,
+    /// Loaded from a snapshot; a change journal reported nothing touching this subtree
+    /// since the cursor, and nothing has re-checked it.
+    ///
+    /// Named for what actually happened — a journal *scoped* the work — rather than for
+    /// what a reader might wish it meant. Nothing here was confirmed against the
+    /// filesystem: a scoped revalidation stats the paths the journal names and does not
+    /// stat the rest, so this value rests on the journal having been complete.
+    ///
+    /// It is deliberately weaker than [`Self::Revalidated`] because that assumption is
+    /// known to fail. macOS `FSEvents` will report `HistoryDone` after silently dropping
+    /// history, with no degradation flag, which means a journal answer can be wrong
+    /// without announcing it. Journal-assisted revalidation therefore bounds exposure
+    /// with a maximum age and a periodic full sweep; those are risk controls, not
+    /// proofs, and they do not make any individual answer here verified.
+    JournalScoped,
+    /// Loaded from a snapshot and not re-checked since.
+    Cached,
+}
+
+/// Whether a value covers everything beneath its path.
+///
+/// This is the **structural coverage** axis, and only that. How far to *trust* what is
+/// covered is [`Source`], and the two are deliberately independent: a cached value
+/// covers the whole subtree but may be out of date, while a half-built one covers less
+/// than the subtree but every byte in it was just observed.
+///
+/// An enum rather than a boolean because coverage will gain more ways to be incomplete
+/// — truncated by a cap, cancelled, failed — and ordered worst-last so roll-ups combine
+/// by taking the maximum. Those variants are not here yet; see the progressive-results
+/// plan for the lifecycle they belong to.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash, Default)]
+#[non_exhaustive]
+pub enum Status {
+    /// The value accounts for everything beneath this path that is in scope.
+    #[default]
+    Complete,
+    /// The value does not account for everything beneath this path.
+    ///
+    /// **Not a promise of monotonicity.** A value being built by an additive walk only
+    /// grows, but one left incomplete by reconciliation errors can move either way once
+    /// the missing part is read. Monotonicity is a property of the *producer* that is
+    /// running, not of this status, and a consumer that needs it must know a walk is in
+    /// progress rather than infer it from here.
+    Partial,
+}
+
+/// Everything a consumer needs to decide how far to trust one value.
+///
+/// A *view* type, built on demand rather than stored: the index keeps one [`Source`]
+/// byte per entry and its observation timestamps once, because on a tree of millions
+/// of entries the timestamps are shared by nearly all of them and a per-entry struct
+/// would cost more memory than the information is worth.
+///
+/// The three facts are independent on purpose, because they answer different
+/// questions. [`Status`] asks how much of the subtree the number covers;
+/// [`Source`] asks how far to trust what it covers; `observed_at_ns` asks when.
+/// A [`Status::Complete`] but [`Source::Cached`] value is a point estimate that may
+/// move either way and reads as "about 3.2 GB, as of two minutes ago", while a
+/// [`Status::Partial`] value is missing part of its subtree and reads as "3.2 GB so
+/// far". Collapsing them would make a shrinking number look like a defect.
+///
+/// Note that "3.2 GB so far" is only a *lower bound that grows* while an additive walk
+/// is running. See [`Status::Partial`]: the status records coverage, not direction.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Provenance {
+    /// Where the value came from.
+    pub source: Source,
+    /// When the underlying filesystem observation was made, in nanoseconds since the
+    /// Unix epoch. For [`Source::Cached`] this is when the snapshot captured it — the
+    /// "as of" a consumer displays. Zero when unknown.
+    pub observed_at_ns: i64,
+    /// How settled the value is.
+    pub status: Status,
+}
+
+impl Source {
+    /// Whether a value from this source was checked against the filesystem during
+    /// this session.
+    pub const fn is_verified(self) -> bool {
+        matches!(self, Self::Scanned | Self::Revalidated)
+    }
+}
+
+impl Provenance {
+    /// Freshly observed by this process, complete.
+    pub const fn scanned(observed_at_ns: i64) -> Self {
+        Self { source: Source::Scanned, observed_at_ns, status: Status::Complete }
+    }
+
+    /// Combine with another value's provenance, taking the less trustworthy of each
+    /// fact.
+    ///
+    /// This is what makes a directory only as trustworthy as its least trustworthy
+    /// descendant: the weakest source, the oldest observation, and the worst status.
+    ///
+    /// Every fact fails closed, including time: an unknown `observed_at_ns` is
+    /// absorbing rather than skipped, so a subtree with one contributor of unknown age
+    /// reports an unknown age instead of a precise time it cannot prove.
+    ///
+    /// There is deliberately **no identity element**. Because unknown is absorbing, it
+    /// cannot double as the seed of a fold, and a caller aggregating a possibly-empty
+    /// set must represent emptiness separately (`Option<Provenance>`) rather than
+    /// seeding with a zero timestamp — otherwise every roll-up would come out unknown.
+    #[must_use]
+    pub fn combine(self, other: Self) -> Self {
+        Self {
+            source: self.source.max(other.source),
+            observed_at_ns: match (self.observed_at_ns, other.observed_at_ns) {
+                // Unknown is contagious, not skipped. Zero means "we cannot say when",
+                // and the honest combination of a known time with an unknown one is
+                // still unknown: a parent that drops the unknown contributor would
+                // advertise a precise "as of" it cannot prove for the whole subtree.
+                // Unknown is not the identity for "oldest observation" — it is the
+                // absorbing element.
+                (0, _) | (_, 0) => 0,
+                (mine, other) => mine.min(other),
+            },
+            status: self.status.max(other.status),
+        }
+    }
+
+    /// Whether this value was checked against the filesystem during this session.
+    pub const fn is_verified(self) -> bool {
+        self.source.is_verified()
+    }
+}
+
 /// Trust state for an index or queried subtree.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum Freshness {
@@ -524,5 +662,55 @@ mod tests {
         // A ctime bump is, even when mtime was rolled back to look unchanged.
         let touched = Attrs { ctime_ns: 9, ..base };
         assert_ne!(base.fingerprint(), touched.fingerprint());
+    }
+}
+
+#[cfg(test)]
+mod provenance_tests {
+    use super::*;
+
+    #[test]
+    fn sources_order_from_most_to_least_trustworthy() {
+        assert!(Source::Scanned < Source::Revalidated);
+        assert!(Source::Revalidated < Source::JournalScoped);
+        assert!(Source::JournalScoped < Source::Cached);
+    }
+
+    #[test]
+    fn combining_takes_the_least_trustworthy_of_each_fact() {
+        let verified =
+            Provenance { source: Source::Scanned, observed_at_ns: 900, status: Status::Complete };
+        let stale =
+            Provenance { source: Source::Cached, observed_at_ns: 100, status: Status::Partial };
+        let combined = verified.combine(stale);
+        assert_eq!(combined.source, Source::Cached, "weakest source wins");
+        assert_eq!(combined.observed_at_ns, 100, "oldest observation wins");
+        assert_eq!(combined.status, Status::Partial, "worst status wins");
+        assert_eq!(combined, stale.combine(verified), "combination is commutative");
+    }
+
+    #[test]
+    fn an_unknown_timestamp_makes_the_combination_unknown() {
+        // Fail closed. Zero means "we cannot say when", so a subtree containing one
+        // contributor of unknown age has an unknown age too. Returning the known
+        // timestamp instead would let a directory advertise a precise "as of" that is
+        // wrong for part of what it summarises — the silent lie the provenance model
+        // exists to prevent.
+        let known = Provenance::scanned(500);
+        let unknown = Provenance { observed_at_ns: 0, ..Provenance::scanned(0) };
+        assert_eq!(known.combine(unknown).observed_at_ns, 0);
+        assert_eq!(unknown.combine(known).observed_at_ns, 0);
+        assert_eq!(known.combine(unknown), unknown.combine(known), "combination stays commutative");
+    }
+
+    #[test]
+    fn only_this_session_counts_as_verified() {
+        assert!(Provenance::scanned(1).is_verified());
+        assert!(Provenance { source: Source::Revalidated, ..Provenance::scanned(1) }.is_verified());
+        // The journal can omit history without saying so, so its word is not a check.
+        assert!(
+            !Provenance { source: Source::JournalScoped, ..Provenance::scanned(1) }.is_verified()
+        );
+        assert!(!Provenance { source: Source::Cached, ..Provenance::scanned(1) }.is_verified());
     }
 }

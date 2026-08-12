@@ -57,7 +57,28 @@ class MetricChange(Strict):
     )
     significant: bool = Field(
         default=False,
-        description="Whether the whole interval lies below zero, i.e. the win is not noise.",
+        description=(
+            "Deprecated alias of passes_acceptance, kept so artifacts recorded before "
+            "the fields were split still validate. Read passes_acceptance instead."
+        ),
+    )
+    passes_acceptance: bool = Field(
+        default=False,
+        description=(
+            "Whether the whole interval lies below zero: the project's one-sided "
+            "accept rule. False does NOT mean unchanged - a regression fails it too."
+        ),
+    )
+    ci_excludes_zero: bool = Field(
+        default=False,
+        description=(
+            "Whether the interval is clear of zero in either direction, i.e. the "
+            "measurement says something rather than nothing."
+        ),
+    )
+    direction: Literal["improved", "regressed", "unclear", "unknown"] = Field(
+        default="unknown",
+        description="Which way the evidence points, separate from whether we accept it.",
     )
     pairs: int = Field(default=0, ge=0, description="Trial pairs behind the comparison.")
 
@@ -237,6 +258,22 @@ LEDGER_METRICS = (
 )
 
 
+def _flags_from_interval(low: Any, high: Any) -> Dict[str, Any]:
+    """Evidence flags computed from the 95% interval alone.
+
+    Deriving rather than copying is what lets a run recorded before the fields were
+    split produce a correct artifact: the bounds are the ground truth, and the flags
+    are a reading of them.
+    """
+    if low is None or high is None:
+        return {"ci_excludes_zero": False, "direction": "unknown"}
+    if high < 0:
+        return {"ci_excludes_zero": True, "direction": "improved"}
+    if low > 0:
+        return {"ci_excludes_zero": True, "direction": "regressed"}
+    return {"ci_excludes_zero": False, "direction": "unclear"}
+
+
 def _binary(run: Mapping[str, Any], name: str) -> Dict[str, Any]:
     identity = (run.get("variants") or {}).get(name) or {}
     return {
@@ -298,6 +335,15 @@ def from_run(
                 "ci95_low_pct": interval[0],
                 "ci95_high_pct": interval[1],
                 "significant": bool(entry.get("significant", False)),
+                "passes_acceptance": bool(
+                    entry.get("passes_acceptance", entry.get("significant", False))
+                ),
+                # Derived from the interval, never defaulted. A run recorded before the
+                # fields were split carries neither key, and writing `false`/`unknown`
+                # into the artifact would contradict the very bounds sitting beside them
+                # — an artifact that validates while its own flags disagree with its own
+                # interval is worse than one that lacks the fields.
+                **_flags_from_interval(interval[0], interval[1]),
                 "pairs": int(entry.get("pairs", 0)),
             }
         results.append(

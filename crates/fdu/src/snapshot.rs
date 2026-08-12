@@ -34,7 +34,9 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use crate::index::{EntryId, Index, IndexHandle};
-use crate::types::{Attrs, EntryKind, Error, Freshness, Observation, Op, Result, ScanScope};
+use crate::types::{
+    Attrs, EntryKind, Error, Freshness, Observation, Op, Result, ScanScope, Source,
+};
 
 /// Leading magic. Distinguishes an fdu snapshot from any other file that lands here.
 const MAGIC: &[u8; 8] = b"FDUSNAP\x00";
@@ -102,9 +104,43 @@ const MAX_SNAPSHOT_BYTES: u64 = 64 * GIBIBYTE;
 /// Process-local discriminator for exclusive sibling temporary files.
 static NEXT_TEMP_FILE: AtomicU64 = AtomicU64::new(0);
 
+/// Per-process entropy mixed into temporary file names.
+///
+/// Correctness never depended on this: `O_EXCL` is what guarantees one creator wins,
+/// and the counter above is what keeps two threads of this process from even trying the
+/// same name. Randomness closes two gaps the counter cannot.
+///
+/// A killed writer leaves its temporary behind and nothing reaps it. With a
+/// pid-and-counter name, a later process that recycles that pid restarts its counter at
+/// zero and collides with the corpse on every run — correct, because it retries, but it
+/// accumulates litter and in the pathological case walks the whole retry budget. And
+/// the names are otherwise entirely predictable, which matters because
+/// [`MAX_TEMP_CREATE_ATTEMPTS`] exists specifically to survive a hostile directory: an
+/// attacker who can guess the names can pre-create the whole budget and deny every save.
+///
+/// Seeded from `RandomState`, whose keys the standard library takes from the operating
+/// system, so this needs no dependency and no clock.
+static TEMP_FILE_ENTROPY: std::sync::LazyLock<u64> = std::sync::LazyLock::new(|| {
+    use std::hash::{BuildHasher, Hasher};
+    std::collections::hash_map::RandomState::new().build_hasher().finish()
+});
+
 /// Stale files can survive a killed writer. Try enough unique sequence values to step
 /// over them without turning an attacker-controlled directory into an unbounded loop.
 const MAX_TEMP_CREATE_ATTEMPTS: usize = 1024;
+
+/// How old an abandoned temporary must be before a later writer removes it.
+///
+/// Per-process entropy in the name means a corpse can never collide with a future
+/// writer — which also means no future writer will ever reuse or overwrite it. Unique
+/// names turn an occasional collision into permanent litter, and each corpse is a whole
+/// snapshot image, so something has to collect them.
+///
+/// A day is far longer than any real save and far shorter than "never". The threshold
+/// is what makes this safe without any liveness check: a temporary this old cannot
+/// belong to a writer that is still running, and pid-based liveness tests are both
+/// unportable and wrong under pid reuse.
+const STALE_TEMP_AGE: std::time::Duration = std::time::Duration::from_secs(24 * 60 * 60);
 
 /// Largest encoded root or entry name accepted from a snapshot.
 const MAX_PATH_BYTES: u32 = 1024 * 1024;
@@ -255,8 +291,19 @@ fn load_with_size_limit(path: &Path, max_snapshot_bytes: u64) -> Result<Option<I
     // corruption: the parser may do work before the mismatch is known, and the
     // result is then discarded. Structural corruption is caught by the parser's own
     // bounds and consistency checks exactly as before, fail-closed either way.
+    // The tree was captured shortly before this file was written, so the file's own
+    // mtime is the closest "as of" available without a format change. It slightly
+    // overstates freshness — the walk began earlier — which is why format v3 should
+    // carry the true capture instant and this should read that instead.
+    let captured_at_ns = file
+        .metadata()
+        .ok()
+        .and_then(|metadata| metadata.modified().ok())
+        .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+        .and_then(|since| i64::try_from(since.as_nanos()).ok())
+        .unwrap_or(0);
     let mut reader = Crc32cReader::new(BufReader::new(file.take(payload_len)));
-    let outcome = parse_stream(&mut reader, payload_len);
+    let outcome = parse_stream(&mut reader, payload_len, captured_at_ns);
     match outcome {
         Ok(index) => {
             // A successful parse consumed every payload byte (the trailing-byte check
@@ -330,7 +377,11 @@ const fn make_crc32c_table() -> [u32; 256] {
 
 /// Parse a bounded payload. Records are applied one at a time so bootstrap paths are not
 /// retained in a second full-tree allocation.
-fn parse_stream(reader: &mut impl Read, payload_len: u64) -> ParseResult<Index> {
+fn parse_stream(
+    reader: &mut impl Read,
+    payload_len: u64,
+    captured_at_ns: i64,
+) -> ParseResult<Index> {
     if read_array::<_, 8>(reader)? != *MAGIC {
         return Err(ParseError::Invalid);
     }
@@ -354,6 +405,11 @@ fn parse_stream(reader: &mut impl Read, payload_len: u64) -> ParseResult<Index> 
     }
 
     let mut index = Index::new_with_scope(&root_path, scope);
+    // Everything this loader inserts describes the tree as the snapshot found it, not
+    // as this process has seen it. Stamping the entries `Cached` is what lets a
+    // consumer paint them immediately and label them honestly; without it a loaded
+    // index claims to be fresh when nothing has been checked since the file was read.
+    index.set_applying_source(Source::Cached, captured_at_ns);
     let mut ids: Vec<EntryId> = Vec::new();
     let mut parent_path_memo: Option<(u32, PathBuf)> = None;
     for slot in 0..count {
@@ -425,6 +481,9 @@ fn parse_stream(reader: &mut impl Read, payload_len: u64) -> ParseResult<Index> 
     if reader.read(&mut extra).map_err(ParseError::Io)? != 0 {
         return Err(ParseError::Invalid);
     }
+    // Anything applied after the load is this process checking what the snapshot
+    // claimed, which is a revalidation rather than a first sighting.
+    index.set_applying_source(Source::Revalidated, 0);
     Ok(index)
 }
 
@@ -609,7 +668,7 @@ fn os_string_from_bytes(bytes: &[u8]) -> Option<OsString> {
 /// or the whole new one. The temporary must be a sibling for that to hold — a rename
 /// across filesystems is a copy, and copies are not atomic.
 fn write_atomically(path: &Path, bytes: &[u8]) -> Result<()> {
-    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let parent = parent_dir(path);
     fs::create_dir_all(parent).map_err(|e| Error::io(parent, e))?;
 
     let (tmp, mut file) = create_temp_file(path, parent)?;
@@ -624,16 +683,77 @@ fn write_atomically(path: &Path, bytes: &[u8]) -> Result<()> {
         let _ = fs::remove_file(&tmp);
         return Err(Error::io(path, e));
     }
+    reap_stale_temporaries(parent, path, STALE_TEMP_AGE);
     Ok(())
+}
+
+/// Remove long-abandoned temporaries beside `path`.
+///
+/// Best effort and deliberately silent: this is housekeeping, and a snapshot that was
+/// written correctly must not fail because a directory could not be tidied. Anything
+/// that cannot be read or removed is left for the next writer.
+fn reap_stale_temporaries(parent: &Path, path: &Path, older_than: std::time::Duration) {
+    let Some(prefix) = temp_prefix(path) else { return };
+    let Ok(entries) = fs::read_dir(parent) else { return };
+    let now = std::time::SystemTime::now();
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        if !name.as_encoded_bytes().starts_with(prefix.as_encoded_bytes()) {
+            continue;
+        }
+        let stale = entry
+            .metadata()
+            .and_then(|meta| meta.modified())
+            .ok()
+            .and_then(|modified| now.duration_since(modified).ok())
+            .is_some_and(|age| age >= older_than);
+        if stale {
+            let _ = fs::remove_file(entry.path());
+        }
+    }
+}
+
+/// The shared leading portion of every temporary written for `path`.
+///
+/// Matching on this rather than on a full parse keeps the reaper from depending on the
+/// pid, entropy, and sequence encoding: a temporary written by an older build with a
+/// different suffix layout is still recognised and still collected.
+fn temp_prefix(path: &Path) -> Option<OsString> {
+    let mut prefix = OsString::from(".");
+    prefix.push(path.file_name()?);
+    prefix.push(".tmp.");
+    Some(prefix)
+}
+
+/// The directory a target lives in, as a path that can actually be opened.
+///
+/// A bare relative target such as `snap.fdu` has an *empty* parent rather than none, and
+/// the empty path is not the current directory: `create_dir_all` and `rename` tolerate
+/// it, but `read_dir` does not — which silently disabled the reaper for exactly those
+/// targets while the write itself kept working.
+fn parent_dir(path: &Path) -> &Path {
+    match path.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => parent,
+        _ => Path::new("."),
+    }
+}
+
+/// The temporary name this process uses for `path` at `sequence`.
+///
+/// Split out so a test can plant a collision at a name the writer will actually try.
+/// Guessing the shape does not work — the entropy is per process — and getting that
+/// wrong is how the first version of the stale-temporary test came to exercise nothing.
+fn temp_name(path: &Path, sequence: u64) -> OsString {
+    let mut name = OsString::from(".");
+    name.push(path.file_name().unwrap_or_else(|| OsStr::new("snapshot")));
+    name.push(format!(".tmp.{}.{:016x}.{}", std::process::id(), *TEMP_FILE_ENTROPY, sequence));
+    name
 }
 
 fn create_temp_file(path: &Path, parent: &Path) -> Result<(PathBuf, fs::File)> {
     for _ in 0..MAX_TEMP_CREATE_ATTEMPTS {
         let sequence = NEXT_TEMP_FILE.fetch_add(1, Ordering::Relaxed);
-        let mut name = OsString::from(".");
-        name.push(path.file_name().unwrap_or_else(|| OsStr::new("snapshot")));
-        name.push(format!(".tmp.{}.{}", std::process::id(), sequence));
-        let tmp = parent.join(name);
+        let tmp = parent.join(temp_name(path, sequence));
         let mut options = OpenOptions::new();
         options.write(true).create_new(true);
         #[cfg(unix)]
@@ -715,6 +835,96 @@ mod tests {
     #[test]
     fn crc32c_matches_the_standard_check_value() {
         assert_eq!(crc32c(b"123456789"), 0xe306_9283);
+    }
+
+    #[test]
+    fn a_loaded_index_reports_cached_provenance_not_fresh() {
+        // The gap that motivated the provenance model. A snapshot is complete when it
+        // is written, so a loaded index used to claim `Fresh` — true of when the file
+        // was made, and exactly backwards for a consumer painting on load, which needs
+        // to know nothing has been checked since.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("snapshot.fdu");
+        let original = sample_index();
+        save(&original, &path).expect("save");
+
+        let restored = load(&path).expect("load").expect("snapshot present");
+        let provenance =
+            restored.provenance(Path::new("src/main.rs")).expect("the loaded entry is present");
+        assert_eq!(provenance.source, crate::Source::Cached);
+        assert!(!provenance.is_verified(), "nothing has been stat'd since the load");
+        assert!(
+            provenance.observed_at_ns > 0,
+            "a cached value must say as of when, or a UI cannot label it"
+        );
+
+        // A freshly scanned index is the contrasting case.
+        assert_eq!(
+            original.provenance(Path::new("src/main.rs")).expect("present").source,
+            crate::Source::Scanned
+        );
+    }
+
+    #[test]
+    fn a_loaded_root_reports_cached_provenance_not_fresh() {
+        // The root is the one entry the child-only test above cannot cover, and it is
+        // the one that matters most: whole-tree totals hang off it, so `fdu ~` reads
+        // the root's provenance to label its headline number. `apply_upsert` handles
+        // the root in a separate branch, and that branch used to skip the source stamp
+        // entirely — leaving a snapshot-loaded root claiming `Scanned` and
+        // `is_verified()`, the precise silent lie the model exists to prevent.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("snapshot.fdu");
+        save(&sample_index(), &path).expect("save");
+
+        let restored = load(&path).expect("load").expect("snapshot present");
+        let provenance = restored.provenance(Path::new("")).expect("the root is always present");
+        assert_eq!(provenance.source, crate::Source::Cached, "the root came off disk too");
+        assert!(!provenance.is_verified(), "nothing has been stat'd since the load");
+        assert!(
+            provenance.observed_at_ns > 0,
+            "a cached total must say as of when, or a UI cannot label it"
+        );
+    }
+
+    #[test]
+    fn revalidating_a_loaded_index_promotes_entries_out_of_cached() {
+        // The failure a reviewer caught on PR #6: entries were stamped only when
+        // allocated, so a warm sweep could stat every entry and leave them all
+        // reporting `Cached`. A consumer could then never clear a stale-value
+        // indicator no matter how much verification ran, which defeats the point.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let tree = dir.path().join("tree");
+        std::fs::create_dir_all(tree.join("sub")).expect("create dirs");
+        std::fs::write(tree.join("sub/file.txt"), b"contents").expect("write");
+        let snapshot_path = dir.path().join("snapshot.fdu");
+
+        let config = crate::ScanConfig::default();
+        let (original, report) = crate::scan::scan_into_index(&tree, &config).expect("scan");
+        assert!(report.is_complete());
+        save(&original, &snapshot_path).expect("save");
+
+        let mut restored = load(&snapshot_path).expect("load").expect("present");
+        let target = Path::new("sub/file.txt");
+        assert_eq!(
+            restored.provenance(target).expect("present").source,
+            crate::Source::Cached,
+            "straight off disk, nothing has been checked"
+        );
+
+        // A sweep that finds nothing changed still verified every entry it stat'd.
+        let reconciled =
+            crate::scan::reconcile(&mut restored, &config, &mut |_| {}).expect("reconcile");
+        assert!(reconciled.is_complete());
+        assert_eq!(reconciled.apply.updated, 0, "the tree did not change");
+
+        let provenance = restored.provenance(target).expect("present");
+        assert_eq!(
+            provenance.source,
+            crate::Source::Revalidated,
+            "an unchanged entry that was freshly stat'd has still been verified"
+        );
+        assert!(provenance.is_verified());
     }
 
     #[test]
@@ -930,6 +1140,117 @@ mod tests {
             .filter(|name| name != "snap.fdu")
             .collect();
         assert!(leftovers.is_empty(), "temp files left behind: {leftovers:?}");
+    }
+
+    #[test]
+    fn an_abandoned_temporary_is_collected_once_it_is_old_enough() {
+        // Per-process entropy means no future writer will ever generate a corpse's
+        // name again, so nothing would otherwise reclaim it: unique names turn an
+        // occasional collision into permanent litter, one whole snapshot image at a
+        // time. The reaper closes that, and the age threshold is what makes it safe
+        // without a liveness check — pid-based liveness is unportable and wrong under
+        // pid reuse.
+        //
+        // The threshold is a parameter so both sides are testable without setting
+        // mtimes, which the standard library cannot do and which is not worth a
+        // dependency.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("snap.fdu");
+        let prefix = temp_prefix(&path).expect("a named target has a prefix");
+
+        let mut corpse = prefix.clone();
+        corpse.push("111.0123456789abcdef.7");
+        let unrelated = OsString::from("notes.txt");
+        fs::write(dir.path().join(&corpse), b"a writer killed long ago").expect("plant");
+        fs::write(dir.path().join(&unrelated), b"not ours").expect("plant");
+
+        // The shipped threshold spares anything that could still be in flight.
+        reap_stale_temporaries(dir.path(), &path, STALE_TEMP_AGE);
+        assert!(dir.path().join(&corpse).exists(), "a fresh corpse must be left alone");
+
+        // Past the threshold it is collected, and only it.
+        reap_stale_temporaries(dir.path(), &path, std::time::Duration::ZERO);
+        assert!(!dir.path().join(&corpse).exists(), "an old corpse must be collected");
+        assert!(dir.path().join(&unrelated).exists(), "unrelated files are never touched");
+    }
+
+    #[test]
+    fn the_reaper_only_matches_its_own_targets_temporaries() {
+        // The prefix carries the target's file name, so two snapshots sharing a
+        // directory cannot collect each other's work in progress.
+        let mine = temp_prefix(Path::new("/cache/snap.fdu")).expect("prefix");
+        let theirs = temp_prefix(Path::new("/cache/other.fdu")).expect("prefix");
+        assert_eq!(mine, OsString::from(".snap.fdu.tmp."));
+        assert_ne!(mine, theirs);
+        assert!(temp_prefix(Path::new("/")).is_none(), "a rootless path has no name");
+    }
+
+    #[test]
+    fn a_stale_temporary_does_not_block_a_later_write() {
+        // A killed writer leaves its temporary behind and nothing reaps it until it is
+        // a day old, so a later write can find a corpse sitting exactly where it wants
+        // to go. `O_EXCL` plus the retry loop is what makes that safe: the collision is
+        // detected and stepped over, never shared.
+        //
+        // The corpse is planted at names this process will really try, via `temp_name`.
+        // An earlier version of this test guessed the shape and planted
+        // `.snap.fdu.tmp.{pid}.0`, which the entropy in the name means the writer can
+        // never generate — so it collided with nothing and proved nothing, while
+        // reading as though it had.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("snap.fdu");
+
+        // Block a window of upcoming sequence values. A window rather than one name
+        // because the counter is process-global and other tests draw from it too;
+        // whichever value this write lands on, it starts inside the blocked range.
+        let first = NEXT_TEMP_FILE.load(Ordering::Relaxed);
+        let planted: Vec<OsString> =
+            (first..first + 32).map(|sequence| temp_name(&path, sequence)).collect();
+        for name in &planted {
+            fs::write(dir.path().join(name), b"corpse").expect("plant a stale temporary");
+        }
+
+        write_atomically(&path, b"payload").expect("write past the stale temporaries");
+        assert_eq!(fs::read(&path).expect("read back"), b"payload");
+
+        // Every corpse survives: the writer stepped over them rather than reusing or
+        // removing one, and they are far too young for the reaper.
+        let mut survivors: Vec<_> = fs::read_dir(dir.path())
+            .expect("read_dir")
+            .filter_map(std::result::Result::ok)
+            .map(|entry| entry.file_name())
+            .filter(|name| name != "snap.fdu")
+            .collect();
+        survivors.sort();
+        let mut expected = planted;
+        expected.sort();
+        assert_eq!(survivors, expected, "the write must step over corpses, not consume them");
+    }
+
+    #[test]
+    fn a_bare_filename_target_resolves_to_an_openable_directory() {
+        // `Path::parent` returns `Some("")` for a bare name, not `None`, so an
+        // `unwrap_or(".")` fallback never fires. The write still worked — `rename`
+        // accepts the empty path — but `read_dir("")` fails, so the reaper returned
+        // immediately and collected nothing for those targets.
+        assert_eq!(parent_dir(Path::new("snap.fdu")), Path::new("."));
+        assert!(fs::read_dir(parent_dir(Path::new("snap.fdu"))).is_ok(), "must be openable");
+        assert_eq!(parent_dir(Path::new("/cache/snap.fdu")), Path::new("/cache"));
+        assert_eq!(parent_dir(Path::new("cache/snap.fdu")), Path::new("cache"));
+    }
+
+    #[test]
+    fn a_temporary_name_is_unique_per_sequence_and_carries_process_entropy() {
+        // The two components that make a corpse unreachable by a future process, and a
+        // writer unable to collide with itself.
+        let path = Path::new("/cache/snap.fdu");
+        assert_ne!(temp_name(path, 0), temp_name(path, 1), "the counter separates files");
+        let name = temp_name(path, 0).to_string_lossy().into_owned();
+        assert!(name.starts_with(".snap.fdu.tmp."), "reaper prefix must match: {name}");
+        assert!(
+            name.contains(&format!("{:016x}", *TEMP_FILE_ENTROPY)),
+            "entropy must be in the name, or a recycled pid regenerates a corpse: {name}"
+        );
     }
 
     #[test]

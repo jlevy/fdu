@@ -943,6 +943,7 @@ mod tests {
                     "/fixture/denied",
                     std::io::Error::new(std::io::ErrorKind::PermissionDenied, "denied"),
                 )],
+                attribution: crate::scan::WalkAttribution::default(),
             },
         };
         (cli, index, report)
@@ -1211,7 +1212,12 @@ mod tests {
         index.set_initial_freshness(false);
         let report = crate::OpenReport {
             path_taken: OpenPath::ColdScan,
-            scan: crate::ScanReport { dirs_read: 1, entries: 2, errors: Vec::new() },
+            scan: crate::ScanReport {
+                dirs_read: 1,
+                entries: 2,
+                errors: Vec::new(),
+                attribution: crate::scan::WalkAttribution::default(),
+            },
         };
 
         let mut output = Vec::new();

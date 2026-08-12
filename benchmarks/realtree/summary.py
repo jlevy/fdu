@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -58,9 +59,33 @@ def load_experiments(directory: Path) -> List[Dict[str, Any]]:
     return experiments
 
 
+def _validator() -> List[str]:
+    """The softschema command, pinned rather than resolved from the network.
+
+    Every artifact is validated on the way into the ledger, so this runs once per
+    experiment. Resolving `softschema@latest` each time made the ledger depend on a
+    network fetch fifteen times per run — intermittently failing on a different file
+    each time — and put an unpinned package execution back on a path the supply-chain
+    policy had supposedly closed.
+
+    Resolution order: the `SOFTSCHEMA` environment variable, then the binary beside the
+    running interpreter, which is the frozen benchmarks venv when invoked through
+    `make`.
+    """
+    override = os.environ.get("SOFTSCHEMA")
+    if override:
+        return override.split()
+    candidate = Path(sys.executable).parent / "softschema"
+    if candidate.is_file():
+        return [str(candidate)]
+    raise SummaryError(
+        "softschema not found: run through `make perf-ledger`, or set SOFTSCHEMA"
+    )
+
+
 def _read(path: Path) -> Dict[str, Any]:
     completed = subprocess.run(
-        ["uvx", "softschema@latest", "validate", str(path)],
+        [*_validator(), "validate", str(path)],
         capture_output=True,
         timeout=600,
     )
@@ -68,7 +93,11 @@ def _read(path: Path) -> Dict[str, Any]:
     try:
         document = json.loads(stdout)
     except json.JSONDecodeError as error:
-        raise SummaryError(f"{path}: softschema produced no JSON: {error}") from error
+        stderr = completed.stderr.decode("utf-8", errors="replace").strip()
+        raise SummaryError(
+            f"{path}: softschema produced no JSON (exit {completed.returncode}): "
+            f"{error}; stderr: {stderr[:400] or '(empty)'}"
+        ) from error
     if document.get("outcome") != "valid":
         errors = document.get("structural", {}).get("errors") or []
         detail = "; ".join(str(item.get("message")) for item in errors[:3])
@@ -314,7 +343,7 @@ def _section(experiment: Mapping[str, Any]) -> List[str]:
                 f"| {label} ({unit}) "
                 f"| {_value(entry['control_median'], unit)} "
                 f"| {_value(entry['candidate_median'], unit)} "
-                f"| {entry['change_pct']:+.2f}%{'' if entry.get('significant') else ' (n.s.)'} "
+                f"| {entry['change_pct']:+.2f}%{_mark(low, high)} "
                 + (f"| [{low:+.2f}%, {high:+.2f}%] |" if low is not None else "| — |")
             )
         lines.append("")
@@ -333,9 +362,9 @@ def _section(experiment: Mapping[str, Any]) -> List[str]:
                     f"`{result['job']}` {entry['control_median'] / 1e6:.0f} ms"
                 )
             else:
-                mark = "" if entry.get("significant") else " (n.s.)"
                 summaries.append(
-                    f"`{result['job']}` {entry['change_pct']:+.1f}%{mark}"
+                    f"`{result['job']}` {entry['change_pct']:+.1f}%"
+                    + _mark(entry.get("ci95_low_pct"), entry.get("ci95_high_pct"))
                 )
         lines.append("Other jobs, wall time: " + ", ".join(summaries) + ".")
         lines.append("")
@@ -372,6 +401,22 @@ def _section(experiment: Mapping[str, Any]) -> List[str]:
     lines.append(f"Full record: [`{name}`](../experiments/{name})")
     lines.append("")
     return lines
+
+
+def _mark(low: Any, high: Any) -> str:
+    """Annotate a change with what its interval supports.
+
+    The old renderer printed "(n.s.)" for everything the one-sided accept rule
+    rejected, which labelled measured regressions as statistically silent. Derived
+    from the interval so pre-split artifacts render correctly too.
+    """
+    if low is None or high is None:
+        return " (n.s.)"
+    if high < 0:
+        return ""
+    if low > 0:
+        return " (regression)"
+    return " (n.s.)"
 
 
 def _value(value: float, unit: str) -> str:

@@ -106,12 +106,22 @@ Two further goals surfaced by the research and are proposed as peers of the five
    word, and sentence counts; code metrics) and new file-type recognition rules must be
    registrations against stable interfaces — the reducer registry and the type-rule
    dialect — never engine changes.
-7. **Trustworthy results.** Caching and watching may never silently lie.
+
+7. **Trustworthy results, and an honest speed/certainty trade.** Caching and watching
+   may never silently lie.
    Fingerprints must detect real change (size + mtime + ctime + inode); producers that
    lose precision must escalate (`InvalidateSubtree`) rather than guess; a corrupt cache
    is treated as empty, never as data.
-   Fast-but-wrong is a non-goal, and stale-while-revalidating must always be labeled as
-   such to consumers.
+
+   The operative word throughout is *silently*. Speed may be traded for certainty —
+   often it must be, since a verified answer over a five-million-entry tree costs
+   minutes and a cached one costs milliseconds — **provided every value says where it
+   came from, when it was observed, and whether it is final.** Fast-but-wrong is a
+   non-goal; fast-and-labelled is a feature, and the labelling is per value rather than
+   per run, because a consumer showing a thousand rows needs to know which of them it
+   can trust, not merely that some of them are stale.
+   See
+   [the provenance model](../specs/active/plan-2026-08-11-fdu-progressive-results.md).
 
 ## Questions to Answer
 
@@ -941,10 +951,10 @@ copies at the commits in `attic/`.
    Language matters less than syscall discipline; metabrowser’s 7k files/s is a
    Python-and-GIL ceiling, but the gap to the leaders is syscall technique as much as it
    is language.
-2. **The floor of a trustworthy warm re-scan is still a stat sweep.**
-   With a snapshot: load (one bulk read of a compact file, milliseconds) + revalidation
-   (parallel stat sweep, with a matching directory fingerprint avoiding only redundant
-   name-set enumeration) + re-derivation only for changed entries.
+2. **The floor of a trustworthy warm re-scan is still a stat sweep.** With a snapshot:
+   load (one bulk read of a compact file, milliseconds) + revalidation (parallel stat
+   sweep, with a matching directory fingerprint avoiding only redundant name-set
+   enumeration) + re-derivation only for changed entries.
    This is git’s model, and flowmark proves the UX at 23 ms warm.
 3. **Content work must be opt-in, lazy, and cached by fingerprint.** Every system that
    touches content bounds the read or caches by identity.
@@ -1247,10 +1257,11 @@ fingerprints rather than replacing them.
    mtime, ctime, and inode**, per borg/restic, not mtime alone.
    A directory whose cached fingerprint matches may skip `read_dir` name-set discovery
    (git’s untracked-cache trick), but the sweep still stats every known child and
-   recurses into known directories: modifying a file in place does not change its
-   parent directory mtime. A changed directory fingerprint triggers re-listing to find
-   additions, removals, and renames. Files with matching fingerprints keep their
-   derived data (type verdicts, content metrics) with zero content reads.
+   recurses into known directories: modifying a file in place does not change its parent
+   directory mtime. A changed directory fingerprint triggers re-listing to find
+   additions, removals, and renames.
+   Files with matching fingerprints keep their derived data (type verdicts, content
+   metrics) with zero content reads.
    Only changed entries re-derive.
    Results stream as deltas so callers serve the stale snapshot instantly and reconcile.
 3. **Watch mode.** In a long-lived process, `fdu::watch` keeps the index and cache

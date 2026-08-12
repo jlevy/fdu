@@ -454,7 +454,7 @@ def _measure_once(
         probe={
             key: value
             for key, value in probe.items()
-            if key in {"component_ns", "mode", "source"}
+            if key in {"component_ns", "attribution", "mode", "source"}
         },
     )
 
@@ -795,6 +795,19 @@ def paired_comparison(
             if low is not None
             else None,
             "improved": median_ratio is not None and median_ratio < 0,
+            # Three separate questions that used to be collapsed into one flag.
+            #
+            # `passes_acceptance` is the project's one-sided accept rule: the whole
+            # interval below zero. `ci_excludes_zero` asks only whether the evidence is
+            # clear in *either* direction, and `direction` says which. Reporting only
+            # the accept rule made a measured regression render as "not significant",
+            # which is how exp-012 came to be described as free when its own RSS
+            # intervals sat entirely above zero.
+            "passes_acceptance": low is not None and high is not None and high < 0,
+            "ci_excludes_zero": low is not None
+            and high is not None
+            and (high < 0 or low > 0),
+            "direction": _direction(low, high),
             "significant": low is not None and high is not None and high < 0,
         }
     return result
@@ -825,6 +838,22 @@ def _pairs(
         for ordinal in sorted(set(left) & set(right))
         if left[ordinal]
     ]
+
+
+def _direction(low: Optional[float], high: Optional[float]) -> str:
+    """Which way the evidence points, independent of whether we would accept it.
+
+    "unclear" is the honest answer for an interval straddling zero: it covers both a
+    small win and a small loss, and calling that "unchanged" is the overclaim this
+    field exists to prevent.
+    """
+    if low is None or high is None:
+        return "unknown"
+    if high < 0:
+        return "improved"
+    if low > 0:
+        return "regressed"
+    return "unclear"
 
 
 def _bootstrap_median_interval(

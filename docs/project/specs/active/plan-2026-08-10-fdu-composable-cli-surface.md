@@ -50,34 +50,50 @@ removed from this design by exactly that test.
 4. **Views are readers.** The Delta contract stands: `scan` and `watch` produce
    observations, the index consumes them, and views only read the index.
    No view or format may add a mutation path or reach into producer state.
-5. **Fastest answer the data allows, never silently stale.** Cache behavior is one
-   explicit policy axis, and every report labels its `source`, `freshness`, and
-   `complete` status (Goal 7 of the research).
-   Warm, cold, and cache-only runs are user choices, not heuristics; incremental update
-   (warm revalidation, watch deltas) is the default path, not an opt-in mode.
-6. **Same concepts at every level; the CLI invents nothing.** `Query`, `View`, `Report`,
+5. **Speed may be traded for certainty, never for honesty.** Every value carries its
+   provenance — where it came from, when it was observed, whether it is final — so a
+   consumer rendering a thousand rows knows which ones to trust, not merely that the run
+   was partial (Goal 7 of the research;
+   [the provenance model](plan-2026-08-11-fdu-progressive-results.md)). Provenance is a
+   property of the value in the library; every surface displays it rather than inventing
+   it. `auto` may choose the cheapest sound path per tree, and that choice is legible in
+   the report’s `source` — a hidden choice would violate this principle, a visible one
+   is how it is implemented.
+   The explicit policies (`refresh`, `read-only`, `only`, `off`) remain for callers who
+   want a particular path rather than the cheapest one.
+6. **Benefit from the OS; never depend on it.** Three tiers, each fast in its own right:
+   a portable walk, a cache for the cases a cache can help, and platform APIs (bulk
+   stat, `statx`, `io_uring`, fanotify, the FSEvents journal) probed at runtime as
+   accelerators for the first two.
+   A missing or degraded tier falls back to the one below, losing speed and never
+   accuracy. The most valuable platform APIs do not compute answers; they **bound
+   uncertainty** — naming in milliseconds which parts of a million-entry tree could have
+   changed, so verification goes only there.
+   That is what makes near-real-time views of huge trees possible, and why such an API
+   may narrow what is checked but never substitute for checking it.
+7. **Same concepts at every level; the CLI invents nothing.** `Query`, `View`, `Report`,
    and `CachePolicy` are typed values in the Rust library; the CLI parses flags into
    them and renders `Report`s; Python exposes the same types.
    Any logic beyond flag parsing, terminal handling, and exit codes belongs in the
    library, where Rust and Python callers get it too.
    A capability that exists in one surface and not the others is unfinished, and
    complexity that exists only at the CLI layer is misplaced.
-7. **Subsume the neighbors.** The compositions below must each be expressible in one
+8. **Subsume the neighbors.** The compositions below must each be expressible in one
    invocation; the mapping table in the Design section is a living checklist.
    Where a neighbor’s behavior is out of scope (e.g. ncdu’s TUI), that is recorded as a
    non-goal, not left ambiguous.
-8. **Formats are serializations, not features.** Every view renders in every format
+9. **Formats are serializations, not features.** Every view renders in every format
    (`text`, `json`, `jsonl`, `yaml`). Machine formats are schema-versioned; a schema
    change without a version bump fails a golden test.
-9. **Watch is the same query, repeated.** A watch run evaluates the same selection and
-   views as a one-shot run, re-applied as deltas arrive.
-   There is no separate watch grammar to learn, and overflow or invalidation is reported
-   explicitly in the stream, never dropped.
-10. **Utilities are explicit flags, never side effects.** Cache inspection and clearing
+10. **Watch is the same query, repeated.** A watch run evaluates the same selection and
+    views as a one-shot run, re-applied as deltas arrive.
+    There is no separate watch grammar to learn, and overflow or invalidation is
+    reported explicitly in the stream, never dropped.
+11. **Utilities are explicit flags, never side effects.** Cache inspection and clearing
     are lifecycle flags on the same grammar (`--cache-status`, `--cache-clear`) that run
     without scanning and without a report; a report run never deletes anything, and
     utility output composes with the format axis like any other.
-11. **No unbenchmarked performance claims.** Each new output surface becomes a named
+12. **No unbenchmarked performance claims.** Each new output surface becomes a named
     benchmark job per the
     [performance evidence research](../../research/research-2026-08-09-end-to-end-performance-evidence.md),
     and flags are part of benchmark identity: renaming one means updating the job
@@ -153,7 +169,7 @@ selection is evaluated at view time against the retained index.
 This is the same reasoning as the research’s gitignore *tag, don’t prune* decision.
 The rename from `--max-depth` to `--scan-depth` (alongside render `--depth`) makes the
 distinction legible; the benchmark job manifests that reference the old spelling are
-updated in the same change (Principle 11).
+updated in the same change (Principle 12).
 
 ### CLI Surface
 
@@ -163,7 +179,7 @@ fdu [PATH] --cache-status | --cache-clear[=all]   # lifecycle flags; never scan
 fdu --skill / --help / --version                  # unchanged discovery surfaces
 ```
 
-Representative compositions, which double as the subsumption checklist (Principle 7):
+Representative compositions, which double as the subsumption checklist (Principle 8):
 
 | Instead of | Run | Notes |
 | --- | --- | --- |
@@ -327,7 +343,7 @@ The rules that make this trustworthy, stated so they hold under iteration:
 
 | Policy | Reads snapshot | Touches filesystem | Writes snapshot | Use |
 | --- | --- | --- | --- | --- |
-| `auto` (default) | yes | revalidates | on complete | fastest trustworthy answer |
+| `auto` (default) | when it is cheaper | the cheapest sound verification | on complete | fastest trustworthy answer |
 | `refresh` | no | full scan | on complete | forced cold start; benchmark control |
 | `read-only` | yes | revalidates | never | warm answer without touching the cache |
 | `only` | yes | never | no | instant answer from data on hand, labeled `freshness: stale` |
@@ -338,6 +354,28 @@ Disabling the always-write behavior is therefore a policy value, not a separate 
 
 Every report carries `source` (`cold_scan`, `warm_revalidate`, `cache_only`),
 `freshness`, and `complete`, in all formats, so no policy can silently lie.
+
+**`auto` is a cost decision, not a habit.** Measurement settled this: on a 60k-entry
+tree a parallel rescan costs 37 ms while loading the snapshot and verifying it costs 102
+ms, so reading the cache is a *loss* at project scale — and for stat-tier queries the
+full sweep is dominated by rescanning at every size, because it performs the same
+enumeration and the same one-stat-per-entry and then adds a load.
+At home-folder scale the reverse holds: the tree cannot fit the OS metadata cache
+(`kern.maxvnodes` is ~263k on a 32 GiB Mac), every scan is effectively cold, and the
+snapshot plus a journal resume is the only affordable answer.
+
+So `auto` estimates before it acts, from the snapshot header alone: entry count and the
+µs/entry that tree’s own last scan achieved, against the platform’s metadata-cache
+capacity and the reducer tier the requested views need.
+Small tree, stat-tier query: rescan and refresh the snapshot.
+Large tree with a usable journal: load, replay, verify only what changed.
+Content-tier query at any size: load and sweep, because the sweep’s stats are what avoid
+re-reading unchanged files.
+The decision function, its self-calibrating cost model, and the derived replay budget
+are specified in the
+[FSEvents-scoped revalidation plan](plan-2026-08-10-fdu-fsevents-scoped-revalidation.md)
+(bead `fdu-6ld9`); `refresh`, `read-only`, `only`, and `off` remain explicit overrides
+for anyone who wants a specific path rather than the cheapest one.
 
 **When the cache is written.** The policy axis decides *whether* a run may write; these
 rules decide *what and when*, and they are rules, not heuristics (Principle 5):
@@ -391,7 +429,7 @@ A future *labeled* stale-sizes mode (the research’s H44) is possible but never
 and not part of this plan.
 
 The lifecycle flags are backed by new library functions rather than CLI-side directory
-walking (Principle 6 — the CLI invents nothing):
+walking (Principle 7 — the CLI invents nothing):
 
 - `cache_status(root) -> CacheStatus` — snapshot path, presence, size, entry count,
   scope, saved-at time, and whether the engine fingerprint still matches.
@@ -409,7 +447,7 @@ get cache observability without a second schema style.
 
 ### Watch Mode
 
-`--watch` runs the same query continuously (Principle 9):
+`--watch` runs the same query continuously (Principle 10):
 
 1. Open the index per the cache policy and emit the initial report exactly as a one-shot
    run would.
@@ -462,7 +500,7 @@ pub fn parse_size(s: &str) -> Result<u64>;                          // "10M" | "
 
 The value grammars (`parse_when`, `parse_size`) are small first-party parsers in the
 library, not CLI helpers and not new dependencies, so the CLI, Rust callers, and Python
-all accept identical strings (Principle 6); `parse_when` takes `now` as an argument so
+all accept identical strings (Principle 7); `parse_when` takes `now` as an argument so
 callers and tests control the reference instant.
 
 `Report` and its sections derive `serde::Serialize`; `text` rendering and the
@@ -473,7 +511,7 @@ routing streams — the current private rendering methods on `Cli` move behind
 Watch composes the same pieces: a `Session` owning `IndexHandle` + `Watcher` yields
 batches already filtered through the `Selection`, and the CLI loop is a thin consumer.
 
-The parity test for Principle 6 is mechanical: the CLI’s five axes map one-to-one onto
+The parity test for Principle 7 is mechanical: the CLI’s five axes map one-to-one onto
 these library types, so any capability reachable by flags is reachable as one typed
 call, with the same defaults.
 If implementing a flag ever requires logic that does not fit `Query`, `CachePolicy`, or
@@ -522,7 +560,7 @@ shared process boundary, as today.
   [FSEvents-scoped revalidation plan](plan-2026-08-10-fdu-fsevents-scoped-revalidation.md).
 - Benchmark identity: `cli-human` and `cli-json` job definitions are re-pointed at the
   new argument vectors in the same change, and `cli-summary`, `cli-files`, and
-  `watch-stream` become named jobs when their surfaces land (Principle 11).
+  `watch-stream` become named jobs when their surfaces land (Principle 12).
 - The help text, SKILL.md, and README currently drift as three hand-maintained copies of
   the contract; each phase updates all three, and consolidating them into one generated
   source is tracked as follow-up work, not assumed.

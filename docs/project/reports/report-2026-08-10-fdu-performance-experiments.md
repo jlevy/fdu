@@ -24,9 +24,9 @@ Third-party tools on the same tree, for calibration only — they answer a sligh
 
 **The tree.** Pinned by content, not by name.
 
-- Label `metabrowser-clone`, 59,654 entries (7,341 directories, 52,291 files, 22 symlinks), max depth 19.
-- 1.01 GiB apparent, 1.14 GiB allocated.
-- Content digest `bf574331eca680372f7060d4f9ab3b3b175afd265ac27bda6b6dc67ed9c80798` (`fdu-index-record-v1`). Two trees with this digest are the same tree in the same state.
+- Label `metabrowser`, 60,067 entries (7,350 directories, 52,695 files, 22 symlinks), max depth 19.
+- 1.01 GiB apparent, 1.15 GiB allocated.
+- Content digest `c631fbf39d7c7adace225d5c9935aaf991176d05da800abd7a69c56ceb0f3b0e` (`fdu-index-record-v1`). Two trees with this digest are the same tree in the same state.
 - Identified as `dbd79ed9c898f7a2…`, the SHA-256 of its path. The path itself is deliberately not recorded.
 
 **The machine.**
@@ -56,6 +56,9 @@ The rejected ones are the reusable part: they stop the next person spending a da
 | 009 | [Single-pass checksum and parse on snapshot load](#exp009--singlepass-checksum-and-parse-on-snapshot-load) | H32 | `warm-snapshot-load` | -12.4% | ✅ accepted |
 | 010 | [Claim-list join and deferred path joins in reconcile](#exp010--claimlist-join-and-deferred-path-joins-in-reconcile) | H17 | `warm-revalidate` | -0.0% | ❌ rejected |
 | 011 | [One ancestor merge per same-parent insert run](#exp011--one-ancestor-merge-per-sameparent-insert-run) | H13 | `cold-scan-index` | -2.5% | ❌ rejected |
+| 012 | [Breadth-first traversal order](#exp012--breadthfirst-traversal-order) | H48 | `cold-scan-index` | -0.6% | ✅ accepted |
+| 013 | [Region-scheduled breadth-first traversal](#exp013--regionscheduled-breadthfirst-traversal) | H49: exp-012's RSS cost and its missing ordering benefit both came from the global FIFO, not from preferring shallow work; per-region buckets with round-robin hand-off recover memory while making the shallow preference survive parallelism | `cold-scan-index` | -3.8% | ✅ accepted |
+| 014 | [What the breadth-first default costs, on the shipped scheduler](#exp014--what-the-breadthfirst-default-costs-on-the-shipped-scheduler) | H50: exp-012 measured a scheduler that no longer exists and exp-013 compared two breadth-first schedulers, so what the shipped default costs against depth-first is unmeasured | `cold-scan-producer` | -3.0% | 📏 baseline |
 
 ## The experiments
 
@@ -95,11 +98,11 @@ Candidate: four producer threads feeding one index consumer (--threads 4)
 | --- | ---: | ---: | ---: | --- |
 | wall (ms) | 621.8 | 310.8 | -50.03% | [-51.02%, -43.74%] |
 | component (ms) | 507.0 | 196.6 | -61.64% | [-62.78%, -54.77%] |
-| cpu (ms) | 612.0 | 973.6 | +58.05% (n.s.) | [+54.55%, +66.56%] |
-| user (ms) | 231.0 | 271.9 | +17.36% (n.s.) | [+16.39%, +22.58%] |
-| system (ms) | 379.4 | 702.6 | +83.50% (n.s.) | [+77.06%, +92.72%] |
+| cpu (ms) | 612.0 | 973.6 | +58.05% (regression) | [+54.55%, +66.56%] |
+| user (ms) | 231.0 | 271.9 | +17.36% (regression) | [+16.39%, +22.58%] |
+| system (ms) | 379.4 | 702.6 | +83.50% (regression) | [+77.06%, +92.72%] |
 | blocked (ms) | 8.1 | 0.0 | -100.00% | [-100.00%, -100.00%] |
-| peak rss (MiB) | 31.7 | 34.1 | +7.49% (n.s.) | [+6.21%, +9.83%] |
+| peak rss (MiB) | 31.7 | 34.1 | +7.49% (regression) | [+6.21%, +9.83%] |
 
 Other jobs, wall time: `cold-scan-producer` -50.7%, `warm-revalidate` +0.3% (n.s.).
 
@@ -188,7 +191,7 @@ Candidate: components borrowed from the caller's path; validation allocates noth
 | cpu (ms) | 810.5 | 747.3 | -10.01% | [-11.06%, -8.70%] |
 | user (ms) | 431.9 | 356.1 | -18.56% | [-18.86%, -17.94%] |
 | system (ms) | 380.3 | 390.3 | +0.04% (n.s.) | [-2.15%, +2.37%] |
-| blocked (ms) | 7.8 | 16.2 | +50.13% (n.s.) | [+4.94%, +129.75%] |
+| blocked (ms) | 7.8 | 16.2 | +50.13% (regression) | [+4.94%, +129.75%] |
 | peak rss (MiB) | 32.5 | 33.0 | +0.91% (n.s.) | [-0.22%, +1.64%] |
 
 Other jobs, wall time: `cold-scan-index` -1.1% (n.s.), `cold-snapshot-save` -0.7% (n.s.), `warm-snapshot-load` -17.8%.
@@ -245,11 +248,11 @@ Candidate: HEAD 954d27b: exp-001, exp-004 and exp-005 together
 | --- | ---: | ---: | ---: | --- |
 | wall (ms) | 630.7 | 320.9 | -48.91% | [-51.13%, -47.52%] |
 | component (ms) | 507.4 | 202.1 | -61.11% | [-61.90%, -59.29%] |
-| cpu (ms) | 612.5 | 1266.6 | +104.13% (n.s.) | [+100.93%, +108.56%] |
-| user (ms) | 231.7 | 253.2 | +8.81% (n.s.) | [+7.82%, +10.43%] |
-| system (ms) | 379.9 | 1006.4 | +161.31% (n.s.) | [+157.21%, +166.31%] |
+| cpu (ms) | 612.5 | 1266.6 | +104.13% (regression) | [+100.93%, +108.56%] |
+| user (ms) | 231.7 | 253.2 | +8.81% (regression) | [+7.82%, +10.43%] |
+| system (ms) | 379.9 | 1006.4 | +161.31% (regression) | [+157.21%, +166.31%] |
 | blocked (ms) | 11.1 | 0.0 | -100.00% | [-100.00%, -100.00%] |
-| peak rss (MiB) | 31.9 | 34.8 | +9.21% (n.s.) | [+8.85%, +9.56%] |
+| peak rss (MiB) | 31.9 | 34.8 | +9.21% (regression) | [+8.85%, +9.56%] |
 
 Other jobs, wall time: `cold-scan-producer` -51.6%, `cold-snapshot-save` -46.2%, `warm-revalidate` -14.7%, `warm-snapshot-load` -29.1%.
 
@@ -410,6 +413,88 @@ Reverted. The interaction is the finding: merge-batching and key-interning compe
 **Rejected:** Direction right but under the bar: -2.53% [-8.39%, +0.23%] on cold scan; H18 already removed the expensive part of each merge, so cutting ~520k merges to ~73k amortized work that had become a few integer adds.
 
 Full record: [`exp-011-one-ancestor-merge-per-same-parent-insert-run.md`](../experiments/exp-011-one-ancestor-merge-per-same-parent-insert-run.md)
+
+### exp-012 — Breadth-first traversal order
+
+✅ accepted · 2026-08-11 · H48 · commit `fbc28f4`
+
+Control: the previous hardcoded LIFO walk
+
+Candidate: breadth-first, the new default, so partial results are monotone lower bounds
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 337.9 | 337.0 | -0.58% (n.s.) | [-2.50%, +1.20%] |
+| component (ms) | 216.3 | 211.2 | -0.07% (n.s.) | [-3.49%, +1.17%] |
+| cpu (ms) | 1178.2 | 1205.4 | +0.49% (n.s.) | [-0.71%, +3.49%] |
+| user (ms) | 242.7 | 245.7 | +0.49% (n.s.) | [-1.44%, +3.12%] |
+| system (ms) | 943.5 | 955.7 | +0.68% (n.s.) | [-1.12%, +4.30%] |
+| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
+| peak rss (MiB) | 33.1 | 33.7 | +1.51% (regression) | [+0.84%, +2.88%] |
+
+Other jobs, wall time: `cold-scan-producer` +1.5% (n.s.), `warm-revalidate` +0.0% (n.s.).
+
+Cost to carry: 153 lines; no new dependencies.
+
+Accepted on cost, not on speed: the value is that partial results become monotone lower bounds instead of a confidently wrong ranking, and this experiment establishes that the property is cheap - not that it is free. It also corrects an earlier six-sample median comparison that had suggested ~8% and was quoted in the plan before going through the accept rule; sixteen paired trials say the wall-time difference is not measurable. Peak RSS and producer CPU did rise measurably and are recorded above. NOTE: the reference tree was reclaimed mid-session (disk at 100%) and re-cloned, so it is now 60,067 entries against the 59,654 used by exp-000..011; comparisons across that boundary are not valid.
+
+**Accepted:** No detectable wall-time change on a complete scan (-0.58%, interval [-2.50%, +1.20%] - straddles zero, so this is 'not measurably different', not 'free'). Peak RSS rose measurably on all three jobs (+1.51% [+0.85, +2.88] cold-scan-index, +3.66% [+2.47, +4.72] cold-scan-producer, +1.17% [+0.36, +3.77] warm-revalidate), as did producer CPU (+2.50% [+1.48, +4.04]). Accepted on those costs, not on speed: monotone partial results are worth ~1 MiB of frontier and ~2% producer CPU on a 60k tree.
+
+Full record: [`exp-012-breadth-first-traversal-order.md`](../experiments/exp-012-breadth-first-traversal-order.md)
+
+### exp-013 — Region-scheduled breadth-first traversal
+
+✅ accepted · 2026-08-11 · H49: exp-012's RSS cost and its missing ordering benefit both came from the global FIFO, not from preferring shallow work; per-region buckets with round-robin hand-off recover memory while making the shallow preference survive parallelism
+
+Control: global FIFO breadth-first (bbc9cca)
+
+Candidate: per-region LIFO buckets with a round-robin ready ring
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 308.7 | 297.0 | -4.83% (n.s.) | [-6.56%, +4.08%] |
+| component (ms) | 193.8 | 183.3 | -6.83% (n.s.) | [-9.38%, +7.57%] |
+| cpu (ms) | 1241.5 | 1174.0 | -4.85% (n.s.) | [-9.45%, +1.56%] |
+| user (ms) | 235.3 | 230.9 | -1.66% | [-3.70%, -0.57%] |
+| system (ms) | 1005.6 | 945.4 | -5.42% (n.s.) | [-10.57%, +2.11%] |
+| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
+| peak rss (MiB) | 33.3 | 32.1 | -3.77% | [-5.18%, -2.99%] |
+
+Other jobs, wall time: `warm-revalidate` -0.0% (n.s.).
+
+Cost to carry: 80 lines; no new dependencies.
+
+One queue, two shapes: DepthFirst keeps the single stack, BreadthFirst uses per-region buckets plus a ready ring and an enqueued flag array. No barrier, no new dependency, claims O(1). Worker affinity was tried and removed: it pinned each worker to one subtree.
+
+**Accepted:** Peak RSS -3.77% [-5.18%, -2.99%] on cold-scan-index, the only interval clear of zero, reversing exp-012's +1.51%. Wall unchanged (-4.83% [-6.56%, +4.08%]); nothing regressed. On twelve branching subtrees the least advanced one holds 42 files at one worker and 33-37 at six, against depth-first's 0 and 6, so the ordering benefit now survives parallelism.
+
+Full record: [`exp-013-region-scheduled-breadth-first-traversal.md`](../experiments/exp-013-region-scheduled-breadth-first-traversal.md)
+
+### exp-014 — What the breadth-first default costs, on the shipped scheduler
+
+📏 baseline · 2026-08-11 · H50: exp-012 measured a scheduler that no longer exists and exp-013 compared two breadth-first schedulers, so what the shipped default costs against depth-first is unmeasured
+
+**`cold-scan-producer`** (cold start) — measured
+
+| metric | value |
+| --- | ---: |
+| wall (ms) | 489.4 |
+| component (ms) | 192.0 |
+| cpu (ms) | 2122.0 |
+| user (ms) | 312.5 |
+| system (ms) | 1812.2 |
+| blocked (ms) | 0.0 |
+| peak rss (MiB) | 33.0 |
+
+Other jobs, wall time: `cold-scan-index` 322 ms, `warm-revalidate` 624 ms.
+
+**Baseline:** Same binary both arms, 20 interleaved paired trials. Breadth-first is now cheaper where region scheduling reaches: cold-scan-producer wall -3.04% [-5.99%, -0.96%], cold-scan-index peak RSS -1.76% [-2.63%, -0.74%]. warm-revalidate regressed +2.70% [+1.55%, +3.37%] because reconcile walks with the serial take_next and region scheduling never reached it. No code changed; the warm asymmetry is tracked as fdu-v71x.
+
+Full record: [`exp-014-what-the-breadth-first-default-costs-on-the-shipped-schedule.md`](../experiments/exp-014-what-the-breadth-first-default-costs-on-the-shipped-schedule.md)
 
 
 <!-- This document follows common-doc-guidelines.md.

@@ -25,8 +25,8 @@ process exits and reboots.
 Storing the journal cursor in the snapshot and replaying “what changed since” turns a
 quiet tree’s revalidation from ~700 ms at 60k entries into an approximately
 size-independent tens of milliseconds — against today’s serial sweep; the Background
-section states the honest comparison against where rung-1 work will land, and where
-the journal is transformative rather than incremental.
+section states the honest comparison against where rung-1 work will land, and where the
+journal is transformative rather than incremental.
 
 This is rung 2 of the warm ladder in the
 [performance-frontier research](../../research/research-2026-08-10-performance-frontier.md)
@@ -53,6 +53,9 @@ fails closed on every row, and why the full sweep remains the backstop on every 
   by the performance harness on both paths
 - Land the numbers through the performance loop as experiments, with the accept rule
   deciding
+- Choose the cheapest sound path per tree *automatically*, so a project-scale tree pays
+  no cache overhead at all and a home-folder-scale tree gets the journal — one
+  self-calibrating decision, not a flag the caller has to know to set
 
 ## Non-Goals
 
@@ -95,14 +98,22 @@ constants; none can change the asymptotics, because the sweep must stat every en
 be sound. Only change information can — and `fseventsd` records it: directory-granular
 events, persisted to disk in per-volume journals, addressed by IDs from a machine-wide
 monotonic counter, replayable from a stored ID via `FSEventStreamCreate(sinceWhen:)`,
-with explicit flags for every way the history can be insufficient
+with flags for *several* of the ways history can be insufficient
 (`kFSEventStreamEventFlagMustScanSubDirs`, `UserDropped`, `KernelDropped`,
 `EventIdsWrapped`, `HistoryDone`, `RootChanged`, `Mount`, `Unmount`).
 
-Crucially, the journal’s directory granularity carries exactly the information directory
-mtimes do not: a content edit to `a/b/c/file.txt` produces an event naming `a/b/c`,
-because `fseventsd` logs operations rather than namespace timestamps.
-That is what makes subtree skipping sound here and unsound when inferred from mtimes.
+**Not for every way, and that gap is the single most important spike finding.** An
+earlier draft of this section claimed the flags covered every case. They do not: replay
+from an old cursor can deliver `HistoryDone` having silently omitted most of the
+intervening history, raising none of these flags. Every gate, every age bound, and the
+naming of [`Source::JournalScoped`] descends from that one observation.
+
+The journal’s directory granularity does carry exactly the information directory mtimes
+do not: a content edit to `a/b/c/file.txt` produces an event naming `a/b/c`, because
+`fseventsd` logs operations rather than namespace timestamps.
+That is what makes subtree skipping *informative* here and useless when inferred from
+mtimes — a strictly better signal, but still not a sound one, because being told the
+truth about what changed is not the same as being told the whole truth.
 
 ### What the journal is worth, honestly
 
@@ -226,8 +237,26 @@ layer needed it first.
 
 ### The gate
 
-The user-visible rule is “journal when provably applicable, sweep otherwise,” and the
-gate is a pure decision function so the whole table is unit-testable without
+The user-visible rule is **“journal when the risk is bounded and labelled, sweep
+otherwise.”**
+
+The word *provably* does not belong here, and an earlier draft of this plan used it.
+The Phase 0 spike established the opposite: an old `sinceWhen` can return `HistoryDone`
+after silently dropping most of its history, with no degradation flag to test.
+Scoped revalidation stats the paths the journal *names* and does not stat the rest, so
+the untouched majority of the tree is accepted on the journal’s completeness — the one
+property the spike showed cannot be checked. That is not a sound verification path, and
+calling it one would contradict the project rule that a platform journal narrows what
+must be checked but never replaces the checking.
+
+So this plan takes the **risk-bounded** contract deliberately, and the honesty is
+carried in the type rather than in prose: values the journal vouched for read as
+[`Source::JournalScoped`], never as verified, and a consumer that needs certainty can
+see the difference on every row. G5 and G12 below are **risk controls that bound how
+long a silent omission can persist** — they are not correctness gates, and no row of
+this table proves any individual journal answer right.
+
+The gate is a pure decision function so the whole table is unit-testable without
 CoreServices. Every row falls closed to the sweep:
 
 | # | Condition | Decision |
@@ -236,12 +265,14 @@ CoreServices. Every row falls closed to the sweep:
 | G2 | Snapshot has no cursor (older format, or first save) | full sweep; write cursor on save |
 | G3 | Root’s current volume UUID ≠ stored UUID (moved disk, container change, UUID unreadable) | full sweep |
 | G4 | Stored event ID > current volume event ID (regression: journal purged, clock wrapped) | full sweep |
-| G5 | Snapshot older than `max_journal_age` (default 14 days) | full sweep — paranoia bound; Apple documents the journal as advisory |
-| G6 | Stream creation fails or replay exceeds `replay_timeout` (default 5 s) without `HistoryDone` | full sweep |
+| G5 | Snapshot older than `max_journal_age` (default **24 hours**) | full sweep — load-bearing, not paranoia: the spike showed history is purged *silently*, so age is the only protection |
+| G6 | Stream creation fails, or replay exceeds the G11 budget without `HistoryDone` | full sweep |
 | G7 | Replay reports `EventIdsWrapped`, `RootChanged`, `Mount`, `Unmount`, `UserDropped`, or `KernelDropped` | full sweep |
 | G8 | Replay reports `MustScanSubDirs(path)` | scoped: `InvalidateSubtree(path)`, journal continues for the rest |
 | G9 | Changed-dir set exceeds `max_changed_fraction` (default 25%) of the snapshot’s directories | full sweep — scoped work would approach sweep cost with worse locality |
 | G10 | Otherwise | scoped revalidation of the changed-dir set |
+| G11 | Replay wall exceeds a budget scaled to the estimated sweep cost (measured: replay runs ~200 ms typical, up to 2 s from an old cursor) | abandon replay, full sweep |
+| G12 | Every Nth warm open (default 20), regardless of what the journal reports | full sweep — bounds how long a silently-truncated replay can persist |
 
 The changed-dir set is normalized before G9: paths outside the root are dropped,
 descendants of a `MustScanSubDirs` subtree are absorbed into it, duplicates coalesce,
@@ -369,6 +400,234 @@ self-declared externs, and answers, on a real volume:
 - [ ] Findings are recorded by amending this spec’s gates and constants (G5/G6 defaults,
   G9 fraction) and noted in the experiment ledger; explicit go/no-go for Phase 2
 
+### Two regimes, one decision: when the journal is the right tool
+
+The spike’s cost numbers only make sense against the workload, and fdu has two that
+behave nothing alike.
+The dividing line is not a matter of taste — it is the operating system’s metadata cache
+capacity, which on this host is a hard ceiling:
+
+```
+kern.maxvnodes: 263168      kern.num_vnodes: 263168      (saturated)
+```
+
+Roughly a quarter of a million vnodes, on a 32 GiB machine.
+That single number splits the product:
+
+|  | **Project tree** (10k–200k entries) | **Home folder / whole drive** (1M–10M entries) |
+| --- | --- | --- |
+| Fits the metadata cache? | Yes — comfortably | No — not even close, by 10–40× |
+| So repeat scans are | genuinely warm | effectively cold, every time |
+| Measured rescan | **37 ms** at 60k (parallel, warm) | minutes |
+| Load + full stat sweep | 102 ms — *slower than rescanning* | minutes, plus the load |
+| Journal replay | 10–200 ms fixed — *also slower than rescanning* | ~0.1–2 s, independent of size |
+| Right answer | **rescan; ignore the cache** | **load + journal + scoped verify** |
+
+Read the two right-hand rows together and the strategy falls out.
+At project scale the fastest cache is no cache: a parallel rescan costs less than
+*either* verifying a snapshot or asking `fseventsd` what happened.
+At drive scale the rescan is the thing you cannot afford, and the journal’s fixed cost
+stops mattering because it is a rounding error against minutes.
+
+**A conclusion that reaches past this feature: for stat-tier queries the full sweep is
+dominated by rescanning, at every size.** The sweep performs the same enumeration and
+the same one-stat-per-entry as a cold scan, and then adds a snapshot load on top.
+It can never win.
+That makes the current default warm path — load, then verify everything
+— the wrong default for plain disk usage regardless of tree size, and it explains the
+measured “cache is 2.75× slower than no cache” without appealing to any implementation
+defect.
+
+The full sweep keeps two jobs it is genuinely the cheapest way to do, and they should be
+the only reasons it runs:
+
+- **Content-tier queries** (line counts, hashes).
+  The sweep’s N stats identify which files changed so only those are re-read; rescanning
+  would discard the derived data and re-read gigabytes.
+- **Change feeds.** Answering “what changed since my last run” needs the comparison, not
+  just the current totals.
+
+### The policy, and how it calibrates itself
+
+`open()` chooses before doing work, from the snapshot header alone (a bounded read that
+is already part of the format):
+
+```
+N              = entry count recorded in the snapshot header
+scan_per_entry = µs/entry this tree's own last scan achieved, recorded in the header
+capacity       = kern.maxvnodes (macOS) / dentry-state (Linux); N > capacity ⇒ cold regime
+
+estimated_rescan  = N × scan_per_entry × (cold_penalty if N > capacity else 1)
+estimated_journal = snapshot_load_cost(N) + replay_budget
+
+choose the cheaper, then apply the fail-closed gates
+```
+
+Two properties make this worth doing rather than hardcoding a threshold:
+
+- **The cache carries its own cost model.** Each run records the µs/entry it actually
+  achieved, so the next run predicts from this machine, this storage, this tree — not
+  from a constant calibrated on a laptop in 2026. A fresh snapshot with no recorded
+  timing uses a conservative default and corrects itself on the next run.
+- **G11’s replay budget stops being a magic number.** It is exactly
+  `estimated_rescan − snapshot_load_cost`: never spend longer replaying the journal than
+  rescanning from scratch would have taken.
+  On a 60k tree that budget is tens of milliseconds, so the gate declines the journal
+  automatically — which is the correct answer, reached by arithmetic rather than by a
+  hardcoded entry-count threshold.
+
+The vnode ceiling also retires an open question from the frontier research: the
+superlinear knee it observed between 500k and 1M entries (H36) sits exactly where
+`kern.maxvnodes` does on this host.
+The capacity signal the policy reads for its own decision is the same measurement that
+explains the knee, so the loop’s H36 experiment and this policy input are the same work.
+
+### What this means for platforms without a journal
+
+Linux has no persistent change journal, so its large-tree warm path is not “sweep
+instead” — the sweep is dominated there too.
+Linux gets the same policy with the journal branch unavailable, which means large trees
+fall back to **rescan**, and the lever that matters becomes raw scan speed (parallel
+traversal, `statx`, inode-ordered access).
+This is why the research calls the two investments complements: the journal caps macOS
+warm cost, and scan speed is what caps everyone else’s. Neither substitutes for the
+other, and the policy above is what routes each platform to its best available answer
+without the caller choosing.
+
+### The first scan is the other half of the problem, and the journal cannot help it
+
+Measuring a real home folder made the large-tree regime concrete, and turned up
+something the journal work does not address at all.
+
+```
+/Users/…  4,366,510 files, 1,016,449 dirs, 224 GiB
+  791 s wall   15 s user   160 s system   2.65 GB peak RSS
+```
+
+Thirteen minutes, and the breakdown is the finding: **175 s of CPU against 791 s of wall
+— 78% of the run was spent blocked, and the achieved parallelism was 0.22×.** Six worker
+threads sat waiting on the SSD, 923,000 voluntary context switches deep.
+Memory landed at ~493 B/entry, matching the frontier research’s ~490 B/entry estimate
+almost exactly.
+
+The automatic worker cap is six, and it was chosen honestly: exp-001 measured 2, 4, 6
+and 8 threads on a warm 60k tree and found the knee at four, with eight *worse* than
+four. That verdict is correct and it does not generalize one step outside the state it
+was measured in. On a cold subtree of ~795k entries — large enough that the vnode cache
+cannot hold it — interleaved runs say the opposite:
+
+| workers | median | best |
+| ---: | ---: | ---: |
+| 6 | 33.7 s | 16.3 s |
+| 16 | **17.0 s** | 12.4 s |
+| 32 | 19.9 s | 14.3 s |
+
+Roughly **2× from raising in-flight depth alone**, on the exact workload the whole-drive
+use case cares about.
+(The variance is wide because the subtree is live and the machine was not quiet; the
+direction is unambiguous and consistent across all four rounds.)
+`MAX_SCAN_THREADS` is currently 32, so the top of the useful range has not even been
+probed.
+
+Two consequences, and the second is the important one:
+
+- **Worker count must be state-adaptive, exactly like the cache policy.** When the tree
+  fits the metadata cache the walk is syscall-bound and extra threads add contention;
+  when it does not, the walk is latency-bound and extra threads buy throughput almost
+  linearly until the device saturates.
+  The same capacity signal the cache policy reads (`kern.maxvnodes` versus recorded
+  entry count) selects the pool size, which is the frontier research’s H31 with a
+  concrete trigger rather than a calibration probe.
+- **This is worth more than journal resume for the motivating use case, and it is
+  orthogonal to it.** A first scan of a home folder can never be helped by a journal:
+  there is no cursor yet.
+  Halving thirteen minutes is a bigger, simpler win than anything the journal does, and
+  it lands on every platform rather than one.
+  The journal’s job is the *second* scan; in-flight depth’s job is the first, and the
+  product story for whole-drive usage needs both.
+
+That reorders the work: the adaptive pool (`fdu-6ld9`’s sibling) should land before
+scoped revalidation, because it is cheap, portable, and improves the case the journal is
+designed for without depending on any of it.
+
+### Phase 0 spike findings (2026-08-10, run on this host)
+
+The spike ran. Three assumptions held, two did not, and one of the failures changes the
+design rather than the schedule.
+
+**Confirmed.**
+
+- *The load-bearing granularity claim.* An in-place append to a file at depth 17 in the
+  59,654-entry reference tree changed **no** directory’s mtime and produced **exactly
+  one** FSEvents event, naming the file’s parent directory.
+  This is the whole basis of the feature: the journal carries what the namespace refuses
+  to.
+- *O(changes), not O(tree).* Creating 20 files and 2 directories produced 7
+  directory-level events; cloning a 257-entry, 24-directory subtree produced 47, every
+  directory named, flagged `ItemCloned`. Coalescing is per directory, as documented.
+- *The binding decision.* `fsevent-sys` from the existing lockfile plus six
+  self-declared externs (`FSEventStreamSetDispatchQueue`, `FSEventsCopyUUIDForDevice`,
+  `CFUUIDCreateString`, `dispatch_queue_create`/`_release`) compiles and links with zero
+  new crates. The non-deprecated dispatch-queue path works: create, set queue, start,
+  receive, `HistoryDone`, tear down.
+  Volume UUID resolves from `st_dev`, and `HistoryDone` arrives with a meaningless path,
+  as the plan assumed.
+
+**Refuted: replay is not free, and its cost grows with cursor age.**
+
+Empty replays on a quiet tree are bimodal — 17 trials split between ~9–33 ms and
+~193–487 ms, with no warm-up trend.
+Cost then grows with how far back the cursor reaches: roughly 150 ms at −1M event ids,
+1.8 s at −20M, and 2.0 s at −94M.
+
+This corrects this plan’s own headline.
+“Tens of milliseconds at 60k” was optimistic: a warm open would be snapshot load plus a
+replay that is often ~200 ms, against a full sweep of ~690 ms.
+Real, but incremental — exactly the calibration the frontier research already argued
+for, now measured rather than predicted.
+The transformative cases remain large trees, cold caches, and network storage, where the
+sweep grows and the replay does not.
+
+**Refuted, and this one is a correctness finding: insufficient history is silent.**
+
+Replaying the reference tree from `sinceWhen = 1` returned `HistoryDone` after **one**
+event — the recent edit — with no `MustScanSubDirs`, no `UserDropped`, and no other
+degradation flag. That tree was created by a clone of 7,341 directories hours earlier,
+which the clone experiment above proves would have logged on the order of ten thousand
+events. They are gone from the journal, and the API reported success.
+A cursor set far in the *future* likewise returned zero events and `HistoryDone` rather
+than any error.
+
+So the assumption that the journal fails loudly does not hold on this host.
+That is precisely the risk the frontier research flagged when it found Watchman had
+reverted resume-by-default “due to possible correctness issues”, and it promotes the
+plan’s paranoia bound from prudence to contract:
+
+- **G4 and G5 are load-bearing, not belt-and-braces.** They are the only protection
+  against a truncated replay, because the platform will not signal one.
+  G5’s default age bound tightens from 14 days to **24 hours**, and the reason changes
+  from “history might be purged” to “history *is* purged without saying so”.
+- **New G11: a replay budget.** Replay is abandoned for the full sweep when it exceeds a
+  deadline scaled to the estimated sweep cost — spending 2 s of replay to avoid a 690 ms
+  sweep is a loss. The deadline replaces the flat 5 s timeout, which the measurements
+  show is far too generous to be a safety net.
+- **New G12: mandatory periodic verification.** Every Nth warm open (default 20) and any
+  snapshot older than the age bound takes the full sweep regardless of what the journal
+  says, so a silently-truncated replay cannot persist indefinitely.
+  This is the “promoted from paranoia to contract” clause the bead anticipated.
+
+None of this changes the architecture: the journal still only chooses *where to look*,
+every path still verifies by fresh stat, and the sweep remains the backstop.
+What changed is that the gate now assumes the journal lies by omission, because on this
+host it does.
+
+**Go/no-go: go, with reduced expectations.** The mechanism works and the granularity
+claim is real.
+The value case moves from “warm opens become instant at any size” to “warm
+opens stop scaling with tree size”, which is still the only route past the per-entry
+stat floor — but the 60k-entry reference tree is now the wrong place to prove it, and
+Phase 2’s acceptance should be measured at 500k+ or on a cold cache.
+
 ### Phase 1: Format and gate (mergeable alone; unblocks the block-format spike)
 
 - [ ] Snapshot format v3: cursor section, save-side capture stub (writes `none` on all
@@ -376,6 +635,15 @@ self-declared externs, and answers, on a real volume:
 - [ ] `journal/mod.rs`: cursor types, gate decision table as a pure function,
   changed-set normalization; exhaustive unit tests for every gate row
 - [ ] Golden and round-trip tests: v2 loads as cursor-absent; v3 round-trips
+- [ ] Snapshot header records this tree’s observed scan cost (µs/entry) and entry count,
+  so the cache carries its own cost model; a header without timing falls back to a
+  conservative default
+- [ ] `CachePlan::choose()`: the pure decision function above (rescan vs load+journal vs
+  load+sweep), taking N, recorded scan cost, metadata-cache capacity, and the requested
+  reducer tier; unit-tested across both regimes with no platform APIs
+- [ ] Capacity probe: `kern.maxvnodes` on macOS, `fs/dentry-state` on Linux, a
+  conservative default elsewhere — the same signal the frontier research’s H36 knee
+  experiment needs
 
 ### Phase 2: Replay and scoped revalidation (macOS)
 
