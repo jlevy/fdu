@@ -18,6 +18,7 @@ import errno
 import json
 import os
 import pathlib
+import re
 import subprocess
 import sys
 import tempfile
@@ -46,8 +47,14 @@ def main() -> None:
     assert total["files"] == 2, total
     assert total["dirs"] == 1, total
     assert total["bytes"] == 17, total
-    assert total["by_extension"][".txt"] == {"files": 1, "bytes": 5}, total
-    assert total["by_extension"][".rs"] == {"files": 1, "bytes": 12}, total
+    # Allocated rides alongside apparent bytes per type, so a report asked for allocated
+    # sizes keeps its per-type breakdown instead of switching metrics.
+    txt = total["by_extension"][".txt"]
+    rs = total["by_extension"][".rs"]
+    assert (txt["files"], txt["bytes"]) == (1, 5), total
+    assert (rs["files"], rs["bytes"]) == (1, 12), total
+    assert txt["allocated"] >= txt["bytes"], total
+    assert rs["allocated"] >= rs["bytes"], total
 
     # Per-directory roll-ups, which is the thing no surveyed tool provides.
     src = index.rollup("src")
@@ -70,7 +77,13 @@ def main() -> None:
 
     version = subprocess.run([entrypoint, "--version"], check=False, capture_output=True, text=True)
     assert version.returncode == 0, version
-    assert version.stdout == f"fdu {fdu_py.__version__}\n", version.stdout
+    # A wheel built from a checkout carries the git revision as semver build metadata;
+    # one built without git metadata reports the bare semver. Either way the semver
+    # itself must match the module's exactly.
+    version_pattern = (
+        rf"fdu {re.escape(fdu_py.__version__)}(-dev\+g[0-9a-f]{{7,12}}(\.dirty)?)?\n"
+    )
+    assert re.fullmatch(version_pattern, version.stdout), version.stdout
     assert version.stderr == "", version.stderr
 
     help_result = subprocess.run(
@@ -85,9 +98,12 @@ def main() -> None:
     cli_scan = subprocess.run(
         [
             entrypoint,
-            "--no-cache",
-            "--json",
-            "--apparent-size",
+            "--cache",
+            "off",
+            "--format",
+            "json",
+            "--size",
+            "apparent",
             "--depth",
             "1",
             str(root),
@@ -98,10 +114,14 @@ def main() -> None:
     )
     assert cli_scan.returncode == 0, cli_scan
     cli_data = json.loads(cli_scan.stdout)
-    assert cli_data["schema"] == "fdu.tree/2", cli_data
+    assert cli_data["schema"] == "fdu.report/1", cli_data
     assert cli_data["complete"] is True, cli_data
-    assert cli_data["tree_truncated"] is True, cli_data
-    assert cli_data["tree"]["bytes"] == 17, cli_data
+    tree = cli_data["reports"][0]["tree"]
+    assert tree["bytes"] == 17, cli_data
+    # Truncation describes omitted tree rows. A file is already represented in its
+    # directory's totals, so reaching the depth bound at a file-only leaf omits nothing.
+    assert tree["truncated"] is False, cli_data
+    assert tree["children"][0]["truncated"] is False, cli_data
     assert cli_scan.stderr == "", cli_scan.stderr
 
     usage = subprocess.run(
@@ -130,7 +150,7 @@ def main() -> None:
             # APFS rejects this fixture, but passing the same bytes to fdu still proves
             # that Python argv reached Rust losslessly instead of raising in PyO3.
             raw_scan = subprocess.run(
-                [os.fsencode(entrypoint), b"--no-cache", b"--json", raw_root],
+                [os.fsencode(entrypoint), b"--cache", b"off", b"--format", b"json", raw_root],
                 check=False,
                 capture_output=True,
             )
@@ -141,7 +161,7 @@ def main() -> None:
             with open(raw_root + b"/data.bin", "wb") as raw_file:
                 raw_file.write(b"raw")
             raw_scan = subprocess.run(
-                [os.fsencode(entrypoint), b"--no-cache", b"--json", raw_root],
+                [os.fsencode(entrypoint), b"--cache", b"off", b"--format", b"json", raw_root],
                 check=False,
                 capture_output=True,
             )
@@ -199,6 +219,105 @@ def main() -> None:
         expected_kinds.update({"link": "symlink", "fifo": "other"})
     kinds = {child["name"]: child["kind"] for child in fdu_py.scan(str(kind_root)).children("")}
     assert kinds == expected_kinds, kinds
+
+    # The query surface: the same five axes the CLI exposes, as one typed call.
+    query_root = pathlib.Path(tempfile.mkdtemp())
+    (query_root / "src").mkdir()
+    (query_root / "src" / "main.rs").write_text("fn main() {}")
+    (query_root / "src" / "lib.rs").write_text("pub fn lib() {}")
+    (query_root / "notes.md").write_text("notes")
+    index = fdu_py.scan(str(query_root))
+
+    summary = index.report(views=["summary"])["reports"][0]["summary"]
+    assert summary["files"] == 3, summary
+    assert summary["dirs"] == 1, summary
+
+    # Selection narrows without rescanning, and every view is reachable.
+    rust_only = index.report(views=["files"], include=["*.rs"], kind=["file"])
+    # Reported paths carry native separators, so compare in a separator-agnostic way
+    # rather than narrowing what the engine reports to satisfy a string.
+    paths = sorted(
+        row["path"].replace(os.sep, "/") for row in rust_only["reports"][0]["files"]
+    )
+    assert paths == ["src/lib.rs", "src/main.rs"], paths
+
+    types = index.report(views=["types"])["reports"][0]["types"]
+    extensions = sorted(row["extension"] for row in types)
+    assert extensions == [".md", ".rs"], extensions
+
+    tree = index.report(views=["tree"], depth="all")["reports"][0]["tree"]
+    assert tree["name"] == ".", tree
+    assert any(child["name"] == "src" for child in tree["children"]), tree
+
+    # Several views come back in request order, from one index.
+    ordered = index.report(views=["types", "summary"])["reports"]
+    assert [section["view"] for section in ordered] == ["types", "summary"], ordered
+
+    # Value grammars are shared, so a bad value is rejected the same way everywhere.
+    for bad in [
+        {"min_size": "10X"},
+        {"modified_since": "1.5h"},
+        {"views": ["bogus"]},
+        {"sort": "sideways"},
+    ]:
+        try:
+            index.report(**bad)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"expected {bad} to be rejected")
+
+    # Cache accessors mirror the library functions.
+    cache_root = pathlib.Path(tempfile.mkdtemp())
+    (cache_root / "a.txt").write_text("hello")
+    fdu_py.open(str(cache_root), cache="auto")
+    status = fdu_py.cache_status(str(cache_root))
+    assert status is not None and status["recognized"], status
+    # Rust keeps Windows verbatim paths (\\?\); compare filesystem identity rather than
+    # weakening native long-path behavior to satisfy a string.
+    assert os.path.samefile(status["root"], cache_root), status
+    assert fdu_py.clear_cache(str(cache_root)) is True
+    assert fdu_py.cache_status(str(cache_root))["recognized"] is False
+
+    # Cache policy is the same closed vocabulary the CLI accepts.
+    try:
+        fdu_py.open(str(cache_root), cache="sometimes")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("expected an invalid cache policy to be rejected")
+
+    # The watch feed: event-driven, and closable without hanging the interpreter.
+    watch_root = pathlib.Path(tempfile.mkdtemp())
+    (watch_root / "seed.txt").write_text("seed")
+    watch_index = fdu_py.scan(str(watch_root))
+    feed = watch_index.watch(interval=0.25, views=["files"])
+
+    (watch_root / "created.rs").write_text("fn main() {}")
+    seen = []
+    for _ in range(40):
+        seen.extend(next(feed))
+        if any(change["path"].endswith("created.rs") for change in seen):
+            break
+    assert any(change["path"].endswith("created.rs") for change in seen), seen
+    created = next(c for c in seen if c["path"].endswith("created.rs"))
+    assert created["op"] == "upsert", created
+    assert created["bytes"] == 12, created
+
+    # A closed feed is exhausted rather than an error, so a for-loop ends cleanly
+    # instead of raising something a caller has to special-case.
+    feed.close()
+    try:
+        next(feed)
+    except StopIteration:
+        pass
+    else:
+        raise AssertionError("a closed feed must stop iterating")
+    assert list(feed) == [], "iterating a closed feed yields nothing"
+
+    # And it works as a context manager.
+    with watch_index.watch(interval=0.1) as scoped:
+        assert next(scoped) is not None
 
     print(f"fdu_py {fdu_py.__version__} ok")
 

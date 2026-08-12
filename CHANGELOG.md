@@ -34,11 +34,13 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     The applying driver re-verifies queued samples at a clock-stable commit boundary,
     rejects a watcher for another root, and rejects depth- and filesystem-restricted
     scopes until events can be filtered against those boundaries.
-  - **CLI** (feature `cli`): human tree output with percentage bars, `--by-type`,
-    versioned JSON (`fdu.tree/2`), exact entry kinds, error details, partial exit
-    status, `NO_COLOR`, and pipe detection.
-  - **Python bindings** (`fdu-py`): bulk API retaining scan scope and exposing freshness
-    and errors while releasing the GIL during native work.
+  - **CLI** (feature `cli`): composable scope, selection, view, format, and mode axes;
+    compact human tree output; schema-versioned text/JSON/JSONL/YAML reports; cache
+    lifecycle controls; and a `tail -f`-style watch stream.
+    Reports require an explicit path, while bare `fdu` prints help without scanning the
+    current directory.
+  - **Python bindings** (`fdu-py`): bulk API mirroring the query, provenance, cache, and
+    watch surfaces while releasing the GIL during native work.
     The wheel does not compile the optional watch dependency.
 
 ### Known limitations

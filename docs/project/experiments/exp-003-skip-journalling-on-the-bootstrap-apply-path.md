@@ -260,17 +260,18 @@ experiment:
 
 ## Hypothesis
 
-H8: _state what you expected to be slow, why,
-and which metric would move._
+H8: *state what you expected to be slow, why, and which metric would move.*
 
 ## What was tried
 
-_The smallest change that tests the hypothesis._
+*The smallest change that tests the hypothesis.*
 
 ## What the numbers said
 
-_Read the tables in the frontmatter. Say what surprised you._
+*Read the tables in the frontmatter.
+Say what surprised you.*
 
 ## Verdict
 
-**REJECTED** — Removing roughly 120,000 path clones per scan produced no measurable change, so a duplicated arbitration loop was not worth carrying
+**REJECTED** — Removing roughly 120,000 path clones per scan produced no measurable
+change, so a duplicated arbitration loop was not worth carrying

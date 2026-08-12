@@ -28,8 +28,10 @@ These are the accountability criteria for every iteration of this design.
 A change that violates one of these needs this spec amended first, not a silent
 exception. The governing aspiration: the design fits the contours of the true problem —
 no more complexity, but no less either.
-Simple things are simple (`fdu` alone is a good answer), and complex things are possible
+Simple things are simple (`fdu PATH` is a good answer), and complex things are possible
 (any axis composes with any other), as with all good developer tools.
+Bare `fdu` is deliberately safe discovery: it prints help instead of assuming that a
+possibly enormous current directory should be scanned.
 The concrete test for “no more complexity”: before adding a view or flag, show it cannot
 be expressed as a composition of the existing axes — `largest` and `recent` views were
 removed from this design by exactly that test.
@@ -38,8 +40,9 @@ removed from this design by exactly that test.
    scope, selection, view, format, or mode.
    A proposed flag that does not fit an axis is a design smell; either it generalizes
    into an axis value or it does not ship.
-2. **Intuitive by default, everything by composition.** `fdu` or `fdu <path>` with no
-   flags gives a useful, fast report with sensible, obvious defaults.
+2. **Intuitive by default, everything by composition.** `fdu <path>` with no flags gives
+   a useful, fast report with sensible, obvious defaults.
+   The path is mandatory for reports; bare `fdu` prints help and performs no scan.
    There are no subcommands: the grammar is always “report on a path,” customized by
    composable flags, so a path argument can never be shadowed.
    Help documents each axis, its options, and its defaults plainly enough that the
@@ -99,7 +102,8 @@ removed from this design by exactly that test.
     and flags are part of benchmark identity: renaming one means updating the job
     manifests in the same change.
 
-These principles graduate into a standalone design doc under `docs/project/guides/` once
+These principles graduate into
+[the standalone design doc](../../architecture/fdu-design-principles.md) once
 implementation has validated them (Phase 4), so they outlive this spec.
 
 ## Non-Goals
@@ -161,7 +165,7 @@ flowmark’s *surface* patterns, not its storage.
 | **Selection** | Which retained entries does this query consider, and how are results shaped? | `--include <GLOB>`, `--exclude <GLOB>`, `--min-size <SIZE>`, `--modified-since <WHEN>`, `--modified-before <WHEN>`, `--kind <LIST>` of `file\|dir\|symlink`, `--depth <N>`, `-n/--limit <N>`, `--sort <size\|count\|mtime\|name>`, `--reverse`, `--size <allocated\|apparent>` | View-time filter over the index; never part of the cache key |
 | **View** | Which roll-ups or listings are reported? | `--view <LIST>` — comma-delimited from `tree`, `types`, `files`, `summary`; default `tree` | Pure projections over `Index` |
 | **Format** | How is the report serialized? | `--format <text\|json\|jsonl\|yaml>`, `--color <auto\|always\|never>` | Serializers over `Report`; schema-versioned |
-| **Mode** | One answer or a live feed, and how is the cache used? | one-shot (default) vs `--watch [--interval <DUR>]`; `--cache <auto\|refresh\|only\|off>`; `--allow-partial` | `open()` path selection; `watch::Watcher` driving the same query |
+| **Mode** | One answer or a live feed, and how is the cache used? | one-shot (default) vs `--watch [--interval <DUR>]`; `--cache <auto\|refresh\|read-only\|only\|off>`; `--allow-partial` | `open()` path selection; `watch::Watcher` driving the same query |
 
 Scope versus selection is the load-bearing distinction, and it is why filters are cheap:
 scope determines what is scanned and cached (one cache serves every query), while
@@ -174,31 +178,34 @@ updated in the same change (Principle 12).
 ### CLI Surface
 
 ```text
-fdu [PATH] [OPTIONS]                              # the one and only command
-fdu [PATH] --cache-status | --cache-clear[=all]   # lifecycle flags; never scan
-fdu --skill / --help / --version                  # unchanged discovery surfaces
+fdu [OPTIONS] <PATH>                                      # reports name their root
+fdu [PATH] --cache-status[=<SCOPE>] [--cache-clear[=<SCOPE>]] # lifecycle; never scan
+fdu [PATH] --cache-clear[=<SCOPE>]                        # lifecycle; never scan
+fdu --skill / --help / --version                          # discovery surfaces
 ```
 
 Representative compositions, which double as the subsumption checklist (Principle 8):
 
 | Instead of | Run | Notes |
 | --- | --- | --- |
-| `dust` / `dut` | `fdu` | tree view, warm when a cache exists |
-| `du -sh` / `diskus` | `fdu --view summary` | one-line totals |
-| `du -a --max-depth 3` | `fdu --depth 3 -n all` | unlimited entries per directory |
-| `fd -e rs` / `find -name` | `fdu --view files --include '*.rs'` | flat listing, one path per line in text |
-| biggest files (`dust -f`, `find -size +10M`) | `fdu --view files --min-size 10M --sort size -n 100` | not a special view — files + sort + limit |
-| recently modified (`find -mmin -60`) | `fdu --view files --modified-since 1h --sort mtime` | humane durations, not day counts |
-| `du` by type | `fdu --view types` | current `--by-type` |
-| two reports, one scan | `fdu --view types,tree` | one index, both roll-ups |
-| `tail -f` for a tree | `fdu --watch --view files --format jsonl` | one record per applied change |
-| live dashboard poll | `fdu --watch --view tree,types --interval 2s` | aggregate views re-render when dirty |
-| forced cold measurement | `fdu --cache refresh` | ignores and rewrites the snapshot |
-| answer from cache alone | `fdu --cache only` | never touches the tree; labeled stale |
-| incremental backup sync | `fdu --view summary`, then later `fdu --view files --modified-since <scan_started_at>` | exact-timestamp watermark; see below |
+| `dust` / `dut` | `fdu PATH` | tree view, warm when a cache exists |
+| `du -sh` / `diskus` | `fdu --view summary PATH` | one-line totals |
+| `du -a --max-depth 3` | `fdu --depth 3 -n all PATH` | unlimited entries per directory |
+| `fd -e rs` / `find -name` | `fdu --view files --include '*.rs' PATH` | flat listing, one path per line in text |
+| biggest files (`dust -f`, `find -size +10M`) | `fdu --view files --min-size 10M --sort size -n 100 PATH` | not a special view — files + sort + limit |
+| recently modified (`find -mmin -60`) | `fdu --view files --modified-since 1h --sort mtime PATH` | humane durations, not day counts |
+| `du` by type | `fdu --view types PATH` | current `--by-type` |
+| two reports, one scan | `fdu --view types,tree PATH` | one index, both roll-ups |
+| `tail -f` for a tree | `fdu --watch --view files --format jsonl PATH` | one record per applied change |
+| live dashboard poll | `fdu --watch --view tree,types --interval 2s PATH` | aggregate views re-render when dirty |
+| forced cold measurement | `fdu --cache refresh PATH` | ignores and rewrites the snapshot |
+| answer from cache alone | `fdu --cache only PATH` | never touches the tree; labeled stale |
+| incremental backup sync | `fdu --view summary PATH`, then later `fdu --view files --modified-since <scan_started_at> PATH` | exact-timestamp watermark; see below |
 
 Grammar conventions, applied uniformly so every flag behaves the way its neighbors do:
 
+- **Reports require an explicit root.** Bare `fdu` is identical to `fdu --help` and
+  returns without filesystem work; `fdu .` is the deliberate current-directory form.
 - **Closed identifier vocabularies are comma-delimited lists** (`--view`, `--kind`):
   split on commas, trim, reject empty tokens, and name the valid values in the error for
   an unknown token (flowmark’s list pattern).
@@ -270,7 +277,7 @@ Reports are therefore self-describing evidence: a summary is not just “the dis
 but “the disk usage as observed starting at T.”
 
 Time selection uses one shared, fully specified grammar (`WHEN`), covering ages and
-absolute times:
+offset-bearing absolute times:
 
 ```text
 WHEN      = "now" | AGE | TIMESTAMP
@@ -280,16 +287,14 @@ UNIT      = "s"|"sec"|"secs"|"second"|"seconds"
           | "h"|"hr"|"hrs"|"hour"|"hours"
           | "d"|"day"|"days" | "w"|"week"|"weeks"
 TIMESTAMP = RFC3339                       ; 2026-08-10T18:22:31.482919114Z — exact
-          | date [ " " time ]            ; 2026-08-10 [12:30[:45]] — local time
           | "@" INT [ "." FRAC ]         ; seconds since the Unix epoch, UTC
 ```
 
 The rules that keep it well defined:
 
-- The surface grammar is deliberately fd’s `--changed-within`/`--changed-before` grammar
-  (durations, RFC 3339, local date/datetime, `@epoch`) — the de facto modern standard
-  from a tool this design subsumes — extended with compound ages (`1h30m`) and the `now`
-  keyword, so existing muscle memory transfers.
+- The surface grammar deliberately follows fd’s `--changed-within`/`--changed-before`
+  vocabulary for durations, RFC 3339, and `@epoch`, extended with compound ages
+  (`1h30m`) and the `now` keyword, so existing muscle memory transfers.
 - We borrow the grammar, not the implementation: `humantime`, the crate behind fd’s
   parser, is unmaintained (RUSTSEC-2025-0014, and fd has an open issue to replace it),
   so `parse_when` is a small first-party parser with table-driven tests.
@@ -305,9 +310,12 @@ The rules that keep it well defined:
 - Natural-language forms (`yesterday`, `2 weeks ago` à la GNU date and journalctl) are
   rejected: locale-dependent and unbounded; the closed grammar above is the whole
   language.
+- Bare local dates and date-times are rejected with guidance to supply an RFC 3339
+  offset. Resolving civil time correctly requires a time-zone policy and database; that
+  decision remains tracked as `fdu-f6dn` rather than silently treating local input as
+  UTC.
 - RFC 3339 timestamps carry their own offset and round-trip a report’s `scan_started_at`
-  exactly; the date/datetime shorthand is local time, matching what fd users expect at a
-  prompt.
+  exactly.
 
 `--modified-since` is inclusive and `--modified-before` is exclusive, forming the
 half-open window `[since, before)`.
@@ -447,6 +455,15 @@ get cache observability without a second schema style.
 
 ### Watch Mode
 
+Change detection is event-driven, never polling: the watcher binds the native OS backend
+through `notify` (FSEvents on macOS, inotify on Linux, ReadDirectoryChangesW on
+Windows), coalesces kernel-pushed events, and verifies each coalesced path with one
+fresh stat — idle cost is zero filesystem work.
+`--interval` below throttles only how often *aggregate views re-render*; it plays no
+part in detection. Polling exists solely as the deliberate fallback for filesystems
+without native events (NFS/FUSE/SMB), selected per-filesystem by the watch-hardening
+work (`fdu-lka2`).
+
 `--watch` runs the same query continuously (Principle 10):
 
 1. Open the index per the cache policy and emit the initial report exactly as a one-shot
@@ -503,8 +520,8 @@ library, not CLI helpers and not new dependencies, so the CLI, Rust callers, and
 all accept identical strings (Principle 7); `parse_when` takes `now` as an argument so
 callers and tests control the reference instant.
 
-`Report` and its sections derive `serde::Serialize`; `text` rendering and the
-JSON/JSONL/YAML serializers live in the CLI feature.
+`Report` and its sections remain dependency-light library values; deterministic,
+hand-written text/JSON/JSONL/YAML serializers live in the CLI feature.
 `cli.rs` shrinks to parsing flags into `(ScanConfig, CachePolicy, Query, Format)` and
 routing streams — the current private rendering methods on `Cli` move behind
 `query`/`format` types with their own unit tests.
@@ -518,11 +535,9 @@ If implementing a flag ever requires logic that does not fit `Query`, `CachePoli
 a `Report` serializer, the library types are wrong and get fixed first; each phase ends
 with an explicit review of what, if anything, lives only in `cli.rs`.
 
-Supply-chain note: `serde` (derive) enters the core crate; YAML requires care because
-`serde_yaml` is unmaintained.
-The YAML emitter is either a small first-party writer over the already-structured
-`Report` or a vetted maintained crate passing the cool-off policy — decided in
-implementation, recorded in `deny.toml` either way.
+Supply-chain outcome: the serializers are small first-party writers over the closed
+`Report` shape. This avoided adding `serde`, a JSON crate, or the unmaintained
+`serde_yaml`, while keeping key order and number formatting byte-stable for goldens.
 
 ### Python API
 
@@ -569,63 +584,74 @@ shared process boundary, as today.
 
 ### Phase 1: Query and Report Core
 
-- [ ] Add `query` module: `Selection`, `ViewSpec` (tree/types/files/summary), `Query`,
+- [x] Add `query` module: `Selection`, `ViewSpec` (tree/types/files/summary), `Query`,
   `Report`, pure `report()` with unit tests per view × selection, including the roll-up
   fast path vs traversal tier
-- [ ] Implement the shared value grammars (`parse_when`, `parse_size`) and the
+- [x] Implement the shared value grammars (`parse_when`, `parse_size`) and the
   `--modified-since`/`--modified-before` half-open window; stamp `scan_started_at` and
-  `generated_at` on every report
-- [ ] Add `allocated` to `ExtTally` and thread the size metric through all views
-- [ ] Serde-derive `Report`; implement `text`, `json`, `jsonl`, `yaml` formatters and
-  the `fdu.report/1` golden + schema-bump tests; resolve the YAML dependency per the
-  supply-chain note
-- [ ] Rework CLI parsing to the five axes (view list parsing, replaced flags, exit
-  contract), update SKILL.md, `AFTER_HELP`, README, tryscript goldens, and the benchmark
-  job manifests together
-- [ ] Python `Index.report(...)` with the same defaults and names
+  `generated_at` on every report.
+  Local date-times are rejected pending a time-zone decision (`fdu-f6dn`); the watermark
+  round-trip is pinned by `crates/fdu/tests/watermark.rs` (`fdu-3vgt`, closed)
+- [x] Add `allocated` to `ExtTally` and thread the size metric through all views
+- [x] Implement dependency-light `Report` values plus hand-written `text`, `json`,
+  `jsonl`, and `yaml` formatters; pin both `fdu.report/1` and `fdu.stream/1` with schema
+  assertions and whole-record goldens (`fdu-rti1`, closed)
+- [x] Rework CLI parsing to the five axes (view list parsing, replaced flags, exit
+  contract), require an explicit report path with bare `fdu` as help, and update
+  SKILL.md, `AFTER_HELP`, README, tryscript goldens, and the benchmark job manifests
+  together
+- [x] Python `Index.report(...)` with the same defaults and names
 
 ### Phase 2: Cache Policy and Utilities
 
-- [ ] `CachePolicy` in `open()` covering auto/refresh/only/off, with `only` failing
-  closed when no usable snapshot exists
-- [ ] Snapshot write ordering and failure semantics: save on a background thread
+- [x] `CachePolicy` in `open()` covering auto/refresh/read-only/only/off, with `only`
+  failing closed when no usable snapshot exists
+- [x] Snapshot write ordering and failure semantics: save on a background thread
   overlapped with rendering, only when complete and `Fresh`, joined before exit,
   completing even on broken-pipe rendering; a failed save warns on stderr without
   changing the exit code; `read-only` policy suppresses the write entirely.
   The journal-resume fields (event ID, volume UUID, platform tag) are reserved by the
   [FSEvents-scoped revalidation plan](plan-2026-08-10-fdu-fsevents-scoped-revalidation.md)
   as snapshot format v3 (bead `fdu-2cdv`), not duplicated here
-- [ ] Document the two-layer cache design and the tier-derived verification contract in
+- [x] Document the two-layer cache design and the tier-derived verification contract in
   help, SKILL.md, and the schema docs (implementation of tiered verification lands with
   the reducer registry, cross-plan)
-- [ ] Library `cache_status`, `list_caches`, `clear_cache`, `clear_all_caches` with
+- [x] Library `cache_status`, `list_caches`, `clear_cache`, `clear_all_caches` with
   bounded header reads and never-delete-unrecognized semantics
-- [ ] `--cache-status[=root|all]` and `--cache-clear[=root|all]` lifecycle flags
+- [x] `--cache-status[=root|all]` and `--cache-clear[=root|all]` lifecycle flags
   rendering through the format axis, running before scan validation; tryscript coverage
   per flowmark’s cache-behavior suite
-- [ ] Python `cache` accessors mirroring the library functions
+- [x] Python `cache` accessors mirroring the library functions
 
 ### Phase 3: Watch Mode
 
-- [ ] `Session` API composing `IndexHandle`, `Watcher`, and `Query`; batch filtering
+- [x] `Session` API composing `IndexHandle`, `Watcher`, and `Query`; batch filtering
   through `Selection`
-- [ ] `--watch`/`--interval` CLI loop: initial report, streamed `files` records,
-  dirty-gated aggregate re-render, explicit invalidation records, `fdu.stream/1` schema
-  and goldens, signal handling and final save
-- [ ] Scope validation errors for `--watch` + `--scan-depth`/`--one-filesystem`
-- [ ] Python `Index.watch(...)` iterator with deterministic shutdown tests
-- [ ] `watch-stream` benchmark job registration
+- [x] `--watch`/`--interval` CLI loop: initial report, streamed `files` records,
+  dirty-gated aggregate re-render, explicit invalidation records, `fdu.stream/1` schema,
+  and a persisting save.
+  Delivered as a save after each dirty batch rather than a signal handler: std has no
+  portable one, and a watch session ends by signal far more often than it ends politely,
+  so an exit-time save would be the one that never runs.
+  Pinned by `crates/fdu/tests/watch_persistence.rs`, which SIGKILLs the real binary
+- [x] Deterministic goldens for streamed records through the bounded `watch-capture`
+  helper (`fdu-t9nv`, closed)
+- [x] Scope validation errors for `--watch` + `--scan-depth`/`--one-filesystem`
+- [x] Python `Index.watch(...)` iterator with deterministic shutdown tests
+- [x] `watch-stream` benchmark job registration — the job vocabulary only, which is what
+  this item asked for; the runner is `fdu-g8ks`
 
 ### Phase 4: Design Principles Documentation
 
-- [ ] Distill the Goals and Design Principles of this spec — as actually implemented,
+- [x] Distill the Goals and Design Principles of this spec — as actually implemented,
   with any amendments iteration forced — into
   [the design doc](../../architecture/fdu-design-principles.md), following
   common-doc-guidelines: the five axes, the CLI-invents-nothing parity rule, and the
   subsumption checklist.
-  The doc exists and already carries the engine principles, including the delta contract
-  and cache honesty; the CLI-specific axes land with this spec
-- [ ] Run the end-of-plan parity review (what, if anything, lives only in `cli.rs`) and
+  The doc already carried the engine principles, including the delta contract and cache
+  honesty; the CLI-specific axes were first distilled on this branch and folded into it
+  when the two histories merged
+- [x] Run the end-of-plan parity review (what, if anything, lives only in `cli.rs`) and
   record its outcome in the design doc
 - [x] Point AGENTS.md, README, and the architecture references at the design doc
 - [ ] Move this spec to done and reconcile the subsumed beads (Open Question 4)
@@ -638,12 +664,14 @@ shared process boundary, as today.
 - Golden tryscript sessions per axis: view lists, each format, cache policies (using a
   scratch `XDG_CACHE_HOME`), cache utilities, and watch streaming with injected changes;
   goldens are byte-stable (integer formatting, no floats in text output).
+  The watch stream uses a bounded, causally sequenced capture helper rather than timing
+  a process that never exits.
 - Schema tests: `fdu.report/1` and `fdu.stream/1` fixtures that fail on unversioned
   change.
 - Time-window tests: table-driven `parse_when`/`parse_size` grammar units with injected
-  `now`, covering every accepted form (`now`, compound ages, RFC 3339, local
-  date/datetime under a pinned `TZ`, `@epoch` with fraction) and every rejection with
-  its suggestion (months/years → days, fractional ages → compounds, natural language);
+  `now`, covering every accepted form (`now`, compound ages, RFC 3339, `@epoch` with
+  fraction) and every rejection with its suggestion (months/years → days, fractional
+  ages → compounds, bare local date-times → offset-bearing RFC 3339, natural language);
   boundary inclusivity at exact-equal mtimes; a watermark round-trip proving a report’s
   `scan_started_at` fed back as `--modified-since` lists exactly the files touched after
   scan start, including one touched mid-scan; timestamp fields are normalized in
@@ -655,12 +683,40 @@ shared process boundary, as today.
 
 ## Rollout Plan
 
-One PR per phase, each leaving the CLI fully working and documented.
-Phase 1 is the breaking rename PR and lands before any new capability so churn on
-SKILL.md, goldens, and benchmark manifests happens once.
-Phase 4 is small but not optional: the principles must land in `docs/project/guides/` so
-they govern future work, not just this plan.
+Implementation proceeded phase by phase on one feature branch, with each phase leaving
+the CLI working and documented.
+Phase 1 carried the breaking rename so churn on SKILL.md, goldens, and benchmark
+manifests happened once.
+Phase 4 is small but not optional: the principles live in `docs/project/architecture/`
+so they govern future work, not just this plan.
 No publishing; `fdu-9cf0` gates remain.
+
+## Remaining work
+
+The four implementation phases are complete.
+The remaining product decisions and follow-ups are mapped to beads so they cannot be
+lost by being described only here:
+
+| Gap | Bead |
+| --- | --- |
+| `watch-stream` benchmark **runner** (only the job vocabulary is registered) | `fdu-g8ks` |
+| Local date-times in `parse_when`, pending a time-zone decision | `fdu-f6dn` |
+| Cache retention: nothing prunes snapshots or bounds total size (open question 5) | `fdu-558j` |
+| Open questions 1, 2, and 4 | `fdu-khu8` |
+| Automate the runbook’s bead-sync check as a periodic guard | `fdu-qut8` |
+
+The watch stream is goldened (`fdu-t9nv`, closed): tryscript compares one command’s
+completed output and a watch process never exits, so
+`tests/golden/bin/watch-capture.mjs` turns watching into a command that does — it spawns
+`fdu --watch`, applies a scripted change sequence, waits for each change’s own record
+before making the next, and prints the captured stream.
+Determinism is causal, not timed.
+`tests/golden/cli-watch.tryscript.md` pins the schema on every record, the op
+vocabulary, per-op field presence, and the absent-not-null contract for removals.
+Alongside it: `crates/fdu/tests/watch_session.rs` for event semantics,
+`watch_persistence.rs` for save-surviving-SIGKILL (cold and warm start), and section 6
+of [the integration runbook](../../guides/integration-runbook.md) for the one property
+no automated test asserts well: that an idle tree costs 0% CPU.
 
 ## Open Questions
 

@@ -12,6 +12,7 @@ env:
   TZ: UTC
   XDG_CACHE_HOME: .cache
 patterns:
+  RFC3339: '\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{9}Z'
   ALLOCATED: '\d+'
   MTIME_NS: '-?\d+'
   SCAN_PATH: '[^\r\n]+'
@@ -23,34 +24,23 @@ patterns:
 ### Scan Without a Cache
 
 ```console
-$ fdu --no-cache --json --apparent-size --depth 0 --number 0 project
+$ fdu --cache off --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.tree/2",
+  "schema": "fdu.report/1",
   "generator": "fdu 0.0.1",
   "root": "[SCAN_PATH]",
+  "scan_started_at": "[RFC3339]",
+  "generated_at": "[RFC3339]",
   "source": "cold_scan",
-  "complete": true,
-  "display_depth": 0,
-  "entries_per_directory": 0,
-  "scan_max_depth": null,
-  "tree_truncated": true,
   "freshness": "fresh",
-  "errors": [
-  ],
-  "by_extension": {
-    ".tar.gz": {"files": 1, "bytes": 128},
-    ".md": {"files": 2, "bytes": 71},
-    ".rs": {"files": 2, "bytes": 36}
-  },
-  "tree": {
-    "name": ".",
-    "kind": "dir",
-    "bytes": 263,
-    "allocated": [ALLOCATED],
-    "files": 6,
-    "dirs": 3,
-    "newest_mtime_ns": [MTIME_NS]
-  }
+  "complete": true,
+  "errors": [],
+  "reports": [
+    {
+      "view": "tree",
+      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 263, "allocated": [ALLOCATED], "files": 6, "dirs": 3, "newest_mtime_ns": [MTIME_NS], "truncated": true, "children": []}
+    }
+  ]
 }
 ? 0
 ```
@@ -68,34 +58,23 @@ cache absent
 ### Create the Snapshot
 
 ```console
-$ fdu --json --apparent-size --depth 0 --number 0 project
+$ fdu --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.tree/2",
+  "schema": "fdu.report/1",
   "generator": "fdu 0.0.1",
   "root": "[SCAN_PATH]",
+  "scan_started_at": "[RFC3339]",
+  "generated_at": "[RFC3339]",
   "source": "cold_scan",
-  "complete": true,
-  "display_depth": 0,
-  "entries_per_directory": 0,
-  "scan_max_depth": null,
-  "tree_truncated": true,
   "freshness": "fresh",
-  "errors": [
-  ],
-  "by_extension": {
-    ".tar.gz": {"files": 1, "bytes": 128},
-    ".md": {"files": 2, "bytes": 71},
-    ".rs": {"files": 2, "bytes": 36}
-  },
-  "tree": {
-    "name": ".",
-    "kind": "dir",
-    "bytes": 263,
-    "allocated": [ALLOCATED],
-    "files": 6,
-    "dirs": 3,
-    "newest_mtime_ns": [MTIME_NS]
-  }
+  "complete": true,
+  "errors": [],
+  "reports": [
+    {
+      "view": "tree",
+      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 263, "allocated": [ALLOCATED], "files": 6, "dirs": 3, "newest_mtime_ns": [MTIME_NS], "truncated": true, "children": []}
+    }
+  ]
 }
 ? 0
 ```
@@ -111,34 +90,23 @@ snapshot present
 ## An Unchanged Second Open Revalidates the Snapshot
 
 ```console
-$ fdu --json --apparent-size --depth 0 --number 0 project
+$ fdu --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.tree/2",
+  "schema": "fdu.report/1",
   "generator": "fdu 0.0.1",
   "root": "[SCAN_PATH]",
+  "scan_started_at": "[RFC3339]",
+  "generated_at": "[RFC3339]",
   "source": "warm_revalidate",
-  "complete": true,
-  "display_depth": 0,
-  "entries_per_directory": 0,
-  "scan_max_depth": null,
-  "tree_truncated": true,
   "freshness": "fresh",
-  "errors": [
-  ],
-  "by_extension": {
-    ".tar.gz": {"files": 1, "bytes": 128},
-    ".md": {"files": 2, "bytes": 71},
-    ".rs": {"files": 2, "bytes": 36}
-  },
-  "tree": {
-    "name": ".",
-    "kind": "dir",
-    "bytes": 263,
-    "allocated": [ALLOCATED],
-    "files": 6,
-    "dirs": 3,
-    "newest_mtime_ns": [MTIME_NS]
-  }
+  "complete": true,
+  "errors": [],
+  "reports": [
+    {
+      "view": "tree",
+      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 263, "allocated": [ALLOCATED], "files": 6, "dirs": 3, "newest_mtime_ns": [MTIME_NS], "truncated": true, "children": []}
+    }
+  ]
 }
 ? 0
 ```
@@ -156,34 +124,23 @@ fixture expanded
 ### Revalidate the Changed Tree
 
 ```console
-$ fdu --json --apparent-size --depth 0 --number 0 project
+$ fdu --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.tree/2",
+  "schema": "fdu.report/1",
   "generator": "fdu 0.0.1",
   "root": "[SCAN_PATH]",
+  "scan_started_at": "[RFC3339]",
+  "generated_at": "[RFC3339]",
   "source": "warm_revalidate",
-  "complete": true,
-  "display_depth": 0,
-  "entries_per_directory": 0,
-  "scan_max_depth": null,
-  "tree_truncated": true,
   "freshness": "fresh",
-  "errors": [
-  ],
-  "by_extension": {
-    ".tar.gz": {"files": 1, "bytes": 128},
-    ".md": {"files": 2, "bytes": 96},
-    ".rs": {"files": 2, "bytes": 36}
-  },
-  "tree": {
-    "name": ".",
-    "kind": "dir",
-    "bytes": 288,
-    "allocated": [ALLOCATED],
-    "files": 6,
-    "dirs": 3,
-    "newest_mtime_ns": [MTIME_NS]
-  }
+  "complete": true,
+  "errors": [],
+  "reports": [
+    {
+      "view": "tree",
+      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 288, "allocated": [ALLOCATED], "files": 6, "dirs": 3, "newest_mtime_ns": [MTIME_NS], "truncated": true, "children": []}
+    }
+  ]
 }
 ? 0
 ```
@@ -191,32 +148,23 @@ $ fdu --json --apparent-size --depth 0 --number 0 project
 ## A Different Semantic Scan Scope Misses the Snapshot
 
 ```console
-$ fdu --json --apparent-size --max-depth 1 --depth 0 --number 0 project
+$ fdu --format json --size apparent --scan-depth 1 --depth 0 --limit 0 project
 {
-  "schema": "fdu.tree/2",
+  "schema": "fdu.report/1",
   "generator": "fdu 0.0.1",
   "root": "[SCAN_PATH]",
+  "scan_started_at": "[RFC3339]",
+  "generated_at": "[RFC3339]",
   "source": "cold_scan",
-  "complete": true,
-  "display_depth": 0,
-  "entries_per_directory": 0,
-  "scan_max_depth": 1,
-  "tree_truncated": true,
   "freshness": "fresh",
-  "errors": [
-  ],
-  "by_extension": {
-    ".md": {"files": 1, "bytes": 48}
-  },
-  "tree": {
-    "name": ".",
-    "kind": "dir",
-    "bytes": 76,
-    "allocated": [ALLOCATED],
-    "files": 2,
-    "dirs": 3,
-    "newest_mtime_ns": [MTIME_NS]
-  }
+  "complete": true,
+  "errors": [],
+  "reports": [
+    {
+      "view": "tree",
+      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 76, "allocated": [ALLOCATED], "files": 2, "dirs": 3, "newest_mtime_ns": [MTIME_NS], "truncated": true, "children": []}
+    }
+  ]
 }
 ? 0
 ```
@@ -234,32 +182,23 @@ snapshot corrupted
 ### Recover with a Cold Scan
 
 ```console
-$ fdu --json --apparent-size --max-depth 1 --depth 0 --number 0 project
+$ fdu --format json --size apparent --scan-depth 1 --depth 0 --limit 0 project
 {
-  "schema": "fdu.tree/2",
+  "schema": "fdu.report/1",
   "generator": "fdu 0.0.1",
   "root": "[SCAN_PATH]",
+  "scan_started_at": "[RFC3339]",
+  "generated_at": "[RFC3339]",
   "source": "cold_scan",
-  "complete": true,
-  "display_depth": 0,
-  "entries_per_directory": 0,
-  "scan_max_depth": 1,
-  "tree_truncated": true,
   "freshness": "fresh",
-  "errors": [
-  ],
-  "by_extension": {
-    ".md": {"files": 1, "bytes": 48}
-  },
-  "tree": {
-    "name": ".",
-    "kind": "dir",
-    "bytes": 76,
-    "allocated": [ALLOCATED],
-    "files": 2,
-    "dirs": 3,
-    "newest_mtime_ns": [MTIME_NS]
-  }
+  "complete": true,
+  "errors": [],
+  "reports": [
+    {
+      "view": "tree",
+      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 76, "allocated": [ALLOCATED], "files": 2, "dirs": 3, "newest_mtime_ns": [MTIME_NS], "truncated": true, "children": []}
+    }
+  ]
 }
 ? 0
 ```

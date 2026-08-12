@@ -7,7 +7,7 @@ NPM ?= npm
 MSRV ?= 1.85.0
 NODE_INSTALL_STAMP := node_modules/.package-lock.json
 
-.PHONY: help build release test rust-test test-golden performance-probe test-performance golden-update check supply-chain fix fmt fmt-check clippy docs docs-format docs-format-check lib-only msrv audit npm-audit python-concurrency python-smoke clean cli perf-help
+.PHONY: help build release test rust-test test-golden performance-probe test-performance golden-update check supply-chain fix fmt fmt-check clippy docs docs-format docs-format-check lib-only msrv audit npm-audit python-concurrency python-smoke clean cli perf-help verify-beads
 
 help:
 	@echo "make build      Debug build of the core library and CLI, all features"
@@ -24,7 +24,7 @@ help:
 	@echo "make python-concurrency  Prove Python GIL release and runtime borrow exclusion"
 	@echo "make python-smoke  Build, install, and smoke-test the locked Python wheel"
 	@echo "make cli        Build and run the CLI against this repo"
-	@echo "make docs-format  Auto-format hand-written Markdown with flowmark"
+	@echo "make docs-format  Auto-format all Markdown with flowmark"
 	@echo ""
 	@echo "Performance loop (not part of check; see docs/project/guides/performance-loop.md)"
 	@echo "make perf-baseline  Fingerprint the reference tree named by PERF_TREE"
@@ -64,6 +64,15 @@ $(NODE_INSTALL_STAMP): package.json package-lock.json .npmrc
 
 # Everything CI enforces, in the order that fails fastest.
 check: supply-chain fmt-check clippy test docs docs-format-check lib-only msrv audit npm-audit python-concurrency python-smoke
+
+# Verify that synced beads match the local database, field by field.
+#
+# Deliberately outside `check`: it compares against `origin/tbd-sync`, a branch other
+# working copies push to independently, so a shared-branch race would fail a PR for
+# something the PR did not do. Run it before a handoff, or when a sync looked odd.
+verify-beads:
+	git fetch --quiet origin tbd-sync
+	python3 scripts/verify_bead_sync.py --quiet
 
 supply-chain:
 	$(NPM) run test:supply-chain
@@ -116,37 +125,22 @@ python-smoke:
 		uvx --isolated --no-index --from "$$wheel_path" fdu --version
 
 cli:
-	$(CARGO) run --locked --release --bin fdu -- --no-cache -d 2 .
+	$(CARGO) run --locked --release --bin fdu -- --cache off -d 2 .
 
 # --- Documentation ----------------------------------------------------------
 #
-# Hand-written Markdown only. Generated artifacts are excluded because their
-# generators own their layout and would overwrite any formatting applied here:
-# the experiment artifacts and the ledger come from `benchmarks.realtree`, and the
-# tryscript goldens are compared byte for byte against recorded CLI output.
-FLOWMARK ?= flowmark
-FLOWMARK_OPTS := --semantic --cleanups --smartquotes --width 88
-DOC_FILES := README.md AGENTS.md CLAUDE.md CHANGELOG.md SUPPLY-CHAIN-SECURITY.md \
-	benchmarks/README.md crates/fdu/README.md crates/fdu-py/README.md \
-	$(shell find docs -name '*.md' -not -path 'docs/project/experiments/*' -not -path 'docs/project/reports/*' 2>/dev/null)
+# `--auto` owns repository-wide file discovery and applicable cleanups. The committed
+# tooling lock pins the native Rust formatter used locally and in CI. Generated Markdown
+# uses this same path after generation, so regenerating it cannot create format drift.
+FLOWMARK := uv run --project benchmarks --frozen --only-group docs flowmark
 
 docs-format:
-	@$(FLOWMARK) $(FLOWMARK_OPTS) --inplace --nobackup $(DOC_FILES) && echo "formatted $(words $(DOC_FILES)) documents"
+	@$(FLOWMARK) --auto .
 
 # Fails when a document is not in normal form, so drift is caught rather than
 # accumulating until someone reformats a file and buries a real change in noise.
 docs-format-check:
-	@command -v $(FLOWMARK) >/dev/null 2>&1 || { \
-		echo "skipping documentation format check: $(FLOWMARK) is not installed"; \
-		exit 0; \
-	}; \
-	fail=0; for doc in $(DOC_FILES); do \
-		$(FLOWMARK) $(FLOWMARK_OPTS) -o "$$doc.formatted" "$$doc" >/dev/null 2>&1; \
-		if ! cmp -s "$$doc" "$$doc.formatted"; then echo "not formatted: $$doc"; fail=1; fi; \
-		rm -f "$$doc.formatted"; \
-	done; \
-	if [ "$$fail" = 1 ]; then echo "run: make docs-format"; exit 1; fi; \
-	echo "documentation formatting is clean"
+	@$(FLOWMARK) --auto --check .
 
 # --- Performance loop -------------------------------------------------------
 #
@@ -209,6 +203,7 @@ perf-test:
 # validator lives in that group.
 perf-ledger:
 	$(PERF_UV) --group dev python -m benchmarks.realtree.summary
+	$(MAKE) docs-format
 
 # The experiment contract is compiled from the Pydantic model; --check fails on drift.
 # Pinned in benchmarks/pyproject.toml, not `@latest`: this validator is the

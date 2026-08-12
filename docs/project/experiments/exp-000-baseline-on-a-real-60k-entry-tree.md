@@ -385,17 +385,18 @@ experiment:
 
 ## Hypothesis
 
-—: _state what you expected to be slow, why,
-and which metric would move._
+—: *state what you expected to be slow, why, and which metric would move.*
 
 ## What was tried
 
-_The smallest change that tests the hypothesis._
+*The smallest change that tests the hypothesis.*
 
 ## What the numbers said
 
-_Read the tables in the frontmatter. Say what surprised you._
+*Read the tables in the frontmatter.
+Say what surprised you.*
 
 ## Verdict
 
-**BASELINE** — Establishes the reference numbers every later experiment is measured against
+**BASELINE** — Establishes the reference numbers every later experiment is measured
+against

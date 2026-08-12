@@ -318,21 +318,22 @@ experiment:
 
 ## Hypothesis
 
-H50: exp-012 answered "what does choosing breadth-first cost?" against an implementation
-that no longer exists — a single global FIFO, since replaced by region scheduling
-(exp-013). exp-013 in turn compared two *breadth-first* schedulers against each other.
-Neither measures the question a reader actually has, which is what the shipped default
-costs against the alternative a caller could select.
+H50: exp-012 answered “what does choosing breadth-first cost?”
+against an implementation that no longer exists — a single global FIFO, since replaced
+by region scheduling (exp-013). exp-013 in turn compared two *breadth-first* schedulers
+against each other. Neither measures the question a reader actually has, which is what
+the shipped default costs against the alternative a caller could select.
 
 Predicted: the cold jobs improve or hold, because they are the ones region scheduling
 touches. The warm sweep is unaffected either way, because it runs its own walk.
 
 ## What was tried
 
-Nothing was changed. One binary, both arms, `--order depth-first` as control and
-`--order breadth-first` as candidate, twenty interleaved paired trials per job. Running
-both arms from the same binary removes build-to-build variation entirely, which matters
-here because the effects are single-digit percentages.
+Nothing was changed.
+One binary, both arms, `--order depth-first` as control and `--order breadth-first` as
+candidate, twenty interleaved paired trials per job.
+Running both arms from the same binary removes build-to-build variation entirely, which
+matters here because the effects are single-digit percentages.
 
 ## What the numbers said
 
@@ -350,45 +351,50 @@ exp-012.
 **The warm sweep regressed, and the prediction that it would be unaffected was wrong.**
 `reconcile` walks with the serial `take_next`, not with `DirectoryQueue`, so region
 scheduling never reached it: breadth-first there is still the front-popping global FIFO
-that exp-013 replaced everywhere else, paying the same locality and frontier costs. Wall
-+2.70% [+1.55%, +3.37%], component +4.50% [+2.68%, +5.15%], CPU +2.48% [+1.18%, +3.17%].
+that exp-013 replaced everywhere else, paying the same locality and frontier costs.
+Wall +2.70% [+1.55%, +3.37%], component +4.50% [+2.68%, +5.15%], CPU +2.48%
+[+1.18%, +3.17%].
 
-The regression is small but real, and it survived re-measurement. A first run at 14
-trials on a loaded machine put it at +5.96% [+2.33%, +18.20%]; 24 trials gave +2.15%
-[−0.19%, +4.43%], whose interval includes zero; 20 clean trials gave the +2.70%
-[+1.55%, +3.37%] recorded here. Three runs, one direction, converging as the noise fell.
+The regression is small but real, and it survived re-measurement.
+A first run at 14 trials on a loaded machine put it at +5.96% [+2.33%, +18.20%]; 24
+trials gave +2.15% [−0.19%, +4.43%], whose interval includes zero; 20 clean trials gave
+the +2.70% [+1.55%, +3.37%] recorded here.
+Three runs, one direction, converging as the noise fell.
 
 ## What it means
 
 Breadth-first buys orientation: a consumer watching a walk sees top-level totals fill
-together instead of one subtree finishing while its siblings read zero. On the warm
-sweep, **a one-shot CLI reads none of that** — it prints after reconciliation completes
-— so on that path the property is currently bought and thrown away, at 2.7% of the
-slowest job in the suite.
+together instead of one subtree finishing while its siblings read zero.
+On the warm sweep, **a one-shot CLI reads none of that** — it prints after
+reconciliation completes — so on that path the property is currently bought and thrown
+away, at 2.7% of the slowest job in the suite.
 
 Two ways out, neither measured yet: extend region scheduling to the reconcile sweep, or
 let the sweep default to depth-first and take breadth-first only from a caller that
-reads progressively. The second is closer to the project's own position that traversal
-order is a consumer contract rather than an engine setting.
+reads progressively.
+The second is closer to the project’s own position that traversal order is a consumer
+contract rather than an engine setting.
 
 **Reviewed and deliberately not chased.** 2.7% of one job is below the 3% bar this
 project applies to changes worth added complexity, and the same effort is worth far more
 elsewhere: the adaptive worker pool is estimated at roughly 2x on cold large trees
 (`fdu-tt2j`), persisted roll-ups and lazy open turn an 11-second warm load into a first
-paint (`fdu-1vd0`), and `open` still accounts for about 28% of cold self-time. Fixing a
-2.7% warm regression ahead of any of those would be optimising the wrong thing. It stays
-recorded so it is a decision rather than an oversight, and tracked at low priority as
-`fdu-v71x`.
+paint (`fdu-1vd0`), and `open` still accounts for about 28% of cold self-time.
+Fixing a 2.7% warm regression ahead of any of those would be optimising the wrong thing.
+It stays recorded so it is a decision rather than an oversight, and tracked at low
+priority as `fdu-v71x`.
 
 ## Limitations
 
-One tree, one host. The warm sweep's cost is a locality effect and locality is exactly
+One tree, one host. The warm sweep’s cost is a locality effect and locality is exactly
 what varies most across filesystems and cache states, so the magnitude should not be
 quoted as general — only the sign, which three runs agree on.
 
 ## Verdict
 
-**BASELINE** (no code changed; recorded as the reference point for what the default costs). The default stays breadth-first: it is cheaper on
-both cold jobs and on memory, and the warm cost is 2.7% of one job against an
-orientation property the interactive use case needs. The warm-path asymmetry is recorded
-rather than smoothed over, and is tracked as its own work item.
+**BASELINE** (no code changed; recorded as the reference point for what the default
+costs). The default stays breadth-first: it is cheaper on both cold jobs and on memory,
+and the warm cost is 2.7% of one job against an orientation property the interactive use
+case needs.
+The warm-path asymmetry is recorded rather than smoothed over, and is tracked
+as its own work item.

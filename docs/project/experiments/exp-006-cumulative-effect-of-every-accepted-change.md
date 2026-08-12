@@ -388,17 +388,18 @@ experiment:
 
 ## Hypothesis
 
-H1, H5, H10: _state what you expected to be slow, why,
-and which metric would move._
+H1, H5, H10: *state what you expected to be slow, why, and which metric would move.*
 
 ## What was tried
 
-_The smallest change that tests the hypothesis._
+*The smallest change that tests the hypothesis.*
 
 ## What the numbers said
 
-_Read the tables in the frontmatter. Say what surprised you._
+*Read the tables in the frontmatter.
+Say what surprised you.*
 
 ## Verdict
 
-**ACCEPTED** — Every measured job improved significantly in one interleaved run against the original baseline, with no sample rejected by the oracle
+**ACCEPTED** — Every measured job improved significantly in one interleaved run against
+the original baseline, with no sample rejected by the oracle

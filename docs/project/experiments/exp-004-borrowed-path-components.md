@@ -319,17 +319,18 @@ experiment:
 
 ## Hypothesis
 
-H5: _state what you expected to be slow, why,
-and which metric would move._
+H5: *state what you expected to be slow, why, and which metric would move.*
 
 ## What was tried
 
-_The smallest change that tests the hypothesis._
+*The smallest change that tests the hypothesis.*
 
 ## What the numbers said
 
-_Read the tables in the frontmatter. Say what surprised you._
+*Read the tables in the frontmatter.
+Say what surprised you.*
 
 ## Verdict
 
-**ACCEPTED** — Warm revalidation 9.4% faster and snapshot load 17.8% faster, both with intervals entirely below zero, by deleting work rather than adding machinery
+**ACCEPTED** — Warm revalidation 9.4% faster and snapshot load 17.8% faster, both with
+intervals entirely below zero, by deleting work rather than adding machinery

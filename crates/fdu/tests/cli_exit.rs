@@ -15,7 +15,7 @@ fn partial_results_use_exit_two_unless_explicitly_allowed() {
 
     let run = |allow_partial: bool| {
         let mut command = Command::new(env!("CARGO_BIN_EXE_fdu"));
-        command.args(["--no-cache", "--json"]);
+        command.args(["--cache", "off", "--format", "json"]);
         if allow_partial {
             command.arg("--allow-partial");
         }
@@ -26,7 +26,7 @@ fn partial_results_use_exit_two_unless_explicitly_allowed() {
     let allowed = run(true);
 
     let human = Command::new(env!("CARGO_BIN_EXE_fdu"))
-        .args(["--no-cache", "--color", "never"])
+        .args(["--cache", "off", "--color", "never"])
         .arg(root.path())
         .output()
         .expect("run human fdu");
