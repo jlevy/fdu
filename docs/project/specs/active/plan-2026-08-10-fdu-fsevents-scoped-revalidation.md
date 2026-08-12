@@ -24,9 +24,10 @@ on disk already: `fseventsd` journals directory-level change events persistently
 process exits and reboots.
 Storing the journal cursor in the snapshot and replaying “what changed since” turns a
 quiet tree’s revalidation from ~700 ms at 60k entries into an approximately
-size-independent tens of milliseconds — against today’s serial sweep; the Background
-section states the honest comparison against where rung-1 work will land, and where the
-journal is transformative rather than incremental.
+size-independent tens of milliseconds.
+The Background section replaces that original serial comparison with exp-030’s current
+bounded-parallel rung-1 baseline and states where the journal is transformative rather
+than incremental.
 
 This is rung 2 of the warm ladder in the
 [performance-frontier research](../../research/research-2026-08-10-performance-frontier.md)
@@ -106,10 +107,12 @@ with flags for *several* of the ways history can be insufficient
 The iterative loop has since improved those constants without changing that shape.
 On the current 60,067-entry subject, exp-027 measures about 275 ms for cold index and
 261 ms for snapshot load.
-exp-026 wires the exp-022 `getattrlistbulk` reader into full reconciliation: warm-open
-wall falls from about 616 ms to 500 ms at 60k and from 21.16 seconds to 14.01 seconds at
-720k. The large-tree run cuts system CPU 53.97% with neutral RSS. This improves the
-full-sweep fallback without changing its O(tree) shape.
+exp-026 wires the exp-022 `getattrlistbulk` reader into full reconciliation, and exp-030
+then compares bounded directory waves against an immutable baseline so exact no-ops
+never reach the index consumer.
+Warm-open wall is now about 351 ms at 60k and 5.71 seconds at 720k; exp-030 alone
+improves those paths 30.25% and 59.53%. This improves the full-sweep fallback without
+changing its O(tree) verification shape.
 
 **Not for every way, and that gap is the single most important spike finding.** An
 earlier draft of this section claimed the flags covered every case.
@@ -127,17 +130,13 @@ truth about what changed is not the same as being told the whole truth.
 
 ### What the journal is worth, honestly
 
-Against today’s serial sweep the journal looks overwhelming: ~690 ms → tens of
+Against the old serial sweep the journal looked overwhelming: ~690 ms to tens of
 milliseconds on a quiet 60k tree.
-That comparison flatters it, and the
-[frontier research’s calibration](../../research/research-2026-08-10-performance-frontier.md)
-is the honest one. Two parts of rung 1 have now been measured: H26’s bulk reader brings
-the 60k cold producer component to about 170 ms, and exp-026 reuses it to bring full
-warm reconciliation to about 297 ms plus snapshot load.
-Producer-side no-op elision (H12) and a parallel sweep where misses justify it can still
-move revalidation toward producer time.
-Measured against the current roughly-500-ms full warm open, the journal at 60k-warm is
-an incremental win, not a transformative one.
+That comparison flattered it.
+H26’s bulk reader and H12’s bounded parallel no-op elision now bring full reconciliation
+to about 151 ms and the complete warm open to about 351 ms (exp-030). Measured against
+that current rung-1 baseline, journal replay at 60k-warm is an incremental win rather
+than a transformative one.
 
 Where it is transformative is everywhere the sweep cannot be fast: cold metadata caches
 (cloud hosts whose RAM cannot hold the inodes — the snapshot is the only warm state
@@ -151,8 +150,8 @@ between a tool that can be part of a working loop and one that cannot.
 Both documents draw the same conclusion from opposite ends: the sweep must stay fast
 regardless, because the journal degrades into it (gate rows G3–G9), and the journal must
 exist, because no sweep reaches O(changes).
-The loop’s accept rule will judge Phase 2 against the rung-1 baseline current at
-measurement time, not against today’s serial sweep.
+The loop’s accept rule will judge Phase 2 against exp-030 or a later rung-1 baseline,
+not against the retired serial sweep.
 
 Scoped revalidation also composes with the platform work rather than competing with it.
 Both the cold-scan and full-reconciliation halves of H26 have landed.

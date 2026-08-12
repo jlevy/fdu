@@ -92,7 +92,7 @@ numbers may drift.
 ### Loop Update: 2026-08-12
 
 The original research above scoped out implementation; the performance loop has since
-tested its highest-ranked ideas through exp-026. The durable changes are:
+tested its highest-ranked ideas through exp-030. The durable changes are:
 
 - warm reconciliation and snapshot constants improved through borrowed path components,
   direct child expectations, extension interning, and single-pass checksum/parse;
@@ -102,7 +102,9 @@ tested its highest-ranked ideas through exp-026. The durable changes are:
   to sixteen only after the first 16k entries demonstrate a slow filesystem path; and
 - the macOS cold walker now batches enumeration and complete stat-tier metadata through
   `getattrlistbulk`, falling back for a complete directory on any malformed response,
-  unsupported filesystem, mount point, or firmlink.
+  unsupported filesystem, mount point, or firmlink; and
+- exclusive full reconciliation now compares bounded region-aware waves against an
+  immutable baseline, discarding exact no-ops before the delta consumer.
 
 The current stack versus the pre-work binary is 52.84% faster for cold indexed scans,
 58.29% faster for producer-only scans, 51.13% faster through snapshot save, 34.78%
@@ -115,10 +117,12 @@ H26 now covers cold scans and full reconciliation.
 exp-026 improves warm-open wall 18.97% at 60k and 34.39% at 720k while cutting
 large-tree system CPU 53.97%; using the same reader for a future FSEvents-scoped
 changed-directory set remains open.
-The smallest H24 follow-up did not help: retaining one root descriptor per worker and
-opening descendants relative to it left 720k indexed wall and system CPU neutral in
-exp-024. Parent- or ancestor-relative handles remain architecturally distinct, but must
-justify their descriptor lifetime under breadth-first traversal.
+exp-030 composes that reader with producer-side no-op elision: warm-open wall improves
+another 30.25% at 60k and 59.53% at 720k, with reconciliation component time down 50.31%
+and 72.55%. The smallest H24 follow-up did not help: retaining one root descriptor per
+worker and opening descendants relative to it left 720k indexed wall and system CPU
+neutral in exp-024. Parent- or ancestor-relative handles remain architecturally
+distinct, but must justify their descriptor lifetime under breadth-first traversal.
 The post-H26 worker-depth reproduction also invalidated the old sixteen-worker bulk
 target: compared with six workers it regressed 720k indexed wall 19.19%, producer wall
 12.65%, CPU by more than 100%, and RSS by about one third (exp-025). The existing
@@ -1115,19 +1119,18 @@ The loop’s discipline (profile → hypothesis → smallest change → paired m
 right; the risk of any such loop is climbing a local hill.
 These are the hills worth being on:
 
-1. **Make warm cost O(changes), not O(entries): producer-side no-op elision.** This is
-   the architectural answer to the loop’s H9 (warm 2.6× cold) and the correct reading of
-   exp-002’s rejection.
-   Today every entry — changed or not — flows through the single-threaded consumer’s
-   expectation/arbitration machinery; exp-002 parallelized the walk but still funneled
-   60k no-ops through one thread.
-   Restructure: the parallel producers hold a clock-stable read-only baseline (the
-   loaded index or the snapshot itself), compare fingerprints *in the workers*, and
-   forward only mismatches plus per-directory verified-unchanged summaries.
+1. **Make warm consumer cost O(changes), not O(entries): producer-side no-op elision.**
+   **Landed in exp-030.** This is the architectural answer to the loop’s H9 (warm 2.6×
+   cold) and the correct reading of exp-002’s rejection.
+   exp-002 parallelized the walk but still funnelled 60k no-ops through one thread.
+   The landed parallel producers hold a clock-stable read-only baseline (the loaded
+   index or the snapshot itself), compare fingerprints *in the workers*, and forward
+   only mismatches plus per-directory verified-unchanged summaries.
    Consumer work becomes proportional to churn — typically zero.
-   Predicted end state: warm-revalidate wall converges on parallel producer time (~190
-   ms at 60k today, less once bulk stat lands) and finally drops *below*
-   cold-scan-index; on an unchanged tree the consumer applies nothing.
+   Measured result: the 60k reconciliation component is about 151 ms and the 720k
+   component about 3.19 seconds; on an unchanged tree the consumer applies nothing.
+   Snapshot load keeps full 60k warm open slightly above cold scan, so H9 remains open
+   under the next leverage point.
    The delta contract is untouched — producers emit fewer, richer observations; no new
    mutation path.
 2. **Serve queries from persisted roll-ups; stop rebuilding what the snapshot knew.**
@@ -1184,7 +1187,7 @@ the loop extensions in H36–H39 to be trusted globally.
 
 | # | Hypothesis | Predicted signal | Prereq |
 | --- | --- | --- | --- |
-| H12 | Producer-side fingerprint comparison against a clock-stable baseline makes consumer work O(changes); the expectation machinery per unchanged entry is the warm bound (exp-002’s residue) | `warm-revalidate` wall −40% or more at 60k; falls below `cold-scan-index`; `user_cpu_ns` collapses | — |
+| H12 | Producer-side fingerprint comparison against a clock-stable baseline makes consumer work O(changes); the expectation machinery per unchanged entry is the warm bound (exp-002’s residue) | **Confirmed** (exp-030): bounded four-worker waves improve warm wall 30.25% at 60k and 59.53% at 720k; reconciliation component falls 50.31%/72.55%. Snapshot load keeps complete 60k warm open above cold. | landed exclusive full-tree path; shared/scoped arbitration stays serial |
 | H13 | Applying per *directory* (accumulate children locally, one ancestor merge per directory) cuts upward merges ~7× (7.3k dirs vs 52k files on the reference tree) | `user_cpu_ns` down on `cold-scan-index` and `warm-revalidate` | — |
 | H14 | Routing `ReconcileTarget::Direct` through `collect_child_expectations` (deleting `collect_child_states`) removes ~13 allocations and ~10 descents per unchanged entry; equivalence already test-locked | `warm-revalidate` `user_cpu_ns`, `minor_faults` down | — |
 | H15 | A directory whose stat fingerprint matches the snapshot can skip `read_dir` *membership discovery* (git untracked-cache trick; plocate’s updatedb ships exactly this contract — “it won’t readdir() it. It will stat() it, though”); child stats still run | `system_cpu_ns` down modestly on unchanged trees, most on wide dirs | guardrail G1 |

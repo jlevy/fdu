@@ -72,6 +72,7 @@ The rejected ones are the reusable part: they stop the next person spending a da
 | 027 | [Cumulative effect through bulk reconciliation](#exp027--cumulative-effect-through-bulk-reconciliation) | H1, H5, H10, H14, H18, H32, H48, H49, H31, H3, H26, H53 | `cold-scan-index` | -52.8% | ✅ accepted |
 | 028 | [Reuse macOS bulk directory staging allocations](#exp028--reuse-macos-bulk-directory-staging-allocations) | H54 | `cold-scan-index` | +0.2% | ❌ rejected |
 | 029 | [Increase macOS bulk metadata buffer to 256 KiB](#exp029--increase-macos-bulk-metadata-buffer-to-256-kib) | H55 | `cold-scan-index` | -1.8% | ❌ rejected |
+| 030 | [Elide unchanged entries in bounded parallel reconciliation waves](#exp030--elide-unchanged-entries-in-bounded-parallel-reconciliation-waves) | H12, H9 | `warm-revalidate` | -59.5% | ✅ accepted |
 
 ## The experiments
 
@@ -956,6 +957,34 @@ one constant change; no dependency or unsafe change; the preregistered 720k gate
 **Rejected:** Cold-index wall was -1.80% with an interval spanning -5.95% to +5.45%; producer and warm paths were neutral, system CPU did not corroborate a gain, and cold RSS plus faults regressed.
 
 Full record: [`exp-029-increase-macos-bulk-metadata-buffer-to-256-kib.md`](../experiments/exp-029-increase-macos-bulk-metadata-buffer-to-256-kib.md)
+
+### exp-030 — Elide unchanged entries in bounded parallel reconciliation waves
+
+✅ accepted · 2026-08-12 · H12, H9
+
+Control: exp-026 serial bulk-backed full reconciliation
+
+Candidate: four-worker bounded immutable-baseline waves with producer-side no-op elision
+
+**`warm-revalidate`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 14463.4 | 5708.1 | -59.53% | [-62.80%, -50.43%] |
+| component (ms) | 11864.5 | 3189.1 | -72.55% | [-75.61%, -66.65%] |
+| cpu (ms) | 8001.7 | 9258.7 | +17.30% (regression) | [+5.94%, +30.62%] |
+| user (ms) | 2900.2 | 3072.3 | +6.93% (regression) | [+1.95%, +12.93%] |
+| system (ms) | 5094.1 | 6186.4 | +23.68% (regression) | [+8.49%, +40.34%] |
+| blocked (ms) | 6399.4 | 0.0 | -100.00% | [-100.00%, -100.00%] |
+| peak rss (MiB) | 341.6 | 338.2 | -0.99% | [-1.15%, -0.91%] |
+
+Cost to carry: 419 lines; no new dependencies; new failure mode: a panicking reconciliation worker makes the sweep partial and reports the missing work; new failure mode: a wave exceeding the bounded deferred-change budget repeats the full tree through the serial reconciler; new failure mode: exclusive full reconciliation now delays effective deltas until the current bounded directory wave joins.
+
+407 insertions and 12 deletions; no dependency or unsafe change; direct full-tree path only, while shared, scoped, and explicit one-worker reconciliation retain the serial reference
+
+**Accepted:** Warm-open wall improved 30.25% at 60k and 59.53% at 720k; reconciliation component improved 50.31% and 72.55%, exact oracles passed, and RSS stayed within the preregistered bound.
+
+Full record: [`exp-030-elide-unchanged-entries-in-bounded-parallel-reconciliation-w.md`](../experiments/exp-030-elide-unchanged-entries-in-bounded-parallel-reconciliation-w.md)
 
 
 <!-- This document follows common-doc-guidelines.md.

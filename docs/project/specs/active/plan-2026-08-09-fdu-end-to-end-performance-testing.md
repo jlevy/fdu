@@ -93,21 +93,22 @@ What it found, first against a roughly 60k-entry checkout and then against a
   macOS `getattrlistbulk` backend compose to improve producer wall 58.29% against the
   original build (exp-027). The platform backend alone improves 720k cold-index wall
   30.13% and producer wall 41.60% (exp-022).
-- **The warm path is still the outstanding structural defect, but its full sweep is
-  materially cheaper.** Reusing the audited bulk reader during reconciliation improves
-  warm-open wall 18.97% at 60k and 34.39% at 720k, with large-tree system CPU down
-  53.97% (exp-026). At 60k the resulting roughly-500-ms warm open still loses to the
-  roughly-296-ms cold index; journal scoping and persisted roll-ups remain necessary.
+- **The warm defect is now concentrated in snapshot load.** Bounded immutable-baseline
+  waves compose producer-side no-op elision with the bulk reader: warm-open wall
+  improves another 30.25% at 60k and 59.53% at 720k, while reconciliation component time
+  falls 50.31% and 72.55% (exp-030). The resulting roughly-351-ms warm open is close to
+  but still slower than the roughly-296-ms cold index; persisted roll-ups/bulk load and
+  journal scoping remain necessary.
 - **Recent BFS-sensitive ideas were explicitly rechecked.** Root-relative `openat` was
   neutral for indexed scans and reverted (exp-024). The old pre-bulk sixteen-worker
   large-tree knee now regresses indexed wall 19.19%, CPU 107%, and RSS 33%; the existing
   service-time trigger correctly keeps the bulk path at six workers (exp-025).
 
-Two of the five experiments so far were rejected and reverted, and that is the point of
-writing them down: parallelising the revalidation sweep bought 2.6% for 180 lines of
-concurrency, and removing 120,000 path clones per scan bought nothing measurable at all.
-Both are recorded with their numbers so the next person does not spend a day
-rediscovering them.
+Rejected experiments remain as important as accepted ones.
+The original parallel revalidation funnel bought only 2.6%, root-relative `openat` was
+neutral, excess bulk workers regressed wall/CPU/RSS, and allocation/buffer tweaks failed
+their gates. Those records explain why exp-030 parallelizes immutable comparison and
+deletes no-ops before the consumer instead of retrying the earlier design.
 
 Experiments are soft-schema artifacts under
 [docs/project/experiments/](../../experiments/), validated against a committed contract,

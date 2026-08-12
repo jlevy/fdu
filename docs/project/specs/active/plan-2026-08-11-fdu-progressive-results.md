@@ -140,14 +140,15 @@ shipped default against `DepthFirst` directly: `cold-scan-producer` wall −3.04
 [−5.99%, −0.96%] and `cold-scan-index` peak RSS −1.76% [−2.63%, −0.74%] — breadth-first
 is now the cheaper of the two there.
 
-The warm sweep is the exception and is a known gap: `reconcile` walks with the serial
-`take_next`, so region scheduling never reached it and breadth-first costs +2.70%
-[+1.55%, +3.37%] on `warm-revalidate`, for an orientation benefit a one-shot CLI never
-reads.
+The warm sweep was the exception in exp-014: serial `take_next` meant region scheduling
+never reached it, and breadth-first cost 2.70%. exp-030 retires that asymmetry.
+Exclusive full reconciliation now takes bounded region-aware waves, compares each wave
+against an immutable index baseline, and publishes effective deltas between waves.
+Shared and scoped reconciliation retain their stronger serial arbitration.
 
-That cost is accepted rather than outstanding.
-It sits below the project’s own 3% bar for changes worth added complexity, and the queue
-ahead of it has proved worth far more.
+That composition is substantially faster, not merely orientation-neutral: warm-open wall
+improves 30.25% at 60k and 59.53% at 720k, while the bounded wave preserves useful
+progress for a consumer reading during a changed-tree sweep.
 The adaptive worker pool (`fdu-tt2j`) improves a reproducible 720k cold-index run 5.31%
 [−8.37%, −2.70%] while retaining the 120k boundary result.
 The macOS bulk-metadata backend then composes with that pool: exp-022 improves the same
@@ -159,10 +160,9 @@ remains context; exp-027 is now the claim-grade reproduction.
 The same audited bulk reader now serves full macOS reconciliation as well.
 exp-026 improves warm-open wall 18.97% on the 60k subject and 34.39% on the 720k
 subject, with large-tree system CPU down 53.97% and RSS neutral.
-Cumulatively, warm-open wall is now 34.78% below the original build (exp-027).
-Reconciliation stays serial, so this does not change the breadth-first partial-result
-contract; it removes filesystem work from the sound cache fallback and composes with
-future FSEvents scoping.
+exp-030 then composes that reader with four-worker immutable-baseline waves, improving
+warm wall another 30.25% and 59.53%. Effective changes still flow through bounded deltas
+between waves, and the faster sound fallback composes with future FSEvents scoping.
 Persisted roll-ups with lazy open (`fdu-1vd0`) turn an 11-second warm load into a first
 paint. Tracked at low priority as `fdu-v71x` so the decision stays visible.
 
