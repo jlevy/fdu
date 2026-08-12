@@ -190,48 +190,22 @@ Three artifacts and one contract:
 | **AppliedDelta** | A clocked batch of effective committed changes for the bounded change feed |
 
 Everything else produces observations or consumes applied deltas.
-A cold scan establishes a historyless baseline; a reconciliation sweep conditionally
-applies its diff while it walks; the watch layer coalesces event hints and verifies them
-by stat.
-The index alone arbitrates observations, removes no-ops, advances the clock, and
-mints `AppliedDelta`.
+The index alone arbitrates observations, removes no-ops, advances the clock, and mints
+`AppliedDelta`.
 
-Today, `open()` is deliberately blocking: it loads a usable snapshot and completes a
-filesystem reconciliation before returning.
-It never serves the snapshot as fresh before that pass, and it never replaces a complete
-snapshot with a partial result.
-`IndexHandle` and the reconciliation APIs support readers between applied batches with
-explicit `Fresh`, `Reconciling`, `Stale`, and `Partial` state, but applications must opt
-into that serving model.
-The optional watcher is an adapter and driver; `open()` and the Python API do not start
-it automatically, and the Python wheel does not compile the watch dependency.
-Its applying driver re-verifies queued samples at a clock-stable commit boundary and
-currently accepts only an unbounded, cross-filesystem scope; bounded-depth and
-one-filesystem event filtering is tracked as watch-hardening work and those
-configurations fail explicitly rather than indexing excluded paths.
-A watch sample is valid at its filesystem `stat` point; the process does not pretend it
-can freeze external filesystem mutation until the in-memory commit.
-Backend events that arrive during or after verification remain queued for the next
-batch, while reported loss or ambiguity invalidates and reconciles the affected scope.
-The logical-clock check prevents an older sample from overwriting a newer in-memory
-commit; it is not a filesystem transaction.
+Two invariants are non-negotiable, because a cache that lies is worse than no cache.
+Content-reuse fingerprints are size, mtime, ctime, and inode, never mtime alone, because
+mtime is user-settable and some applications roll it back after writing.
+A corrupt or unrecognized snapshot is treated as absent, never as data.
 
-Two invariants are non-negotiable, because a cache that lies is worse than no cache:
+Every value also carries its provenance: where it came from, when it was observed, and
+whether it is final.
+That is what lets a caller show a cached number immediately, label it honestly, and
+clear the label as verification converges.
 
-- Content-reuse fingerprints are **size, mtime, ctime, and inode**, not mtime alone.
-  mtime is user-settable and some applications roll it back after writing; ctime is
-  kernel-controlled. All observed stat fields are still compared when updating stored
-  state, so allocated-byte or device changes cannot leave query results stale.
-- A corrupt or unrecognized snapshot is treated as **absent, never as data**. Failing
-  closed costs a rescan; failing open silently corrupts every answer built on it.
-  The bootstrap format verifies its payload checksum before parsing records, and Unix
-  cache files are created owner-only because they contain a filesystem inventory.
-- Conditional observations carry generation and revision guards.
-  Present-state ABA, parent replacement, and absent create/remove races are rejected at
-  one batch boundary without making changes in unrelated subtrees conflict.
-- Cold scans and every warm mutation path enforce the same semantic scope.
-  Depth zero is root-only, and subtree reconciliation refuses paths below
-  depth/filesystem boundaries or through symlink ancestors.
+The serving model, the concurrency guards, and the full set of rules any change must
+respect are in
+[the design and principles doc](docs/project/architecture/fdu-design-principles.md).
 
 ## Development
 
@@ -261,7 +235,9 @@ anything for speed.
 
 Read [the supply-chain policy](SUPPLY-CHAIN-SECURITY.md) before changing a dependency,
 toolchain, CI action, or bootstrap download.
-[AGENTS.md](AGENTS.md) carries the conventions worth not rediscovering.
+[The design and principles doc](docs/project/architecture/fdu-design-principles.md)
+carries the rules worth not rediscovering, and [AGENTS.md](AGENTS.md) covers how to
+operate on the repository.
 
 ## License
 

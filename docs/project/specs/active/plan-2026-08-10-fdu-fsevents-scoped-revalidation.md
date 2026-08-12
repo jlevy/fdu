@@ -103,10 +103,11 @@ with flags for *several* of the ways history can be insufficient
 `EventIdsWrapped`, `HistoryDone`, `RootChanged`, `Mount`, `Unmount`).
 
 **Not for every way, and that gap is the single most important spike finding.** An
-earlier draft of this section claimed the flags covered every case. They do not: replay
-from an old cursor can deliver `HistoryDone` having silently omitted most of the
-intervening history, raising none of these flags. Every gate, every age bound, and the
-naming of [`Source::JournalScoped`] descends from that one observation.
+earlier draft of this section claimed the flags covered every case.
+They do not: replay from an old cursor can deliver `HistoryDone` having silently omitted
+most of the intervening history, raising none of these flags.
+Every gate, every age bound, and the naming of [`Source::JournalScoped`] descends from
+that one observation.
 
 The journal’s directory granularity does carry exactly the information directory mtimes
 do not: a content edit to `a/b/c/file.txt` produces an event naming `a/b/c`, because
@@ -245,16 +246,18 @@ The Phase 0 spike established the opposite: an old `sinceWhen` can return `Histo
 after silently dropping most of its history, with no degradation flag to test.
 Scoped revalidation stats the paths the journal *names* and does not stat the rest, so
 the untouched majority of the tree is accepted on the journal’s completeness — the one
-property the spike showed cannot be checked. That is not a sound verification path, and
-calling it one would contradict the project rule that a platform journal narrows what
-must be checked but never replaces the checking.
+property the spike showed cannot be checked.
+That is not a sound verification path, and calling it one would contradict the project
+rule that a platform journal narrows what must be checked but never replaces the
+checking.
 
 So this plan takes the **risk-bounded** contract deliberately, and the honesty is
 carried in the type rather than in prose: values the journal vouched for read as
 [`Source::JournalScoped`], never as verified, and a consumer that needs certainty can
-see the difference on every row. G5 and G12 below are **risk controls that bound how
-long a silent omission can persist** — they are not correctness gates, and no row of
-this table proves any individual journal answer right.
+see the difference on every row.
+G5 and G12 below are **risk controls that bound how long a silent omission can persist**
+— they are not correctness gates, and no row of this table proves any individual journal
+answer right.
 
 The gate is a pure decision function so the whole table is unit-testable without
 CoreServices. Every row falls closed to the sweep:

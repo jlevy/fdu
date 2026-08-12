@@ -7,7 +7,7 @@ NPM ?= npm
 MSRV ?= 1.85.0
 NODE_INSTALL_STAMP := node_modules/.package-lock.json
 
-.PHONY: help build release test rust-test test-golden performance-probe test-performance golden-update check supply-chain fix fmt fmt-check clippy docs lib-only msrv audit npm-audit python-concurrency python-smoke clean cli perf-help
+.PHONY: help build release test rust-test test-golden performance-probe test-performance golden-update check supply-chain fix fmt fmt-check clippy docs docs-format docs-format-check lib-only msrv audit npm-audit python-concurrency python-smoke clean cli perf-help
 
 help:
 	@echo "make build      Debug build of the core library and CLI, all features"
@@ -24,6 +24,7 @@ help:
 	@echo "make python-concurrency  Prove Python GIL release and runtime borrow exclusion"
 	@echo "make python-smoke  Build, install, and smoke-test the locked Python wheel"
 	@echo "make cli        Build and run the CLI against this repo"
+	@echo "make docs-format  Auto-format hand-written Markdown with flowmark"
 	@echo ""
 	@echo "Performance loop (not part of check; see docs/project/guides/performance-loop.md)"
 	@echo "make perf-baseline  Fingerprint the reference tree named by PERF_TREE"
@@ -62,7 +63,7 @@ $(NODE_INSTALL_STAMP): package.json package-lock.json .npmrc
 	$(NPM) ci
 
 # Everything CI enforces, in the order that fails fastest.
-check: supply-chain fmt-check clippy test docs lib-only msrv audit npm-audit python-concurrency python-smoke
+check: supply-chain fmt-check clippy test docs docs-format-check lib-only msrv audit npm-audit python-concurrency python-smoke
 
 supply-chain:
 	$(NPM) run test:supply-chain
@@ -117,6 +118,36 @@ python-smoke:
 cli:
 	$(CARGO) run --locked --release --bin fdu -- --no-cache -d 2 .
 
+# --- Documentation ----------------------------------------------------------
+#
+# Hand-written Markdown only. Generated artifacts are excluded because their
+# generators own their layout and would overwrite any formatting applied here:
+# the experiment artifacts and the ledger come from `benchmarks.realtree`, and the
+# tryscript goldens are compared byte for byte against recorded CLI output.
+FLOWMARK ?= flowmark
+FLOWMARK_OPTS := --semantic --cleanups --smartquotes --width 88
+DOC_FILES := README.md AGENTS.md CLAUDE.md CHANGELOG.md SUPPLY-CHAIN-SECURITY.md \
+	benchmarks/README.md crates/fdu/README.md crates/fdu-py/README.md \
+	$(shell find docs -name '*.md' -not -path 'docs/project/experiments/*' -not -path 'docs/project/reports/*' 2>/dev/null)
+
+docs-format:
+	@$(FLOWMARK) $(FLOWMARK_OPTS) --inplace --nobackup $(DOC_FILES) && echo "formatted $(words $(DOC_FILES)) documents"
+
+# Fails when a document is not in normal form, so drift is caught rather than
+# accumulating until someone reformats a file and buries a real change in noise.
+docs-format-check:
+	@command -v $(FLOWMARK) >/dev/null 2>&1 || { \
+		echo "skipping documentation format check: $(FLOWMARK) is not installed"; \
+		exit 0; \
+	}; \
+	fail=0; for doc in $(DOC_FILES); do \
+		$(FLOWMARK) $(FLOWMARK_OPTS) -o "$$doc.formatted" "$$doc" >/dev/null 2>&1; \
+		if ! cmp -s "$$doc" "$$doc.formatted"; then echo "not formatted: $$doc"; fail=1; fi; \
+		rm -f "$$doc.formatted"; \
+	done; \
+	if [ "$$fail" = 1 ]; then echo "run: make docs-format"; exit 1; fi; \
+	echo "documentation formatting is clean"
+
 # --- Performance loop -------------------------------------------------------
 #
 # Deliberately outside `check`. This is a development workflow that needs a large
@@ -136,7 +167,7 @@ PERF_PROFILING := target/profiling/examples/perf_probe
 PERF_UV := uv run --project benchmarks --frozen
 PERF_RUN := $(PERF_UV) python -m benchmarks.realtree
 
-.PHONY: perf-probe-release perf-probe-profiling perf-baseline perf-profile perf-compare perf-test perf-ledger perf-schema perf-schema-check
+.PHONY: perf-probe-release perf-probe-profiling perf-baseline perf-profile perf-compare perf-record perf-test perf-ledger perf-schema perf-schema-check
 
 perf-probe-release:
 	$(CARGO) build --locked --release -p fdu --example perf_probe --no-default-features
@@ -164,6 +195,10 @@ perf-compare: perf-probe-release
 		--trials $(or $(TRIALS),12) \
 		--baseline-fingerprint benchmarks/results/realtree/tree-$(PERF_LABEL).json \
 		--name $(or $(NAME),adhoc)
+
+# Record an experiment artifact from a completed measurement run.
+perf-record:
+	$(PERF_UV) --group dev python -m benchmarks.realtree.record $(ARGS)
 
 perf-test:
 	$(PERF_UV) --group dev python -m unittest discover -s benchmarks/realtree/tests -p 'test_*.py'

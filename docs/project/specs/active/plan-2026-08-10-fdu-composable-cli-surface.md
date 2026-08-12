@@ -619,14 +619,16 @@ shared process boundary, as today.
 ### Phase 4: Design Principles Documentation
 
 - [ ] Distill the Goals and Design Principles of this spec — as actually implemented,
-  with any amendments iteration forced — into a durable design doc at
-  `docs/project/guides/fdu-design-principles.md`, following common-doc-guidelines: the
-  five axes, the delta contract, cache honesty, the CLI-invents-nothing parity rule, and
-  the subsumption checklist
+  with any amendments iteration forced — into
+  [the design doc](../../architecture/fdu-design-principles.md), following
+  common-doc-guidelines: the five axes, the CLI-invents-nothing parity rule, and the
+  subsumption checklist.
+  The doc exists and already carries the engine principles, including the delta contract
+  and cache honesty; the CLI-specific axes land with this spec
 - [ ] Run the end-of-plan parity review (what, if anything, lives only in `cli.rs`) and
   record its outcome in the design doc
-- [ ] Point AGENTS.md, README, and the architecture references at the design doc; move
-  this spec to done and reconcile the subsumed beads (Open Question 4)
+- [x] Point AGENTS.md, README, and the architecture references at the design doc
+- [ ] Move this spec to done and reconcile the subsumed beads (Open Question 4)
 
 ## Testing Strategy
 

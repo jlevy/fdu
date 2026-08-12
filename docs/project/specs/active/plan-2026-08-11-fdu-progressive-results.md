@@ -118,43 +118,45 @@ Both orders visit every entry exactly once and leave an identical index behind, 
 policy sits beside `threads` and `batch_size` as operational, and stays out of
 `ScanScope` where it could otherwise invalidate a snapshot.
 The serial walk, the revalidation sweep, and subtree reconciliation take from the front
-or the back of one `VecDeque` according to the policy. The parallel worker queue is
-region-scheduled under `BreadthFirst` (exp-013): work is bucketed by top-level subtree,
-each free worker is handed a different bucket round-robin, and within a bucket the order
-is LIFO. A global FIFO ordered the queue but not the claims, so workers clustered in one
-subtree; regions spread them by construction. There is still no second walker and no
-barrier anywhere.
+or the back of one `VecDeque` according to the policy.
+The parallel worker queue is region-scheduled under `BreadthFirst` (exp-013): work is
+bucketed by top-level subtree, each free worker is handed a different bucket
+round-robin, and within a bucket the order is LIFO. A global FIFO ordered the queue but
+not the claims, so workers clustered in one subtree; regions spread them by
+construction. There is still no second walker and no barrier anywhere.
 
 Measured properly (exp-012: 60,067-entry tree, 16 interleaved paired trials per job),
-breadth-first costs **no measurable wall time and a little memory**.
-Wall on `cold-scan-index` is −0.58% with a 95% interval of [−2.50%, +1.20%]; the
-walk-only and warm-revalidation intervals straddle zero too, so the supported claim is
-"not measurably different", not "free".
+breadth-first costs **no measurable wall time and a little memory**. Wall on
+`cold-scan-index` is −0.58% with a 95% interval of [−2.50%, +1.20%]; the walk-only and
+warm-revalidation intervals straddle zero too, so the supported claim is “not measurably
+different”, not “free”.
 Peak RSS did rise in that first implementation, with intervals clear of zero: +1.51%
 [+0.85%, +2.88%] on `cold-scan-index` (about 34.7 MB to 35.4 MB), +3.66% on
 `cold-scan-producer`, +1.17% on `warm-revalidate`, alongside +2.50% producer CPU.
 
-Those costs no longer apply to the parallel walk. exp-013 replaced the global FIFO with
-a region scheduler, and exp-014 measured the shipped default against `DepthFirst`
-directly: `cold-scan-producer` wall −3.04% [−5.99%, −0.96%] and `cold-scan-index` peak
-RSS −1.76% [−2.63%, −0.74%] — breadth-first is now the cheaper of the two there.
+Those costs no longer apply to the parallel walk.
+exp-013 replaced the global FIFO with a region scheduler, and exp-014 measured the
+shipped default against `DepthFirst` directly: `cold-scan-producer` wall −3.04%
+[−5.99%, −0.96%] and `cold-scan-index` peak RSS −1.76% [−2.63%, −0.74%] — breadth-first
+is now the cheaper of the two there.
 
 The warm sweep is the exception and is a known gap: `reconcile` walks with the serial
 `take_next`, so region scheduling never reached it and breadth-first costs +2.70%
 [+1.55%, +3.37%] on `warm-revalidate`, for an orientation benefit a one-shot CLI never
 reads.
 
-That cost is accepted rather than outstanding. It sits below the project's own 3% bar
-for changes worth added complexity, and the queue ahead of it is worth far more — the
-adaptive worker pool (`fdu-tt2j`) is estimated at roughly 2x on cold large trees, and
-persisted roll-ups with lazy open (`fdu-1vd0`) turn an 11-second warm load into a first
-paint. Tracked at low priority as `fdu-v71x` so the decision stays visible.
+That cost is accepted rather than outstanding.
+It sits below the project’s own 3% bar for changes worth added complexity, and the queue
+ahead of it is worth far more — the adaptive worker pool (`fdu-tt2j`) is estimated at
+roughly 2x on cold large trees, and persisted roll-ups with lazy open (`fdu-1vd0`) turn
+an 11-second warm load into a first paint.
+Tracked at low priority as `fdu-v71x` so the decision stays visible.
 
 An earlier six-sample median comparison suggested ~8%, and that figure was quoted here
 before it had been through the accept rule.
 It did not survive it — and the correction then overshot in the other direction, calling
 the change free, because the harness printed metrics failing the one-sided accept rule
-as "n.s." regardless of which way they pointed.
+as “n.s.” regardless of which way they pointed.
 The correction matters beyond the number: it removes the only argument for giving the
 one-shot CLI a different default, so breadth-first is simply the default everywhere and
 `DepthFirst` exists for callers with a specific reason — a memory-constrained walk of a
@@ -399,10 +401,11 @@ plans: everything else here works without it, on every platform.
 
 - [x] `ScanOrder` policy, breadth-first default, all four traversal loops, tests for
   index equality, depth monotonicity, and scope stability
-- [x] `--order` on the probe. The one-shot CLI does **not** default to `DepthFirst`:
-  the 8% that would have justified it did not survive the accept rule (exp-012), so
-  breadth-first is the default everywhere and `DepthFirst` is for callers with a
-  specific memory or locality reason
+- [x] `--order` on the probe.
+  The one-shot CLI does **not** default to `DepthFirst`: the 8% that would have
+  justified it did not survive the accept rule (exp-012), so breadth-first is the
+  default everywhere and `DepthFirst` is for callers with a specific memory or locality
+  reason
 - [ ] `Session`: start/read/complete/cancel over `IndexHandle`, with documented
   monotonicity and per-path freshness; bounded-memory option
 - [ ] Python `Session` mirroring the Rust surface
@@ -414,8 +417,7 @@ plans: everything else here works without it, on every platform.
 - [ ] `Provenance` per value, composed through the existing reducer path by weakest
   source / oldest observation / worst status - note these aggregates are **not
   invertible** under deletion or revalidation, so the design must specify the recompute
-  path (`fdu-fka6`); a
-  snapshot-loaded index reports `Cached`, not `Fresh`
+  path (`fdu-fka6`); a snapshot-loaded index reports `Cached`, not `Fresh`
 - [ ] Provenance transitions on the session’s change stream, reporting confirmations as
   well as corrections
 - [ ] `session.prioritize(path)` so verification follows the user’s attention
