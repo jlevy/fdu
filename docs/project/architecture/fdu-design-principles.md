@@ -389,10 +389,15 @@ probe-and-fallback, never load-bearing.
 
 ### Claim Only What the Benchmarks Have Shown
 
-The current walker is a portable `read_dir` and `symlink_metadata` implementation, and
-is explicitly scaffolding.
-Goal 1 is not met until the `getdents64` and `statx` layer replaces it *and* the
-benchmark gate against dut and gdu passes.
+The portable walker uses `read_dir` and `symlink_metadata`, which the Rust standard
+library already implements on Linux as `getdents64` plus dirfd-relative `statx`. A
+strace census on a 450,462-entry tree measured fdu, dut, and diskus issuing the same
+counts of each, and a single-threaded harness found raw `getdents64` and narrow `statx`
+masks within noise of the standard library, so a hand-rolled syscall layer is not what
+remains between here and Goal 1 on Linux; see
+[the Linux first measurements](../research/research-2026-08-13-linux-first-measurements.md).
+Goal 1 is met when the benchmark gate against dut and gdu passes, which on that rig
+means closing the index-consumer gap rather than the enumeration one.
 
 Benchmarks report cold and warm separately, and raw-walk and with-stats separately, or
 they compare different jobs.

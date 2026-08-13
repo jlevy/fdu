@@ -482,6 +482,16 @@ H64’s complete selected-total specialization then changed wall by only −1.15
 
 The current headline is deliberately limited to one M1 Pro and local APFS. Linux will
 exercise the portable per-entry metadata path and may produce a different ranking.
+
+A first paired scouting pass on a virtualized Linux host now exists in
+[the Linux first measurements](../research/research-2026-08-13-linux-first-measurements.md).
+It is not release evidence — the rig is a VM whose guest-cold reads can still be
+host-cached, and its subject was generated for that session — but it ranks the work: the
+enumeration layer is already at parity with dut and diskus in syscalls issued, the index
+consumer accounts for the tree-class gap, and the verified warm open runs slower than a
+cold scan. The claim-grade matrix below remains outstanding, and the scouting numbers do
+not substitute for any part of it.
+
 A future report should repeat the exact comparator matrix on a controlled local-SSD
 Linux host with:
 

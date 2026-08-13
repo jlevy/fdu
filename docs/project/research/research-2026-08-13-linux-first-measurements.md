@@ -92,7 +92,7 @@ variant slower):
 | narrow `statx` mask | +1.2% | [−0.7%, +4.8%] | masks don’t skip local-fs work |
 | files-only `statx` (summary tier) | −1.4% | [−2.4%, +1.9%] | saves 6.4% of stats here; larger on dir-heavy trees |
 | inode-sorted `statx` | **+6.8%** | [+2.8%, +13.7%] | sort cost, no warm benefit; its claim is cold-only |
-| io_uring `statx`, QD 128 | **+327%** | [+309%, +345%] | 4.4× CPU; io-wq punting; decisively refuted warm |
+| io_uring `statx`, QD 128 | **+327%** | [+309%, +345%] | 4.4× CPU; io-wq punting; refuted warm |
 
 The baseline itself runs ~1.5 µs/entry single-threaded, ~91% system CPU: the warm Linux
 floor is per-entry `statx` kernel time, and no enumeration rearrangement moves it.
@@ -188,13 +188,12 @@ dependency would need the supply-chain process first):
 The summary plan’s allocation pattern — producers allocate paths and observation
 batches, the consumer thread frees them — is the cross-thread free pattern glibc malloc
 handles worst and mimalloc handles best.
-A −30% wall change with the interval far below zero would put the summary plan
-decisively ahead of diskus warm on this rig (242 vs 296 ms) while returning five exact
-tallies to diskus’s one total.
-The index path is unaffected: its cost is BTreeMap traversal, not allocation, which
-independently corroborates the consumer-layout program (H19–H22/H60). The RSS increase
-(+49% on a small base) needs a million-entry check before adoption, and the dependency
-itself needs the documented cool-off and audit.
+A 30% wall reduction with the interval below zero would put the summary plan ahead of
+diskus warm on this rig (242 vs 296 ms) while returning five exact tallies to diskus’s
+one total. The index path is unaffected: its cost is BTreeMap traversal, not allocation,
+which independently corroborates the consumer-layout program (H19–H22/H60). The RSS
+increase (+49% on a small base) needs a million-entry check before adoption, and the
+dependency itself needs the documented cool-off and audit.
 
 ## What this changes
 
@@ -210,8 +209,8 @@ Ordered by expected effect on the Linux ranking:
    Until warm open beats cold scan on Linux, the cache is a liability here: today it
    costs +72% wall and +44% RSS on an unchanged tree.
 3. **Stop planning syscall-layer work on Linux warm** (H58 downgraded; raw
-   getdents64/narrow-statx/io_uring warm variants measured at or below noise, io_uring
-   catastrophically negative).
+   getdents64/narrow-statx/io_uring warm variants measured at or below noise, and
+   io_uring strongly negative).
    The remaining syscall lever is *stat elision by tier*: files-only statx for the
    summary plan (~6% fewer stats on this tree, more on dir-heavy trees, `d_type`-gated
    with `DT_UNKNOWN` fallback), and any future attrs-free tier (a pure `--view files`
