@@ -580,9 +580,9 @@ preregistered CPU, memory, and I/O budgets.
   adding a production dependency
 - [x] Define `code-sloc-v1` for code, comment, blank, physical, mixed-line, docstring,
   nested-comment, generated-file, and embedded-language behavior
-- [ ] Add adversarial golden fixtures for Rust, Python, JavaScript, TypeScript, Go,
+- [x] Add adversarial golden fixtures for Rust, Python, JavaScript, TypeScript, Go,
   Java, C, C++, C#, Ruby, PHP, Swift, Kotlin, shell, and SQL
-- [ ] Compare those fixtures and representative repositories with pinned SCC and Tokei
+- [x] Compare those fixtures and representative repositories with pinned SCC and Tokei
   revisions, recording intentional dialect differences
 - [x] Expose standard `code_lines` as the ordinary LOC/SLOC rollup and keep
   `nonblank_lines` separately named
@@ -590,7 +590,7 @@ preregistered CPU, memory, and I/O budgets.
   explicit unsupported-language coverage
 - [x] Report unsupported and ambiguous language coverage rather than falling back to
   nonblank lines
-- [ ] Extend the multilingual tryscript and repository self-host checks, then freeze
+- [x] Extend the multilingual tryscript and repository self-host checks, then freeze
   their semantic outputs before any code-parser performance iteration
 
 **Exit criteria:** required common-language fixtures are versioned and green; every

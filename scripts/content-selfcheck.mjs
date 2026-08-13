@@ -98,6 +98,7 @@ try {
       nonblank_lines: 0,
       code_lines: 0,
       comment_lines: 0,
+      code_blank_lines: 0,
       raw_words: 0,
       logical_words: 0,
       paragraphs: 0,
@@ -106,9 +107,49 @@ try {
     });
   }
 
+  const codeOutput = run(resolve(root, "target/debug/fdu"), [
+    "--cache",
+    "off",
+    "--allow-partial",
+    "--analyze",
+    "code",
+    "--view",
+    "languages",
+    "--format",
+    "json",
+    "--limit",
+    "all",
+    tree,
+  ]);
+  const codeReport = JSON.parse(codeOutput);
+  assert.equal(codeReport.schema, "fdu.report/2");
+  assert.equal(codeReport.analysis.profile, "code");
+  assert.deepEqual(codeReport.analysis.analyzers, [
+    { id: "content-basic-v1", version: 1 },
+    { id: "code-sloc-v1", version: 1 },
+  ]);
+  const code = codeReport.reports[0].metrics;
+  assert.equal(code.share_metric, "code_lines");
+  assert.equal(code.total.share.numerator, code.total.metrics.code_lines);
+  assert.equal(code.total.share.denominator, code.total.metrics.code_lines);
+  assert.ok(code.total.metrics.code_lines > 0);
+  assert.ok(code.total.coverage.unsupported > 0, "self-host should expose unsupported code");
+  const codeRows = new Map(code.rows.map((row) => [row.id, row]));
+  for (const id of ["rust", "python", "javascript"]) {
+    const row = codeRows.get(id);
+    assert.ok(row, `missing self-host SLOC row ${id}`);
+    assert.equal(row.coverage.analyzed, row.files);
+    assert.equal(
+      row.metrics.physical_lines,
+      row.metrics.code_lines + row.metrics.comment_lines + row.metrics.code_blank_lines,
+      `${id} SLOC partition`,
+    );
+  }
+
   console.log(
     `content self-check passed: ${types.total.files} tracked files, ` +
-      `${types.total.metrics.physical_lines} text lines, ${types.rows.length} types`,
+      `${types.total.metrics.physical_lines} text lines, ` +
+      `${code.total.metrics.code_lines} standard LOC, ${types.rows.length} types`,
   );
 } finally {
   rmSync(scratch, { recursive: true, force: true });

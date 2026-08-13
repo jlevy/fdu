@@ -87,6 +87,7 @@ struct Syntax {
     backtick_strings: bool,
     rust_raw_strings: bool,
     shell_hash_boundary: bool,
+    ruby_blocks: bool,
 }
 
 impl Syntax {
@@ -99,6 +100,7 @@ impl Syntax {
             backtick_strings: false,
             rust_raw_strings: false,
             shell_hash_boundary: false,
+            ruby_blocks: false,
         };
         match file_type {
             "rust" => Some(Self { nested_blocks: true, rust_raw_strings: true, ..c_like }),
@@ -114,6 +116,7 @@ impl Syntax {
                 backtick_strings: false,
                 rust_raw_strings: false,
                 shell_hash_boundary: false,
+                ruby_blocks: file_type == "ruby",
             }),
             "shell" => Some(Self {
                 line_comments: &[b"#"],
@@ -123,6 +126,7 @@ impl Syntax {
                 backtick_strings: true,
                 rust_raw_strings: false,
                 shell_hash_boundary: true,
+                ruby_blocks: false,
             }),
             "sql" => Some(Self {
                 line_comments: &[b"--"],
@@ -132,6 +136,7 @@ impl Syntax {
                 backtick_strings: true,
                 rust_raw_strings: false,
                 shell_hash_boundary: false,
+                ruby_blocks: false,
             }),
             _ => None,
         }
@@ -151,6 +156,7 @@ enum State {
     Quoted { quote: u8, escaped: bool, multiline: bool },
     TripleQuoted { quote: u8 },
     RustRaw { hashes: u8 },
+    RubyBlock,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -166,6 +172,17 @@ fn classify_line(syntax: Syntax, state: &mut State, line: &[u8]) -> LineClass {
     let mut code =
         matches!(state, State::Quoted { .. } | State::TripleQuoted { .. } | State::RustRaw { .. });
     let mut comment = matches!(state, State::BlockComment { .. });
+
+    if matches!(state, State::RubyBlock) {
+        if line.starts_with(b"=end") {
+            *state = State::Normal;
+        }
+        return LineClass::Comment;
+    }
+    if syntax.ruby_blocks && matches!(state, State::Normal) && line.starts_with(b"=begin") {
+        *state = State::RubyBlock;
+        return LineClass::Comment;
+    }
 
     while index < line.len() {
         match *state {
@@ -217,6 +234,7 @@ fn classify_line(syntax: Syntax, state: &mut State, line: &[u8]) -> LineClass {
                     index += 1;
                 }
             }
+            State::RubyBlock => unreachable!("Ruby blocks return before byte scanning"),
             State::Normal => {
                 let byte = line[index];
                 if byte.is_ascii_whitespace() {
@@ -345,6 +363,23 @@ mod tests {
         assert_eq!(metrics.code_lines, 4);
         assert_eq!(metrics.comment_lines, 1);
         assert_eq!(metrics.code_blank_lines, 0);
+    }
+
+    #[test]
+    fn every_line_ending_convention_has_the_same_partition() {
+        for source in [
+            "// comment\nlet value = 1;\n\n",
+            "// comment\r\nlet value = 1;\r\n\r\n",
+            "// comment\rlet value = 1;\r\r",
+            "// comment\r\nlet value = 1;\r\n",
+        ] {
+            let metrics = count("rust", &[source.as_bytes()]);
+            let expected_lines = if source.ends_with("value = 1;\r\n") { 2 } else { 3 };
+            assert_eq!(metrics.physical_lines, expected_lines, "{source:?}");
+            assert_eq!(metrics.code_lines, 1, "{source:?}");
+            assert_eq!(metrics.comment_lines, 1, "{source:?}");
+            assert_eq!(metrics.code_blank_lines, expected_lines - 2, "{source:?}");
+        }
     }
 
     #[test]
