@@ -4,7 +4,7 @@
 
 **Author:** fdu project
 
-**Status:** Draft
+**Status:** Approved for phased implementation
 
 ## Overview
 
@@ -126,6 +126,29 @@ These are exploratory envelopes rather than portable product claims, but they ju
 the order of the phases: fuse cheap counters, reject binary input early, and add syntax
 only where its extra work changes the answer.
 
+### SCC Parity and Differentiation
+
+“Beat SCC” is not one claim.
+The plan separates surfaces where fdu should lead from surfaces where parity is
+expensive:
+
+| Surface | Expected difficulty | Target |
+| --- | --- | --- |
+| Physical, blank, nonblank, and raw-word streaming | Easy | Match the obvious semantics and plausibly exceed SCC when less syntax work is requested |
+| Early known-binary and NUL rejection | Easy | Avoid full reads that SCC may perform on mislabeled binaries |
+| Warm unchanged trees and one-percent churn | Moderate | Lead through per-analyzer caching and incremental directory rollups, which SCC does not provide |
+| Common-language code/comment/blank counts | Moderate | Match SCC-style standard SLOC for the explicitly supported dialect set |
+| Hundreds of languages and every ambiguity rule | Hard | Grow only from measured demand; do not claim SCC’s breadth initially |
+| Complexity, ULOC, minified/generated heuristics, and embedded languages | Hard | Keep outside the first standard rollup or add later as independently versioned analyzers |
+| Raw, logical, and reader-visible document words, paragraphs, and pages | Moderate | Go beyond SCC with first-class textual volume inspired by FlexDoc |
+
+The likely first wins are basic analysis, binary-heavy inputs, cache hits, and small
+incremental changes.
+Cold `code-sloc-v1` parity is a measured goal, not a promise to outperform a mature code
+counter before profiling.
+Feature claims must name the analyzer dialect and supported-language set; speed claims
+must name corpus, cache state, and semantic oracle.
+
 ## Design Principles
 
 ### Metadata and Content Remain Separate Tiers
@@ -195,7 +218,7 @@ The initial slots are:
 | `code-sloc-v1` | `comment_lines` | Comment-only lines under the named language dialect |
 | `code-sloc-v1` | `blank_lines` | Whitespace-only lines outside comments |
 | `code-sloc-v1` | `physical_lines` | `code_lines + comment_lines + blank_lines` |
-| `text-logical-v1` | `logical_words` | Normalized prose-volume units under the pinned logical-word rules |
+| `text-logical-v1` | `logical_word_stats` | Additive integer statistics from which normalized prose-volume units are derived |
 | `text-structure-v1` | `paragraphs` | Plain-text paragraph runs or projected markup blocks |
 | `markdown-prose-v1` | `visible_raw_words` | Raw words after reader-visible Markdown projection |
 | `markdown-prose-v1` | `visible_logical_words` | Logical words after reader-visible Markdown projection |
@@ -230,6 +253,24 @@ Words are summed before division, so directory totals do not accumulate per-file
 rounding error and a caller can choose another convention without invalidating cached
 analysis. Machine output carries the word numerator and words-per-page denominator as
 integers; a rendered decimal is presentation rather than stored state.
+
+Logical words follow the same rule.
+A rounded per-file logical-word value is not additive, so `text-logical-v1` stores three
+integer sufficient statistics:
+
+```text
+wide_nonspace_chars
+nonwide_whitespace_tokens
+nonwide_nonspace_chars
+```
+
+At query time, the reducer clamps `nonwide_whitespace_tokens` between
+`nonwide_nonspace_chars / 6` and `nonwide_nonspace_chars / 3`, adds one half per wide or
+fullwidth non-whitespace character, and rounds half-up once after aggregation.
+The implementation uses checked integer arithmetic rather than floating point for the
+pinned `3`, `6`, and `1/2` constants.
+This matches FlexDoc’s logical-word semantics while making directory, type, and filtered
+totals independent of file boundaries.
 
 ### Coverage Is Data, Not a Warning String
 
@@ -390,10 +431,12 @@ Add library-owned, non-stringly-typed concepts for:
 - per-file, per-type, per-directory, and summary content rollups
 - conditional analysis observations and committed derived deltas
 
-`ScanOptions` and `OpenOptions` accept an `AnalysisRequest` whose default enables no
-analyzers. `Query` gains a metric projection and a query-only words-per-page convention.
-Report rows expose requested metric maps and coverage without removing their existing
-byte, count, timestamp, and provenance fields.
+`OpenConfig` accepts an `AnalysisRequest` whose default enables no analyzers.
+`ScanConfig` remains metadata-only: the content coordinator consumes regular-file
+candidates already retained in the index, so neither scan producer nor walker owns
+content policy. `Query` gains a metric projection and a query-only words-per-page
+convention. Report rows expose requested metric maps and coverage without removing their
+existing byte, count, timestamp, and provenance fields.
 
 The analyzer boundary receives a resolved type, a bounded byte stream or checked buffer,
 and cancellation state.
@@ -458,8 +501,9 @@ one-off command.
 ### Machine Schemas and Python
 
 Content fields require a new JSON/JSONL/YAML schema version.
-The old schema remains stable for metadata-only requests during the compatibility
-window; a content request always emits the content-capable schema.
+`report_format.rs` keeps `fdu.report/1` for unchanged metadata-only requests during the
+compatibility window and emits `fdu.report/2` when a stable type/family or content field
+is requested. A content request always emits the content-capable schema.
 
 Python exposes the same `AnalysisRequest`, metric identifiers, coverage, and report
 values as Rust. It does not implement analyzers or aggregation in Python.
@@ -514,12 +558,15 @@ is opened; and the disabled-path performance verdict is “no measurable regress
   versioned machine schema
 - [ ] Extend the metric-summary projection with physical, blank, nonblank, and raw-word
   slots; add the `documents` preset and query-derived pages
-- [ ] Benchmark cold reads, warm filesystem cache, content-cache hits, 1% churn, large
-  files, many tiny files, and the adversarial mislabeled-binary corpus
+- [ ] Lock the complete Rust/CLI/Python contract with the multilingual tryscript fixture
+  and the repository self-host sanity check before changing the implementation for speed
+- [ ] Then benchmark cold reads, warm filesystem cache, content-cache hits, 1% churn,
+  large files, many tiny files, and the adversarial mislabeled-binary corpus
 
 **Exit criteria:** line identities hold for every fixture; unchanged warm runs perform
 no content opens; a changed file updates ancestors by subtraction and addition; binaries
-produce coverage rather than text counts; and the basic analyzer stays within its
+produce coverage rather than text counts; end-to-end goldens and the self-host check are
+green before performance work begins; and the basic analyzer stays within its
 preregistered CPU, memory, and I/O budgets.
 
 ### Phase 3: Common-Language Standard SLOC
@@ -543,6 +590,8 @@ preregistered CPU, memory, and I/O budgets.
   explicit unsupported-language coverage
 - [ ] Report unsupported and ambiguous language coverage rather than falling back to
   nonblank lines
+- [ ] Extend the multilingual tryscript and repository self-host checks, then freeze
+  their semantic outputs before any code-parser performance iteration
 
 **Exit criteria:** required common-language fixtures are versioned and green; every
 physical line belongs to exactly one code, comment, or blank category; no unsupported
@@ -553,8 +602,10 @@ performance, and semantic gates.
 
 - [ ] Implement `text-logical-v1` as streaming sufficient statistics under the pinned
   3-to-6 non-whitespace-character clamp and half-weight wide-character rule
-- [ ] Keep `raw_words` and `logical_words` together so callers can choose literal or
-  normalized volume
+- [ ] Store `LogicalWordStats` additively and derive `logical_words` only after the
+  selected files have been aggregated; never sum rounded per-file logical words
+- [ ] Keep raw, logical, and visible words together so callers can choose literal,
+  normalized, or reader-visible volume
 - [ ] Add plain-text paragraph runs and derive fixed-word page equivalents only after
   aggregation
 - [ ] Prototype `markdown-prose-v1` with `pulldown-cmark`, subject to the same
@@ -566,12 +617,16 @@ performance, and semantic gates.
   second projected document
 - [ ] Validate ordinary English, punctuation-heavy prose, symbolic text, multilingual
   spaced scripts, CJK, Markdown links, code fences, tables, HTML, and malformed input
+- [ ] Extend the multilingual tryscript and repository self-host checks with document
+  rows, raw/logical/visible word relationships, paragraphs, and page denominators before
+  prose performance iterations
 - [ ] Decide whether a sentence slot has a stable enough contract to create
   `text-sentences-v1`; absence remains preferable to a misleading count
 
 **Exit criteria:** page estimates use aggregated words and an explicit convention;
 logical-word fixtures match the referenced proposal; Markdown measurements reflect
-reader-visible prose; and raw, logical, and visible metrics remain distinct slots.
+reader-visible prose; raw, logical, and visible metrics remain distinct slots; and fdu
+offers first-class document volume that SCC’s code-focused summary does not.
 
 ### Phase 5: Bounded Deep Detection and Specialized Formats
 
@@ -592,6 +647,145 @@ reader-visible prose; and raw, logical, and visible metrics remain distinct slot
 cost; every content probe has a byte bound; ambiguous decisions are explainable from
 detection provenance; and deeper coverage improves without changing earlier metric
 dialects.
+
+## File and Function Implementation Map
+
+The implementation stays inside the existing `fdu` and `fdu-py` crates.
+It adds modules, not another crate, and it does not modify the metadata walker to
+perform content I/O. Names below are the intended ownership boundaries; small private
+helpers may move during implementation when tests show a clearer boundary, but public
+types and mutation paths must retain these responsibilities.
+
+### Core Classification and Metric Contracts
+
+| File | Types and functions | Responsibility |
+| --- | --- | --- |
+| `crates/fdu/src/classify.rs` | `FileTypeId`, `ContentFamily`, `DetectionSource`, `Classification`, `classify_path()` | Consume the compiled rules from `fdu-v4lc`; resolve exact names and extensions without content I/O; preserve unknown extensions as stable IDs |
+| `crates/fdu/src/content/mod.rs` | module exports, `AnalysisRequest`, `AnalysisProfile`, `resolve_profile()`, `analyze_index()` | Public content-analysis facade; expand profiles into ordered analyzer IDs; own one-shot orchestration over index candidates |
+| `crates/fdu/src/content/types.rs` | `AnalyzerId`, `AnalyzerVersion`, `MetricSlotId`, `MetricValues`, `LogicalWordStats`, `AnalysisCoverage`, `CoverageReason`, `ContentProvenance`, `AnalysisCandidate`, `AnalysisObservation`, `AppliedAnalysisDelta` | Define the versioned, additive contract shared by workers, index, cache, query, CLI, and Python |
+| `crates/fdu/src/content/index.rs` | `ContentIndex`, `FileAnalysis`, `ContentRollUp`, `ContentIndex::commit()`, `ContentIndex::invalidate()`, `ContentIndex::rollup()` | Hold sparse per-file results and precomputed directory/type/family rollups; subtract before add; allocate only after analysis is enabled |
+| `crates/fdu/src/index.rs` | add `content: Option<Box<ContentIndex>>`; `analysis_candidates()`, `apply_analysis()`, `content_rollup_of()`; invalidate from `apply_upsert()`, `apply_remove()`, and `remove_entry()` | Keep generation, revision, fingerprint, and ancestor ownership inside the sole mutation authority; reject stale worker observations and emit typed derived deltas |
+| `crates/fdu/src/lib.rs` | export content types; add `OpenConfig::analysis`; extend `OpenReport`; call `analyze_index()` from `open_with_pending_save()` | Preserve the disabled default; run analysis after metadata is complete for one-shot opens; expose content completeness separately from metadata completeness |
+
+`AnalysisCandidate` is an owned snapshot containing `EntryId`, relative and absolute
+path, entry revision, `Attrs::fingerprint()`, classification, and requested analyzers.
+Workers must not retain an index lock.
+`AnalysisObservation` carries the same expectation, the pre-read and post-read handle
+fingerprints, results, and coverage outcome.
+`Index::apply_analysis()` is the only content mutation entry point: it rechecks the
+generation, revision, kind, classification, and all fingerprints before committing.
+A mismatch returns a stale outcome that the coordinator may requeue; it never publishes
+partial metrics.
+
+### Streaming, Detection, and Analyzer Ownership
+
+| File | Types and functions | Responsibility |
+| --- | --- | --- |
+| `crates/fdu/src/content/basic.rs` | `BasicAccumulator`, `BasicAccumulator::push()`, `BasicAccumulator::finish()`, `TextAdmission` | Fuse NUL detection, UTF-8 validation, physical/blank/nonblank lines, raw prose words, paragraph runs, and logical-word sufficient statistics in a reusable-buffer streaming pass |
+| `crates/fdu/src/content/worker.rs` | `AnalysisCoordinator`, `AnalysisCoordinator::run()`, `analyze_candidate()`, `read_bounded()` | Own the bounded queue and worker pool; open once; `fstat` before and after EOF; share the first 16 KiB; enforce cancellation and per-file limits |
+| `crates/fdu/src/content/code.rs` | `CodeAnalyzer` trait, `analyze_code()`, optional `tokei_adapter`, optional native state machine | Consume an fdu-owned checked buffer and return the `code-sloc-v1` partition without walking, reopening, or spawning unbounded work |
+| `crates/fdu/src/content/text.rs` | `LogicalWordAccumulator`, `logical_words()`, `PlainTextAccumulator` | Implement the integer FlexDoc-compatible `3..6` clamp, half-weight wide characters, raw/logical words, and plain-text paragraph runs |
+| `crates/fdu/src/content/markdown.rs` | `MarkdownAccumulator`, `analyze_markdown()` | Fold parser events directly into visible-word and paragraph statistics; never materialize a second projected document |
+| `crates/fdu/src/content/detect.rs` | `probe_prefix()`, `detect_shebang()`, `resolve_ambiguity()` | Add only bounded content-dependent detection; keep known extension and exact-name paths free of regex or statistical work |
+
+`BasicAccumulator` retains whether any byte has been seen, whether the current logical
+line contains a non-whitespace code point, whether the previous chunk ended in CR,
+whether a raw word is open, incremental UTF-8 decoder state, and paragraph-run state.
+`finish()` alone accounts for a final unterminated line or word.
+Tests invoke `push()` at every byte boundary so CRLF, multibyte whitespace, BOM, and
+token boundaries cannot accidentally depend on buffer size.
+
+Phase 2 may put logical-word sufficient statistics into the fused pass while exposing
+only raw words; this is allowed only when disabled slots cost no extra allocation and
+the measured CPU delta is negligible.
+Otherwise `LogicalWordAccumulator` is enabled by the prose profile in Phase 4. Known
+binary types skip opening.
+Unknown and text/code candidates share one prefix and one handle; a NUL discovered after
+the prefix discards all provisional text results and records `binary` coverage.
+
+### Cache and Lifecycle Integration
+
+| File | Types and functions | Responsibility |
+| --- | --- | --- |
+| `crates/fdu/src/cache_file.rs` | `write_atomically()`, bounded header/read helpers, temporary-file cleanup | Extract the existing sibling-temp, sync, rename, and stale-temp lifecycle from `snapshot.rs` for reuse without changing metadata snapshot v2 |
+| `crates/fdu/src/snapshot.rs` | call `cache_file::write_atomically()`; keep `FORMAT_VERSION = 2` and content-free records | Preserve metadata snapshot compatibility and engine-fingerprint behavior |
+| `crates/fdu/src/content/cache.rs` | `sidecar_path()`, `load_sidecar()`, `save_sidecar()`, `AnalyzerCacheHeader` | Read and write one bounded, checksummed sidecar per analyzer identity; validate file fingerprint, rule fingerprint, analyzer version, and options fingerprint before allocation |
+| `crates/fdu/src/cache.rs` | extend `CacheStatus`; update `cache_status()`, `list_caches()`, `clear_cache()`, `clear_all_caches()` | Present metadata and recognized content sidecars as one cache lifecycle while refusing to delete foreign files |
+| `crates/fdu/src/lib.rs` | change private `PendingSave` storage from one optional handle to a vector of named save handles; retain `PendingSave::join()` | Overlap metadata and analyzer-sidecar writes with rendering, join every started writer, and preserve the current public lifecycle |
+| `crates/fdu/src/session.rs` and `crates/fdu/src/watch.rs` | enqueue candidates from committed metadata deltas; publish `AppliedAnalysisDelta` | Invalidate immediately on a metadata change, analyze asynchronously, and preserve the same stale-result checks during watch sessions |
+
+Sidecar corruption is analyzer-local.
+A missing or invalid `code-sloc-v1` file cannot invalidate metadata or a valid
+`content-basic-v1` sidecar.
+A `CachePolicy::Only` request may report content only from matching sidecars and must
+fail explicitly when a requested analyzer is absent; it cannot read source files.
+A normal warm revalidation first reconciles metadata, then admits sidecar records only
+for unchanged fingerprints.
+
+### Query, CLI, Rendering, and Python
+
+| File | Types and functions | Responsibility |
+| --- | --- | --- |
+| `crates/fdu/src/query/report.rs` | extend `ViewSpec`; add `MetricSummarySpec`, `MetricGroup`, `MetricRow`, `MetricShare`, `metric_rows()`; extend `Walked`, `build_section()`, `merge_summary()` | Power `extensions`, `types`, `families`, `languages`, `documents`, and `metrics` from one projection; aggregate sufficient statistics before deriving logical words or pages |
+| `crates/fdu/src/query/selection.rs` | add metric-qualified sort key and validation | Reuse the sort axis for projected metrics without introducing report-specific ordering flags |
+| `crates/fdu/src/query/mod.rs` | export the new query and row types | Keep the library surface typed and discoverable |
+| `crates/fdu/src/cli.rs` | add scope `--analyze`; view/metric/group/percentage/page options; update `Cli::run()`, `parse_view()`, and new parsers | Parse the complete request before I/O, reject a metric whose analyzer is absent, and keep every option on one of the five documented axes |
+| `crates/fdu/src/report_format.rs` | add content sections to `render_text()`, JSON, JSONL, and YAML helpers; introduce `fdu.report/2` only for content-capable output | Render stable integer numerators, denominators, analyzer identities, provenance, and coverage; retain byte-identical `fdu.report/1` metadata output during the compatibility window |
+| `crates/fdu-py/src/lib.rs` | extend `open()`, `scan()`, `PyIndex::report()`, `report_dict()`, and parsers | Mirror Rust profiles, metric IDs, grouped rows, coverage, and query-derived pages; keep analysis in Rust with the GIL released |
+| `crates/fdu/src/skills/SKILL.md` and user docs | document profiles, metrics, coverage, and examples | Keep agent-facing help and human CLI help synchronized with the shipped surface |
+
+The `languages` and `documents` presets call the same `metric_rows()` path as an
+explicit `metrics` request.
+Stable report tests compare the named and expanded forms.
+The filtered tier extends the existing single `walk()` pass to collect content
+contributions; the unfiltered tier reads `ContentIndex` rollups.
+No report reads a file.
+
+### Tests, Self-Hosting, and Performance Harness
+
+| File | Tests or functions | Responsibility |
+| --- | --- | --- |
+| `crates/fdu/src/content/*` test modules | accumulator, parser, cache-bound, and detection tables plus chunk-boundary/property tests | Pin each versioned analyzer dialect at its narrowest unit |
+| `crates/fdu/tests/content_incremental.rs` | full scan versus insert/update/rename/type-change/remove sequences; race and ABA cases | Prove subtract/add maintenance, stale rejection, and full-recompute equivalence |
+| `crates/fdu/tests/content_cache.rs` | cold, revalidated, cache-only, corrupt, mismatched, and partial cases | Prove analyzer-local invalidation and no-open cache hits |
+| `tests/golden/fixtures/content-project/` | small multilingual Rust, Python, JavaScript/TypeScript, Go, shell, SQL, Markdown, plain text, mixed endings, and binary files | Provide one auditable exact-output fixture rather than depending on the changing repository for golden totals |
+| `tests/golden/cli-content.tryscript.md` | human, JSON, JSONL, YAML, aliases, errors, coverage, and equivalent-preset transcripts | Lock the end-to-end CLI and schema contract before optimization begins |
+| `scripts/content-selfcheck.mjs` and `make content-selfcheck` | materialize tracked `HEAD` files with `git archive`, run the release binary with cache off, and validate the machine report | Exercise fdu on its own multilingual Rust, Python, JavaScript, Markdown, TOML, YAML, and shell sources without scanning `.git`, build output, caches, or other worktrees |
+| `crates/fdu/examples/perf_probe.rs` | add `content-basic`, `code-sloc`, `text-prose`, `markdown-prose`, and `binary-gate` modes | Measure components through supported public APIs and emit semantic digests outside the component timer |
+| `benchmarks/corpora.json`, `benchmarks/scenarios.json`, and `benchmarks/schema/` | add content recipes, named jobs, transitions, and result fields | Reuse the existing generated-corpus, validation, and paired-measurement contracts |
+| `benchmarks/realtree/` and the experiment ledger | add immutable self-host tree fingerprints and SCC/Tokei comparators | Measure real multilingual behavior and record accepted and rejected optimization hypotheses |
+
+The self-host check intentionally asserts identities and coverage, not a permanently
+pinned total for the moving repository.
+It requires all expected families and common languages to appear, every grouped total to
+equal the summary, every code partition to satisfy `physical = code + comment + blank`,
+every basic partition to satisfy `physical = nonblank + blank`, unsupported files to
+retain file and byte coverage, and binary files to expose no text metrics.
+Exact values live in the small tryscript fixture.
+Performance runs use an immutable `git archive` of a recorded commit outside the
+measured root and record its fingerprint, so candidate and control see identical bytes.
+
+### Merge Slices and Required Gates
+
+Each row below is independently reviewable and keeps metadata-only behavior intact:
+
+1. Land compiled classification, stable type/family summaries, and the sparse disabled
+   content boundary after `fdu-v4lc`.
+2. Land the basic accumulator and its unit/property tests without exposing CLI output.
+3. Land orchestration, conditional derived deltas, sidecars, coverage, and cache tests.
+4. Land Rust/CLI/Python projections, `fdu.report/2`, the multilingual tryscript fixture,
+   and `content-selfcheck`; this is the Phase 2 semantic lock.
+5. Only after slice 4 passes `make test-golden`, `make content-selfcheck`, and
+   `make check`, run preregistered basic-analysis performance iterations and accept or
+   reject each change through the existing paired protocol.
+6. Repeat the same semantic-lock-then-performance sequence for common-language SLOC.
+7. Repeat it for logical prose and Markdown-visible prose.
+8. Add deep detection and specialized formats only after ordinary resolved paths are
+   profiled and the prior analyzer dialects remain unchanged.
+
+No performance patch may update a golden merely to make an unexpected semantic change
+pass. First explain and version the semantic change, update the analyzer ID or version
+when required, review the golden diff, and only then resume performance measurement.
 
 ## Testing Strategy
 
@@ -644,20 +838,50 @@ dialects.
 - Bound record counts, path lengths, metric slot counts, and declared allocation sizes
   before allocating from cache input
 
+### End-to-End Semantic Lock
+
+Before the first performance iteration in each phase:
+
+1. Add or update unit and property tests for the analyzer dialect.
+2. Add the user-visible request to `tests/golden/cli-content.tryscript.md` and review
+   the full human and machine output diff.
+3. Run `make test-golden`, then `make content-selfcheck` against a tracked-file archive
+   of this multilingual repository, then the repository-wide `make check` gate.
+4. Record the fixture digest and self-host invariants in the performance scenario’s
+   validation contract.
+5. Only then preregister and measure an optimization hypothesis.
+
+After each candidate optimization, the same tests and digests run before its timing
+sample is eligible. The changing repository is a broad sanity corpus, not an exact
+golden; the committed multilingual fixture remains the exact, reviewable contract.
+
 ### Performance Tests
 
-Add named jobs to the existing performance harness and experiment ledger:
+Add these named jobs to the existing performance harness and experiment ledger:
 
-- metadata-only classification and report, proving the disabled-path invariant
-- basic analyzer over source, prose, large-line, many-tiny-file, and binary-heavy
-  corpora
-- content-cache hit and metadata-revalidated content reuse
-- 1% content churn with stable path count
-- code parser against pinned SCC and Tokei comparators
-- Markdown projection and logical-word analysis
-- ordinary resolved detection versus deliberately ambiguous detection
+| Job | Corpus and cache state | Question |
+| --- | --- | --- |
+| `content-disabled` | standard metadata corpora; analysis absent | Did classification or optional storage regress the default path? |
+| `content-basic-cold` | source, prose, long-line, and many-tiny-file corpora; cache absent | What does one fused read cost by file shape? |
+| `content-basic-warm-fs` | same bytes with filesystem pages warm; content cache absent | What is analyzer CPU throughput without cold-storage noise? |
+| `content-basic-cache-hit` | compatible metadata and analyzer sidecars | Do unchanged files avoid content opens and approach metadata-only cost? |
+| `content-basic-churn-1pct` | stable paths with one percent modified | Are cache lookup, invalidation, reread, and subtract/add proportional to change? |
+| `binary-gate` | known binary, early-NUL mislabeled, late-NUL mislabeled, and random data | Does rejection save I/O and prevent invented metrics without hurting text? |
+| `code-sloc-cold` | representative common-language source | What is end-to-end and parser-only throughput relative to SCC and Tokei? |
+| `code-sloc-cache-hit` | compatible `code-sloc-v1` sidecar | Does the deeper analyzer preserve warm incremental behavior? |
+| `text-prose` | English, punctuation-heavy, long-token, spaced multilingual, and CJK prose | What do raw plus logical statistics cost relative to basic lines? |
+| `markdown-prose` | links, images, code fences, tables, HTML, and malformed Markdown | What does visible projection cost and how does it scale with input size? |
+| `detect-ambiguous` | resolved fast path versus ambiguity-maximizing candidates | Do deeper rules remain bounded and off the common path? |
+| `selfhost-content` | immutable archive of a recorded fdu commit | Do synthetic conclusions hold on a real multilingual project? |
 
 Performance verdicts use the existing paired, interleaved protocol.
+Each optimization is a separately preregistered experiment, preferably changing one
+mechanism at a time.
+Candidate and control each run at least 12 paired trials; acceptance requires a median
+improvement of at least 3 percent, a 95 percent paired interval wholly below zero, valid
+semantic oracles, and no meaningful RSS, artifact-size, compile-time, or tail-latency
+regression outside the preregistered budget.
+Accepted and rejected hypotheses both go in the experiment ledger.
 CI proves benchmark contracts and semantic digests, not timing thresholds.
 No README or release claim is made from the exploratory figures in the research brief.
 
@@ -710,12 +934,30 @@ None of these questions blocks Phases 1 or 2.
 | --- | --- | --- |
 | `fdu-3n8c` | Open | Governing content-tier feature; link this spec here |
 | `fdu-0i15` | Complete | Research, prior-art survey, and exploratory benchmarks |
-| `fdu-w09m` | In progress | Create and validate this phased plan spec |
+| `fdu-w09m` | Complete | Refine and validate this implementation-ready plan spec |
 | `fdu-v4lc` | Open prerequisite | Native compiled file-type rules consumed by Phase 1 |
+| `fdu-j5ny` | Open epic | Implement this approved spec in an isolated feature worktree |
+| `fdu-m7n5` | Open; blocked by `fdu-v4lc` | Stable classification, metric contracts, and disabled sparse boundary |
+| `fdu-ciq7` | Open; blocked by `fdu-m7n5` | Fused basic streaming analyzer and boundary/property tests |
+| `fdu-96l2` | Open; blocked by `fdu-ciq7` | Workers, conditional deltas, incremental rollups, and sidecars |
+| `fdu-8kd8` | Open; blocked by `fdu-96l2` | Basic Rust, CLI, report-schema, view, and Python surface |
+| `fdu-occl` | Open; blocked by `fdu-8kd8` | Basic tryscript golden and multilingual self-host semantic lock |
+| `fdu-tq3k` | Open; blocked by `fdu-occl` | Basic and binary-gate performance iterations |
+| `fdu-jmrs` | Open; blocked by `fdu-tq3k` | Tokei-versus-native SLOC decision spike |
+| `fdu-q3sx` | Open; blocked by `fdu-jmrs` | Production `code-sloc-v1` and language summary |
+| `fdu-d82z` | Open; blocked by `fdu-q3sx` | SLOC goldens and self-host semantic lock |
+| `fdu-zfjk` | Open; blocked by `fdu-d82z` | SLOC and comparator performance iterations |
+| `fdu-cq7i` | Open; blocked by `fdu-zfjk` | Additive logical words, paragraphs, and pages |
+| `fdu-6sas` | Open; blocked by `fdu-cq7i` | Reader-visible Markdown prose metrics |
+| `fdu-1ysa` | Open; blocked by `fdu-6sas` | Document goldens and self-host semantic lock |
+| `fdu-3b5a` | Open; blocked by `fdu-1ysa` | Text and Markdown performance iterations |
+| `fdu-kgml` | Open; blocked by `fdu-3b5a` | Bounded deep detection and specialized formats |
+| `fdu-eu80` | Open; blocked by `fdu-kgml` | Final compatibility, documentation, and release validation |
 
-Create implementation beads from this spec only after the plan is reviewed.
-Use one bead per independently mergeable phase or decision spike, with dependency edges
-matching the phase order.
+The epic’s child-order hints match this table, and every child was created with its
+blocker edge already attached.
+Implementation starts from `fdu-m7n5` only after `fdu-v4lc`; it does not reuse the
+primary repository checkout.
 
 ## References
 
