@@ -52,6 +52,7 @@ performance-probe:
 
 test-performance: performance-probe
 	uv run --no-project python -m unittest discover -s benchmarks/tests -p 'test_*.py'
+	$(PERF_UV) --group dev python -m unittest discover -s benchmarks/realtree/tests -p 'test_*.py'
 
 # Tryscript returns nonzero when it updates a previously failing block. The immediate
 # comparison is authoritative and catches execution failures or incomplete updates.

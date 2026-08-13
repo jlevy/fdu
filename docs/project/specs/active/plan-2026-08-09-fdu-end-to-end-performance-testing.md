@@ -173,6 +173,15 @@ What it found, first against a roughly 60k-entry checkout and then against a
   It cut user CPU 51.54% and RSS 39.19%, but changed paired wall only −1.15%
   [−2.24%, +0.44%] and did not beat dumac (exp-044). All API and engine code was
   reverted; the rich H59 summary remains the smallest useful execution tier.
+- **The component-probe oracle is complete again.** PR review found that the real-tree
+  oracle required `newest_file_mtime_ns`, but `perf_probe` did not emit it.
+  That made nonempty-tree component samples fail closed even when their scan was
+  correct; it did not affect the separately adapted live-tool matrices or their
+  five-tally oracles. Producer and index summaries now emit the exact newest regular-file
+  mtime, producer self-validation includes it, and an end-to-end test checks real probe
+  output against an independent filesystem fingerprint.
+  The ordinary handoff gate now runs both the portable and real-tree harness suites so
+  this contract cannot drift silently again.
 
 Rejected experiments remain as important as accepted ones.
 The original parallel revalidation funnel bought only 2.6%, root-relative `openat` was
@@ -216,8 +225,8 @@ A publishable result still requires an immutable clean-revision binary and zero 
 drift; the README claim is owned by that separate live comparison, not by exploratory
 generated-corpus curves.
 
-The portable harness now has 63 deterministic and adversarial tests and is included in
-`make check` without a numeric timing assertion.
+The portable harness now has 64 deterministic and adversarial tests, and the 67-test
+real-tree harness is also included in `make check`, without a numeric timing assertion.
 The maintainer selected Python 3.12 as the new minimum for the wheel and
 repository-owned tooling; `fdu-c7z2` owns the pending PyO3 ABI, package metadata, uv
 lock, CI, and documentation alignment.
@@ -736,6 +745,12 @@ challenge (H64), and reduction-only worker calibration (H65). Exp-041 through ex
 rejected every additional layer for wall time despite strong CPU and memory reductions.
 The repeated resource/wall split localizes the current warm-APFS floor to directory-open
 and kernel work rather than summary representation.
+H67 now owns the remaining first-principles question: reproduce the tied comparison,
+profile current FDU and dumac binaries side by side, and quantify per-directory
+`open`/`getattrlistbulk` work before proposing another engine change.
+It closes as no-gap evidence if no significant wall difference exists; any candidate
+must preserve FDU’s strict parser, exact paths, fallback, scope, and partial-result
+semantics and clear the normal 3% paired gate before being retained.
 
 The
 [current diskus benchmark](https://github.com/sharkdp/diskus/blob/90196e950017d25b2940e8e0fda51a321ca66e1a/README.md#benchmark)
@@ -1187,6 +1202,7 @@ The planning bead retains the same stable IDs.
 | PEV-34 | High | A warm-cache ranking can be extrapolated into an unsupported cold-cache claim even when eviction changes absolute time and the relative effect size | Label repeated-workload and controlled-cold matrices separately, retain the exact cache-state evidence for every sample, and never use ranking correlation as a substitute for measuring both regimes |
 | PEV-35 | High | Treating dut’s successful `echo 1 > drop_caches` preparation as cold implies directory and inode metadata were evicted even though the kernel contract says `1` targets page cache and the command omits `sync` | Label that reproduction `pagecache-drop-only`; publish it beside verified warm and a distinct dedicated-host controlled-cold regime that requires successful per-sample `sync` plus `echo 3` |
 | PEV-36 | High | A fast dut trial can silently omit entries or selected bytes because human output, warning-plus-zero-exit errors, multi-buffer enumeration, hard-link resizing, and early top-N rejection are not a machine oracle | Pin the exact source/binary, reject warning-bearing partial scans, and pass independent wide-directory, hard-link, sparse/preallocated, symlink, mount-boundary, non-UTF-8, and root-total postconditions before accepting timing |
+| PEV-37 | High | The real-tree oracle required newest regular-file mtime, but the component probe omitted that field, so valid nonempty-tree runs failed closed while the normal handoff gate did not exercise the separate real-tree suite | Emit and self-validate `newest_file_mtime_ns` in both producer and index summaries, compare a real probe process with an independent tree fingerprint, and include both performance-harness suites in `make check` |
 
 ## Beads
 
@@ -1215,6 +1231,7 @@ research and plan, assemble this graph, and validate it through CI.
 | `fdu-nffc` | P2 | Extend the paired comparator matrix to controlled Linux warm and cold regimes | dedicated Linux host |
 | `fdu-6nmp` | P1 | Refresh dut source, benchmark-method audit, and Linux semantic test plan | — |
 | `fdu-sk7v` | P1 | Test an exact directory-only transient tree at 60k and near-million scale | dut Linux calibration and `fdu-j2ka` loop |
+| `fdu-ea8e` | P1 | Isolate the macOS directory-open and bulk-syscall floor against dumac | exact near-million paired profiles |
 | `fdu-dpsk` | P1 | Audit warm versus cold filesystem-cache claims and encode warm-steady evidence | `fdu-j2ka` evidence |
 | `fdu-rjqx` | P2 | Establish a controlled macOS cold-cache comparison protocol | dedicated quiet Mac and disposable APFS volume |
 | `fdu-16pw` | P2 | Compare and incorporate the diskus benchmark protocol | — |

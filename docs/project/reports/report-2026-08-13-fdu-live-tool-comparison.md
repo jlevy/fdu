@@ -170,6 +170,27 @@ crossing zero, did not beat dumac, and required a second unsafe parser plus a ne
 view. The prototype was reverted.
 The existing rich summary remains the smallest useful execution tier.
 
+This is not evidence of a fundamental limit or of a remaining proved FDU deficit.
+`getattrlistbulk` batches the children of one open directory; it does not traverse
+several directories in one call.
+This subject has 110,369 directories including root, so both implementations still pay a
+directory-open and at least one bulk-call boundary for every directory they visit.
+Experiment 044 removed most of the plausible FDU-only user-space work without changing
+system CPU or elapsed time materially.
+Dumac’s lower point estimate came with 87.8% more system CPU, consistent with pushing
+more concurrent work through the same kernel boundary rather than executing fewer
+required tree steps.
+FDU separately tested dumac-like 128 KiB buffers, depth-first order, smaller directory
+claims, and deeper worker pools; none produced a confirmed wall improvement.
+
+The correct conclusion is therefore that the two tools match within the resolution of
+the present experiment and the current FDU path is kernel/topology-bound on this tree.
+H67 (`fdu-ea8e`) will profile the exact current binaries side by side and quantify
+directory-open and bulk-call time before another production change is proposed.
+A different platform primitive, a genuinely better overlap strategy, or journal-scoped
+work may still win; a 2.2% noisy point estimate is not a reason to duplicate an unsafe
+parser or weaken semantics.
+
 This subject contained no duplicate in-tree hard-link paths, so hard-link deduplication
 did not affect its regular-file total.
 It did contain 333 symlinks.
@@ -192,6 +213,7 @@ descriptor frontiers, worker-local summary reduction, narrower rich-summary reco
 a selected-total scanner all failed their wall-time gates.
 The remaining high-impact queue is therefore architectural:
 
+- reproduce and profile the tied dumac comparison before assuming a wall gap exists
 - compact the reusable full-index entry layout and separate directory-only state
 - construct disjoint worker-local subtrees and splice them in bounded region units
 - test a dense immutable bootstrap with a sparse mutation overlay

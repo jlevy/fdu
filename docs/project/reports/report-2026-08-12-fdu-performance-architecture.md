@@ -362,25 +362,31 @@ Exp-043 also retained six workers: eight looked promising on the 901k screen but
 H64’s complete selected-total specialization then changed wall by only −1.15%
 [−2.24%, +0.44%] and did not beat dumac despite halving user CPU (exp-044).
 
-1. **Directory-only transient tree (H66, `fdu-sk7v`).** For an unfiltered cache-off
+1. **Profile the apparent dumac gap (H67, `fdu-ea8e`).** The current paired interval
+   crosses zero, so no wall gap is established.
+   Reproduce the tie and compare exact current-binary directory-open, `getattrlistbulk`,
+   scheduling, CPU, and wall evidence before proposing another macOS path.
+   Close the hypothesis if there is no significant gap; keep a candidate only if it
+   preserves the strict scan contract and clears the normal paired gate.
+2. **Directory-only transient tree (H66, `fdu-sk7v`).** For an unfiltered cache-off
    tree-only request, test folding file observations into exact directory roll-ups and
    retaining only directory topology.
    Require byte-identical output at 60k and near-million scale; fall closed to the full
    index for cache, filters, composed views, watch, or reusable-index requests.
-2. **Compact reusable entries (H19–H22, `fdu-prph`).** Measure the entry layout, remove
+3. **Compact reusable entries (H19–H22, `fdu-prph`).** Measure the entry layout, remove
    duplicate name storage, move directory-only state out of files, and compact IDs and
    revisions one arm at a time.
    Million-entry RSS is the clearest current defect.
-3. **Worker-local subtree construction (H60, `fdu-weey`).** Build disjoint local arenas
+4. **Worker-local subtree construction (H60, `fdu-weey`).** Build disjoint local arenas
    and splice them with one roll-up at region completion, reducing path and channel work
    without bypassing the index contract.
-4. **Dense immutable base plus sparse overlay (H61, `fdu-f67r`).** After the layout
+5. **Dense immutable base plus sparse overlay (H61, `fdu-f67r`).** After the layout
    floor is known, test whether bootstrap state can remain dense while later mutations
    use a bounded overlay and compaction cycle.
-5. **Portable wide-directory stat chunks (H58, `fdu-r9he`).** On Linux or the portable
+6. **Portable wide-directory stat chunks (H58, `fdu-r9he`).** On Linux or the portable
    backend, test dua-style small stealable metadata jobs.
    This is not expected to help the macOS bulk path.
-6. **Journal scoping.** FSEvents can turn a quiet warm run from O(entries) into
+7. **Journal scoping.** FSEvents can turn a quiet warm run from O(entries) into
    O(changed regions), but the same fast full scan remains the fallback and the basis
    for first use, invalid journals, and explicit cache-off runs.
 

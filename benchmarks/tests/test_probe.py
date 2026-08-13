@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import copy
+import json
 import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 from typing import Any, Dict, List
 
+from benchmarks.realtree import tree
 from benchmarks.runner import run_scenario_set
 from benchmarks.schema import load_scenario_set
 
@@ -66,6 +69,32 @@ class FduProbeTests(unittest.TestCase):
                     for trial in result["trials"]
                 )
             )
+
+    def test_scan_summaries_match_an_independent_real_tree_oracle(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory) / "tree"
+            (root / "nested").mkdir(parents=True)
+            older = root / "older.txt"
+            newer = root / "nested" / "newer.txt"
+            older.write_bytes(b"older")
+            newer.write_bytes(b"newer")
+            os.utime(older, ns=(10_000_000_000, 10_000_000_000))
+            os.utime(newer, ns=(30_000_000_000, 30_000_000_000))
+            oracle = tree.fingerprint(root, label="probe-integration")
+
+            for mode in ("scan-index", "scan-producer"):
+                completed = subprocess.run(
+                    [str(self.probe), mode, "--root", str(root)],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                )
+                summary = json.loads(completed.stdout)["summary"]
+                self.assertIsNone(
+                    tree.probe_agrees(oracle, summary),
+                    f"{mode} summary disagreed with the independent tree oracle",
+                )
 
     def test_wrong_probe_evidence_and_snapshot_states_are_rejected(self) -> None:
         committed = load_scenario_set(SCENARIOS)["scenarios"]
