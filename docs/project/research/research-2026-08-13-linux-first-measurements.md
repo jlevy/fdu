@@ -221,11 +221,12 @@ Ordered by expected effect on the Linux ranking:
 
 ## Reproduction
 
-The walker harness and paired runner used here are committed under `benchmarks/spikes/`;
-the generated tree, exact commands, and raw JSONL rows are documented in the spike
-README. Nothing here entered the experiment ledger: the rig is virtualized and the
-subject was generated for this session, so any of these results that motivates a
-production change must re-run under the ledger’s protocol on real hardware first.
+The walker harness, paired runner, and tree generator used here are committed under
+`benchmarks/spikes/` with usage in its README; the summary rows the runner printed are
+the tables above, and the session-local raw samples were deliberately not committed.
+Nothing here entered the experiment ledger: the rig is virtualized and the subject was
+generated for this session, so any of these results that motivates a production change
+must re-run under the ledger’s protocol on real hardware first.
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.
