@@ -543,7 +543,7 @@ is opened; and the disabled-path performance verdict is “no measurable regress
   eligible file
 - [x] Share one 16 KiB prefix among byte-order-mark recognition, NUL detection, UTF-8
   admission, and the continuing line/word scan
-- [ ] Pin empty-file, final-boundary, LF, CRLF, lone-CR, mixed-ending,
+- [x] Pin empty-file, final-boundary, LF, CRLF, lone-CR, mixed-ending,
   boundary-across-chunk, whitespace-only, invalid-UTF-8, BOM, long-line, and
   adversarial-binary semantics in golden fixtures
 - [x] Add conditional analysis observations, stale-read rejection, derived delta
@@ -558,7 +558,7 @@ is opened; and the disabled-path performance verdict is “no measurable regress
   versioned machine schema
 - [x] Extend the metric-summary projection with physical, blank, nonblank, and raw-word
   slots; add the `documents` preset and query-derived pages
-- [ ] Lock the complete Rust/CLI/Python contract with the multilingual tryscript fixture
+- [x] Lock the complete Rust/CLI/Python contract with the multilingual tryscript fixture
   and the repository self-host sanity check before changing the implementation for speed
 - [ ] Then benchmark cold reads, warm filesystem cache, content-cache hits, 1% churn,
   large files, many tiny files, and the adversarial mislabeled-binary corpus
@@ -941,7 +941,7 @@ None of these questions blocks Phases 1 or 2.
 | `fdu-ciq7` | Complete | Fused basic streaming analyzer and boundary/property tests |
 | `fdu-96l2` | Complete | Workers, conditional deltas, incremental rollups, and sidecars |
 | `fdu-8kd8` | Complete | Basic Rust, CLI, report-schema, view, and Python surface |
-| `fdu-occl` | Open; blocked by `fdu-8kd8` | Basic tryscript golden and multilingual self-host semantic lock |
+| `fdu-occl` | Complete | Basic tryscript golden and multilingual self-host semantic lock |
 | `fdu-tq3k` | Open; blocked by `fdu-occl` | Basic and binary-gate performance iterations |
 | `fdu-jmrs` | Open; blocked by `fdu-tq3k` | Tokei-versus-native SLOC decision spike |
 | `fdu-q3sx` | Open; blocked by `fdu-jmrs` | Production `code-sloc-v1` and language summary |

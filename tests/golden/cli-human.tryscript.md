@@ -47,9 +47,10 @@ what makes this block stable across platforms.
 
 ```console
 $ fdu --cache off --color never --view types --limit 10 --size apparent project
-     128 B  .tar.gz      1 file
-      71 B  .md          2 files
-      36 B  .rs          2 files
+     128 B   48.7%  archive            1 file
+      71 B   27.0%  markdown           2 files
+      36 B   13.7%  rust               2 files
+      28 B   10.6%  make               1 file
 ? 0
 ```
 

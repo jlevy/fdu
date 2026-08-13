@@ -3,17 +3,19 @@
 .DEFAULT_GOAL := help
 
 CARGO ?= cargo
+NODE ?= node
 NPM ?= npm
 MSRV ?= 1.85.0
 NODE_INSTALL_STAMP := node_modules/.package-lock.json
 
-.PHONY: help build release test rust-test test-golden performance-probe test-performance golden-update check supply-chain fix fmt fmt-check clippy docs docs-format docs-format-check lib-only msrv audit npm-audit python-concurrency python-smoke clean cli perf-help verify-beads
+.PHONY: help build release test rust-test test-golden content-selfcheck performance-probe test-performance golden-update check supply-chain fix fmt fmt-check clippy docs docs-format docs-format-check lib-only msrv audit npm-audit python-concurrency python-smoke clean cli perf-help verify-beads
 
 help:
 	@echo "make build      Debug build of the core library and CLI, all features"
 	@echo "make release    Optimized build of the core library and CLI"
 	@echo "make test       Run Rust, CLI golden, and performance-harness tests"
 	@echo "make test-golden  Build and compare the CLI golden contract"
+	@echo "make content-selfcheck  Analyze an archive of tracked repository files"
 	@echo "make test-performance  Test the performance harness and every fdu probe job"
 	@echo "make golden-update  Regenerate intentional golden changes, then compare"
 	@echo "make check      Handoff gate: tests, audits, docs, and installed-wheel smoke"
@@ -39,13 +41,16 @@ build:
 release:
 	$(CARGO) build --locked --release -p fdu --all-features
 
-test: rust-test test-golden test-performance
+test: rust-test test-golden content-selfcheck test-performance
 
 rust-test:
 	$(CARGO) test --locked --all-features
 
 test-golden: build $(NODE_INSTALL_STAMP)
 	$(NPM) run test:golden
+
+content-selfcheck: build
+	$(NODE) scripts/content-selfcheck.mjs
 
 performance-probe:
 	$(CARGO) build --locked -p fdu --example perf_probe --no-default-features

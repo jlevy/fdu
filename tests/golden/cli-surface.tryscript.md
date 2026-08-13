@@ -80,9 +80,29 @@ Options:
           [default: allocated]
 
       --view <LIST>
-          Views to report: tree, types, files, summary
+          Views: tree, extensions, types, families, languages, documents, files, summary
 
           [default: tree]
+
+      --analyze <PROFILE>
+          Content depth: none, basic, code, documents, or full
+
+          [default: none]
+
+      --max-file-size <SIZE>
+          Maximum bytes read from one analyzed file
+
+          [default: 16MiB]
+
+      --analysis-workers <N>
+          Content reader workers; zero selects available parallelism
+
+          [default: 0]
+
+      --words-per-page <N>
+          Logical words per derived document page
+
+          [default: 300]
 
       --format <FORMAT>
           Output format: text, json, jsonl, or yaml
@@ -129,50 +149,34 @@ Options:
 
 Examples:
   fdu .
-  fdu --view types ~/Downloads
-  fdu --view files --sort size --limit 20 ~/src
-  fdu --view files --modified-since 2h --format jsonl .
-  fdu --view summary,types --format json .
+  fdu --view extensions ~/Downloads
+  fdu --view types,families --format json .
+  fdu --analyze basic --view documents .
+  fdu --analyze basic --view languages --max-file-size 8MiB .
 
 Five axes, and every option belongs to exactly one:
-  Scope      PATH, --scan-depth        what is scanned and cached
-  Selection  --include, --exclude, --min-size, --modified-since, --modified-before,
-             --kind, --depth, --limit, --sort, --reverse, --size
-  View       --view tree,types,files,summary
+  Scope      PATH, --scan-depth                         what is scanned and cached
+  Selection  --include, --exclude, --depth, --limit    which entries are considered
+  View       tree,extensions,types,families,languages,documents,files,summary
   Format     --format text|json|jsonl|yaml, --color
-  Mode       --cache auto|refresh|read-only|only|off
+  Mode       --cache, --analyze, --max-file-size, --analysis-workers
 
-Scope versus selection:
-  Reports require PATH; bare `fdu` prints this help and never scans the current directory.
-  --scan-depth limits what is scanned and retained; one cache then serves every query.
-  --depth and --limit bound only the rendered view, and never cost a rescan.
-  --depth 0 reports totals for the root and nothing beneath it.
-  --depth and --limit accept `all` for no bound.
+Content analysis:
+  none       metadata only; source files are never opened (default)
+  basic      physical, blank, and nonblank lines plus raw prose words
+  code       basic metrics plus the versioned common-language SLOC analyzer
+  documents  basic metrics plus logical and reader-visible prose metrics
+  full       every shipped analyzer
 
-Values:
-  SIZE   512, 10k, 10M, 1.5GiB (decimal and binary units, case-insensitive)
-  WHEN   now, an age (45s, 2h, 1h30m), RFC 3339 with an offset, or @epoch seconds
-  --modified-since is inclusive; --modified-before is exclusive
-  --include and --exclude are repeatable globs; --view and --kind are comma lists
-
-Cache:
-  auto       read, revalidate, and write back when complete (default)
-  refresh    ignore any snapshot, scan cold, and rewrite it
-  read-only  read and revalidate, but never write
-  only       answer from the snapshot without touching the tree; labeled stale,
-             and fails when no usable snapshot exists rather than scanning
-  off        ignore the snapshot and leave nothing behind
+  Content reads are bounded by --max-file-size and --analysis-workers.
+  --words-per-page changes only report-time page derivation.
+  Unchanged results are restored from a separate versioned sidecar.
+  cache=only never opens source files and fails if requested content is absent.
 
 Output and automation:
+  Metadata-only machine output remains fdu.report/1; metric summaries use fdu.report/2.
   Results go to stdout; warnings and errors go to stderr.
-  Machine formats are schema-versioned and never colorized.
-  Every report carries schema, source, freshness, complete, errors, and both timestamps.
-  Feed a report's scan_started_at back as --modified-since to list what changed since.
   The command never prompts, pages, or animates progress.
-
-Color:
-  --color overrides NO_COLOR and FORCE_COLOR. In auto mode, NO_COLOR disables color,
-  FORCE_COLOR enables it, and otherwise the destination must be a terminal.
 
 Exit status:
   0  Complete result, or a partial result accepted with --allow-partial
@@ -223,9 +227,9 @@ There are no subcommands: the grammar is always “report on a path”.
 | --- | --- | --- |
 | Scope | What is scanned and cached? | `PATH`, `--scan-depth N` |
 | Selection | Which entries does this query consider? | `--include`, `--exclude`, `--min-size`, `--modified-since`, `--modified-before`, `--kind`, `--depth`, `-n/--limit`, `--sort`, `--reverse`, `--size` |
-| View | Which roll-up is reported? | `--view tree,types,files,summary` |
+| View | Which roll-up is reported? | `--view tree,extensions,types,families,languages,documents,files,summary` |
 | Format | How is it serialized? | `--format text\|json\|jsonl\|yaml`, `--color` |
-| Mode | How is the cache used? | `--cache auto\|refresh\|read-only\|only\|off` |
+| Mode | How is work performed? | `--cache auto\|refresh\|read-only\|only\|off`, `--analyze none\|basic\|code\|documents\|full` |
 
 Scope versus selection is the distinction that matters: scope decides what is scanned
 and cached, so one cache serves every query, while selection filters the retained index
@@ -234,11 +238,18 @@ at query time. Narrowing a selection never costs a rescan.
 ## Pick the View, Then Shape It
 
 - `--view tree` (default) for per-directory roll-ups.
-- `--view types` for an extension breakdown.
+- `--view extensions` for the original raw-extension breakdown.
+- `--view types` for stable detected file types and exact byte shares.
+- `--view families` for code, prose, markup, data, binary, and unknown roll-ups.
+- `--view languages` for code-family rows and `--view documents` for prose metrics.
 - `--view files` for a flat listing; in text output it prints one path per line and
   nothing else, so it pipes directly into other commands.
 - `--view summary` for one aggregate row.
-- Several views in one run share one scan: `--view summary,types`.
+- Several views in one run share one scan: `--view summary,types,families`.
+
+Add `--analyze basic` to stream physical, blank, and nonblank lines and raw prose words.
+Use `--max-file-size`, `--analysis-workers`, and `--words-per-page` to bound work and
+control page derivation.
 
 Common shapes are compositions rather than dedicated flags:
 
