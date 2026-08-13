@@ -539,7 +539,7 @@ is opened; and the disabled-path performance verdict is “no measurable regress
 
 ### Phase 2: Basic Streaming Lines, Binary Gating, and Raw Text
 
-- [ ] Implement `content-basic-v1` as one allocation-light streaming pass over each
+- [x] Implement `content-basic-v1` as one allocation-light streaming pass over each
   eligible file
 - [ ] Share one 16 KiB prefix among byte-order-mark recognition, NUL detection, UTF-8
   admission, and the continuing line/word scan
@@ -938,7 +938,7 @@ None of these questions blocks Phases 1 or 2.
 | `fdu-v4lc` | Complete | Native compiled file-type rules consumed by Phase 1 |
 | `fdu-j5ny` | In progress | Implement this approved spec in an isolated feature worktree |
 | `fdu-m7n5` | Complete | Stable classification, metric contracts, and disabled sparse boundary |
-| `fdu-ciq7` | Open; blocked by `fdu-m7n5` | Fused basic streaming analyzer and boundary/property tests |
+| `fdu-ciq7` | Complete | Fused basic streaming analyzer and boundary/property tests |
 | `fdu-96l2` | Open; blocked by `fdu-ciq7` | Workers, conditional deltas, incremental rollups, and sidecars |
 | `fdu-8kd8` | Open; blocked by `fdu-96l2` | Basic Rust, CLI, report-schema, view, and Python surface |
 | `fdu-occl` | Open; blocked by `fdu-8kd8` | Basic tryscript golden and multilingual self-host semantic lock |
