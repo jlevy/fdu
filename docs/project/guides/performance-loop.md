@@ -202,7 +202,7 @@ Kept as a live list.
 Numbering is shared with the
 [performance-frontier research](../research/research-2026-08-10-performance-frontier.md),
 whose backlog owns H12–H46; new hypotheses from any source take the next free number
-(currently H77) so no id ever means two things.
+(currently H79) so no id ever means two things.
 Each is stated so it can be wrong, with the metric that would show it.
 Status is updated as experiments resolve them; see the ledger for results.
 
@@ -224,6 +224,7 @@ Status is updated as experiments resolve them; see the ledger for results.
 | H72 | The transient summary needs no directory or symlink attributes, so `d_type` can skip their `statx` calls entirely. | produced stat calls down by the directory share; warm wall down at least 3% on a directory-heavy tree | **Queued** (`fdu-i2f3`). Measured −1.4% alone on a 6.4%-directory tree, below the gate; the planner must prove the tier and `one_filesystem` still forces directory stats. |
 | H73 | Sorting each directory’s entries by `d_ino` before statting turns random inode reads into near-sequential ones on ext4 and btrfs. | controlled-cold wall down substantially; warm unchanged | **Unresolved** (`fdu-lf3v`). The scouting rig measured −2.3% cold with an interval crossing zero and +6.8% warm from the sort itself, but its guest-cold reads were host-cached, so the cold claim was untestable there. Needs bare metal, and any implementation must stay behind a cold-suspected trigger. |
 | H76 | Linux cold scans are under-parallelized: `diskus` runs three times the core count and the automatic policy’s thresholds were calibrated on APFS. | controlled-cold wall down at least 3% at the swept depth; warm unchanged | **Queued** (`fdu-tk1b`). The scouting rig measured `diskus` 22.8% ahead of the summary plan cold while tying warm. Sweep depth per regime and filesystem rather than inheriting the APFS constants. |
+| H77 | Both FDU and dumac pay at least one directory open plus one bulk call across 110,369 directories, and exp-045/046 profiles put about 95% of worker samples there. macOS `searchfs` reads the volume catalog without opening each directory, removing that per-directory work rather than shaving it. | macOS cold and warm wall down substantially at near-million scale, with exact oracle parity | **Speculative, unscreened** (`fdu-9716`). Needs parent-id tree reconstruction, subtree scoping, a permission-semantics audit, non-UTF-8 handling, and probe-and-fallback. Prototype standalone before any production path. |
 
 ### Index and allocation
 
@@ -249,6 +250,7 @@ Status is updated as experiments resolve them; see the ledger for results.
 | H60 | Cold bootstrap workers can build disjoint local subtree arenas and splice them plus one roll-up at region completion, replacing one path operation per entry through the single consumer. | cold-index component/user CPU and channel allocation down; end-to-end wall down at least 3%; RSS bounded | **Queued** (`fdu-weey`). Preserve deterministic identity, progressive publication, errors, and the delta contract. |
 | H61 | A completed bootstrap can live in a dense immutable base while subsequent changes use a sparse overlay and bounded compaction, avoiding the full mutable-entry overhead on nearly every record. | million-scale RSS down at least 40% plus cold indexed wall down at least 3% or a decisive warm/query win | **Queued after H19–H22** (`fdu-f67r`). Preserve stable identities, exact snapshots, all views, progressive publication, errors, deltas, and watch semantics. |
 | H74 | Producers allocate paths and observation batches that the consumer frees, which is the cross-thread pattern glibc `malloc` handles worst. A different global allocator should recover that cost where the scan is not syscall-bound. | transient-summary wall down at least 3%; RSS increase bounded at million scale | **Promising, unconfirmed** (`fdu-cckr`). A local mimalloc build improved the scouting rig’s warm summary plan 30.3% [−32.9%, −25.6%] and left the full-index path within noise. Needs the supply-chain process, a macOS replication, a million-entry RSS check, and a ledger-protocol run before adoption. |
+| H78 | H10’s remaining half: once load stops rebuilding the tree per record, the residue is parse-and-allocate. A format whose on-disk layout is usable directly, with roll-ups persisted rather than recomputed, makes warm open bound by the reconcile walk instead of the load. | `warm-snapshot-load` component down several-fold; warm open below cold-scan wall on Linux | **Queued after `fdu-91ts`** (`fdu-pdra`). Preserve exact snapshot semantics, a completeness boundary in the format version, endianness and alignment discipline, and allocation that is never sized from untrusted counts. |
 
 ### Warm start
 
