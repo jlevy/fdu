@@ -287,11 +287,8 @@ fn revalidate(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     let component = started.elapsed();
     let mut summary = summarize_index(&index)?;
     summary.dirs_read = report.scan.dirs_read;
-    // Deliberately left None. Only the parallel wave path fills any of these counters,
-    // and only some of them, so the object is neither comparable with a cold scan's nor
-    // present at all for a serial sweep (tracked in fdu-78wr). Emitting it would read as
-    // measured evidence rather than a partial measurement. Null says "not instrumented";
-    // a partly zeroed object would lie.
+    // Deliberately left None: neither reconciliation path has complete attribution yet
+    // (tracked in fdu-78wr). Null says "not instrumented"; zeros would lie.
     summary.errors = u64::try_from(report.scan.errors.len()).unwrap_or(u64::MAX);
     summary.complete = report.is_complete();
     summary.apply = ApplySummary {

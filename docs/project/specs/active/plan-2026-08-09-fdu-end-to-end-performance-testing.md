@@ -173,6 +173,26 @@ What it found, first against a roughly 60k-entry checkout and then against a
   It cut user CPU 51.54% and RSS 39.19%, but changed paired wall only −1.15%
   [−2.24%, +0.44%] and did not beat dumac (exp-044). All API and engine code was
   reverted; the rich H59 summary remains the smallest useful execution tier.
+- **The dumac difference is concurrency-sensitive, and an open-only pipeline is now the
+  narrow follow-up.** H67 replayed current FDU and dumac in twelve pairs under a busy
+  interactive host: dumac led by 16.19% [12.23%, 19.10%] while spending 34.88% more CPU
+  and 231.70% more RSS. Replaying the exact published binaries on the same host also
+  produced an 11.1% five-pair dumac lead, ruling out the later reconciliation-only
+  change. Exact process samples put 96.10% of FDU worker tops and 94.21% of dumac worker
+  tops in `open` or `getattrlistbulk`; FDU sustained 3.46 aggregate core-equivalents and
+  dumac 5.64. The paired-helper H69 screen was promising at −4.47%, but its
+  [−31.04%, +33.91%] interval under severe host noise is not acceptance evidence
+  (exp-045). H70 replaced that handoff with one shared opener pool.
+  Two openers improved paired wall 3.98% [0.70%, 9.87%] and aggregate CPU 15.98% in one
+  exact five-pair screen, while involuntary context switches rose 111.80%. A follow-up
+  count sweep and twelve-pair four-opener comparison with dumac were too noisy to select
+  or accept a count (exp-046). No production code is retained pending quiet-host and
+  independent-topology confirmation.
+- **The macOS bulk reader now matches portable apparent-size semantics for resource
+  forks.** A review fixture reproduced the mismatch on APFS: `ATTR_FILE_TOTALSIZE`
+  included the resource fork while portable `st_size` described only the data fork.
+  The reader now requests and parses `ATTR_FILE_DATALENGTH` in attribute-bit order, and
+  the byte-for-byte backend equivalence test carries a real resource fork.
 - **The component-probe oracle is complete again.** PR review found that the real-tree
   oracle required `newest_file_mtime_ns`, but `perf_probe` did not emit it.
   That made nonempty-tree component samples fail closed even when their scan was
@@ -750,14 +770,18 @@ Its two implementation reports and source diff motivated worker-local rich-summa
 reduction (H62), report-derived macOS metadata (H63), a selected-total matched-workload
 challenge (H64), and reduction-only worker calibration (H65). Exp-041 through exp-044
 rejected every additional layer for wall time despite strong CPU and memory reductions.
-The repeated resource/wall split localizes the current warm-APFS floor to directory-open
-and kernel work rather than summary representation.
-H67 now owns the remaining first-principles question: reproduce the tied comparison,
-profile current FDU and dumac binaries side by side, and quantify per-directory
-`open`/`getattrlistbulk` work before proposing another engine change.
-It closes as no-gap evidence if no significant wall difference exists; any candidate
-must preserve FDU’s strict parser, exact paths, fallback, scope, and partial-result
-semantics and clear the normal 3% paired gate before being retained.
+The repeated resource/wall split and H67 profiles localize the current warm-APFS floor
+to directory-open and kernel work rather than summary representation.
+H67 also shows why one benchmark regime is insufficient: the published quiet-host pair
+is a statistical tie, while both exact binary pairs give dumac a clear lead under
+heavier host pressure.
+H70 owns the remaining overlap question after H69 established that pairwise pre-opening
+is possible but too noisy to retain.
+It may tune a shared two-to-four-thread opener pool around the accepted six scan
+workers, but it must preserve FDU’s strict parser, exact paths, fallback, scope, and
+partial-result semantics; share one budget with the adaptive reserve; clear the normal
+3% paired gate on a quiet 12-pair run; and reproduce on an independent large topology
+before being retained.
 
 The
 [current diskus benchmark](https://github.com/sharkdp/diskus/blob/90196e950017d25b2940e8e0fda51a321ca66e1a/README.md#benchmark)
@@ -1236,10 +1260,13 @@ research and plan, assemble this graph, and validate it through CI.
 | `fdu-6wu0` | P1 | Reuse safely cloned and independently verified base corpora for large repeated trials | discovered by `fdu-p2i1` |
 | `fdu-j2ka` | P1 | Coordinate the iterative real-tree profile and optimization campaign | `fdu-6wu0` informs generated-corpus setup |
 | `fdu-1y8f` | P1 | Publish the performance architecture white paper | `fdu-j2ka` evidence |
-| `fdu-nffc` | P2 | Extend the paired comparator matrix to controlled Linux warm and cold regimes | dedicated Linux host |
-| `fdu-6nmp` | P1 | Refresh dut source, benchmark-method audit, and Linux semantic test plan | — |
-| `fdu-sk7v` | P1 | Test an exact directory-only transient tree at 60k and near-million scale | dut Linux calibration and `fdu-j2ka` loop |
+| `fdu-0myw` | P1 | Coordinate Linux performance validation and optimization after the stable macOS PR lands | dedicated Linux host and PR #8 correctness baseline |
+| `fdu-nffc` | P2 | Extend the paired comparator matrix to controlled Linux warm and cold regimes | `fdu-0myw`; dedicated Linux host |
+| `fdu-6nmp` | P1 | Refresh dut source, benchmark-method audit, and Linux semantic test plan | `fdu-0myw` research input; complete |
+| `fdu-sk7v` | P1 | Test an exact directory-only transient tree at 60k and near-million scale | `fdu-0myw`; dut Linux calibration |
 | `fdu-ea8e` | P1 | Isolate the macOS directory-open and bulk-syscall floor against dumac | exact near-million paired profiles |
+| `fdu-hzf0` | P1 | Pipeline macOS directory opens ahead of bulk enumeration under one shared concurrency budget | `fdu-ea8e` profiles and quiet-host confirmation |
+| `fdu-druf` | P1 | Tune a shared two-to-four-thread macOS directory-opener pool | `fdu-hzf0`; quiet-host and independent-tree confirmation |
 | `fdu-dpsk` | P1 | Audit warm versus cold filesystem-cache claims and encode warm-steady evidence | `fdu-j2ka` evidence |
 | `fdu-rjqx` | P2 | Establish a controlled macOS cold-cache comparison protocol | dedicated quiet Mac and disposable APFS volume |
 | `fdu-16pw` | P2 | Compare and incorporate the diskus benchmark protocol | — |
@@ -1252,6 +1279,15 @@ research and plan, assemble this graph, and validate it through CI.
 | `fdu-k5t5` | P1 | Pinned dut/gdu adapters, parsers, postconditions, and capability matrix | `fdu-rq5m`, `fdu-d8kq`, `fdu-ad45` |
 | `fdu-8z5l` | P2 | Pull-request smoke, stable scheduled baselines, regression triage, artifact retention, and claim governance | `fdu-d8kq`, `fdu-k5t5`, `fdu-zga3`, `fdu-849g`, `fdu-bmhr`, `fdu-6wu0` |
 | `fdu-ywu0` | P1 | Execute the complete Phase 1 matrix and publish the generated evidence report | all implementation/proof beads plus the existing engine blockers |
+
+The post-PR Linux handoff is the `fdu-0myw` epic.
+Start with `fdu-nffc`: reproduce warm-steady, pagecache-drop-only, and controlled-cold
+evidence on a local-SSD host with the committed semantic oracle and exact binary, host,
+filesystem, and corpus provenance.
+Then test directory-only retained state (`fdu-sk7v`), warm snapshot load/save costs
+(`fdu-maxn`, `fdu-niuz`, `fdu-91ts`), and Linux-specific summary hypotheses (`fdu-cckr`,
+`fdu-i2f3`) before worker or syscall experiments.
+APFS-only opener work H70 and controlled macOS cold-cache work stay outside that epic.
 
 Cross-workstream dependencies make the existing decision beads consume the common
 infrastructure:

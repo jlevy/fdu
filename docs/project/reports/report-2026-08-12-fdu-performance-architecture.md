@@ -1,4 +1,4 @@
-# fdu Performance Architecture: Evidence From Forty-Five Experiments
+# fdu Performance Architecture: Evidence From Forty-Seven Experiments
 
 **Date:** 2026-08-12 (updated 2026-08-13)
 
@@ -15,7 +15,7 @@ producer, reduce kernel transitions with platform bulk metadata, remove repeated
 work from the single-writer consumer, and compare immutable state in parallel before
 sending only real changes through the mutation contract.
 
-Forty-five measured experiments produced a 54.5% improvement in snapshot-absent indexed
+Forty-seven measured experiments produced a 54.5% improvement in snapshot-absent indexed
 wall time and a 52.0% improvement in verified warm-open wall time against the original
 implementation on the primary 60,067-entry subject.
 On a heterogeneous 1,007,659-entry workspace, the integrated branch was 31.3% faster
@@ -45,6 +45,9 @@ index construction. Exp-041 through exp-044 then removed progressively more summ
 representation work, including a selected-total scanner matched to dumac.
 They cut user CPU and memory but failed the wall-time gate, confirming that directory
 opens and bulk system calls now own the warm-APFS floor.
+Exp-045 and exp-046 are the open-ahead follow-ups: exact-binary profiles localize both
+FDU and dumac to `open` plus `getattrlistbulk`; exp-045’s pairwise helper was superseded
+by exp-046’s shared pool, which remains unretained pending quiet-host confirmation.
 
 All M1/APFS numbers in this paper use a repeated-workload warm-steady operating-system
 filesystem cache, established by a complete independent fingerprint and explicit
@@ -225,7 +228,12 @@ changing the smaller-tree resource profile (exp-021).
 The important design is feedback, not the number sixteen.
 After bulk metadata removed per-entry waits, sixteen workers regressed indexed wall time
 19.2% and roughly doubled CPU (exp-025). The service-time trigger correctly remained at
-six.
+six. The calibration intentionally decides once from the initial sample.
+It does not re-evaluate if a later subtree or mount becomes slower; repeated calibration
+would add coordination to every directory release for a case not established in the
+measured local-tree workload.
+A future mixed-latency or network-filesystem experiment must measure that trade rather
+than assume the opening sample represents every subtree.
 On the later million-entry tree, eight workers bought only 1.30% for 33.5% more CPU,
 while twelve and sixteen were slower (exp-036).
 
@@ -307,8 +315,19 @@ Dumac’s 2.2% lower paired point estimate is an upper-bound signal: it requests
 attributes and retains only a total and hard-link inode set.
 The interval [−5.7%, +1.7%] crosses zero, and dumac nevertheless used 85.4% more
 aggregate CPU and 224.5% more peak RSS than FDU’s richer summary.
-The next material tree-product opportunity is compact index construction, not more APFS
-worker threads.
+H67 then replayed both the current and published exact binary pairs under a busier host
+regime. Dumac led current FDU by 16.19% in twelve pairs and the published FDU binary by
+11.1% in a five-pair diagnostic.
+The intervening reconciliation-only change was therefore not a live-scan regression.
+FDU sustained 3.46 aggregate core-equivalents and dumac 5.64, while exact process
+samples put 96.10% and 94.21% of worker tops, respectively, in `open` or
+`getattrlistbulk`. The relative wall result is sensitive to host pressure and
+concurrency; the original quiet-host matrix remains the published typical comparison.
+
+The next material tree-product opportunity is still compact index construction, not a
+static increase in APFS worker threads.
+H69 separately tests whether open-only helpers can overlap the two synchronous syscall
+phases under one shared concurrency budget.
 
 Full method, intervals, semantic caveats, and source analysis are in the
 [live tool comparison](report-2026-08-13-fdu-live-tool-comparison.md), with exact facts
@@ -316,8 +335,9 @@ in its [reproduction manifest](fdu-live-tool-comparison-manifest-v2.json).
 
 ## The Most Useful Negative Results
 
-Forty-five experiments are valuable partly because they close plausible but unproductive
-paths:
+Completed experiments are valuable partly because they close plausible but unproductive
+paths; exp-045 records the superseded pairwise mechanism and exp-046 the unretained
+shared-pool follow-up:
 
 - **Parallelism without moving the serialization boundary:** the first parallel
   reconcile funnel gained only 2.6%; immutable producer-side comparison later gained
@@ -427,12 +447,15 @@ Exp-043 also retained six workers: eight looked promising on the 901k screen but
 H64’s complete selected-total specialization then changed wall by only −1.15%
 [−2.24%, +0.44%] and did not beat dumac despite halving user CPU (exp-044).
 
-1. **Profile the apparent dumac gap (H67, `fdu-ea8e`).** The current paired interval
-   crosses zero, so no wall gap is established.
-   Reproduce the tie and compare exact current-binary directory-open, `getattrlistbulk`,
-   scheduling, CPU, and wall evidence before proposing another macOS path.
-   Close the hypothesis if there is no significant gap; keep a candidate only if it
-   preserves the strict scan contract and clears the normal paired gate.
+1. **Confirm a shared directory-opener pool (H70, `fdu-druf`).** H67 found six FDU
+   workers and ten dumac workers at the same synchronous `open` and `getattrlistbulk`
+   boundary. H69’s pairwise handoff was inconclusive.
+   H70’s shared two-opener screen improved wall 3.98% [0.70%, 9.87%], but doubled
+   involuntary context switches; its count sweep and direct dumac run suffered extreme
+   host outliers. Run twelve quiet adjacent pairs, then replicate any qualifying gain on
+   an independent large topology.
+   The opener and adaptive-worker policies must share one budget: the first prototype
+   accidentally activated both and created eighteen threads.
 2. **Directory-only transient tree (H66, `fdu-sk7v`).** For an unfiltered cache-off
    tree-only request, test folding file observations into exact directory roll-ups and
    retaining only directory topology.

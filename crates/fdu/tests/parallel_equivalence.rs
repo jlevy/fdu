@@ -151,9 +151,13 @@ fn build_fixture(root: &Path, wide_files: usize) {
     #[cfg(unix)]
     {
         use std::os::unix::ffi::OsStrExt;
-        // A name that is not valid UTF-8 must survive the round trip byte for byte.
+        // A name that is not valid UTF-8 must survive the round trip byte for byte,
+        // where the filesystem allows one at all. APFS rejects the bytes outright with
+        // EILSEQ, so this is the one fixture entry that is allowed not to appear.
         let raw = std::ffi::OsStr::from_bytes(b"invalid-\xff\xfe-name");
-        write(&root.join("names").join(raw), b"non-utf8");
+        if fs::write(root.join("names").join(raw), b"non-utf8").is_err() {
+            eprintln!("fixture: this filesystem rejects non-UTF-8 names; that case is absent");
+        }
 
         fs::create_dir_all(root.join("links")).expect("links dir");
         std::os::unix::fs::symlink("../README.md", root.join("links").join("to-readme"))
@@ -369,13 +373,14 @@ fn the_automatic_worker_pool_agrees_with_the_serial_reference() {
 #[test]
 fn a_bounded_scan_scope_reconciles_the_same_way_at_every_worker_count() {
     // Depth and one-filesystem bounds are semantic scope, and the wave worker evaluates
-    // them itself rather than deferring to the serial descent decision.
+    // them itself rather than deferring to the serial descent decision. Windows has no
+    // device identity to bound by and rejects the flag, so only depth is varied there.
+    let one_filesystem = cfg!(unix);
     for depth in [0usize, 1, 3] {
         let mut reference: Option<Vec<String>> = None;
         for threads in WORKER_COUNTS {
             let (_guard, root) = fixture_root("scoped", NARROW_DIRECTORY_FILES);
-            let settings =
-                ScanConfig { max_depth: Some(depth), one_filesystem: true, ..config(threads) };
+            let settings = ScanConfig { max_depth: Some(depth), one_filesystem, ..config(threads) };
             let (mut index, baseline) = scan_into_index(&root, &settings).expect("baseline scan");
             assert!(baseline.is_complete(), "depth {depth}/{threads}: baseline was partial");
 

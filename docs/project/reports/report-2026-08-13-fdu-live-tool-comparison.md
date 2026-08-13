@@ -183,13 +183,30 @@ required tree steps.
 FDU separately tested dumac-like 128 KiB buffers, depth-first order, smaller directory
 claims, and deeper worker pools; none produced a confirmed wall improvement.
 
-The correct conclusion is therefore that the two tools match within the resolution of
-the present experiment and the current FDU path is kernel/topology-bound on this tree.
-H67 (`fdu-ea8e`) will profile the exact current binaries side by side and quantify
-directory-open and bulk-call time before another production change is proposed.
-A different platform primitive, a genuinely better overlap strategy, or journal-scoped
-work may still win; a 2.2% noisy point estimate is not a reason to duplicate an unsafe
-parser or weaken semantics.
+The claim for this published matrix is therefore that the two tools match within its
+resolution and the current FDU path is kernel/topology-bound on this tree.
+H67 later replayed both the current and published binary pairs under a much busier
+interactive host. Dumac led current FDU by 16.19% in twelve pairs and the published FDU
+binary by 11.1% in a five-pair diagnostic, ruling out the intervening
+reconciliation-only change as the cause.
+FDU sustained 3.46 aggregate core-equivalents versus dumac’s 5.64. Exact process samples
+put 96.10% of FDU worker tops and 94.21% of dumac worker tops in `open` or
+`getattrlistbulk`, with both main threads waiting for workers.
+
+That follow-up does not replace this quiet-host matrix; it establishes that the relative
+wall result depends on host pressure and available concurrency.
+H69 tested a genuinely different overlap strategy: six scan and parser workers plus two
+bounded open-only helpers.
+Its corrected five-pair point estimate was −4.47%, but the busy-host interval
+[−31.04%, +33.91%] could not support retention.
+H70 replaced the pairwise handoff with a shared pool.
+Two openers improved wall 3.98% [0.70%, 9.87%] and aggregate CPU 15.98% in one exact
+five-pair screen, at the cost of 111.80% more involuntary context switches.
+A two/three/four-opener sweep and direct twelve-pair four-opener comparison with dumac
+were too noisy to select a count; that four-opener FDU/dumac comparison was a wall-time
+tie while dumac used 40.68% more aggregate CPU and 223.23% more peak RSS. A different
+platform primitive or journal-scoped work may still win; neither a noisy gap nor a short
+screen justifies duplicating an unsafe parser or weakening semantics.
 
 This subject contained no duplicate in-tree hard-link paths, so hard-link deduplication
 did not affect its regular-file total.
@@ -213,7 +230,8 @@ descriptor frontiers, worker-local summary reduction, narrower rich-summary reco
 a selected-total scanner all failed their wall-time gates.
 The remaining high-impact queue is therefore architectural:
 
-- reproduce and profile the tied dumac comparison before assuming a wall gap exists
+- confirm a shared bounded directory-opener pool on a quiet host and independent
+  topology
 - compact the reusable full-index entry layout and separate directory-only state
 - construct disjoint worker-local subtrees and splice them in bounded region units
 - test a dense immutable bootstrap with a sparse mutation overlay

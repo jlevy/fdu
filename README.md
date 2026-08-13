@@ -6,9 +6,9 @@ fdu answers, for *every* directory in a tree at once: how big is it, how many fi
 it hold, what changed most recently, and what kinds of files live in it.
 One walk, many metrics, cached between runs.
 
-> **Typical live performance:** FDU built a reusable exact index and ten-row tree over
-> 901,963 entries in a **3.324-second median**, versus 5.657 seconds for pdu, 6.016 for
-> dust, and 6.782 for Go gdu on an M1 Pro MacBook with a local SSD. See
+> **Typical macOS/APFS live performance:** FDU built a reusable exact index and ten-row
+> tree over 901,963 entries in a **3.324-second median**, versus 5.657 seconds for pdu,
+> 6.016 for dust, and 6.782 for Go gdu on an M1 Pro MacBook with a local SSD. See
 > [the full comparison](#speed-and-the-cache).
 
 > **Status: pre-release.** The observation/commit contract, bounded in-process change

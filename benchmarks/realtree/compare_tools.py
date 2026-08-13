@@ -74,6 +74,10 @@ CONTRACTS: Dict[str, ToolContract] = {
         ),
         version_argv=("{binary}", "--version"),
     ),
+    # These summary contracts intentionally use the same public CLI arguments. The
+    # immutable binary supplied by the operator determines whether the request takes
+    # the indexed or transient execution plan; the harness records that declared work
+    # class but cannot infer retained engine state from process output.
     "fdu-index-summary": ToolContract(
         name="fdu-index-summary",
         work_class="indexed-summary",

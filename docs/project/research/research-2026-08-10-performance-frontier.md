@@ -154,6 +154,16 @@ Exact commands and caveats are in the
 [manifest](../reports/fdu-live-tool-comparison-manifest-v2.json), and
 [live comparison](../reports/report-2026-08-13-fdu-live-tool-comparison.md).
 
+H67 subsequently replayed both the current and published exact binary pairs under a
+busier interactive-host regime.
+Dumac led current FDU by 16.19% in twelve pairs and the published FDU binary by 11.1% in
+a five-pair diagnostic, so the change was not a code regression.
+FDU sustained 3.46 aggregate core-equivalents while dumac sustained 5.64. Exact process
+samples put 96.10% of FDU worker tops and 94.21% of dumac worker tops in `open` or
+`getattrlistbulk`; their main threads waited for workers.
+The published quiet-host comparison remains the typical claim, while H67 establishes
+that the relative wall result is sensitive to host pressure and available concurrency.
+
 H59 then tested whether the smaller retained state could be derived without weakening
 the rich summary. On a frozen 978,339-entry fingerprint, the internal exact-summary plan
 improved paired wall 14.56% [9.04%, 18.55%] and cut peak RSS 95.28%, from 563.2 MiB to
@@ -504,6 +514,9 @@ derived-report layers H62–H65 for elapsed time.
 H66 (`fdu-sk7v`) now asks whether the same exact planning rule can retain directory
 topology without per-file records for an unfiltered cache-off tree-only request.
 H57 is resolved by exp-036 rather than left in the queue.
+H67 localized the current macOS floor to synchronous directory opens and bulk calls; H69
+(`fdu-hzf0`) now tests whether two bounded open-only helpers can overlap those phases
+without repeating the CPU and contention cost of a deeper full-worker pool.
 
 ### Healey/Dumac Follow-Up: Bulk Syscalls, Fixed Workers, and Inode Locality
 
@@ -596,12 +609,33 @@ The key results and their transfer limits are:
   move the warm-APFS directory-open and bulk-syscall floor enough to earn its design
   cost.
 
-The profiling caveat is also recorded: `/usr/bin/sample` returned no usable stacks and
-the installed Xcode `xctrace` aborted in its Devices plugin before launching the target.
-Exp-040’s resource signature still identifies its mechanism — user CPU down 66.27%,
-system CPU statistically unchanged — and exp-041/042 independently reproduced the same
-wall floor while eliminating more user-space work.
-Fresh native profiles remain desirable when the host tooling works.
+H67 obtained usable exact-binary `/usr/bin/sample` stacks even though `fs_usage` still
+required elevation and the installed Xcode `File Activity` recorder aborted in its
+Devices plugin. Six FDU workers spent 39.56% of sampled tops in `open` and 56.54% in
+`getattrlistbulk`; dumac’s ten workers spent 50.88% and 43.32%, respectively.
+These are within-process stack-residency shares rather than syscall-duration estimates,
+but they confirm the resource signature from exp-040 through exp-044: changing
+user-space report representation cannot move this wall by itself.
+
+The first H69 prototype paired six scan and parser workers with two bounded helpers that
+opened the next claimed directories.
+Its first version accidentally composed with the adaptive reserve and created eighteen
+threads, a concrete warning that independently reasonable concurrency policies must
+share one budget. The corrected six-plus-two five-pair screen had a promising −4.47%
+point estimate, but host interference widened the interval to [−31.04%, +33.91%]. No
+production code is retained (exp-045).
+
+H70 then replaced the pairwise handoff with one shared bounded opener pool.
+Two openers improved paired wall 3.98% [0.70%, 9.87%] in one exact five-pair screen and
+reduced aggregate CPU 15.98%, but involuntary context switches rose 111.80%. A
+two/three/four-opener sweep did not establish a count: two was unclear, three had a
+promising 5.13% point estimate whose interval crossed zero, and four was contaminated by
+two extreme control outliers.
+A direct twelve-pair four-opener comparison with dumac was a statistical tie under the
+same host interference.
+The four-opener FDU used 40.68% less aggregate CPU and 69.06% less peak RSS than dumac.
+Exp-046 records the screen and follow-ups; a quiet-host confirmation and independent
+topology remain required.
 
 **Maintainer testimony on scheduling, collected from primary sources (annotated list in
 the References), adds four warnings the surveys alone would miss:**
@@ -641,7 +675,8 @@ the References), adds four warnings the surveys alone would miss:**
 returns names plus attributes for as many entries as fit the buffer (hundreds at 64–256
 KB), and the attribute set covers fdu’s entire fingerprint and both size metrics:
 `ATTR_CMN_OBJTYPE`, `ATTR_CMN_FILEID`, `ATTR_CMN_MODTIME`, `ATTR_CMN_CHGTIME`,
-`ATTR_FILE_TOTALSIZE` (logical) and `ATTR_FILE_ALLOCSIZE` (allocated bytes).
+`ATTR_FILE_DATALENGTH` (data-fork apparent size, matching `st_size`) and
+`ATTR_FILE_ALLOCSIZE` (allocated bytes, including resource-fork blocks).
 Evidence: Tempelmann’s benchmarks show it losing to bare `readdir` for names-only but
 decisively beating `readdir`+`lstat` once attributes are needed — and fdu always needs
 attributes; dumac (getattrlistbulk + 64-way bounded concurrency) measured **521 ms over

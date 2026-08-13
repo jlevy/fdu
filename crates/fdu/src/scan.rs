@@ -365,10 +365,9 @@ impl WalkAttribution {
 pub struct ReconcileReport {
     /// Filesystem walk effects and partial errors.
     ///
-    /// Read [`ScanReport::attribution`] here with care: only the parallel wave path
-    /// fills it, only with `wall_ns`, `work_ns`, and `claims`, and it accumulates one
-    /// worker lifetime per wave rather than an elapsed span. A serial sweep leaves it
-    /// at zero, which means "not measured", not "no work".
+    /// [`ScanReport::attribution`] remains zero for reconciliation because neither the
+    /// serial nor parallel path has complete, comparable instrumentation yet. Zero
+    /// means "not measured" here, not "no work".
     pub scan: ScanReport,
     /// Index arbitration and mutation effects.
     pub apply: ApplyStats,
@@ -1836,7 +1835,6 @@ fn reconcile_wave_worker(
     overflowed: &std::sync::atomic::AtomicBool,
     max_deferred_ops: usize,
 ) -> DeferredReconcile {
-    let worker_started = std::time::Instant::now();
     let mut result = DeferredReconcile::default();
     #[cfg(target_os = "macos")]
     let mut bulk_reader = macos_bulk::Reader::new();
@@ -1847,8 +1845,6 @@ fn reconcile_wave_worker(
             break;
         }
         let end = start.saturating_add(DIR_CLAIM).min(wave.len());
-        let chunk_started = std::time::Instant::now();
-        result.scan.attribution.claims += 1;
         for (rel_dir, depth, region) in &wave[start..end] {
             let mut known = collect_child_expectations(index, rel_dir);
             let abs_dir = root.join(rel_dir);
@@ -1951,10 +1947,7 @@ fn reconcile_wave_worker(
                 }
             }
         }
-        let chunk_work_ns = elapsed_ns(chunk_started);
-        result.scan.attribution.work_ns += chunk_work_ns;
     }
-    result.scan.attribution.wall_ns = elapsed_ns(worker_started);
     result
 }
 
@@ -3145,7 +3138,7 @@ mod tests {
 
         assert!(portable_report.is_complete());
         assert!(bulk_report.is_complete());
-        assert!(bulk_report.scan.attribution.claims > 0, "parallel waves were not exercised");
+        assert_eq!(bulk_report.scan.attribution, WalkAttribution::default());
         assert_eq!(bulk_report.scan.entries, portable_report.scan.entries);
         assert_eq!(bulk_report.scan.dirs_read, portable_report.scan.dirs_read);
         assert_eq!(bulk_report.apply, portable_report.apply);

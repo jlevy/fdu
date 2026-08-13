@@ -101,6 +101,8 @@ dead end.
 | 042 | [Derive macOS summary bulk records](#exp042--derive-macos-summary-bulk-records) | H63 | `rich-summary-report` | +1.9% | ❌ rejected |
 | 043 | [Retune workers for transient summary](#exp043--retune-workers-for-transient-summary) | H65 | `rich-summary-report` | +0.7% | ❌ rejected |
 | 044 | [Specialize a selected size total](#exp044--specialize-a-selected-size-total) | H64 | `selected-allocated-total` | -1.1% | ❌ rejected |
+| 045 | [Pipeline macOS directory opens](#exp045--pipeline-macos-directory-opens) | H67, H69 | `rich-summary-open-pipeline` | -4.5% | ↩︎ superseded |
+| 046 | [Tune a shared macOS directory-opener pool](#exp046--tune-a-shared-macos-directoryopener-pool) | H70 | `rich-summary-shared-openers` | -4.0% | ⏳ in progress |
 
 ## The experiments
 
@@ -1690,6 +1692,75 @@ public view; all prototype code was reverted.
 
 Full record:
 [`exp-044-specialize-a-selected-size-total.md`](../experiments/exp-044-specialize-a-selected-size-total.md)
+
+### exp-045 — Pipeline macOS directory opens
+
+↩︎ superseded · 2026-08-13 · H67, H69
+
+Control: current exact rich-summary path with its automatic six-worker operating point
+
+Candidate: six scan and parser workers plus two bounded directory-open helpers
+
+**`rich-summary-open-pipeline`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 3468.3 | 3325.4 | -4.46% (n.s.) | [-31.04%, +33.91%] |
+| cpu (ms) | 12623.3 | 12437.9 | +1.47% (n.s.) | [-26.38%, +6.76%] |
+| user (ms) | 563.9 | 635.3 | +8.62% (n.s.) | [-8.65%, +15.68%] |
+| system (ms) | 12059.4 | 11812.4 | +1.21% (n.s.) | [-27.07%, +6.33%] |
+| peak rss (MiB) | 13.6 | 14.0 | +2.86% (n.s.) | [-21.63%, +5.16%] |
+
+Cost to carry: 78 lines; no new dependencies; new failure mode: Open helpers can
+accidentally compose with the adaptive reserve and over-thread the scan; new failure
+mode: Bounded request and response channels add shutdown and panic paths; new failure
+mode: A static opener count can overfit one topology or host-load regime.
+
+The first prototype activated the existing reserve and ran 18 threads; the measured
+candidate fixed the experiment at six scan workers plus two open-only helpers, and no
+production code is retained while confirmation remains open.
+
+**Superseded:** The corrected pairwise-helper screen had a promising -4.47% point
+estimate but an unusable [-31.04%, +33.91%] interval; H70 supersedes it with one shared
+bounded opener pool, and no H69 code is retained.
+
+Full record:
+[`exp-045-pipeline-macos-directory-opens.md`](../experiments/exp-045-pipeline-macos-directory-opens.md)
+
+### exp-046 — Tune a shared macOS directory-opener pool
+
+⏳ in progress · 2026-08-13 · H70
+
+Control: current exact rich-summary path with its automatic six-worker operating point
+
+Candidate: six scan and parser workers drawing opened directories from one shared
+two-thread opener pool
+
+**`rich-summary-shared-openers`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 3337.9 | 3220.9 | -3.98% | [-9.87%, -0.71%] |
+| cpu (ms) | 11757.7 | 10203.6 | -15.98% | [-19.70%, -10.38%] |
+| user (ms) | 527.4 | 636.8 | +23.31% (regression) | [+17.31%, +25.32%] |
+| system (ms) | 11230.3 | 9551.5 | -17.62% | [-21.39%, -11.95%] |
+| peak rss (MiB) | 13.4 | 13.6 | +2.21% (n.s.) | [-0.58%, +3.82%] |
+
+Cost to carry: 121 lines; no new dependencies; new failure mode: A shared opener pool
+adds request ordering and shutdown paths; new failure mode: Every descriptor handoff
+adds scheduler and channel traffic; new failure mode: Opener and adaptive scan-worker
+policies can exceed one intended concurrency budget.
+
+The primary five-pair screen used two shared openers; separate two, three, and
+four-opener screens plus a direct twelve-pair four-opener comparison with dumac were
+diagnostic only, and all prototype code remains outside the production branch.
+
+**In-progress:** Two shared openers cleared the short screen at -3.98% [-9.87%, -0.70%],
+but doubled involuntary context switches and later count/dumac runs suffered extreme
+host outliers; quiet 12-pair and independent-topology confirmation remain required.
+
+Full record:
+[`exp-046-tune-a-shared-macos-directory-opener-pool.md`](../experiments/exp-046-tune-a-shared-macos-directory-opener-pool.md)
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.
