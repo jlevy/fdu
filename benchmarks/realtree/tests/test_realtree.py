@@ -50,6 +50,27 @@ class ReferenceTreeTests(unittest.TestCase):
                 secret, serialized, f"fingerprint leaked {secret!r} from the tree"
             )
 
+    def test_fingerprint_quantifies_hardlinks_without_disclosing_names(self) -> None:
+        linked = self.root / "nested" / "linked-copy.txt"
+        os.link(self.root / "alpha.txt", linked)
+        linked_allocated = int(linked.stat().st_blocks) * 512
+
+        document = tree.fingerprint(self.root, label="fixture")
+
+        self.assertEqual(
+            document["hardlinks"],
+            {
+                "groups": 1,
+                "linked_file_entries": 2,
+                "duplicate_file_entries": 1,
+                "duplicate_apparent_bytes": 5,
+                "duplicate_allocated_bytes": linked_allocated,
+            },
+        )
+        serialized = json.dumps(document)
+        self.assertNotIn("linked-copy", serialized)
+        self.assertNotIn("alpha", serialized)
+
     def test_root_id_identifies_without_disclosing(self) -> None:
         document = tree.fingerprint(self.root, label="fixture")
         self.assertEqual(len(document["root_id"]), 64)
@@ -60,6 +81,13 @@ class ReferenceTreeTests(unittest.TestCase):
         first = tree.fingerprint(self.root, label="fixture")
         second = tree.fingerprint(self.root, label="fixture")
         self.assertEqual(tree.compare(second, first), [])
+
+    def test_fingerprint_schema_drift_is_not_comparable(self) -> None:
+        current = tree.fingerprint(self.root, label="fixture")
+        baseline = dict(current)
+        baseline["schema"] = "fdu-reference-tree-v1"
+
+        self.assertIn("schema differs", " ".join(tree.compare(current, baseline)))
 
     def test_content_change_is_detected(self) -> None:
         before = tree.fingerprint(self.root, label="fixture")

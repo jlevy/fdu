@@ -89,6 +89,13 @@ dead end.
 | 030 | [Elide unchanged entries in bounded parallel reconciliation waves](#exp030--elide-unchanged-entries-in-bounded-parallel-reconciliation-waves) | H12, H9 | `warm-revalidate` | -59.5% | ✅ accepted |
 | 031 | [Increase immutable-baseline reconciliation waves to 4096 directories](#exp031--increase-immutablebaseline-reconciliation-waves-to-4096-directories) | H56 | `warm-revalidate` | +1.6% | ❌ rejected |
 | 032 | [Cumulative effect through bounded parallel reconciliation](#exp032--cumulative-effect-through-bounded-parallel-reconciliation) | H1, H5, H10, H14, H18, H32, H48, H49, H31, H3, H26, H53, H12, H9 | `cold-scan-index` | -54.5% | ✅ accepted |
+| 033 | [Post-composable-CLI integration validation](#exp033--postcomposablecli-integration-validation) | H3, H31, H53, H12, H9 | `warm-revalidate` | -42.3% | ✅ accepted |
+| 034 | [Post-composable-CLI validation under cache pressure](#exp034--postcomposablecli-validation-under-cache-pressure) | H3, H31, H53, H12, H9 | `cold-scan-index` | -30.5% | ✅ accepted |
+| 035 | [Post-composable-CLI validation on the live 1M workspace](#exp035--postcomposablecli-validation-on-the-live-1m-workspace) | H3, H31 | `cold-scan-index` | -31.3% | ✅ accepted |
+| 036 | [Revisit worker depth on the live 1M workspace](#exp036--revisit-worker-depth-on-the-live-1m-workspace) | H57 | `cold-scan-index` | -1.3% | ❌ rejected |
+| 037 | [Revisit breadth-first versus depth-first on the live 1M workspace](#exp037--revisit-breadthfirst-versus-depthfirst-on-the-live-1m-workspace) | H4 | `cold-scan-index` | +3.6% | ❌ rejected |
+| 038 | [Parent-relative openat frontier on the live 1M workspace](#exp038--parentrelative-openat-frontier-on-the-live-1m-workspace) | H24, H29 | `cold-scan-index` | -0.7% | ❌ rejected |
+| 039 | [Revisit the macOS bulk buffer on the live 1M workspace](#exp039--revisit-the-macos-bulk-buffer-on-the-live-1m-workspace) | H55 | `cold-scan-index` | +2.2% | ❌ rejected |
 
 ## The experiments
 
@@ -1279,6 +1286,241 @@ producer 60.05%, snapshot save 52.41%, warm revalidation 51.99%, and snapshot lo
 
 Full record:
 [`exp-032-cumulative-effect-through-bounded-parallel-reconciliation.md`](../experiments/exp-032-cumulative-effect-through-bounded-parallel-reconciliation.md)
+
+### exp-033 — Post-composable-CLI integration validation
+
+✅ accepted · 2026-08-12 · H3, H31, H53, H12, H9
+
+Control: origin/main dc56f77 after merged composable CLI PR #5
+
+Candidate: PR #8 after merging origin/main, correctness review, and exact
+CLI-equivalence checks
+
+**`warm-revalidate`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 844.7 | 481.9 | -42.26% | [-44.60%, -41.00%] |
+| component (ms) | 595.0 | 229.6 | -61.37% | [-62.76%, -59.42%] |
+| cpu (ms) | 806.3 | 1077.6 | +34.79% (regression) | [+30.66%, +37.70%] |
+| user (ms) | 292.8 | 292.3 | +0.10% (n.s.) | [-0.84%, +0.70%] |
+| system (ms) | 513.8 | 782.5 | +55.74% (regression) | [+49.21%, +59.09%] |
+| blocked (ms) | 39.3 | 0.0 | -100.00% | [-100.00%, -100.00%] |
+| peak rss (MiB) | 31.8 | 32.9 | +3.16% (regression) | [+2.52%, +4.59%] |
+
+Other jobs, wall time: `cold-scan-index` -5.1%, `cold-scan-producer` -8.8%,
+`cold-snapshot-save` -4.1%, `warm-snapshot-load` +0.2% (n.s.).
+
+Cost to carry: 1514 lines; dependencies: libc = 0.2.189 (macOS target only; already
+locked transitively); 1 unsafe blocks; new failure mode: Malformed or unsupported bulk
+metadata must retry the complete directory through the portable reader; new failure
+mode: Adaptive reserve workers and reconciliation wave workers can panic; the scan
+reports partial rather than asserting complete truth; new failure mode: A reconciliation
+wave that exceeds its bounded deferred-op budget discards that wave and retries
+serially.
+
+Integration anchor includes previously reviewed experiments exp-015 through exp-030 plus
+correctness hardening and equivalence tests; individual experiment records own each
+optimization decision
+
+**Accepted:** Against current origin/main, candidate improves cold index 5.06%, producer
+8.77%, scan-plus-save 4.13%, and warm revalidation 42.26%; snapshot-only load is neutral
+at +0.18%, all 120 candidate/control oracle samples are valid, and the tree remained
+unchanged.
+
+Full record:
+[`exp-033-post-composable-cli-integration-validation.md`](../experiments/exp-033-post-composable-cli-integration-validation.md)
+
+### exp-034 — Post-composable-CLI validation under cache pressure
+
+✅ accepted · 2026-08-12 · H3, H31, H53, H12, H9
+
+Control: origin/main dc56f77 after merged composable CLI PR #5
+
+Candidate: PR #8 after merging origin/main and correctness review
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 6699.9 | 5154.0 | -30.46% | [-37.71%, -18.20%] |
+| component (ms) | 5141.1 | 3517.5 | -38.12% | [-49.36%, -24.14%] |
+| cpu (ms) | 25916.0 | 24018.7 | -10.39% (n.s.) | [-49.03%, +10.21%] |
+| user (ms) | 3343.8 | 2910.9 | -14.16% | [-17.85%, -11.02%] |
+| system (ms) | 22601.5 | 21042.8 | -9.76% (n.s.) | [-53.66%, +13.77%] |
+| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
+| peak rss (MiB) | 316.3 | 417.5 | +32.27% (regression) | [+0.15%, +44.49%] |
+
+Other jobs, wall time: `warm-revalidate` -70.9%.
+
+Cost to carry: 0 lines; no new dependencies.
+
+Scale-validation anchor only; exp-015 through exp-030 own the implementation complexity
+and individual decisions
+
+**Accepted:** On the 720,805-entry pressure tree, candidate improves cold index 30.46%
+and warm revalidation 70.92%; all paired intervals exclude zero, all samples pass the
+independent oracle, and the tree stayed unchanged.
+
+Full record:
+[`exp-034-post-composable-cli-validation-under-cache-pressure.md`](../experiments/exp-034-post-composable-cli-validation-under-cache-pressure.md)
+
+### exp-035 — Post-composable-CLI validation on the live 1M workspace
+
+✅ accepted · 2026-08-12 · H3, H31
+
+Control: origin/main dc56f77 after merged composable CLI PR #5
+
+Candidate: PR #8 after merging origin/main and correctness review
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 9849.7 | 7332.3 | -31.35% | [-39.13%, -24.45%] |
+| component (ms) | 7195.6 | 4667.4 | -42.38% | [-49.47%, -33.73%] |
+| cpu (ms) | 34712.1 | 34847.9 | -0.57% (n.s.) | [-13.77%, +2.53%] |
+| user (ms) | 5219.2 | 4773.0 | -8.61% | [-13.02%, -7.12%] |
+| system (ms) | 29509.1 | 30064.3 | +0.70% (n.s.) | [-14.02%, +4.17%] |
+| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
+| peak rss (MiB) | 437.6 | 631.1 | +44.32% (regression) | [+37.01%, +47.71%] |
+
+Other jobs, wall time: `cold-scan-producer` -36.6%.
+
+Cost to carry: 0 lines; no new dependencies.
+
+Live-tree scale-validation anchor only; prior experiment records own implementation
+complexity
+
+**Accepted:** On the heterogeneous 1,007,659-entry workspace, candidate improves cold
+indexed wall 31.35% and producer wall 36.59% with valid exact digests and no tree
+mutation; the 44.32% indexed RSS increase remains a documented optimization target.
+
+Full record:
+[`exp-035-post-composable-cli-validation-on-the-live-1m-workspace.md`](../experiments/exp-035-post-composable-cli-validation-on-the-live-1m-workspace.md)
+
+### exp-036 — Revisit worker depth on the live 1M workspace
+
+❌ rejected · 2026-08-12 · H57
+
+Control: automatic adaptive worker policy
+
+Candidate: fixed 8, 10, 12, and 16-worker sweep
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 6188.9 | 6113.6 | -1.30% | [-2.06%, -0.92%] |
+| component (ms) | 3578.9 | 3490.2 | -2.43% | [-2.84%, -1.75%] |
+| cpu (ms) | 16488.3 | 22152.4 | +34.47% (regression) | [+33.26%, +35.57%] |
+| user (ms) | 4333.5 | 4419.3 | +1.79% (regression) | [+1.34%, +2.60%] |
+| system (ms) | 12160.1 | 17702.3 | +46.16% (regression) | [+44.30%, +47.89%] |
+| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
+| peak rss (MiB) | 456.4 | 457.4 | -0.01% (n.s.) | [-0.27%, +0.39%] |
+
+Cost to carry: 0 lines; no new dependencies.
+
+No retained code; one-binary configuration sweep
+
+**Rejected:** Eight workers improve wall only 1.30%, below the 3% bar while CPU rises
+33.5%; 12 and 16 workers regress wall 2.46% and 10.65%, so the automatic policy remains
+the best complexity/resource tradeoff.
+
+Full record:
+[`exp-036-revisit-worker-depth-on-the-live-1m-workspace.md`](../experiments/exp-036-revisit-worker-depth-on-the-live-1m-workspace.md)
+
+### exp-037 — Revisit breadth-first versus depth-first on the live 1M workspace
+
+❌ rejected · 2026-08-13 · H4
+
+Control: region-scheduled breadth-first default
+
+Candidate: depth-first traversal
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 6187.5 | 6444.6 | +3.57% (regression) | [+2.42%, +5.23%] |
+| component (ms) | 3565.9 | 3839.3 | +6.72% (regression) | [+3.75%, +9.27%] |
+| cpu (ms) | 16656.3 | 16532.8 | -0.50% (n.s.) | [-1.20%, +0.47%] |
+| user (ms) | 4356.5 | 4328.4 | -0.34% (n.s.) | [-0.67%, +0.04%] |
+| system (ms) | 12323.2 | 12186.6 | -0.67% (n.s.) | [-1.73%, +0.84%] |
+| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
+| peak rss (MiB) | 458.4 | 453.0 | -1.03% | [-1.49%, -0.55%] |
+
+Cost to carry: 0 lines; no new dependencies.
+
+No retained code; one-binary order comparison
+
+**Rejected:** Depth-first regresses indexed wall 3.57% with a 95% paired interval of
+2.42% to 5.23%; the breadth-first region scheduler remains faster as well as preserving
+progressive shallow coverage.
+
+Full record:
+[`exp-037-revisit-breadth-first-versus-depth-first-on-the-live-1m-work.md`](../experiments/exp-037-revisit-breadth-first-versus-depth-first-on-the-live-1m-work.md)
+
+### exp-038 — Parent-relative openat frontier on the live 1M workspace
+
+❌ rejected · 2026-08-13 · H24, H29
+
+Control: absolute directory opens
+
+Candidate: bounded parent-relative openat frontier
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 6315.8 | 6272.9 | -0.69% (n.s.) | [-1.49%, +0.49%] |
+| component (ms) | 3613.7 | 3560.9 | -1.90% (n.s.) | [-2.57%, +1.13%] |
+| cpu (ms) | 16966.0 | 17105.7 | +1.23% (n.s.) | [-2.01%, +2.48%] |
+| user (ms) | 4446.4 | 4457.6 | +0.25% (n.s.) | [-0.75%, +1.49%] |
+| system (ms) | 12528.8 | 12657.1 | +1.44% (n.s.) | [-2.44%, +2.98%] |
+| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
+| peak rss (MiB) | 457.0 | 459.5 | +0.53% (regression) | [+0.31%, +1.11%] |
+
+Cost to carry: 0 lines; no new dependencies; new failure mode: A retained parent
+descriptor can become stale or exhaust the bounded frontier unless fallback is exact.
+
+Prototype reverted; no dependency or unsafe block retained
+
+**Rejected:** The final paired screen changes indexed wall by -0.69% with an interval
+crossing zero; it does not justify descriptor-lifetime machinery and is reverted.
+
+Full record:
+[`exp-038-parent-relative-openat-frontier-on-the-live-1m-workspace.md`](../experiments/exp-038-parent-relative-openat-frontier-on-the-live-1m-workspace.md)
+
+### exp-039 — Revisit the macOS bulk buffer on the live 1M workspace
+
+❌ rejected · 2026-08-13 · H55
+
+Control: 64 KiB getattrlistbulk buffer
+
+Candidate: 256 KiB getattrlistbulk buffer
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 7822.0 | 8112.6 | +2.22% (n.s.) | [-1.62%, +8.19%] |
+| component (ms) | 5001.1 | 5189.1 | +3.34% (n.s.) | [-1.18%, +8.57%] |
+| cpu (ms) | 28563.9 | 28307.3 | +0.08% (n.s.) | [-11.57%, +5.48%] |
+| user (ms) | 4729.7 | 4740.8 | -0.08% (n.s.) | [-1.31%, +1.19%] |
+| system (ms) | 23781.8 | 23545.8 | +0.04% (n.s.) | [-13.24%, +6.41%] |
+| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
+| peak rss (MiB) | 635.1 | 671.6 | +5.07% (n.s.) | [-2.25%, +15.49%] |
+
+Cost to carry: 0 lines; no new dependencies.
+
+One constant changed for the screen and was reverted
+
+**Rejected:** The 256 KiB screen changes indexed wall by +2.22% with an interval
+crossing zero and no preregistered mechanism win; it is reverted.
+
+Full record:
+[`exp-039-revisit-the-macos-bulk-buffer-on-the-live-1m-workspace.md`](../experiments/exp-039-revisit-the-macos-bulk-buffer-on-the-live-1m-workspace.md)
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

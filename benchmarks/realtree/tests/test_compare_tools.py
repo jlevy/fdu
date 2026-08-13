@@ -103,6 +103,26 @@ class ToolComparisonTests(unittest.TestCase):
             compare_tools._require_external_output(root, root.parent / "external-results")
             compare_tools._require_external_file(root, root.parent / "external-tree.json")
 
+    def test_render_discloses_hardlink_semantics_without_names(self) -> None:
+        note = compare_tools._hardlink_note(
+            {
+                "hardlinks": {
+                    "duplicate_file_entries": 3,
+                    "duplicate_allocated_bytes": 8192,
+                }
+            }
+        )
+
+        self.assertIn("3 duplicate", note)
+        self.assertIn("8,192", note)
+        self.assertIn("not an assertion", note)
+
+    def test_dumac_is_explicitly_total_only(self) -> None:
+        contract = compare_tools.CONTRACTS["dumac"]
+
+        self.assertEqual(contract.work_class, "total-only")
+        self.assertIn("getattrlistbulk", contract.description)
+
 
 if __name__ == "__main__":
     unittest.main()

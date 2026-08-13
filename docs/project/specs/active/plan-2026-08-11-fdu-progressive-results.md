@@ -163,6 +163,10 @@ subject, with large-tree system CPU down 53.97% and RSS neutral.
 exp-030 then composes that reader with four-worker immutable-baseline waves, improving
 warm wall another 30.25% and 59.53%. Effective changes still flow through bounded deltas
 between waves, and the faster sound fallback composes with future FSEvents scoping.
+The direct 1M-tree reproduction in exp-037 resolves the remaining traversal-order
+performance doubt: depth-first regresses indexed wall 3.57% [2.42%, 5.23%] and component
+6.72%, while saving only 1.03% peak RSS. Breadth-first is therefore both the progressive
+contract and the faster measured default on the heterogeneous large tree.
 Persisted roll-ups with lazy open (`fdu-1vd0`) turn an 11-second warm load into a first
 paint. Tracked at low priority as `fdu-v71x` so the decision stays visible.
 
@@ -465,11 +469,9 @@ finish.
 ## Open Questions
 
 - Peak queue width for breadth-first on a tree with a very wide level (a home folder has
-  ~1M directories); measured at 60k, unmeasured at scale, and the answer decides whether
-  a hybrid — breadth-first to a first-render depth, then depth-first below, as
-  metabrowser does — is worth the complexity.
-- Whether the one-shot CLI should really default to `DepthFirst`, given that a future
-  `--progress` would want the opposite.
+  ~1M directories). End-to-end RSS is now measured at 1M and depth-first saves only 1.03%
+  while losing 3.57% wall (exp-037), so a hybrid needs direct queue-width evidence and a
+  progressive-result benefit rather than a presumed memory or speed win.
 - How a session should bound memory: entry cap, depth cap, or eviction.
 
 ## References

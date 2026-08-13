@@ -16,8 +16,9 @@ env:
 ## An Explicit Path Gives a Useful Project-Shaped Report
 
 This is the natural tree view with its default depth, row limit, ordering, and compact
-ten-cell visualization. Cache and color are disabled to isolate the report, and apparent
-size makes the same committed files render identically on every filesystem.
+ten-cell visualization.
+Cache and color are disabled to isolate the report, and apparent size makes the same
+committed files render identically on every filesystem.
 The fixture has one directory below the displayed depth: its bytes and file count roll
 up into `index`, while the report correctly avoids a misleading `…` row because no
 ranked sibling was omitted.

@@ -148,8 +148,8 @@ docs-format-check:
 # real tree and a quiet machine, neither of which CI has; a timing gate on a shared
 # runner measures the runner. See docs/project/guides/performance-loop.md.
 #
-# PERF_TREE names the reference tree. Clone a real checkout with `cp -cR` first so
-# the tree cannot change underneath a run.
+# PERF_TREE names the reference tree. Freeze all writers for the whole run; the
+# harness rejects any difference between its immediate pre/post fingerprints.
 
 PERF_TREE ?= benchmarks/corpus/realtree/metabrowser
 PERF_LABEL ?= $(notdir $(PERF_TREE))
@@ -197,9 +197,12 @@ perf-compare: perf-probe-release
 # stay outside PERF_TREE so the evidence write cannot invalidate its own subject.
 PERF_TOOL_RESULTS ?= /tmp/fdu-tool-comparison/results
 PERF_TOOL_BASELINE ?= $(PERF_TOOL_RESULTS)/tree-$(PERF_LABEL).json
+PERF_TOOL_CONTROL ?=
 perf-compare-tools:
+	@test -n "$(PERF_TOOL_CONTROL)" || \
+		{ echo "PERF_TOOL_CONTROL must name an immutable fdu CLI binary outside PERF_TREE" >&2; exit 2; }
 	$(PERF_RUN).compare_tools --root $(PERF_TREE) --label $(PERF_LABEL) \
-		--anchor "fdu=$(CONTROL)" $(TOOL_ARGS) \
+		--anchor "fdu=$(PERF_TOOL_CONTROL)" $(TOOL_ARGS) \
 		--trials $(or $(TRIALS),12) --warmups $(or $(WARMUPS),3) \
 		--baseline-output $(PERF_TOOL_BASELINE) \
 		--output-dir $(PERF_TOOL_RESULTS) --name $(or $(NAME),tool-comparison) \

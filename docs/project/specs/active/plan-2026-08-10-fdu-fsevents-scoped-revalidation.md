@@ -113,6 +113,11 @@ never reach the index consumer.
 Warm-open wall is now about 351 ms at 60k and 5.71 seconds at 720k; exp-030 alone
 improves those paths 30.25% and 59.53%. This improves the full-sweep fallback without
 changing its O(tree) verification shape.
+After the composable CLI merge, exp-035 reproduced the current branch on the
+heterogeneous 1,007,659-entry workspace: cold indexed wall is 7.332 seconds versus 9.850
+seconds on merged `origin/main`, with exact digest parity.
+That is not a journal result, but it is the current live non-cached scale anchor the
+journal fallback must preserve.
 
 **Not for every way, and that gap is the single most important spike finding.** An
 earlier draft of this section claimed the flags covered every case.
@@ -575,6 +580,14 @@ The 720k cold-index job improved 5.31% [−8.37%, −2.70%] and producer wall 10
 After activation, the large index job traded latency for 51% more aggregate CPU and
 1.43% more RSS. These are warm-steady OS-cache measurements, not a controlled-cold
 claim; the private roughly-2× observation remains motivating context.
+
+The later bulk/BFS reproduction at 1M (exp-036) confirms why this remains adaptive
+rather than a new high fixed default.
+On the live APFS bulk path, eight workers improve wall only 1.30% while raising CPU
+33.5%; twelve and sixteen regress wall 2.46% and 10.65%. The service-time trigger
+correctly stays inactive in that fast state.
+This does not reverse the portable high-latency result above; it proves the policy
+distinguishes the two regimes it was designed for.
 
 Two consequences, and the second is the important one:
 

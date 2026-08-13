@@ -5,8 +5,9 @@ performance evidence.
 The current implementation generates deterministic filesystem corpora, verifies them
 with an implementation independent of fdu, applies exact churn transitions, and runs the
 repository-only Rust component probe through a strict evidence state machine.
-It does not contain a claim-grade performance result and does not show that the current
-portable walker is fast.
+It separates correctness-gated experiment evidence from external-tool calibration.
+Current published measurements and their limitations live in the README and committed
+performance reports; raw host-specific runs remain outside the repository.
 
 The full methodology, runner design, and release gates live in the
 [end-to-end performance plan](../docs/project/specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md).
@@ -124,6 +125,38 @@ The portable runner deliberately rejects `controlled-cold`. That label requires 
 dedicated-host eviction protocol and supporting collector evidence, which are owned by
 `fdu-8z5l`. A successful cache-preparation command can establish `verified-warm`; normal
 developer and hosted-CI runs remain `uncontrolled`.
+
+### Canonical local million-entry comparison
+
+Once this repository workspace fingerprints above one million entries, it is the
+canonical local heterogeneous testbed.
+The ignored generated corpus, `target/`, package trees, Git data, and pinned `attic/`
+comparator checkouts are intentionally part of the subject.
+This makes it realistic and self-contained for one machine, but not reproducible by path
+or fixed count on another machine.
+
+Freeze it before measuring: complete all builds, Git/tbd operations, source checkouts,
+and document writes; copy every immutable binary outside the workspace; and do not run
+an editor, build, Git command, tbd command, or indexer until the post-run fingerprint is
+finished. Evidence outputs and the immediate baseline must also be outside the root.
+
+The paired external comparison is:
+
+```shell
+make perf-compare-tools \
+  PERF_TREE=. PERF_LABEL=live-workspace \
+  PERF_TOOL_CONTROL=/tmp/fdu-tool-comparison/bin/fdu \
+  TOOL_ARGS='--tool dust=/path/to/dust --tool gdu=/path/to/gdu' \
+  STORAGE='local SSD' NAME=live-1m
+```
+
+Add `pdu`, `dua`, `diskus`, `dumac`, or another supported contract with repeated
+`--tool`. Each competitor runs immediately beside fdu with alternating order.
+The v2 fingerprint records redacted counts, depth, bytes, and in-tree hard-link
+duplication; any baseline drift, pre/post mutation, timeout, or nonzero exit makes the
+run non-publishable.
+The report labels indexed-tree, rendered-tree, and total-only work classes because those
+jobs are not semantically identical.
 
 `output-digest` drains stdout through a pipe and hashes it without timing filesystem
 writes. Compact JSON postconditions are retained in a bounded 16 MiB buffer for untimed

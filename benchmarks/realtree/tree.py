@@ -33,7 +33,7 @@ from benchmarks.corpus import (
     _SemanticAccumulator,
 )
 
-FINGERPRINT_SCHEMA = "fdu-reference-tree-v1"
+FINGERPRINT_SCHEMA = "fdu-reference-tree-v2"
 
 #: Extensions are structural, not private, but an unbounded histogram would leak the
 #: shape of a private tree one rare suffix at a time. Keep the head, count the tail.
@@ -66,6 +66,7 @@ def fingerprint(root: Path, *, label: str) -> Dict[str, Any]:
     counts = {"directories": 1, "files": 0, "other": 0, "symlinks": 0, "total": 1}
     apparent_bytes = 0
     allocated_bytes = 0
+    linked_files: Dict[Tuple[int, int], Tuple[int, int, int]] = {}
     depths: Dict[int, int] = {0: 1}
     extensions: Dict[str, int] = {}
     max_depth = 0
@@ -79,8 +80,20 @@ def fingerprint(root: Path, *, label: str) -> Dict[str, Any]:
         elif stat.S_ISREG(mode):
             kind = "file"
             counts["files"] += 1
-            apparent_bytes += int(metadata.st_size)
-            allocated_bytes += int(getattr(metadata, "st_blocks", 0)) * 512
+            apparent = int(metadata.st_size)
+            allocated = int(getattr(metadata, "st_blocks", 0)) * 512
+            apparent_bytes += apparent
+            allocated_bytes += allocated
+            if int(metadata.st_nlink) > 1:
+                key = (int(metadata.st_dev), int(metadata.st_ino))
+                occurrences, recorded_apparent, recorded_allocated = linked_files.get(
+                    key, (0, apparent, allocated)
+                )
+                linked_files[key] = (
+                    occurrences + 1,
+                    recorded_apparent,
+                    recorded_allocated,
+                )
             extensions[_extension(relative)] = extensions.get(_extension(relative), 0) + 1
         elif stat.S_ISLNK(mode):
             kind = "symlink"
@@ -106,6 +119,7 @@ def fingerprint(root: Path, *, label: str) -> Dict[str, Any]:
         "engine_digest_algorithm": ENGINE_DIGEST_ALGORITHM,
         "engine_digest_components": engine.components(),
         "extensions": _bounded_extensions(extensions),
+        "hardlinks": _hardlink_summary(linked_files),
         "label": label,
         "max_depth": max_depth,
         "root_id": root_id(absolute),
@@ -130,6 +144,10 @@ def compare(current: Dict[str, Any], baseline: Dict[str, Any]) -> List[str]:
     and measurements taken against them may be compared.
     """
     reasons: List[str] = []
+    if current.get("schema") != baseline.get("schema"):
+        reasons.append(
+            "reference tree fingerprint schema differs from the baseline schema"
+        )
     if current.get("root_id") != baseline.get("root_id"):
         reasons.append("reference tree root differs from the baseline root")
     if current.get("engine_digest") != baseline.get("engine_digest"):
@@ -208,6 +226,24 @@ def _bounded_extensions(extensions: Dict[str, int]) -> Dict[str, Any]:
         "distinct": len(ordered),
         "top": {name: count for name, count in head},
         "remaining_files": sum(count for _name, count in tail),
+    }
+
+
+def _hardlink_summary(
+    linked_files: Dict[Tuple[int, int], Tuple[int, int, int]],
+) -> Dict[str, int]:
+    """Describe in-tree hard-link duplication without retaining or exposing names."""
+    groups = [entry for entry in linked_files.values() if entry[0] > 1]
+    return {
+        "groups": len(groups),
+        "linked_file_entries": sum(entry[0] for entry in groups),
+        "duplicate_file_entries": sum(entry[0] - 1 for entry in groups),
+        "duplicate_apparent_bytes": sum(
+            (entry[0] - 1) * entry[1] for entry in groups
+        ),
+        "duplicate_allocated_bytes": sum(
+            (entry[0] - 1) * entry[2] for entry in groups
+        ),
     }
 
 

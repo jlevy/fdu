@@ -4,7 +4,7 @@
 
 **Author:** fdu project
 
-**Status:** Draft
+**Status:** Implementation complete; PR #5 merged, follow-ups tracked
 
 ## Overview
 
@@ -654,7 +654,8 @@ shared process boundary, as today.
 - [x] Run the end-of-plan parity review (what, if anything, lives only in `cli.rs`) and
   record its outcome in the design doc
 - [x] Point AGENTS.md, README, and the architecture references at the design doc
-- [ ] Move this spec to done and reconcile the subsumed beads (Open Question 4)
+- [x] Merge PR #5, reconcile the implemented surface, and leave remaining product
+  decisions on the explicit follow-up beads below
 
 ## Testing Strategy
 
@@ -667,10 +668,11 @@ shared process boundary, as today.
   The watch stream uses a bounded, causally sequenced capture helper rather than timing
   a process that never exits.
 - One concise, realistic nested-project session pins the complete natural human report
-  at its default depth and limit. Its rows jointly cover size ranking, hierarchy,
-  alignment, fixed ten-cell bars, rolled-up descendants below the display depth, and no
-  spurious omission marker. Focused sessions retain the actual limit-marker boundary
-  and other combinatorial edges instead of inflating this product example.
+  at its default depth and limit.
+  Its rows jointly cover size ranking, hierarchy, alignment, fixed ten-cell bars,
+  rolled-up descendants below the display depth, and no spurious omission marker.
+  Focused sessions retain the actual limit-marker boundary and other combinatorial edges
+  instead of inflating this product example.
 - Schema tests: `fdu.report/1` and `fdu.stream/1` fixtures that fail on unversioned
   change.
 - Time-window tests: table-driven `parse_when`/`parse_size` grammar units with injected
@@ -699,8 +701,14 @@ No publishing; `fdu-9cf0` gates remain.
 ## Remaining work
 
 The four implementation phases are complete.
-The remaining product decisions and follow-ups are mapped to beads so they cannot be
-lost by being described only here:
+Post-merge integration was reproduced against the performance branch rather than
+assumed: exp-033 exercised all five engine jobs with exact oracles, and exp-035 repeated
+the cold path on a heterogeneous 1M-entry workspace.
+The concise realistic `cli-overview` tryscript fixture remains the human-output contract
+while focused goldens own boundary cases.
+No performance experiment changed CLI text, query semantics, or the mandatory-root/help
+behavior. The remaining product decisions and follow-ups are mapped to beads so they
+cannot be lost by being described only here:
 
 | Gap | Bead |
 | --- | --- |

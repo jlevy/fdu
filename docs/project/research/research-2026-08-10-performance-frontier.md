@@ -67,8 +67,9 @@ numbers may drift.
 - Review of `crates/fdu/src` (scan, index, snapshot, watch, types), the perf probe, both
   benchmark harnesses, and the committed realtree baseline results.
 - Direct source review of tools checked out under `attic/`: bfs (4af45dc), dut (68d4ba2,
-  GPL — ideas only), pdu (c30e46f), diskus (90196e9), jwalk (v0.9.0), plus the existing
-  dust checkout.
+  GPL — ideas only), jwalk (v0.9.0), and the pinned comparator set refreshed on
+  2026-08-12: dust v1.2.4 (`fabe19b`), gdu v5.36.1 (`8d64b4f`), pdu 0.24.0 (`4e19260`),
+  dua v2.41.1 (`90a59e1`), diskus v0.9.0 (`d8a77db`), and dumac (`1ffbe3c`).
 - Platform research with cited sources: getattrlistbulk, APFS concurrency, FSEvents
   journal resume, Apple Silicon QoS, io_uring status and cloud availability, fanotify,
   overlayfs, cloud storage characteristics.
@@ -128,6 +129,16 @@ target: compared with six workers it regressed 720k indexed wall 19.19%, produce
 12.65%, CPU by more than 100%, and RSS by about one third (exp-025). The existing
 service-time trigger stays below its threshold on the bulk path, so no retune was
 needed.
+
+The merged composable CLI was then used as a fresh control rather than assumed
+equivalent. On the heterogeneous 1,007,659-entry workspace, the rebased branch improves
+cold indexed wall 31.35% and producer wall 36.59% with exact-oracle parity (exp-035),
+but indexed peak RSS rises 44.32% to about 631 MiB. The same tree resolves three
+BFS-sensitive questions: depth-first is 3.57% slower (exp-037), eight workers buy only
+1.30% for 33.5% more CPU while 12/16 regress (exp-036), and a bounded parent-relative
+`openat` frontier is neutral (exp-038). A 256 KiB bulk buffer also remains a rejection
+at this scale (exp-039). These results supersede the remaining suggestions to retune
+worker count, switch traversal order, or revisit buffer size without a new mechanism.
 
 ## Findings
 
@@ -361,6 +372,54 @@ capability matrix must keep saying so.
 **Two classic optimizations are unclaimed by every tool surveyed:** none uses macOS
 `getattrlistbulk`, and none sorts entries by inode before statting.
 Both are the top platform levers below; fdu can be first.
+
+### Comparator Refresh: What Still Transfers After the 1M Reproduction
+
+The 2026-08-12 source refresh inspected the exact releases used by the live comparison,
+not just README claims.
+It yields four actionable conclusions and three negative ones:
+
+- `dua` v2.41.1 has the clearest new portable scheduling experiment.
+  A custom crossbeam injector plus worker-local LIFO deques turns entries from a wide
+  directory into four-entry `StatCompletion` jobs, allowing other workers to steal
+  metadata work before the directory finishes.
+  H58 queues the mechanism for the portable/Linux path; it is not appropriate for the
+  macOS bulk reader, which already returns attributes.
+- `pdu` 0.24.0 recursively aggregates children in Rayon workers.
+  Once `--max-depth` is exhausted it sums a child’s size and discards that child tree,
+  explaining its very low retained memory for a depth-one report.
+  H59 asks whether FDU can obtain a similar bounded result through a general, exact
+  view-driven library path; the experiment is rejected at design review if it makes a
+  CLI-only shortcut or lets output depth prune the scan.
+  Its worker-local recursion separately strengthens H60, subtree-index splice.
+- `dumac` commit `1ffbe3c` uses the same `getattrlistbulk` primitive FDU already landed,
+  but requests only name, object type, file id, and allocated size, then reduces
+  directly to a scalar total.
+  It holds a 128-shard global inode set and recursively invokes Rayon.
+  FDU requests more attributes because one exact scan must support fingerprints,
+  snapshots, multiple reducers, and later views, and it retains the complete index.
+  The smaller job is a useful lower bound, not evidence that FDU should weaken its
+  contract.
+- The 1M result makes H19–H22 higher priority.
+  FDU’s full-index RSS is the clearest remaining disadvantage versus tools that retain
+  only totals or bounded output.
+  Packing the reusable index attacks that cost without changing the job.
+- `dust` v1.2.4 uses recursive Rayon `par_bridge` and retains a rendered node tree;
+  `gdu` v5.36.1 uses recursive goroutines bounded at twice `GOMAXPROCS` and retains
+  `File`/`Dir` objects; `diskus` v0.9.0 recursively feeds Rayon with three-times-core
+  concurrency capped at 64. None supplies a new post-H57 thread-count hypothesis:
+  over-threading already loses decisively on APFS.
+- `dumac`’s smaller attribute mask is not independently transferable to FDU’s current
+  stat-tier index. Within the contract, dropping mtime/ctime/dev fields would remove
+  cache validation and reducer inputs, which is a functionality change rather than a
+  speed improvement.
+- `pdu`/`dumac` also handle errors and hard links differently.
+  Their totals therefore calibrate traversal throughput; they are not correctness
+  oracles for FDU’s path-entry accounting and complete/partial provenance.
+
+All four live candidates are tracked beneath the performance-iteration bead: H19–H22
+(`fdu-prph`), H58 (`fdu-r9he`), H59 (`fdu-hke6`), and H60 (`fdu-weey`). H57 is resolved
+by exp-036 rather than left in the queue.
 
 **Maintainer testimony on scheduling, collected from primary sources (annotated list in
 the References), adds four warnings the surveys alone would miss:**
@@ -1200,22 +1259,22 @@ the loop extensions in H36–H39 to be trusted globally.
 | # | Hypothesis | Predicted signal | Prereq |
 | --- | --- | --- | --- |
 | H18 | Interning extensions to `u32` ids (side table; `by_ext` as id-keyed small vec) removes ~523k `String` clones + B-tree descents per 60k scan — the largest single apply cost | `cold-scan-index` `user_cpu_ns` down; `peak_rss` down | — |
-| H19 | Storing `Entry` inline in the arena slot (un-boxing) converts a pointer chase per touch into sequential access | `user_cpu_ns`, `minor_faults`, `peak_rss` down ~10–15% | — |
-| H20 | Storing each name once (parent-map key only, or a shared name arena) removes a duplicate heap string per entry | `peak_rss` −15–20%; locality gains | H19 helps |
-| H21 | Moving `RollUp` (64 B) out of file entries into a directory-only side vector removes dead weight from ~88% of entries | `peak_rss` down ~55 B × file share | — |
-| H22 | `EntryId` with a niche (`u32::MAX` sentinel) and `u32` revisions shrinks parent links from 24 B to 8 B and halves ABA overhead | `peak_rss` down ~24–32 B/entry | — |
+| H19 | Storing `Entry` inline in the arena slot (un-boxing) converts a pointer chase per touch into sequential access | `user_cpu_ns`, `minor_faults`, `peak_rss` down ~10–15% | **Queued with H20–H22** (`fdu-prph`); exp-035 measured about 631 MiB indexed RSS at 1M, 44.32% above merged main |
+| H20 | Storing each name once (parent-map key only, or a shared name arena) removes a duplicate heap string per entry | `peak_rss` −15–20%; locality gains | `fdu-prph`; H19 helps |
+| H21 | Moving `RollUp` (64 B) out of file entries into a directory-only side vector removes dead weight from ~88% of entries | `peak_rss` down ~55 B × file share | `fdu-prph` |
+| H22 | `EntryId` with a niche (`u32::MAX` sentinel) and `u32` revisions shrinks parent links from 24 B to 8 B and halves ABA overhead | `peak_rss` down ~24–32 B/entry | `fdu-prph` |
 | H23 | Carrying the parent `EntryId` in the op (walker and loader both know it) makes `ensure_dir_chain` O(1) instead of a root descent per entry | `cold-scan-index` `user_cpu_ns` down | — |
 
 **Syscall and in-flight rung (macOS binding established by exp-022 — leverage 3):**
 
 | # | Hypothesis | Predicted signal | Prereq |
 | --- | --- | --- | --- |
-| H24 | `openat` relative to a retained dirfd removes repeated path-prefix resolution (`open` = 33.86% of post-H26 cold self-time) | `system_cpu_ns` down, most on deep trees | **Root-dirfd variant refuted** (exp-024); parent/ancestor-relative variant untested and requires bounded descriptor lifetime |
+| H24 | `openat` relative to a retained dirfd removes repeated path-prefix resolution (`open` = 33.86% of post-H26 cold self-time) | `system_cpu_ns` down, most on deep trees | **Refuted in root and bounded-parent forms** (exp-024/038); the 1M parent-relative screen was −0.69% [−1.49%, +0.49%] with RSS/fault regressions |
 | H25 | Linux `statx` with `STATX_BASIC_STATS` only, `AT_STATX_DONT_SYNC` on network mounts | `system_cpu_ns` down modestly; NFS dramatically | rustix |
 | H26 | macOS `getattrlistbulk` (64 KiB buffers, drain-then-descend) replaces one `fstatat` per entry with one syscall per many entries | **Confirmed for cold and full reconciliation** (exp-022/026): 720k cold producer wall −41.60% and warm wall −34.39%; 60k cold producer wall −9.25% and warm wall −18.97%. exp-025 confirms the batched cold backend should remain at six workers rather than the portable path’s sixteen-worker high-latency knee. | landed macOS backend; journal-scoped orchestration open |
 | H27 | Raw `getdents64` with a 256 KB–1 MB per-thread buffer beats libc’s 32 KB `readdir` batching on wide directories | `system_cpu_ns` down on Linux; neutral macOS | rustix |
 | H28 | Statting in `d_ino` order on ext4 turns random inode-table reads ~N/16 sequential | drop_caches-cold wall 2–6× down on ext4; neutral warm; neutral XFS | rustix; Linux host |
-| H29 | An LRU of ancestor dirfds sized from `RLIMIT_NOFILE` keeps H24 effective at depth | `system_cpu_ns` flat vs depth | H24 |
+| H29 | An LRU of ancestor dirfds sized from `RLIMIT_NOFILE` keeps H24 effective at depth | `system_cpu_ns` flat vs depth | **Refuted for the bounded-parent frontier** (exp-038); do not revisit without new profile evidence |
 | H30 | Worker QoS `USER_INITIATED` on macOS protects throughput under background load | wall variance down under load; neutral idle | — |
 | H31 | In-flight depth from measured first-K operation latency (Little’s law) beats any fixed thread count across storage classes | **Confirmed by exp-015–021 on portable chunk timing:** 720k cold-index wall −5.31% and producer wall −10.09%; 120k wall and resources neutral | — |
 
@@ -1248,6 +1307,15 @@ the loop extensions in H36–H39 to be trusted globally.
 | H45 | Whole-drive macOS spike: per-volume shards + journal resume + persisted roll-ups turn a 30–60 min dust-class drive scan into a seconds-scale recheck at realistic churn | cold first-scan minutes; hour/day-churn recheck seconds; shard rewrite bounded by changed volume | H26, H33, H43 |
 | H46 | A fingerprint-keyed derived-data cache (line counts over a real repo) turns minutes-cold content summarization into seconds-warm: N stats + re-derive changed files only | cached rerun ~10–100× faster than cold; 1%-churn rerun ∝ churn; scc/tokei as cold-every-time references | tier findings; G5 |
 | H47 | On btrfs/ZFS, a CoW snapshot held as the cache cursor and diffed at open (`btrfs send --no-data -p` / `zfs diff`) yields a complete change set — deletes and renames included — making Linux warm runs O(changes) with the same gate-and-fallback shape as FSEvents resume | quiet-tree warm revalidate in seconds→ms on btrfs/ZFS roots; sweep-identical digests; privilege and subvolume-scope caveats recorded | niche/privileged; fsevents-plan gate pattern |
+
+**Comparator-derived continuation (the shared registry resumes at H57):**
+
+| # | Hypothesis | Predicted signal | Prereq |
+| --- | --- | --- | --- |
+| H57 | Bulk/BFS integration may move the 1M APFS worker knee above automatic/six | **Refuted** (exp-036): eight workers gained 1.30% for 33.5% more CPU; 12/16 regressed | resolved; no retained code |
+| H58 | Portable wide-directory entries split into small stealable stat jobs can expose parallelism hidden by directory-granular scheduling | portable/Linux wall and system CPU down ≥3%; queue wait/RSS bounded | queued `fdu-r9he`; source: dua v2.41.1 |
+| H59 | A general exact cache-off report path can retain only the complete requested view state without making output limits alter the scan | large RSS reduction and wall down ≥3%; byte-identical multi-view reports | design-gated `fdu-hke6`; source: pdu 0.24.0 |
+| H60 | Cold workers can build disjoint local subtree indexes and splice them at region completion instead of funneling one path operation per entry | cold-index component/user CPU and channel work down; end-to-end wall down ≥3%; RSS bounded | queued `fdu-weey`; deterministic identity/progress/delta contract required |
 
 **Guardrails, so a fast-looking result cannot be a wrong one:**
 
@@ -1387,8 +1455,11 @@ in the original research), and micro-tuning `readdir` batch sizes on the portabl
 
 ## References
 
-Checked out under `attic/` for this research: bfs `4af45dc`; dut `68d4ba2` (GPL — ideas
-only); parallel-disk-usage (pdu) `c30e46f`; diskus `90196e9`; jwalk v0.9.0.
+Checked out under ignored `attic/` for this research: bfs `4af45dc`; dut `68d4ba2` (GPL
+— ideas only); jwalk v0.9.0; dust v1.2.4 `fabe19b` (Apache-2.0); gdu v5.36.1 `8d64b4f`
+(MIT); pdu 0.24.0 `4e19260` (Apache-2.0); dua v2.41.1 `90a59e1` (MIT); diskus v0.9.0
+`d8a77db` (MIT OR Apache-2.0); and dumac `1ffbe3c` (no license declared in that
+revision, so inspect-only and executable benchmark input, with no copied code).
 
 macOS:
 

@@ -96,9 +96,10 @@ intend to touch is a finding, not a nuisance.
 Discipline to preserve when adding blocks:
 
 - Make each session a concise, realistic end-to-end example with the smallest fixture
-  that exposes the largest useful surface. Capture complete user-visible output rather
-  than extracting hand-picked lines; every additional command or row must protect a
-  contract not already visible elsewhere. Keep combinatorial edges in focused tests.
+  that exposes the largest useful surface.
+  Capture complete user-visible output rather than extracting hand-picked lines; every
+  additional command or row must protect a contract not already visible elsewhere.
+  Keep combinatorial edges in focused tests.
 - Classify every field as stable or unstable.
   Paths, sizes, counts, kinds, and schema strings are stable and must match exactly.
   Timestamps, allocated sizes, inode-derived values, and absolute paths are unstable and

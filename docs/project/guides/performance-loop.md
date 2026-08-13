@@ -93,6 +93,26 @@ as immutable and confidential:
   If it changed, the run says so and exits nonzero, because timings taken against two
   different trees are not comparable.
 
+The project workspace itself is the canonical local large-tree testbed once its
+fingerprint crosses one million entries.
+It is self-contained in the operational sense: the repository root, ignored generated
+corpus, build output, dependency trees, and `attic/` source checkouts all live below one
+root and are scanned together.
+It is not a committed reproducible corpus and must never be compared by path or assumed
+count across machines.
+
+For a publishable workspace run, first finish every build, checkout, Git operation, tbd
+update, and document write.
+Copy immutable release binaries outside the root; write the immediate baseline, JSON,
+Markdown, and command output outside the root too.
+Then run no editor, build, Git, tbd, IDE indexer, or other writer until the harness’s
+post-run fingerprint completes.
+The v2 fingerprint records redacted counts, depth, byte totals, and in-tree hard-link
+duplication.
+A precomputed baseline is optional: the tool-comparison harness always takes
+its own immediate pre-run fingerprint, and any pre/post drift makes the run
+non-publishable.
+
 ## The loop
 
 ```
@@ -146,7 +166,7 @@ Kept as a live list.
 Numbering is shared with the
 [performance-frontier research](../research/research-2026-08-10-performance-frontier.md),
 whose backlog owns H12–H46; new hypotheses from any source take the next free number
-(currently H57) so no id ever means two things.
+(currently H61) so no id ever means two things.
 Each is stated so it can be wrong, with the metric that would show it.
 Status is updated as experiments resolve them; see the ledger for results.
 
@@ -155,13 +175,15 @@ Status is updated as experiments resolve them; see the ledger for results.
 | # | Hypothesis | Predicted effect | Status |
 | --- | --- | --- | --- |
 | H1 | The walk is serial, so it uses one core while the machine has ten. A bounded parallel producer feeding a single index consumer will cut wall time several-fold. | `wall_ns` down 3–4×, `cpu_ns` roughly flat or slightly up, `cpu_ns/wall_ns` from 1.0 to 4+ | **Confirmed** (exp-001, −50.0%) |
-| H2 | `fs::read_dir` opens each directory by absolute path, so the kernel re-resolves every component from the root. Opening relative to a retained dirfd (`openat`) removes repeated prefix resolution. After H26 landed, `open` is the largest remaining cold cost at **33.86%** of self time. | `system_cpu_ns` down, biggest effect on deep trees | **Refuted for one retained root fd** (exp-024): 720k cold-index wall −0.07% [−4.06%, +1.53%], with indexed and producer system CPU neutral. Parent/ancestor dirfds remain a distinct H24/H29 design problem. |
+| H2 | `fs::read_dir` opens each directory by absolute path, so the kernel re-resolves every component from the root. Opening relative to a retained dirfd (`openat`) removes repeated prefix resolution. After H26 landed, `open` is the largest remaining cold cost at **33.86%** of self time. | `system_cpu_ns` down, biggest effect on deep trees | **Refuted in both measured forms.** One retained root fd was neutral at 720k (exp-024); a bounded parent-relative frontier changed 1M indexed wall by −0.69% [−1.49%, +0.49%] and regressed RSS/faults (exp-038). |
 | H3 | One `fstatat` per entry (20.08% of post-adaptive self time) is the floor for a portable walker, but macOS `getattrlistbulk` batches enumeration and complete stat-tier metadata per directory. | `system_cpu_ns` down substantially | **Confirmed on macOS** (exp-022): 720k cold-index wall −30.13%, producer wall −41.60%, system CPU −46.62%/−61.40%; 60k wall −5.22%/−9.25%. Linux `statx` remains open. |
-| H4 | Depth-first traversal order has worse locality than breadth-first for a tree whose directories were written breadth-first. | `system_cpu_ns`, `minor_faults` | — |
+| H4 | Depth-first traversal order has worse locality than breadth-first for a tree whose directories were written breadth-first. | indexed wall, component, `system_cpu_ns`, `minor_faults` | **Confirmed for breadth-first** (exp-037): depth-first regressed 1M indexed wall 3.57% [2.42%, 5.23%] and component 6.72%, while saving only 1.03% RSS. Breadth-first also preserves progressive shallow coverage. |
 | H31 | A latency-bound walk needs more in-flight metadata operations than the six-worker warm-small knee. Calibrating aggregate chunk service time over the first 16k entries should select sixteen workers in the slow state and retain six in the fast state. | slow cold wall down 5–10%; fast wall and resources unchanged | **Confirmed for the portable high-latency path** (exp-015–021): service-time calibration improved 720k cold-index wall 5.31% and producer wall 10.09%. H52 confirms that the same trigger correctly remains at six after bulk metadata removes the per-entry wait. |
 | H52 | H26 removed the per-entry metadata wait that made sixteen workers the pre-bulk 720k knee. On the bulk backend, six workers should now match or beat deeper fixed pools while using less CPU and memory, and the H31 service-time trigger should remain inactive. | 6-worker large-tree wall no worse than 8/12/16; CPU, context switches, and RSS lower | **Confirmed** (exp-025): sixteen workers regressed indexed wall 19.19%, producer wall 12.65%, total CPU 107–117%, and RSS about 33%. Eight was neutral in the exploratory curve, and automatic calibration remained at six. |
 | H54 | The macOS bulk reader creates and drops one `Vec<Entry>` per directory: 7,350 allocations at 60k and 88,201 at 720k. Retaining the staging vector in each reader and draining it after a successful complete-directory parse should reuse capacity without weakening atomic fallback. | cold/warm `user_cpu_ns` and faults down; at least one primary wall/component down 3%; RSS neutral | **Refuted at 60k** (exp-028): cold-index wall +0.21%, producer +1.32%, warm −0.85%; predicted CPU/fault reductions were absent and producer RSS/faults regressed. Reverted without a 720k run. |
-| H55 | A 256 KiB `getattrlistbulk` buffer should reduce repeat calls in wide directories versus H26’s 64 KiB buffer. | cold wall/component and system CPU down at least 3%; warm may compose; account for about 1.1 MiB more capacity across six workers | **Refuted at 60k** (exp-029): cold-index wall -1.80% [−5.95%, +5.45%], producer +1.78%, and warm −0.01%; the syscall/CPU mechanism was absent while cold RSS and faults regressed. Reverted without a 720k run. |
+| H55 | A 256 KiB `getattrlistbulk` buffer should reduce repeat calls in wide directories versus H26’s 64 KiB buffer. | cold wall/component and system CPU down at least 3%; warm may compose; account for about 1.1 MiB more capacity across six workers | **Refuted at 60k and 1M** (exp-029/039): the 1M revisit changed indexed wall by +2.22% [−1.62%, +8.19%], with component, RSS, and faults all moving the wrong way. |
+| H57 | Breadth-first scheduling and bulk enumeration may have moved the optimal worker depth above the automatic policy on the heterogeneous 1M tree. | indexed wall down at least 3%; CPU/RSS proportional | **Refuted** (exp-036): eight workers gained only 1.30% while CPU rose 33.5%; twelve and sixteen workers regressed wall 2.46% and 10.65%. Automatic/six remains the operating point. |
+| H58 | On the portable backend, splitting metadata work from very wide directory reads into small stealable chunks may expose parallelism that directory-level scheduling cannot, as `dua` 2.41.1 does with four-entry jobs. | portable/Linux wall and system CPU down at least 3%; queue wait and RSS bounded | **Queued** (`fdu-r9he`). Profile first; preserve region order/progress and do not add a queue dependency merely to screen it. |
 
 ### Index and allocation
 
@@ -177,6 +199,9 @@ Status is updated as experiments resolve them; see the ledger for results.
 | H13 | Accumulating consecutive same-parent insert contributions and merging once per run cuts upward merges ~7×. | cold `user_cpu_ns` down | **Refuted after H18** (exp-011): −2.53% [−8.39, +0.23]. Interning had already removed the expensive part of each merge — the two hypotheses competed for the same cost, and interning captured it alone. Re-test if content-tier reducers make roll-ups heavy again. |
 | H8 | The observation batch allocates a `PathBuf` per op and then clones it. Moving instead of cloning removes one allocation per entry. | `user_cpu_ns`, `minor_faults` | **Refuted** (exp-003): removing ~120,000 clones per scan changed nothing measurable. The allocator cost is in the producer, not in apply. |
 | H51 | The portable producer clones every relative `PathBuf` into its observation even though non-directory entries can transfer ownership; retaining a second path is necessary only for directories added to the frontier. | cold producer `user_cpu_ns`, `minor_faults`, then wall | **Refuted** (exp-016): cold-index wall −0.44% [−5.30%, +1.52%], with CPU also unclear; peak RSS and minor faults instead regressed about 4%. The allocator can reuse the short-lived original buffer, so moving it changes which allocation stays live without reducing measured work. |
+| H19–H22 | Pack reusable full-index entries: inline arena storage, one stored name, directory-only roll-ups, and compact identities/revisions. The post-CLI 1M result spends about 631 MiB peak RSS, 44% above `origin/main`. | substantial peak RSS and fault reduction; wall neutral or at least one arm ≥3% faster | **Queued** (`fdu-prph`). Measure layout and one structural arm at a time; snapshots, stable identities, deltas, and query results remain exact. |
+| H59 | A cache-off report might retain only state required by the complete requested view set, as `pdu` discards subtrees below its output depth. | large RSS reduction and wall down at least 3%, with byte-identical multi-view output | **Design-gated** (`fdu-hke6`). Reject if it creates a CLI-only engine, makes depth/top-N affect scanning, or violates one-scan-many-views. |
+| H60 | Cold bootstrap workers can build disjoint local subtree arenas and splice them plus one roll-up at region completion, replacing one path operation per entry through the single consumer. | cold-index component/user CPU and channel allocation down; end-to-end wall down at least 3%; RSS bounded | **Queued** (`fdu-weey`). Preserve deterministic identity, progressive publication, errors, and the delta contract. |
 
 ### Warm start
 
@@ -228,16 +253,32 @@ reasoning.
 
 ### Comparing against other tools
 
-`--reference dust=/path/to/dust` measures a third-party tool on the same tree in the
-same run. These numbers live in their own table and never enter the accept rule, because
-the tools answer slightly different questions with different guarantees.
-What they are for is calibration: they establish what a mature tool achieves on this
-hardware, which is the only thing that makes an fdu number mean anything.
+`make perf-compare-tools` runs each competitor immediately beside an immutable fdu
+anchor, alternates pair order, and reports paired bootstrap intervals.
+The immediate pre/post v2 fingerprints must agree; results and the baseline live outside
+the measured root.
+Each artifact retains binary hashes, versions, command templates, work
+classes, resource use, and redacted output hashes.
 
-`dust` is the most useful comparison because it solves the same problem — walk a tree,
-roll up sizes — with a well-tuned parallel walker.
-Its source is worth reading; check it out into `attic/` (gitignored) and note that it is
-Apache-2.0, so designs may be described and reimplemented but not copied.
+The default comparison should include rendered-tree peers (`dust`, `gdu`, `pdu`) and
+fast total-only lower bounds (`dua`, `diskus`, and macOS `dumac`). `ncdu` is a useful
+indexed-tree peer; BSD/GNU `du` are serial floors.
+These numbers never enter an FDU experiment verdict because the jobs differ.
+In particular, FDU builds a reusable exact metadata index and roll-ups; total-only tools
+retain much less state, and tools differ in hard-link attribution.
+The fingerprint quantifies that semantic difference rather than pretending byte totals
+are interchangeable.
+
+Source review is part of calibration.
+Pin each ignored `attic/` checkout to the exact revision whose binary is measured,
+record its license, and describe transferable mechanisms rather than copying
+implementation. Current findings are reflected in the queue: `dua`’s portable
+wide-directory chunks motivate H58; `pdu`’s bounded retention motivates the design-gated
+H59 and its local aggregation helps motivate H60; `dumac` confirms FDU’s existing
+`getattrlistbulk` mechanism but achieves its small state by requesting fewer attributes
+and reducing directly to one total.
+`dust`, `gdu`, and `diskus` mainly reinforce work already measured: recursive high
+concurrency is not a new hypothesis after H52/H57 rejected over-threading on APFS.
 
 * * *
 

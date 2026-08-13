@@ -38,8 +38,8 @@ This plan is independently actionable.
   preconditions for accepting a timing sample
 - Record exact binaries, revisions, build settings, host class, filesystem, corpus,
   commands, collectors, and raw trials in a versioned machine-readable format
-- Compare fdu, dut, and gdu through reviewed adapters and a capability matrix, with
-  like-for-like and cross-capability results labeled differently
+- Compare fdu and pinned external tools through reviewed contracts and a capability
+  matrix, with like-for-like and cross-capability results labeled differently
 - Measure user-visible new-process latency externally and use component probes only to
   explain it
 - Measure the Phase 1 scale, warm-revalidation, memory, snapshot-open, and contention
@@ -82,9 +82,9 @@ verdict is in
 What it found, first against a roughly 60k-entry checkout and then against a
 720,805-entry cache-pressure subject on a 10-core machine:
 
-- **The gap to `dust` was parallelism, not efficiency.** At baseline fdu was three times
-  slower in wall time while using *half* the total CPU — 541 ms against 1047 ms.
-  It was doing the same job on one core.
+- **The original gap to `dust` was parallelism, not efficiency.** At baseline fdu was
+  three times slower in wall time while using *half* the total CPU — 541 ms against 1047
+  ms. It was doing the same job on one core.
   A bounded parallel producer feeding the single index consumer halved cold-scan wall
   time, and the shipped CLI is now level with `dust` on the same tree and 1.6× faster
   than `du`.
@@ -103,6 +103,13 @@ What it found, first against a roughly 60k-entry checkout and then against a
   neutral for indexed scans and reverted (exp-024). The old pre-bulk sixteen-worker
   large-tree knee now regresses indexed wall 19.19%, CPU 107%, and RSS 33%; the existing
   service-time trigger correctly keeps the bulk path at six workers (exp-025).
+- **The merged CLI and live million-entry tree are now integration anchors.** Against
+  merged `origin/main`, the rebased branch improves cold indexed wall 31.35% and
+  producer wall 36.59% on 1,007,659 heterogeneous entries with exact-oracle parity
+  (exp-035). Depth-first is 3.57% slower (exp-037), a parent-relative descriptor
+  frontier is neutral (exp-038), and the 256 KiB bulk buffer remains a rejection
+  (exp-039). Peak indexed RSS rises 44.32%, so compact full-index layout is now the
+  clearest retained cost.
 
 Rejected experiments remain as important as accepted ones.
 The original parallel revalidation funnel bought only 2.6%, root-relative `openat` was
@@ -137,10 +144,14 @@ release-evidence children, `fdu-849g` and `fdu-bmhr`; neither blocks local scale
 The repository-wide correctness, supply-chain, and concurrency implementation gates are
 closed; final approval bead `fdu-sn43` is closed and PR #1 has merged.
 The next measurement steps are the revalidation and snapshot cost-curve spikes under
-`fdu-p2i1` and `fdu-1vd0`. Comparator acquisition under `fdu-k5t5` has cleared its
-executable-dependency policy blocker but now waits only on the reviewed adapter
-implementation shown below.
-No current timing result supports a product claim.
+`fdu-p2i1` and `fdu-1vd0`. Comparator acquisition under `fdu-k5t5` cleared its
+executable-dependency policy blocker.
+The real-tree paired comparator now records work classes, exact binary hashes and
+versions, direct argv, resource use, redacted output hashes, an immediate v2
+fingerprint, and hard-link prevalence.
+A publishable result still requires an immutable clean-revision binary and zero pre/post
+drift; the README claim is owned by that separate live comparison, not by exploratory
+generated-corpus curves.
 
 The portable harness now has 63 deterministic and adversarial tests and is included in
 `make check` without a numeric timing assertion.
@@ -215,10 +226,11 @@ fdu already has the boundaries a useful performance system needs:
   adds reference-model, fault-injection, toolchain, and feature-matrix gates before the
   Phase 1 representation changes.
 
-The current walker is deliberately portable scaffolding.
-The benchmark system may be built against it to validate the harness, but no speed
-ranking or target pass is published until the syscall layer and optimized revalidation
-land.
+The portable walker remains the universal fallback.
+The optimized macOS cold and full reconciliation paths now use the audited
+`getattrlistbulk` backend; scope and view parameters still select no different engine.
+Speed rankings must identify platform, tree, work class, cache state, and exact binary
+rather than generalizing this backend to other systems.
 
 ### Lessons Carried from Flowmark
 
@@ -573,7 +585,7 @@ Missing values are `null` with a reason.
 A collector failure invalidates only scenarios that require it; the runner never records
 an unavailable counter as zero.
 
-### Comparator Adapters
+### Comparator Adapters and Live Contracts
 
 Adapters are data plus a small parser, not shell snippets.
 Each one pins:
@@ -605,6 +617,33 @@ The initial capability report includes:
 
 The table is completed from the pinned source revisions before the first comparison.
 No unavailable comparator is silently skipped in a release run.
+
+The live-tree calibration harness has a deliberately smaller, executable contract layer
+for tools that do not expose the full generated-corpus oracle.
+It supports fdu, dust, gdu, pdu, ncdu, dua, diskus, dumac, and BSD/GNU du.
+Each competitor runs immediately beside fdu with alternating order and paired bootstrap
+intervals; the same immutable fdu binary anchors every pair.
+Contracts label three work classes:
+
+- `indexed-tree`: complete scan plus a retained browseable/reusable index;
+- `rendered-tree`: complete scan, roll-up, and bounded human tree; and
+- `total-only`: complete scan reduced directly to one scalar total.
+
+The classes prevent a total-only result from being presented as equivalent work.
+The v2 fingerprint also counts duplicate in-tree hard-link entries and bytes because fdu
+currently attributes sizes to paths while several comparators deduplicate inode
+identity. External output must be stable and successful, but competitor byte totals are
+not used as an FDU semantic oracle; the repository’s independent probe remains the
+correctness gate for optimization experiments.
+
+The current pinned source review queues only mechanisms that survive FDU’s design: dua
+v2.41.1 motivates portable wide-directory stat chunks (H58), pdu 0.24.0 motivates a
+design-gated bounded-retention path (H59) and worker-local subtree construction (H60),
+and the 1M RSS result raises the existing compact-index H19–H22 ladder.
+Recursive high-concurrency implementations in dust, gdu, and diskus do not create a new
+APFS hypothesis after exp-036 refuted over-threading.
+Dumac validates the already-landed bulk syscall mechanism but performs a smaller
+total-only, reduced-attribute job.
 
 ### Trial Scheduling and Statistics
 

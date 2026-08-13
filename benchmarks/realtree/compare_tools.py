@@ -21,7 +21,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from benchmarks.realtree import measure, tree
 
-SCHEMA = "fdu-tool-comparison-v1"
+SCHEMA = "fdu-tool-comparison-v2"
 DEFAULT_RESULTS = Path("benchmarks/results/realtree")
 
 
@@ -52,7 +52,10 @@ CONTRACTS: Dict[str, ToolContract] = {
     "fdu": ToolContract(
         name="fdu",
         work_class="indexed-tree",
-        description="complete scan, reusable metadata index, roll-ups, and 10-row tree",
+        description=(
+            "complete scan, reusable exact metadata index, roll-ups, and 10-row tree; "
+            "bytes are attributed to path entries"
+        ),
         argv=(
             "{binary}",
             "--cache",
@@ -142,6 +145,16 @@ CONTRACTS: Dict[str, ToolContract] = {
         description="complete parallel scan reduced to one aggregate total",
         argv=("{binary}", "{root}"),
         version_argv=("{binary}", "--version"),
+    ),
+    "dumac": ToolContract(
+        name="dumac",
+        work_class="total-only",
+        description=(
+            "macOS getattrlistbulk scan reduced to one hard-link-deduplicated "
+            "allocated-byte total"
+        ),
+        argv=("{binary}", "{root}"),
+        version_argv=(),
     ),
     "bsd-du": ToolContract(
         name="bsd-du",
@@ -254,6 +267,8 @@ def run(
     if len(names) != len(set(names)) or "fdu" in names:
         raise ComparisonError("competitor names must be unique and cannot be fdu")
 
+    tools = [anchor, *competitors]
+    identities = {tool.contract.name: _identity(tool) for tool in tools}
     started = time.time()
     before = tree.fingerprint(root, label=label)
     if baseline_output is not None:
@@ -283,7 +298,6 @@ def run(
 
     after = tree.fingerprint(root, label=label)
     mutation = tree.compare(after, before)
-    tools = [anchor, *competitors]
     document: Dict[str, Any] = {
         "schema": SCHEMA,
         "started_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(started)),
@@ -303,7 +317,7 @@ def run(
         "baseline_drift": drift,
         "anchor": anchor.contract.name,
         "competitor_order": names,
-        "tools": {tool.contract.name: _identity(tool) for tool in tools},
+        "tools": identities,
         "samples": samples,
     }
     document["invalid_samples"] = sum(
@@ -425,6 +439,16 @@ def _overall(document: Mapping[str, Any]) -> Dict[str, Any]:
         ]
         result[name] = {
             "samples": len(selected),
+            "stdout_hashes": len(
+                {
+                    sample["stdout_sha256"]
+                    for sample in selected
+                    if sample.get("stdout_sha256")
+                }
+            ),
+            "stderr_nonempty_samples": sum(
+                1 for sample in selected if sample.get("stderr_bytes", 0)
+            ),
             "metrics": {
                 metric: measure.distribution(
                     [
@@ -487,6 +511,8 @@ def render(document: Mapping[str, Any]) -> str:
             f"{host.get('cpu_model') or host.get('arch')} with "
             f"{document['conditions'].get('storage') or 'unspecified storage'}."
         ),
+        "",
+        _hardlink_note(tree_document),
         "",
         "| Tool | Work class | Median wall | Versus paired fdu | 95% interval | Peak RSS |",
         "| --- | --- | ---: | ---: | ---: | ---: |",
@@ -581,7 +607,7 @@ def _identity(tool: Tool) -> Dict[str, Any]:
 
 def _version(tool: Tool) -> str:
     if not tool.contract.version_argv:
-        return "version not reported by system binary"
+        return "version command unavailable; binary hash is authoritative"
     completed = subprocess.run(
         _expand(tool.contract.version_argv, tool.binary, Path(".")),
         stdin=subprocess.DEVNULL,
@@ -652,6 +678,23 @@ def _comparison_change(comparison: Optional[Mapping[str, Any]]) -> Tuple[str, st
     return (
         _percent(comparison["median_change_pct"]),
         " to ".join(_percent(value) for value in comparison["ci95_change_pct"]),
+    )
+
+
+def _hardlink_note(tree_document: Mapping[str, Any]) -> str:
+    hardlinks = tree_document.get("hardlinks", {})
+    duplicates = int(hardlinks.get("duplicate_file_entries", 0))
+    allocated = int(hardlinks.get("duplicate_allocated_bytes", 0))
+    if duplicates == 0:
+        return (
+            "The fingerprint found no duplicate in-tree hard-link entries, so hard-link "
+            "accounting does not distinguish tool totals on this subject."
+        )
+    return (
+        f"The fingerprint found {duplicates:,} duplicate in-tree hard-link entries "
+        f"representing {allocated:,} path-counted allocated bytes. Tools differ in "
+        "hard-link attribution; this is a traversal comparison, not an assertion that "
+        "their reported byte totals are identical."
     )
 
 
