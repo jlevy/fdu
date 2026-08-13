@@ -3,9 +3,9 @@ type: is
 id: is-01kzx0mvs4a2qgjh3vrc3rywmy
 title: "H64: Derive a selected-total-only execution plan"
 kind: task
-status: in_progress
+status: closed
 priority: 1
-version: 4
+version: 6
 spec_path: docs/project/specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md
 labels:
   - performance
@@ -14,10 +14,12 @@ labels:
 dependencies: []
 parent_id: is-01kzwk20kyaxajq254tee8apts
 created_at: 2026-08-13T07:33:35.651Z
-updated_at: 2026-08-13T10:44:44.115Z
+updated_at: 2026-08-13T11:52:26.486Z
+closed_at: 2026-08-13T11:52:26.485Z
+close_reason: "Rejected: exact selected-total prototype did not clear the 3% wall gate or beat DUMAC; no functionality change will land"
 ---
 Design and prototype a typed total projection that requests only the selected apparent or allocated byte total, retains no index, and gathers no counts, recency, extensions, or unused size metric. Keep the existing summary contract unchanged and avoid a benchmark-only fast flag. Establish a clean Rust/Python/CLI surface in a separate functionality decision if required, then compare the derived scanner with dumac on the million-entry APFS tree. Preserve FDU path-counted semantics and disclose dumac hard-link/symlink differences; accept the engine mechanism only with exact oracle parity and >=3% paired wall improvement.
 
 ## Notes
 
-Active after exp-043. Implement/prototype selected total as a proper View-axis value, not a fast flag; rich summary stays unchanged and the internal planner derives minimum state only for cache-off, unfiltered, sole-total requests. Preserve FDU path accounting and provenance; compare separately with dumac semantics.
+Rejected after full H64 prototype. A typed cache-off sole total, strict selected-field macOS getattrlistbulk parser, per-worker reduction, in-buffer file folding, 64/128 KiB buffers, 6/8/10/12 workers, BFS/DFS, and claim sizes 1/2/4/8 were oracle-checked. On 901,963 entries the composed narrow+folded total improved generic scalar wall only 1.1% [-2.2%, +0.4%], though RSS fell ~39%; DUMAC remained 2.6% faster [-6.7%, +0.2%] while using 5.5x RSS and ~78% more CPU. Eight workers regressed 2.0% [-3.0%, +6.0%] on independent 720,805 entries; DFS regressed 4.7%; 128 KiB neutral; smaller claims worse. No public total view or engine layer earned inclusion. Record as exp-044 on PR #8, preserve rich summary and existing six-worker/four-claim BFS.
