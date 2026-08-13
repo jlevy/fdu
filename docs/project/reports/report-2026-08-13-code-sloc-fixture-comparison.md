@@ -6,8 +6,8 @@
 - **SCC:** commit `50ea91a853f94fa581e6d505b85b0aef944bd7b5`
 
 The 15-file adversarial corpus pins the first common-language dialect before any parser
-performance work. Every file has seven physical lines. Counts below are
-`code / comment / blank` under each tool's source-line partition.
+performance work. Every file has seven physical lines.
+Counts below are `code / comment / blank` under each tool’s source-line partition.
 
 | Language | fdu | Tokei | SCC | Disposition |
 | --- | ---: | ---: | ---: | --- |
@@ -28,11 +28,11 @@ performance work. Every file has seven physical lines. Counts below are
 | TypeScript | 2 / 4 / 1 | 2 / 4 / 1 | 2 / 4 / 1 | Match |
 | **Total** | **40 / 53 / 12** | **40 / 53 / 12** | **37 / 56 / 12** | Python docstring policy explains the difference |
 
-The CLI golden separately pins fdu's exact per-language human report and percentages.
+The CLI golden separately pins fdu’s exact per-language human report and percentages.
 The parser unit tests cover chunk boundaries, LF, CRLF, lone CR, mixed endings, final
-unterminated lines, invalid UTF-8 admission, and unsupported-language coverage. This
-matrix is not a claim that the tools share one universal definition; it makes the one
-intentional v1 disagreement reviewable.
+unterminated lines, invalid UTF-8 admission, and unsupported-language coverage.
+This matrix is not a claim that the tools share one universal definition; it makes the
+one intentional v1 disagreement reviewable.
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

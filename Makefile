@@ -189,7 +189,8 @@ perf-profile: perf-probe-profiling
 
 perf-content-profile: perf-probe-profiling
 	$(PERF_RUN) profile --root $(PERF_TREE) --binary $(PERF_PROFILING) \
-		--job content-basic --job content-cache-hit --job content-query \
+		--job content-basic --job content-cache-hit --job code-sloc \
+		--job code-sloc-cache-hit --job content-query \
 		--label $(or $(NAME),content-latest)
 
 # Is the candidate faster than the control? Set CONTROL to a saved reference binary.
@@ -208,7 +209,8 @@ perf-content-compare: perf-probe-release
 	$(PERF_RUN) measure --root $(PERF_TREE) --label $(PERF_LABEL) \
 		--variant "control=$(CONTROL)" \
 		--variant "candidate=$(PERF_RELEASE)" \
-		--job content-basic --job content-cache-hit --job content-query \
+		--job content-basic --job content-cache-hit --job code-sloc \
+		--job code-sloc-cache-hit --job content-query \
 		--trials $(or $(TRIALS),12) \
 		--baseline-fingerprint $(PERF_BASELINE) \
 		--name $(or $(NAME),content-adhoc)

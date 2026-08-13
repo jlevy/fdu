@@ -40,6 +40,9 @@ fn main() -> ExitCode {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Mode {
+    CodeSloc,
+    CodeSlocCacheHit,
+    CodeSlocSeed,
     ContentBasic,
     ContentBinaryGate,
     ContentCacheHit,
@@ -60,6 +63,9 @@ enum Mode {
 impl Mode {
     fn parse(value: &str) -> ProbeResult<Self> {
         match value {
+            "code-sloc" => Ok(Self::CodeSloc),
+            "code-sloc-cache-hit" => Ok(Self::CodeSlocCacheHit),
+            "code-sloc-seed" => Ok(Self::CodeSlocSeed),
             "content-basic" => Ok(Self::ContentBasic),
             "content-binary-gate" => Ok(Self::ContentBinaryGate),
             "content-cache-hit" => Ok(Self::ContentCacheHit),
@@ -81,6 +87,9 @@ impl Mode {
 
     const fn name(self) -> &'static str {
         match self {
+            Self::CodeSloc => "code-sloc",
+            Self::CodeSlocCacheHit => "code-sloc-cache-hit",
+            Self::CodeSlocSeed => "code-sloc-seed",
             Self::ContentBasic => "content-basic",
             Self::ContentBinaryGate => "content-binary-gate",
             Self::ContentCacheHit => "content-cache-hit",
@@ -212,13 +221,22 @@ fn execute_repeated(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
 
 fn execute(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     match arguments.mode {
-        Mode::ContentBasic | Mode::ContentBinaryGate => content_analysis(arguments, true),
-        Mode::ContentCacheHit => content_open(arguments, CachePolicy::Only),
-        Mode::ContentDisabled => content_analysis(arguments, false),
-        Mode::ContentOpen => content_open(arguments, CachePolicy::Auto),
+        Mode::CodeSloc => content_analysis(arguments, code_request()),
+        Mode::CodeSlocCacheHit => content_open(arguments, CachePolicy::Only, code_request()),
+        Mode::CodeSlocSeed => {
+            let mut output = content_open(arguments, CachePolicy::Auto, code_request())?;
+            output.summary.complete = true;
+            Ok(output)
+        }
+        Mode::ContentBasic | Mode::ContentBinaryGate => {
+            content_analysis(arguments, basic_request())
+        }
+        Mode::ContentCacheHit => content_open(arguments, CachePolicy::Only, basic_request()),
+        Mode::ContentDisabled => content_analysis(arguments, AnalysisRequest::default()),
+        Mode::ContentOpen => content_open(arguments, CachePolicy::Auto, basic_request()),
         Mode::ContentQuery => content_query(arguments),
         Mode::ContentSeed => {
-            let mut output = content_open(arguments, CachePolicy::Auto)?;
+            let mut output = content_open(arguments, CachePolicy::Auto, basic_request())?;
             output.summary.complete = true;
             Ok(output)
         }
@@ -236,12 +254,16 @@ fn basic_request() -> AnalysisRequest {
     AnalysisRequest { profile: AnalysisProfile::Basic, ..AnalysisRequest::default() }
 }
 
-fn content_analysis(arguments: &Arguments, enabled: bool) -> ProbeResult<ProbeOutput> {
+fn code_request() -> AnalysisRequest {
+    AnalysisRequest { profile: AnalysisProfile::Code, ..AnalysisRequest::default() }
+}
+
+fn content_analysis(arguments: &Arguments, request: AnalysisRequest) -> ProbeResult<ProbeOutput> {
     let (mut index, scan) = fdu::scan::scan_into_index(&arguments.root, &arguments.scan)?;
     if !scan.is_complete() {
         return Err(ProbeError("content-analysis setup scan was partial".into()));
     }
-    let request = if enabled { basic_request() } else { AnalysisRequest::default() };
+    let enabled = request.profile.is_enabled();
     let started = Instant::now();
     let report = fdu::content::analyze_index(&mut index, request);
     black_box(report);
@@ -254,13 +276,17 @@ fn content_analysis(arguments: &Arguments, enabled: bool) -> ProbeResult<ProbeOu
     Ok(ProbeOutput::new(arguments.mode, "scan", component, summary))
 }
 
-fn content_open(arguments: &Arguments, policy: CachePolicy) -> ProbeResult<ProbeOutput> {
+fn content_open(
+    arguments: &Arguments,
+    policy: CachePolicy,
+    analysis: AnalysisRequest,
+) -> ProbeResult<ProbeOutput> {
     let snapshot = arguments.snapshot()?.to_path_buf();
     let config = OpenConfig {
         scan: arguments.scan.clone(),
         cache_path: Some(snapshot.clone()),
         policy,
-        analysis: basic_request(),
+        analysis,
     };
     let started = Instant::now();
     let (index, report) = fdu::open(&arguments.root, &config)?;
@@ -580,7 +606,9 @@ fn attach_content_summary(summary: &mut Summary, index: &Index) {
     let record = format!(
         concat!(
             "fdu-content-summary-v1\0records={}\0analyzed={}\0binary={}\0invalid_utf8={}\0",
-            "too_large={}\0physical={}\0blank={}\0nonblank={}\0raw_words={}"
+            "too_large={}\0physical={}\0blank={}\0nonblank={}\0code={}\0comment={}\0",
+            "code_blank={}\0raw_words={}\0logical_words={}\0paragraphs={}\0visible_words={}\0",
+            "visible_logical_words={}"
         ),
         summary.content_records,
         summary.content_analyzed,
@@ -590,7 +618,14 @@ fn attach_content_summary(summary: &mut Summary, index: &Index) {
         metrics.physical_lines,
         metrics.blank_lines,
         metrics.nonblank_lines,
+        metrics.code_lines,
+        metrics.comment_lines,
+        metrics.code_blank_lines,
         metrics.raw_words,
+        metrics.logical_word_stats.logical_words(),
+        metrics.paragraphs,
+        metrics.visible_words,
+        metrics.visible_logical_word_stats.logical_words(),
     );
     summary.content_digest = Some(hex(&Sha256::digest(record.as_bytes())));
 }

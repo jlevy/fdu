@@ -233,9 +233,10 @@ $ fdu --cache only --analyze basic --view documents --format jsonl --size appare
 
 ## Common-Language SLOC Is a Complete Partition
 
-The adversarial fixture covers every v1 language. It includes nested and multiline
-comments, comment markers in strings, mixed lines, docstrings, raw and template
-strings, source-whitespace lines, and blank lines inside comments.
+The adversarial fixture covers every v1 language.
+It includes nested and multiline comments, comment markers in strings, mixed lines,
+docstrings, raw and template strings, source-whitespace lines, and blank lines inside
+comments.
 
 ```console
 $ fdu --cache off --analyze code --view languages --limit all --size apparent code-project

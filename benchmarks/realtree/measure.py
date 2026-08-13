@@ -151,6 +151,27 @@ class Sample:
 #: cases. Dropping it on macOS needs root, so a run that does not opt into
 #: ``--purge`` records ``os_cache: "warm-steady"`` and means it.
 PROBE_JOBS: Dict[str, Job] = {
+    "code-sloc": Job(
+        id="code-sloc",
+        argv=("{binary}", "code-sloc", "--root", "{root}"),
+        start_state="cold",
+        description="Analyze common-language code with code-sloc-v1 after metadata setup.",
+    ),
+    "code-sloc-cache-hit": Job(
+        id="code-sloc-cache-hit",
+        argv=(
+            "{binary}",
+            "code-sloc-cache-hit",
+            "--root",
+            "{root}",
+            "--snapshot",
+            "{snapshot}",
+        ),
+        start_state="warm",
+        description="Load code-sloc-v1 metrics entirely from compatible sidecars.",
+        needs_snapshot=True,
+        snapshot_preparation_mode="code-sloc-seed",
+    ),
     "content-basic": Job(
         id="content-basic",
         argv=("{binary}", "content-basic", "--root", "{root}"),

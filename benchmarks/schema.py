@@ -32,6 +32,8 @@ _PLACEHOLDERS = {
     "snapshot_path",
 }
 _JOBS = {
+    "code-sloc-cache-hit",
+    "code-sloc-cold",
     "content-basic-cold",
     "content-basic-warm-fs",
     "content-binary-gate",
