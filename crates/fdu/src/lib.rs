@@ -745,16 +745,6 @@ mod save_tests {
         fs::create_dir(&denied).expect("create");
         write_file(&denied.join("hidden.txt"), b"hidden");
         fs::set_permissions(&denied, fs::Permissions::from_mode(0o000)).expect("deny");
-        // CAP_DAC_OVERRIDE (root containers, some CI) ignores the mode bits, so the
-        // fixture cannot force the partial scan this test exists to pin.
-        if fs::read_dir(&denied).is_ok() {
-            fs::set_permissions(&denied, fs::Permissions::from_mode(0o700)).expect("restore");
-            eprintln!(
-                "skipping a_partial_scan_leaves_the_previous_snapshot_alone: permission drop \
-                 does not revoke access here (running as root?)"
-            );
-            return;
-        }
 
         let opened = open(dir.path(), &settings);
         fs::set_permissions(&denied, fs::Permissions::from_mode(0o700)).expect("restore");

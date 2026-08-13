@@ -74,6 +74,11 @@ CONTRACTS: Dict[str, ToolContract] = {
         ),
         version_argv=("{binary}", "--version"),
     ),
+    # fdu-index-summary and fdu-transient-summary run byte-identical argv: the
+    # planner inside the measured binary decides whether an index is retained, so
+    # the two contracts are distinguished only by which binary the operator points
+    # at. Nothing here can verify that the binary labelled index-summary actually
+    # retained an index; the label records operator intent, not a checked property.
     "fdu-index-summary": ToolContract(
         name="fdu-index-summary",
         work_class="indexed-summary",

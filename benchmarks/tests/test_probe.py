@@ -91,10 +91,51 @@ class FduProbeTests(unittest.TestCase):
                     timeout=30,
                 )
                 summary = json.loads(completed.stdout)["summary"]
-                self.assertIsNone(
-                    tree.probe_agrees(oracle, summary),
-                    f"{mode} summary disagreed with the independent tree oracle",
-                )
+                disagreement = tree.probe_agrees(oracle, summary)
+                if disagreement is not None:
+                    self.fail(self._oracle_forensics(root, mode, disagreement, oracle, summary))
+
+    def _oracle_forensics(
+        self,
+        root: Path,
+        mode: str,
+        disagreement: str,
+        oracle: Dict[str, Any],
+        summary: Dict[str, Any],
+    ) -> str:
+        """Explain a digest mismatch instead of reporting two opaque hashes.
+
+        A multiset digest cannot name the record that differed, but the fixture is
+        five entries, so a raw stat dump plus one immediate re-fingerprint separates
+        the two failure classes: a tree that changed between the oracle walk and the
+        probe run (the re-fingerprint follows the probe), and an engine that reads
+        the same tree differently (the re-fingerprint follows the first walk).
+        """
+        lines = [f"{mode} summary disagreed with the independent tree oracle: {disagreement}"]
+        recheck = tree.fingerprint(root, label="probe-integration-recheck")
+        probe_digest = summary.get("engine_digest")
+        for label, digest in (
+            ("oracle", oracle.get("engine_digest")),
+            ("probe", probe_digest),
+            ("recheck", recheck.get("engine_digest")),
+        ):
+            lines.append(f"{label} digest: {digest}")
+        if recheck.get("engine_digest") == probe_digest:
+            lines.append("recheck matches the probe: the tree changed after the oracle walk")
+        elif recheck.get("engine_digest") == oracle.get("engine_digest"):
+            lines.append("recheck matches the oracle: the engine read this stable tree differently")
+        else:
+            lines.append("recheck matches neither side: the tree is still changing")
+        lines.append(f"oracle components: {oracle.get('engine_digest_components')}")
+        lines.append(f"recheck components: {recheck.get('engine_digest_components')}")
+        for path in sorted(root.rglob("*")):
+            status = os.lstat(path)
+            lines.append(
+                f"{path.relative_to(root)}: mode={status.st_mode:#o} size={status.st_size} "
+                f"mtime_ns={status.st_mtime_ns} ctime_ns={status.st_ctime_ns} "
+                f"nlink={status.st_nlink}"
+            )
+        return "\n".join(lines)
 
     def test_wrong_probe_evidence_and_snapshot_states_are_rejected(self) -> None:
         committed = load_scenario_set(SCENARIOS)["scenarios"]

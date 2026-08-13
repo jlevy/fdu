@@ -3272,16 +3272,6 @@ mod tests {
             // misclassified as a deletion.
             fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o400))
                 .expect("remove search permission");
-            // CAP_DAC_OVERRIDE (root containers, some CI) ignores the mode bits, so the
-            // fixture cannot induce the error boundary this test exists to pin.
-            if fs::symlink_metadata(dir.path().join("a.txt")).is_ok() {
-                fs::set_permissions(dir.path(), original_permissions).expect("restore permissions");
-                eprintln!(
-                    "skipping reconciliation_metadata_errors_do_not_delete_enumerated_entries: \
-                     permission drop does not revoke access here (running as root?)"
-                );
-                return;
-            }
             let outcome = reconcile(&mut index, &config, &mut |_| {});
             fs::set_permissions(dir.path(), original_permissions).expect("restore permissions");
 

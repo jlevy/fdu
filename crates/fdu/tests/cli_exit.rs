@@ -33,16 +33,6 @@ fn partial_results_use_exit_two_unless_explicitly_allowed() {
     fs::create_dir(&denied).expect("create denied directory");
     fs::write(denied.join("hidden.txt"), b"hidden").expect("write hidden file");
     fs::set_permissions(&denied, fs::Permissions::from_mode(0o000)).expect("deny reads");
-    // CAP_DAC_OVERRIDE (root containers, some CI) ignores the mode bits, so the fixture
-    // cannot force the partial scan whose exit code this test pins.
-    if fs::read_dir(&denied).is_ok() {
-        fs::set_permissions(&denied, fs::Permissions::from_mode(0o700)).expect("restore reads");
-        eprintln!(
-            "skipping partial_results_use_exit_two_unless_explicitly_allowed: permission drop \
-             does not revoke access here (running as root?)"
-        );
-        return;
-    }
 
     let run = |allow_partial: bool| {
         let mut command = Command::new(env!("CARGO_BIN_EXE_fdu"));

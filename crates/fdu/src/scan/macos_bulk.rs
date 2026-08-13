@@ -20,6 +20,13 @@ const BUFFER_BYTES: usize = 64 * 1024;
 // libc exposes the bulk call and the other attr.h constants, but not this one.
 const ATTR_CMN_ERROR: libc::attrgroup_t = 0x2000_0000;
 
+// sys/attr.h: the length of the data fork alone. `ATTR_FILE_TOTALSIZE` sums every
+// fork, but the portable reference stores `st_size`, which is the data fork, so a
+// file carrying a resource fork would make the two backends disagree about one
+// entry's apparent size. Pinned here rather than taken from libc so the build does
+// not depend on which libc release first carried it.
+const ATTR_FILE_DATALENGTH: libc::attrgroup_t = 0x0000_0200;
+
 // sys/stat.h marks a firmlink with this file flag. Like a mount point,
 // getattrlistbulk reports its underlying vnode rather than the object stat sees.
 const SF_FIRMLINK: u32 = 0x0080_0000;
@@ -41,7 +48,7 @@ const REQUESTED_COMMON: libc::attrgroup_t =
     libc::ATTR_CMN_RETURNED_ATTRS | REQUIRED_COMMON | ATTR_CMN_ERROR;
 const REQUESTED_DIRECTORY: libc::attrgroup_t =
     libc::ATTR_DIR_MOUNTSTATUS | libc::ATTR_DIR_ALLOCSIZE | libc::ATTR_DIR_DATALENGTH;
-const REQUESTED_FILE: libc::attrgroup_t = libc::ATTR_FILE_TOTALSIZE | libc::ATTR_FILE_ALLOCSIZE;
+const REQUESTED_FILE: libc::attrgroup_t = libc::ATTR_FILE_ALLOCSIZE | ATTR_FILE_DATALENGTH;
 
 pub(super) struct Entry {
     pub(super) name: OsString,
@@ -165,10 +172,12 @@ fn parse_entry(record: &[u8]) -> Option<Entry> {
     } else {
         Some(cursor.i64()?)
     };
-    let file_size =
-        if returned.file & libc::ATTR_FILE_TOTALSIZE == 0 { None } else { Some(cursor.i64()?) };
+    // Attributes appear in ascending bit order within each group, so the allocated
+    // size (0x4) precedes the data-fork length (0x200).
     let file_allocated =
         if returned.file & libc::ATTR_FILE_ALLOCSIZE == 0 { None } else { Some(cursor.i64()?) };
+    let file_size =
+        if returned.file & ATTR_FILE_DATALENGTH == 0 { None } else { Some(cursor.i64()?) };
     let fixed_end = cursor.position();
 
     let kind = match object_type {
@@ -306,8 +315,8 @@ mod tests {
         record.extend_from_slice(&5_i64.to_ne_bytes()); // ctime nanoseconds
         record.extend_from_slice(&0_u32.to_ne_bytes()); // file flags
         record.extend_from_slice(&6_u64.to_ne_bytes()); // inode
-        record.extend_from_slice(&7_i64.to_ne_bytes()); // logical size
-        record.extend_from_slice(&8_i64.to_ne_bytes()); // allocated size
+        record.extend_from_slice(&8_i64.to_ne_bytes()); // allocated size (0x4 first)
+        record.extend_from_slice(&7_i64.to_ne_bytes()); // data-fork length (0x200 second)
         let name_position = record.len();
         record.extend_from_slice(b"file\0");
 
@@ -328,6 +337,13 @@ mod tests {
         symlink("file", directory.path().join("link")).expect("symbolic link");
         fs::write(directory.path().join("decomposed-e\u{301}"), b"bytes")
             .expect("decomposed Unicode name");
+        // A resource fork is the shape where all-forks and data-fork sizes diverge:
+        // the bulk reader must still report `st_size`, the data fork alone.
+        fs::write(directory.path().join("forked"), b"data fork").expect("forked file");
+        if fs::write(directory.path().join("forked/..namedfork/rsrc"), b"resource payload").is_err()
+        {
+            eprintln!("resource-fork case not exercised: volume rejects named forks");
+        }
 
         let expected: BTreeMap<_, _> = fs::read_dir(directory.path())
             .expect("portable directory listing")
