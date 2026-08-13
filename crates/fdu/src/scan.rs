@@ -1423,7 +1423,7 @@ fn reconcile_target(
     }
     let subtree = resolve_subtree_root(target, &subtree, config)?;
     let started_at = target.begin_reconcile(&subtree)?;
-    match reconcile_target_inner(target, &subtree, config, sink) {
+    match reconcile_target_inner(target, &subtree, config, MAX_DEFERRED_RECONCILE_OPS, sink) {
         Ok(report) => {
             target.finish_reconcile(&subtree, started_at, report.is_complete())?;
             Ok(report)
@@ -1439,6 +1439,7 @@ fn reconcile_target_inner(
     target: &mut ReconcileTarget<'_>,
     subtree: &Path,
     config: &ScanConfig,
+    max_deferred_ops: usize,
     sink: &mut dyn FnMut(&AppliedDelta),
 ) -> Result<ReconcileReport> {
     let root = target.root_path()?;
@@ -1455,6 +1456,7 @@ fn reconcile_target_inner(
     let root_dev = attrs_from(&root_meta).dev;
     let start_depth = subtree.components().count();
     let mut report = ReconcileReport::default();
+    let mut retry_frontier = None;
     let mut batch: Vec<ObservationOp> = Vec::with_capacity(config.batch_size.max(1));
 
     if config.max_depth == Some(0) {
@@ -1510,22 +1512,19 @@ fn reconcile_target_inner(
 
     if subtree.as_os_str().is_empty() && config.reconciliation_worker_threads() > 1 {
         if let ReconcileTarget::Direct(index) = target {
-            match reconcile_direct_parallel(
-                index,
-                &root,
-                root_dev,
-                config,
-                MAX_DEFERRED_RECONCILE_OPS,
-                sink,
-            )? {
+            match reconcile_direct_parallel(index, &root, root_dev, config, max_deferred_ops, sink)?
+            {
                 DirectParallelOutcome::Complete(parallel) => return Ok(parallel),
-                DirectParallelOutcome::RetrySerial(prefix) => report.apply = prefix,
+                DirectParallelOutcome::RetrySerial { prefix, remaining } => {
+                    report = prefix;
+                    retry_frontier = Some(remaining);
+                }
             }
         }
     }
 
-    let mut queue: VecDeque<(PathBuf, usize)> =
-        VecDeque::from(vec![(subtree.to_path_buf(), start_depth)]);
+    let mut queue: VecDeque<(PathBuf, usize)> = retry_frontier
+        .unwrap_or_else(|| VecDeque::from(vec![(subtree.to_path_buf(), start_depth)]));
     #[cfg(target_os = "macos")]
     let mut bulk_reader = (config.worker_threads() > 1).then(macos_bulk::Reader::new);
     while let Some((rel_dir, depth)) = take_next(&mut queue, config.order) {
@@ -1655,6 +1654,7 @@ fn reconcile_target_inner(
     }
 
     flush_reconcile_batch(target, &mut batch, sink, &mut report.apply)?;
+    report.scan.errors.sort_by_cached_key(ToString::to_string);
     Ok(report)
 }
 
@@ -1668,7 +1668,7 @@ struct DeferredReconcile {
 
 enum DirectParallelOutcome {
     Complete(ReconcileReport),
-    RetrySerial(ApplyStats),
+    RetrySerial { prefix: ReconcileReport, remaining: VecDeque<(PathBuf, usize)> },
 }
 
 /// Reconcile an exclusive full tree in bounded immutable-baseline waves.
@@ -1736,10 +1736,18 @@ fn reconcile_direct_parallel(
         });
 
         // Nothing from an overflowing wave was applied, so the ordinary incremental
-        // reconciler can safely repeat the full tree. Changes from completed earlier
-        // waves remain valid and their apply statistics are retained.
+        // reconciler can resume at that wave. Completed waves and their statistics are
+        // retained exactly once; restarting from the root would count their unchanged
+        // entries again and misreport the logical reconciliation pass.
         if overflowed.load(std::sync::atomic::Ordering::Relaxed) {
-            return Ok(DirectParallelOutcome::RetrySerial(report.apply));
+            let mut remaining: VecDeque<_> =
+                wave.into_iter().map(|(path, depth, _region)| (path, depth)).collect();
+            let mut deferred = Vec::with_capacity(DIR_CLAIM);
+            while !frontier.is_empty(config.order) {
+                frontier.take(DIR_CLAIM, config.order, &mut deferred);
+                remaining.extend(deferred.drain(..).map(|(path, depth, _region)| (path, depth)));
+            }
+            return Ok(DirectParallelOutcome::RetrySerial { prefix: report, remaining });
         }
 
         let operation_count = deferred_count.load(std::sync::atomic::Ordering::Relaxed);
@@ -3269,11 +3277,12 @@ mod tests {
             &mut |delta| deltas.push(delta.clone()),
         )
         .expect("parallel attempt");
-        let DirectParallelOutcome::RetrySerial(prefix) = outcome else {
+        let DirectParallelOutcome::RetrySerial { prefix, remaining } = outcome else {
             panic!("the deliberately tiny deferred budget must trigger the retry");
         };
 
-        assert_eq!(prefix, ApplyStats::default());
+        assert_eq!(prefix.apply, ApplyStats::default());
+        assert_eq!(remaining, VecDeque::from([(PathBuf::new(), 0)]));
         assert!(deltas.is_empty());
         assert_eq!(index_fingerprint(&index), before);
 
@@ -3289,6 +3298,45 @@ mod tests {
         assert_eq!(index.total().allocated, expected.total().allocated);
         assert_eq!(index.total().newest_mtime_ns, expected.total().newest_mtime_ns);
         assert_eq!(index.by_ext_named(index.total()), expected.by_ext_named(expected.total()));
+    }
+
+    #[test]
+    fn late_overflow_resumes_without_double_counting_completed_waves() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        // The root wave discovers more than one full wave of directories. A change in
+        // the second wave then forces the serial fallback only after the first wave's
+        // unchanged entries have already been counted.
+        for directory in 0..=RECONCILE_WAVE_DIRECTORIES {
+            write_file(&dir.path().join(format!("d{directory:04}/file.txt")), b"unchanged");
+        }
+        let parallel = ScanConfig { threads: Some(2), ..ScanConfig::default() };
+        let (baseline, _) = scan_into_index(dir.path(), &parallel).expect("baseline");
+        let mut candidate = baseline.clone();
+        let mut serial_oracle = baseline;
+
+        for directory in 0..=RECONCILE_WAVE_DIRECTORIES {
+            write_file(
+                &dir.path().join(format!("d{directory:04}/file.txt")),
+                b"changed after the first wave",
+            );
+        }
+
+        let candidate_report = reconcile_target_inner(
+            &mut ReconcileTarget::Direct(&mut candidate),
+            Path::new(""),
+            &parallel,
+            0,
+            &mut |_| {},
+        )
+        .expect("late-overflow reconciliation");
+        let serial = ScanConfig { threads: Some(1), ..parallel };
+        let oracle_report =
+            reconcile(&mut serial_oracle, &serial, &mut |_| {}).expect("serial oracle");
+
+        assert_eq!(candidate_report.apply, oracle_report.apply);
+        assert_eq!(candidate_report.scan.entries, oracle_report.scan.entries);
+        assert_eq!(candidate_report.scan.dirs_read, oracle_report.scan.dirs_read);
+        assert_eq!(index_fingerprint(&candidate), index_fingerprint(&serial_oracle));
     }
 
     #[test]

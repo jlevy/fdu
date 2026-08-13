@@ -101,6 +101,10 @@ What it found, first against a roughly 60k-entry checkout and then against a
   falls 50.31% and 72.55% (exp-030). The resulting roughly-351-ms warm open is close to
   but still slower than the roughly-296-ms cold index; persisted roll-ups/bulk load and
   journal scoping remain necessary.
+  A PR review found that a late deferred-change overflow retried the full tree and
+  double-counted completed-prefix statistics; the fallback now resumes at the first
+  unapplied wave, with final index, scan, and apply statistics checked against a serial
+  oracle on a deterministic 1,025-directory test.
 - **Recent BFS-sensitive ideas were explicitly rechecked.** Root-relative `openat` was
   neutral for indexed scans and reverted (exp-024). The old pre-bulk sixteen-worker
   large-tree knee now regresses indexed wall 19.19%, CPU 107%, and RSS 33%; the existing
