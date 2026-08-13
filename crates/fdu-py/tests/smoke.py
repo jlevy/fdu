@@ -326,11 +326,43 @@ def main() -> None:
     fdu_py.open(str(cache_root), cache="auto")
     status = fdu_py.cache_status(str(cache_root))
     assert status is not None and status["recognized"], status
+    cached_index = fdu_py.open(str(cache_root), cache="only")
+    assert cached_index.complete is False, cached_index.freshness
+    assert cached_index.report(views=["summary"])["complete"] is True
     # Rust keeps Windows verbatim paths (\\?\); compare filesystem identity rather than
     # weakening native long-path behavior to satisfy a string.
     assert os.path.samefile(status["root"], cache_root), status
     assert fdu_py.clear_cache(str(cache_root)) is True
     assert fdu_py.cache_status(str(cache_root))["recognized"] is False
+
+    # A cached analysis failure remains partial even when cache-only mode cannot reread
+    # the source file. The generic diagnostic points callers to the preserved coverage.
+    partial_root = pathlib.Path(tempfile.mkdtemp())
+    (partial_root / "invalid.txt").write_bytes(b"valid prefix\xff")
+    partial = fdu_py.open(str(partial_root), cache="auto", analyze="basic")
+    assert partial.complete is False, partial.errors
+    assert partial.errors == [
+        "content analysis incomplete: 1 invalid UTF-8, 0 too large, 0 I/O errors, "
+        "0 changed during read, 0 unsupported, 0 stale"
+    ], partial.errors
+
+    cached_partial = fdu_py.open(str(partial_root), cache="only", analyze="basic")
+    cached_error = (
+        "content cache restored 1 incomplete analysis result; "
+        "inspect coverage for details"
+    )
+    assert cached_partial.complete is False, cached_partial.errors
+    assert cached_partial.errors == [cached_error], cached_partial.errors
+    partial_report = cached_partial.report(views=["types"], size="apparent")
+    assert partial_report["complete"] is False, partial_report
+    assert partial_report["errors"] == [cached_error], partial_report
+    coverage = partial_report["reports"][0]["metrics"]["total"]["coverage"]
+    assert coverage == {"invalid_utf8": 1}, coverage
+    refreshed = cached_partial.refresh()
+    assert refreshed["complete"] is False, refreshed
+    assert refreshed["errors"] == [
+        "content index retains 1 incomplete analysis result; inspect coverage for details"
+    ], refreshed
 
     # Cache policy is the same closed vocabulary the CLI accepts.
     try:

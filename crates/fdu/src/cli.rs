@@ -428,20 +428,6 @@ impl Cli {
         let scan_started_at = SystemTime::now();
         let (index, open_report, pending_save) = open_with_pending_save(path, &config)?;
 
-        let mut errors = open_report.errors().iter().map(ToString::to_string).collect::<Vec<_>>();
-        if let Some(analysis) = open_report.analysis.as_ref() {
-            if !analysis.is_complete() {
-                errors.push(format!(
-                    "content analysis incomplete: {} invalid UTF-8, {} too large, {} I/O errors, {} changed during read, {} unsupported, {} stale",
-                    analysis.invalid_utf8,
-                    analysis.too_large,
-                    analysis.io_errors,
-                    analysis.changed_during_read,
-                    analysis.unsupported,
-                    analysis.stale
-                ));
-            }
-        }
         let provenance = Provenance {
             scan_started_at: Some(scan_started_at),
             generated_at: SystemTime::now(),
@@ -451,7 +437,7 @@ impl Cli {
                 crate::OpenPath::CacheOnly => ReportSource::CacheOnly,
             },
             complete: open_report.is_complete(),
-            errors,
+            errors: open_report.error_messages(),
         };
         let report = crate::query::report(&index, &query, &provenance);
 
@@ -483,7 +469,7 @@ impl Cli {
             let color =
                 ColorContext::from_environment(self.color, false, false, stderr_is_terminal)
                     .enabled();
-            for error in open_report.errors() {
+            for error in open_report.error_messages() {
                 let _ = writeln!(
                     diagnostic,
                     "{}",
@@ -555,7 +541,7 @@ impl Cli {
                 crate::OpenPath::CacheOnly => ReportSource::CacheOnly,
             },
             complete: open_report.is_complete(),
-            errors: open_report.errors().iter().map(ToString::to_string).collect(),
+            errors: open_report.error_messages(),
         };
         write!(out, "{}", report_format::render(&session.report(&provenance)?, format, color))?;
         out.flush()?;

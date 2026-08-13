@@ -74,11 +74,13 @@ The roughly 55 ns deeper-tier increment remains off the ordinary resolved path.
 
 The repository-wide `make check` gate passed after implementation.
 It included supply-chain policy, formatting, clippy, all Rust feature combinations, 326
-all-feature library tests, CLI and watch integration tests, 89 exact tryscript
+all-feature library tests, CLI and watch integration tests, 92 exact tryscript
 scenarios, 63 performance contract tests, documentation, audits, public hygiene, MSRV,
 and installed-wheel smoke.
-The self-host check analyzed 278 tracked files and reported 80,384 text lines, 33,021
+The self-host check analyzed 278 tracked files and reported 80,487 text lines, 33,086
 standard LOC, and 10 types while satisfying every rollup and coverage invariant.
+Cache-only and refreshed Python indexes also preserve partial content status,
+diagnostics, and coverage when an invalid source is served entirely from its sidecar.
 
 Python 3.12 remains the minimum and the stable native ABI floor.
 The gate built `fdu-0.0.1-cp312-abi3-macosx_11_0_arm64.whl` with CPython 3.12, then

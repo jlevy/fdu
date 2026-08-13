@@ -94,6 +94,7 @@ pub struct PyIndex {
     config: ScanConfig,
     analysis: AnalysisRequest,
     errors: Vec<String>,
+    operation_complete: bool,
     /// Which cache tier produced this index.
     ///
     /// Carried rather than assumed: reporting `warm_revalidate` for an index built by a
@@ -119,7 +120,7 @@ impl PyIndex {
     /// Whether every path in this index's configured scope is currently trustworthy.
     #[getter]
     fn complete(&self) -> bool {
-        self.inner.freshness() == Freshness::Fresh && self.errors.is_empty()
+        self.inner.freshness() == Freshness::Fresh && self.operation_complete
     }
 
     /// Current trust state: fresh, reconciling, stale, or partial.
@@ -222,7 +223,7 @@ impl PyIndex {
             scan_started_at: None,
             generated_at: now,
             source: self.source,
-            complete: self.errors.is_empty(),
+            complete: self.operation_complete,
             errors: self.errors.clone(),
         };
         if words_per_page == 0 {
@@ -342,12 +343,23 @@ impl PyIndex {
         let report = py
             .detach(|| fdu::scan::reconcile(&mut self.inner, &config, &mut |_| {}))
             .map_err(to_py_err)?;
+        let mut complete = report.scan.is_complete();
         self.errors = report.scan.errors.iter().map(ToString::to_string).collect();
         if self.analysis.profile.is_enabled() {
             let analysis =
                 py.detach(|| fdu::content::analyze_index(&mut self.inner, self.analysis));
+            let analysis_complete = analysis.is_complete();
             append_analysis_error(&mut self.errors, analysis);
+            let retained_incomplete = incomplete_content_records(&self.inner);
+            if analysis_complete && retained_incomplete > 0 {
+                let suffix = if retained_incomplete == 1 { "result" } else { "results" };
+                self.errors.push(format!(
+                    "content index retains {retained_incomplete} incomplete analysis {suffix}; inspect coverage for details"
+                ));
+            }
+            complete &= analysis_complete && retained_incomplete == 0;
         }
+        self.operation_complete = complete;
         let stats = report.apply;
 
         let out = PyDict::new(py);
@@ -455,6 +467,18 @@ fn append_analysis_error(errors: &mut Vec<String>, analysis: fdu::content::Analy
             analysis.stale
         ));
     }
+}
+
+fn incomplete_content_records(index: &fdu::Index) -> u64 {
+    index.content_rollup(Path::new("")).map_or(0, |rollup| {
+        rollup
+            .coverage
+            .iter()
+            .filter(|(reason, _)| {
+                !matches!(reason, CoverageReason::Analyzed | CoverageReason::Binary)
+            })
+            .fold(0_u64, |total, (_, count)| total.saturating_add(*count))
+    })
 }
 
 /// Name a cache tier for Python callers, matching the CLI's machine output.
@@ -950,16 +974,14 @@ fn open(
 
     let opened = py.detach(|| fdu::open(&root, &config));
     let (index, report) = opened.map_err(to_py_err)?;
-    let mut errors = report.errors().iter().map(ToString::to_string).collect::<Vec<_>>();
-    if let Some(analysis_report) = report.analysis {
-        append_analysis_error(&mut errors, analysis_report);
-    }
+    let operation_complete = report.is_complete();
+    let errors = report.error_messages();
     let source = match report.path_taken {
         fdu::OpenPath::ColdScan => ReportSource::ColdScan,
         fdu::OpenPath::WarmRevalidate => ReportSource::WarmRevalidate,
         fdu::OpenPath::CacheOnly => ReportSource::CacheOnly,
     };
-    Ok(PyIndex { inner: index, config: config.scan, analysis, errors, source })
+    Ok(PyIndex { inner: index, config: config.scan, analysis, errors, operation_complete, source })
 }
 
 /// Walk a tree with no cache at all and return the index.
@@ -983,16 +1005,15 @@ fn scan(
     };
     let scanned = py.detach(|| fdu::open(&root, &config));
     let (index, report) = scanned.map_err(to_py_err)?;
-    let mut errors = report.errors().iter().map(ToString::to_string).collect::<Vec<_>>();
-    if let Some(analysis_report) = report.analysis {
-        append_analysis_error(&mut errors, analysis_report);
-    }
+    let operation_complete = report.is_complete();
+    let errors = report.error_messages();
     // A bare scan never consults the cache, so it is always cold.
     Ok(PyIndex {
         inner: index,
         config: config.scan,
         analysis,
         errors,
+        operation_complete,
         source: ReportSource::ColdScan,
     })
 }
@@ -1047,6 +1068,7 @@ mod tests {
                     config: ScanConfig::default(),
                     analysis: AnalysisRequest::default(),
                     errors: Vec::new(),
+                    operation_complete: true,
                     source: ReportSource::ColdScan,
                 },
             )

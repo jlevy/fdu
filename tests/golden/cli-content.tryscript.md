@@ -273,6 +273,29 @@ $ fdu --cache off --allow-partial --analyze basic --max-file-size 20 --view type
 ? 0
 ```
 
+## Cached Partial Analysis Preserves Diagnostics
+
+```console
+$ node -e "const fs=require('node:fs'); fs.mkdirSync('cached-partial-project'); fs.writeFileSync('cached-partial-project/invalid.txt',Buffer.from([118,97,108,105,100,255]));"
+? 0
+```
+
+The cold run reports the exact analysis failure.
+The cache-only run cannot reconstruct that per-file event, but remains partial and
+points to the preserved coverage tally.
+
+```console
+$ node -e "const {spawnSync}=require('node:child_process'); const p=spawnSync('fdu',['--analyze','basic','--view','types','--format','json','--size','apparent','cached-partial-project'],{encoding:'utf8'}); const r=JSON.parse(p.stdout); console.log(JSON.stringify({status:p.status,source:r.source,complete:r.complete,errors:r.errors,coverage:r.reports[0].metrics.total.coverage}));"
+{"status":2,"source":"cold_scan","complete":false,"errors":["content analysis incomplete: 1 invalid UTF-8, 0 too large, 0 I/O errors, 0 changed during read, 0 unsupported, 0 stale"],"coverage":{"invalid_utf8":1}}
+? 0
+```
+
+```console
+$ node -e "const {spawnSync}=require('node:child_process'); const p=spawnSync('fdu',['--cache','only','--analyze','basic','--view','types','--format','json','--size','apparent','cached-partial-project'],{encoding:'utf8'}); const r=JSON.parse(p.stdout); console.log(JSON.stringify({status:p.status,source:r.source,complete:r.complete,errors:r.errors,coverage:r.reports[0].metrics.total.coverage}));"
+{"status":2,"source":"cache_only","complete":false,"errors":["content cache restored 1 incomplete analysis result; inspect coverage for details"],"coverage":{"invalid_utf8":1}}
+? 0
+```
+
 ## Content Cache Hits Preserve the Same Tallies
 
 ```console

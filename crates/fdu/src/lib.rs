@@ -229,6 +229,34 @@ impl OpenReport {
     pub fn errors(&self) -> &[Error] {
         &self.scan.errors
     }
+
+    /// Human-readable diagnostics for every condition that makes this result partial.
+    ///
+    /// Live analysis can report exact failure categories. A restored content-cache
+    /// record retains its coverage outcome but not an error string, so cache reuse uses
+    /// a stable aggregate diagnostic and directs callers to that coverage evidence.
+    pub fn error_messages(&self) -> Vec<String> {
+        let mut errors = self.scan.errors.iter().map(ToString::to_string).collect::<Vec<_>>();
+        if let Some(analysis) = self.analysis.as_ref().filter(|report| !report.is_complete()) {
+            errors.push(format!(
+                "content analysis incomplete: {} invalid UTF-8, {} too large, {} I/O errors, {} changed during read, {} unsupported, {} stale",
+                analysis.invalid_utf8,
+                analysis.too_large,
+                analysis.io_errors,
+                analysis.changed_during_read,
+                analysis.unsupported,
+                analysis.stale
+            ));
+        }
+        if self.content_cache.incomplete > 0 {
+            let count = self.content_cache.incomplete;
+            let suffix = if count == 1 { "result" } else { "results" };
+            errors.push(format!(
+                "content cache restored {count} incomplete analysis {suffix}; inspect coverage for details"
+            ));
+        }
+        errors
+    }
 }
 
 /// Open a tree, using the snapshot cache when one is usable.
@@ -627,11 +655,19 @@ mod tests {
         assert_eq!(warm_report.content_cache.incomplete, 1);
         assert_eq!(warm_report.analysis.expect("analysis").candidates, 0);
         assert!(!warm_report.is_complete());
+        assert_eq!(
+            warm_report.error_messages(),
+            ["content cache restored 1 incomplete analysis result; inspect coverage for details"]
+        );
 
         let only = OpenConfig { policy: CachePolicy::Only, ..auto };
         let (_, cached_report) = open(dir.path(), &only).expect("cache-only analyzed open");
         assert_eq!(cached_report.content_cache.incomplete, 1);
         assert!(!cached_report.is_complete());
+        assert_eq!(
+            cached_report.error_messages(),
+            ["content cache restored 1 incomplete analysis result; inspect coverage for details"]
+        );
     }
 
     #[test]

@@ -977,9 +977,10 @@ None of these questions blocks Phases 1 or 2.
 | `fdu-3b5a` | Complete | Text and Markdown performance iterations |
 | `fdu-kgml` | Complete | Bounded deep detection and specialized formats |
 | `fdu-eu80` | Complete | Final compatibility, documentation, and release validation |
+| `fdu-fkry` | Complete | Cached partial diagnostics across Rust, CLI, and Python |
 
-The epic’s child-order hints match this table, and every child was created with its
-blocker edge already attached.
+The epic’s phase child-order hints match the planned entries above; `fdu-fkry` is a
+corrective child of final compatibility, and every planned child retained its blocker.
 Implementation starts from `fdu-m7n5` only after `fdu-v4lc`; it does not reuse the
 primary repository checkout.
 
