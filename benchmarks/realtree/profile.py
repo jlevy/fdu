@@ -210,6 +210,10 @@ _LAYERS = (
         ),
     ),
     ("fdu::snapshot", (r"fdu::snapshot", r"3fdu8snapshot")),
+    (
+        "fdu::content",
+        (r"fdu::content", r"3fdu7content", r"BasicAccumulator", r"analyze_candidate"),
+    ),
     ("std::fs", (r"std::fs", r"std::sys", r"ReadDir", r"DirEntry", r"2fs", r"3sys")),
     ("collections", (r"BTreeMap", r"HashMap", r"btree", r"hashbrown", r"7btree", r"4hash")),
     ("path", (r"PathBuf", r"OsString", r"std::path", r"components", r"4path", r"Components")),

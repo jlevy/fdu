@@ -215,6 +215,14 @@
         },
         "job": {
           "enum": [
+            "content-basic-cold",
+            "content-basic-warm-fs",
+            "content-binary-gate",
+            "content-cache-hit",
+            "content-churn",
+            "content-disabled",
+            "content-query",
+            "selfhost-content",
             "scan-producer",
             "scan-index",
             "snapshot-save",

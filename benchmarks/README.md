@@ -57,8 +57,10 @@ make test-performance
 
 This builds the excluded `perf_probe` example and runs the corpus, schema, runner,
 report, collector, and eight-job probe smoke suite.
-The suite has no numeric speed assertion and is included in `make check`. Large-corpus
-measurements remain separate from that correctness gate.
+The suite has no numeric speed assertion and is included in `make check`. Its component
+matrix includes metadata, basic content, binary gating, content-cache reuse, churn, and
+grouped content-query jobs.
+Large-corpus measurements remain separate from that correctness gate.
 
 ## Execute and Validate Evidence
 

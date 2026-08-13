@@ -536,6 +536,380 @@
         "stdout_nonempty": true,
         "stdout_sha256": null
       }
+    },
+    {
+      "adapter": "fdu-probe",
+      "command": {
+        "argv": ["{executable}", "content-disabled", "--root", "{corpus_root}"],
+        "environment": {"set": {}, "unset": []}
+      },
+      "corpus": {
+        "recipe_id": "contract",
+        "seed": null,
+        "state": "baseline",
+        "target_entries": 14
+      },
+      "filesystem_cache_state": "uncontrolled",
+      "id": "content-disabled/contract/snapshot-absent/fs-uncontrolled/output-digest",
+      "job": "content-disabled",
+      "method": {
+        "order_group": "fdu-content-components",
+        "required_resources": [],
+        "timeout_seconds": 30.0,
+        "trials": 1,
+        "warmups": 0
+      },
+      "output_sink": "output-digest",
+      "preparation": {"filesystem_cache_argv": null, "snapshot_argv": null},
+      "process_state": "same-process",
+      "snapshot_state": "absent",
+      "validation": {
+        "allowed_exit_codes": [0],
+        "corpus": "unchanged",
+        "snapshot": "absent",
+        "stderr": "empty",
+        "stdout_json": {
+          "equals": {
+            "mode": "content-disabled",
+            "schema": "fdu-perf-probe-v1",
+            "source": "scan",
+            "summary.complete": true,
+            "summary.content.records": 0
+          },
+          "matches_manifest": {
+            "summary.engine_digest": "oracle.engine_digest",
+            "summary.entries": "counts.total",
+            "summary.index_len": "counts.total"
+          },
+          "record": ["component_ns", "summary.content.digest"]
+        },
+        "stdout_nonempty": true,
+        "stdout_sha256": null
+      }
+    },
+    {
+      "adapter": "fdu-probe",
+      "command": {
+        "argv": ["{executable}", "content-basic", "--root", "{corpus_root}"],
+        "environment": {"set": {}, "unset": []}
+      },
+      "corpus": {
+        "recipe_id": "contract",
+        "seed": null,
+        "state": "baseline",
+        "target_entries": 14
+      },
+      "filesystem_cache_state": "uncontrolled",
+      "id": "content-basic-cold/contract/snapshot-absent/fs-uncontrolled/output-digest",
+      "job": "content-basic-cold",
+      "method": {
+        "order_group": "fdu-content-components",
+        "required_resources": [],
+        "timeout_seconds": 30.0,
+        "trials": 1,
+        "warmups": 0
+      },
+      "output_sink": "output-digest",
+      "preparation": {"filesystem_cache_argv": null, "snapshot_argv": null},
+      "process_state": "same-process",
+      "snapshot_state": "absent",
+      "validation": {
+        "allowed_exit_codes": [2],
+        "corpus": "unchanged",
+        "snapshot": "absent",
+        "stderr": "empty",
+        "stdout_json": {
+          "equals": {
+            "mode": "content-basic",
+            "schema": "fdu-perf-probe-v1",
+            "source": "scan",
+            "summary.complete": false
+          },
+          "matches_manifest": {
+            "summary.engine_digest": "oracle.engine_digest",
+            "summary.entries": "counts.total",
+            "summary.index_len": "counts.total"
+          },
+          "record": [
+            "component_ns",
+            "summary.content.analyzed",
+            "summary.content.binary",
+            "summary.content.candidates",
+            "summary.content.digest",
+            "summary.content.invalid_utf8",
+            "summary.content.records"
+          ]
+        },
+        "stdout_nonempty": true,
+        "stdout_sha256": null
+      }
+    },
+    {
+      "adapter": "fdu-probe",
+      "command": {
+        "argv": ["{executable}", "content-basic", "--root", "{corpus_root}"],
+        "environment": {"set": {}, "unset": []}
+      },
+      "corpus": {
+        "recipe_id": "contract",
+        "seed": null,
+        "state": "baseline",
+        "target_entries": 14
+      },
+      "filesystem_cache_state": "uncontrolled",
+      "id": "content-basic-warm-fs/contract/snapshot-absent/fs-uncontrolled/output-digest",
+      "job": "content-basic-warm-fs",
+      "method": {
+        "order_group": "fdu-content-components",
+        "required_resources": [],
+        "timeout_seconds": 30.0,
+        "trials": 1,
+        "warmups": 1
+      },
+      "output_sink": "output-digest",
+      "preparation": {"filesystem_cache_argv": null, "snapshot_argv": null},
+      "process_state": "same-process",
+      "snapshot_state": "absent",
+      "validation": {
+        "allowed_exit_codes": [2],
+        "corpus": "unchanged",
+        "snapshot": "absent",
+        "stderr": "empty",
+        "stdout_json": {
+          "equals": {
+            "mode": "content-basic",
+            "schema": "fdu-perf-probe-v1",
+            "source": "scan",
+            "summary.complete": false
+          },
+          "matches_manifest": {
+            "summary.engine_digest": "oracle.engine_digest",
+            "summary.entries": "counts.total",
+            "summary.index_len": "counts.total"
+          },
+          "record": ["component_ns", "summary.content.digest"]
+        },
+        "stdout_nonempty": true,
+        "stdout_sha256": null
+      }
+    },
+    {
+      "adapter": "fdu-probe",
+      "command": {
+        "argv": ["{executable}", "content-cache-hit", "--root", "{corpus_root}", "--snapshot", "{snapshot_path}"],
+        "environment": {"set": {}, "unset": []}
+      },
+      "corpus": {
+        "recipe_id": "contract",
+        "seed": null,
+        "state": "baseline",
+        "target_entries": 14
+      },
+      "filesystem_cache_state": "uncontrolled",
+      "id": "content-cache-hit/contract/snapshot-compatible-unchanged/fs-uncontrolled/output-digest",
+      "job": "content-cache-hit",
+      "method": {
+        "order_group": "fdu-content-components",
+        "required_resources": [],
+        "timeout_seconds": 30.0,
+        "trials": 1,
+        "warmups": 0
+      },
+      "output_sink": "output-digest",
+      "preparation": {
+        "filesystem_cache_argv": null,
+        "snapshot_argv": ["{executable}", "content-seed", "--root", "{corpus_root}", "--snapshot", "{snapshot_path}"]
+      },
+      "process_state": "same-process",
+      "snapshot_state": "compatible-unchanged",
+      "validation": {
+        "allowed_exit_codes": [0],
+        "corpus": "unchanged",
+        "snapshot": "exists",
+        "stderr": "empty",
+        "stdout_json": {
+          "equals": {
+            "mode": "content-cache-hit",
+            "schema": "fdu-perf-probe-v1",
+            "source": "content-cache",
+            "summary.complete": true
+          },
+          "matches_manifest": {
+            "summary.engine_digest": "oracle.engine_digest",
+            "summary.entries": "counts.total",
+            "summary.index_len": "counts.total"
+          },
+          "record": [
+            "component_ns",
+            "summary.content.cache_hits",
+            "summary.content.digest",
+            "summary.snapshot_bytes"
+          ]
+        },
+        "stdout_nonempty": true,
+        "stdout_sha256": null
+      }
+    },
+    {
+      "adapter": "fdu-probe",
+      "command": {
+        "argv": ["{executable}", "content-open", "--root", "{corpus_root}", "--snapshot", "{snapshot_path}"],
+        "environment": {"set": {}, "unset": []}
+      },
+      "corpus": {
+        "recipe_id": "churn-local",
+        "seed": null,
+        "state": "modify-1pct",
+        "target_entries": 100
+      },
+      "filesystem_cache_state": "uncontrolled",
+      "id": "content-churn/churn-local-100-modify-1pct/snapshot-compatible-changed/fs-uncontrolled/output-digest",
+      "job": "content-churn",
+      "method": {
+        "order_group": "fdu-content-components",
+        "required_resources": [],
+        "timeout_seconds": 30.0,
+        "trials": 1,
+        "warmups": 0
+      },
+      "output_sink": "output-digest",
+      "preparation": {
+        "filesystem_cache_argv": null,
+        "snapshot_argv": ["{executable}", "content-seed", "--root", "{corpus_root}", "--snapshot", "{snapshot_path}"]
+      },
+      "process_state": "same-process",
+      "snapshot_state": "compatible-changed",
+      "validation": {
+        "allowed_exit_codes": [2],
+        "corpus": "unchanged",
+        "snapshot": "exists",
+        "stderr": "empty",
+        "stdout_json": {
+          "equals": {
+            "mode": "content-open",
+            "schema": "fdu-perf-probe-v1",
+            "source": "warm-revalidate",
+            "summary.complete": false
+          },
+          "matches_manifest": {
+            "summary.engine_digest": "oracle.engine_digest",
+            "summary.entries": "counts.total",
+            "summary.index_len": "counts.total"
+          },
+          "record": [
+            "component_ns",
+            "summary.content.cache_hits",
+            "summary.content.candidates",
+            "summary.content.digest"
+          ]
+        },
+        "stdout_nonempty": true,
+        "stdout_sha256": null
+      }
+    },
+    {
+      "adapter": "fdu-probe",
+      "command": {
+        "argv": ["{executable}", "content-binary-gate", "--root", "{corpus_root}"],
+        "environment": {"set": {}, "unset": []}
+      },
+      "corpus": {
+        "recipe_id": "contract",
+        "seed": null,
+        "state": "baseline",
+        "target_entries": 14
+      },
+      "filesystem_cache_state": "uncontrolled",
+      "id": "content-binary-gate/contract/snapshot-absent/fs-uncontrolled/output-digest",
+      "job": "content-binary-gate",
+      "method": {
+        "order_group": "fdu-content-components",
+        "required_resources": [],
+        "timeout_seconds": 30.0,
+        "trials": 1,
+        "warmups": 0
+      },
+      "output_sink": "output-digest",
+      "preparation": {"filesystem_cache_argv": null, "snapshot_argv": null},
+      "process_state": "same-process",
+      "snapshot_state": "absent",
+      "validation": {
+        "allowed_exit_codes": [2],
+        "corpus": "unchanged",
+        "snapshot": "absent",
+        "stderr": "empty",
+        "stdout_json": {
+          "equals": {
+            "mode": "content-binary-gate",
+            "schema": "fdu-perf-probe-v1",
+            "source": "scan",
+            "summary.complete": false
+          },
+          "matches_manifest": {
+            "summary.engine_digest": "oracle.engine_digest",
+            "summary.entries": "counts.total",
+            "summary.index_len": "counts.total"
+          },
+          "record": [
+            "component_ns",
+            "summary.content.binary",
+            "summary.content.digest",
+            "summary.content.invalid_utf8"
+          ]
+        },
+        "stdout_nonempty": true,
+        "stdout_sha256": null
+      }
+    },
+    {
+      "adapter": "fdu-probe",
+      "command": {
+        "argv": ["{executable}", "content-query", "--root", "{corpus_root}", "--queries", "100"],
+        "environment": {"set": {}, "unset": []}
+      },
+      "corpus": {
+        "recipe_id": "contract",
+        "seed": null,
+        "state": "baseline",
+        "target_entries": 14
+      },
+      "filesystem_cache_state": "uncontrolled",
+      "id": "content-query/contract-100/snapshot-absent/fs-uncontrolled/output-digest",
+      "job": "content-query",
+      "method": {
+        "order_group": "fdu-content-components",
+        "required_resources": [],
+        "timeout_seconds": 30.0,
+        "trials": 1,
+        "warmups": 0
+      },
+      "output_sink": "output-digest",
+      "preparation": {"filesystem_cache_argv": null, "snapshot_argv": null},
+      "process_state": "same-process",
+      "snapshot_state": "absent",
+      "validation": {
+        "allowed_exit_codes": [2],
+        "corpus": "unchanged",
+        "snapshot": "absent",
+        "stderr": "empty",
+        "stdout_json": {
+          "equals": {
+            "mode": "content-query",
+            "schema": "fdu-perf-probe-v1",
+            "source": "scan",
+            "summary.complete": false,
+            "summary.query_iterations": 100
+          },
+          "matches_manifest": {
+            "summary.engine_digest": "oracle.engine_digest",
+            "summary.entries": "counts.total",
+            "summary.index_len": "counts.total"
+          },
+          "record": ["component_ns", "summary.content.digest"]
+        },
+        "stdout_nonempty": true,
+        "stdout_sha256": null
+      }
     }
   ],
   "schema": "fdu-performance-scenarios-v1"

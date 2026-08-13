@@ -13,7 +13,12 @@ use std::path::{Component, Path, PathBuf};
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
-use fdu::{Attrs, EntryId, EntryKind, Index, Observation, Op, ScanConfig, ScanOrder};
+use fdu::content::{AnalysisProfile, AnalysisRequest, CoverageReason};
+use fdu::query::{Provenance, Query, ReportSource, ViewSpec};
+use fdu::{
+    Attrs, CachePolicy, EntryId, EntryKind, Index, Observation, Op, OpenConfig, ScanConfig,
+    ScanOrder,
+};
 
 const PROBE_SCHEMA: &str = "fdu-perf-probe-v1";
 const DIGEST_ALGORITHM: &str = "fdu-index-record-v1/sha256-multiset-v1";
@@ -35,6 +40,13 @@ fn main() -> ExitCode {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Mode {
+    ContentBasic,
+    ContentBinaryGate,
+    ContentCacheHit,
+    ContentDisabled,
+    ContentOpen,
+    ContentQuery,
+    ContentSeed,
     DeltaApply,
     Query,
     Revalidate,
@@ -48,6 +60,13 @@ enum Mode {
 impl Mode {
     fn parse(value: &str) -> ProbeResult<Self> {
         match value {
+            "content-basic" => Ok(Self::ContentBasic),
+            "content-binary-gate" => Ok(Self::ContentBinaryGate),
+            "content-cache-hit" => Ok(Self::ContentCacheHit),
+            "content-disabled" => Ok(Self::ContentDisabled),
+            "content-open" => Ok(Self::ContentOpen),
+            "content-query" => Ok(Self::ContentQuery),
+            "content-seed" => Ok(Self::ContentSeed),
             "delta-apply" => Ok(Self::DeltaApply),
             "query" => Ok(Self::Query),
             "revalidate" => Ok(Self::Revalidate),
@@ -62,6 +81,13 @@ impl Mode {
 
     const fn name(self) -> &'static str {
         match self {
+            Self::ContentBasic => "content-basic",
+            Self::ContentBinaryGate => "content-binary-gate",
+            Self::ContentCacheHit => "content-cache-hit",
+            Self::ContentDisabled => "content-disabled",
+            Self::ContentOpen => "content-open",
+            Self::ContentQuery => "content-query",
+            Self::ContentSeed => "content-seed",
             Self::DeltaApply => "delta-apply",
             Self::Query => "query",
             Self::Revalidate => "revalidate",
@@ -186,6 +212,16 @@ fn execute_repeated(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
 
 fn execute(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     match arguments.mode {
+        Mode::ContentBasic | Mode::ContentBinaryGate => content_analysis(arguments, true),
+        Mode::ContentCacheHit => content_open(arguments, CachePolicy::Only),
+        Mode::ContentDisabled => content_analysis(arguments, false),
+        Mode::ContentOpen => content_open(arguments, CachePolicy::Auto),
+        Mode::ContentQuery => content_query(arguments),
+        Mode::ContentSeed => {
+            let mut output = content_open(arguments, CachePolicy::Auto)?;
+            output.summary.complete = true;
+            Ok(output)
+        }
         Mode::ScanProducer => scan_producer(arguments),
         Mode::ScanIndex | Mode::ValidateIndex => scan_index(arguments),
         Mode::SnapshotSave => snapshot_save(arguments),
@@ -194,6 +230,88 @@ fn execute(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
         Mode::DeltaApply => delta_apply(arguments),
         Mode::Query => query(arguments),
     }
+}
+
+fn basic_request() -> AnalysisRequest {
+    AnalysisRequest { profile: AnalysisProfile::Basic, ..AnalysisRequest::default() }
+}
+
+fn content_analysis(arguments: &Arguments, enabled: bool) -> ProbeResult<ProbeOutput> {
+    let (mut index, scan) = fdu::scan::scan_into_index(&arguments.root, &arguments.scan)?;
+    if !scan.is_complete() {
+        return Err(ProbeError("content-analysis setup scan was partial".into()));
+    }
+    let request = if enabled { basic_request() } else { AnalysisRequest::default() };
+    let started = Instant::now();
+    let report = fdu::content::analyze_index(&mut index, request);
+    black_box(report);
+    let component = started.elapsed();
+    let mut summary = summarize_index(&index)?;
+    attach_content_summary(&mut summary, &index);
+    summary.content_candidates = report.candidates;
+    summary.content_applied = report.applied;
+    summary.complete = scan.is_complete() && (!enabled || report.is_complete());
+    Ok(ProbeOutput::new(arguments.mode, "scan", component, summary))
+}
+
+fn content_open(arguments: &Arguments, policy: CachePolicy) -> ProbeResult<ProbeOutput> {
+    let snapshot = arguments.snapshot()?.to_path_buf();
+    let config = OpenConfig {
+        scan: arguments.scan.clone(),
+        cache_path: Some(snapshot.clone()),
+        policy,
+        analysis: basic_request(),
+    };
+    let started = Instant::now();
+    let (index, report) = fdu::open(&arguments.root, &config)?;
+    let component = started.elapsed();
+    let mut summary = summarize_index(&index)?;
+    attach_content_summary(&mut summary, &index);
+    summary.content_cache_hits = report.content_cache.hits;
+    if let Some(analysis) = report.analysis {
+        summary.content_candidates = analysis.candidates;
+        summary.content_applied = analysis.applied;
+    }
+    summary.complete = report.is_complete();
+    summary.errors = u64::try_from(report.scan.errors.len()).unwrap_or(u64::MAX);
+    summary.snapshot_bytes = snapshot.metadata().ok().map(|metadata| metadata.len());
+    let source = match report.path_taken {
+        fdu::OpenPath::ColdScan => "cold-scan",
+        fdu::OpenPath::WarmRevalidate => "warm-revalidate",
+        fdu::OpenPath::CacheOnly => "content-cache",
+    };
+    Ok(ProbeOutput::new(arguments.mode, source, component, summary))
+}
+
+fn content_query(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
+    let (mut index, scan) = fdu::scan::scan_into_index(&arguments.root, &arguments.scan)?;
+    if !scan.is_complete() {
+        return Err(ProbeError("content-query setup scan was partial".into()));
+    }
+    let analysis = fdu::content::analyze_index(&mut index, basic_request());
+    let query = Query {
+        views: vec![ViewSpec::Types, ViewSpec::Families, ViewSpec::Languages, ViewSpec::Documents],
+        ..Query::default()
+    };
+    let provenance = Provenance {
+        scan_started_at: None,
+        generated_at: std::time::UNIX_EPOCH,
+        source: ReportSource::ColdScan,
+        complete: analysis.is_complete(),
+        errors: Vec::new(),
+    };
+    let started = Instant::now();
+    for _ in 0..arguments.queries {
+        black_box(fdu::query::report(&index, &query, &provenance));
+    }
+    let component = started.elapsed();
+    let mut summary = summarize_index(&index)?;
+    attach_content_summary(&mut summary, &index);
+    summary.content_candidates = analysis.candidates;
+    summary.content_applied = analysis.applied;
+    summary.query_iterations = u64::try_from(arguments.queries).unwrap_or(u64::MAX);
+    summary.complete = analysis.is_complete();
+    Ok(ProbeOutput::new(arguments.mode, "scan", component, summary))
 }
 
 fn scan_producer(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
@@ -387,6 +505,15 @@ struct Summary {
     apparent_bytes: u128,
     apply: ApplySummary,
     complete: bool,
+    content_analyzed: u64,
+    content_applied: u64,
+    content_binary: u64,
+    content_cache_hits: u64,
+    content_candidates: u64,
+    content_digest: Option<String>,
+    content_invalid_utf8: u64,
+    content_records: u64,
+    content_too_large: u64,
     dirs: u64,
     dirs_read: u64,
     engine_digest: Option<String>,
@@ -409,6 +536,15 @@ impl Default for Summary {
             apparent_bytes: 0,
             apply: ApplySummary::default(),
             complete: true,
+            content_analyzed: 0,
+            content_applied: 0,
+            content_binary: 0,
+            content_cache_hits: 0,
+            content_candidates: 0,
+            content_digest: None,
+            content_invalid_utf8: 0,
+            content_records: 0,
+            content_too_large: 0,
             dirs: 0,
             dirs_read: 0,
             engine_digest: None,
@@ -423,6 +559,40 @@ impl Default for Summary {
             symlinks: 0,
         }
     }
+}
+
+fn attach_content_summary(summary: &mut Summary, index: &Index) {
+    let Some(content) = index.content() else {
+        summary.content_digest = Some(hex(&Sha256::digest(b"fdu-content-summary-v1\0disabled")));
+        return;
+    };
+    let Some(root) = content.rollup(Path::new("")) else {
+        summary.content_digest = Some(hex(&Sha256::digest(b"fdu-content-summary-v1\0empty")));
+        return;
+    };
+    summary.content_records = root.total.files;
+    summary.content_analyzed = root.total.analyzed_files;
+    summary.content_binary = root.coverage.get(&CoverageReason::Binary).copied().unwrap_or(0);
+    summary.content_invalid_utf8 =
+        root.coverage.get(&CoverageReason::InvalidUtf8).copied().unwrap_or(0);
+    summary.content_too_large = root.coverage.get(&CoverageReason::TooLarge).copied().unwrap_or(0);
+    let metrics = root.total.metrics;
+    let record = format!(
+        concat!(
+            "fdu-content-summary-v1\0records={}\0analyzed={}\0binary={}\0invalid_utf8={}\0",
+            "too_large={}\0physical={}\0blank={}\0nonblank={}\0raw_words={}"
+        ),
+        summary.content_records,
+        summary.content_analyzed,
+        summary.content_binary,
+        summary.content_invalid_utf8,
+        summary.content_too_large,
+        metrics.physical_lines,
+        metrics.blank_lines,
+        metrics.nonblank_lines,
+        metrics.raw_words,
+    );
+    summary.content_digest = Some(hex(&Sha256::digest(record.as_bytes())));
 }
 
 impl Summary {
@@ -534,6 +704,7 @@ impl ProbeOutput {
     fn render(&self) -> String {
         let summary = &self.summary;
         let digest = json_optional_string(summary.engine_digest.as_deref());
+        let content_digest = json_optional_string(summary.content_digest.as_deref());
         let index_len = json_optional_u64(summary.index_len);
         let snapshot_bytes = json_optional_u64(summary.snapshot_bytes);
         format!(
@@ -544,6 +715,9 @@ impl ProbeOutput {
                 "\"apply\":{{\"inserted\":{},\"invalidated\":{},",
                 "\"removed\":{},\"stale\":{},\"unchanged\":{},\"updated\":{}}},",
                 "\"complete\":{},\"dirs\":{},\"dirs_read\":{},",
+                "\"content\":{{\"analyzed\":{},\"applied\":{},\"binary\":{},",
+                "\"cache_hits\":{},\"candidates\":{},\"digest\":{},",
+                "\"invalid_utf8\":{},\"records\":{},\"too_large\":{}}},",
                 "\"engine_digest\":{},\"entries\":{},\"errors\":{},",
                 "\"files\":{},\"index_len\":{},\"other\":{},",
                 "\"query_iterations\":{},\"query_observations\":{},",
@@ -566,6 +740,15 @@ impl ProbeOutput {
             summary.complete,
             summary.dirs,
             summary.dirs_read,
+            summary.content_analyzed,
+            summary.content_applied,
+            summary.content_binary,
+            summary.content_cache_hits,
+            summary.content_candidates,
+            content_digest,
+            summary.content_invalid_utf8,
+            summary.content_records,
+            summary.content_too_large,
             digest,
             summary.entries,
             summary.errors,

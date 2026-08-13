@@ -80,6 +80,9 @@ class Job:
     #: file — and the path must be empty at the start of every trial, or the job
     #: would be measured overwriting rather than creating.
     writes_snapshot: bool = False
+    #: Probe mode used by untimed snapshot preparation. Content-cache jobs need both
+    #: the metadata snapshot and its independently versioned content sidecar.
+    snapshot_preparation_mode: str = "snapshot-save"
 
 
 @dataclass
@@ -148,6 +151,45 @@ class Sample:
 #: cases. Dropping it on macOS needs root, so a run that does not opt into
 #: ``--purge`` records ``os_cache: "warm-steady"`` and means it.
 PROBE_JOBS: Dict[str, Job] = {
+    "content-basic": Job(
+        id="content-basic",
+        argv=("{binary}", "content-basic", "--root", "{root}"),
+        start_state="cold",
+        description="Analyze every eligible file with content-basic-v1 after metadata setup.",
+    ),
+    "content-binary-gate": Job(
+        id="content-binary-gate",
+        argv=("{binary}", "content-binary-gate", "--root", "{root}"),
+        start_state="cold",
+        description="Exercise early binary admission on a binary-heavy immutable tree.",
+    ),
+    "content-cache-hit": Job(
+        id="content-cache-hit",
+        argv=(
+            "{binary}",
+            "content-cache-hit",
+            "--root",
+            "{root}",
+            "--snapshot",
+            "{snapshot}",
+        ),
+        start_state="warm",
+        description="Load metadata and basic content entirely from compatible sidecars.",
+        needs_snapshot=True,
+        snapshot_preparation_mode="content-seed",
+    ),
+    "content-query": Job(
+        id="content-query",
+        argv=("{binary}", "content-query", "--root", "{root}", "--queries", "100"),
+        start_state="warm",
+        description="Build type, family, language, and document summaries 100 times.",
+    ),
+    "content-disabled": Job(
+        id="content-disabled",
+        argv=("{binary}", "content-disabled", "--root", "{root}"),
+        start_state="cold",
+        description="Call the disabled content boundary after metadata setup.",
+    ),
     "cold-scan-index": Job(
         id="cold-scan-index",
         argv=("{binary}", "scan-index", "--root", "{root}"),
@@ -350,7 +392,14 @@ def _prepare_snapshots(
             if path.exists():
                 path.unlink()
             argv = _expand(
-                ("{binary}", "snapshot-save", "--root", "{root}", "--snapshot", "{snapshot}"),
+                (
+                    "{binary}",
+                    job.snapshot_preparation_mode,
+                    "--root",
+                    "{root}",
+                    "--snapshot",
+                    "{snapshot}",
+                ),
                 binary=variant.path,
                 root=root,
                 snapshot=path,

@@ -45,7 +45,11 @@ class FduProbeTests(unittest.TestCase):
                 order_seed="probe-smoke-v1",
             )
 
-        self.assertEqual(len(result["trials"]), 8)
+        expected_samples = sum(
+            scenario["method"]["trials"] + scenario["method"]["warmups"]
+            for scenario in scenarios["scenarios"]
+        )
+        self.assertEqual(len(result["trials"]), expected_samples)
         self.assertTrue(
             all(trial["validation"]["valid"] for trial in result["trials"])
         )

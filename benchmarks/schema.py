@@ -32,6 +32,14 @@ _PLACEHOLDERS = {
     "snapshot_path",
 }
 _JOBS = {
+    "content-basic-cold",
+    "content-basic-warm-fs",
+    "content-binary-gate",
+    "content-cache-hit",
+    "content-churn",
+    "content-disabled",
+    "content-query",
+    "selfhost-content",
     "watch-stream",
     "cli-files",
     "cli-human",
