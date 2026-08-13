@@ -97,6 +97,7 @@ dead end.
 | 038 | [Parent-relative openat frontier on the live 1M workspace](#exp038--parentrelative-openat-frontier-on-the-live-1m-workspace) | H24, H29 | `cold-scan-index` | -0.7% | ❌ rejected |
 | 039 | [Revisit the macOS bulk buffer on the live 1M workspace](#exp039--revisit-the-macos-bulk-buffer-on-the-live-1m-workspace) | H55 | `cold-scan-index` | +2.2% | ❌ rejected |
 | 040 | [Reject inline basic content analysis](#exp040--reject-inline-basic-content-analysis) | H62 | `content-basic` | +66.3% | ❌ rejected |
+| 041 | [Reject prose collector gating for SLOC](#exp041--reject-prose-collector-gating-for-sloc) | H66 | `code-sloc` | +1.5% | ❌ rejected |
 
 ## The experiments
 
@@ -1556,6 +1557,39 @@ worker pool was doing useful parallel I/O, so the change is reverted.
 
 Full record:
 [`exp-040-reject-inline-basic-content-analysis.md`](../experiments/exp-040-reject-inline-basic-content-analysis.md)
+
+### exp-041 — Reject prose collector gating for SLOC
+
+❌ rejected · 2026-08-13 · H66 · commit `d7363a298ac58905597b2ede8c9f3240938a3129`
+
+Control: frozen code-sloc-v1 semantic baseline
+
+Candidate: skip prose-only collectors for code families
+
+**`code-sloc`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 20.2 | 19.9 | +1.50% (n.s.) | [-4.59%, +4.23%] |
+| component (ms) | 9.2 | 8.9 | +1.34% (n.s.) | [-6.43%, +4.95%] |
+| cpu (ms) | 71.7 | 73.3 | +2.13% (n.s.) | [-3.84%, +8.28%] |
+| user (ms) | 29.2 | 28.1 | -4.67% | [-6.06%, -2.87%] |
+| system (ms) | 42.2 | 45.0 | +8.02% (n.s.) | [-3.40%, +16.99%] |
+| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
+| peak rss (MiB) | 9.2 | 9.4 | +0.51% (n.s.) | [-1.89%, +2.29%] |
+
+Other jobs, wall time: `code-sloc-cache-hit` -0.6% (n.s.), `content-basic` -2.2% (n.s.),
+`content-cache-hit` +1.4% (n.s.).
+
+Cost to carry: 31 lines; no new dependencies.
+
+One mode bit and conditional prose counters; no dependency or unsafe code.
+
+**Rejected:** The 12-pair wall interval crossed zero and the median did not clear the 3%
+acceptance threshold; cache-hit and basic jobs were also neutral..
+
+Full record:
+[`exp-041-reject-prose-collector-gating-for-sloc.md`](../experiments/exp-041-reject-prose-collector-gating-for-sloc.md)
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

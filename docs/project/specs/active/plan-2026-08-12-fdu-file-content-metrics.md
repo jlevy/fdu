@@ -592,6 +592,9 @@ preregistered CPU, memory, and I/O budgets.
   nonblank lines
 - [x] Extend the multilingual tryscript and repository self-host checks, then freeze
   their semantic outputs before any code-parser performance iteration
+- [x] Add cold and cache-hit SLOC evidence jobs, compare complete CLI runs with SCC and
+  Tokei on generated and immutable self-host corpora, and record the first rejected
+  optimization without weakening the semantic digest
 
 **Exit criteria:** required common-language fixtures are versioned and green; every
 physical line belongs to exactly one code, comment, or blank category; no unsupported

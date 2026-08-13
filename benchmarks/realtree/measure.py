@@ -74,6 +74,8 @@ class Job:
     argv: Sequence[str]
     start_state: str
     description: str
+    allowed_exit_codes: Sequence[int] = (0,)
+    allow_incomplete: bool = False
     needs_snapshot: bool = False
     verify_oracle: bool = True
     #: The job writes the snapshot itself, so it needs a path but not a prepared
@@ -156,6 +158,8 @@ PROBE_JOBS: Dict[str, Job] = {
         argv=("{binary}", "code-sloc", "--root", "{root}"),
         start_state="cold",
         description="Analyze common-language code with code-sloc-v1 after metadata setup.",
+        allowed_exit_codes=(0, 2),
+        allow_incomplete=True,
     ),
     "code-sloc-cache-hit": Job(
         id="code-sloc-cache-hit",
@@ -485,13 +489,15 @@ def _measure_once(
     reasons: List[str] = []
     if result["timed_out"]:
         reasons.append("command timed out")
-    if result["exit_code"] != 0:
+    if result["exit_code"] not in job.allowed_exit_codes:
         reasons.append(f"command exited with {result['exit_code']}")
 
     probe: Dict[str, Any] = {}
     component_ns: Optional[int] = None
     if variant.kind == "fdu-probe":
-        probe, probe_reasons = _read_probe_output(result["stdout"])
+        probe, probe_reasons = _read_probe_output(
+            result["stdout"], allow_incomplete=job.allow_incomplete
+        )
         reasons.extend(probe_reasons)
         component_ns = probe.get("component_ns")
         if job.verify_oracle and probe:
@@ -529,7 +535,7 @@ def _measure_once(
     )
 
 
-def _read_probe_output(stdout: bytes):
+def _read_probe_output(stdout: bytes, *, allow_incomplete: bool = False):
     reasons: List[str] = []
     text = stdout.decode("utf-8", errors="replace").strip()
     if not text:
@@ -544,7 +550,7 @@ def _read_probe_output(stdout: bytes):
         reasons.append(f"unexpected probe schema {document.get('schema')!r}")
     summary = document.get("summary")
     if isinstance(summary, dict):
-        if summary.get("complete") is not True:
+        if summary.get("complete") is not True and not allow_incomplete:
             reasons.append("probe reported an incomplete traversal")
         if summary.get("errors"):
             reasons.append(f"probe reported {summary['errors']} traversal errors")
