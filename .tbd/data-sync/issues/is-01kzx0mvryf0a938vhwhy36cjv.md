@@ -3,9 +3,9 @@ type: is
 id: is-01kzx0mvryf0a938vhwhy36cjv
 title: "H65: Retune worker depth for reduction-only scans"
 kind: task
-status: closed
+status: in_progress
 priority: 1
-version: 3
+version: 4
 spec_path: docs/project/specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md
 labels:
   - performance
@@ -13,7 +13,7 @@ labels:
 dependencies: []
 parent_id: is-01kzwk20kyaxajq254tee8apts
 created_at: 2026-08-13T07:33:35.645Z
-updated_at: 2026-08-13T10:25:01.627Z
+updated_at: 2026-08-13T10:28:29.082Z
 closed_at: 2026-08-13T10:25:01.626Z
 close_reason: Superseded because rejected H62 prerequisite did not land; indexed worker depth is already resolved.
 ---
@@ -21,4 +21,4 @@ After worker-local reduction removes the single index consumer, profile and meas
 
 ## Notes
 
-Superseded without a measurement: H65 required the H62 reduction-only walker, which exp-041/042 rejected and reverted. The indexed worker-depth curve remains resolved by H57/exp-036; reopen only if a materially different reducer lands.
+Reopened before H64: H59 itself already removes index construction, so exact-summary worker depth can differ even though H62 did not land. Screen fixed 8/10/12 summary-only pools against committed H59 automatic/six, then run a paired >=16-trial confirmation only if an arm plausibly clears 3%. Indexed policy remains untouched.
