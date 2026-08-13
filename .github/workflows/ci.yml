@@ -183,7 +183,7 @@ jobs:
           python-version: ${{ matrix.python }}
       - name: Test GIL release and Python object borrow exclusion
         working-directory: crates/fdu-py
-        run: uv run --frozen --only-group dev cargo test --locked -p fdu-py --lib --no-default-features
+        run: uv run --frozen --only-group dev python tests/run_concurrency.py
       - name: Build the wheel
         working-directory: crates/fdu-py
         run: uv run --frozen --only-group dev maturin build --locked --release --out dist

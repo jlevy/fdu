@@ -119,7 +119,7 @@ npm-audit: $(NODE_INSTALL_STAMP)
 
 python-concurrency:
 	uv run --directory crates/fdu-py --frozen --only-group dev \
-		cargo test --locked -p fdu-py --lib --no-default-features
+		python tests/run_concurrency.py
 
 python-smoke:
 	cd crates/fdu-py && wheel_dir="$$(mktemp -d "$${TMPDIR:-/tmp}/fdu-wheel.XXXXXX")" && \
