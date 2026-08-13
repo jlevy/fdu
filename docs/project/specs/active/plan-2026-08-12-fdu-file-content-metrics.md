@@ -25,6 +25,8 @@ Each analyzer has a versioned metric dialect, explicit coverage, independent cac
 identity, and additive per-directory rollups.
 A user can tell the difference between zero code and code that was not analyzed, and an
 analyzer change invalidates only that analyzer’s results rather than the metadata index.
+Grouped metric summaries make the same data useful as a GitHub-style language report or
+a document-volume report without introducing separate walkers or reducers.
 
 The evidence and prior-art review behind this plan are in
 [the fast file-content metrics research](../../research/research-2026-08-12-fast-file-content-metrics.md).
@@ -41,6 +43,8 @@ includes exploratory whole-tree, in-memory, and binary-gating measurements.
   binaries and reporting unsupported encodings as uncovered rather than zero
 - Provide a standard code-line rollup that distinguishes code, comments, and blanks for
   common languages and names its parser dialect
+- Provide language and document summaries with file counts, applicable metric columns,
+  coverage, and percentages over an explicitly named denominator
 - Measure prose using raw words, normalized logical words, paragraphs, and fixed-word
   page equivalents without storing rounded page counts
 - Exclude Markdown destinations, code, and hidden syntax from reader-visible prose
@@ -66,6 +70,8 @@ includes exploratory whole-tree, in-memory, and binary-gating measurements.
   coverage
 - Treat a MIME label or binary magic signature as a programming-language detector
 - Count minified data, URLs, code fences, or markup syntax as human-readable pages
+- Copy GitHub’s byte-based language percentages without labeling the denominator; fdu
+  supports byte share but uses code-line share for its default language summary
 - Add sentence counts until a versioned boundary rule survives representative prose,
   abbreviation, Unicode, and markup-projection fixtures
 - Persist per-byte code/comment classifications; ordinary rollups need counts, not a
@@ -194,17 +200,24 @@ The initial slots are:
 | `markdown-prose-v1` | `visible_raw_words` | Raw words after reader-visible Markdown projection |
 | `markdown-prose-v1` | `visible_logical_words` | Logical words after reader-visible Markdown projection |
 
-`content-basic-v1` treats LF as the line boundary, consumes the CR in CRLF, and does not
-invent another line after a terminal newline.
+`content-basic-v1` recognizes LF, CRLF, and lone CR as line boundaries, including mixed
+conventions in one file.
+CRLF is one boundary even when its two bytes straddle input chunks, and a terminal line
+boundary does not invent another line.
 An empty file has zero physical lines.
-A blank line contains only ASCII space, tab, vertical tab, form feed, or the CR consumed
-from CRLF. Raw words are maximal runs separated by Unicode whitespace in validated UTF-8
-prose.
+A blank line contains only Unicode White_Space code points under the analyzer’s pinned
+Unicode table after removing its line boundary.
+The implementation keeps an ASCII fast path and decodes only when a line contains
+non-ASCII bytes. Raw words are maximal runs separated by Unicode whitespace in validated
+UTF-8 prose.
 
 A line containing both code and a trailing comment counts once as code.
 Strings hide comment delimiters.
 Docstrings, nested comments, generated files, and embedded languages are explicit
 dialect rules rather than undocumented exceptions.
+Every language analyzer uses the shared physical-line boundaries and blank-line
+classification. An adapter that cannot parse lone-CR input directly normalizes only that
+uncommon path to LF before parsing; LF and CRLF stay allocation-free.
 
 Pages are a query-time derived value:
 
@@ -327,6 +340,44 @@ cache while reporting their byte sizes separately.
 
 ## API and Output Changes
 
+### Grouped Metric Summaries
+
+One `MetricSummarySpec` powers all grouped content reports:
+
+- group by raw extension, stable type, or broad content family
+- optionally admit only selected content families
+- project any requested additive metric slots
+- choose one projected metric as the percentage denominator
+- carry analyzer coverage for every row and for the complete report
+
+Each machine row carries the exact share numerator and denominator as integers.
+Human renderers calculate the percentage from those integers and may round for display;
+coverage excluded from the denominator is printed separately, so analyzed rows cannot
+appear to represent an unsupported portion of the tree.
+A zero denominator produces an unavailable percentage, not zero percent.
+
+Three named views lower to this generic projection rather than implementing their own
+aggregation:
+
+| View | Group and family | Default metric columns | Default percentage |
+| --- | --- | --- | --- |
+| `languages` | stable type; code | files, apparent bytes, code, comment, blank, physical lines | code lines |
+| `documents` | stable type; prose and markup | files, apparent bytes, physical, blank, nonblank lines, raw words, pages | raw words |
+| `metrics` | caller-selected group and families | caller-selected | none unless requested |
+
+`--percent-of apparent-bytes` gives the same broad kind of byte share as GitHub’s
+language bar; the default `languages` report instead answers what proportion of measured
+source code belongs to each language.
+When Phase 4 lands, callers can add logical or visible-prose metrics to `documents`
+without changing its Phase 2 defaults.
+
+The existing `types`, new `extensions`, and new `families` views use the same summary
+engine for metadata fields.
+Named summary views default to descending percentage, with stable type ID as the tie
+breaker; callers can use the existing sort axis to select a name or metric-qualified
+ordering. Tests assert that each named view equals its explicit `metrics` composition,
+preventing the presets from becoming alternate semantics.
+
 ### Rust API
 
 Add library-owned, non-stringly-typed concepts for:
@@ -335,6 +386,7 @@ Add library-owned, non-stringly-typed concepts for:
 - `AnalyzerId`, `AnalyzerVersion`, and `MetricSlotId`
 - `AnalysisRequest` containing an ordered set of analyzers and bounded analyzer options
 - `MetricValues` and `AnalysisCoverage`
+- `MetricSummarySpec`, `MetricGroup`, and exact metric-share numerator and denominator
 - per-file, per-type, per-directory, and summary content rollups
 - conditional analysis observations and committed derived deltas
 
@@ -362,6 +414,10 @@ Add repeatable analysis selection under the scan-scope axis:
 Profiles compose and imply prerequisites: `code` and `prose` include the basic binary
 and text-admission pass; `deep` adds bounded detection rather than rerunning the file.
 No flag means metadata only.
+Within the existing five-axis CLI, analysis belongs to scan scope because it changes
+what is read and cached; `languages`, `documents`, and `metrics` belong to the view axis
+because they are pure projections over retained results.
+A view never silently enables an analyzer.
 
 Add repeatable metric projection for views:
 
@@ -376,6 +432,21 @@ Add repeatable metric projection for views:
 
 Add `extensions` and `families` to the view grammar when Phase 1 gives `types` its
 stable detected-type meaning.
+Add the grouped summary views and their generic form:
+
+```text
+fdu PATH --analyze code --view languages
+fdu PATH --analyze basic --view documents --words-per-page 250
+fdu PATH --analyze code --view metrics --group-by type \
+  --content-family code --metric physical-lines --metric blank-lines \
+  --metric nonblank-lines --percent-of nonblank-lines
+```
+
+`physical-lines` includes blank lines, `nonblank-lines` excludes them, and `code-lines`
+excludes both blank and comment-only lines.
+This metric choice is the whitespace-inclusion option; analysis always retains
+`blank-lines` separately, so changing the displayed total or percentage never rereads a
+file or invalidates a cache.
 The default metric remains the selected apparent or allocated byte size, so existing
 tree, files, and summary commands do not change.
 A requested metric whose analyzer is not enabled is an explicit usage error rather than
@@ -406,6 +477,8 @@ Content work releases the GIL through the same Rust execution boundary as scans.
   reads
 - [ ] Make `types` report stable type IDs, add `families`, and preserve the current raw
   grouping and row semantics as `extensions`
+- [ ] Implement the generic metric-summary projection for extension, type, and family
+  groups, initially supporting file and byte metrics and exact share denominators
 - [ ] Define analyzer, metric-slot, coverage, options-fingerprint, and
   content-provenance types without enabling an analyzer
 - [ ] Add the optional sparse `ContentIndex` boundary and prove it allocates nothing per
@@ -426,8 +499,9 @@ is opened; and the disabled-path performance verdict is “no measurable regress
   eligible file
 - [ ] Share one 16 KiB prefix among byte-order-mark recognition, NUL detection, UTF-8
   admission, and the continuing line/word scan
-- [ ] Pin empty-file, final-newline, CRLF, whitespace-only, invalid-UTF-8, BOM,
-  long-line, and adversarial-binary semantics in golden fixtures
+- [ ] Pin empty-file, final-boundary, LF, CRLF, lone-CR, mixed-ending,
+  boundary-across-chunk, whitespace-only, invalid-UTF-8, BOM, long-line, and
+  adversarial-binary semantics in golden fixtures
 - [ ] Add conditional analysis observations, stale-read rejection, derived delta
   application, and subtract/add directory and type rollups
 - [ ] Add per-analyzer atomic persistence keyed by strong file fingerprint, type rules,
@@ -438,6 +512,8 @@ is opened; and the disabled-path performance verdict is “no measurable regress
   existing partial-result contract
 - [ ] Add `basic` analysis selection and metric projection to Rust, CLI, Python, and the
   versioned machine schema
+- [ ] Extend the metric-summary projection with physical, blank, nonblank, and raw-word
+  slots; add the `documents` preset and query-derived pages
 - [ ] Benchmark cold reads, warm filesystem cache, content-cache hits, 1% churn, large
   files, many tiny files, and the adversarial mislabeled-binary corpus
 
@@ -463,6 +539,8 @@ preregistered CPU, memory, and I/O budgets.
   revisions, recording intentional dialect differences
 - [ ] Expose standard `code_lines` as the ordinary LOC/SLOC rollup and keep
   `nonblank_lines` separately named
+- [ ] Add the `languages` preset with exact code-line shares, optional byte shares, and
+  explicit unsupported-language coverage
 - [ ] Report unsupported and ambiguous language coverage rather than falling back to
   nonblank lines
 
@@ -521,8 +599,12 @@ dialects.
 
 - Table-test type rules, exact names, case normalization, compound extensions, unknown
   extensions, dotfiles, extensionless files, and conflicting candidates
-- Golden every analyzer with empty input, no final newline, LF, CRLF, long lines, ASCII
-  whitespace variants, byte-order marks, invalid encodings, and early and late NUL bytes
+- Golden every analyzer with empty input, no final line boundary, long lines, ASCII and
+  Unicode whitespace variants, byte-order marks, invalid encodings, and early and late
+  NUL bytes
+- Generate LF, CRLF, lone-CR, and mixed-ending forms of the same fixtures, including
+  CRLF split across every possible streaming chunk boundary, and require identical
+  logical counts
 - Assert `physical_lines == blank_lines + nonblank_lines` for the basic analyzer
 - Assert `physical_lines == code_lines + comment_lines + blank_lines` for the code
   analyzer
@@ -555,6 +637,8 @@ dialects.
 - Prove a changed page convention causes no content-cache miss
 - Prove cache-only, revalidated, scanned, partial, and absent analyzer provenance in
   every output format
+- Prove each named grouped view equals its explicit generic composition and percentages
+  use the named metric, analyzed coverage, exact numerator, and exact denominator
 - Golden native CLI, installed wheel, and Rust/Python parity for metadata-only and
   content requests
 - Bound record counts, path lengths, metric slot counts, and declared allocation sizes
