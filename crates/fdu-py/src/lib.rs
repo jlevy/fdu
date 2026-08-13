@@ -571,6 +571,7 @@ fn metric_summary_dict<'py>(
             fdu::query::MetricGroup::Family => "family",
         },
     )?;
+    dict.set_item("share_metric", summary.share_metric.as_str())?;
     dict.set_item("words_per_page", summary.words_per_page)?;
     dict.set_item("total", metric_row_dict(py, &summary.total, summary.words_per_page)?)?;
     let rows = PyList::empty(py);

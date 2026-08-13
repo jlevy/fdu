@@ -128,6 +128,7 @@ fdu --view extensions ~/Downloads          # break down by raw file extension
 fdu --view types ~/Downloads               # break down by stable detected file type
 fdu --analyze basic --view families .      # lines, blanks, words, and exact byte shares
 fdu --analyze basic --view documents .     # text lines, words, paragraphs, and pages
+fdu --analyze code --view languages .      # standard LOC, comments, blanks, and shares
 fdu --format json .                        # stable, versioned machine output
 fdu --view files --sort size -n 20 ~/src   # compose a largest-files query
 fdu --skill                                # print the self-contained agent skill
@@ -164,9 +165,15 @@ files explicitly, and counts raw words only for prose and markup types.
 `--words-per-page` controls the report-time page denominator.
 Content results use an independently versioned sidecar, so unchanged warm runs do not
 reopen files and metadata snapshot v2 remains unchanged.
-The `code`, `documents`, and `full` profiles reserve the stable deeper-analyzer
-contracts; their additional SLOC and markup-aware slots land in the later phases of the
-same implementation plan.
+The `code` profile adds the dependency-free `code-sloc-v1` state machine for Rust,
+Python, JavaScript, TypeScript, Go, Java, C, C++, C#, Ruby, PHP, Swift, Kotlin, shell,
+and SQL. It reports code, comment, and code-blank lines separately, counts mixed lines
+as code, treats multiline strings and docstrings as code, and uses code lines as the
+default language-percentage denominator.
+Other code types remain visible as unsupported coverage rather than being mislabeled
+from nonblank lines.
+The `documents` and `full` profiles reserve the stable logical and markup-aware slots
+that land in the later phases of the same implementation plan.
 
 This surface — composable views, selection filters, time-window and watermark queries,
 cache policies, and a `tail -f`-style watch mode, all as orthogonal flags over one

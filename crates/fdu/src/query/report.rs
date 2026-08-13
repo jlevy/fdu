@@ -187,6 +187,31 @@ pub struct MetricShare {
     pub denominator: u64,
 }
 
+/// Metric used as the numerator and denominator of grouped percentages.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ShareMetric {
+    /// Apparent file bytes selected by the query.
+    ApparentBytes,
+    /// Allocated filesystem bytes selected by the query.
+    AllocatedBytes,
+    /// Standard code lines from `code-sloc-v1`.
+    CodeLines,
+    /// Aggregated logical prose words.
+    LogicalWords,
+}
+
+impl ShareMetric {
+    /// Stable machine label.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::ApparentBytes => "apparent_bytes",
+            Self::AllocatedBytes => "allocated_bytes",
+            Self::CodeLines => "code_lines",
+            Self::LogicalWords => "logical_words",
+        }
+    }
+}
+
 /// One stable group in a metric-summary section.
 #[derive(Clone, Debug)]
 pub struct MetricRow {
@@ -219,6 +244,8 @@ pub struct MetricSummary {
     pub total: MetricRow,
     /// Sorted, display-bounded rows.
     pub rows: Vec<MetricRow>,
+    /// Metric used for every row's exact share.
+    pub share_metric: ShareMetric,
     /// Logical words per derived page.
     pub words_per_page: u64,
 }
@@ -606,35 +633,49 @@ fn metric_summary(
             *total.coverage.entry(*reason).or_default() += count;
         }
     }
-    let denominator = match query.selection.size {
-        SizeMetric::Apparent => total.bytes,
-        SizeMetric::Allocated => total.allocated,
+    let share_metric = match view {
+        ViewSpec::Languages => ShareMetric::CodeLines,
+        ViewSpec::Documents => ShareMetric::LogicalWords,
+        ViewSpec::Types | ViewSpec::Families => match query.selection.size {
+            SizeMetric::Apparent => ShareMetric::ApparentBytes,
+            SizeMetric::Allocated => ShareMetric::AllocatedBytes,
+        },
+        ViewSpec::Tree | ViewSpec::Extensions | ViewSpec::Files | ViewSpec::Summary => {
+            unreachable!("only grouped views reach metric_summary")
+        }
     };
+    let denominator = share_value(&total, share_metric);
     total.share = MetricShare { numerator: denominator, denominator };
     let mut rows = grouped.into_values().collect::<Vec<_>>();
     for row in &mut rows {
-        row.share = MetricShare {
-            numerator: match query.selection.size {
-                SizeMetric::Apparent => row.bytes,
-                SizeMetric::Allocated => row.allocated,
-            },
-            denominator,
-        };
+        row.share = MetricShare { numerator: share_value(row, share_metric), denominator };
     }
     sort_rows(
         &mut rows,
         query,
         view,
-        |row, metric| match metric {
-            SizeMetric::Apparent => row.bytes,
-            SizeMetric::Allocated => row.allocated,
+        |row, metric| match view {
+            ViewSpec::Languages | ViewSpec::Documents => share_value(row, share_metric),
+            _ => match metric {
+                SizeMetric::Apparent => row.bytes,
+                SizeMetric::Allocated => row.allocated,
+            },
         },
         |row| row.files,
         |_| None,
         |row| row.id.clone(),
     );
     truncate(&mut rows, query.selection.limit);
-    MetricSummary { group, total, rows, words_per_page: query.words_per_page.max(1) }
+    MetricSummary { group, total, rows, share_metric, words_per_page: query.words_per_page.max(1) }
+}
+
+fn share_value(row: &MetricRow, metric: ShareMetric) -> u64 {
+    match metric {
+        ShareMetric::ApparentBytes => row.bytes,
+        ShareMetric::AllocatedBytes => row.allocated,
+        ShareMetric::CodeLines => row.metrics.code_lines,
+        ShareMetric::LogicalWords => row.metrics.logical_word_stats.logical_words(),
+    }
 }
 
 /// Rows for the files view.
@@ -1226,11 +1267,13 @@ mod tests {
         let rust = types.rows.iter().find(|row| row.id == "rust").expect("rust");
         assert_eq!((rust.files, rust.bytes), (3, 350));
         assert_eq!((rust.share.numerator, rust.share.denominator), (350, 657));
+        assert_eq!(types.share_metric, ShareMetric::ApparentBytes);
 
         let Section::Metrics { summary: families, .. } = &report.sections[1] else {
             panic!("expected family metrics")
         };
         assert!(families.rows.iter().any(|row| row.id == "code"));
         assert!(families.rows.iter().any(|row| row.id == "prose"));
+        assert_eq!(families.share_metric, ShareMetric::ApparentBytes);
     }
 }

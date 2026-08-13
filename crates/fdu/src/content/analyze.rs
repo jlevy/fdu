@@ -11,8 +11,8 @@ use crate::classify::{ContentFamily, classify_path_with_prefix};
 
 use super::{
     AnalysisApplyOutcome, AnalysisCandidate, AnalysisObservation, AnalysisRequest,
-    BasicAccumulator, ContentProvenance, CoverageReason, FileAnalysis, LogicalWordStats,
-    MetricValues, TextAdmission,
+    BasicAccumulator, CodeAccumulator, ContentProvenance, CoverageReason, FileAnalysis,
+    LogicalWordStats, MetricValues, TextAdmission,
 };
 
 const READ_CHUNK_BYTES: usize = 64 * 1024;
@@ -149,6 +149,14 @@ fn analyze_open_file(candidate: &AnalysisCandidate, request: AnalysisRequest) ->
     }
 
     let mut accumulator = BasicAccumulator::new();
+    let mut code_accumulator = request
+        .profile
+        .includes_code()
+        .then(|| CodeAccumulator::for_type(candidate.classification.file_type.as_str()))
+        .flatten();
+    let mut deferred_code = (request.profile.includes_code()
+        && candidate.classification.family == ContentFamily::Unknown)
+        .then(Vec::new);
     let mut prefix = Vec::with_capacity(CLASSIFICATION_PREFIX_BYTES);
     let mut chunk = vec![0_u8; READ_CHUNK_BYTES];
     let mut bytes_read = 0_u64;
@@ -175,6 +183,12 @@ fn analyze_open_file(candidate: &AnalysisCandidate, request: AnalysisRequest) ->
                     break;
                 }
                 accumulator.push(&chunk[..count]);
+                if let Some(code) = &mut code_accumulator {
+                    code.push(&chunk[..count]);
+                }
+                if let Some(deferred) = &mut deferred_code {
+                    deferred.extend_from_slice(&chunk[..count]);
+                }
             }
             Err(error) => {
                 read_failure = Some(error);
@@ -209,6 +223,30 @@ fn analyze_open_file(candidate: &AnalysisCandidate, request: AnalysisRequest) ->
                 metrics.raw_words = 0;
                 metrics.paragraphs = 0;
                 metrics.logical_word_stats = LogicalWordStats::default();
+            }
+            if request.profile.includes_code() && classification.family == ContentFamily::Code {
+                if code_accumulator.is_none()
+                    && let Some(deferred) = deferred_code
+                    && let Some(mut code) =
+                        CodeAccumulator::for_type(classification.file_type.as_str())
+                {
+                    code.push(&deferred);
+                    code_accumulator = Some(code);
+                }
+                let Some(code) = code_accumulator else {
+                    return record(
+                        candidate,
+                        request,
+                        classification,
+                        CoverageReason::Unsupported,
+                        None,
+                    );
+                };
+                let code_metrics = code.finish();
+                debug_assert_eq!(metrics.physical_lines, code_metrics.physical_lines);
+                metrics.code_lines = code_metrics.code_lines;
+                metrics.comment_lines = code_metrics.comment_lines;
+                metrics.code_blank_lines = code_metrics.code_blank_lines;
             }
             analyzed_record(candidate, request, classification, metrics)
         }
@@ -347,5 +385,61 @@ mod tests {
             index.content_rollup(std::path::Path::new("")).expect("root").total.metrics,
             MetricValues::default()
         );
+    }
+
+    #[test]
+    fn code_profile_partitions_supported_languages_and_marks_others_unsupported() {
+        let root = tempfile::tempdir().expect("tempdir");
+        fs::write(root.path().join("main.rs"), "// comment\nfn main() {} // mixed\n\n")
+            .expect("write rust");
+        fs::write(root.path().join("Main.hs"), "-- not claimed\nmain = pure ()\n")
+            .expect("write haskell");
+        let (mut index, _) =
+            crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
+
+        let report = analyze_index(
+            &mut index,
+            AnalysisRequest {
+                profile: super::super::AnalysisProfile::Code,
+                ..AnalysisRequest::default()
+            },
+        );
+
+        assert_eq!(report.analyzed, 1);
+        assert_eq!(report.unsupported, 1);
+        let rust = index.content().expect("content").file(std::path::Path::new("main.rs"));
+        let metrics = rust.expect("rust record").metrics;
+        assert_eq!(metrics.physical_lines, 3);
+        assert_eq!(metrics.code_lines, 1);
+        assert_eq!(metrics.comment_lines, 1);
+        assert_eq!(metrics.code_blank_lines, 1);
+        assert_eq!(
+            metrics.physical_lines,
+            metrics.code_lines + metrics.comment_lines + metrics.code_blank_lines
+        );
+        let haskell = index.content().expect("content").file(std::path::Path::new("Main.hs"));
+        assert_eq!(haskell.expect("haskell record").coverage, CoverageReason::Unsupported);
+
+        let query = crate::query::Query {
+            views: vec![crate::query::ViewSpec::Languages],
+            ..crate::query::Query::default()
+        };
+        let rendered = crate::query::report(
+            &index,
+            &query,
+            &crate::query::Provenance {
+                scan_started_at: None,
+                generated_at: std::time::UNIX_EPOCH,
+                source: crate::query::ReportSource::ColdScan,
+                complete: false,
+                errors: Vec::new(),
+            },
+        );
+        let crate::query::Section::Metrics { summary, .. } = &rendered.sections[0] else {
+            panic!("expected language metrics")
+        };
+        assert_eq!(summary.share_metric, crate::query::ShareMetric::CodeLines);
+        assert_eq!((summary.total.share.numerator, summary.total.share.denominator), (1, 1));
+        assert_eq!(summary.total.coverage.get(&CoverageReason::Unsupported), Some(&1));
     }
 }

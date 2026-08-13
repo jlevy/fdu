@@ -78,6 +78,7 @@ impl CodeAccumulator {
 }
 
 #[derive(Clone, Copy, Debug)]
+#[allow(clippy::struct_excessive_bools)]
 struct Syntax {
     line_comments: &'static [&'static [u8]],
     block: Option<BlockSyntax>,
@@ -101,8 +102,7 @@ impl Syntax {
         };
         match file_type {
             "rust" => Some(Self { nested_blocks: true, rust_raw_strings: true, ..c_like }),
-            "javascript" | "typescript" => Some(Self { backtick_strings: true, ..c_like }),
-            "go" => Some(Self { backtick_strings: true, ..c_like }),
+            "javascript" | "typescript" | "go" => Some(Self { backtick_strings: true, ..c_like }),
             "c" | "cpp" | "csharp" | "java" => Some(c_like),
             "kotlin" | "swift" => Some(Self { nested_blocks: true, triple_quotes: true, ..c_like }),
             "php" => Some(Self { line_comments: &[b"//", b"#"], ..c_like }),

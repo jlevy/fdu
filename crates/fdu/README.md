@@ -25,9 +25,12 @@ Features: `cli` (default, gates the binary and clap), `watch` (gates the notify
 dependency).
 
 Content inspection is optional and disabled by default.
-`OpenConfig::analysis` enables bounded streaming line and prose metrics, sparse
-type/family summaries, and independently versioned sidecar reuse without changing the
-metadata snapshot format or cost model for metadata-only consumers.
+`OpenConfig::analysis` enables bounded streaming line, prose, and common-language SLOC
+metrics; sparse type, family, and language summaries; and independently versioned
+sidecar reuse without changing the metadata snapshot format or cost model for
+metadata-only consumers.
+`code-sloc-v1` covers Rust, Python, JavaScript, TypeScript, Go, Java, C, C++, C#, Ruby,
+PHP, Swift, Kotlin, shell, and SQL without adding a parser dependency.
 
 License: MIT.
 

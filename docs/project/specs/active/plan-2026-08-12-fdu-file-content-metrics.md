@@ -216,8 +216,8 @@ The initial slots are:
 | `content-basic-v1` | `raw_words` | Whitespace-delimited words in eligible prose files |
 | `code-sloc-v1` | `code_lines` | Physical lines containing code, including mixed code/comment lines |
 | `code-sloc-v1` | `comment_lines` | Comment-only lines under the named language dialect |
-| `code-sloc-v1` | `blank_lines` | Whitespace-only lines outside comments |
-| `code-sloc-v1` | `physical_lines` | `code_lines + comment_lines + blank_lines` |
+| `code-sloc-v1` | `code_blank_lines` | Whitespace-only lines outside comments; separate from basic source-whitespace lines |
+| `code-sloc-v1` | `physical_lines` | `code_lines + comment_lines + code_blank_lines` |
 | `text-logical-v1` | `logical_word_stats` | Additive integer statistics from which normalized prose-volume units are derived |
 | `text-structure-v1` | `paragraphs` | Plain-text paragraph runs or projected markup blocks |
 | `markdown-prose-v1` | `visible_raw_words` | Raw words after reader-visible Markdown projection |
@@ -571,24 +571,24 @@ preregistered CPU, memory, and I/O budgets.
 
 ### Phase 3: Common-Language Standard SLOC
 
-- [ ] Build a feature-gated Tokei per-buffer adapter that consumes fdu-owned buffers and
+- [x] Build a feature-gated Tokei per-buffer adapter that consumes fdu-owned buffers and
   never invokes Tokei’s walker and disables or bounds nested parallelism
-- [ ] Compare binary size, compile time, RSS, large-file behavior, cancellation,
+- [x] Compare binary size, compile time, RSS, large-file behavior, cancellation,
   per-file latency distribution, cache reuse, and 1% churn with a narrow native
   SCC/Tokei-style state-machine prototype
-- [ ] Select Tokei or the native implementation through a recorded decision gate before
+- [x] Select Tokei or the native implementation through a recorded decision gate before
   adding a production dependency
-- [ ] Define `code-sloc-v1` for code, comment, blank, physical, mixed-line, docstring,
+- [x] Define `code-sloc-v1` for code, comment, blank, physical, mixed-line, docstring,
   nested-comment, generated-file, and embedded-language behavior
 - [ ] Add adversarial golden fixtures for Rust, Python, JavaScript, TypeScript, Go,
   Java, C, C++, C#, Ruby, PHP, Swift, Kotlin, shell, and SQL
 - [ ] Compare those fixtures and representative repositories with pinned SCC and Tokei
   revisions, recording intentional dialect differences
-- [ ] Expose standard `code_lines` as the ordinary LOC/SLOC rollup and keep
+- [x] Expose standard `code_lines` as the ordinary LOC/SLOC rollup and keep
   `nonblank_lines` separately named
-- [ ] Add the `languages` preset with exact code-line shares, optional byte shares, and
+- [x] Add the `languages` preset with exact code-line shares, optional byte shares, and
   explicit unsupported-language coverage
-- [ ] Report unsupported and ambiguous language coverage rather than falling back to
+- [x] Report unsupported and ambiguous language coverage rather than falling back to
   nonblank lines
 - [ ] Extend the multilingual tryscript and repository self-host checks, then freeze
   their semantic outputs before any code-parser performance iteration
@@ -800,7 +800,7 @@ when required, review the golden diff, and only then resume performance measurem
   CRLF split across every possible streaming chunk boundary, and require identical
   logical counts
 - Assert `physical_lines == blank_lines + nonblank_lines` for the basic analyzer
-- Assert `physical_lines == code_lines + comment_lines + blank_lines` for the code
+- Assert `physical_lines == code_lines + comment_lines + code_blank_lines` for the code
   analyzer
 - Golden strings containing comment markers, raw strings, multiline and nested comments,
   code plus trailing comments, docstrings, and unterminated constructs

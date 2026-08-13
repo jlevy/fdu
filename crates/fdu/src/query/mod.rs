@@ -15,6 +15,7 @@ pub use glob::Pattern;
 pub use parse::{format_rfc3339, parse_size, parse_when, system_time_to_nanos};
 pub use report::{
     ContentReportMetadata, FileRow, MetricGroup, MetricRow, MetricShare, MetricSummary, Provenance,
-    Query, Report, ReportSource, Section, SummaryRow, TreeNode, TypeRow, ViewSpec, report,
+    Query, Report, ReportSource, Section, ShareMetric, SummaryRow, TreeNode, TypeRow, ViewSpec,
+    report,
 };
 pub use selection::{Bound, Candidate, ModifiedWindow, Selection, SizeMetric, SortKey};

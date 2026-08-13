@@ -369,8 +369,9 @@ fn metric_summary_json(summary: &MetricSummary) -> String {
     let mut out = String::new();
     let _ = write!(
         out,
-        "{{\"group\": {}, \"words_per_page\": {}, \"total\": {}, \"rows\": [",
+        "{{\"group\": {}, \"share_metric\": {}, \"words_per_page\": {}, \"total\": {}, \"rows\": [",
         quote(metric_group_label(summary.group)),
+        quote(summary.share_metric.as_str()),
         summary.words_per_page,
         metric_row_json(&summary.total, summary.words_per_page)
     );
@@ -639,6 +640,7 @@ fn render_yaml(report: &Report) -> String {
 fn yaml_metrics(out: &mut String, summary: &MetricSummary) {
     out.push_str("    metrics:\n");
     let _ = writeln!(out, "      group: {}", metric_group_label(summary.group));
+    let _ = writeln!(out, "      share_metric: {}", summary.share_metric.as_str());
     let _ = writeln!(out, "      words_per_page: {}", summary.words_per_page);
     out.push_str("      total:\n");
     yaml_metric_row(out, &summary.total, summary.words_per_page, 8, false);
