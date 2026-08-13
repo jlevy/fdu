@@ -5,8 +5,29 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::process::Command;
 
+/// Whether this process is actually subject to Unix permission bits.
+///
+/// A privileged process reads the denied directory anyway, so the fixture below cannot
+/// produce a partial scan and the exit-code contract it pins is untestable. Probing the
+/// capability asks the question the fixture depends on, rather than inferring it from a
+/// user id.
+fn permission_bits_are_enforced() -> bool {
+    let Ok(directory) = tempfile::tempdir() else {
+        return false;
+    };
+    let path = directory.path().join("unreadable");
+    fs::write(&path, b"probe").is_ok()
+        && fs::set_permissions(&path, fs::Permissions::from_mode(0o000)).is_ok()
+        && fs::read(&path).is_err()
+}
+
 #[test]
 fn partial_results_use_exit_two_unless_explicitly_allowed() {
+    if !permission_bits_are_enforced() {
+        eprintln!("skipped: this process is not subject to Unix permission bits");
+        return;
+    }
+
     let root = tempfile::tempdir().expect("tempdir");
     let denied = root.path().join("denied");
     fs::create_dir(&denied).expect("create denied directory");

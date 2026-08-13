@@ -24,9 +24,10 @@ on disk already: `fseventsd` journals directory-level change events persistently
 process exits and reboots.
 Storing the journal cursor in the snapshot and replaying “what changed since” turns a
 quiet tree’s revalidation from ~700 ms at 60k entries into an approximately
-size-independent tens of milliseconds — against today’s serial sweep; the Background
-section states the honest comparison against where rung-1 work will land, and where the
-journal is transformative rather than incremental.
+size-independent tens of milliseconds.
+The Background section replaces that original serial comparison with exp-030’s current
+bounded-parallel rung-1 baseline and states where the journal is transformative rather
+than incremental.
 
 This is rung 2 of the warm ladder in the
 [performance-frontier research](../../research/research-2026-08-10-performance-frontier.md)
@@ -82,7 +83,8 @@ fails closed on every row, and why the full sweep remains the backstop on every 
 
 ## Background
 
-Measured on a 59,654-entry real checkout (Apple M1 Pro, APFS, warm page cache):
+The plan’s original baseline was measured on a 59,654-entry real checkout (Apple M1 Pro,
+APFS, warm page cache):
 
 | path | wall | of which |
 | --- | ---: | --- |
@@ -102,6 +104,21 @@ with flags for *several* of the ways history can be insufficient
 (`kFSEventStreamEventFlagMustScanSubDirs`, `UserDropped`, `KernelDropped`,
 `EventIdsWrapped`, `HistoryDone`, `RootChanged`, `Mount`, `Unmount`).
 
+The iterative loop has since improved those constants without changing that shape.
+On the current 60,067-entry subject, exp-032 measures about 290 ms for cold index and
+207 ms for snapshot load.
+exp-026 wires the exp-022 `getattrlistbulk` reader into full reconciliation, and exp-030
+then compares bounded directory waves against an immutable baseline so exact no-ops
+never reach the index consumer.
+Warm-open wall is now about 351 ms at 60k and 5.71 seconds at 720k; exp-030 alone
+improves those paths 30.25% and 59.53%. This improves the full-sweep fallback without
+changing its O(tree) verification shape.
+After the composable CLI merge, exp-035 reproduced the current branch on the
+heterogeneous 1,007,659-entry workspace: cold indexed wall is 7.332 seconds versus 9.850
+seconds on merged `origin/main`, with exact digest parity.
+That is not a journal result, but it is the current live non-cached scale anchor the
+journal fallback must preserve.
+
 **Not for every way, and that gap is the single most important spike finding.** An
 earlier draft of this section claimed the flags covered every case.
 They do not: replay from an old cursor can deliver `HistoryDone` having silently omitted
@@ -118,16 +135,13 @@ truth about what changed is not the same as being told the whole truth.
 
 ### What the journal is worth, honestly
 
-Against today’s serial sweep the journal looks overwhelming: ~690 ms → tens of
+Against the old serial sweep the journal looked overwhelming: ~690 ms to tens of
 milliseconds on a quiet 60k tree.
-That comparison flatters it, and the
-[frontier research’s calibration](../../research/research-2026-08-10-performance-frontier.md)
-is the honest one. Rung 1 of the warm ladder — producer-side no-op elision (the
-registry’s H12), the parallel sweep, and eventually bulk stat (H26) — is expected to
-bring a warm-cache revalidation down toward parallel-producer time on its own: ~190 ms
-at 60k today, and ~0.2–0.4 s per million entries on a warm cache.
-Measured against *that* baseline, the journal at 60k-warm is an incremental win, not a
-transformative one.
+That comparison flattered it.
+H26’s bulk reader and H12’s bounded parallel no-op elision now bring full reconciliation
+to about 151 ms and the complete warm open to about 351 ms (exp-030). Measured against
+that current rung-1 baseline, journal replay at 60k-warm is an incremental win rather
+than a transformative one.
 
 Where it is transformative is everywhere the sweep cannot be fast: cold metadata caches
 (cloud hosts whose RAM cannot hold the inodes — the snapshot is the only warm state
@@ -141,14 +155,16 @@ between a tool that can be part of a working loop and one that cannot.
 Both documents draw the same conclusion from opposite ends: the sweep must stay fast
 regardless, because the journal degrades into it (gate rows G3–G9), and the journal must
 exist, because no sweep reaches O(changes).
-The loop’s accept rule will judge Phase 2 against the rung-1 baseline current at
-measurement time, not against today’s serial sweep.
+The loop’s accept rule will judge Phase 2 against exp-030 or a later rung-1 baseline,
+not against the retired serial sweep.
 
-Scoped revalidation also composes with the platform work rather than competing with it:
-once bulk stat lands (H26), re-verifying a named changed directory is one
-`getattrlistbulk` call — the research’s whole-drive composition is journal resume (H43)
-naming the directories, bulk re-scan (H26) verifying them, and persisted roll-ups
-(H33/H16) rendering the rest untouched.
+Scoped revalidation also composes with the platform work rather than competing with it.
+Both the cold-scan and full-reconciliation halves of H26 have landed.
+The remaining integration is orchestration: feed journal-named changed directories into
+the existing bulk-backed subtree reconciler.
+The research’s whole-drive composition remains journal resume (H43) naming the
+directories, bulk re-scan (H26) verifying them, and persisted roll-ups (H33/H16)
+rendering the rest untouched.
 
 ### How modern Rust talks to FSEvents (researched 2026-08-10)
 
@@ -179,9 +195,10 @@ new supply-chain entries for ~6 declarations today.
 
 The workspace denies `unsafe_code`; the one FFI module carries a scoped
 `#[allow(unsafe_code)]` with every call site documented, and no unsafe appears anywhere
-else. This is a far smaller decision than the still-blocked `libc`-for-`openat` question
-(H2/H24): same locked crate set, unsafe confined to one leaf module behind a non-default
-feature on one platform.
+else. The exp-022/026 `getattrlistbulk` work has since established the same pattern for
+the scan boundary: an exact already-locked binding, unsafe confined to one leaf module,
+and byte-for-byte portable parity tests.
+The FSEvents module remains behind a non-default feature on one platform.
 
 Replay semantics that the implementation and its tests must honor, from Apple’s
 documentation and Watchman’s source (mechanics only — see the Overview’s honesty note on
@@ -530,18 +547,57 @@ Roughly **2× from raising in-flight depth alone**, on the exact workload the wh
 use case cares about.
 (The variance is wide because the subtree is live and the machine was not quiet; the
 direction is unambiguous and consistent across all four rounds.)
-`MAX_SCAN_THREADS` is currently 32, so the top of the useful range has not even been
-probed.
+`MAX_SCAN_THREADS` was 32, so the initial calibration included that upper bound rather
+than assuming sixteen was the knee.
+
+The post-breadth-first campaign turned that private observation into reproducible
+evidence. Exp-015 built an immutable 720,805-entry cache-pressure subject from twelve
+APFS clones of the pinned 60k tree.
+On that subject, explicit sixteen workers improved end-to-end cold-index wall 11.72%
+[−16.83%, −2.42%] against six; on the original 60,067-entry tree they instead regressed
+it 5.64% [+2.08%, +7.96%]. Thirty-two did not improve on sixteen in calibration.
+The old result survived the scheduler change, but it also confirmed that no fixed count
+is right for both regimes.
+
+Exp-018 through exp-021 then tested the shipped adaptive path.
+Pre-creating dormant reserves added small-tree CPU, faults, and RSS, so it was rejected.
+Creating them after 100,000 observed entries passed the 60k and 720k endpoints, but a
+post-review 120k boundary run found no wall benefit and measurable RSS and fault
+regressions.
+Moving the trigger to metadata-cache capacity avoided that boundary but left
+only a 1.71% unclear end-to-end gain at 720k.
+
+The accepted selector measures the state directly.
+Automatic scans aggregate the chunk work timing already collected for attribution and
+make one decision after 16,384 entries.
+At 30 microseconds of worker service per entry or more, one in-band control message
+causes the consumer to create reserve workers, bounded by twice available parallelism
+and sixteen overall.
+There are no reserve threads, per-entry clocks, or polling before that point, and
+explicit thread counts never adapt.
+The 720k cold-index job improved 5.31% [−8.37%, −2.70%] and producer wall 10.09%; on the
+120k boundary, wall, total CPU, faults, and RSS all remained unclear.
+After activation, the large index job traded latency for 51% more aggregate CPU and
+1.43% more RSS. These are warm-steady OS-cache measurements, not a controlled-cold
+claim; the private roughly-2× observation remains motivating context.
+
+The later bulk/BFS reproduction at 1M (exp-036) confirms why this remains adaptive
+rather than a new high fixed default.
+On the live APFS bulk path, eight workers improve wall only 1.30% while raising CPU
+33.5%; twelve and sixteen regress wall 2.46% and 10.65%. The service-time trigger
+correctly stays inactive in that fast state.
+This does not reverse the portable high-latency result above; it proves the policy
+distinguishes the two regimes it was designed for.
 
 Two consequences, and the second is the important one:
 
 - **Worker count must be state-adaptive, exactly like the cache policy.** When the tree
   fits the metadata cache the walk is syscall-bound and extra threads add contention;
-  when it does not, the walk is latency-bound and extra threads buy throughput almost
-  linearly until the device saturates.
-  The same capacity signal the cache policy reads (`kern.maxvnodes` versus recorded
-  entry count) selects the pool size, which is the frontier research’s H31 with a
-  concrete trigger rather than a calibration probe.
+  when it does not, the walk is latency-bound and extra threads buy throughput until the
+  device saturates. A first scan has no recorded entry count, so it begins conservatively
+  and calibrates from its own initial chunk service time.
+  This direct signal adapts across storage states without waiting to discover that the
+  tree is large.
 - **This is worth more than journal resume for the motivating use case, and it is
   orthogonal to it.** A first scan of a home folder can never be helped by a journal:
   there is no cursor yet.
@@ -550,9 +606,9 @@ Two consequences, and the second is the important one:
   The journal’s job is the *second* scan; in-flight depth’s job is the first, and the
   product story for whole-drive usage needs both.
 
-That reorders the work: the adaptive pool (`fdu-6ld9`’s sibling) should land before
-scoped revalidation, because it is cheap, portable, and improves the case the journal is
-designed for without depending on any of it.
+That reordered the work: the adaptive pool (`fdu-tt2j`) now precedes scoped
+revalidation. It is portable and improves the case the journal is designed for without
+depending on any of it.
 
 ### Phase 0 spike findings (2026-08-10, run on this host)
 
@@ -653,7 +709,8 @@ Phase 2’s acceptance should be measured at 500k+ or on a cold cache.
 
 - [ ] `journal/fsevents.rs`: FFI declarations, current-event-id, volume UUID, historical
   replay with deadline; scoped `#[allow(unsafe_code)]` with per-call safety comments
-- [ ] `revalidate_dirs` in scan.rs, plus `InvalidateSubtree` resolution for G8
+- [ ] `revalidate_dirs` orchestration in scan.rs, feeding changed roots into exp-026’s
+  bulk-backed subtree reconciler, plus `InvalidateSubtree` resolution for G8
 - [ ] CLI: gate wiring, `--revalidate` flag, save-side cursor capture on macOS
 - [ ] Integration tests (macOS CI leg): mutate-then-journal-revalidate equals fresh scan
   by engine digest; UUID mismatch, event-ID regression, and forced `MustScanSubDirs`

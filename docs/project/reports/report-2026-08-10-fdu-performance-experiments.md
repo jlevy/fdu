@@ -14,28 +14,24 @@ a change is kept: [the performance loop guide](../guides/performance-loop.md).
 ## Where it stands
 
 Every accepted change together, measured against the pre-work baseline in one
-interleaved run of 16 paired trials (exp-006).
+interleaved run of 12 paired trials (exp-032).
 
 | job | before | after | change | 95% interval |
 | --- | ---: | ---: | ---: | --- |
-| `cold-scan-index` | 631 ms | 321 ms | **-48.9%** | [-51.1%, -47.5%] |
-| `cold-scan-producer` | 959 ms | 465 ms | **-51.6%** | [-52.3%, -50.2%] |
-| `cold-snapshot-save` | 647 ms | 352 ms | **-46.2%** | [-48.6%, -45.1%] |
-| `warm-revalidate` | 804 ms | 688 ms | **-14.7%** | [-15.8%, -12.7%] |
-| `warm-snapshot-load` | 324 ms | 230 ms | **-29.1%** | [-29.6%, -28.1%] |
+| `cold-scan-index` | 635 ms | 290 ms | **-54.5%** | [-55.3%, -53.7%] |
+| `cold-scan-producer` | 1219 ms | 457 ms | **-60.0%** | [-62.2%, -58.7%] |
+| `cold-snapshot-save` | 737 ms | 333 ms | **-52.4%** | [-56.6%, -51.0%] |
+| `warm-revalidate` | 902 ms | 442 ms | **-52.0%** | [-54.1%, -50.1%] |
+| `warm-snapshot-load` | 321 ms | 207 ms | **-35.7%** | [-36.2%, -35.3%] |
 
-Third-party tools on the same tree, for calibration only — they answer a slightly
-different question with different guarantees, and never enter the accept rule: `du` 350
-ms, `dust` 220 ms.
-
-## Reproducing this
+## Reproducing the cumulative comparison
 
 **The tree.** Pinned by content, not by name.
 
-- Label `metabrowser`, 60,067 entries (7,350 directories, 52,695 files, 22 symlinks),
-  max depth 19.
+- Label `metabrowser-20260812`, 60,067 entries (7,350 directories, 52,695 files, 22
+  symlinks), max depth 19.
 - 1.01 GiB apparent, 1.15 GiB allocated.
-- Content digest `c631fbf39d7c7adace225d5c9935aaf991176d05da800abd7a69c56ceb0f3b0e`
+- Content digest `ce5a7430e152412a519ee9f9776c2fec73e59c58fa553aa3e9c2f8c085d26619`
   (`fdu-index-record-v1`). Two trees with this digest are the same tree in the same
   state.
 - Identified as `dbd79ed9c898f7a2…`, the SHA-256 of its path.
@@ -75,6 +71,38 @@ dead end.
 | 012 | [Breadth-first traversal order](#exp012--breadthfirst-traversal-order) | H48 | `cold-scan-index` | -0.6% | ✅ accepted |
 | 013 | [Region-scheduled breadth-first traversal](#exp013--regionscheduled-breadthfirst-traversal) | H49: exp-012’s RSS cost and its missing ordering benefit both came from the global FIFO, not from preferring shallow work; per-region buckets with round-robin hand-off recover memory while making the shallow preference survive parallelism | `cold-scan-index` | -3.8% | ✅ accepted |
 | 014 | [What the breadth-first default costs, on the shipped scheduler](#exp014--what-the-breadthfirst-default-costs-on-the-shipped-scheduler) | H50: exp-012 measured a scheduler that no longer exists and exp-013 compared two breadth-first schedulers, so what the shipped default costs against depth-first is unmeasured | `cold-scan-producer` | -3.0% | 📏 baseline |
+| 015 | [Post-BFS worker depth under metadata-cache pressure](#exp015--postbfs-worker-depth-under-metadatacache-pressure) | H31 | `cold-scan-index` | -11.7% | ✅ accepted |
+| 016 | [Move cold-scan producer paths instead of cloning](#exp016--move-coldscan-producer-paths-instead-of-cloning) | H51 | `cold-scan-index` | -0.4% | ❌ rejected |
+| 017 | [Pre-create dormant workers for adaptive scan depth](#exp017--precreate-dormant-workers-for-adaptive-scan-depth) | H31 | `cold-scan-producer` | +2.0% | ❌ rejected |
+| 018 | [Spawn reserve workers only after observed scan scale](#exp018--spawn-reserve-workers-only-after-observed-scan-scale) | H31 | `cold-scan-index` | -4.0% | ↩︎ superseded |
+| 019 | [Adaptive worker threshold at the first crossing scale](#exp019--adaptive-worker-threshold-at-the-first-crossing-scale) | H31 | `cold-scan-index` | +1.2% | ❌ rejected |
+| 020 | [Delay adaptive workers until metadata-cache capacity](#exp020--delay-adaptive-workers-until-metadatacache-capacity) | H31 | `cold-scan-index` | -1.7% | ❌ rejected |
+| 021 | [Calibrate adaptive workers from initial filesystem service time](#exp021--calibrate-adaptive-workers-from-initial-filesystem-service-time) | H31 | `cold-scan-index` | -5.3% | ✅ accepted |
+| 022 | [Batch macOS scan metadata with getattrlistbulk](#exp022--batch-macos-scan-metadata-with-getattrlistbulk) | H3, H26 | `cold-scan-index` | -30.1% | ✅ accepted |
+| 023 | [Cumulative effect through adaptive scanning and macOS bulk metadata](#exp023--cumulative-effect-through-adaptive-scanning-and-macos-bulk-metadata) | H1, H5, H10, H14, H18, H32, H48, H49, H31, H3, H26 | `cold-scan-index` | -53.5% | ✅ accepted |
+| 024 | [Open macOS directories relative to one retained root fd](#exp024--open-macos-directories-relative-to-one-retained-root-fd) | H2, H24 | `cold-scan-index` | -0.1% | ❌ rejected |
+| 025 | [Revisit worker depth after macOS bulk metadata](#exp025--revisit-worker-depth-after-macos-bulk-metadata) | H52 | `cold-scan-index` | +19.2% | ❌ rejected |
+| 026 | [Reuse macOS bulk metadata during full reconciliation](#exp026--reuse-macos-bulk-metadata-during-full-reconciliation) | H53, H26 | `warm-revalidate` | -34.4% | ✅ accepted |
+| 027 | [Cumulative effect through bulk reconciliation](#exp027--cumulative-effect-through-bulk-reconciliation) | H1, H5, H10, H14, H18, H32, H48, H49, H31, H3, H26, H53 | `cold-scan-index` | -52.8% | ✅ accepted |
+| 028 | [Reuse macOS bulk directory staging allocations](#exp028--reuse-macos-bulk-directory-staging-allocations) | H54 | `cold-scan-index` | +0.2% | ❌ rejected |
+| 029 | [Increase macOS bulk metadata buffer to 256 KiB](#exp029--increase-macos-bulk-metadata-buffer-to-256-kib) | H55 | `cold-scan-index` | -1.8% | ❌ rejected |
+| 030 | [Elide unchanged entries in bounded parallel reconciliation waves](#exp030--elide-unchanged-entries-in-bounded-parallel-reconciliation-waves) | H12, H9 | `warm-revalidate` | -59.5% | ✅ accepted |
+| 031 | [Increase immutable-baseline reconciliation waves to 4096 directories](#exp031--increase-immutablebaseline-reconciliation-waves-to-4096-directories) | H56 | `warm-revalidate` | +1.6% | ❌ rejected |
+| 032 | [Cumulative effect through bounded parallel reconciliation](#exp032--cumulative-effect-through-bounded-parallel-reconciliation) | H1, H5, H10, H14, H18, H32, H48, H49, H31, H3, H26, H53, H12, H9 | `cold-scan-index` | -54.5% | ✅ accepted |
+| 033 | [Post-composable-CLI integration validation](#exp033--postcomposablecli-integration-validation) | H3, H31, H53, H12, H9 | `warm-revalidate` | -42.3% | ✅ accepted |
+| 034 | [Post-composable-CLI validation under cache pressure](#exp034--postcomposablecli-validation-under-cache-pressure) | H3, H31, H53, H12, H9 | `cold-scan-index` | -30.5% | ✅ accepted |
+| 035 | [Post-composable-CLI validation on the live 1M workspace](#exp035--postcomposablecli-validation-on-the-live-1m-workspace) | H3, H31 | `cold-scan-index` | -31.3% | ✅ accepted |
+| 036 | [Revisit worker depth on the live 1M workspace](#exp036--revisit-worker-depth-on-the-live-1m-workspace) | H57 | `cold-scan-index` | -1.3% | ❌ rejected |
+| 037 | [Revisit breadth-first versus depth-first on the live 1M workspace](#exp037--revisit-breadthfirst-versus-depthfirst-on-the-live-1m-workspace) | H4 | `cold-scan-index` | +3.6% | ❌ rejected |
+| 038 | [Parent-relative openat frontier on the live 1M workspace](#exp038--parentrelative-openat-frontier-on-the-live-1m-workspace) | H24, H29 | `cold-scan-index` | -0.7% | ❌ rejected |
+| 039 | [Revisit the macOS bulk buffer on the live 1M workspace](#exp039--revisit-the-macos-bulk-buffer-on-the-live-1m-workspace) | H55 | `cold-scan-index` | +2.2% | ❌ rejected |
+| 040 | [Derive an exact rich summary without building an index](#exp040--derive-an-exact-rich-summary-without-building-an-index) | H59 | `rich-summary-report` | -14.6% | ✅ accepted |
+| 041 | [Reduce transient summaries inside scan workers](#exp041--reduce-transient-summaries-inside-scan-workers) | H62 | `rich-summary-report` | -1.4% | ❌ rejected |
+| 042 | [Derive macOS summary bulk records](#exp042--derive-macos-summary-bulk-records) | H63 | `rich-summary-report` | +1.9% | ❌ rejected |
+| 043 | [Retune workers for transient summary](#exp043--retune-workers-for-transient-summary) | H65 | `rich-summary-report` | +0.7% | ❌ rejected |
+| 044 | [Specialize a selected size total](#exp044--specialize-a-selected-size-total) | H64 | `selected-allocated-total` | -1.1% | ❌ rejected |
+| 045 | [Pipeline macOS directory opens](#exp045--pipeline-macos-directory-opens) | H67, H69 | `rich-summary-open-pipeline` | -4.5% | ↩︎ superseded |
+| 046 | [Tune a shared macOS directory-opener pool](#exp046--tune-a-shared-macos-directoryopener-pool) | H70 | `rich-summary-shared-openers` | -4.0% | ⏳ in progress |
 
 ## The experiments
 
@@ -627,6 +655,1112 @@ No code changed; the warm asymmetry is tracked as fdu-v71x.
 
 Full record:
 [`exp-014-what-the-breadth-first-default-costs-on-the-shipped-schedule.md`](../experiments/exp-014-what-the-breadth-first-default-costs-on-the-shipped-schedule.md)
+
+### exp-015 — Post-BFS worker depth under metadata-cache pressure
+
+✅ accepted · 2026-08-12 · H31
+
+Control: six workers, the current automatic ceiling
+
+Candidate: sixteen workers on a tree larger than the vnode cache
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 7238.6 | 6231.9 | -11.72% | [-16.83%, -2.42%] |
+| component (ms) | 5795.7 | 4846.9 | -16.04% | [-20.28%, -5.38%] |
+| cpu (ms) | 22555.6 | 32602.3 | +42.64% (regression) | [+28.82%, +52.30%] |
+| user (ms) | 3079.2 | 3353.4 | +7.79% (regression) | [+5.97%, +12.62%] |
+| system (ms) | 19523.9 | 29249.9 | +47.67% (regression) | [+31.73%, +59.69%] |
+| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
+| peak rss (MiB) | 310.4 | 315.1 | +1.55% (regression) | [+1.41%, +1.95%] |
+
+Other jobs, wall time: `cold-scan-producer` -9.3%.
+
+Cost to carry: 0 lines; no new dependencies.
+
+Configuration experiment only; establishes the large-tree target and the need for a
+scale-sensitive trigger.
+
+**Accepted:** Sixteen workers improved large-tree end-to-end wall 11.72% and producer
+wall 9.27%, while the separate 60k run showed why the default must adapt rather than
+rise globally.
+
+Full record:
+[`exp-015-post-bfs-worker-depth-under-metadata-cache-pressure.md`](../experiments/exp-015-post-bfs-worker-depth-under-metadata-cache-pressure.md)
+
+### exp-016 — Move cold-scan producer paths instead of cloning
+
+❌ rejected · 2026-08-12 · H51
+
+Control: current region-scheduled breadth-first producer
+
+Candidate: move non-directory relative paths into observation ops
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 336.0 | 339.9 | -0.44% (n.s.) | [-5.30%, +1.52%] |
+| component (ms) | 217.0 | 221.7 | -0.87% (n.s.) | [-7.76%, +2.30%] |
+| cpu (ms) | 1198.5 | 1217.5 | +0.92% (n.s.) | [-3.81%, +5.84%] |
+| user (ms) | 251.0 | 251.0 | -1.16% (n.s.) | [-2.73%, +2.27%] |
+| system (ms) | 947.3 | 963.9 | +1.18% (n.s.) | [-5.18%, +7.95%] |
+| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
+| peak rss (MiB) | 32.6 | 33.8 | +3.88% (regression) | [+1.50%, +4.78%] |
+
+Other jobs, wall time: `cold-scan-producer` +1.4% (n.s.).
+
+Cost to carry: 5 lines; no new dependencies.
+
+Reverted; transferring ownership changes which allocation remains live in each batch but
+did not reduce the measured work.
+
+**Rejected:** Wall and CPU were unchanged while peak RSS and minor faults regressed
+about 4%, so the ownership rewrite is not worth carrying.
+
+Full record:
+[`exp-016-move-cold-scan-producer-paths-instead-of-cloning.md`](../experiments/exp-016-move-cold-scan-producer-paths-instead-of-cloning.md)
+
+### exp-017 — Pre-create dormant workers for adaptive scan depth
+
+❌ rejected · 2026-08-12 · H31
+
+Control: fixed six-worker automatic pool
+
+Candidate: six active workers plus ten dormant reserve threads
+
+**`cold-scan-producer`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 494.2 | 500.7 | +2.01% (n.s.) | [-1.86%, +5.59%] |
+| component (ms) | 204.6 | 207.7 | +0.88% (n.s.) | [-5.32%, +5.07%] |
+| cpu (ms) | 2041.1 | 2116.9 | +5.67% (regression) | [+1.33%, +8.44%] |
+| user (ms) | 307.9 | 320.3 | +3.33% (regression) | [+2.47%, +5.03%] |
+| system (ms) | 1733.5 | 1791.6 | +5.57% (regression) | [+0.95%, +9.41%] |
+| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
+| peak rss (MiB) | 32.5 | 33.0 | +1.40% (regression) | [+0.53%, +2.77%] |
+
+Other jobs, wall time: `cold-scan-index` -2.2% (n.s.).
+
+Cost to carry: 126 lines; no new dependencies; new failure mode: reserve-thread wakeup
+must stay synchronized with queue completion.
+
+Superseded in the working tree by threshold-triggered spawning; no dormant reserve is
+needed.
+
+**Rejected:** Small-tree wall was unclear, but dormant reserves measurably added 5.67%
+CPU, 2.38% minor faults, and 1.40% peak RSS before ever activating.
+
+Full record:
+[`exp-017-pre-create-dormant-workers-for-adaptive-scan-depth.md`](../experiments/exp-017-pre-create-dormant-workers-for-adaptive-scan-depth.md)
+
+### exp-018 — Spawn reserve workers only after observed scan scale
+
+↩︎ superseded · 2026-08-12 · H31
+
+Control: fixed six-worker automatic pool
+
+Candidate: start at six and spawn up to sixteen after 100k observed entries
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 6517.9 | 6238.3 | -4.04% | [-5.56%, -1.85%] |
+| component (ms) | 5148.9 | 4854.2 | -5.42% | [-7.17%, -2.89%] |
+| cpu (ms) | 22952.0 | 32294.3 | +41.24% (regression) | [+37.73%, +44.26%] |
+| user (ms) | 2951.3 | 3368.8 | +13.84% (regression) | [+11.40%, +14.51%] |
+| system (ms) | 20003.2 | 28918.4 | +45.12% (regression) | [+41.54%, +48.81%] |
+| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
+| peak rss (MiB) | 309.9 | 314.9 | +1.56% (regression) | [+1.31%, +1.79%] |
+
+Other jobs, wall time: `cold-scan-producer` -4.6% (n.s.).
+
+Cost to carry: 128 lines; no new dependencies; new failure mode: a threshold control
+message must create the reserve exactly once without extending channel lifetime.
+
+No dependency or unsafe code; explicit thread counts remain fixed.
+Large-tree latency trades for roughly 41% more CPU and 1.56% RSS.
+
+**Superseded:** The 720k endpoint passed, but exp-019 found needless RSS and fault
+regressions just above the 100k trigger; service-time calibration supersedes scale
+alone.
+
+Full record:
+[`exp-018-spawn-reserve-workers-only-after-observed-scan-scale.md`](../experiments/exp-018-spawn-reserve-workers-only-after-observed-scan-scale.md)
+
+### exp-019 — Adaptive worker threshold at the first crossing scale
+
+❌ rejected · 2026-08-12 · H31
+
+Control: fixed six-worker automatic pool
+
+Candidate: spawn ten reserve workers after 100k observed entries
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 634.2 | 637.5 | +1.23% (n.s.) | [-1.85%, +3.80%] |
+| component (ms) | 408.1 | 407.2 | +0.81% (n.s.) | [-3.19%, +4.29%] |
+| cpu (ms) | 2622.3 | 2701.1 | +1.70% (n.s.) | [-2.05%, +8.04%] |
+| user (ms) | 491.8 | 498.3 | +3.39% (regression) | [+0.10%, +5.98%] |
+| system (ms) | 2161.3 | 2213.6 | +0.95% (n.s.) | [-2.83%, +9.12%] |
+| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
+| peak rss (MiB) | 60.2 | 61.0 | +1.64% (regression) | [+0.52%, +2.32%] |
+
+Other jobs, wall time: `cold-scan-producer` -2.7% (n.s.).
+
+Cost to carry: 0 lines; no new dependencies.
+
+Boundary validation of exp-018; raise the trigger toward metadata-cache capacity and
+remeasure both endpoints.
+
+**Rejected:** At 120k entries the threshold added no wall benefit but measurably
+regressed RSS and minor faults, so 100k activates before enough work remains.
+
+Full record:
+[`exp-019-adaptive-worker-threshold-at-the-first-crossing-scale.md`](../experiments/exp-019-adaptive-worker-threshold-at-the-first-crossing-scale.md)
+
+### exp-020 — Delay adaptive workers until metadata-cache capacity
+
+❌ rejected · 2026-08-12 · H31
+
+Control: fixed six-worker automatic pool
+
+Candidate: spawn reserve workers after 262144 observed entries
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 6185.8 | 6036.8 | -1.71% (n.s.) | [-2.90%, +1.05%] |
+| component (ms) | 4847.5 | 4654.8 | -2.82% | [-4.52%, -0.63%] |
+| cpu (ms) | 22821.8 | 31111.4 | +35.58% (regression) | [+9.01%, +43.22%] |
+| user (ms) | 2879.1 | 3184.0 | +11.41% (regression) | [+5.60%, +14.50%] |
+| system (ms) | 19960.6 | 27890.0 | +38.75% (regression) | [+9.57%, +47.64%] |
+| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
+| peak rss (MiB) | 310.1 | 313.8 | +1.19% (regression) | [+0.91%, +1.29%] |
+
+Other jobs, wall time: `cold-scan-producer` -4.2%.
+
+Cost to carry: 0 lines; no new dependencies.
+
+Scale alone cannot distinguish a cached medium tree from a latency-bound large one early
+enough; supersede with first-chunk service-time calibration.
+
+**Rejected:** The safer trigger removed the 120k activation but improved 720k end-to-end
+wall only 1.71% with an interval crossing zero, below the bar.
+
+Full record:
+[`exp-020-delay-adaptive-workers-until-metadata-cache-capacity.md`](../experiments/exp-020-delay-adaptive-workers-until-metadata-cache-capacity.md)
+
+### exp-021 — Calibrate adaptive workers from initial filesystem service time
+
+✅ accepted · 2026-08-12 · H31
+
+Control: fixed six-worker automatic pool
+
+Candidate: measure the first 16k entries and expand only above 30 microseconds of worker
+service per entry
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 6300.4 | 6056.1 | -5.31% | [-8.37%, -2.70%] |
+| component (ms) | 4915.4 | 4672.5 | -7.11% | [-11.06%, -2.98%] |
+| cpu (ms) | 22674.6 | 34479.0 | +51.16% (regression) | [+43.81%, +55.44%] |
+| user (ms) | 2953.8 | 3328.4 | +12.93% (regression) | [+11.13%, +15.11%] |
+| system (ms) | 19734.9 | 31109.0 | +56.75% (regression) | [+48.33%, +60.64%] |
+| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
+| peak rss (MiB) | 310.6 | 314.5 | +1.43% (regression) | [+0.85%, +1.64%] |
+
+Other jobs, wall time: `cold-scan-producer` -10.1%.
+
+Cost to carry: 181 lines; no new dependencies; new failure mode: a noisy first 16k
+entries can choose the wrong fixed pool for the remainder of one scan.
+
+No dependency, unsafe code, polling, or per-entry clocks; explicit thread counts remain
+fixed. Activated scans trade wall latency for 51% more aggregate CPU and 1.43% RSS.
+
+**Accepted:** Latency calibration improved 720k cold-index wall 5.31% and producer wall
+10.09%, while the separate 120k boundary left wall, CPU, faults, and RSS unchanged.
+
+Full record:
+[`exp-021-calibrate-adaptive-workers-from-initial-filesystem-service-t.md`](../experiments/exp-021-calibrate-adaptive-workers-from-initial-filesystem-service-t.md)
+
+### exp-022 — Batch macOS scan metadata with getattrlistbulk
+
+✅ accepted · 2026-08-12 · H3, H26
+
+Control: portable read_dir plus one metadata syscall per entry, with adaptive workers
+
+Candidate: macOS getattrlistbulk names and complete stat-tier metadata, with portable
+directory fallback
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 6478.7 | 4537.0 | -30.13% | [-32.19%, -25.11%] |
+| component (ms) | 4990.0 | 3077.7 | -38.98% | [-44.88%, -31.77%] |
+| cpu (ms) | 29818.1 | 15046.7 | -43.56% | [-60.05%, -34.03%] |
+| user (ms) | 3371.1 | 2688.9 | -19.60% | [-21.06%, -17.74%] |
+| system (ms) | 26468.6 | 12039.1 | -46.62% | [-65.75%, -36.63%] |
+| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
+| peak rss (MiB) | 315.2 | 317.5 | +2.71% (n.s.) | [-1.42%, +37.00%] |
+
+Other jobs, wall time: `cold-scan-producer` -41.6%.
+
+Cost to carry: 542 lines; dependencies: libc 0.2.189 (macOS-only direct dependency,
+already locked transitively); 1 unsafe blocks; new failure mode: a malformed or
+unsupported bulk response causes that directory to be discarded and reread through the
+portable backend; new failure mode: one worker buffers a complete directory before
+publishing it, increasing peak memory and delaying progress within extremely wide
+directories.
+
+macOS-only accelerator; one bounds-audited FFI call, per-record returned-attribute
+validation, mount/firmlink-boundary fallback, 64 KiB buffer per worker, and unchanged
+portable implementation elsewhere
+
+**Accepted:** Current code improved 720k end-to-end wall 30.13% and producer wall
+41.60%, while the separate 60k run improved them 5.22% and 9.25%; all oracle checks
+passed and CPU fell at both scales.
+
+Full record:
+[`exp-022-batch-macos-scan-metadata-with-getattrlistbulk.md`](../experiments/exp-022-batch-macos-scan-metadata-with-getattrlistbulk.md)
+
+### exp-023 — Cumulative effect through adaptive scanning and macOS bulk metadata
+
+✅ accepted · 2026-08-12 · H1, H5, H10, H14, H18, H32, H48, H49, H31, H3, H26
+
+Control: b565882 before the iterative performance work
+
+Candidate: current code through exp-022: accepted traversal, index, snapshot, BFS
+scheduling, adaptive-depth, and macOS bulk-metadata changes
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 625.2 | 295.5 | -53.49% | [-55.22%, -52.22%] |
+| component (ms) | 506.1 | 175.3 | -65.66% | [-67.04%, -64.89%] |
+| cpu (ms) | 617.3 | 1068.9 | +64.87% (regression) | [+62.60%, +92.64%] |
+| user (ms) | 240.4 | 228.5 | -4.22% | [-7.60%, -0.53%] |
+| system (ms) | 376.0 | 839.7 | +111.31% (regression) | [+102.85%, +149.98%] |
+| blocked (ms) | 9.5 | 0.0 | -100.00% | [-100.00%, -100.00%] |
+| peak rss (MiB) | 32.0 | 33.6 | +4.66% (regression) | [+3.40%, +6.49%] |
+
+Other jobs, wall time: `cold-scan-producer` -58.2%, `cold-snapshot-save` -51.3%,
+`warm-revalidate` -20.6%, `warm-snapshot-load` -36.1%.
+
+Cost to carry: 0 lines; no new dependencies.
+
+measurement-only cumulative anchor; complexity belongs to the individual accepted
+experiments
+
+**Accepted:** Against the original pre-work baseline, current code improved cold-index
+wall 53.49%, producer wall 58.20%, snapshot-save wall 51.32%, warm revalidation 20.60%,
+and snapshot load 36.08%; all oracle checks passed.
+
+Full record:
+[`exp-023-cumulative-effect-through-adaptive-scanning-and-macos-bulk-m.md`](../experiments/exp-023-cumulative-effect-through-adaptive-scanning-and-macos-bulk-m.md)
+
+### exp-024 — Open macOS directories relative to one retained root fd
+
+❌ rejected · 2026-08-12 · H2, H24
+
+Control: exp-022 macOS bulk reader with absolute directory opens
+
+Candidate: one retained root fd per worker and root-relative openat
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 3685.7 | 3625.6 | -0.07% (n.s.) | [-4.06%, +1.53%] |
+| component (ms) | 2335.4 | 2251.5 | -0.09% (n.s.) | [-6.88%, +1.05%] |
+| cpu (ms) | 11396.8 | 10831.6 | -0.42% (n.s.) | [-2.79%, +1.07%] |
+| user (ms) | 2420.3 | 2415.9 | +1.37% (n.s.) | [-0.69%, +1.99%] |
+| system (ms) | 8938.7 | 8428.1 | -1.03% (n.s.) | [-3.75%, +0.85%] |
+| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
+| peak rss (MiB) | 311.1 | 312.2 | +0.30% (regression) | [+0.17%, +0.44%] |
+
+Other jobs, wall time: `cold-scan-producer` -6.3%.
+
+Cost to carry: 69 lines; no new dependencies; 1 unsafe blocks; new failure mode: root
+open, path conversion, or openat failure sends the directory through the portable reread
+path; new failure mode: one additional root directory descriptor remains live per active
+worker.
+
+macOS only; 50 insertions and 19 deletions, one retained fd per worker, one CString
+conversion per directory, and a second unsafe block
+
+**Rejected:** Indexed wall was neutral at -0.07% [-4.06%, +1.53%] and the pre-registered
+system-CPU signal was also neutral; a producer-only wall win did not justify the extra
+descriptor, conversion, and unsafe boundary.
+
+Full record:
+[`exp-024-open-macos-directories-relative-to-one-retained-root-fd.md`](../experiments/exp-024-open-macos-directories-relative-to-one-retained-root-fd.md)
+
+### exp-025 — Revisit worker depth after macOS bulk metadata
+
+❌ rejected · 2026-08-12 · H52
+
+Control: six fixed workers on the exp-022 bulk backend
+
+Candidate: the pre-H26 sixteen-worker large-tree target
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 3700.5 | 4374.3 | +19.19% (regression) | [+11.81%, +25.00%] |
+| component (ms) | 2338.4 | 2987.0 | +28.39% (regression) | [+18.74%, +38.00%] |
+| cpu (ms) | 11127.6 | 23309.3 | +107.02% (regression) | [+98.70%, +122.91%] |
+| user (ms) | 2443.1 | 2730.0 | +11.82% (regression) | [+9.83%, +14.01%] |
+| system (ms) | 8574.6 | 20601.6 | +135.38% (regression) | [+125.96%, +153.35%] |
+| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
+| peak rss (MiB) | 311.7 | 415.9 | +33.46% (regression) | [+31.53%, +35.57%] |
+
+Other jobs, wall time: `cold-scan-producer` +12.7% (regression).
+
+Cost to carry: 0 lines; no new dependencies.
+
+configuration-only reproduction using one exact binary; no code, dependency, or unsafe
+change
+
+**Rejected:** Sixteen workers regressed 720k indexed wall 19.19% and producer wall
+12.65%, while roughly doubling CPU and adding about one-third RSS; the exploratory
+6/8/12/16 curve found no smaller retune above the acceptance bar.
+
+Full record:
+[`exp-025-revisit-worker-depth-after-macos-bulk-metadata.md`](../experiments/exp-025-revisit-worker-depth-after-macos-bulk-metadata.md)
+
+### exp-026 — Reuse macOS bulk metadata during full reconciliation
+
+✅ accepted · 2026-08-12 · H53, H26
+
+Control: exp-022/025 current code with portable full reconciliation
+
+Candidate: the existing macOS bulk metadata reader reused by direct, shared, and scoped
+reconciliation
+
+**`warm-revalidate`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 21161.5 | 14014.3 | -34.39% | [-37.66%, -29.50%] |
+| component (ms) | 18591.3 | 11505.3 | -39.05% | [-41.61%, -33.85%] |
+| cpu (ms) | 13628.1 | 7659.5 | -44.06% | [-46.41%, -39.94%] |
+| user (ms) | 3171.0 | 2844.4 | -11.11% | [-13.82%, -7.49%] |
+| system (ms) | 10421.8 | 4814.1 | -53.97% | [-56.29%, -50.38%] |
+| blocked (ms) | 7537.6 | 6195.5 | -16.96% | [-21.33%, -13.38%] |
+| peak rss (MiB) | 341.3 | 341.7 | +0.06% (n.s.) | [-0.03%, +0.18%] |
+
+Cost to carry: 139 lines; no new dependencies; new failure mode: an unsupported or
+malformed bulk directory is discarded before application and reread through the portable
+reconciliation path; new failure mode: warm reconciliation now shares H26
+whole-directory staging, so an extremely wide directory delays its entries and
+temporarily uses memory proportional to that directory.
+
+macOS-only reuse of the existing 64 KiB reader and audited FFI boundary; reconciliation
+remains serial and other platforms plus explicit one-worker configurations remain
+portable
+
+**Accepted:** Warm-open wall improved 34.39% at 720k and 18.97% at 60k; large-tree total
+CPU fell 44.06% and system CPU 53.97%, RSS was neutral, and all oracle checks passed.
+
+Full record:
+[`exp-026-reuse-macos-bulk-metadata-during-full-reconciliation.md`](../experiments/exp-026-reuse-macos-bulk-metadata-during-full-reconciliation.md)
+
+### exp-027 — Cumulative effect through bulk reconciliation
+
+✅ accepted · 2026-08-12 · H1, H5, H10, H14, H18, H32, H48, H49, H31, H3, H26, H53
+
+Control: b565882 before the iterative performance work
+
+Candidate: current code through exp-026, including accepted traversal, index, snapshot,
+BFS scheduling, adaptive-depth, and macOS bulk cold/warm changes
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 586.9 | 275.4 | -52.84% | [-53.43%, -52.60%] |
+| component (ms) | 475.8 | 165.4 | -65.42% | [-66.22%, -64.61%] |
+| cpu (ms) | 582.7 | 1113.6 | +91.36% (regression) | [+89.21%, +92.77%] |
+| user (ms) | 228.9 | 195.3 | -14.53% | [-15.90%, -6.57%] |
+| system (ms) | 352.7 | 917.0 | +160.21% (regression) | [+154.24%, +163.66%] |
+| blocked (ms) | 4.3 | 0.0 | -100.00% | [-100.00%, -100.00%] |
+| peak rss (MiB) | 32.0 | 32.9 | +2.62% (regression) | [+2.03%, +3.42%] |
+
+Other jobs, wall time: `cold-scan-producer` -58.3%, `cold-snapshot-save` -51.1%,
+`warm-revalidate` -34.8%, `warm-snapshot-load` -32.7%.
+
+Cost to carry: 0 lines; no new dependencies.
+
+measurement-only cumulative anchor; complexity belongs to the individual accepted
+experiments
+
+**Accepted:** Against the original baseline, current code improved cold index 52.84%,
+producer 58.29%, snapshot save 51.13%, warm revalidation 34.78%, and snapshot load
+32.69%; all oracle checks passed.
+
+Full record:
+[`exp-027-cumulative-effect-through-bulk-reconciliation.md`](../experiments/exp-027-cumulative-effect-through-bulk-reconciliation.md)
+
+### exp-028 — Reuse macOS bulk directory staging allocations
+
+❌ rejected · 2026-08-12 · H54
+
+Control: exp-026 bulk reader with one fresh entry vector per directory
+
+Candidate: one retained entry vector per bulk reader, drained after complete validation
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 382.2 | 307.8 | +0.21% (n.s.) | [-7.09%, +3.88%] |
+| component (ms) | 261.1 | 192.0 | -2.20% (n.s.) | [-12.10%, +5.74%] |
+| cpu (ms) | 1384.3 | 1183.4 | -2.81% (n.s.) | [-20.03%, +1.10%] |
+| user (ms) | 225.8 | 225.6 | -0.76% (n.s.) | [-3.33%, +4.16%] |
+| system (ms) | 1169.9 | 956.0 | -3.64% (n.s.) | [-23.26%, +2.29%] |
+| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
+| peak rss (MiB) | 33.7 | 33.2 | -1.29% (n.s.) | [-2.42%, +1.34%] |
+
+Other jobs, wall time: `cold-scan-producer` +1.3% (regression), `warm-revalidate` -0.8%
+(n.s.).
+
+Cost to carry: 20 lines; no new dependencies; new failure mode: each reader retains the
+largest directory entry-vector capacity it encounters until the worker or reconciliation
+ends.
+
+14 insertions and 6 deletions; no dependency or unsafe change; 720k confirmation was
+gated on a promising 60k result and did not run
+
+**Rejected:** Cold-index wall was +0.21%, producer regressed 1.32%, and warm wall was
+-0.85%; predicted user-CPU and fault reductions were absent while producer RSS and
+faults regressed.
+
+Full record:
+[`exp-028-reuse-macos-bulk-directory-staging-allocations.md`](../experiments/exp-028-reuse-macos-bulk-directory-staging-allocations.md)
+
+### exp-029 — Increase macOS bulk metadata buffer to 256 KiB
+
+❌ rejected · 2026-08-12 · H55
+
+Control: exp-026 64 KiB macOS bulk metadata buffer
+
+Candidate: 256 KiB macOS bulk metadata buffer
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 311.0 | 321.5 | -1.80% (n.s.) | [-5.95%, +5.45%] |
+| component (ms) | 190.8 | 194.0 | -3.04% (n.s.) | [-6.90%, +9.61%] |
+| cpu (ms) | 1061.7 | 1112.1 | +1.15% (n.s.) | [-4.43%, +8.81%] |
+| user (ms) | 229.4 | 233.4 | +3.65% (n.s.) | [-5.07%, +7.68%] |
+| system (ms) | 832.5 | 883.7 | +3.36% (n.s.) | [-7.16%, +10.72%] |
+| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
+| peak rss (MiB) | 33.6 | 34.2 | +2.38% (regression) | [+0.25%, +3.11%] |
+
+Other jobs, wall time: `cold-scan-producer` +1.8% (n.s.), `warm-revalidate` -0.0%
+(n.s.).
+
+Cost to carry: 1 lines; no new dependencies; new failure mode: each active reader
+reserves an additional 192 KiB of syscall buffer capacity.
+
+one constant change; no dependency or unsafe change; the preregistered 720k gate was not
+triggered
+
+**Rejected:** Cold-index wall was -1.80% with an interval spanning -5.95% to +5.45%;
+producer and warm paths were neutral, system CPU did not corroborate a gain, and cold
+RSS plus faults regressed.
+
+Full record:
+[`exp-029-increase-macos-bulk-metadata-buffer-to-256-kib.md`](../experiments/exp-029-increase-macos-bulk-metadata-buffer-to-256-kib.md)
+
+### exp-030 — Elide unchanged entries in bounded parallel reconciliation waves
+
+✅ accepted · 2026-08-12 · H12, H9
+
+Control: exp-026 serial bulk-backed full reconciliation
+
+Candidate: four-worker bounded immutable-baseline waves with producer-side no-op elision
+
+**`warm-revalidate`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 14463.4 | 5708.1 | -59.53% | [-62.80%, -50.43%] |
+| component (ms) | 11864.5 | 3189.1 | -72.55% | [-75.61%, -66.65%] |
+| cpu (ms) | 8001.7 | 9258.7 | +17.30% (regression) | [+5.94%, +30.62%] |
+| user (ms) | 2900.2 | 3072.3 | +6.93% (regression) | [+1.95%, +12.93%] |
+| system (ms) | 5094.1 | 6186.4 | +23.68% (regression) | [+8.49%, +40.34%] |
+| blocked (ms) | 6399.4 | 0.0 | -100.00% | [-100.00%, -100.00%] |
+| peak rss (MiB) | 341.6 | 338.2 | -0.99% | [-1.15%, -0.91%] |
+
+Cost to carry: 419 lines; no new dependencies; new failure mode: a panicking
+reconciliation worker makes the sweep partial and reports the missing work; new failure
+mode: a wave exceeding the bounded deferred-change budget repeats the full tree through
+the serial reconciler; new failure mode: exclusive full reconciliation now delays
+effective deltas until the current bounded directory wave joins.
+
+407 insertions and 12 deletions; no dependency or unsafe change; direct full-tree path
+only, while shared, scoped, and explicit one-worker reconciliation retain the serial
+reference
+
+**Accepted:** Warm-open wall improved 30.25% at 60k and 59.53% at 720k; reconciliation
+component improved 50.31% and 72.55%, exact oracles passed, and RSS stayed within the
+preregistered bound.
+
+Full record:
+[`exp-030-elide-unchanged-entries-in-bounded-parallel-reconciliation-w.md`](../experiments/exp-030-elide-unchanged-entries-in-bounded-parallel-reconciliation-w.md)
+
+### exp-031 — Increase immutable-baseline reconciliation waves to 4096 directories
+
+❌ rejected · 2026-08-12 · H56
+
+Control: exp-030 1024-directory immutable-baseline waves
+
+Candidate: 4096-directory immutable-baseline waves
+
+**`warm-revalidate`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 477.6 | 482.5 | +1.64% (n.s.) | [-3.88%, +10.07%] |
+| component (ms) | 194.2 | 220.2 | +13.24% (n.s.) | [-0.47%, +19.56%] |
+| cpu (ms) | 866.9 | 884.9 | +4.87% (n.s.) | [-2.17%, +10.10%] |
+| user (ms) | 277.5 | 275.5 | +1.33% (n.s.) | [-3.38%, +5.17%] |
+| system (ms) | 585.5 | 613.6 | +5.34% (n.s.) | [-1.08%, +13.88%] |
+| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
+| peak rss (MiB) | 32.4 | 32.2 | -0.46% (n.s.) | [-2.06%, +1.40%] |
+
+Cost to carry: 1 lines; no new dependencies; new failure mode: effective changed-tree
+deltas may wait behind four times as many directory reads.
+
+one constant change; no dependency or unsafe change; the preregistered 720k gate was not
+triggered
+
+**Rejected:** Warm wall was +1.64% with an interval spanning -3.88% to +10.07%,
+component was +13.24%, and CPU plus context-switch signals did not show the predicted
+startup amortization.
+
+Full record:
+[`exp-031-increase-immutable-baseline-reconciliation-waves-to-4096-dir.md`](../experiments/exp-031-increase-immutable-baseline-reconciliation-waves-to-4096-dir.md)
+
+### exp-032 — Cumulative effect through bounded parallel reconciliation
+
+✅ accepted · 2026-08-12 · H1, H5, H10, H14, H18, H32, H48, H49, H31, H3, H26, H53, H12,
+H9
+
+Control: b565882 before the iterative performance campaign
+
+Candidate: final Rust-1.85-compatible code through exp-030, including accepted cold,
+snapshot, BFS, bulk metadata, and bounded parallel reconciliation changes
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 635.4 | 289.6 | -54.53% | [-55.33%, -53.72%] |
+| component (ms) | 520.9 | 173.4 | -66.74% | [-67.45%, -65.70%] |
+| cpu (ms) | 629.7 | 1142.7 | +82.43% (regression) | [+73.39%, +86.30%] |
+| user (ms) | 236.3 | 223.7 | -5.08% | [-8.16%, -3.41%] |
+| system (ms) | 391.3 | 933.2 | +133.84% (regression) | [+122.04%, +142.88%] |
+| blocked (ms) | 6.9 | 0.0 | -100.00% | [-100.00%, -100.00%] |
+| peak rss (MiB) | 32.0 | 33.4 | +4.04% (regression) | [+3.42%, +6.80%] |
+
+Other jobs, wall time: `cold-scan-producer` -60.0%, `cold-snapshot-save` -52.4%,
+`warm-revalidate` -52.0%, `warm-snapshot-load` -35.7%.
+
+Cost to carry: 0 lines; no new dependencies.
+
+measurement-only cumulative anchor; complexity belongs to the individual accepted
+experiments
+
+**Accepted:** Against the original binary, final code improves cold index 54.53%,
+producer 60.05%, snapshot save 52.41%, warm revalidation 51.99%, and snapshot load
+35.66%; all exact oracles passed.
+
+Full record:
+[`exp-032-cumulative-effect-through-bounded-parallel-reconciliation.md`](../experiments/exp-032-cumulative-effect-through-bounded-parallel-reconciliation.md)
+
+### exp-033 — Post-composable-CLI integration validation
+
+✅ accepted · 2026-08-12 · H3, H31, H53, H12, H9
+
+Control: origin/main dc56f77 after merged composable CLI PR #5
+
+Candidate: PR #8 after merging origin/main, correctness review, and exact
+CLI-equivalence checks
+
+**`warm-revalidate`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 844.7 | 481.9 | -42.26% | [-44.60%, -41.00%] |
+| component (ms) | 595.0 | 229.6 | -61.37% | [-62.76%, -59.42%] |
+| cpu (ms) | 806.3 | 1077.6 | +34.79% (regression) | [+30.66%, +37.70%] |
+| user (ms) | 292.8 | 292.3 | +0.10% (n.s.) | [-0.84%, +0.70%] |
+| system (ms) | 513.8 | 782.5 | +55.74% (regression) | [+49.21%, +59.09%] |
+| blocked (ms) | 39.3 | 0.0 | -100.00% | [-100.00%, -100.00%] |
+| peak rss (MiB) | 31.8 | 32.9 | +3.16% (regression) | [+2.52%, +4.59%] |
+
+Other jobs, wall time: `cold-scan-index` -5.1%, `cold-scan-producer` -8.8%,
+`cold-snapshot-save` -4.1%, `warm-snapshot-load` +0.2% (n.s.).
+
+Cost to carry: 1514 lines; dependencies: libc = 0.2.189 (macOS target only; already
+locked transitively); 1 unsafe blocks; new failure mode: Malformed or unsupported bulk
+metadata must retry the complete directory through the portable reader; new failure
+mode: Adaptive reserve workers and reconciliation wave workers can panic; the scan
+reports partial rather than asserting complete truth; new failure mode: A reconciliation
+wave that exceeds its bounded deferred-op budget discards that wave and retries
+serially.
+
+Integration anchor includes previously reviewed experiments exp-015 through exp-030 plus
+correctness hardening and equivalence tests; individual experiment records own each
+optimization decision
+
+**Accepted:** Against current origin/main, candidate improves cold index 5.06%, producer
+8.77%, scan-plus-save 4.13%, and warm revalidation 42.26%; snapshot-only load is neutral
+at +0.18%, all 120 candidate/control oracle samples are valid, and the tree remained
+unchanged.
+
+Full record:
+[`exp-033-post-composable-cli-integration-validation.md`](../experiments/exp-033-post-composable-cli-integration-validation.md)
+
+### exp-034 — Post-composable-CLI validation under cache pressure
+
+✅ accepted · 2026-08-12 · H3, H31, H53, H12, H9
+
+Control: origin/main dc56f77 after merged composable CLI PR #5
+
+Candidate: PR #8 after merging origin/main and correctness review
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 6699.9 | 5154.0 | -30.46% | [-37.71%, -18.20%] |
+| component (ms) | 5141.1 | 3517.5 | -38.12% | [-49.36%, -24.14%] |
+| cpu (ms) | 25916.0 | 24018.7 | -10.39% (n.s.) | [-49.03%, +10.21%] |
+| user (ms) | 3343.8 | 2910.9 | -14.16% | [-17.85%, -11.02%] |
+| system (ms) | 22601.5 | 21042.8 | -9.76% (n.s.) | [-53.66%, +13.77%] |
+| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
+| peak rss (MiB) | 316.3 | 417.5 | +32.27% (regression) | [+0.15%, +44.49%] |
+
+Other jobs, wall time: `warm-revalidate` -70.9%.
+
+Cost to carry: 0 lines; no new dependencies.
+
+Scale-validation anchor only; exp-015 through exp-030 own the implementation complexity
+and individual decisions
+
+**Accepted:** On the 720,805-entry pressure tree, candidate improves cold index 30.46%
+and warm revalidation 70.92%; all paired intervals exclude zero, all samples pass the
+independent oracle, and the tree stayed unchanged.
+
+Full record:
+[`exp-034-post-composable-cli-validation-under-cache-pressure.md`](../experiments/exp-034-post-composable-cli-validation-under-cache-pressure.md)
+
+### exp-035 — Post-composable-CLI validation on the live 1M workspace
+
+✅ accepted · 2026-08-12 · H3, H31
+
+Control: origin/main dc56f77 after merged composable CLI PR #5
+
+Candidate: PR #8 after merging origin/main and correctness review
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 9849.7 | 7332.3 | -31.35% | [-39.13%, -24.45%] |
+| component (ms) | 7195.6 | 4667.4 | -42.38% | [-49.47%, -33.73%] |
+| cpu (ms) | 34712.1 | 34847.9 | -0.57% (n.s.) | [-13.77%, +2.53%] |
+| user (ms) | 5219.2 | 4773.0 | -8.61% | [-13.02%, -7.12%] |
+| system (ms) | 29509.1 | 30064.3 | +0.70% (n.s.) | [-14.02%, +4.17%] |
+| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
+| peak rss (MiB) | 437.6 | 631.1 | +44.32% (regression) | [+37.01%, +47.71%] |
+
+Other jobs, wall time: `cold-scan-producer` -36.6%.
+
+Cost to carry: 0 lines; no new dependencies.
+
+Live-tree scale-validation anchor only; prior experiment records own implementation
+complexity
+
+**Accepted:** On the heterogeneous 1,007,659-entry workspace, candidate improves cold
+indexed wall 31.35% and producer wall 36.59% with valid exact digests and no tree
+mutation; the 44.32% indexed RSS increase remains a documented optimization target.
+
+Full record:
+[`exp-035-post-composable-cli-validation-on-the-live-1m-workspace.md`](../experiments/exp-035-post-composable-cli-validation-on-the-live-1m-workspace.md)
+
+### exp-036 — Revisit worker depth on the live 1M workspace
+
+❌ rejected · 2026-08-12 · H57
+
+Control: automatic adaptive worker policy
+
+Candidate: fixed 8, 10, 12, and 16-worker sweep
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 6188.9 | 6113.6 | -1.30% | [-2.06%, -0.92%] |
+| component (ms) | 3578.9 | 3490.2 | -2.43% | [-2.84%, -1.75%] |
+| cpu (ms) | 16488.3 | 22152.4 | +34.47% (regression) | [+33.26%, +35.57%] |
+| user (ms) | 4333.5 | 4419.3 | +1.79% (regression) | [+1.34%, +2.60%] |
+| system (ms) | 12160.1 | 17702.3 | +46.16% (regression) | [+44.30%, +47.89%] |
+| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
+| peak rss (MiB) | 456.4 | 457.4 | -0.01% (n.s.) | [-0.27%, +0.39%] |
+
+Cost to carry: 0 lines; no new dependencies.
+
+No retained code; one-binary configuration sweep
+
+**Rejected:** Eight workers improve wall only 1.30%, below the 3% bar while CPU rises
+33.5%; 12 and 16 workers regress wall 2.46% and 10.65%, so the automatic policy remains
+the best complexity/resource tradeoff.
+
+Full record:
+[`exp-036-revisit-worker-depth-on-the-live-1m-workspace.md`](../experiments/exp-036-revisit-worker-depth-on-the-live-1m-workspace.md)
+
+### exp-037 — Revisit breadth-first versus depth-first on the live 1M workspace
+
+❌ rejected · 2026-08-13 · H4
+
+Control: region-scheduled breadth-first default
+
+Candidate: depth-first traversal
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 6187.5 | 6444.6 | +3.57% (regression) | [+2.42%, +5.23%] |
+| component (ms) | 3565.9 | 3839.3 | +6.72% (regression) | [+3.75%, +9.27%] |
+| cpu (ms) | 16656.3 | 16532.8 | -0.50% (n.s.) | [-1.20%, +0.47%] |
+| user (ms) | 4356.5 | 4328.4 | -0.34% (n.s.) | [-0.67%, +0.04%] |
+| system (ms) | 12323.2 | 12186.6 | -0.67% (n.s.) | [-1.73%, +0.84%] |
+| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
+| peak rss (MiB) | 458.4 | 453.0 | -1.03% | [-1.49%, -0.55%] |
+
+Cost to carry: 0 lines; no new dependencies.
+
+No retained code; one-binary order comparison
+
+**Rejected:** Depth-first regresses indexed wall 3.57% with a 95% paired interval of
+2.42% to 5.23%; the breadth-first region scheduler remains faster as well as preserving
+progressive shallow coverage.
+
+Full record:
+[`exp-037-revisit-breadth-first-versus-depth-first-on-the-live-1m-work.md`](../experiments/exp-037-revisit-breadth-first-versus-depth-first-on-the-live-1m-work.md)
+
+### exp-038 — Parent-relative openat frontier on the live 1M workspace
+
+❌ rejected · 2026-08-13 · H24, H29
+
+Control: absolute directory opens
+
+Candidate: bounded parent-relative openat frontier
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 6315.8 | 6272.9 | -0.69% (n.s.) | [-1.49%, +0.49%] |
+| component (ms) | 3613.7 | 3560.9 | -1.90% (n.s.) | [-2.57%, +1.13%] |
+| cpu (ms) | 16966.0 | 17105.7 | +1.23% (n.s.) | [-2.01%, +2.48%] |
+| user (ms) | 4446.4 | 4457.6 | +0.25% (n.s.) | [-0.75%, +1.49%] |
+| system (ms) | 12528.8 | 12657.1 | +1.44% (n.s.) | [-2.44%, +2.98%] |
+| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
+| peak rss (MiB) | 457.0 | 459.5 | +0.53% (regression) | [+0.31%, +1.11%] |
+
+Cost to carry: 0 lines; no new dependencies; new failure mode: A retained parent
+descriptor can become stale or exhaust the bounded frontier unless fallback is exact.
+
+Prototype reverted; no dependency or unsafe block retained
+
+**Rejected:** The final paired screen changes indexed wall by -0.69% with an interval
+crossing zero; it does not justify descriptor-lifetime machinery and is reverted.
+
+Full record:
+[`exp-038-parent-relative-openat-frontier-on-the-live-1m-workspace.md`](../experiments/exp-038-parent-relative-openat-frontier-on-the-live-1m-workspace.md)
+
+### exp-039 — Revisit the macOS bulk buffer on the live 1M workspace
+
+❌ rejected · 2026-08-13 · H55
+
+Control: 64 KiB getattrlistbulk buffer
+
+Candidate: 256 KiB getattrlistbulk buffer
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 7822.0 | 8112.6 | +2.22% (n.s.) | [-1.62%, +8.19%] |
+| component (ms) | 5001.1 | 5189.1 | +3.34% (n.s.) | [-1.18%, +8.57%] |
+| cpu (ms) | 28563.9 | 28307.3 | +0.08% (n.s.) | [-11.57%, +5.48%] |
+| user (ms) | 4729.7 | 4740.8 | -0.08% (n.s.) | [-1.31%, +1.19%] |
+| system (ms) | 23781.8 | 23545.8 | +0.04% (n.s.) | [-13.24%, +6.41%] |
+| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
+| peak rss (MiB) | 635.1 | 671.6 | +5.07% (n.s.) | [-2.25%, +15.49%] |
+
+Cost to carry: 0 lines; no new dependencies.
+
+One constant changed for the screen and was reverted
+
+**Rejected:** The 256 KiB screen changes indexed wall by +2.22% with an interval
+crossing zero and no preregistered mechanism win; it is reverted.
+
+Full record:
+[`exp-039-revisit-the-macos-bulk-buffer-on-the-live-1m-workspace.md`](../experiments/exp-039-revisit-the-macos-bulk-buffer-on-the-live-1m-workspace.md)
+
+### exp-040 — Derive an exact rich summary without building an index
+
+✅ accepted · 2026-08-13 · H59
+
+Control: cache-off summary after constructing the complete reusable index
+
+Candidate: cache-off summary reduced directly from the scan through a derived execution
+plan
+
+**`rich-summary-report`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 4852.0 | 4183.2 | -14.56% | [-18.55%, -9.04%] |
+| cpu (ms) | 17735.2 | 16048.7 | -8.65% | [-12.43%, -7.31%] |
+| user (ms) | 1933.6 | 664.7 | -66.27% | [-68.58%, -65.76%] |
+| system (ms) | 15771.9 | 15367.9 | -0.81% (n.s.) | [-4.14%, +0.12%] |
+| peak rss (MiB) | 563.2 | 26.3 | -95.28% | [-95.51%, -95.11%] |
+
+Cost to carry: 273 lines; no new dependencies; new failure mode: An incorrect
+requirement proof could select retained state too small for a report.
+
+The planner is internal to the existing CLI composition, has one compact tier, and falls
+closed to the complete index for cache participation, filters, multiple views, watch
+mode, or any unproved request
+
+**Accepted:** The derived exact-summary plan improves paired wall 14.56%
+[9.04%, 18.55%], cuts peak RSS 95.28%, and produces one identical stable report hash
+across every old/new sample with no invalid trial or tree drift.
+
+Full record:
+[`exp-040-derive-an-exact-rich-summary-without-building-an-index.md`](../experiments/exp-040-derive-an-exact-rich-summary-without-building-an-index.md)
+
+### exp-041 — Reduce transient summaries inside scan workers
+
+❌ rejected · 2026-08-13 · H62
+
+Control: H59 transient summary reduced from generic observation batches
+
+Candidate: worker-local summary reduction with paths retained only for directories
+
+**`rich-summary-report`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 3031.8 | 2966.0 | -1.38% | [-3.71%, -0.31%] |
+| cpu (ms) | 10673.3 | 10521.7 | -1.12% | [-3.26%, -0.22%] |
+| user (ms) | 483.6 | 309.0 | -36.23% | [-36.95%, -34.83%] |
+| system (ms) | 10183.7 | 10212.8 | +0.53% (n.s.) | [-1.68%, +1.38%] |
+| peak rss (MiB) | 13.8 | 9.0 | -34.77% | [-35.95%, -34.17%] |
+
+Cost to carry: 299 lines; no new dependencies; new failure mode: A second walker
+implementation could drift from the generic scan contract.
+
+The prototype was retained only while screening the preregistered H63 composition;
+exp-042 also missed the wall gate, so both engine layers were reverted
+
+**Rejected:** Worker-local reduction cuts user CPU 36.23% and RSS 34.77%, but its 1.38%
+paired wall improvement misses the preregistered 3% production bar; the 720,805-entry
+replication is likewise only 1.26% with its interval crossing zero.
+
+Full record:
+[`exp-041-reduce-transient-summaries-inside-scan-workers.md`](../experiments/exp-041-reduce-transient-summaries-inside-scan-workers.md)
+
+### exp-042 — Derive macOS summary bulk records
+
+❌ rejected · 2026-08-13 · H63
+
+Control: H59 transient summary reduced from generic observation batches
+
+Candidate: H62 worker-local reduction plus a requirement-derived macOS bulk record
+
+**`rich-summary-report`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 3199.5 | 3251.2 | +1.86% (n.s.) | [-1.96%, +4.56%] |
+| cpu (ms) | 11245.7 | 10860.4 | -2.94% | [-4.03%, -0.99%] |
+| user (ms) | 499.2 | 246.8 | -50.96% | [-51.72%, -49.84%] |
+| system (ms) | 10741.4 | 10613.9 | -0.63% (n.s.) | [-1.86%, +1.36%] |
+| peak rss (MiB) | 13.9 | 8.4 | -39.70% | [-40.46%, -38.62%] |
+
+Cost to carry: 547 lines; no new dependencies; 1 unsafe blocks; new failure mode: A
+second strict kernel-record parser could drift from the full metadata parser; new
+failure mode: A reduction-specific walker could drift from the generic scan contract.
+
+The complete H62 plus H63 composition was screened against committed H59 and is reverted
+because its primary wall metric missed the production bar
+
+**Rejected:** The composition changes paired wall by +1.86% with a 95% interval spanning
+-1.96% to +4.56%; lower user CPU and RSS do not justify a second walker and macOS record
+parser without a user-visible speedup.
+
+Full record:
+[`exp-042-derive-macos-summary-bulk-records.md`](../experiments/exp-042-derive-macos-summary-bulk-records.md)
+
+### exp-043 — Retune workers for transient summary
+
+❌ rejected · 2026-08-13 · H65
+
+Control: H59 transient summary with the accepted automatic six-worker policy
+
+Candidate: H59 transient summary with a fixed eight-worker pool
+
+**`rich-summary-report`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 2210.5 | 2258.4 | +0.67% (n.s.) | [-1.56%, +3.99%] |
+| cpu (ms) | 8920.7 | 12531.0 | +40.66% (regression) | [+38.26%, +43.32%] |
+| user (ms) | 387.5 | 434.0 | +11.67% (regression) | [+10.13%, +14.34%] |
+| system (ms) | 8535.1 | 12102.7 | +42.03% (regression) | [+39.63%, +44.88%] |
+| peak rss (MiB) | 14.5 | 15.1 | +3.39% (regression) | [+1.22%, +6.43%] |
+
+Cost to carry: 12 lines; no new dependencies; new failure mode: A report-plan-specific
+worker policy could overfit one tree topology.
+
+A compile-time-only experimental override built fixed 8, 10, 12, and 16 worker binaries;
+the hook was removed after the curve and independent replication rejected a policy
+change
+
+**Rejected:** Eight workers looked promising in the 901,963-entry screen but the
+independent 720,805-entry 20-pair confirmation changed wall by +0.67% [-1.56%, +3.99%]
+while CPU rose 40.66%; automatic six remains the policy.
+
+Full record:
+[`exp-043-retune-workers-for-transient-summary.md`](../experiments/exp-043-retune-workers-for-transient-summary.md)
+
+### exp-044 — Specialize a selected size total
+
+❌ rejected · 2026-08-13 · H64
+
+Control: selected allocated total reduced through the existing generic H59 transient
+scan
+
+Candidate: selected allocated total folded inside a strict requirement-derived macOS
+bulk reader
+
+**`selected-allocated-total`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 2980.1 | 2954.7 | -1.15% (n.s.) | [-2.24%, +0.44%] |
+| cpu (ms) | 10641.8 | 10340.3 | -2.70% | [-3.49%, -1.70%] |
+| user (ms) | 485.8 | 234.0 | -51.54% | [-52.74%, -50.84%] |
+| system (ms) | 10164.0 | 10110.3 | -0.40% (n.s.) | [-1.15%, +0.79%] |
+| peak rss (MiB) | 13.6 | 8.3 | -39.19% | [-39.76%, -38.66%] |
+
+Cost to carry: 636 lines; no new dependencies; 1 unsafe blocks; new failure mode: A
+second macOS walker and parser could drift from the full reader’s fallback and scope
+semantics; new failure mode: A new public total view would enlarge the CLI, report,
+Python, and test contracts.
+
+The prototype included a typed total view, exact portable fallback, strict macOS parser,
+worker-local scalar reduction, and in-buffer file folding; every production change was
+reverted after measurement
+
+**Rejected:** The complete specialization improved paired wall only 1.15%
+[-2.24%, +0.44%], did not beat dumac, and required a second unsafe parser plus a new
+public view; all prototype code was reverted.
+
+Full record:
+[`exp-044-specialize-a-selected-size-total.md`](../experiments/exp-044-specialize-a-selected-size-total.md)
+
+### exp-045 — Pipeline macOS directory opens
+
+↩︎ superseded · 2026-08-13 · H67, H69
+
+Control: current exact rich-summary path with its automatic six-worker operating point
+
+Candidate: six scan and parser workers plus two bounded directory-open helpers
+
+**`rich-summary-open-pipeline`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 3468.3 | 3325.4 | -4.46% (n.s.) | [-31.04%, +33.91%] |
+| cpu (ms) | 12623.3 | 12437.9 | +1.47% (n.s.) | [-26.38%, +6.76%] |
+| user (ms) | 563.9 | 635.3 | +8.62% (n.s.) | [-8.65%, +15.68%] |
+| system (ms) | 12059.4 | 11812.4 | +1.21% (n.s.) | [-27.07%, +6.33%] |
+| peak rss (MiB) | 13.6 | 14.0 | +2.86% (n.s.) | [-21.63%, +5.16%] |
+
+Cost to carry: 78 lines; no new dependencies; new failure mode: Open helpers can
+accidentally compose with the adaptive reserve and over-thread the scan; new failure
+mode: Bounded request and response channels add shutdown and panic paths; new failure
+mode: A static opener count can overfit one topology or host-load regime.
+
+The first prototype activated the existing reserve and ran 18 threads; the measured
+candidate fixed the experiment at six scan workers plus two open-only helpers, and no
+production code is retained while confirmation remains open.
+
+**Superseded:** The corrected pairwise-helper screen had a promising -4.47% point
+estimate but an unusable [-31.04%, +33.91%] interval; H70 supersedes it with one shared
+bounded opener pool, and no H69 code is retained.
+
+Full record:
+[`exp-045-pipeline-macos-directory-opens.md`](../experiments/exp-045-pipeline-macos-directory-opens.md)
+
+### exp-046 — Tune a shared macOS directory-opener pool
+
+⏳ in progress · 2026-08-13 · H70
+
+Control: current exact rich-summary path with its automatic six-worker operating point
+
+Candidate: six scan and parser workers drawing opened directories from one shared
+two-thread opener pool
+
+**`rich-summary-shared-openers`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 3337.9 | 3220.9 | -3.98% | [-9.87%, -0.71%] |
+| cpu (ms) | 11757.7 | 10203.6 | -15.98% | [-19.70%, -10.38%] |
+| user (ms) | 527.4 | 636.8 | +23.31% (regression) | [+17.31%, +25.32%] |
+| system (ms) | 11230.3 | 9551.5 | -17.62% | [-21.39%, -11.95%] |
+| peak rss (MiB) | 13.4 | 13.6 | +2.21% (n.s.) | [-0.58%, +3.82%] |
+
+Cost to carry: 121 lines; no new dependencies; new failure mode: A shared opener pool
+adds request ordering and shutdown paths; new failure mode: Every descriptor handoff
+adds scheduler and channel traffic; new failure mode: Opener and adaptive scan-worker
+policies can exceed one intended concurrency budget.
+
+The primary five-pair screen used two shared openers; separate two, three, and
+four-opener screens plus a direct twelve-pair four-opener comparison with dumac were
+diagnostic only, and all prototype code remains outside the production branch.
+
+**In-progress:** Two shared openers cleared the short screen at -3.98% [-9.87%, -0.70%],
+but doubled involuntary context switches and later count/dumac runs suffered extreme
+host outliers; quiet 12-pair and independent-topology confirmation remain required.
+
+Full record:
+[`exp-046-tune-a-shared-macos-directory-opener-pool.md`](../experiments/exp-046-tune-a-shared-macos-directory-opener-pool.md)
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

@@ -52,6 +52,7 @@ performance-probe:
 
 test-performance: performance-probe
 	uv run --no-project python -m unittest discover -s benchmarks/tests -p 'test_*.py'
+	$(PERF_UV) --group dev python -m unittest discover -s benchmarks/realtree/tests -p 'test_*.py'
 
 # Tryscript returns nonzero when it updates a previously failing block. The immediate
 # comparison is authoritative and catches execution failures or incomplete updates.
@@ -148,20 +149,23 @@ docs-format-check:
 # real tree and a quiet machine, neither of which CI has; a timing gate on a shared
 # runner measures the runner. See docs/project/guides/performance-loop.md.
 #
-# PERF_TREE names the reference tree. Clone a real checkout with `cp -cR` first so
-# the tree cannot change underneath a run.
+# PERF_TREE names the reference tree. Freeze all writers for the whole run; the
+# harness rejects any difference between its immediate pre/post fingerprints.
 
-PERF_TREE ?= benchmarks/corpus/realtree/metabrowser
-PERF_LABEL ?= $(notdir $(PERF_TREE))
+PERF_TREE ?= benchmarks
+PERF_LABEL ?= benchmarks-self-contained
+PERF_RESULTS ?= /tmp/fdu-realtree/results
+PERF_SCRATCH ?= /tmp/fdu-realtree/scratch
+PERF_BASELINE ?= $(PERF_RESULTS)/tree-$(PERF_LABEL).json
 PERF_RELEASE := target/release/examples/perf_probe
 PERF_PROFILING := target/profiling/examples/perf_probe
 # The harness runs from the repo root against a committed, frozen environment, so a
 # benchmark run resolves nothing at invocation time. `--project` (not `--directory`)
 # keeps the working directory here, which is what makes `-m benchmarks.realtree` work.
-PERF_UV := uv run --project benchmarks --frozen
+PERF_UV := PYTHONDONTWRITEBYTECODE=1 uv run --project benchmarks --frozen
 PERF_RUN := $(PERF_UV) python -m benchmarks.realtree
 
-.PHONY: perf-probe-release perf-probe-profiling perf-baseline perf-profile perf-compare perf-record perf-test perf-ledger perf-schema perf-schema-check
+.PHONY: perf-probe-release perf-probe-profiling perf-baseline perf-profile perf-compare perf-compare-tools perf-record perf-test perf-ledger perf-schema perf-schema-check
 
 perf-probe-release:
 	$(CARGO) build --locked --release -p fdu --example perf_probe --no-default-features
@@ -171,12 +175,15 @@ perf-probe-profiling:
 
 # Record what the tree looks like now, so later runs can prove they measured the same one.
 perf-baseline:
-	$(PERF_RUN) baseline --root $(PERF_TREE) --label $(PERF_LABEL)
+	$(PERF_RUN) baseline --root $(PERF_TREE) --label $(PERF_LABEL) \
+		--output $(PERF_BASELINE)
 
 # Where does the time go? Attribution only; never a timing claim.
 perf-profile: perf-probe-profiling
 	$(PERF_RUN) profile --root $(PERF_TREE) --binary $(PERF_PROFILING) \
-		--job cold-scan-index --job warm-revalidate --label $(or $(NAME),latest)
+		--job cold-scan-index --job warm-revalidate --label $(or $(NAME),latest) \
+		--scratch $(PERF_SCRATCH) \
+		--output $(PERF_RESULTS)/profile-$(or $(NAME),latest).json
 
 # Is the candidate faster than the control? Set CONTROL to a saved reference binary.
 CONTROL ?= $(PERF_RELEASE)
@@ -187,8 +194,25 @@ perf-compare: perf-probe-release
 		--reference dust=$(shell command -v dust 2>/dev/null || echo /usr/bin/du) \
 		--job cold-scan-index --job warm-revalidate \
 		--trials $(or $(TRIALS),12) \
-		--baseline-fingerprint benchmarks/results/realtree/tree-$(PERF_LABEL).json \
+		--scratch $(PERF_SCRATCH) --output-dir $(PERF_RESULTS) \
+		--baseline-fingerprint $(PERF_BASELINE) \
 		--name $(or $(NAME),adhoc)
+
+# Compare one immutable fdu release binary with external tools on the same live tree.
+# TOOL_ARGS supplies repeated `--tool name=/path/to/binary` arguments. Results must
+# stay outside PERF_TREE so the evidence write cannot invalidate its own subject.
+PERF_TOOL_RESULTS ?= /tmp/fdu-tool-comparison/results
+PERF_TOOL_BASELINE ?= $(PERF_TOOL_RESULTS)/tree-$(PERF_LABEL).json
+PERF_TOOL_CONTROL ?=
+perf-compare-tools:
+	@test -n "$(PERF_TOOL_CONTROL)" || \
+		{ echo "PERF_TOOL_CONTROL must name an immutable fdu CLI binary outside PERF_TREE" >&2; exit 2; }
+	$(PERF_RUN).compare_tools --root $(PERF_TREE) --label $(PERF_LABEL) \
+		--anchor "fdu=$(PERF_TOOL_CONTROL)" $(TOOL_ARGS) \
+		--trials $(or $(TRIALS),12) --warmups $(or $(WARMUPS),3) \
+		--baseline-output $(PERF_TOOL_BASELINE) \
+		--output-dir $(PERF_TOOL_RESULTS) --name $(or $(NAME),tool-comparison) \
+		--storage "$(or $(STORAGE),local storage)"
 
 # Record an experiment artifact from a completed measurement run.
 perf-record:

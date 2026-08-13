@@ -1,0 +1,226 @@
+{
+  "schema": "fdu-live-tool-comparison-manifest-v1",
+  "measured_commit": "aeac4875d8ab9ef490da1ad94cfc1f1c4186aa4c",
+  "started_utc": "2026-08-13T04:17:10Z",
+  "duration_seconds": 4268.185,
+  "conditions": {
+    "schedule": "competitor-adjacent-fdu-anchor-v1",
+    "trials_per_pair": 12,
+    "warmups_per_pair": 3,
+    "interleaved": true,
+    "fdu_cache": "off",
+    "os_filesystem_cache": "warm-steady",
+    "storage": "M1 Pro MacBook local APFS SSD"
+  },
+  "host": {
+    "cpu": "Apple M1 Pro",
+    "architecture": "arm64",
+    "logical_cores": 10,
+    "performance_cores": 8,
+    "efficiency_cores": 2,
+    "memory_bytes": 34359738368,
+    "system": "Darwin 25.5.0",
+    "filesystem": "apfs",
+    "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)"
+  },
+  "subject": {
+    "label": "live-workspace-20260812",
+    "entries": 976295,
+    "directories": 113025,
+    "files": 862911,
+    "symlinks": 359,
+    "other": 0,
+    "max_depth": 24,
+    "apparent_bytes": 24311032049,
+    "allocated_bytes": 26647465984,
+    "hardlink_groups": 12805,
+    "linked_file_entries": 55833,
+    "duplicate_file_entries": 43028,
+    "duplicate_apparent_bytes": 3051881216,
+    "duplicate_allocated_bytes": 3138498560,
+    "engine_digest_algorithm": "fdu-index-record-v1/sha256-multiset-v1",
+    "engine_digest": "c80d469fce7f831edd27da7a3da2a9a95613db3d7de745c5181c2240344e9312"
+  },
+  "validation": {
+    "post_run_engine_digest": "c80d469fce7f831edd27da7a3da2a9a95613db3d7de745c5181c2240344e9312",
+    "invalid_timed_samples": 0,
+    "baseline_drift": [],
+    "tree_mutated_during_run": [],
+    "stable_output_digest_count_per_tool": 1
+  },
+  "tools": {
+    "fdu": {
+      "version": "fdu 0.0.1-dev+gaeac4875d",
+      "binary_sha256": "bc6c69c0ac777e9ea7653ece1931e79a433fca63556dca516e3f76288b5ff910",
+      "binary_size_bytes": 1299824,
+      "work_class": "indexed-tree",
+      "command": [
+        "{binary}",
+        "--cache",
+        "off",
+        "--color",
+        "never",
+        "--depth",
+        "1",
+        "--limit",
+        "10",
+        "{root}"
+      ]
+    },
+    "dust": {
+      "version": "Dust 1.2.4",
+      "source_revision": "fabe19b8de4d1d36ad55dfa28b00698bc55297e6",
+      "binary_sha256": "e97c3b68f74afa7837fd8038132de2723568936d4d37c9fce94de0c2ce734188",
+      "work_class": "rendered-tree",
+      "command": [
+        "{binary}",
+        "-d",
+        "1",
+        "-n",
+        "10",
+        "--no-progress",
+        "--no-colors",
+        "{root}"
+      ]
+    },
+    "gdu": {
+      "version": "gdu 5.36.1",
+      "source_revision": "8d64b4f1ef50bf6694cd17e060f9fd80aed3e297",
+      "binary_sha256": "f6b16958c9b4abae31cd3eee577519c2f5d4bbbfd2bbc286a115aa674be5b752",
+      "work_class": "rendered-tree",
+      "command": [
+        "{binary}",
+        "--non-interactive",
+        "--depth",
+        "1",
+        "--top",
+        "10",
+        "--no-progress",
+        "--no-color",
+        "--config-file",
+        "/dev/null",
+        "{root}"
+      ]
+    },
+    "pdu": {
+      "version": "pdu 0.24.0",
+      "source_revision": "4e192606dfafc4fb9fcc57d77785c80917e8389f",
+      "binary_sha256": "9ce723d37adb765dc4c752acc2b1470e04bcdc87a14b20079e2790a048c0698b",
+      "work_class": "rendered-tree",
+      "command": [
+        "{binary}",
+        "--max-depth",
+        "1",
+        "--silent-errors",
+        "{root}"
+      ]
+    },
+    "ncdu": {
+      "version": "ncdu 2.9.2",
+      "binary_sha256": "35ff4595ef984896c35b83b6f484bebadbb930446e78ad8b209c232ddda8d929",
+      "work_class": "indexed-tree",
+      "command": [
+        "{binary}",
+        "-0",
+        "--ignore-config",
+        "-o",
+        "/dev/null",
+        "{root}"
+      ]
+    },
+    "dua": {
+      "version": "dua 2.41.1",
+      "source_revision": "90a59e15a681d50a64c0f86483100b257297f5a7",
+      "binary_sha256": "febc73f6faf61b00a943323c75d932c39d74af46a33bb8359911925c4a16b012",
+      "work_class": "total-only",
+      "command": [
+        "{binary}",
+        "{root}"
+      ]
+    },
+    "diskus": {
+      "version": "diskus 0.9.0",
+      "source_revision": "d8a77db0f693ec32007cf337572b559cbbff50fe",
+      "binary_sha256": "5f6fd0677454028bda1c4b2ec9e5397c502ceab95391ce5b39aab60ef6b95c3a",
+      "work_class": "total-only",
+      "command": [
+        "{binary}",
+        "{root}"
+      ]
+    },
+    "dumac": {
+      "version": "source revision 1ffbe3c; no version command",
+      "source_revision": "1ffbe3c38d1066c45cac9b4ec1e31eb74edc1076",
+      "binary_sha256": "87ce8aa107909653881b8dee5bb245d71c2a4230604568dea6fdfda929446592",
+      "work_class": "total-only",
+      "command": [
+        "{binary}",
+        "{root}"
+      ]
+    }
+  },
+  "results": {
+    "fdu": {
+      "timed_samples": 84,
+      "median_wall_seconds": 4.236947375,
+      "median_cpu_seconds": 19.7266415,
+      "median_peak_rss_mib": 585.1796875
+    },
+    "dust": {
+      "timed_samples": 12,
+      "median_wall_seconds": 7.545715271,
+      "paired_change_vs_fdu_pct": 80.305,
+      "paired_change_ci95_pct": [65.478, 102.183],
+      "median_cpu_seconds": 35.6538215,
+      "median_peak_rss_mib": 455.9375
+    },
+    "gdu": {
+      "timed_samples": 12,
+      "median_wall_seconds": 8.3145911875,
+      "paired_change_vs_fdu_pct": 93.253,
+      "paired_change_ci95_pct": [74.713, 105.402],
+      "median_cpu_seconds": 43.141575,
+      "median_peak_rss_mib": 431.5859375
+    },
+    "pdu": {
+      "timed_samples": 12,
+      "median_wall_seconds": 6.683543979,
+      "paired_change_vs_fdu_pct": 60.858,
+      "paired_change_ci95_pct": [49.811, 82.393],
+      "median_cpu_seconds": 35.2520075,
+      "median_peak_rss_mib": 16.6875
+    },
+    "ncdu": {
+      "timed_samples": 12,
+      "median_wall_seconds": 28.576130104,
+      "paired_change_vs_fdu_pct": 560.23,
+      "paired_change_ci95_pct": [501.246, 712.505],
+      "median_cpu_seconds": 16.253652,
+      "median_peak_rss_mib": 2.0
+    },
+    "dua": {
+      "timed_samples": 12,
+      "median_wall_seconds": 8.3518365625,
+      "paired_change_vs_fdu_pct": 92.53,
+      "paired_change_ci95_pct": [77.006, 128.244],
+      "median_cpu_seconds": 33.1559915,
+      "median_peak_rss_mib": 63.2578125
+    },
+    "diskus": {
+      "timed_samples": 12,
+      "median_wall_seconds": 7.0639085415,
+      "paired_change_vs_fdu_pct": 66.914,
+      "paired_change_ci95_pct": [58.308, 77.793],
+      "median_cpu_seconds": 37.969395,
+      "median_peak_rss_mib": 33.984375
+    },
+    "dumac": {
+      "timed_samples": 12,
+      "median_wall_seconds": 3.565876062,
+      "paired_change_vs_fdu_pct": -17.615,
+      "paired_change_ci95_pct": [-27.096, -9.121],
+      "median_cpu_seconds": 16.1139415,
+      "median_peak_rss_mib": 45.3359375
+    }
+  }
+}

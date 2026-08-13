@@ -5,8 +5,9 @@ performance evidence.
 The current implementation generates deterministic filesystem corpora, verifies them
 with an implementation independent of fdu, applies exact churn transitions, and runs the
 repository-only Rust component probe through a strict evidence state machine.
-It does not contain a claim-grade performance result and does not show that the current
-portable walker is fast.
+It separates correctness-gated experiment evidence from external-tool calibration.
+Current published measurements and their limitations live in the README and committed
+performance reports; raw host-specific runs remain outside the repository.
 
 The full methodology, runner design, and release gates live in the
 [end-to-end performance plan](../docs/project/specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md).
@@ -54,8 +55,9 @@ Run the corpus correctness suite with:
 make test-performance
 ```
 
-This builds the excluded `perf_probe` example and runs the corpus, schema, runner,
-report, collector, and eight-job probe smoke suite.
+This builds the excluded `perf_probe` example and runs both the corpus/schema/runner
+suite and the real-tree evidence-harness suite, including an actual probe scan checked
+against an independently fingerprinted filesystem tree.
 The suite has no numeric speed assertion and is included in `make check`. Large-corpus
 measurements remain separate from that correctness gate.
 
@@ -124,6 +126,95 @@ The portable runner deliberately rejects `controlled-cold`. That label requires 
 dedicated-host eviction protocol and supporting collector evidence, which are owned by
 `fdu-8z5l`. A successful cache-preparation command can establish `verified-warm`; normal
 developer and hosted-CI runs remain `uncontrolled`.
+
+### Standard Local Near-Million-Entry Comparison
+
+The repository’s `benchmarks/` subtree is the standard self-contained large local
+testbed. Its 2026-08-13 fingerprint contained 901,963 entries: the ignored generated
+corpus, benchmark environment, harness, schemas, and prior result artifacts.
+It is large and heterogeneous enough to expose real directory topology while excluding
+volatile Git and Rust build state.
+Generated state moves the count, so fingerprint every run and treat “near-million scale”
+as the designation rather than assuming an exact size across machines.
+
+Finish every change under `benchmarks/` before measuring.
+Copy immutable binaries outside the subtree, and do not run the benchmark test suite,
+update its environment, or write result artifacts there until the post-run fingerprint
+finishes.
+The Make defaults put baselines, scratch snapshots, profiles, and results under
+`/tmp/fdu-realtree`; the CLI also rejects explicit output or scratch paths inside the
+measured root.
+
+Run tree and scalar work classes as separate matrices so the headline does not present a
+one-number total as equivalent to a reusable index and rendered tree:
+
+```shell
+make perf-compare-tools \
+  PERF_TREE=benchmarks PERF_LABEL=benchmarks-self-contained \
+  PERF_TOOL_CONTROL=/tmp/fdu-tool-comparison/bin/fdu \
+  TOOL_ARGS='--tool dust=/path/to/dust --tool gdu=/path/to/gdu-go --tool pdu=/path/to/pdu --tool ncdu=/path/to/ncdu' \
+  STORAGE='local APFS SSD' NAME=tree-900k
+
+PYTHONDONTWRITEBYTECODE=1 uv run --project benchmarks --frozen --group dev \
+  python -m benchmarks.realtree.compare_tools \
+  --root benchmarks --label benchmarks-self-contained \
+  --anchor fdu-transient-summary=/tmp/fdu-tool-comparison/bin/fdu \
+  --tool dumac=/path/to/dumac --tool diskus=/path/to/diskus \
+  --tool dua=/path/to/dua --tool bsd-du=/usr/bin/du \
+  --tool gnu-du=/path/to/gnu-du --trials 12 --warmups 3 \
+  --storage 'local APFS SSD' --name scalar-900k
+```
+
+Homebrew installs the Go disk analyzer as `gdu-go` when GNU coreutils also owns `gdu`.
+Resolve and hash the actual executable rather than assuming the command name.
+Each competitor runs immediately beside FDU with alternating order.
+The v3 fingerprint records redacted counts, depth, bytes, newest file time, and in-tree
+hard-link duplication; any baseline drift, pre/post mutation, timeout, or nonzero exit
+makes the run non-publishable.
+The v3 summary oracle additionally checks files, descendant directories, apparent bytes,
+allocated bytes, and newest regular-file mtime on every FDU sample.
+Partial, stale, cached, or error-bearing output is invalid.
+Reports label indexed-tree, rendered-tree, transient-summary, and total-only work
+classes because those jobs are not semantically identical.
+
+The reviewed M1/APFS result and exact manifest are in the
+[live tool comparison](../docs/project/reports/report-2026-08-13-fdu-live-tool-comparison.md).
+The architecture-level synthesis is the
+[performance white paper](../docs/project/reports/report-2026-08-12-fdu-performance-architecture.md).
+
+The tool runner’s `warm-steady` label is deliberately narrower than “everything fits in
+RAM.” Before timing, the independent fingerprint walks every entry, and every tool then
+receives explicit full-tree warmups; future JSON records retain both facts.
+The label means repeated-workload steady state under whatever metadata-cache pressure
+the subject creates.
+It never means an FDU snapshot was used, and it never implies that all dentries, inodes,
+vnodes, or APFS metadata blocks remained resident.
+
+### Future Linux warm and cold comparison
+
+The
+[current diskus benchmark](https://github.com/sharkdp/diskus/blob/90196e950017d25b2940e8e0fda51a321ca66e1a/README.md#benchmark)
+provides one practice the macOS run cannot reproduce without different platform
+controls: it uses Hyperfine with five warmups for the warm regime, and runs `sync` plus
+`/proc/sys/vm/drop_caches` before every timed Linux cold-cache sample.
+It also uses a parameter scan before selecting a comparator’s worker count.
+
+The future Linux matrix adopts that per-sample cache preparation for its
+`controlled-cold` regime and reports a separate `verified-warm` regime.
+It retains the stronger FDU evidence contract: adjacent paired scheduling, exact
+binaries and host facts, immutable pre/post fingerprints, correctness oracles, work
+classes, output digests, resource metrics, raw samples, and bootstrap confidence
+intervals.
+The runner must record every preparation command and failure; a label alone is
+not proof that the kernel cache was evicted.
+
+macOS `/usr/sbin/purge` is useful only as a separately labeled approximation: its own
+manual says it approximates initial-boot buffer-cache conditions, while a full metadata
+residency guarantee is unavailable.
+A publishable macOS cold matrix therefore needs a quiet dedicated host and preferably a
+disposable APFS volume remounted between samples.
+Running on a corpus larger than `kern.maxvnodes` is valuable cache-pressure evidence,
+but size alone does not establish a controlled-cold state.
 
 `output-digest` drains stdout through a pipe and hashes it without timing filesystem
 writes. Compact JSON postconditions are retained in a bounded 16 MiB buffer for untimed

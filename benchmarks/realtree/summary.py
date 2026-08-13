@@ -157,12 +157,9 @@ def _headline(experiments: Sequence[Mapping[str, Any]]) -> List[str]:
     total. Adding up the individual experiments would not be: each was measured
     against a different control on a differently loaded machine.
     """
-    cumulative = [
-        item for item in experiments if "cumulative" in item["title"].lower()
-    ]
-    if not cumulative:
+    latest = _latest_cumulative(experiments)
+    if latest is None:
         return []
-    latest = cumulative[-1]
     lines = ["## Where it stands", ""]
     lines.append(
         f"Every accepted change together, measured against the pre-work baseline in "
@@ -201,12 +198,28 @@ def _headline(experiments: Sequence[Mapping[str, Any]]) -> List[str]:
     return lines
 
 
+def _latest_cumulative(
+    experiments: Sequence[Mapping[str, Any]],
+) -> Optional[Mapping[str, Any]]:
+    cumulative = [
+        item for item in experiments if "cumulative" in item["title"].lower()
+    ]
+    return cumulative[-1] if cumulative else None
+
+
 def _conditions(experiments: Sequence[Mapping[str, Any]]) -> List[str]:
     if not experiments:
         return []
-    subject = experiments[-1]["subject"]
-    method = experiments[-1]["method"]
-    lines = ["## Reproducing this", ""]
+    cumulative = _latest_cumulative(experiments)
+    anchor = cumulative or experiments[-1]
+    subject = anchor["subject"]
+    method = anchor["method"]
+    heading = (
+        "## Reproducing the cumulative comparison"
+        if cumulative is not None
+        else "## Reproducing this"
+    )
+    lines = [heading, ""]
     lines.append("**The tree.** Pinned by content, not by name.")
     lines.append("")
     lines.append(

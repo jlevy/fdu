@@ -7,12 +7,12 @@
 //!
 //! # Status
 //!
-//! This is the portable `read_dir` + `symlink_metadata` implementation. It is correct
-//! and it is the reference the fast path must match, but it is **not** the walker the
-//! performance goal calls for: raw `getdents64` into a large reused per-thread buffer,
-//! dirfd-relative `statx` with a narrow field mask, `d_type` stat-avoidance, and a
-//! work-stealing pool. Until that layer lands and the benchmark gate passes, no
-//! performance claim should be made for this crate.
+//! The serial walk is the portable `read_dir` plus non-following metadata reference.
+//! Parallel scans use the same path on most platforms; on macOS they first try a
+//! measured `getattrlistbulk` backend that returns directory entries and stat-tier
+//! metadata together. Unsupported filesystems, malformed results, mount points, and
+//! firmlinks fail closed to the portable path for the complete containing directory.
+//! Every backend produces the same [`Observation`] contract.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::ffi::OsString;
@@ -26,6 +26,13 @@ use crate::types::{
     PathState, Result, ScanScope,
 };
 
+// Keep the FFI exception at the platform boundary. The rest of the engine, including
+// every consumer of these observations, remains under the workspace's unsafe-code
+// denial.
+#[cfg(target_os = "macos")]
+#[allow(unsafe_code)]
+mod macos_bulk;
+
 /// How many ops accumulate before an observation is handed to the sink.
 ///
 /// Batching matters for more than syscall economy: consumers coalesce per path within a
@@ -35,6 +42,20 @@ const DEFAULT_BATCH_SIZE: usize = 1024;
 
 /// Largest producer batch accepted before work must be published incrementally.
 pub const MAX_SCAN_BATCH_SIZE: usize = 64 * 1024;
+
+/// Most changed paths an exclusive parallel reconciliation may defer before applying.
+///
+/// Workers compare against one immutable index image, so mutations wait until the wave
+/// joins. Bounding that change set keeps a churned tree from turning the fast unchanged
+/// path into an unbounded allocation; overflow discards the wave and retries through
+/// the incremental serial reconciler.
+const MAX_DEFERRED_RECONCILE_OPS: usize = MAX_SCAN_BATCH_SIZE;
+
+/// Directories compared against one immutable index baseline before changes are applied.
+///
+/// The wave is large enough to amortize scoped worker creation and small enough that a
+/// changed tree publishes progress throughout a long reconciliation.
+const RECONCILE_WAVE_DIRECTORIES: usize = 1024;
 
 /// Identity of the current built-in ignore policy. No ignore rules exist yet.
 const IGNORE_RULES_FINGERPRINT: u64 = 0;
@@ -129,7 +150,9 @@ pub struct ScanConfig {
     /// scales with threads far better than most work does. One means the serial
     /// walker, which stays the reference implementation and the thing every result is
     /// checked against. [`None`] asks for a bounded default derived from the
-    /// machine's available parallelism.
+    /// machine's available parallelism. The automatic pool starts conservatively and
+    /// unlocks more latency-hiding workers only when initial chunk timing identifies a
+    /// slow filesystem path.
     ///
     /// This is an operational knob, not a semantic one: it changes how fast the same
     /// observations are produced, never which observations they are. That is why it
@@ -165,16 +188,28 @@ impl ScanConfig {
         }
     }
 
-    /// Resolve [`Self::threads`] to a concrete, bounded worker count.
-    ///
-    /// A machine that will not report its parallelism gets one thread rather than a
-    /// guess: the serial walker is always correct, and silently choosing a pool size
-    /// out of thin air is how a benchmark ends up measuring the guess.
+    /// Resolve [`Self::threads`] to the workers active when a scan begins.
     fn worker_threads(&self) -> usize {
+        self.worker_pool().initial
+    }
+
+    /// Resolve the worker count for immutable-baseline reconciliation waves.
+    fn reconciliation_worker_threads(&self) -> usize {
         match self.threads {
             Some(threads) => threads.clamp(1, MAX_SCAN_THREADS),
             None => std::thread::available_parallelism()
-                .map_or(1, |value| value.get().clamp(1, DEFAULT_SCAN_THREADS_CAP)),
+                .map_or(1, std::num::NonZero::get)
+                .clamp(1, DEFAULT_RECONCILE_THREADS_CAP),
+        }
+    }
+
+    /// Resolve the initial and maximum worker counts for one scan.
+    fn worker_pool(&self) -> WorkerPool {
+        match self.threads {
+            Some(threads) => WorkerPool::fixed(threads.clamp(1, MAX_SCAN_THREADS)),
+            None => automatic_worker_pool(
+                std::thread::available_parallelism().map_or(1, std::num::NonZero::get),
+            ),
         }
     }
 
@@ -329,6 +364,10 @@ impl WalkAttribution {
 #[derive(Debug, Default)]
 pub struct ReconcileReport {
     /// Filesystem walk effects and partial errors.
+    ///
+    /// [`ScanReport::attribution`] remains zero for reconciliation because neither the
+    /// serial nor parallel path has complete, comparable instrumentation yet. Zero
+    /// means "not measured" here, not "no work".
     pub scan: ScanReport,
     /// Index arbitration and mutation effects.
     pub apply: ApplyStats,
@@ -542,7 +581,7 @@ fn take_next(queue: &mut VecDeque<(PathBuf, usize)>, order: ScanOrder) -> Option
 /// count from something silly cannot spawn thousands of threads.
 const MAX_SCAN_THREADS: usize = 32;
 
-/// Ceiling on the pool size chosen automatically.
+/// Ceiling on the workers active at the start of an automatic scan.
 ///
 /// Measured, not guessed. On a 10-core machine walking a 60k-entry `node_modules`
 /// tree, wall time fell 37% at two workers and 50% at four, then stopped improving:
@@ -551,6 +590,92 @@ const MAX_SCAN_THREADS: usize = 32;
 /// contention and efficiency-core scheduling rather than throughput. See
 /// `docs/project/reports/report-2026-08-10-fdu-performance-experiments.md`.
 const DEFAULT_SCAN_THREADS_CAP: usize = 6;
+
+/// Ceiling on automatic workers for an immutable-baseline reconciliation wave.
+///
+/// Reconciliation reads both filesystem and index state. Its measured knee arrives
+/// before the cold producer's because additional metadata calls amplify kernel work
+/// after the index comparisons already saturate the performance cores.
+const DEFAULT_RECONCILE_THREADS_CAP: usize = 4;
+
+/// Ceiling an automatic scan may unlock after it establishes that the tree is large.
+///
+/// Sixteen was the knee on the 720k-entry cache-pressure corpus in exp-015. Thirty-two
+/// did not improve on it and spent substantially more worker time waiting at the end.
+const ADAPTIVE_SCAN_THREADS_CAP: usize = 16;
+
+/// Maximum reserve depth relative to the host's reported parallelism.
+const ADAPTIVE_SCAN_PARALLELISM_MULTIPLIER: usize = 2;
+
+/// Entries used to calibrate the initial workers' filesystem service time.
+const ADAPTIVE_SCAN_CALIBRATION_ENTRIES: u64 = 16 * 1024;
+
+/// Average worker time per observed entry that identifies a latency-bound scan.
+///
+/// Whole-run attribution separated the measured regimes: roughly 18 microseconds on
+/// the 60k tree, 22 on the 120k boundary, and 42 or more on the 720k cache-pressure
+/// tree. Thirty leaves margin between them. The calibration uses the same chunk timing
+/// already collected for attribution, so it adds no per-entry clock reads.
+const ADAPTIVE_SCAN_SLOW_WORK_NS_PER_ENTRY: u64 = 30_000;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct WorkerPool {
+    initial: usize,
+    maximum: usize,
+    calibration: Option<WorkerCalibration>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct WorkerCalibration {
+    minimum_entries: u64,
+    slow_work_ns_per_entry: u64,
+    entries: u64,
+    work_ns: u64,
+}
+
+enum WalkMessage {
+    Observation(Observation),
+    ScaleUp(std::sync::mpsc::Sender<Self>),
+}
+
+impl WorkerPool {
+    const fn fixed(workers: usize) -> Self {
+        Self { initial: workers, maximum: workers, calibration: None }
+    }
+}
+
+impl WorkerCalibration {
+    const fn new(minimum_entries: u64, slow_work_ns_per_entry: u64) -> Self {
+        Self { minimum_entries, slow_work_ns_per_entry, entries: 0, work_ns: 0 }
+    }
+
+    fn observe(&mut self, entries: u64, work_ns: u64) -> Option<bool> {
+        self.entries = self.entries.saturating_add(entries);
+        self.work_ns = self.work_ns.saturating_add(work_ns);
+        (self.entries >= self.minimum_entries)
+            .then(|| self.work_ns / self.entries >= self.slow_work_ns_per_entry)
+    }
+}
+
+fn automatic_worker_pool(available: usize) -> WorkerPool {
+    let initial = available.clamp(1, DEFAULT_SCAN_THREADS_CAP);
+    // Preserve the serial fallback when the platform cannot report more than one
+    // available processor. There is no measured basis for inventing parallelism there.
+    if initial == 1 {
+        return WorkerPool::fixed(1);
+    }
+    let maximum = available
+        .saturating_mul(ADAPTIVE_SCAN_PARALLELISM_MULTIPLIER)
+        .clamp(initial, ADAPTIVE_SCAN_THREADS_CAP);
+    WorkerPool {
+        initial,
+        maximum,
+        calibration: (maximum > initial).then_some(WorkerCalibration::new(
+            ADAPTIVE_SCAN_CALIBRATION_ENTRIES,
+            ADAPTIVE_SCAN_SLOW_WORK_NS_PER_ENTRY,
+        )),
+    }
+}
 
 /// Directories handed to a worker in one go.
 ///
@@ -578,12 +703,12 @@ fn scan_concurrent(
     root_dev: u64,
     sink: &mut dyn FnMut(Observation),
 ) -> ScanReport {
-    let workers = config.worker_threads();
-    let queue = DirectoryQueue::new((PathBuf::new(), 0), config.order);
-    let (sender, receiver) = std::sync::mpsc::channel::<Observation>();
+    let pool = config.worker_pool();
+    let queue = DirectoryQueue::new((PathBuf::new(), 0), config.order, pool.calibration);
+    let (sender, receiver) = std::sync::mpsc::channel::<WalkMessage>();
 
     let mut report = std::thread::scope(|scope| {
-        let handles: Vec<_> = (0..workers)
+        let mut handles: Vec<_> = (0..pool.initial)
             .map(|_| {
                 let sender = sender.clone();
                 let queue = &queue;
@@ -593,8 +718,23 @@ fn scan_concurrent(
         // The loop below ends when every sender is gone, so this one must go first.
         drop(sender);
 
-        for observation in receiver {
-            sink(observation);
+        let mut scaled_up = false;
+        for message in receiver {
+            match message {
+                WalkMessage::Observation(observation) => sink(observation),
+                WalkMessage::ScaleUp(sender) if !scaled_up => {
+                    scaled_up = true;
+                    for _ in pool.initial..pool.maximum {
+                        let sender = sender.clone();
+                        let queue = &queue;
+                        handles
+                            .push(scope.spawn(move || {
+                                walk_worker(root, config, root_dev, queue, &sender)
+                            }));
+                    }
+                }
+                WalkMessage::ScaleUp(_) => {}
+            }
         }
 
         let mut report = ScanReport::default();
@@ -627,7 +767,7 @@ fn walk_worker(
     config: &ScanConfig,
     root_dev: u64,
     queue: &DirectoryQueue,
-    sender: &std::sync::mpsc::Sender<Observation>,
+    sender: &std::sync::mpsc::Sender<WalkMessage>,
 ) -> ScanReport {
     let worker_started = std::time::Instant::now();
     let mut report = ScanReport::default();
@@ -635,6 +775,8 @@ fn walk_worker(
     let mut claimed: Vec<(PathBuf, usize, RegionId)> = Vec::with_capacity(DIR_CLAIM);
     let mut discovered: Vec<(PathBuf, usize, RegionId)> = Vec::new();
     let mut consumer_gone = false;
+    #[cfg(target_os = "macos")]
+    let mut bulk_reader = macos_bulk::Reader::new();
 
     'walk: while queue.claim(&mut claimed, &mut report.attribution) {
         // One timing pair per claimed chunk, never per entry: the chunk is the unit
@@ -642,8 +784,35 @@ fn walk_worker(
         // collected in.
         let chunk_started = std::time::Instant::now();
         let mut chunk_send_ns: u64 = 0;
+        let entries_before = report.entries;
         for (rel_dir, depth, region) in claimed.drain(..) {
             let abs_dir = root.join(&rel_dir);
+            #[cfg(target_os = "macos")]
+            if let Some(entries) = bulk_reader.read(&abs_dir) {
+                report.dirs_read += 1;
+                for entry in entries {
+                    if !record_walk_entry(
+                        &rel_dir,
+                        depth,
+                        region,
+                        entry.name,
+                        entry.kind,
+                        entry.attrs,
+                        root_dev,
+                        config,
+                        &mut batch,
+                        &mut discovered,
+                        &mut report,
+                        sender,
+                        &mut chunk_send_ns,
+                    ) {
+                        consumer_gone = true;
+                        break 'walk;
+                    }
+                }
+                continue;
+            }
+
             let listing = match fs::read_dir(&abs_dir) {
                 Ok(listing) => listing,
                 Err(e) => {
@@ -662,7 +831,6 @@ fn walk_worker(
                     }
                 };
                 let name = item.file_name();
-                let rel_path = rel_dir.join(&name);
                 let meta = match metadata_for_fingerprint(&item) {
                     Ok(meta) => meta,
                     Err(e) => {
@@ -673,45 +841,94 @@ fn walk_worker(
 
                 let attrs = attrs_from(&meta);
                 let kind = kind_from(&meta);
-                report.entries += 1;
-                let descend = should_descend(kind, attrs, depth, root_dev, config);
-                batch.push(Op::Upsert { path: rel_path.clone(), kind, attrs });
-                if batch.len() >= config.batch_size {
-                    let send_started = std::time::Instant::now();
-                    let sent = sender.send(Observation::new(std::mem::take(&mut batch))).is_ok();
-                    chunk_send_ns += elapsed_ns(send_started);
-                    if !sent {
-                        // The consumer is gone; nothing further will be read.
-                        consumer_gone = true;
-                        break 'walk;
-                    }
-                }
-                if descend {
-                    // A child of the root seeds a new region; everything deeper
-                    // inherits its parent's. Region membership therefore costs one
-                    // integer copy and never inspects a path.
-                    let child_region = if depth == 0 { RegionId::UNASSIGNED } else { region };
-                    discovered.push((rel_path, depth + 1, child_region));
+                if !record_walk_entry(
+                    &rel_dir,
+                    depth,
+                    region,
+                    name,
+                    kind,
+                    attrs,
+                    root_dev,
+                    config,
+                    &mut batch,
+                    &mut discovered,
+                    &mut report,
+                    sender,
+                    &mut chunk_send_ns,
+                ) {
+                    // The consumer is gone; nothing further will be read.
+                    consumer_gone = true;
+                    break 'walk;
                 }
             }
         }
         report.attribution.send_ns += chunk_send_ns;
-        report.attribution.work_ns += elapsed_ns(chunk_started).saturating_sub(chunk_send_ns);
+        let chunk_work_ns = elapsed_ns(chunk_started).saturating_sub(chunk_send_ns);
+        report.attribution.work_ns += chunk_work_ns;
         // Publish before releasing the claim so a worker that finds nothing new does
         // not hold work that others could be doing.
         if !discovered.is_empty() {
             queue.extend(discovered.drain(..), &mut report.attribution);
         }
-        queue.release(&mut report.attribution);
+        if queue.release(
+            report.entries.saturating_sub(entries_before),
+            chunk_work_ns,
+            &mut report.attribution,
+        ) {
+            // Carry a sender in-band so the consumer can create the reserve workers
+            // without retaining a channel endpoint that would keep a small scan alive.
+            // Only the release that completes a slow calibration returns true, so one
+            // message expands the pool exactly once.
+            let _ = sender.send(WalkMessage::ScaleUp(sender.clone()));
+        }
     }
 
     if !consumer_gone && !batch.is_empty() {
         let send_started = std::time::Instant::now();
-        let _ = sender.send(Observation::new(batch));
+        let _ = sender.send(WalkMessage::Observation(Observation::new(batch)));
         report.attribution.send_ns += elapsed_ns(send_started);
     }
     report.attribution.wall_ns = elapsed_ns(worker_started);
     report
+}
+
+#[allow(clippy::too_many_arguments)]
+fn record_walk_entry(
+    rel_dir: &Path,
+    depth: usize,
+    region: RegionId,
+    name: OsString,
+    kind: EntryKind,
+    attrs: Attrs,
+    root_dev: u64,
+    config: &ScanConfig,
+    batch: &mut Vec<Op>,
+    discovered: &mut Vec<(PathBuf, usize, RegionId)>,
+    report: &mut ScanReport,
+    sender: &std::sync::mpsc::Sender<WalkMessage>,
+    chunk_send_ns: &mut u64,
+) -> bool {
+    let rel_path = rel_dir.join(name);
+    let descend = should_descend(kind, attrs, depth, root_dev, config);
+    report.entries += 1;
+    batch.push(Op::Upsert { path: rel_path.clone(), kind, attrs });
+    if batch.len() >= config.batch_size {
+        let send_started = std::time::Instant::now();
+        let sent =
+            sender.send(WalkMessage::Observation(Observation::new(std::mem::take(batch)))).is_ok();
+        *chunk_send_ns += elapsed_ns(send_started);
+        if !sent {
+            return false;
+        }
+    }
+    if descend {
+        // A child of the root seeds a new region; everything deeper inherits its
+        // parent's. Region membership therefore costs one integer copy and never
+        // inspects a path.
+        let child_region = if depth == 0 { RegionId::UNASSIGNED } else { region };
+        discovered.push((rel_path, depth + 1, child_region));
+    }
+    true
 }
 
 /// Nanoseconds since `started`, saturating rather than panicking on the absurd.
@@ -779,9 +996,28 @@ struct DirectoryQueueState {
     enqueued: Vec<bool>,
     outstanding: usize,
     finished: bool,
+    calibration: Option<WorkerCalibration>,
 }
 
 impl DirectoryQueueState {
+    fn seeded(
+        root: (PathBuf, usize),
+        order: ScanOrder,
+        calibration: Option<WorkerCalibration>,
+    ) -> Self {
+        let mut state = Self {
+            pending: VecDeque::new(),
+            regions: Vec::new(),
+            ready_ring: VecDeque::new(),
+            enqueued: Vec::new(),
+            outstanding: 0,
+            finished: false,
+            calibration,
+        };
+        state.push((root.0, root.1, RegionId::ROOT), order);
+        state
+    }
+
     /// Push one directory into the structure the order uses.
     fn push(&mut self, item: (PathBuf, usize, RegionId), order: ScanOrder) {
         match order {
@@ -858,16 +1094,12 @@ impl DirectoryQueueState {
 
 impl DirectoryQueue {
     /// Seed the queue with the root, which is region zero until its children fan out.
-    fn new(root: (PathBuf, usize), order: ScanOrder) -> Self {
-        let mut state = DirectoryQueueState {
-            pending: VecDeque::new(),
-            regions: Vec::new(),
-            ready_ring: VecDeque::new(),
-            enqueued: Vec::new(),
-            outstanding: 0,
-            finished: false,
-        };
-        state.push((root.0, root.1, RegionId::ROOT), order);
+    fn new(
+        root: (PathBuf, usize),
+        order: ScanOrder,
+        calibration: Option<WorkerCalibration>,
+    ) -> Self {
+        let state = DirectoryQueueState::seeded(root, order, calibration);
         Self { state: std::sync::Mutex::new(state), ready: std::sync::Condvar::new(), order }
     }
 
@@ -920,13 +1152,36 @@ impl DirectoryQueue {
     }
 
     /// Give up a claim taken by [`claim`]. Wakes everyone if this was the last one.
-    fn release(&self, timing: &mut WalkAttribution) {
+    ///
+    /// The chunk's own entry count and work time feed the shared service-time
+    /// calibration, so the decision uses the timing the walk already collects for
+    /// attribution rather than a second clock. Returns true exactly once, on the
+    /// release that both completes the calibration and finds the filesystem slow
+    /// enough to be worth more latency-hiding workers; the caller turns that into a
+    /// single pool expansion. A release that ends the walk returns false, because
+    /// there is no longer any work for a reserve worker to take.
+    fn release(
+        &self,
+        observed_entries: u64,
+        observed_work_ns: u64,
+        timing: &mut WalkAttribution,
+    ) -> bool {
         let mut state = self.lock_timed(timing);
+        let decision = state
+            .calibration
+            .as_mut()
+            .and_then(|value| value.observe(observed_entries, observed_work_ns));
+        if decision.is_some() {
+            state.calibration = None;
+        }
         state.outstanding -= 1;
         if state.outstanding == 0 && state.is_empty(self.order) {
             state.finished = true;
             drop(state);
             self.ready.notify_all();
+            false
+        } else {
+            decision.unwrap_or(false)
         }
     }
 
@@ -1180,7 +1435,7 @@ fn reconcile_target(
     }
     let subtree = resolve_subtree_root(target, &subtree, config)?;
     let started_at = target.begin_reconcile(&subtree)?;
-    match reconcile_target_inner(target, &subtree, config, sink) {
+    match reconcile_target_inner(target, &subtree, config, MAX_DEFERRED_RECONCILE_OPS, sink) {
         Ok(report) => {
             target.finish_reconcile(&subtree, started_at, report.is_complete())?;
             Ok(report)
@@ -1196,6 +1451,7 @@ fn reconcile_target_inner(
     target: &mut ReconcileTarget<'_>,
     subtree: &Path,
     config: &ScanConfig,
+    max_deferred_ops: usize,
     sink: &mut dyn FnMut(&AppliedDelta),
 ) -> Result<ReconcileReport> {
     let root = target.root_path()?;
@@ -1212,6 +1468,7 @@ fn reconcile_target_inner(
     let root_dev = attrs_from(&root_meta).dev;
     let start_depth = subtree.components().count();
     let mut report = ReconcileReport::default();
+    let mut retry_frontier = None;
     let mut batch: Vec<ObservationOp> = Vec::with_capacity(config.batch_size.max(1));
 
     if config.max_depth == Some(0) {
@@ -1265,45 +1522,38 @@ fn reconcile_target_inner(
         }
     }
 
-    let mut queue: VecDeque<(PathBuf, usize)> =
-        VecDeque::from(vec![(subtree.to_path_buf(), start_depth)]);
+    if subtree.as_os_str().is_empty() && config.reconciliation_worker_threads() > 1 {
+        if let ReconcileTarget::Direct(index) = target {
+            match reconcile_direct_parallel(index, &root, root_dev, config, max_deferred_ops, sink)?
+            {
+                DirectParallelOutcome::Complete(parallel) => return Ok(parallel),
+                DirectParallelOutcome::RetrySerial { prefix, remaining } => {
+                    report = prefix;
+                    retry_frontier = Some(remaining);
+                }
+            }
+        }
+    }
+
+    let mut queue: VecDeque<(PathBuf, usize)> = retry_frontier
+        .unwrap_or_else(|| VecDeque::from(vec![(subtree.to_path_buf(), start_depth)]));
+    #[cfg(target_os = "macos")]
+    let mut bulk_reader = (config.worker_threads() > 1).then(macos_bulk::Reader::new);
     while let Some((rel_dir, depth)) = take_next(&mut queue, config.order) {
         let mut known = target.child_states(&rel_dir)?;
         let abs_dir = root.join(&rel_dir);
-        let listing = match fs::read_dir(&abs_dir) {
-            Ok(listing) => listing,
-            Err(error) => {
-                report.scan.errors.push(Error::io(abs_dir, error));
-                continue;
-            }
-        };
-        report.scan.dirs_read += 1;
         let mut listing_complete = true;
-
-        for item in listing {
-            let item = match item {
-                Ok(item) => item,
-                Err(error) => {
-                    listing_complete = false;
-                    report.scan.errors.push(Error::io(&abs_dir, error));
-                    continue;
-                }
-            };
-            let name = item.file_name();
+        let process_entry = |name: OsString,
+                             kind: EntryKind,
+                             attrs: Attrs,
+                             baseline: PathExpectation,
+                             target: &mut ReconcileTarget<'_>,
+                             queue: &mut VecDeque<(PathBuf, usize)>,
+                             batch: &mut Vec<ObservationOp>,
+                             sink: &mut dyn FnMut(&AppliedDelta),
+                             report: &mut ReconcileReport|
+         -> Result<()> {
             let rel_path = rel_dir.join(&name);
-            let baseline = match known.remove(&name) {
-                Some(baseline) => baseline,
-                None => target.expectation(&rel_path)?,
-            };
-            let meta = match metadata_for_fingerprint(&item) {
-                Ok(meta) => meta,
-                Err(error) => {
-                    report.scan.errors.push(Error::io(item.path(), error));
-                    continue;
-                }
-            };
-            let kind = kind_from(&meta);
-            let attrs = attrs_from(&meta);
             report.scan.entries += 1;
             push_reconcile_upsert(
                 target,
@@ -1311,23 +1561,93 @@ fn reconcile_target_inner(
                 kind,
                 attrs,
                 baseline,
-                &mut batch,
+                batch,
                 &mut report.apply,
             );
             if batch.len() >= config.batch_size.max(1) {
-                flush_reconcile_batch(target, &mut batch, sink, &mut report.apply)?;
+                flush_reconcile_batch(target, batch, sink, &mut report.apply)?;
             }
 
             if should_descend(kind, attrs, depth, root_dev, config) {
                 queue.push_back((rel_path, depth + 1));
             } else if kind.is_dir() {
-                remove_known_children(
+                remove_known_children(target, &rel_path, config, batch, sink, &mut report.apply)?;
+            }
+            Ok(())
+        };
+
+        #[cfg(target_os = "macos")]
+        let used_bulk =
+            if let Some(entries) = bulk_reader.as_mut().and_then(|reader| reader.read(&abs_dir)) {
+                report.scan.dirs_read += 1;
+                for entry in entries {
+                    let baseline = match known.remove(&entry.name) {
+                        Some(baseline) => baseline,
+                        None => target.expectation(&rel_dir.join(&entry.name))?,
+                    };
+                    process_entry(
+                        entry.name,
+                        entry.kind,
+                        entry.attrs,
+                        baseline,
+                        target,
+                        &mut queue,
+                        &mut batch,
+                        sink,
+                        &mut report,
+                    )?;
+                }
+                true
+            } else {
+                false
+            };
+        #[cfg(not(target_os = "macos"))]
+        let used_bulk = false;
+
+        if !used_bulk {
+            let listing = match fs::read_dir(&abs_dir) {
+                Ok(listing) => listing,
+                Err(error) => {
+                    report.scan.errors.push(Error::io(abs_dir, error));
+                    continue;
+                }
+            };
+            report.scan.dirs_read += 1;
+            for item in listing {
+                let item = match item {
+                    Ok(item) => item,
+                    Err(error) => {
+                        listing_complete = false;
+                        report.scan.errors.push(Error::io(&abs_dir, error));
+                        continue;
+                    }
+                };
+                let name = item.file_name();
+                // Seeing the name proves it is not absent even if the following
+                // metadata lookup fails. Remove it from the missing set before that
+                // fallible lookup so an operational error cannot turn an existing
+                // entry into a deletion.
+                let baseline = match known.remove(&name) {
+                    Some(baseline) => baseline,
+                    None => target.expectation(&rel_dir.join(&name))?,
+                };
+                let meta = match metadata_for_fingerprint(&item) {
+                    Ok(meta) => meta,
+                    Err(error) => {
+                        report.scan.errors.push(Error::io(item.path(), error));
+                        continue;
+                    }
+                };
+                process_entry(
+                    name,
+                    kind_from(&meta),
+                    attrs_from(&meta),
+                    baseline,
                     target,
-                    &rel_path,
-                    config,
+                    &mut queue,
                     &mut batch,
                     sink,
-                    &mut report.apply,
+                    &mut report,
                 )?;
             }
         }
@@ -1346,7 +1666,321 @@ fn reconcile_target_inner(
     }
 
     flush_reconcile_batch(target, &mut batch, sink, &mut report.apply)?;
+    report.scan.errors.sort_by_cached_key(ToString::to_string);
     Ok(report)
+}
+
+#[derive(Debug, Default)]
+struct DeferredReconcile {
+    scan: ScanReport,
+    unchanged: u64,
+    operations: Vec<Op>,
+    discovered: Vec<(PathBuf, usize, RegionId)>,
+}
+
+enum DirectParallelOutcome {
+    Complete(ReconcileReport),
+    RetrySerial { prefix: ReconcileReport, remaining: VecDeque<(PathBuf, usize)> },
+}
+
+/// Reconcile an exclusive full tree in bounded immutable-baseline waves.
+///
+/// No index write occurs while a wave's workers hold shared baseline references. That
+/// lets each worker discard exact no-ops where they are observed instead of funnelling
+/// every entry through one consumer. Effective changes still enter through ordinary
+/// observations between waves, preserving both the index's sole mutation contract and
+/// progressive delta delivery.
+///
+/// Unlike every other reconciliation path, the operations a wave defers are
+/// unconditional: they carry no [`ObservationOp::if_state`] guard. Three properties
+/// have to hold together for that to be safe, and a change to any one of them puts the
+/// guards back. The target is an exclusive `&mut Index`, so no other producer can
+/// commit between a worker's read and the wave's write. Nothing is applied while
+/// workers run, so no baseline a worker compared against can go stale beneath it. And
+/// a directory is only reconciled in a wave after the wave that discovered it has
+/// committed, so a parent is never absent when its children arrive.
+fn reconcile_direct_parallel(
+    index: &mut Index,
+    root: &Path,
+    root_dev: u64,
+    config: &ScanConfig,
+    max_deferred_ops: usize,
+    sink: &mut dyn FnMut(&AppliedDelta),
+) -> Result<DirectParallelOutcome> {
+    let mut frontier = DirectoryQueueState::seeded((PathBuf::new(), 0), config.order, None);
+    let mut report = ReconcileReport::default();
+    while !frontier.is_empty(config.order) {
+        let mut wave = Vec::with_capacity(RECONCILE_WAVE_DIRECTORIES);
+        while wave.len() < RECONCILE_WAVE_DIRECTORIES && !frontier.is_empty(config.order) {
+            let remaining = RECONCILE_WAVE_DIRECTORIES - wave.len();
+            frontier.take(remaining.min(DIR_CLAIM), config.order, &mut wave);
+        }
+
+        let next = std::sync::atomic::AtomicUsize::new(0);
+        let deferred_count = std::sync::atomic::AtomicUsize::new(0);
+        let overflowed = std::sync::atomic::AtomicBool::new(false);
+        let workers = config.reconciliation_worker_threads().min(wave.len());
+        let baseline: &Index = index;
+        let results: Vec<DeferredReconcile> = std::thread::scope(|scope| {
+            let handles: Vec<_> = (0..workers)
+                .map(|_| {
+                    scope.spawn(|| {
+                        reconcile_wave_worker(
+                            baseline,
+                            root,
+                            root_dev,
+                            config,
+                            &wave,
+                            &next,
+                            &deferred_count,
+                            &overflowed,
+                            max_deferred_ops,
+                        )
+                    })
+                })
+                .collect();
+
+            handles
+                .into_iter()
+                .map(|handle| {
+                    if let Ok(worker) = handle.join() {
+                        return worker;
+                    }
+                    let mut worker = DeferredReconcile::default();
+                    worker.scan.errors.push(Error::io(
+                        root,
+                        std::io::Error::other("a reconciliation worker thread panicked"),
+                    ));
+                    worker
+                })
+                .collect()
+        });
+
+        // Nothing from an overflowing wave was applied, so the ordinary incremental
+        // reconciler can resume at that wave. Completed waves and their statistics are
+        // retained exactly once; restarting from the root would count their unchanged
+        // entries again and misreport the logical reconciliation pass.
+        if overflowed.load(std::sync::atomic::Ordering::Relaxed) {
+            let mut remaining: VecDeque<_> =
+                wave.into_iter().map(|(path, depth, _region)| (path, depth)).collect();
+            let mut deferred = Vec::with_capacity(DIR_CLAIM);
+            while !frontier.is_empty(config.order) {
+                frontier.take(DIR_CLAIM, config.order, &mut deferred);
+                remaining.extend(deferred.drain(..).map(|(path, depth, _region)| (path, depth)));
+            }
+            return Ok(DirectParallelOutcome::RetrySerial { prefix: report, remaining });
+        }
+
+        let operation_count = deferred_count.load(std::sync::atomic::Ordering::Relaxed);
+        let mut operations = Vec::with_capacity(operation_count);
+        for worker in results {
+            report.scan.absorb(worker.scan);
+            report.apply.unchanged += worker.unchanged;
+            operations.extend(worker.operations);
+            for directory in worker.discovered {
+                frontier.push(directory, config.order);
+            }
+        }
+        apply_deferred_reconcile(index, &mut operations, config, sink, &mut report.apply)?;
+    }
+    report.scan.errors.sort_by_cached_key(ToString::to_string);
+    Ok(DirectParallelOutcome::Complete(report))
+}
+
+fn apply_deferred_reconcile(
+    index: &mut Index,
+    operations: &mut Vec<Op>,
+    config: &ScanConfig,
+    sink: &mut dyn FnMut(&AppliedDelta),
+    stats: &mut ApplyStats,
+) -> Result<()> {
+    // Parent upserts establish real directory attributes before children arrive.
+    // Removals run deepest first so a parent removal never precedes an independently
+    // observed descendant operation. The index supports out-of-order producers, but a
+    // deterministic causal order also makes emitted deltas stable for callers.
+    operations.sort_by(|left, right| {
+        let left_remove = matches!(left, Op::Remove { .. });
+        let right_remove = matches!(right, Op::Remove { .. });
+        left_remove.cmp(&right_remove).then_with(|| {
+            let left_depth = left.path().components().count();
+            let right_depth = right.path().components().count();
+            if left_remove {
+                right_depth.cmp(&left_depth).then_with(|| left.path().cmp(right.path()))
+            } else {
+                left_depth.cmp(&right_depth).then_with(|| left.path().cmp(right.path()))
+            }
+        })
+    });
+
+    let batch_limit = config.batch_size.max(1);
+    let mut batch = Vec::with_capacity(batch_limit.min(operations.len()));
+    for operation in operations.drain(..) {
+        batch.push(operation);
+        if batch.len() >= batch_limit {
+            flush_direct_reconcile_batch(index, &mut batch, sink, stats)?;
+        }
+    }
+    flush_direct_reconcile_batch(index, &mut batch, sink, stats)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn reconcile_wave_worker(
+    index: &Index,
+    root: &Path,
+    root_dev: u64,
+    config: &ScanConfig,
+    wave: &[(PathBuf, usize, RegionId)],
+    next: &std::sync::atomic::AtomicUsize,
+    deferred_count: &std::sync::atomic::AtomicUsize,
+    overflowed: &std::sync::atomic::AtomicBool,
+    max_deferred_ops: usize,
+) -> DeferredReconcile {
+    let mut result = DeferredReconcile::default();
+    #[cfg(target_os = "macos")]
+    let mut bulk_reader = macos_bulk::Reader::new();
+
+    loop {
+        let start = next.fetch_add(DIR_CLAIM, std::sync::atomic::Ordering::Relaxed);
+        if start >= wave.len() {
+            break;
+        }
+        let end = start.saturating_add(DIR_CLAIM).min(wave.len());
+        for (rel_dir, depth, region) in &wave[start..end] {
+            let mut known = collect_child_expectations(index, rel_dir);
+            let abs_dir = root.join(rel_dir);
+            let mut listing_complete = true;
+
+            {
+                let mut process_entry =
+                    |name: OsString, kind: EntryKind, attrs: Attrs, baseline: PathExpectation| {
+                        let rel_path = rel_dir.join(&name);
+                        result.scan.entries += 1;
+                        if baseline.state == (PathState::Present { kind, attrs }) {
+                            result.unchanged += 1;
+                        } else {
+                            defer_reconcile_op(
+                                Op::Upsert { path: rel_path.clone(), kind, attrs },
+                                &mut result.operations,
+                                deferred_count,
+                                overflowed,
+                                max_deferred_ops,
+                            );
+                        }
+
+                        if should_descend(kind, attrs, *depth, root_dev, config) {
+                            let child_region =
+                                if *depth == 0 { RegionId::UNASSIGNED } else { *region };
+                            result.discovered.push((rel_path, depth + 1, child_region));
+                        } else if kind.is_dir() {
+                            for name in collect_child_expectations(index, &rel_path).into_keys() {
+                                defer_reconcile_op(
+                                    Op::Remove { path: rel_path.join(name) },
+                                    &mut result.operations,
+                                    deferred_count,
+                                    overflowed,
+                                    max_deferred_ops,
+                                );
+                            }
+                        }
+                    };
+
+                #[cfg(target_os = "macos")]
+                let used_bulk = if let Some(entries) = bulk_reader.read(&abs_dir) {
+                    result.scan.dirs_read += 1;
+                    for entry in entries {
+                        let baseline = known
+                            .remove(&entry.name)
+                            .unwrap_or_else(|| index.expectation(&rel_dir.join(&entry.name)));
+                        process_entry(entry.name, entry.kind, entry.attrs, baseline);
+                    }
+                    true
+                } else {
+                    false
+                };
+                #[cfg(not(target_os = "macos"))]
+                let used_bulk = false;
+
+                if !used_bulk {
+                    let listing = match fs::read_dir(&abs_dir) {
+                        Ok(listing) => listing,
+                        Err(error) => {
+                            result.scan.errors.push(Error::io(abs_dir, error));
+                            continue;
+                        }
+                    };
+                    result.scan.dirs_read += 1;
+                    for item in listing {
+                        let item = match item {
+                            Ok(item) => item,
+                            Err(error) => {
+                                listing_complete = false;
+                                result.scan.errors.push(Error::io(&abs_dir, error));
+                                continue;
+                            }
+                        };
+                        let name = item.file_name();
+                        // Match the serial path: an entry whose name was enumerated is
+                        // not missing merely because its metadata could not be read.
+                        let baseline = known
+                            .remove(&name)
+                            .unwrap_or_else(|| index.expectation(&rel_dir.join(&name)));
+                        let meta = match metadata_for_fingerprint(&item) {
+                            Ok(meta) => meta,
+                            Err(error) => {
+                                result.scan.errors.push(Error::io(item.path(), error));
+                                continue;
+                            }
+                        };
+                        process_entry(name, kind_from(&meta), attrs_from(&meta), baseline);
+                    }
+                }
+            }
+            if listing_complete {
+                for (name, _) in known {
+                    defer_reconcile_op(
+                        Op::Remove { path: rel_dir.join(name) },
+                        &mut result.operations,
+                        deferred_count,
+                        overflowed,
+                        max_deferred_ops,
+                    );
+                }
+            }
+        }
+    }
+    result
+}
+
+fn defer_reconcile_op(
+    operation: Op,
+    operations: &mut Vec<Op>,
+    deferred_count: &std::sync::atomic::AtomicUsize,
+    overflowed: &std::sync::atomic::AtomicBool,
+    max_deferred_ops: usize,
+) {
+    let position = deferred_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    if position < max_deferred_ops {
+        operations.push(operation);
+    } else {
+        overflowed.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+fn flush_direct_reconcile_batch(
+    index: &mut Index,
+    batch: &mut Vec<Op>,
+    sink: &mut dyn FnMut(&AppliedDelta),
+    stats: &mut ApplyStats,
+) -> Result<()> {
+    if batch.is_empty() {
+        return Ok(());
+    }
+    let outcome = index.apply(&Observation::new(std::mem::take(batch)))?;
+    merge_apply_stats(stats, outcome.stats);
+    if let Some(applied) = &outcome.applied {
+        sink(applied);
+    }
+    Ok(())
 }
 
 /// Drain and reconcile every pending invalidation, collapsing nested requests.
@@ -1719,6 +2353,39 @@ mod tests {
         entries
     }
 
+    /// A small tree whose mutation crosses every structural reconciliation boundary.
+    fn reconciliation_transition_tree() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().expect("tempdir");
+        write_file(&dir.path().join("changed.txt"), b"before");
+        write_file(&dir.path().join("removed.txt"), b"remove me");
+        write_file(&dir.path().join("directory-to-file/old.rs"), b"old child");
+        write_file(&dir.path().join("file-to-directory"), b"old file");
+        write_file(&dir.path().join("removed-tree/nested/gone.md"), b"gone");
+        write_file(&dir.path().join("stable/deep/kept.rs"), b"kept");
+        dir
+    }
+
+    fn mutate_reconciliation_transition_tree(root: &Path) {
+        write_file(&root.join("changed.txt"), b"after, with a distinct size");
+        fs::remove_file(root.join("removed.txt")).expect("remove root file");
+
+        fs::remove_dir_all(root.join("directory-to-file")).expect("remove old directory");
+        write_file(&root.join("directory-to-file"), b"replacement file");
+
+        fs::remove_file(root.join("file-to-directory")).expect("remove old file");
+        write_file(&root.join("file-to-directory/new.txt"), b"replacement child");
+
+        fs::remove_dir_all(root.join("removed-tree")).expect("remove nested tree");
+        write_file(&root.join("added-tree/nested/new.md"), b"new nested file");
+    }
+
+    fn effective_ops(deltas: &[AppliedDelta]) -> Vec<Op> {
+        let mut operations: Vec<_> =
+            deltas.iter().flat_map(|delta| delta.ops.iter().cloned()).collect();
+        operations.sort_by(|left, right| left.path().cmp(right.path()));
+        operations
+    }
+
     #[test]
     fn parallel_and_serial_walks_produce_the_same_index() {
         let dir = branching_tree();
@@ -2064,7 +2731,7 @@ mod tests {
         // walk: consecutive claims by *different* workers must land in different
         // regions while several regions have work. This is what the round-robin ready
         // ring buys, and it is the thing a global FIFO could not promise.
-        let queue = DirectoryQueue::new((PathBuf::new(), 0), ScanOrder::BreadthFirst);
+        let queue = DirectoryQueue::new((PathBuf::new(), 0), ScanOrder::BreadthFirst, None);
         let mut timing = WalkAttribution::default();
 
         // Bootstrap: drain the root, then seed four top-level regions.
@@ -2075,7 +2742,7 @@ mod tests {
             (0..4).map(|top| (PathBuf::from(format!("t{top}")), 1, RegionId::UNASSIGNED)),
             &mut timing,
         );
-        queue.release(&mut timing);
+        assert!(!queue.release(0, 0, &mut timing));
 
         // Four workers with no affinity must each be handed a different region.
         let mut regions = BTreeSet::new();
@@ -2132,6 +2799,58 @@ mod tests {
         // the measured knee is far below the core count on a large machine.
         let automatic = ScanConfig { threads: None, ..ScanConfig::default() };
         assert!((1..=DEFAULT_SCAN_THREADS_CAP).contains(&automatic.worker_threads()));
+    }
+
+    #[test]
+    fn automatic_worker_pool_keeps_a_conservative_start_and_bounded_reserve() {
+        assert_eq!(automatic_worker_pool(1), WorkerPool::fixed(1));
+        assert_eq!(
+            automatic_worker_pool(4),
+            WorkerPool {
+                initial: 4,
+                maximum: 8,
+                calibration: Some(WorkerCalibration::new(
+                    ADAPTIVE_SCAN_CALIBRATION_ENTRIES,
+                    ADAPTIVE_SCAN_SLOW_WORK_NS_PER_ENTRY,
+                )),
+            }
+        );
+        assert_eq!(
+            automatic_worker_pool(10),
+            WorkerPool {
+                initial: DEFAULT_SCAN_THREADS_CAP,
+                maximum: ADAPTIVE_SCAN_THREADS_CAP,
+                calibration: Some(WorkerCalibration::new(
+                    ADAPTIVE_SCAN_CALIBRATION_ENTRIES,
+                    ADAPTIVE_SCAN_SLOW_WORK_NS_PER_ENTRY,
+                )),
+            }
+        );
+    }
+
+    #[test]
+    fn automatic_queue_activates_its_reserve_only_for_slow_initial_work() {
+        let slow = WorkerCalibration::new(3, 10);
+        let queue = DirectoryQueue::new((PathBuf::new(), 0), ScanOrder::BreadthFirst, Some(slow));
+        let mut timing = WalkAttribution::default();
+        let mut claimed = Vec::new();
+
+        assert!(queue.claim(&mut claimed, &mut timing));
+        queue.extend([(PathBuf::from("child"), 1, RegionId::UNASSIGNED)].into_iter(), &mut timing);
+        assert!(!queue.release(2, 20, &mut timing));
+
+        claimed.clear();
+        assert!(queue.claim(&mut claimed, &mut timing));
+        queue.extend([(PathBuf::from("grandchild"), 2, claimed[0].2)].into_iter(), &mut timing);
+        assert!(queue.release(1, 10, &mut timing));
+
+        let fast = WorkerCalibration::new(3, 11);
+        let queue = DirectoryQueue::new((PathBuf::new(), 0), ScanOrder::BreadthFirst, Some(fast));
+        let mut timing = WalkAttribution::default();
+        let mut claimed = Vec::new();
+        assert!(queue.claim(&mut claimed, &mut timing));
+        assert!(!queue.release(3, 30, &mut timing));
+        assert!(queue.lock().calibration.is_none(), "calibration decides only once");
     }
 
     #[test]
@@ -2396,6 +3115,250 @@ mod tests {
         assert!(deltas.is_empty());
         assert_eq!(index.clock(), before_clock);
         assert_eq!(index.total(), &before_total);
+    }
+
+    #[test]
+    fn parallel_and_serial_reconciliation_produce_the_same_index() {
+        let dir = sample_tree();
+        let portable_config =
+            ScanConfig { threads: Some(1), batch_size: 2, ..ScanConfig::default() };
+        let (mut portable, _) =
+            scan_into_index(dir.path(), &portable_config).expect("portable baseline");
+        let mut bulk = portable.clone();
+
+        fs::remove_file(dir.path().join("a.txt")).expect("remove file");
+        write_file(&dir.path().join("src/main.rs"), b"fn main() { much longer }");
+        write_file(&dir.path().join("src/added.md"), b"new file");
+
+        let portable_report = reconcile(&mut portable, &portable_config, &mut |_| {})
+            .expect("portable reconciliation");
+        let bulk_config = ScanConfig { threads: Some(2), ..portable_config };
+        let bulk_report =
+            reconcile(&mut bulk, &bulk_config, &mut |_| {}).expect("bulk reconciliation");
+
+        assert!(portable_report.is_complete());
+        assert!(bulk_report.is_complete());
+        assert_eq!(bulk_report.scan.attribution, WalkAttribution::default());
+        assert_eq!(bulk_report.scan.entries, portable_report.scan.entries);
+        assert_eq!(bulk_report.scan.dirs_read, portable_report.scan.dirs_read);
+        assert_eq!(bulk_report.apply, portable_report.apply);
+        assert_eq!(index_fingerprint(&bulk), index_fingerprint(&portable));
+        assert_eq!(bulk.total(), portable.total());
+        assert_eq!(bulk.by_ext_named(bulk.total()), portable.by_ext_named(portable.total()));
+    }
+
+    #[test]
+    fn parallel_reconciliation_matches_serial_across_structural_transitions() {
+        for max_depth in [None, Some(1), Some(2)] {
+            for order in [ScanOrder::BreadthFirst, ScanOrder::DepthFirst] {
+                let dir = reconciliation_transition_tree();
+                let reference_config = ScanConfig {
+                    order,
+                    max_depth,
+                    threads: Some(1),
+                    batch_size: 2,
+                    ..ScanConfig::default()
+                };
+                let (baseline, baseline_report) =
+                    scan_into_index(dir.path(), &reference_config).expect("baseline scan");
+                assert!(baseline_report.is_complete());
+                mutate_reconciliation_transition_tree(dir.path());
+
+                let mut serial = baseline.clone();
+                let mut serial_deltas = Vec::new();
+                let serial_report = reconcile(&mut serial, &reference_config, &mut |delta| {
+                    serial_deltas.push(delta.clone());
+                })
+                .expect("serial reconciliation");
+                let (fresh, fresh_report) =
+                    scan_into_index(dir.path(), &reference_config).expect("fresh oracle");
+                assert!(serial_report.is_complete(), "serial {order:?}/{max_depth:?}");
+                assert!(fresh_report.is_complete(), "fresh {order:?}/{max_depth:?}");
+                assert_eq!(
+                    index_fingerprint(&serial),
+                    index_fingerprint(&fresh),
+                    "serial did not converge to a fresh scan for {order:?}/{max_depth:?}"
+                );
+
+                for workers in [2, 4] {
+                    let mut parallel = baseline.clone();
+                    let config = ScanConfig { threads: Some(workers), ..reference_config.clone() };
+                    let mut parallel_deltas = Vec::new();
+                    let report = reconcile(&mut parallel, &config, &mut |delta| {
+                        parallel_deltas.push(delta.clone());
+                    })
+                    .expect("parallel reconciliation");
+                    let context = format!("{order:?}/{max_depth:?}/{workers} workers");
+
+                    assert!(report.is_complete(), "{context}: unexpected partial report");
+                    assert_eq!(report.scan.entries, serial_report.scan.entries, "{context}");
+                    assert_eq!(report.scan.dirs_read, serial_report.scan.dirs_read, "{context}");
+                    assert_eq!(report.apply, serial_report.apply, "{context}");
+                    assert_eq!(
+                        effective_ops(&parallel_deltas),
+                        effective_ops(&serial_deltas),
+                        "{context}: effective delta differs"
+                    );
+                    assert_eq!(
+                        index_fingerprint(&parallel),
+                        index_fingerprint(&serial),
+                        "{context}: final index differs"
+                    );
+                    let (parallel_total, serial_total) = (parallel.total(), serial.total());
+                    assert_eq!(
+                        (
+                            parallel_total.files,
+                            parallel_total.dirs,
+                            parallel_total.bytes,
+                            parallel_total.allocated,
+                            parallel_total.newest_mtime_ns,
+                        ),
+                        (
+                            serial_total.files,
+                            serial_total.dirs,
+                            serial_total.bytes,
+                            serial_total.allocated,
+                            serial_total.newest_mtime_ns,
+                        ),
+                        "{context}: roll-up differs"
+                    );
+                    assert_eq!(
+                        parallel.by_ext_named(parallel_total),
+                        serial.by_ext_named(serial_total),
+                        "{context}: extension roll-up differs"
+                    );
+                }
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn reconciliation_metadata_errors_do_not_delete_enumerated_entries() {
+        use std::os::unix::fs::PermissionsExt;
+
+        if !crate::test_support::permission_bits_are_enforced() {
+            // A privileged process still reads the directory it was denied, so the
+            // fixture cannot reach the metadata-error boundary this pins.
+            eprintln!("skipped: this process is not subject to Unix permission bits");
+            return;
+        }
+
+        // macOS's parallel path may satisfy the whole directory through
+        // getattrlistbulk even without search permission. One worker pins the portable
+        // fallback there; Linux also exercises the parallel portable worker.
+        let worker_counts = if cfg!(target_os = "macos") { vec![1] } else { vec![1, 2] };
+        for workers in worker_counts {
+            let dir = sample_tree();
+            let config =
+                ScanConfig { threads: Some(workers), batch_size: 2, ..ScanConfig::default() };
+            let (mut index, baseline_report) =
+                scan_into_index(dir.path(), &config).expect("baseline scan");
+            assert!(baseline_report.is_complete());
+            let before = index_fingerprint(&index);
+            let original_permissions =
+                fs::metadata(dir.path()).expect("root metadata").permissions();
+
+            // Reading names requires read permission; looking up their metadata also
+            // requires search permission. This makes enumeration succeed and each
+            // metadata lookup fail, the boundary where an encountered name used to be
+            // misclassified as a deletion.
+            fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o400))
+                .expect("remove search permission");
+            let outcome = reconcile(&mut index, &config, &mut |_| {});
+            fs::set_permissions(dir.path(), original_permissions).expect("restore permissions");
+
+            let report = outcome.expect("operational metadata errors are a partial report");
+            assert!(!report.scan.errors.is_empty(), "the fixture did not induce metadata errors");
+            assert!(!report.is_complete());
+            assert_eq!(index_fingerprint(&index), before);
+            assert!(index.attrs(Path::new("a.txt")).is_some(), "existing entry was removed");
+        }
+    }
+
+    #[test]
+    fn deferred_change_overflow_retries_without_applying_a_partial_wave() {
+        let dir = sample_tree();
+        let config = ScanConfig { threads: Some(2), batch_size: 2, ..ScanConfig::default() };
+        let (mut index, _) = scan_into_index(dir.path(), &config).expect("baseline");
+        let before = index_fingerprint(&index);
+
+        fs::remove_file(dir.path().join("a.txt")).expect("remove file");
+        write_file(&dir.path().join("added.md"), b"new file");
+        write_file(&dir.path().join("src/main.rs"), b"fn main() { much longer }");
+
+        let root = index.root_path().to_path_buf();
+        let root_meta = fs::symlink_metadata(&root).expect("root metadata");
+        let mut deltas = Vec::new();
+        let outcome = reconcile_direct_parallel(
+            &mut index,
+            &root,
+            attrs_from(&root_meta).dev,
+            &config,
+            1,
+            &mut |delta| deltas.push(delta.clone()),
+        )
+        .expect("parallel attempt");
+        let DirectParallelOutcome::RetrySerial { prefix, remaining } = outcome else {
+            panic!("the deliberately tiny deferred budget must trigger the retry");
+        };
+
+        assert_eq!(prefix.apply, ApplyStats::default());
+        assert_eq!(remaining, VecDeque::from([(PathBuf::new(), 0)]));
+        assert!(deltas.is_empty());
+        assert_eq!(index_fingerprint(&index), before);
+
+        let serial = ScanConfig { threads: Some(1), ..config };
+        let report = reconcile(&mut index, &serial, &mut |_| {}).expect("serial retry");
+        let (expected, expected_report) = scan_into_index(dir.path(), &serial).expect("oracle");
+        assert!(report.is_complete());
+        assert!(expected_report.is_complete());
+        assert_eq!(index_fingerprint(&index), index_fingerprint(&expected));
+        assert_eq!(index.total().files, expected.total().files);
+        assert_eq!(index.total().dirs, expected.total().dirs);
+        assert_eq!(index.total().bytes, expected.total().bytes);
+        assert_eq!(index.total().allocated, expected.total().allocated);
+        assert_eq!(index.total().newest_mtime_ns, expected.total().newest_mtime_ns);
+        assert_eq!(index.by_ext_named(index.total()), expected.by_ext_named(expected.total()));
+    }
+
+    #[test]
+    fn late_overflow_resumes_without_double_counting_completed_waves() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        // The root wave discovers more than one full wave of directories. A change in
+        // the second wave then forces the serial fallback only after the first wave's
+        // unchanged entries have already been counted.
+        for directory in 0..=RECONCILE_WAVE_DIRECTORIES {
+            write_file(&dir.path().join(format!("d{directory:04}/file.txt")), b"unchanged");
+        }
+        let parallel = ScanConfig { threads: Some(2), ..ScanConfig::default() };
+        let (baseline, _) = scan_into_index(dir.path(), &parallel).expect("baseline");
+        let mut candidate = baseline.clone();
+        let mut serial_oracle = baseline;
+
+        for directory in 0..=RECONCILE_WAVE_DIRECTORIES {
+            write_file(
+                &dir.path().join(format!("d{directory:04}/file.txt")),
+                b"changed after the first wave",
+            );
+        }
+
+        let candidate_report = reconcile_target_inner(
+            &mut ReconcileTarget::Direct(&mut candidate),
+            Path::new(""),
+            &parallel,
+            0,
+            &mut |_| {},
+        )
+        .expect("late-overflow reconciliation");
+        let serial = ScanConfig { threads: Some(1), ..parallel };
+        let oracle_report =
+            reconcile(&mut serial_oracle, &serial, &mut |_| {}).expect("serial oracle");
+
+        assert_eq!(candidate_report.apply, oracle_report.apply);
+        assert_eq!(candidate_report.scan.entries, oracle_report.scan.entries);
+        assert_eq!(candidate_report.scan.dirs_read, oracle_report.scan.dirs_read);
+        assert_eq!(index_fingerprint(&candidate), index_fingerprint(&serial_oracle));
     }
 
     #[test]

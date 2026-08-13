@@ -95,6 +95,11 @@ intend to touch is a finding, not a nuisance.
 
 Discipline to preserve when adding blocks:
 
+- Make each session a concise, realistic end-to-end example with the smallest fixture
+  that exposes the largest useful surface.
+  Capture complete user-visible output rather than extracting hand-picked lines; every
+  additional command or row must protect a contract not already visible elsewhere.
+  Keep combinatorial edges in focused tests.
 - Classify every field as stable or unstable.
   Paths, sizes, counts, kinds, and schema strings are stable and must match exactly.
   Timestamps, allocated sizes, inode-derived values, and absolute paths are unstable and
@@ -105,6 +110,9 @@ Discipline to preserve when adding blocks:
 - Machine output is schema-versioned.
   A schema change without a version bump must fail a golden; if you changed a field and
   nothing went red, the schema-bump test is missing.
+- `cli-overview.tryscript.md` is the natural human-output review: it runs the default
+  tree depth and limit on a tiny but believable nested project, with only cache, colour,
+  and filesystem-dependent allocation neutralized for determinism.
 
 ## 5. Cache behavior by hand
 

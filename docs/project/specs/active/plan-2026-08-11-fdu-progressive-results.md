@@ -140,17 +140,35 @@ shipped default against `DepthFirst` directly: `cold-scan-producer` wall −3.04
 [−5.99%, −0.96%] and `cold-scan-index` peak RSS −1.76% [−2.63%, −0.74%] — breadth-first
 is now the cheaper of the two there.
 
-The warm sweep is the exception and is a known gap: `reconcile` walks with the serial
-`take_next`, so region scheduling never reached it and breadth-first costs +2.70%
-[+1.55%, +3.37%] on `warm-revalidate`, for an orientation benefit a one-shot CLI never
-reads.
+The warm sweep was the exception in exp-014: serial `take_next` meant region scheduling
+never reached it, and breadth-first cost 2.70%. exp-030 retires that asymmetry.
+Exclusive full reconciliation now takes bounded region-aware waves, compares each wave
+against an immutable index baseline, and publishes effective deltas between waves.
+Shared and scoped reconciliation retain their stronger serial arbitration.
 
-That cost is accepted rather than outstanding.
-It sits below the project’s own 3% bar for changes worth added complexity, and the queue
-ahead of it is worth far more — the adaptive worker pool (`fdu-tt2j`) is estimated at
-roughly 2x on cold large trees, and persisted roll-ups with lazy open (`fdu-1vd0`) turn
-an 11-second warm load into a first paint.
-Tracked at low priority as `fdu-v71x` so the decision stays visible.
+That composition is substantially faster, not merely orientation-neutral: warm-open wall
+improves 30.25% at 60k and 59.53% at 720k, while the bounded wave preserves useful
+progress for a consumer reading during a changed-tree sweep.
+The adaptive worker pool (`fdu-tt2j`) improves a reproducible 720k cold-index run 5.31%
+[−8.37%, −2.70%] while retaining the 120k boundary result.
+The macOS bulk-metadata backend then composes with that pool: exp-022 improves the same
+720k cold-index job another 30.13% [−32.19%, −25.11%] and producer wall 41.60%, while
+the 60k jobs improve 5.22% and 9.25%. Against the original pre-optimization build, the
+complete accepted stack is 54.53% faster for cold index and 60.05% faster for
+producer-only scans (exp-032). The earlier roughly-2× cold private-tree observation
+remains context; exp-032 is now the claim-grade reproduction.
+The same audited bulk reader now serves full macOS reconciliation as well.
+exp-026 improves warm-open wall 18.97% on the 60k subject and 34.39% on the 720k
+subject, with large-tree system CPU down 53.97% and RSS neutral.
+exp-030 then composes that reader with four-worker immutable-baseline waves, improving
+warm wall another 30.25% and 59.53%. Effective changes still flow through bounded deltas
+between waves, and the faster sound fallback composes with future FSEvents scoping.
+The direct 1M-tree reproduction in exp-037 resolves the remaining traversal-order
+performance doubt: depth-first regresses indexed wall 3.57% [2.42%, 5.23%] and component
+6.72%, while saving only 1.03% peak RSS. Breadth-first is therefore both the progressive
+contract and the faster measured default on the heterogeneous large tree.
+Persisted roll-ups with lazy open (`fdu-1vd0`) turn an 11-second warm load into a first
+paint. Tracked at low priority as `fdu-v71x` so the decision stays visible.
 
 An earlier six-sample median comparison suggested ~8%, and that figure was quoted here
 before it had been through the accept rule.
@@ -406,6 +424,12 @@ plans: everything else here works without it, on every platform.
   justified it did not survive the accept rule (exp-012), so breadth-first is the
   default everywhere and `DepthFirst` is for callers with a specific memory or locality
   reason
+- [x] Adaptive cold-scan workers: begin at the warm-small knee, calibrate the first 16k
+  entries from existing chunk attribution, and spawn bounded reserves only for slow
+  filesystem service (exp-015–021, `fdu-tt2j`)
+- [x] macOS bulk metadata: replace directory enumeration plus one metadata syscall per
+  entry with fail-closed `getattrlistbulk`, retaining the portable backend elsewhere and
+  at mount/firmlink boundaries (exp-022)
 - [ ] `Session`: start/read/complete/cancel over `IndexHandle`, with documented
   monotonicity and per-path freshness; bounded-memory option
 - [ ] Python `Session` mirroring the Rust surface
@@ -445,11 +469,9 @@ finish.
 ## Open Questions
 
 - Peak queue width for breadth-first on a tree with a very wide level (a home folder has
-  ~1M directories); measured at 60k, unmeasured at scale, and the answer decides whether
-  a hybrid — breadth-first to a first-render depth, then depth-first below, as
-  metabrowser does — is worth the complexity.
-- Whether the one-shot CLI should really default to `DepthFirst`, given that a future
-  `--progress` would want the opposite.
+  ~1M directories). End-to-end RSS is now measured at 1M and depth-first saves only 1.03%
+  while losing 3.57% wall (exp-037), so a hybrid needs direct queue-width evidence and a
+  progressive-result benefit rather than a presumed memory or speed win.
 - How a session should bound memory: entry cap, depth cap, or eviction.
 
 ## References

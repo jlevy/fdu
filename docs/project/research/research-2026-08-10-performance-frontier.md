@@ -67,8 +67,10 @@ numbers may drift.
 - Review of `crates/fdu/src` (scan, index, snapshot, watch, types), the perf probe, both
   benchmark harnesses, and the committed realtree baseline results.
 - Direct source review of tools checked out under `attic/`: bfs (4af45dc), dut (68d4ba2,
-  GPL — ideas only), pdu (c30e46f), diskus (90196e9), jwalk (v0.9.0), plus the existing
-  dust checkout.
+  GPL — ideas only; refreshed 2026-08-13), jwalk (v0.9.0), and the pinned comparator set
+  refreshed on 2026-08-12: dust v1.2.4 (`fabe19b`), gdu v5.36.1 (`8d64b4f`), pdu 0.24.0
+  (`4e19260`), dua v2.41.1 (`90a59e1`), diskus v0.9.0 (`d8a77db`), and dumac
+  (`1ffbe3c`).
 - Platform research with cited sources: getattrlistbulk, APFS concurrency, FSEvents
   journal resume, Apple Silicon QoS, io_uring status and cloud availability, fanotify,
   overlayfs, cloud storage characteristics.
@@ -88,6 +90,94 @@ numbers may drift.
   HDD-specific work (FIEMAP physical ordering, single-thread heuristics beyond a safe
   fallback) is explicitly out of scope: the target hardware is MacBook internal SSDs and
   cloud storage, for interactive use and agent/CI workloads.
+
+### Loop Update: 2026-08-12
+
+The original research above scoped out implementation; the performance loop has since
+tested its highest-ranked ideas through exp-030. The durable changes are:
+
+- warm reconciliation and snapshot constants improved through borrowed path components,
+  direct child expectations, extension interning, and single-pass checksum/parse;
+- breadth-first traversal was reworked into a region scheduler and remeasured against
+  depth-first, removing the original parallel queue’s wall and RSS concern;
+- service-time calibration now retains six workers on fast small trees and activates up
+  to sixteen only after the first 16k entries demonstrate a slow filesystem path; and
+- the macOS cold walker now batches enumeration and complete stat-tier metadata through
+  `getattrlistbulk`, falling back for a complete directory on any malformed response,
+  unsupported filesystem, mount point, or firmlink; and
+- exclusive full reconciliation now compares bounded region-aware waves against an
+  immutable baseline, discarding exact no-ops before the delta consumer.
+
+The current stack versus the pre-work binary is 53.59% faster for cold indexed scans,
+57.87% faster for producer-only scans, 51.33% faster through snapshot save, 54.26%
+faster for full warm revalidation, and 35.25% faster for snapshot load on the current
+60,067-entry APFS subject (exp-032). The platform accelerator itself improves the
+720,805-entry cold-index job 30.13% and producer wall 41.60% over the adaptive portable
+control (exp-022). These are warm-steady operating-system-cache results, not
+controlled-cold claims.
+H26 now covers cold scans and full reconciliation.
+exp-026 improves warm-open wall 18.97% at 60k and 34.39% at 720k while cutting
+large-tree system CPU 53.97%; using the same reader for a future FSEvents-scoped
+changed-directory set remains open.
+exp-030 composes that reader with producer-side no-op elision: warm-open wall improves
+another 30.25% at 60k and 59.53% at 720k, with reconciliation component time down 50.31%
+and 72.55%. The smallest H24 follow-up did not help: retaining one root descriptor per
+worker and opening descendants relative to it left 720k indexed wall and system CPU
+neutral in exp-024. Parent- or ancestor-relative handles remain architecturally
+distinct, but must justify their descriptor lifetime under breadth-first traversal.
+The post-H26 worker-depth reproduction also invalidated the old sixteen-worker bulk
+target: compared with six workers it regressed 720k indexed wall 19.19%, producer wall
+12.65%, CPU by more than 100%, and RSS by about one third (exp-025). The existing
+service-time trigger stays below its threshold on the bulk path, so no retune was
+needed.
+
+The merged composable CLI was then used as a fresh control rather than assumed
+equivalent. On the heterogeneous 1,007,659-entry workspace, the rebased branch improves
+cold indexed wall 31.35% and producer wall 36.59% with exact-oracle parity (exp-035),
+but indexed peak RSS rises 44.32% to about 631 MiB. The same tree resolves three
+BFS-sensitive questions: depth-first is 3.57% slower (exp-037), eight workers buy only
+1.30% for 33.5% more CPU while 12/16 regress (exp-036), and a bounded parent-relative
+`openat` frontier is neutral (exp-038). A 256 KiB bulk buffer also remains a rejection
+at this scale (exp-039). These results supersede the remaining suggestions to retune
+worker count, switch traversal order, or revisit buffer size without a new mechanism.
+
+The current product comparison uses the self-contained 901,963-entry benchmark tree and
+twelve adjacent pairs per competitor.
+FDU’s fresh cache-off reusable index and ten-row tree completed in 3.324 seconds, ahead
+of pdu (5.657), dust (6.016), Go gdu (6.782), and ncdu (20.550). Its derived rich
+summary took 3.125 seconds, ahead of diskus (5.708), dua (5.459), BSD du (13.075), and
+GNU du (20.426). Dumac’s narrower scalar-only total had a 2.980-second median, but its
+paired 2.2% advantage was statistically unclear [−5.7%, +1.7%]. It used 85.4% more CPU
+and 224.5% more RSS than FDU’s five-tally summary.
+Exact commands and caveats are in the
+[performance white paper](../reports/report-2026-08-12-fdu-performance-architecture.md),
+[manifest](../reports/fdu-live-tool-comparison-manifest-v2.json), and
+[live comparison](../reports/report-2026-08-13-fdu-live-tool-comparison.md).
+
+H67 subsequently replayed both the current and published exact binary pairs under a
+busier interactive-host regime.
+Dumac led current FDU by 16.19% in twelve pairs and the published FDU binary by 11.1% in
+a five-pair diagnostic, so the change was not a code regression.
+FDU sustained 3.46 aggregate core-equivalents while dumac sustained 5.64. Exact process
+samples put 96.10% of FDU worker tops and 94.21% of dumac worker tops in `open` or
+`getattrlistbulk`; their main threads waited for workers.
+The published quiet-host comparison remains the typical claim, while H67 establishes
+that the relative wall result is sensitive to host pressure and available concurrency.
+
+H59 then tested whether the smaller retained state could be derived without weakening
+the rich summary. On a frozen 978,339-entry fingerprint, the internal exact-summary plan
+improved paired wall 14.56% [9.04%, 18.55%] and cut peak RSS 95.28%, from 563.2 MiB to
+26.3 MiB (exp-040). Every old/new FDU sample had the same stable report hash.
+After a prototype-only public surface was removed, the exact final CLI binary reproduced
+the semantic and resource mechanism on inactive 720,805- and 901,963-entry trees: user
+CPU was roughly three times lower and peak RSS 23–30 times lower.
+Those more uniform trees improved wall only 2.8% [0.4%, 6.9%] and 1.8% [−0.5%, 4.0%],
+respectively. The heterogeneous speedup is therefore real but not a topology-independent
+multiplier; when system time dominates, removing user-space index work mostly improves
+memory and CPU headroom.
+The result preserves the existing command and report schema; cache participation,
+filters, multiple views, watch mode, and unproved requirements fall closed to the full
+index.
 
 ## Findings
 
@@ -322,6 +412,231 @@ capability matrix must keep saying so.
 `getattrlistbulk`, and none sorts entries by inode before statting.
 Both are the top platform levers below; fdu can be first.
 
+### Comparator Refresh: What Still Transfers After the 1M Reproduction
+
+The 2026-08-12 source refresh inspected the exact releases used by the live comparison,
+not just README claims.
+It yields four actionable conclusions and three negative ones:
+
+- `dua` v2.41.1 has the clearest new portable scheduling experiment.
+  A custom crossbeam injector plus worker-local LIFO deques turns entries from a wide
+  directory into four-entry `StatCompletion` jobs, allowing other workers to steal
+  metadata work before the directory finishes.
+  H58 queues the mechanism for the portable/Linux path; it is not appropriate for the
+  macOS bulk reader, which already returns attributes.
+- `pdu` 0.24.0 recursively aggregates children in Rayon workers.
+  Once `--max-depth` is exhausted it sums a child’s size and discards that child tree,
+  explaining its very low retained memory for a depth-one report.
+  H59 asks whether FDU can obtain a similar bounded result through a general, exact
+  view-driven library path; the experiment is rejected at design review if it makes a
+  CLI-only shortcut or lets output depth prune the scan.
+  Its worker-local recursion separately strengthens H60, subtree-index splice.
+- `dumac` commit `1ffbe3c` uses the same `getattrlistbulk` primitive FDU already landed,
+  but requests only name, object type, file id, and allocated size, then reduces
+  directly to a scalar total.
+  It holds a 128-shard global inode set and recursively invokes Rayon.
+  FDU requests more attributes because one exact scan must support fingerprints,
+  snapshots, multiple reducers, and later views, and it retains the complete index.
+  The smaller job is a useful lower bound, not evidence that FDU should weaken its
+  contract.
+- The 1M result makes H19–H22 higher priority.
+  FDU’s full-index RSS is the clearest remaining disadvantage versus tools that retain
+  only totals or bounded output.
+  Packing the reusable index attacks that cost without changing the job.
+- `dust` v1.2.4 uses recursive Rayon `par_bridge` and retains a rendered node tree;
+  `gdu` v5.36.1 uses recursive goroutines bounded at twice `GOMAXPROCS` and retains
+  `File`/`Dir` objects; `diskus` v0.9.0 recursively feeds Rayon with three-times-core
+  concurrency capped at 64. None supplies a new post-H57 thread-count hypothesis:
+  over-threading already loses decisively on APFS.
+- `dumac`’s smaller attribute mask is not independently transferable to FDU’s current
+  stat-tier index. Within the contract, dropping mtime/ctime/dev fields would remove
+  cache validation and reducer inputs, which is a functionality change rather than a
+  speed improvement.
+- `pdu`/`dumac` also handle errors and hard links differently.
+  Their totals therefore calibrate traversal throughput; they are not correctness
+  oracles for FDU’s path-entry accounting and complete/partial provenance.
+
+### Dut Linux Refresh: Mechanisms, Limits, and Required Proof
+
+The ignored `attic/dut` checkout was refreshed on 2026-08-13 to current upstream commit
+[`68d4ba2`](https://codeberg.org/201984/dut/commit/68d4ba2d66211e7ca93a2312bb12f5879d0179e1).
+It identifies itself as 1.1 even though the newest tag is 1.0, so a future adapter must
+pin the commit and binary checksum rather than infer provenance from a release tag.
+The source is GPL: it is an executable benchmark input and a source of independently
+described ideas, never copied, linked, or distributed with FDU.
+
+The refresh confirms that dut optimizes a materially smaller retained job.
+It keeps every directory plus bounded top-N files, not a reusable per-file inventory;
+allocated bytes, apparent bytes, and file counts are mutually exclusive modes; it has no
+newest-mtime reducer or machine-readable output.
+Its human tree is therefore a useful `rendered-tree` calibration, not an oracle for
+FDU’s `indexed-tree` or multi-metric jobs.
+Partial traversal failures are warnings while the process can still exit successfully,
+so stderr and independent postconditions are part of the adapter contract.
+
+Three implementation patterns remain worth testing independently on Linux:
+
+- a reused 1 MiB per-worker `getdents64` buffer plus dirfd-relative `statx` with a
+  narrow mask;
+- one-CAS sibling-batch publication with demand-sized wakeups; and
+- per-thread early-reject heaps plus bottom-up, last-child roll-up, generalized only if
+  FDU can preserve its complete reducer and error contracts.
+
+The project history supplies priors, not transferable effect sizes: dut reports roughly
+10% for `fstatat`→`statx`, 12% for per-thread heaps, and only about 2% between
+`getdents64` and `readdir` in its implementation.
+Recent fixes are more important than those numbers for experiment safety: one prevented
+file loss when a wide directory crossed the scratch-buffer boundary, one stopped
+unbounded buffer growth on `EINVAL`, and one corrected the hard-link table’s resize
+element size. The FDU raw-reader gate must cover multi-chunk wide directories, bounded
+`EINVAL`, synthetic malformed records, and high-cardinality cross-directory hard links.
+The dut adapter also gets sparse and preallocated files whose apparent and allocated
+rankings disagree: the current early-reject comparison reads `stx_size` before the
+selected metric is computed, which is a concrete Linux hypothesis to reproduce rather
+than assume correct.
+
+The benchmark labels need the same precision.
+dut’s warm comparison performs warmups, but its SSD/HDD preparation writes `1` to
+`drop_caches` without `sync`. The
+[Linux kernel contract](https://docs.kernel.org/admin-guide/sysctl/vm.html#drop-caches)
+says `1` drops page cache while `2` targets reclaimable slab objects such as dentries
+and inodes; `3` requests both, and `sync` first makes dirty objects eligible.
+FDU will therefore report dut’s published method as `pagecache-drop-only`, alongside a
+separate verified-warm regime and a claim-grade per-sample `sync` plus `echo 3`
+controlled-cold regime.
+That three-state matrix, an ext4/XFS comparison, and a worker-count sweep are queued for
+the controlled Linux host rather than extrapolated from APFS.
+
+The retained-index candidates remain tracked beneath the performance-iteration bead:
+H19–H22 (`fdu-prph`), H58 (`fdu-r9he`), H60 (`fdu-weey`), and H61 (`fdu-f67r`). H59 is
+resolved by exp-040, while exp-041 through exp-044 reject all four additional
+derived-report layers H62–H65 for elapsed time.
+H66 (`fdu-sk7v`) now asks whether the same exact planning rule can retain directory
+topology without per-file records for an unfiltered cache-off tree-only request.
+H57 is resolved by exp-036 rather than left in the queue.
+H67 localized the current macOS floor to synchronous directory opens and bulk calls; H69
+(`fdu-hzf0`) now tests whether two bounded open-only helpers can overlap those phases
+without repeating the CPU and contention cost of a deeper full-worker pool.
+
+### Healey/Dumac Follow-Up: Bulk Syscalls, Fixed Workers, and Inode Locality
+
+The two implementation reports published by Andrew Healey —
+[the original macOS design](https://healeycodes.com/maybe-the-fastest-disk-usage-program-on-macos)
+and
+[the optimization follow-up](https://healeycodes.com/optimizing-my-disk-usage-program) —
+were reviewed alongside dumac `1ffbe3c`, including the pre/post source diff rather than
+only the benchmark table.
+The key results and their transfer limits are:
+
+- **Benchmark shape.** The article subject is a generated binary tree with 4,095
+  directories and 409,500 small files: twelve levels, two child directories per level,
+  and 100 files per directory.
+  It uses Hyperfine with three warmups and, in the current README, at least five warm
+  runs on an M1 Pro. The author reports only warm filesystem-cache results because macOS
+  cache eviction was not repeatable, and argues that warm rank correlated with observed
+  cold rank. The warm measurement is valid as labeled, but neither article nor the dumac
+  repository publishes cold samples that establish the correlation.
+  Diskus’s controlled Linux example keeps the same winner while changing its advantage
+  over `du` from 10.18× cold to 2.20× warm, showing why rank correlation cannot
+  substitute for a separately measured effect size.
+  That makes dumac’s warm result a useful mechanism screen, not a cold-cache claim.
+  FDU’s protocol is more claim-grade: real and generated heterogeneous subjects,
+  adjacent paired order, bootstrap intervals, exact binary and host provenance,
+  independent semantic oracles, pre/post fingerprints, invalid-sample retention,
+  resource metrics, and explicit work classes.
+  The future Linux matrix adds per-sample `sync` plus `drop_caches`, not a macOS claim.
+  The published 901,963-entry FDU matrix is also warm by construction: one complete
+  independent fingerprint and three full traversals per tool precede timing.
+  Its label is “repeated-workload warm-steady,” not “all metadata resident”; a follow-up
+  on the same host found `kern.maxvnodes=263168`, below the subject size.
+- **The first integer-factor gain was `getattrlistbulk`.** Traditional `readdir` plus
+  one `lstat` per entry was replaced by bulk names and metadata, using a 128 KiB buffer.
+  FDU independently landed the same primitive in H26, but its full-index reader requests
+  a wider strict record: name, device, type, mtime, ctime, flags, file id, mount status,
+  logical size, and allocated size.
+  That supports fingerprints, one-filesystem scope, mount/firmlink fallback, both size
+  metrics, recency, snapshots, and later queries.
+  Dumac requests only name, type, inode, and allocated size.
+  H63 therefore narrows records only when the complete report requirements prove a field
+  unused; it does not weaken the full reader.
+  Because the record width changes, H63 will screen 64 versus 128 KiB anew; exp-029/039
+  rejected 256 KiB for the wider record and do not answer that narrower question.
+- **The follow-up’s largest gain was removing task-per-directory scheduling.** Replacing
+  Tokio tasks plus `spawn_blocking` and a semaphore with one fixed Rayon work-stealing
+  pool improved dumac about 23% and reduced context switches roughly 80%, from about 1.2
+  million to 235 thousand in the article’s System Trace.
+  FDU already uses scoped reusable workers and a bounded directory queue, so adding
+  Rayon would duplicate machinery and a dependency.
+  The transferable principle is to reduce where work is produced: H62 aggregates rich
+  summaries inside existing workers, eliminates file `PathBuf` joins and observation
+  batches, and returns only worker totals.
+  H65 then retunes that reduction-only path because the accepted six-worker indexed knee
+  was constrained by a consumer H62 removes; dumac currently uses
+  `available_parallelism()` (ten threads on the measured M1 Pro).
+- **Sequential APFS inode allocation defeated modulus sharding.** Dumac’s original
+  `inode % 128` mapping sent corresponding positions from independently created
+  directories through the same locks.
+  Changing the shard to `(inode >> 8) % 128` grouped runs of 256 consecutive inodes and
+  reduced observed shard collisions from about 177 to five per run, worth about 5% in
+  the article. FDU currently counts file sizes by path and has no global hard-link set,
+  so copying the sharding code would be both useless and a semantic change.
+  The insight belongs with the existing hard-link-attribution design gate `fdu-579b`: if
+  a future mode deduplicates `(device, inode)`, test shifted or mixed sharding against
+  APFS allocation patterns and never key on inode alone.
+- **Dumac’s low constant comes with narrower correctness.** Its parser uses unchecked
+  pointer arithmetic, skips names that are not UTF-8, keys hard links on inode without
+  device, counts symlinks as one 512-byte block, lacks FDU’s mount/firmlink and
+  one-filesystem fallback contract, prints many child errors and substitutes zero, and
+  retains a process-global inode set.
+  FDU’s audited reader bounds-checks every record and offset, preserves native non-UTF-8
+  names, falls back atomically for a whole directory, excludes symlinks from
+  regular-file roll-ups, reports partial provenance, and path-counts hard links pending
+  the explicit policy decision.
+  These differences must remain visible in any “faster than dumac” claim.
+- **The final gap is now decomposed rather than mysterious.** Exp-040 removes full-index
+  retention and user CPU but rich summary still asks for files, directories, apparent
+  bytes, allocated bytes, and newest file mtime.
+  Exp-041/042 show that removing generic observation/path work and index-only macOS
+  fields cuts user CPU and memory sharply without moving the syscall-dominated wall
+  floor; both prototypes were reverted.
+  Exp-044 isolated the remaining semantic work with a selected-total prototype that
+  requested only the chosen size, folded files in the bulk buffer, and retained names
+  only for directories.
+  It cut user CPU 51.54% and RSS 39.19%, but wall changed only −1.15% [−2.24%, +0.44%]
+  and dumac remained statistically tied/slightly ahead.
+  The public view and second unsafe parser were reverted.
+  The repeated result establishes that another representation-only specialization cannot
+  move the warm-APFS directory-open and bulk-syscall floor enough to earn its design
+  cost.
+
+H67 obtained usable exact-binary `/usr/bin/sample` stacks even though `fs_usage` still
+required elevation and the installed Xcode `File Activity` recorder aborted in its
+Devices plugin. Six FDU workers spent 39.56% of sampled tops in `open` and 56.54% in
+`getattrlistbulk`; dumac’s ten workers spent 50.88% and 43.32%, respectively.
+These are within-process stack-residency shares rather than syscall-duration estimates,
+but they confirm the resource signature from exp-040 through exp-044: changing
+user-space report representation cannot move this wall by itself.
+
+The first H69 prototype paired six scan and parser workers with two bounded helpers that
+opened the next claimed directories.
+Its first version accidentally composed with the adaptive reserve and created eighteen
+threads, a concrete warning that independently reasonable concurrency policies must
+share one budget. The corrected six-plus-two five-pair screen had a promising −4.47%
+point estimate, but host interference widened the interval to [−31.04%, +33.91%]. No
+production code is retained (exp-045).
+
+H70 then replaced the pairwise handoff with one shared bounded opener pool.
+Two openers improved paired wall 3.98% [0.70%, 9.87%] in one exact five-pair screen and
+reduced aggregate CPU 15.98%, but involuntary context switches rose 111.80%. A
+two/three/four-opener sweep did not establish a count: two was unclear, three had a
+promising 5.13% point estimate whose interval crossed zero, and four was contaminated by
+two extreme control outliers.
+A direct twelve-pair four-opener comparison with dumac was a statistical tie under the
+same host interference.
+The four-opener FDU used 40.68% less aggregate CPU and 69.06% less peak RSS than dumac.
+Exp-046 records the screen and follow-ups; a quiet-host confirmation and independent
+topology remain required.
+
 **Maintainer testimony on scheduling, collected from primary sources (annotated list in
 the References), adds four warnings the surveys alone would miss:**
 
@@ -360,7 +675,8 @@ the References), adds four warnings the surveys alone would miss:**
 returns names plus attributes for as many entries as fit the buffer (hundreds at 64–256
 KB), and the attribute set covers fdu’s entire fingerprint and both size metrics:
 `ATTR_CMN_OBJTYPE`, `ATTR_CMN_FILEID`, `ATTR_CMN_MODTIME`, `ATTR_CMN_CHGTIME`,
-`ATTR_FILE_TOTALSIZE` (logical) and `ATTR_FILE_ALLOCSIZE` (allocated bytes).
+`ATTR_FILE_DATALENGTH` (data-fork apparent size, matching `st_size`) and
+`ATTR_FILE_ALLOCSIZE` (allocated bytes, including resource-fork blocks).
 Evidence: Tempelmann’s benchmarks show it losing to bare `readdir` for names-only but
 decisively beating `readdir`+`lstat` once attributes are needed — and fdu always needs
 attributes; dumac (getattrlistbulk + 64-way bounded concurrency) measured **521 ms over
@@ -1079,19 +1395,18 @@ The loop’s discipline (profile → hypothesis → smallest change → paired m
 right; the risk of any such loop is climbing a local hill.
 These are the hills worth being on:
 
-1. **Make warm cost O(changes), not O(entries): producer-side no-op elision.** This is
-   the architectural answer to the loop’s H9 (warm 2.6× cold) and the correct reading of
-   exp-002’s rejection.
-   Today every entry — changed or not — flows through the single-threaded consumer’s
-   expectation/arbitration machinery; exp-002 parallelized the walk but still funneled
-   60k no-ops through one thread.
-   Restructure: the parallel producers hold a clock-stable read-only baseline (the
-   loaded index or the snapshot itself), compare fingerprints *in the workers*, and
-   forward only mismatches plus per-directory verified-unchanged summaries.
+1. **Make warm consumer cost O(changes), not O(entries): producer-side no-op elision.**
+   **Landed in exp-030.** This is the architectural answer to the loop’s H9 (warm 2.6×
+   cold) and the correct reading of exp-002’s rejection.
+   exp-002 parallelized the walk but still funnelled 60k no-ops through one thread.
+   The landed parallel producers hold a clock-stable read-only baseline (the loaded
+   index or the snapshot itself), compare fingerprints *in the workers*, and forward
+   only mismatches plus per-directory verified-unchanged summaries.
    Consumer work becomes proportional to churn — typically zero.
-   Predicted end state: warm-revalidate wall converges on parallel producer time (~190
-   ms at 60k today, less once bulk stat lands) and finally drops *below*
-   cold-scan-index; on an unchanged tree the consumer applies nothing.
+   Measured result: the 60k reconciliation component is about 151 ms and the 720k
+   component about 3.19 seconds; on an unchanged tree the consumer applies nothing.
+   Snapshot load keeps full 60k warm open slightly above cold scan, so H9 remains open
+   under the next leverage point.
    The delta contract is untouched — producers emit fewer, richer observations; no new
    mutation path.
 2. **Serve queries from persisted roll-ups; stop rebuilding what the snapshot knew.**
@@ -1105,17 +1420,18 @@ These are the hills worth being on:
    Sequence: persisted roll-ups → single-pass load → lazy block format (`fdu-xihx`),
    each independently measurable in the loop’s `warm-snapshot-load` and a new
    `warm-query` job.
-3. **Unblock the syscall rung deliberately — it gates half the backlog.** The loop’s two
-   largest measured cold costs (`open` 28%, `fstatat` 19% of self-time after exp-001)
-   are both behind its blocked H2/H3, which is a dependency-policy decision, not an
-   experiment. Recommendation: evaluate `rustix` under the supply-chain process rather
-   than raw `libc` calls — it is the std-ecosystem’s own low-level binding (no libc
-   linkage on Linux, unsafe wrapped internally and audited once,
-   `openat`/`statx`/getdents provided, macOS syscalls available) and it keeps
-   `unsafe_code = "deny"` intact in fdu itself.
-   Until this lands, every syscall hypothesis below (H24–H31) is untestable; after it
-   lands, the single biggest step is macOS `getattrlistbulk` (its H3), which the
-   platform evidence predicts at 2–6× on the producer.
+3. **Continue through the now-unblocked syscall rung.** exp-022 completed the dependency
+   review and put direct `libc` plus the sole unsafe call behind a macOS-only module.
+   `getattrlistbulk` removed per-entry `fstatat` from the cold profile and improved 720k
+   producer wall 41.60%; directory `open` is now the largest residue at 33.86% of cold
+   samples. exp-024 then showed that resolving descendants relative to one retained root
+   fd does not reduce that residue: indexed wall was −0.07% and both system-CPU
+   intervals included zero.
+   Revisit H24 only with a bounded parent/ancestor-handle design.
+   exp-026 completed the next syscall-rung step for full and subtree reconciliation,
+   improving warm wall 18.97% at 60k and 34.39% at 720k; FSEvents-scoped orchestration
+   remains open. Linux `statx`/`getdents64` still needs its own binding and host evidence
+   rather than inheriting the macOS verdict.
 4. **Parallelize index construction by subtree merge, not a faster funnel.** exp-001/002
    establish the single consumer as both paths’ ceiling (cold component 197 ms vs
    producer 192 ms). Cheaper apply (H6/H7, backlog below) raises the ceiling; the
@@ -1125,10 +1441,11 @@ These are the hills worth being on:
    streaming consumer at all and cold-scan-index converges on producer time.
    This is what `fdu-gdrv`/`fdu-aky1` are really for; packing (H19–H22) is what makes
    the splice cheap.
-5. **Move the loop beyond one warm 60k APFS tree before trusting global verdicts.**
-   Everything measured so far is one tree, one host, warm-steady cache, zero churn.
-   The 500k+ knee, cold caches, churned warm runs, network storage, and Linux are
-   invisible, and exp-002 is predicted to flip in several of those states.
+5. **Keep moving the loop beyond one warm 60k APFS tree before trusting global
+   verdicts.** The adaptive-depth and bulk-metadata work now includes 120k boundary and
+   720k cache-pressure subjects, but controlled-cold caches, churned warm runs, network
+   storage, and Linux are still invisible.
+   exp-002 is predicted to flip in several of those states.
    The extensions are cheap because the generated-corpus harness already exists (recipes
    for 100k–1M, churn transitions, `--purge`); they are backlog items H36–H39, and they
    should interleave with code experiments rather than wait.
@@ -1146,7 +1463,7 @@ the loop extensions in H36–H39 to be trusted globally.
 
 | # | Hypothesis | Predicted signal | Prereq |
 | --- | --- | --- | --- |
-| H12 | Producer-side fingerprint comparison against a clock-stable baseline makes consumer work O(changes); the expectation machinery per unchanged entry is the warm bound (exp-002’s residue) | `warm-revalidate` wall −40% or more at 60k; falls below `cold-scan-index`; `user_cpu_ns` collapses | — |
+| H12 | Producer-side fingerprint comparison against a clock-stable baseline makes consumer work O(changes); the expectation machinery per unchanged entry is the warm bound (exp-002’s residue) | **Confirmed** (exp-030): bounded four-worker waves improve warm wall 30.25% at 60k and 59.53% at 720k; reconciliation component falls 50.31%/72.55%. Snapshot load keeps complete 60k warm open above cold. | landed exclusive full-tree path; shared/scoped arbitration stays serial |
 | H13 | Applying per *directory* (accumulate children locally, one ancestor merge per directory) cuts upward merges ~7× (7.3k dirs vs 52k files on the reference tree) | `user_cpu_ns` down on `cold-scan-index` and `warm-revalidate` | — |
 | H14 | Routing `ReconcileTarget::Direct` through `collect_child_expectations` (deleting `collect_child_states`) removes ~13 allocations and ~10 descents per unchanged entry; equivalence already test-locked | `warm-revalidate` `user_cpu_ns`, `minor_faults` down | — |
 | H15 | A directory whose stat fingerprint matches the snapshot can skip `read_dir` *membership discovery* (git untracked-cache trick; plocate’s updatedb ships exactly this contract — “it won’t readdir() it. It will stat() it, though”); child stats still run | `system_cpu_ns` down modestly on unchanged trees, most on wide dirs | guardrail G1 |
@@ -1159,24 +1476,24 @@ the loop extensions in H36–H39 to be trusted globally.
 | # | Hypothesis | Predicted signal | Prereq |
 | --- | --- | --- | --- |
 | H18 | Interning extensions to `u32` ids (side table; `by_ext` as id-keyed small vec) removes ~523k `String` clones + B-tree descents per 60k scan — the largest single apply cost | `cold-scan-index` `user_cpu_ns` down; `peak_rss` down | — |
-| H19 | Storing `Entry` inline in the arena slot (un-boxing) converts a pointer chase per touch into sequential access | `user_cpu_ns`, `minor_faults`, `peak_rss` down ~10–15% | — |
-| H20 | Storing each name once (parent-map key only, or a shared name arena) removes a duplicate heap string per entry | `peak_rss` −15–20%; locality gains | H19 helps |
-| H21 | Moving `RollUp` (64 B) out of file entries into a directory-only side vector removes dead weight from ~88% of entries | `peak_rss` down ~55 B × file share | — |
-| H22 | `EntryId` with a niche (`u32::MAX` sentinel) and `u32` revisions shrinks parent links from 24 B to 8 B and halves ABA overhead | `peak_rss` down ~24–32 B/entry | — |
+| H19 | Storing `Entry` inline in the arena slot (un-boxing) converts a pointer chase per touch into sequential access | `user_cpu_ns`, `minor_faults`, `peak_rss` down ~10–15% | **Queued with H20–H22** (`fdu-prph`); exp-035 measured about 631 MiB indexed RSS at 1M, 44.32% above merged main |
+| H20 | Storing each name once (parent-map key only, or a shared name arena) removes a duplicate heap string per entry | `peak_rss` −15–20%; locality gains | `fdu-prph`; H19 helps |
+| H21 | Moving `RollUp` (64 B) out of file entries into a directory-only side vector removes dead weight from ~88% of entries | `peak_rss` down ~55 B × file share | `fdu-prph` |
+| H22 | `EntryId` with a niche (`u32::MAX` sentinel) and `u32` revisions shrinks parent links from 24 B to 8 B and halves ABA overhead | `peak_rss` down ~24–32 B/entry | `fdu-prph` |
 | H23 | Carrying the parent `EntryId` in the op (walker and loader both know it) makes `ensure_dir_chain` O(1) instead of a root descent per entry | `cold-scan-index` `user_cpu_ns` down | — |
 
-**Syscall rung (all blocked on the rustix/libc decision — leverage 3):**
+**Syscall and in-flight rung (macOS binding established by exp-022 — leverage 3):**
 
 | # | Hypothesis | Predicted signal | Prereq |
 | --- | --- | --- | --- |
-| H24 | `openat` relative to the parent dirfd removes per-component path re-resolution (`open` = 28% of cold self-time) | `system_cpu_ns` down, most on deep trees | rustix |
+| H24 | `openat` relative to a retained dirfd removes repeated path-prefix resolution (`open` = 33.86% of post-H26 cold self-time) | `system_cpu_ns` down, most on deep trees | **Refuted in root and bounded-parent forms** (exp-024/038); the 1M parent-relative screen was −0.69% [−1.49%, +0.49%] with RSS/fault regressions |
 | H25 | Linux `statx` with `STATX_BASIC_STATS` only, `AT_STATX_DONT_SYNC` on network mounts | `system_cpu_ns` down modestly; NFS dramatically | rustix |
-| H26 | macOS `getattrlistbulk` (≥64 KB buffers, drain-then-descend) replaces one `fstatat` per entry with one syscall per ~hundreds of entries | `cold-scan-producer` and `warm-revalidate` `system_cpu_ns` −40–70% on APFS | rustix |
+| H26 | macOS `getattrlistbulk` (64 KiB buffers, drain-then-descend) replaces one `fstatat` per entry with one syscall per many entries | **Confirmed for cold and full reconciliation** (exp-022/026): 720k cold producer wall −41.60% and warm wall −34.39%; 60k cold producer wall −9.25% and warm wall −18.97%. exp-025 confirms the batched cold backend should remain at six workers rather than the portable path’s sixteen-worker high-latency knee. | landed macOS backend; journal-scoped orchestration open |
 | H27 | Raw `getdents64` with a 256 KB–1 MB per-thread buffer beats libc’s 32 KB `readdir` batching on wide directories | `system_cpu_ns` down on Linux; neutral macOS | rustix |
 | H28 | Statting in `d_ino` order on ext4 turns random inode-table reads ~N/16 sequential | drop_caches-cold wall 2–6× down on ext4; neutral warm; neutral XFS | rustix; Linux host |
-| H29 | An LRU of ancestor dirfds sized from `RLIMIT_NOFILE` keeps H24 effective at depth | `system_cpu_ns` flat vs depth | H24 |
+| H29 | An LRU of ancestor dirfds sized from `RLIMIT_NOFILE` keeps H24 effective at depth | `system_cpu_ns` flat vs depth | **Refuted for the bounded-parent frontier** (exp-038); do not revisit without new profile evidence |
 | H30 | Worker QoS `USER_INITIATED` on macOS protects throughput under background load | wall variance down under load; neutral idle | — |
-| H31 | In-flight depth from measured first-K operation latency (Little’s law) beats any fixed thread count across storage classes | cold wall down on network storage; neutral local | calibration probe (H42) |
+| H31 | In-flight depth from measured first-K operation latency (Little’s law) beats any fixed thread count across storage classes | **Confirmed by exp-015–021 on portable chunk timing:** 720k cold-index wall −5.31% and producer wall −10.09%; 120k wall and resources neutral | — |
 
 **Snapshot (sequenced; leverage 2):**
 
@@ -1207,6 +1524,21 @@ the loop extensions in H36–H39 to be trusted globally.
 | H45 | Whole-drive macOS spike: per-volume shards + journal resume + persisted roll-ups turn a 30–60 min dust-class drive scan into a seconds-scale recheck at realistic churn | cold first-scan minutes; hour/day-churn recheck seconds; shard rewrite bounded by changed volume | H26, H33, H43 |
 | H46 | A fingerprint-keyed derived-data cache (line counts over a real repo) turns minutes-cold content summarization into seconds-warm: N stats + re-derive changed files only | cached rerun ~10–100× faster than cold; 1%-churn rerun ∝ churn; scc/tokei as cold-every-time references | tier findings; G5 |
 | H47 | On btrfs/ZFS, a CoW snapshot held as the cache cursor and diffed at open (`btrfs send --no-data -p` / `zfs diff`) yields a complete change set — deletes and renames included — making Linux warm runs O(changes) with the same gate-and-fallback shape as FSEvents resume | quiet-tree warm revalidate in seconds→ms on btrfs/ZFS roots; sweep-identical digests; privilege and subvolume-scope caveats recorded | niche/privileged; fsevents-plan gate pattern |
+
+**Comparator-derived continuation (the shared registry resumes at H57):**
+
+| # | Hypothesis | Predicted signal | Prereq |
+| --- | --- | --- | --- |
+| H57 | Bulk/BFS integration may move the 1M APFS worker knee above automatic/six | **Refuted** (exp-036): eight workers gained 1.30% for 33.5% more CPU; 12/16 regressed | resolved; no retained code |
+| H58 | Portable wide-directory entries split into small stealable stat jobs can expose parallelism hidden by directory-granular scheduling | portable/Linux wall and system CPU down ≥3%; queue wait/RSS bounded | queued `fdu-r9he`; source: dua v2.41.1 |
+| H59 | A general exact cache-off report path can retain only the complete requested view state without making output limits alter the scan | large RSS reduction and wall down ≥3%; byte-identical report | **Confirmed, topology-sensitive** (exp-040): heterogeneous rich-summary wall −14.56% [−18.55%, −9.04%], RSS −95.28%, one stable semantic hash; uniform-tree exact-binary wall replications +2.8% and +1.8% versus the indexed control |
+| H60 | Cold workers can build disjoint local subtree indexes and splice them at region completion instead of funneling one path operation per entry | cold-index component/user CPU and channel work down; end-to-end wall down ≥3%; RSS bounded | queued `fdu-weey`; deterministic identity/progress/delta contract required |
+| H61 | Store the completed bootstrap in a dense immutable base and apply later changes through a sparse mutable overlay with bounded compaction | million-scale RSS down ≥40% plus cold indexed wall down ≥3% or a decisive warm/query win | queued after H19–H22 as `fdu-f67r`; preserve all query, identity, snapshot, delta, watch, and progressive semantics |
+| H62 | Aggregate the exact rich summary inside existing scan workers, retaining paths only for directories that must be descended into | wall/user CPU/channel work down ≥3%; exact rich-summary hash | **Refuted** (exp-041): wall −1.38%; user CPU −36.23%; reverted after composition screen |
+| H63 | Derive a strict macOS bulk request/parser from rich-summary requirements and avoid allocating file names | wall/system/user CPU down ≥3%; malformed/mount/firmlink/one-filesystem fallback parity | **Refuted with H62** (exp-042): wall +1.86% [−1.96%, +4.56%]; reverted |
+| H64 | Derive only the selected size total for a workload matched to dumac | match or beat dumac wall; exact FDU path-accounting oracle | **Refuted** (exp-044): wall −1.15% [−2.24%, +0.44%], user CPU −51.54%, RSS −39.19%; did not beat dumac, and all prototype API/engine code was reverted |
+| H65 | Retune worker depth for the H59 transient-summary plan | 6/8/10/12/16 curve; wall down ≥3%, CPU/RSS bounded | **Refuted** (exp-043): eight workers changed 720k wall +0.67% [−1.56%, +3.99%] and CPU +40.66%; automatic/six retained |
+| H66 | For an unfiltered cache-off tree-only request, fold file observations directly into exact directory roll-ups and retain directory topology without file records | byte-identical tree; wall down ≥3% or decisive RSS reduction without meaningful latency regression at 60k and near-million scale | queued `fdu-sk7v`; never selected for cache, filters, multi-view composition, watch, or reusable-index requests; calibrate against dut’s rendered-tree job on Linux |
 
 **Guardrails, so a fast-looking result cannot be a wrong one:**
 
@@ -1266,10 +1598,14 @@ in the original research), and micro-tuning `readdir` batch sizes on the portabl
    inherits a loader worth having; exp-005 was the first step of this ladder.
    Persisted roll-ups also unlock the index-free warm CLI query (H16), the strongest
    product-latency result available on any platform.
-5. **Put the `rustix`-vs-`libc` decision through the supply-chain process now.** It is
-   the gate on H24–H31 — including the single largest predicted win on the primary
-   interactive platform (H26, getattrlistbulk) — and it is a maintainer policy decision
-   the experiment loop cannot make for itself.
+5. **Reuse the established platform boundary deliberately.** exp-022 chose an exact,
+   macOS-only `libc` dependency already present in the lockfile, passed the supply-chain
+   review, and confines unsafe code to one bounds-audited module.
+   The reconciliation half of H26 should extend that boundary rather than adding a
+   second binding abstraction without measured need.
+   exp-024 rejected the one-root-fd form of H24; any parent/ancestor form needs a
+   separate bounded-lifetime design.
+   Linux remains a separate review.
 6. **Extend the loop’s states and scales (H36–H39) in parallel with code experiments:**
    generated-corpus scale points, `--purge` runs, a churn job, a `warm-query` job, and
    one Linux host — so rejections and acceptances generalize beyond one warm 60k APFS
@@ -1325,7 +1661,10 @@ in the original research), and micro-tuning `readdir` batch sizes on the portabl
   registry so ledger verdicts accumulate against one numbering.
   Suggested first round: H14, H12, H18, H13 (warm architecture and apply cost), with H36
   run alongside to establish the scale states.
-- Put the `rustix` evaluation through the supply-chain review to unblock H24–H31.
+- Re-run the worker-depth curve after H26, then reuse the bulk reader for full and
+  journal-scoped reconciliation.
+  Revisit H24 only with a bounded parent/ancestor-dirfd design; evaluate Linux bindings
+  separately for H25/H27–H29.
 - Extend the loop with the H36–H39 states/scales and a `warm-query` job.
 - Correct the applies-to-which-path wording in the reconciliation fast-path research
   note.
@@ -1333,14 +1672,28 @@ in the original research), and micro-tuning `readdir` batch sizes on the portabl
   snapshot format design (`fdu-xihx`).
 - Add dumac to the comparator list and the macOS purge-vs-remount cold protocol to the
   benchmark plan.
+- Extend the comparison to a controlled Linux local-SSD host.
+  Preserve warm and cold as separate regimes; adopt diskus’s per-sample `sync` plus
+  `/proc/sys/vm/drop_caches` preparation for the cold regime while retaining FDU’s
+  paired oracle and provenance controls (`fdu-nffc`).
+- Pin dut at its exact current commit and add a Linux-only rendered-tree adapter matrix:
+  verified warm, a labeled reproduction of its pagecache-drop-only method, and
+  per-sample `sync` plus `echo 3` controlled cold.
+  Sweep workers on ext4 and XFS, reject warning-bearing partial scans, and run the wide
+  directory, hard-link, sparse/preallocated, symlink, mount-boundary, and non-UTF-8
+  semantic fixtures before accepting a timing (`fdu-k5t5`, `fdu-nffc`).
 - Track the strategic items as beads where no bead exists: producer-side elision (H12),
   persisted roll-ups + `warm-query` (H16/H33), the calibration probe (H42), and the
   FSEvents journal resume spike (H43).
 
 ## References
 
-Checked out under `attic/` for this research: bfs `4af45dc`; dut `68d4ba2` (GPL — ideas
-only); parallel-disk-usage (pdu) `c30e46f`; diskus `90196e9`; jwalk v0.9.0.
+Checked out under ignored `attic/` for this research: bfs `4af45dc`;
+[dut `68d4ba2`](https://codeberg.org/201984/dut/commit/68d4ba2d66211e7ca93a2312bb12f5879d0179e1)
+(GPL — ideas only); jwalk v0.9.0; dust v1.2.4 `fabe19b` (Apache-2.0); gdu v5.36.1
+`8d64b4f` (MIT); pdu 0.24.0 `4e19260` (Apache-2.0); dua v2.41.1 `90a59e1` (MIT); diskus
+v0.9.0 `d8a77db` (MIT OR Apache-2.0); and dumac `1ffbe3c` (no license declared in that
+revision, so inspect-only and executable benchmark input, with no copied code).
 
 macOS:
 

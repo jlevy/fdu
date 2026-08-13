@@ -4,7 +4,7 @@
 
 **Author:** fdu project
 
-**Status:** Draft
+**Status:** Implementation complete; PR #5 merged, follow-ups tracked
 
 ## Overview
 
@@ -268,6 +268,16 @@ Both are milliseconds warm; neither touches the filesystem.
 `ExtTally` gains an `allocated` field so the `types` view honors `--size allocated`
 instead of silently switching metrics.
 
+*Performance-only implementation amendment.* A one-shot cache-off request whose complete
+view set is exactly one unfiltered `summary` may derive an internal exact-summary plan
+instead of retaining an index.
+This changes neither the five axes nor the `fdu.report/1` bytes: there is no fast-mode
+flag, output depth does not prune scanning, and cache participation, filters, multiple
+views, watch mode, and every unproved composition fall closed to the full index.
+The natural text and all three machine-format summary goldens exercise the same command;
+the performance harness additionally compares stable semantic hashes against the
+pre-plan indexed binary.
+
 ### Timestamps and Sync Watermarks
 
 Every report carries two instants in every format: `scan_started_at` (when the walk or
@@ -528,6 +538,11 @@ routing streams — the current private rendering methods on `Cli` move behind
 Watch composes the same pieces: a `Session` owning `IndexHandle` + `Watcher` yields
 batches already filtered through the `Selection`, and the CLI loop is a thin consumer.
 
+The derived summary planner is an internal CLI execution detail, not a second public
+query API. It decides only what state the existing one-shot composition retains; the
+public Rust `report(index, query, provenance)` and Python `Index.report(...)` contracts
+remain unchanged and pure.
+
 The parity test for Principle 7 is mechanical: the CLI’s five axes map one-to-one onto
 these library types, so any capability reachable by flags is reachable as one typed
 call, with the same defaults.
@@ -601,6 +616,8 @@ shared process boundary, as today.
   SKILL.md, `AFTER_HELP`, README, tryscript goldens, and the benchmark job manifests
   together
 - [x] Python `Index.report(...)` with the same defaults and names
+- [x] Derive a cache-off, one-view, unfiltered summary plan internally with indexed
+  fallback and byte-identical golden/semantic-hash coverage (exp-040)
 
 ### Phase 2: Cache Policy and Utilities
 
@@ -654,7 +671,8 @@ shared process boundary, as today.
 - [x] Run the end-of-plan parity review (what, if anything, lives only in `cli.rs`) and
   record its outcome in the design doc
 - [x] Point AGENTS.md, README, and the architecture references at the design doc
-- [ ] Move this spec to done and reconcile the subsumed beads (Open Question 4)
+- [x] Merge PR #5, reconcile the implemented surface, and leave remaining product
+  decisions on the explicit follow-up beads below
 
 ## Testing Strategy
 
@@ -666,6 +684,12 @@ shared process boundary, as today.
   goldens are byte-stable (integer formatting, no floats in text output).
   The watch stream uses a bounded, causally sequenced capture helper rather than timing
   a process that never exits.
+- One concise, realistic nested-project session pins the complete natural human report
+  at its default depth and limit.
+  Its rows jointly cover size ranking, hierarchy, alignment, fixed ten-cell bars,
+  rolled-up descendants below the display depth, and no spurious omission marker.
+  Focused sessions retain the actual limit-marker boundary and other combinatorial edges
+  instead of inflating this product example.
 - Schema tests: `fdu.report/1` and `fdu.stream/1` fixtures that fail on unversioned
   change.
 - Time-window tests: table-driven `parse_when`/`parse_size` grammar units with injected
@@ -694,8 +718,14 @@ No publishing; `fdu-9cf0` gates remain.
 ## Remaining work
 
 The four implementation phases are complete.
-The remaining product decisions and follow-ups are mapped to beads so they cannot be
-lost by being described only here:
+Post-merge integration was reproduced against the performance branch rather than
+assumed: exp-033 exercised all five engine jobs with exact oracles, and exp-035 repeated
+the cold path on a heterogeneous 1M-entry workspace.
+The concise realistic `cli-overview` tryscript fixture remains the human-output contract
+while focused goldens own boundary cases.
+No performance experiment changed CLI text, query semantics, or the mandatory-root/help
+behavior. The remaining product decisions and follow-ups are mapped to beads so they
+cannot be lost by being described only here:
 
 | Gap | Bead |
 | --- | --- |

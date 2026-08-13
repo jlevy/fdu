@@ -52,10 +52,14 @@
 
 pub mod cache;
 pub mod classify;
+#[cfg(feature = "cli")]
+mod execution;
 mod index;
 pub mod query;
 pub mod scan;
 pub mod snapshot;
+#[cfg(test)]
+mod test_support;
 mod types;
 
 #[cfg(feature = "cli")]
@@ -169,7 +173,7 @@ pub struct PendingSave {
 
 impl PendingSave {
     /// Nothing to wait for.
-    fn none() -> Self {
+    pub(crate) fn none() -> Self {
         Self { worker: None }
     }
 
@@ -720,6 +724,13 @@ mod save_tests {
         // Writing a partial view would serve it as fact on the next run, and the
         // existing complete snapshot is better than that.
         use std::os::unix::fs::PermissionsExt;
+
+        if !crate::test_support::permission_bits_are_enforced() {
+            // A privileged process reads the denied directory anyway, so the fixture
+            // cannot produce the partial scan this asserts on.
+            eprintln!("skipped: this process is not subject to Unix permission bits");
+            return;
+        }
 
         let dir = tempfile::tempdir().expect("tempdir");
         let cache = tempfile::tempdir().expect("cache dir");
