@@ -40,7 +40,7 @@ use crate::content::{
     AnalysisApplyOutcome, AnalysisCandidate, AnalysisObservation, AnalysisProfile, ContentIndex,
     ContentRollUp,
 };
-use crate::types::{
+use crate::engine_contract::{
     AppliedDelta, Attrs, Clock, EntryIdentity, EntryKind, Expectation, Freshness, InvalidateReason,
     Observation, Op, PathExpectation, PathState, Provenance, ScanScope, Source, Status,
 };
@@ -1657,7 +1657,7 @@ fn same_target(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::ObservationOp;
+    use crate::engine_contract::ObservationOp;
     use std::sync::{Arc, Barrier};
 
     fn file_attrs(size: u64, mtime_ns: i64) -> Attrs {

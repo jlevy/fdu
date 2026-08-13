@@ -11,8 +11,8 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::engine_contract::{Error, Result, ScanScope};
 use crate::snapshot;
-use crate::types::{Error, Result, ScanScope};
 
 /// What is known about one file in the cache directory.
 #[derive(Clone, Debug, PartialEq, Eq)]

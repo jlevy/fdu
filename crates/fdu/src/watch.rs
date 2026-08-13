@@ -37,8 +37,8 @@ use std::time::{Duration, Instant};
 
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher as NotifyWatcher};
 
+use crate::engine_contract::{AppliedDelta, Error, InvalidateReason, Observation, Op, Result};
 use crate::scan;
-use crate::types::{AppliedDelta, Error, InvalidateReason, Observation, Op, Result};
 use crate::{ApplyOutcome, IndexHandle, ScanConfig};
 
 /// Optimistic re-verification retries before the applying driver guarantees progress

@@ -20,11 +20,11 @@ use std::fs;
 use std::path::{Component, Path, PathBuf};
 
 use crate::ApplyStats;
-use crate::index::{Index, IndexHandle, collect_child_expectations};
-use crate::types::{
+use crate::engine_contract::{
     AppliedDelta, Attrs, EntryKind, Error, Observation, ObservationOp, Op, PathExpectation,
     PathState, Result, ScanScope,
 };
+use crate::index::{Index, IndexHandle, collect_child_expectations};
 
 // Keep the FFI exception at the platform boundary. The rest of the engine, including
 // every consumer of these observations, remains under the workspace's unsafe-code

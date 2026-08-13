@@ -8,7 +8,7 @@ NPM ?= npm
 MSRV ?= 1.85.0
 NODE_INSTALL_STAMP := node_modules/.package-lock.json
 
-.PHONY: help build release test rust-test test-golden content-selfcheck performance-probe test-performance golden-update check supply-chain fix fmt fmt-check clippy docs docs-format docs-format-check lib-only msrv audit npm-audit python-concurrency python-smoke clean cli perf-help verify-beads
+.PHONY: help build release test rust-test test-golden content-selfcheck performance-probe test-performance golden-update check supply-chain rust-module-names fix fmt fmt-check clippy docs docs-format docs-format-check lib-only msrv audit npm-audit python-concurrency python-smoke clean cli perf-help verify-beads
 
 help:
 	@echo "make build      Debug build of the core library and CLI, all features"
@@ -20,6 +20,7 @@ help:
 	@echo "make golden-update  Regenerate intentional golden changes, then compare"
 	@echo "make check      Handoff gate: tests, audits, docs, and installed-wheel smoke"
 	@echo "make supply-chain  Verify release age, provenance, pins, and CI trust controls"
+	@echo "make rust-module-names  Check Rust source filenames for ambiguity"
 	@echo "make msrv       Compile all features and test the core contract on Rust $(MSRV)"
 	@echo "make fix        Apply formatting and machine-applicable lint fixes"
 	@echo "make audit      Dependency advisory and license audit (needs cargo-deny)"
@@ -71,7 +72,7 @@ $(NODE_INSTALL_STAMP): package.json package-lock.json .npmrc
 	$(NPM) ci
 
 # Everything CI enforces, in the order that fails fastest.
-check: supply-chain fmt-check clippy test docs docs-format-check lib-only msrv audit npm-audit python-concurrency python-smoke
+check: supply-chain rust-module-names fmt-check clippy test docs docs-format-check lib-only msrv audit npm-audit python-concurrency python-smoke
 
 # Verify that synced beads match the local database, field by field.
 #
@@ -85,6 +86,10 @@ verify-beads:
 supply-chain:
 	$(NPM) run test:supply-chain
 	$(NPM) run check:supply-chain
+
+rust-module-names:
+	$(NODE) --test scripts/check-rust-module-names.test.mjs
+	$(NODE) scripts/check-rust-module-names.mjs
 
 fmt:
 	$(CARGO) fmt --all

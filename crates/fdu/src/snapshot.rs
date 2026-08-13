@@ -33,10 +33,10 @@ use std::io::{self, BufReader, Read, Seek, SeekFrom, Write};
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use crate::index::{EntryId, Index, IndexHandle};
-use crate::types::{
+use crate::engine_contract::{
     Attrs, EntryKind, Error, Freshness, Observation, Op, Result, ScanScope, Source,
 };
+use crate::index::{EntryId, Index, IndexHandle};
 
 /// Leading magic. Distinguishes an fdu snapshot from any other file that lands here.
 const MAGIC: &[u8; 8] = b"FDUSNAP\x00";
@@ -846,8 +846,8 @@ fn create_temp_file(path: &Path, parent: &Path) -> Result<(PathBuf, fs::File)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine_contract::Observation;
     use crate::index::ExtTally;
-    use crate::types::Observation;
 
     fn attrs(size: u64, mtime_ns: i64) -> Attrs {
         Attrs {

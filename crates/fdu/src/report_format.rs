@@ -19,11 +19,11 @@ use clap::builder::styling::{AnsiColor, Style as AnsiStyle};
 
 use crate::classify::{DetectionConfidence, DetectionSource};
 use crate::content::{CoverageReason, MetricValues};
+use crate::engine_contract::{EntryKind, Freshness};
 use crate::query::{
     FileRow, MetricGroup, MetricRow, MetricSummary, Report, ReportSource, Section, SizeMetric,
     SummaryRow, TreeNode, TypeRow, ViewSpec, document_words, format_rfc3339,
 };
-use crate::types::{EntryKind, Freshness};
 
 /// Directory names in a tree, so structure reads at a glance.
 const STYLE_DIRECTORY: AnsiStyle = AnsiColor::Cyan.on_default();
@@ -1179,8 +1179,8 @@ pub fn render_cache_status(statuses: &[crate::CacheStatus], format: Format) -> S
 mod tests {
     use super::*;
     use crate::Index;
+    use crate::engine_contract::{Attrs, Observation, Op, ScanScope};
     use crate::query::{Bound, Provenance, Query, Selection, report};
-    use crate::types::{Attrs, Observation, Op, ScanScope};
     use std::path::PathBuf;
     use std::time::{Duration, UNIX_EPOCH};
 

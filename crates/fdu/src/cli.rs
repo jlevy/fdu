@@ -493,8 +493,8 @@ impl Cli {
         color: bool,
     ) -> anyhow::Result<RunOutcome> {
         use crate::query::ViewSpec;
-        use crate::session::{ChangeKind, Session};
         use crate::watch::WatchConfig;
+        use crate::watch_session::{ChangeKind, Session};
 
         let path = self.path.as_deref().expect("run() validates the report path first");
         let interval = parse_duration(&self.interval).map_err(|error| usage(&error))?;
@@ -608,7 +608,7 @@ impl Cli {
     #[cfg(feature = "watch")]
     #[allow(clippy::too_many_arguments)]
     fn save_if_pending(
-        session: &crate::session::Session,
+        session: &crate::watch_session::Session,
         config: &OpenConfig,
         pending: &mut bool,
         last_save: &mut SystemTime,
@@ -649,7 +649,10 @@ impl Cli {
     /// exit. A failure here is a warning: the stream is still correct, and only the next
     /// run's warmth is lost.
     #[cfg(feature = "watch")]
-    fn save_live(session: &crate::session::Session, config: &OpenConfig) -> anyhow::Result<bool> {
+    fn save_live(
+        session: &crate::watch_session::Session,
+        config: &OpenConfig,
+    ) -> anyhow::Result<bool> {
         let (Some(cache_path), true) = (config.cache_path.as_deref(), config.policy.writes())
         else {
             return Ok(false);
@@ -669,7 +672,7 @@ impl Cli {
     #[cfg(feature = "watch")]
     fn render_live(
         out: &mut dyn Write,
-        session: &crate::session::Session,
+        session: &crate::watch_session::Session,
         format: report_format::Format,
         color: bool,
     ) -> anyhow::Result<()> {

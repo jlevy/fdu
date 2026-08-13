@@ -23,9 +23,9 @@ use crate::classify::{
 use crate::content::{
     AnalysisProfile, ContentProvenance, CoverageReason, LogicalWordStats, MetricValues,
 };
+use crate::engine_contract::{EntryKind, Freshness, ScanScope};
 use crate::index::{EntryId, ExtTally, Index, RollUp};
-use crate::query::selection::{Bound, Candidate, Selection, SizeMetric, SortKey};
-use crate::types::{EntryKind, Freshness, ScanScope};
+use crate::query::query_selection::{Bound, Candidate, Selection, SizeMetric, SortKey};
 
 /// Which roll-up or listing a view reports.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -1074,9 +1074,9 @@ fn sort_rows_by<T>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::query::glob::Pattern;
-    use crate::query::selection::ModifiedWindow;
-    use crate::types::{Attrs, Observation, Op};
+    use crate::engine_contract::{Attrs, Observation, Op};
+    use crate::query::query_glob::Pattern;
+    use crate::query::query_selection::ModifiedWindow;
     use std::time::{Duration, UNIX_EPOCH};
 
     fn attrs(size: u64, mtime_ns: i64) -> Attrs {

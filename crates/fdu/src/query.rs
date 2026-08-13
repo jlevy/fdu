@@ -6,18 +6,18 @@
 //! API, and the Python bindings all compose the same types rather than reimplementing
 //! selection three times — and so a report can never quietly become a producer of state.
 
-mod glob;
-mod parse;
-mod report;
-mod selection;
+mod query_glob;
+mod query_report;
+mod query_selection;
+mod query_values;
 
-pub use glob::Pattern;
-pub use parse::{format_rfc3339, parse_size, parse_when, system_time_to_nanos};
+pub use query_glob::Pattern;
 #[cfg(feature = "cli")]
-pub(crate) use report::report_summary;
-pub use report::{
+pub(crate) use query_report::report_summary;
+pub use query_report::{
     ContentReportMetadata, FileRow, MetricGroup, MetricRow, MetricShare, MetricSummary, Provenance,
     Query, Report, ReportSource, Section, ShareMetric, SummaryRow, TreeNode, TypeRow, ViewSpec,
     document_words, report,
 };
-pub use selection::{Bound, Candidate, ModifiedWindow, Selection, SizeMetric, SortKey};
+pub use query_selection::{Bound, Candidate, ModifiedWindow, Selection, SizeMetric, SortKey};
+pub use query_values::{format_rfc3339, parse_size, parse_when, system_time_to_nanos};

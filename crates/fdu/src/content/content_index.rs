@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use crate::classify::ContentFamily;
 
-use super::types::{CoverageReason, FileAnalysis, MetricValues};
+use super::content_model::{CoverageReason, FileAnalysis, MetricValues};
 
 /// Additive tally for one type or family group.
 #[derive(Clone, PartialEq, Eq, Debug, Default)]

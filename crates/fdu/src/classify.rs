@@ -11,7 +11,7 @@ use std::ffi::OsStr;
 use std::fmt;
 use std::path::Path;
 
-mod detect;
+mod file_type_detection;
 
 /// Broad analysis family for a recognized file type.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
@@ -209,16 +209,19 @@ pub fn classify_path_with_prefix(path: &Path, prefix: Option<&[u8]>) -> Classifi
                 DetectionSource::Extension
             };
             let classification = if key == "h" {
-                prefix.and_then(detect::resolve_c_header).and_then(rule_by_id).map_or_else(
-                    || classified(rule, source, DetectionConfidence::Certain),
-                    |cpp| {
-                        classified(
-                            cpp,
-                            DetectionSource::AmbiguousContent,
-                            DetectionConfidence::High,
-                        )
-                    },
-                )
+                prefix
+                    .and_then(file_type_detection::resolve_c_header)
+                    .and_then(rule_by_id)
+                    .map_or_else(
+                        || classified(rule, source, DetectionConfidence::Certain),
+                        |cpp| {
+                            classified(
+                                cpp,
+                                DetectionSource::AmbiguousContent,
+                                DetectionConfidence::High,
+                            )
+                        },
+                    )
             } else {
                 classified(rule, source, DetectionConfidence::Certain)
             };
@@ -240,9 +243,9 @@ pub fn classify_path_with_prefix(path: &Path, prefix: Option<&[u8]>) -> Classifi
     let Some(prefix) = prefix else {
         return with_flags(path, None, unknown());
     };
-    let probed = detect::probe_unresolved(prefix);
+    let probed = file_type_detection::probe_unresolved(prefix);
     match probed {
-        Some(detect::PrefixMatch::UnknownBinary) => {
+        Some(file_type_detection::PrefixMatch::UnknownBinary) => {
             return with_flags(
                 path,
                 Some(prefix),
@@ -253,7 +256,7 @@ pub fn classify_path_with_prefix(path: &Path, prefix: Option<&[u8]>) -> Classifi
                 },
             );
         }
-        Some(detect::PrefixMatch::Rule(id, source))
+        Some(file_type_detection::PrefixMatch::Rule(id, source))
             if rule_by_id(id).is_some_and(|rule| rule.family == ContentFamily::Binary) =>
         {
             let rule = rule_by_id(id).expect("guard established a generated rule");
@@ -265,7 +268,7 @@ pub fn classify_path_with_prefix(path: &Path, prefix: Option<&[u8]>) -> Classifi
         }
         _ => {}
     }
-    if let Some(interpreter) = detect::shebang_interpreter(prefix) {
+    if let Some(interpreter) = file_type_detection::shebang_interpreter(prefix) {
         if let Some(rule) = GENERATED_RULES
             .iter()
             .filter(|rule| rule.shebangs.contains(&interpreter))
@@ -279,9 +282,11 @@ pub fn classify_path_with_prefix(path: &Path, prefix: Option<&[u8]>) -> Classifi
         }
     }
     let classification = match probed {
-        Some(detect::PrefixMatch::Rule(id, source)) => rule_by_id(id)
+        Some(file_type_detection::PrefixMatch::Rule(id, source)) => rule_by_id(id)
             .map_or_else(unknown, |rule| classified(rule, source, DetectionConfidence::High)),
-        Some(detect::PrefixMatch::UnknownBinary) => unreachable!("returned above"),
+        Some(file_type_detection::PrefixMatch::UnknownBinary) => {
+            unreachable!("returned above")
+        }
         None => unknown(),
     };
     with_flags(path, Some(prefix), classification)
@@ -310,7 +315,7 @@ fn with_flags(
     prefix: Option<&[u8]>,
     mut classification: Classification,
 ) -> Classification {
-    classification.flags = detect::flags(path, prefix);
+    classification.flags = file_type_detection::flags(path, prefix);
     classification
 }
 
