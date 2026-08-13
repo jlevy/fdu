@@ -4,7 +4,7 @@
 
 **Author:** fdu project
 
-**Status:** Approved for phased implementation
+**Status:** Complete
 
 ## Overview
 
@@ -530,7 +530,7 @@ Content work releases the GIL through the same Rust execution boundary as scans.
 - [x] Pin metadata-only Rust, Python, human, and machine output compatibility
 - [x] Publish the pre-1.0 `types`-to-`extensions` migration in help, schemas, and
   release notes
-- [ ] Record default-path wall, CPU, RSS, snapshot, and per-entry memory evidence before
+- [x] Record default-path wall, CPU, RSS, snapshot, and per-entry memory evidence before
   advancing
 
 **Exit criteria:** common exact names and extensions produce deterministic type, family,
@@ -560,7 +560,7 @@ is opened; and the disabled-path performance verdict is “no measurable regress
   slots; add the `documents` preset and query-derived pages
 - [x] Lock the complete Rust/CLI/Python contract with the multilingual tryscript fixture
   and the repository self-host sanity check before changing the implementation for speed
-- [ ] Then benchmark cold reads, warm filesystem cache, content-cache hits, 1% churn,
+- [x] Then benchmark cold reads, warm filesystem cache, content-cache hits, 1% churn,
   large files, many tiny files, and the adversarial mislabeled-binary corpus
 
 **Exit criteria:** line identities hold for every fixture; unchanged warm runs perform
@@ -664,7 +664,7 @@ dialects.
 - [x] Run the repository-wide handoff gate, installed-wheel smoke on Python 3.12 and a
   newer interpreter, exact tryscript goldens, multilingual self-host assertions, audits,
   public-hygiene checks, and MSRV build
-- [ ] Reconcile and close the implementation beads, sync tbd, publish the isolated
+- [x] Reconcile and close the implementation beads, sync tbd, publish the isolated
   branch, and watch the pull request checks to completion
 
 **Exit criteria:** public documentation describes only implemented semantics; Python
@@ -938,13 +938,13 @@ Resolved for all phases:
 - Pages are derived from aggregate words with a visible 250-word default
 - fdu owns walking, opening, scheduling, caching, rollups, and coverage
 - External parsers receive fdu-owned buffers and never run a second tree walk
+- The native `code-sloc-v1` state machine passed the Tokei decision gate, avoiding a
+  production Tokei dependency
+- Complete-buffer analyzers use a 16 MiB per-file default, which callers can lower or
+  raise explicitly
 
-Phase-gated questions:
+Future questions:
 
-- Does the Tokei adapter meet the artifact, concurrency, semantic, and performance
-  gates, or should fdu ship a narrower native state machine?
-- What complete-buffer limit gives code and markup analyzers a safe default without
-  excluding common large source and documentation files?
 - Do Unicode sentence boundaries plus abbreviation and markup fixtures yield a metric
   worth naming, or should sentence count remain out of scope?
 - Which specialized markup or data formats have enough measured demand to follow
@@ -956,11 +956,11 @@ None of these questions blocks Phases 1 or 2.
 
 | Bead | Status | Role |
 | --- | --- | --- |
-| `fdu-3n8c` | Open | Governing content-tier feature; link this spec here |
+| `fdu-3n8c` | Complete | Governing content-tier feature and completed contract |
 | `fdu-0i15` | Complete | Research, prior-art survey, and exploratory benchmarks |
 | `fdu-w09m` | Complete | Refine and validate this implementation-ready plan spec |
 | `fdu-v4lc` | Complete | Native compiled file-type rules consumed by Phase 1 |
-| `fdu-j5ny` | In progress | Implement this approved spec in an isolated feature worktree |
+| `fdu-j5ny` | Complete | Implemented this spec in an isolated feature worktree |
 | `fdu-m7n5` | Complete | Stable classification, metric contracts, and disabled sparse boundary |
 | `fdu-ciq7` | Complete | Fused basic streaming analyzer and boundary/property tests |
 | `fdu-96l2` | Complete | Workers, conditional deltas, incremental rollups, and sidecars |
@@ -976,7 +976,7 @@ None of these questions blocks Phases 1 or 2.
 | `fdu-1ysa` | Complete | Document goldens and self-host semantic lock |
 | `fdu-3b5a` | Complete | Text and Markdown performance iterations |
 | `fdu-kgml` | Complete | Bounded deep detection and specialized formats |
-| `fdu-eu80` | In progress | Final compatibility, documentation, and release validation |
+| `fdu-eu80` | Complete | Final compatibility, documentation, and release validation |
 
 The epic’s child-order hints match this table, and every child was created with its
 blocker edge already attached.
@@ -987,9 +987,9 @@ primary repository checkout.
 
 - [Fast file-content metrics research](../../research/research-2026-08-12-fast-file-content-metrics.md)
 - [fdu design principles](../../architecture/fdu-design-principles.md)
-- [Composable CLI and query surface plan](plan-2026-08-10-fdu-composable-cli-surface.md)
-- [Progressive-results plan](plan-2026-08-11-fdu-progressive-results.md)
-- [Performance testing plan](plan-2026-08-09-fdu-end-to-end-performance-testing.md)
+- [Composable CLI and query surface plan](../active/plan-2026-08-10-fdu-composable-cli-surface.md)
+- [Progressive-results plan](../active/plan-2026-08-11-fdu-progressive-results.md)
+- [Performance testing plan](../active/plan-2026-08-09-fdu-end-to-end-performance-testing.md)
 - [Performance loop](../../guides/performance-loop.md)
 - [Cache design](../../guides/cache-design.md)
 - [Post-Phase-1 roadmap](../future/plan-2026-08-09-fdu-post-phase-1-roadmap.md)

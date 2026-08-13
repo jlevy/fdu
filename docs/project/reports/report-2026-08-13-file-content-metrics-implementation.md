@@ -73,10 +73,11 @@ The roughly 55 ns deeper-tier increment remains off the ordinary resolved path.
 ## Compatibility and Validation
 
 The repository-wide `make check` gate passed after implementation.
-It included supply-chain policy, formatting, clippy, all Rust feature combinations, 325
-all-feature unit and integration tests, 89 exact tryscript scenarios, 63 performance
-contract tests, documentation, audits, public hygiene, MSRV, and installed-wheel smoke.
-The self-host check analyzed 276 tracked files and reported 80,026 text lines, 32,902
+It included supply-chain policy, formatting, clippy, all Rust feature combinations, 326
+all-feature library tests, CLI and watch integration tests, 89 exact tryscript
+scenarios, 63 performance contract tests, documentation, audits, public hygiene, MSRV,
+and installed-wheel smoke.
+The self-host check analyzed 278 tracked files and reported 80,384 text lines, 33,021
 standard LOC, and 10 types while satisfying every rollup and coverage invariant.
 
 Python 3.12 remains the minimum and the stable native ABI floor.
@@ -86,7 +87,7 @@ was needed.
 
 The detailed evidence remains split into the
 [research brief](../research/research-2026-08-12-fast-file-content-metrics.md),
-[implementation plan](../specs/active/plan-2026-08-12-fdu-file-content-metrics.md),
+[implementation plan](../specs/done/plan-2026-08-12-fdu-file-content-metrics.md),
 [SLOC engine decision](report-2026-08-13-code-sloc-engine-decision.md),
 [SLOC performance checkpoint](report-2026-08-13-code-sloc-performance.md),
 [Markdown parser decision](report-2026-08-13-markdown-parser-decision.md),

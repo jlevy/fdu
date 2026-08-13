@@ -621,15 +621,15 @@ Adopt Option C and implement it as a capability ladder.
 ## Next Steps
 
 - [x] Convert this research into
-  [a content-metrics specification](../specs/active/plan-2026-08-12-fdu-file-content-metrics.md)
+  [a content-metrics specification](../specs/done/plan-2026-08-12-fdu-file-content-metrics.md)
   linked to `fdu-3n8c`.
-- [ ] Define stable type, family, detection-provenance, analyzer, slot, and coverage
+- [x] Define stable type, family, detection-provenance, analyzer, slot, and coverage
   schemas.
-- [ ] Implement and benchmark `content-basic-v1` behind an opt-in feature or command.
-- [ ] Build the Tokei per-buffer adapter spike without changing fdu’s walker.
-- [ ] Add a common-language adversarial golden corpus and cross-tool comparison report.
-- [ ] Add named cold, warm, cached, and 1%-churn content jobs to the performance ledger.
-- [ ] Prototype the Markdown prose projection and logical-word streaming accumulator.
+- [x] Implement and benchmark `content-basic-v1` behind an opt-in feature or command.
+- [x] Build the Tokei per-buffer adapter spike without changing fdu’s walker.
+- [x] Add a common-language adversarial golden corpus and cross-tool comparison report.
+- [x] Add named cold, warm, cached, and 1%-churn content jobs to the performance ledger.
+- [x] Prototype the Markdown prose projection and logical-word streaming accumulator.
 
 ## Methodology
 
