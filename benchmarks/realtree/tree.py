@@ -216,7 +216,12 @@ def _walk(root: Path, unreadable: List[str]):
         for entry in entries:
             relative = entry.name if not prefix else f"{prefix}/{entry.name}"
             try:
-                metadata = entry.stat(follow_symlinks=False)
+                # A fresh query per entry, never DirEntry's cached copy: Windows
+                # serves scandir metadata from directory-enumeration data, which
+                # the platform permits to be stale (a directory's own mtime can
+                # lag its true value). The engine already stats freshly for the
+                # same reason, and the oracle must observe what the engine does.
+                metadata = os.lstat(entry.path)
             except OSError:
                 unreadable.append(relative)
                 continue
