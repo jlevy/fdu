@@ -6,7 +6,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::classify::{
-    Classification, ContentFamily, DetectionConfidence, DetectionSource, FileTypeId,
+    Classification, ClassificationFlags, ContentFamily, DetectionConfidence, DetectionSource,
+    FileTypeId,
 };
 use crate::{Error, Fingerprint, Index, Result};
 
@@ -18,7 +19,7 @@ use super::{
 
 const MAGIC: &[u8; 8] = b"FDUCTNT\0";
 const TRAILER: &[u8; 8] = b"FDUCTEND";
-const FORMAT_VERSION: u32 = 3;
+const FORMAT_VERSION: u32 = 4;
 const CHECKSUM_BYTES: usize = 4;
 const MAX_CACHE_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_RECORDS: u64 = 5_000_000;
@@ -158,6 +159,7 @@ fn put_record(buffer: &mut Vec<u8>, path: &Path, record: &FileAnalysis) -> Resul
     buffer.push(family_code(record.classification.family));
     buffer.push(source_code(record.classification.source));
     buffer.push(confidence_code(record.classification.confidence));
+    buffer.push(flags_code(record.classification.flags));
     put_metrics(buffer, record.metrics);
     buffer.push(coverage_code(record.coverage));
     put_bounded_bytes(buffer, record.error.as_deref().unwrap_or("").as_bytes(), MAX_ERROR_BYTES)
@@ -206,6 +208,7 @@ fn parse(
             family: read_family(reader.u8()?)?,
             source: read_source(reader.u8()?)?,
             confidence: read_confidence(reader.u8()?)?,
+            flags: read_flags(reader.u8()?)?,
         };
         let metrics = read_metrics(&mut reader)?;
         let coverage = read_coverage(reader.u8()?)?;
@@ -400,6 +403,9 @@ fn source_code(value: DetectionSource) -> u8 {
         DetectionSource::Shebang => 3,
         DetectionSource::ContentProbe => 4,
         DetectionSource::Unknown => 5,
+        DetectionSource::Modeline => 6,
+        DetectionSource::AmbiguousContent => 7,
+        DetectionSource::FormatSignature => 8,
     }
 }
 
@@ -411,8 +417,25 @@ fn read_source(code: u8) -> Option<DetectionSource> {
         3 => Some(DetectionSource::Shebang),
         4 => Some(DetectionSource::ContentProbe),
         5 => Some(DetectionSource::Unknown),
+        6 => Some(DetectionSource::Modeline),
+        7 => Some(DetectionSource::AmbiguousContent),
+        8 => Some(DetectionSource::FormatSignature),
         _ => None,
     }
+}
+
+fn flags_code(value: ClassificationFlags) -> u8 {
+    u8::from(value.generated)
+        | (u8::from(value.vendored) << 1)
+        | (u8::from(value.documentation) << 2)
+}
+
+fn read_flags(code: u8) -> Option<ClassificationFlags> {
+    (code & !0b111 == 0).then_some(ClassificationFlags {
+        generated: code & 0b001 != 0,
+        vendored: code & 0b010 != 0,
+        documentation: code & 0b100 != 0,
+    })
 }
 
 fn confidence_code(value: DetectionConfidence) -> u8 {
@@ -547,7 +570,7 @@ mod tests {
 
     fn analyzed_index() -> (tempfile::TempDir, Index, AnalysisRequest) {
         let root = tempfile::tempdir().expect("root");
-        fs::write(root.path().join("notes.md"), "one two\n").expect("write");
+        fs::write(root.path().join("notes.md"), "<!-- @generated -->\none two\n").expect("write");
         let (mut index, _) =
             crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
         let request =
@@ -560,6 +583,8 @@ mod tests {
     fn round_trip_restores_matching_records() {
         let (root, index, request) = analyzed_index();
         let cache = root.path().join("content.cache");
+        let expected_words =
+            index.content_rollup(Path::new("")).expect("rollup").total.metrics.raw_words;
         save_content_cache(&index, request, &cache).expect("save");
         let (mut restored, _) =
             crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
@@ -568,8 +593,10 @@ mod tests {
         assert_eq!(loaded, ContentCacheLoad { usable: true, hits: 1, stale: 0 });
         assert_eq!(
             restored.content_rollup(Path::new("")).expect("rollup").total.metrics.raw_words,
-            2
+            expected_words
         );
+        let record = restored.content().expect("content").file(Path::new("notes.md"));
+        assert!(record.expect("restored record").classification.flags.generated);
     }
 
     #[test]

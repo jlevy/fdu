@@ -17,6 +17,7 @@ use std::path::Path;
 
 use clap::builder::styling::{AnsiColor, Style as AnsiStyle};
 
+use crate::classify::{DetectionConfidence, DetectionSource};
 use crate::content::{CoverageReason, MetricValues};
 use crate::query::{
     FileRow, MetricGroup, MetricRow, MetricSummary, Report, ReportSource, Section, SizeMetric,
@@ -150,6 +151,15 @@ fn render_text_metrics(out: &mut String, summary: &MetricSummary, size: SizeMetr
                 page_tenths / 10,
                 page_tenths % 10
             );
+        }
+        if row.generated_files > 0 {
+            let _ = write!(suffix, ", {} generated", row.generated_files);
+        }
+        if row.vendored_files > 0 {
+            let _ = write!(suffix, ", {} vendored", row.vendored_files);
+        }
+        if row.documentation_files > 0 {
+            let _ = write!(suffix, ", {} documentation", row.documentation_files);
         }
         let _ = writeln!(
             out,
@@ -389,7 +399,7 @@ fn metric_summary_json(summary: &MetricSummary) -> String {
 
 fn metric_row_json(row: &MetricRow, words_per_page: u64) -> String {
     format!(
-        "{{\"id\": {}, \"family\": {}, \"files\": {}, \"bytes\": {}, \"allocated\": {}, \"analyzed_files\": {}, \"share\": {{\"numerator\": {}, \"denominator\": {}}}, \"metrics\": {}, \"coverage\": {}, \"pages\": {{\"words\": {}, \"words_per_page\": {}}}}}",
+        "{{\"id\": {}, \"family\": {}, \"files\": {}, \"bytes\": {}, \"allocated\": {}, \"analyzed_files\": {}, \"share\": {{\"numerator\": {}, \"denominator\": {}}}, \"metrics\": {}, \"coverage\": {}, \"detection\": {}, \"pages\": {{\"words\": {}, \"words_per_page\": {}}}}}",
         quote(&row.id),
         quote(row.family.as_str()),
         row.files,
@@ -400,8 +410,38 @@ fn metric_row_json(row: &MetricRow, words_per_page: u64) -> String {
         row.share.denominator,
         metric_values_json(row.metrics, document_words(row)),
         coverage_json(&row.coverage),
+        detection_json(row),
         document_words(row),
         words_per_page,
+    )
+}
+
+fn detection_json(row: &MetricRow) -> String {
+    let mut sources = String::from("{");
+    for (index, (source, count)) in row.detection_sources.iter().enumerate() {
+        let _ = write!(
+            sources,
+            "{}{}: {}",
+            if index > 0 { ", " } else { "" },
+            quote(source.as_str()),
+            count
+        );
+    }
+    sources.push('}');
+    let mut confidence = String::from("{");
+    for (index, (level, count)) in row.detection_confidence.iter().enumerate() {
+        let _ = write!(
+            confidence,
+            "{}{}: {}",
+            if index > 0 { ", " } else { "" },
+            quote(level.as_str()),
+            count
+        );
+    }
+    confidence.push('}');
+    format!(
+        "{{\"sources\": {sources}, \"confidence\": {confidence}, \"flags\": {{\"generated\": {}, \"vendored\": {}, \"documentation\": {}}}}}",
+        row.generated_files, row.vendored_files, row.documentation_files
     )
 }
 
@@ -693,6 +733,36 @@ fn yaml_metric_row(out: &mut String, row: &MetricRow, words_per_page: u64, pad: 
         for (reason, count) in &row.coverage {
             let _ = writeln!(out, "{rest}  {}: {count}", coverage_label(*reason));
         }
+    }
+    let _ = writeln!(out, "{rest}detection:");
+    yaml_detection_map(out, "sources", &row.detection_sources, &rest, DetectionSource::as_str);
+    yaml_detection_map(
+        out,
+        "confidence",
+        &row.detection_confidence,
+        &rest,
+        DetectionConfidence::as_str,
+    );
+    let _ = writeln!(out, "{rest}  flags:");
+    let _ = writeln!(out, "{rest}    generated: {}", row.generated_files);
+    let _ = writeln!(out, "{rest}    vendored: {}", row.vendored_files);
+    let _ = writeln!(out, "{rest}    documentation: {}", row.documentation_files);
+}
+
+fn yaml_detection_map<K: Ord + Copy>(
+    out: &mut String,
+    name: &str,
+    values: &std::collections::BTreeMap<K, u64>,
+    indent: &str,
+    label: impl Fn(K) -> &'static str,
+) {
+    if values.is_empty() {
+        let _ = writeln!(out, "{indent}  {name}: {{}}");
+        return;
+    }
+    let _ = writeln!(out, "{indent}  {name}:");
+    for (key, count) in values {
+        let _ = writeln!(out, "{indent}    {}: {count}", label(*key));
     }
 }
 

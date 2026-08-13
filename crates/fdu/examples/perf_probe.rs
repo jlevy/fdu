@@ -50,6 +50,8 @@ enum Mode {
     ContentOpen,
     ContentQuery,
     ContentSeed,
+    DetectAmbiguous,
+    DetectResolved,
     DocumentCacheHit,
     DocumentSeed,
     DeltaApply,
@@ -77,6 +79,8 @@ impl Mode {
             "content-open" => Ok(Self::ContentOpen),
             "content-query" => Ok(Self::ContentQuery),
             "content-seed" => Ok(Self::ContentSeed),
+            "detect-ambiguous" => Ok(Self::DetectAmbiguous),
+            "detect-resolved" => Ok(Self::DetectResolved),
             "document-cache-hit" => Ok(Self::DocumentCacheHit),
             "document-seed" => Ok(Self::DocumentSeed),
             "delta-apply" => Ok(Self::DeltaApply),
@@ -105,6 +109,8 @@ impl Mode {
             Self::ContentOpen => "content-open",
             Self::ContentQuery => "content-query",
             Self::ContentSeed => "content-seed",
+            Self::DetectAmbiguous => "detect-ambiguous",
+            Self::DetectResolved => "detect-resolved",
             Self::DocumentCacheHit => "document-cache-hit",
             Self::DocumentSeed => "document-seed",
             Self::DeltaApply => "delta-apply",
@@ -252,6 +258,8 @@ fn execute(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
             output.summary.complete = true;
             Ok(output)
         }
+        Mode::DetectAmbiguous => classification_probe(arguments, true),
+        Mode::DetectResolved => classification_probe(arguments, false),
         Mode::DocumentCacheHit => content_open(arguments, CachePolicy::Only, document_request()),
         Mode::DocumentSeed => {
             let mut output = content_open(arguments, CachePolicy::Auto, document_request())?;
@@ -267,6 +275,50 @@ fn execute(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
         Mode::MarkdownProse | Mode::TextProse => content_analysis(arguments, document_request()),
         Mode::Query => query(arguments),
     }
+}
+
+fn classification_probe(arguments: &Arguments, ambiguous: bool) -> ProbeResult<ProbeOutput> {
+    let (index, scan) = fdu::scan::scan_into_index(&arguments.root, &arguments.scan)?;
+    if !scan.is_complete() {
+        return Err(ProbeError("classification probe setup scan was partial".into()));
+    }
+    let resolved = [
+        "src/main.rs",
+        "src/lib.py",
+        "web/app.ts",
+        "docs/guide.md",
+        "data/config.json",
+        "assets/photo.png",
+        "archive.tar.zst",
+        "Makefile",
+    ];
+    let ambiguous_cases = [
+        ("include/value.h", b"namespace demo { constexpr int value = 1; }\n" as &[u8]),
+        ("script.inc", b"# vim: set filetype=rust:\nfn main() {}\n"),
+        ("manual.1", b".TH FDU 1\n.SH NAME\nfdu - disk usage\n"),
+        ("document.unknown", b"<?xml version=\"1.0\"?><root/>"),
+        ("download", b"%PDF-1.7\nfixture"),
+        ("program", b"#!/usr/bin/env python3\nprint('ok')\n"),
+    ];
+    let started = Instant::now();
+    let mut observed = 0_u64;
+    for iteration in 0..arguments.operations {
+        let classification = if ambiguous {
+            let (path, prefix) = ambiguous_cases[iteration % ambiguous_cases.len()];
+            fdu::classify::classify_path_with_prefix(Path::new(path), Some(prefix))
+        } else {
+            fdu::classify::classify_path(Path::new(resolved[iteration % resolved.len()]))
+        };
+        observed = observed.saturating_add(
+            u64::try_from(classification.file_type.as_str().len()).unwrap_or(u64::MAX),
+        );
+        black_box(classification);
+    }
+    let component = started.elapsed();
+    let mut summary = summarize_index(&index)?;
+    summary.query_iterations = u64::try_from(arguments.operations).unwrap_or(u64::MAX);
+    summary.query_observations = observed;
+    Ok(ProbeOutput::new(arguments.mode, "synthetic", component, summary))
 }
 
 fn basic_request() -> AnalysisRequest {

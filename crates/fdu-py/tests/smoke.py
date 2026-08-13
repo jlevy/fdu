@@ -276,6 +276,11 @@ def main() -> None:
 
     types = index.report(views=["types"])["reports"][0]["metrics"]
     assert sorted(row["id"] for row in types["rows"]) == ["markdown", "rust"], types
+    assert types["total"]["detection"] == {
+        "sources": {"extension": 3},
+        "confidence": {"certain": 3},
+        "flags": {"generated": 0, "vendored": 0, "documentation": 0},
+    }, types
 
     analyzed = fdu_py.scan(str(query_root), analyze="basic", max_file_size="1MiB")
     documents = analyzed.report(views=["documents"], words_per_page=250)

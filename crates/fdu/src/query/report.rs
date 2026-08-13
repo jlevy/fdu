@@ -17,7 +17,9 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-use crate::classify::{ContentFamily, classify_path, derive_ext};
+use crate::classify::{
+    ContentFamily, DetectionConfidence, DetectionSource, classify_path, derive_ext,
+};
 use crate::content::{
     AnalysisProfile, ContentProvenance, CoverageReason, LogicalWordStats, MetricValues,
 };
@@ -239,6 +241,16 @@ pub struct MetricRow {
     pub document_metric_files: u64,
     /// Explicit content-analysis outcomes.
     pub coverage: BTreeMap<CoverageReason, u64>,
+    /// Files by the classification tier that established their type.
+    pub detection_sources: BTreeMap<DetectionSource, u64>,
+    /// Files by classification confidence.
+    pub detection_confidence: BTreeMap<DetectionConfidence, u64>,
+    /// Files carrying a bounded generated-file marker.
+    pub generated_files: u64,
+    /// Files below a conventional vendored path.
+    pub vendored_files: u64,
+    /// Files below a conventional documentation path or basename.
+    pub documentation_files: u64,
     /// Exact share in the report's selected size metric.
     pub share: MetricShare,
 }
@@ -309,7 +321,7 @@ pub enum Section {
         /// Requested preset that selected grouping and family filters.
         view: ViewSpec,
         /// Generic grouped metrics.
-        summary: MetricSummary,
+        summary: Box<MetricSummary>,
     },
     /// A files view.
     Files(Vec<FileRow>),
@@ -518,7 +530,7 @@ fn build_section(view: ViewSpec, index: &Index, query: &Query, walked: Option<&W
         }),
         ViewSpec::Extensions => Section::Extensions(extension_rows(index, query, walked)),
         ViewSpec::Types | ViewSpec::Families | ViewSpec::Languages | ViewSpec::Documents => {
-            Section::Metrics { view, summary: metric_summary(view, index, query, walked) }
+            Section::Metrics { view, summary: Box::new(metric_summary(view, index, query, walked)) }
         }
         ViewSpec::Files => Section::Files(file_rows(index, query, walked)),
         ViewSpec::Tree => Section::Tree(tree_node(index, query, walked)),
@@ -609,11 +621,24 @@ fn metric_summary(
             document_word_stats: LogicalWordStats::default(),
             document_metric_files: 0,
             coverage: BTreeMap::new(),
+            detection_sources: BTreeMap::new(),
+            detection_confidence: BTreeMap::new(),
+            generated_files: 0,
+            vendored_files: 0,
+            documentation_files: 0,
             share: MetricShare::default(),
         });
         row.files = row.files.saturating_add(1);
         row.bytes = row.bytes.saturating_add(file.bytes);
         row.allocated = row.allocated.saturating_add(file.allocated);
+        *row.detection_sources.entry(classification.source).or_default() += 1;
+        *row.detection_confidence.entry(classification.confidence).or_default() += 1;
+        row.generated_files =
+            row.generated_files.saturating_add(u64::from(classification.flags.generated));
+        row.vendored_files =
+            row.vendored_files.saturating_add(u64::from(classification.flags.vendored));
+        row.documentation_files =
+            row.documentation_files.saturating_add(u64::from(classification.flags.documentation));
         if let Some(record) = cached {
             *row.coverage.entry(record.coverage).or_default() += 1;
             if record.coverage == CoverageReason::Analyzed {
@@ -651,6 +676,11 @@ fn metric_summary(
         document_word_stats: LogicalWordStats::default(),
         document_metric_files: 0,
         coverage: BTreeMap::new(),
+        detection_sources: BTreeMap::new(),
+        detection_confidence: BTreeMap::new(),
+        generated_files: 0,
+        vendored_files: 0,
+        documentation_files: 0,
         share: MetricShare::default(),
     };
     for row in grouped.values() {
@@ -666,6 +696,16 @@ fn metric_summary(
         for (reason, count) in &row.coverage {
             *total.coverage.entry(*reason).or_default() += count;
         }
+        for (source, count) in &row.detection_sources {
+            *total.detection_sources.entry(*source).or_default() += count;
+        }
+        for (confidence, count) in &row.detection_confidence {
+            *total.detection_confidence.entry(*confidence).or_default() += count;
+        }
+        total.generated_files = total.generated_files.saturating_add(row.generated_files);
+        total.vendored_files = total.vendored_files.saturating_add(row.vendored_files);
+        total.documentation_files =
+            total.documentation_files.saturating_add(row.documentation_files);
     }
     let share_metric = match view {
         ViewSpec::Languages => ShareMetric::CodeLines,

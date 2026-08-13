@@ -73,8 +73,10 @@ class FduProbeTests(unittest.TestCase):
 
     def test_wrong_probe_evidence_and_snapshot_states_are_rejected(self) -> None:
         committed = load_scenario_set(SCENARIOS)["scenarios"]
-        scan = committed[1]
-        snapshot_load = committed[3]
+        scan = next(scenario for scenario in committed if scenario["job"] == "scan-index")
+        snapshot_load = next(
+            scenario for scenario in committed if scenario["job"] == "snapshot-load"
+        )
         cases: List[Dict[str, Any]] = []
 
         wrong_digest = copy.deepcopy(scan)

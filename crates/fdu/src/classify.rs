@@ -11,6 +11,8 @@ use std::ffi::OsStr;
 use std::fmt;
 use std::path::Path;
 
+mod detect;
+
 /// Broad analysis family for a recognized file type.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub enum ContentFamily {
@@ -64,7 +66,7 @@ impl fmt::Display for FileTypeId {
 }
 
 /// Which bounded step established a classification.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub enum DetectionSource {
     /// An exact basename rule matched.
     ExactFilename,
@@ -74,10 +76,33 @@ pub enum DetectionSource {
     Extension,
     /// An unresolved text file's interpreter matched a shebang rule.
     Shebang,
+    /// A modeline in an unresolved text file named the language.
+    Modeline,
+    /// A required literal resolved an explicitly ambiguous extension.
+    AmbiguousContent,
+    /// A named binary or textual format signature matched.
+    FormatSignature,
     /// A bounded prefix established a binary family.
     ContentProbe,
     /// No known rule matched; an extension, when present, is preserved in the type id.
     Unknown,
+}
+
+impl DetectionSource {
+    /// Stable machine label used by reports and caches.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::ExactFilename => "exact_filename",
+            Self::CompoundExtension => "compound_extension",
+            Self::Extension => "extension",
+            Self::Shebang => "shebang",
+            Self::Modeline => "modeline",
+            Self::AmbiguousContent => "ambiguous_content",
+            Self::FormatSignature => "format_signature",
+            Self::ContentProbe => "content_probe",
+            Self::Unknown => "unknown",
+        }
+    }
 }
 
 /// Coarse confidence attached to a classification decision.
@@ -91,6 +116,28 @@ pub enum DetectionConfidence {
     Heuristic,
 }
 
+impl DetectionConfidence {
+    /// Stable machine label used by reports and caches.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Certain => "certain",
+            Self::High => "high",
+            Self::Heuristic => "heuristic",
+        }
+    }
+}
+
+/// Orthogonal attributes discovered from bounded path and prefix checks.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub struct ClassificationFlags {
+    /// The prefix contains a conventional generated-file marker.
+    pub generated: bool,
+    /// A path component names a conventional vendored dependency tree.
+    pub vendored: bool,
+    /// The path names a conventional documentation tree or document basename.
+    pub documentation: bool,
+}
+
 /// Result of the cheapest-first file-type cascade.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Classification {
@@ -102,6 +149,8 @@ pub struct Classification {
     pub source: DetectionSource,
     /// Strength of the evidence used.
     pub confidence: DetectionConfidence,
+    /// Orthogonal origin and purpose attributes.
+    pub flags: ClassificationFlags,
 }
 
 #[derive(Clone, Copy)]
@@ -116,8 +165,6 @@ struct GeneratedRule {
 
 include!(concat!(env!("OUT_DIR"), "/file_type_rules.rs"));
 
-const SHEBANG_PROBE_BYTES: usize = 200;
-
 /// Fingerprint of the repository-owned rule manifest compiled into this build.
 pub const fn type_rule_fingerprint() -> u64 {
     TYPE_RULE_FINGERPRINT
@@ -130,8 +177,10 @@ pub fn classify_path(path: &Path) -> Classification {
 
 /// Classify with an optional bounded content prefix.
 ///
-/// Known exact-name and extension matches return before inspecting `prefix`. Callers may
-/// pass a larger buffer; only the documented shebang prefix is consulted here.
+/// Known exact-name and ordinary extension matches avoid deep detection. The `.h`
+/// ambiguity and generated-file flag alone inspect their documented bounded prefix.
+/// Callers may pass a larger buffer; all content-dependent helpers enforce smaller
+/// internal limits.
 pub fn classify_path_with_prefix(path: &Path, prefix: Option<&[u8]>) -> Classification {
     let name = path.file_name().unwrap_or_else(|| OsStr::new(""));
     if let Some(rule) = GENERATED_RULES
@@ -139,7 +188,11 @@ pub fn classify_path_with_prefix(path: &Path, prefix: Option<&[u8]>) -> Classifi
         .filter(|rule| rule.filenames.iter().any(|candidate| name == OsStr::new(candidate)))
         .max_by_key(|rule| rule.priority)
     {
-        return classified(rule, DetectionSource::ExactFilename, DetectionConfidence::Certain);
+        return with_flags(
+            path,
+            prefix,
+            classified(rule, DetectionSource::ExactFilename, DetectionConfidence::Certain),
+        );
     }
 
     let extension = derive_ext(name);
@@ -155,7 +208,21 @@ pub fn classify_path_with_prefix(path: &Path, prefix: Option<&[u8]>) -> Classifi
             } else {
                 DetectionSource::Extension
             };
-            return classified(rule, source, DetectionConfidence::Certain);
+            let classification = if key == "h" {
+                prefix.and_then(detect::resolve_c_header).and_then(rule_by_id).map_or_else(
+                    || classified(rule, source, DetectionConfidence::Certain),
+                    |cpp| {
+                        classified(
+                            cpp,
+                            DetectionSource::AmbiguousContent,
+                            DetectionConfidence::High,
+                        )
+                    },
+                )
+            } else {
+                classified(rule, source, DetectionConfidence::Certain)
+            };
+            return with_flags(path, prefix, classification);
         }
     }
 
@@ -168,28 +235,56 @@ pub fn classify_path_with_prefix(path: &Path, prefix: Option<&[u8]>) -> Classifi
         family: ContentFamily::Unknown,
         source: DetectionSource::Unknown,
         confidence: DetectionConfidence::Heuristic,
+        flags: ClassificationFlags::default(),
     };
     let Some(prefix) = prefix else {
-        return unknown();
+        return with_flags(path, None, unknown());
     };
-    let prefix = &prefix[..prefix.len().min(SHEBANG_PROBE_BYTES)];
-    if prefix.contains(&0) {
-        return Classification {
-            family: ContentFamily::Binary,
-            source: DetectionSource::ContentProbe,
-            ..unknown()
-        };
+    let probed = detect::probe_unresolved(prefix);
+    match probed {
+        Some(detect::PrefixMatch::UnknownBinary) => {
+            return with_flags(
+                path,
+                Some(prefix),
+                Classification {
+                    family: ContentFamily::Binary,
+                    source: DetectionSource::ContentProbe,
+                    ..unknown()
+                },
+            );
+        }
+        Some(detect::PrefixMatch::Rule(id, source))
+            if rule_by_id(id).is_some_and(|rule| rule.family == ContentFamily::Binary) =>
+        {
+            let rule = rule_by_id(id).expect("guard established a generated rule");
+            return with_flags(
+                path,
+                Some(prefix),
+                classified(rule, source, DetectionConfidence::High),
+            );
+        }
+        _ => {}
     }
-    if let Some(interpreter) = shebang_interpreter(prefix) {
+    if let Some(interpreter) = detect::shebang_interpreter(prefix) {
         if let Some(rule) = GENERATED_RULES
             .iter()
             .filter(|rule| rule.shebangs.contains(&interpreter))
             .max_by_key(|rule| rule.priority)
         {
-            return classified(rule, DetectionSource::Shebang, DetectionConfidence::High);
+            return with_flags(
+                path,
+                Some(prefix),
+                classified(rule, DetectionSource::Shebang, DetectionConfidence::High),
+            );
         }
     }
-    unknown()
+    let classification = match probed {
+        Some(detect::PrefixMatch::Rule(id, source)) => rule_by_id(id)
+            .map_or_else(unknown, |rule| classified(rule, source, DetectionConfidence::High)),
+        Some(detect::PrefixMatch::UnknownBinary) => unreachable!("returned above"),
+        None => unknown(),
+    };
+    with_flags(path, Some(prefix), classification)
 }
 
 fn classified(
@@ -202,18 +297,21 @@ fn classified(
         family: rule.family,
         source,
         confidence,
+        flags: ClassificationFlags::default(),
     }
 }
 
-fn shebang_interpreter(prefix: &[u8]) -> Option<&str> {
-    let line = prefix.split(|byte| matches!(byte, b'\r' | b'\n')).next()?;
-    let command = line.strip_prefix(b"#!")?;
-    let mut tokens = std::str::from_utf8(command).ok()?.split_ascii_whitespace();
-    let executable = tokens.next()?.rsplit('/').next()?;
-    if executable != "env" {
-        return Some(executable);
-    }
-    tokens.find(|token| !token.starts_with('-')).and_then(|token| token.rsplit('/').next())
+fn rule_by_id(id: &str) -> Option<&'static GeneratedRule> {
+    GENERATED_RULES.iter().find(|rule| rule.id == id)
+}
+
+fn with_flags(
+    path: &Path,
+    prefix: Option<&[u8]>,
+    mut classification: Classification,
+) -> Classification {
+    classification.flags = detect::flags(path, prefix);
+    classification
 }
 
 /// Extract the compound-tail extension from a file name, lowercased and including the
@@ -394,6 +492,52 @@ mod tests {
         assert_eq!(binary.file_type.as_str(), "unknown:.unknown");
         assert_eq!(binary.family, ContentFamily::Binary);
         assert_eq!(binary.source, DetectionSource::ContentProbe);
+
+        let spoofed = classify_path_with_prefix(
+            Path::new("payload"),
+            Some(b"#!/usr/bin/env python3\ntext\0binary"),
+        );
+        assert_eq!(spoofed.family, ContentFamily::Binary);
+        assert_eq!(spoofed.source, DetectionSource::ContentProbe);
+    }
+
+    #[test]
+    fn bounded_deep_detection_is_explainable() {
+        let c = classify_path_with_prefix(Path::new("include/value.h"), Some(b"int value;\n"));
+        assert_eq!(c.file_type.as_str(), "c");
+        assert_eq!(c.source, DetectionSource::Extension);
+
+        let cpp = classify_path_with_prefix(
+            Path::new("include/value.h"),
+            Some(b"namespace demo { constexpr int value = 1; }\n"),
+        );
+        assert_eq!(cpp.file_type.as_str(), "cpp");
+        assert_eq!(cpp.source, DetectionSource::AmbiguousContent);
+        assert_eq!(cpp.confidence, DetectionConfidence::High);
+
+        let modeline = classify_path_with_prefix(
+            Path::new("script.unknown"),
+            Some(b"# vim: set filetype=rust:\nfn main() {}\n"),
+        );
+        assert_eq!(modeline.file_type.as_str(), "rust");
+        assert_eq!(modeline.source, DetectionSource::Modeline);
+
+        let xml = classify_path_with_prefix(
+            Path::new("document.unknown"),
+            Some(b"<?xml version=\"1.0\"?><root/>"),
+        );
+        assert_eq!(xml.file_type.as_str(), "xml");
+        assert_eq!(xml.source, DetectionSource::FormatSignature);
+
+        let manual = classify_path_with_prefix(
+            Path::new("fdu.1"),
+            Some(b".TH FDU 1\n.SH NAME\nfdu - disk usage\n"),
+        );
+        assert_eq!(manual.file_type.as_str(), "manpage");
+
+        let pdf = classify_path_with_prefix(Path::new("download"), Some(b"%PDF-1.7\n"));
+        assert_eq!(pdf.file_type.as_str(), "pdf");
+        assert_eq!(pdf.family, ContentFamily::Binary);
     }
 
     #[cfg(unix)]

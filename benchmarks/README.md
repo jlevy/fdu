@@ -59,7 +59,8 @@ This builds the excluded `perf_probe` example and runs the corpus, schema, runne
 report, collector, and probe smoke suite.
 The suite has no numeric speed assertion and is included in `make check`. Its component
 matrix includes metadata, basic content, code SLOC, normalized text, reader-visible
-Markdown, binary gating, content-cache reuse, churn, and grouped content-query jobs.
+Markdown, binary gating, content-cache reuse, churn, grouped content-query jobs, and
+separate resolved-versus-ambiguous classification probes.
 Large-corpus measurements remain separate from that correctness gate.
 
 ## Execute and Validate Evidence

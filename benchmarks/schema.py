@@ -41,6 +41,8 @@ _JOBS = {
     "content-churn",
     "content-disabled",
     "content-query",
+    "detect-ambiguous",
+    "detect-resolved",
     "selfhost-content",
     "watch-stream",
     "cli-files",

@@ -224,6 +224,8 @@
             "content-churn",
             "content-disabled",
             "content-query",
+            "detect-ambiguous",
+            "detect-resolved",
             "selfhost-content",
             "scan-producer",
             "scan-index",

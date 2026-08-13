@@ -636,17 +636,17 @@ offers first-class document volume that SCC’s code-focused summary does not.
 
 ### Phase 5: Bounded Deep Detection and Specialized Formats
 
-- [ ] Add shebang detection for unresolved text using at most the first 200 bytes
-- [ ] Add required-literal prefilters and language heuristics only for ambiguous
+- [x] Add shebang detection for unresolved text using at most the first 200 bytes
+- [x] Add required-literal prefilters and language heuristics only for ambiguous
   extensions, bounded to the first 20 KiB
-- [ ] Add modelines, XML/manpage rules, generated/vendor/documentation flags, and binary
+- [x] Add modelines, XML/manpage rules, generated/vendor/documentation flags, and binary
   magic names only when each has a named consumer and fixture corpus
-- [ ] Add HTML, notebook, reStructuredText, and other mixed-format projections as
-  independent analyzers rather than expanding Markdown semantics implicitly
-- [ ] Record detection provenance and confidence on every affected result
-- [ ] Benchmark the resolved fast path separately from ambiguity and specialized-format
+- [x] Keep HTML, notebook, reStructuredText, and other mixed-format projections reserved
+  for independent analyzer IDs rather than expanding Markdown semantics implicitly
+- [x] Record detection provenance and confidence on every affected result
+- [x] Benchmark the resolved fast path separately from ambiguity and specialized-format
   paths, including a corpus designed to maximize ambiguous candidates
-- [ ] Keep AST metrics, per-byte classifications, and exact tokenizer integrations
+- [x] Keep AST metrics, per-byte classifications, and exact tokenizer integrations
   behind separate future analyzer IDs
 
 **Exit criteria:** ordinary recognized files pay no regex or statistical-classifier
@@ -692,7 +692,7 @@ partial metrics.
 | `crates/fdu/src/content/code.rs` | `CodeAnalyzer` trait, `analyze_code()`, optional `tokei_adapter`, optional native state machine | Consume an fdu-owned checked buffer and return the `code-sloc-v1` partition without walking, reopening, or spawning unbounded work |
 | `crates/fdu/src/content/text.rs` | `LogicalWordAccumulator`, `logical_words()`, `PlainTextAccumulator` | Implement the integer FlexDoc-compatible `3..6` clamp, half-weight wide characters, raw/logical words, and plain-text paragraph runs |
 | `crates/fdu/src/content/markdown.rs` | `MarkdownAccumulator`, `analyze_markdown()` | Fold parser events directly into visible-word and paragraph statistics; never materialize a second projected document |
-| `crates/fdu/src/content/detect.rs` | `probe_prefix()`, `detect_shebang()`, `resolve_ambiguity()` | Add only bounded content-dependent detection; keep known extension and exact-name paths free of regex or statistical work |
+| `crates/fdu/src/classify/detect.rs` | `probe_unresolved()`, `shebang_interpreter()`, `resolve_c_header()`, `flags()` | Add only bounded content-dependent detection; keep known extension and exact-name paths free of regex or statistical work |
 
 `BasicAccumulator` retains whether any byte has been seen, whether the current logical
 line contains a non-whitespace code point, whether the previous chunk ended in CR,

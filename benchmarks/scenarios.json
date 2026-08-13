@@ -3,6 +3,108 @@
     {
       "adapter": "fdu-probe",
       "command": {
+        "argv": ["{executable}", "detect-resolved", "--root", "{corpus_root}", "--operations", "100000"],
+        "environment": {"set": {}, "unset": []}
+      },
+      "corpus": {
+        "recipe_id": "contract",
+        "seed": null,
+        "state": "baseline",
+        "target_entries": 14
+      },
+      "filesystem_cache_state": "uncontrolled",
+      "id": "detect-resolved/contract-100000/snapshot-absent/fs-uncontrolled/output-digest",
+      "job": "detect-resolved",
+      "method": {
+        "order_group": "fdu-detection-components",
+        "required_resources": [],
+        "timeout_seconds": 30.0,
+        "trials": 1,
+        "warmups": 0
+      },
+      "output_sink": "output-digest",
+      "preparation": {"filesystem_cache_argv": null, "snapshot_argv": null},
+      "process_state": "same-process",
+      "snapshot_state": "absent",
+      "validation": {
+        "allowed_exit_codes": [0],
+        "corpus": "unchanged",
+        "snapshot": "absent",
+        "stderr": "empty",
+        "stdout_json": {
+          "equals": {
+            "mode": "detect-resolved",
+            "schema": "fdu-perf-probe-v1",
+            "source": "synthetic",
+            "summary.complete": true,
+            "summary.errors": 0,
+            "summary.query_iterations": 100000
+          },
+          "matches_manifest": {
+            "summary.engine_digest": "oracle.engine_digest",
+            "summary.entries": "counts.total",
+            "summary.index_len": "counts.total"
+          },
+          "record": ["component_ns", "summary.query_observations"]
+        },
+        "stdout_nonempty": true,
+        "stdout_sha256": null
+      }
+    },
+    {
+      "adapter": "fdu-probe",
+      "command": {
+        "argv": ["{executable}", "detect-ambiguous", "--root", "{corpus_root}", "--operations", "100000"],
+        "environment": {"set": {}, "unset": []}
+      },
+      "corpus": {
+        "recipe_id": "contract",
+        "seed": null,
+        "state": "baseline",
+        "target_entries": 14
+      },
+      "filesystem_cache_state": "uncontrolled",
+      "id": "detect-ambiguous/contract-100000/snapshot-absent/fs-uncontrolled/output-digest",
+      "job": "detect-ambiguous",
+      "method": {
+        "order_group": "fdu-detection-components",
+        "required_resources": [],
+        "timeout_seconds": 30.0,
+        "trials": 1,
+        "warmups": 0
+      },
+      "output_sink": "output-digest",
+      "preparation": {"filesystem_cache_argv": null, "snapshot_argv": null},
+      "process_state": "same-process",
+      "snapshot_state": "absent",
+      "validation": {
+        "allowed_exit_codes": [0],
+        "corpus": "unchanged",
+        "snapshot": "absent",
+        "stderr": "empty",
+        "stdout_json": {
+          "equals": {
+            "mode": "detect-ambiguous",
+            "schema": "fdu-perf-probe-v1",
+            "source": "synthetic",
+            "summary.complete": true,
+            "summary.errors": 0,
+            "summary.query_iterations": 100000
+          },
+          "matches_manifest": {
+            "summary.engine_digest": "oracle.engine_digest",
+            "summary.entries": "counts.total",
+            "summary.index_len": "counts.total"
+          },
+          "record": ["component_ns", "summary.query_observations"]
+        },
+        "stdout_nonempty": true,
+        "stdout_sha256": null
+      }
+    },
+    {
+      "adapter": "fdu-probe",
+      "command": {
         "argv": ["{executable}", "scan-producer", "--root", "{corpus_root}"],
         "environment": {"set": {}, "unset": []}
       },

@@ -615,6 +615,23 @@ fn metric_row_dict<'py>(
         coverage.set_item(coverage_label(*reason), count)?;
     }
     dict.set_item("coverage", coverage)?;
+    let detection = PyDict::new(py);
+    let sources = PyDict::new(py);
+    for (source, count) in &row.detection_sources {
+        sources.set_item(source.as_str(), count)?;
+    }
+    detection.set_item("sources", sources)?;
+    let confidence = PyDict::new(py);
+    for (level, count) in &row.detection_confidence {
+        confidence.set_item(level.as_str(), count)?;
+    }
+    detection.set_item("confidence", confidence)?;
+    let flags = PyDict::new(py);
+    flags.set_item("generated", row.generated_files)?;
+    flags.set_item("vendored", row.vendored_files)?;
+    flags.set_item("documentation", row.documentation_files)?;
+    detection.set_item("flags", flags)?;
+    dict.set_item("detection", detection)?;
     Ok(dict)
 }
 

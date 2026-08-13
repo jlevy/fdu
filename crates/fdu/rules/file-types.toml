@@ -241,6 +241,10 @@ family = "prose"
 extensions = ["rst"]
 
 [[kind]]
+id = "manpage"
+family = "markup"
+
+[[kind]]
 id = "asciidoc"
 family = "prose"
 extensions = ["adoc", "asciidoc"]
