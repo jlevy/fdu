@@ -33,7 +33,11 @@ use std::time::{Duration, SystemTime};
 
 fn to_py_err(err: fdu::Error) -> PyErr {
     match err {
-        fdu::Error::Io { .. } => PyOSError::new_err(err.to_string()),
+        fdu::Error::Io { path, source } => PyOSError::new_err((
+            source.raw_os_error(),
+            source.to_string(),
+            path.as_os_str().to_os_string(),
+        )),
         other => PyValueError::new_err(other.to_string()),
     }
 }
@@ -100,8 +104,8 @@ pub struct PyIndex {
 impl PyIndex {
     /// The absolute root this index covers.
     #[getter]
-    fn root(&self) -> String {
-        self.inner.root_path().display().to_string()
+    fn root(&self) -> OsString {
+        self.inner.root_path().as_os_str().to_os_string()
     }
 
     /// The current logical clock. Pass it to `since()` later to get what changed.
@@ -276,8 +280,9 @@ impl PyIndex {
 
     /// Roll-up totals for one directory, or `None` if it is absent or not a directory.
     #[pyo3(signature = (path))]
-    fn rollup<'py>(&self, py: Python<'py>, path: &str) -> PyResult<Option<Bound<'py, PyDict>>> {
-        match self.inner.rollup(Path::new(path)) {
+    #[allow(clippy::needless_pass_by_value)]
+    fn rollup<'py>(&self, py: Python<'py>, path: PathBuf) -> PyResult<Option<Bound<'py, PyDict>>> {
+        match self.inner.rollup(&path) {
             Some(roll) => Ok(Some(rollup_dict(py, &self.inner, roll)?)),
             None => Ok(None),
         }
@@ -287,16 +292,21 @@ impl PyIndex {
     ///
     /// Returns `None` when the path is absent or is not a directory — distinct from an
     /// empty list, which means a directory with no children.
-    #[pyo3(signature = (path = ""))]
-    fn children<'py>(&self, py: Python<'py>, path: &str) -> PyResult<Option<Bound<'py, PyList>>> {
-        let Some(children) = self.inner.children(Path::new(path)) else {
+    #[pyo3(signature = (path = None))]
+    fn children<'py>(
+        &self,
+        py: Python<'py>,
+        path: Option<PathBuf>,
+    ) -> PyResult<Option<Bound<'py, PyList>>> {
+        let path = path.unwrap_or_default();
+        let Some(children) = self.inner.children(&path) else {
             return Ok(None);
         };
 
         let out = PyList::empty(py);
         for (name, id) in children {
             let entry = PyDict::new(py);
-            entry.set_item("name", name.to_string_lossy().as_ref())?;
+            entry.set_item("name", name)?;
             let kind = self.inner.kind_of(id).expect("child handle is live");
             entry.set_item("kind", entry_kind_label(kind))?;
             if let Some(roll) = self.inner.rollup_of(id) {
@@ -351,7 +361,7 @@ impl PyIndex {
             for op in &delta.ops {
                 let item = PyDict::new(py);
                 item.set_item("clock", delta.clock.0)?;
-                item.set_item("path", op.path().display().to_string())?;
+                item.set_item("path", op.path().as_os_str())?;
                 match op {
                     fdu::Op::Upsert { kind, attrs, .. } => {
                         item.set_item("op", "upsert")?;
@@ -421,7 +431,7 @@ fn bound_nanos(input: &str, when: std::time::SystemTime, field: &str) -> PyResul
 /// Convert a report into the dict shape Python callers get.
 fn report_dict<'py>(py: Python<'py>, report: &Report) -> PyResult<Bound<'py, PyDict>> {
     let dict = PyDict::new(py);
-    dict.set_item("root", report.root.display().to_string())?;
+    dict.set_item("root", report.root.as_os_str())?;
     dict.set_item("complete", report.complete)?;
     dict.set_item("errors", report.errors.clone())?;
     dict.set_item("source", source_label(report.source))?;
@@ -455,7 +465,7 @@ fn report_dict<'py>(py: Python<'py>, report: &Report) -> PyResult<Bound<'py, PyD
                 let list = PyList::empty(py);
                 for row in rows {
                     let item = PyDict::new(py);
-                    item.set_item("path", row.path.display().to_string())?;
+                    item.set_item("path", row.path.as_os_str())?;
                     item.set_item("kind", entry_kind_label(row.kind))?;
                     item.set_item("bytes", row.bytes)?;
                     item.set_item("allocated", row.allocated)?;
@@ -494,7 +504,7 @@ fn tree_dict<'py>(py: Python<'py>, root: &TreeNode) -> PyResult<Bound<'py, PyDic
     fn node_dict<'py>(py: Python<'py>, node: &TreeNode) -> PyResult<Bound<'py, PyDict>> {
         let dict = PyDict::new(py);
         dict.set_item("name", &node.name)?;
-        dict.set_item("path", node.path.display().to_string())?;
+        dict.set_item("path", node.path.as_os_str())?;
         dict.set_item("bytes", node.bytes)?;
         dict.set_item("allocated", node.allocated)?;
         dict.set_item("files", node.files)?;
@@ -618,7 +628,7 @@ impl PyWatch {
         if let Some(batch) = batch {
             for change in &batch.changes {
                 let dict = PyDict::new(py);
-                dict.set_item("path", change.path.display().to_string())?;
+                dict.set_item("path", change.path.as_os_str())?;
                 dict.set_item(
                     "op",
                     match change.kind {
@@ -660,11 +670,11 @@ fn cache_status_dict<'py>(
     status: &fdu::CacheStatus,
 ) -> PyResult<Bound<'py, PyDict>> {
     let dict = PyDict::new(py);
-    dict.set_item("path", status.path.display().to_string())?;
+    dict.set_item("path", status.path.as_os_str())?;
     dict.set_item("bytes", status.bytes)?;
     dict.set_item("recognized", status.is_recognized())?;
     if let Some(info) = &status.snapshot {
-        dict.set_item("root", info.root.display().to_string())?;
+        dict.set_item("root", info.root.as_os_str())?;
         dict.set_item("entries", info.entries)?;
     } else {
         dict.set_item("root", py.None())?;
@@ -675,14 +685,16 @@ fn cache_status_dict<'py>(
 
 /// The cache directory this build would use for a root.
 #[pyfunction]
-fn cache_path(root: &str) -> Option<String> {
-    fdu::default_cache_path(Path::new(root)).map(|path| path.display().to_string())
+#[allow(clippy::needless_pass_by_value)]
+fn cache_path(root: PathBuf) -> Option<PathBuf> {
+    fdu::default_cache_path(&root)
 }
 
 /// Status of the snapshot for one root.
 #[pyfunction]
-fn cache_status<'py>(py: Python<'py>, root: &str) -> PyResult<Option<Bound<'py, PyDict>>> {
-    let Some(path) = fdu::default_cache_path(Path::new(root)) else {
+#[allow(clippy::needless_pass_by_value)]
+fn cache_status(py: Python<'_>, root: PathBuf) -> PyResult<Option<Bound<'_, PyDict>>> {
+    let Some(path) = fdu::default_cache_path(&root) else {
         return Ok(None);
     };
     let status = fdu::cache_status(&path).map_err(to_py_err)?;
@@ -691,10 +703,10 @@ fn cache_status<'py>(py: Python<'py>, root: &str) -> PyResult<Option<Bound<'py, 
 
 /// Every cache file this build can see, recognized or not.
 #[pyfunction]
-fn list_caches<'py>(py: Python<'py>, root: &str) -> PyResult<Bound<'py, PyList>> {
+#[allow(clippy::needless_pass_by_value)]
+fn list_caches(py: Python<'_>, root: PathBuf) -> PyResult<Bound<'_, PyList>> {
     let list = PyList::empty(py);
-    let Some(dir) =
-        fdu::default_cache_path(Path::new(root)).and_then(|p| p.parent().map(Path::to_path_buf))
+    let Some(dir) = fdu::default_cache_path(&root).and_then(|p| p.parent().map(Path::to_path_buf))
     else {
         return Ok(list);
     };
@@ -706,8 +718,9 @@ fn list_caches<'py>(py: Python<'py>, root: &str) -> PyResult<Bound<'py, PyList>>
 
 /// Remove the snapshot for one root. Returns whether a file was removed.
 #[pyfunction]
-fn clear_cache(root: &str) -> PyResult<bool> {
-    match fdu::default_cache_path(Path::new(root)) {
+#[allow(clippy::needless_pass_by_value)]
+fn clear_cache(root: PathBuf) -> PyResult<bool> {
+    match fdu::default_cache_path(&root) {
         Some(path) => fdu::clear_cache(&path).map_err(to_py_err),
         None => Ok(false),
     }
@@ -715,8 +728,9 @@ fn clear_cache(root: &str) -> PyResult<bool> {
 
 /// Remove every recognized snapshot, leaving unrecognized files alone.
 #[pyfunction]
-fn clear_all_caches(root: &str) -> PyResult<usize> {
-    match fdu::default_cache_path(Path::new(root)).and_then(|p| p.parent().map(Path::to_path_buf)) {
+#[allow(clippy::needless_pass_by_value)]
+fn clear_all_caches(root: PathBuf) -> PyResult<usize> {
+    match fdu::default_cache_path(&root).and_then(|p| p.parent().map(Path::to_path_buf)) {
         Some(dir) => fdu::clear_all_caches(&dir).map_err(to_py_err),
         None => Ok(0),
     }
@@ -725,8 +739,8 @@ fn clear_all_caches(root: &str) -> PyResult<usize> {
 /// Open a directory tree, using the snapshot cache according to `cache`.
 #[pyfunction]
 #[pyo3(signature = (root, *, cache = "auto", max_depth = None))]
-fn open(py: Python<'_>, root: &str, cache: &str, max_depth: Option<usize>) -> PyResult<PyIndex> {
-    let root = PathBuf::from(root);
+#[allow(clippy::needless_pass_by_value)]
+fn open(py: Python<'_>, root: PathBuf, cache: &str, max_depth: Option<usize>) -> PyResult<PyIndex> {
     let policy = parse_cache_policy(cache)?;
     let config = OpenConfig {
         scan: ScanConfig { max_depth, ..ScanConfig::default() },
@@ -748,8 +762,8 @@ fn open(py: Python<'_>, root: &str, cache: &str, max_depth: Option<usize>) -> Py
 /// Walk a tree with no cache at all and return the index.
 #[pyfunction]
 #[pyo3(signature = (root, *, max_depth = None))]
-fn scan(py: Python<'_>, root: &str, max_depth: Option<usize>) -> PyResult<PyIndex> {
-    let root = PathBuf::from(root);
+#[allow(clippy::needless_pass_by_value)]
+fn scan(py: Python<'_>, root: PathBuf, max_depth: Option<usize>) -> PyResult<PyIndex> {
     let config = ScanConfig { max_depth, ..ScanConfig::default() };
     let scanned = py.detach(|| fdu::scan::scan_into_index(&root, &config));
     let (index, report) = scanned.map_err(to_py_err)?;

@@ -342,7 +342,7 @@ fn walk(index: &Index, selection: &Selection) -> Walked {
                         own.newest_mtime_ns.map_or(attrs.mtime_ns, |seen| seen.max(attrs.mtime_ns)),
                     );
 
-                    if let Some(ext) = derive_ext(&name) {
+                    if let Some(ext) = child_path.file_name().and_then(derive_ext) {
                         let tally = walked.by_ext.entry(ext).or_default();
                         tally.files += 1;
                         tally.bytes += attrs.size;

@@ -32,7 +32,7 @@ def main() -> None:
     (root / "src").mkdir()
     (root / "src" / "main.rs").write_text("fn main() {}")
 
-    index = fdu_py.scan(str(root))
+    index = fdu_py.scan(root)
 
     # Rust preserves Windows canonical verbatim paths (`\\?\`), while Python's
     # realpath commonly returns the conventional spelling. Compare the filesystem
@@ -42,6 +42,16 @@ def main() -> None:
     assert index.freshness == "fresh", index.freshness
     assert index.errors == [], index.errors
     assert len(index) == 4, f"root + 2 files + 1 dir, got {len(index)}"
+
+    missing = root / "missing"
+    try:
+        fdu_py.scan(missing)
+    except OSError as error:
+        assert error.errno is not None, error
+        assert os.path.samefile(pathlib.Path(error.filename).parent, root), error
+        assert pathlib.Path(error.filename).name == missing.name, error
+    else:
+        raise AssertionError("a missing scan root must raise OSError with its path")
 
     total = index.total()
     assert total["files"] == 2, total
@@ -160,6 +170,25 @@ def main() -> None:
         else:
             with open(raw_root + b"/data.bin", "wb") as raw_file:
                 raw_file.write(b"raw")
+            raw_name = b"source-\xfe.RS"
+            with open(raw_root + b"/" + raw_name, "wb") as raw_file:
+                raw_file.write(b"fn main() {}")
+
+            raw_index = fdu_py.scan(raw_root)
+            assert os.fsencode(raw_index.root) == os.path.realpath(raw_root), raw_index.root
+            raw_children = raw_index.children()
+            assert raw_children is not None
+            assert raw_name in {os.fsencode(child["name"]) for child in raw_children}, raw_children
+            assert raw_index.total()["by_extension"][".rs"]["files"] == 1
+
+            raw_mark = raw_index.clock
+            added_name = b"notes-\xfd.md"
+            with open(raw_root + b"/" + added_name, "wb") as raw_file:
+                raw_file.write(b"notes")
+            raw_index.refresh()
+            raw_ops = raw_index.since(raw_mark)["ops"]
+            assert added_name in {os.fsencode(op["path"]) for op in raw_ops}, raw_ops
+
             raw_scan = subprocess.run(
                 [os.fsencode(entrypoint), b"--cache", b"off", b"--format", b"json", raw_root],
                 check=False,

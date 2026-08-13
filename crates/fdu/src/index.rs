@@ -1409,7 +1409,7 @@ impl Index {
         }
 
         let ext_id = (kind == EntryKind::File)
-            .then(|| name.to_str().and_then(derive_ext).map(|ext| self.intern_ext(&ext)))
+            .then(|| derive_ext(name).map(|ext| self.intern_ext(&ext)))
             .flatten();
         let id = self.alloc(Entry {
             parent: Some(parent),
@@ -2561,6 +2561,27 @@ mod tests {
         assert_eq!(index.total().bytes, 30);
         assert!(index.lookup(&first).is_some());
         assert!(index.lookup(&second).is_some());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn non_utf8_stem_keeps_ascii_extension_tally() {
+        use std::ffi::OsString;
+        use std::os::unix::ffi::OsStringExt;
+
+        let path = PathBuf::from(OsString::from_vec(vec![b'n', 0x80, b'.', b'R', b'S']));
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![Op::Upsert {
+            path,
+            kind: EntryKind::File,
+            attrs: file_attrs(10, 1),
+        }]));
+
+        let tallies = index.by_ext_named(index.total());
+        assert_eq!(
+            tallies.get(".rs"),
+            Some(&ExtTally { files: 1, bytes: 10, allocated: file_attrs(10, 1).allocated })
+        );
     }
 
     #[test]
