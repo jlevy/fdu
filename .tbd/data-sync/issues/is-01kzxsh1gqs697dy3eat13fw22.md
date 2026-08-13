@@ -5,16 +5,16 @@ title: Refresh dut Linux source and benchmark research
 kind: task
 status: closed
 priority: 1
-version: 4
+version: 5
 spec_path: docs/project/specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md
 labels:
   - performance
   - linux
   - research
 dependencies: []
-parent_id: is-01kzpvshmzfp0804ywk18v4pzr
+parent_id: is-01kzy554jjg27mz97mryenftym
 created_at: 2026-08-13T14:48:24.853Z
-updated_at: 2026-08-13T14:58:47.952Z
+updated_at: 2026-08-13T18:11:52.998Z
 closed_at: 2026-08-13T14:58:47.951Z
 close_reason: null
 ---

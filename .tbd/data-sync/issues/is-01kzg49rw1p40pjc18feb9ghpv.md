@@ -5,7 +5,7 @@ title: "Walk layer: raw getdents64 and dirfd-relative statx"
 kind: feature
 status: open
 priority: 1
-version: 8
+version: 9
 spec_path: docs/project/specs/active/plan-2026-08-08-fdu-phase-1.md
 labels: []
 dependencies:
@@ -15,11 +15,11 @@ dependencies:
     target: is-01kzg4c6h9v2dzand7t090p278
   - type: blocks
     target: is-01kzg49s5s1gst3526wx73q9rf
-parent_id: is-01kzg48ekn4sm0azybr010qgmn
+parent_id: is-01kzy554jjg27mz97mryenftym
 child_order_hints:
   - is-01kzmzmcszb269mrex4hzdcp3y
 created_at: 2026-08-08T07:27:18.913Z
-updated_at: 2026-08-13T14:56:26.420Z
+updated_at: 2026-08-13T18:11:55.487Z
 ---
 Replace the portable read_dir + symlink_metadata walker. Goal 1 is not met, and must not be claimed, until this lands and the benchmark gate passes.
 

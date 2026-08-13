@@ -5,16 +5,16 @@ title: Isolate env-001 concurrency and platform causes on controlled hosts
 kind: task
 status: open
 priority: 2
-version: 2
+version: 3
 spec_path: docs/project/reports/report-2026-08-11-fdu-cache-environment-matrix.md
 labels:
   - performance
   - benchmark
   - research
 dependencies: []
-parent_id: is-01kzkzm62q1vwxbv9hbp39bxxm
+parent_id: is-01kzy554jjg27mz97mryenftym
 created_at: 2026-08-11T08:22:58.418Z
-updated_at: 2026-08-11T08:31:50.614Z
+updated_at: 2026-08-13T18:11:56.457Z
 ---
 Repeat the env-001 frozen corrected-control versus candidate comparison on controlled Mac and Linux hosts with the same portable 60k workload and a fixed two-thread producer count, then vary worker count independently. Replace or bypass the Linux process-launcher RSS floor so peak memory varies per measured child; the matrix must not accept a row with an unmeasured resource gate. Preserve the v3 environment matrix contract, record first-output and completion latency where supported, and decide whether the cold CPU divergence follows concurrency, host, OS, or filesystem. Do not promote an auto-selector platform row until equivalent controlled cells pass the latency and resource gates.
 

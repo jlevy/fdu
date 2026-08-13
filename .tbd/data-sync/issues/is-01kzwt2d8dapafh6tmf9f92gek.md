@@ -5,15 +5,15 @@ title: Extend comparative evidence to Linux
 kind: task
 status: open
 priority: 2
-version: 5
+version: 6
 spec_path: docs/project/specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md
 labels:
   - performance
   - linux
 dependencies: []
-parent_id: is-01kzpvshmzfp0804ywk18v4pzr
+parent_id: is-01kzy554jjg27mz97mryenftym
 created_at: 2026-08-13T05:38:39.500Z
-updated_at: 2026-08-13T14:56:26.754Z
+updated_at: 2026-08-13T18:11:52.731Z
 ---
 Repeat the claim-grade paired comparison on a controlled Linux local-SSD host using the portable backend, then add Linux numbers to the comparison report and white paper. Include exact binary/host/corpus provenance, the full oracle, pre/post fingerprint, a controlled or explicitly classified OS-cache state, and profile-backed follow-up hypotheses such as statx/getdents/io_uring only when measurements justify them.
 

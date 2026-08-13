@@ -5,7 +5,7 @@ title: Build reproducible end-to-end performance evidence for fdu
 kind: epic
 status: open
 priority: 1
-version: 22
+version: 23
 spec_path: docs/project/specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md
 labels: []
 dependencies: []
@@ -28,8 +28,9 @@ child_order_hints:
   - is-01kzn3wr63m47hmqh90ep0aczz
   - is-01kzpvshmzfp0804ywk18v4pzr
   - is-01kzqynv3k4rf6gb6cddsnz93e
+  - is-01kzy554jjg27mz97mryenftym
 created_at: 2026-08-09T19:22:34.966Z
-updated_at: 2026-08-11T08:22:58.418Z
+updated_at: 2026-08-13T18:11:37.668Z
 ---
 Child evidence epic under fdu-qfz6. After the current merge blockers take priority, build deterministic corpora/oracle, then the strict state-machine runner, fdu probes and collectors, reviewed dut/gdu adapters, stable regression governance, and the final generated report. The harness supplies common evidence to Phase 1 owner beads, resets every trial state, rejects samples whose oracle fails, and introduces no performance claim until the optimized engine passes the dedicated-host matrix.
 
