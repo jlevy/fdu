@@ -96,6 +96,7 @@ dead end.
 | 037 | [Revisit breadth-first versus depth-first on the live 1M workspace](#exp037--revisit-breadthfirst-versus-depthfirst-on-the-live-1m-workspace) | H4 | `cold-scan-index` | +3.6% | ❌ rejected |
 | 038 | [Parent-relative openat frontier on the live 1M workspace](#exp038--parentrelative-openat-frontier-on-the-live-1m-workspace) | H24, H29 | `cold-scan-index` | -0.7% | ❌ rejected |
 | 039 | [Revisit the macOS bulk buffer on the live 1M workspace](#exp039--revisit-the-macos-bulk-buffer-on-the-live-1m-workspace) | H55 | `cold-scan-index` | +2.2% | ❌ rejected |
+| 040 | [Reject inline basic content analysis](#exp040--reject-inline-basic-content-analysis) | H62 | `content-basic` | +66.3% | ❌ rejected |
 
 ## The experiments
 
@@ -1521,6 +1522,40 @@ crossing zero and no preregistered mechanism win; it is reverted.
 
 Full record:
 [`exp-039-revisit-the-macos-bulk-buffer-on-the-live-1m-workspace.md`](../experiments/exp-039-revisit-the-macos-bulk-buffer-on-the-live-1m-workspace.md)
+
+### exp-040 — Reject inline basic content analysis
+
+❌ rejected · 2026-08-13 · H62
+
+Control: automatic bounded worker pool
+
+Candidate: inline analysis at or below 512 files and 8 MiB
+
+**`content-basic`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 16.7 | 27.8 | +66.34% (regression) | [+61.51%, +80.48%] |
+| component (ms) | 9.1 | 17.6 | +92.93% (regression) | [+79.03%, +109.28%] |
+| cpu (ms) | 85.9 | 33.1 | -61.52% | [-65.64%, -56.77%] |
+| user (ms) | 17.4 | 15.0 | -13.07% | [-14.47%, -11.22%] |
+| system (ms) | 68.2 | 18.0 | -73.79% | [-76.85%, -69.87%] |
+| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
+| peak rss (MiB) | 5.2 | 8.1 | +56.44% (regression) | [+55.46%, +58.14%] |
+
+Other jobs, wall time: `content-cache-hit` +50.3% (regression), `content-disabled`
++44.3% (regression), `content-query` +15.8% (regression).
+
+Cost to carry: 54 lines; no new dependencies; new failure mode: serial file reads on
+small repositories.
+
+One bounded dispatch branch and one unit test; production change reverted
+
+**Rejected:** Inline self-host analysis regressed wall 66.34% and component 92.93%; the
+worker pool was doing useful parallel I/O, so the change is reverted.
+
+Full record:
+[`exp-040-reject-inline-basic-content-analysis.md`](../experiments/exp-040-reject-inline-basic-content-analysis.md)
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

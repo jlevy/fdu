@@ -503,7 +503,7 @@ def _measure_once(
         probe={
             key: value
             for key, value in probe.items()
-            if key in {"component_ns", "attribution", "mode", "source"}
+            if key in {"component_ns", "attribution", "mode", "source", "summary"}
         },
     )
 
