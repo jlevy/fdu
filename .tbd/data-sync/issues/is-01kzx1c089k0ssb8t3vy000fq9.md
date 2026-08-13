@@ -5,13 +5,15 @@ title: Finalize content metrics rollout, documentation, and compatibility
 kind: task
 status: closed
 priority: 2
-version: 5
+version: 6
 spec_path: docs/project/specs/done/plan-2026-08-12-fdu-file-content-metrics.md
 labels: []
 dependencies: []
 parent_id: is-01kzx1aabeghy62dfp0gk03fbr
+child_order_hints:
+  - is-01kzxgt20y0rqwrk9d2b4zy77h
 created_at: 2026-08-13T07:46:13.896Z
-updated_at: 2026-08-13T12:03:10.081Z
+updated_at: 2026-08-13T12:16:03.101Z
 closed_at: 2026-08-13T12:03:10.080Z
 close_reason: "All six content-metrics phases are implemented and validated by the complete local gate and green cross-platform PR #10 checks; the plan and documentation are reconciled."
 ---
