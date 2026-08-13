@@ -3,9 +3,9 @@ type: is
 id: is-01kzy4tve6eej9e0jhxfqmqqmz
 title: "Address review: PR #8 — macOS stability and general correctness"
 kind: task
-status: in_progress
+status: closed
 priority: 1
-version: 12
+version: 13
 spec_path: docs/project/specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md
 labels:
   - review
@@ -25,6 +25,8 @@ child_order_hints:
   - is-01kzy5tnkdtdvnxv2zcv4kthv8
   - is-01kzy5tp48xn18jsjqttbj5ac8
 created_at: 2026-08-13T18:06:00.645Z
-updated_at: 2026-08-13T18:23:23.783Z
+updated_at: 2026-08-13T18:40:32.901Z
+closed_at: 2026-08-13T18:40:32.900Z
+close_reason: "Complete: every PR #8 review finding has an explicit fixed, rebutted, or deferred disposition; APFS resource-fork parity is proven; portable differential coverage is integrated; make check and all 14 CI checks pass; PR description and formal review channel are current; branch is zero behind main with no conflicts."
 ---
 Address every unresolved general correctness finding in the 2026-08-13 senior engineering review of PR #8. Fix and verify the macOS resource-fork metadata mismatch; disposition reconciliation attribution, privileged test portability, scheduler and reconciliation invariants, differential producer coverage, argument-count maintainability, and benchmark work-class labeling. Linux performance measurement and Linux-only optimization stay outside this stabilization bead and move to the Linux handoff epic. Publish a per-finding disposition map, update the PR description, run the full handoff gate, and merge only after CI and conflict state are clean.
