@@ -181,6 +181,14 @@ The reviewed M1/APFS result and exact manifest are in the
 The architecture-level synthesis is the
 [performance white paper](../docs/project/reports/report-2026-08-12-fdu-performance-architecture.md).
 
+The tool runner’s `warm-steady` label is deliberately narrower than “everything fits in
+RAM.” Before timing, the independent fingerprint walks every entry, and every tool then
+receives explicit full-tree warmups; future JSON records retain both facts.
+The label means repeated-workload steady state under whatever metadata-cache pressure
+the subject creates.
+It never means an FDU snapshot was used, and it never implies that all dentries, inodes,
+vnodes, or APFS metadata blocks remained resident.
+
 ### Future Linux warm and cold comparison
 
 The
@@ -198,6 +206,14 @@ classes, output digests, resource metrics, raw samples, and bootstrap confidence
 intervals.
 The runner must record every preparation command and failure; a label alone is
 not proof that the kernel cache was evicted.
+
+macOS `/usr/sbin/purge` is useful only as a separately labeled approximation: its own
+manual says it approximates initial-boot buffer-cache conditions, while a full metadata
+residency guarantee is unavailable.
+A publishable macOS cold matrix therefore needs a quiet dedicated host and preferably a
+disposable APFS volume remounted between samples.
+Running on a corpus larger than `kern.maxvnodes` is valuable cache-pressure evidence,
+but size alone does not establish a controlled-cold state.
 
 `output-digest` drains stdout through a pipe and hashes it without timing filesystem
 writes. Compact JSON postconditions are retained in a bounded 16 MiB buffer for untimed

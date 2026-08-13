@@ -24,6 +24,8 @@ from benchmarks.realtree import measure, tree
 
 SCHEMA = "fdu-tool-comparison-v3"
 DEFAULT_RESULTS = Path(tempfile.gettempdir()) / "fdu-tool-comparison" / "results"
+MIN_TOOL_COMPARISON_WARMUPS = 1
+PRE_RUN_FINGERPRINT_PASSES = 1
 
 
 class ComparisonError(RuntimeError):
@@ -309,8 +311,7 @@ def run(
         raise ComparisonError("at least one competitor is required")
     if trials < 3:
         raise ComparisonError("at least three trials are required for a paired interval")
-    if warmups < 0:
-        raise ComparisonError("warmups cannot be negative")
+    cache_evidence = _warm_cache_evidence(warmups)
     names = [tool.name for tool in competitors]
     if len(names) != len(set(names)) or anchor.name in names:
         raise ComparisonError("competitor names must be unique and cannot repeat the anchor")
@@ -368,6 +369,7 @@ def run(
         "host": measure.host_facts(),
         "conditions": {
             "os_cache": "warm-steady",
+            "os_cache_evidence": cache_evidence,
             "storage": storage,
             "trials": trials,
             "warmups": warmups,
@@ -716,6 +718,8 @@ def render(document: Mapping[str, Any]) -> str:
             f"{document['conditions'].get('storage') or 'unspecified storage'}."
         ),
         "",
+        _cache_note(document["conditions"]),
+        "",
         _hardlink_note(tree_document),
         "",
         "| Tool | Work class | Median wall | Versus paired anchor | 95% interval | Peak RSS |",
@@ -782,6 +786,35 @@ def render(document: Mapping[str, Any]) -> str:
         ]
     )
     return "\n".join(lines)
+
+
+def _warm_cache_evidence(warmups: int) -> Dict[str, Any]:
+    """Describe what establishes the repeated-workload filesystem-cache state."""
+    if warmups < MIN_TOOL_COMPARISON_WARMUPS:
+        raise ComparisonError(
+            "a warm-steady tool comparison requires at least one warmup per tool"
+        )
+    return {
+        "pre_run_full_tree_fingerprints": PRE_RUN_FINGERPRINT_PASSES,
+        "minimum_full_tree_warmups_per_tool": warmups,
+        "residency_claim": "repeated-workload-steady-state",
+    }
+
+
+def _cache_note(conditions: Mapping[str, Any]) -> str:
+    """Render the cache claim without implying that all metadata remained resident."""
+    state = conditions.get("os_cache", "unspecified")
+    evidence = conditions.get("os_cache_evidence")
+    if not isinstance(evidence, Mapping):
+        return f"OS filesystem cache: {state}."
+    fingerprints = evidence.get("pre_run_full_tree_fingerprints", 0)
+    warmups = evidence.get("minimum_full_tree_warmups_per_tool", 0)
+    return (
+        f"OS filesystem cache: {state}, after {fingerprints} complete independent "
+        f"fingerprint and at least {warmups} full-tree warmups per tool. This is a "
+        "repeated-workload state, not a claim that every metadata object remained "
+        "resident."
+    )
 
 
 def _parse_tool(specification: str, *, expected: Optional[str] = None) -> Tool:

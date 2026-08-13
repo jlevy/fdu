@@ -898,6 +898,7 @@ def host_facts() -> Dict[str, Any]:
     if sys.platform == "darwin":
         facts["cpu_model"] = _sysctl("machdep.cpu.brand_string")
         facts["memory_bytes"] = _sysctl_int("hw.memsize")
+        facts["max_vnodes"] = _sysctl_int("kern.maxvnodes")
         facts["performance_cores"] = _sysctl_int("hw.perflevel0.logicalcpu")
         facts["efficiency_cores"] = _sysctl_int("hw.perflevel1.logicalcpu")
         facts["filesystem"] = _darwin_filesystem()

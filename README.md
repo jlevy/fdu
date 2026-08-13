@@ -43,7 +43,9 @@ its own cache disabled built a reusable exact index and ten-row tree in a **3.32
 median**. Pdu and dust took 5.657 and 6.016 seconds, and Go gdu took 6.782 seconds.
 FDU’s richer index-and-tree product was the fastest of every tree or index tool
 measured. This was 12 adjacent paired trials per tool on an M1 Pro MacBook with a local
-APFS SSD and the operating system’s filesystem cache warm.
+APFS SSD in a repeated-workload warm-steady filesystem-cache state.
+One independent full-tree fingerprint and three warmups per tool preceded timing; this
+does not claim that every metadata object remained resident.
 
 The cache-off rich-summary plan took 3.125 seconds and beat diskus, dua, BSD du, and GNU
 du. Dumac’s narrower allocated-byte total had a 2.980-second median, but its paired 2.2%

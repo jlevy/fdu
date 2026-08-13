@@ -13,6 +13,25 @@ def tool(name: str) -> compare_tools.Tool:
 
 
 class ToolComparisonTests(unittest.TestCase):
+    def test_warm_cache_evidence_requires_an_explicit_tool_warmup(self) -> None:
+        with self.assertRaisesRegex(
+            compare_tools.ComparisonError, "at least one warmup"
+        ):
+            compare_tools._warm_cache_evidence(0)
+
+        evidence = compare_tools._warm_cache_evidence(3)
+
+        self.assertEqual(evidence["pre_run_full_tree_fingerprints"], 1)
+        self.assertEqual(evidence["minimum_full_tree_warmups_per_tool"], 3)
+        self.assertEqual(
+            evidence["residency_claim"], "repeated-workload-steady-state"
+        )
+        note = compare_tools._cache_note(
+            {"os_cache": "warm-steady", "os_cache_evidence": evidence}
+        )
+        self.assertIn("3 full-tree warmups per tool", note)
+        self.assertIn("not a claim that every metadata object remained resident", note)
+
     def test_schedule_keeps_pairs_adjacent_and_alternates_the_anchor(self) -> None:
         competitors = [tool("dust"), tool("gdu"), tool("pdu")]
         schedule = compare_tools._schedule(competitors, trials=4, warmups=1)

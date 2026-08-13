@@ -51,6 +51,46 @@ operating system’s filesystem cache was in its ordinary warm-steady state.
 “FDU cache off” means no FDU snapshot was read or written; it does not imply that APFS
 metadata was purged.
 
+### What Warm-Steady Means
+
+This run did intentionally benchmark a warm operating-system filesystem cache.
+The immediate independent fingerprint was itself a complete metadata walk over all
+901,963 entries. Every comparator then received three complete warmup traversals before
+its twelve timed pairs; FDU ran beside every one of those warmups.
+That is at least as explicit as the three-warmup Hyperfine protocol used in the
+[dumac benchmark](https://healeycodes.com/maybe-the-fastest-disk-usage-program-on-macos)
+and differs from merely rerunning a command and assuming the cache is warm.
+
+“Warm-steady” does not mean the whole tree fits in a metadata cache.
+A follow-up observation on the same host found `kern.maxvnodes=263168`, well below the
+subject’s entry count.
+That value is a global target rather than a per-tree hard limit, and `getattrlistbulk`
+can avoid materializing a vnode for many entries, so it cannot measure a cache-hit ratio
+by itself. It does show why “all metadata resident” would be an unjustified claim.
+The measured state is a repeated cyclic traversal under realistic cache pressure.
+
+Andrew Healey’s choice to publish warm-cache macOS numbers is valid for that stated
+regime, and it matches the common case of rerunning a local interactive tool.
+His stronger statement that warm performance correlates with cold performance is
+plausible as a ranking observation but is not demonstrated by cold raw samples in the
+article or repository.
+It is not safe to infer the size of a cold-cache advantage from it.
+The
+[diskus benchmark](https://github.com/sharkdp/diskus/blob/90196e950017d25b2940e8e0fda51a321ca66e1a/README.md#benchmark)
+illustrates the distinction: diskus keeps the lead over `du` in both Linux regimes, but
+the published relative gap changes from 10.18× cold to 2.20× warm.
+
+Both regimes are useful.
+Warm-steady is the primary local-product and optimization comparison because it exposes
+syscall, scheduling, and user-space constants without letting SSD state dominate.
+Controlled-cold measures first access after eviction, memory-constrained or much-larger
+trees, and remote/provisioned storage.
+The queued Linux matrix will publish both, using `sync` plus `drop_caches` before every
+cold sample and explicit warmups for the separate warm matrix.
+On macOS, `/usr/sbin/purge` only promises an approximation of initial-boot buffer-cache
+conditions, so a purge run must be labeled separately; a dedicated APFS volume remounted
+between samples is the stronger future cold protocol.
+
 The two matrices each used three warmups and twelve timed pairs per competitor.
 Every competitor ran immediately beside the same immutable FDU binary, and pair order
 alternated at each ordinal.

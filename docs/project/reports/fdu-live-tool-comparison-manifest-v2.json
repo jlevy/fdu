@@ -22,6 +22,11 @@
     "interleaved": true,
     "fdu_cache": "off",
     "os_filesystem_cache": "warm-steady",
+    "os_cache_evidence": {
+      "pre_run_full_tree_fingerprints": 1,
+      "minimum_full_tree_warmups_per_tool": 3,
+      "residency_claim": "repeated-workload-steady-state"
+    },
     "storage": "M1 Pro MacBook local APFS SSD"
   },
   "host": {

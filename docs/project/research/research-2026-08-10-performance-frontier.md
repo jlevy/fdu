@@ -467,11 +467,21 @@ The key results and their transfer limits are:
   It uses Hyperfine with three warmups and, in the current README, at least five warm
   runs on an M1 Pro. The author reports only warm filesystem-cache results because macOS
   cache eviction was not repeatable, and argues that warm rank correlated with observed
-  cold rank. That is a useful mechanism screen, but FDU’s protocol is more claim-grade:
-  real and generated heterogeneous subjects, adjacent paired order, bootstrap intervals,
-  exact binary and host provenance, independent semantic oracles, pre/post fingerprints,
-  invalid-sample retention, resource metrics, and explicit work classes.
+  cold rank. The warm measurement is valid as labeled, but neither article nor the dumac
+  repository publishes cold samples that establish the correlation.
+  Diskus’s controlled Linux example keeps the same winner while changing its advantage
+  over `du` from 10.18× cold to 2.20× warm, showing why rank correlation cannot
+  substitute for a separately measured effect size.
+  That makes dumac’s warm result a useful mechanism screen, not a cold-cache claim.
+  FDU’s protocol is more claim-grade: real and generated heterogeneous subjects,
+  adjacent paired order, bootstrap intervals, exact binary and host provenance,
+  independent semantic oracles, pre/post fingerprints, invalid-sample retention,
+  resource metrics, and explicit work classes.
   The future Linux matrix adds per-sample `sync` plus `drop_caches`, not a macOS claim.
+  The published 901,963-entry FDU matrix is also warm by construction: one complete
+  independent fingerprint and three full traversals per tool precede timing.
+  Its label is “repeated-workload warm-steady,” not “all metadata resident”; a follow-up
+  on the same host found `kern.maxvnodes=263168`, below the subject size.
 - **The first integer-factor gain was `getattrlistbulk`.** Traditional `readdir` plus
   one `lstat` per entry was replaced by bulk names and metadata, using a 128 KiB buffer.
   FDU independently landed the same primitive in H26, but its full-index reader requests

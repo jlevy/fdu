@@ -62,20 +62,40 @@ Two axes cross these dimensions:
 - **Warm start** — a compatible snapshot exists and is revalidated against the tree.
   This is `warm-revalidate` (load plus reconcile) and `warm-snapshot-load` (load only).
 
-Note what “cold” does *not* claim.
-The operating system page cache is warm in both cases.
-Dropping it on macOS requires root, so a run that does not pass `--purge` records
-`os_cache: warm-steady` and means exactly that.
-Cold-page-cache numbers measure the SSD, which is not the thing we are trying to
-improve.
+The names “cold scan” and “warm start” describe **FDU snapshot state**, not the
+operating-system filesystem cache.
+Disk-usage tools read directory and inode/vnode metadata rather than file payloads, so
+“disk-cache warmth” here mostly means namespace and metadata state, not cached file
+contents.
 
-A future Linux product matrix measures both states because Linux offers a repeatable
-privileged control. Following the useful part of diskus’s published protocol, each
-controlled-cold sample runs `sync` and writes `3` to `/proc/sys/vm/drop_caches`; a
+The local optimization loop and published M1 comparison use `os_cache: warm-steady`. The
+comparison establishes that state with one complete independent fingerprint walk, then
+at least one full-tree warmup per tool; the definitive run used three.
+It means a repeated workload after explicit warmup.
+It does **not** claim every metadata object remains resident: the near-million-entry
+subject is larger than the host’s vnode target, and macOS may recycle metadata while a
+scan is in progress.
+That capacity-pressured steady state is representative of rerunning a CLI over a large
+working tree and is the right primary regime for judging user-space and syscall
+overhead.
+
+Controlled-cold results answer a separate question: first access after boot or eviction,
+cache pressure beyond RAM, and remote or provisioned storage.
+They may change both absolute time and relative rankings, so no warm result is
+extrapolated into a cold claim.
+The future Linux product matrix measures both states because Linux offers a repeatable
+privileged control. Following the useful part of
+[diskus’s published protocol](https://github.com/sharkdp/diskus/blob/90196e950017d25b2940e8e0fda51a321ca66e1a/README.md#benchmark),
+each controlled-cold sample runs `sync` and writes `3` to `/proc/sys/vm/drop_caches`; a
 separate verified-warm job performs explicit warmups.
 Those labels remain invalid unless the runner records preparation success per sample.
 The paired schedule, exact oracle, immutable fingerprint, work classes, binary and host
 provenance, and raw resource metrics still apply in both regimes.
+
+On macOS, `/usr/sbin/purge` only promises to *approximate* initial-boot buffer-cache
+conditions. A purge-cold run is therefore a separately labeled diagnostic, not
+controlled-cold release evidence; a dedicated APFS test volume remounted between samples
+is the stronger future protocol.
 
 ## The reference tree
 

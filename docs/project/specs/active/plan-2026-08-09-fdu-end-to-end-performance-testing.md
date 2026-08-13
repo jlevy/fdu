@@ -128,6 +128,16 @@ What it found, first against a roughly 60k-entry checkout and then against a
   [manifest](../../reports/fdu-live-tool-comparison-manifest-v2.json), and
   [performance white paper](../../reports/report-2026-08-12-fdu-performance-architecture.md)
   own the claim and its architectural interpretation.
+- **The published cache regime is now audited explicitly.** The near-million comparison
+  is warm-steady by construction: one complete independent fingerprint and three
+  full-tree warmups per tool precede timing.
+  This is repeated-workload state, not a claim that every metadata object remains
+  resident; the subject exceeds the host’s vnode target.
+  Healey’s warm-cache dumac result is valid as labeled, but the asserted warm/cold
+  correlation has no published cold samples and cannot supply a cold effect size.
+  The Linux comparison retains separate verified-warm and per-sample controlled-cold
+  matrices. macOS `purge` is only an approximation and must not be labeled
+  controlled-cold.
 - **The first requirement-derived execution plan is accepted.** For the existing
   `--cache off --view summary` composition, exp-040 proves that retaining one exact rich
   aggregate instead of a reusable index improves paired wall 14.56% [9.04%, 18.55%] and
@@ -373,6 +383,14 @@ Generated data and reports must not use unqualified *cold*, *warm*, or *raw*.
   postcondition was checked
 - `controlled-cold` — a dedicated host performed a documented eviction protocol and the
   collector evidence supports it
+
+The shared real-tree comparator additionally uses `warm-steady`: one independent
+full-tree fingerprint, then explicit full-tree warmups for every tool before the
+interleaved timed pairs.
+Unlike `verified-warm` in the generated-corpus state machine, it does not recreate and
+warm a private corpus immediately before every invocation.
+It is valid evidence for a repeated local workload, but not proof that the complete
+metadata set stayed resident.
 
 **Process state:**
 
@@ -1054,6 +1072,9 @@ averaged.
 - **Controlled-cold protocol (`fdu-8z5l`, `fdu-ywu0`)**: privileged cache eviction,
   disposable VM/block device, or a corpus larger than available cache?
   The full report must document the chosen method and its limits.
+- **macOS cold protocol (`fdu-rjqx`)**: use `sync` plus `/usr/sbin/purge` as a labeled
+  approximation, remount a disposable APFS volume between samples, or reboot a dedicated
+  host? Corpus size and `kern.maxvnodes` are diagnostics, not cache-state controls.
 - **Comparator postconditions (`fdu-k5t5`)**: can dut and gdu expose strong enough
   machine-readable evidence, or must adapters add external traversal/count validation?
 - **Snapshot first-listing surface (`fdu-1vd0`, `fdu-xihx`)**: does the optimized
@@ -1109,6 +1130,7 @@ The planning bead retains the same stable IDs.
 | PEV-31 | High | Calling an APFS-cloned tree “cold” confuses corpus scale with operating-system cache state and overstates what a local run proved | Record the clone recipe and exact fingerprint as a cache-pressure subject, but retain `os_cache: warm-steady`; only the privileged or disposable-host protocol may claim controlled-cold evidence |
 | PEV-32 | Medium | Validating an adaptive threshold only below it and far above it misses the first-crossing scale, where setup cost can remain after too little useful work to move wall time | Give adaptive policies a boundary subject as well as small and large endpoints; exp-019 rejected the 100k scale trigger before service-time calibration passed both 120k and 720k gates |
 | PEV-33 | High | A platform syscall accelerator can look correct on ordinary files while silently changing mount, firmlink, symlink, identity, or size semantics, and a small-tree win may not predict its behavior after the metadata cache knee | Compare the platform backend byte-for-byte with the portable reference, validate every returned field and offset, fall back for a complete directory at unsupported boundaries, and require current-binary paired gates at both the original and cache-pressure scales with CPU and RSS tradeoffs recorded; exp-022 followed this protocol before its claim was retained |
+| PEV-34 | High | A warm-cache ranking can be extrapolated into an unsupported cold-cache claim even when eviction changes absolute time and the relative effect size | Label repeated-workload and controlled-cold matrices separately, retain the exact cache-state evidence for every sample, and never use ranking correlation as a substitute for measuring both regimes |
 
 ## Beads
 
@@ -1135,6 +1157,8 @@ research and plan, assemble this graph, and validate it through CI.
 | `fdu-j2ka` | P1 | Coordinate the iterative real-tree profile and optimization campaign | `fdu-6wu0` informs generated-corpus setup |
 | `fdu-1y8f` | P1 | Publish the performance architecture white paper | `fdu-j2ka` evidence |
 | `fdu-nffc` | P2 | Extend the paired comparator matrix to controlled Linux warm and cold regimes | dedicated Linux host |
+| `fdu-dpsk` | P1 | Audit warm versus cold filesystem-cache claims and encode warm-steady evidence | `fdu-j2ka` evidence |
+| `fdu-rjqx` | P2 | Establish a controlled macOS cold-cache comparison protocol | dedicated quiet Mac and disposable APFS volume |
 | `fdu-16pw` | P2 | Compare and incorporate the diskus benchmark protocol | — |
 | `fdu-hh8g` | P1 | Add a mutation-detecting, path-redacted real-tree baseline | — |
 | `fdu-16py` | P1 | Profile and optimize snapshot-absent real-tree traversal | `fdu-hh8g` |

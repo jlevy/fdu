@@ -46,6 +46,15 @@ representation work, including a selected-total scanner matched to dumac.
 They cut user CPU and memory but failed the wall-time gate, confirming that directory
 opens and bulk system calls now own the warm-APFS floor.
 
+All M1/APFS numbers in this paper use a repeated-workload warm-steady operating-system
+filesystem cache, established by a complete independent fingerprint and explicit
+warmups. “Cold” job names refer to an absent FDU snapshot, not an evicted OS cache.
+Warm-steady is not a full-residency claim: the near-million-entry subject exceeds the
+host’s vnode target.
+Controlled-cold Linux and dedicated-volume macOS results remain separate future evidence
+because cache state can change both absolute latency and the size of a relative
+advantage.
+
 ## The Product Being Optimized
 
 FDU’s cold path produces one complete inventory from which a caller can ask multiple
