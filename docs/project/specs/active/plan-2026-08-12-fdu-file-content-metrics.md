@@ -513,19 +513,19 @@ Content work releases the GIL through the same Rust execution boundary as scans.
 
 ### Phase 1: Classification and Zero-I/O Type Rollups
 
-- [ ] Define stable file-type IDs, content families, detection sources,
+- [x] Define stable file-type IDs, content families, detection sources,
   unknown-extension preservation, and a versioned checked-in rule manifest
-- [ ] Reuse the compiled native type-rule work owned by `fdu-v4lc`; do not add a second
+- [x] Reuse the compiled native type-rule work owned by `fdu-v4lc`; do not add a second
   classifier or runtime manifest parser
-- [ ] Resolve exact filenames, compound extensions, and ordinary extensions without file
+- [x] Resolve exact filenames, compound extensions, and ordinary extensions without file
   reads
 - [ ] Make `types` report stable type IDs, add `families`, and preserve the current raw
   grouping and row semantics as `extensions`
 - [ ] Implement the generic metric-summary projection for extension, type, and family
   groups, initially supporting file and byte metrics and exact share denominators
-- [ ] Define analyzer, metric-slot, coverage, options-fingerprint, and
+- [x] Define analyzer, metric-slot, coverage, options-fingerprint, and
   content-provenance types without enabling an analyzer
-- [ ] Add the optional sparse `ContentIndex` boundary and prove it allocates nothing per
+- [x] Add the optional sparse `ContentIndex` boundary and prove it allocates nothing per
   entry while disabled
 - [ ] Pin metadata-only Rust, Python, human, and machine output compatibility
 - [ ] Publish the pre-1.0 `types`-to-`extensions` migration in help, schemas, and
@@ -935,9 +935,9 @@ None of these questions blocks Phases 1 or 2.
 | `fdu-3n8c` | Open | Governing content-tier feature; link this spec here |
 | `fdu-0i15` | Complete | Research, prior-art survey, and exploratory benchmarks |
 | `fdu-w09m` | Complete | Refine and validate this implementation-ready plan spec |
-| `fdu-v4lc` | Open prerequisite | Native compiled file-type rules consumed by Phase 1 |
-| `fdu-j5ny` | Open epic | Implement this approved spec in an isolated feature worktree |
-| `fdu-m7n5` | Open; blocked by `fdu-v4lc` | Stable classification, metric contracts, and disabled sparse boundary |
+| `fdu-v4lc` | Complete | Native compiled file-type rules consumed by Phase 1 |
+| `fdu-j5ny` | In progress | Implement this approved spec in an isolated feature worktree |
+| `fdu-m7n5` | Complete | Stable classification, metric contracts, and disabled sparse boundary |
 | `fdu-ciq7` | Open; blocked by `fdu-m7n5` | Fused basic streaming analyzer and boundary/property tests |
 | `fdu-96l2` | Open; blocked by `fdu-ciq7` | Workers, conditional deltas, incremental rollups, and sidecars |
 | `fdu-8kd8` | Open; blocked by `fdu-96l2` | Basic Rust, CLI, report-schema, view, and Python surface |

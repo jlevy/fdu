@@ -36,6 +36,10 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
 use crate::classify::derive_ext;
+use crate::content::{
+    AnalysisApplyOutcome, AnalysisCandidate, AnalysisObservation, AnalysisProfile, ContentIndex,
+    ContentRollUp,
+};
 use crate::types::{
     AppliedDelta, Attrs, Clock, EntryIdentity, EntryKind, Expectation, Freshness, InvalidateReason,
     Observation, Op, PathExpectation, PathState, Provenance, ScanScope, Source, Status,
@@ -312,6 +316,8 @@ pub struct Index {
     ext_names: Vec<String>,
     /// Interner lookup: name → id.
     ext_ids: BTreeMap<String, ExtId>,
+    /// Sparse derived-data tier, allocated only after analysis is enabled.
+    content: Option<Box<ContentIndex>>,
     freshness_epoch: u64,
     freshness_marks: BTreeMap<PathBuf, FreshnessMark>,
 }
@@ -554,6 +560,7 @@ impl Index {
             verified: Vec::new(),
             ext_names: Vec::new(),
             ext_ids: BTreeMap::new(),
+            content: None,
         }
     }
 
@@ -929,6 +936,74 @@ impl Index {
     /// Name for an entry id. The root's name is empty; stale handles return `None`.
     pub fn name_of(&self, id: EntryId) -> Option<&OsStr> {
         Some(&self.try_entry(id)?.name)
+    }
+
+    /// Sparse content tier, when analysis has been enabled.
+    pub fn content(&self) -> Option<&ContentIndex> {
+        self.content.as_deref()
+    }
+
+    /// Precomputed content rollup for one relative directory.
+    pub fn content_rollup(&self, path: &Path) -> Option<&ContentRollUp> {
+        self.content()?.rollup(path)
+    }
+
+    /// Capture every regular-file analysis candidate without retaining a lock or entry
+    /// borrow across filesystem I/O.
+    pub fn analysis_candidates(&self, profile: AnalysisProfile) -> Vec<AnalysisCandidate> {
+        if !profile.is_enabled() {
+            return Vec::new();
+        }
+        let mut candidates = Vec::with_capacity(usize::try_from(self.total().files).unwrap_or(0));
+        let mut stack = vec![EntryId::ROOT];
+        while let Some(parent) = stack.pop() {
+            for (_, id) in self.children_of(parent).into_iter().flatten() {
+                let entry = self.entry(id);
+                if entry.kind == EntryKind::Dir {
+                    stack.push(id);
+                    continue;
+                }
+                if entry.kind != EntryKind::File {
+                    continue;
+                }
+                let relative_path = self.path_of(id).expect("live entry has a path");
+                candidates.push(AnalysisCandidate {
+                    entry_id: id,
+                    revision: entry.revision,
+                    absolute_path: self.root_path.join(&relative_path),
+                    classification: crate::classify::classify_path(&relative_path),
+                    relative_path,
+                    attrs: entry.attrs,
+                    profile,
+                });
+            }
+        }
+        candidates
+    }
+
+    /// Conditionally commit a worker result if its entry and metadata expectation still
+    /// match.
+    pub fn apply_analysis(&mut self, observation: AnalysisObservation) -> AnalysisApplyOutcome {
+        let candidate = &observation.candidate;
+        let Some(entry) = self.try_entry(candidate.entry_id) else {
+            return AnalysisApplyOutcome::Stale;
+        };
+        if entry.kind != EntryKind::File
+            || entry.revision != candidate.revision
+            || entry.attrs.fingerprint() != candidate.attrs.fingerprint()
+            || crate::classify::classify_path(&candidate.relative_path) != candidate.classification
+        {
+            return AnalysisApplyOutcome::Stale;
+        }
+        self.content
+            .get_or_insert_with(|| Box::new(ContentIndex::default()))
+            .commit(candidate.relative_path.clone(), observation.analysis);
+        AnalysisApplyOutcome::Applied
+    }
+
+    /// Drop all derived content while preserving metadata and snapshot compatibility.
+    pub fn clear_content(&mut self) {
+        self.content = None;
     }
 
     // ---- internals ----
@@ -1389,6 +1464,7 @@ impl Index {
                     stats.updated += 1;
                     return true;
                 }
+                self.invalidate_content(path);
                 let old = self.contribution(id);
                 self.unmerge_upward(Some(parent), &old);
                 let entry = self.entry_mut(id);
@@ -1444,6 +1520,9 @@ impl Index {
     }
 
     fn remove_entry(&mut self, id: EntryId, stats: &mut ApplyStats) {
+        if let Some(path) = self.path_of(id) {
+            self.invalidate_content(&path);
+        }
         let parent = self.entry(id).parent;
         let name = self.entry(id).name.clone();
         let contribution = self.contribution(id);
@@ -1465,6 +1544,12 @@ impl Index {
 
         // The max may have lived in what was just removed.
         self.recompute_newest_upward(parent);
+    }
+
+    fn invalidate_content(&mut self, path: &Path) {
+        if let Some(content) = self.content.as_mut() {
+            content.invalidate(path);
+        }
     }
 }
 
@@ -2581,6 +2666,65 @@ mod tests {
         assert_eq!(
             tallies.get(".rs"),
             Some(&ExtTally { files: 1, bytes: 10, allocated: file_attrs(10, 1).allocated })
+        );
+    }
+
+    #[test]
+    fn content_results_commit_conditionally_and_metadata_changes_invalidate_them() {
+        use crate::content::{
+            AnalysisApplyOutcome, AnalysisProfile, AnalysisRequest, ContentProvenance,
+            CoverageReason, FileAnalysis, MetricValues,
+        };
+
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![upsert(
+            "src/lib.rs",
+            EntryKind::File,
+            file_attrs(10, 1),
+        )]));
+        let candidate = index
+            .analysis_candidates(AnalysisProfile::Basic)
+            .into_iter()
+            .next()
+            .expect("file candidate");
+        let analysis = FileAnalysis {
+            classification: candidate.classification.clone(),
+            fingerprint: candidate.attrs.fingerprint(),
+            bytes: candidate.attrs.size,
+            profile: candidate.profile,
+            provenance: ContentProvenance::for_request(AnalysisRequest {
+                profile: candidate.profile,
+                ..AnalysisRequest::default()
+            }),
+            metrics: MetricValues {
+                physical_lines: 2,
+                nonblank_lines: 2,
+                ..MetricValues::default()
+            },
+            coverage: CoverageReason::Analyzed,
+            error: None,
+        };
+        assert_eq!(
+            index.apply_analysis(AnalysisObservation {
+                candidate: candidate.clone(),
+                analysis: analysis.clone(),
+            }),
+            AnalysisApplyOutcome::Applied
+        );
+        assert_eq!(
+            index.content_rollup(Path::new("")).expect("content root").total.metrics.physical_lines,
+            2
+        );
+
+        index.apply_ok(&Observation::new(vec![upsert(
+            "src/lib.rs",
+            EntryKind::File,
+            file_attrs(20, 2),
+        )]));
+        assert!(index.content_rollup(Path::new("")).is_none());
+        assert_eq!(
+            index.apply_analysis(AnalysisObservation { candidate, analysis }),
+            AnalysisApplyOutcome::Stale
         );
     }
 

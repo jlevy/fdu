@@ -52,6 +52,7 @@
 
 pub mod cache;
 pub mod classify;
+pub mod content;
 mod index;
 pub mod query;
 pub mod scan;
