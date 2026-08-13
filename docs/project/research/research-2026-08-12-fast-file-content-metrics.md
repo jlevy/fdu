@@ -601,7 +601,9 @@ Adopt Option C and implement it as a capability ladder.
 
 ## Next Steps
 
-- [ ] Convert this research into a content-metrics specification linked to `fdu-3n8c`.
+- [x] Convert this research into
+  [a content-metrics specification](../specs/active/plan-2026-08-12-fdu-file-content-metrics.md)
+  linked to `fdu-3n8c`.
 - [ ] Define stable type, family, detection-provenance, analyzer, slot, and coverage
   schemas.
 - [ ] Implement and benchmark `content-basic-v1` behind an opt-in feature or command.
