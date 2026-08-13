@@ -391,7 +391,7 @@ fix.
   CLI follow-up preserves exact output and adds a small-stack subprocess regression
 - [ ] `fdu-k8zw`: preserve native filesystem identity through classification and Python
   bindings
-- [ ] `fdu-c7z2`: raise the wheel and tooling minimum to Python 3.12 and align PyO3, uv,
+- [x] `fdu-c7z2`: raise the wheel and tooling minimum to Python 3.12 and align PyO3, uv,
   CI, and documentation
 - [ ] Complete package, compatibility, security, and artifact-smoke acceptance under the
   existing publishing bead `fdu-9cf0`

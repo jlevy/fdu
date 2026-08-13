@@ -91,16 +91,7 @@ class CorpusBasePool:
             if exception is None:
                 raise AssertionError("context manager received an exception type only")
             note = f"corpus base-pool cleanup also failed: {cleanup_error}"
-            if hasattr(exception, "add_note"):
-                exception.add_note(note)
-            else:
-                # PEP 678 notes arrived in 3.11 and this harness supports 3.9. Emulating
-                # the attribute keeps the primary exception propagating while still
-                # carrying the secondary failure, rather than losing one of two real
-                # problems or replacing the error the caller expects.
-                notes = list(getattr(exception, "__notes__", []))
-                notes.append(note)
-                exception.__notes__ = notes
+            exception.add_note(note)
 
     def materialize(
         self,

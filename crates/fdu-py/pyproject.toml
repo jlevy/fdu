@@ -5,7 +5,7 @@ build-backend = "maturin"
 [project]
 name = "fdu"
 description = "Fast, incremental file roll-up engine: hierarchical tallies over large directory trees"
-requires-python = ">=3.9"
+requires-python = ">=3.12"
 license = { text = "MIT" }
 readme = "README.md"
 dynamic = ["version"]

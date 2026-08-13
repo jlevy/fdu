@@ -161,13 +161,14 @@ jobs:
           arguments: "--all-features --locked"
 
   python:
-    name: Python wheel (${{ matrix.os }})
+    name: Python ${{ matrix.python }} wheel (${{ matrix.os }})
     needs: supply-chain
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
+        python: ["3.12", "3.14"]
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -179,6 +180,7 @@ jobs:
         with:
           version: "0.11.28"
           enable-cache: false
+          python-version: ${{ matrix.python }}
       - name: Test GIL release and Python object borrow exclusion
         working-directory: crates/fdu-py
         run: uv run --frozen --only-group dev cargo test --locked -p fdu-py --lib --no-default-features

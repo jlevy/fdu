@@ -27,7 +27,7 @@ thing it covers. Every step states what correct looks like, so a failure is unam
 ```shell
 rustc --version            # must satisfy rust-toolchain.toml and the MSRV in Cargo.toml
 cargo --version
-python3 --version          # 3.11+ for the benchmark harness
+python3 --version          # 3.12+ for the wheel and benchmark harness
 uv --version               # optional; only the wheel and benchmark steps use it
 node --version             # optional; only the tryscript golden runner uses it
 ```
