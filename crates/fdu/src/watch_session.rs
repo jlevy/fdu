@@ -17,10 +17,10 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
+use crate::engine_contract::{AppliedDelta, EntryKind, Op, Result};
 use crate::index::IndexHandle;
 use crate::query::{Provenance, Query, Report, ReportSource, Selection, report};
 use crate::scan::ScanConfig;
-use crate::types::{AppliedDelta, EntryKind, Op, Result};
 use crate::watch::{WatchConfig, Watcher};
 
 /// One effective change, already filtered through the run's selection.

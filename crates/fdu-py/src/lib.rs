@@ -27,8 +27,8 @@ use fdu::query::{
     Bound as Bound_, MetricRow, MetricSummary, Pattern, Provenance, Query, Report, ReportSource,
     Section, Selection, SizeMetric, SortKey, SummaryRow, TreeNode, ViewSpec, document_words,
 };
-use fdu::session::{ChangeKind, Session};
 use fdu::watch::WatchConfig;
+use fdu::watch_session::{ChangeKind, Session};
 use fdu::{CachePolicy, EntryKind, Freshness, IndexHandle, OpenConfig, RollUp, ScanConfig};
 use std::time::{Duration, SystemTime};
 

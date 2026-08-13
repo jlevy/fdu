@@ -13,7 +13,7 @@
 
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use crate::types::{Error, Result};
+use crate::engine_contract::{Error, Result};
 
 /// Nanoseconds in one second.
 const NANOS_PER_SEC: u32 = 1_000_000_000;

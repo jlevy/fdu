@@ -108,7 +108,7 @@ describes ownership.
 | `crates/fdu/src/query/parse.rs` | `crates/fdu/src/query/query_values.rs` | Size and time value grammars |
 | `crates/fdu/src/query/report.rs` | `crates/fdu/src/query/query_report.rs` | Report model and construction |
 | `crates/fdu/src/query/selection.rs` | `crates/fdu/src/query/query_selection.rs` | Selection contracts and evaluation |
-| `crates/fdu/src/classify/detect.rs` | `crates/fdu/src/classify/classification_detection.rs` | Bounded content-dependent classification |
+| `crates/fdu/src/classify/detect.rs` | `crates/fdu/src/classify/file_type_detection.rs` | Bounded content-dependent classification |
 | `crates/fdu/src/types.rs` | `crates/fdu/src/engine_contract.rs` | Shared observation, commit, and provenance contract |
 | `crates/fdu/src/session.rs` | `crates/fdu/src/watch_session.rs` | Live watch/query session composition |
 | `crates/fdu/tests/watch_session.rs` | `crates/fdu/tests/watch_session_integration.rs` | Watch-session integration behavior |
@@ -133,8 +133,10 @@ The rename commit changes declarations, imports, and re-exports only:
 - `crates/fdu/src/lib.rs` declares `engine_contract` and `watch_session`; it keeps every
   existing crate-root item re-export and adds `pub use crate::watch_session as session`
   so existing `fdu::session::*` consumers continue to compile.
-- First-party Rust and Python-binding call sites move to `watch_session`, proving the
-  new canonical path while the old path remains compatible.
+- Internal implementation and Python-binding call sites move to `watch_session`, proving
+  the new canonical path.
+  The watch-session integration target deliberately imports `fdu::session` so the
+  compatibility alias remains compile-tested.
 - `crates/fdu/Cargo.toml` points the two explicit integration-test targets at their new
   filenames, and architecture/spec references use the new paths.
 
@@ -176,12 +178,12 @@ The branch remains on Python 3.12-compatible Rust bindings and keeps the existin
 
 - [x] Record the current branch SHA and a green `make test-golden` baseline; the already
   green stacked-base CI is supporting evidence, not a substitute for local validation.
-- [ ] Apply the rename map with Git-aware moves so history remains reviewable.
-- [ ] Apply exact module declaration/import substitutions with `repren`, inspect every
+- [x] Apply the rename map with Git-aware moves so history remains reviewable.
+- [x] Apply exact module declaration/import substitutions with `repren`, inspect every
   changed hunk, and confirm no function body or expected output changed.
-- [ ] Run `cargo fmt --check`, Rust unit/integration tests, Python binding tests, and
+- [x] Run `cargo fmt --check`, Rust unit/integration tests, Python binding tests, and
   `make test-golden`; require an empty golden diff.
-- [ ] Commit the pure structural refactor separately from policy enforcement.
+- [x] Commit the pure structural refactor separately from policy enforcement.
 
 ### Phase 2: Naming guardrail
 
@@ -231,6 +233,13 @@ passed all 92 golden scenarios without expectation changes and passed `make chec
 binary because the temporary Cargo target directory was outside the repository; linking
 the ignored `target` path to that build directory made Cargo and tryscript use the same
 binary, after which the suite passed cleanly.
+
+After the structural rename, all 92 golden scenarios again passed without changing an
+expectation. The complete `make check` gate passed with temporary Cargo artifacts on a
+RAM volume and test temporary files on an APFS RAM volume because the host data volume
+was nearly full. The gate covered all-feature, minimal, watch, and Rust 1.85 builds;
+Python concurrency and the Python 3.12 stable-ABI wheel; documentation; supply-chain and
+dependency audits; and the multilingual repository self-check.
 
 ## Rollout Plan
 

@@ -30,7 +30,7 @@ required-features = ["cli"]
 
 [[test]]
 name = "watch_session"
-path = "tests/watch_session.rs"
+path = "tests/watch_session_integration.rs"
 required-features = ["watch"]
 
 [[test]]
@@ -40,8 +40,8 @@ required-features = ["cli"]
 
 # Drives the real binary, so the binary has to exist.
 [[test]]
-name = "watermark"
-path = "tests/watermark.rs"
+name = "scan_watermark"
+path = "tests/scan_watermark_integration.rs"
 required-features = ["cli"]
 
 # Drives the real binary in watch mode, so it needs both features, not either one.

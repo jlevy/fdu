@@ -591,7 +591,8 @@ shared process boundary, as today.
   `--modified-since`/`--modified-before` half-open window; stamp `scan_started_at` and
   `generated_at` on every report.
   Local date-times are rejected pending a time-zone decision (`fdu-f6dn`); the watermark
-  round-trip is pinned by `crates/fdu/tests/watermark.rs` (`fdu-3vgt`, closed)
+  round-trip is pinned by `crates/fdu/tests/scan_watermark_integration.rs` (`fdu-3vgt`,
+  closed)
 - [x] Add `allocated` to `ExtTally` and thread the size metric through all views
 - [x] Implement dependency-light `Report` values plus hand-written `text`, `json`,
   `jsonl`, and `yaml` formatters; pin both `fdu.report/1` and `fdu.stream/1` with schema
@@ -726,7 +727,7 @@ before making the next, and prints the captured stream.
 Determinism is causal, not timed.
 `tests/golden/cli-watch.tryscript.md` pins the schema on every record, the op
 vocabulary, per-op field presence, and the absent-not-null contract for removals.
-Alongside it: `crates/fdu/tests/watch_session.rs` for event semantics,
+Alongside it: `crates/fdu/tests/watch_session_integration.rs` for event semantics,
 `watch_persistence.rs` for save-surviving-SIGKILL (cold and warm start), and section 6
 of [the integration runbook](../../guides/integration-runbook.md) for the one property
 no automated test asserts well: that an idle tree costs 0% CPU.

@@ -12,7 +12,7 @@ use crate::classify::{ContentFamily, classify_path_with_prefix};
 use super::{
     AnalysisApplyOutcome, AnalysisCandidate, AnalysisObservation, AnalysisRequest,
     BasicAccumulator, CodeAccumulator, ContentProvenance, CoverageReason, FileAnalysis,
-    LogicalWordStats, MetricValues, TextAdmission, markdown::analyze_markdown,
+    LogicalWordStats, MetricValues, TextAdmission, content_markdown_metrics::analyze_markdown,
 };
 
 const READ_CHUNK_BYTES: usize = 64 * 1024;

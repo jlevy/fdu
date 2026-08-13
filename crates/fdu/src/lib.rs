@@ -53,11 +53,11 @@
 pub mod cache;
 pub mod classify;
 pub mod content;
+mod engine_contract;
 mod index;
 pub mod query;
 pub mod scan;
 pub mod snapshot;
-mod types;
 
 #[cfg(feature = "cli")]
 pub mod cli;
@@ -66,25 +66,28 @@ pub mod cli;
 pub mod report_format;
 
 #[cfg(feature = "watch")]
-pub mod session;
+pub mod watch_session;
 
 #[cfg(feature = "watch")]
 pub mod watch;
 
+#[cfg(feature = "watch")]
+pub use crate::watch_session as session;
+
 pub use crate::cache::{
     CacheStatus, SnapshotInfo, cache_status, clear_all_caches, clear_cache, list_caches,
+};
+pub use crate::engine_contract::{
+    AppliedDelta, Attrs, Clock, EntryKind, Error, Expectation, Fingerprint, Freshness,
+    InvalidateReason, Observation, ObservationOp, Op, PathExpectation, PathState, Provenance,
+    Result, ScanScope, Source, Status,
 };
 pub use crate::index::{
     ApplyOutcome, ApplyStats, ChildSnapshot, EntryId, ExtTally, Index, IndexHandle, RollUp, Since,
 };
 pub use crate::scan::{ReconcileReport, ScanConfig, ScanOrder, ScanReport};
 #[cfg(feature = "watch")]
-pub use crate::session::{Batch, Change, ChangeKind, Session};
-pub use crate::types::{
-    AppliedDelta, Attrs, Clock, EntryKind, Error, Expectation, Fingerprint, Freshness,
-    InvalidateReason, Observation, ObservationOp, Op, PathExpectation, PathState, Provenance,
-    Result, ScanScope, Source, Status,
-};
+pub use crate::watch_session::{Batch, Change, ChangeKind, Session};
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
