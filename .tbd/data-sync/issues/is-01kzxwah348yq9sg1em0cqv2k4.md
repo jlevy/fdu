@@ -3,9 +3,9 @@ type: is
 id: is-01kzxwah348yq9sg1em0cqv2k4
 title: "Audit PR #8 performance narrative and dumac gap"
 kind: task
-status: in_progress
+status: closed
 priority: 1
-version: 5
+version: 6
 spec_path: docs/project/specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md
 labels:
   - performance
@@ -16,7 +16,9 @@ child_order_hints:
   - is-01kzxwdc5w2hpw5yefe75xnxdv
   - is-01kzxxkmmqedebn5wqdr2gxjft
 created_at: 2026-08-13T15:37:17.156Z
-updated_at: 2026-08-13T15:59:44.278Z
+updated_at: 2026-08-13T16:18:26.431Z
+closed_at: 2026-08-13T16:18:26.430Z
+close_reason: "Completed the full PR #8 audit against source, current main, experiment artifacts, manifests, goldens, and live comparator evidence. Made the architecture report and active spec authoritative for the integration boundary and batching explanation, rewrote the PR body as their organized summary, fixed both evidence-oracle gaps, resolved all review threads, passed local make check and all GitHub checks, and retained H67 (fdu-ea8e) as the only open dumac-gap experiment."
 ---
 Audit every change in PR #8 against commits, profiles, experiment artifacts, and final comparator evidence. Explain precisely what the macOS getattrlistbulk and batching work improved, what work still differs from dumac, whether a proven platform limitation exists, and which experiments falsified proposed ways to close the remaining wall-time gap. Rewrite the top-level PR description so each accepted change has mechanism, measured effect, semantic boundary, and current status; track any genuinely open follow-up.
 
