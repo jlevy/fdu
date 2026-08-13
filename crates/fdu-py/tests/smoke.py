@@ -174,7 +174,10 @@ def main() -> None:
             with open(raw_root + b"/" + raw_name, "wb") as raw_file:
                 raw_file.write(b"fn main() {}")
 
-            raw_index = fdu_py.scan(raw_root)
+            # PathBuf follows Python's path-string protocol. Decode through the native
+            # filesystem codec so undecodable bytes become surrogateescape code points
+            # that PyO3 can round-trip to the original Unix OsString.
+            raw_index = fdu_py.scan(os.fsdecode(raw_root))
             assert os.fsencode(raw_index.root) == os.path.realpath(raw_root), raw_index.root
             raw_children = raw_index.children()
             assert raw_children is not None
