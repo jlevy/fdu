@@ -233,32 +233,33 @@ experiment:
 
 ## Hypothesis
 
-H31's 100,000-entry trigger passed its 60k and 720k endpoints, but a threshold policy
-also needs the first scale that crosses it. A 120k tree leaves only about one sixth of
-the walk after activation. If thread creation is truly conditional on useful remaining
-work, wall and resource counters should remain neutral there.
+H31’s 100,000-entry trigger passed its 60k and 720k endpoints, but a threshold policy
+also needs the first scale that crosses it.
+A 120k tree leaves only about one sixth of the walk after activation.
+If thread creation is truly conditional on useful remaining work, wall and resource
+counters should remain neutral there.
 
 ## What was tried
 
 The exp-018 binary and its fixed-six control ran unchanged on an immutable 120,135-entry
-subject made from two APFS clones of the pinned reference tree. Twelve measured pairs
-followed three warmups for producer-only and end-to-end index jobs. This was a boundary
-validation, not another implementation.
+subject made from two APFS clones of the pinned reference tree.
+Twelve measured pairs followed three warmups for producer-only and end-to-end index
+jobs. This was a boundary validation, not another implementation.
 
 ## What the numbers said
 
-Cold-index wall was +1.23% [−1.85%, +3.80%] and producer wall −2.68%
-[−6.42%, +3.53%]: neither showed a benefit. The cost did show. Cold-index peak RSS
-regressed 1.64% [+0.52%, +2.32%], minor faults 1.55%, and user CPU 3.39%.
-Producer peak RSS regressed 3.23% [+2.85%, +3.73%] and minor faults 3.84%.
-The reserves were created near completion, performed too little useful work to move
-wall, and still enlarged the process.
+Cold-index wall was +1.23% [−1.85%, +3.80%] and producer wall −2.68% [−6.42%, +3.53%]:
+neither showed a benefit.
+The cost did show. Cold-index peak RSS regressed 1.64% [+0.52%, +2.32%], minor faults
+1.55%, and user CPU 3.39%. Producer peak RSS regressed 3.23% [+2.85%, +3.73%] and minor
+faults 3.84%. The reserves were created near completion, performed too little useful
+work to move wall, and still enlarged the process.
 
 ## Verdict
 
-**Rejected.** This supersedes exp-018's production decision. Raising the scale trigger
-was tested next; the durable lesson is that total scale is only a proxy for the state
-that actually matters: filesystem service latency.
+**Rejected.** This supersedes exp-018’s production decision.
+Raising the scale trigger was tested next; the durable lesson is that total scale is
+only a proxy for the state that actually matters: filesystem service latency.
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

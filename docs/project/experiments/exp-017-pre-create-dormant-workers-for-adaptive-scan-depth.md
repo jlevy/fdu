@@ -234,35 +234,37 @@ experiment:
 
 ## Hypothesis
 
-Exp-015 showed that sixteen active workers help under cache pressure and hurt the
-fully warm 60k case. H31's first implementation therefore started six workers and
-pre-created ten reserve threads blocked on the queue until the walk crossed 100,000
-observed entries. Because the reference tree has only 60,067 entries, the reserves
-could never activate there; small-tree wall, CPU, faults, and RSS should all have
-matched the six-worker control.
+Exp-015 showed that sixteen active workers help under cache pressure and hurt the fully
+warm 60k case. H31’s first implementation therefore started six workers and pre-created
+ten reserve threads blocked on the queue until the walk crossed 100,000 observed
+entries. Because the reference tree has only 60,067 entries, the reserves could never
+activate there; small-tree wall, CPU, faults, and RSS should all have matched the
+six-worker control.
 
 ## What was tried
 
-The automatic pool resolved to an initial and maximum worker count. All maximum
-workers were spawned with the scan, but reserve workers waited outside the attribution
-timer until queue accounting crossed the threshold. Explicit thread counts remained
-fixed. Two queue tests pinned the automatic bounds and threshold transition.
+The automatic pool resolved to an initial and maximum worker count.
+All maximum workers were spawned with the scan, but reserve workers waited outside the
+attribution timer until queue accounting crossed the threshold.
+Explicit thread counts remained fixed.
+Two queue tests pinned the automatic bounds and threshold transition.
 
 ## What the numbers said
 
-Small-tree wall did remain unclear: +2.01% [−1.86%, +5.59%] for the producer and
-−2.19% [−12.30%, +1.93%] for cold-index. The reserve was not free, however. Producer
-CPU regressed 5.67% [+1.33%, +8.44%], minor faults 2.38%
-[+1.12%, +3.50%], and peak RSS 1.40% [+0.53%, +2.77%]. Cold-index resource
-intervals were less conclusive, but there is no reason to pay a clear setup cost in the
-isolating producer job when no reserve worker performs scan work.
+Small-tree wall did remain unclear: +2.01% [−1.86%, +5.59%] for the producer and −2.19%
+[−12.30%, +1.93%] for cold-index.
+The reserve was not free, however.
+Producer CPU regressed 5.67% [+1.33%, +8.44%], minor faults 2.38% [+1.12%, +3.50%], and
+peak RSS 1.40% [+0.53%, +2.77%]. Cold-index resource intervals were less conclusive, but
+there is no reason to pay a clear setup cost in the isolating producer job when no
+reserve worker performs scan work.
 
 ## Verdict
 
 **Rejected.** Reserve workers should be created only when the threshold is crossed.
-An in-band control message can carry the last live channel sender to the consumer,
-which can then spawn the additional scoped workers without polling or keeping a small
-scan's channel artificially open.
+An in-band control message can carry the last live channel sender to the consumer, which
+can then spawn the additional scoped workers without polling or keeping a small scan’s
+channel artificially open.
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

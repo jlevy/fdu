@@ -199,17 +199,19 @@ experiment:
 
 ## Hypothesis
 
-H14: _state what you expected to be slow, why,
-and which metric would move._
+H14: *state what you expected to be slow, why, and which metric would move.*
 
 ## What was tried
 
-_The smallest change that tests the hypothesis._
+*The smallest change that tests the hypothesis.*
 
 ## What the numbers said
 
-_Read the tables in the frontmatter. Say what surprised you._
+*Read the tables in the frontmatter.
+Say what surprised you.*
 
 ## Verdict
 
-**ACCEPTED** — Quiet-machine re-run: warm-revalidate wall -7.09% with 95% interval [-8.92%, -5.76%] over 20 paired trials; the first, load-average-17 run was underpowered, not wrong
+**ACCEPTED** — Quiet-machine re-run: warm-revalidate wall -7.09% with 95% interval
+[-8.92%, -5.76%] over 20 paired trials; the first, load-average-17 run was underpowered,
+not wrong

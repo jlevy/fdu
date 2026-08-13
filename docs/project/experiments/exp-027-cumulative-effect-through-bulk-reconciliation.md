@@ -488,36 +488,41 @@ experiment:
 ## Purpose
 
 This measurement replaces exp-023 as the current cumulative anchor after exp-026 added
-bulk metadata to full macOS reconciliation. It asks one question only: what does the
-complete accepted stack now do relative to the exact `b565882` pre-campaign binary?
+bulk metadata to full macOS reconciliation.
+It asks one question only: what does the complete accepted stack now do relative to the
+exact `b565882` pre-campaign binary?
 Complexity and causal attribution remain in the individual experiments.
 
 ## Method
 
 The exact original release probe and the exact release probe from `824f2c4` ran twelve
-interleaved pairs after three warmups across all five loop jobs. The subject was freshly
-fingerprinted before the run: 60,067 entries on APFS, with the same engine digest before
-and after every job. All samples passed the independent oracle. The candidate binary is
-the same hash used for exp-026's final 60k and 720k gates.
+interleaved pairs after three warmups across all five loop jobs.
+The subject was freshly fingerprinted before the run: 60,067 entries on APFS, with the
+same engine digest before and after every job.
+All samples passed the independent oracle.
+The candidate binary is the same hash used for exp-026’s final 60k and 720k gates.
 
 ## Results
 
 Against the original build, the current stack improves cold indexed wall 52.84%
-[-53.43%, -52.60%], producer wall 58.29%, and cold scan plus snapshot save 51.13%.
-Warm revalidation now improves 34.78% [-37.16%, -31.03%], up from exp-023's 20.60%
-cumulative result before bulk reconciliation. Snapshot load improves 32.69%.
+[-53.43%, -52.60%], producer wall 58.29%, and cold scan plus snapshot save 51.13%. Warm
+revalidation now improves 34.78% [-37.16%, -31.03%], up from exp-023’s 20.60% cumulative
+result before bulk reconciliation.
+Snapshot load improves 32.69%.
 
 The indexed candidate retained one 675-ms host-load outlier among otherwise roughly
-267–282-ms samples. It remains in the evidence; the paired interval still clears the
-gate by a wide margin. These are warm-steady operating-system-cache results, not
+267–282-ms samples.
+It remains in the evidence; the paired interval still clears the gate
+by a wide margin. These are warm-steady operating-system-cache results, not
 controlled-cold claims.
 
 ## Verdict
 
 **Accepted as the new cumulative anchor.** The accepted traversal, index, snapshot,
 breadth-first scheduling, adaptive-depth, macOS cold bulk-metadata, and macOS bulk-
-reconciliation changes compose across every measured job. This record introduces no
-code and must not be used to double-count the individual experiment gains.
+reconciliation changes compose across every measured job.
+This record introduces no code and must not be used to double-count the individual
+experiment gains.
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

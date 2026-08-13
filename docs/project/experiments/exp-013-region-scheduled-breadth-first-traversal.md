@@ -241,27 +241,29 @@ experiment:
 
 ## Hypothesis
 
-H49: breadth-first's costs in exp-012 came from *how* it was implemented, not from
-preferring shallow work. A single global FIFO makes the pending set hold an entire
-level of the tree (the memory) and lets workers roam the full width with poor path
-locality (the CPU), while still not spreading workers across distinct subtrees — the
-one property a progressive consumer actually wants.
+H49: breadth-first’s costs in exp-012 came from *how* it was implemented, not from
+preferring shallow work.
+A single global FIFO makes the pending set hold an entire level of the tree (the memory)
+and lets workers roam the full width with poor path locality (the CPU), while still not
+spreading workers across distinct subtrees — the one property a progressive consumer
+actually wants.
 
 Predicted: bucketing work per top-level subtree and handing each free worker a
-*different* bucket round-robin, LIFO within a bucket, recovers depth-first's memory
-profile and locality while making the shallow preference stronger. Peak RSS should
-fall; wall time should not move; a deep spur should stop crowding out shallow siblings.
+*different* bucket round-robin, LIFO within a bucket, recovers depth-first’s memory
+profile and locality while making the shallow preference stronger.
+Peak RSS should fall; wall time should not move; a deep spur should stop crowding out
+shallow siblings.
 
 ## What was tried
 
 `DirectoryQueueState` gains per-region buckets keyed by depth-1 ancestor, a round-robin
 ready ring, and an `enqueued` flag array so a region appears in the ring at most once.
-Each of the root's children seeds a region; every deeper directory inherits its
-parent's, so membership costs one integer copy and never inspects a path. A worker
-keeps affinity to its region while that region has work (O(1), no coordination) and
-takes the next region off the ring when it runs dry (also O(1) — no scan under the
-lock). `DepthFirst` keeps the single stack. There is no barrier anywhere: if only one
-region has work, every worker takes it.
+Each of the root’s children seeds a region; every deeper directory inherits its
+parent’s, so membership costs one integer copy and never inspects a path.
+A worker keeps affinity to its region while that region has work (O(1), no coordination)
+and takes the next region off the ring when it runs dry (also O(1) — no scan under the
+lock). `DepthFirst` keeps the single stack.
+There is no barrier anywhere: if only one region has work, every worker takes it.
 
 ## What the numbers said
 
@@ -270,12 +272,13 @@ region has work, every worker takes it.
 than a reversal of the +1.51% [+0.85%, +2.88%] that exp-012 paid.
 
 **Wall time did not move**, as predicted: −4.83% [−6.56%, +4.08%] cold, −0.02%
-[−1.08%, +2.19%] warm. CPU trends down (−4.85% [−9.45%, +1.56%]) without clearing zero.
-No metric regressed on either job. Warm revalidation is unchanged throughout because
-its sweep does not use this queue.
+[−1.08%, +2.19%] warm.
+CPU trends down (−4.85% [−9.45%, +1.56%]) without clearing zero.
+No metric regressed on either job.
+Warm revalidation is unchanged throughout because its sweep does not use this queue.
 
-**The orientation property now holds under parallelism**, which it did not before. On
-twelve branching subtrees, counting the files held by the *least advanced* top-level
+**The orientation property now holds under parallelism**, which it did not before.
+On twelve branching subtrees, counting the files held by the *least advanced* top-level
 subtree a quarter of the way through the walk (perfectly even would be ~46):
 
 | workers | region breadth-first | depth-first |
@@ -290,52 +293,57 @@ second.
 
 **The single-worker row is deterministic; the six-worker row is host-specific.** This
 metric reads *emission* order, and under several workers emission reflects which worker
-finished first as much as which region was claimed. On the six-core machine used here
-the margin is wide and stable across runs; on a CI runner with fewer cores both orders
-can report zero, which is how the first version of this test failed on macOS after
-passing locally. So the parallel row is a benchmark observation on one host, not a
-guarantee — the assertion in the test suite is limited to the deterministic single-worker
-case, and the scheduling property itself is pinned separately by an invariant test
-against the queue.
+finished first as much as which region was claimed.
+On the six-core machine used here the margin is wide and stable across runs; on a CI
+runner with fewer cores both orders can report zero, which is how the first version of
+this test failed on macOS after passing locally.
+So the parallel row is a benchmark observation on one host, not a guarantee — the
+assertion in the test suite is limited to the deterministic single-worker case, and the
+scheduling property itself is pinned separately by an invariant test against the queue.
 
-Three things the measurement corrected along the way. The first implementation resolved
-the "allocate me a region" sentinel when choosing a bucket but never wrote it back into
-the item, so children inherited the sentinel and every directory allocated its own
-region — a scheduler degenerate into round-robin over the whole frontier. It passed
-every correctness test, because per-entry results do not depend on scheduling; only the
-invariant test written against the queue itself caught it. Second, the metric used in
-exp-012 (`distinct top-level subtrees started at the halfway point`) turns out to be
-saturated on the uniform fixture: each region holds 80 files and a quarter of the walk
-is 520 files, so ~6.5 regions is an arithmetic ceiling and 7 was already optimal. It
-also rewards a scheduler that *starts* many subtrees and finishes none, which is why
+Three things the measurement corrected along the way.
+The first implementation resolved the “allocate me a region” sentinel when choosing a
+bucket but never wrote it back into the item, so children inherited the sentinel and
+every directory allocated its own region — a scheduler degenerate into round-robin over
+the whole frontier. It passed every correctness test, because per-entry results do not
+depend on scheduling; only the invariant test written against the queue itself caught
+it. Second, the metric used in exp-012
+(`distinct top-level subtrees started at the halfway point`) turns out to be saturated
+on the uniform fixture: each region holds 80 files and a quarter of the walk is 520
+files, so ~6.5 regions is an arithmetic ceiling and 7 was already optimal.
+It also rewards a scheduler that *starts* many subtrees and finishes none, which is why
 depth-first scored higher on it with more workers.
 
-Third, two fixtures had to be discarded before one could tell the orders apart. A deep
-spur beside shallow siblings made the answer depend on `readdir` order — it passed on
-APFS and failed on ext4, because depth-first only wastes early effort on the spur if it
-happens to pop the spur first. A uniform forest of single-child chains fixed that but
-pinned the frontier at twelve directories, where a LIFO has nothing to dive into and
-both orders behave identically. Only a forest of *branching* subtrees separates them.
+Third, two fixtures had to be discarded before one could tell the orders apart.
+A deep spur beside shallow siblings made the answer depend on `readdir` order — it
+passed on APFS and failed on ext4, because depth-first only wastes early effort on the
+spur if it happens to pop the spur first.
+A uniform forest of single-child chains fixed that but pinned the frontier at twelve
+directories, where a LIFO has nothing to dive into and both orders behave identically.
+Only a forest of *branching* subtrees separates them.
 
 ## Limitations
 
 The reference tree is 60,067 entries on one host, and its top level is not wide enough
-to stress the ready ring. A home folder with a million directories has a far larger
-region count, and while the ring is O(1) per claim, the region table grows with the
-number of top-level subtrees rather than with the tree.
+to stress the ready ring.
+A home folder with a million directories has a far larger region count, and while the
+ring is O(1) per claim, the region table grows with the number of top-level subtrees
+rather than with the tree.
 
 Region granularity is fixed at depth 1. A tree whose entire content sits under a single
 top-level directory collapses to one region, and the scheduler degenerates to LIFO
 within it — correct and no worse than depth-first, but no orientation benefit either.
-Adaptive granularity (deepen the region key when the top level is narrow) is the
-obvious follow-up and is unmeasured.
+Adaptive granularity (deepen the region key when the top level is narrow) is the obvious
+follow-up and is unmeasured.
 
-Worker affinity was tried and removed. Keeping a worker in its region for locality
-pinned each worker to one subtree, so with twelve deep subtrees and six workers only six
-advanced — depth-first, whose four-directory claims happen to fan across the root's
-children, spread *wider* than breadth-first did. Locality now comes only from a claim
-being a run of directories out of one region. Whether a bounded affinity (rotate after
-N claims) recovers locality without reintroducing that failure is unmeasured.
+Worker affinity was tried and removed.
+Keeping a worker in its region for locality pinned each worker to one subtree, so with
+twelve deep subtrees and six workers only six advanced — depth-first, whose
+four-directory claims happen to fan across the root’s children, spread *wider* than
+breadth-first did.
+Locality now comes only from a claim being a run of directories out of
+one region. Whether a bounded affinity (rotate after N claims) recovers locality without
+reintroducing that failure is unmeasured.
 
 ## Verdict
 

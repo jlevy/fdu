@@ -233,30 +233,31 @@ experiment:
 
 ## Hypothesis
 
-The 100k trigger activated too near the end of a 120k scan. Moving it to 262,144—the
-development host's measured vnode ceiling rounded to a portable power of two—should
-avoid that boundary cost while leaving roughly two thirds of the 720k subject for the
-sixteen-worker pool.
+The 100k trigger activated too near the end of a 120k scan.
+Moving it to 262,144—the development host’s measured vnode ceiling rounded to a portable
+power of two—should avoid that boundary cost while leaving roughly two thirds of the
+720k subject for the sixteen-worker pool.
 
 ## What was tried
 
-Only the entry threshold changed. The same in-band message created the same bounded
-reserve, explicit thread counts remained fixed, and the immutable 720,805-entry subject
-and twelve-pair protocol matched the earlier large-tree runs.
+Only the entry threshold changed.
+The same in-band message created the same bounded reserve, explicit thread counts
+remained fixed, and the immutable 720,805-entry subject and twelve-pair protocol matched
+the earlier large-tree runs.
 
 ## What the numbers said
 
 Producer wall improved 4.16% [−6.35%, −0.26%], but the user-facing end-to-end job did
 not: cold-index wall improved only 1.71% [−2.90%, +1.05%]. The later activation
-therefore discarded most of the benefit needed to repay the concurrency path. Scale
-could be made safe at the boundary or early enough to matter, but these experiments did
-not find one fixed scale that did both.
+therefore discarded most of the benefit needed to repay the concurrency path.
+Scale could be made safe at the boundary or early enough to matter, but these
+experiments did not find one fixed scale that did both.
 
 ## Verdict
 
 **Rejected.** A first scan can measure its own initial service time without already
-knowing its eventual size. Exp-021 tests that direct signal instead of another scale
-constant.
+knowing its eventual size.
+Exp-021 tests that direct signal instead of another scale constant.
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

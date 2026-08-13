@@ -155,30 +155,32 @@ experiment:
 
 ## Hypothesis
 
-H53 followed the current warm profile rather than the earlier cold profile. Full
-reconciliation spent 64.94% of samples in the kernel: one `fstatat` per entry was
+H53 followed the current warm profile rather than the earlier cold profile.
+Full reconciliation spent 64.94% of samples in the kernel: one `fstatat` per entry was
 29.25%, directory open 19.49%, and `getdirentries64` 6.76%. The bounds-audited H26
 reader already returns exactly the name, kind, identity, fingerprint, and size contract
-reconciliation needs. Reusing it per directory should remove the per-entry metadata
-syscall while leaving index arbitration, scoped reconciliation, and complete-directory
-portable fallback unchanged.
+reconciliation needs.
+Reusing it per directory should remove the per-entry metadata syscall while leaving
+index arbitration, scoped reconciliation, and complete-directory portable fallback
+unchanged.
 
 ## What was tried
 
 On macOS, direct and shared reconciliation now create one reusable 64 KiB bulk reader.
 For each directory, a complete successful `getattrlistbulk` result flows through the
 existing expectation, unchanged-elision, conditional-upsert, descent, removal, and
-batch-flush logic. Any unsupported filesystem, per-entry error, malformed record,
-mount, or firmlink discards the uncommitted directory result and reopens it through the
-portable path. Other platforms and explicit one-worker configurations retain the
-portable implementation.
+batch-flush logic. Any unsupported filesystem, per-entry error, malformed record, mount,
+or firmlink discards the uncommitted directory result and reopens it through the
+portable path.
+Other platforms and explicit one-worker configurations retain the portable
+implementation.
 
-The reconciliation loop remains serial. No worker, lock, dependency, unsafe block,
-snapshot field, or delta operation was added. A macOS test mutates an indexed tree with
-an addition, edit, and deletion, then proves bulk and portable reconciliation have
-identical reports, entries, roll-ups, and extension tallies. The existing direct,
-shared-handle, subtree, invalidation, depth, filesystem-boundary, and failure tests also
-exercise the default bulk path on macOS.
+The reconciliation loop remains serial.
+No worker, lock, dependency, unsafe block, snapshot field, or delta operation was added.
+A macOS test mutates an indexed tree with an addition, edit, and deletion, then proves
+bulk and portable reconciliation have identical reports, entries, roll-ups, and
+extension tallies. The existing direct, shared-handle, subtree, invalidation, depth,
+filesystem-boundary, and failure tests also exercise the default bulk path on macOS.
 
 ## What the numbers said
 
@@ -192,11 +194,10 @@ The final run against a freshly fingerprinted immutable 60,067-entry subject imp
 warm-open wall 18.97% [-19.62%, -18.37%] and the reconciliation component 27.85%. The
 earlier same-binary exploratory run also showed total CPU down 19.48%, system CPU down
 27.05%, and RSS unclear; it was not used for the claim because its older reference
-fingerprint had timestamp drift, even though the tree remained unchanged during the
-run.
+fingerprint had timestamp drift, even though the tree remained unchanged during the run.
 
-The post-change profile confirms the predicted transition. `fstatat` and
-`getdirentries64` disappeared from warm reconciliation's top list; batched
+The post-change profile confirms the predicted transition.
+`fstatat` and `getdirentries64` disappeared from warm reconciliation’s top list; batched
 `getattrlistbulk` accounts for 16.61% and directory open is now the largest filesystem
 residue at 30.27%.
 
@@ -206,8 +207,9 @@ residue at 30.27%.
 preserves exact reconciliation and delta semantics, and reuses the platform boundary
 already justified by exp-022. It also improves the sound full-sweep fallback that
 FSEvents must retain and gives future journal-scoped reconciliation the same bulk
-verification primitive. Whole-directory staging remains H26's known limitation; the
-large-tree RSS interval shows no additional retained-memory cost in this path.
+verification primitive.
+Whole-directory staging remains H26’s known limitation; the large-tree RSS interval
+shows no additional retained-memory cost in this path.
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

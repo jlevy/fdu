@@ -490,15 +490,17 @@ The accepted experiments deliberately attacked different layers: bounded product
 path normalization, reconciliation lookup, extension aggregation, snapshot parsing,
 breadth-first scheduling, scale-adaptive queue depth, and finally macOS metadata
 syscalls. Their percentages cannot be added because each experiment used the preceding
-accepted build as its control. Only a fresh comparison between the current stack and
-the original pre-work binary can say what users gained cumulatively.
+accepted build as its control.
+Only a fresh comparison between the current stack and the original pre-work binary can
+say what users gained cumulatively.
 
 ## What was tried
 
 The exact original `b565882` release probe and the exact current release probe were run
-against the same immutable 60,067-entry APFS tree. The harness interleaved twelve paired
-trials after three warmups for all five established jobs, checked every engine digest
-against the independent oracle, and fingerprinted the tree before and after the set.
+against the same immutable 60,067-entry APFS tree.
+The harness interleaved twelve paired trials after three warmups for all five
+established jobs, checked every engine digest against the independent oracle, and
+fingerprinted the tree before and after the set.
 This experiment changes no code; the individual experiment records own the complexity
 and tradeoffs of each optimization.
 
@@ -511,22 +513,23 @@ comes from the scan that precedes it.
 
 The warm jobs also retain substantial cumulative improvements even though macOS bulk
 metadata is not yet wired into reconciliation: full warm revalidation is 20.60% faster
-[−21.12%, −20.22%], and snapshot load is 36.08% faster
-[−36.39%, −35.78%]. All samples were valid and the tree stayed unchanged.
+[−21.12%, −20.22%], and snapshot load is 36.08% faster [−36.39%, −35.78%]. All samples
+were valid and the tree stayed unchanged.
 
-Cold total CPU remains higher than the original serial baseline—64.87% for indexed
-scans and 82.82% for producer-only scans—because bounded parallelism buys latency by
-overlapping metadata operations. The latest bulk experiment materially paid that cost
-back relative to the adaptive parallel control, but did not erase it relative to the
-serial starting point. Warm CPU, by contrast, fell 20.98% for revalidation and 36.21%
-for snapshot load.
+Cold total CPU remains higher than the original serial baseline—64.87% for indexed scans
+and 82.82% for producer-only scans—because bounded parallelism buys latency by
+overlapping metadata operations.
+The latest bulk experiment materially paid that cost back relative to the adaptive
+parallel control, but did not erase it relative to the serial starting point.
+Warm CPU, by contrast, fell 20.98% for revalidation and 36.21% for snapshot load.
 
 ## Verdict
 
 **Accepted as the cumulative anchor.** The current implementation is roughly twice as
 fast as the pre-work build on every live cold path measured here, while preserving the
-independent result oracle. The resource record also keeps the important qualification:
-the wall-time win is not a claim that cold work became cheaper in aggregate CPU.
+independent result oracle.
+The resource record also keeps the important qualification: the wall-time win is not a
+claim that cold work became cheaper in aggregate CPU.
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

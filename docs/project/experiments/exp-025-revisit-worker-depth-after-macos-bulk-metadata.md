@@ -237,50 +237,52 @@ experiment:
 
 ## Hypothesis
 
-H52 revisited H31 after H26 changed the unit of filesystem work. Sixteen workers were
-the measured knee when each of 720,805 entries incurred a separate metadata syscall,
-but `getattrlistbulk` now amortizes that wait across a directory. Six workers should
-therefore match or beat deeper pools on the same cache-pressure tree while using less
-CPU and memory, and the existing service-time trigger should remain below its scale-up
-threshold.
+H52 revisited H31 after H26 changed the unit of filesystem work.
+Sixteen workers were the measured knee when each of 720,805 entries incurred a separate
+metadata syscall, but `getattrlistbulk` now amortizes that wait across a directory.
+Six workers should therefore match or beat deeper pools on the same cache-pressure tree
+while using less CPU and memory, and the existing service-time trigger should remain
+below its scale-up threshold.
 
 ## What was tried
 
 An exploratory interleaved curve ran the exact exp-022 binary at fixed depths of 6, 8,
 12, and 16 workers. Explicit counts disable adaptation, so the run isolated pool depth
-without changing code. Six and eight were neutral for indexed and producer scans;
-twelve offered no improvement; sixteen was visibly slower. The consequential old-versus-
-new comparison was then repeated with twelve paired trials after three warmups on the
-immutable 720,805-entry APFS subject.
+without changing code.
+Six and eight were neutral for indexed and producer scans; twelve offered no
+improvement; sixteen was visibly slower.
+The consequential old-versus- new comparison was then repeated with twelve paired trials
+after three warmups on the immutable 720,805-entry APFS subject.
 
-The automatic configuration was also invoked directly on the same tree. Its aggregate
-worker work was 14.84 seconds over a 2.48-second component--approximately six active
-workers--and 20.6 microseconds per entry, below the pre-registered 30-microsecond H31
-scale-up threshold. H26 therefore makes the current trigger retain the conservative
-pool without another policy branch.
+The automatic configuration was also invoked directly on the same tree.
+Its aggregate worker work was 14.84 seconds over a 2.48-second component--approximately
+six active workers--and 20.6 microseconds per entry, below the pre-registered
+30-microsecond H31 scale-up threshold.
+H26 therefore makes the current trigger retain the conservative pool without another
+policy branch.
 
 ## What the numbers said
 
 Against six workers, the old sixteen-worker target regressed end-to-end cold-index wall
 19.19% [+11.81%, +25.00%] and its component 28.39%. Total CPU rose 107.02%, system CPU
-135.38%, peak RSS 33.46%, minor faults 34.26%, and involuntary context switches
-206.91%.
+135.38%, peak RSS 33.46%, minor faults 34.26%, and involuntary context switches 206.91%.
 
-Producer-only wall regressed 12.65% [+5.99%, +14.58%] and its scan component 11.52%.
-Its total CPU rose 117.04%, system CPU 133.89%, peak RSS 32.90%, and context switches
+Producer-only wall regressed 12.65% [+5.99%, +14.58%] and its scan component 11.52%. Its
+total CPU rose 117.04%, system CPU 133.89%, peak RSS 32.90%, and context switches
 165.22%. Every sample passed the independent oracle and the tree remained unchanged.
 
 The exploratory curve also rejected a tempting smaller retune: eight versus six was
--0.65% [-9.42%, +6.43%] for indexed wall and -2.47% [-11.07%, +1.57%] for producer
-wall, below the acceptance threshold with both intervals crossing zero.
+-0.65% [-9.42%, +6.43%] for indexed wall and -2.47% [-11.07%, +1.57%] for producer wall,
+below the acceptance threshold with both intervals crossing zero.
 
 ## Verdict
 
-**Rejected the deeper worker target; confirmed H52.** The breadth-first region
-scheduler still scales correctly, but the optimum depends on the syscall backend.
+**Rejected the deeper worker target; confirmed H52.** The breadth-first region scheduler
+still scales correctly, but the optimum depends on the syscall backend.
 `getattrlistbulk` removed the latency that justified sixteen workers, and the existing
-service-time calibration automatically stays at six. No code change is needed. The
-pre-bulk H31 result remains valid for the portable high-latency path; it must not be
+service-time calibration automatically stays at six.
+No code change is needed.
+The pre-bulk H31 result remains valid for the portable high-latency path; it must not be
 generalized to the macOS bulk backend.
 
 <!-- This document follows common-doc-guidelines.md.

@@ -259,17 +259,19 @@ experiment:
 
 ## Hypothesis
 
-H13: _state what you expected to be slow, why,
-and which metric would move._
+H13: *state what you expected to be slow, why, and which metric would move.*
 
 ## What was tried
 
-_The smallest change that tests the hypothesis._
+*The smallest change that tests the hypothesis.*
 
 ## What the numbers said
 
-_Read the tables in the frontmatter. Say what surprised you._
+*Read the tables in the frontmatter.
+Say what surprised you.*
 
 ## Verdict
 
-**REJECTED** — Direction right but under the bar: -2.53% [-8.39%, +0.23%] on cold scan; H18 already removed the expensive part of each merge, so cutting ~520k merges to ~73k amortized work that had become a few integer adds
+**REJECTED** — Direction right but under the bar: -2.53% [-8.39%, +0.23%] on cold scan;
+H18 already removed the expensive part of each merge, so cutting ~520k merges to ~73k
+amortized work that had become a few integer adds

@@ -29,12 +29,32 @@ path = "src/main.rs"
 required-features = ["cli"]
 
 [[test]]
+name = "watch_session"
+path = "tests/watch_session.rs"
+required-features = ["watch"]
+
+[[test]]
 name = "cli_exit"
 path = "tests/cli_exit.rs"
 required-features = ["cli"]
 
+# Drives the real binary, so the binary has to exist.
+[[test]]
+name = "watermark"
+path = "tests/watermark.rs"
+required-features = ["cli"]
+
+# Drives the real binary in watch mode, so it needs both features, not either one.
+[[test]]
+name = "watch_persistence"
+path = "tests/watch_persistence.rs"
+required-features = ["cli", "watch"]
+
 [features]
-default = ["cli"]
+# The shipped binary watches; `--no-default-features` and library consumers do not,
+# and a `--features cli` build without `watch` still compiles, which is what keeps the
+# watch layer deletable rather than merely optional.
+default = ["cli", "watch"]
 # Gates clap and the [[bin]], flowmark-style: library consumers take
 # `default-features = false` and never compile the CLI's dependency tree.
 cli = ["dep:clap", "dep:anyhow"]

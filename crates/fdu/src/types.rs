@@ -613,6 +613,21 @@ pub enum Error {
     #[error("watch worker panicked and stopped")]
     WatchWorkerPanicked,
 
+    /// An argument value did not match its documented grammar.
+    ///
+    /// Carries a suggestion rather than only a rejection, because these values are typed
+    /// by humans and agents at a prompt: the whole point of a closed grammar is that a
+    /// near miss can say what the near-hit spelling would be.
+    #[error("invalid {kind} {value:?}: {hint}")]
+    InvalidValue {
+        /// Which grammar was expected, for the message: `time` or `size`.
+        kind: &'static str,
+        /// The rejected input, as written.
+        value: String,
+        /// What to write instead.
+        hint: String,
+    },
+
     /// A watcher was paired with an index rooted at a different directory.
     #[error("watch root {watched:?} does not match index root {indexed:?}")]
     WatchRootMismatch {

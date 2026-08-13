@@ -156,13 +156,13 @@ experiment:
 
 ## Hypothesis
 
-H12 revisited exp-002 after the intervening reconciliation changes. The rejected 2026
-parallel sweep still sent every unchanged entry through one mutable index consumer.
-H14 later made an exclusive no-op decidable from captured child state, and H53 made a
-directory's complete stat-tier metadata available in one audited macOS bulk read.
-Workers should therefore compare filesystem entries with one immutable index baseline,
-discard exact matches at the producer, and send only effective changes through the
-delta contract after each bounded wave.
+H12 revisited exp-002 after the intervening reconciliation changes.
+The rejected 2026 parallel sweep still sent every unchanged entry through one mutable
+index consumer. H14 later made an exclusive no-op decidable from captured child state,
+and H53 made a directory’s complete stat-tier metadata available in one audited macOS
+bulk read. Workers should therefore compare filesystem entries with one immutable index
+baseline, discard exact matches at the producer, and send only effective changes through
+the delta contract after each bounded wave.
 
 The pre-registered 60k gate required warm-open wall to improve at least 15% with a
 confidence interval below zero, reconciliation component time to improve at least 25%,
@@ -172,34 +172,35 @@ only after that gate passed.
 ## What was tried
 
 Exclusive full-tree reconciliation now takes bounded waves from the same region-aware
-breadth-first frontier as the cold walker. Scoped workers hold an immutable index view,
-read different directory claims, compare complete state in place, and retain only
-upserts or removals that can change the index. After the workers join, those operations
-are put in deterministic causal order and applied in the configured batch size through
-ordinary observations before the next wave begins. Delta delivery therefore remains
-progressive and no mutation bypasses `Index::apply`.
+breadth-first frontier as the cold walker.
+Scoped workers hold an immutable index view, read different directory claims, compare
+complete state in place, and retain only upserts or removals that can change the index.
+After the workers join, those operations are put in deterministic causal order and
+applied in the configured batch size through ordinary observations before the next wave
+begins. Delta delivery therefore remains progressive and no mutation bypasses
+`Index::apply`.
 
-The deferred change set is capped at the existing maximum observation size. Overflow
-discards the unapplied wave and repeats through the incremental serial reconciler, so a
-high-churn or adversarially wide tree costs time rather than unbounded memory. Shared
-reconciliation retains its conditional serial path because readers and other producers
-can change its ABA baseline between lock boundaries. Explicit one-worker and scoped
-reconciliation also remain on the reference path.
+The deferred change set is capped at the existing maximum observation size.
+Overflow discards the unapplied wave and repeats through the incremental serial
+reconciler, so a high-churn or adversarially wide tree costs time rather than unbounded
+memory. Shared reconciliation retains its conditional serial path because readers and
+other producers can change its ABA baseline between lock boundaries.
+Explicit one-worker and scoped reconciliation also remain on the reference path.
 
-An exploratory 60k curve found four workers faster than two, six, or eight. Four beat
-six by 6.85% while six used 45.92% more total CPU; at 720k six was an unclear 4.60%
-faster with an interval crossing zero. Automatic reconciliation therefore stops at
-four while explicit caller thread settings remain honored. Tests compare parallel and
-serial mutation results on every platform and force the deferred-budget fallback to
-prove that no partial wave is applied.
+An exploratory 60k curve found four workers faster than two, six, or eight.
+Four beat six by 6.85% while six used 45.92% more total CPU; at 720k six was an unclear
+4.60% faster with an interval crossing zero.
+Automatic reconciliation therefore stops at four while explicit caller thread settings
+remain honored. Tests compare parallel and serial mutation results on every platform and
+force the deferred-budget fallback to prove that no partial wave is applied.
 
 ## What the numbers said
 
 On the exact 60,067-entry APFS gate, warm-open wall fell 30.25% [-32.11%, -28.41%] and
 the reconciliation component fell 50.31%. Total CPU rose 56.06% and system CPU 94.19%
-because four metadata readers run concurrently, but peak RSS rose only 3.29%, within
-the pre-registered bound. Every sample passed the independent oracle and the tree
-fingerprint remained unchanged.
+because four metadata readers run concurrently, but peak RSS rose only 3.29%, within the
+pre-registered bound.
+Every sample passed the independent oracle and the tree fingerprint remained unchanged.
 
 On the 720,805-entry cache-pressure confirmation, warm-open wall fell 59.53%
 [-62.80%, -50.43%] and the reconciliation component fell 72.55%. Blocked time fell to
@@ -218,9 +219,9 @@ the structural win.
 **Accepted.** H12 clears every pre-registered gate at 60k and scales to a much larger
 win at 720k. It composes producer-side no-op elision with the current BFS scheduler and
 bulk metadata backend without weakening full verification, delta-only mutation,
-progressive delivery, shared arbitration, or bounded memory. Warm open is now about
-351 ms versus roughly 296 ms for a cold index on the 60k subject; snapshot load, not
-full reconciliation, is most of the remaining gap.
+progressive delivery, shared arbitration, or bounded memory.
+Warm open is now about 351 ms versus roughly 296 ms for a cold index on the 60k subject;
+snapshot load, not full reconciliation, is most of the remaining gap.
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

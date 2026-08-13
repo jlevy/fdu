@@ -244,23 +244,25 @@ deep 720,805-entry cache-pressure tree.
 
 ## What was tried
 
-Each macOS scan worker retained one `File` for the walk root. The bulk metadata reader
-used that descriptor directly for the root and `openat(root_fd, relative_path, ...)` for
-all descendants. Failure to open the root, encode a relative path without an interior
-NUL, or open a descendant caused the existing portable directory reread. The change
-added one audited unsafe block for the `openat` call and transfer of its returned owned
-descriptor into `File`; other platforms were unchanged.
+Each macOS scan worker retained one `File` for the walk root.
+The bulk metadata reader used that descriptor directly for the root and
+`openat(root_fd, relative_path, ...)` for all descendants.
+Failure to open the root, encode a relative path without an interior NUL, or open a
+descendant caused the existing portable directory reread.
+The change added one audited unsafe block for the `openat` call and transfer of its
+returned owned descriptor into `File`; other platforms were unchanged.
 
-This is deliberately the smallest H24 implementation. It retains one bounded descriptor
-per worker, rather than keeping parent descriptors with a breadth-first frontier or
-adding the H29 ancestor-descriptor cache.
+This is deliberately the smallest H24 implementation.
+It retains one bounded descriptor per worker, rather than keeping parent descriptors
+with a breadth-first frontier or adding the H29 ancestor-descriptor cache.
 
 ## What the numbers said
 
 The full gate used twelve interleaved pairs on the immutable 720,805-entry APFS subject.
-End-to-end cold-index wall was neutral at -0.07% with a 95% interval of [-4.06%,
-+1.53%]. Its component, total CPU, and system CPU intervals all included zero. Peak RSS
-regressed 0.30% and minor faults 0.28%, although both absolute changes were small.
+End-to-end cold-index wall was neutral at -0.07% with a 95% interval of
+[-4.06%, +1.53%]. Its component, total CPU, and system CPU intervals all included zero.
+Peak RSS regressed 0.30% and minor faults 0.28%, although both absolute changes were
+small.
 
 Producer-only wall improved 6.35% [-13.06%, -1.98%], and its scan component improved
 6.16% [-17.57%, -1.56%]. That result did not carry the predicted mechanism evidence:
@@ -274,12 +276,13 @@ component or CPU.
 ## Verdict
 
 **Rejected.** The user-visible indexed scan missed the default wall-time gate and the
-pre-registered system-CPU signal did not move. A producer-only wall result without that
-mechanism evidence does not justify extra path conversion, a retained descriptor per
-worker, or a second unsafe block. Root-relative `openat` is therefore a measured dead
-end for the current breadth-first bulk walker. H24's more elaborate parent- or
-ancestor-dirfd variants remain distinct hypotheses, but they must account for descriptor
-bounds and BFS lifetime before implementation.
+pre-registered system-CPU signal did not move.
+A producer-only wall result without that mechanism evidence does not justify extra path
+conversion, a retained descriptor per worker, or a second unsafe block.
+Root-relative `openat` is therefore a measured dead end for the current breadth-first
+bulk walker. H24’s more elaborate parent- or ancestor-dirfd variants remain distinct
+hypotheses, but they must account for descriptor bounds and BFS lifetime before
+implementation.
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

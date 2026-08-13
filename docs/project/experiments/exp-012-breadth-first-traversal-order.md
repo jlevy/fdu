@@ -255,8 +255,8 @@ experiment:
 
 ## Hypothesis
 
-H48: switching the walker's claim order from LIFO to FIFO will not change wall time on
-a complete scan, because the same directories are read either way and only their order
+H48: switching the walker’s claim order from LIFO to FIFO will not change wall time on a
+complete scan, because the same directories are read either way and only their order
 differs — but it will raise peak memory, because a breadth-first frontier holds a whole
 level of directories where a depth-first stack holds one path from the root.
 
@@ -274,36 +274,37 @@ number of directories in the widest level rather than by the tree size.
 
 ## What the numbers said
 
-**Wall time did not move, and the interval is wide enough that "did not move" is the
-whole claim.** `cold-scan-index` is -0.58% with a 95% interval of [-2.50%, +1.20%].
-That interval straddles zero, so it is consistent with a 2.5% win and with a 1.2% loss
-alike. It does not license the word "free".
+**Wall time did not move, and the interval is wide enough that “did not move” is the
+whole claim.** `cold-scan-index` is -0.58% with a 95% interval of [-2.50%, +1.20%]. That
+interval straddles zero, so it is consistent with a 2.5% win and with a 1.2% loss alike.
+It does not license the word “free”.
 
 **Memory moved, and the intervals are clear of zero.** Peak RSS rose +1.51%
-[+0.85%, +2.88%] on `cold-scan-index`, +3.66% [+2.47%, +4.72%] on
-`cold-scan-producer`, and +1.17% [+0.36%, +3.77%] on `warm-revalidate` — about 34.7 MB
-to 35.4 MB on the primary job. Producer CPU rose +2.50% [+1.48%, +4.04%]. These are
-small, but they are measured, and the hypothesis predicted the direction.
+[+0.85%, +2.88%] on `cold-scan-index`, +3.66% [+2.47%, +4.72%] on `cold-scan-producer`,
+and +1.17% [+0.36%, +3.77%] on `warm-revalidate` — about 34.7 MB to 35.4 MB on the
+primary job. Producer CPU rose +2.50% [+1.48%, +4.04%]. These are small, but they are
+measured, and the hypothesis predicted the direction.
 
-The surprise was procedural rather than technical. An earlier six-sample median
-comparison had suggested breadth-first cost about 8% of wall time, and that number
-reached the plan before it went through the accept rule; sixteen paired trials say the
-wall-time difference is not measurable at all. The reporting then made the opposite
-error in the other direction — the harness rendered every metric failing the one-sided
-accept rule as "n.s.", so these RSS regressions printed as statistical silence and the
-first write-up of this experiment called the change "free" and "unchanged in memory".
+The surprise was procedural rather than technical.
+An earlier six-sample median comparison had suggested breadth-first cost about 8% of
+wall time, and that number reached the plan before it went through the accept rule;
+sixteen paired trials say the wall-time difference is not measurable at all.
+The reporting then made the opposite error in the other direction — the harness rendered
+every metric failing the one-sided accept rule as “n.s.”, so these RSS regressions
+printed as statistical silence and the first write-up of this experiment called the
+change “free” and “unchanged in memory”.
 Both readings were wrong, and the second was the more dangerous one, because it
-converted a real cost into a claim of no cost. The harness now reports evidence
-direction separately from the accept rule.
+converted a real cost into a claim of no cost.
+The harness now reports evidence direction separately from the accept rule.
 
 ## Limitations
 
 This is one warm tree of 60,067 entries on one host, and the two conditions that would
 make breadth-first genuinely expensive are both absent from it:
 
-- **Frontier width.** A 60k tree has no level wide enough to stress the queue. A home
-  folder with a million directories has not been measured for peak queue size, and that
-  is where a +1.5% RSS delta could become a different number entirely.
+- **Frontier width.** A 60k tree has no level wide enough to stress the queue.
+  A home folder with a million directories has not been measured for peak queue size,
+  and that is where a +1.5% RSS delta could become a different number entirely.
 - **Cold I/O locality.** On a warm tree the metadata cache absorbs ordering effects.
   Ordering interacts with readahead and seek locality differently on a genuinely cold
   tree.
@@ -313,8 +314,8 @@ general. The wide-tree experiment is tracked separately.
 
 ## Verdict
 
-**ACCEPTED, on cost rather than on speed.** Wall time is not measurably different;
-peak RSS and producer CPU are measurably but slightly worse. The change buys monotone
-partial results — every number a lower bound that only grows, instead of a confident
-and wrong early ranking — and roughly 1 MiB of frontier plus ~2% producer CPU on a 60k
-tree is a fair price for it.
+**ACCEPTED, on cost rather than on speed.** Wall time is not measurably different; peak
+RSS and producer CPU are measurably but slightly worse.
+The change buys monotone partial results — every number a lower bound that only grows,
+instead of a confident and wrong early ranking — and roughly 1 MiB of frontier plus ~2%
+producer CPU on a 60k tree is a fair price for it.

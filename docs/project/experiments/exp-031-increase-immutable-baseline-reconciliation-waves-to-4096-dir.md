@@ -153,46 +153,49 @@ experiment:
 
 ## Hypothesis
 
-H56 followed exp-030's post-change profile, where scoped thread startup, waiting, and
-thread entry frames together accounted for about 13% of 60k warm samples. Increasing
-the immutable-baseline wave from 1,024 to 4,096 directories should amortize worker
-creation while retaining the four-worker depth, deferred-operation bound, exact
+H56 followed exp-030’s post-change profile, where scoped thread startup, waiting, and
+thread entry frames together accounted for about 13% of 60k warm samples.
+Increasing the immutable-baseline wave from 1,024 to 4,096 directories should amortize
+worker creation while retaining the four-worker depth, deferred-operation bound, exact
 comparison, and delta-only apply path.
 
 The pre-registered 60k gate required warm wall or reconciliation component time to
 improve at least 3% with its confidence interval below zero, no more than 5% additional
-RSS, and exact oracle parity. A 720k confirmation would run only if that gate passed.
+RSS, and exact oracle parity.
+A 720k confirmation would run only if that gate passed.
 
 ## What was tried
 
 One constant increased the maximum directories compared before a wave joins and applies
 effective changes. No worker, syscall, parser, index operation, dependency, or unsafe
-boundary changed. The exact accepted exp-030 binary and candidate ran twelve
-interleaved pairs after three warmups on the immutable 60,067-entry APFS subject.
+boundary changed. The exact accepted exp-030 binary and candidate ran twelve interleaved
+pairs after three warmups on the immutable 60,067-entry APFS subject.
 
 The candidate remained bounded by the same 65,536 deferred changes, but a changed-tree
-delta could wait behind four times as many directory reads. That latency cost required
-a clear throughput result rather than a within-noise change.
+delta could wait behind four times as many directory reads.
+That latency cost required a clear throughput result rather than a within-noise change.
 
 ## What the numbers said
 
 Warm-open wall was +1.64% [-3.88%, +10.07%] and reconciliation component time was
 +13.24% [-0.47%, +19.56%]. Total CPU was +4.87%, system CPU +5.34%, and involuntary
-context switches -4.59%; every interval included zero. RSS was neutral at -0.46%.
-Every sample passed the exact oracle and the tree remained unchanged.
+context switches -4.59%; every interval included zero.
+RSS was neutral at -0.46%. Every sample passed the exact oracle and the tree remained
+unchanged.
 
 The larger unit did not reduce a measured coordination counter and lengthened the
 component median. The thread-related profile frames were therefore not evidence that
-worker creation lay on the critical wall-time path. Coarser waves also give the
-region-aware frontier fewer apply/scheduling boundaries, so carrying them would trade
-progress latency for no demonstrated throughput benefit.
+worker creation lay on the critical wall-time path.
+Coarser waves also give the region-aware frontier fewer apply/scheduling boundaries, so
+carrying them would trade progress latency for no demonstrated throughput benefit.
 
 ## Verdict
 
 **Rejected and reverted.** Neither registered performance signal improved, and the
-component moved in the wrong direction. The 720k run was not triggered. The accepted
-1,024-directory wave remains the measured balance between amortization, region
-scheduling, and progressive delta delivery.
+component moved in the wrong direction.
+The 720k run was not triggered.
+The accepted 1,024-directory wave remains the measured balance between amortization,
+region scheduling, and progressive delta delivery.
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

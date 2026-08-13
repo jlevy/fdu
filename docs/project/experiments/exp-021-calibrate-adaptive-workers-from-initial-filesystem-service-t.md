@@ -237,50 +237,55 @@ experiment:
 H31 originally proposed choosing in-flight depth from measured first-operation latency.
 Exp-015 proved the worker-count opportunity, while exp-018 through exp-020 showed why
 entry count is the wrong selector: it identifies a large tree only after much of the
-walk has finished and needlessly activates near a medium tree's end. Initial aggregate
-worker service time should distinguish the measured cached and cache-pressure states
-after a small fraction of either tree, independent of eventual size.
+walk has finished and needlessly activates near a medium tree’s end.
+Initial aggregate worker service time should distinguish the measured cached and
+cache-pressure states after a small fraction of either tree, independent of eventual
+size.
 
 ## What was tried
 
-Automatic scans start at the existing conservative count. The queue aggregates the
-chunk-level work time already collected for attribution—no per-entry clocks—and makes
-one decision after 16,384 successful entries. An average at or above 30 microseconds
-per entry sends the existing in-band control message and expands the pool, bounded by
-twice available parallelism and sixteen workers. A faster calibration disables the
-reserve for the rest of that scan. Explicit thread counts never calibrate or adapt.
+Automatic scans start at the existing conservative count.
+The queue aggregates the chunk-level work time already collected for attribution—no
+per-entry clocks—and makes one decision after 16,384 successful entries.
+An average at or above 30 microseconds per entry sends the existing in-band control
+message and expands the pool, bounded by twice available parallelism and sixteen
+workers. A faster calibration disables the reserve for the rest of that scan.
+Explicit thread counts never calibrate or adapt.
 
-The threshold came from measured whole-run attribution before the code change: about
-18 microseconds per entry on the 60k tree, 22 on the 120k boundary, and 42 or more on
-the 720k cache-pressure control. Unit tests pin both sides of the one-shot decision,
-pool bounds, traversal equivalence, and explicit-count scope semantics.
+The threshold came from measured whole-run attribution before the code change: about 18
+microseconds per entry on the 60k tree, 22 on the 120k boundary, and 42 or more on the
+720k cache-pressure control.
+Unit tests pin both sides of the one-shot decision, pool bounds, traversal equivalence,
+and explicit-count scope semantics.
 
 ## What the numbers said
 
-On the immutable 720,805-entry subject, producer wall improved 10.09%
-[−17.69%, −4.51%] and component time 8.26%. End-to-end cold-index wall improved
-5.31% [−8.37%, −2.70%] and component time 7.11%. Every oracle check passed and
-the tree fingerprint remained stable.
+On the immutable 720,805-entry subject, producer wall improved 10.09% [−17.69%, −4.51%]
+and component time 8.26%. End-to-end cold-index wall improved 5.31% [−8.37%, −2.70%] and
+component time 7.11%. Every oracle check passed and the tree fingerprint remained
+stable.
 
-The improvement buys latency with concurrency rather than eliminating work. Activated
-cold-index scans used 51.17% more aggregate CPU [+43.81%, +55.44%], 1.43% more peak
-RSS, and 1.47% more minor faults. Those costs are appropriate only in the slow state,
-which is why the no-activation evidence is part of the decision.
+The improvement buys latency with concurrency rather than eliminating work.
+Activated cold-index scans used 51.17% more aggregate CPU [+43.81%, +55.44%], 1.43% more
+peak RSS, and 1.47% more minor faults.
+Those costs are appropriate only in the slow state, which is why the no-activation
+evidence is part of the decision.
 
 On the separate immutable 120,135-entry boundary, calibration retained six workers.
-Cold-index wall was +0.18% [−3.63%, +1.86%], total CPU −1.46%, peak RSS +0.27%,
-and minor faults −0.35%; every interval crossed zero. Producer wall and resource
-counters were likewise unclear. This removes the RSS and fault regressions the 100k
-scale trigger caused on the same subject.
+Cold-index wall was +0.18% [−3.63%, +1.86%], total CPU −1.46%, peak RSS +0.27%, and
+minor faults −0.35%; every interval crossed zero.
+Producer wall and resource counters were likewise unclear.
+This removes the RSS and fault regressions the 100k scale trigger caused on the same
+subject.
 
 ## Verdict
 
 **Accepted.** The direct state signal clears the end-to-end bar when it activates and
-has no measured cost when it does not. Its remaining limitation is a one-shot decision:
-a noisy or unrepresentative first 16k entries can select the wrong fixed pool for the
-rest of one scan. The caller's explicit thread setting remains the escape hatch and a
-future controller may revisit the decision continuously only if evidence justifies the
-extra coordination.
+has no measured cost when it does not.
+Its remaining limitation is a one-shot decision: a noisy or unrepresentative first 16k
+entries can select the wrong fixed pool for the rest of one scan.
+The caller’s explicit thread setting remains the escape hatch and a future controller
+may revisit the decision continuously only if evidence justifies the extra coordination.
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

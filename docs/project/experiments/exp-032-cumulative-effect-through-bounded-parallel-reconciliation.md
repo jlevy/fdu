@@ -489,10 +489,10 @@ experiment:
 
 ## Question
 
-exp-032 replaces exp-027 as the exact-binary cumulative anchor after H12/exp-030
-changed the warm path. The comparison asks what the complete accepted campaign buys
-against `b565882`, before the iterative traversal work, across every component job the
-real-tree harness exposes. It is a reproduction, not a new code hypothesis.
+exp-032 replaces exp-027 as the exact-binary cumulative anchor after H12/exp-030 changed
+the warm path. The comparison asks what the complete accepted campaign buys against
+`b565882`, before the iterative traversal work, across every component job the real-tree
+harness exposes. It is a reproduction, not a new code hypothesis.
 
 ## Method
 
@@ -505,10 +505,11 @@ immutable throughout the run, and every sample passed the independent exact orac
 The candidate includes the accepted parallel producer, direct child expectations,
 extension interning, single-pass snapshot checksum/parse, region-aware breadth-first
 scheduling, service-time adaptive cold workers, macOS bulk metadata for cold and warm
-paths, and bounded four-worker immutable-baseline reconciliation waves. The final
-candidate differs from the exp-030 measurement binary only by an equivalent syntax
-rewrite required by the Rust 1.85 minimum supported version. Complexity and failure
-modes belong to their individual experiment records; this anchor changes no behavior.
+paths, and bounded four-worker immutable-baseline reconciliation waves.
+The final candidate differs from the exp-030 measurement binary only by an equivalent
+syntax rewrite required by the Rust 1.85 minimum supported version.
+Complexity and failure modes belong to their individual experiment records; this anchor
+changes no behavior.
 
 ## Results
 
@@ -523,18 +524,19 @@ reconciliation component 63.94%. Snapshot-only load improved 35.66% in wall time
 
 The cold wall gains deliberately spend parallel system CPU to remove elapsed wait:
 cold-index total CPU is 82.43% higher and producer CPU 52.58% higher, while user CPU is
-5.08% and 8.48% lower. Warm total CPU is statistically unclear at +3.85%, with user CPU
-down 40.14% and system CPU up 51.81%. The operating point favors interactive wall
-latency; explicit thread controls and the serial reference remain available where CPU
-budget matters more.
+5.08% and 8.48% lower.
+Warm total CPU is statistically unclear at +3.85%, with user CPU down 40.14% and system
+CPU up 51.81%. The operating point favors interactive wall latency; explicit thread
+controls and the serial reference remain available where CPU budget matters more.
 
 ## Verdict
 
 **Accepted as the final cumulative anchor.** All five end-to-end jobs improve
-decisively, with live non-cached scan paths roughly twice as fast and verified warm
-open also roughly twice as fast against the original binary. The next high-order work
-is not another cold constant tweak: it is snapshot bulk load/persisted roll-ups,
-journal scoping, platform-specific Linux evidence, and memory layout.
+decisively, with live non-cached scan paths roughly twice as fast and verified warm open
+also roughly twice as fast against the original binary.
+The next high-order work is not another cold constant tweak: it is snapshot bulk
+load/persisted roll-ups, journal scoping, platform-specific Linux evidence, and memory
+layout.
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

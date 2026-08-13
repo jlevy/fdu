@@ -238,44 +238,47 @@ experiment:
 ## Hypothesis
 
 H31 revisited the six-worker automatic ceiling after region-scheduled breadth-first
-traversal landed. That ceiling came from a fully warm 60k-entry tree, where the
-single index consumer becomes the limit. A tree larger than the metadata cache should
-instead spend more time waiting for filesystem metadata, leaving room for a deeper
-producer pool to reduce wall time even though it consumes more CPU.
+traversal landed. That ceiling came from a fully warm 60k-entry tree, where the single
+index consumer becomes the limit.
+A tree larger than the metadata cache should instead spend more time waiting for
+filesystem metadata, leaving room for a deeper producer pool to reduce wall time even
+though it consumes more CPU.
 
 ## What was tried
 
 The same release binary ran with explicit `--threads 6` and `--threads 16`; no code
-changed between variants. The immutable subject was built from twelve APFS clones of
-the pinned 60k reference tree under independent top-level names. It has 720,805 entries,
-well above this host's 263,168-vnode ceiling, while clone sharing limits additional
-physical storage. Twelve measured pairs followed three warmups, alternating variant
-order at every ordinal.
+changed between variants.
+The immutable subject was built from twelve APFS clones of the pinned 60k reference tree
+under independent top-level names.
+It has 720,805 entries, well above this host’s 263,168-vnode ceiling, while clone
+sharing limits additional physical storage.
+Twelve measured pairs followed three warmups, alternating variant order at every
+ordinal.
 
 A second claim-grade run repeated the comparison on the original 60,067-entry tree.
-Keeping the two scales separate preserves each run's single immutable subject while
+Keeping the two scales separate preserves each run’s single immutable subject while
 testing both sides of the proposed policy boundary.
 
 ## What the numbers said
 
 Under cache pressure, sixteen workers improved cold-index wall by 11.72%
-[−16.83%, −2.42%] and its measured scan component by 16.04%
-[−20.28%, −5.38%]. Producer wall improved 9.27% [−13.81%, −5.49%]. Queue
-coordination remained negligible, so the result survives the breadth-first scheduler
-change that motivated this revisit.
+[−16.83%, −2.42%] and its measured scan component by 16.04% [−20.28%, −5.38%]. Producer
+wall improved 9.27% [−13.81%, −5.49%]. Queue coordination remained negligible, so the
+result survives the breadth-first scheduler change that motivated this revisit.
 
-The speed is a latency trade, not free work elimination. Cold-index CPU regressed
-42.64% [+28.82%, +52.30%], mostly in system time, and peak RSS rose 1.56%. On the
-small reference tree, sixteen workers regressed cold-index wall 5.64%
-[+2.08%, +7.96%], CPU 42.99%, and peak RSS 14.83%; producer wall there was
-unclear at −1.17% [−3.90%, +0.65%]. Raising the default globally would therefore
-make the common warm-small case slower and substantially less efficient.
+The speed is a latency trade, not free work elimination.
+Cold-index CPU regressed 42.64% [+28.82%, +52.30%], mostly in system time, and peak RSS
+rose 1.56%. On the small reference tree, sixteen workers regressed cold-index wall 5.64%
+[+2.08%, +7.96%], CPU 42.99%, and peak RSS 14.83%; producer wall there was unclear at
+−1.17% [−3.90%, +0.65%]. Raising the default globally would therefore make the common
+warm-small case slower and substantially less efficient.
 
 ## Verdict
 
 **Accepted as the large-tree target, not as a global default.** An automatic scan should
-begin at six workers and unlock up to sixteen only after observed scale establishes
-that the tree is not the warm-small case. That implementation needs its own experiment.
+begin at six workers and unlock up to sixteen only after observed scale establishes that
+the tree is not the warm-small case.
+That implementation needs its own experiment.
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

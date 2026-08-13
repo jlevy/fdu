@@ -336,7 +336,8 @@ snapshot like any other parse failure.
 - `crates/fdu/src/snapshot.rs` — format v3 fields, cursor capture on save.
 - `crates/fdu/src/cli.rs` — wire the gate into the cached path; `--revalidate=auto|full`
   (default `auto`; `full` forces the sweep).
-  `--no-cache` is untouched.
+  `--cache off` remains the explicit full-scan, no-snapshot policy and bypasses the
+  journal path unchanged.
 - Feature `journal` in `crates/fdu/Cargo.toml`: gates `dep:fsevent-sys` (macOS only via
   target-conditional dependency) and the FFI module.
   Off by default initially; the CLI enables it once the evidence is in.

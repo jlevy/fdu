@@ -233,18 +233,20 @@ experiment:
 
 ## Hypothesis
 
-H51 separated two similarly described allocations. Experiment 003 removed copies made
-inside index arbitration and concluded that the remaining allocator cost was in the
-producer. The portable producer still built a relative `PathBuf`, cloned it into an
-upsert, and retained the original only when the entry was a directory. Moving the path
-for the mostly-file case should have removed one allocation per file, reducing producer
-user CPU and minor faults before affecting wall time.
+H51 separated two similarly described allocations.
+Experiment 003 removed copies made inside index arbitration and concluded that the
+remaining allocator cost was in the producer.
+The portable producer still built a relative `PathBuf`, cloned it into an upsert, and
+retained the original only when the entry was a directory.
+Moving the path for the mostly-file case should have removed one allocation per file,
+reducing producer user CPU and minor faults before affecting wall time.
 
 ## What was tried
 
 Both the serial reference walker and the parallel worker moved each relative path into
 its `Op::Upsert`. They cloned a second path only for directories that had to remain in
-the traversal frontier. No observation, batching, ordering, or index behavior changed.
+the traversal frontier.
+No observation, batching, ordering, or index behavior changed.
 
 ## What the numbers said
 
@@ -252,17 +254,18 @@ Twelve interleaved pairs on the immutable 60,067-entry tree found no speed or CP
 signal. Cold-index wall was −0.44% [−5.30%, +1.52%], producer wall was +1.36%
 [−2.39%, +6.97%], and both user-CPU intervals crossed zero.
 
-The memory counters moved in the wrong direction. Peak RSS regressed 3.88%
-[+1.50%, +4.78%] for cold-index and 3.99% [+3.29%, +6.20%] for the producer;
-minor faults regressed 3.05% and 3.80%, respectively. The result exposes why allocation
-counts alone were misleading: in the control, the allocator can recycle the original
-short-lived path buffer while the clone remains in the batch. Moving the original
-changes which allocation remains live, but does not make the batch smaller.
+The memory counters moved in the wrong direction.
+Peak RSS regressed 3.88% [+1.50%, +4.78%] for cold-index and 3.99% [+3.29%, +6.20%] for
+the producer; minor faults regressed 3.05% and 3.80%, respectively.
+The result exposes why allocation counts alone were misleading: in the control, the
+allocator can recycle the original short-lived path buffer while the clone remains in
+the batch. Moving the original changes which allocation remains live, but does not make
+the batch smaller.
 
 ## Verdict
 
-**Rejected.** Wall and CPU were unchanged while both memory signals regressed. The
-production change was reverted.
+**Rejected.** Wall and CPU were unchanged while both memory signals regressed.
+The production change was reverted.
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

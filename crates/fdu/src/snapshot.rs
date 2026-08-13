@@ -29,7 +29,7 @@
 
 use std::ffi::{OsStr, OsString};
 use std::fs::{self, OpenOptions};
-use std::io::{BufReader, Read, Seek, SeekFrom, Write};
+use std::io::{self, BufReader, Read, Seek, SeekFrom, Write};
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -373,6 +373,73 @@ const fn make_crc32c_table() -> [u32; 256] {
         value += 1;
     }
     table
+}
+
+/// Read only a snapshot's header, without materializing its index.
+///
+/// Returns `None` for anything this build cannot identify — absent, truncated, foreign,
+/// a different format version, or a mismatched engine fingerprint. Corrupt equals
+/// absent here exactly as it does on the load path: a caller asking what is in the cache
+/// must not be stopped by one unreadable file, and a file this code cannot identify is
+/// not a file it should later delete.
+pub fn read_header(path: &Path) -> Result<Option<crate::cache::SnapshotInfo>> {
+    let file = match fs::File::open(path) {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(Error::io(path, error)),
+    };
+    if !has_intact_trailer(&file).map_err(|error| Error::io(path, error))? {
+        // Truncation removes the tail and leaves the prologue readable, so a
+        // header-only check would call a half-written file a snapshot.
+        return Ok(None);
+    }
+    // The trailer check left the cursor at the end; the header lives at the start.
+    let mut file = file;
+    file.seek(SeekFrom::Start(0)).map_err(|error| Error::io(path, error))?;
+
+    let mut reader = BufReader::new(file);
+    Ok(parse_header(&mut reader).ok())
+}
+
+/// Whether a file ends with the snapshot trailer.
+///
+/// Cheap enough for a status listing — one seek and eight bytes — and it is exactly what
+/// a truncated write destroys.
+fn has_intact_trailer(file: &fs::File) -> io::Result<bool> {
+    let footer_bytes = CHECKSUM_BYTES + TRAILER.len();
+    let file_len = file.metadata()?.len();
+    if file_len < u64::try_from(footer_bytes).unwrap_or(u64::MAX) {
+        return Ok(false);
+    }
+
+    let mut handle = file;
+    handle.seek(SeekFrom::End(-(i64::try_from(TRAILER.len()).unwrap_or(0))))?;
+    let mut trailer = [0u8; TRAILER.len()];
+    match handle.read_exact(&mut trailer) {
+        Ok(()) => Ok(&trailer == TRAILER),
+        Err(error) if error.kind() == io::ErrorKind::UnexpectedEof => Ok(false),
+        Err(error) => Err(error),
+    }
+}
+
+/// Parse the fixed prologue every snapshot begins with.
+fn parse_header(reader: &mut impl Read) -> ParseResult<crate::cache::SnapshotInfo> {
+    if read_array::<_, 8>(reader)? != *MAGIC {
+        return Err(ParseError::Invalid);
+    }
+    if read_u32(reader)? != FORMAT_VERSION || read_u64(reader)? != engine_fingerprint() {
+        return Err(ParseError::Invalid);
+    }
+    if read_u8(reader)? != path_encoding() {
+        return Err(ParseError::Invalid);
+    }
+    let scope = read_scope(reader)?;
+    let root = PathBuf::from(read_os_string(reader)?);
+    let entries = read_u64(reader)?;
+    if entries == 0 || entries > MAX_SNAPSHOT_ENTRIES {
+        return Err(ParseError::Invalid);
+    }
+    Ok(crate::cache::SnapshotInfo { root, scope, entries })
 }
 
 /// Parse a bounded payload. Records are applied one at a time so bootstrap paths are not
@@ -955,7 +1022,7 @@ mod tests {
         assert_eq!(restored.total().bytes, 157);
         assert_eq!(
             restored.by_ext_named(restored.total())[".rs"],
-            ExtTally { files: 2, bytes: 150 }
+            ExtTally { files: 2, bytes: 150, allocated: 1024 }
         );
         assert_eq!(
             restored.attrs(Path::new("src/deep/nested.rs")),

@@ -316,46 +316,50 @@ experiment:
 ## Hypothesis
 
 H55 tested whether the 64 KiB `getattrlistbulk` buffer retained after exp-026 was
-forcing repeat syscalls in wide directories. Increasing it to 256 KiB should have
-reduced cold scan wall/component time and system CPU by at least 3%, with warm
-reconciliation as a possible compositional benefit. The cost was an additional 192 KiB
-per reader, or about 1.1 MiB across the normal six cold workers.
+forcing repeat syscalls in wide directories.
+Increasing it to 256 KiB should have reduced cold scan wall/component time and system
+CPU by at least 3%, with warm reconciliation as a possible compositional benefit.
+The cost was an additional 192 KiB per reader, or about 1.1 MiB across the normal six
+cold workers.
 
 ## What was tried
 
-The macOS bulk reader's fixed syscall buffer changed from 64 KiB to 256 KiB. No parser,
-fallback, scheduling, index, or reconciliation behavior changed. The exact exp-026
-binary and the one-line candidate ran twelve interleaved pairs after three warmups for
-cold index, producer-only, and full warm revalidation on a freshly fingerprinted,
-immutable 60,067-entry APFS subject.
+The macOS bulk reader’s fixed syscall buffer changed from 64 KiB to 256 KiB. No parser,
+fallback, scheduling, index, or reconciliation behavior changed.
+The exact exp-026 binary and the one-line candidate ran twelve interleaved pairs after
+three warmups for cold index, producer-only, and full warm revalidation on a freshly
+fingerprinted, immutable 60,067-entry APFS subject.
 
 The pre-registered gate required a 3% cold wall or component improvement accompanied by
-lower system CPU before spending a 720k-entry confirmation run. RSS was recorded
-explicitly because the candidate reserved four times as much syscall capacity for each
-reader.
+lower system CPU before spending a 720k-entry confirmation run.
+RSS was recorded explicitly because the candidate reserved four times as much syscall
+capacity for each reader.
 
 ## What the numbers said
 
-Cold-index wall was -1.80% [-5.95%, +5.45%], component -3.04%, and system CPU +3.36%; all
-intervals included zero. Producer wall was +1.78% [-0.65%, +7.22%], component +3.72%,
-and system CPU -3.09%; those intervals also included zero. Warm wall was -0.01%
-[-0.86%, +1.08%] and its component -0.30%.
+Cold-index wall was -1.80% [-5.95%, +5.45%], component -3.04%, and system CPU +3.36%;
+all intervals included zero.
+Producer wall was +1.78% [-0.65%, +7.22%], component +3.72%, and system CPU -3.09%;
+those intervals also included zero.
+Warm wall was -0.01% [-0.86%, +1.08%] and its component -0.30%.
 
-The predicted mechanism was absent. Cold-index RSS and minor faults regressed 2.38% and
-1.92%; producer RSS and faults regressed 2.59% and 2.25%. Warm RSS and faults also rose
-slightly. Every sample passed the oracle and the tree remained unchanged.
+The predicted mechanism was absent.
+Cold-index RSS and minor faults regressed 2.38% and 1.92%; producer RSS and faults
+regressed 2.59% and 2.25%. Warm RSS and faults also rose slightly.
+Every sample passed the oracle and the tree remained unchanged.
 
-The subject averages only about eight entries per directory. A 64 KiB buffer already
-holds nearly every directory in one call, so quadrupling it spends resident memory
-without removing enough bulk calls to measure.
+The subject averages only about eight entries per directory.
+A 64 KiB buffer already holds nearly every directory in one call, so quadrupling it
+spends resident memory without removing enough bulk calls to measure.
 
 ## Verdict
 
-**Rejected and reverted.** No path cleared the 3% gate, system CPU did not corroborate
-a cold improvement, and memory counters moved in the predicted adverse direction. The
-720k run was not triggered. The 64 KiB buffer remains the measured operating point;
-future syscall work should reduce directory opens or improve a platform backend rather
-than enlarge each reader's buffer.
+**Rejected and reverted.** No path cleared the 3% gate, system CPU did not corroborate a
+cold improvement, and memory counters moved in the predicted adverse direction.
+The 720k run was not triggered.
+The 64 KiB buffer remains the measured operating point; future syscall work should
+reduce directory opens or improve a platform backend rather than enlarge each reader’s
+buffer.
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

@@ -234,54 +234,58 @@ experiment:
 
 ## Hypothesis
 
-H31's explicit configuration run established two different knees: six workers for the
-warm-small tree and sixteen under metadata-cache pressure. Exp-017 preserved the first
-count but paid to pre-create the second, adding measurable small-tree resource cost.
+H31’s explicit configuration run established two different knees: six workers for the
+warm-small tree and sixteen under metadata-cache pressure.
+Exp-017 preserved the first count but paid to pre-create the second, adding measurable
+small-tree resource cost.
 Creating reserve workers only when an active walk crosses 100,000 observed entries
 should leave the 60k execution path identical while recovering a meaningful portion of
 the 720k latency gain.
 
 ## What was tried
 
-An automatic scan now resolves an initial and maximum pool. On this ten-core host those
-counts are six and sixteen; smaller hosts cap the reserve at twice their available
-parallelism, and explicit `threads` values remain fixed. The queue counts successful
-entries as claimed directory chunks finish. Its threshold-crossing worker sends one
-in-band control message carrying a live observation-channel sender. The consumer uses
-that sender to create the additional scoped workers, then drops it.
+An automatic scan now resolves an initial and maximum pool.
+On this ten-core host those counts are six and sixteen; smaller hosts cap the reserve at
+twice their available parallelism, and explicit `threads` values remain fixed.
+The queue counts successful entries as claimed directory chunks finish.
+Its threshold-crossing worker sends one in-band control message carrying a live
+observation-channel sender.
+The consumer uses that sender to create the additional scoped workers, then drops it.
 
 This shape matters for the small case: no reserve thread, polling loop, retained sender,
-dependency, or unsafe block exists before the threshold. Unit tests pin the pool bounds,
-single threshold transition, explicit-count semantics, traversal equivalence, and queue
-scheduling. The benchmark probe's independent digest continued to validate every trial.
+dependency, or unsafe block exists before the threshold.
+Unit tests pin the pool bounds, single threshold transition, explicit-count semantics,
+traversal equivalence, and queue scheduling.
+The benchmark probe’s independent digest continued to validate every trial.
 
 ## What the numbers said
 
 On the 720,805-entry cache-pressure corpus, cold-index wall improved 4.04%
-[−5.56%, −1.85%] and its scan component improved 5.43%
-[−7.17%, −2.89%]. Producer component improved 5.03%
-[−10.39%, −1.62%]; whole producer wall had the same −4.63% median but a wider
-[−7.92%, +0.62%] interval because that job includes an untimed validation scan in
-its process wall.
+[−5.56%, −1.85%] and its scan component improved 5.43% [−7.17%, −2.89%]. Producer
+component improved 5.03% [−10.39%, −1.62%]; whole producer wall had the same −4.63%
+median but a wider [−7.92%, +0.62%] interval because that job includes an untimed
+validation scan in its process wall.
 
 The adaptive cold-index median, 6.238 seconds, essentially matched explicit sixteen
-workers in exp-015 at 6.232 seconds. Its relative gain was smaller because the paired
-six-worker control was faster in this later run. This is why the verdict uses paired
-evidence from one run rather than comparing medians across runs.
+workers in exp-015 at 6.232 seconds.
+Its relative gain was smaller because the paired six-worker control was faster in this
+later run. This is why the verdict uses paired evidence from one run rather than
+comparing medians across runs.
 
 Latency still trades for work after activation: large cold-index CPU regressed 41.24%
-[+37.73%, +44.26%], peak RSS 1.56% [+1.31%, +1.79%], and minor faults 1.75%.
-The separate 60,067-entry validation never crossed the threshold. There, cold-index
-wall was −0.48% [−3.07%, +1.93%] and producer wall +1.17%
+[+37.73%, +44.26%], peak RSS 1.56% [+1.31%, +1.79%], and minor faults 1.75%. The
+separate 60,067-entry validation never crossed the threshold.
+There, cold-index wall was −0.48% [−3.07%, +1.93%] and producer wall +1.17%
 [−1.14%, +4.64%]; total CPU, peak RSS, and minor-fault intervals also showed no
 regression.
 
 ## Verdict
 
 **Superseded.** The implementation cleared the two preregistered endpoints, but the
-post-review 120k boundary in exp-019 showed that observed scale alone activates too
-late to help and still pays reserve-thread memory. Exp-021 retains the in-band spawn
-mechanism and replaces the scale trigger with initial service-time calibration.
+post-review 120k boundary in exp-019 showed that observed scale alone activates too late
+to help and still pays reserve-thread memory.
+Exp-021 retains the in-band spawn mechanism and replaces the scale trigger with initial
+service-time calibration.
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

@@ -260,16 +260,16 @@ experiment:
 
 ## Hypothesis
 
-H9: _state what you expected to be slow, why,
-and which metric would move._
+H9: *state what you expected to be slow, why, and which metric would move.*
 
 ## What was tried
 
-_The smallest change that tests the hypothesis._
+*The smallest change that tests the hypothesis.*
 
 ## What the numbers said
 
-_Read the tables in the frontmatter. Say what surprised you._
+*Read the tables in the frontmatter.
+Say what surprised you.*
 
 ## Verdict
 

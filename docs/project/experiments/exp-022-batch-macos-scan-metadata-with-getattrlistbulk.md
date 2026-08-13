@@ -237,71 +237,77 @@ experiment:
 
 ## Hypothesis
 
-H3/H26 predicted the fresh post-adaptive profile's result: 67.20% of cold-index samples
+H3/H26 predicted the fresh post-adaptive profile’s result: 67.20% of cold-index samples
 were in the kernel. One directory open accounted for 29.74%, one `fstatat` per entry for
 20.08%, and directory enumeration for another 9.29%; index code was only 1.35%. macOS
 `getattrlistbulk` returns names, type, identity, both fingerprint times, and both size
-measures for many entries in one call. Replacing `read_dir` plus per-entry metadata
-calls on macOS should therefore reduce cold producer wall and system CPU enough to move
-end-to-end wall at both the original and cache-pressure scales.
+measures for many entries in one call.
+Replacing `read_dir` plus per-entry metadata calls on macOS should therefore reduce cold
+producer wall and system CPU enough to move end-to-end wall at both the original and
+cache-pressure scales.
 
 ## What was tried
 
 The concurrent macOS producer opens each claimed directory and fills a reusable 64 KiB
-buffer with `getattrlistbulk`. A target-specific parser checks the kernel's per-entry
+buffer with `getattrlistbulk`. A target-specific parser checks the kernel’s per-entry
 returned-attribute bitmap, record length, every fixed-width read, the relative name
 offset and length, the terminal NUL, and path-component validity before constructing an
-observation. It requests exactly fdu's existing metadata contract: name, device, vnode
+observation. It requests exactly fdu’s existing metadata contract: name, device, vnode
 type, mtime, ctime, file id, logical size, and allocated size.
 
-The accelerator does not weaken the portable path. If the call fails, an entry reports
-an error, required fields are absent, a record is malformed, or a containing directory
-includes a mount, trigger, or firmlink boundary whose bulk metadata differs from
-`stat`, the worker discards that directory's uncommitted bulk results and reopens it
-through `read_dir`. Other platforms and explicit one-worker scans retain the portable
-implementation. One macOS-only direct dependency exposes the system call: `libc`
-0.2.189 was already locked transitively, more than fourteen days old, and covered by
-the repository's provenance, license, and advisory checks. The single unsafe block is
-the FFI call; parsing uses bounds-checked byte copies rather than pointer dereferences.
+The accelerator does not weaken the portable path.
+If the call fails, an entry reports an error, required fields are absent, a record is
+malformed, or a containing directory includes a mount, trigger, or firmlink boundary
+whose bulk metadata differs from `stat`, the worker discards that directory’s
+uncommitted bulk results and reopens it through `read_dir`. Other platforms and explicit
+one-worker scans retain the portable implementation.
+One macOS-only direct dependency exposes the system call: `libc` 0.2.189 was already
+locked transitively, more than fourteen days old, and covered by the repository’s
+provenance, license, and advisory checks.
+The single unsafe block is the FFI call; parsing uses bounds-checked byte copies rather
+than pointer dereferences.
 
-Unit coverage compares bulk and portable results exactly for regular files,
-directories, symlinks, allocated bytes, fingerprints, device/inode identity, and a
-decomposed Unicode name. A synthetic valid record pins the layout and signed `dev_t`
-conversion, every possible truncation is rejected, and missing or unexpected attribute
-sets, an escaping name offset, and the firmlink flag fail closed. The existing
-serial-versus-parallel tests then exercise the bulk backend against the portable
-reference over complete trees.
+Unit coverage compares bulk and portable results exactly for regular files, directories,
+symlinks, allocated bytes, fingerprints, device/inode identity, and a decomposed Unicode
+name. A synthetic valid record pins the layout and signed `dev_t` conversion, every
+possible truncation is rejected, and missing or unexpected attribute sets, an escaping
+name offset, and the firmlink flag fail closed.
+The existing serial-versus-parallel tests then exercise the bulk backend against the
+portable reference over complete trees.
 
 ## What the numbers said
 
 On the immutable 720,805-entry cache-pressure subject, end-to-end cold-index wall fell
-30.13% [−32.19%, −25.11%] and its scan component fell 38.98%. Producer wall fell
-41.60% [−43.94%, −36.83%] and its component fell 47.00%. This removed work instead of
-merely overlapping it: end-to-end total CPU fell 43.56% and system CPU 46.62%; producer
-total CPU fell 59.03% and system CPU 61.40%. Every measured sample passed the
-independent oracle and the before/after tree fingerprints matched. One indexed ordinal
-captured an abrupt host-load spike against the candidate; it remains in the run, and
-the paired interval still clears the gate.
+30.13% [−32.19%, −25.11%] and its scan component fell 38.98%. Producer wall fell 41.60%
+[−43.94%, −36.83%] and its component fell 47.00%. This removed work instead of merely
+overlapping it: end-to-end total CPU fell 43.56% and system CPU 46.62%; producer total
+CPU fell 59.03% and system CPU 61.40%. Every measured sample passed the independent
+oracle and the before/after tree fingerprints matched.
+One indexed ordinal captured an abrupt host-load spike against the candidate; it remains
+in the run, and the paired interval still clears the gate.
 
 The separate current-code run on the immutable 60,067-entry subject also cleared the
 gate: end-to-end wall fell 5.22% [−7.99%, −3.69%], producer wall 9.25%
-[−11.83%, −7.71%], and total CPU 7.37% and 9.74%, respectively. The price is small but
-visible at that scale: index peak RSS rose 1.90%, while the producer RSS interval
-included zero. On the large producer job RSS instead fell 1.06%; the large index
-interval was too wide to interpret under host load.
+[−11.83%, −7.71%], and total CPU 7.37% and 9.74%, respectively.
+The price is small but visible at that scale: index peak RSS rose 1.90%, while the
+producer RSS interval included zero.
+On the large producer job RSS instead fell 1.06%; the large index interval was too wide
+to interpret under host load.
 
-The post-change profile shows the intended phase change. Per-entry `fstatat` and
-`getdirentries64` disappeared from the cold top list; opening directories is now 33.86%
-of samples and `getattrlistbulk` itself 25.93%. That makes dirfd-relative open the next
-measured cold-scan hypothesis rather than another index micro-optimization.
+The post-change profile shows the intended phase change.
+Per-entry `fstatat` and `getdirentries64` disappeared from the cold top list; opening
+directories is now 33.86% of samples and `getattrlistbulk` itself 25.93%. That makes
+dirfd-relative open the next measured cold-scan hypothesis rather than another index
+micro-optimization.
 
 ## Verdict
 
 **Accepted.** The speedup is large at both tested scales, composes with adaptive worker
-depth, and substantially reduces CPU as well as latency. That justifies the narrow
-platform backend, direct binding, audited unsafe call, and sub-megabyte small-tree RSS
-cost. The known limitation is whole-directory staging: an extremely wide directory
-delays its observations and can temporarily use memory proportional to its entries.
+depth, and substantially reduces CPU as well as latency.
+That justifies the narrow platform backend, direct binding, audited unsafe call, and
+sub-megabyte small-tree RSS cost.
+The known limitation is whole-directory staging: an extremely wide directory delays its
+observations and can temporarily use memory proportional to its entries.
 Any future streaming rewrite must preserve the current all-or-nothing fallback, because
 falling back after publishing part of a directory would duplicate observations.
 

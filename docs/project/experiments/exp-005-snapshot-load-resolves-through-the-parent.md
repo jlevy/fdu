@@ -259,17 +259,18 @@ experiment:
 
 ## Hypothesis
 
-H10: _state what you expected to be slow, why,
-and which metric would move._
+H10: *state what you expected to be slow, why, and which metric would move.*
 
 ## What was tried
 
-_The smallest change that tests the hypothesis._
+*The smallest change that tests the hypothesis.*
 
 ## What the numbers said
 
-_Read the tables in the frontmatter. Say what surprised you._
+*Read the tables in the frontmatter.
+Say what surprised you.*
 
 ## Verdict
 
-**ACCEPTED** — Snapshot load 18.6% faster with an interval entirely below zero, by using the parent id the format already provided instead of four ancestor walks per entry
+**ACCEPTED** — Snapshot load 18.6% faster with an interval entirely below zero, by using
+the parent id the format already provided instead of four ancestor walks per entry

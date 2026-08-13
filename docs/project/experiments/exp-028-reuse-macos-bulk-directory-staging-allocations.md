@@ -317,44 +317,48 @@ experiment:
 
 H54 targeted the allocation residue after exp-026. Each `macos_bulk::Reader::read`
 created and dropped one `Vec<Entry>` per directory--7,350 times on the 60k subject and
-88,201 times on the 720k subject. Retaining that vector in the reader and draining it
-after a successful complete-directory parse should reuse capacity, reduce allocator
-work and faults, and benefit cold and warm consumers without weakening fallback.
+88,201 times on the 720k subject.
+Retaining that vector in the reader and draining it after a successful
+complete-directory parse should reuse capacity, reduce allocator work and faults, and
+benefit cold and warm consumers without weakening fallback.
 
 ## What was tried
 
-The reader gained an entry vector beside its existing 64 KiB syscall buffer. A read
-cleared and refilled the vector, returned a draining iterator only after the entire
-directory validated, and cleared partial results before portable fallback. No caller,
-syscall, parser, index, or observation behavior changed. The candidate added fourteen
-lines and removed six, with no dependency or unsafe change.
+The reader gained an entry vector beside its existing 64 KiB syscall buffer.
+A read cleared and refilled the vector, returned a draining iterator only after the
+entire directory validated, and cleared partial results before portable fallback.
+No caller, syscall, parser, index, or observation behavior changed.
+The candidate added fourteen lines and removed six, with no dependency or unsafe change.
 
 The exact exp-026 binary and candidate ran twelve interleaved pairs after three warmups
 for cold index, producer-only, and full warm revalidation on a freshly fingerprinted,
-immutable 60,067-entry APFS subject. The pre-registered plan required a 3% primary
-wall/component gain with lower user CPU or faults before spending a long run at 720k.
+immutable 60,067-entry APFS subject.
+The pre-registered plan required a 3% primary wall/component gain with lower user CPU or
+faults before spending a long run at 720k.
 
 ## What the numbers said
 
 Cold-index wall was +0.21% [-7.09%, +3.88%], its component -2.20%, and user CPU -0.76%;
-all intervals included zero. Producer wall regressed 1.32% [+0.29%, +3.12%] and its
-component 1.87%, while the predicted user-CPU and fault improvements were unclear; RSS
-instead regressed 1.53% and faults 1.18%. Warm wall was -0.85% [-1.53%, +0.55%], with
-component, user CPU, RSS, and faults all unclear. Every sample passed the oracle and the
-tree remained unchanged.
+all intervals included zero.
+Producer wall regressed 1.32% [+0.29%, +3.12%] and its component 1.87%, while the
+predicted user-CPU and fault improvements were unclear; RSS instead regressed 1.53% and
+faults 1.18%. Warm wall was -0.85% [-1.53%, +0.55%], with component, user CPU, RSS, and
+faults all unclear. Every sample passed the oracle and the tree remained unchanged.
 
-A temporary host-load interval affected both indexed variants and widened that job's
-interval. The quiet producer and warm jobs resolve the hypothesis independently: there
-is no meaningful reduction in allocation or CPU. The system allocator already recycles
+A temporary host-load interval affected both indexed variants and widened that job’s
+interval.
+The quiet producer and warm jobs resolve the hypothesis independently: there is
+no meaningful reduction in allocation or CPU. The system allocator already recycles
 these small, short-lived vector buffers effectively; retaining one only changes where
 capacity remains live.
 
 ## Verdict
 
 **Rejected and reverted.** No measured path reached the 3% gate or showed the predicted
-mechanism, and producer memory/fault counters moved in the wrong direction. The 720k run
-was not triggered. Future allocation work should target the per-entry owned name/path
-objects visible to consumers, not the directory vector's backing allocation.
+mechanism, and producer memory/fault counters moved in the wrong direction.
+The 720k run was not triggered.
+Future allocation work should target the per-entry owned name/path objects visible to
+consumers, not the directory vector’s backing allocation.
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.
