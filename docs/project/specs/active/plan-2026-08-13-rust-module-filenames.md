@@ -187,12 +187,12 @@ The branch remains on Python 3.12-compatible Rust bindings and keeps the existin
 
 ### Phase 2: Naming guardrail
 
-- [ ] Add the dependency-free policy checker and deterministic diagnostics.
-- [ ] Add focused Node tests for allowed roots, forbidden names, duplicate names, and
+- [x] Add the dependency-free policy checker and deterministic diagnostics.
+- [x] Add focused Node tests for allowed roots, forbidden names, duplicate names, and
   fixture exclusion.
-- [ ] Wire the check into `make check` without changing unrelated targets.
-- [ ] Run the focused test, the policy check against the repository, and `make check`.
-- [ ] Commit the guardrail separately from the rename.
+- [x] Wire the check into `make check` without changing unrelated targets.
+- [x] Run the focused test, the policy check against the repository, and `make check`.
+- [x] Commit the guardrail separately from the rename.
 
 ### Phase 3: End-to-end handoff
 
@@ -240,6 +240,11 @@ RAM volume and test temporary files on an APFS RAM volume because the host data 
 was nearly full. The gate covered all-feature, minimal, watch, and Rust 1.85 builds;
 Python concurrency and the Python 3.12 stable-ABI wheel; documentation; supply-chain and
 dependency audits; and the multilingual repository self-check.
+
+The focused policy suite passed all six synthetic-tree cases, and the repository audit
+accepted all 35 in-scope Rust files.
+The complete `make check` gate also passed after the new check was added, including the
+unchanged 92-case CLI golden suite and installed-wheel smoke test.
 
 ## Rollout Plan
 
