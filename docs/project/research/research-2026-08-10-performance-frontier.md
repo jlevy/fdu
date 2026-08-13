@@ -515,17 +515,20 @@ The key results and their transfer limits are:
 - **The final gap is now decomposed rather than mysterious.** Exp-040 removes full-index
   retention and user CPU but rich summary still asks for files, directories, apparent
   bytes, allocated bytes, and newest file mtime.
-  H62 removes generic observation/path work; H63 removes index-only macOS fields and
-  avoids copying file names; H65 checks the new worker knee; H64 finally derives only
-  the selected apparent or allocated total for a matched scalar workload.
+  Exp-041/042 show that removing generic observation/path work and index-only macOS
+  fields cuts user CPU and memory sharply without moving the syscall-dominated wall
+  floor; both prototypes were reverted.
+  H64 now isolates the semantic remainder by deriving only the selected apparent or
+  allocated total for a matched scalar workload.
   H64 keeps rich `summary` unchanged and must compare FDU’s path accounting separately
   from dumac’s hard-link-deduplicated total.
 
 The profiling caveat is also recorded: `/usr/bin/sample` returned no usable stacks and
 the installed Xcode `xctrace` aborted in its Devices plugin before launching the target.
 Exp-040’s resource signature still identifies its mechanism — user CPU down 66.27%,
-system CPU statistically unchanged — but H62/H63 should obtain fresh native profiles
-when the host tooling works instead of treating that attribution as a substitute.
+system CPU statistically unchanged — and exp-041/042 independently reproduced the same
+wall floor while eliminating more user-space work.
+Fresh native profiles remain desirable when the host tooling works.
 
 **Maintainer testimony on scheduling, collected from primary sources (annotated list in
 the References), adds four warnings the surveys alone would miss:**
@@ -1423,10 +1426,10 @@ the loop extensions in H36–H39 to be trusted globally.
 | H59 | A general exact cache-off report path can retain only the complete requested view state without making output limits alter the scan | large RSS reduction and wall down ≥3%; byte-identical report | **Confirmed, topology-sensitive** (exp-040): heterogeneous rich-summary wall −14.56% [−18.55%, −9.04%], RSS −95.28%, one stable semantic hash; uniform-tree exact-binary wall replications +2.8% and +1.8% versus the indexed control |
 | H60 | Cold workers can build disjoint local subtree indexes and splice them at region completion instead of funneling one path operation per entry | cold-index component/user CPU and channel work down; end-to-end wall down ≥3%; RSS bounded | queued `fdu-weey`; deterministic identity/progress/delta contract required |
 | H61 | Store the completed bootstrap in a dense immutable base and apply later changes through a sparse mutable overlay with bounded compaction | million-scale RSS down ≥40% plus cold indexed wall down ≥3% or a decisive warm/query win | queued after H19–H22 as `fdu-f67r`; preserve all query, identity, snapshot, delta, watch, and progressive semantics |
-| H62 | Aggregate the exact rich summary inside existing scan workers, retaining paths only for directories that must be descended into | wall/user CPU/channel work down ≥3%; exact rich-summary hash | queued `fdu-hly4`; portable scope/error parity |
-| H63 | Derive a strict macOS bulk request/parser from rich-summary requirements and avoid allocating file names | wall/system/user CPU down ≥3%; malformed/mount/firmlink/one-filesystem fallback parity | queued `fdu-vpow`; re-screen 64/128 KiB |
+| H62 | Aggregate the exact rich summary inside existing scan workers, retaining paths only for directories that must be descended into | wall/user CPU/channel work down ≥3%; exact rich-summary hash | **Refuted** (exp-041): wall −1.38%; user CPU −36.23%; reverted after composition screen |
+| H63 | Derive a strict macOS bulk request/parser from rich-summary requirements and avoid allocating file names | wall/system/user CPU down ≥3%; malformed/mount/firmlink/one-filesystem fallback parity | **Refuted with H62** (exp-042): wall +1.86% [−1.96%, +4.56%]; reverted |
 | H64 | Derive only the selected size total for a workload matched to dumac | match or beat dumac wall; exact FDU path-accounting oracle | design-gated `fdu-8nfx`; rich summary unchanged, hard-link difference disclosed |
-| H65 | Retune worker depth only after worker-local reduction removes the indexed consumer | 6/8/10/12/16 curve; wall down ≥3%, CPU/RSS bounded | queued `fdu-i076`; indexed policy unchanged |
+| H65 | Retune worker depth only after worker-local reduction removes the indexed consumer | 6/8/10/12/16 curve; wall down ≥3%, CPU/RSS bounded | superseded before measurement because H62 did not land; H57 already resolved indexed depth |
 
 **Guardrails, so a fast-looking result cannot be a wrong one:**
 

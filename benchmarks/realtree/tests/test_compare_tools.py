@@ -9,7 +9,7 @@ from benchmarks.realtree import compare_tools
 
 
 def tool(name: str) -> compare_tools.Tool:
-    return compare_tools.Tool(compare_tools.CONTRACTS[name], Path("/bin/true"))
+    return compare_tools.Tool(name, compare_tools.CONTRACTS[name], Path("/bin/true"))
 
 
 class ToolComparisonTests(unittest.TestCase):
@@ -21,7 +21,7 @@ class ToolComparisonTests(unittest.TestCase):
         for ordinal in range(-1, 4):
             at_ordinal = [entry for entry in schedule if entry[1] == ordinal]
             self.assertCountEqual(
-                [entry[0].contract.name for entry in at_ordinal],
+                [entry[0].name for entry in at_ordinal],
                 ["dust", "gdu", "pdu"],
             )
         for competitor in competitors:
@@ -37,13 +37,30 @@ class ToolComparisonTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as raw:
             binary = Path(raw) / "private-name"
             binary.write_bytes(b"fixture")
-            candidate = compare_tools.Tool(compare_tools.CONTRACTS["bsd-du"], binary)
+            candidate = compare_tools.Tool(
+                "bsd-du", compare_tools.CONTRACTS["bsd-du"], binary
+            )
 
             identity = compare_tools._identity(candidate)
 
         self.assertNotIn(raw, str(identity))
         self.assertEqual(identity["binary_size_bytes"], 7)
+        self.assertEqual(identity["contract"], "bsd-du")
         self.assertEqual(identity["command"], ["{binary}", "-sk", "{root}"])
+
+    def test_aliases_compare_two_binaries_under_the_same_contract(self) -> None:
+        binary = str(Path("/usr/bin/true").resolve())
+        candidate = compare_tools._parse_tool(
+            f"h62:fdu-transient-summary={binary}"
+        )
+        control = compare_tools._parse_tool(
+            f"h59:fdu-transient-summary={binary}"
+        )
+
+        self.assertEqual(candidate.name, "h62")
+        self.assertEqual(control.name, "h59")
+        self.assertEqual(candidate.contract, control.contract)
+        self.assertEqual(compare_tools._identity(candidate)["contract"], "fdu-transient-summary")
 
     def test_statistics_compare_each_tool_only_with_its_adjacent_anchor(self) -> None:
         samples = []

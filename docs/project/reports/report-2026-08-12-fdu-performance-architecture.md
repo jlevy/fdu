@@ -301,36 +301,30 @@ keeping raw samples so means or Hyperfine-compatible summaries can be reconstruc
 
 ## Next Performance Frontier
 
-The experiment queue is ordered by potential impact and by design risk:
+The experiment queue is ordered by potential impact and by design risk.
+Two proposed layers have now been measured and removed: H62 cut user CPU 36.23% but
+improved wall only 1.38% (exp-041), and the H62 plus H63 composition changed wall by
++1.86% [−1.96%, +4.56%] (exp-042). That evidence says another rich-summary allocation
+optimization is unlikely to move the warm APFS syscall floor.
 
-1. **Worker-local derived summaries (H62, `fdu-hly4`).** Exp-040 proved the execution
-   plan; now aggregate inside existing workers so files need no relative path, `Op`,
-   observation batch, or single summary consumer.
-2. **Report-derived macOS metadata (H63, `fdu-vpow`).** Use a separate strict
-   `getattrlistbulk` record for the derived summary, omitting index-only fields and
-   allocating names only for directories.
-   Re-screen 64 versus 128 KiB for that narrower record; do not resurrect the rejected
-   256 KiB full-record change.
-3. **Selected-total matched challenge (H64, `fdu-8nfx`).** Derive only the requested
+1. **Selected-total matched challenge (H64, `fdu-8nfx`).** Derive only the requested
    apparent or allocated total for a fair dumac-class workload.
    Keep rich `summary` unchanged and publish hard-link/symlink accounting differences
    beside any claim.
-4. **Reduction-only worker depth (H65, `fdu-i076`).** Re-run the 6/8/10/12/16 curve
-   after H62 removes the consumer; the indexed path retains its accepted policy.
-5. **Compact reusable entries (H19–H22, `fdu-prph`).** Measure the entry layout, remove
+2. **Compact reusable entries (H19–H22, `fdu-prph`).** Measure the entry layout, remove
    duplicate name storage, move directory-only state out of files, and compact IDs and
    revisions one arm at a time.
    Million-entry RSS is the clearest current defect.
-6. **Worker-local subtree construction (H60, `fdu-weey`).** Build disjoint local arenas
+3. **Worker-local subtree construction (H60, `fdu-weey`).** Build disjoint local arenas
    and splice them with one roll-up at region completion, reducing path and channel work
    without bypassing the index contract.
-7. **Dense immutable base plus sparse overlay (H61, `fdu-f67r`).** After the layout
+4. **Dense immutable base plus sparse overlay (H61, `fdu-f67r`).** After the layout
    floor is known, test whether bootstrap state can remain dense while later mutations
    use a bounded overlay and compaction cycle.
-8. **Portable wide-directory stat chunks (H58, `fdu-r9he`).** On Linux or the portable
+5. **Portable wide-directory stat chunks (H58, `fdu-r9he`).** On Linux or the portable
    backend, test dua-style small stealable metadata jobs.
    This is not expected to help the macOS bulk path.
-9. **Journal scoping.** FSEvents can turn a quiet warm run from O(entries) into
+6. **Journal scoping.** FSEvents can turn a quiet warm run from O(entries) into
    O(changed regions), but the same fast full scan remains the fallback and the basis
    for first use, invalid journals, and explicit cache-off runs.
 

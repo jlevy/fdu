@@ -131,6 +131,12 @@ What it found, first against a roughly 60k-entry checkout and then against a
   gains, so the speed effect is explicitly topology-sensitive.
   The planner is internal, has no fast-mode flag, and falls closed to the full index for
   cache participation, filters, multiple views, watch mode, or any unproved request.
+- **Further rich-summary specialization did not compound.** Worker-local reduction
+  improved wall only 1.38% at 901,963 entries and 1.26% at 720,805 entries (exp-041).
+  Adding a narrower macOS bulk record changed wall by +1.86% [−1.96%, +4.56%] (exp-042),
+  even though user CPU and memory fell sharply.
+  Both engine prototypes were reverted: system calls remain the warm-APFS floor, and a
+  duplicate walker/parser is not justified without a visible speedup.
 
 Rejected experiments remain as important as accepted ones.
 The original parallel revalidation funnel bought only 2.6%, root-relative `openat` was
@@ -671,10 +677,13 @@ H19–H22 ladder. Recursive high-concurrency implementations in dust, gdu, and d
 not create a new APFS hypothesis after exp-036 refuted over-threading.
 Dumac validates the already-landed bulk syscall mechanism but performs a smaller
 total-only, reduced-attribute job.
-Its two implementation reports and source diff queue worker-local rich-summary reduction
-(H62), report-derived macOS metadata (H63), a selected-total matched-workload challenge
-(H64), and reduction-only worker calibration (H65). These remain isolated from the
-accepted indexed worker policy and the open hard-link attribution design.
+Its two implementation reports and source diff motivated worker-local rich-summary
+reduction (H62), report-derived macOS metadata (H63), a selected-total matched-workload
+challenge (H64), and reduction-only worker calibration (H65). Exp-041/042 rejected
+H62/H63 despite strong CPU and memory reductions, and H65 is superseded because its
+reduction-only prerequisite did not land.
+H64 remains design-gated and isolated from the accepted indexed worker policy and the
+open hard-link attribution design.
 
 The
 [current diskus benchmark](https://github.com/sharkdp/diskus/blob/90196e950017d25b2940e8e0fda51a321ca66e1a/README.md#benchmark)

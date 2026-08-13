@@ -44,6 +44,7 @@ class ToolContract:
 class Tool:
     """A resolved tool binary with its declared contract."""
 
+    name: str
     contract: ToolContract
     binary: Path
 
@@ -222,14 +223,14 @@ def main(argv: Sequence[str]) -> int:
     parser.add_argument(
         "--anchor",
         required=True,
-        metavar="FDU_CONTRACT=PATH",
+        metavar="[LABEL:]FDU_CONTRACT=PATH",
         help="immutable fdu release binary used beside every competitor",
     )
     parser.add_argument(
         "--tool",
         action="append",
         required=True,
-        metavar="NAME=PATH",
+        metavar="[LABEL:]CONTRACT=PATH",
         help="supported competitor; repeat for each tool",
     )
     parser.add_argument("--trials", type=int, default=measure.DEFAULT_TRIALS)
@@ -309,12 +310,12 @@ def run(
         raise ComparisonError("at least three trials are required for a paired interval")
     if warmups < 0:
         raise ComparisonError("warmups cannot be negative")
-    names = [tool.contract.name for tool in competitors]
-    if len(names) != len(set(names)) or anchor.contract.name in names:
+    names = [tool.name for tool in competitors]
+    if len(names) != len(set(names)) or anchor.name in names:
         raise ComparisonError("competitor names must be unique and cannot repeat the anchor")
 
     tools = [anchor, *competitors]
-    identities = {tool.contract.name: _identity(tool) for tool in tools}
+    identities = {tool.name: _identity(tool) for tool in tools}
     started = time.time()
     before = tree.fingerprint(root, label=label)
     if baseline_output is not None:
@@ -333,7 +334,7 @@ def run(
             position += 1
             sample = _run_one(
                 tool,
-                pair=competitor.contract.name,
+                pair=competitor.name,
                 ordinal=ordinal,
                 warmup=warmup,
                 root=root,
@@ -345,7 +346,7 @@ def run(
     after = tree.fingerprint(root, label=label)
     mutation = tree.compare(after, before)
     semantic_mismatches = _invalidate_semantic_mismatches(
-        samples, anchor=anchor.contract.name
+        samples, anchor=anchor.name
     )
     document: Dict[str, Any] = {
         "schema": SCHEMA,
@@ -364,7 +365,7 @@ def run(
         "tree_after_digest": after["engine_digest"],
         "tree_mutated_during_run": mutation,
         "baseline_drift": drift,
-        "anchor": anchor.contract.name,
+        "anchor": anchor.name,
         "competitor_order": names,
         "tools": identities,
         "samples": samples,
@@ -473,7 +474,7 @@ def _run_one(
     stderr = result["stderr"].encode("utf-8", errors="replace")
     return {
         "pair": pair,
-        "tool": tool.contract.name,
+        "tool": tool.name,
         "ordinal": ordinal,
         "warmup": warmup,
         "valid": not reasons,
@@ -720,26 +721,34 @@ def render(document: Mapping[str, Any]) -> str:
 
 
 def _parse_tool(specification: str, *, expected: Optional[str] = None) -> Tool:
-    name, separator, raw_path = specification.partition("=")
-    if not separator or not name or not raw_path:
-        raise ComparisonError(f"tool {specification!r} must be NAME=PATH")
-    if expected is not None and name != expected:
+    descriptor, separator, raw_path = specification.partition("=")
+    if not separator or not descriptor or not raw_path:
+        raise ComparisonError(f"tool {specification!r} must be [LABEL:]CONTRACT=PATH")
+    label, alias, contract_name = descriptor.partition(":")
+    if not alias:
+        label = descriptor
+        contract_name = descriptor
+    if not label or not contract_name:
+        raise ComparisonError(f"tool {specification!r} must be [LABEL:]CONTRACT=PATH")
+    if expected is not None and contract_name != expected:
         raise ComparisonError(f"expected {expected}=PATH, got {specification!r}")
-    contract = CONTRACTS.get(name)
+    contract = CONTRACTS.get(contract_name)
     if contract is None:
         raise ComparisonError(
-            f"unsupported tool {name!r}; choose from {', '.join(sorted(CONTRACTS))}"
+            f"unsupported tool contract {contract_name!r}; "
+            f"choose from {', '.join(sorted(CONTRACTS))}"
         )
     binary = Path(raw_path).resolve()
     if not binary.is_file():
-        raise ComparisonError(f"{name} binary does not exist: {binary}")
-    return Tool(contract=contract, binary=binary)
+        raise ComparisonError(f"{label} binary does not exist: {binary}")
+    return Tool(name=label, contract=contract, binary=binary)
 
 
 def _identity(tool: Tool) -> Dict[str, Any]:
     content = tool.binary.read_bytes()
     return {
-        "name": tool.contract.name,
+        "name": tool.name,
+        "contract": tool.contract.name,
         "work_class": tool.contract.work_class,
         "description": tool.contract.description,
         "command": list(tool.contract.argv),

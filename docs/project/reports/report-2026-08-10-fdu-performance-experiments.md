@@ -97,6 +97,8 @@ dead end.
 | 038 | [Parent-relative openat frontier on the live 1M workspace](#exp038--parentrelative-openat-frontier-on-the-live-1m-workspace) | H24, H29 | `cold-scan-index` | -0.7% | ❌ rejected |
 | 039 | [Revisit the macOS bulk buffer on the live 1M workspace](#exp039--revisit-the-macos-bulk-buffer-on-the-live-1m-workspace) | H55 | `cold-scan-index` | +2.2% | ❌ rejected |
 | 040 | [Derive an exact rich summary without building an index](#exp040--derive-an-exact-rich-summary-without-building-an-index) | H59 | `rich-summary-report` | -14.6% | ✅ accepted |
+| 041 | [Reduce transient summaries inside scan workers](#exp041--reduce-transient-summaries-inside-scan-workers) | H62 | `rich-summary-report` | -1.4% | ❌ rejected |
+| 042 | [Derive macOS summary bulk records](#exp042--derive-macos-summary-bulk-records) | H63 | `rich-summary-report` | +1.9% | ❌ rejected |
 
 ## The experiments
 
@@ -1555,6 +1557,69 @@ across every old/new sample with no invalid trial or tree drift.
 
 Full record:
 [`exp-040-derive-an-exact-rich-summary-without-building-an-index.md`](../experiments/exp-040-derive-an-exact-rich-summary-without-building-an-index.md)
+
+### exp-041 — Reduce transient summaries inside scan workers
+
+❌ rejected · 2026-08-13 · H62
+
+Control: H59 transient summary reduced from generic observation batches
+
+Candidate: worker-local summary reduction with paths retained only for directories
+
+**`rich-summary-report`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 3031.8 | 2966.0 | -1.38% | [-3.71%, -0.31%] |
+| cpu (ms) | 10673.3 | 10521.7 | -1.12% | [-3.26%, -0.22%] |
+| user (ms) | 483.6 | 309.0 | -36.23% | [-36.95%, -34.83%] |
+| system (ms) | 10183.7 | 10212.8 | +0.53% (n.s.) | [-1.68%, +1.38%] |
+| peak rss (MiB) | 13.8 | 9.0 | -34.77% | [-35.95%, -34.17%] |
+
+Cost to carry: 299 lines; no new dependencies; new failure mode: A second walker
+implementation could drift from the generic scan contract.
+
+The prototype was retained only while screening the preregistered H63 composition;
+exp-042 also missed the wall gate, so both engine layers were reverted
+
+**Rejected:** Worker-local reduction cuts user CPU 36.23% and RSS 34.77%, but its 1.38%
+paired wall improvement misses the preregistered 3% production bar; the 720,805-entry
+replication is likewise only 1.26% with its interval crossing zero.
+
+Full record:
+[`exp-041-reduce-transient-summaries-inside-scan-workers.md`](../experiments/exp-041-reduce-transient-summaries-inside-scan-workers.md)
+
+### exp-042 — Derive macOS summary bulk records
+
+❌ rejected · 2026-08-13 · H63
+
+Control: H59 transient summary reduced from generic observation batches
+
+Candidate: H62 worker-local reduction plus a requirement-derived macOS bulk record
+
+**`rich-summary-report`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 3199.5 | 3251.2 | +1.86% (n.s.) | [-1.96%, +4.56%] |
+| cpu (ms) | 11245.7 | 10860.4 | -2.94% | [-4.03%, -0.99%] |
+| user (ms) | 499.2 | 246.8 | -50.96% | [-51.72%, -49.84%] |
+| system (ms) | 10741.4 | 10613.9 | -0.63% (n.s.) | [-1.86%, +1.36%] |
+| peak rss (MiB) | 13.9 | 8.4 | -39.70% | [-40.46%, -38.62%] |
+
+Cost to carry: 547 lines; no new dependencies; 1 unsafe blocks; new failure mode: A
+second strict kernel-record parser could drift from the full metadata parser; new
+failure mode: A reduction-specific walker could drift from the generic scan contract.
+
+The complete H62 plus H63 composition was screened against committed H59 and is reverted
+because its primary wall metric missed the production bar
+
+**Rejected:** The composition changes paired wall by +1.86% with a 95% interval spanning
+-1.96% to +4.56%; lower user CPU and RSS do not justify a second walker and macOS record
+parser without a user-visible speedup.
+
+Full record:
+[`exp-042-derive-macos-summary-bulk-records.md`](../experiments/exp-042-derive-macos-summary-bulk-records.md)
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.
