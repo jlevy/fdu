@@ -229,11 +229,9 @@ impl PyIndex {
         if words_per_page == 0 {
             return Err(PyValueError::new_err("words_per_page must be positive"));
         }
-        let report = fdu::query::report(
-            &self.inner,
-            &Query { selection, views, words_per_page },
-            &provenance,
-        );
+        let query = Query { selection, views, words_per_page };
+        query.validate_analysis(self.analysis.profile).map_err(PyValueError::new_err)?;
+        let report = fdu::query::report(&self.inner, &query, &provenance);
         report_dict(py, &report)
     }
 

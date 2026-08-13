@@ -24,21 +24,29 @@ For where the design comes from and which prior art each piece draws on, see
 
 ## Architecture
 
-Three retained artifacts, one transient answer, and one contract:
+The metadata core has two retained artifacts, one transient answer, and one mutation
+contract. Explicit content analysis adds two separately invalidated derived artifacts:
 
 - **Index** (`index.rs`): in-memory parent-pointer tree.
   Every directory carries pre-computed roll-up state.
 - **Snapshot** (`snapshot.rs`): the index serialized, invalidated wholesale by an engine
   fingerprint.
-- **Delta** (`types.rs`): a typed, clocked change, and the only way the index or the
-  cache is ever modified.
+- **Delta** (`engine_contract.rs`): a typed, clocked metadata change, and the only way
+  the metadata index or snapshot is ever modified.
   Producers submit `Observation`s; the index arbitrates them and mints `AppliedDelta`.
+- **Content index** (`content/content_index.rs`): optional sparse file records and
+  pre-computed content roll-ups, allocated only for an enabled analysis profile.
+- **Content sidecar** (`content/content_cache.rs`): profile-scoped persistence for the
+  derived content tier, never loaded by metadata-only requests and never embedded in the
+  metadata snapshot.
 - **Derived report plan** (`execution.rs`): the minimum transient state sufficient for
   one complete one-shot request when no cache, live session, or later query can consume
   an index. It produces a `Report`, never a hidden cache or second query grammar.
 
-`scan.rs` and `watch.rs` are delta *producers*. `index.rs` and `snapshot.rs` are delta
-*consumers*. Nothing else mutates state.
+`scan.rs` and `watch.rs` are metadata-delta *producers*. `index.rs` and `snapshot.rs`
+are metadata-delta *consumers*. Content workers submit independently fingerprint-checked
+analysis observations through the index’s derived-data boundary; they do not advance the
+metadata clock or alter snapshot truth.
 
 A cold scan establishes a historyless baseline.
 A reconciliation sweep conditionally applies its diff while it walks.
@@ -190,9 +198,9 @@ Every option belongs to exactly one axis:
 | --- | --- | --- |
 | Scope | What is scanned and cached? | `PATH`, `--scan-depth` |
 | Selection | Which retained entries does this query consider, and how are results shaped? | `--include`, `--exclude`, `--min-size`, `--modified-since`, `--modified-before`, `--kind`, `--depth`, `--limit`, `--sort`, `--reverse`, `--size` |
-| View | Which roll-up is reported? | `--view tree,types,files,summary` |
+| View | Which roll-up is reported? | `--view tree,extensions,types,families,languages,documents,files,summary`, `--words-per-page` |
 | Format | How is it serialized? | `--format`, `--color` |
-| Mode | One answer or a live feed, and how is the cache used? | `--watch`, `--interval`, `--cache`, `--allow-partial` |
+| Mode | One answer or a live feed, how is the cache used, and is content read? | `--watch`, `--interval`, `--cache`, `--analyze`, `--max-file-size`, `--analysis-workers`, `--allow-partial` |
 
 A proposed flag that fits no axis is a design smell: either it generalizes into an axis
 value, or it does not ship.
@@ -223,13 +231,22 @@ an exact aggregate instead.
 It derives that decision from the complete request, exposes no fast-mode flag, and falls
 closed to the full index when any requirement is unproved.
 
-Two performance tiers follow from this, and both are milliseconds warm: an unfiltered
-request reads pre-computed roll-up state directly, while any selection filter triggers
-one traversal that re-aggregates what it admits.
+Within metadata report evaluation, two query-cost tiers follow from this, and both are
+milliseconds warm: an unfiltered request reads pre-computed roll-up state directly,
+while any selection filter triggers one traversal that re-aggregates what it admits.
 One traversal serves every filtered view in a request.
 A test pins that the two tiers answer identically when the filter admits everything.
 An additional golden and semantic-hash gate pins that a derived summary serializes
 identically to the indexed summary.
+
+Content analysis adds a third, explicit I/O tier without changing either metadata tier.
+No analysis profile means no regular-file content opens, analyzer workers, sparse
+content index, or content-sidecar load.
+Any enabled `--analyze` profile retains the full metadata index, then performs bounded
+content reads for records absent from the matching sidecar.
+`languages` requires the code analyzer and `documents` requires at least the basic
+analyzer; a view rejects missing analyzers instead of enabling them or presenting
+unmeasured values as zero.
 
 ### Views Are Readers
 

@@ -37,6 +37,14 @@ content fixture prepared
 ? 0
 ```
 
+### Prepare Empty and Unsupported-Language Trees
+
+```console
+$ node -e "const fs=require('node:fs'); fs.mkdirSync('empty-project'); fs.mkdirSync('unsupported-project'); fs.writeFileSync('unsupported-project/Main.hs','main = pure ()\n'); console.log('edge fixtures prepared')"
+edge fixtures prepared
+? 0
+```
+
 ### Prepare a Signature-Only Binary
 
 ```console
@@ -60,13 +68,46 @@ $ node -e "const {execFileSync}=require('node:child_process'); const r=JSON.pars
 
 ## Human Summaries Separate Code and Documents
 
+Content views never enable their analyzers implicitly, and they do not present missing
+measurements as zero.
+
+```console
+$ fdu --cache off --view languages content-project
+! fdu: --view languages requires --analyze code or full; views never enable content analysis implicitly
+? 2
+```
+
+```console
+$ fdu --cache off --view documents content-project
+! fdu: --view documents requires --analyze basic, code, documents, or full; views never enable content analysis implicitly
+? 2
+```
+
+An explicit analysis request remains visible even when there are no file records.
+
+```console
+$ node -e "const {execFileSync}=require('node:child_process'); const r=JSON.parse(execFileSync('fdu',['--cache','off','--analyze','basic','--view','summary','--format','json','empty-project'],{encoding:'utf8'})); console.log(JSON.stringify({schema:r.schema,profile:r.analysis.profile,files:r.reports[0].summary.files}));"
+{"schema":"fdu.report/2","profile":"basic","files":0}
+? 0
+```
+
+An unavailable percentage is not printed as a measured zero, and the reason remains on
+the human row.
+
+```console
+$ fdu --cache off --allow-partial --analyze code --view languages --size apparent unsupported-project
+! warning: content analysis incomplete: 0 invalid UTF-8, 0 too large, 0 I/O errors, 0 changed during read, 1 unsupported, 0 stale
+      15 B       —  haskell            1 file, 1 unsupported
+? 0
+```
+
 ```console
 $ fdu --cache off --analyze code --view languages,documents --size apparent content-project
       38 B   75.0%  rust               1 file, 4 lines (3 code, 0 comment, 1 blank)
       39 B   25.0%  python             1 file, 3 lines (1 code, 1 comment, 1 blank)
 
       42 B   63.6%  markdown           1 file, 5 lines (3 nonblank, 2 blank), 7 words (0.0 pages), 1 documentation
-      35 B   36.4%  text               2 files, 3 lines (2 nonblank, 1 blank), 4 words (0.0 pages), 1 documentation
+      35 B   36.4%  text               2 files, 3 lines (2 nonblank, 1 blank), 4 words (0.0 pages), 1 documentation, 1 binary
 ? 0
 ```
 
@@ -337,13 +378,13 @@ Malformed markup remains bounded and deterministic.
 
 ```console
 $ node -e "const {execFileSync}=require('node:child_process'); const r=JSON.parse(execFileSync('fdu',['--cache','off','--analyze','documents','--view','documents','--format','json','--limit','all','markdown-project'],{encoding:'utf8'})); const m=r.reports[0].metrics; console.log(JSON.stringify({share_metric:m.share_metric,files:m.total.files,metrics:m.total.metrics,pages:m.total.pages}));"
-{"share_metric":"document_words","files":2,"metrics":{"physical_lines":27,"blank_lines":9,"nonblank_lines":18,"code_lines":0,"comment_lines":0,"code_blank_lines":0,"raw_words":56,"logical_words":70,"paragraphs":6,"visible_words":21,"visible_logical_words":25,"document_words":25},"pages":{"words":25,"words_per_page":250}}
+{"share_metric":"document_words","files":2,"metrics":{"physical_lines":27,"blank_lines":9,"nonblank_lines":18,"code_lines":0,"comment_lines":0,"code_blank_lines":0,"raw_words":56,"logical_words":70,"paragraphs":6,"visible_words":22,"visible_logical_words":25,"document_words":25},"pages":{"words":25,"words_per_page":250}}
 ? 0
 ```
 
 ```console
 $ node -e "const {execFileSync}=require('node:child_process'); const args=['--analyze','documents','--view','documents','--format','json','--limit','all','markdown-project']; const cold=JSON.parse(execFileSync('fdu',args,{encoding:'utf8'})); const hit=JSON.parse(execFileSync('fdu',['--cache','only',...args.slice(0)],{encoding:'utf8'})); const cm=cold.reports[0].metrics.total; const hm=hit.reports[0].metrics.total; console.log(JSON.stringify({cold:cold.source,hit:hit.source,cold_metrics:cm.metrics,hit_metrics:hm.metrics,equal:JSON.stringify(cm.metrics)===JSON.stringify(hm.metrics)}));"
-{"cold":"cold_scan","hit":"cache_only","cold_metrics":{"physical_lines":27,"blank_lines":9,"nonblank_lines":18,"code_lines":0,"comment_lines":0,"code_blank_lines":0,"raw_words":56,"logical_words":70,"paragraphs":6,"visible_words":21,"visible_logical_words":25,"document_words":25},"hit_metrics":{"physical_lines":27,"blank_lines":9,"nonblank_lines":18,"code_lines":0,"comment_lines":0,"code_blank_lines":0,"raw_words":56,"logical_words":70,"paragraphs":6,"visible_words":21,"visible_logical_words":25,"document_words":25},"equal":true}
+{"cold":"cold_scan","hit":"cache_only","cold_metrics":{"physical_lines":27,"blank_lines":9,"nonblank_lines":18,"code_lines":0,"comment_lines":0,"code_blank_lines":0,"raw_words":56,"logical_words":70,"paragraphs":6,"visible_words":22,"visible_logical_words":25,"document_words":25},"hit_metrics":{"physical_lines":27,"blank_lines":9,"nonblank_lines":18,"code_lines":0,"comment_lines":0,"code_blank_lines":0,"raw_words":56,"logical_words":70,"paragraphs":6,"visible_words":22,"visible_logical_words":25,"document_words":25},"equal":true}
 ? 0
 ```
 

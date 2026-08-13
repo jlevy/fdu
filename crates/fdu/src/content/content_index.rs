@@ -5,7 +5,9 @@ use std::path::{Path, PathBuf};
 
 use crate::classify::ContentFamily;
 
-use super::content_model::{CoverageReason, FileAnalysis, MetricValues};
+use super::content_model::{
+    AnalysisProfile, ContentProvenance, CoverageReason, FileAnalysis, MetricValues,
+};
 
 /// Additive tally for one type or family group.
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
@@ -92,6 +94,8 @@ impl ContentRollUp {
 /// Optional derived-data tier owned by an index only after analysis is enabled.
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 pub struct ContentIndex {
+    profile: Option<AnalysisProfile>,
+    provenance: Option<ContentProvenance>,
     files: BTreeMap<PathBuf, FileAnalysis>,
     rollups: BTreeMap<PathBuf, ContentRollUp>,
 }
@@ -105,6 +109,16 @@ impl ContentIndex {
     /// Whether no analysis records are present.
     pub fn is_empty(&self) -> bool {
         self.files.is_empty()
+    }
+
+    /// Requested profile represented by this derived tier, even when the tree is empty.
+    pub fn profile(&self) -> Option<AnalysisProfile> {
+        self.profile
+    }
+
+    /// Analyzer, rule, and option identity represented by this derived tier.
+    pub fn provenance(&self) -> Option<&ContentProvenance> {
+        self.provenance.as_ref()
     }
 
     /// Borrow one file's analysis.
@@ -122,6 +136,7 @@ impl ContentIndex {
     }
 
     pub(crate) fn commit(&mut self, path: PathBuf, analysis: FileAnalysis) {
+        self.prepare(analysis.profile, analysis.provenance.clone());
         if let Some(previous) = self.files.remove(&path) {
             self.merge_ancestors(&path, &previous, false);
         }
@@ -140,6 +155,16 @@ impl ContentIndex {
             self.files.remove(&candidate);
             self.merge_ancestors(&candidate, &analysis, false);
         }
+    }
+
+    pub(crate) fn prepare(&mut self, profile: AnalysisProfile, provenance: ContentProvenance) {
+        if self.profile == Some(profile) && self.provenance.as_ref() == Some(&provenance) {
+            return;
+        }
+        self.files.clear();
+        self.rollups.clear();
+        self.profile = Some(profile);
+        self.provenance = Some(provenance);
     }
 
     fn merge_ancestors(&mut self, file: &Path, analysis: &FileAnalysis, add: bool) {

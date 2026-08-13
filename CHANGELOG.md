@@ -63,6 +63,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Content performance evidence is currently local M1/APFS data rather than a controlled
   cross-platform release matrix; CI checks semantics and benchmark contracts, not timing
   thresholds.
+- Content sidecars are profile-scoped.
+  Repeating one profile reuses unchanged files, but switching profiles can reread
+  content whose lower-level analyzer results were already computed under another
+  profile.
+- Content coverage is also profile-scoped rather than per analyzer.
+  An unsupported deeper analyzer leaves the file uncovered for that profile instead of
+  retaining a separate lower-level metric record.
+- Content analysis is one-shot; watch mode remains metadata-only.
 - Standard LOC covers 15 common languages rather than SCC or Tokei’s long tail.
   Unsupported code stays explicit coverage, and embedded-language and AST metrics are
   deferred rather than approximated.

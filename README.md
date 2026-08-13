@@ -20,6 +20,29 @@ One walk, many metrics, cached between runs.
 > matrices remain open.
 > See [the Phase 1 plan](docs/project/specs/active/plan-2026-08-08-fdu-phase-1.md).
 
+## Four Common Reports
+
+These commands cover the common cost and reporting choices:
+
+| Report | Command | Regular-file content | Result |
+| --- | --- | --- | --- |
+| Languages and lines of code | `fdu --analyze code --view languages PATH` | Reads eligible files | One row per detected code type with bytes, standard code lines, comment lines, blank lines, exact shares, and explicit unsupported coverage |
+| File types by name | `fdu --view types PATH` | Never read | Stable file-type rows classified from exact filenames and extensions, with file counts and sizes |
+| Folder sizes | `fdu PATH` | Never read | The default directory tree with rolled-up sizes and file counts; builds or refreshes the reusable metadata index |
+| Fast totals only | `fdu --cache off --view summary PATH` | Never read | One aggregate row with total size, file count, and directory count; retains no index or cache |
+
+The language command intentionally names two independent choices.
+`--analyze code` authorizes bounded content reads and computes standard lines of code;
+`--view languages` selects the grouped language report.
+A view never turns on content analysis by itself.
+
+For metadata classification, `--view types` applies stable exact-name and extension
+rules; use `--view extensions` when the raw extension is the desired grouping.
+For folder sizes, `tree` is the default view, so `fdu PATH` is the complete command.
+For the no-index totals path, both `--cache off` and the single unfiltered `summary`
+view are required. Sizes use allocated bytes by default; add `--size apparent` for
+logical file lengths.
+
 ## Why
 
 Of a dozen surveyed tools in this space ([du](https://www.gnu.org/software/coreutils/),
@@ -142,19 +165,89 @@ Publishing is Phase 1 work.
 `cargo install fdu` and `uvx --from fdu==<version> fdu` are future commands; neither
 package should be presented as available from crates.io or PyPI yet.
 
-## Use It
+## Three Cost Layers
+
+fdu separates **what it reads** from **how it reports the result**. `--analyze` is the
+content-I/O switch; `--view` is a projection over the state that was requested.
+A view never enables an analyzer implicitly.
+
+| Layer | Representative command | Filesystem work | State retained |
+| --- | --- | --- | --- |
+| Exact summary | `fdu --cache off --view summary PATH` | Enumerate and stat every entry; never read file contents | Five aggregate tallies; no index or cache |
+| Metadata index | `fdu PATH` | Enumerate and stat every entry; classify recognized paths without reading contents | Reusable parent-pointer index and, unless disabled, metadata snapshot v2 |
+| Content index | `fdu --analyze PROFILE PATH` | Metadata work plus bounded reads of eligible files missing from a compatible content sidecar | Metadata index plus sparse content roll-ups and a separate `.content` sidecar |
+
+The summary-only plan applies only to one unfiltered `summary` view with `--cache off`.
+Filters, multiple views, cache participation, watch mode, or content analysis fall
+closed to the full index because they need paths, hierarchy, or reusable state.
+The planner derives this internally; there is no separate “fast” flag whose semantics
+can drift from the ordinary query.
+
+With no `--analyze`, the default is strictly metadata-only:
+
+- no regular file is opened for content
+- no analyzer worker pool or sparse content index is created
+- `tree`, `files`, `summary`, and `extensions` retain their metadata behavior
+- `types` and `families` add path-only classification by exact filename and extension
+- the content sidecar is not loaded, and analyzer settings do not alter metadata
+  snapshot v2
+
+Analysis profiles request nested bundles; each deeper bundle includes the basic pass.
+Views select a report from the requested bundle:
+
+| `--analyze` | Adds | Views that expose those metrics |
+| --- | --- | --- |
+| `none` | Nothing; the default metadata-only path | None |
+| `basic` | Physical, blank, and nonblank lines; raw prose words | `types`, `families`, `documents` |
+| `code` | `basic` plus standard code, comment, and code-blank lines | `languages`; also the basic document report |
+| `documents` | `basic` plus logical words, paragraphs, and reader-visible Markdown | `documents` |
+| `full` | Every shipped analyzer | `languages,documents` together |
+
+`languages` therefore requires `--analyze code` or `full`, while `documents` requires
+any enabled profile.
+The metadata views remain legal with every profile, so one command can compose byte,
+type, code, and prose summaries over the same observed tree.
+Content analysis is currently one-shot; `--watch` remains metadata-only and rejects an
+enabled analysis profile.
+Content reads are bounded by `--max-file-size` and `--analysis-workers`; known binary
+types are rejected before opening, and other binary or unsupported inputs appear as
+coverage rather than invented zeroes.
+Selection flags such as `--include` shape the report, not the retained analysis scope.
+An enabled profile analyzes eligible files in the chosen `PATH` and `--scan-depth` so
+the resulting sidecar can serve later selections without rereading them.
+Coverage records are profile-scoped today.
+If a deeper analyzer such as standard LOC does not support a file, its byte metadata
+remains visible but that profile does not retain a separate lower-level line result for
+the same file.
+
+## Compose Other Queries
 
 ```shell
-fdu .                                      # summarize an explicitly chosen directory
 fdu --depth 3 ~/src                        # render three levels deep
 fdu --view extensions ~/Downloads          # break down by raw file extension
-fdu --view types ~/Downloads               # break down by stable detected file type
 fdu --analyze basic --view families .      # lines, blanks, words, and exact byte shares
 fdu --analyze basic --view documents .     # text lines, words, paragraphs, and pages
-fdu --analyze code --view languages .      # standard LOC, comments, blanks, and shares
 fdu --format json .                        # stable, versioned machine output
 fdu --view files --sort size -n 20 ~/src   # compose a largest-files query
 fdu --skill                                # print the self-contained agent skill
+```
+
+A cache-oriented walkthrough on one tree is:
+
+```shell
+# Metadata only: compact one-shot totals, then reusable indexed views.
+fdu --cache off --view summary PATH
+fdu --cache refresh --view tree,extensions,types,families PATH
+fdu --cache only --view tree,types PATH
+
+# Opt into successively richer content bundles.
+fdu --cache off --analyze basic --view types,families,documents PATH
+fdu --cache off --analyze code --view languages PATH
+fdu --cache off --analyze documents --view documents PATH
+fdu --cache refresh --analyze full --view languages,documents PATH
+
+# Reuse the exact same profile without touching source-file contents.
+fdu --cache only --analyze full --view languages,documents PATH
 ```
 
 ```text
@@ -170,10 +263,13 @@ Human output uses restrained semantic color when its destination is a terminal;
 `--color auto|always|never`, `NO_COLOR`, and `FORCE_COLOR` make the policy explicit.
 Primary results go to stdout, while warnings and errors go to stderr.
 Machine and skill output never contain ANSI styling.
-Metadata-only machine reports retain the versioned `fdu.report/1` schema.
-The `types`, `families`, `languages`, and `documents` metric summaries use
-`fdu.report/2`, adding exact share numerators and denominators, analyzer coverage, and
-versioned rule, option, and analyzer identities.
+Metadata-only machine reports retain the versioned `fdu.report/1` schema unless a
+metric-summary view is requested.
+Every explicit content request and the `types`, `families`, `languages`, and `documents`
+metric summaries use `fdu.report/2`, adding exact share numerators and denominators,
+analyzer coverage, and versioned rule, option, and analyzer identities.
+An unavailable metric share is represented as `0/0` in machine output and `—` in human
+output, never as a measured zero percent.
 Every metric row also reports how its files were detected, the confidence of those
 decisions, and generated, vendored, and documentation flags.
 Scan completeness and each tree node’s rendered truncation are separate fields.
@@ -188,13 +284,14 @@ endings, separates blank and nonblank lines, rejects NUL-containing and invalid 
 files explicitly, and counts raw words only for prose and markup types.
 `--max-file-size` bounds every read, `--analysis-workers` bounds concurrency, and
 `--words-per-page` controls the report-time page denominator.
-Content results use an independently versioned sidecar, so unchanged warm runs do not
-reopen files and metadata snapshot v2 remains unchanged.
-The `code` profile adds the dependency-free `code-sloc-v1` state machine for Rust,
-Python, JavaScript, TypeScript, Go, Java, C, C++, C#, Ruby, PHP, Swift, Kotlin, shell,
-and SQL. It reports code, comment, and code-blank lines separately, counts mixed lines
-as code, treats multiline strings and docstrings as code, and uses code lines as the
-default language-percentage denominator.
+Content results use a separately versioned, profile-scoped sidecar, so an unchanged warm
+run with the same profile and semantic settings does not reopen files.
+Changing profiles can require content reanalysis, but it never invalidates the separate
+metadata snapshot v2. The `code` profile adds the dependency-free `code-sloc-v1` state
+machine for Rust, Python, JavaScript, TypeScript, Go, Java, C, C++, C#, Ruby, PHP,
+Swift, Kotlin, shell, and SQL. It reports code, comment, and code-blank lines
+separately, counts mixed lines as code, treats multiline strings and docstrings as code,
+and uses code lines as the default language-percentage denominator.
 Other code types remain visible as unsupported coverage rather than being mislabeled
 from nonblank lines.
 The `documents` profile adds FlexDoc-style normalized word counts, paragraph runs, and
@@ -203,13 +300,15 @@ For Markdown it separately reports reader-visible words and excludes URLs, link
 destinations, code, metadata, footnote markers, and hidden markup; `full` combines the
 code and document analyzers.
 
-Classification is also a cost ladder.
+When analysis is enabled, classification is also a cost ladder.
 Exact filenames and recognized extensions stay path-only.
 Only unresolved files and the ambiguous `.h` extension receive bounded probes for
 shebangs, modelines, C++ literals, XML and manpage markers, binary signatures, and
 generated-file markers.
-NUL and named binary signatures take precedence over text hints, and every deeper
-decision is explainable in `fdu.report/2` rather than silently guessed.
+For unresolved paths, NUL and named binary signatures take precedence over shebang and
+modeline hints. A NUL found anywhere in any eligible read discards provisional text
+metrics, and every deeper decision is explainable in `fdu.report/2` rather than silently
+guessed.
 
 This surface — composable views, selection filters, time-window and watermark queries,
 cache policies, and a `tail -f`-style watch mode, all as orthogonal flags over one
@@ -257,8 +356,10 @@ use std::path::Path;
 let mut config = OpenConfig::default();
 config.analysis.profile = AnalysisProfile::Full;
 let (index, report) = open(Path::new("."), &config)?;
-let content = index.content_rollup(Path::new("")).expect("analysis requested");
-println!("{} analyzed files", content.total.analyzed_files);
+let analyzed = index
+    .content_rollup(Path::new(""))
+    .map_or(0, |content| content.total.analyzed_files);
+println!("{} analyzed files", analyzed);
 assert!(report.analysis.is_some());
 # Ok::<(), fdu::Error>(())
 ```
@@ -288,19 +389,22 @@ a release is published, that makes an exact version directly runnable as
 
 ## How It Works
 
-Three retained artifacts, one transient answer, and one contract:
+The metadata core and opt-in content layer retain separate state:
 
 | Artifact | What it is |
 | --- | --- |
-| **Index** | In-memory parent-pointer tree; every directory carries pre-computed roll-ups |
-| **Snapshot** | A complete index baseline, keyed by canonical root, semantic scan scope, format, and engine version |
+| **Metadata index** | In-memory parent-pointer tree; every directory carries pre-computed size, count, recency, and extension roll-ups |
+| **Metadata snapshot** | A complete metadata baseline, keyed by canonical root, semantic scan scope, format, and engine version |
+| **Content index** | Optional sparse per-file analysis records and derived roll-ups, allocated only after `--analyze` opts in |
+| **Content sidecar** | Separately versioned, profile-scoped persistence for unchanged content records; never loaded by metadata-only requests |
 | **Observation** | Verified producer input, optionally conditional on the indexed path state |
 | **AppliedDelta** | A clocked batch of effective committed changes for the bounded change feed |
 | **Derived report** | Exact minimum state for a proven one-shot composition; otherwise the planner falls back to the index |
 
-Everything else produces observations or consumes applied deltas.
-The index alone arbitrates observations, removes no-ops, advances the clock, and mints
-`AppliedDelta`.
+Metadata producers submit observations; the index alone removes no-ops, advances the
+metadata clock, and mints `AppliedDelta`. Content workers submit fingerprint-checked
+analysis observations to the optional derived tier without changing metadata truth or
+snapshot compatibility.
 
 Two invariants are non-negotiable, because a cache that lies is worse than no cache.
 Content-reuse fingerprints are size, mtime, ctime, and inode, never mtime alone, because

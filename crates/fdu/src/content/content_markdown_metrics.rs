@@ -148,12 +148,14 @@ pub(crate) fn analyze_markdown(source: &str) -> MetricValues {
             Event::End(tag) => accumulator.end(tag),
             Event::Text(text) => accumulator.push_text(&text),
             Event::Html(html) | Event::InlineHtml(html) => accumulator.push_html(&html),
-            Event::SoftBreak | Event::HardBreak | Event::Rule => accumulator.boundary(),
-            Event::Code(_)
+            Event::SoftBreak
+            | Event::HardBreak
+            | Event::Rule
+            | Event::Code(_)
             | Event::InlineMath(_)
             | Event::DisplayMath(_)
             | Event::FootnoteReference(_)
-            | Event::TaskListMarker(_) => {}
+            | Event::TaskListMarker(_) => accumulator.boundary(),
         }
     }
     accumulator.finish()
@@ -196,6 +198,14 @@ Reference[^note].
         let metrics = analyze_markdown(source);
         assert_eq!(metrics.visible_words, 6);
         assert_eq!(metrics.paragraphs, 1);
+    }
+
+    #[test]
+    fn excluded_inline_events_do_not_join_the_words_around_them() {
+        let metrics =
+            analyze_markdown("alpha`hidden`beta and before[^note]after\n\n[^note]: hidden\n");
+        assert_eq!(metrics.visible_words, 5);
+        assert_eq!(metrics.visible_logical_word_stats.logical_words(), 5);
     }
 
     #[test]

@@ -65,8 +65,10 @@ Keeping them separate from metadata remains load-bearing rather than tidy:
 - The core snapshot stays small and fast to open.
   An analyzer’s output can be far larger than the tree’s metadata, and paying for it on
   every open would penalize the common query.
-- Per-analyzer invalidation never touches tree truth.
-  Bumping a line counter’s version invalidates its own column, not the sizes.
+- Content-sidecar invalidation never touches tree truth.
+  The current sidecar is profile-scoped: changing any requested analyzer identity or
+  semantic option misses that sidecar as a unit, but never invalidates metadata sizes.
+  Separate per-analyzer reuse across profile changes remains future work.
 - The layer is loaded only for an explicitly requested analysis profile, bounded before
   allocation, and removed through the same cache lifecycle as its recognized snapshot.
   A metadata-only run never opens it and never pays for content structures.

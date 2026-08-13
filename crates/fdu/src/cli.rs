@@ -42,12 +42,23 @@ const CLI_STYLES: Styles = Styles::styled()
     .valid(AnsiColor::Green.on_default())
     .invalid(AnsiColor::Yellow.on_default());
 
-const CONTENT_AFTER_HELP: &str = r"Examples:
-  fdu .
+const COMMON_REPORTS_HELP: &str = r"Four common reports:
+  Languages and LOC   fdu --analyze code --view languages PATH
+                      Reads eligible files for code, comment, and blank lines.
+  File types by name  fdu --view types PATH
+                      Uses exact names and extensions; never reads file contents.
+  Folder sizes        fdu PATH
+                      Uses the metadata-only tree view and reusable index.
+  Fast totals only    fdu --cache off --view summary PATH
+                      Returns bytes plus file and directory counts;
+                      retains no index or cache.
+
+--analyze chooses what may be read; --view chooses what is printed.";
+
+const CONTENT_AFTER_HELP: &str = r"More compositions:
   fdu --view extensions ~/Downloads
   fdu --view types,families --format json .
   fdu --analyze documents --view documents .
-  fdu --analyze code --view languages --max-file-size 8MiB .
 
 Five axes, and every option belongs to exactly one:
   Scope      PATH, --scan-depth                         what is scanned and cached
@@ -63,9 +74,11 @@ Content analysis:
   documents  basic metrics plus logical and reader-visible prose metrics
   full       every shipped analyzer
 
+  languages requires code or full; documents requires any enabled profile.
+  Views never enable content analysis implicitly.
   Content reads are bounded by --max-file-size and --analysis-workers.
   --words-per-page changes only report-time page derivation.
-  Unchanged results are restored from a separate versioned sidecar.
+  Unchanged results for the same profile are restored from a separate sidecar.
   cache=only never opens source files and fails if requested content is absent.
 
 Output and automation:
@@ -197,6 +210,7 @@ pub enum RunOutcome {
     about,
     long_about = None,
     styles = CLI_STYLES,
+    before_help = COMMON_REPORTS_HELP,
     after_help = CONTENT_AFTER_HELP,
     arg_required_else_help = true,
     override_usage = "fdu [OPTIONS] <PATH>\n       fdu [PATH] --cache-status[=<SCOPE>] [--cache-clear[=<SCOPE>]]\n       fdu [PATH] --cache-clear[=<SCOPE>]\n       fdu --skill"
@@ -382,6 +396,9 @@ impl Cli {
 
         let policy = self.parse_cache_policy().map_err(|error| usage(&error))?;
         let analysis = self.parse_analysis().map_err(|error| usage(&error))?;
+        query
+            .validate_analysis(analysis.profile)
+            .map_err(|message| usage(&anyhow::anyhow!(message)))?;
         let config = OpenConfig {
             scan: ScanConfig {
                 max_depth: self.scan_depth,

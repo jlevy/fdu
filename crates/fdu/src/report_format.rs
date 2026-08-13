@@ -121,7 +121,11 @@ fn render_text(report: &Report, color: bool) -> String {
 fn render_text_metrics(out: &mut String, summary: &MetricSummary, size: SizeMetric, color: bool) {
     for row in &summary.rows {
         let selected = pick(size, row.bytes, row.allocated);
-        let share = ratio(row.share.numerator, row.share.denominator);
+        let percentage = if row.share.denominator == 0 {
+            "—".to_string()
+        } else {
+            format!("{:.1}%", ratio(row.share.numerator, row.share.denominator) * 100.0)
+        };
         let mut suffix = format!("{} {}", row.files, plural(row.files, "file", "files"));
         if row.metrics.physical_lines > 0 {
             if row.metrics.code_lines > 0 || row.metrics.comment_lines > 0 {
@@ -161,13 +165,30 @@ fn render_text_metrics(out: &mut String, summary: &MetricSummary, size: SizeMetr
         if row.documentation_files > 0 {
             let _ = write!(suffix, ", {} documentation", row.documentation_files);
         }
+        for (reason, count) in &row.coverage {
+            if *reason != CoverageReason::Analyzed {
+                let _ = write!(suffix, ", {count} {}", human_coverage_label(*reason));
+            }
+        }
         let _ = writeln!(
             out,
-            "{:>10}  {:>5.1}%  {:<18} {suffix}",
+            "{:>10}  {:>6}  {:<18} {suffix}",
             human_bytes(selected),
-            share * 100.0,
+            percentage,
             paint(&row.id, STYLE_TYPE, color),
         );
+    }
+}
+
+fn human_coverage_label(reason: CoverageReason) -> &'static str {
+    match reason {
+        CoverageReason::Analyzed => "analyzed",
+        CoverageReason::Binary => "binary",
+        CoverageReason::InvalidUtf8 => "invalid UTF-8",
+        CoverageReason::TooLarge => "too large",
+        CoverageReason::Unsupported => "unsupported",
+        CoverageReason::IoError => "I/O error",
+        CoverageReason::ChangedDuringRead => "changed during read",
     }
 }
 
@@ -885,7 +906,9 @@ fn view_label(view: ViewSpec) -> &'static str {
 }
 
 fn report_schema(report: &Report) -> &'static str {
-    if report.sections.iter().any(|section| matches!(section, Section::Metrics { .. })) {
+    if report.analysis.is_some()
+        || report.sections.iter().any(|section| matches!(section, Section::Metrics { .. }))
+    {
         CONTENT_REPORT_SCHEMA
     } else {
         REPORT_SCHEMA

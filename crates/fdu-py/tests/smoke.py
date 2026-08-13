@@ -311,6 +311,8 @@ def main() -> None:
         {"min_size": "10X"},
         {"modified_since": "1.5h"},
         {"views": ["bogus"]},
+        {"views": ["languages"]},
+        {"views": ["documents"]},
         {"sort": "sideways"},
     ]:
         try:

@@ -948,6 +948,15 @@ impl Index {
         self.content()?.rollup(path)
     }
 
+    pub(crate) fn prepare_content_analysis(&mut self, request: crate::content::AnalysisRequest) {
+        if !request.profile.is_enabled() {
+            return;
+        }
+        self.content
+            .get_or_insert_with(|| Box::new(ContentIndex::default()))
+            .prepare(request.profile, crate::content::ContentProvenance::for_request(request));
+    }
+
     /// Capture every regular-file analysis candidate without retaining a lock or entry
     /// borrow across filesystem I/O.
     pub fn analysis_candidates(&self, profile: AnalysisProfile) -> Vec<AnalysisCandidate> {

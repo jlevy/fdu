@@ -38,7 +38,7 @@ What that means concretely, because “scaffold” is otherwise an unhelpful wor
 
 | Piece | Module | State |
 | --- | --- | --- |
-| Observation/commit contract | `types.rs` | Conditional producer observations; only effective accepted ops become clocked `AppliedDelta` |
+| Observation/commit contract | `engine_contract.rs` | Conditional producer observations; only effective accepted ops become clocked `AppliedDelta` |
 | In-memory index | `index.rs` | Parent-pointer arena, generation/revision-safe arbitration, per-directory roll-ups, O(depth) apply, bounded feed |
 | Roll-up reducers | `index.rs` | Counts, apparent and allocated bytes, pre-epoch-safe newest mtime, per-extension tallies — all hierarchical |
 | Walk and reconcile | `scan.rs` | Scope-safe applying full/subtree reconciliation with explicit freshness and bounded producer batches; correct and portable, **not fast** |

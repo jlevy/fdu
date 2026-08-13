@@ -103,7 +103,6 @@ impl BasicAccumulator {
             if self.first_character {
                 self.first_character = false;
                 if character == '\u{feff}' {
-                    self.current_line_exists = true;
                     continue;
                 }
             }
@@ -131,7 +130,7 @@ impl BasicAccumulator {
 
     fn push_character(&mut self, character: char) {
         self.current_line_exists = true;
-        if character.is_whitespace() {
+        if is_content_whitespace(character) {
             if self.raw_word_open {
                 self.metrics.raw_words = self.metrics.raw_words.saturating_add(1);
                 self.raw_word_open = false;
@@ -184,6 +183,23 @@ impl BasicAccumulator {
     }
 }
 
+pub(super) fn is_content_whitespace(character: char) -> bool {
+    matches!(
+        character,
+        '\u{0009}'..='\u{000d}'
+            | '\u{0020}'
+            | '\u{0085}'
+            | '\u{00a0}'
+            | '\u{1680}'
+            | '\u{2000}'..='\u{200a}'
+            | '\u{2028}'
+            | '\u{2029}'
+            | '\u{202f}'
+            | '\u{205f}'
+            | '\u{3000}'
+    )
+}
+
 fn is_wide(character: char) -> bool {
     matches!(
         character as u32,
@@ -229,6 +245,8 @@ mod tests {
         assert_eq!(accepted(&[b"one line"]).physical_lines, 1);
         assert_eq!(accepted(&[b"one line\n"]).physical_lines, 1);
         assert_eq!(accepted(&[b"\n"]).blank_lines, 1);
+        assert_eq!(accepted(&["\u{feff}".as_bytes()]).physical_lines, 0);
+        assert_eq!(accepted(&["\u{feff}\n".as_bytes()]).blank_lines, 1);
     }
 
     #[test]
@@ -261,6 +279,20 @@ mod tests {
             metrics.logical_word_stats,
             super::super::LogicalWordStats { wide_chars: 2, nonwide_tokens: 3, nonwide_chars: 15 }
         );
+    }
+
+    #[test]
+    fn analyzer_v1_pins_the_unicode_white_space_table() {
+        let white_space = [
+            '\u{0009}', '\u{000a}', '\u{000b}', '\u{000c}', '\u{000d}', '\u{0020}', '\u{0085}',
+            '\u{00a0}', '\u{1680}', '\u{2000}', '\u{2001}', '\u{2002}', '\u{2003}', '\u{2004}',
+            '\u{2005}', '\u{2006}', '\u{2007}', '\u{2008}', '\u{2009}', '\u{200a}', '\u{2028}',
+            '\u{2029}', '\u{202f}', '\u{205f}', '\u{3000}',
+        ];
+        assert!(white_space.into_iter().all(is_content_whitespace));
+        for non_whitespace in ['\u{0008}', '\u{200b}', '\u{2060}', '\u{feff}'] {
+            assert!(!is_content_whitespace(non_whitespace), "{non_whitespace:?}");
+        }
     }
 
     #[test]

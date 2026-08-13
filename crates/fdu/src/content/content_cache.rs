@@ -117,6 +117,7 @@ pub fn load_content_cache(
     let Some(records) = parse(&image, index.root_path(), request) else {
         return Ok(ContentCacheLoad::default());
     };
+    index.prepare_content_analysis(request);
     let mut candidates = index
         .analysis_candidates(request.profile)
         .into_iter()

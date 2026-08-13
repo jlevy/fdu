@@ -1,11 +1,10 @@
 //! File-type recognition.
 //!
-//! Phase 1 ships only the cheapest tier of the planned cascade: the compound-tail
-//! extension. The full design is a priority-ordered cascade of declarative rules
-//! (exact filename, extension, shebang, bounded content probe) compiled to automata at
-//! build time, deliberately compatible with metabrowser's `[[kind]]` manifest dialect.
-//! Nothing here should grow runtime rule parsing; that is what the compiled dialect is
-//! for.
+//! Exact filenames and extensions are resolved from repository-owned declarative rules
+//! compiled at build time. Callers that explicitly enabled content analysis may also
+//! supply a bounded prefix for binary signatures, shebangs, modelines, ambiguous
+//! headers, and origin flags. Nothing here performs runtime rule parsing or opens a
+//! file; the caller owns the optional read.
 
 use std::ffi::OsStr;
 use std::fmt;

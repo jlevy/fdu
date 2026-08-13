@@ -309,9 +309,10 @@ pub fn open_with_pending_save(
         index.mark_unverified();
         let content_cache = load_content(&mut index, config)?;
         if config.analysis.profile.is_enabled()
-            && content_cache.hits
-                != u64::try_from(index.analysis_candidates(config.analysis.profile).len())
-                    .unwrap_or(u64::MAX)
+            && (!content_cache.usable
+                || content_cache.hits
+                    != u64::try_from(index.analysis_candidates(config.analysis.profile).len())
+                        .unwrap_or(u64::MAX))
         {
             return Err(Error::Snapshot(
                 "no complete usable content sidecar for this root and analysis profile".into(),
@@ -689,6 +690,38 @@ mod tests {
             ..OpenConfig::default()
         };
         open(dir.path(), &metadata_only).expect("seed metadata");
+
+        let only = OpenConfig {
+            policy: CachePolicy::Only,
+            analysis: content::AnalysisRequest {
+                profile: content::AnalysisProfile::Basic,
+                ..content::AnalysisRequest::default()
+            },
+            ..metadata_only
+        };
+        assert!(matches!(open(dir.path(), &only), Err(Error::Snapshot(_))));
+
+        let analyzed = OpenConfig { policy: CachePolicy::Auto, ..only.clone() };
+        open(dir.path(), &analyzed).expect("write an explicit empty content sidecar");
+        let (cached, report) = open(dir.path(), &only).expect("restore empty analyzed state");
+        assert!(report.content_cache.usable);
+        assert_eq!(
+            cached.content().and_then(content::ContentIndex::profile),
+            Some(content::AnalysisProfile::Basic)
+        );
+    }
+
+    #[test]
+    fn cache_only_empty_analysis_still_requires_a_usable_sidecar() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let cache = tempfile::tempdir().expect("cache dir");
+        let snapshot_path = cache.path().join("snap.fdu");
+        let metadata_only = OpenConfig {
+            cache_path: Some(snapshot_path),
+            policy: CachePolicy::Auto,
+            ..OpenConfig::default()
+        };
+        open(dir.path(), &metadata_only).expect("seed empty metadata");
 
         let only = OpenConfig {
             policy: CachePolicy::Only,

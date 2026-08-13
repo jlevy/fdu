@@ -4,7 +4,7 @@
 //! else. Producers submit observations and the index commits them; a report can never
 //! become a third way to change state.
 //!
-//! # Two performance tiers
+//! # Two metadata query tiers
 //!
 //! An unfiltered request reads the roll-up state the index already maintains, so it costs
 //! O(directories) for a tree and O(1) for a summary regardless of how many files the tree
@@ -12,6 +12,8 @@
 //! entries and re-aggregates only what the filter admits, because a pre-computed roll-up
 //! cannot answer a question about a subset. Both tiers are milliseconds warm and neither
 //! touches the filesystem; the difference is visible in a profile, not in a user's wait.
+//! Optional content I/O happens before this pure reader boundary and is retained in the
+//! index's separate derived tier.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -80,6 +82,35 @@ pub struct Query {
 impl Default for Query {
     fn default() -> Self {
         Self { selection: Selection::default(), views: Vec::new(), words_per_page: 250 }
+    }
+}
+
+impl Query {
+    /// Reject views whose primary metric was not populated by the requested analysis.
+    pub fn validate_analysis(&self, profile: AnalysisProfile) -> Result<(), &'static str> {
+        for view in &self.views {
+            match view {
+                ViewSpec::Languages if !profile.includes_code() => {
+                    return Err(
+                        "--view languages requires --analyze code or full; views never enable content analysis implicitly",
+                    );
+                }
+                ViewSpec::Documents if !profile.is_enabled() => {
+                    return Err(
+                        "--view documents requires --analyze basic, code, documents, or full; views never enable content analysis implicitly",
+                    );
+                }
+                ViewSpec::Tree
+                | ViewSpec::Types
+                | ViewSpec::Extensions
+                | ViewSpec::Families
+                | ViewSpec::Languages
+                | ViewSpec::Documents
+                | ViewSpec::Files
+                | ViewSpec::Summary => {}
+            }
+        }
+        Ok(())
     }
 }
 
@@ -399,9 +430,9 @@ pub fn report(index: &Index, query: &Query, provenance: &Provenance) -> Report {
         root: index.root_path().to_path_buf(),
         size: query.selection.size,
         analysis: index.content().and_then(|content| {
-            content.records().next().map(|(_, record)| ContentReportMetadata {
-                profile: record.profile,
-                provenance: record.provenance.clone(),
+            Some(ContentReportMetadata {
+                profile: content.profile()?,
+                provenance: content.provenance()?.clone(),
             })
         }),
         sections,
@@ -1128,6 +1159,36 @@ mod tests {
 
     fn query(views: &[ViewSpec], selection: Selection) -> Query {
         Query { selection, views: views.to_vec(), ..Query::default() }
+    }
+
+    #[test]
+    fn content_views_require_profiles_that_populate_their_primary_metric() {
+        let languages = query(&[ViewSpec::Languages], Selection::default());
+        assert!(languages.validate_analysis(AnalysisProfile::Code).is_ok());
+        assert!(languages.validate_analysis(AnalysisProfile::Full).is_ok());
+        for profile in
+            [AnalysisProfile::Disabled, AnalysisProfile::Basic, AnalysisProfile::Documents]
+        {
+            let error = languages.validate_analysis(profile).expect_err("SLOC was not requested");
+            assert!(error.contains("--analyze code or full"), "{error}");
+        }
+
+        let documents = query(&[ViewSpec::Documents], Selection::default());
+        assert!(documents.validate_analysis(AnalysisProfile::Disabled).is_err());
+        for profile in [
+            AnalysisProfile::Basic,
+            AnalysisProfile::Code,
+            AnalysisProfile::Documents,
+            AnalysisProfile::Full,
+        ] {
+            documents
+                .validate_analysis(profile)
+                .expect("every enabled profile includes the basic document metrics");
+        }
+
+        query(&[ViewSpec::Types, ViewSpec::Families], Selection::default())
+            .validate_analysis(AnalysisProfile::Disabled)
+            .expect("metadata grouping never requires content I/O");
     }
 
     fn pattern(source: &str) -> Pattern {

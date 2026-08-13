@@ -44,7 +44,7 @@ try {
     "--analyze",
     "documents",
     "--view",
-    "types,families,languages,documents",
+    "types,families,documents",
     "--format",
     "json",
     "--size",
@@ -64,7 +64,6 @@ try {
   const sections = new Map(report.reports.map((section) => [section.view, section]));
   const types = sections.get("types").metrics;
   const families = sections.get("families").metrics;
-  const languages = sections.get("languages").metrics;
   const documents = sections.get("documents").metrics;
 
   const typeRows = new Map(types.rows.map((row) => [row.id, row]));
@@ -75,9 +74,7 @@ try {
   const familyRows = new Map(families.rows.map((row) => [row.id, row]));
   for (const id of ["code", "prose", "data"])
     assert.ok(familyRows.has(id), `missing tracked family ${id}`);
-  assert.equal(languages.total.family, "unknown");
   assert.equal(documents.total.family, "unknown");
-  assert.ok(languages.total.files >= typeRows.get("rust").files);
   assert.ok(documents.total.files >= typeRows.get("markdown").files);
   assert.equal(documents.share_metric, "document_words");
   assert.equal(documents.words_per_page, 250);
@@ -94,7 +91,7 @@ try {
   assert.equal(markdown.metrics.document_words, markdown.metrics.visible_logical_words);
   assert.equal(markdown.pages.words, markdown.metrics.document_words);
 
-  for (const summary of [types, families, languages, documents]) {
+  for (const summary of [types, families, documents]) {
     assert.equal(
       summary.total.metrics.physical_lines,
       summary.total.metrics.blank_lines + summary.total.metrics.nonblank_lines,

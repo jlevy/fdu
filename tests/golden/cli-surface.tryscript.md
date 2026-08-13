@@ -26,6 +26,19 @@ A unit test separately proves that `--help` produces these exact bytes.
 
 ```console
 $ fdu
+Four common reports:
+  Languages and LOC   fdu --analyze code --view languages PATH
+                      Reads eligible files for code, comment, and blank lines.
+  File types by name  fdu --view types PATH
+                      Uses exact names and extensions; never reads file contents.
+  Folder sizes        fdu PATH
+                      Uses the metadata-only tree view and reusable index.
+  Fast totals only    fdu --cache off --view summary PATH
+                      Returns bytes plus file and directory counts;
+                      retains no index or cache.
+
+--analyze chooses what may be read; --view chooses what is printed.
+
 A fast, incremental file roll-up engine: hierarchical tallies over large directory trees
 
 Usage: fdu [OPTIONS] <PATH>
@@ -151,12 +164,10 @@ Options:
   -V, --version
           Print version
 
-Examples:
-  fdu .
+More compositions:
   fdu --view extensions ~/Downloads
   fdu --view types,families --format json .
   fdu --analyze documents --view documents .
-  fdu --analyze code --view languages --max-file-size 8MiB .
 
 Five axes, and every option belongs to exactly one:
   Scope      PATH, --scan-depth                         what is scanned and cached
@@ -172,9 +183,11 @@ Content analysis:
   documents  basic metrics plus logical and reader-visible prose metrics
   full       every shipped analyzer
 
+  languages requires code or full; documents requires any enabled profile.
+  Views never enable content analysis implicitly.
   Content reads are bounded by --max-file-size and --analysis-workers.
   --words-per-page changes only report-time page derivation.
-  Unchanged results are restored from a separate versioned sidecar.
+  Unchanged results for the same profile are restored from a separate sidecar.
   cache=only never opens source files and fails if requested content is absent.
 
 Output and automation:
@@ -210,7 +223,20 @@ current directory.
 
 ## Run fdu
 
-Use the local command when it is available:
+Start with the report that answers the question:
+
+```bash
+fdu --analyze code --view languages PATH  # language and standard LOC; reads content
+fdu --view types PATH                     # file types from names; metadata only
+fdu PATH                                  # folder-size tree; metadata only
+fdu --cache off --view summary PATH       # one totals row; no retained index
+```
+
+`--analyze` chooses what may be read and `--view` chooses what is printed.
+The language command needs both because a view never enables content reads implicitly.
+Use `--size apparent` when logical file lengths are wanted instead of allocated bytes.
+
+For a bounded machine-readable tree, use:
 
 ```bash
 fdu --format json --view tree --depth 2 --limit 20 PATH
@@ -240,13 +266,24 @@ Scope versus selection is the distinction that matters: scope decides what is sc
 and cached, so one cache serves every query, while selection filters the retained index
 at query time. Narrowing a selection never costs a rescan.
 
+Cost has three layers.
+`--cache off --view summary PATH` is the one exact composition that retains only
+aggregate tallies and no index.
+Ordinary metadata requests retain the reusable index but never read regular-file
+contents. Any non-`none` `--analyze` profile opts into bounded content reads and a
+separate profile-scoped sidecar.
+A repeated run with the same profile and semantic settings reuses unchanged content
+records. Coverage is profile-scoped too: an unsupported deeper analyzer leaves byte
+metadata visible but does not retain a separate lower-level metric record for that file.
+
 ## Pick the View, Then Shape It
 
 - `--view tree` (default) for per-directory roll-ups.
 - `--view extensions` for the original raw-extension breakdown.
 - `--view types` for stable detected file types and exact byte shares.
 - `--view families` for code, prose, markup, data, binary, and unknown roll-ups.
-- `--view languages` for code-family rows and `--view documents` for prose metrics.
+- `--view languages` for code-family rows; it requires `--analyze code` or `full`.
+- `--view documents` for prose metrics; it requires any enabled analysis profile.
 - `--view files` for a flat listing; in text output it prints one path per line and
   nothing else, so it pipes directly into other commands.
 - `--view summary` for one aggregate row.
@@ -260,6 +297,7 @@ aggregate-derived pages, and reader-visible Markdown that excludes destinations 
 code. `--analyze full` computes both families in one bounded pass.
 Use `--max-file-size`, `--analysis-workers`, and `--words-per-page` to bound work and
 control page derivation.
+Content analysis is currently one-shot and cannot be combined with `--watch`.
 
 Common shapes are compositions rather than dedicated flags:
 
@@ -329,8 +367,8 @@ Questions answerable from names alone need only one stat per directory.
 Adding metrics within a tier is free; crossing a tier boundary is what costs.
 
 Exact names and ordinary extensions remain path-only classifications.
-Unresolved files and ambiguous `.h` headers may use bounded shebang, modeline, literal,
-or signature probes.
+When analysis is enabled, unresolved files and ambiguous `.h` headers may use bounded
+shebang, modeline, literal, or signature probes.
 Do not collapse their provenance into an unqualified language claim; retain the report’s
 source and confidence fields when summarizing or transforming machine output.
 

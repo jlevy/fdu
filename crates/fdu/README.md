@@ -44,8 +44,10 @@ use std::path::Path;
 let mut config = OpenConfig::default();
 config.analysis.profile = AnalysisProfile::Full;
 let (index, report) = open(Path::new("."), &config)?;
-let root = index.content_rollup(Path::new("")).expect("analysis requested");
-println!("{} lines", root.total.metrics.physical_lines);
+let lines = index
+    .content_rollup(Path::new(""))
+    .map_or(0, |root| root.total.metrics.physical_lines);
+println!("{} lines", lines);
 assert!(report.analysis.is_some());
 # Ok::<(), fdu::Error>(())
 ```

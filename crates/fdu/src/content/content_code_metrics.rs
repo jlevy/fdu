@@ -53,7 +53,7 @@ impl CodeAccumulator {
 
     /// Finish an unterminated final line and return its additive metrics.
     pub fn finish(mut self) -> MetricValues {
-        if !self.line.is_empty() {
+        if !self.line.is_empty() && self.line.as_slice() != [0xef, 0xbb, 0xbf] {
             self.finish_line();
         }
         self.metrics
@@ -169,6 +169,7 @@ enum LineClass {
 fn classify_line(syntax: Syntax, state: &mut State, line: &[u8]) -> LineClass {
     let mut index = usize::from(line.starts_with(&[0xef, 0xbb, 0xbf]));
     index = index.saturating_mul(3);
+    let mut whitespace_boundary = matches!(state, State::Normal);
     let mut code =
         matches!(state, State::Quoted { .. } | State::TripleQuoted { .. } | State::RustRaw { .. });
     let mut comment = matches!(state, State::BlockComment { .. });
@@ -238,14 +239,20 @@ fn classify_line(syntax: Syntax, state: &mut State, line: &[u8]) -> LineClass {
             State::Normal => {
                 let byte = line[index];
                 if byte.is_ascii_whitespace() {
+                    whitespace_boundary = true;
                     index += 1;
                     continue;
                 }
+                if let Some((character, width)) = leading_utf8_character(&line[index..]) {
+                    if super::content_basic_metrics::is_content_whitespace(character) {
+                        whitespace_boundary = true;
+                        index += width;
+                        continue;
+                    }
+                }
                 if syntax.line_comments.iter().any(|marker| {
                     line[index..].starts_with(marker)
-                        && (!syntax.shell_hash_boundary
-                            || index == 0
-                            || line[index - 1].is_ascii_whitespace())
+                        && (!syntax.shell_hash_boundary || whitespace_boundary)
                 }) {
                     comment = true;
                     break;
@@ -253,6 +260,7 @@ fn classify_line(syntax: Syntax, state: &mut State, line: &[u8]) -> LineClass {
                 if let Some(block) = syntax.block {
                     if line[index..].starts_with(block.open) {
                         comment = true;
+                        whitespace_boundary = false;
                         *state = State::BlockComment { depth: 1 };
                         index += block.open.len();
                         continue;
@@ -261,6 +269,7 @@ fn classify_line(syntax: Syntax, state: &mut State, line: &[u8]) -> LineClass {
                 if syntax.rust_raw_strings {
                     if let Some((hashes, consumed)) = rust_raw_open(&line[index..]) {
                         code = true;
+                        whitespace_boundary = false;
                         *state = State::RustRaw { hashes };
                         index += consumed;
                         continue;
@@ -271,17 +280,20 @@ fn classify_line(syntax: Syntax, state: &mut State, line: &[u8]) -> LineClass {
                     && line[index..].starts_with(&[byte, byte, byte])
                 {
                     code = true;
+                    whitespace_boundary = false;
                     *state = State::TripleQuoted { quote: byte };
                     index += 3;
                     continue;
                 }
                 if matches!(byte, b'\'' | b'"') || (syntax.backtick_strings && byte == b'`') {
                     code = true;
+                    whitespace_boundary = false;
                     *state = State::Quoted { quote: byte, escaped: false, multiline: byte == b'`' };
                     index += 1;
                     continue;
                 }
                 code = true;
+                whitespace_boundary = false;
                 index += 1;
             }
         }
@@ -297,6 +309,18 @@ fn classify_line(syntax: Syntax, state: &mut State, line: &[u8]) -> LineClass {
     } else {
         LineClass::Blank
     }
+}
+
+fn leading_utf8_character(input: &[u8]) -> Option<(char, usize)> {
+    let width = match *input.first()? {
+        0x00..=0x7f => 1,
+        0xc2..=0xdf => 2,
+        0xe0..=0xef => 3,
+        0xf0..=0xf4 => 4,
+        _ => return None,
+    };
+    let character = std::str::from_utf8(input.get(..width)?).ok()?.chars().next()?;
+    Some((character, width))
 }
 
 fn rust_raw_open(input: &[u8]) -> Option<(u8, usize)> {
@@ -380,6 +404,29 @@ mod tests {
             assert_eq!(metrics.comment_lines, 1, "{source:?}");
             assert_eq!(metrics.code_blank_lines, expected_lines - 2, "{source:?}");
         }
+    }
+
+    #[test]
+    fn a_leading_utf8_bom_is_not_an_invented_line() {
+        let empty = count("rust", &[b"\xef\xbb\xbf"]);
+        assert_eq!(empty.physical_lines, 0);
+
+        let blank = count("rust", &[b"\xef\xbb\xbf\n"]);
+        assert_eq!(blank.physical_lines, 1);
+        assert_eq!(blank.code_blank_lines, 1);
+    }
+
+    #[test]
+    fn unicode_whitespace_uses_the_basic_analyzers_pinned_table() {
+        let metrics = count("rust", &["\u{3000}\n\u{2003}// comment\n".as_bytes()]);
+        assert_eq!(metrics.physical_lines, 2);
+        assert_eq!(metrics.code_blank_lines, 1);
+        assert_eq!(metrics.comment_lines, 1);
+        assert_eq!(metrics.code_lines, 0);
+
+        let shell = count("shell", &["\u{3000}# comment\n".as_bytes()]);
+        assert_eq!(shell.comment_lines, 1);
+        assert_eq!(shell.code_lines, 0);
     }
 
     #[test]

@@ -25,8 +25,10 @@ Open, scan, and the native reconciliation phase of refresh run with the GIL rele
 unrelated Python threads and independent indexes can progress.
 One `Index` object still has `PyO3` runtime borrow exclusion: an overlapping call on
 that same object is rejected rather than becoming an unsynchronized shared-index access.
-The wheel uses the core scan/cache surface and does not compile the optional watch
-dependency; no Python watcher API is implied yet.
+The wheel enables the optional watch dependency and exposes `Index.watch()` as a
+closable, event-driven change feed.
+Content analysis itself remains one-shot: refresh reanalyzes after metadata
+reconciliation, while a watch feed reports metadata changes.
 
 `open()` and `scan()` accept the same `none`, `basic`, `code`, `documents`, and `full`
 analysis profiles as the Rust CLI, plus bounded file-size and worker settings.

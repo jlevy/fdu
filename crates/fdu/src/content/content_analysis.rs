@@ -62,6 +62,10 @@ impl AnalysisReport {
 /// caller thread applies observations afterward, so metadata changes remain serialized
 /// through [`Index::apply_analysis`].
 pub fn analyze_index(index: &mut Index, request: AnalysisRequest) -> AnalysisReport {
+    if !request.profile.is_enabled() {
+        return AnalysisReport::default();
+    }
+    index.prepare_content_analysis(request);
     let candidates = index.pending_analysis_candidates(request);
     let mut report = AnalysisReport {
         candidates: u64::try_from(candidates.len()).unwrap_or(u64::MAX),
@@ -607,5 +611,87 @@ mod tests {
         let text = rows["text"];
         assert!(text.metrics.logical_word_stats.logical_words() > text.metrics.raw_words);
         assert_eq!(crate::query::document_words(&summary.total), 7);
+    }
+
+    #[test]
+    fn an_empty_analysis_still_retains_the_requested_identity() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let (mut index, _) =
+            crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
+        let request = AnalysisRequest {
+            profile: super::super::AnalysisProfile::Basic,
+            ..AnalysisRequest::default()
+        };
+
+        let analysis = analyze_index(&mut index, request);
+
+        assert_eq!(analysis.candidates, 0);
+        let content = index.content().expect("the requested derived tier remains explicit");
+        assert_eq!(content.profile(), Some(request.profile));
+        assert_eq!(content.provenance(), Some(&ContentProvenance::for_request(request)));
+    }
+
+    #[cfg(feature = "cli")]
+    #[test]
+    fn content_reports_preserve_empty_profiles_and_unavailable_shares() {
+        let empty = tempfile::tempdir().expect("empty tempdir");
+        let (mut empty_index, _) =
+            crate::scan::scan_into_index(empty.path(), &ScanConfig::default()).expect("scan");
+        analyze_index(
+            &mut empty_index,
+            AnalysisRequest {
+                profile: super::super::AnalysisProfile::Basic,
+                ..AnalysisRequest::default()
+            },
+        );
+        let summary = crate::query::report(
+            &empty_index,
+            &crate::query::Query {
+                views: vec![crate::query::ViewSpec::Summary],
+                ..crate::query::Query::default()
+            },
+            &crate::query::Provenance {
+                scan_started_at: None,
+                generated_at: std::time::UNIX_EPOCH,
+                source: crate::query::ReportSource::ColdScan,
+                complete: true,
+                errors: Vec::new(),
+            },
+        );
+        let json =
+            crate::report_format::render(&summary, crate::report_format::Format::Json, false);
+        assert!(json.contains("\"schema\": \"fdu.report/2\""), "{json}");
+        assert!(json.contains("\"profile\": \"basic\""), "{json}");
+
+        let unsupported = tempfile::tempdir().expect("unsupported tempdir");
+        fs::write(unsupported.path().join("Main.hs"), "main = pure ()\n").expect("write");
+        let (mut unsupported_index, _) =
+            crate::scan::scan_into_index(unsupported.path(), &ScanConfig::default()).expect("scan");
+        analyze_index(
+            &mut unsupported_index,
+            AnalysisRequest {
+                profile: super::super::AnalysisProfile::Code,
+                ..AnalysisRequest::default()
+            },
+        );
+        let languages = crate::query::report(
+            &unsupported_index,
+            &crate::query::Query {
+                views: vec![crate::query::ViewSpec::Languages],
+                ..crate::query::Query::default()
+            },
+            &crate::query::Provenance {
+                scan_started_at: None,
+                generated_at: std::time::UNIX_EPOCH,
+                source: crate::query::ReportSource::ColdScan,
+                complete: false,
+                errors: Vec::new(),
+            },
+        );
+        let text =
+            crate::report_format::render(&languages, crate::report_format::Format::Text, false);
+        assert!(text.contains("—"), "an unavailable 0/0 share needs a distinct marker: {text}");
+        assert!(text.contains("1 unsupported"), "coverage must remain visible: {text}");
+        assert!(!text.contains("0.0%"), "unmeasured is not a zero percentage: {text}");
     }
 }
