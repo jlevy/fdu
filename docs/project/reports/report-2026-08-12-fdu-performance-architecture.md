@@ -1,6 +1,6 @@
 # fdu Performance Architecture: Evidence From Forty-Five Experiments
 
-**Date:** 2026-08-12
+**Date:** 2026-08-12 (updated 2026-08-13)
 
 **Status:** Technical white paper
 
@@ -320,6 +320,36 @@ ratios. FDU should retain its paired median and bootstrap interval as the decisi
 statistic because filesystem timings are skewed and drift over long runs, while also
 keeping raw samples so means or Hyperfine-compatible summaries can be reconstructed.
 
+### What dut changes in the Linux plan
+
+A source refresh at current upstream commit
+[`68d4ba2`](https://codeberg.org/201984/dut/commit/68d4ba2d66211e7ca93a2312bb12f5879d0179e1)
+confirms that dut is the most interesting Linux rendered-tree comparator, but not a
+like-for-like full-index oracle.
+It retains directories plus bounded top-N files and runs allocated bytes, apparent
+bytes, or file counts as separate modes.
+Its transferable mechanisms are a reused 1 MiB `getdents64` buffer, dirfd-relative
+`statx`, one-CAS sibling-batch publication, demand-sized worker wakeups, early top-N
+rejection, and last-child bottom-up roll-up.
+Because the source is GPL, FDU uses these descriptions and measurements for independent
+experiments only; no implementation is copied or linked.
+
+The refresh also makes the validity bar stricter.
+Recent dut fixes addressed entries lost across a full directory buffer, unbounded growth
+after `EINVAL`, and a hard-link-table resize error.
+The adapter must therefore pass wide-directory, hard-link-growth,
+sparse/preallocated-size-ordering, partial-error, symlink, mount-boundary, and non-UTF-8
+fixtures before its timing counts.
+That is especially important because dut emits human output and can warn about partial
+traversal while returning success.
+
+dut’s published warm comparison uses warmups, but its SSD/HDD preparation writes `1` to
+`/proc/sys/vm/drop_caches` without a preceding `sync`. Under the
+[Linux kernel contract](https://docs.kernel.org/admin-guide/sysctl/vm.html#drop-caches),
+that targets page cache but does not request dentry/inode slab reclamation.
+The future report will call this `pagecache-drop-only`, not cold, and publish it beside
+verified warm and per-sample `sync` plus `echo 3` controlled cold.
+
 ## Next Performance Frontier
 
 The experiment queue is ordered by potential impact and by design risk.
@@ -332,20 +362,25 @@ Exp-043 also retained six workers: eight looked promising on the 901k screen but
 H64’s complete selected-total specialization then changed wall by only −1.15%
 [−2.24%, +0.44%] and did not beat dumac despite halving user CPU (exp-044).
 
-1. **Compact reusable entries (H19–H22, `fdu-prph`).** Measure the entry layout, remove
+1. **Directory-only transient tree (H66, `fdu-sk7v`).** For an unfiltered cache-off
+   tree-only request, test folding file observations into exact directory roll-ups and
+   retaining only directory topology.
+   Require byte-identical output at 60k and near-million scale; fall closed to the full
+   index for cache, filters, composed views, watch, or reusable-index requests.
+2. **Compact reusable entries (H19–H22, `fdu-prph`).** Measure the entry layout, remove
    duplicate name storage, move directory-only state out of files, and compact IDs and
    revisions one arm at a time.
    Million-entry RSS is the clearest current defect.
-2. **Worker-local subtree construction (H60, `fdu-weey`).** Build disjoint local arenas
+3. **Worker-local subtree construction (H60, `fdu-weey`).** Build disjoint local arenas
    and splice them with one roll-up at region completion, reducing path and channel work
    without bypassing the index contract.
-3. **Dense immutable base plus sparse overlay (H61, `fdu-f67r`).** After the layout
+4. **Dense immutable base plus sparse overlay (H61, `fdu-f67r`).** After the layout
    floor is known, test whether bootstrap state can remain dense while later mutations
    use a bounded overlay and compaction cycle.
-4. **Portable wide-directory stat chunks (H58, `fdu-r9he`).** On Linux or the portable
+5. **Portable wide-directory stat chunks (H58, `fdu-r9he`).** On Linux or the portable
    backend, test dua-style small stealable metadata jobs.
    This is not expected to help the macOS bulk path.
-5. **Journal scoping.** FSEvents can turn a quiet warm run from O(entries) into
+6. **Journal scoping.** FSEvents can turn a quiet warm run from O(entries) into
    O(changed regions), but the same fast full scan remains the fallback and the basis
    for first use, invalid journals, and explicit cache-off runs.
 
@@ -357,12 +392,17 @@ A future report should repeat the exact comparator matrix on a controlled local-
 Linux host with:
 
 - the same immutable tree or a generated and verified million-entry equivalent
-- verified-warm and per-sample controlled-cold regimes reported separately
-- `sync` and `/proc/sys/vm/drop_caches` preparation for the cold regime, following the
-  useful part of the diskus method
+- verified-warm, dut-compatible pagecache-drop-only, and per-sample controlled-cold
+  regimes reported separately
+- `sync` plus `echo 3 > /proc/sys/vm/drop_caches` for controlled cold, following the
+  useful part of the diskus method and recording failures per sample
+- ext4 and XFS results or an explicit record that only one filesystem was available,
+  with a worker-count sweep rather than an inherited thread constant
 - exact binary, compiler, kernel, filesystem, mount, CPU, memory, and storage provenance
 - the FDU oracle, pre/post fingerprint, work classes, paired schedule, raw resource
   metrics, and confidence intervals used on macOS
+- dut-specific wide-directory, hard-link-growth, selected-size-ordering, and partial
+  error postconditions before comparator timing is accepted
 - profile evidence before considering `statx`, raw `getdents64`, io_uring, or a
   different queue design
 

@@ -1,6 +1,6 @@
 # Research: fdu — a High-Performance File Roll-Up Engine (Rust Library, CLI, and Python Embedding)
 
-**Date:** 2026-08-06 (last updated 2026-08-08)
+**Date:** 2026-08-06 (last updated 2026-08-13)
 
 **Author:** Metabrowser project, with Claude Code research assistance
 
@@ -350,6 +350,27 @@ depth-first traversal versus the breadth-first fan-out of the multithreaded fram
 DFS has better locality when everything is already in page cache, BFS keeps more
 requests in flight when it is not.
 That trade-off is worth encoding as a tunable.
+
+A 2026-08-13 audit narrows that claim.
+`dut` warms the tree before its warm benchmark, but its SSD and HDD Hyperfine commands
+write `1` to `/proc/sys/vm/drop_caches` without a preceding `sync`. The
+[Linux kernel documentation](https://docs.kernel.org/admin-guide/sysctl/vm.html#drop-caches)
+defines `1` as page-cache eviction only; reclaimable slab objects such as dentries and
+inodes require `2`, and `3` requests both.
+Those published runs are useful **pagecache-drop-only** evidence, not the per-sample
+`sync` plus `echo 3` controlled-cold regime FDU will use on Linux.
+
+The refreshed source at commit
+[`68d4ba2`](https://codeberg.org/201984/dut/commit/68d4ba2d66211e7ca93a2312bb12f5879d0179e1)
+also improves the experiment design.
+Its history reports about 10% from `fstatat`→`statx`, about 12% from per-thread top-N
+heaps, and only about 2% from raw `getdents64` versus `readdir`; these are
+author-reported directional clues, not FDU effect sizes.
+Recent fixes cover a directory spanning multiple 1 MB buffers, an `EINVAL` path that
+previously grew the scratch buffer without bound, and a wrong hard-link-table resize.
+Any FDU raw-directory backend therefore needs bounded-buffer, multi-chunk
+wide-directory, malformed-record, and high-cardinality hard-link tests before
+performance evidence is accepted.
 
 ### Ncdu 1 and 2: Streaming Architecture and the 25-Byte Record
 

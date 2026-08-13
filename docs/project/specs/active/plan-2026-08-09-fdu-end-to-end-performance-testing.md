@@ -138,6 +138,15 @@ What it found, first against a roughly 60k-entry checkout and then against a
   The Linux comparison retains separate verified-warm and per-sample controlled-cold
   matrices. macOS `purge` is only an approximation and must not be labeled
   controlled-cold.
+- **The current dut source and protocol now have a Linux-specific audit.** Commit
+  `68d4ba2` retains directories plus bounded top-N files rather than a reusable
+  inventory, offers allocated size, apparent size, and counts as separate modes, and
+  emits only a human tree.
+  Its published SSD/HDD preparation drops page cache with `echo 1` but does not run
+  `sync`, so those numbers are now labeled pagecache-drop-only rather than
+  controlled-cold. The adapter and raw-reader plans add wide-directory, bounded-error,
+  hard-link-growth, and selected-size-ordering fixtures; H66 separately queues an exact
+  directory-only transient-tree experiment.
 - **The first requirement-derived execution plan is accepted.** For the existing
   `--cache off --view summary` composition, exp-040 proves that retaining one exact rich
   aggregate instead of a reusable index improves paired wall 14.56% [9.04%, 18.55%] and
@@ -670,12 +679,12 @@ The initial capability report includes:
 
 | Capability | fdu | dut | gdu |
 | --- | --- | --- | --- |
-| Full retained inventory | yes | adapter records exact limitation | adapter records exact limitation |
-| Apparent and allocated bytes in one run | yes | verify at pinned revision | yes |
-| Counts and newest mtime | yes | verify at pinned revision | verify at pinned revision |
+| Full retained inventory | yes | no: directories plus bounded top-N files | adapter records exact limitation |
+| Apparent and allocated bytes in one run | yes | no: mutually exclusive modes | yes |
+| Counts and newest mtime | yes | counts in a separate mode; no newest mtime | verify at pinned revision |
 | Per-directory extension tallies | yes | no | verify/record |
 | Persistent snapshot and revalidation | yes | no | persistence is not equivalent to fdu revalidation |
-| Machine output sufficient for oracle | yes | verify/record | verify/record |
+| Machine output sufficient for oracle | yes | no: human parser plus independent postconditions required | verify/record |
 
 The table is completed from the pinned source revisions before the first comparison.
 No unavailable comparator is silently skipped in a release run.
@@ -714,7 +723,12 @@ requirement-derived retention path (H59, now accepted in exp-040) and worker-loc
 subtree construction (H60), and the 1M RSS result raises the existing compact-index
 H19–H22 ladder. Recursive high-concurrency implementations in dust, gdu, and diskus do
 not create a new APFS hypothesis after exp-036 refuted over-threading.
-Dumac validates the already-landed bulk syscall mechanism but performs a smaller
+Dut commit `68d4ba2` reinforces the Linux raw `getdents64`/relative-`statx`, batched
+publication, and last-child roll-up experiments without supplying FDU effect sizes.
+Its bounded retention also motivates H66: an unfiltered cache-off tree-only request may
+retain exact directory topology and roll-ups without per-file records, but only through
+the same requirement-derived planner and never by allowing display depth to prune the
+scan. Dumac validates the already-landed bulk syscall mechanism but performs a smaller
 total-only, reduced-attribute job.
 Its two implementation reports and source diff motivated worker-local rich-summary
 reduction (H62), report-derived macOS metadata (H63), a selected-total matched-workload
@@ -733,6 +747,46 @@ FDU’s Linux run will adopt the per-sample cold-cache preparation while retaini
 adjacent paired scheduling, the independent oracle, pre/post fingerprints, exact binary
 and host provenance, work classes, resource metrics, stable-output checks, and bootstrap
 intervals. Warm and cold Linux results remain separate from M1/APFS numbers.
+
+### Dut Linux Research and Validation
+
+The dut adapter targets exact current upstream commit
+[`68d4ba2`](https://codeberg.org/201984/dut/commit/68d4ba2d66211e7ca93a2312bb12f5879d0179e1),
+not the older 1.0 tag; source and binary provenance must record that it identifies
+itself as 1.1 without a matching tag.
+Its GPL source is used only to describe behavior and design independent tests.
+The binary may be executed as a comparator but is never linked into or distributed with
+FDU.
+
+Before any timing is valid, the adapter proves its human-output parser and independent
+postconditions on Linux fixtures covering:
+
+- a directory whose entries require multiple 1 MiB `getdents64` chunks;
+- high-cardinality hard links that force table growth and cross-directory merging;
+- sparse and preallocated files with opposite apparent/allocated size ordering;
+- unreadable/stat-failure cases, because dut may warn yet return success; and
+- symlinks, one-filesystem boundaries, supported non-UTF-8 names, and exact root totals.
+
+The raw FDU Linux backend adds bounded `EINVAL`, malformed-record, short-record, and
+multi-chunk tests before it may consume performance evidence.
+These are direct guards for recent dut fixes involving lost wide-directory entries,
+unbounded buffer growth, and a hard-link-table resize error; implementation remains an
+independent Rust design.
+
+The Linux matrix has three explicit cache states:
+
+1. verified warm after recorded full-tree warmups;
+2. `pagecache-drop-only`, reproducing dut’s `echo 1` preparation for calibration but not
+   calling it cold; and
+3. controlled cold, requiring successful `sync` plus per-sample `echo 3` under the
+   dedicated-host authority.
+
+The distinction follows the
+[kernel `drop_caches` contract](https://docs.kernel.org/admin-guide/sysctl/vm.html#drop-caches):
+`1` targets page cache, `2` reclaimable slab objects including dentries and inodes, and
+`3` both. Run the paired matrix and worker-count sweep on ext4 and XFS when available,
+retain raw CPU/RSS/fault/I/O evidence, and profile before deciding whether `statx`, raw
+`getdents64`, scheduling, or H66 explains any gap.
 
 ### Trial Scheduling and Statistics
 
@@ -1131,6 +1185,8 @@ The planning bead retains the same stable IDs.
 | PEV-32 | Medium | Validating an adaptive threshold only below it and far above it misses the first-crossing scale, where setup cost can remain after too little useful work to move wall time | Give adaptive policies a boundary subject as well as small and large endpoints; exp-019 rejected the 100k scale trigger before service-time calibration passed both 120k and 720k gates |
 | PEV-33 | High | A platform syscall accelerator can look correct on ordinary files while silently changing mount, firmlink, symlink, identity, or size semantics, and a small-tree win may not predict its behavior after the metadata cache knee | Compare the platform backend byte-for-byte with the portable reference, validate every returned field and offset, fall back for a complete directory at unsupported boundaries, and require current-binary paired gates at both the original and cache-pressure scales with CPU and RSS tradeoffs recorded; exp-022 followed this protocol before its claim was retained |
 | PEV-34 | High | A warm-cache ranking can be extrapolated into an unsupported cold-cache claim even when eviction changes absolute time and the relative effect size | Label repeated-workload and controlled-cold matrices separately, retain the exact cache-state evidence for every sample, and never use ranking correlation as a substitute for measuring both regimes |
+| PEV-35 | High | Treating dut’s successful `echo 1 > drop_caches` preparation as cold implies directory and inode metadata were evicted even though the kernel contract says `1` targets page cache and the command omits `sync` | Label that reproduction `pagecache-drop-only`; publish it beside verified warm and a distinct dedicated-host controlled-cold regime that requires successful per-sample `sync` plus `echo 3` |
+| PEV-36 | High | A fast dut trial can silently omit entries or selected bytes because human output, warning-plus-zero-exit errors, multi-buffer enumeration, hard-link resizing, and early top-N rejection are not a machine oracle | Pin the exact source/binary, reject warning-bearing partial scans, and pass independent wide-directory, hard-link, sparse/preallocated, symlink, mount-boundary, non-UTF-8, and root-total postconditions before accepting timing |
 
 ## Beads
 
@@ -1157,6 +1213,8 @@ research and plan, assemble this graph, and validate it through CI.
 | `fdu-j2ka` | P1 | Coordinate the iterative real-tree profile and optimization campaign | `fdu-6wu0` informs generated-corpus setup |
 | `fdu-1y8f` | P1 | Publish the performance architecture white paper | `fdu-j2ka` evidence |
 | `fdu-nffc` | P2 | Extend the paired comparator matrix to controlled Linux warm and cold regimes | dedicated Linux host |
+| `fdu-6nmp` | P1 | Refresh dut source, benchmark-method audit, and Linux semantic test plan | — |
+| `fdu-sk7v` | P1 | Test an exact directory-only transient tree at 60k and near-million scale | dut Linux calibration and `fdu-j2ka` loop |
 | `fdu-dpsk` | P1 | Audit warm versus cold filesystem-cache claims and encode warm-steady evidence | `fdu-j2ka` evidence |
 | `fdu-rjqx` | P2 | Establish a controlled macOS cold-cache comparison protocol | dedicated quiet Mac and disposable APFS volume |
 | `fdu-16pw` | P2 | Compare and incorporate the diskus benchmark protocol | — |

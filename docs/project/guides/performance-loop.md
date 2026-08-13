@@ -202,7 +202,7 @@ Kept as a live list.
 Numbering is shared with the
 [performance-frontier research](../research/research-2026-08-10-performance-frontier.md),
 whose backlog owns H12–H46; new hypotheses from any source take the next free number
-(currently H66) so no id ever means two things.
+(currently H67) so no id ever means two things.
 Each is stated so it can be wrong, with the metric that would show it.
 Status is updated as experiments resolve them; see the ledger for results.
 
@@ -241,6 +241,7 @@ Status is updated as experiments resolve them; see the ledger for results.
 | H63 | A macOS bulk request derived from rich-summary requirements can omit index-only fields and avoid copying names for files. | system/user CPU and wall down at least 3%; strict parser and portable fallback parity | **Refuted in composition with H62** (exp-042): wall changed +1.86% [−1.96%, +4.56%] despite 50.96% lower user CPU and 39.70% lower RSS. Both layers were reverted. |
 | H64 | A selected-total projection can gather only the requested size metric for a workload matched to dumac. | beat or match dumac wall with exact FDU path-accounting oracle | **Refuted** (exp-044): the full narrow-reader and in-buffer-folding composition changed wall −1.15% [−2.24%, +0.44%] and did not beat dumac despite halving user CPU; all prototype API and engine code was reverted. |
 | H65 | Removing the index consumer may move the reduction-only worker-depth knee above six. | 6/8/10/12/16 curve; wall down at least 3% with bounded CPU/RSS | **Refuted** (exp-043): eight workers’ promising 901k screen did not replicate at 720k (+0.67% wall [−1.56%, +3.99%]); CPU rose 40.66%. Automatic/six remains shared by transient and indexed scans. |
+| H66 | An unfiltered cache-off tree-only request can fold file observations into exact directory roll-ups and retain directory topology without file records. | byte-identical tree; wall down at least 3% or decisive RSS reduction without meaningful latency regression at 60k and near-million scale | **Queued** (`fdu-sk7v`). The planner must fall closed for cache, filters, multiple views, watch, or reusable-index requests; compare the Linux arm with dut’s rendered-tree job. |
 | H60 | Cold bootstrap workers can build disjoint local subtree arenas and splice them plus one roll-up at region completion, replacing one path operation per entry through the single consumer. | cold-index component/user CPU and channel allocation down; end-to-end wall down at least 3%; RSS bounded | **Queued** (`fdu-weey`). Preserve deterministic identity, progressive publication, errors, and the delta contract. |
 | H61 | A completed bootstrap can live in a dense immutable base while subsequent changes use a sparse overlay and bounded compaction, avoiding the full mutable-entry overhead on nearly every record. | million-scale RSS down at least 40% plus cold indexed wall down at least 3% or a decisive warm/query win | **Queued after H19–H22** (`fdu-f67r`). Preserve stable identities, exact snapshots, all views, progressive publication, errors, deltas, and watch semantics. |
 
@@ -330,6 +331,11 @@ workload, and H65 reduction-only worker calibration.
 Exp-041 through exp-044 rejected all four additional layers for wall time.
 Their decisive CPU and memory reductions show that the remaining elapsed-time floor is
 directory-open and kernel work, not the rich summary representation.
+The 2026-08-13 dut refresh adds H66, an exact directory-only transient tree, and
+strengthens the Linux proof gates: distinguish verified warm, dut-style
+pagecache-drop-only, and `sync` plus `echo 3` controlled cold; reject partial scans even
+when dut exits zero; and exercise multi-buffer directories, hard-link-table growth, and
+sparse/preallocated size ordering before timing.
 `dust`, `gdu`, and `diskus` mainly reinforce work already measured: recursive high
 concurrency is not a new hypothesis after H52/H57 rejected over-threading on APFS.
 

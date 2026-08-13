@@ -67,9 +67,10 @@ numbers may drift.
 - Review of `crates/fdu/src` (scan, index, snapshot, watch, types), the perf probe, both
   benchmark harnesses, and the committed realtree baseline results.
 - Direct source review of tools checked out under `attic/`: bfs (4af45dc), dut (68d4ba2,
-  GPL — ideas only), jwalk (v0.9.0), and the pinned comparator set refreshed on
-  2026-08-12: dust v1.2.4 (`fabe19b`), gdu v5.36.1 (`8d64b4f`), pdu 0.24.0 (`4e19260`),
-  dua v2.41.1 (`90a59e1`), diskus v0.9.0 (`d8a77db`), and dumac (`1ffbe3c`).
+  GPL — ideas only; refreshed 2026-08-13), jwalk (v0.9.0), and the pinned comparator set
+  refreshed on 2026-08-12: dust v1.2.4 (`fabe19b`), gdu v5.36.1 (`8d64b4f`), pdu 0.24.0
+  (`4e19260`), dua v2.41.1 (`90a59e1`), diskus v0.9.0 (`d8a77db`), and dumac
+  (`1ffbe3c`).
 - Platform research with cited sources: getattrlistbulk, APFS concurrency, FSEvents
   journal resume, Apple Silicon QoS, io_uring status and cloud availability, fanotify,
   overlayfs, cloud storage characteristics.
@@ -445,10 +446,63 @@ It yields four actionable conclusions and three negative ones:
   Their totals therefore calibrate traversal throughput; they are not correctness
   oracles for FDU’s path-entry accounting and complete/partial provenance.
 
+### Dut Linux Refresh: Mechanisms, Limits, and Required Proof
+
+The ignored `attic/dut` checkout was refreshed on 2026-08-13 to current upstream commit
+[`68d4ba2`](https://codeberg.org/201984/dut/commit/68d4ba2d66211e7ca93a2312bb12f5879d0179e1).
+It identifies itself as 1.1 even though the newest tag is 1.0, so a future adapter must
+pin the commit and binary checksum rather than infer provenance from a release tag.
+The source is GPL: it is an executable benchmark input and a source of independently
+described ideas, never copied, linked, or distributed with FDU.
+
+The refresh confirms that dut optimizes a materially smaller retained job.
+It keeps every directory plus bounded top-N files, not a reusable per-file inventory;
+allocated bytes, apparent bytes, and file counts are mutually exclusive modes; it has no
+newest-mtime reducer or machine-readable output.
+Its human tree is therefore a useful `rendered-tree` calibration, not an oracle for
+FDU’s `indexed-tree` or multi-metric jobs.
+Partial traversal failures are warnings while the process can still exit successfully,
+so stderr and independent postconditions are part of the adapter contract.
+
+Three implementation patterns remain worth testing independently on Linux:
+
+- a reused 1 MiB per-worker `getdents64` buffer plus dirfd-relative `statx` with a
+  narrow mask;
+- one-CAS sibling-batch publication with demand-sized wakeups; and
+- per-thread early-reject heaps plus bottom-up, last-child roll-up, generalized only if
+  FDU can preserve its complete reducer and error contracts.
+
+The project history supplies priors, not transferable effect sizes: dut reports roughly
+10% for `fstatat`→`statx`, 12% for per-thread heaps, and only about 2% between
+`getdents64` and `readdir` in its implementation.
+Recent fixes are more important than those numbers for experiment safety: one prevented
+file loss when a wide directory crossed the scratch-buffer boundary, one stopped
+unbounded buffer growth on `EINVAL`, and one corrected the hard-link table’s resize
+element size. The FDU raw-reader gate must cover multi-chunk wide directories, bounded
+`EINVAL`, synthetic malformed records, and high-cardinality cross-directory hard links.
+The dut adapter also gets sparse and preallocated files whose apparent and allocated
+rankings disagree: the current early-reject comparison reads `stx_size` before the
+selected metric is computed, which is a concrete Linux hypothesis to reproduce rather
+than assume correct.
+
+The benchmark labels need the same precision.
+dut’s warm comparison performs warmups, but its SSD/HDD preparation writes `1` to
+`drop_caches` without `sync`. The
+[Linux kernel contract](https://docs.kernel.org/admin-guide/sysctl/vm.html#drop-caches)
+says `1` drops page cache while `2` targets reclaimable slab objects such as dentries
+and inodes; `3` requests both, and `sync` first makes dirty objects eligible.
+FDU will therefore report dut’s published method as `pagecache-drop-only`, alongside a
+separate verified-warm regime and a claim-grade per-sample `sync` plus `echo 3`
+controlled-cold regime.
+That three-state matrix, an ext4/XFS comparison, and a worker-count sweep are queued for
+the controlled Linux host rather than extrapolated from APFS.
+
 The retained-index candidates remain tracked beneath the performance-iteration bead:
 H19–H22 (`fdu-prph`), H58 (`fdu-r9he`), H60 (`fdu-weey`), and H61 (`fdu-f67r`). H59 is
 resolved by exp-040, while exp-041 through exp-044 reject all four additional
 derived-report layers H62–H65 for elapsed time.
+H66 (`fdu-sk7v`) now asks whether the same exact planning rule can retain directory
+topology without per-file records for an unfiltered cache-off tree-only request.
 H57 is resolved by exp-036 rather than left in the queue.
 
 ### Healey/Dumac Follow-Up: Bulk Syscalls, Fixed Workers, and Inode Locality
@@ -1449,6 +1503,7 @@ the loop extensions in H36–H39 to be trusted globally.
 | H63 | Derive a strict macOS bulk request/parser from rich-summary requirements and avoid allocating file names | wall/system/user CPU down ≥3%; malformed/mount/firmlink/one-filesystem fallback parity | **Refuted with H62** (exp-042): wall +1.86% [−1.96%, +4.56%]; reverted |
 | H64 | Derive only the selected size total for a workload matched to dumac | match or beat dumac wall; exact FDU path-accounting oracle | **Refuted** (exp-044): wall −1.15% [−2.24%, +0.44%], user CPU −51.54%, RSS −39.19%; did not beat dumac, and all prototype API/engine code was reverted |
 | H65 | Retune worker depth for the H59 transient-summary plan | 6/8/10/12/16 curve; wall down ≥3%, CPU/RSS bounded | **Refuted** (exp-043): eight workers changed 720k wall +0.67% [−1.56%, +3.99%] and CPU +40.66%; automatic/six retained |
+| H66 | For an unfiltered cache-off tree-only request, fold file observations directly into exact directory roll-ups and retain directory topology without file records | byte-identical tree; wall down ≥3% or decisive RSS reduction without meaningful latency regression at 60k and near-million scale | queued `fdu-sk7v`; never selected for cache, filters, multi-view composition, watch, or reusable-index requests; calibrate against dut’s rendered-tree job on Linux |
 
 **Guardrails, so a fast-looking result cannot be a wrong one:**
 
@@ -1586,16 +1641,23 @@ in the original research), and micro-tuning `readdir` batch sizes on the portabl
   Preserve warm and cold as separate regimes; adopt diskus’s per-sample `sync` plus
   `/proc/sys/vm/drop_caches` preparation for the cold regime while retaining FDU’s
   paired oracle and provenance controls (`fdu-nffc`).
+- Pin dut at its exact current commit and add a Linux-only rendered-tree adapter matrix:
+  verified warm, a labeled reproduction of its pagecache-drop-only method, and
+  per-sample `sync` plus `echo 3` controlled cold.
+  Sweep workers on ext4 and XFS, reject warning-bearing partial scans, and run the wide
+  directory, hard-link, sparse/preallocated, symlink, mount-boundary, and non-UTF-8
+  semantic fixtures before accepting a timing (`fdu-k5t5`, `fdu-nffc`).
 - Track the strategic items as beads where no bead exists: producer-side elision (H12),
   persisted roll-ups + `warm-query` (H16/H33), the calibration probe (H42), and the
   FSEvents journal resume spike (H43).
 
 ## References
 
-Checked out under ignored `attic/` for this research: bfs `4af45dc`; dut `68d4ba2` (GPL
-— ideas only); jwalk v0.9.0; dust v1.2.4 `fabe19b` (Apache-2.0); gdu v5.36.1 `8d64b4f`
-(MIT); pdu 0.24.0 `4e19260` (Apache-2.0); dua v2.41.1 `90a59e1` (MIT); diskus v0.9.0
-`d8a77db` (MIT OR Apache-2.0); and dumac `1ffbe3c` (no license declared in that
+Checked out under ignored `attic/` for this research: bfs `4af45dc`;
+[dut `68d4ba2`](https://codeberg.org/201984/dut/commit/68d4ba2d66211e7ca93a2312bb12f5879d0179e1)
+(GPL — ideas only); jwalk v0.9.0; dust v1.2.4 `fabe19b` (Apache-2.0); gdu v5.36.1
+`8d64b4f` (MIT); pdu 0.24.0 `4e19260` (Apache-2.0); dua v2.41.1 `90a59e1` (MIT); diskus
+v0.9.0 `d8a77db` (MIT OR Apache-2.0); and dumac `1ffbe3c` (no license declared in that
 revision, so inspect-only and executable benchmark input, with no copied code).
 
 macOS:
