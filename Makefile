@@ -153,6 +153,7 @@ docs-format-check:
 
 PERF_TREE ?= benchmarks/corpus/realtree/metabrowser
 PERF_LABEL ?= $(notdir $(PERF_TREE))
+PERF_BASELINE ?= benchmarks/results/realtree/tree-$(PERF_LABEL).json
 PERF_RELEASE := target/release/examples/perf_probe
 PERF_PROFILING := target/profiling/examples/perf_probe
 # The harness runs from the repo root against a committed, frozen environment, so a
@@ -161,7 +162,7 @@ PERF_PROFILING := target/profiling/examples/perf_probe
 PERF_UV := uv run --project benchmarks --frozen
 PERF_RUN := $(PERF_UV) python -m benchmarks.realtree
 
-.PHONY: perf-probe-release perf-probe-profiling perf-baseline perf-profile perf-compare perf-record perf-test perf-ledger perf-schema perf-schema-check
+.PHONY: perf-probe-release perf-probe-profiling perf-baseline perf-profile perf-compare perf-compare-tools perf-record perf-test perf-ledger perf-schema perf-schema-check
 
 perf-probe-release:
 	$(CARGO) build --locked --release -p fdu --example perf_probe --no-default-features
@@ -171,7 +172,8 @@ perf-probe-profiling:
 
 # Record what the tree looks like now, so later runs can prove they measured the same one.
 perf-baseline:
-	$(PERF_RUN) baseline --root $(PERF_TREE) --label $(PERF_LABEL)
+	$(PERF_RUN) baseline --root $(PERF_TREE) --label $(PERF_LABEL) \
+		--output $(PERF_BASELINE)
 
 # Where does the time go? Attribution only; never a timing claim.
 perf-profile: perf-probe-profiling
@@ -187,8 +189,20 @@ perf-compare: perf-probe-release
 		--reference dust=$(shell command -v dust 2>/dev/null || echo /usr/bin/du) \
 		--job cold-scan-index --job warm-revalidate \
 		--trials $(or $(TRIALS),12) \
-		--baseline-fingerprint benchmarks/results/realtree/tree-$(PERF_LABEL).json \
+		--baseline-fingerprint $(PERF_BASELINE) \
 		--name $(or $(NAME),adhoc)
+
+# Compare one immutable fdu release binary with external tools on the same live tree.
+# TOOL_ARGS supplies repeated `--tool name=/path/to/binary` arguments. Results must
+# stay outside PERF_TREE so the evidence write cannot invalidate its own subject.
+PERF_TOOL_RESULTS ?= /tmp/fdu-tool-comparison/results
+perf-compare-tools:
+	$(PERF_RUN).compare_tools --root $(PERF_TREE) --label $(PERF_LABEL) \
+		--anchor "fdu=$(CONTROL)" $(TOOL_ARGS) \
+		--trials $(or $(TRIALS),12) --warmups $(or $(WARMUPS),3) \
+		--baseline-fingerprint $(PERF_BASELINE) \
+		--output-dir $(PERF_TOOL_RESULTS) --name $(or $(NAME),tool-comparison) \
+		--storage "$(or $(STORAGE),local storage)"
 
 # Record an experiment artifact from a completed measurement run.
 perf-record:
