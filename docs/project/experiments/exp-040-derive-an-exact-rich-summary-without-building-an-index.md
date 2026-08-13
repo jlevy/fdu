@@ -236,7 +236,9 @@ The next experiments remove work still shared by both summary plans: worker-loca
 reduction (H62), a report-derived macOS attribute layout (H63), plan-specific worker
 depth (H65), and a selected-total-only projection for the DUMAC-matched challenge (H64).
 Exp-041/042 later rejected H62 and the H62 plus H63 composition; H65 consequently lost
-its prerequisite, leaving H64 as the clean matched-workload follow-up.
+its proposed reducer prerequisite, but was still screened directly over H59. Exp-043
+retained automatic/six after eight workers failed to reproduce, leaving H64 as the clean
+matched-workload follow-up.
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

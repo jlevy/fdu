@@ -137,6 +137,11 @@ What it found, first against a roughly 60k-entry checkout and then against a
   even though user CPU and memory fell sharply.
   Both engine prototypes were reverted: system calls remain the warm-APFS floor, and a
   duplicate walker/parser is not justified without a visible speedup.
+- **The transient-summary worker knee remains six.** Eight workers looked 5.2% faster in
+  a short 901,963-entry screen, but the independent 720,805-entry 20-pair run changed
+  wall by +0.67% [−1.56%, +3.99%] while CPU rose 40.66% (exp-043). Ten, twelve, and
+  sixteen workers were neutral or slower in the screen; the experiment-only override was
+  removed.
 
 Rejected experiments remain as important as accepted ones.
 The original parallel revalidation funnel bought only 2.6%, root-relative `openat` was
@@ -680,8 +685,8 @@ total-only, reduced-attribute job.
 Its two implementation reports and source diff motivated worker-local rich-summary
 reduction (H62), report-derived macOS metadata (H63), a selected-total matched-workload
 challenge (H64), and reduction-only worker calibration (H65). Exp-041/042 rejected
-H62/H63 despite strong CPU and memory reductions, and H65 is superseded because its
-reduction-only prerequisite did not land.
+H62/H63 despite strong CPU and memory reductions, and exp-043 rejected H65 after its
+promising eight-worker screen failed to reproduce.
 H64 remains design-gated and isolated from the accepted indexed worker policy and the
 open hard-link attribution design.
 

@@ -99,6 +99,7 @@ dead end.
 | 040 | [Derive an exact rich summary without building an index](#exp040--derive-an-exact-rich-summary-without-building-an-index) | H59 | `rich-summary-report` | -14.6% | ✅ accepted |
 | 041 | [Reduce transient summaries inside scan workers](#exp041--reduce-transient-summaries-inside-scan-workers) | H62 | `rich-summary-report` | -1.4% | ❌ rejected |
 | 042 | [Derive macOS summary bulk records](#exp042--derive-macos-summary-bulk-records) | H63 | `rich-summary-report` | +1.9% | ❌ rejected |
+| 043 | [Retune workers for transient summary](#exp043--retune-workers-for-transient-summary) | H65 | `rich-summary-report` | +0.7% | ❌ rejected |
 
 ## The experiments
 
@@ -1620,6 +1621,38 @@ parser without a user-visible speedup.
 
 Full record:
 [`exp-042-derive-macos-summary-bulk-records.md`](../experiments/exp-042-derive-macos-summary-bulk-records.md)
+
+### exp-043 — Retune workers for transient summary
+
+❌ rejected · 2026-08-13 · H65
+
+Control: H59 transient summary with the accepted automatic six-worker policy
+
+Candidate: H59 transient summary with a fixed eight-worker pool
+
+**`rich-summary-report`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 2210.5 | 2258.4 | +0.67% (n.s.) | [-1.56%, +3.99%] |
+| cpu (ms) | 8920.7 | 12531.0 | +40.66% (regression) | [+38.26%, +43.32%] |
+| user (ms) | 387.5 | 434.0 | +11.67% (regression) | [+10.13%, +14.34%] |
+| system (ms) | 8535.1 | 12102.7 | +42.03% (regression) | [+39.63%, +44.88%] |
+| peak rss (MiB) | 14.5 | 15.1 | +3.39% (regression) | [+1.22%, +6.43%] |
+
+Cost to carry: 12 lines; no new dependencies; new failure mode: A report-plan-specific
+worker policy could overfit one tree topology.
+
+A compile-time-only experimental override built fixed 8, 10, 12, and 16 worker binaries;
+the hook was removed after the curve and independent replication rejected a policy
+change
+
+**Rejected:** Eight workers looked promising in the 901,963-entry screen but the
+independent 720,805-entry 20-pair confirmation changed wall by +0.67% [-1.56%, +3.99%]
+while CPU rose 40.66%; automatic six remains the policy.
+
+Full record:
+[`exp-043-retune-workers-for-transient-summary.md`](../experiments/exp-043-retune-workers-for-transient-summary.md)
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

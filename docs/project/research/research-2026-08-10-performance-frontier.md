@@ -1429,7 +1429,7 @@ the loop extensions in H36–H39 to be trusted globally.
 | H62 | Aggregate the exact rich summary inside existing scan workers, retaining paths only for directories that must be descended into | wall/user CPU/channel work down ≥3%; exact rich-summary hash | **Refuted** (exp-041): wall −1.38%; user CPU −36.23%; reverted after composition screen |
 | H63 | Derive a strict macOS bulk request/parser from rich-summary requirements and avoid allocating file names | wall/system/user CPU down ≥3%; malformed/mount/firmlink/one-filesystem fallback parity | **Refuted with H62** (exp-042): wall +1.86% [−1.96%, +4.56%]; reverted |
 | H64 | Derive only the selected size total for a workload matched to dumac | match or beat dumac wall; exact FDU path-accounting oracle | design-gated `fdu-8nfx`; rich summary unchanged, hard-link difference disclosed |
-| H65 | Retune worker depth only after worker-local reduction removes the indexed consumer | 6/8/10/12/16 curve; wall down ≥3%, CPU/RSS bounded | superseded before measurement because H62 did not land; H57 already resolved indexed depth |
+| H65 | Retune worker depth for the H59 transient-summary plan | 6/8/10/12/16 curve; wall down ≥3%, CPU/RSS bounded | **Refuted** (exp-043): eight workers changed 720k wall +0.67% [−1.56%, +3.99%] and CPU +40.66%; automatic/six retained |
 
 **Guardrails, so a fast-looking result cannot be a wrong one:**
 

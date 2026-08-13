@@ -219,7 +219,7 @@ Status is updated as experiments resolve them; see the ledger for results.
 | H62 | Rich summaries can reduce inside scan workers rather than materializing file paths and sending observation batches through one consumer. | wall/user CPU/channel work down at least 3%; exact summary hash | **Refuted as production code** (exp-041): user CPU fell 36.23% and RSS 34.77%, but wall improved only 1.38%; the independent 720k replication was 1.26%. Reverted after the H63 composition also failed. |
 | H63 | A macOS bulk request derived from rich-summary requirements can omit index-only fields and avoid copying names for files. | system/user CPU and wall down at least 3%; strict parser and portable fallback parity | **Refuted in composition with H62** (exp-042): wall changed +1.86% [−1.96%, +4.56%] despite 50.96% lower user CPU and 39.70% lower RSS. Both layers were reverted. |
 | H64 | A selected-total projection can gather only the requested size metric for a workload matched to dumac. | beat or match dumac wall with exact FDU path-accounting oracle | **Design-gated** (`fdu-8nfx`). Keep rich `summary` unchanged and disclose hard-link/symlink differences. |
-| H65 | Removing the index consumer may move the reduction-only worker-depth knee above six. | 6/8/10/12/16 curve; wall down at least 3% with bounded CPU/RSS | **Superseded before measurement:** its H62 prerequisite was rejected, while H57 already retained six workers after an indexed 6/8/12/16 curve. Reopen only if a materially different reducer lands. |
+| H65 | Removing the index consumer may move the reduction-only worker-depth knee above six. | 6/8/10/12/16 curve; wall down at least 3% with bounded CPU/RSS | **Refuted** (exp-043): eight workers’ promising 901k screen did not replicate at 720k (+0.67% wall [−1.56%, +3.99%]); CPU rose 40.66%. Automatic/six remains shared by transient and indexed scans. |
 | H60 | Cold bootstrap workers can build disjoint local subtree arenas and splice them plus one roll-up at region completion, replacing one path operation per entry through the single consumer. | cold-index component/user CPU and channel allocation down; end-to-end wall down at least 3%; RSS bounded | **Queued** (`fdu-weey`). Preserve deterministic identity, progressive publication, errors, and the delta contract. |
 | H61 | A completed bootstrap can live in a dense immutable base while subsequent changes use a sparse overlay and bounded compaction, avoiding the full mutable-entry overhead on nearly every record. | million-scale RSS down at least 40% plus cold indexed wall down at least 3% or a decisive warm/query win | **Queued after H19–H22** (`fdu-f67r`). Preserve stable identities, exact snapshots, all views, progressive publication, errors, deltas, and watch semantics. |
 
@@ -302,8 +302,8 @@ H59 and its local aggregation helps motivate H60. H59 is now confirmed by exp-04
 `dumac` confirms FDU’s existing `getattrlistbulk` mechanism and motivated H62
 worker-local reduction, H63 report-derived macOS metadata, H64 a selected-total matched
 workload, and H65 reduction-only worker calibration.
-Exp-041/042 rejected the first two layers, and H65 lost its prerequisite; H64 remains
-the clean matched-workload experiment.
+Exp-041/042 rejected the first two layers, and exp-043 found no transferable H65 worker
+retuning; H64 remains the clean matched-workload experiment.
 `dust`, `gdu`, and `diskus` mainly reinforce work already measured: recursive high
 concurrency is not a new hypothesis after H52/H57 rejected over-threading on APFS.
 

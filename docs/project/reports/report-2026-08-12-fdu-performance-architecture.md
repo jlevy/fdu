@@ -306,6 +306,8 @@ Two proposed layers have now been measured and removed: H62 cut user CPU 36.23% 
 improved wall only 1.38% (exp-041), and the H62 plus H63 composition changed wall by
 +1.86% [−1.96%, +4.56%] (exp-042). That evidence says another rich-summary allocation
 optimization is unlikely to move the warm APFS syscall floor.
+Exp-043 also retained six workers: eight looked promising on the 901k screen but changed
+720k wall by +0.67% while raising CPU 40.66%; deeper pools were neutral or slower.
 
 1. **Selected-total matched challenge (H64, `fdu-8nfx`).** Derive only the requested
    apparent or allocated total for a fair dumac-class workload.
