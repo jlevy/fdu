@@ -69,6 +69,14 @@ Dropping it on macOS requires root, so a run that does not pass `--purge` record
 Cold-page-cache numbers measure the SSD, which is not the thing we are trying to
 improve.
 
+A future Linux product matrix measures both states because Linux offers a repeatable
+privileged control. Following the useful part of diskus’s published protocol, each
+controlled-cold sample runs `sync` and writes `3` to `/proc/sys/vm/drop_caches`; a
+separate verified-warm job performs explicit warmups.
+Those labels remain invalid unless the runner records preparation success per sample.
+The paired schedule, exact oracle, immutable fingerprint, work classes, binary and host
+provenance, and raw resource metrics still apply in both regimes.
+
 ## The reference tree
 
 Timings against a generated corpus answer a different question than timings against a
@@ -93,8 +101,11 @@ as immutable and confidential:
   If it changed, the run says so and exits nonzero, because timings taken against two
   different trees are not comparable.
 
-The project workspace itself is the canonical local large-tree testbed once its
-fingerprint crosses one million entries.
+The project workspace itself is the standard local million-scale testbed.
+Its publishable 2026-08-12 comparison fingerprint contained 976,295 entries, and earlier
+experiment fingerprints crossed one million.
+Generated output and source checkouts move the exact count, so the protocol records it
+every time rather than treating one million as an eligibility cliff.
 It is self-contained in the operational sense: the repository root, ignored generated
 corpus, build output, dependency trees, and `attic/` source checkouts all live below one
 root and are scanned together.
@@ -166,7 +177,7 @@ Kept as a live list.
 Numbering is shared with the
 [performance-frontier research](../research/research-2026-08-10-performance-frontier.md),
 whose backlog owns H12–H46; new hypotheses from any source take the next free number
-(currently H61) so no id ever means two things.
+(currently H62) so no id ever means two things.
 Each is stated so it can be wrong, with the metric that would show it.
 Status is updated as experiments resolve them; see the ledger for results.
 
@@ -202,6 +213,7 @@ Status is updated as experiments resolve them; see the ledger for results.
 | H19–H22 | Pack reusable full-index entries: inline arena storage, one stored name, directory-only roll-ups, and compact identities/revisions. The post-CLI 1M result spends about 631 MiB peak RSS, 44% above `origin/main`. | substantial peak RSS and fault reduction; wall neutral or at least one arm ≥3% faster | **Queued** (`fdu-prph`). Measure layout and one structural arm at a time; snapshots, stable identities, deltas, and query results remain exact. |
 | H59 | A cache-off report might retain only state required by the complete requested view set, as `pdu` discards subtrees below its output depth. | large RSS reduction and wall down at least 3%, with byte-identical multi-view output | **Design-gated** (`fdu-hke6`). Reject if it creates a CLI-only engine, makes depth/top-N affect scanning, or violates one-scan-many-views. |
 | H60 | Cold bootstrap workers can build disjoint local subtree arenas and splice them plus one roll-up at region completion, replacing one path operation per entry through the single consumer. | cold-index component/user CPU and channel allocation down; end-to-end wall down at least 3%; RSS bounded | **Queued** (`fdu-weey`). Preserve deterministic identity, progressive publication, errors, and the delta contract. |
+| H61 | A completed bootstrap can live in a dense immutable base while subsequent changes use a sparse overlay and bounded compaction, avoiding the full mutable-entry overhead on nearly every record. | million-scale RSS down at least 40% plus cold indexed wall down at least 3% or a decisive warm/query win | **Queued after H19–H22** (`fdu-f67r`). Preserve stable identities, exact snapshots, all views, progressive publication, errors, deltas, and watch semantics. |
 
 ### Warm start
 
@@ -276,9 +288,10 @@ implementation. Current findings are reflected in the queue: `dua`’s portable
 wide-directory chunks motivate H58; `pdu`’s bounded retention motivates the design-gated
 H59 and its local aggregation helps motivate H60; `dumac` confirms FDU’s existing
 `getattrlistbulk` mechanism but achieves its small state by requesting fewer attributes
-and reducing directly to one total.
-`dust`, `gdu`, and `diskus` mainly reinforce work already measured: recursive high
-concurrency is not a new hypothesis after H52/H57 rejected over-threading on APFS.
+and reducing directly to one total, which raises the H19–H22 layout ladder and H61
+dense-base design. `dust`, `gdu`, and `diskus` mainly reinforce work already measured:
+recursive high concurrency is not a new hypothesis after H52/H57 rejected over-threading
+on APFS.
 
 * * *
 

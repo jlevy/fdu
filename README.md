@@ -9,11 +9,11 @@ One walk, many metrics, cached between runs.
 > **Status: pre-release.** The observation/commit contract, bounded in-process change
 > feed, cache lifecycle, applying reconciler, CLI, and Python wheel are tested end to
 > end, and the measured-improvement loop described below is running.
-> The syscall layer is not built yet: the walker is a bounded parallel pool over
-> portable `read_dir` and `symlink_metadata`, so **no release-grade performance claim
-> should be made for this crate until that layer lands and the benchmark gate against
-> other tools passes**. See
-> [the Phase 1 plan](docs/project/specs/active/plan-2026-08-08-fdu-phase-1.md).
+> The portable walker has a bounded parallel pool; macOS additionally uses an audited
+> `getattrlistbulk` backend.
+> Local M1/APFS evidence is published below, while the controlled Linux and full release
+> matrices remain open.
+> See [the Phase 1 plan](docs/project/specs/active/plan-2026-08-08-fdu-phase-1.md).
 
 ## Why
 
@@ -32,6 +32,27 @@ The full survey, with the techniques worth adapting and their sources, is in
 [the file roll-up engine research](docs/project/research/research-2026-08-06-file-rollup-engine.md).
 
 ## Speed and the Cache
+
+**Typical live scan:** on a 976,295-entry workspace, a fresh FDU process with its own
+cache disabled produced a ten-row tree in a **4.237-second median**, versus **7.546
+seconds for dust**, **6.684 seconds for pdu**, and **8.315 seconds for gdu**. This was
+12 paired trials per tool on an M1 Pro MacBook with a local APFS SSD and the operating
+system’s filesystem cache warm.
+The narrower scalar-only dumac took 3.566 seconds; it does not retain FDU’s reusable
+index or per-directory metrics.
+See the
+[technical white paper](docs/project/reports/report-2026-08-12-fdu-performance-architecture.md),
+[full comparison](docs/project/reports/report-2026-08-12-fdu-live-tool-comparison.md),
+and
+[reproduction manifest](docs/project/reports/fdu-live-tool-comparison-manifest-v1.json).
+
+| Tool | Result | Typical median |
+| --- | --- | ---: |
+| **fdu** | reusable index and ten-row tree | **4.237 s** |
+| pdu | rendered tree | 6.684 s |
+| dust | ten-row tree | 7.546 s |
+| gdu | ten-row tree | 8.315 s |
+| dumac | scalar total only | **3.566 s** |
 
 fdu has two paths to an answer, and it labels which one you got.
 
@@ -70,7 +91,9 @@ Speed changes here are decided by paired, interleaved measurement against a real
 with an independent oracle verifying that faster output is still identical output.
 Every accepted and rejected experiment is recorded in
 [the experiment ledger](docs/project/reports/report-2026-08-10-fdu-performance-experiments.md);
-the protocol is [the performance loop](docs/project/guides/performance-loop.md).
+the key architectural conclusions are in
+[the performance white paper](docs/project/reports/report-2026-08-12-fdu-performance-architecture.md),
+and the protocol is [the performance loop](docs/project/guides/performance-loop.md).
 The cost model, the platform levers that change constants by integer factors, and the
 ranked backlog are in
 [the performance frontier research](docs/project/research/research-2026-08-10-performance-frontier.md),

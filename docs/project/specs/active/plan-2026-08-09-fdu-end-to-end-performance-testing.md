@@ -110,6 +110,16 @@ What it found, first against a roughly 60k-entry checkout and then against a
   frontier is neutral (exp-038), and the 256 KiB bulk buffer remains a rejection
   (exp-039). Peak indexed RSS rises 44.32%, so compact full-index layout is now the
   clearest retained cost.
+- **The local product comparison now has publishable evidence.** On the later
+  976,295-entry workspace fingerprint, fresh cache-off FDU completed in a 4.237-second
+  median versus 7.546 seconds for dust, 6.684 for pdu, 8.315 for gdu, and 28.576 for
+  ncdu. FDU also beat dua and diskus scalar totals.
+  Dumac was 17.6% faster in paired wall time while performing a narrower scalar-only job
+  and using 45.3 MiB instead of FDU’s 585.2 MiB. The
+  [live comparison](../../reports/report-2026-08-12-fdu-live-tool-comparison.md),
+  [manifest](../../reports/fdu-live-tool-comparison-manifest-v1.json), and
+  [performance white paper](../../reports/report-2026-08-12-fdu-performance-architecture.md)
+  own the claim and its architectural interpretation.
 
 Rejected experiments remain as important as accepted ones.
 The original parallel revalidation funnel bought only 2.6%, root-relative `openat` was
@@ -645,6 +655,17 @@ APFS hypothesis after exp-036 refuted over-threading.
 Dumac validates the already-landed bulk syscall mechanism but performs a smaller
 total-only, reduced-attribute job.
 
+The
+[current diskus benchmark](https://github.com/sharkdp/diskus/blob/90196e950017d25b2940e8e0fda51a321ca66e1a/README.md#benchmark)
+adds a useful Linux control to the future matrix.
+It uses Hyperfine on a roughly 500k-entry tree, separates five-warmup and cold regimes,
+runs `sync` plus `/proc/sys/vm/drop_caches` before every cold sample, and uses a
+parameter scan to choose a configurable competitor’s thread count.
+FDU’s Linux run will adopt the per-sample cold-cache preparation while retaining
+adjacent paired scheduling, the independent oracle, pre/post fingerprints, exact binary
+and host provenance, work classes, resource metrics, stable-output checks, and bootstrap
+intervals. Warm and cold Linux results remain separate from M1/APFS numbers.
+
 ### Trial Scheduling and Statistics
 
 Setup and validation are untimed.
@@ -967,12 +988,19 @@ The performance-testing workstream is complete when:
    explicit design decision to revise a target;
 10. every README performance claim links to that report and reproduction manifest.
 
+Local M1/APFS evidence now satisfies the claim-linkage rule.
+The complete Phase 1 gate remains open for a controlled Linux local-SSD run (`fdu-nffc`)
+and the generated-corpus matrix; platform results are added side by side rather than
+averaged.
+
 ## Open Questions
 
 - **Dedicated Linux host (`fdu-8z5l`, `fdu-ywu0`)**: which runner and filesystem become
   the first benchmark host class?
   The result schema and local harness do not depend on the answer, but numeric baselines
-  do.
+  do. The protocol will include separate warm-steady and per-sample controlled-cold
+  states; the latter uses recorded `sync` and `/proc/sys/vm/drop_caches` preparation as
+  in the current diskus benchmark.
 - **Controlled-cold protocol (`fdu-8z5l`, `fdu-ywu0`)**: privileged cache eviction,
   disposable VM/block device, or a corpus larger than available cache?
   The full report must document the chosen method and its limits.
@@ -1055,6 +1083,9 @@ research and plan, assemble this graph, and validate it through CI.
 | `fdu-pkyu` | P1 | Elide redundant path lookups and guaranteed no-op applies during reconciliation | discovered by `fdu-p2i1` |
 | `fdu-6wu0` | P1 | Reuse safely cloned and independently verified base corpora for large repeated trials | discovered by `fdu-p2i1` |
 | `fdu-j2ka` | P1 | Coordinate the iterative real-tree profile and optimization campaign | `fdu-6wu0` informs generated-corpus setup |
+| `fdu-1y8f` | P1 | Publish the performance architecture white paper | `fdu-j2ka` evidence |
+| `fdu-nffc` | P2 | Extend the paired comparator matrix to controlled Linux warm and cold regimes | dedicated Linux host |
+| `fdu-16pw` | P2 | Compare and incorporate the diskus benchmark protocol | — |
 | `fdu-hh8g` | P1 | Add a mutation-detecting, path-redacted real-tree baseline | — |
 | `fdu-16py` | P1 | Profile and optimize snapshot-absent real-tree traversal | `fdu-hh8g` |
 | `fdu-xnyn` | P1 | Profile and optimize compatible-snapshot real-tree revalidation | `fdu-hh8g` |

@@ -140,6 +140,16 @@ BFS-sensitive questions: depth-first is 3.57% slower (exp-037), eight workers bu
 at this scale (exp-039). These results supersede the remaining suggestions to retune
 worker count, switch traversal order, or revisit buffer size without a new mechanism.
 
+The publishable product comparison used a later 976,295-entry fingerprint and twelve
+adjacent pairs per competitor.
+FDU’s fresh cache-off median was 4.237 seconds, ahead of dust (7.546), pdu (6.684), gdu
+(8.315), ncdu (28.576), dua (8.352), and diskus (7.064). Dumac’s scalar-only total was
+3.566 seconds. Its smaller attribute request and 45.3 MiB retained state, versus FDU’s
+roughly 585 MiB full index, reinforce the compact-entry H19–H22 ladder and motivate a
+dense immutable base with sparse mutation overlay (H61, `fdu-f67r`). See the
+[performance white paper](../reports/report-2026-08-12-fdu-performance-architecture.md)
+and [live comparison](../reports/report-2026-08-12-fdu-live-tool-comparison.md).
+
 ## Findings
 
 ### A First-Principles Cost Model
@@ -417,9 +427,9 @@ It yields four actionable conclusions and three negative ones:
   Their totals therefore calibrate traversal throughput; they are not correctness
   oracles for FDU’s path-entry accounting and complete/partial provenance.
 
-All four live candidates are tracked beneath the performance-iteration bead: H19–H22
-(`fdu-prph`), H58 (`fdu-r9he`), H59 (`fdu-hke6`), and H60 (`fdu-weey`). H57 is resolved
-by exp-036 rather than left in the queue.
+All five live candidates are tracked beneath the performance-iteration bead: H19–H22
+(`fdu-prph`), H58 (`fdu-r9he`), H59 (`fdu-hke6`), H60 (`fdu-weey`), and H61
+(`fdu-f67r`). H57 is resolved by exp-036 rather than left in the queue.
 
 **Maintainer testimony on scheduling, collected from primary sources (annotated list in
 the References), adds four warnings the surveys alone would miss:**
@@ -1316,6 +1326,7 @@ the loop extensions in H36–H39 to be trusted globally.
 | H58 | Portable wide-directory entries split into small stealable stat jobs can expose parallelism hidden by directory-granular scheduling | portable/Linux wall and system CPU down ≥3%; queue wait/RSS bounded | queued `fdu-r9he`; source: dua v2.41.1 |
 | H59 | A general exact cache-off report path can retain only the complete requested view state without making output limits alter the scan | large RSS reduction and wall down ≥3%; byte-identical multi-view reports | design-gated `fdu-hke6`; source: pdu 0.24.0 |
 | H60 | Cold workers can build disjoint local subtree indexes and splice them at region completion instead of funneling one path operation per entry | cold-index component/user CPU and channel work down; end-to-end wall down ≥3%; RSS bounded | queued `fdu-weey`; deterministic identity/progress/delta contract required |
+| H61 | Store the completed bootstrap in a dense immutable base and apply later changes through a sparse mutable overlay with bounded compaction | million-scale RSS down ≥40% plus cold indexed wall down ≥3% or a decisive warm/query win | queued after H19–H22 as `fdu-f67r`; preserve all query, identity, snapshot, delta, watch, and progressive semantics |
 
 **Guardrails, so a fast-looking result cannot be a wrong one:**
 
@@ -1449,6 +1460,10 @@ in the original research), and micro-tuning `readdir` batch sizes on the portabl
   snapshot format design (`fdu-xihx`).
 - Add dumac to the comparator list and the macOS purge-vs-remount cold protocol to the
   benchmark plan.
+- Extend the comparison to a controlled Linux local-SSD host.
+  Preserve warm and cold as separate regimes; adopt diskus’s per-sample `sync` plus
+  `/proc/sys/vm/drop_caches` preparation for the cold regime while retaining FDU’s
+  paired oracle and provenance controls (`fdu-nffc`).
 - Track the strategic items as beads where no bead exists: producer-side elision (H12),
   persisted roll-ups + `warm-query` (H16/H33), the calibration probe (H42), and the
   FSEvents journal resume spike (H43).

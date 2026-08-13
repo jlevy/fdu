@@ -128,8 +128,10 @@ developer and hosted-CI runs remain `uncontrolled`.
 
 ### Canonical local million-entry comparison
 
-Once this repository workspace fingerprints above one million entries, it is the
-canonical local heterogeneous testbed.
+This repository workspace is the standard local million-scale heterogeneous testbed.
+Its publishable 2026-08-12 fingerprint contained 976,295 entries; generated output and
+source checkouts move the exact count, so “million-scale” is the stable designation and
+one million is a useful milestone rather than an eligibility cliff.
 The ignored generated corpus, `target/`, package trees, Git data, and pinned `attic/`
 comparator checkouts are intentionally part of the subject.
 This makes it realistic and self-contained for one machine, but not reproducible by path
@@ -157,6 +159,29 @@ duplication; any baseline drift, pre/post mutation, timeout, or nonzero exit mak
 run non-publishable.
 The report labels indexed-tree, rendered-tree, and total-only work classes because those
 jobs are not semantically identical.
+
+The reviewed M1/APFS result and exact manifest are in the
+[live tool comparison](../docs/project/reports/report-2026-08-12-fdu-live-tool-comparison.md).
+The architecture-level synthesis is the
+[performance white paper](../docs/project/reports/report-2026-08-12-fdu-performance-architecture.md).
+
+### Future Linux warm and cold comparison
+
+The
+[current diskus benchmark](https://github.com/sharkdp/diskus/blob/90196e950017d25b2940e8e0fda51a321ca66e1a/README.md#benchmark)
+provides one practice the macOS run cannot reproduce without different platform
+controls: it uses Hyperfine with five warmups for the warm regime, and runs `sync` plus
+`/proc/sys/vm/drop_caches` before every timed Linux cold-cache sample.
+It also uses a parameter scan before selecting a comparator’s worker count.
+
+The future Linux matrix adopts that per-sample cache preparation for its
+`controlled-cold` regime and reports a separate `verified-warm` regime.
+It retains the stronger FDU evidence contract: adjacent paired scheduling, exact
+binaries and host facts, immutable pre/post fingerprints, correctness oracles, work
+classes, output digests, resource metrics, raw samples, and bootstrap confidence
+intervals.
+The runner must record every preparation command and failure; a label alone is
+not proof that the kernel cache was evicted.
 
 `output-digest` drains stdout through a pipe and hashes it without timing filesystem
 writes. Compact JSON postconditions are retained in a bounded 16 MiB buffer for untimed
