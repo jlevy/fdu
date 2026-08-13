@@ -77,6 +77,71 @@ An **indexed tree** retains browseable state, a **rendered tree** produces roll-
 bounded human output, and a **scalar total** reduces the scan to one number.
 The classes share traversal work but are not semantically interchangeable.
 
+## Integration Boundary for Performance PR #8
+
+The PR is the performance layer on top of the merged composable CLI in #5. Current
+`main` already contains region-scheduled breadth-first traversal, the explicit path
+requirement, the safe bare-help behavior, the compact default tree, and the public
+composition rules. The performance branch retains those semantics and adds five
+production mechanisms:
+
+1. service-time-adaptive reserve workers for a slow fresh scan;
+2. macOS bulk metadata for fresh scans;
+3. reuse of that bulk reader during full reconciliation;
+4. bounded parallel immutable-baseline reconciliation with producer-side no-op
+   elimination; and
+5. an internal exact transient-summary plan for an unfiltered cache-off summary-only
+   request.
+
+It also fixes two reconciliation correctness defects found during integration review: an
+enumerated entry whose metadata lookup fails is no longer mistaken for a deletion, and a
+late deferred-change overflow resumes at the first unapplied wave instead of retrying
+completed work and double-counting its statistics.
+The evidence review fixed two harness defects as well: the component probe now emits
+newest regular-file mtime as required by the real-tree oracle, and the real-tree
+allocated-byte aggregate uses apparent size on non-POSIX hosts, matching both FDU and
+the oracle’s own engine digest when native block counts are unavailable.
+
+Against freshly rebuilt merged `origin/main`, the integrated branch measured:
+
+| Immutable APFS subject | Job | Wall-time change |
+| --- | --- | ---: |
+| 60,067 entries | snapshot-absent indexed scan | -5.1% |
+| 60,067 entries | verified warm open | **-42.3%** |
+| 720,805 entries | snapshot-absent indexed scan | **-30.5%** |
+| 720,805 entries | verified warm open | **-70.9%** |
+| 1,007,659 entries | cache-off indexed scan | **-31.3%** |
+| 1,007,659 entries | scan producer | **-36.6%** |
+
+These are the PR merge deltas.
+The 54.5% snapshot-absent index and 52.0% verified-warm results elsewhere in this paper
+are cumulative campaign comparisons with the older pre-campaign `b565882` binary, not
+the incremental difference from current `main`.
+
+### Four Different Batching Boundaries
+
+The implementation has four batching layers with different effects and failure modes:
+
+1. **Kernel record batches:** the new macOS reader fills one reusable 64 KiB buffer with
+   the children and stat-tier attributes of one open directory.
+   A wide directory takes several calls; the API does not batch across directories.
+2. **Observation batches:** workers publish up to 1,024 ordinary operations to the
+   consumer. This pre-existing mutation boundary is unchanged; an earlier sweep found no
+   stable benefit from increasing it.
+3. **Directory claims:** a worker takes four directories from the region scheduler at a
+   time. This pre-existing queue-lock amortization is small enough not to hoard a whole
+   region.
+4. **Reconciliation waves:** up to 1,024 directories share one immutable index baseline
+   and four comparison workers.
+   Effective changes are applied only after the wave joins, through the ordinary
+   mutation authority and observation batches.
+
+The fresh-scan 30.1–41.6% gain in exp-022 comes primarily from kernel record batching.
+Reusing it during warm reconciliation produced the 34.4% exp-026 gain.
+Immutable comparison waves then removed the unchanged-entry mutation funnel and produced
+the additional 59.5% large-tree warm gain in exp-030. Those experiments use successive
+controls, so their percentages compose in the code but must not be added arithmetically.
+
 ## Cost Model
 
 A complete scan has four dominant costs:

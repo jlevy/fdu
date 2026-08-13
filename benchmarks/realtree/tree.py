@@ -65,7 +65,7 @@ def fingerprint(root: Path, *, label: str) -> Dict[str, Any]:
 
     counts = {"directories": 1, "files": 0, "other": 0, "symlinks": 0, "total": 1}
     apparent_bytes = 0
-    allocated_bytes = 0
+    allocated_bytes_total = 0
     newest_file_mtime_ns: Optional[int] = None
     linked_files: Dict[Tuple[int, int], Tuple[int, int, int]] = {}
     depths: Dict[int, int] = {0: 1}
@@ -82,9 +82,9 @@ def fingerprint(root: Path, *, label: str) -> Dict[str, Any]:
             kind = "file"
             counts["files"] += 1
             apparent = int(metadata.st_size)
-            allocated = int(getattr(metadata, "st_blocks", 0)) * 512
+            allocated = _allocated_bytes(metadata)
             apparent_bytes += apparent
-            allocated_bytes += allocated
+            allocated_bytes_total += allocated
             mtime_ns = int(metadata.st_mtime_ns)
             newest_file_mtime_ns = (
                 mtime_ns
@@ -132,12 +132,19 @@ def fingerprint(root: Path, *, label: str) -> Dict[str, Any]:
         "root_id": root_id(absolute),
         "schema": FINGERPRINT_SCHEMA,
         "sizes": {
-            "allocated_bytes": allocated_bytes,
+            "allocated_bytes": allocated_bytes_total,
             "apparent_bytes": apparent_bytes,
         },
         "newest_file_mtime_ns": newest_file_mtime_ns,
         "depth_histogram": {str(key): depths[key] for key in sorted(depths)},
     }
+
+
+def _allocated_bytes(metadata: Any) -> int:
+    """Match the engine's honest fallback when allocated size is unavailable."""
+    if os.name == "posix" and hasattr(metadata, "st_blocks"):
+        return int(metadata.st_blocks) * 512
+    return int(metadata.st_size)
 
 
 def root_id(root: Path) -> str:

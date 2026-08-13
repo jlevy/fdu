@@ -182,6 +182,13 @@ What it found, first against a roughly 60k-entry checkout and then against a
   output against an independent filesystem fingerprint.
   The ordinary handoff gate now runs both the portable and real-tree harness suites so
   this contract cannot drift silently again.
+- **The independent real-tree aggregate now matches the portable engine contract.** The
+  new real-process test exposed on Windows that the oracle engine digest correctly used
+  apparent size when native allocated blocks were unavailable, while the same
+  fingerprint document incorrectly reported aggregate allocated bytes as zero.
+  One shared platform rule now supplies both aggregate and hard-link accounting, with
+  direct block-present and block-absent tests.
+  This was a harness-only mismatch; the production scanner and digest already agreed.
 
 Rejected experiments remain as important as accepted ones.
 The original parallel revalidation funnel bought only 2.6%, root-relative `openat` was
@@ -225,7 +232,7 @@ A publishable result still requires an immutable clean-revision binary and zero 
 drift; the README claim is owned by that separate live comparison, not by exploratory
 generated-corpus curves.
 
-The portable harness now has 64 deterministic and adversarial tests, and the 67-test
+The portable harness now has 64 deterministic and adversarial tests, and the 68-test
 real-tree harness is also included in `make check`, without a numeric timing assertion.
 The maintainer selected Python 3.12 as the new minimum for the wheel and
 repository-owned tooling; `fdu-c7z2` owns the pending PyO3 ABI, package metadata, uv
@@ -1203,6 +1210,7 @@ The planning bead retains the same stable IDs.
 | PEV-35 | High | Treating dut’s successful `echo 1 > drop_caches` preparation as cold implies directory and inode metadata were evicted even though the kernel contract says `1` targets page cache and the command omits `sync` | Label that reproduction `pagecache-drop-only`; publish it beside verified warm and a distinct dedicated-host controlled-cold regime that requires successful per-sample `sync` plus `echo 3` |
 | PEV-36 | High | A fast dut trial can silently omit entries or selected bytes because human output, warning-plus-zero-exit errors, multi-buffer enumeration, hard-link resizing, and early top-N rejection are not a machine oracle | Pin the exact source/binary, reject warning-bearing partial scans, and pass independent wide-directory, hard-link, sparse/preallocated, symlink, mount-boundary, non-UTF-8, and root-total postconditions before accepting timing |
 | PEV-37 | High | The real-tree oracle required newest regular-file mtime, but the component probe omitted that field, so valid nonempty-tree runs failed closed while the normal handoff gate did not exercise the separate real-tree suite | Emit and self-validate `newest_file_mtime_ns` in both producer and index summaries, compare a real probe process with an independent tree fingerprint, and include both performance-harness suites in `make check` |
+| PEV-38 | High | On non-POSIX hosts, the real-tree engine digest used apparent size as FDU’s documented fallback for unavailable allocated blocks, but the fingerprint aggregate independently substituted zero, so one oracle document disagreed with itself | Centralize allocated-byte observation: use native 512-byte block counts on POSIX when available and apparent size otherwise; test both cases and run the real-process oracle on every CI platform |
 
 ## Beads
 

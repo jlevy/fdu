@@ -15,6 +15,8 @@ import statistics
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
 from benchmarks.realtree import __main__ as realtree_cli
 from benchmarks.realtree import ledger, measure, profile, tree
@@ -46,6 +48,13 @@ class ReferenceTreeTests(unittest.TestCase):
             max(path.stat().st_mtime_ns for path in self.root.rglob("*") if path.is_file()),
         )
         self.assertEqual(document["max_depth"], 3)
+
+    def test_allocated_bytes_use_apparent_size_when_blocks_are_unavailable(self) -> None:
+        metadata = SimpleNamespace(st_size=7, st_blocks=2)
+        with mock.patch("benchmarks.realtree.tree.os.name", "posix"):
+            self.assertEqual(tree._allocated_bytes(metadata), 1024)
+        with mock.patch("benchmarks.realtree.tree.os.name", "nt"):
+            self.assertEqual(tree._allocated_bytes(metadata), 7)
 
     def test_fingerprint_discloses_no_path_or_name(self) -> None:
         document = tree.fingerprint(self.root, label="fixture")
