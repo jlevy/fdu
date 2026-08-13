@@ -270,17 +270,33 @@ def main() -> None:
     )
     assert paths == ["src/lib.rs", "src/main.rs"], paths
 
-    types = index.report(views=["types"])["reports"][0]["types"]
-    extensions = sorted(row["extension"] for row in types)
+    extension_rows = index.report(views=["extensions"])["reports"][0]["extensions"]
+    extensions = sorted(row["extension"] for row in extension_rows)
     assert extensions == [".md", ".rs"], extensions
+
+    types = index.report(views=["types"])["reports"][0]["metrics"]
+    assert sorted(row["id"] for row in types["rows"]) == ["markdown", "rust"], types
+
+    analyzed = fdu_py.scan(str(query_root), analyze="basic", max_file_size="1MiB")
+    documents = analyzed.report(views=["documents"], words_per_page=250)
+    assert documents["analysis"]["profile"] == "basic", documents
+    document_metrics = documents["reports"][0]["metrics"]
+    markdown = document_metrics["rows"][0]
+    assert markdown["physical_lines"] == 1, markdown
+    assert markdown["raw_words"] == 1, markdown
+    assert markdown["words_per_page"] == 250, markdown
 
     tree = index.report(views=["tree"], depth="all")["reports"][0]["tree"]
     assert tree["name"] == ".", tree
     assert any(child["name"] == "src" for child in tree["children"]), tree
 
     # Several views come back in request order, from one index.
-    ordered = index.report(views=["types", "summary"])["reports"]
-    assert [section["view"] for section in ordered] == ["types", "summary"], ordered
+    ordered = index.report(views=["extensions", "types", "summary"])["reports"]
+    assert [section["view"] for section in ordered] == [
+        "extensions",
+        "types",
+        "summary",
+    ], ordered
 
     # Value grammars are shared, so a bad value is rejected the same way everywhere.
     for bad in [

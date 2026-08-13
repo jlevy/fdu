@@ -16,6 +16,7 @@ use std::time::{Duration, SystemTime};
 use clap::builder::styling::{AnsiColor, Style as AnsiStyle, Styles};
 use clap::{ArgAction, ColorChoice, CommandFactory, FromArgMatches, Parser, ValueEnum};
 
+use crate::content::{AnalysisProfile, AnalysisRequest};
 use crate::query::{
     Bound, Pattern, Provenance, Query, ReportSource, Selection, SizeMetric, SortKey, ViewSpec,
     parse_size, parse_when, system_time_to_nanos,
@@ -41,6 +42,13 @@ const CLI_STYLES: Styles = Styles::styled()
     .invalid(AnsiColor::Yellow.on_default());
 
 const AFTER_HELP: &str = "Examples:\n  fdu .\n  fdu --view types ~/Downloads\n  fdu --view files --sort size --limit 20 ~/src\n  fdu --view files --modified-since 2h --format jsonl .\n  fdu --view summary,types --format json .\n\nFive axes, and every option belongs to exactly one:\n  Scope      PATH, --scan-depth        what is scanned and cached\n  Selection  --include, --exclude, --min-size, --modified-since, --modified-before,\n             --kind, --depth, --limit, --sort, --reverse, --size\n  View       --view tree,types,files,summary\n  Format     --format text|json|jsonl|yaml, --color\n  Mode       --cache auto|refresh|read-only|only|off\n\nScope versus selection:\n  Reports require PATH; bare `fdu` prints this help and never scans the current directory.\n  --scan-depth limits what is scanned and retained; one cache then serves every query.\n  --depth and --limit bound only the rendered view, and never cost a rescan.\n  --depth 0 reports totals for the root and nothing beneath it.\n  --depth and --limit accept `all` for no bound.\n\nValues:\n  SIZE   512, 10k, 10M, 1.5GiB (decimal and binary units, case-insensitive)\n  WHEN   now, an age (45s, 2h, 1h30m), RFC 3339 with an offset, or @epoch seconds\n  --modified-since is inclusive; --modified-before is exclusive\n  --include and --exclude are repeatable globs; --view and --kind are comma lists\n\nCache:\n  auto       read, revalidate, and write back when complete (default)\n  refresh    ignore any snapshot, scan cold, and rewrite it\n  read-only  read and revalidate, but never write\n  only       answer from the snapshot without touching the tree; labeled stale,\n             and fails when no usable snapshot exists rather than scanning\n  off        ignore the snapshot and leave nothing behind\n\nOutput and automation:\n  Results go to stdout; warnings and errors go to stderr.\n  Machine formats are schema-versioned and never colorized.\n  Every report carries schema, source, freshness, complete, errors, and both timestamps.\n  Feed a report's scan_started_at back as --modified-since to list what changed since.\n  The command never prompts, pages, or animates progress.\n\nColor:\n  --color overrides NO_COLOR and FORCE_COLOR. In auto mode, NO_COLOR disables color,\n  FORCE_COLOR enables it, and otherwise the destination must be a terminal.\n\nExit status:\n  0  Complete result, or a partial result accepted with --allow-partial\n  1  Fatal filesystem or cache error\n  2  Partial result, or command-line usage error";
+
+const CONTENT_AFTER_HELP: &str = "Examples:\n  fdu .\n  fdu --view extensions ~/Downloads\n  fdu --view types,families --format json .\n  fdu --analyze basic --view documents .\n  fdu --analyze basic --view languages --max-file-size 8MiB .\n\nFive axes, and every option belongs to exactly one:\n  Scope      PATH, --scan-depth                         what is scanned and cached\n  Selection  --include, --exclude, --depth, --limit    which entries are considered\n  View       tree,extensions,types,families,languages,documents,files,summary\n  Format     --format text|json|jsonl|yaml, --color\n  Mode       --cache, --analyze, --max-file-size, --analysis-workers\n\nContent analysis:\n  none       metadata only; source files are never opened (default)\n  basic      physical, blank, and nonblank lines plus raw prose words\n  code       basic metrics plus the versioned common-language SLOC analyzer\n  documents  basic metrics plus logical and reader-visible prose metrics\n  full       every shipped analyzer\n\n  Content reads are bounded by --max-file-size and --analysis-workers.\n  --words-per-page changes only report-time page derivation.\n  Unchanged results are restored from a separate versioned sidecar.\n  cache=only never opens source files and fails if requested content is absent.\n\nOutput and automation:\n  Metadata-only machine output remains fdu.report/1; metric summaries use fdu.report/2.\n  Results go to stdout; warnings and errors go to stderr.\n  The command never prompts, pages, or animates progress.\n\nExit status:\n  0  Complete result, or a partial result accepted with --allow-partial\n  1  Fatal filesystem or cache error\n  2  Partial result, or command-line usage error";
+
+// Keep the original long-form prose compiled until the compatibility documentation is
+// removed in the release cleanup; this reference prevents it becoming dead code while
+// the command displays the content-aware replacement above.
+const _: &str = AFTER_HELP;
 
 /// When terminal styling should be enabled.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum)]
@@ -160,7 +168,7 @@ pub enum RunOutcome {
     about,
     long_about = None,
     styles = CLI_STYLES,
-    after_help = AFTER_HELP,
+    after_help = CONTENT_AFTER_HELP,
     arg_required_else_help = true,
     override_usage = "fdu [OPTIONS] <PATH>\n       fdu [PATH] --cache-status[=<SCOPE>] [--cache-clear[=<SCOPE>]]\n       fdu [PATH] --cache-clear[=<SCOPE>]\n       fdu --skill"
 )]
@@ -228,9 +236,25 @@ pub struct Cli {
     pub size: String,
 
     // ---- view: which roll-ups are reported ----
-    /// Views to report: tree, types, files, summary.
+    /// Views: tree, extensions, types, families, languages, documents, files, summary.
     #[arg(long, value_name = "LIST", default_value = "tree")]
     pub view: String,
+
+    /// Content depth: none, basic, code, documents, or full.
+    #[arg(long, value_name = "PROFILE", default_value = "none")]
+    pub analyze: String,
+
+    /// Maximum bytes read from one analyzed file.
+    #[arg(long, value_name = "SIZE", default_value = "16MiB")]
+    pub max_file_size: String,
+
+    /// Content reader workers; zero selects available parallelism.
+    #[arg(long, value_name = "N", default_value_t = 0)]
+    pub analysis_workers: usize,
+
+    /// Logical words per derived document page.
+    #[arg(long, value_name = "N", default_value_t = 300)]
+    pub words_per_page: u64,
 
     // ---- format: how the report is serialized ----
     /// Output format: text, json, jsonl, or yaml.
@@ -328,6 +352,7 @@ impl Cli {
         })?;
 
         let policy = self.parse_cache_policy().map_err(|error| usage(&error))?;
+        let analysis = self.parse_analysis().map_err(|error| usage(&error))?;
         let config = OpenConfig {
             scan: ScanConfig {
                 max_depth: self.scan_depth,
@@ -336,7 +361,7 @@ impl Cli {
             },
             cache_path: default_cache_path(path),
             policy,
-            analysis: crate::content::AnalysisRequest::default(),
+            analysis,
         };
 
         #[cfg(feature = "watch")]
@@ -354,6 +379,13 @@ impl Cli {
         }
 
         #[cfg(feature = "watch")]
+        if self.watch && analysis.profile.is_enabled() {
+            return Err(usage(&anyhow::anyhow!(
+                "--analyze is not yet supported with --watch; use a one-shot report"
+            )));
+        }
+
+        #[cfg(feature = "watch")]
         if self.watch {
             let color = ColorContext::from_environment(
                 self.color,
@@ -368,6 +400,20 @@ impl Cli {
         let scan_started_at = SystemTime::now();
         let (index, open_report, pending_save) = open_with_pending_save(path, &config)?;
 
+        let mut errors = open_report.errors().iter().map(ToString::to_string).collect::<Vec<_>>();
+        if let Some(analysis) = open_report.analysis.as_ref() {
+            if !analysis.is_complete() {
+                errors.push(format!(
+                    "content analysis incomplete: {} invalid UTF-8, {} too large, {} I/O errors, {} changed during read, {} unsupported, {} stale",
+                    analysis.invalid_utf8,
+                    analysis.too_large,
+                    analysis.io_errors,
+                    analysis.changed_during_read,
+                    analysis.unsupported,
+                    analysis.stale
+                ));
+            }
+        }
         let provenance = Provenance {
             scan_started_at: Some(scan_started_at),
             generated_at: SystemTime::now(),
@@ -377,7 +423,7 @@ impl Cli {
                 crate::OpenPath::CacheOnly => ReportSource::CacheOnly,
             },
             complete: open_report.is_complete(),
-            errors: open_report.errors().iter().map(ToString::to_string).collect(),
+            errors,
         };
         let report = crate::query::report(&index, &query, &provenance);
 
@@ -714,10 +760,11 @@ impl Cli {
                 match &status.snapshot {
                     Some(info) => writeln!(
                         out,
-                        "{}  {} entries, {} bytes  {}",
+                        "{}  {} entries, {} metadata bytes, {} content bytes  {}",
                         status.path.display(),
                         info.entries,
                         status.bytes,
+                        status.content_bytes.unwrap_or(0),
                         info.root.display()
                     )?,
                     None => writeln!(out, "{}  unrecognized", status.path.display())?,
@@ -796,7 +843,31 @@ impl Cli {
             selection.sort = Some(parse_sort(sort)?);
         }
 
-        Ok(Query { selection, views: parse_list(&self.view, "--view", parse_view)? })
+        let views = parse_list(&self.view, "--view", parse_view)?;
+        if self.words_per_page == 0 {
+            anyhow::bail!("invalid --words-per-page 0: expected a positive integer");
+        }
+        Ok(Query { selection, views, words_per_page: self.words_per_page })
+    }
+
+    fn parse_analysis(&self) -> anyhow::Result<AnalysisRequest> {
+        let profile = match self.analyze.trim().to_ascii_lowercase().as_str() {
+            "none" | "off" | "disabled" => AnalysisProfile::Disabled,
+            "basic" => AnalysisProfile::Basic,
+            "code" => AnalysisProfile::Code,
+            "documents" | "docs" => AnalysisProfile::Documents,
+            "full" => AnalysisProfile::Full,
+            other => anyhow::bail!(
+                "invalid --analyze {other:?}: expected one of none, basic, code, documents, full"
+            ),
+        };
+        Ok(AnalysisRequest {
+            profile,
+            max_file_bytes: parse_size(&self.max_file_size).map_err(|error| {
+                anyhow::anyhow!("invalid --max-file-size {:?}: {error}", self.max_file_size)
+            })?,
+            workers: self.analysis_workers,
+        })
     }
 }
 
@@ -860,9 +931,15 @@ fn parse_view(token: &str, flag: &str) -> anyhow::Result<ViewSpec> {
     match token.to_ascii_lowercase().as_str() {
         "tree" => Ok(ViewSpec::Tree),
         "types" => Ok(ViewSpec::Types),
+        "extensions" => Ok(ViewSpec::Extensions),
+        "families" => Ok(ViewSpec::Families),
+        "languages" => Ok(ViewSpec::Languages),
+        "documents" | "docs" => Ok(ViewSpec::Documents),
         "files" => Ok(ViewSpec::Files),
         "summary" => Ok(ViewSpec::Summary),
-        _ => anyhow::bail!("invalid {flag} {token:?}: expected one of tree, types, files, summary"),
+        _ => anyhow::bail!(
+            "invalid {flag} {token:?}: expected one of tree, extensions, types, families, languages, documents, files, summary"
+        ),
     }
 }
 
@@ -1258,6 +1335,10 @@ mod tests {
             reverse: false,
             size: "allocated".to_string(),
             view: "tree".to_string(),
+            analyze: "none".to_string(),
+            max_file_size: "16MiB".to_string(),
+            analysis_workers: 0,
+            words_per_page: 300,
             format: "text".to_string(),
             color: ColorWhen::Auto,
             cache: "off".to_string(),
@@ -1327,7 +1408,12 @@ mod tests {
     #[test]
     fn an_unknown_view_names_every_valid_value() {
         let message = query_error(&Cli { view: "bogus".to_string(), ..cli() });
-        assert!(message.contains("tree, types, files, summary"), "{message}");
+        assert!(
+            message.contains(
+                "tree, extensions, types, families, languages, documents, files, summary"
+            ),
+            "{message}"
+        );
     }
 
     #[test]
@@ -1409,6 +1495,57 @@ mod tests {
         assert_eq!(parsed.selection.sort, Some(SortKey::Mtime));
         assert_eq!(parsed.selection.size, SizeMetric::Apparent);
         assert!(parsed.selection.reverse);
+    }
+
+    #[test]
+    fn analysis_profile_bounds_and_page_denominator_parse_before_io() {
+        let parsed = Cli {
+            analyze: "basic".to_string(),
+            max_file_size: "2MiB".to_string(),
+            analysis_workers: 3,
+            words_per_page: 250,
+            ..cli()
+        };
+        assert_eq!(
+            parsed.parse_analysis().expect("analysis"),
+            AnalysisRequest {
+                profile: AnalysisProfile::Basic,
+                max_file_bytes: 2 * 1024 * 1024,
+                workers: 3,
+            }
+        );
+        assert_eq!(parsed.parse_query().expect("query").words_per_page, 250);
+
+        let invalid = Cli { analyze: "deep".to_string(), ..cli() }
+            .parse_analysis()
+            .expect_err("invalid profile")
+            .to_string();
+        assert!(invalid.contains("none, basic, code, documents, full"));
+        assert!(query_error(&Cli { words_per_page: 0, ..cli() }).contains("positive"));
+    }
+
+    #[test]
+    fn real_basic_documents_report_exposes_lines_words_pages_and_schema_two() {
+        let root = tempfile::tempdir().expect("tempdir");
+        std::fs::write(root.path().join("notes.md"), b"one two\n\nthree\n").expect("write");
+        let command = Cli {
+            path: Some(root.path().to_path_buf()),
+            analyze: "basic".to_string(),
+            view: "documents".to_string(),
+            format: "json".to_string(),
+            size: "apparent".to_string(),
+            ..cli()
+        };
+        let mut output = Vec::new();
+        let outcome =
+            command.run(&mut output, &mut Vec::new(), false, false).expect("run content report");
+        assert_eq!(outcome, RunOutcome::Complete);
+        let output = String::from_utf8(output).expect("UTF-8 JSON");
+        assert!(output.contains("\"schema\": \"fdu.report/2\""), "{output}");
+        assert!(output.contains("\"physical_lines\": 3"), "{output}");
+        assert!(output.contains("\"raw_words\": 3"), "{output}");
+        assert!(output.contains("\"words_per_page\": 300"), "{output}");
+        assert!(output.contains("\"content-basic-v1\""), "{output}");
     }
 
     #[test]
@@ -1568,6 +1705,7 @@ mod tests {
                 let query = Query {
                     selection: Selection { depth: Bound::All, ..Selection::default() },
                     views: vec![ViewSpec::Tree],
+                    ..Query::default()
                 };
                 let provenance = Provenance {
                     scan_started_at: None,

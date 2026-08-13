@@ -124,7 +124,10 @@ package should be presented as available from crates.io or PyPI yet.
 ```shell
 fdu .                                      # summarize an explicitly chosen directory
 fdu --depth 3 ~/src                        # render three levels deep
-fdu --view types ~/Downloads               # break down by file extension
+fdu --view extensions ~/Downloads          # break down by raw file extension
+fdu --view types ~/Downloads               # break down by stable detected file type
+fdu --analyze basic --view families .      # lines, blanks, words, and exact byte shares
+fdu --analyze basic --view documents .     # text lines, words, paragraphs, and pages
 fdu --format json .                        # stable, versioned machine output
 fdu --view files --sort size -n 20 ~/src   # compose a largest-files query
 fdu --skill                                # print the self-contained agent skill
@@ -143,13 +146,27 @@ Human output uses restrained semantic color when its destination is a terminal;
 `--color auto|always|never`, `NO_COLOR`, and `FORCE_COLOR` make the policy explicit.
 Primary results go to stdout, while warnings and errors go to stderr.
 Machine and skill output never contain ANSI styling.
-Machine reports carry the versioned `fdu.report/1` schema plus source, freshness,
-completeness, errors, the conservative scan watermark, and generation time.
+Metadata-only machine reports retain the versioned `fdu.report/1` schema.
+The `types`, `families`, `languages`, and `documents` metric summaries use
+`fdu.report/2`, adding exact share numerators and denominators, analyzer coverage, and
+versioned rule, option, and analyzer identities.
 Scan completeness and each tree node’s rendered truncation are separate fields.
 Invalid-Unicode paths retain their display string and add a lossless, platform-tagged
 raw identity.
 Exit status 2 means partial results; pass `--allow-partial` to accept those
 as success. Exit status 1 means the command failed.
+
+Content analysis is opt-in through `--analyze none|basic|code|documents|full`. The basic
+profile streams each eligible file once, recognizes LF, CRLF, lone CR, and mixed line
+endings, separates blank and nonblank lines, rejects NUL-containing and invalid UTF-8
+files explicitly, and counts raw words only for prose and markup types.
+`--max-file-size` bounds every read, `--analysis-workers` bounds concurrency, and
+`--words-per-page` controls the report-time page denominator.
+Content results use an independently versioned sidecar, so unchanged warm runs do not
+reopen files and metadata snapshot v2 remains unchanged.
+The `code`, `documents`, and `full` profiles reserve the stable deeper-analyzer
+contracts; their additional SLOC and markup-aware slots land in the later phases of the
+same implementation plan.
 
 This surface — composable views, selection filters, time-window and watermark queries,
 cache policies, and a `tail -f`-style watch mode, all as orthogonal flags over one

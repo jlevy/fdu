@@ -36,9 +36,9 @@ There are no subcommands: the grammar is always “report on a path”.
 | --- | --- | --- |
 | Scope | What is scanned and cached? | `PATH`, `--scan-depth N` |
 | Selection | Which entries does this query consider? | `--include`, `--exclude`, `--min-size`, `--modified-since`, `--modified-before`, `--kind`, `--depth`, `-n/--limit`, `--sort`, `--reverse`, `--size` |
-| View | Which roll-up is reported? | `--view tree,types,files,summary` |
+| View | Which roll-up is reported? | `--view tree,extensions,types,families,languages,documents,files,summary` |
 | Format | How is it serialized? | `--format text\|json\|jsonl\|yaml`, `--color` |
-| Mode | How is the cache used? | `--cache auto\|refresh\|read-only\|only\|off` |
+| Mode | How is work performed? | `--cache auto\|refresh\|read-only\|only\|off`, `--analyze none\|basic\|code\|documents\|full` |
 
 Scope versus selection is the distinction that matters: scope decides what is scanned
 and cached, so one cache serves every query, while selection filters the retained index
@@ -47,11 +47,18 @@ at query time. Narrowing a selection never costs a rescan.
 ## Pick the View, Then Shape It
 
 - `--view tree` (default) for per-directory roll-ups.
-- `--view types` for an extension breakdown.
+- `--view extensions` for the original raw-extension breakdown.
+- `--view types` for stable detected file types and exact byte shares.
+- `--view families` for code, prose, markup, data, binary, and unknown roll-ups.
+- `--view languages` for code-family rows and `--view documents` for prose metrics.
 - `--view files` for a flat listing; in text output it prints one path per line and
   nothing else, so it pipes directly into other commands.
 - `--view summary` for one aggregate row.
-- Several views in one run share one scan: `--view summary,types`.
+- Several views in one run share one scan: `--view summary,types,families`.
+
+Add `--analyze basic` to stream physical, blank, and nonblank lines and raw prose words.
+Use `--max-file-size`, `--analysis-workers`, and `--words-per-page` to bound work and
+control page derivation.
 
 Common shapes are compositions rather than dedicated flags:
 

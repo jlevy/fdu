@@ -6,12 +6,13 @@ roll-up engine.
 ```python
 import fdu_py
 
-index = fdu_py.open("/path/to/tree")
+index = fdu_py.open("/path/to/tree", analyze="basic", max_file_size="16MiB")
 print(index.complete)         # false when unreadable paths made the result partial
 print(index.freshness)        # fresh, reconciling, stale, or partial
 print(index.errors)           # details from the latest open/scan/refresh
 print(index.total())          # {'files': ..., 'bytes': ..., 'by_extension': {...}}
 print(index.children("src"))  # one call returns every child with its roll-up
+print(index.report(views=["types", "families", "documents"]))
 
 mark = index.clock
 result = index.refresh()      # reuses the original max_depth and returns error details
@@ -26,6 +27,12 @@ One `Index` object still has `PyO3` runtime borrow exclusion: an overlapping cal
 that same object is rejected rather than becoming an unsynchronized shared-index access.
 The wheel uses the core scan/cache surface and does not compile the optional watch
 dependency; no Python watcher API is implied yet.
+
+`open()` and `scan()` accept the same `none`, `basic`, `code`, `documents`, and `full`
+analysis profiles as the Rust CLI, plus bounded file-size and worker settings.
+The report dictionary exposes stable type/family groups, exact share fractions, line and
+word slots, page denominators, coverage outcomes, and analyzer provenance.
+The original extension grouping remains available as the `extensions` view.
 
 The wheel also exposes the native Rust CLI as the `fdu` console script.
 Argument parsing, help, streams, color, errors, broken-pipe handling, and exit status

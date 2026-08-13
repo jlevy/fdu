@@ -22,9 +22,10 @@ use pyo3::exceptions::{PyOSError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 
+use fdu::content::{AnalysisProfile, AnalysisRequest, CoverageReason};
 use fdu::query::{
-    Bound as Bound_, Pattern, Provenance, Query, Report, ReportSource, Section, Selection,
-    SizeMetric, SortKey, SummaryRow, TreeNode, ViewSpec,
+    Bound as Bound_, MetricRow, MetricSummary, Pattern, Provenance, Query, Report, ReportSource,
+    Section, Selection, SizeMetric, SortKey, SummaryRow, TreeNode, ViewSpec,
 };
 use fdu::session::{ChangeKind, Session};
 use fdu::watch::WatchConfig;
@@ -91,6 +92,7 @@ fn freshness_label(freshness: Freshness) -> &'static str {
 pub struct PyIndex {
     inner: fdu::Index,
     config: ScanConfig,
+    analysis: AnalysisRequest,
     errors: Vec<String>,
     /// Which cache tier produced this index.
     ///
@@ -117,7 +119,7 @@ impl PyIndex {
     /// Whether every path in this index's configured scope is currently trustworthy.
     #[getter]
     fn complete(&self) -> bool {
-        self.inner.freshness() == Freshness::Fresh
+        self.inner.freshness() == Freshness::Fresh && self.errors.is_empty()
     }
 
     /// Current trust state: fresh, reconciling, stale, or partial.
@@ -155,7 +157,8 @@ impl PyIndex {
         limit = None,
         sort = None,
         reverse = false,
-        size = "allocated"
+        size = "allocated",
+        words_per_page = 300
     ))]
     #[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
     fn report<'py>(
@@ -173,6 +176,7 @@ impl PyIndex {
         sort: Option<&str>,
         reverse: bool,
         size: &str,
+        words_per_page: u64,
     ) -> PyResult<Bound<'py, PyDict>> {
         let now = SystemTime::now();
         let mut selection =
@@ -221,7 +225,14 @@ impl PyIndex {
             complete: self.errors.is_empty(),
             errors: self.errors.clone(),
         };
-        let report = fdu::query::report(&self.inner, &Query { selection, views }, &provenance);
+        if words_per_page == 0 {
+            return Err(PyValueError::new_err("words_per_page must be positive"));
+        }
+        let report = fdu::query::report(
+            &self.inner,
+            &Query { selection, views, words_per_page },
+            &provenance,
+        );
         report_dict(py, &report)
     }
 
@@ -265,7 +276,7 @@ impl PyIndex {
         let session = Session::new(
             handle,
             self.config.clone(),
-            Query { selection, views },
+            Query { selection, views, ..Query::default() },
             WatchConfig::default(),
         )
         .map_err(to_py_err)?;
@@ -332,6 +343,11 @@ impl PyIndex {
             .detach(|| fdu::scan::reconcile(&mut self.inner, &config, &mut |_| {}))
             .map_err(to_py_err)?;
         self.errors = report.scan.errors.iter().map(ToString::to_string).collect();
+        if self.analysis.profile.is_enabled() {
+            let analysis =
+                py.detach(|| fdu::content::analyze_index(&mut self.inner, self.analysis));
+            append_analysis_error(&mut self.errors, analysis);
+        }
         let stats = report.apply;
 
         let out = PyDict::new(py);
@@ -406,6 +422,41 @@ fn parse_cache_policy(value: &str) -> PyResult<CachePolicy> {
     }
 }
 
+fn parse_analysis_request(
+    profile: &str,
+    max_file_size: &str,
+    workers: usize,
+) -> PyResult<AnalysisRequest> {
+    let profile = match profile.trim().to_ascii_lowercase().as_str() {
+        "none" | "off" | "disabled" => AnalysisProfile::Disabled,
+        "basic" => AnalysisProfile::Basic,
+        "code" => AnalysisProfile::Code,
+        "documents" | "docs" => AnalysisProfile::Documents,
+        "full" => AnalysisProfile::Full,
+        other => {
+            return Err(PyValueError::new_err(format!(
+                "invalid analysis profile {other:?}: expected one of none, basic, code, documents, full"
+            )));
+        }
+    };
+    let max_file_bytes = fdu::query::parse_size(max_file_size).map_err(to_py_err)?;
+    Ok(AnalysisRequest { profile, max_file_bytes, workers })
+}
+
+fn append_analysis_error(errors: &mut Vec<String>, analysis: fdu::content::AnalysisReport) {
+    if !analysis.is_complete() {
+        errors.push(format!(
+            "content analysis incomplete: {} invalid UTF-8, {} too large, {} I/O errors, {} changed during read, {} unsupported, {} stale",
+            analysis.invalid_utf8,
+            analysis.too_large,
+            analysis.io_errors,
+            analysis.changed_during_read,
+            analysis.unsupported,
+            analysis.stale
+        ));
+    }
+}
+
 /// Name a cache tier for Python callers, matching the CLI's machine output.
 fn source_label(source: fdu::query::ReportSource) -> &'static str {
     match source {
@@ -438,6 +489,25 @@ fn report_dict<'py>(py: Python<'py>, report: &Report) -> PyResult<Bound<'py, PyD
     dict.set_item("freshness", freshness_label(report.freshness))?;
     dict.set_item("generated_at", fdu::query::format_rfc3339(report.generated_at))?;
     dict.set_item("scan_started_at", report.scan_started_at.map(fdu::query::format_rfc3339))?;
+    match report.analysis.as_ref() {
+        None => dict.set_item("analysis", py.None())?,
+        Some(analysis) => {
+            let metadata = PyDict::new(py);
+            metadata.set_item("profile", analysis_profile_label(analysis.profile))?;
+            metadata
+                .set_item("type_rules_fingerprint", analysis.provenance.type_rules_fingerprint)?;
+            metadata.set_item("options_fingerprint", analysis.provenance.options_fingerprint.0)?;
+            let analyzers = PyList::empty(py);
+            for (id, version) in &analysis.provenance.analyzers {
+                let analyzer = PyDict::new(py);
+                analyzer.set_item("id", id.0)?;
+                analyzer.set_item("version", version.0)?;
+                analyzers.append(analyzer)?;
+            }
+            metadata.set_item("analyzers", analyzers)?;
+            dict.set_item("analysis", metadata)?;
+        }
+    }
 
     let sections = PyList::empty(py);
     for section in &report.sections {
@@ -447,8 +517,8 @@ fn report_dict<'py>(py: Python<'py>, report: &Report) -> PyResult<Bound<'py, PyD
                 entry.set_item("view", "summary")?;
                 entry.set_item("summary", summary_dict(py, row)?)?;
             }
-            Section::Types(rows) => {
-                entry.set_item("view", "types")?;
+            Section::Extensions(rows) => {
+                entry.set_item("view", "extensions")?;
                 let list = PyList::empty(py);
                 for row in rows {
                     let item = PyDict::new(py);
@@ -458,7 +528,11 @@ fn report_dict<'py>(py: Python<'py>, report: &Report) -> PyResult<Bound<'py, PyD
                     item.set_item("allocated", row.allocated)?;
                     list.append(item)?;
                 }
-                entry.set_item("types", list)?;
+                entry.set_item("extensions", list)?;
+            }
+            Section::Metrics { view, summary } => {
+                entry.set_item("view", view_label(*view))?;
+                entry.set_item("metrics", metric_summary_dict(py, summary)?)?;
             }
             Section::Files(rows) => {
                 entry.set_item("view", "files")?;
@@ -483,6 +557,95 @@ fn report_dict<'py>(py: Python<'py>, report: &Report) -> PyResult<Bound<'py, PyD
     }
     dict.set_item("reports", sections)?;
     Ok(dict)
+}
+
+fn metric_summary_dict<'py>(
+    py: Python<'py>,
+    summary: &MetricSummary,
+) -> PyResult<Bound<'py, PyDict>> {
+    let dict = PyDict::new(py);
+    dict.set_item(
+        "group",
+        match summary.group {
+            fdu::query::MetricGroup::Type => "type",
+            fdu::query::MetricGroup::Family => "family",
+        },
+    )?;
+    dict.set_item("words_per_page", summary.words_per_page)?;
+    dict.set_item("total", metric_row_dict(py, &summary.total, summary.words_per_page)?)?;
+    let rows = PyList::empty(py);
+    for row in &summary.rows {
+        rows.append(metric_row_dict(py, row, summary.words_per_page)?)?;
+    }
+    dict.set_item("rows", rows)?;
+    Ok(dict)
+}
+
+fn metric_row_dict<'py>(
+    py: Python<'py>,
+    row: &MetricRow,
+    words_per_page: u64,
+) -> PyResult<Bound<'py, PyDict>> {
+    let dict = PyDict::new(py);
+    dict.set_item("id", &row.id)?;
+    dict.set_item("family", row.family.as_str())?;
+    dict.set_item("files", row.files)?;
+    dict.set_item("bytes", row.bytes)?;
+    dict.set_item("allocated", row.allocated)?;
+    dict.set_item("analyzed_files", row.analyzed_files)?;
+    dict.set_item("share_numerator", row.share.numerator)?;
+    dict.set_item("share_denominator", row.share.denominator)?;
+    dict.set_item("physical_lines", row.metrics.physical_lines)?;
+    dict.set_item("blank_lines", row.metrics.blank_lines)?;
+    dict.set_item("nonblank_lines", row.metrics.nonblank_lines)?;
+    dict.set_item("code_lines", row.metrics.code_lines)?;
+    dict.set_item("comment_lines", row.metrics.comment_lines)?;
+    dict.set_item("raw_words", row.metrics.raw_words)?;
+    dict.set_item("logical_words", row.metrics.logical_word_stats.logical_words())?;
+    dict.set_item("paragraphs", row.metrics.paragraphs)?;
+    dict.set_item("visible_words", row.metrics.visible_words)?;
+    dict.set_item("words_per_page", words_per_page)?;
+    let coverage = PyDict::new(py);
+    for (reason, count) in &row.coverage {
+        coverage.set_item(coverage_label(*reason), count)?;
+    }
+    dict.set_item("coverage", coverage)?;
+    Ok(dict)
+}
+
+fn view_label(view: ViewSpec) -> &'static str {
+    match view {
+        ViewSpec::Tree => "tree",
+        ViewSpec::Extensions => "extensions",
+        ViewSpec::Types => "types",
+        ViewSpec::Families => "families",
+        ViewSpec::Languages => "languages",
+        ViewSpec::Documents => "documents",
+        ViewSpec::Files => "files",
+        ViewSpec::Summary => "summary",
+    }
+}
+
+fn coverage_label(reason: CoverageReason) -> &'static str {
+    match reason {
+        CoverageReason::Analyzed => "analyzed",
+        CoverageReason::Binary => "binary",
+        CoverageReason::InvalidUtf8 => "invalid_utf8",
+        CoverageReason::TooLarge => "too_large",
+        CoverageReason::Unsupported => "unsupported",
+        CoverageReason::IoError => "io_error",
+        CoverageReason::ChangedDuringRead => "changed_during_read",
+    }
+}
+
+fn analysis_profile_label(profile: AnalysisProfile) -> &'static str {
+    match profile {
+        AnalysisProfile::Disabled => "none",
+        AnalysisProfile::Basic => "basic",
+        AnalysisProfile::Code => "code",
+        AnalysisProfile::Documents => "documents",
+        AnalysisProfile::Full => "full",
+    }
 }
 
 /// One summary row as a dict.
@@ -535,10 +698,14 @@ fn parse_view(value: &str) -> PyResult<ViewSpec> {
     match value.trim().to_ascii_lowercase().as_str() {
         "tree" => Ok(ViewSpec::Tree),
         "types" => Ok(ViewSpec::Types),
+        "extensions" => Ok(ViewSpec::Extensions),
+        "families" => Ok(ViewSpec::Families),
+        "languages" => Ok(ViewSpec::Languages),
+        "documents" | "docs" => Ok(ViewSpec::Documents),
         "files" => Ok(ViewSpec::Files),
         "summary" => Ok(ViewSpec::Summary),
         other => Err(PyValueError::new_err(format!(
-            "invalid view {other:?}: expected one of tree, types, files, summary"
+            "invalid view {other:?}: expected one of tree, extensions, types, families, languages, documents, files, summary"
         ))),
     }
 }
@@ -672,6 +839,7 @@ fn cache_status_dict<'py>(
     let dict = PyDict::new(py);
     dict.set_item("path", status.path.as_os_str())?;
     dict.set_item("bytes", status.bytes)?;
+    dict.set_item("content_bytes", status.content_bytes)?;
     dict.set_item("recognized", status.is_recognized())?;
     if let Some(info) = &status.snapshot {
         dict.set_item("root", info.root.as_os_str())?;
@@ -738,39 +906,73 @@ fn clear_all_caches(root: PathBuf) -> PyResult<usize> {
 
 /// Open a directory tree, using the snapshot cache according to `cache`.
 #[pyfunction]
-#[pyo3(signature = (root, *, cache = "auto", max_depth = None))]
+#[pyo3(signature = (root, *, cache = "auto", max_depth = None, analyze = "none", max_file_size = "16MiB", analysis_workers = 0))]
 #[allow(clippy::needless_pass_by_value)]
-fn open(py: Python<'_>, root: PathBuf, cache: &str, max_depth: Option<usize>) -> PyResult<PyIndex> {
+fn open(
+    py: Python<'_>,
+    root: PathBuf,
+    cache: &str,
+    max_depth: Option<usize>,
+    analyze: &str,
+    max_file_size: &str,
+    analysis_workers: usize,
+) -> PyResult<PyIndex> {
     let policy = parse_cache_policy(cache)?;
+    let analysis = parse_analysis_request(analyze, max_file_size, analysis_workers)?;
     let config = OpenConfig {
         scan: ScanConfig { max_depth, ..ScanConfig::default() },
         cache_path: fdu::default_cache_path(&root),
         policy,
-        analysis: fdu::content::AnalysisRequest::default(),
+        analysis,
     };
 
     let opened = py.detach(|| fdu::open(&root, &config));
     let (index, report) = opened.map_err(to_py_err)?;
-    let errors = report.errors().iter().map(ToString::to_string).collect();
+    let mut errors = report.errors().iter().map(ToString::to_string).collect::<Vec<_>>();
+    if let Some(analysis_report) = report.analysis {
+        append_analysis_error(&mut errors, analysis_report);
+    }
     let source = match report.path_taken {
         fdu::OpenPath::ColdScan => ReportSource::ColdScan,
         fdu::OpenPath::WarmRevalidate => ReportSource::WarmRevalidate,
         fdu::OpenPath::CacheOnly => ReportSource::CacheOnly,
     };
-    Ok(PyIndex { inner: index, config: config.scan, errors, source })
+    Ok(PyIndex { inner: index, config: config.scan, analysis, errors, source })
 }
 
 /// Walk a tree with no cache at all and return the index.
 #[pyfunction]
-#[pyo3(signature = (root, *, max_depth = None))]
+#[pyo3(signature = (root, *, max_depth = None, analyze = "none", max_file_size = "16MiB", analysis_workers = 0))]
 #[allow(clippy::needless_pass_by_value)]
-fn scan(py: Python<'_>, root: PathBuf, max_depth: Option<usize>) -> PyResult<PyIndex> {
-    let config = ScanConfig { max_depth, ..ScanConfig::default() };
-    let scanned = py.detach(|| fdu::scan::scan_into_index(&root, &config));
+fn scan(
+    py: Python<'_>,
+    root: PathBuf,
+    max_depth: Option<usize>,
+    analyze: &str,
+    max_file_size: &str,
+    analysis_workers: usize,
+) -> PyResult<PyIndex> {
+    let analysis = parse_analysis_request(analyze, max_file_size, analysis_workers)?;
+    let config = OpenConfig {
+        scan: ScanConfig { max_depth, ..ScanConfig::default() },
+        cache_path: None,
+        policy: CachePolicy::Off,
+        analysis,
+    };
+    let scanned = py.detach(|| fdu::open(&root, &config));
     let (index, report) = scanned.map_err(to_py_err)?;
-    let errors = report.errors.iter().map(ToString::to_string).collect();
+    let mut errors = report.errors().iter().map(ToString::to_string).collect::<Vec<_>>();
+    if let Some(analysis_report) = report.analysis {
+        append_analysis_error(&mut errors, analysis_report);
+    }
     // A bare scan never consults the cache, so it is always cold.
-    Ok(PyIndex { inner: index, config, errors, source: ReportSource::ColdScan })
+    Ok(PyIndex {
+        inner: index,
+        config: config.scan,
+        analysis,
+        errors,
+        source: ReportSource::ColdScan,
+    })
 }
 
 /// Run the native CLI using Python's process arguments.
@@ -821,6 +1023,7 @@ mod tests {
                 PyIndex {
                     inner: fdu::Index::new("/unused"),
                     config: ScanConfig::default(),
+                    analysis: AnalysisRequest::default(),
                     errors: Vec::new(),
                     source: ReportSource::ColdScan,
                 },

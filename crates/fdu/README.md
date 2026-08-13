@@ -24,6 +24,11 @@ step.
 Features: `cli` (default, gates the binary and clap), `watch` (gates the notify
 dependency).
 
+Content inspection is optional and disabled by default.
+`OpenConfig::analysis` enables bounded streaming line and prose metrics, sparse
+type/family summaries, and independently versioned sidecar reuse without changing the
+metadata snapshot format or cost model for metadata-only consumers.
+
 License: MIT.
 
 <!-- This document follows common-doc-guidelines.md.

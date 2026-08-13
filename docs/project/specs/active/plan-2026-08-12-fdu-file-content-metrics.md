@@ -519,16 +519,16 @@ Content work releases the GIL through the same Rust execution boundary as scans.
   classifier or runtime manifest parser
 - [x] Resolve exact filenames, compound extensions, and ordinary extensions without file
   reads
-- [ ] Make `types` report stable type IDs, add `families`, and preserve the current raw
+- [x] Make `types` report stable type IDs, add `families`, and preserve the current raw
   grouping and row semantics as `extensions`
-- [ ] Implement the generic metric-summary projection for extension, type, and family
+- [x] Implement the generic metric-summary projection for extension, type, and family
   groups, initially supporting file and byte metrics and exact share denominators
 - [x] Define analyzer, metric-slot, coverage, options-fingerprint, and
   content-provenance types without enabling an analyzer
 - [x] Add the optional sparse `ContentIndex` boundary and prove it allocates nothing per
   entry while disabled
-- [ ] Pin metadata-only Rust, Python, human, and machine output compatibility
-- [ ] Publish the pre-1.0 `types`-to-`extensions` migration in help, schemas, and
+- [x] Pin metadata-only Rust, Python, human, and machine output compatibility
+- [x] Publish the pre-1.0 `types`-to-`extensions` migration in help, schemas, and
   release notes
 - [ ] Record default-path wall, CPU, RSS, snapshot, and per-entry memory evidence before
   advancing
@@ -550,13 +550,13 @@ is opened; and the disabled-path performance verdict is “no measurable regress
   application, and subtract/add directory and type rollups
 - [x] Add per-analyzer atomic persistence keyed by strong file fingerprint, type rules,
   analyzer version, and options
-- [ ] Expose physical, blank, and nonblank lines for accepted text; expose raw words and
+- [x] Expose physical, blank, and nonblank lines for accepted text; expose raw words and
   query-derived pages only for prose-family files
 - [x] Expose analyzer coverage and make requested-analysis failures participate in the
   existing partial-result contract
-- [ ] Add `basic` analysis selection and metric projection to Rust, CLI, Python, and the
+- [x] Add `basic` analysis selection and metric projection to Rust, CLI, Python, and the
   versioned machine schema
-- [ ] Extend the metric-summary projection with physical, blank, nonblank, and raw-word
+- [x] Extend the metric-summary projection with physical, blank, nonblank, and raw-word
   slots; add the `documents` preset and query-derived pages
 - [ ] Lock the complete Rust/CLI/Python contract with the multilingual tryscript fixture
   and the repository self-host sanity check before changing the implementation for speed
@@ -940,7 +940,7 @@ None of these questions blocks Phases 1 or 2.
 | `fdu-m7n5` | Complete | Stable classification, metric contracts, and disabled sparse boundary |
 | `fdu-ciq7` | Complete | Fused basic streaming analyzer and boundary/property tests |
 | `fdu-96l2` | Complete | Workers, conditional deltas, incremental rollups, and sidecars |
-| `fdu-8kd8` | Open; blocked by `fdu-96l2` | Basic Rust, CLI, report-schema, view, and Python surface |
+| `fdu-8kd8` | Complete | Basic Rust, CLI, report-schema, view, and Python surface |
 | `fdu-occl` | Open; blocked by `fdu-8kd8` | Basic tryscript golden and multilingual self-host semantic lock |
 | `fdu-tq3k` | Open; blocked by `fdu-occl` | Basic and binary-gate performance iterations |
 | `fdu-jmrs` | Open; blocked by `fdu-tq3k` | Tokei-versus-native SLOC decision spike |

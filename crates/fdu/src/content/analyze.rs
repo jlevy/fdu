@@ -46,7 +46,7 @@ pub struct AnalysisReport {
 
 impl AnalysisReport {
     /// Whether every candidate reached an analyzed or known-binary terminal outcome.
-    pub const fn is_complete(self) -> bool {
+    pub const fn is_complete(&self) -> bool {
         self.stale == 0
             && self.too_large == 0
             && self.invalid_utf8 == 0

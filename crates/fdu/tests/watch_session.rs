@@ -24,7 +24,7 @@ fn session(root: &Path, selection: Selection, views: Vec<ViewSpec>) -> Session {
     Session::new(
         IndexHandle::new(index),
         ScanConfig::default(),
-        Query { selection, views },
+        Query { selection, views, ..Query::default() },
         WatchConfig::default(),
     )
     .expect("session")

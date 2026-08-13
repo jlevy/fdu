@@ -220,7 +220,8 @@ pub struct OpenReport {
 impl OpenReport {
     /// Whether every path in the requested scan scope was read successfully.
     pub fn is_complete(&self) -> bool {
-        self.scan.is_complete() && self.analysis.is_none_or(content::AnalysisReport::is_complete)
+        self.scan.is_complete()
+            && self.analysis.as_ref().is_none_or(content::AnalysisReport::is_complete)
     }
 
     /// Per-path errors that make this result partial.

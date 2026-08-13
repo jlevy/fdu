@@ -42,6 +42,15 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - **Python bindings** (`fdu-py`): bulk API mirroring the query, provenance, cache, and
     watch surfaces while releasing the GIL during native work.
     The wheel does not compile the optional watch dependency.
+  - **Opt-in content metrics** (`content`): compiled stable file-type rules; bounded
+    parallel one-pass UTF-8, NUL, line, blank, and raw-word analysis; conditional
+    fingerprint-checked commits; sparse type/family roll-ups; and independently
+    checksummed atomic sidecars that preserve metadata snapshot v2.
+  - **Metric summaries** (`fdu.report/2`): stable `types`, `families`, `languages`, and
+    `documents` views with exact byte-share fractions, coverage, analyzer provenance,
+    logical page denominators, and matching Rust, CLI, and Python surfaces.
+    The original extension view is retained as `extensions`, while metadata-only
+    `fdu.report/1` output remains unchanged.
 
 ### Known limitations
 
