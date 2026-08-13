@@ -3,9 +3,9 @@ type: is
 id: is-01kzg4bfj2cqzcksgpmfce89w6
 title: "Type-rule dialect: declarative rules compiled at build time"
 kind: feature
-status: open
+status: closed
 priority: 2
-version: 5
+version: 7
 spec_path: docs/project/specs/active/plan-2026-08-08-fdu-phase-1.md
 labels: []
 dependencies:
@@ -17,7 +17,9 @@ dependencies:
     target: is-01kzx1awzy1bantebrc5f6dke5
 parent_id: is-01kzg48ekn4sm0azybr010qgmn
 created_at: 2026-08-08T07:28:14.914Z
-updated_at: 2026-08-13T07:45:37.790Z
+updated_at: 2026-08-13T08:22:29.163Z
+closed_at: 2026-08-13T08:22:29.162Z
+close_reason: Added a repository-owned [[kind]] manifest for 64 common file types; the existing build script now validates ids/families/priorities/extensions/exact basenames/shebangs, rejects ambiguity, emits native tables and a fingerprint, and retains git-version embedding. Classification is lossless over OsStr, preserves unknown extensions, and adds bounded 200-byte NUL/shebang detection for unresolved files. Clippy, all-feature tests, rustdoc, docs format, and cargo packaging pass.
 ---
 Today classify.rs does compound-tail extensions only. Goal 6 requires pluggable recognition through a stable interface.
 
