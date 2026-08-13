@@ -5,15 +5,15 @@ title: Enforce the Rust filename policy
 kind: task
 status: closed
 priority: 1
-version: 3
-spec_path: docs/project/specs/active/plan-2026-08-13-rust-module-filenames.md
+version: 4
+spec_path: docs/project/specs/done/plan-2026-08-13-rust-module-filenames.md
 labels: []
 dependencies:
   - type: blocks
     target: is-01kzxxasgg35kcqrfx5f03n3aq
 parent_id: is-01kzxxaqvy1gjmb4vdcg40tcr3
 created_at: 2026-08-13T15:54:53.952Z
-updated_at: 2026-08-13T16:16:11.778Z
+updated_at: 2026-08-13T16:27:07.769Z
 closed_at: 2026-08-13T16:16:11.777Z
 close_reason: Added and tested the deterministic Rust module filename policy checker, integrated it into make check, and passed the full handoff gate.
 ---
