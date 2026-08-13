@@ -18,7 +18,9 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use crate::classify::{ContentFamily, classify_path, derive_ext};
-use crate::content::{AnalysisProfile, ContentProvenance, CoverageReason, MetricValues};
+use crate::content::{
+    AnalysisProfile, ContentProvenance, CoverageReason, LogicalWordStats, MetricValues,
+};
 use crate::index::{EntryId, ExtTally, Index, RollUp};
 use crate::query::selection::{Bound, Candidate, Selection, SizeMetric, SortKey};
 use crate::types::{EntryKind, Freshness, ScanScope};
@@ -75,7 +77,7 @@ pub struct Query {
 
 impl Default for Query {
     fn default() -> Self {
-        Self { selection: Selection::default(), views: Vec::new(), words_per_page: 300 }
+        Self { selection: Selection::default(), views: Vec::new(), words_per_page: 250 }
     }
 }
 
@@ -196,8 +198,8 @@ pub enum ShareMetric {
     AllocatedBytes,
     /// Standard code lines from `code-sloc-v1`.
     CodeLines,
-    /// Aggregated logical prose words.
-    LogicalWords,
+    /// Raw or reader-visible normalized document words, selected by analysis depth.
+    DocumentWords,
 }
 
 impl ShareMetric {
@@ -207,7 +209,7 @@ impl ShareMetric {
             Self::ApparentBytes => "apparent_bytes",
             Self::AllocatedBytes => "allocated_bytes",
             Self::CodeLines => "code_lines",
-            Self::LogicalWords => "logical_words",
+            Self::DocumentWords => "document_words",
         }
     }
 }
@@ -229,6 +231,12 @@ pub struct MetricRow {
     pub analyzed_files: u64,
     /// Additive content metric slots.
     pub metrics: MetricValues,
+    /// Query-selected raw document words before normalization.
+    pub document_raw_words: u64,
+    /// Additive sufficient statistics for the query-selected document projection.
+    pub document_word_stats: LogicalWordStats,
+    /// Analyzed files that supplied normalized document statistics.
+    pub document_metric_files: u64,
     /// Explicit content-analysis outcomes.
     pub coverage: BTreeMap<CoverageReason, u64>,
     /// Exact share in the report's selected size metric.
@@ -597,6 +605,9 @@ fn metric_summary(
             allocated: 0,
             analyzed_files: 0,
             metrics: MetricValues::default(),
+            document_raw_words: 0,
+            document_word_stats: LogicalWordStats::default(),
+            document_metric_files: 0,
             coverage: BTreeMap::new(),
             share: MetricShare::default(),
         });
@@ -608,6 +619,22 @@ fn metric_summary(
             if record.coverage == CoverageReason::Analyzed {
                 row.analyzed_files = row.analyzed_files.saturating_add(1);
                 row.metrics.add_assign(&record.metrics);
+                if record.profile.includes_documents() {
+                    row.document_metric_files = row.document_metric_files.saturating_add(1);
+                    if classification.file_type.as_str() == "markdown" {
+                        row.document_raw_words =
+                            row.document_raw_words.saturating_add(record.metrics.visible_words);
+                        row.document_word_stats
+                            .add_assign(record.metrics.visible_logical_word_stats);
+                    } else {
+                        row.document_raw_words =
+                            row.document_raw_words.saturating_add(record.metrics.raw_words);
+                        row.document_word_stats.add_assign(record.metrics.logical_word_stats);
+                    }
+                } else {
+                    row.document_raw_words =
+                        row.document_raw_words.saturating_add(record.metrics.raw_words);
+                }
             }
         }
     }
@@ -620,6 +647,9 @@ fn metric_summary(
         allocated: 0,
         analyzed_files: 0,
         metrics: MetricValues::default(),
+        document_raw_words: 0,
+        document_word_stats: LogicalWordStats::default(),
+        document_metric_files: 0,
         coverage: BTreeMap::new(),
         share: MetricShare::default(),
     };
@@ -629,13 +659,17 @@ fn metric_summary(
         total.allocated = total.allocated.saturating_add(row.allocated);
         total.analyzed_files = total.analyzed_files.saturating_add(row.analyzed_files);
         total.metrics.add_assign(&row.metrics);
+        total.document_raw_words = total.document_raw_words.saturating_add(row.document_raw_words);
+        total.document_word_stats.add_assign(row.document_word_stats);
+        total.document_metric_files =
+            total.document_metric_files.saturating_add(row.document_metric_files);
         for (reason, count) in &row.coverage {
             *total.coverage.entry(*reason).or_default() += count;
         }
     }
     let share_metric = match view {
         ViewSpec::Languages => ShareMetric::CodeLines,
-        ViewSpec::Documents => ShareMetric::LogicalWords,
+        ViewSpec::Documents => ShareMetric::DocumentWords,
         ViewSpec::Types | ViewSpec::Families => match query.selection.size {
             SizeMetric::Apparent => ShareMetric::ApparentBytes,
             SizeMetric::Allocated => ShareMetric::AllocatedBytes,
@@ -674,7 +708,16 @@ fn share_value(row: &MetricRow, metric: ShareMetric) -> u64 {
         ShareMetric::ApparentBytes => row.bytes,
         ShareMetric::AllocatedBytes => row.allocated,
         ShareMetric::CodeLines => row.metrics.code_lines,
-        ShareMetric::LogicalWords => row.metrics.logical_word_stats.logical_words(),
+        ShareMetric::DocumentWords => document_words(row),
+    }
+}
+
+/// Derive the selected document volume only after every sufficient statistic is added.
+pub fn document_words(row: &MetricRow) -> u64 {
+    if row.document_metric_files > 0 {
+        row.document_word_stats.logical_words()
+    } else {
+        row.document_raw_words
     }
 }
 

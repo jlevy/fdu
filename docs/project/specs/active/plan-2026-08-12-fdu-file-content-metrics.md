@@ -603,20 +603,20 @@ performance, and semantic gates.
 
 ### Phase 4: Logical and Markup-Aware Prose
 
-- [ ] Implement `text-logical-v1` as streaming sufficient statistics under the pinned
+- [x] Implement `text-logical-v1` as streaming sufficient statistics under the pinned
   3-to-6 non-whitespace-character clamp and half-weight wide-character rule
-- [ ] Store `LogicalWordStats` additively and derive `logical_words` only after the
+- [x] Store `LogicalWordStats` additively and derive `logical_words` only after the
   selected files have been aggregated; never sum rounded per-file logical words
-- [ ] Keep raw, logical, and visible words together so callers can choose literal,
+- [x] Keep raw, logical, and visible words together so callers can choose literal,
   normalized, or reader-visible volume
-- [ ] Add plain-text paragraph runs and derive fixed-word page equivalents only after
+- [x] Add plain-text paragraph runs and derive fixed-word page equivalents only after
   aggregation
-- [ ] Prototype `markdown-prose-v1` with `pulldown-cmark`, subject to the same
+- [x] Prototype `markdown-prose-v1` with `pulldown-cmark`, subject to the same
   dependency and buffer-size gates as the code analyzer
-- [ ] Retain headings, paragraphs, link labels, image alt text, and opted-in table
+- [x] Retain headings, paragraphs, link labels, image alt text, and opted-in table
   cells; exclude URLs, reference definitions, inline code, code blocks, frontmatter,
   footnote markers, and hidden HTML syntax
-- [ ] Compute word statistics directly from parser events instead of materializing a
+- [x] Compute word statistics directly from parser events instead of materializing a
   second projected document
 - [ ] Validate ordinary English, punctuation-heavy prose, symbolic text, multilingual
   spaced scripts, CJK, Markdown links, code fences, tables, HTML, and malformed input

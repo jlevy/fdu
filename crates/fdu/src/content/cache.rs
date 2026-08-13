@@ -18,7 +18,7 @@ use super::{
 
 const MAGIC: &[u8; 8] = b"FDUCTNT\0";
 const TRAILER: &[u8; 8] = b"FDUCTEND";
-const FORMAT_VERSION: u32 = 2;
+const FORMAT_VERSION: u32 = 3;
 const CHECKSUM_BYTES: usize = 4;
 const MAX_CACHE_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_RECORDS: u64 = 5_000_000;

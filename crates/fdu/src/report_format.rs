@@ -20,7 +20,7 @@ use clap::builder::styling::{AnsiColor, Style as AnsiStyle};
 use crate::content::{CoverageReason, MetricValues};
 use crate::query::{
     FileRow, MetricGroup, MetricRow, MetricSummary, Report, ReportSource, Section, SizeMetric,
-    SummaryRow, TreeNode, TypeRow, ViewSpec, format_rfc3339,
+    SummaryRow, TreeNode, TypeRow, ViewSpec, document_words, format_rfc3339,
 };
 use crate::types::{EntryKind, Freshness};
 
@@ -140,8 +140,8 @@ fn render_text_metrics(out: &mut String, summary: &MetricSummary, size: SizeMetr
                 );
             }
         }
-        if row.metrics.raw_words > 0 {
-            let words = row.metrics.logical_word_stats.logical_words().max(row.metrics.raw_words);
+        let words = document_words(row);
+        if words > 0 {
             let page_tenths = words.saturating_mul(10) / summary.words_per_page;
             let _ = write!(
                 suffix,
@@ -398,16 +398,16 @@ fn metric_row_json(row: &MetricRow, words_per_page: u64) -> String {
         row.analyzed_files,
         row.share.numerator,
         row.share.denominator,
-        metric_values_json(row.metrics),
+        metric_values_json(row.metrics, document_words(row)),
         coverage_json(&row.coverage),
-        page_words(row.metrics),
+        document_words(row),
         words_per_page,
     )
 }
 
-fn metric_values_json(metrics: MetricValues) -> String {
+fn metric_values_json(metrics: MetricValues, document_words: u64) -> String {
     format!(
-        "{{\"physical_lines\": {}, \"blank_lines\": {}, \"nonblank_lines\": {}, \"code_lines\": {}, \"comment_lines\": {}, \"code_blank_lines\": {}, \"raw_words\": {}, \"logical_words\": {}, \"paragraphs\": {}, \"visible_words\": {}, \"visible_logical_words\": {}}}",
+        "{{\"physical_lines\": {}, \"blank_lines\": {}, \"nonblank_lines\": {}, \"code_lines\": {}, \"comment_lines\": {}, \"code_blank_lines\": {}, \"raw_words\": {}, \"logical_words\": {}, \"paragraphs\": {}, \"visible_words\": {}, \"visible_logical_words\": {}, \"document_words\": {}}}",
         metrics.physical_lines,
         metrics.blank_lines,
         metrics.nonblank_lines,
@@ -419,6 +419,7 @@ fn metric_values_json(metrics: MetricValues) -> String {
         metrics.paragraphs,
         metrics.visible_words,
         metrics.visible_logical_word_stats.logical_words(),
+        document_words,
     )
 }
 
@@ -677,7 +678,13 @@ fn yaml_metric_row(out: &mut String, row: &MetricRow, words_per_page: u64, pad: 
         writeln!(out, "{rest}logical_words: {}", row.metrics.logical_word_stats.logical_words());
     let _ = writeln!(out, "{rest}paragraphs: {}", row.metrics.paragraphs);
     let _ = writeln!(out, "{rest}visible_words: {}", row.metrics.visible_words);
-    let _ = writeln!(out, "{rest}page_words: {}", page_words(row.metrics));
+    let _ = writeln!(
+        out,
+        "{rest}visible_logical_words: {}",
+        row.metrics.visible_logical_word_stats.logical_words()
+    );
+    let _ = writeln!(out, "{rest}document_words: {}", document_words(row));
+    let _ = writeln!(out, "{rest}page_words: {}", document_words(row));
     let _ = writeln!(out, "{rest}words_per_page: {words_per_page}");
     if row.coverage.is_empty() {
         let _ = writeln!(out, "{rest}coverage: {{}}");
@@ -841,15 +848,6 @@ fn analysis_profile_label(profile: crate::content::AnalysisProfile) -> &'static 
         crate::content::AnalysisProfile::Code => "code",
         crate::content::AnalysisProfile::Documents => "documents",
         crate::content::AnalysisProfile::Full => "full",
-    }
-}
-
-fn page_words(metrics: MetricValues) -> u64 {
-    let visible = metrics.visible_logical_word_stats.logical_words();
-    if visible > 0 {
-        visible
-    } else {
-        metrics.logical_word_stats.logical_words().max(metrics.raw_words)
     }
 }
 

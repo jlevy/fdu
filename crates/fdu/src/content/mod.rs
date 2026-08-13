@@ -7,6 +7,7 @@ mod basic;
 mod cache;
 mod code;
 mod index;
+mod markdown;
 mod types;
 
 pub use analyze::{AnalysisReport, analyze_index};

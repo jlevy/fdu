@@ -19,6 +19,7 @@ pub enum TextAdmission {
 pub struct BasicAccumulator {
     metrics: MetricValues,
     utf8_carry: Vec<u8>,
+    collect_logical: bool,
     binary: bool,
     invalid_utf8: bool,
     first_character: bool,
@@ -33,7 +34,12 @@ pub struct BasicAccumulator {
 impl BasicAccumulator {
     /// Create an empty streaming counter.
     pub fn new() -> Self {
-        Self { first_character: true, ..Self::default() }
+        Self::with_logical_metrics(false)
+    }
+
+    /// Select the optional logical-word and paragraph collectors.
+    pub(crate) fn with_logical_metrics(collect_logical: bool) -> Self {
+        Self { collect_logical, first_character: true, ..Self::default() }
     }
 
     /// Consume another byte chunk.
@@ -129,6 +135,9 @@ impl BasicAccumulator {
 
         self.current_line_nonblank = true;
         self.raw_word_open = true;
+        if !self.collect_logical {
+            return;
+        }
         if is_wide(character) {
             self.metrics.logical_word_stats.wide_chars =
                 self.metrics.logical_word_stats.wide_chars.saturating_add(1);
@@ -152,13 +161,15 @@ impl BasicAccumulator {
         self.metrics.physical_lines = self.metrics.physical_lines.saturating_add(1);
         if self.current_line_nonblank {
             self.metrics.nonblank_lines = self.metrics.nonblank_lines.saturating_add(1);
-            if !self.paragraph_open {
+            if self.collect_logical && !self.paragraph_open {
                 self.metrics.paragraphs = self.metrics.paragraphs.saturating_add(1);
                 self.paragraph_open = true;
             }
         } else {
             self.metrics.blank_lines = self.metrics.blank_lines.saturating_add(1);
-            self.paragraph_open = false;
+            if self.collect_logical {
+                self.paragraph_open = false;
+            }
         }
         self.current_line_exists = false;
         self.current_line_nonblank = false;
@@ -188,7 +199,7 @@ mod tests {
     use super::*;
 
     fn accepted(chunks: &[&[u8]]) -> MetricValues {
-        let mut accumulator = BasicAccumulator::new();
+        let mut accumulator = BasicAccumulator::with_logical_metrics(true);
         for chunk in chunks {
             accumulator.push(chunk);
         }
@@ -259,5 +270,17 @@ mod tests {
         let mut invalid = BasicAccumulator::new();
         invalid.push(&[b'a', 0xff]);
         assert_eq!(invalid.finish(), TextAdmission::InvalidUtf8);
+    }
+
+    #[test]
+    fn basic_mode_keeps_raw_words_but_omits_deeper_document_metrics() {
+        let mut accumulator = BasicAccumulator::new();
+        accumulator.push(b"one two\n\nthree\n");
+        let TextAdmission::Accepted(metrics) = accumulator.finish() else {
+            panic!("expected accepted text");
+        };
+        assert_eq!(metrics.raw_words, 3);
+        assert_eq!(metrics.paragraphs, 0);
+        assert_eq!(metrics.logical_word_stats, super::super::LogicalWordStats::default());
     }
 }

@@ -246,7 +246,7 @@ pub struct Cli {
     pub analysis_workers: usize,
 
     /// Logical words per derived document page.
-    #[arg(long, value_name = "N", default_value_t = 300)]
+    #[arg(long, value_name = "N", default_value_t = 250)]
     pub words_per_page: u64,
 
     // ---- format: how the report is serialized ----
@@ -1331,7 +1331,7 @@ mod tests {
             analyze: "none".to_string(),
             max_file_size: "16MiB".to_string(),
             analysis_workers: 0,
-            words_per_page: 300,
+            words_per_page: 250,
             format: "text".to_string(),
             color: ColorWhen::Auto,
             cache: "off".to_string(),
@@ -1537,7 +1537,7 @@ mod tests {
         assert!(output.contains("\"schema\": \"fdu.report/2\""), "{output}");
         assert!(output.contains("\"physical_lines\": 3"), "{output}");
         assert!(output.contains("\"raw_words\": 3"), "{output}");
-        assert!(output.contains("\"words_per_page\": 300"), "{output}");
+        assert!(output.contains("\"words_per_page\": 250"), "{output}");
         assert!(output.contains("\"content-basic-v1\""), "{output}");
     }
 

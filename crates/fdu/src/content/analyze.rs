@@ -12,7 +12,7 @@ use crate::classify::{ContentFamily, classify_path_with_prefix};
 use super::{
     AnalysisApplyOutcome, AnalysisCandidate, AnalysisObservation, AnalysisRequest,
     BasicAccumulator, CodeAccumulator, ContentProvenance, CoverageReason, FileAnalysis,
-    LogicalWordStats, MetricValues, TextAdmission,
+    LogicalWordStats, MetricValues, TextAdmission, markdown::analyze_markdown,
 };
 
 const READ_CHUNK_BYTES: usize = 64 * 1024;
@@ -148,7 +148,8 @@ fn analyze_open_file(candidate: &AnalysisCandidate, request: AnalysisRequest) ->
         );
     }
 
-    let mut accumulator = BasicAccumulator::new();
+    let mut accumulator =
+        BasicAccumulator::with_logical_metrics(request.profile.includes_documents());
     let mut code_accumulator = request
         .profile
         .includes_code()
@@ -156,6 +157,9 @@ fn analyze_open_file(candidate: &AnalysisCandidate, request: AnalysisRequest) ->
         .flatten();
     let mut deferred_code = (request.profile.includes_code()
         && candidate.classification.family == ContentFamily::Unknown)
+        .then(Vec::new);
+    let mut markdown_source = (request.profile.includes_documents()
+        && candidate.classification.file_type.as_str() == "markdown")
         .then(Vec::new);
     let mut prefix = Vec::with_capacity(CLASSIFICATION_PREFIX_BYTES);
     let mut chunk = vec![0_u8; READ_CHUNK_BYTES];
@@ -188,6 +192,9 @@ fn analyze_open_file(candidate: &AnalysisCandidate, request: AnalysisRequest) ->
                 }
                 if let Some(deferred) = &mut deferred_code {
                     deferred.extend_from_slice(&chunk[..count]);
+                }
+                if let Some(source) = &mut markdown_source {
+                    source.extend_from_slice(&chunk[..count]);
                 }
             }
             Err(error) => {
@@ -247,6 +254,17 @@ fn analyze_open_file(candidate: &AnalysisCandidate, request: AnalysisRequest) ->
                 metrics.code_lines = code_metrics.code_lines;
                 metrics.comment_lines = code_metrics.comment_lines;
                 metrics.code_blank_lines = code_metrics.code_blank_lines;
+            }
+            if request.profile.includes_documents()
+                && classification.file_type.as_str() == "markdown"
+                && let Some(source) = markdown_source
+            {
+                let source = std::str::from_utf8(&source)
+                    .expect("basic admission already established valid UTF-8");
+                let visible = analyze_markdown(source);
+                metrics.visible_words = visible.visible_words;
+                metrics.visible_logical_word_stats = visible.visible_logical_word_stats;
+                metrics.paragraphs = visible.paragraphs;
             }
             analyzed_record(candidate, request, classification, metrics)
         }
@@ -329,6 +347,7 @@ fn count_coverage(report: &mut AnalysisReport, coverage: CoverageReason) {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
     use std::fs;
 
     use crate::scan::ScanConfig;
@@ -441,5 +460,57 @@ mod tests {
         assert_eq!(summary.share_metric, crate::query::ShareMetric::CodeLines);
         assert_eq!((summary.total.share.numerator, summary.total.share.denominator), (1, 1));
         assert_eq!(summary.total.coverage.get(&CoverageReason::Unsupported), Some(&1));
+    }
+
+    #[test]
+    fn document_profile_uses_visible_markdown_and_logical_plain_text() {
+        let root = tempfile::tempdir().expect("tempdir");
+        fs::write(
+            root.path().join("guide.md"),
+            "# Read [the label](https://example.test)\n\n`hidden code` 中文\n",
+        )
+        .expect("write markdown");
+        fs::write(root.path().join("notes.txt"), "oneverylongtoken\n\nplain words\n")
+            .expect("write text");
+        let (mut index, _) =
+            crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
+
+        let report = analyze_index(
+            &mut index,
+            AnalysisRequest {
+                profile: super::super::AnalysisProfile::Documents,
+                ..AnalysisRequest::default()
+            },
+        );
+        assert!(report.is_complete());
+
+        let query = crate::query::Query {
+            views: vec![crate::query::ViewSpec::Documents],
+            ..crate::query::Query::default()
+        };
+        let rendered = crate::query::report(
+            &index,
+            &query,
+            &crate::query::Provenance {
+                scan_started_at: None,
+                generated_at: std::time::UNIX_EPOCH,
+                source: crate::query::ReportSource::ColdScan,
+                complete: true,
+                errors: Vec::new(),
+            },
+        );
+        let crate::query::Section::Metrics { summary, .. } = &rendered.sections[0] else {
+            panic!("expected document metrics")
+        };
+        assert_eq!(summary.share_metric, crate::query::ShareMetric::DocumentWords);
+        let rows =
+            summary.rows.iter().map(|row| (row.id.as_str(), row)).collect::<BTreeMap<_, _>>();
+        let markdown = rows["markdown"];
+        assert!(markdown.metrics.raw_words > markdown.metrics.visible_words);
+        assert_eq!(markdown.metrics.visible_words, 4);
+        assert_eq!(markdown.metrics.paragraphs, 2);
+        let text = rows["text"];
+        assert!(text.metrics.logical_word_stats.logical_words() > text.metrics.raw_words);
+        assert_eq!(crate::query::document_words(&summary.total), 7);
     }
 }

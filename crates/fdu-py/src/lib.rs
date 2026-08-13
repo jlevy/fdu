@@ -25,7 +25,7 @@ use pyo3::types::{PyDict, PyList};
 use fdu::content::{AnalysisProfile, AnalysisRequest, CoverageReason};
 use fdu::query::{
     Bound as Bound_, MetricRow, MetricSummary, Pattern, Provenance, Query, Report, ReportSource,
-    Section, Selection, SizeMetric, SortKey, SummaryRow, TreeNode, ViewSpec,
+    Section, Selection, SizeMetric, SortKey, SummaryRow, TreeNode, ViewSpec, document_words,
 };
 use fdu::session::{ChangeKind, Session};
 use fdu::watch::WatchConfig;
@@ -606,6 +606,9 @@ fn metric_row_dict<'py>(
     dict.set_item("logical_words", row.metrics.logical_word_stats.logical_words())?;
     dict.set_item("paragraphs", row.metrics.paragraphs)?;
     dict.set_item("visible_words", row.metrics.visible_words)?;
+    dict.set_item("visible_logical_words", row.metrics.visible_logical_word_stats.logical_words())?;
+    dict.set_item("document_words", document_words(row))?;
+    dict.set_item("page_words", document_words(row))?;
     dict.set_item("words_per_page", words_per_page)?;
     let coverage = PyDict::new(py);
     for (reason, count) in &row.coverage {

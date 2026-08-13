@@ -151,12 +151,26 @@ pub struct LogicalWordStats {
 }
 
 impl LogicalWordStats {
+    pub(crate) fn add_assign(&mut self, other: Self) {
+        self.wide_chars = self.wide_chars.saturating_add(other.wide_chars);
+        self.nonwide_tokens = self.nonwide_tokens.saturating_add(other.nonwide_tokens);
+        self.nonwide_chars = self.nonwide_chars.saturating_add(other.nonwide_chars);
+    }
+
     /// Derive rounded logical words after aggregation.
     pub fn logical_words(self) -> u64 {
-        let minimum = self.nonwide_chars.div_ceil(6);
-        let maximum = self.nonwide_chars.div_ceil(3);
-        let nonwide = self.nonwide_tokens.clamp(minimum, maximum.max(minimum));
-        (nonwide.saturating_mul(2).saturating_add(self.wide_chars).saturating_add(1)) / 2
+        let chars = u128::from(self.nonwide_chars);
+        let tokens = u128::from(self.nonwide_tokens);
+        let wide = u128::from(self.wide_chars);
+        let (numerator, denominator) = if tokens.saturating_mul(6) < chars {
+            (chars.saturating_add(wide.saturating_mul(3)), 6)
+        } else if tokens.saturating_mul(3) > chars {
+            (chars.saturating_mul(2).saturating_add(wide.saturating_mul(3)), 6)
+        } else {
+            (tokens.saturating_mul(2).saturating_add(wide), 2)
+        };
+        let rounded = numerator.saturating_add(denominator / 2) / denominator;
+        u64::try_from(rounded).unwrap_or(u64::MAX)
     }
 }
 
@@ -353,5 +367,18 @@ mod tests {
             nonwide_chars: first.nonwide_chars + second.nonwide_chars,
         };
         assert_eq!(combined.logical_words(), 8);
+    }
+
+    #[test]
+    fn logical_words_match_the_pinned_rational_clamp_and_half_up_rounding() {
+        let logical = |wide_chars, nonwide_tokens, nonwide_chars| {
+            LogicalWordStats { wide_chars, nonwide_tokens, nonwide_chars }.logical_words()
+        };
+        assert_eq!(logical(0, 0, 0), 0);
+        assert_eq!(logical(0, 2, 9), 2, "ordinary prose passes through");
+        assert_eq!(logical(0, 1, 12), 2, "long tokens use the six-character floor");
+        assert_eq!(logical(0, 4, 4), 1, "short tokens use the three-character ceiling");
+        assert_eq!(logical(3, 0, 0), 2, "wide halves round up once");
+        assert_eq!(logical(1, 1, 1), 1, "mixed fractions combine before rounding");
     }
 }
