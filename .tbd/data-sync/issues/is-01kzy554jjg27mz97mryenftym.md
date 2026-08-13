@@ -5,7 +5,7 @@ title: Linux performance validation and optimization
 kind: epic
 status: open
 priority: 1
-version: 18
+version: 19
 spec_path: docs/project/specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md
 labels:
   - performance
@@ -31,10 +31,10 @@ child_order_hints:
   - is-01kzn04cqdaaknww7941cbp7aw
   - is-01kzqynv3k4rf6gb6cddsnz93e
 created_at: 2026-08-13T18:11:37.668Z
-updated_at: 2026-08-13T18:12:14.316Z
+updated_at: 2026-08-13T18:41:26.521Z
 ---
 Own the post-PR-#8 Linux program on controlled Linux hosts. Establish claim-grade warm, pagecache-drop-only, and controlled-cold matrices on local SSD with exact binary/host/filesystem/corpus provenance, full semantic oracle, paired adjacency, resource counters, and pre/post fingerprints. Use the portable backend as the correctness baseline; reproduce the first scouting results before changing production. Then prioritize default-view retained-state/index work, warm snapshot load/save costs, allocator and Linux-only stat-elision hypotheses, worker calibration by cache regime/filesystem, and explicit closure of io_uring or inode-ordering ideas when bare-metal evidence rejects them. Keep macOS-only H69/H70 and controlled-macOS-cold work outside this epic.
 
 ## Notes
 
-Handoff order: (1) reproduce the first Linux scouting evidence on a controlled local-SSD host via fdu-nffc; (2) default rendered-tree gap via fdu-sk7v plus retained-state/index work; (3) warm inversion via fdu-maxn/fdu-niuz/fdu-91ts; (4) portable summary via fdu-cckr/fdu-i2f3; (5) cold worker calibration via fdu-tk1b; (6) close or qualify io_uring/inode-ordering with fdu-dzs0/fdu-lf3v. PR #8 already carries cross-platform differential correctness tests; do not mix APFS-only H69/H70 into Linux conclusions.
+Handoff baseline: PR #8 merged on 2026-08-13 as origin/main c0ffd44216fcb5add1cee45e1ba3c0677d9ad6ab (reviewed head 51917f8). All 14 CI checks passed on macOS/Linux/Windows; the branch adds portable differential tests and the APFS resource-fork fix. Start with fdu-nffc on a controlled local-SSD Linux host, then fdu-sk7v, warm snapshot work, Linux summary ideas, and cold worker calibration. Do not mix APFS-only H70 into Linux claims.
