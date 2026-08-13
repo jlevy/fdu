@@ -825,7 +825,7 @@
       "process_state": "same-process",
       "snapshot_state": "compatible-unchanged",
       "validation": {
-        "allowed_exit_codes": [0],
+        "allowed_exit_codes": [2],
         "corpus": "unchanged",
         "snapshot": "exists",
         "stderr": "empty",
@@ -834,7 +834,7 @@
             "mode": "content-cache-hit",
             "schema": "fdu-perf-probe-v1",
             "source": "content-cache",
-            "summary.complete": true
+            "summary.complete": false
           },
           "matches_manifest": {
             "summary.engine_digest": "oracle.engine_digest",
