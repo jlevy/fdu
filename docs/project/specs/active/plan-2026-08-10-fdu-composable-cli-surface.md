@@ -666,6 +666,11 @@ shared process boundary, as today.
   goldens are byte-stable (integer formatting, no floats in text output).
   The watch stream uses a bounded, causally sequenced capture helper rather than timing
   a process that never exits.
+- One concise, realistic nested-project session pins the complete natural human report
+  at its default depth and limit. Its rows jointly cover size ranking, hierarchy,
+  alignment, fixed ten-cell bars, rolled-up descendants below the display depth, and no
+  spurious omission marker. Focused sessions retain the actual limit-marker boundary
+  and other combinatorial edges instead of inflating this product example.
 - Schema tests: `fdu.report/1` and `fdu.stream/1` fixtures that fail on unversioned
   change.
 - Time-window tests: table-driven `parse_when`/`parse_size` grammar units with injected

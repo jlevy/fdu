@@ -326,6 +326,15 @@ The measurement rules themselves are under [Performance](#performance).
 
 ### Golden Tests Are the Text Contract
 
+Each golden is a compact end-to-end product example: **minimal fixture and transcript,
+maximum critical surface, realistic enough that a person can judge the experience.**
+Every committed row or command must protect a distinct contract, but surgical snippets
+are not a substitute for showing the complete output a user sees. Focused unit and
+property tests own combinatorial edge cases; a small number of representative golden
+sessions own the whole invocation, stdout, stderr, exit status, and relevant side
+effects. This is the project form of the tbd golden-testing guidance: concise, broad,
+stable, and reviewable.
+
 Their value depends on one habit: **classify every field as stable or unstable.** Paths
 inside the fixture, byte counts, entry counts, kinds, and schema strings are stable and
 must match exactly. Sandbox paths, timestamps, allocated sizes, and inode-derived values
@@ -335,6 +344,9 @@ field instead of freeing its value.
 Re-recording is normal; **reading the diff is the point.** In this workstream the
 goldens caught four defects no unit test did, including JSON that was balanced and
 invalid because the fixture had no directory with two children.
+The default human report has its own realistic nested-project session so alignment,
+size ranking, fixed ten-cell bars, default depth, rolled-up hidden descendants, and the
+absence of spurious omission markers move together as one visible product contract.
 
 Two hazards worth remembering, both found the hard way:
 
