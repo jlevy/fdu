@@ -169,6 +169,7 @@ fn parse_entry(record: &[u8]) -> Option<Entry> {
         if returned.file & libc::ATTR_FILE_TOTALSIZE == 0 { None } else { Some(cursor.i64()?) };
     let file_allocated =
         if returned.file & libc::ATTR_FILE_ALLOCSIZE == 0 { None } else { Some(cursor.i64()?) };
+    let fixed_end = cursor.position();
 
     let kind = match object_type {
         VREG => EntryKind::File,
@@ -194,6 +195,12 @@ fn parse_entry(record: &[u8]) -> Option<Entry> {
     let name_offset = usize::try_from(name_offset).ok()?;
     let name_start = reference_position.checked_add(name_offset)?;
     let name_end = name_start.checked_add(name_length)?;
+    // Variable-length attributes follow the fixed-width fields. A reference back into
+    // those fields can still be in bounds and can even contain a plausible NUL-terminated
+    // component, but it is not a valid kernel record and must take the portable path.
+    if name_start < fixed_end {
+        return None;
+    }
     let name = record.get(name_start..name_end)?;
     let (&0, name) = name.split_last()? else { return None };
     if name.is_empty() || name.contains(&0) || name.contains(&b'/') {
@@ -374,6 +381,17 @@ mod tests {
         escaped_name[reference_position..reference_position + 4]
             .copy_from_slice(&i32::MAX.to_ne_bytes());
         assert!(parse_entry(&escaped_name).is_none());
+
+        let mut backward_name = valid.clone();
+        let device_position = reference_position + 2 * size_of::<u32>();
+        backward_name[device_position..device_position + 4].copy_from_slice(b"a\0\0\0");
+        let backward_offset =
+            i32::try_from(device_position - reference_position).expect("fixture offset fits i32");
+        backward_name[reference_position..reference_position + 4]
+            .copy_from_slice(&backward_offset.to_ne_bytes());
+        backward_name[reference_position + 4..reference_position + 8]
+            .copy_from_slice(&2_u32.to_ne_bytes());
+        assert!(parse_entry(&backward_name).is_none());
 
         let mut missing_fingerprint = valid.clone();
         let common = REQUESTED_COMMON & !libc::ATTR_CMN_CHGTIME;

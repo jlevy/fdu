@@ -1535,18 +1535,14 @@ fn reconcile_target_inner(
         let process_entry = |name: OsString,
                              kind: EntryKind,
                              attrs: Attrs,
+                             baseline: PathExpectation,
                              target: &mut ReconcileTarget<'_>,
-                             known: &mut BTreeMap<OsString, PathExpectation>,
                              queue: &mut VecDeque<(PathBuf, usize)>,
                              batch: &mut Vec<ObservationOp>,
                              sink: &mut dyn FnMut(&AppliedDelta),
                              report: &mut ReconcileReport|
          -> Result<()> {
             let rel_path = rel_dir.join(&name);
-            let baseline = match known.remove(&name) {
-                Some(baseline) => baseline,
-                None => target.expectation(&rel_path)?,
-            };
             report.scan.entries += 1;
             push_reconcile_upsert(
                 target,
@@ -1574,12 +1570,16 @@ fn reconcile_target_inner(
             if let Some(entries) = bulk_reader.as_mut().and_then(|reader| reader.read(&abs_dir)) {
                 report.scan.dirs_read += 1;
                 for entry in entries {
+                    let baseline = match known.remove(&entry.name) {
+                        Some(baseline) => baseline,
+                        None => target.expectation(&rel_dir.join(&entry.name))?,
+                    };
                     process_entry(
                         entry.name,
                         entry.kind,
                         entry.attrs,
+                        baseline,
                         target,
-                        &mut known,
                         &mut queue,
                         &mut batch,
                         sink,
@@ -1611,6 +1611,15 @@ fn reconcile_target_inner(
                         continue;
                     }
                 };
+                let name = item.file_name();
+                // Seeing the name proves it is not absent even if the following
+                // metadata lookup fails. Remove it from the missing set before that
+                // fallible lookup so an operational error cannot turn an existing
+                // entry into a deletion.
+                let baseline = match known.remove(&name) {
+                    Some(baseline) => baseline,
+                    None => target.expectation(&rel_dir.join(&name))?,
+                };
                 let meta = match metadata_for_fingerprint(&item) {
                     Ok(meta) => meta,
                     Err(error) => {
@@ -1619,11 +1628,11 @@ fn reconcile_target_inner(
                     }
                 };
                 process_entry(
-                    item.file_name(),
+                    name,
                     kind_from(&meta),
                     attrs_from(&meta),
+                    baseline,
                     target,
-                    &mut known,
                     &mut queue,
                     &mut batch,
                     sink,
@@ -1816,44 +1825,47 @@ fn reconcile_wave_worker(
             let mut listing_complete = true;
 
             {
-                let mut process_entry = |name: OsString, kind: EntryKind, attrs: Attrs| {
-                    let rel_path = rel_dir.join(&name);
-                    let baseline =
-                        known.remove(&name).unwrap_or_else(|| index.expectation(&rel_path));
-                    result.scan.entries += 1;
-                    if baseline.state == (PathState::Present { kind, attrs }) {
-                        result.unchanged += 1;
-                    } else {
-                        defer_reconcile_op(
-                            Op::Upsert { path: rel_path.clone(), kind, attrs },
-                            &mut result.operations,
-                            deferred_count,
-                            overflowed,
-                            max_deferred_ops,
-                        );
-                    }
-
-                    if should_descend(kind, attrs, *depth, root_dev, config) {
-                        let child_region = if *depth == 0 { RegionId::UNASSIGNED } else { *region };
-                        result.discovered.push((rel_path, depth + 1, child_region));
-                    } else if kind.is_dir() {
-                        for name in collect_child_expectations(index, &rel_path).into_keys() {
+                let mut process_entry =
+                    |name: OsString, kind: EntryKind, attrs: Attrs, baseline: PathExpectation| {
+                        let rel_path = rel_dir.join(&name);
+                        result.scan.entries += 1;
+                        if baseline.state == (PathState::Present { kind, attrs }) {
+                            result.unchanged += 1;
+                        } else {
                             defer_reconcile_op(
-                                Op::Remove { path: rel_path.join(name) },
+                                Op::Upsert { path: rel_path.clone(), kind, attrs },
                                 &mut result.operations,
                                 deferred_count,
                                 overflowed,
                                 max_deferred_ops,
                             );
                         }
-                    }
-                };
+
+                        if should_descend(kind, attrs, *depth, root_dev, config) {
+                            let child_region =
+                                if *depth == 0 { RegionId::UNASSIGNED } else { *region };
+                            result.discovered.push((rel_path, depth + 1, child_region));
+                        } else if kind.is_dir() {
+                            for name in collect_child_expectations(index, &rel_path).into_keys() {
+                                defer_reconcile_op(
+                                    Op::Remove { path: rel_path.join(name) },
+                                    &mut result.operations,
+                                    deferred_count,
+                                    overflowed,
+                                    max_deferred_ops,
+                                );
+                            }
+                        }
+                    };
 
                 #[cfg(target_os = "macos")]
                 let used_bulk = if let Some(entries) = bulk_reader.read(&abs_dir) {
                     result.scan.dirs_read += 1;
                     for entry in entries {
-                        process_entry(entry.name, entry.kind, entry.attrs);
+                        let baseline = known
+                            .remove(&entry.name)
+                            .unwrap_or_else(|| index.expectation(&rel_dir.join(&entry.name)));
+                        process_entry(entry.name, entry.kind, entry.attrs, baseline);
                     }
                     true
                 } else {
@@ -1880,6 +1892,12 @@ fn reconcile_wave_worker(
                                 continue;
                             }
                         };
+                        let name = item.file_name();
+                        // Match the serial path: an entry whose name was enumerated is
+                        // not missing merely because its metadata could not be read.
+                        let baseline = known
+                            .remove(&name)
+                            .unwrap_or_else(|| index.expectation(&rel_dir.join(&name)));
                         let meta = match metadata_for_fingerprint(&item) {
                             Ok(meta) => meta,
                             Err(error) => {
@@ -1887,7 +1905,7 @@ fn reconcile_wave_worker(
                                 continue;
                             }
                         };
-                        process_entry(item.file_name(), kind_from(&meta), attrs_from(&meta));
+                        process_entry(name, kind_from(&meta), attrs_from(&meta), baseline);
                     }
                 }
             }
@@ -2310,6 +2328,39 @@ mod tests {
         }
         entries.sort_by(|left, right| left.0.cmp(&right.0));
         entries
+    }
+
+    /// A small tree whose mutation crosses every structural reconciliation boundary.
+    fn reconciliation_transition_tree() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().expect("tempdir");
+        write_file(&dir.path().join("changed.txt"), b"before");
+        write_file(&dir.path().join("removed.txt"), b"remove me");
+        write_file(&dir.path().join("directory-to-file/old.rs"), b"old child");
+        write_file(&dir.path().join("file-to-directory"), b"old file");
+        write_file(&dir.path().join("removed-tree/nested/gone.md"), b"gone");
+        write_file(&dir.path().join("stable/deep/kept.rs"), b"kept");
+        dir
+    }
+
+    fn mutate_reconciliation_transition_tree(root: &Path) {
+        write_file(&root.join("changed.txt"), b"after, with a distinct size");
+        fs::remove_file(root.join("removed.txt")).expect("remove root file");
+
+        fs::remove_dir_all(root.join("directory-to-file")).expect("remove old directory");
+        write_file(&root.join("directory-to-file"), b"replacement file");
+
+        fs::remove_file(root.join("file-to-directory")).expect("remove old file");
+        write_file(&root.join("file-to-directory/new.txt"), b"replacement child");
+
+        fs::remove_dir_all(root.join("removed-tree")).expect("remove nested tree");
+        write_file(&root.join("added-tree/nested/new.md"), b"new nested file");
+    }
+
+    fn effective_ops(deltas: &[AppliedDelta]) -> Vec<Op> {
+        let mut operations: Vec<_> =
+            deltas.iter().flat_map(|delta| delta.ops.iter().cloned()).collect();
+        operations.sort_by(|left, right| left.path().cmp(right.path()));
+        operations
     }
 
     #[test]
@@ -3071,6 +3122,128 @@ mod tests {
         assert_eq!(index_fingerprint(&bulk), index_fingerprint(&portable));
         assert_eq!(bulk.total(), portable.total());
         assert_eq!(bulk.by_ext_named(bulk.total()), portable.by_ext_named(portable.total()));
+    }
+
+    #[test]
+    fn parallel_reconciliation_matches_serial_across_structural_transitions() {
+        for max_depth in [None, Some(1), Some(2)] {
+            for order in [ScanOrder::BreadthFirst, ScanOrder::DepthFirst] {
+                let dir = reconciliation_transition_tree();
+                let reference_config = ScanConfig {
+                    order,
+                    max_depth,
+                    threads: Some(1),
+                    batch_size: 2,
+                    ..ScanConfig::default()
+                };
+                let (baseline, baseline_report) =
+                    scan_into_index(dir.path(), &reference_config).expect("baseline scan");
+                assert!(baseline_report.is_complete());
+                mutate_reconciliation_transition_tree(dir.path());
+
+                let mut serial = baseline.clone();
+                let mut serial_deltas = Vec::new();
+                let serial_report = reconcile(&mut serial, &reference_config, &mut |delta| {
+                    serial_deltas.push(delta.clone());
+                })
+                .expect("serial reconciliation");
+                let (fresh, fresh_report) =
+                    scan_into_index(dir.path(), &reference_config).expect("fresh oracle");
+                assert!(serial_report.is_complete(), "serial {order:?}/{max_depth:?}");
+                assert!(fresh_report.is_complete(), "fresh {order:?}/{max_depth:?}");
+                assert_eq!(
+                    index_fingerprint(&serial),
+                    index_fingerprint(&fresh),
+                    "serial did not converge to a fresh scan for {order:?}/{max_depth:?}"
+                );
+
+                for workers in [2, 4] {
+                    let mut parallel = baseline.clone();
+                    let config = ScanConfig { threads: Some(workers), ..reference_config.clone() };
+                    let mut parallel_deltas = Vec::new();
+                    let report = reconcile(&mut parallel, &config, &mut |delta| {
+                        parallel_deltas.push(delta.clone());
+                    })
+                    .expect("parallel reconciliation");
+                    let context = format!("{order:?}/{max_depth:?}/{workers} workers");
+
+                    assert!(report.is_complete(), "{context}: unexpected partial report");
+                    assert_eq!(report.scan.entries, serial_report.scan.entries, "{context}");
+                    assert_eq!(report.scan.dirs_read, serial_report.scan.dirs_read, "{context}");
+                    assert_eq!(report.apply, serial_report.apply, "{context}");
+                    assert_eq!(
+                        effective_ops(&parallel_deltas),
+                        effective_ops(&serial_deltas),
+                        "{context}: effective delta differs"
+                    );
+                    assert_eq!(
+                        index_fingerprint(&parallel),
+                        index_fingerprint(&serial),
+                        "{context}: final index differs"
+                    );
+                    let (parallel_total, serial_total) = (parallel.total(), serial.total());
+                    assert_eq!(
+                        (
+                            parallel_total.files,
+                            parallel_total.dirs,
+                            parallel_total.bytes,
+                            parallel_total.allocated,
+                            parallel_total.newest_mtime_ns,
+                        ),
+                        (
+                            serial_total.files,
+                            serial_total.dirs,
+                            serial_total.bytes,
+                            serial_total.allocated,
+                            serial_total.newest_mtime_ns,
+                        ),
+                        "{context}: roll-up differs"
+                    );
+                    assert_eq!(
+                        parallel.by_ext_named(parallel_total),
+                        serial.by_ext_named(serial_total),
+                        "{context}: extension roll-up differs"
+                    );
+                }
+            }
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn reconciliation_metadata_errors_do_not_delete_enumerated_entries() {
+        use std::os::unix::fs::PermissionsExt;
+
+        // macOS's parallel path may satisfy the whole directory through
+        // getattrlistbulk even without search permission. One worker pins the portable
+        // fallback there; Linux also exercises the parallel portable worker.
+        let worker_counts = if cfg!(target_os = "macos") { vec![1] } else { vec![1, 2] };
+        for workers in worker_counts {
+            let dir = sample_tree();
+            let config =
+                ScanConfig { threads: Some(workers), batch_size: 2, ..ScanConfig::default() };
+            let (mut index, baseline_report) =
+                scan_into_index(dir.path(), &config).expect("baseline scan");
+            assert!(baseline_report.is_complete());
+            let before = index_fingerprint(&index);
+            let original_permissions =
+                fs::metadata(dir.path()).expect("root metadata").permissions();
+
+            // Reading names requires read permission; looking up their metadata also
+            // requires search permission. This makes enumeration succeed and each
+            // metadata lookup fail, the boundary where an encountered name used to be
+            // misclassified as a deletion.
+            fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o400))
+                .expect("remove search permission");
+            let outcome = reconcile(&mut index, &config, &mut |_| {});
+            fs::set_permissions(dir.path(), original_permissions).expect("restore permissions");
+
+            let report = outcome.expect("operational metadata errors are a partial report");
+            assert!(!report.scan.errors.is_empty(), "the fixture did not induce metadata errors");
+            assert!(!report.is_complete());
+            assert_eq!(index_fingerprint(&index), before);
+            assert!(index.attrs(Path::new("a.txt")).is_some(), "existing entry was removed");
+        }
     }
 
     #[test]
