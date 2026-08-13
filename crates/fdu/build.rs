@@ -30,7 +30,11 @@ fn main() {
     let rules = parse_rules(&source).unwrap_or_else(|error| panic!("{RULES_PATH}: {error}"));
     validate_rules(&rules).unwrap_or_else(|error| panic!("{RULES_PATH}: {error}"));
 
-    let generated = render_rules(&rules, fingerprint(source.as_bytes()));
+    // Git may materialize text files with CRLF on Windows. The fingerprint describes
+    // the manifest, not the checkout's line-ending convention, because reports and
+    // content sidecars must remain compatible across hosts.
+    let normalized_source = source.replace("\r\n", "\n").replace('\r', "\n");
+    let generated = render_rules(&rules, fingerprint(normalized_source.as_bytes()));
     let output = PathBuf::from(std::env::var_os("OUT_DIR").expect("OUT_DIR"));
     fs::write(output.join(GENERATED_NAME), generated).expect("write compiled file-type rules");
 }
