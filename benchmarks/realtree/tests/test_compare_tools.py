@@ -97,7 +97,11 @@ class ToolComparisonTests(unittest.TestCase):
             with self.assertRaisesRegex(compare_tools.ComparisonError, "outside --root"):
                 compare_tools._require_external_output(root, root / "results")
 
+            with self.assertRaisesRegex(compare_tools.ComparisonError, "outside --root"):
+                compare_tools._require_external_file(root, root / "tree.json")
+
             compare_tools._require_external_output(root, root.parent / "external-results")
+            compare_tools._require_external_file(root, root.parent / "external-tree.json")
 
 
 if __name__ == "__main__":

@@ -180,6 +180,11 @@ def main(argv: Sequence[str]) -> int:
     parser.add_argument("--trials", type=int, default=measure.DEFAULT_TRIALS)
     parser.add_argument("--warmups", type=int, default=measure.DEFAULT_WARMUPS)
     parser.add_argument("--baseline-fingerprint", type=Path)
+    parser.add_argument(
+        "--baseline-output",
+        type=Path,
+        help="write the immediate pre-run redacted fingerprint outside the subject",
+    )
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_RESULTS)
     parser.add_argument("--name", default="")
     parser.add_argument("--storage", default="", help="non-sensitive storage description")
@@ -188,6 +193,8 @@ def main(argv: Sequence[str]) -> int:
 
     try:
         _require_external_output(arguments.root, arguments.output_dir)
+        if arguments.baseline_output is not None:
+            _require_external_file(arguments.root, arguments.baseline_output)
         anchor = _parse_tool(arguments.anchor, expected="fdu")
         competitors = [_parse_tool(item) for item in arguments.tool]
         document = run(
@@ -198,6 +205,7 @@ def main(argv: Sequence[str]) -> int:
             trials=arguments.trials,
             warmups=arguments.warmups,
             baseline_fingerprint=_load_baseline(arguments.baseline_fingerprint),
+            baseline_output=arguments.baseline_output,
             storage=arguments.storage,
             timeout_seconds=arguments.timeout,
         )
@@ -229,6 +237,7 @@ def run(
     trials: int,
     warmups: int,
     baseline_fingerprint: Optional[Mapping[str, Any]],
+    baseline_output: Optional[Path],
     storage: str,
     timeout_seconds: float,
 ) -> Dict[str, Any]:
@@ -247,6 +256,11 @@ def run(
 
     started = time.time()
     before = tree.fingerprint(root, label=label)
+    if baseline_output is not None:
+        baseline_output.parent.mkdir(parents=True, exist_ok=True)
+        baseline_output.write_text(
+            json.dumps(before, indent=2, sort_keys=True), encoding="utf-8"
+        )
     drift = tree.compare(before, dict(baseline_fingerprint)) if baseline_fingerprint else []
     schedule = _schedule(competitors, trials=trials, warmups=warmups)
     samples: List[Dict[str, Any]] = []
@@ -594,11 +608,16 @@ def _load_baseline(path: Optional[Path]) -> Optional[Mapping[str, Any]]:
 
 def _require_external_output(root: Path, output_dir: Path) -> None:
     """Keep evidence writes out of the subject whose stability they certify."""
+    _require_external_file(root, output_dir)
+
+
+def _require_external_file(root: Path, destination: Path) -> None:
+    """Reject any evidence destination nested in the measured tree."""
     resolved_root = root.resolve(strict=True)
-    resolved_output = output_dir.resolve(strict=False)
-    if resolved_output == resolved_root or resolved_root in resolved_output.parents:
+    resolved_destination = destination.resolve(strict=False)
+    if resolved_destination == resolved_root or resolved_root in resolved_destination.parents:
         raise ComparisonError(
-            "--output-dir must be outside --root so recording evidence cannot mutate "
+            "evidence outputs must be outside --root so recording them cannot mutate "
             "the benchmark tree"
         )
 

@@ -159,7 +159,7 @@ PERF_PROFILING := target/profiling/examples/perf_probe
 # The harness runs from the repo root against a committed, frozen environment, so a
 # benchmark run resolves nothing at invocation time. `--project` (not `--directory`)
 # keeps the working directory here, which is what makes `-m benchmarks.realtree` work.
-PERF_UV := uv run --project benchmarks --frozen
+PERF_UV := PYTHONDONTWRITEBYTECODE=1 uv run --project benchmarks --frozen
 PERF_RUN := $(PERF_UV) python -m benchmarks.realtree
 
 .PHONY: perf-probe-release perf-probe-profiling perf-baseline perf-profile perf-compare perf-compare-tools perf-record perf-test perf-ledger perf-schema perf-schema-check
@@ -196,11 +196,12 @@ perf-compare: perf-probe-release
 # TOOL_ARGS supplies repeated `--tool name=/path/to/binary` arguments. Results must
 # stay outside PERF_TREE so the evidence write cannot invalidate its own subject.
 PERF_TOOL_RESULTS ?= /tmp/fdu-tool-comparison/results
+PERF_TOOL_BASELINE ?= $(PERF_TOOL_RESULTS)/tree-$(PERF_LABEL).json
 perf-compare-tools:
 	$(PERF_RUN).compare_tools --root $(PERF_TREE) --label $(PERF_LABEL) \
 		--anchor "fdu=$(CONTROL)" $(TOOL_ARGS) \
 		--trials $(or $(TRIALS),12) --warmups $(or $(WARMUPS),3) \
-		--baseline-fingerprint $(PERF_BASELINE) \
+		--baseline-output $(PERF_TOOL_BASELINE) \
 		--output-dir $(PERF_TOOL_RESULTS) --name $(or $(NAME),tool-comparison) \
 		--storage "$(or $(STORAGE),local storage)"
 
