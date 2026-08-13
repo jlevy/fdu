@@ -625,6 +625,9 @@ performance, and semantic gates.
   prose performance iterations
 - [x] Keep sentence counting deferred: `text-sentences-v1` has no stable multilingual
   contract yet, so absence remains preferable to a misleading count
+- [x] Add `text-prose`, `markdown-prose`, and document-cache-hit evidence jobs; profile
+  frozen generated and self-host corpora; record one rejected and one accepted paired
+  iteration without changing the semantic digests
 
 **Exit criteria:** page estimates use aggregated words and an explicit convention;
 logical-word fixtures match the referenced proposal; Markdown measurements reflect
