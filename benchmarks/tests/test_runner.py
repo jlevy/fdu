@@ -23,6 +23,29 @@ from benchmarks.schema import (
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
 
+def _process_is_running(pid: int) -> bool:
+    """True while ``pid`` is alive; a SIGKILLed process awaiting reaping is dead.
+
+    ``os.kill(pid, 0)`` alone reports zombies as alive. When the killed
+    grandchild reparents to a lazy-reaping init (root containers, sandboxes),
+    the zombie can outlive this test's polling window even though group
+    cleanup worked, so on Linux the process table's own state decides.
+    """
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    try:
+        with open(f"/proc/{pid}/stat", encoding="ascii", errors="replace") as stat:
+            fields = stat.read()
+    except OSError:
+        # No procfs (macOS) or the process vanished between the probes; fall
+        # back to the signal probe's answer, which prompt reapers make right.
+        return True
+    state = fields.rpartition(") ")[2].split(maxsplit=1)
+    return bool(state) and state[0] != "Z"
+
+
 def _scenario_set(mode: str = "success") -> Dict[str, Any]:
     document = load_scenario_set(FIXTURES / "schema" / "scenario-valid.json")
     scenario = document["scenarios"][0]
@@ -320,9 +343,7 @@ class ScenarioRunnerTests(unittest.TestCase):
             )
             child_pid = int(artifact.read_text(encoding="utf-8"))
             for _attempt in range(100):
-                try:
-                    os.kill(child_pid, 0)
-                except ProcessLookupError:
+                if not _process_is_running(child_pid):
                     break
                 time.sleep(0.01)
             else:
