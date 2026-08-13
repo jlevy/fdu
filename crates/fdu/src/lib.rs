@@ -52,6 +52,8 @@
 
 pub mod cache;
 pub mod classify;
+#[cfg(feature = "cli")]
+mod execution;
 mod index;
 pub mod query;
 pub mod scan;
@@ -169,7 +171,7 @@ pub struct PendingSave {
 
 impl PendingSave {
     /// Nothing to wait for.
-    fn none() -> Self {
+    pub(crate) fn none() -> Self {
         Self { worker: None }
     }
 

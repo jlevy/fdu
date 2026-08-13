@@ -150,6 +150,21 @@ dense immutable base with sparse mutation overlay (H61, `fdu-f67r`). See the
 [performance white paper](../reports/report-2026-08-12-fdu-performance-architecture.md)
 and [live comparison](../reports/report-2026-08-12-fdu-live-tool-comparison.md).
 
+H59 then tested whether the smaller retained state could be derived without weakening
+the rich summary. On a frozen 978,339-entry fingerprint, the internal exact-summary plan
+improved paired wall 14.56% [9.04%, 18.55%] and cut peak RSS 95.28%, from 563.2 MiB to
+26.3 MiB (exp-040). Every old/new FDU sample had the same stable report hash.
+After a prototype-only public surface was removed, the exact final CLI binary reproduced
+the semantic and resource mechanism on inactive 720,805- and 901,963-entry trees: user
+CPU was roughly three times lower and peak RSS 23–30 times lower.
+Those more uniform trees improved wall only 2.8% [0.4%, 6.9%] and 1.8% [−0.5%, 4.0%],
+respectively. The heterogeneous speedup is therefore real but not a topology-independent
+multiplier; when system time dominates, removing user-space index work mostly improves
+memory and CPU headroom.
+The result preserves the existing command and report schema; cache participation,
+filters, multiple views, watch mode, and unproved requirements fall closed to the full
+index.
+
 ## Findings
 
 ### A First-Principles Cost Model
@@ -427,9 +442,90 @@ It yields four actionable conclusions and three negative ones:
   Their totals therefore calibrate traversal throughput; they are not correctness
   oracles for FDU’s path-entry accounting and complete/partial provenance.
 
-All five live candidates are tracked beneath the performance-iteration bead: H19–H22
-(`fdu-prph`), H58 (`fdu-r9he`), H59 (`fdu-hke6`), H60 (`fdu-weey`), and H61
-(`fdu-f67r`). H57 is resolved by exp-036 rather than left in the queue.
+The retained-index candidates remain tracked beneath the performance-iteration bead:
+H19–H22 (`fdu-prph`), H58 (`fdu-r9he`), H60 (`fdu-weey`), and H61 (`fdu-f67r`). H59 is
+resolved by exp-040; its next derived-report layers are H62–H65. H57 is resolved by
+exp-036 rather than left in the queue.
+
+### Healey/Dumac Follow-Up: Bulk Syscalls, Fixed Workers, and Inode Locality
+
+The two implementation reports published by Andrew Healey —
+[the original macOS design](https://healeycodes.com/maybe-the-fastest-disk-usage-program-on-macos)
+and
+[the optimization follow-up](https://healeycodes.com/optimizing-my-disk-usage-program) —
+were reviewed alongside dumac `1ffbe3c`, including the pre/post source diff rather than
+only the benchmark table.
+The key results and their transfer limits are:
+
+- **Benchmark shape.** The article subject is a generated binary tree with 4,095
+  directories and 409,500 small files: twelve levels, two child directories per level,
+  and 100 files per directory.
+  It uses Hyperfine with three warmups and, in the current README, at least five warm
+  runs on an M1 Pro. The author reports only warm filesystem-cache results because macOS
+  cache eviction was not repeatable, and argues that warm rank correlated with observed
+  cold rank. That is a useful mechanism screen, but FDU’s protocol is more claim-grade:
+  real and generated heterogeneous subjects, adjacent paired order, bootstrap intervals,
+  exact binary and host provenance, independent semantic oracles, pre/post fingerprints,
+  invalid-sample retention, resource metrics, and explicit work classes.
+  The future Linux matrix adds per-sample `sync` plus `drop_caches`, not a macOS claim.
+- **The first integer-factor gain was `getattrlistbulk`.** Traditional `readdir` plus
+  one `lstat` per entry was replaced by bulk names and metadata, using a 128 KiB buffer.
+  FDU independently landed the same primitive in H26, but its full-index reader requests
+  a wider strict record: name, device, type, mtime, ctime, flags, file id, mount status,
+  logical size, and allocated size.
+  That supports fingerprints, one-filesystem scope, mount/firmlink fallback, both size
+  metrics, recency, snapshots, and later queries.
+  Dumac requests only name, type, inode, and allocated size.
+  H63 therefore narrows records only when the complete report requirements prove a field
+  unused; it does not weaken the full reader.
+  Because the record width changes, H63 will screen 64 versus 128 KiB anew; exp-029/039
+  rejected 256 KiB for the wider record and do not answer that narrower question.
+- **The follow-up’s largest gain was removing task-per-directory scheduling.** Replacing
+  Tokio tasks plus `spawn_blocking` and a semaphore with one fixed Rayon work-stealing
+  pool improved dumac about 23% and reduced context switches roughly 80%, from about 1.2
+  million to 235 thousand in the article’s System Trace.
+  FDU already uses scoped reusable workers and a bounded directory queue, so adding
+  Rayon would duplicate machinery and a dependency.
+  The transferable principle is to reduce where work is produced: H62 aggregates rich
+  summaries inside existing workers, eliminates file `PathBuf` joins and observation
+  batches, and returns only worker totals.
+  H65 then retunes that reduction-only path because the accepted six-worker indexed knee
+  was constrained by a consumer H62 removes; dumac currently uses
+  `available_parallelism()` (ten threads on the measured M1 Pro).
+- **Sequential APFS inode allocation defeated modulus sharding.** Dumac’s original
+  `inode % 128` mapping sent corresponding positions from independently created
+  directories through the same locks.
+  Changing the shard to `(inode >> 8) % 128` grouped runs of 256 consecutive inodes and
+  reduced observed shard collisions from about 177 to five per run, worth about 5% in
+  the article. FDU currently counts file sizes by path and has no global hard-link set,
+  so copying the sharding code would be both useless and a semantic change.
+  The insight belongs with the existing hard-link-attribution design gate `fdu-579b`: if
+  a future mode deduplicates `(device, inode)`, test shifted or mixed sharding against
+  APFS allocation patterns and never key on inode alone.
+- **Dumac’s low constant comes with narrower correctness.** Its parser uses unchecked
+  pointer arithmetic, skips names that are not UTF-8, keys hard links on inode without
+  device, counts symlinks as one 512-byte block, lacks FDU’s mount/firmlink and
+  one-filesystem fallback contract, prints many child errors and substitutes zero, and
+  retains a process-global inode set.
+  FDU’s audited reader bounds-checks every record and offset, preserves native non-UTF-8
+  names, falls back atomically for a whole directory, excludes symlinks from
+  regular-file roll-ups, reports partial provenance, and path-counts hard links pending
+  the explicit policy decision.
+  These differences must remain visible in any “faster than dumac” claim.
+- **The final gap is now decomposed rather than mysterious.** Exp-040 removes full-index
+  retention and user CPU but rich summary still asks for files, directories, apparent
+  bytes, allocated bytes, and newest file mtime.
+  H62 removes generic observation/path work; H63 removes index-only macOS fields and
+  avoids copying file names; H65 checks the new worker knee; H64 finally derives only
+  the selected apparent or allocated total for a matched scalar workload.
+  H64 keeps rich `summary` unchanged and must compare FDU’s path accounting separately
+  from dumac’s hard-link-deduplicated total.
+
+The profiling caveat is also recorded: `/usr/bin/sample` returned no usable stacks and
+the installed Xcode `xctrace` aborted in its Devices plugin before launching the target.
+Exp-040’s resource signature still identifies its mechanism — user CPU down 66.27%,
+system CPU statistically unchanged — but H62/H63 should obtain fresh native profiles
+when the host tooling works instead of treating that attribution as a substitute.
 
 **Maintainer testimony on scheduling, collected from primary sources (annotated list in
 the References), adds four warnings the surveys alone would miss:**
@@ -1324,9 +1420,13 @@ the loop extensions in H36–H39 to be trusted globally.
 | --- | --- | --- | --- |
 | H57 | Bulk/BFS integration may move the 1M APFS worker knee above automatic/six | **Refuted** (exp-036): eight workers gained 1.30% for 33.5% more CPU; 12/16 regressed | resolved; no retained code |
 | H58 | Portable wide-directory entries split into small stealable stat jobs can expose parallelism hidden by directory-granular scheduling | portable/Linux wall and system CPU down ≥3%; queue wait/RSS bounded | queued `fdu-r9he`; source: dua v2.41.1 |
-| H59 | A general exact cache-off report path can retain only the complete requested view state without making output limits alter the scan | large RSS reduction and wall down ≥3%; byte-identical multi-view reports | design-gated `fdu-hke6`; source: pdu 0.24.0 |
+| H59 | A general exact cache-off report path can retain only the complete requested view state without making output limits alter the scan | large RSS reduction and wall down ≥3%; byte-identical report | **Confirmed, topology-sensitive** (exp-040): heterogeneous rich-summary wall −14.56% [−18.55%, −9.04%], RSS −95.28%, one stable semantic hash; uniform-tree exact-binary wall replications +2.8% and +1.8% versus the indexed control |
 | H60 | Cold workers can build disjoint local subtree indexes and splice them at region completion instead of funneling one path operation per entry | cold-index component/user CPU and channel work down; end-to-end wall down ≥3%; RSS bounded | queued `fdu-weey`; deterministic identity/progress/delta contract required |
 | H61 | Store the completed bootstrap in a dense immutable base and apply later changes through a sparse mutable overlay with bounded compaction | million-scale RSS down ≥40% plus cold indexed wall down ≥3% or a decisive warm/query win | queued after H19–H22 as `fdu-f67r`; preserve all query, identity, snapshot, delta, watch, and progressive semantics |
+| H62 | Aggregate the exact rich summary inside existing scan workers, retaining paths only for directories that must be descended into | wall/user CPU/channel work down ≥3%; exact rich-summary hash | queued `fdu-hly4`; portable scope/error parity |
+| H63 | Derive a strict macOS bulk request/parser from rich-summary requirements and avoid allocating file names | wall/system/user CPU down ≥3%; malformed/mount/firmlink/one-filesystem fallback parity | queued `fdu-vpow`; re-screen 64/128 KiB |
+| H64 | Derive only the selected size total for a workload matched to dumac | match or beat dumac wall; exact FDU path-accounting oracle | design-gated `fdu-8nfx`; rich summary unchanged, hard-link difference disclosed |
+| H65 | Retune worker depth only after worker-local reduction removes the indexed consumer | 6/8/10/12/16 curve; wall down ≥3%, CPU/RSS bounded | queued `fdu-i076`; indexed policy unchanged |
 
 **Guardrails, so a fast-looking result cannot be a wrong one:**
 

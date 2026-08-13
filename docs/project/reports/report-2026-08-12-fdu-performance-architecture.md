@@ -1,4 +1,4 @@
-# fdu Performance Architecture: Evidence From Forty Experiments
+# fdu Performance Architecture: Evidence From Forty-One Experiments
 
 **Date:** 2026-08-12
 
@@ -15,8 +15,8 @@ producer, reduce kernel transitions with platform bulk metadata, remove repeated
 work from the single-writer consumer, and compare immutable state in parallel before
 sending only real changes through the mutation contract.
 
-Forty measured experiments produced a 54.5% improvement in snapshot-absent indexed wall
-time and a 52.0% improvement in verified warm-open wall time against the original
+Forty-one measured experiments produced a 54.5% improvement in snapshot-absent indexed
+wall time and a 52.0% improvement in verified warm-open wall time against the original
 implementation on the primary 60,067-entry subject.
 On a heterogeneous 1,007,659-entry workspace, the integrated branch was 31.3% faster
 than merged `origin/main` with exact oracle parity.
@@ -32,6 +32,14 @@ Larger buffers, allocation reuse, extra workers, path clone removal, and descrip
 frontiers did not. The main remaining cost is the size and construction of the reusable
 index: it used about 585 MiB at million-entry scale, and the only faster comparator was
 dumac, which retained only a scalar total and an inode set.
+The first requirement-derived plan now closes most of that retained-state cost for the
+existing rich summary composition: exp-040 avoids index retention when no later consumer
+can use it, improving wall 14.56% and cutting RSS 95.28% on the heterogeneous acceptance
+tree without changing report bytes.
+Exact-final-binary runs on two more uniform 720,805- and 901,963-entry trees reproduced
+the roughly 3× user-CPU and 23–30× memory advantage, while wall improved only 1.8–2.8%.
+That contrast localizes the remaining floor to filesystem work and topology rather than
+index construction.
 
 ## The Product Being Optimized
 
@@ -225,7 +233,7 @@ in its [reproduction manifest](fdu-live-tool-comparison-manifest-v1.json).
 
 ## The Most Useful Negative Results
 
-Forty experiments are valuable partly because they close plausible but unproductive
+Forty-one experiments are valuable partly because they close plausible but unproductive
 paths:
 
 - **Parallelism without moving the serialization boundary:** the first parallel
@@ -295,23 +303,34 @@ keeping raw samples so means or Hyperfine-compatible summaries can be reconstruc
 
 The experiment queue is ordered by potential impact and by design risk:
 
-1. **Compact reusable entries (H19–H22, `fdu-prph`).** Measure the entry layout, remove
+1. **Worker-local derived summaries (H62, `fdu-hly4`).** Exp-040 proved the execution
+   plan; now aggregate inside existing workers so files need no relative path, `Op`,
+   observation batch, or single summary consumer.
+2. **Report-derived macOS metadata (H63, `fdu-vpow`).** Use a separate strict
+   `getattrlistbulk` record for the derived summary, omitting index-only fields and
+   allocating names only for directories.
+   Re-screen 64 versus 128 KiB for that narrower record; do not resurrect the rejected
+   256 KiB full-record change.
+3. **Selected-total matched challenge (H64, `fdu-8nfx`).** Derive only the requested
+   apparent or allocated total for a fair dumac-class workload.
+   Keep rich `summary` unchanged and publish hard-link/symlink accounting differences
+   beside any claim.
+4. **Reduction-only worker depth (H65, `fdu-i076`).** Re-run the 6/8/10/12/16 curve
+   after H62 removes the consumer; the indexed path retains its accepted policy.
+5. **Compact reusable entries (H19–H22, `fdu-prph`).** Measure the entry layout, remove
    duplicate name storage, move directory-only state out of files, and compact IDs and
    revisions one arm at a time.
    Million-entry RSS is the clearest current defect.
-2. **Worker-local subtree construction (H60, `fdu-weey`).** Build disjoint local arenas
+6. **Worker-local subtree construction (H60, `fdu-weey`).** Build disjoint local arenas
    and splice them with one roll-up at region completion, reducing path and channel work
    without bypassing the index contract.
-3. **Dense immutable base plus sparse overlay (H61, `fdu-f67r`).** After the layout
+7. **Dense immutable base plus sparse overlay (H61, `fdu-f67r`).** After the layout
    floor is known, test whether bootstrap state can remain dense while later mutations
    use a bounded overlay and compaction cycle.
-4. **Portable wide-directory stat chunks (H58, `fdu-r9he`).** On Linux or the portable
+8. **Portable wide-directory stat chunks (H58, `fdu-r9he`).** On Linux or the portable
    backend, test dua-style small stealable metadata jobs.
    This is not expected to help the macOS bulk path.
-5. **Bounded retention (H59, `fdu-hke6`).** Explore pdu-like retention only behind a
-   design gate. Reject any version that makes output depth change scan semantics, removes
-   one-scan-many-views, or creates a separate CLI-only engine.
-6. **Journal scoping.** FSEvents can turn a quiet warm run from O(entries) into
+9. **Journal scoping.** FSEvents can turn a quiet warm run from O(entries) into
    O(changed regions), but the same fast full scan remains the fallback and the basis
    for first use, invalid journals, and explicit cache-off runs.
 

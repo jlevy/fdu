@@ -96,6 +96,7 @@ dead end.
 | 037 | [Revisit breadth-first versus depth-first on the live 1M workspace](#exp037--revisit-breadthfirst-versus-depthfirst-on-the-live-1m-workspace) | H4 | `cold-scan-index` | +3.6% | ❌ rejected |
 | 038 | [Parent-relative openat frontier on the live 1M workspace](#exp038--parentrelative-openat-frontier-on-the-live-1m-workspace) | H24, H29 | `cold-scan-index` | -0.7% | ❌ rejected |
 | 039 | [Revisit the macOS bulk buffer on the live 1M workspace](#exp039--revisit-the-macos-bulk-buffer-on-the-live-1m-workspace) | H55 | `cold-scan-index` | +2.2% | ❌ rejected |
+| 040 | [Derive an exact rich summary without building an index](#exp040--derive-an-exact-rich-summary-without-building-an-index) | H59 | `rich-summary-report` | -14.6% | ✅ accepted |
 
 ## The experiments
 
@@ -1521,6 +1522,39 @@ crossing zero and no preregistered mechanism win; it is reverted.
 
 Full record:
 [`exp-039-revisit-the-macos-bulk-buffer-on-the-live-1m-workspace.md`](../experiments/exp-039-revisit-the-macos-bulk-buffer-on-the-live-1m-workspace.md)
+
+### exp-040 — Derive an exact rich summary without building an index
+
+✅ accepted · 2026-08-13 · H59
+
+Control: cache-off summary after constructing the complete reusable index
+
+Candidate: cache-off summary reduced directly from the scan through a derived execution
+plan
+
+**`rich-summary-report`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 4852.0 | 4183.2 | -14.56% | [-18.55%, -9.04%] |
+| cpu (ms) | 17735.2 | 16048.7 | -8.65% | [-12.43%, -7.31%] |
+| user (ms) | 1933.6 | 664.7 | -66.27% | [-68.58%, -65.76%] |
+| system (ms) | 15771.9 | 15367.9 | -0.81% (n.s.) | [-4.14%, +0.12%] |
+| peak rss (MiB) | 563.2 | 26.3 | -95.28% | [-95.51%, -95.11%] |
+
+Cost to carry: 273 lines; no new dependencies; new failure mode: An incorrect
+requirement proof could select retained state too small for a report.
+
+The planner is internal to the existing CLI composition, has one compact tier, and falls
+closed to the complete index for cache participation, filters, multiple views, watch
+mode, or any unproved request
+
+**Accepted:** The derived exact-summary plan improves paired wall 14.56%
+[9.04%, 18.55%], cuts peak RSS 95.28%, and produces one identical stable report hash
+across every old/new sample with no invalid trial or tree drift.
+
+Full record:
+[`exp-040-derive-an-exact-rich-summary-without-building-an-index.md`](../experiments/exp-040-derive-an-exact-rich-summary-without-building-an-index.md)
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

@@ -51,8 +51,10 @@ This plan is independently actionable.
 
 - Claim that the current `read_dir` + `symlink_metadata` scaffold is fast
 - Put absolute timing thresholds on generic hosted pull-request runners
-- Reduce retained metadata, skip correctness checks, weaken cache validation, or alter
-  the output contract to improve a benchmark
+- Drop data required by the requested result, skip correctness checks, weaken cache
+  validation, or alter the output contract to improve a benchmark.
+  An internal plan may retain less transient state only when it proves the complete
+  request remains exact and falls closed to the full index otherwise.
 - Treat deleting an fdu snapshot, starting a new process, or copying a corpus as proof
   that the operating-system filesystem cache is cold
 - Benchmark every Cartesian product of scale, topology, metadata, state, output, and
@@ -120,6 +122,15 @@ What it found, first against a roughly 60k-entry checkout and then against a
   [manifest](../../reports/fdu-live-tool-comparison-manifest-v1.json), and
   [performance white paper](../../reports/report-2026-08-12-fdu-performance-architecture.md)
   own the claim and its architectural interpretation.
+- **The first requirement-derived execution plan is accepted.** For the existing
+  `--cache off --view summary` composition, exp-040 proves that retaining one exact rich
+  aggregate instead of a reusable index improves paired wall 14.56% [9.04%, 18.55%] and
+  cuts peak RSS 95.28%, with one stable semantic hash across all old/new samples.
+  Exact-final-binary replications on uniform 720,805- and 901,963-entry trees reproduced
+  the roughly 3× user-CPU and 23–30× RSS mechanism but measured only 1.8–2.8% wall
+  gains, so the speed effect is explicitly topology-sensitive.
+  The planner is internal, has no fast-mode flag, and falls closed to the full index for
+  cache participation, filters, multiple views, watch mode, or any unproved request.
 
 Rejected experiments remain as important as accepted ones.
 The original parallel revalidation funnel bought only 2.6%, root-relative `openat` was
@@ -633,10 +644,16 @@ for tools that do not expose the full generated-corpus oracle.
 It supports fdu, dust, gdu, pdu, ncdu, dua, diskus, dumac, and BSD/GNU du.
 Each competitor runs immediately beside fdu with alternating order and paired bootstrap
 intervals; the same immutable fdu binary anchors every pair.
-Contracts label three work classes:
+The harness can also anchor an FDU derived-summary plan beside its indexed control.
+It hashes stable report semantics after excluding only run-specific timestamps,
+generator, and absolute root, and invalidates both samples in a mismatched pair.
+Contracts label five work classes:
 
 - `indexed-tree`: complete scan plus a retained browseable/reusable index;
 - `rendered-tree`: complete scan, roll-up, and bounded human tree; and
+- `indexed-summary`: complete scan plus reusable index, rendered as one rich summary;
+- `transient-summary`: complete scan reduced to one exact rich summary without an index;
+  and
 - `total-only`: complete scan reduced directly to one scalar total.
 
 The classes prevent a total-only result from being presented as equivalent work.
@@ -648,12 +665,16 @@ correctness gate for optimization experiments.
 
 The current pinned source review queues only mechanisms that survive FDU’s design: dua
 v2.41.1 motivates portable wide-directory stat chunks (H58), pdu 0.24.0 motivates a
-design-gated bounded-retention path (H59) and worker-local subtree construction (H60),
-and the 1M RSS result raises the existing compact-index H19–H22 ladder.
-Recursive high-concurrency implementations in dust, gdu, and diskus do not create a new
-APFS hypothesis after exp-036 refuted over-threading.
+requirement-derived retention path (H59, now accepted in exp-040) and worker-local
+subtree construction (H60), and the 1M RSS result raises the existing compact-index
+H19–H22 ladder. Recursive high-concurrency implementations in dust, gdu, and diskus do
+not create a new APFS hypothesis after exp-036 refuted over-threading.
 Dumac validates the already-landed bulk syscall mechanism but performs a smaller
 total-only, reduced-attribute job.
+Its two implementation reports and source diff queue worker-local rich-summary reduction
+(H62), report-derived macOS metadata (H63), a selected-total matched-workload challenge
+(H64), and reduction-only worker calibration (H65). These remain isolated from the
+accepted indexed worker policy and the open hard-link attribution design.
 
 The
 [current diskus benchmark](https://github.com/sharkdp/diskus/blob/90196e950017d25b2940e8e0fda51a321ca66e1a/README.md#benchmark)

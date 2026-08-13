@@ -60,6 +60,14 @@ fdu has two paths to an answer, and it labels which one you got.
 statted once, and per-directory roll-ups accumulate as the walk proceeds.
 That is the same job `du` does, plus the extra metrics, and it is bounded by syscall
 count and storage latency.
+For the existing `--cache off --view summary` composition, FDU now derives an exact
+summary-only execution plan instead of retaining a reusable index.
+On a frozen heterogeneous 978,339-entry run that improved paired wall time 14.56% and
+cut peak RSS 95.28%, with identical stable report semantics (exp-040). Exact-binary
+replications on uniform 720,805- and 901,963-entry trees reproduced the resource
+mechanism but only 1.8–2.8% wall gains, showing that syscall-bound topology can hide
+most of the saved user-space work.
+Tree, filtered, multi-view, cached, and live requests still use the full index.
 
 **With a usable cache, it can be much faster** — but only where the cache can supply
 something the filesystem will not.
@@ -101,8 +109,9 @@ which draws on source review of bfs, dut,
 [pdu](https://github.com/KSXGitHub/parallel-disk-usage),
 [diskus](https://github.com/sharkdp/diskus), and
 [jwalk](https://github.com/jessegrosjean/jwalk), plus
-[dumac](https://healeycodes.com/maybe-the-fastest-disk-usage-program-on-macos)’s
-measurements of the macOS bulk-attribute path.
+[dumac](https://healeycodes.com/maybe-the-fastest-disk-usage-program-on-macos)’s macOS
+bulk-attribute design and
+[follow-up scheduler and inode-sharding work](https://healeycodes.com/optimizing-my-disk-usage-program).
 
 ## Build Locally
 
@@ -210,7 +219,7 @@ a release is published, that makes an exact version directly runnable as
 
 ## How It Works
 
-Three artifacts and one contract:
+Three retained artifacts, one transient answer, and one contract:
 
 | Artifact | What it is |
 | --- | --- |
@@ -218,6 +227,7 @@ Three artifacts and one contract:
 | **Snapshot** | A complete index baseline, keyed by canonical root, semantic scan scope, format, and engine version |
 | **Observation** | Verified producer input, optionally conditional on the indexed path state |
 | **AppliedDelta** | A clocked batch of effective committed changes for the bounded change feed |
+| **Derived report** | Exact minimum state for a proven one-shot composition; otherwise the planner falls back to the index |
 
 Everything else produces observations or consumes applied deltas.
 The index alone arbitrates observations, removes no-ops, advances the clock, and mints
