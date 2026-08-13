@@ -28,6 +28,9 @@ def main() -> int:
         library_dirs.insert(0, Path(configured_lib))
 
     if sys.platform == "win32":
+        # uv virtual environments keep the versioned Python DLL at the base runtime,
+        # not necessarily beside the venv launcher or in sysconfig's LIBDIR.
+        library_dirs.insert(0, Path(sys.base_prefix).resolve())
         prepend_env_path(env, "PATH", library_dirs)
     elif sys.platform == "darwin":
         prepend_env_path(env, "DYLD_FALLBACK_LIBRARY_PATH", library_dirs)
