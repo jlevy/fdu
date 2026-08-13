@@ -5,15 +5,15 @@ title: "Phase 3a: Decide the common-language SLOC engine"
 kind: task
 status: closed
 priority: 2
-version: 4
-spec_path: docs/project/specs/active/plan-2026-08-12-fdu-file-content-metrics.md
+version: 6
+spec_path: docs/project/specs/done/plan-2026-08-12-fdu-file-content-metrics.md
 labels: []
 dependencies:
   - type: blocks
     target: is-01kzx1bhaasx9mn1q2nh4r7408
 parent_id: is-01kzx1aabeghy62dfp0gk03fbr
 created_at: 2026-08-13T07:45:58.093Z
-updated_at: 2026-08-13T09:40:16.474Z
+updated_at: 2026-08-13T12:03:03.207Z
 closed_at: 2026-08-13T09:40:16.473Z
 close_reason: Compared pinned Tokei per-buffer and native streaming prototypes on the immutable self-host archive. Native was ~1.6x faster, much smaller, dependency-free, and preserves fdu worker/cancellation control; recorded the decision and v1 semantic commitments.
 ---

@@ -5,13 +5,13 @@ title: Plan phased fast file content metrics
 kind: task
 status: closed
 priority: 2
-version: 10
-spec_path: docs/project/specs/active/plan-2026-08-12-fdu-file-content-metrics.md
+version: 11
+spec_path: docs/project/specs/done/plan-2026-08-12-fdu-file-content-metrics.md
 labels: []
 dependencies: []
 parent_id: is-01kzg4d256qmchmtyvttnpvn4y
 created_at: 2026-08-13T06:37:43.593Z
-updated_at: 2026-08-13T07:50:12.246Z
+updated_at: 2026-08-13T12:03:01.322Z
 closed_at: 2026-08-13T07:50:12.245Z
 close_reason: Implementation-ready plan approved, refined, validated, and decomposed into dependency-wired beads under fdu-j5ny.
 ---

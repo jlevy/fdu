@@ -3,10 +3,10 @@ type: is
 id: is-01kzx1aabeghy62dfp0gk03fbr
 title: "Spec: Fast file content metrics"
 kind: epic
-status: in_progress
+status: closed
 priority: 2
-version: 19
-spec_path: docs/project/specs/active/plan-2026-08-12-fdu-file-content-metrics.md
+version: 21
+spec_path: docs/project/specs/done/plan-2026-08-12-fdu-file-content-metrics.md
 labels: []
 dependencies: []
 parent_id: is-01kzg4d256qmchmtyvttnpvn4y
@@ -28,6 +28,8 @@ child_order_hints:
   - is-01kzx1bzstwwvjpc1bxtnj8xsy
   - is-01kzx1c089k0ssb8t3vy000fq9
 created_at: 2026-08-13T07:45:18.698Z
-updated_at: 2026-08-13T08:05:13.083Z
+updated_at: 2026-08-13T12:03:10.087Z
+closed_at: 2026-08-13T12:03:10.087Z
+close_reason: "All six content-metrics phases are implemented and validated by the complete local gate and green cross-platform PR #10 checks; the plan and documentation are reconciled."
 ---
 Implement the approved phased file-content metrics plan from the isolated codex/file-content-metrics-plan worktree. Keep the primary checkout untouched. Own classification, optional content analysis, code SLOC, FlexDoc-style textual metrics, grouped reports, exact goldens, self-host sanity checks, and evidence-gated performance iterations.

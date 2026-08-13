@@ -5,15 +5,15 @@ title: "Phase 4c: Lock document metrics with goldens and self-host checks"
 kind: task
 status: closed
 priority: 2
-version: 4
-spec_path: docs/project/specs/active/plan-2026-08-12-fdu-file-content-metrics.md
+version: 6
+spec_path: docs/project/specs/done/plan-2026-08-12-fdu-file-content-metrics.md
 labels: []
 dependencies:
   - type: blocks
     target: is-01kzx1bzbk4an6cccaxe02b9sy
 parent_id: is-01kzx1aabeghy62dfp0gk03fbr
 created_at: 2026-08-13T07:46:01.289Z
-updated_at: 2026-08-13T10:25:36.787Z
+updated_at: 2026-08-13T12:03:04.403Z
 closed_at: 2026-08-13T10:25:36.786Z
 close_reason: Document semantics frozen with exact tryscript fixtures, Python parity, cache replay, self-host invariants, and a passing make check on Rust 1.85 plus abi3 Python 3.12.
 ---

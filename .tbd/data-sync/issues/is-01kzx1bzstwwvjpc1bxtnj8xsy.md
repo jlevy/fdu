@@ -5,15 +5,15 @@ title: "Phase 5: Add bounded deep detection and specialized formats"
 kind: task
 status: closed
 priority: 2
-version: 4
-spec_path: docs/project/specs/active/plan-2026-08-12-fdu-file-content-metrics.md
+version: 6
+spec_path: docs/project/specs/done/plan-2026-08-12-fdu-file-content-metrics.md
 labels: []
 dependencies:
   - type: blocks
     target: is-01kzx1c089k0ssb8t3vy000fq9
 parent_id: is-01kzx1aabeghy62dfp0gk03fbr
 created_at: 2026-08-13T07:46:13.433Z
-updated_at: 2026-08-13T10:57:56.670Z
+updated_at: 2026-08-13T12:03:04.798Z
 closed_at: 2026-08-13T10:57:56.669Z
 close_reason: Implemented bounded deep detection, report/cache/Python evidence, ambiguity and binary goldens, and validated isolated performance jobs.
 ---

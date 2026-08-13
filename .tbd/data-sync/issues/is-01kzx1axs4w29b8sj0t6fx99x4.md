@@ -5,15 +5,15 @@ title: "Phase 2b: Integrate content workers, deltas, and sidecar caches"
 kind: task
 status: closed
 priority: 2
-version: 4
-spec_path: docs/project/specs/active/plan-2026-08-12-fdu-file-content-metrics.md
+version: 6
+spec_path: docs/project/specs/done/plan-2026-08-12-fdu-file-content-metrics.md
 labels: []
 dependencies:
   - type: blocks
     target: is-01kzx1ay5qq8xd5sc790bvdeec
 parent_id: is-01kzx1aabeghy62dfp0gk03fbr
 created_at: 2026-08-13T07:45:38.595Z
-updated_at: 2026-08-13T08:50:45.402Z
+updated_at: 2026-08-13T12:03:02.415Z
 closed_at: 2026-08-13T08:50:45.402Z
 close_reason: Implemented bounded content worker pool, conditional file-handle fingerprint checks, sparse incremental rollups, independently versioned atomic sidecars, cache-only semantics, and cache lifecycle integration with focused all-feature tests.
 ---

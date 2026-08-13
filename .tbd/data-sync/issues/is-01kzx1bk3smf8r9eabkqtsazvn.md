@@ -5,15 +5,15 @@ title: "Phase 4a: Implement additive logical and structural prose metrics"
 kind: task
 status: closed
 priority: 2
-version: 4
-spec_path: docs/project/specs/active/plan-2026-08-12-fdu-file-content-metrics.md
+version: 6
+spec_path: docs/project/specs/done/plan-2026-08-12-fdu-file-content-metrics.md
 labels: []
 dependencies:
   - type: blocks
     target: is-01kzx1bkh01q3gvbwpcpxyrfk9
 parent_id: is-01kzx1aabeghy62dfp0gk03fbr
 created_at: 2026-08-13T07:46:00.440Z
-updated_at: 2026-08-13T10:18:51.914Z
+updated_at: 2026-08-13T12:03:04.005Z
 closed_at: 2026-08-13T10:18:51.913Z
 close_reason: Implemented additive FlexDoc-compatible logical words with exact rational 3..6 clamp, half-wide weighting, aggregate-before-round, paragraph runs, 250-word pages, and basic/documents depth separation.
 ---
