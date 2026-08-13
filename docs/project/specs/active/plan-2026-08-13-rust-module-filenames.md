@@ -9,7 +9,7 @@ author: Joshua Levy (github.com/jlevy) with LLM assistance
 
 **Author:** Joshua Levy (github.com/jlevy) with LLM assistance
 
-**Status:** Approved
+**Status:** In Review
 
 ## Overview
 
@@ -196,12 +196,12 @@ The branch remains on Python 3.12-compatible Rust bindings and keeps the existin
 
 ### Phase 3: End-to-end handoff
 
-- [ ] Update this plan with the completed rename audit and validation evidence.
-- [ ] Run `make docs-format`, inspect the complete diff, and rerun `make check` as the
+- [x] Update this plan with the completed rename audit and validation evidence.
+- [x] Run `make docs-format`, inspect the complete diff, and rerun `make check` as the
   required handoff gate.
-- [ ] Run CLI golden tests across all scenarios and verify no `.trycmd` expectation
+- [x] Run CLI golden tests across all scenarios and verify no `.trycmd` expectation
   changed.
-- [ ] Run the multilingual repository language/document report as an end-to-end smoke
+- [x] Run the multilingual repository language/document report as an end-to-end smoke
   check and compare it with the stacked-base output shape.
 - [ ] Close and sync all linked beads, push the stacked branch, open the pull request
   against `codex/file-content-metrics-plan`, and watch every CI check to completion.
@@ -245,6 +245,16 @@ The focused policy suite passed all six synthetic-tree cases, and the repository
 accepted all 35 in-scope Rust files.
 The complete `make check` gate also passed after the new check was added, including the
 unchanged 92-case CLI golden suite and installed-wheel smoke test.
+
+The final repository-archive smoke test preserved the versioned `fdu.report/2` shape and
+returned 16 language rows and four document rows.
+Its aggregate code partition was 33,398 code lines, 3,507 comment lines, and 3,755 blank
+code lines; the document roll-up was 138,770 words at 250 words per page.
+The report included Rust, Python, JavaScript, Shell, and the repository’s small
+cross-language fixtures.
+Two Makefiles were reported as explicitly unsupported by the code parser, so
+`--allow-partial` produced the intended successful partial report rather than silently
+claiming complete coverage.
 
 ## Rollout Plan
 
