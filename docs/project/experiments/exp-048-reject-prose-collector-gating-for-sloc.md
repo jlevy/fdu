@@ -6,11 +6,11 @@ softschema:
   envelope: experiment
   status: enforced
 experiment:
-  id: exp-041
+  id: exp-048
   title: Reject prose collector gating for SLOC
   date: 2026-08-13
   hypotheses:
-    - H66
+    - H80
   subject:
     tree_label: fdu-content-selfhost-20260813
     tree_root_id: 0d8bca813ccc20705265ad42baad61b86c412e7927cf3fd4b8703be5e93c1f57
@@ -399,7 +399,7 @@ The frozen self-host profile attributed 8.74% of samples to
 `BasicAccumulator::push_text`, compared with 5.42% in `CodeAccumulator::finish_line`.
 The basic pass computed prose-only word, paragraph, and logical-word statistics for code
 files, then discarded those values.
-H66 predicted that gating those collectors by the already-known content family would
+H80 predicted that gating those collectors by the already-known content family would
 reduce `code-sloc` wall and component time by at least 3%.
 
 ## What was tried

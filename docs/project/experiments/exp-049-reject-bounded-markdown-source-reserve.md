@@ -6,11 +6,11 @@ softschema:
   envelope: experiment
   status: enforced
 experiment:
-  id: exp-042
+  id: exp-049
   title: Reject bounded Markdown source reserve
   date: 2026-08-13
   hypotheses:
-    - H67
+    - H81
   subject:
     tree_label: generated-markdown-2000
     tree_root_id: 58aeab71141cc4924989599a2dbf53bcae48f3cec814d1cc2a171f22f9d1ab85
@@ -233,7 +233,7 @@ experiment:
 
 ## Hypothesis
 
-H67 predicted that reserving the known, bounded Markdown file size would remove repeated
+H81 predicted that reserving the known, bounded Markdown file size would remove repeated
 buffer growth. The preregistered signal was at least a 3% improvement in both wall and
 component time on the immutable 2,000-file Markdown corpus, without a semantic-digest,
 cache-hit, or memory regression.

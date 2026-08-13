@@ -96,8 +96,8 @@ dead end.
 | 037 | [Revisit breadth-first versus depth-first on the live 1M workspace](#exp037--revisit-breadthfirst-versus-depthfirst-on-the-live-1m-workspace) | H4 | `cold-scan-index` | +3.6% | ❌ rejected |
 | 038 | [Parent-relative openat frontier on the live 1M workspace](#exp038--parentrelative-openat-frontier-on-the-live-1m-workspace) | H24, H29 | `cold-scan-index` | -0.7% | ❌ rejected |
 | 039 | [Revisit the macOS bulk buffer on the live 1M workspace](#exp039--revisit-the-macos-bulk-buffer-on-the-live-1m-workspace) | H55 | `cold-scan-index` | +2.2% | ❌ rejected |
-| 040 | [Reject inline basic content analysis](#exp040--reject-inline-basic-content-analysis) | H62 | `content-basic` | +66.3% | ❌ rejected |
-| 041 | [Reject prose collector gating for SLOC](#exp041--reject-prose-collector-gating-for-sloc) | H66 | `code-sloc` | +1.5% | ❌ rejected |
+| 040 | [Reject inline basic content analysis](#exp047--reject-inline-basic-content-analysis) | H79 | `content-basic` | +66.3% | ❌ rejected |
+| 041 | [Reject prose collector gating for SLOC](#exp048--reject-prose-collector-gating-for-sloc) | H80 | `code-sloc` | +1.5% | ❌ rejected |
 
 ## The experiments
 
@@ -1524,9 +1524,9 @@ crossing zero and no preregistered mechanism win; it is reverted.
 Full record:
 [`exp-039-revisit-the-macos-bulk-buffer-on-the-live-1m-workspace.md`](../experiments/exp-039-revisit-the-macos-bulk-buffer-on-the-live-1m-workspace.md)
 
-### exp-040 — Reject inline basic content analysis
+### exp-047 — Reject inline basic content analysis
 
-❌ rejected · 2026-08-13 · H62
+❌ rejected · 2026-08-13 · H79
 
 Control: automatic bounded worker pool
 
@@ -1556,11 +1556,11 @@ One bounded dispatch branch and one unit test; production change reverted
 worker pool was doing useful parallel I/O, so the change is reverted.
 
 Full record:
-[`exp-040-reject-inline-basic-content-analysis.md`](../experiments/exp-040-reject-inline-basic-content-analysis.md)
+[`exp-047-reject-inline-basic-content-analysis.md`](../experiments/exp-047-reject-inline-basic-content-analysis.md)
 
-### exp-041 — Reject prose collector gating for SLOC
+### exp-048 — Reject prose collector gating for SLOC
 
-❌ rejected · 2026-08-13 · H66 · commit `d7363a298ac58905597b2ede8c9f3240938a3129`
+❌ rejected · 2026-08-13 · H80 · commit `d7363a298ac58905597b2ede8c9f3240938a3129`
 
 Control: frozen code-sloc-v1 semantic baseline
 
@@ -1589,7 +1589,7 @@ One mode bit and conditional prose counters; no dependency or unsafe code.
 acceptance threshold; cache-hit and basic jobs were also neutral..
 
 Full record:
-[`exp-041-reject-prose-collector-gating-for-sloc.md`](../experiments/exp-041-reject-prose-collector-gating-for-sloc.md)
+[`exp-048-reject-prose-collector-gating-for-sloc.md`](../experiments/exp-048-reject-prose-collector-gating-for-sloc.md)
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

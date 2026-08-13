@@ -6,11 +6,11 @@ softschema:
   envelope: experiment
   status: enforced
 experiment:
-  id: exp-040
+  id: exp-047
   title: Reject inline basic content analysis
   date: 2026-08-13
   hypotheses:
-    - H62
+    - H79
   subject:
     tree_label: selfhost-content
     tree_root_id: 0d8bca813ccc20705265ad42baad61b86c412e7927cf3fd4b8703be5e93c1f57
@@ -396,7 +396,7 @@ experiment:
 
 ## Hypothesis
 
-H62: the fixed cost of starting a scoped worker pool may dominate basic content analysis
+H79: the fixed cost of starting a scoped worker pool may dominate basic content analysis
 on a small repository.
 Auto-selected workloads of at most 512 files and 8 MiB should therefore run inline,
 improving both end-to-end wall time and the measured analysis component by at least 3%

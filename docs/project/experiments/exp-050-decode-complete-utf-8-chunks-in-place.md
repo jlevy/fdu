@@ -6,11 +6,11 @@ softschema:
   envelope: experiment
   status: enforced
 experiment:
-  id: exp-043
+  id: exp-050
   title: Decode complete UTF-8 chunks in place
   date: 2026-08-13
   hypotheses:
-    - H68
+    - H82
   subject:
     tree_label: generated-markdown-2000
     tree_root_id: 58aeab71141cc4924989599a2dbf53bcae48f3cec814d1cc2a171f22f9d1ab85
@@ -156,7 +156,7 @@ experiment:
 
 ## Hypothesis
 
-H68 predicted that the basic analyzer’s unconditional temporary vector was copying every
+H82 predicted that the basic analyzer’s unconditional temporary vector was copying every
 read chunk before UTF-8 decoding.
 Decoding a complete chunk in place should remove one allocation and byte copy while
 retaining the existing carry path for a multibyte character split across reads.

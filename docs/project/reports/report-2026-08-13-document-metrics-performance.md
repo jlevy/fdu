@@ -16,13 +16,13 @@ itself accounted for the next material content costs.
 
 ## Iterations
 
-H67 reserved the known bounded Markdown source size before reading.
+H81 reserved the known bounded Markdown source size before reading.
 The 12-pair result moved wall time by −3.55%, but its [−14.49%, +7.45%] interval crossed
 zero and the component was neutral.
 Most files already fit the first 64 KiB read.
-The change was reverted and is recorded in `exp-042`.
+The change was reverted and is recorded in `exp-049`.
 
-H68 removed an unconditional temporary-vector allocation and copy whenever an input
+H82 removed an unconditional temporary-vector allocation and copy whenever an input
 chunk is already complete UTF-8. An unrelated benchmark saturated the host during the
 comparison, so the accepted primary run constrained both variants to one worker and used
 32 interleaved pairs.
@@ -36,7 +36,7 @@ was wall-neutral while user CPU improved 17.95% and peak RSS improved 10.63%. Ca
 latency was neutral.
 All runs preserved the engine and content digests; the exhaustive chunk-boundary tests,
 87 tryscript scenarios, and self-host assertions also remained green.
-H68 therefore landed as commit `2fef9bf` and is recorded in `exp-043`.
+H82 therefore landed as commit `2fef9bf` and is recorded in `exp-050`.
 
 ## Interpretation
 

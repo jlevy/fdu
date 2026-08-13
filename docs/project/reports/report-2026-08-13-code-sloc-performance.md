@@ -41,12 +41,12 @@ grammars.
 
 ## First Optimization Verdict
 
-H66 skipped prose-only word, paragraph, and logical-word counters while reading code.
+H80 skipped prose-only word, paragraph, and logical-word counters while reading code.
 The candidate preserved every semantic oracle and reduced user CPU by 4.67%, but its
 12-pair end-to-end interval crossed zero and its +1.50% paired wall result did not clear
 the 3% acceptance bar.
 Basic and cache-hit negative controls were also neutral, so the implementation was
-reverted and recorded as exp-041.
+reverted and recorded as exp-048.
 
 The evidence says the native parser itself is not the dominant end-to-end gap on these
 small files. Future SLOC optimization should begin with file-open and scheduling
