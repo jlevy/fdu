@@ -250,21 +250,21 @@ fn classify_line(syntax: Syntax, state: &mut State, line: &[u8]) -> LineClass {
                     comment = true;
                     break;
                 }
-                if let Some(block) = syntax.block
-                    && line[index..].starts_with(block.open)
-                {
-                    comment = true;
-                    *state = State::BlockComment { depth: 1 };
-                    index += block.open.len();
-                    continue;
+                if let Some(block) = syntax.block {
+                    if line[index..].starts_with(block.open) {
+                        comment = true;
+                        *state = State::BlockComment { depth: 1 };
+                        index += block.open.len();
+                        continue;
+                    }
                 }
-                if syntax.rust_raw_strings
-                    && let Some((hashes, consumed)) = rust_raw_open(&line[index..])
-                {
-                    code = true;
-                    *state = State::RustRaw { hashes };
-                    index += consumed;
-                    continue;
+                if syntax.rust_raw_strings {
+                    if let Some((hashes, consumed)) = rust_raw_open(&line[index..]) {
+                        code = true;
+                        *state = State::RustRaw { hashes };
+                        index += consumed;
+                        continue;
+                    }
                 }
                 if syntax.triple_quotes
                     && matches!(byte, b'\'' | b'"')

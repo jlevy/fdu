@@ -232,13 +232,15 @@ fn analyze_open_file(candidate: &AnalysisCandidate, request: AnalysisRequest) ->
                 metrics.logical_word_stats = LogicalWordStats::default();
             }
             if request.profile.includes_code() && classification.family == ContentFamily::Code {
-                if code_accumulator.is_none()
-                    && let Some(deferred) = deferred_code
-                    && let Some(mut code) =
-                        CodeAccumulator::for_type(classification.file_type.as_str())
-                {
-                    code.push(&deferred);
-                    code_accumulator = Some(code);
+                if code_accumulator.is_none() {
+                    if let Some(deferred) = deferred_code {
+                        if let Some(mut code) =
+                            CodeAccumulator::for_type(classification.file_type.as_str())
+                        {
+                            code.push(&deferred);
+                            code_accumulator = Some(code);
+                        }
+                    }
                 }
                 let Some(code) = code_accumulator else {
                     return record(
@@ -257,14 +259,15 @@ fn analyze_open_file(candidate: &AnalysisCandidate, request: AnalysisRequest) ->
             }
             if request.profile.includes_documents()
                 && classification.file_type.as_str() == "markdown"
-                && let Some(source) = markdown_source
             {
-                let source = std::str::from_utf8(&source)
-                    .expect("basic admission already established valid UTF-8");
-                let visible = analyze_markdown(source);
-                metrics.visible_words = visible.visible_words;
-                metrics.visible_logical_word_stats = visible.visible_logical_word_stats;
-                metrics.paragraphs = visible.paragraphs;
+                if let Some(source) = markdown_source {
+                    let source = std::str::from_utf8(&source)
+                        .expect("basic admission already established valid UTF-8");
+                    let visible = analyze_markdown(source);
+                    metrics.visible_words = visible.visible_words;
+                    metrics.visible_logical_word_stats = visible.visible_logical_word_stats;
+                    metrics.paragraphs = visible.paragraphs;
+                }
             }
             analyzed_record(candidate, request, classification, metrics)
         }

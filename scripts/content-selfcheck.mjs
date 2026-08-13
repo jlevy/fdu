@@ -42,7 +42,7 @@ try {
     "--cache",
     "off",
     "--analyze",
-    "basic",
+    "documents",
     "--view",
     "types,families,languages,documents",
     "--format",
@@ -54,9 +54,11 @@ try {
   const report = JSON.parse(output);
   assert.equal(report.schema, "fdu.report/2");
   assert.equal(report.complete, true);
-  assert.equal(report.analysis.profile, "basic");
+  assert.equal(report.analysis.profile, "documents");
   assert.deepEqual(report.analysis.analyzers, [
     { id: "content-basic-v1", version: 1 },
+    { id: "text-logical-v1", version: 1 },
+    { id: "markdown-prose-v1", version: 1 },
   ]);
 
   const sections = new Map(report.reports.map((section) => [section.view, section]));
@@ -77,6 +79,20 @@ try {
   assert.equal(documents.total.family, "unknown");
   assert.ok(languages.total.files >= typeRows.get("rust").files);
   assert.ok(documents.total.files >= typeRows.get("markdown").files);
+  assert.equal(documents.share_metric, "document_words");
+  assert.equal(documents.words_per_page, 250);
+  assert.equal(documents.total.pages.words, documents.total.metrics.document_words);
+  assert.ok(documents.total.metrics.raw_words > 0);
+  assert.ok(documents.total.metrics.logical_words > 0);
+  assert.ok(documents.total.metrics.visible_words > 0);
+  assert.ok(documents.total.metrics.visible_logical_words > 0);
+  assert.ok(documents.total.metrics.paragraphs > 0);
+  const documentRows = new Map(documents.rows.map((row) => [row.id, row]));
+  const markdown = documentRows.get("markdown");
+  assert.ok(markdown, "missing self-host Markdown document row");
+  assert.ok(markdown.metrics.visible_words > 0);
+  assert.equal(markdown.metrics.document_words, markdown.metrics.visible_logical_words);
+  assert.equal(markdown.pages.words, markdown.metrics.document_words);
 
   for (const summary of [types, families, languages, documents]) {
     assert.equal(
@@ -104,6 +120,7 @@ try {
       paragraphs: 0,
       visible_words: 0,
       visible_logical_words: 0,
+      document_words: 0,
     });
   }
 

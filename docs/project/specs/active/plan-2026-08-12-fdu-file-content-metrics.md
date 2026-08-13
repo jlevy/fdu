@@ -618,13 +618,13 @@ performance, and semantic gates.
   footnote markers, and hidden HTML syntax
 - [x] Compute word statistics directly from parser events instead of materializing a
   second projected document
-- [ ] Validate ordinary English, punctuation-heavy prose, symbolic text, multilingual
+- [x] Validate ordinary English, punctuation-heavy prose, symbolic text, multilingual
   spaced scripts, CJK, Markdown links, code fences, tables, HTML, and malformed input
-- [ ] Extend the multilingual tryscript and repository self-host checks with document
+- [x] Extend the multilingual tryscript and repository self-host checks with document
   rows, raw/logical/visible word relationships, paragraphs, and page denominators before
   prose performance iterations
-- [ ] Decide whether a sentence slot has a stable enough contract to create
-  `text-sentences-v1`; absence remains preferable to a misleading count
+- [x] Keep sentence counting deferred: `text-sentences-v1` has no stable multilingual
+  contract yet, so absence remains preferable to a misleading count
 
 **Exit criteria:** page estimates use aggregated words and an explicit convention;
 logical-word fixtures match the referenced proposal; Markdown measurements reflect

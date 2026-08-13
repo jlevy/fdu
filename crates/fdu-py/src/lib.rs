@@ -158,7 +158,7 @@ impl PyIndex {
         sort = None,
         reverse = false,
         size = "allocated",
-        words_per_page = 300
+        words_per_page = 250
     ))]
     #[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
     fn report<'py>(

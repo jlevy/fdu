@@ -102,7 +102,7 @@ Options:
       --words-per-page <N>
           Logical words per derived document page
 
-          [default: 300]
+          [default: 250]
 
       --format <FORMAT>
           Output format: text, json, jsonl, or yaml
