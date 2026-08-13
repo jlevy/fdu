@@ -221,6 +221,7 @@ impl OpenReport {
     /// Whether every path in the requested scan scope was read successfully.
     pub fn is_complete(&self) -> bool {
         self.scan.is_complete()
+            && self.content_cache.incomplete == 0
             && self.analysis.as_ref().is_none_or(content::AnalysisReport::is_complete)
     }
 
@@ -599,6 +600,38 @@ mod tests {
             cached.content_rollup(Path::new("")).expect("content").total.metrics.raw_words,
             2
         );
+    }
+
+    #[test]
+    fn cached_incomplete_analysis_stays_partial_on_warm_and_cache_only_opens() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let cache = tempfile::tempdir().expect("cache dir");
+        let snapshot_path = cache.path().join("snap.fdu");
+        write_file(&dir.path().join("invalid.txt"), b"valid prefix\xff");
+        let auto = OpenConfig {
+            cache_path: Some(snapshot_path),
+            policy: CachePolicy::Auto,
+            analysis: content::AnalysisRequest {
+                profile: content::AnalysisProfile::Basic,
+                ..content::AnalysisRequest::default()
+            },
+            ..OpenConfig::default()
+        };
+
+        let (_, cold_report) = open(dir.path(), &auto).expect("cold analyzed open");
+        assert!(!cold_report.is_complete());
+        assert_eq!(cold_report.analysis.expect("analysis").invalid_utf8, 1);
+
+        let (_, warm_report) = open(dir.path(), &auto).expect("warm analyzed open");
+        assert_eq!(warm_report.content_cache.hits, 1);
+        assert_eq!(warm_report.content_cache.incomplete, 1);
+        assert_eq!(warm_report.analysis.expect("analysis").candidates, 0);
+        assert!(!warm_report.is_complete());
+
+        let only = OpenConfig { policy: CachePolicy::Only, ..auto };
+        let (_, cached_report) = open(dir.path(), &only).expect("cache-only analyzed open");
+        assert_eq!(cached_report.content_cache.incomplete, 1);
+        assert!(!cached_report.is_complete());
     }
 
     #[test]

@@ -36,6 +36,8 @@ pub struct ContentCacheLoad {
     pub usable: bool,
     /// Records accepted by the current metadata index.
     pub hits: u64,
+    /// Accepted records whose coverage keeps the requested analysis partial.
+    pub incomplete: u64,
     /// Records that no longer matched a live candidate.
     pub stale: u64,
 }
@@ -130,8 +132,13 @@ pub fn load_content_cache(
             loaded.stale = loaded.stale.saturating_add(1);
             continue;
         }
+        let incomplete =
+            !matches!(analysis.coverage, CoverageReason::Analyzed | CoverageReason::Binary);
         match index.apply_analysis(AnalysisObservation { candidate, analysis }) {
-            AnalysisApplyOutcome::Applied => loaded.hits = loaded.hits.saturating_add(1),
+            AnalysisApplyOutcome::Applied => {
+                loaded.hits = loaded.hits.saturating_add(1);
+                loaded.incomplete = loaded.incomplete.saturating_add(u64::from(incomplete));
+            }
             AnalysisApplyOutcome::Stale => loaded.stale = loaded.stale.saturating_add(1),
         }
     }
@@ -590,7 +597,7 @@ mod tests {
             crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
 
         let loaded = load_content_cache(&mut restored, request, &cache).expect("load");
-        assert_eq!(loaded, ContentCacheLoad { usable: true, hits: 1, stale: 0 });
+        assert_eq!(loaded, ContentCacheLoad { usable: true, hits: 1, incomplete: 0, stale: 0 });
         assert_eq!(
             restored.content_rollup(Path::new("")).expect("rollup").total.metrics.raw_words,
             expected_words
