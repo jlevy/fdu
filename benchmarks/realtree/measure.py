@@ -215,6 +215,39 @@ PROBE_JOBS: Dict[str, Job] = {
         start_state="cold",
         description="Call the disabled content boundary after metadata setup.",
     ),
+    "document-cache-hit": Job(
+        id="document-cache-hit",
+        argv=(
+            "{binary}",
+            "document-cache-hit",
+            "--root",
+            "{root}",
+            "--snapshot",
+            "{snapshot}",
+        ),
+        start_state="warm",
+        description="Load reader-visible document metrics from compatible sidecars.",
+        needs_snapshot=True,
+        snapshot_preparation_mode="document-seed",
+    ),
+    "markdown-prose": Job(
+        id="markdown-prose",
+        argv=("{binary}", "markdown-prose", "--root", "{root}"),
+        start_state="cold",
+        description=(
+            "Analyze Markdown with raw, logical, reader-visible, paragraph, and page "
+            "sufficient statistics after metadata setup."
+        ),
+    ),
+    "text-prose": Job(
+        id="text-prose",
+        argv=("{binary}", "text-prose", "--root", "{root}"),
+        start_state="cold",
+        description=(
+            "Analyze plain text with raw and normalized words, paragraphs, and page "
+            "sufficient statistics after metadata setup."
+        ),
+    ),
     "cold-scan-index": Job(
         id="cold-scan-index",
         argv=("{binary}", "scan-index", "--root", "{root}"),

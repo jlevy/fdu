@@ -50,13 +50,17 @@ enum Mode {
     ContentOpen,
     ContentQuery,
     ContentSeed,
+    DocumentCacheHit,
+    DocumentSeed,
     DeltaApply,
+    MarkdownProse,
     Query,
     Revalidate,
     ScanIndex,
     ScanProducer,
     SnapshotLoad,
     SnapshotSave,
+    TextProse,
     ValidateIndex,
 }
 
@@ -73,13 +77,17 @@ impl Mode {
             "content-open" => Ok(Self::ContentOpen),
             "content-query" => Ok(Self::ContentQuery),
             "content-seed" => Ok(Self::ContentSeed),
+            "document-cache-hit" => Ok(Self::DocumentCacheHit),
+            "document-seed" => Ok(Self::DocumentSeed),
             "delta-apply" => Ok(Self::DeltaApply),
+            "markdown-prose" => Ok(Self::MarkdownProse),
             "query" => Ok(Self::Query),
             "revalidate" => Ok(Self::Revalidate),
             "scan-index" => Ok(Self::ScanIndex),
             "scan-producer" => Ok(Self::ScanProducer),
             "snapshot-load" => Ok(Self::SnapshotLoad),
             "snapshot-save" => Ok(Self::SnapshotSave),
+            "text-prose" => Ok(Self::TextProse),
             "validate-index" => Ok(Self::ValidateIndex),
             _ => Err(ProbeError(format!("unknown mode {value:?}"))),
         }
@@ -97,13 +105,17 @@ impl Mode {
             Self::ContentOpen => "content-open",
             Self::ContentQuery => "content-query",
             Self::ContentSeed => "content-seed",
+            Self::DocumentCacheHit => "document-cache-hit",
+            Self::DocumentSeed => "document-seed",
             Self::DeltaApply => "delta-apply",
+            Self::MarkdownProse => "markdown-prose",
             Self::Query => "query",
             Self::Revalidate => "revalidate",
             Self::ScanIndex => "scan-index",
             Self::ScanProducer => "scan-producer",
             Self::SnapshotLoad => "snapshot-load",
             Self::SnapshotSave => "snapshot-save",
+            Self::TextProse => "text-prose",
             Self::ValidateIndex => "validate-index",
         }
     }
@@ -240,12 +252,19 @@ fn execute(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
             output.summary.complete = true;
             Ok(output)
         }
+        Mode::DocumentCacheHit => content_open(arguments, CachePolicy::Only, document_request()),
+        Mode::DocumentSeed => {
+            let mut output = content_open(arguments, CachePolicy::Auto, document_request())?;
+            output.summary.complete = true;
+            Ok(output)
+        }
         Mode::ScanProducer => scan_producer(arguments),
         Mode::ScanIndex | Mode::ValidateIndex => scan_index(arguments),
         Mode::SnapshotSave => snapshot_save(arguments),
         Mode::SnapshotLoad => snapshot_load(arguments),
         Mode::Revalidate => revalidate(arguments),
         Mode::DeltaApply => delta_apply(arguments),
+        Mode::MarkdownProse | Mode::TextProse => content_analysis(arguments, document_request()),
         Mode::Query => query(arguments),
     }
 }
@@ -256,6 +275,10 @@ fn basic_request() -> AnalysisRequest {
 
 fn code_request() -> AnalysisRequest {
     AnalysisRequest { profile: AnalysisProfile::Code, ..AnalysisRequest::default() }
+}
+
+fn document_request() -> AnalysisRequest {
+    AnalysisRequest { profile: AnalysisProfile::Documents, ..AnalysisRequest::default() }
 }
 
 fn content_analysis(arguments: &Arguments, request: AnalysisRequest) -> ProbeResult<ProbeOutput> {
