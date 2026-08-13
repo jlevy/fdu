@@ -5,7 +5,7 @@ title: "Walk layer: raw getdents64 and dirfd-relative statx"
 kind: feature
 status: open
 priority: 1
-version: 7
+version: 8
 spec_path: docs/project/specs/active/plan-2026-08-08-fdu-phase-1.md
 labels: []
 dependencies:
@@ -19,7 +19,7 @@ parent_id: is-01kzg48ekn4sm0azybr010qgmn
 child_order_hints:
   - is-01kzmzmcszb269mrex4hzdcp3y
 created_at: 2026-08-08T07:27:18.913Z
-updated_at: 2026-08-10T22:13:58.900Z
+updated_at: 2026-08-13T14:56:26.420Z
 ---
 Replace the portable read_dir + symlink_metadata walker. Goal 1 is not met, and must not be claimed, until this lands and the benchmark gate passes.
 
@@ -32,3 +32,7 @@ Techniques, all proven in dut and bfs:
 - LRU cache of open directory fds sized from RLIMIT_NOFILE, pinning roots and in-progress dirs.
 
 Note ncdu 2 deliberately uses fstatat, not statx, for older-kernel compatibility: keep a portable fallback and do not make statx a hard requirement. Non-Linux keeps the portable path.
+
+## Notes
+
+2026-08-13 dut refresh adds raw-reader correctness gates before timing: a wide directory spanning multiple getdents64 chunks; bounded handling of EINVAL without scratch growth; synthetic malformed/short dirent records; no loss at buffer boundaries; and high-cardinality hard-link cases. dut history reports about 10% for fstatat-to-statx and only about 2% for getdents64 versus readdir in that codebase; treat these as priors, profile FDU on Linux, and preserve the portable fallback. Independent Rust implementation only because dut is GPL.
