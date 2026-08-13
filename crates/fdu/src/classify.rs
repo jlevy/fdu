@@ -8,6 +8,209 @@
 //! for.
 
 use std::ffi::OsStr;
+use std::fmt;
+use std::path::Path;
+
+/// Broad analysis family for a recognized file type.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub enum ContentFamily {
+    /// Programming and configuration languages with code-like comment syntax.
+    Code,
+    /// Human-authored prose.
+    Prose,
+    /// Mixed markup whose reader-visible text may need projection.
+    Markup,
+    /// Structured textual or binary data.
+    Data,
+    /// Known binary formats that text analyzers must not open.
+    Binary,
+    /// No family was established by the bounded cascade.
+    Unknown,
+}
+
+impl ContentFamily {
+    /// Stable machine label used by reports and caches.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Code => "code",
+            Self::Prose => "prose",
+            Self::Markup => "markup",
+            Self::Data => "data",
+            Self::Binary => "binary",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
+/// Stable identifier for a known or preserved unknown file type.
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub struct FileTypeId(String);
+
+impl FileTypeId {
+    /// Borrow the stable machine label.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for FileTypeId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+/// Which bounded step established a classification.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub enum DetectionSource {
+    /// An exact basename rule matched.
+    ExactFilename,
+    /// A compound extension such as `.tar.gz` matched.
+    CompoundExtension,
+    /// An ordinary extension matched.
+    Extension,
+    /// An unresolved text file's interpreter matched a shebang rule.
+    Shebang,
+    /// A bounded prefix established a binary family.
+    ContentProbe,
+    /// No known rule matched; an extension, when present, is preserved in the type id.
+    Unknown,
+}
+
+/// Coarse confidence attached to a classification decision.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub enum DetectionConfidence {
+    /// Exact filename, extension, or known binary format.
+    Certain,
+    /// A conventional shebang interpreter.
+    High,
+    /// A bounded content heuristic rather than a named format rule.
+    Heuristic,
+}
+
+/// Result of the cheapest-first file-type cascade.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct Classification {
+    /// Stable known id or `unknown:.ext` for an unrecognized extension.
+    pub file_type: FileTypeId,
+    /// Broad analyzer family.
+    pub family: ContentFamily,
+    /// Rule tier that produced this result.
+    pub source: DetectionSource,
+    /// Strength of the evidence used.
+    pub confidence: DetectionConfidence,
+}
+
+#[derive(Clone, Copy)]
+struct GeneratedRule {
+    id: &'static str,
+    family: ContentFamily,
+    extensions: &'static [&'static str],
+    filenames: &'static [&'static str],
+    shebangs: &'static [&'static str],
+    priority: u16,
+}
+
+include!(concat!(env!("OUT_DIR"), "/file_type_rules.rs"));
+
+const SHEBANG_PROBE_BYTES: usize = 200;
+
+/// Fingerprint of the repository-owned rule manifest compiled into this build.
+pub const fn type_rule_fingerprint() -> u64 {
+    TYPE_RULE_FINGERPRINT
+}
+
+/// Classify from path metadata only, without opening the file.
+pub fn classify_path(path: &Path) -> Classification {
+    classify_path_with_prefix(path, None)
+}
+
+/// Classify with an optional bounded content prefix.
+///
+/// Known exact-name and extension matches return before inspecting `prefix`. Callers may
+/// pass a larger buffer; only the documented shebang prefix is consulted here.
+pub fn classify_path_with_prefix(path: &Path, prefix: Option<&[u8]>) -> Classification {
+    let name = path.file_name().unwrap_or_else(|| OsStr::new(""));
+    if let Some(rule) = GENERATED_RULES
+        .iter()
+        .filter(|rule| rule.filenames.iter().any(|candidate| name == OsStr::new(candidate)))
+        .max_by_key(|rule| rule.priority)
+    {
+        return classified(rule, DetectionSource::ExactFilename, DetectionConfidence::Certain);
+    }
+
+    let extension = derive_ext(name);
+    if let Some(extension) = extension.as_deref() {
+        let key = extension.strip_prefix('.').expect("derived extensions start with a dot");
+        if let Some(rule) = GENERATED_RULES
+            .iter()
+            .filter(|rule| rule.extensions.contains(&key))
+            .max_by_key(|rule| rule.priority)
+        {
+            let source = if key.contains('.') {
+                DetectionSource::CompoundExtension
+            } else {
+                DetectionSource::Extension
+            };
+            return classified(rule, source, DetectionConfidence::Certain);
+        }
+    }
+
+    let unknown = || Classification {
+        file_type: FileTypeId(
+            extension
+                .as_deref()
+                .map_or_else(|| "unknown".to_string(), |ext| format!("unknown:{ext}")),
+        ),
+        family: ContentFamily::Unknown,
+        source: DetectionSource::Unknown,
+        confidence: DetectionConfidence::Heuristic,
+    };
+    let Some(prefix) = prefix else {
+        return unknown();
+    };
+    let prefix = &prefix[..prefix.len().min(SHEBANG_PROBE_BYTES)];
+    if prefix.contains(&0) {
+        return Classification {
+            family: ContentFamily::Binary,
+            source: DetectionSource::ContentProbe,
+            ..unknown()
+        };
+    }
+    if let Some(interpreter) = shebang_interpreter(prefix) {
+        if let Some(rule) = GENERATED_RULES
+            .iter()
+            .filter(|rule| rule.shebangs.contains(&interpreter))
+            .max_by_key(|rule| rule.priority)
+        {
+            return classified(rule, DetectionSource::Shebang, DetectionConfidence::High);
+        }
+    }
+    unknown()
+}
+
+fn classified(
+    rule: &GeneratedRule,
+    source: DetectionSource,
+    confidence: DetectionConfidence,
+) -> Classification {
+    Classification {
+        file_type: FileTypeId(rule.id.to_string()),
+        family: rule.family,
+        source,
+        confidence,
+    }
+}
+
+fn shebang_interpreter(prefix: &[u8]) -> Option<&str> {
+    let line = prefix.split(|byte| matches!(byte, b'\r' | b'\n')).next()?;
+    let command = line.strip_prefix(b"#!")?;
+    let mut tokens = std::str::from_utf8(command).ok()?.split_ascii_whitespace();
+    let executable = tokens.next()?.rsplit('/').next()?;
+    if executable != "env" {
+        return Some(executable);
+    }
+    tokens.find(|token| !token.starts_with('-')).and_then(|token| token.rsplit('/').next())
+}
 
 /// Extract the compound-tail extension from a file name, lowercased and including the
 /// leading dot.
@@ -116,8 +319,12 @@ fn derive_ext_str(name: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::derive_ext;
+    use super::{
+        ContentFamily, DetectionConfidence, DetectionSource, classify_path,
+        classify_path_with_prefix, derive_ext, type_rule_fingerprint,
+    };
     use std::ffi::OsStr;
+    use std::path::Path;
 
     #[test]
     fn plain_extensions_lowercase() {
@@ -146,6 +353,43 @@ mod tests {
     #[test]
     fn dotfiles_with_a_real_extension_keep_it() {
         assert_eq!(derive_ext(OsStr::new(".eslintrc.json")).as_deref(), Some(".json"));
+    }
+
+    #[test]
+    fn compiled_rules_cover_exact_extension_compound_and_unknown_paths() {
+        let makefile = classify_path(Path::new("Makefile"));
+        assert_eq!(makefile.file_type.as_str(), "make");
+        assert_eq!(makefile.source, DetectionSource::ExactFilename);
+
+        let rust = classify_path(Path::new("src/lib.RS"));
+        assert_eq!(rust.file_type.as_str(), "rust");
+        assert_eq!(rust.family, ContentFamily::Code);
+        assert_eq!(rust.source, DetectionSource::Extension);
+
+        let archive = classify_path(Path::new("source.tar.ZST"));
+        assert_eq!(archive.file_type.as_str(), "archive");
+        assert_eq!(archive.source, DetectionSource::CompoundExtension);
+
+        let unknown = classify_path(Path::new("sample.widget"));
+        assert_eq!(unknown.file_type.as_str(), "unknown:.widget");
+        assert_eq!(unknown.family, ContentFamily::Unknown);
+        assert_ne!(type_rule_fingerprint(), 0);
+    }
+
+    #[test]
+    fn bounded_prefix_resolves_shebangs_and_unknown_binary_files() {
+        let python = classify_path_with_prefix(
+            Path::new("script"),
+            Some(b"#!/usr/bin/env -S python3 -I\nprint('ok')\n"),
+        );
+        assert_eq!(python.file_type.as_str(), "python");
+        assert_eq!(python.source, DetectionSource::Shebang);
+        assert_eq!(python.confidence, DetectionConfidence::High);
+
+        let binary = classify_path_with_prefix(Path::new("payload.unknown"), Some(b"abc\0def"));
+        assert_eq!(binary.file_type.as_str(), "unknown:.unknown");
+        assert_eq!(binary.family, ContentFamily::Binary);
+        assert_eq!(binary.source, DetectionSource::ContentProbe);
     }
 
     #[cfg(unix)]

@@ -239,6 +239,19 @@ depends on:
 - `fdu-v4lc` defines the native-unit type-rule dialect after gitignore measurement and
   goal ratification.
 
+`fdu-v4lc` is complete.
+`crates/fdu/rules/file-types.toml` provides one repository-owned `[[kind]]` dialect with
+stable ids, families, priorities, extensions, exact filenames, and shebang interpreters.
+`crates/fdu/build.rs` rejects malformed, duplicate, non-ASCII path keys and generates
+native Rust tables plus a rule fingerprint.
+`classify_path()` matches exact basenames and extensions over `OsStr` units without
+lossy conversion; `classify_path_with_prefix()` adds a 200-byte NUL/shebang tier only
+for unresolved inputs.
+The first manifest covers 64 common code, prose, markup, data, and binary types.
+Unknown extensions remain visible as `unknown:.ext`. Path-glob, folder-marker, magic,
+modeline, and ambiguity fields remain later additive dialect revisions because the
+content plan gives each a bounded Phase 5 consumer and fixture gate.
+
 The `fdu-p35d` spike used `ignore` 0.4.25’s standalone `GitignoreBuilder` and
 `matched_path_or_any_parents()` over prebuilt relative paths on an Apple M1 Pro with
 Rust 1.97.1. Compiling 1,000 mixed ignore and negation patterns took 12–15 ms; matching
@@ -380,7 +393,7 @@ blocker. The table below is the complete set owned directly by this plan.
 | 3 | `fdu-r27g` | P2 | Measure index contention before changing synchronization | `fdu-s7wr`, `fdu-oj25` |
 | 4 | `fdu-oqoy` | P2 | Finish human CLI behavior | `fdu-zsdy`, `fdu-6c8n` |
 | 4 | `fdu-jej9` | P2 | Finish agent CLI and schema behavior | `fdu-zsdy`, `fdu-k8zw`, `fdu-6c8n` |
-| 4 | `fdu-v4lc` | P2 | Define native-unit compiled type rules | `fdu-k8zw`, `fdu-p35d`, `fdu-odx6` |
+| 4 | `fdu-v4lc` | P2 | Define native-unit compiled type rules (complete) | `fdu-k8zw`, `fdu-p35d`, `fdu-odx6` |
 | 4 | `fdu-lka2` | P2 | Harden watcher platform backends | `fdu-s7wr`, `fdu-8jte` |
 | 4 | `fdu-9cf0` | P2 | Publish crates and wheels after all release gates | `fdu-ad45`, `fdu-zga3`, `fdu-s7wr`, `fdu-k8zw`, `fdu-ywu0`, `fdu-6c8n`, `fdu-oqoy`, `fdu-jej9`, `fdu-v4lc`, `fdu-lka2` |
 
