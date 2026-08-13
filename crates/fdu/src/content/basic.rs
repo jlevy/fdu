@@ -52,23 +52,30 @@ impl BasicAccumulator {
             self.utf8_carry.clear();
             return;
         }
+        if self.utf8_carry.is_empty() {
+            self.push_utf8(chunk);
+            return;
+        }
 
         let mut joined = Vec::with_capacity(self.utf8_carry.len() + chunk.len());
         joined.extend_from_slice(&self.utf8_carry);
         joined.extend_from_slice(chunk);
         self.utf8_carry.clear();
+        self.push_utf8(&joined);
+    }
 
-        match std::str::from_utf8(&joined) {
+    fn push_utf8(&mut self, bytes: &[u8]) {
+        match std::str::from_utf8(bytes) {
             Ok(text) => self.push_text(text),
             Err(error) => {
                 let valid = error.valid_up_to();
-                if let Ok(text) = std::str::from_utf8(&joined[..valid]) {
+                if let Ok(text) = std::str::from_utf8(&bytes[..valid]) {
                     self.push_text(text);
                 }
                 if error.error_len().is_some() {
                     self.invalid_utf8 = true;
                 } else {
-                    self.utf8_carry.extend_from_slice(&joined[valid..]);
+                    self.utf8_carry.extend_from_slice(&bytes[valid..]);
                 }
             }
         }
