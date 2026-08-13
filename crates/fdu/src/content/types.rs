@@ -175,6 +175,8 @@ pub struct MetricValues {
     pub code_lines: u64,
     /// Comment-only lines under `code-sloc-v1`.
     pub comment_lines: u64,
+    /// Blank lines under `code-sloc-v1`, distinct from whitespace-only source lines.
+    pub code_blank_lines: u64,
     /// Plain-text paragraph runs.
     pub paragraphs: u64,
     /// Reader-visible Markdown words.
@@ -193,6 +195,7 @@ impl MetricValues {
         self.raw_words = self.raw_words.saturating_add(other.raw_words);
         self.code_lines = self.code_lines.saturating_add(other.code_lines);
         self.comment_lines = self.comment_lines.saturating_add(other.comment_lines);
+        self.code_blank_lines = self.code_blank_lines.saturating_add(other.code_blank_lines);
         self.paragraphs = self.paragraphs.saturating_add(other.paragraphs);
         self.visible_words = self.visible_words.saturating_add(other.visible_words);
         self.logical_word_stats.wide_chars =
@@ -231,6 +234,7 @@ impl MetricValues {
         subtract!(raw_words);
         subtract!(code_lines);
         subtract!(comment_lines);
+        subtract!(code_blank_lines);
         subtract!(paragraphs);
         subtract!(visible_words);
         self.logical_word_stats.wide_chars =

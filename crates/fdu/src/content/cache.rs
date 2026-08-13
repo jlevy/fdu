@@ -18,7 +18,7 @@ use super::{
 
 const MAGIC: &[u8; 8] = b"FDUCTNT\0";
 const TRAILER: &[u8; 8] = b"FDUCTEND";
-const FORMAT_VERSION: u32 = 1;
+const FORMAT_VERSION: u32 = 2;
 const CHECKSUM_BYTES: usize = 4;
 const MAX_CACHE_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_RECORDS: u64 = 5_000_000;
@@ -268,6 +268,7 @@ fn put_metrics(buffer: &mut Vec<u8>, value: MetricValues) {
         value.raw_words,
         value.code_lines,
         value.comment_lines,
+        value.code_blank_lines,
         value.paragraphs,
         value.visible_words,
         value.logical_word_stats.wide_chars,
@@ -289,6 +290,7 @@ fn read_metrics(reader: &mut Reader<'_>) -> Option<MetricValues> {
         raw_words: reader.u64()?,
         code_lines: reader.u64()?,
         comment_lines: reader.u64()?,
+        code_blank_lines: reader.u64()?,
         paragraphs: reader.u64()?,
         visible_words: reader.u64()?,
         logical_word_stats: LogicalWordStats {

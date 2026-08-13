@@ -130,7 +130,7 @@ fn render_text_metrics(out: &mut String, summary: &MetricSummary, size: SizeMetr
                     row.metrics.physical_lines,
                     row.metrics.code_lines,
                     row.metrics.comment_lines,
-                    row.metrics.blank_lines
+                    row.metrics.code_blank_lines
                 );
             } else {
                 let _ = write!(
@@ -406,12 +406,13 @@ fn metric_row_json(row: &MetricRow, words_per_page: u64) -> String {
 
 fn metric_values_json(metrics: MetricValues) -> String {
     format!(
-        "{{\"physical_lines\": {}, \"blank_lines\": {}, \"nonblank_lines\": {}, \"code_lines\": {}, \"comment_lines\": {}, \"raw_words\": {}, \"logical_words\": {}, \"paragraphs\": {}, \"visible_words\": {}, \"visible_logical_words\": {}}}",
+        "{{\"physical_lines\": {}, \"blank_lines\": {}, \"nonblank_lines\": {}, \"code_lines\": {}, \"comment_lines\": {}, \"code_blank_lines\": {}, \"raw_words\": {}, \"logical_words\": {}, \"paragraphs\": {}, \"visible_words\": {}, \"visible_logical_words\": {}}}",
         metrics.physical_lines,
         metrics.blank_lines,
         metrics.nonblank_lines,
         metrics.code_lines,
         metrics.comment_lines,
+        metrics.code_blank_lines,
         metrics.raw_words,
         metrics.logical_word_stats.logical_words(),
         metrics.paragraphs,
@@ -668,6 +669,7 @@ fn yaml_metric_row(out: &mut String, row: &MetricRow, words_per_page: u64, pad: 
     let _ = writeln!(out, "{rest}nonblank_lines: {}", row.metrics.nonblank_lines);
     let _ = writeln!(out, "{rest}code_lines: {}", row.metrics.code_lines);
     let _ = writeln!(out, "{rest}comment_lines: {}", row.metrics.comment_lines);
+    let _ = writeln!(out, "{rest}code_blank_lines: {}", row.metrics.code_blank_lines);
     let _ = writeln!(out, "{rest}raw_words: {}", row.metrics.raw_words);
     let _ =
         writeln!(out, "{rest}logical_words: {}", row.metrics.logical_word_stats.logical_words());

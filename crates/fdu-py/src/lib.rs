@@ -600,6 +600,7 @@ fn metric_row_dict<'py>(
     dict.set_item("nonblank_lines", row.metrics.nonblank_lines)?;
     dict.set_item("code_lines", row.metrics.code_lines)?;
     dict.set_item("comment_lines", row.metrics.comment_lines)?;
+    dict.set_item("code_blank_lines", row.metrics.code_blank_lines)?;
     dict.set_item("raw_words", row.metrics.raw_words)?;
     dict.set_item("logical_words", row.metrics.logical_word_stats.logical_words())?;
     dict.set_item("paragraphs", row.metrics.paragraphs)?;
