@@ -24,7 +24,7 @@ For where the design comes from and which prior art each piece draws on, see
 
 ## Architecture
 
-Three artifacts and one contract:
+Three retained artifacts, one transient answer, and one contract:
 
 - **Index** (`index.rs`): in-memory parent-pointer tree.
   Every directory carries pre-computed roll-up state.
@@ -33,6 +33,9 @@ Three artifacts and one contract:
 - **Delta** (`types.rs`): a typed, clocked change, and the only way the index or the
   cache is ever modified.
   Producers submit `Observation`s; the index arbitrates them and mints `AppliedDelta`.
+- **Derived report plan** (`execution.rs`): the minimum transient state sufficient for
+  one complete one-shot request when no cache, live session, or later query can consume
+  an index. It produces a `Report`, never a hidden cache or second query grammar.
 
 `scan.rs` and `watch.rs` are delta *producers*. `index.rs` and `snapshot.rs` are delta
 *consumers*. Nothing else mutates state.
@@ -211,16 +214,22 @@ design is legible from the help text alone.
 
 ### One Scan, Many Views
 
-Views are projections over the in-memory index.
-Requesting more views never adds filesystem work, and two reports over the same tree
-come from one consistent state — a property with its own test, because “one scan” would
-otherwise be an aspiration rather than a guarantee.
+Views are projections over one consistent scanned state.
+The reusable form of that state is the in-memory index: requesting more views never adds
+filesystem work, and two reports over the same index cannot disagree about when the tree
+was observed. For a one-shot request that proves no cache, live session, second view,
+filter, or later query can consume hierarchy, an internal execution planner may retain
+an exact aggregate instead.
+It derives that decision from the complete request, exposes no fast-mode flag, and falls
+closed to the full index when any requirement is unproved.
 
 Two performance tiers follow from this, and both are milliseconds warm: an unfiltered
 request reads pre-computed roll-up state directly, while any selection filter triggers
 one traversal that re-aggregates what it admits.
 One traversal serves every filtered view in a request.
 A test pins that the two tiers answer identically when the filter admits everything.
+An additional golden and semantic-hash gate pins that a derived summary serializes
+identically to the indexed summary.
 
 ### Views Are Readers
 
@@ -228,6 +237,10 @@ The delta contract stands: `scan` and `watch` produce observations, the index co
 them, and views only read.
 `report()` is a pure function of an index, a query, and provenance — no filesystem
 access, no mutation, and the same inputs always produce the same report.
+The one-shot execution planner sits before that reader boundary: it chooses what state
+must be retained, then constructs the same immutable `Report` shape.
+It never changes `report(index, query, provenance)` or lets a view reach into the
+filesystem.
 
 *Amended during implementation.* The plan sketched `report(index, query)`. Provenance is
 a third argument because `generated_at` cannot be sampled inside a pure function; making
@@ -376,10 +389,15 @@ probe-and-fallback, never load-bearing.
 
 ### Claim Only What the Benchmarks Have Shown
 
-The current walker is a portable `read_dir` and `symlink_metadata` implementation, and
-is explicitly scaffolding.
-Goal 1 is not met until the `getdents64` and `statx` layer replaces it *and* the
-benchmark gate against dut and gdu passes.
+The portable walker uses `read_dir` and `symlink_metadata`, which the Rust standard
+library already implements on Linux as `getdents64` plus dirfd-relative `statx`. A
+strace census on a 450,462-entry tree measured fdu, dut, and diskus issuing the same
+counts of each, and a single-threaded harness found raw `getdents64` and narrow `statx`
+masks within noise of the standard library, so a hand-rolled syscall layer is not what
+remains between here and Goal 1 on Linux; see
+[the Linux first measurements](../research/research-2026-08-13-linux-first-measurements.md).
+Goal 1 is met when the benchmark gate against dut and gdu passes, which on that rig
+means closing the index-consumer gap rather than the enumeration one.
 
 Benchmarks report cold and warm separately, and raw-walk and with-stats separately, or
 they compare different jobs.

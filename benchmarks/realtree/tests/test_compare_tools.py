@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -8,10 +9,29 @@ from benchmarks.realtree import compare_tools
 
 
 def tool(name: str) -> compare_tools.Tool:
-    return compare_tools.Tool(compare_tools.CONTRACTS[name], Path("/bin/true"))
+    return compare_tools.Tool(name, compare_tools.CONTRACTS[name], Path("/bin/true"))
 
 
 class ToolComparisonTests(unittest.TestCase):
+    def test_warm_cache_evidence_requires_an_explicit_tool_warmup(self) -> None:
+        with self.assertRaisesRegex(
+            compare_tools.ComparisonError, "at least one warmup"
+        ):
+            compare_tools._warm_cache_evidence(0)
+
+        evidence = compare_tools._warm_cache_evidence(3)
+
+        self.assertEqual(evidence["pre_run_full_tree_fingerprints"], 1)
+        self.assertEqual(evidence["minimum_full_tree_warmups_per_tool"], 3)
+        self.assertEqual(
+            evidence["residency_claim"], "repeated-workload-steady-state"
+        )
+        note = compare_tools._cache_note(
+            {"os_cache": "warm-steady", "os_cache_evidence": evidence}
+        )
+        self.assertIn("3 full-tree warmups per tool", note)
+        self.assertIn("not a claim that every metadata object remained resident", note)
+
     def test_schedule_keeps_pairs_adjacent_and_alternates_the_anchor(self) -> None:
         competitors = [tool("dust"), tool("gdu"), tool("pdu")]
         schedule = compare_tools._schedule(competitors, trials=4, warmups=1)
@@ -20,7 +40,7 @@ class ToolComparisonTests(unittest.TestCase):
         for ordinal in range(-1, 4):
             at_ordinal = [entry for entry in schedule if entry[1] == ordinal]
             self.assertCountEqual(
-                [entry[0].contract.name for entry in at_ordinal],
+                [entry[0].name for entry in at_ordinal],
                 ["dust", "gdu", "pdu"],
             )
         for competitor in competitors:
@@ -36,13 +56,30 @@ class ToolComparisonTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as raw:
             binary = Path(raw) / "private-name"
             binary.write_bytes(b"fixture")
-            candidate = compare_tools.Tool(compare_tools.CONTRACTS["bsd-du"], binary)
+            candidate = compare_tools.Tool(
+                "bsd-du", compare_tools.CONTRACTS["bsd-du"], binary
+            )
 
             identity = compare_tools._identity(candidate)
 
         self.assertNotIn(raw, str(identity))
         self.assertEqual(identity["binary_size_bytes"], 7)
+        self.assertEqual(identity["contract"], "bsd-du")
         self.assertEqual(identity["command"], ["{binary}", "-sk", "{root}"])
+
+    def test_aliases_compare_two_binaries_under_the_same_contract(self) -> None:
+        binary = str(Path("/usr/bin/true").resolve())
+        candidate = compare_tools._parse_tool(
+            f"h62:fdu-transient-summary={binary}"
+        )
+        control = compare_tools._parse_tool(
+            f"h59:fdu-transient-summary={binary}"
+        )
+
+        self.assertEqual(candidate.name, "h62")
+        self.assertEqual(control.name, "h59")
+        self.assertEqual(candidate.contract, control.contract)
+        self.assertEqual(compare_tools._identity(candidate)["contract"], "fdu-transient-summary")
 
     def test_statistics_compare_each_tool_only_with_its_adjacent_anchor(self) -> None:
         samples = []
@@ -69,6 +106,7 @@ class ToolComparisonTests(unittest.TestCase):
                                 "voluntary_context_switches": 0,
                                 "involuntary_context_switches": 0,
                             },
+                            "semantic_sha256": None,
                         }
                     )
         document = {
@@ -90,6 +128,46 @@ class ToolComparisonTests(unittest.TestCase):
         )
         self.assertEqual(overall["fdu"]["samples"], 6)
         self.assertEqual(overall["dust"]["metrics"]["wall_ns"]["median"], 200)
+
+    def test_statistics_accept_the_summary_anchor(self) -> None:
+        samples = []
+        for ordinal in range(3):
+            for name, wall in (("fdu-transient-summary", 100), ("dumac", 80)):
+                samples.append(
+                    {
+                        "pair": "dumac",
+                        "tool": name,
+                        "ordinal": ordinal,
+                        "warmup": False,
+                        "valid": True,
+                        "metrics": {
+                            "wall_ns": wall,
+                            "cpu_ns": wall,
+                            "user_cpu_ns": wall,
+                            "system_cpu_ns": 0,
+                            "peak_rss_bytes": 1,
+                            "major_faults": 0,
+                            "minor_faults": 0,
+                            "input_blocks": 0,
+                            "output_blocks": 0,
+                            "voluntary_context_switches": 0,
+                            "involuntary_context_switches": 0,
+                        },
+                        "semantic_sha256": "same",
+                    }
+                )
+        document = {
+            "anchor": "fdu-transient-summary",
+            "competitor_order": ["dumac"],
+            "samples": samples,
+        }
+
+        statistics = compare_tools._statistics(document)
+
+        self.assertEqual(
+            statistics["dumac"]["competitor_vs_fdu"]["wall_ns"]["median_change_pct"],
+            -20.0,
+        )
 
     def test_output_directory_cannot_be_inside_the_subject(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
@@ -122,6 +200,167 @@ class ToolComparisonTests(unittest.TestCase):
 
         self.assertEqual(contract.work_class, "total-only")
         self.assertIn("getattrlistbulk", contract.description)
+
+    def test_fdu_index_summary_disables_the_snapshot_but_discloses_the_index(self) -> None:
+        contract = compare_tools.CONTRACTS["fdu-index-summary"]
+
+        self.assertEqual(contract.work_class, "indexed-summary")
+        self.assertIn("--cache", contract.argv)
+        self.assertIn("off", contract.argv)
+        self.assertIn("summary", contract.argv)
+        self.assertIn("reusable exact metadata index", contract.description)
+
+    def test_fdu_transient_summary_discloses_bounded_retention(self) -> None:
+        contract = compare_tools.CONTRACTS["fdu-transient-summary"]
+
+        self.assertEqual(contract.work_class, "transient-summary")
+        self.assertIn("--cache", contract.argv)
+        self.assertIn("off", contract.argv)
+        self.assertIn("summary", contract.argv)
+        self.assertIn("no path index", contract.description)
+
+    def test_summary_semantic_digest_ignores_run_specific_envelope_fields(self) -> None:
+        first = {
+            "schema": "fdu.report/1",
+            "generator": "fdu old",
+            "root": "/private/one",
+            "scan_started_at": "2026-01-01T00:00:00Z",
+            "generated_at": "2026-01-01T00:00:01Z",
+            "source": "cold_scan",
+            "freshness": "fresh",
+            "complete": True,
+            "errors": [],
+            "reports": [{"view": "summary", "summary": {"files": 3}}],
+        }
+        second = {
+            **first,
+            "generator": "fdu new",
+            "root": "/private/two",
+            "scan_started_at": "2027-01-01T00:00:00Z",
+            "generated_at": "2027-01-01T00:00:01Z",
+        }
+
+        first_digest, first_error = compare_tools._summary_semantic_digest(
+            json.dumps(first).encode()
+        )
+        second_digest, second_error = compare_tools._summary_semantic_digest(
+            json.dumps(second).encode()
+        )
+
+        self.assertIsNone(first_error)
+        self.assertIsNone(second_error)
+        self.assertEqual(first_digest, second_digest)
+
+    def test_partial_or_cached_summary_cannot_be_timing_evidence(self) -> None:
+        base = {
+            "schema": "fdu.report/1",
+            "source": "cold_scan",
+            "freshness": "fresh",
+            "complete": True,
+            "errors": [],
+            "reports": [{"view": "summary", "summary": {"files": 3}}],
+        }
+        for change in (
+            {"source": "snapshot"},
+            {"freshness": "stale"},
+            {"complete": False},
+            {"errors": [{"message": "unreadable"}]},
+        ):
+            _digest, error = compare_tools._summary_semantic_digest(
+                json.dumps({**base, **change}).encode()
+            )
+            self.assertIsNotNone(error)
+
+    def test_summary_oracle_checks_counts_and_both_byte_totals(self) -> None:
+        oracle = {
+            "counts": {"directories": 5, "files": 9},
+            "sizes": {"apparent_bytes": 1234, "allocated_bytes": 4096},
+            "newest_file_mtime_ns": 17,
+        }
+        summary = {
+            "files": 9,
+            "dirs": 4,
+            "bytes": 1234,
+            "allocated": 4096,
+            "newest_mtime_ns": 17,
+        }
+
+        self.assertIsNone(compare_tools._summary_oracle_error(summary, oracle))
+
+        summary["allocated"] = 8192
+        error = compare_tools._summary_oracle_error(summary, oracle)
+
+        self.assertIsNotNone(error)
+        self.assertIn("allocated=8192", error or "")
+        self.assertIn("oracle 4096", error or "")
+
+    def test_summary_oracle_excludes_the_subject_root_from_directory_count(self) -> None:
+        oracle = {
+            "counts": {"directories": 1, "files": 0},
+            "sizes": {"apparent_bytes": 0, "allocated_bytes": 0},
+            "newest_file_mtime_ns": None,
+        }
+        summary = {
+            "files": 0,
+            "dirs": 0,
+            "bytes": 0,
+            "allocated": 0,
+            "newest_mtime_ns": None,
+        }
+
+        self.assertIsNone(compare_tools._summary_oracle_error(summary, oracle))
+
+    def test_summary_semantic_mismatch_invalidates_both_sides_of_the_pair(self) -> None:
+        samples = [
+            {
+                "pair": "fdu-index-summary",
+                "tool": "fdu-transient-summary",
+                "ordinal": 2,
+                "warmup": False,
+                "valid": True,
+                "reasons": [],
+                "semantic_sha256": "compact",
+            },
+            {
+                "pair": "fdu-index-summary",
+                "tool": "fdu-index-summary",
+                "ordinal": 2,
+                "warmup": False,
+                "valid": True,
+                "reasons": [],
+                "semantic_sha256": "indexed",
+            },
+        ]
+
+        mismatches = compare_tools._invalidate_semantic_mismatches(
+            samples, anchor="fdu-transient-summary"
+        )
+
+        self.assertEqual(len(mismatches), 1)
+        self.assertFalse(samples[0]["valid"])
+        self.assertFalse(samples[1]["valid"])
+        self.assertIn("semantics differ", samples[0]["reasons"][0])
+
+    def test_matching_summary_semantics_remain_valid(self) -> None:
+        samples = [
+            {
+                "pair": "fdu-index-summary",
+                "tool": name,
+                "ordinal": 0,
+                "warmup": False,
+                "valid": True,
+                "reasons": [],
+                "semantic_sha256": "same",
+            }
+            for name in ("fdu-transient-summary", "fdu-index-summary")
+        ]
+
+        mismatches = compare_tools._invalidate_semantic_mismatches(
+            samples, anchor="fdu-transient-summary"
+        )
+
+        self.assertEqual(mismatches, [])
+        self.assertTrue(all(sample["valid"] for sample in samples))
 
 
 if __name__ == "__main__":

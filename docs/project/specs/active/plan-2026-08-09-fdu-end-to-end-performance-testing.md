@@ -51,8 +51,10 @@ This plan is independently actionable.
 
 - Claim that the current `read_dir` + `symlink_metadata` scaffold is fast
 - Put absolute timing thresholds on generic hosted pull-request runners
-- Reduce retained metadata, skip correctness checks, weaken cache validation, or alter
-  the output contract to improve a benchmark
+- Drop data required by the requested result, skip correctness checks, weaken cache
+  validation, or alter the output contract to improve a benchmark.
+  An internal plan may retain less transient state only when it proves the complete
+  request remains exact and falls closed to the full index otherwise.
 - Treat deleting an fdu snapshot, starting a new process, or copying a corpus as proof
   that the operating-system filesystem cache is cold
 - Benchmark every Cartesian product of scale, topology, metadata, state, output, and
@@ -99,6 +101,10 @@ What it found, first against a roughly 60k-entry checkout and then against a
   falls 50.31% and 72.55% (exp-030). The resulting roughly-351-ms warm open is close to
   but still slower than the roughly-296-ms cold index; persisted roll-ups/bulk load and
   journal scoping remain necessary.
+  A PR review found that a late deferred-change overflow retried the full tree and
+  double-counted completed-prefix statistics; the fallback now resumes at the first
+  unapplied wave, with final index, scan, and apply statistics checked against a serial
+  oracle on a deterministic 1,025-directory test.
 - **Recent BFS-sensitive ideas were explicitly rechecked.** Root-relative `openat` was
   neutral for indexed scans and reverted (exp-024). The old pre-bulk sixteen-worker
   large-tree knee now regresses indexed wall 19.19%, CPU 107%, and RSS 33%; the existing
@@ -110,16 +116,99 @@ What it found, first against a roughly 60k-entry checkout and then against a
   frontier is neutral (exp-038), and the 256 KiB bulk buffer remains a rejection
   (exp-039). Peak indexed RSS rises 44.32%, so compact full-index layout is now the
   clearest retained cost.
-- **The local product comparison now has publishable evidence.** On the later
-  976,295-entry workspace fingerprint, fresh cache-off FDU completed in a 4.237-second
-  median versus 7.546 seconds for dust, 6.684 for pdu, 8.315 for gdu, and 28.576 for
-  ncdu. FDU also beat dua and diskus scalar totals.
-  Dumac was 17.6% faster in paired wall time while performing a narrower scalar-only job
-  and using 45.3 MiB instead of FDU’s 585.2 MiB. The
-  [live comparison](../../reports/report-2026-08-12-fdu-live-tool-comparison.md),
-  [manifest](../../reports/fdu-live-tool-comparison-manifest-v1.json), and
+- **The local product comparison now has oracle-checked near-million evidence.** On the
+  self-contained 901,963-entry benchmark tree, fresh cache-off FDU built its reusable
+  index and ten-row tree in a 3.324-second median versus 5.657 seconds for pdu, 6.016
+  for dust, 6.782 for Go gdu, and 20.550 for ncdu.
+  Its derived five-tally summary took 3.125 seconds and beat diskus, dua, BSD du, and
+  GNU du. Dumac’s allocated-byte-only total had a 2.980-second median, but its paired
+  2.2% advantage was statistically unclear [−5.7%, +1.7%]; it used 44.4 MiB versus FDU’s
+  13.6 MiB and 85.4% more aggregate CPU. The
+  [live comparison](../../reports/report-2026-08-13-fdu-live-tool-comparison.md),
+  [manifest](../../reports/fdu-live-tool-comparison-manifest-v2.json), and
   [performance white paper](../../reports/report-2026-08-12-fdu-performance-architecture.md)
   own the claim and its architectural interpretation.
+- **The published cache regime is now audited explicitly.** The near-million comparison
+  is warm-steady by construction: one complete independent fingerprint and three
+  full-tree warmups per tool precede timing.
+  This is repeated-workload state, not a claim that every metadata object remains
+  resident; the subject exceeds the host’s vnode target.
+  Healey’s warm-cache dumac result is valid as labeled, but the asserted warm/cold
+  correlation has no published cold samples and cannot supply a cold effect size.
+  The Linux comparison retains separate verified-warm and per-sample controlled-cold
+  matrices. macOS `purge` is only an approximation and must not be labeled
+  controlled-cold.
+- **The current dut source and protocol now have a Linux-specific audit.** Commit
+  `68d4ba2` retains directories plus bounded top-N files rather than a reusable
+  inventory, offers allocated size, apparent size, and counts as separate modes, and
+  emits only a human tree.
+  Its published SSD/HDD preparation drops page cache with `echo 1` but does not run
+  `sync`, so those numbers are now labeled pagecache-drop-only rather than
+  controlled-cold. The adapter and raw-reader plans add wide-directory, bounded-error,
+  hard-link-growth, and selected-size-ordering fixtures; H66 separately queues an exact
+  directory-only transient-tree experiment.
+- **The first requirement-derived execution plan is accepted.** For the existing
+  `--cache off --view summary` composition, exp-040 proves that retaining one exact rich
+  aggregate instead of a reusable index improves paired wall 14.56% [9.04%, 18.55%] and
+  cuts peak RSS 95.28%, with one stable semantic hash across all old/new samples.
+  Exact-final-binary replications on uniform 720,805- and 901,963-entry trees reproduced
+  the roughly 3× user-CPU and 23–30× RSS mechanism but measured only 1.8–2.8% wall
+  gains, so the speed effect is explicitly topology-sensitive.
+  The planner is internal, has no fast-mode flag, and falls closed to the full index for
+  cache participation, filters, multiple views, watch mode, or any unproved request.
+- **Further rich-summary specialization did not compound.** Worker-local reduction
+  improved wall only 1.38% at 901,963 entries and 1.26% at 720,805 entries (exp-041).
+  Adding a narrower macOS bulk record changed wall by +1.86% [−1.96%, +4.56%] (exp-042),
+  even though user CPU and memory fell sharply.
+  Both engine prototypes were reverted: system calls remain the warm-APFS floor, and a
+  duplicate walker/parser is not justified without a visible speedup.
+- **The transient-summary worker knee remains six.** Eight workers looked 5.2% faster in
+  a short 901,963-entry screen, but the independent 720,805-entry 20-pair run changed
+  wall by +0.67% [−1.56%, +3.99%] while CPU rose 40.66% (exp-043). Ten, twelve, and
+  sixteen workers were neutral or slower in the screen; the experiment-only override was
+  removed.
+- **A selected-total specialization is rejected.** The complete H64 prototype added a
+  typed total view, strict selected-attribute macOS reader, portable fallback,
+  worker-local scalar reduction, and in-buffer file folding.
+  It cut user CPU 51.54% and RSS 39.19%, but changed paired wall only −1.15%
+  [−2.24%, +0.44%] and did not beat dumac (exp-044). All API and engine code was
+  reverted; the rich H59 summary remains the smallest useful execution tier.
+- **The dumac difference is concurrency-sensitive, and an open-only pipeline is now the
+  narrow follow-up.** H67 replayed current FDU and dumac in twelve pairs under a busy
+  interactive host: dumac led by 16.19% [12.23%, 19.10%] while spending 34.88% more CPU
+  and 231.70% more RSS. Replaying the exact published binaries on the same host also
+  produced an 11.1% five-pair dumac lead, ruling out the later reconciliation-only
+  change. Exact process samples put 96.10% of FDU worker tops and 94.21% of dumac worker
+  tops in `open` or `getattrlistbulk`; FDU sustained 3.46 aggregate core-equivalents and
+  dumac 5.64. The paired-helper H69 screen was promising at −4.47%, but its
+  [−31.04%, +33.91%] interval under severe host noise is not acceptance evidence
+  (exp-045). H70 replaced that handoff with one shared opener pool.
+  Two openers improved paired wall 3.98% [0.70%, 9.87%] and aggregate CPU 15.98% in one
+  exact five-pair screen, while involuntary context switches rose 111.80%. A follow-up
+  count sweep and twelve-pair four-opener comparison with dumac were too noisy to select
+  or accept a count (exp-046). No production code is retained pending quiet-host and
+  independent-topology confirmation.
+- **The macOS bulk reader now matches portable apparent-size semantics for resource
+  forks.** A review fixture reproduced the mismatch on APFS: `ATTR_FILE_TOTALSIZE`
+  included the resource fork while portable `st_size` described only the data fork.
+  The reader now requests and parses `ATTR_FILE_DATALENGTH` in attribute-bit order, and
+  the byte-for-byte backend equivalence test carries a real resource fork.
+- **The component-probe oracle is complete again.** PR review found that the real-tree
+  oracle required `newest_file_mtime_ns`, but `perf_probe` did not emit it.
+  That made nonempty-tree component samples fail closed even when their scan was
+  correct; it did not affect the separately adapted live-tool matrices or their
+  five-tally oracles. Producer and index summaries now emit the exact newest regular-file
+  mtime, producer self-validation includes it, and an end-to-end test checks real probe
+  output against an independent filesystem fingerprint.
+  The ordinary handoff gate now runs both the portable and real-tree harness suites so
+  this contract cannot drift silently again.
+- **The independent real-tree aggregate now matches the portable engine contract.** The
+  new real-process test exposed on Windows that the oracle engine digest correctly used
+  apparent size when native allocated blocks were unavailable, while the same
+  fingerprint document incorrectly reported aggregate allocated bytes as zero.
+  One shared platform rule now supplies both aggregate and hard-link accounting, with
+  direct block-present and block-absent tests.
+  This was a harness-only mismatch; the production scanner and digest already agreed.
 
 Rejected experiments remain as important as accepted ones.
 The original parallel revalidation funnel bought only 2.6%, root-relative `openat` was
@@ -163,8 +252,8 @@ A publishable result still requires an immutable clean-revision binary and zero 
 drift; the README claim is owned by that separate live comparison, not by exploratory
 generated-corpus curves.
 
-The portable harness now has 63 deterministic and adversarial tests and is included in
-`make check` without a numeric timing assertion.
+The portable harness now has 64 deterministic and adversarial tests, and the 68-test
+real-tree harness is also included in `make check`, without a numeric timing assertion.
 The maintainer selected Python 3.12 as the new minimum for the wheel and
 repository-owned tooling; `fdu-c7z2` owns the pending PyO3 ABI, package metadata, uv
 lock, CI, and documentation alignment.
@@ -339,6 +428,14 @@ Generated data and reports must not use unqualified *cold*, *warm*, or *raw*.
   postcondition was checked
 - `controlled-cold` — a dedicated host performed a documented eviction protocol and the
   collector evidence supports it
+
+The shared real-tree comparator additionally uses `warm-steady`: one independent
+full-tree fingerprint, then explicit full-tree warmups for every tool before the
+interleaved timed pairs.
+Unlike `verified-warm` in the generated-corpus state machine, it does not recreate and
+warm a private corpus immediately before every invocation.
+It is valid evidence for a repeated local workload, but not proof that the complete
+metadata set stayed resident.
 
 **Process state:**
 
@@ -618,12 +715,12 @@ The initial capability report includes:
 
 | Capability | fdu | dut | gdu |
 | --- | --- | --- | --- |
-| Full retained inventory | yes | adapter records exact limitation | adapter records exact limitation |
-| Apparent and allocated bytes in one run | yes | verify at pinned revision | yes |
-| Counts and newest mtime | yes | verify at pinned revision | verify at pinned revision |
+| Full retained inventory | yes | no: directories plus bounded top-N files | adapter records exact limitation |
+| Apparent and allocated bytes in one run | yes | no: mutually exclusive modes | yes |
+| Counts and newest mtime | yes | counts in a separate mode; no newest mtime | verify at pinned revision |
 | Per-directory extension tallies | yes | no | verify/record |
 | Persistent snapshot and revalidation | yes | no | persistence is not equivalent to fdu revalidation |
-| Machine output sufficient for oracle | yes | verify/record | verify/record |
+| Machine output sufficient for oracle | yes | no: human parser plus independent postconditions required | verify/record |
 
 The table is completed from the pinned source revisions before the first comparison.
 No unavailable comparator is silently skipped in a release run.
@@ -633,10 +730,20 @@ for tools that do not expose the full generated-corpus oracle.
 It supports fdu, dust, gdu, pdu, ncdu, dua, diskus, dumac, and BSD/GNU du.
 Each competitor runs immediately beside fdu with alternating order and paired bootstrap
 intervals; the same immutable fdu binary anchors every pair.
-Contracts label three work classes:
+The harness can also anchor an FDU derived-summary plan beside its indexed control.
+It hashes stable report semantics after excluding only run-specific timestamps,
+generator, and absolute root.
+The v3 fingerprint also checks every FDU rich-summary tally independently: files,
+descendant directories, apparent bytes, allocated bytes, and newest regular-file mtime.
+Partial, stale, cached, error-bearing, semantically mismatched, or oracle-mismatched
+samples are invalid.
+Contracts label five work classes:
 
 - `indexed-tree`: complete scan plus a retained browseable/reusable index;
 - `rendered-tree`: complete scan, roll-up, and bounded human tree; and
+- `indexed-summary`: complete scan plus reusable index, rendered as one rich summary;
+- `transient-summary`: complete scan reduced to one exact rich summary without an index;
+  and
 - `total-only`: complete scan reduced directly to one scalar total.
 
 The classes prevent a total-only result from being presented as equivalent work.
@@ -648,12 +755,33 @@ correctness gate for optimization experiments.
 
 The current pinned source review queues only mechanisms that survive FDU’s design: dua
 v2.41.1 motivates portable wide-directory stat chunks (H58), pdu 0.24.0 motivates a
-design-gated bounded-retention path (H59) and worker-local subtree construction (H60),
-and the 1M RSS result raises the existing compact-index H19–H22 ladder.
-Recursive high-concurrency implementations in dust, gdu, and diskus do not create a new
-APFS hypothesis after exp-036 refuted over-threading.
-Dumac validates the already-landed bulk syscall mechanism but performs a smaller
+requirement-derived retention path (H59, now accepted in exp-040) and worker-local
+subtree construction (H60), and the 1M RSS result raises the existing compact-index
+H19–H22 ladder. Recursive high-concurrency implementations in dust, gdu, and diskus do
+not create a new APFS hypothesis after exp-036 refuted over-threading.
+Dut commit `68d4ba2` reinforces the Linux raw `getdents64`/relative-`statx`, batched
+publication, and last-child roll-up experiments without supplying FDU effect sizes.
+Its bounded retention also motivates H66: an unfiltered cache-off tree-only request may
+retain exact directory topology and roll-ups without per-file records, but only through
+the same requirement-derived planner and never by allowing display depth to prune the
+scan. Dumac validates the already-landed bulk syscall mechanism but performs a smaller
 total-only, reduced-attribute job.
+Its two implementation reports and source diff motivated worker-local rich-summary
+reduction (H62), report-derived macOS metadata (H63), a selected-total matched-workload
+challenge (H64), and reduction-only worker calibration (H65). Exp-041 through exp-044
+rejected every additional layer for wall time despite strong CPU and memory reductions.
+The repeated resource/wall split and H67 profiles localize the current warm-APFS floor
+to directory-open and kernel work rather than summary representation.
+H67 also shows why one benchmark regime is insufficient: the published quiet-host pair
+is a statistical tie, while both exact binary pairs give dumac a clear lead under
+heavier host pressure.
+H70 owns the remaining overlap question after H69 established that pairwise pre-opening
+is possible but too noisy to retain.
+It may tune a shared two-to-four-thread opener pool around the accepted six scan
+workers, but it must preserve FDU’s strict parser, exact paths, fallback, scope, and
+partial-result semantics; share one budget with the adaptive reserve; clear the normal
+3% paired gate on a quiet 12-pair run; and reproduce on an independent large topology
+before being retained.
 
 The
 [current diskus benchmark](https://github.com/sharkdp/diskus/blob/90196e950017d25b2940e8e0fda51a321ca66e1a/README.md#benchmark)
@@ -665,6 +793,46 @@ FDU’s Linux run will adopt the per-sample cold-cache preparation while retaini
 adjacent paired scheduling, the independent oracle, pre/post fingerprints, exact binary
 and host provenance, work classes, resource metrics, stable-output checks, and bootstrap
 intervals. Warm and cold Linux results remain separate from M1/APFS numbers.
+
+### Dut Linux Research and Validation
+
+The dut adapter targets exact current upstream commit
+[`68d4ba2`](https://codeberg.org/201984/dut/commit/68d4ba2d66211e7ca93a2312bb12f5879d0179e1),
+not the older 1.0 tag; source and binary provenance must record that it identifies
+itself as 1.1 without a matching tag.
+Its GPL source is used only to describe behavior and design independent tests.
+The binary may be executed as a comparator but is never linked into or distributed with
+FDU.
+
+Before any timing is valid, the adapter proves its human-output parser and independent
+postconditions on Linux fixtures covering:
+
+- a directory whose entries require multiple 1 MiB `getdents64` chunks;
+- high-cardinality hard links that force table growth and cross-directory merging;
+- sparse and preallocated files with opposite apparent/allocated size ordering;
+- unreadable/stat-failure cases, because dut may warn yet return success; and
+- symlinks, one-filesystem boundaries, supported non-UTF-8 names, and exact root totals.
+
+The raw FDU Linux backend adds bounded `EINVAL`, malformed-record, short-record, and
+multi-chunk tests before it may consume performance evidence.
+These are direct guards for recent dut fixes involving lost wide-directory entries,
+unbounded buffer growth, and a hard-link-table resize error; implementation remains an
+independent Rust design.
+
+The Linux matrix has three explicit cache states:
+
+1. verified warm after recorded full-tree warmups;
+2. `pagecache-drop-only`, reproducing dut’s `echo 1` preparation for calibration but not
+   calling it cold; and
+3. controlled cold, requiring successful `sync` plus per-sample `echo 3` under the
+   dedicated-host authority.
+
+The distinction follows the
+[kernel `drop_caches` contract](https://docs.kernel.org/admin-guide/sysctl/vm.html#drop-caches):
+`1` targets page cache, `2` reclaimable slab objects including dentries and inodes, and
+`3` both. Run the paired matrix and worker-count sweep on ext4 and XFS when available,
+retain raw CPU/RSS/fault/I/O evidence, and profile before deciding whether `statx`, raw
+`getdents64`, scheduling, or H66 explains any gap.
 
 ### Trial Scheduling and Statistics
 
@@ -1004,6 +1172,9 @@ averaged.
 - **Controlled-cold protocol (`fdu-8z5l`, `fdu-ywu0`)**: privileged cache eviction,
   disposable VM/block device, or a corpus larger than available cache?
   The full report must document the chosen method and its limits.
+- **macOS cold protocol (`fdu-rjqx`)**: use `sync` plus `/usr/sbin/purge` as a labeled
+  approximation, remount a disposable APFS volume between samples, or reboot a dedicated
+  host? Corpus size and `kern.maxvnodes` are diagnostics, not cache-state controls.
 - **Comparator postconditions (`fdu-k5t5`)**: can dut and gdu expose strong enough
   machine-readable evidence, or must adapters add external traversal/count validation?
 - **Snapshot first-listing surface (`fdu-1vd0`, `fdu-xihx`)**: does the optimized
@@ -1059,6 +1230,11 @@ The planning bead retains the same stable IDs.
 | PEV-31 | High | Calling an APFS-cloned tree “cold” confuses corpus scale with operating-system cache state and overstates what a local run proved | Record the clone recipe and exact fingerprint as a cache-pressure subject, but retain `os_cache: warm-steady`; only the privileged or disposable-host protocol may claim controlled-cold evidence |
 | PEV-32 | Medium | Validating an adaptive threshold only below it and far above it misses the first-crossing scale, where setup cost can remain after too little useful work to move wall time | Give adaptive policies a boundary subject as well as small and large endpoints; exp-019 rejected the 100k scale trigger before service-time calibration passed both 120k and 720k gates |
 | PEV-33 | High | A platform syscall accelerator can look correct on ordinary files while silently changing mount, firmlink, symlink, identity, or size semantics, and a small-tree win may not predict its behavior after the metadata cache knee | Compare the platform backend byte-for-byte with the portable reference, validate every returned field and offset, fall back for a complete directory at unsupported boundaries, and require current-binary paired gates at both the original and cache-pressure scales with CPU and RSS tradeoffs recorded; exp-022 followed this protocol before its claim was retained |
+| PEV-34 | High | A warm-cache ranking can be extrapolated into an unsupported cold-cache claim even when eviction changes absolute time and the relative effect size | Label repeated-workload and controlled-cold matrices separately, retain the exact cache-state evidence for every sample, and never use ranking correlation as a substitute for measuring both regimes |
+| PEV-35 | High | Treating dut’s successful `echo 1 > drop_caches` preparation as cold implies directory and inode metadata were evicted even though the kernel contract says `1` targets page cache and the command omits `sync` | Label that reproduction `pagecache-drop-only`; publish it beside verified warm and a distinct dedicated-host controlled-cold regime that requires successful per-sample `sync` plus `echo 3` |
+| PEV-36 | High | A fast dut trial can silently omit entries or selected bytes because human output, warning-plus-zero-exit errors, multi-buffer enumeration, hard-link resizing, and early top-N rejection are not a machine oracle | Pin the exact source/binary, reject warning-bearing partial scans, and pass independent wide-directory, hard-link, sparse/preallocated, symlink, mount-boundary, non-UTF-8, and root-total postconditions before accepting timing |
+| PEV-37 | High | The real-tree oracle required newest regular-file mtime, but the component probe omitted that field, so valid nonempty-tree runs failed closed while the normal handoff gate did not exercise the separate real-tree suite | Emit and self-validate `newest_file_mtime_ns` in both producer and index summaries, compare a real probe process with an independent tree fingerprint, and include both performance-harness suites in `make check` |
+| PEV-38 | High | On non-POSIX hosts, the real-tree engine digest used apparent size as FDU’s documented fallback for unavailable allocated blocks, but the fingerprint aggregate independently substituted zero, so one oracle document disagreed with itself | Centralize allocated-byte observation: use native 512-byte block counts on POSIX when available and apparent size otherwise; test both cases and run the real-process oracle on every CI platform |
 
 ## Beads
 
@@ -1084,7 +1260,15 @@ research and plan, assemble this graph, and validate it through CI.
 | `fdu-6wu0` | P1 | Reuse safely cloned and independently verified base corpora for large repeated trials | discovered by `fdu-p2i1` |
 | `fdu-j2ka` | P1 | Coordinate the iterative real-tree profile and optimization campaign | `fdu-6wu0` informs generated-corpus setup |
 | `fdu-1y8f` | P1 | Publish the performance architecture white paper | `fdu-j2ka` evidence |
-| `fdu-nffc` | P2 | Extend the paired comparator matrix to controlled Linux warm and cold regimes | dedicated Linux host |
+| `fdu-0myw` | P1 | Coordinate Linux performance validation and optimization after the stable macOS PR lands | dedicated Linux host and PR #8 correctness baseline |
+| `fdu-nffc` | P2 | Extend the paired comparator matrix to controlled Linux warm and cold regimes | `fdu-0myw`; dedicated Linux host |
+| `fdu-6nmp` | P1 | Refresh dut source, benchmark-method audit, and Linux semantic test plan | `fdu-0myw` research input; complete |
+| `fdu-sk7v` | P1 | Test an exact directory-only transient tree at 60k and near-million scale | `fdu-0myw`; dut Linux calibration |
+| `fdu-ea8e` | P1 | Isolate the macOS directory-open and bulk-syscall floor against dumac | exact near-million paired profiles |
+| `fdu-hzf0` | P1 | Pipeline macOS directory opens ahead of bulk enumeration under one shared concurrency budget | `fdu-ea8e` profiles and quiet-host confirmation |
+| `fdu-druf` | P1 | Tune a shared two-to-four-thread macOS directory-opener pool | `fdu-hzf0`; quiet-host and independent-tree confirmation |
+| `fdu-dpsk` | P1 | Audit warm versus cold filesystem-cache claims and encode warm-steady evidence | `fdu-j2ka` evidence |
+| `fdu-rjqx` | P2 | Establish a controlled macOS cold-cache comparison protocol | dedicated quiet Mac and disposable APFS volume |
 | `fdu-16pw` | P2 | Compare and incorporate the diskus benchmark protocol | — |
 | `fdu-hh8g` | P1 | Add a mutation-detecting, path-redacted real-tree baseline | — |
 | `fdu-16py` | P1 | Profile and optimize snapshot-absent real-tree traversal | `fdu-hh8g` |
@@ -1095,6 +1279,15 @@ research and plan, assemble this graph, and validate it through CI.
 | `fdu-k5t5` | P1 | Pinned dut/gdu adapters, parsers, postconditions, and capability matrix | `fdu-rq5m`, `fdu-d8kq`, `fdu-ad45` |
 | `fdu-8z5l` | P2 | Pull-request smoke, stable scheduled baselines, regression triage, artifact retention, and claim governance | `fdu-d8kq`, `fdu-k5t5`, `fdu-zga3`, `fdu-849g`, `fdu-bmhr`, `fdu-6wu0` |
 | `fdu-ywu0` | P1 | Execute the complete Phase 1 matrix and publish the generated evidence report | all implementation/proof beads plus the existing engine blockers |
+
+The post-PR Linux handoff is the `fdu-0myw` epic.
+Start with `fdu-nffc`: reproduce warm-steady, pagecache-drop-only, and controlled-cold
+evidence on a local-SSD host with the committed semantic oracle and exact binary, host,
+filesystem, and corpus provenance.
+Then test directory-only retained state (`fdu-sk7v`), warm snapshot load/save costs
+(`fdu-maxn`, `fdu-niuz`, `fdu-91ts`), and Linux-specific summary hypotheses (`fdu-cckr`,
+`fdu-i2f3`) before worker or syscall experiments.
+APFS-only opener work H70 and controlled macOS cold-cache work stay outside that epic.
 
 Cross-workstream dependencies make the existing decision beads consume the common
 infrastructure:

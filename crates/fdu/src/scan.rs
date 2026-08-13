@@ -361,6 +361,10 @@ impl WalkAttribution {
 #[derive(Debug, Default)]
 pub struct ReconcileReport {
     /// Filesystem walk effects and partial errors.
+    ///
+    /// [`ScanReport::attribution`] remains zero for reconciliation because neither the
+    /// serial nor parallel path has complete, comparable instrumentation yet. Zero
+    /// means "not measured" here, not "no work".
     pub scan: ScanReport,
     /// Index arbitration and mutation effects.
     pub apply: ApplyStats,
@@ -1145,6 +1149,14 @@ impl DirectoryQueue {
     }
 
     /// Give up a claim taken by [`claim`]. Wakes everyone if this was the last one.
+    ///
+    /// The chunk's own entry count and work time feed the shared service-time
+    /// calibration, so the decision uses the timing the walk already collects for
+    /// attribution rather than a second clock. Returns true exactly once, on the
+    /// release that both completes the calibration and finds the filesystem slow
+    /// enough to be worth more latency-hiding workers; the caller turns that into a
+    /// single pool expansion. A release that ends the walk returns false, because
+    /// there is no longer any work for a reserve worker to take.
     fn release(
         &self,
         observed_entries: u64,
@@ -1420,7 +1432,7 @@ fn reconcile_target(
     }
     let subtree = resolve_subtree_root(target, &subtree, config)?;
     let started_at = target.begin_reconcile(&subtree)?;
-    match reconcile_target_inner(target, &subtree, config, sink) {
+    match reconcile_target_inner(target, &subtree, config, MAX_DEFERRED_RECONCILE_OPS, sink) {
         Ok(report) => {
             target.finish_reconcile(&subtree, started_at, report.is_complete())?;
             Ok(report)
@@ -1436,6 +1448,7 @@ fn reconcile_target_inner(
     target: &mut ReconcileTarget<'_>,
     subtree: &Path,
     config: &ScanConfig,
+    max_deferred_ops: usize,
     sink: &mut dyn FnMut(&AppliedDelta),
 ) -> Result<ReconcileReport> {
     let root = target.root_path()?;
@@ -1452,6 +1465,7 @@ fn reconcile_target_inner(
     let root_dev = attrs_from(&root_meta).dev;
     let start_depth = subtree.components().count();
     let mut report = ReconcileReport::default();
+    let mut retry_frontier = None;
     let mut batch: Vec<ObservationOp> = Vec::with_capacity(config.batch_size.max(1));
 
     if config.max_depth == Some(0) {
@@ -1507,22 +1521,19 @@ fn reconcile_target_inner(
 
     if subtree.as_os_str().is_empty() && config.reconciliation_worker_threads() > 1 {
         if let ReconcileTarget::Direct(index) = target {
-            match reconcile_direct_parallel(
-                index,
-                &root,
-                root_dev,
-                config,
-                MAX_DEFERRED_RECONCILE_OPS,
-                sink,
-            )? {
+            match reconcile_direct_parallel(index, &root, root_dev, config, max_deferred_ops, sink)?
+            {
                 DirectParallelOutcome::Complete(parallel) => return Ok(parallel),
-                DirectParallelOutcome::RetrySerial(prefix) => report.apply = prefix,
+                DirectParallelOutcome::RetrySerial { prefix, remaining } => {
+                    report = prefix;
+                    retry_frontier = Some(remaining);
+                }
             }
         }
     }
 
-    let mut queue: VecDeque<(PathBuf, usize)> =
-        VecDeque::from(vec![(subtree.to_path_buf(), start_depth)]);
+    let mut queue: VecDeque<(PathBuf, usize)> = retry_frontier
+        .unwrap_or_else(|| VecDeque::from(vec![(subtree.to_path_buf(), start_depth)]));
     #[cfg(target_os = "macos")]
     let mut bulk_reader = (config.worker_threads() > 1).then(macos_bulk::Reader::new);
     while let Some((rel_dir, depth)) = take_next(&mut queue, config.order) {
@@ -1652,6 +1663,7 @@ fn reconcile_target_inner(
     }
 
     flush_reconcile_batch(target, &mut batch, sink, &mut report.apply)?;
+    report.scan.errors.sort_by_cached_key(ToString::to_string);
     Ok(report)
 }
 
@@ -1665,7 +1677,7 @@ struct DeferredReconcile {
 
 enum DirectParallelOutcome {
     Complete(ReconcileReport),
-    RetrySerial(ApplyStats),
+    RetrySerial { prefix: ReconcileReport, remaining: VecDeque<(PathBuf, usize)> },
 }
 
 /// Reconcile an exclusive full tree in bounded immutable-baseline waves.
@@ -1675,6 +1687,15 @@ enum DirectParallelOutcome {
 /// every entry through one consumer. Effective changes still enter through ordinary
 /// observations between waves, preserving both the index's sole mutation contract and
 /// progressive delta delivery.
+///
+/// Unlike every other reconciliation path, the operations a wave defers are
+/// unconditional: they carry no [`ObservationOp::if_state`] guard. Three properties
+/// have to hold together for that to be safe, and a change to any one of them puts the
+/// guards back. The target is an exclusive `&mut Index`, so no other producer can
+/// commit between a worker's read and the wave's write. Nothing is applied while
+/// workers run, so no baseline a worker compared against can go stale beneath it. And
+/// a directory is only reconciled in a wave after the wave that discovered it has
+/// committed, so a parent is never absent when its children arrive.
 fn reconcile_direct_parallel(
     index: &mut Index,
     root: &Path,
@@ -1733,10 +1754,18 @@ fn reconcile_direct_parallel(
         });
 
         // Nothing from an overflowing wave was applied, so the ordinary incremental
-        // reconciler can safely repeat the full tree. Changes from completed earlier
-        // waves remain valid and their apply statistics are retained.
+        // reconciler can resume at that wave. Completed waves and their statistics are
+        // retained exactly once; restarting from the root would count their unchanged
+        // entries again and misreport the logical reconciliation pass.
         if overflowed.load(std::sync::atomic::Ordering::Relaxed) {
-            return Ok(DirectParallelOutcome::RetrySerial(report.apply));
+            let mut remaining: VecDeque<_> =
+                wave.into_iter().map(|(path, depth, _region)| (path, depth)).collect();
+            let mut deferred = Vec::with_capacity(DIR_CLAIM);
+            while !frontier.is_empty(config.order) {
+                frontier.take(DIR_CLAIM, config.order, &mut deferred);
+                remaining.extend(deferred.drain(..).map(|(path, depth, _region)| (path, depth)));
+            }
+            return Ok(DirectParallelOutcome::RetrySerial { prefix: report, remaining });
         }
 
         let operation_count = deferred_count.load(std::sync::atomic::Ordering::Relaxed);
@@ -1803,7 +1832,6 @@ fn reconcile_wave_worker(
     overflowed: &std::sync::atomic::AtomicBool,
     max_deferred_ops: usize,
 ) -> DeferredReconcile {
-    let worker_started = std::time::Instant::now();
     let mut result = DeferredReconcile::default();
     #[cfg(target_os = "macos")]
     let mut bulk_reader = macos_bulk::Reader::new();
@@ -1814,8 +1842,6 @@ fn reconcile_wave_worker(
             break;
         }
         let end = start.saturating_add(DIR_CLAIM).min(wave.len());
-        let chunk_started = std::time::Instant::now();
-        result.scan.attribution.claims += 1;
         for (rel_dir, depth, region) in &wave[start..end] {
             let mut known = collect_child_expectations(index, rel_dir);
             let abs_dir = root.join(rel_dir);
@@ -1918,10 +1944,7 @@ fn reconcile_wave_worker(
                 }
             }
         }
-        let chunk_work_ns = elapsed_ns(chunk_started);
-        result.scan.attribution.work_ns += chunk_work_ns;
     }
-    result.scan.attribution.wall_ns = elapsed_ns(worker_started);
     result
 }
 
@@ -3112,7 +3135,7 @@ mod tests {
 
         assert!(portable_report.is_complete());
         assert!(bulk_report.is_complete());
-        assert!(bulk_report.scan.attribution.claims > 0, "parallel waves were not exercised");
+        assert_eq!(bulk_report.scan.attribution, WalkAttribution::default());
         assert_eq!(bulk_report.scan.entries, portable_report.scan.entries);
         assert_eq!(bulk_report.scan.dirs_read, portable_report.scan.dirs_read);
         assert_eq!(bulk_report.apply, portable_report.apply);
@@ -3211,6 +3234,13 @@ mod tests {
     fn reconciliation_metadata_errors_do_not_delete_enumerated_entries() {
         use std::os::unix::fs::PermissionsExt;
 
+        if !crate::test_support::permission_bits_are_enforced() {
+            // A privileged process still reads the directory it was denied, so the
+            // fixture cannot reach the metadata-error boundary this pins.
+            eprintln!("skipped: this process is not subject to Unix permission bits");
+            return;
+        }
+
         // macOS's parallel path may satisfy the whole directory through
         // getattrlistbulk even without search permission. One worker pins the portable
         // fallback there; Linux also exercises the parallel portable worker.
@@ -3266,11 +3296,12 @@ mod tests {
             &mut |delta| deltas.push(delta.clone()),
         )
         .expect("parallel attempt");
-        let DirectParallelOutcome::RetrySerial(prefix) = outcome else {
+        let DirectParallelOutcome::RetrySerial { prefix, remaining } = outcome else {
             panic!("the deliberately tiny deferred budget must trigger the retry");
         };
 
-        assert_eq!(prefix, ApplyStats::default());
+        assert_eq!(prefix.apply, ApplyStats::default());
+        assert_eq!(remaining, VecDeque::from([(PathBuf::new(), 0)]));
         assert!(deltas.is_empty());
         assert_eq!(index_fingerprint(&index), before);
 
@@ -3286,6 +3317,45 @@ mod tests {
         assert_eq!(index.total().allocated, expected.total().allocated);
         assert_eq!(index.total().newest_mtime_ns, expected.total().newest_mtime_ns);
         assert_eq!(index.by_ext_named(index.total()), expected.by_ext_named(expected.total()));
+    }
+
+    #[test]
+    fn late_overflow_resumes_without_double_counting_completed_waves() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        // The root wave discovers more than one full wave of directories. A change in
+        // the second wave then forces the serial fallback only after the first wave's
+        // unchanged entries have already been counted.
+        for directory in 0..=RECONCILE_WAVE_DIRECTORIES {
+            write_file(&dir.path().join(format!("d{directory:04}/file.txt")), b"unchanged");
+        }
+        let parallel = ScanConfig { threads: Some(2), ..ScanConfig::default() };
+        let (baseline, _) = scan_into_index(dir.path(), &parallel).expect("baseline");
+        let mut candidate = baseline.clone();
+        let mut serial_oracle = baseline;
+
+        for directory in 0..=RECONCILE_WAVE_DIRECTORIES {
+            write_file(
+                &dir.path().join(format!("d{directory:04}/file.txt")),
+                b"changed after the first wave",
+            );
+        }
+
+        let candidate_report = reconcile_target_inner(
+            &mut ReconcileTarget::Direct(&mut candidate),
+            Path::new(""),
+            &parallel,
+            0,
+            &mut |_| {},
+        )
+        .expect("late-overflow reconciliation");
+        let serial = ScanConfig { threads: Some(1), ..parallel };
+        let oracle_report =
+            reconcile(&mut serial_oracle, &serial, &mut |_| {}).expect("serial oracle");
+
+        assert_eq!(candidate_report.apply, oracle_report.apply);
+        assert_eq!(candidate_report.scan.entries, oracle_report.scan.entries);
+        assert_eq!(candidate_report.scan.dirs_read, oracle_report.scan.dirs_read);
+        assert_eq!(index_fingerprint(&candidate), index_fingerprint(&serial_oracle));
     }
 
     #[test]

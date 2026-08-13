@@ -15,7 +15,10 @@ import statistics
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
+from benchmarks.realtree import __main__ as realtree_cli
 from benchmarks.realtree import ledger, measure, profile, tree
 
 
@@ -40,7 +43,18 @@ class ReferenceTreeTests(unittest.TestCase):
         self.assertEqual(document["counts"]["files"], 3)
         self.assertEqual(document["counts"]["directories"], 3)
         self.assertEqual(document["sizes"]["apparent_bytes"], 5 + 12 + 2)
+        self.assertEqual(
+            document["newest_file_mtime_ns"],
+            max(path.stat().st_mtime_ns for path in self.root.rglob("*") if path.is_file()),
+        )
         self.assertEqual(document["max_depth"], 3)
+
+    def test_allocated_bytes_use_apparent_size_when_blocks_are_unavailable(self) -> None:
+        metadata = SimpleNamespace(st_size=7, st_blocks=2)
+        with mock.patch("benchmarks.realtree.tree.os.name", "posix"):
+            self.assertEqual(tree._allocated_bytes(metadata), 1024)
+        with mock.patch("benchmarks.realtree.tree.os.name", "nt"):
+            self.assertEqual(tree._allocated_bytes(metadata), 7)
 
     def test_fingerprint_discloses_no_path_or_name(self) -> None:
         document = tree.fingerprint(self.root, label="fixture")
@@ -130,6 +144,7 @@ class ReferenceTreeTests(unittest.TestCase):
             "symlinks": document["counts"]["symlinks"],
             "apparent_bytes": document["sizes"]["apparent_bytes"],
             "allocated_bytes": document["sizes"]["allocated_bytes"],
+            "newest_file_mtime_ns": document["newest_file_mtime_ns"],
             "engine_digest": document["engine_digest"],
         }
         self.assertIsNone(tree.probe_agrees(document, agreeing))
@@ -145,6 +160,16 @@ class ReferenceTreeTests(unittest.TestCase):
     def test_missing_summary_is_a_disagreement(self) -> None:
         document = tree.fingerprint(self.root, label="fixture")
         self.assertIsNotNone(tree.probe_agrees(document, None))
+
+    def test_harness_state_must_live_outside_the_measured_tree(self) -> None:
+        with self.assertRaisesRegex(SystemExit, "outside the measured --root"):
+            realtree_cli._require_external(
+                self.root, self.root / "results", description="result directory"
+            )
+
+        realtree_cli._require_external(
+            self.root, self.scratch / "results", description="result directory"
+        )
 
 
 class StatisticsTests(unittest.TestCase):

@@ -408,6 +408,37 @@ pub fn report(index: &Index, query: &Query, provenance: &Provenance) -> Report {
     }
 }
 
+/// Build a one-section report from an already reduced exact summary.
+///
+/// Pure for the same reason as [`report`]: scanning and time sampling happened before
+/// this boundary.  The execution planner uses this when a one-shot request proves that
+/// retaining paths and hierarchy cannot affect its answer.
+#[cfg(feature = "cli")]
+pub(crate) fn report_summary(
+    root: &Path,
+    scope: ScanScope,
+    size: SizeMetric,
+    summary: SummaryRow,
+    freshness: Freshness,
+    provenance: &Provenance,
+) -> Report {
+    Report {
+        scan_started_at: provenance.scan_started_at,
+        generated_at: provenance.generated_at,
+        source: provenance.source,
+        complete: provenance.complete,
+        errors: provenance.errors.clone(),
+        freshness,
+        scope,
+        root: root.to_path_buf(),
+        size,
+        // The planner only selects this tier when no analysis was requested, so there is
+        // no analyzer provenance to report.
+        analysis: None,
+        sections: vec![Section::Summary(summary)],
+    }
+}
+
 /// Aggregates gathered by one filtered traversal.
 struct Walked {
     /// Filtered subtree aggregates, keyed by directory id.

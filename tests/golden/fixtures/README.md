@@ -13,6 +13,13 @@ end-to-end evidence:
 - `dist/acorn-0.1.0.tar.gz` is a valid deterministic archive with a compound extension
 - Three directories exercise nested roll-ups, depth limits, and per-directory row limits
 
+The `realistic-project/` tree is the default-output acceptance fixture.
+Its sixteen source, documentation, test, benchmark, manifest, and README files create a
+concise but recognizable Rust project with three visible directory levels.
+One full-output scenario therefore covers the natural overview, ranking, indentation,
+alignment, file roll-ups, default depth and limit, compact bars, and the distinction
+between a deeper roll-up and an actually omitted ranked sibling.
+
 Fixture bytes are committed rather than generated during a test.
 Text files are pinned to LF and the archive is marked binary in `.gitattributes`,
 keeping apparent sizes identical across supported platforms.

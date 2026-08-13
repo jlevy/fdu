@@ -452,7 +452,8 @@ fn validate_producer_summary(producer: &Summary, validation: &Summary) -> ProbeR
         && producer.symlinks == validation.symlinks
         && producer.other == validation.other
         && producer.apparent_bytes == validation.apparent_bytes
-        && producer.allocated_bytes == validation.allocated_bytes;
+        && producer.allocated_bytes == validation.allocated_bytes
+        && producer.newest_file_mtime_ns == validation.newest_file_mtime_ns;
     if !matches {
         return Err(ProbeError(
             "scan-producer compact summary disagreed with exact validation".into(),
@@ -505,10 +506,8 @@ fn revalidate(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     let component = started.elapsed();
     let mut summary = summarize_index(&index)?;
     summary.dirs_read = report.scan.dirs_read;
-    // Deliberately left None: the reconcile sweep's walk is not instrumented yet
-    // (tracked in fdu-78wr), and an all-zero attribution object would read as
-    // measured evidence of no work rather than as an absent measurement. Null says
-    // "not instrumented"; zeros would lie.
+    // Deliberately left None: neither reconciliation path has complete attribution yet
+    // (tracked in fdu-78wr). Null says "not instrumented"; zeros would lie.
     summary.errors = u64::try_from(report.scan.errors.len()).unwrap_or(u64::MAX);
     summary.complete = report.is_complete();
     summary.apply = ApplySummary {
@@ -622,6 +621,7 @@ struct Summary {
     errors: u64,
     files: u64,
     index_len: Option<u64>,
+    newest_file_mtime_ns: Option<i64>,
     other: u64,
     query_iterations: u64,
     query_observations: u64,
@@ -653,6 +653,7 @@ impl Default for Summary {
             errors: 0,
             files: 0,
             index_len: None,
+            newest_file_mtime_ns: None,
             other: 0,
             query_iterations: 0,
             query_observations: 0,
@@ -718,6 +719,10 @@ impl Summary {
                     self.apparent_bytes = self.apparent_bytes.saturating_add(attrs.size.into());
                     self.allocated_bytes =
                         self.allocated_bytes.saturating_add(attrs.allocated.into());
+                    self.newest_file_mtime_ns = Some(
+                        self.newest_file_mtime_ns
+                            .map_or(attrs.mtime_ns, |newest| newest.max(attrs.mtime_ns)),
+                    );
                 }
                 EntryKind::Dir => self.dirs = self.dirs.saturating_add(1),
                 EntryKind::Symlink => self.symlinks = self.symlinks.saturating_add(1),
@@ -758,6 +763,7 @@ fn summarize_index(index: &Index) -> ProbeResult<Summary> {
     let total = index.total();
     summary.apparent_bytes = total.bytes.into();
     summary.allocated_bytes = total.allocated.into();
+    summary.newest_file_mtime_ns = (total.files > 0).then_some(total.newest_mtime_ns);
     summary.index_len = Some(index.len());
     summary.engine_digest = Some(digest.finish());
     Ok(summary)
@@ -816,6 +822,7 @@ impl ProbeOutput {
         let digest = json_optional_string(summary.engine_digest.as_deref());
         let content_digest = json_optional_string(summary.content_digest.as_deref());
         let index_len = json_optional_u64(summary.index_len);
+        let newest_file_mtime_ns = json_optional_i64(summary.newest_file_mtime_ns);
         let snapshot_bytes = json_optional_u64(summary.snapshot_bytes);
         format!(
             concat!(
@@ -829,7 +836,7 @@ impl ProbeOutput {
                 "\"cache_hits\":{},\"candidates\":{},\"digest\":{},",
                 "\"invalid_utf8\":{},\"records\":{},\"too_large\":{}}},",
                 "\"engine_digest\":{},\"entries\":{},\"errors\":{},",
-                "\"files\":{},\"index_len\":{},\"other\":{},",
+                "\"files\":{},\"index_len\":{},\"newest_file_mtime_ns\":{},\"other\":{},",
                 "\"query_iterations\":{},\"query_observations\":{},",
                 "\"snapshot_bytes\":{},",
                 "\"symlinks\":{}}}}}"
@@ -864,6 +871,7 @@ impl ProbeOutput {
             summary.errors,
             summary.files,
             index_len,
+            newest_file_mtime_ns,
             summary.other,
             summary.query_iterations,
             summary.query_observations,
@@ -901,6 +909,10 @@ fn json_optional_string(value: Option<&str>) -> String {
 }
 
 fn json_optional_u64(value: Option<u64>) -> String {
+    value.map_or_else(|| "null".into(), |value| value.to_string())
+}
+
+fn json_optional_i64(value: Option<i64>) -> String {
     value.map_or_else(|| "null".into(), |value| value.to_string())
 }
 
@@ -1200,5 +1212,38 @@ mod tests {
         assert!(rendered.starts_with("{\"component_ns\":7,"));
         assert!(rendered.ends_with('}'));
         assert!(rendered.contains("\"schema\":\"fdu-perf-probe-v1\""));
+    }
+
+    #[test]
+    fn summary_reports_newest_regular_file_mtime() {
+        let attrs = |mtime_ns| Attrs {
+            size: 1,
+            allocated: 512,
+            mtime_ns,
+            ctime_ns: mtime_ns,
+            inode: u64::try_from(mtime_ns).unwrap_or_default(),
+            dev: 1,
+        };
+        let observation = Observation::new(vec![
+            Op::Upsert { path: PathBuf::from("older"), kind: EntryKind::File, attrs: attrs(10) },
+            Op::Upsert {
+                path: PathBuf::from("newer-directory"),
+                kind: EntryKind::Dir,
+                attrs: attrs(99),
+            },
+            Op::Upsert {
+                path: PathBuf::from("newest-file"),
+                kind: EntryKind::File,
+                attrs: attrs(30),
+            },
+        ]);
+        let mut summary = Summary::default();
+
+        summary.observe(&observation);
+
+        assert_eq!(summary.newest_file_mtime_ns, Some(30));
+        let rendered =
+            ProbeOutput::new(Mode::ScanProducer, "scan", Duration::ZERO, summary).render();
+        assert!(rendered.contains("\"newest_file_mtime_ns\":30"));
     }
 }

@@ -33,7 +33,7 @@ from benchmarks.corpus import (
     _SemanticAccumulator,
 )
 
-FINGERPRINT_SCHEMA = "fdu-reference-tree-v2"
+FINGERPRINT_SCHEMA = "fdu-reference-tree-v3"
 
 #: Extensions are structural, not private, but an unbounded histogram would leak the
 #: shape of a private tree one rare suffix at a time. Keep the head, count the tail.
@@ -65,7 +65,8 @@ def fingerprint(root: Path, *, label: str) -> Dict[str, Any]:
 
     counts = {"directories": 1, "files": 0, "other": 0, "symlinks": 0, "total": 1}
     apparent_bytes = 0
-    allocated_bytes = 0
+    allocated_bytes_total = 0
+    newest_file_mtime_ns: Optional[int] = None
     linked_files: Dict[Tuple[int, int], Tuple[int, int, int]] = {}
     depths: Dict[int, int] = {0: 1}
     extensions: Dict[str, int] = {}
@@ -81,9 +82,15 @@ def fingerprint(root: Path, *, label: str) -> Dict[str, Any]:
             kind = "file"
             counts["files"] += 1
             apparent = int(metadata.st_size)
-            allocated = int(getattr(metadata, "st_blocks", 0)) * 512
+            allocated = _allocated_bytes(metadata)
             apparent_bytes += apparent
-            allocated_bytes += allocated
+            allocated_bytes_total += allocated
+            mtime_ns = int(metadata.st_mtime_ns)
+            newest_file_mtime_ns = (
+                mtime_ns
+                if newest_file_mtime_ns is None
+                else max(newest_file_mtime_ns, mtime_ns)
+            )
             if int(metadata.st_nlink) > 1:
                 key = (int(metadata.st_dev), int(metadata.st_ino))
                 occurrences, recorded_apparent, recorded_allocated = linked_files.get(
@@ -125,11 +132,19 @@ def fingerprint(root: Path, *, label: str) -> Dict[str, Any]:
         "root_id": root_id(absolute),
         "schema": FINGERPRINT_SCHEMA,
         "sizes": {
-            "allocated_bytes": allocated_bytes,
+            "allocated_bytes": allocated_bytes_total,
             "apparent_bytes": apparent_bytes,
         },
+        "newest_file_mtime_ns": newest_file_mtime_ns,
         "depth_histogram": {str(key): depths[key] for key in sorted(depths)},
     }
+
+
+def _allocated_bytes(metadata: Any) -> int:
+    """Match the engine's honest fallback when allocated size is unavailable."""
+    if os.name == "posix" and hasattr(metadata, "st_blocks"):
+        return int(metadata.st_blocks) * 512
+    return int(metadata.st_size)
 
 
 def root_id(root: Path) -> str:
@@ -176,6 +191,7 @@ def probe_agrees(fingerprint_document: Dict[str, Any], summary: Any) -> Optional
         "symlinks": counts["symlinks"],
         "apparent_bytes": fingerprint_document["sizes"]["apparent_bytes"],
         "allocated_bytes": fingerprint_document["sizes"]["allocated_bytes"],
+        "newest_file_mtime_ns": fingerprint_document["newest_file_mtime_ns"],
         "engine_digest": fingerprint_document["engine_digest"],
     }
     for field, want in expected.items():
@@ -200,7 +216,12 @@ def _walk(root: Path, unreadable: List[str]):
         for entry in entries:
             relative = entry.name if not prefix else f"{prefix}/{entry.name}"
             try:
-                metadata = entry.stat(follow_symlinks=False)
+                # A fresh query per entry, never DirEntry's cached copy: Windows
+                # serves scandir metadata from directory-enumeration data, which
+                # the platform permits to be stale (a directory's own mtime can
+                # lag its true value). The engine already stats freshly for the
+                # same reason, and the oracle must observe what the engine does.
+                metadata = os.lstat(entry.path)
             except OSError:
                 unreadable.append(relative)
                 continue

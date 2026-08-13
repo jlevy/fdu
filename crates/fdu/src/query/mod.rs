@@ -13,6 +13,8 @@ mod selection;
 
 pub use glob::Pattern;
 pub use parse::{format_rfc3339, parse_size, parse_when, system_time_to_nanos};
+#[cfg(feature = "cli")]
+pub(crate) use report::report_summary;
 pub use report::{
     ContentReportMetadata, FileRow, MetricGroup, MetricRow, MetricShare, MetricSummary, Provenance,
     Query, Report, ReportSource, Section, ShareMetric, SummaryRow, TreeNode, TypeRow, ViewSpec,

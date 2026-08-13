@@ -41,7 +41,7 @@ const REQUESTED_COMMON: libc::attrgroup_t =
     libc::ATTR_CMN_RETURNED_ATTRS | REQUIRED_COMMON | ATTR_CMN_ERROR;
 const REQUESTED_DIRECTORY: libc::attrgroup_t =
     libc::ATTR_DIR_MOUNTSTATUS | libc::ATTR_DIR_ALLOCSIZE | libc::ATTR_DIR_DATALENGTH;
-const REQUESTED_FILE: libc::attrgroup_t = libc::ATTR_FILE_TOTALSIZE | libc::ATTR_FILE_ALLOCSIZE;
+const REQUESTED_FILE: libc::attrgroup_t = libc::ATTR_FILE_ALLOCSIZE | libc::ATTR_FILE_DATALENGTH;
 
 pub(super) struct Entry {
     pub(super) name: OsString,
@@ -165,10 +165,10 @@ fn parse_entry(record: &[u8]) -> Option<Entry> {
     } else {
         Some(cursor.i64()?)
     };
-    let file_size =
-        if returned.file & libc::ATTR_FILE_TOTALSIZE == 0 { None } else { Some(cursor.i64()?) };
     let file_allocated =
         if returned.file & libc::ATTR_FILE_ALLOCSIZE == 0 { None } else { Some(cursor.i64()?) };
+    let file_size =
+        if returned.file & libc::ATTR_FILE_DATALENGTH == 0 { None } else { Some(cursor.i64()?) };
     let fixed_end = cursor.position();
 
     let kind = match object_type {
@@ -306,8 +306,8 @@ mod tests {
         record.extend_from_slice(&5_i64.to_ne_bytes()); // ctime nanoseconds
         record.extend_from_slice(&0_u32.to_ne_bytes()); // file flags
         record.extend_from_slice(&6_u64.to_ne_bytes()); // inode
-        record.extend_from_slice(&7_i64.to_ne_bytes()); // logical size
         record.extend_from_slice(&8_i64.to_ne_bytes()); // allocated size
+        record.extend_from_slice(&7_i64.to_ne_bytes()); // data-fork size
         let name_position = record.len();
         record.extend_from_slice(b"file\0");
 
@@ -323,7 +323,9 @@ mod tests {
     #[test]
     fn bulk_entries_match_the_portable_metadata_contract_byte_for_byte() {
         let directory = tempfile::tempdir().expect("temporary directory");
-        fs::write(directory.path().join("file"), b"contents").expect("regular file");
+        let file = directory.path().join("file");
+        fs::write(&file, b"contents").expect("regular file");
+        fs::write(file.join("..namedfork/rsrc"), b"resource fork").expect("resource fork");
         fs::create_dir(directory.path().join("dir")).expect("child directory");
         symlink("file", directory.path().join("link")).expect("symbolic link");
         fs::write(directory.path().join("decomposed-e\u{301}"), b"bytes")

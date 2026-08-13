@@ -17,6 +17,7 @@ use clap::builder::styling::{AnsiColor, Style as AnsiStyle, Styles};
 use clap::{ArgAction, ColorChoice, CommandFactory, FromArgMatches, Parser, ValueEnum};
 
 use crate::content::{AnalysisProfile, AnalysisRequest};
+use crate::execution::prepare_report;
 use crate::query::{
     Bound, Pattern, Provenance, Query, ReportSource, Selection, SizeMetric, SortKey, ViewSpec,
     parse_size, parse_when, system_time_to_nanos,
@@ -425,21 +426,7 @@ impl Cli {
             return self.run_watch(out, diagnostic, format, query, &config, color);
         }
 
-        let scan_started_at = SystemTime::now();
-        let (index, open_report, pending_save) = open_with_pending_save(path, &config)?;
-
-        let provenance = Provenance {
-            scan_started_at: Some(scan_started_at),
-            generated_at: SystemTime::now(),
-            source: match open_report.path_taken {
-                crate::OpenPath::ColdScan => ReportSource::ColdScan,
-                crate::OpenPath::WarmRevalidate => ReportSource::WarmRevalidate,
-                crate::OpenPath::CacheOnly => ReportSource::CacheOnly,
-            },
-            complete: open_report.is_complete(),
-            errors: open_report.error_messages(),
-        };
-        let report = crate::query::report(&index, &query, &provenance);
+        let (report, pending_save) = prepare_report(path, &config, &query)?;
 
         let color = ColorContext::from_environment(
             self.color,
@@ -465,11 +452,11 @@ impl Cli {
         }
         render_result?;
 
-        if format == report_format::Format::Text && !open_report.is_complete() {
+        if format == report_format::Format::Text && !report.complete {
             let color =
                 ColorContext::from_environment(self.color, false, false, stderr_is_terminal)
                     .enabled();
-            for error in open_report.error_messages() {
+            for error in &report.errors {
                 let _ = writeln!(
                     diagnostic,
                     "{}",
@@ -478,7 +465,7 @@ impl Cli {
             }
         }
 
-        Ok(if open_report.is_complete() { RunOutcome::Complete } else { RunOutcome::Partial })
+        Ok(if report.complete { RunOutcome::Complete } else { RunOutcome::Partial })
     }
 
     /// Whether the requested format is a machine format, which is never colorized.

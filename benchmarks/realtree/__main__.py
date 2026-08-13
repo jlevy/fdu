@@ -15,14 +15,15 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import tempfile
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Sequence
 
 from benchmarks.realtree import ledger, measure, profile, tree
 
-DEFAULT_RESULTS = Path("benchmarks/results/realtree")
-DEFAULT_SCRATCH = Path("benchmarks/corpus/realtree-scratch")
+DEFAULT_RESULTS = Path(tempfile.gettempdir()) / "fdu-realtree" / "results"
+DEFAULT_SCRATCH = Path(tempfile.gettempdir()) / "fdu-realtree" / "scratch"
 
 
 def main(argv: Sequence[str]) -> int:
@@ -105,10 +106,11 @@ def main(argv: Sequence[str]) -> int:
 
 
 def _baseline(arguments: argparse.Namespace) -> int:
-    document = tree.fingerprint(arguments.root, label=arguments.label)
     destination = arguments.output or (
         DEFAULT_RESULTS / f"tree-{arguments.label}.json"
     )
+    _require_external(arguments.root, destination, description="baseline output")
+    document = tree.fingerprint(arguments.root, label=arguments.label)
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(json.dumps(document, indent=2, sort_keys=True), encoding="utf-8")
     print(f"wrote {destination}", file=sys.stderr)
@@ -117,6 +119,8 @@ def _baseline(arguments: argparse.Namespace) -> int:
 
 
 def _measure(arguments: argparse.Namespace) -> int:
+    _require_external(arguments.root, arguments.scratch, description="scratch directory")
+    _require_external(arguments.root, arguments.output_dir, description="result directory")
     variants = [_variant(item, kind="fdu-probe") for item in arguments.variant]
     references = [_variant(item, kind="reference") for item in arguments.reference]
     jobs = [
@@ -207,6 +211,11 @@ def _profile(arguments: argparse.Namespace) -> int:
         measure.PROBE_JOBS[job]
         for job in (arguments.job or ["cold-scan-index", "warm-revalidate"])
     ]
+    destination = arguments.output or (
+        DEFAULT_RESULTS / f"profile-{arguments.label or 'latest'}.json"
+    )
+    _require_external(arguments.root, arguments.scratch, description="scratch directory")
+    _require_external(arguments.root, destination, description="profile output")
     arguments.scratch.mkdir(parents=True, exist_ok=True)
     variant = measure.Variant(name="profiling", path=arguments.binary)
     snapshots = measure._prepare_snapshots(
@@ -236,13 +245,18 @@ def _profile(arguments: argparse.Namespace) -> int:
         for frame in entry["self_time"][:14]:
             print(f"  {frame['percent']:6.2f}%  {frame['symbol'][:80]}")
 
-    destination = arguments.output or (
-        DEFAULT_RESULTS / f"profile-{arguments.label or 'latest'}.json"
-    )
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(json.dumps(captured, indent=2, sort_keys=True), encoding="utf-8")
     print(f"\nwrote {destination}", file=sys.stderr)
     return 0
+
+
+def _require_external(root: Path, path: Path, *, description: str) -> None:
+    """Reject harness state inside the tree whose immutability it is proving."""
+    subject = root.resolve(strict=True)
+    candidate = path.resolve(strict=False)
+    if candidate == subject or subject in candidate.parents:
+        raise SystemExit(f"{description} must be outside the measured --root")
 
 
 def _render(arguments: argparse.Namespace) -> int:

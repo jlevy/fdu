@@ -18,10 +18,14 @@ patterns:
 ---
 # CLI Surface
 
-## Help Is the Complete Invocation Contract
+## A Bare Invocation Is Safe and Shows the Complete Contract
+
+The critical no-argument path is the golden itself: it must print help successfully and
+must never infer the current directory.
+A unit test separately proves that `--help` produces these exact bytes.
 
 ```console
-$ fdu --help
+$ fdu
 A fast, incremental file roll-up engine: hierarchical tallies over large directory trees
 
 Usage: fdu [OPTIONS] <PATH>

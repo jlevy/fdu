@@ -6,6 +6,11 @@ fdu answers, for *every* directory in a tree at once: how big is it, how many fi
 it hold, what changed most recently, and what kinds of files live in it.
 One walk, many metrics, cached between runs.
 
+> **Typical macOS/APFS live performance:** FDU built a reusable exact index and ten-row
+> tree over 901,963 entries in a **3.324-second median**, versus 5.657 seconds for pdu,
+> 6.016 for dust, and 6.782 for Go gdu on an M1 Pro MacBook with a local SSD. See
+> [the full comparison](#speed-and-the-cache).
+
 > **Status: pre-release.** The observation/commit contract, bounded in-process change
 > feed, cache lifecycle, applying reconciler, CLI, and Python wheel are tested end to
 > end, and the measured-improvement loop described below is running.
@@ -33,26 +38,35 @@ The full survey, with the techniques worth adapting and their sources, is in
 
 ## Speed and the Cache
 
-**Typical live scan:** on a 976,295-entry workspace, a fresh FDU process with its own
-cache disabled produced a ten-row tree in a **4.237-second median**, versus **7.546
-seconds for dust**, **6.684 seconds for pdu**, and **8.315 seconds for gdu**. This was
-12 paired trials per tool on an M1 Pro MacBook with a local APFS SSD and the operating
-system’s filesystem cache warm.
-The narrower scalar-only dumac took 3.566 seconds; it does not retain FDU’s reusable
-index or per-directory metrics.
-See the
-[technical white paper](docs/project/reports/report-2026-08-12-fdu-performance-architecture.md),
-[full comparison](docs/project/reports/report-2026-08-12-fdu-live-tool-comparison.md),
-and
-[reproduction manifest](docs/project/reports/fdu-live-tool-comparison-manifest-v1.json).
+**Typical live scan:** on a self-contained 901,963-entry tree, a fresh FDU process with
+its own cache disabled built a reusable exact index and ten-row tree in a **3.324-second
+median**. Pdu and dust took 5.657 and 6.016 seconds, and Go gdu took 6.782 seconds.
+FDU’s richer index-and-tree product was the fastest of every tree or index tool
+measured. This was 12 adjacent paired trials per tool on an M1 Pro MacBook with a local
+APFS SSD in a repeated-workload warm-steady filesystem-cache state.
+One independent full-tree fingerprint and three warmups per tool preceded timing; this
+does not claim that every metadata object remained resident.
 
-| Tool | Result | Typical median |
+The cache-off rich-summary plan took 3.125 seconds and beat diskus, dua, BSD du, and GNU
+du. Dumac’s narrower allocated-byte total had a 2.980-second median, but its paired 2.2%
+advantage was statistically unclear (95% interval -5.7% to +1.7%). FDU also returned
+file and directory counts, apparent bytes, and newest file time while using 13.6 MiB
+instead of dumac’s 44.4 MiB peak RSS. See the
+[technical white paper](docs/project/reports/report-2026-08-12-fdu-performance-architecture.md),
+[full comparison](docs/project/reports/report-2026-08-13-fdu-live-tool-comparison.md),
+and
+[reproduction manifest](docs/project/reports/fdu-live-tool-comparison-manifest-v2.json).
+
+| Tool | Work returned | Typical median |
 | --- | --- | ---: |
-| **fdu** | reusable index and ten-row tree | **4.237 s** |
-| pdu | rendered tree | 6.684 s |
-| dust | ten-row tree | 7.546 s |
-| gdu | ten-row tree | 8.315 s |
-| dumac | scalar total only | **3.566 s** |
+| **fdu** | reusable exact index and ten-row tree | **3.324 s** |
+| **fdu** | five-tally exact summary | **3.125 s** |
+| dumac | allocated-byte total only | 2.980 s (statistical tie) |
+| pdu | rendered depth-one tree | 5.657 s |
+| dust | rendered ten-row tree | 6.016 s |
+| gdu | rendered ten-row tree | 6.782 s |
+| diskus | scalar total only | 5.708 s |
+| dua | scalar total only | 5.459 s |
 
 fdu has two paths to an answer, and it labels which one you got.
 
@@ -60,6 +74,14 @@ fdu has two paths to an answer, and it labels which one you got.
 statted once, and per-directory roll-ups accumulate as the walk proceeds.
 That is the same job `du` does, plus the extra metrics, and it is bounded by syscall
 count and storage latency.
+For the existing `--cache off --view summary` composition, FDU now derives an exact
+summary-only execution plan instead of retaining a reusable index.
+On a frozen heterogeneous 978,339-entry run that improved paired wall time 14.56% and
+cut peak RSS 95.28%, with identical stable report semantics (exp-040). Exact-binary
+replications on uniform 720,805- and 901,963-entry trees reproduced the resource
+mechanism but only 1.8–2.8% wall gains, showing that syscall-bound topology can hide
+most of the saved user-space work.
+Tree, filtered, multi-view, cached, and live requests still use the full index.
 
 **With a usable cache, it can be much faster** — but only where the cache can supply
 something the filesystem will not.
@@ -101,8 +123,9 @@ which draws on source review of bfs, dut,
 [pdu](https://github.com/KSXGitHub/parallel-disk-usage),
 [diskus](https://github.com/sharkdp/diskus), and
 [jwalk](https://github.com/jessegrosjean/jwalk), plus
-[dumac](https://healeycodes.com/maybe-the-fastest-disk-usage-program-on-macos)’s
-measurements of the macOS bulk-attribute path.
+[dumac](https://healeycodes.com/maybe-the-fastest-disk-usage-program-on-macos)’s macOS
+bulk-attribute design and
+[follow-up scheduler and inode-sharding work](https://healeycodes.com/optimizing-my-disk-usage-program).
 
 ## Build Locally
 
@@ -265,7 +288,7 @@ a release is published, that makes an exact version directly runnable as
 
 ## How It Works
 
-Three artifacts and one contract:
+Three retained artifacts, one transient answer, and one contract:
 
 | Artifact | What it is |
 | --- | --- |
@@ -273,6 +296,7 @@ Three artifacts and one contract:
 | **Snapshot** | A complete index baseline, keyed by canonical root, semantic scan scope, format, and engine version |
 | **Observation** | Verified producer input, optionally conditional on the indexed path state |
 | **AppliedDelta** | A clocked batch of effective committed changes for the bounded change feed |
+| **Derived report** | Exact minimum state for a proven one-shot composition; otherwise the planner falls back to the index |
 
 Everything else produces observations or consumes applied deltas.
 The index alone arbitrates observations, removes no-ops, advances the clock, and mints

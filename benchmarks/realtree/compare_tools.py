@@ -14,6 +14,7 @@ import json
 import statistics
 import subprocess
 import sys
+import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -21,8 +22,10 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from benchmarks.realtree import measure, tree
 
-SCHEMA = "fdu-tool-comparison-v2"
-DEFAULT_RESULTS = Path("benchmarks/results/realtree")
+SCHEMA = "fdu-tool-comparison-v3"
+DEFAULT_RESULTS = Path(tempfile.gettempdir()) / "fdu-tool-comparison" / "results"
+MIN_TOOL_COMPARISON_WARMUPS = 1
+PRE_RUN_FINGERPRINT_PASSES = 1
 
 
 class ComparisonError(RuntimeError):
@@ -44,6 +47,7 @@ class ToolContract:
 class Tool:
     """A resolved tool binary with its declared contract."""
 
+    name: str
     contract: ToolContract
     binary: Path
 
@@ -66,6 +70,52 @@ CONTRACTS: Dict[str, ToolContract] = {
             "1",
             "--limit",
             "10",
+            "{root}",
+        ),
+        version_argv=("{binary}", "--version"),
+    ),
+    # These summary contracts intentionally use the same public CLI arguments. The
+    # immutable binary supplied by the operator determines whether the request takes
+    # the indexed or transient execution plan; the harness records that declared work
+    # class but cannot infer retained engine state from process output.
+    "fdu-index-summary": ToolContract(
+        name="fdu-index-summary",
+        work_class="indexed-summary",
+        description=(
+            "complete scan and reusable exact metadata index reduced to one summary; "
+            "the persisted snapshot cache is disabled"
+        ),
+        argv=(
+            "{binary}",
+            "--cache",
+            "off",
+            "--view",
+            "summary",
+            "--format",
+            "json",
+            "--color",
+            "never",
+            "{root}",
+        ),
+        version_argv=("{binary}", "--version"),
+    ),
+    "fdu-transient-summary": ToolContract(
+        name="fdu-transient-summary",
+        work_class="transient-summary",
+        description=(
+            "complete scan reduced directly to exact summary tallies; no path index or "
+            "persisted snapshot is retained"
+        ),
+        argv=(
+            "{binary}",
+            "--cache",
+            "off",
+            "--view",
+            "summary",
+            "--format",
+            "json",
+            "--color",
+            "never",
             "{root}",
         ),
         version_argv=("{binary}", "--version"),
@@ -180,14 +230,14 @@ def main(argv: Sequence[str]) -> int:
     parser.add_argument(
         "--anchor",
         required=True,
-        metavar="fdu=PATH",
+        metavar="[LABEL:]FDU_CONTRACT=PATH",
         help="immutable fdu release binary used beside every competitor",
     )
     parser.add_argument(
         "--tool",
         action="append",
         required=True,
-        metavar="NAME=PATH",
+        metavar="[LABEL:]CONTRACT=PATH",
         help="supported competitor; repeat for each tool",
     )
     parser.add_argument("--trials", type=int, default=measure.DEFAULT_TRIALS)
@@ -208,7 +258,7 @@ def main(argv: Sequence[str]) -> int:
         _require_external_output(arguments.root, arguments.output_dir)
         if arguments.baseline_output is not None:
             _require_external_file(arguments.root, arguments.baseline_output)
-        anchor = _parse_tool(arguments.anchor, expected="fdu")
+        anchor = _parse_tool(arguments.anchor)
         competitors = [_parse_tool(item) for item in arguments.tool]
         document = run(
             root=arguments.root,
@@ -255,20 +305,23 @@ def run(
     timeout_seconds: float,
 ) -> Dict[str, Any]:
     """Run each competitor immediately beside the anchor and return redacted evidence."""
-    if anchor.contract.name != "fdu":
-        raise ComparisonError("the comparison anchor must use the fdu contract")
+    if anchor.contract.name not in {
+        "fdu",
+        "fdu-index-summary",
+        "fdu-transient-summary",
+    }:
+        raise ComparisonError("the comparison anchor must use an fdu contract")
     if not competitors:
         raise ComparisonError("at least one competitor is required")
     if trials < 3:
         raise ComparisonError("at least three trials are required for a paired interval")
-    if warmups < 0:
-        raise ComparisonError("warmups cannot be negative")
-    names = [tool.contract.name for tool in competitors]
-    if len(names) != len(set(names)) or "fdu" in names:
-        raise ComparisonError("competitor names must be unique and cannot be fdu")
+    cache_evidence = _warm_cache_evidence(warmups)
+    names = [tool.name for tool in competitors]
+    if len(names) != len(set(names)) or anchor.name in names:
+        raise ComparisonError("competitor names must be unique and cannot repeat the anchor")
 
     tools = [anchor, *competitors]
-    identities = {tool.contract.name: _identity(tool) for tool in tools}
+    identities = {tool.name: _identity(tool) for tool in tools}
     started = time.time()
     before = tree.fingerprint(root, label=label)
     if baseline_output is not None:
@@ -287,10 +340,11 @@ def run(
             position += 1
             sample = _run_one(
                 tool,
-                pair=competitor.contract.name,
+                pair=competitor.name,
                 ordinal=ordinal,
                 warmup=warmup,
                 root=root,
+                summary_oracle=before,
                 timeout_seconds=timeout_seconds,
             )
             samples.append(sample)
@@ -298,6 +352,20 @@ def run(
 
     after = tree.fingerprint(root, label=label)
     mutation = tree.compare(after, before)
+    semantic_mismatches = _invalidate_semantic_mismatches(
+        samples, anchor=anchor.name
+    )
+    oracle_mismatches = [
+        {
+            "pair": sample["pair"],
+            "tool": sample["tool"],
+            "ordinal": sample["ordinal"],
+            "warmup": sample["warmup"],
+            "reason": sample["summary_oracle_error"],
+        }
+        for sample in samples
+        if sample.get("summary_oracle_error") is not None
+    ]
     document: Dict[str, Any] = {
         "schema": SCHEMA,
         "started_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(started)),
@@ -305,6 +373,7 @@ def run(
         "host": measure.host_facts(),
         "conditions": {
             "os_cache": "warm-steady",
+            "os_cache_evidence": cache_evidence,
             "storage": storage,
             "trials": trials,
             "warmups": warmups,
@@ -315,10 +384,12 @@ def run(
         "tree_after_digest": after["engine_digest"],
         "tree_mutated_during_run": mutation,
         "baseline_drift": drift,
-        "anchor": anchor.contract.name,
+        "anchor": anchor.name,
         "competitor_order": names,
         "tools": identities,
         "samples": samples,
+        "semantic_mismatches": semantic_mismatches,
+        "summary_oracle_mismatches": oracle_mismatches,
     }
     document["invalid_samples"] = sum(
         1 for sample in samples if not sample["warmup"] and not sample["valid"]
@@ -326,6 +397,53 @@ def run(
     document["statistics"] = _statistics(document)
     document["overall"] = _overall(document)
     return document
+
+
+def _invalidate_semantic_mismatches(
+    samples: Sequence[Dict[str, Any]], *, anchor: str
+) -> List[Dict[str, Any]]:
+    """Invalidate FDU pairs whose stable report semantics differ.
+
+    Timestamp, generator, and absolute-root fields legitimately differ between two
+    adjacent processes.  ``_summary_semantic_digest`` removes only those envelope
+    fields; a digest mismatch therefore means the candidate changed the answer and its
+    timing cannot support a performance verdict.
+    """
+    indexed: Dict[Tuple[str, int, bool, str], Dict[str, Any]] = {
+        (
+            str(sample["pair"]),
+            int(sample["ordinal"]),
+            bool(sample["warmup"]),
+            str(sample["tool"]),
+        ): sample
+        for sample in samples
+    }
+    mismatches: List[Dict[str, Any]] = []
+    for sample in samples:
+        competitor = str(sample["pair"])
+        if sample["tool"] != competitor or sample.get("semantic_sha256") is None:
+            continue
+        anchor_sample = indexed.get(
+            (competitor, int(sample["ordinal"]), bool(sample["warmup"]), anchor)
+        )
+        if anchor_sample is None or anchor_sample.get("semantic_sha256") is None:
+            continue
+        if sample["semantic_sha256"] == anchor_sample["semantic_sha256"]:
+            continue
+        reason = f"stable report semantics differ from {anchor}"
+        for mismatched in (anchor_sample, sample):
+            mismatched["valid"] = False
+            mismatched["reasons"].append(reason)
+        mismatches.append(
+            {
+                "pair": competitor,
+                "ordinal": int(sample["ordinal"]),
+                "warmup": bool(sample["warmup"]),
+                "anchor_sha256": anchor_sample["semantic_sha256"],
+                "competitor_sha256": sample["semantic_sha256"],
+            }
+        )
+    return mismatches
 
 
 def _schedule(
@@ -351,6 +469,7 @@ def _run_one(
     ordinal: int,
     warmup: bool,
     root: Path,
+    summary_oracle: Mapping[str, Any],
     timeout_seconds: float,
 ) -> Dict[str, Any]:
     argv = _expand(tool.contract.argv, tool.binary, root)
@@ -368,10 +487,20 @@ def _run_one(
         reasons.append("command timed out")
     if result["exit_code"] != 0:
         reasons.append(f"command exited with {result['exit_code']}")
+    semantic_sha256: Optional[str] = None
+    summary_oracle_error: Optional[str] = None
+    if tool.contract.name in {"fdu-index-summary", "fdu-transient-summary"}:
+        semantic_sha256, summary, semantic_error = _summary_semantics(result["stdout"])
+        if semantic_error is not None:
+            reasons.append(semantic_error)
+        elif summary is not None:
+            summary_oracle_error = _summary_oracle_error(summary, summary_oracle)
+            if summary_oracle_error is not None:
+                reasons.append(summary_oracle_error)
     stderr = result["stderr"].encode("utf-8", errors="replace")
     return {
         "pair": pair,
-        "tool": tool.contract.name,
+        "tool": tool.name,
         "ordinal": ordinal,
         "warmup": warmup,
         "valid": not reasons,
@@ -379,9 +508,78 @@ def _run_one(
         "metrics": metrics,
         "stdout_bytes": len(result["stdout"]),
         "stdout_sha256": hashlib.sha256(result["stdout"]).hexdigest(),
+        "semantic_sha256": semantic_sha256,
+        "summary_oracle_error": summary_oracle_error,
         "stderr_bytes": len(stderr),
         "stderr_sha256": hashlib.sha256(stderr).hexdigest(),
     }
+
+
+def _summary_semantic_digest(stdout: bytes) -> Tuple[Optional[str], Optional[str]]:
+    """Hash stable report semantics while excluding timestamps and the absolute root."""
+    digest, _summary, error = _summary_semantics(stdout)
+    return digest, error
+
+
+def _summary_semantics(
+    stdout: bytes,
+) -> Tuple[Optional[str], Optional[Mapping[str, Any]], Optional[str]]:
+    """Return stable report identity and independently checkable summary values."""
+    try:
+        document = json.loads(stdout)
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        return None, None, f"summary output was not JSON: {error}"
+    if not isinstance(document, dict):
+        return None, None, "summary output was not a JSON object"
+    if document.get("source") != "cold_scan" or document.get("freshness") != "fresh":
+        return None, None, "cache-off summary was not a fresh cold scan"
+    if document.get("complete") is not True or document.get("errors") != []:
+        return None, None, "summary output was partial or reported errors"
+    reports = document.get("reports")
+    if (
+        not isinstance(reports, list)
+        or len(reports) != 1
+        or not isinstance(reports[0], dict)
+        or reports[0].get("view") != "summary"
+    ):
+        return None, None, "summary output did not contain exactly one summary report"
+    summary = reports[0].get("summary")
+    if not isinstance(summary, dict):
+        return None, None, "summary report did not contain a summary object"
+    stable = {
+        "schema": document.get("schema"),
+        "source": document.get("source"),
+        "freshness": document.get("freshness"),
+        "complete": document.get("complete"),
+        "errors": document.get("errors"),
+        "reports": reports,
+    }
+    encoded = json.dumps(stable, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest(), summary, None
+
+
+def _summary_oracle_error(
+    summary: Mapping[str, Any], oracle: Mapping[str, Any]
+) -> Optional[str]:
+    """Return why an FDU summary disagrees with the independent Python walk."""
+    counts = oracle["counts"]
+    sizes = oracle["sizes"]
+    expected = {
+        "files": counts["files"],
+        # FDU's summary describes descendants; the fingerprint also counts the root.
+        "dirs": counts["directories"] - 1,
+        "bytes": sizes["apparent_bytes"],
+        "allocated": sizes["allocated_bytes"],
+        "newest_mtime_ns": oracle["newest_file_mtime_ns"],
+    }
+    for field, wanted in expected.items():
+        observed = summary.get(field)
+        if observed != wanted:
+            return (
+                f"summary {field}={observed!r} disagrees with independent oracle "
+                f"{wanted!r}"
+            )
+    return None
 
 
 def _statistics(document: Mapping[str, Any]) -> Dict[str, Any]:
@@ -446,6 +644,13 @@ def _overall(document: Mapping[str, Any]) -> Dict[str, Any]:
                     if sample.get("stdout_sha256")
                 }
             ),
+            "semantic_hashes": len(
+                {
+                    sample["semantic_sha256"]
+                    for sample in selected
+                    if sample.get("semantic_sha256")
+                }
+            ),
             "stderr_nonempty_samples": sum(
                 1 for sample in selected if sample.get("stderr_bytes", 0)
             ),
@@ -468,9 +673,14 @@ def _paired(
     samples: Sequence[Mapping[str, Any]], *, pair: str, metric_names: Iterable[str]
 ) -> Dict[str, Any]:
     result: Dict[str, Any] = {}
+    anchor = next(
+        str(sample["tool"])
+        for sample in samples
+        if sample["pair"] == pair and sample["tool"] != pair
+    )
     for metric in metric_names:
         indexed: Dict[str, Dict[int, int]] = {}
-        for name in ("fdu", pair):
+        for name in (anchor, pair):
             indexed[name] = {
                 int(sample["ordinal"]): int(sample["metrics"][metric])
                 for sample in samples
@@ -480,11 +690,11 @@ def _paired(
                 and sample["valid"]
                 and sample["metrics"].get(metric) is not None
             }
-        ordinals = sorted(set(indexed["fdu"]) & set(indexed[pair]))
+        ordinals = sorted(set(indexed[anchor]) & set(indexed[pair]))
         ratios = [
-            (indexed[pair][ordinal] - indexed["fdu"][ordinal]) / indexed["fdu"][ordinal]
+            (indexed[pair][ordinal] - indexed[anchor][ordinal]) / indexed[anchor][ordinal]
             for ordinal in ordinals
-            if indexed["fdu"][ordinal]
+            if indexed[anchor][ordinal]
         ]
         if len(ratios) < 3:
             result[metric] = None
@@ -512,9 +722,11 @@ def render(document: Mapping[str, Any]) -> str:
             f"{document['conditions'].get('storage') or 'unspecified storage'}."
         ),
         "",
+        _cache_note(document["conditions"]),
+        "",
         _hardlink_note(tree_document),
         "",
-        "| Tool | Work class | Median wall | Versus paired fdu | 95% interval | Peak RSS |",
+        "| Tool | Work class | Median wall | Versus paired anchor | 95% interval | Peak RSS |",
         "| --- | --- | ---: | ---: | ---: | ---: |",
     ]
     anchor = document["anchor"]
@@ -558,10 +770,15 @@ def render(document: Mapping[str, Any]) -> str:
         [
             "",
             "Positive percentages mean the competitor took more wall time than the immediately "
-            "adjacent fdu run. External tools are calibration references, not optimization "
+            "adjacent anchor run. External tools are calibration references, not optimization "
             "verdicts; work classes and command templates are retained in the JSON artifact.",
             "",
             f"Invalid timed samples: {document['invalid_samples']}. ",
+            f"Semantic mismatches: {len(document.get('semantic_mismatches', []))}. ",
+            (
+                "Independent summary-oracle mismatches: "
+                f"{len(document.get('summary_oracle_mismatches', []))}. "
+            ),
             f"Baseline drift: {document['baseline_drift'] or 'none'}. ",
             f"Mutation during run: {document['tree_mutated_during_run'] or 'none'}.",
             "",
@@ -575,27 +792,64 @@ def render(document: Mapping[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _warm_cache_evidence(warmups: int) -> Dict[str, Any]:
+    """Describe what establishes the repeated-workload filesystem-cache state."""
+    if warmups < MIN_TOOL_COMPARISON_WARMUPS:
+        raise ComparisonError(
+            "a warm-steady tool comparison requires at least one warmup per tool"
+        )
+    return {
+        "pre_run_full_tree_fingerprints": PRE_RUN_FINGERPRINT_PASSES,
+        "minimum_full_tree_warmups_per_tool": warmups,
+        "residency_claim": "repeated-workload-steady-state",
+    }
+
+
+def _cache_note(conditions: Mapping[str, Any]) -> str:
+    """Render the cache claim without implying that all metadata remained resident."""
+    state = conditions.get("os_cache", "unspecified")
+    evidence = conditions.get("os_cache_evidence")
+    if not isinstance(evidence, Mapping):
+        return f"OS filesystem cache: {state}."
+    fingerprints = evidence.get("pre_run_full_tree_fingerprints", 0)
+    warmups = evidence.get("minimum_full_tree_warmups_per_tool", 0)
+    return (
+        f"OS filesystem cache: {state}, after {fingerprints} complete independent "
+        f"fingerprint and at least {warmups} full-tree warmups per tool. This is a "
+        "repeated-workload state, not a claim that every metadata object remained "
+        "resident."
+    )
+
+
 def _parse_tool(specification: str, *, expected: Optional[str] = None) -> Tool:
-    name, separator, raw_path = specification.partition("=")
-    if not separator or not name or not raw_path:
-        raise ComparisonError(f"tool {specification!r} must be NAME=PATH")
-    if expected is not None and name != expected:
+    descriptor, separator, raw_path = specification.partition("=")
+    if not separator or not descriptor or not raw_path:
+        raise ComparisonError(f"tool {specification!r} must be [LABEL:]CONTRACT=PATH")
+    label, alias, contract_name = descriptor.partition(":")
+    if not alias:
+        label = descriptor
+        contract_name = descriptor
+    if not label or not contract_name:
+        raise ComparisonError(f"tool {specification!r} must be [LABEL:]CONTRACT=PATH")
+    if expected is not None and contract_name != expected:
         raise ComparisonError(f"expected {expected}=PATH, got {specification!r}")
-    contract = CONTRACTS.get(name)
+    contract = CONTRACTS.get(contract_name)
     if contract is None:
         raise ComparisonError(
-            f"unsupported tool {name!r}; choose from {', '.join(sorted(CONTRACTS))}"
+            f"unsupported tool contract {contract_name!r}; "
+            f"choose from {', '.join(sorted(CONTRACTS))}"
         )
     binary = Path(raw_path).resolve()
     if not binary.is_file():
-        raise ComparisonError(f"{name} binary does not exist: {binary}")
-    return Tool(contract=contract, binary=binary)
+        raise ComparisonError(f"{label} binary does not exist: {binary}")
+    return Tool(name=label, contract=contract, binary=binary)
 
 
 def _identity(tool: Tool) -> Dict[str, Any]:
     content = tool.binary.read_bytes()
     return {
-        "name": tool.contract.name,
+        "name": tool.name,
+        "contract": tool.contract.name,
         "work_class": tool.contract.work_class,
         "description": tool.contract.description,
         "command": list(tool.contract.argv),

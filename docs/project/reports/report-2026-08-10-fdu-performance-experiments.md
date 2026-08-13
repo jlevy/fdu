@@ -96,8 +96,17 @@ dead end.
 | 037 | [Revisit breadth-first versus depth-first on the live 1M workspace](#exp037--revisit-breadthfirst-versus-depthfirst-on-the-live-1m-workspace) | H4 | `cold-scan-index` | +3.6% | ❌ rejected |
 | 038 | [Parent-relative openat frontier on the live 1M workspace](#exp038--parentrelative-openat-frontier-on-the-live-1m-workspace) | H24, H29 | `cold-scan-index` | -0.7% | ❌ rejected |
 | 039 | [Revisit the macOS bulk buffer on the live 1M workspace](#exp039--revisit-the-macos-bulk-buffer-on-the-live-1m-workspace) | H55 | `cold-scan-index` | +2.2% | ❌ rejected |
-| 040 | [Reject inline basic content analysis](#exp047--reject-inline-basic-content-analysis) | H79 | `content-basic` | +66.3% | ❌ rejected |
-| 041 | [Reject prose collector gating for SLOC](#exp048--reject-prose-collector-gating-for-sloc) | H80 | `code-sloc` | +1.5% | ❌ rejected |
+| 040 | [Derive an exact rich summary without building an index](#exp040--derive-an-exact-rich-summary-without-building-an-index) | H59 | `rich-summary-report` | -14.6% | ✅ accepted |
+| 041 | [Reduce transient summaries inside scan workers](#exp041--reduce-transient-summaries-inside-scan-workers) | H62 | `rich-summary-report` | -1.4% | ❌ rejected |
+| 042 | [Derive macOS summary bulk records](#exp042--derive-macos-summary-bulk-records) | H63 | `rich-summary-report` | +1.9% | ❌ rejected |
+| 043 | [Retune workers for transient summary](#exp043--retune-workers-for-transient-summary) | H65 | `rich-summary-report` | +0.7% | ❌ rejected |
+| 044 | [Specialize a selected size total](#exp044--specialize-a-selected-size-total) | H64 | `selected-allocated-total` | -1.1% | ❌ rejected |
+| 045 | [Pipeline macOS directory opens](#exp045--pipeline-macos-directory-opens) | H67, H69 | `rich-summary-open-pipeline` | -4.5% | ↩︎ superseded |
+| 046 | [Tune a shared macOS directory-opener pool](#exp046--tune-a-shared-macos-directoryopener-pool) | H70 | `rich-summary-shared-openers` | -4.0% | ⏳ in progress |
+| 047 | [Reject inline basic content analysis](#exp047--reject-inline-basic-content-analysis) | H79 | `content-basic` | +66.3% | ❌ rejected |
+| 048 | [Reject prose collector gating for SLOC](#exp048--reject-prose-collector-gating-for-sloc) | H80 | `code-sloc` | +1.5% | ❌ rejected |
+| 049 | [Reject bounded Markdown source reserve](#exp049--reject-bounded-markdown-source-reserve) | H81 | `markdown-prose` | -3.5% | ❌ rejected |
+| 050 | [Decode complete UTF-8 chunks in place](#exp050--decode-complete-utf8-chunks-in-place) | H82 | `markdown-prose` | -12.0% | ✅ accepted |
 
 ## The experiments
 
@@ -1524,6 +1533,239 @@ crossing zero and no preregistered mechanism win; it is reverted.
 Full record:
 [`exp-039-revisit-the-macos-bulk-buffer-on-the-live-1m-workspace.md`](../experiments/exp-039-revisit-the-macos-bulk-buffer-on-the-live-1m-workspace.md)
 
+### exp-040 — Derive an exact rich summary without building an index
+
+✅ accepted · 2026-08-13 · H59
+
+Control: cache-off summary after constructing the complete reusable index
+
+Candidate: cache-off summary reduced directly from the scan through a derived execution
+plan
+
+**`rich-summary-report`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 4852.0 | 4183.2 | -14.56% | [-18.55%, -9.04%] |
+| cpu (ms) | 17735.2 | 16048.7 | -8.65% | [-12.43%, -7.31%] |
+| user (ms) | 1933.6 | 664.7 | -66.27% | [-68.58%, -65.76%] |
+| system (ms) | 15771.9 | 15367.9 | -0.81% (n.s.) | [-4.14%, +0.12%] |
+| peak rss (MiB) | 563.2 | 26.3 | -95.28% | [-95.51%, -95.11%] |
+
+Cost to carry: 273 lines; no new dependencies; new failure mode: An incorrect
+requirement proof could select retained state too small for a report.
+
+The planner is internal to the existing CLI composition, has one compact tier, and falls
+closed to the complete index for cache participation, filters, multiple views, watch
+mode, or any unproved request
+
+**Accepted:** The derived exact-summary plan improves paired wall 14.56%
+[9.04%, 18.55%], cuts peak RSS 95.28%, and produces one identical stable report hash
+across every old/new sample with no invalid trial or tree drift.
+
+Full record:
+[`exp-040-derive-an-exact-rich-summary-without-building-an-index.md`](../experiments/exp-040-derive-an-exact-rich-summary-without-building-an-index.md)
+
+### exp-041 — Reduce transient summaries inside scan workers
+
+❌ rejected · 2026-08-13 · H62
+
+Control: H59 transient summary reduced from generic observation batches
+
+Candidate: worker-local summary reduction with paths retained only for directories
+
+**`rich-summary-report`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 3031.8 | 2966.0 | -1.38% | [-3.71%, -0.31%] |
+| cpu (ms) | 10673.3 | 10521.7 | -1.12% | [-3.26%, -0.22%] |
+| user (ms) | 483.6 | 309.0 | -36.23% | [-36.95%, -34.83%] |
+| system (ms) | 10183.7 | 10212.8 | +0.53% (n.s.) | [-1.68%, +1.38%] |
+| peak rss (MiB) | 13.8 | 9.0 | -34.77% | [-35.95%, -34.17%] |
+
+Cost to carry: 299 lines; no new dependencies; new failure mode: A second walker
+implementation could drift from the generic scan contract.
+
+The prototype was retained only while screening the preregistered H63 composition;
+exp-042 also missed the wall gate, so both engine layers were reverted
+
+**Rejected:** Worker-local reduction cuts user CPU 36.23% and RSS 34.77%, but its 1.38%
+paired wall improvement misses the preregistered 3% production bar; the 720,805-entry
+replication is likewise only 1.26% with its interval crossing zero.
+
+Full record:
+[`exp-041-reduce-transient-summaries-inside-scan-workers.md`](../experiments/exp-041-reduce-transient-summaries-inside-scan-workers.md)
+
+### exp-042 — Derive macOS summary bulk records
+
+❌ rejected · 2026-08-13 · H63
+
+Control: H59 transient summary reduced from generic observation batches
+
+Candidate: H62 worker-local reduction plus a requirement-derived macOS bulk record
+
+**`rich-summary-report`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 3199.5 | 3251.2 | +1.86% (n.s.) | [-1.96%, +4.56%] |
+| cpu (ms) | 11245.7 | 10860.4 | -2.94% | [-4.03%, -0.99%] |
+| user (ms) | 499.2 | 246.8 | -50.96% | [-51.72%, -49.84%] |
+| system (ms) | 10741.4 | 10613.9 | -0.63% (n.s.) | [-1.86%, +1.36%] |
+| peak rss (MiB) | 13.9 | 8.4 | -39.70% | [-40.46%, -38.62%] |
+
+Cost to carry: 547 lines; no new dependencies; 1 unsafe blocks; new failure mode: A
+second strict kernel-record parser could drift from the full metadata parser; new
+failure mode: A reduction-specific walker could drift from the generic scan contract.
+
+The complete H62 plus H63 composition was screened against committed H59 and is reverted
+because its primary wall metric missed the production bar
+
+**Rejected:** The composition changes paired wall by +1.86% with a 95% interval spanning
+-1.96% to +4.56%; lower user CPU and RSS do not justify a second walker and macOS record
+parser without a user-visible speedup.
+
+Full record:
+[`exp-042-derive-macos-summary-bulk-records.md`](../experiments/exp-042-derive-macos-summary-bulk-records.md)
+
+### exp-043 — Retune workers for transient summary
+
+❌ rejected · 2026-08-13 · H65
+
+Control: H59 transient summary with the accepted automatic six-worker policy
+
+Candidate: H59 transient summary with a fixed eight-worker pool
+
+**`rich-summary-report`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 2210.5 | 2258.4 | +0.67% (n.s.) | [-1.56%, +3.99%] |
+| cpu (ms) | 8920.7 | 12531.0 | +40.66% (regression) | [+38.26%, +43.32%] |
+| user (ms) | 387.5 | 434.0 | +11.67% (regression) | [+10.13%, +14.34%] |
+| system (ms) | 8535.1 | 12102.7 | +42.03% (regression) | [+39.63%, +44.88%] |
+| peak rss (MiB) | 14.5 | 15.1 | +3.39% (regression) | [+1.22%, +6.43%] |
+
+Cost to carry: 12 lines; no new dependencies; new failure mode: A report-plan-specific
+worker policy could overfit one tree topology.
+
+A compile-time-only experimental override built fixed 8, 10, 12, and 16 worker binaries;
+the hook was removed after the curve and independent replication rejected a policy
+change
+
+**Rejected:** Eight workers looked promising in the 901,963-entry screen but the
+independent 720,805-entry 20-pair confirmation changed wall by +0.67% [-1.56%, +3.99%]
+while CPU rose 40.66%; automatic six remains the policy.
+
+Full record:
+[`exp-043-retune-workers-for-transient-summary.md`](../experiments/exp-043-retune-workers-for-transient-summary.md)
+
+### exp-044 — Specialize a selected size total
+
+❌ rejected · 2026-08-13 · H64
+
+Control: selected allocated total reduced through the existing generic H59 transient
+scan
+
+Candidate: selected allocated total folded inside a strict requirement-derived macOS
+bulk reader
+
+**`selected-allocated-total`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 2980.1 | 2954.7 | -1.15% (n.s.) | [-2.24%, +0.44%] |
+| cpu (ms) | 10641.8 | 10340.3 | -2.70% | [-3.49%, -1.70%] |
+| user (ms) | 485.8 | 234.0 | -51.54% | [-52.74%, -50.84%] |
+| system (ms) | 10164.0 | 10110.3 | -0.40% (n.s.) | [-1.15%, +0.79%] |
+| peak rss (MiB) | 13.6 | 8.3 | -39.19% | [-39.76%, -38.66%] |
+
+Cost to carry: 636 lines; no new dependencies; 1 unsafe blocks; new failure mode: A
+second macOS walker and parser could drift from the full reader’s fallback and scope
+semantics; new failure mode: A new public total view would enlarge the CLI, report,
+Python, and test contracts.
+
+The prototype included a typed total view, exact portable fallback, strict macOS parser,
+worker-local scalar reduction, and in-buffer file folding; every production change was
+reverted after measurement
+
+**Rejected:** The complete specialization improved paired wall only 1.15%
+[-2.24%, +0.44%], did not beat dumac, and required a second unsafe parser plus a new
+public view; all prototype code was reverted.
+
+Full record:
+[`exp-044-specialize-a-selected-size-total.md`](../experiments/exp-044-specialize-a-selected-size-total.md)
+
+### exp-045 — Pipeline macOS directory opens
+
+↩︎ superseded · 2026-08-13 · H67, H69
+
+Control: current exact rich-summary path with its automatic six-worker operating point
+
+Candidate: six scan and parser workers plus two bounded directory-open helpers
+
+**`rich-summary-open-pipeline`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 3468.3 | 3325.4 | -4.46% (n.s.) | [-31.04%, +33.91%] |
+| cpu (ms) | 12623.3 | 12437.9 | +1.47% (n.s.) | [-26.38%, +6.76%] |
+| user (ms) | 563.9 | 635.3 | +8.62% (n.s.) | [-8.65%, +15.68%] |
+| system (ms) | 12059.4 | 11812.4 | +1.21% (n.s.) | [-27.07%, +6.33%] |
+| peak rss (MiB) | 13.6 | 14.0 | +2.86% (n.s.) | [-21.63%, +5.16%] |
+
+Cost to carry: 78 lines; no new dependencies; new failure mode: Open helpers can
+accidentally compose with the adaptive reserve and over-thread the scan; new failure
+mode: Bounded request and response channels add shutdown and panic paths; new failure
+mode: A static opener count can overfit one topology or host-load regime.
+
+The first prototype activated the existing reserve and ran 18 threads; the measured
+candidate fixed the experiment at six scan workers plus two open-only helpers, and no
+production code is retained while confirmation remains open.
+
+**Superseded:** The corrected pairwise-helper screen had a promising -4.47% point
+estimate but an unusable [-31.04%, +33.91%] interval; H70 supersedes it with one shared
+bounded opener pool, and no H69 code is retained.
+
+Full record:
+[`exp-045-pipeline-macos-directory-opens.md`](../experiments/exp-045-pipeline-macos-directory-opens.md)
+
+### exp-046 — Tune a shared macOS directory-opener pool
+
+⏳ in progress · 2026-08-13 · H70
+
+Control: current exact rich-summary path with its automatic six-worker operating point
+
+Candidate: six scan and parser workers drawing opened directories from one shared
+two-thread opener pool
+
+**`rich-summary-shared-openers`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 3337.9 | 3220.9 | -3.98% | [-9.87%, -0.71%] |
+| cpu (ms) | 11757.7 | 10203.6 | -15.98% | [-19.70%, -10.38%] |
+| user (ms) | 527.4 | 636.8 | +23.31% (regression) | [+17.31%, +25.32%] |
+| system (ms) | 11230.3 | 9551.5 | -17.62% | [-21.39%, -11.95%] |
+| peak rss (MiB) | 13.4 | 13.6 | +2.21% (n.s.) | [-0.58%, +3.82%] |
+
+Cost to carry: 121 lines; no new dependencies; new failure mode: A shared opener pool
+adds request ordering and shutdown paths; new failure mode: Every descriptor handoff
+adds scheduler and channel traffic; new failure mode: Opener and adaptive scan-worker
+policies can exceed one intended concurrency budget.
+
+The primary five-pair screen used two shared openers; separate two, three, and
+four-opener screens plus a direct twelve-pair four-opener comparison with dumac were
+diagnostic only, and all prototype code remains outside the production branch.
+
+**In-progress:** Two shared openers cleared the short screen at -3.98% [-9.87%, -0.70%],
+but doubled involuntary context switches and later count/dumac runs suffered extreme
+host outliers; quiet 12-pair and independent-topology confirmation remain required.
+
+Full record:
+[`exp-046-tune-a-shared-macos-directory-opener-pool.md`](../experiments/exp-046-tune-a-shared-macos-directory-opener-pool.md)
+
 ### exp-047 — Reject inline basic content analysis
 
 ❌ rejected · 2026-08-13 · H79
@@ -1590,6 +1832,70 @@ acceptance threshold; cache-hit and basic jobs were also neutral..
 
 Full record:
 [`exp-048-reject-prose-collector-gating-for-sloc.md`](../experiments/exp-048-reject-prose-collector-gating-for-sloc.md)
+
+### exp-049 — Reject bounded Markdown source reserve
+
+❌ rejected · 2026-08-13 · H81
+
+Control: zero-capacity retained Markdown buffer
+
+Candidate: reserve up to the known bounded file size
+
+**`markdown-prose`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 382.0 | 365.6 | -3.55% (n.s.) | [-14.49%, +7.45%] |
+| component (ms) | 334.2 | 332.3 | +0.87% (n.s.) | [-9.24%, +10.44%] |
+| cpu (ms) | 1321.5 | 1275.5 | -3.25% (n.s.) | [-10.20%, +3.13%] |
+| user (ms) | 870.7 | 864.4 | -0.77% (n.s.) | [-2.54%, +1.09%] |
+| system (ms) | 458.9 | 415.8 | -6.19% (n.s.) | [-26.63%, +7.87%] |
+| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
+| peak rss (MiB) | 15.4 | 15.6 | -0.05% (n.s.) | [-3.00%, +4.94%] |
+
+Other jobs, wall time: `document-cache-hit` +1.0% (n.s.).
+
+Cost to carry: 5 lines; no new dependencies.
+
+One bounded capacity hint; production change reverted
+
+**Rejected:** Markdown wall moved -3.55%, but the 95% paired interval [-14.49%, +7.45%]
+crossed zero; cache hits were neutral, so the capacity hint is reverted.
+
+Full record:
+[`exp-049-reject-bounded-markdown-source-reserve.md`](../experiments/exp-049-reject-bounded-markdown-source-reserve.md)
+
+### exp-050 — Decode complete UTF-8 chunks in place
+
+✅ accepted · 2026-08-13 · H82 · commit `2fef9bf`
+
+Control: copy every chunk through a temporary vector
+
+Candidate: decode directly unless a UTF-8 carry is pending
+
+**`markdown-prose`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 251.5 | 218.9 | -12.04% | [-16.46%, -8.38%] |
+| component (ms) | 235.4 | 203.5 | -13.67% | [-19.22%, -8.82%] |
+| cpu (ms) | 1293.8 | 1195.2 | -6.79% | [-8.67%, -5.21%] |
+| user (ms) | 851.5 | 745.5 | -12.24% | [-13.19%, -11.66%] |
+| system (ms) | 436.2 | 443.0 | +4.77% (n.s.) | [-1.58%, +7.58%] |
+| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
+| peak rss (MiB) | 15.3 | 13.9 | -9.12% | [-11.21%, -4.83%] |
+
+Cost to carry: 7 lines; no new dependencies.
+
+One direct fast path plus the existing bounded carry path; no new dependency, unsafe
+code, or failure mode
+
+**Accepted:** The 32-pair Markdown run improved wall 12.04% with a 95% interval of
+[-16.46%, -8.38%], cut user CPU and peak RSS, preserved digests and goldens, and left
+self-host and cache-hit latency neutral.
+
+Full record:
+[`exp-050-decode-complete-utf-8-chunks-in-place.md`](../experiments/exp-050-decode-complete-utf-8-chunks-in-place.md)
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.
