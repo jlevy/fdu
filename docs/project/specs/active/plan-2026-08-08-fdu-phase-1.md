@@ -238,6 +238,18 @@ depends on:
   rendering and native identity foundations.
 - `fdu-v4lc` defines the native-unit type-rule dialect after gitignore measurement and
   goal ratification.
+
+The `fdu-p35d` spike used `ignore` 0.4.25’s standalone `GitignoreBuilder` and
+`matched_path_or_any_parents()` over prebuilt relative paths on an Apple M1 Pro with
+Rust 1.97.1. Compiling 1,000 mixed ignore and negation patterns took 12–15 ms; matching
+500,000 entries took 750–882 ms (median 822 ms, about 1.64 μs per entry).
+With 100 patterns, matching took 198–254 ms for 500,000 entries and 393 ms for 1,000,000
+entries (about 0.39–0.51 μs per entry).
+This validates one compiled matcher for an explicit tagging mode, but the cost is
+material enough that it must not be added to the default metadata walk.
+Content/type analysis may reuse this pattern only when requested and must measure it
+together with file reads rather than call it “free.”
+The one-off probe dependency was removed after recording the result.
 - `fdu-lka2` hardens platform backend failure, rename handling, descriptor limits, and
   reconciliation after the shared-index API and bounded generic transport are sealed.
 - `fdu-8z5l` establishes stable regression and claim governance on the completed runner,
@@ -354,8 +366,8 @@ blocker. The table below is the complete set owned directly by this plan.
 | --- | --- | --- | --- | --- |
 | 0 | `fdu-sn43` | P0 | Close the PR #1 merge gate (complete) | `fdu-ad45`, `fdu-gd6n`, `fdu-l8vc`, `fdu-83gl`, `fdu-ie5z`, `fdu-b3qe`, `fdu-9xf7` |
 | 2 | `fdu-gdrv` | P1 | Prove metric-vector atomic-refcount roll-up | `fdu-sn43` |
-| 2 | `fdu-p35d` | P1 | Measure gitignore tag-don’t-prune matching | `fdu-sn43` |
-| 2 | `fdu-odx6` | P1 | Ratify or amend goals 6 and 7 | `fdu-sn43` |
+| 2 | `fdu-p35d` | P1 | Measure gitignore tag-don’t-prune matching (complete) | `fdu-sn43` |
+| 2 | `fdu-odx6` | P1 | Ratify or amend goals 6 and 7 (complete) | `fdu-sn43` |
 | 2 | `fdu-579b` | P1 | Set deterministic incremental hardlink attribution | `fdu-sn43` |
 | 2 | `fdu-p2i1` | P1 | Measure the 10k-1M revalidation cost curve | `fdu-rq5m`, `fdu-d8kq`, `fdu-oj25` |
 | 2 | `fdu-1vd0` | P1 | Compare snapshot open and first-listing candidates | `fdu-rq5m`, `fdu-d8kq`, `fdu-oj25` |

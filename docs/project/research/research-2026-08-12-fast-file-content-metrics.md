@@ -391,6 +391,25 @@ not the metadata snapshot.
 
 ### Exploratory Performance Results
 
+#### Compiled gitignore tagging
+
+A local one-off spike used `ignore` 0.4.25’s standalone `GitignoreBuilder` and
+`matched_path_or_any_parents()` over prebuilt paths on an Apple M1 Pro, macOS 26.5.2,
+and Rust 1.97.1. This isolates matcher cost from directory enumeration and allocation:
+
+| Entries | Patterns | Compile | Match | Match per entry |
+| ---: | ---: | ---: | ---: | ---: |
+| 500,000 | 1,000 | 12–15 ms | 750–882 ms | 1.50–1.76 μs |
+| 500,000 | 100 | 1.2–1.4 ms | 198–254 ms | 0.40–0.51 μs |
+| 1,000,000 | 100 | 1.2 ms | 393 ms | 0.39 μs |
+
+The result supports compiling ignore rules once and tagging without pruning in an
+explicit analysis mode.
+It does not support charging this work to every default scan: at large-tree scale, even
+the realistic 100-pattern case is hundreds of milliseconds.
+The production design should keep the matcher optional, retain parent-ignore semantics,
+and benchmark its cost alongside content I/O when that mode is implemented.
+
 The source-corpus benchmark used SCC’s current checkout including vendored Go modules,
 with `.git` excluded and ignore-file behavior disabled.
 The corpus had 1,920 regular files and 19,876,258 bytes.
