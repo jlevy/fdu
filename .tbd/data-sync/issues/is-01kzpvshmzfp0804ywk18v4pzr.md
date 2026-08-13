@@ -5,7 +5,7 @@ title: Iteratively profile and optimize real-world traversal
 kind: epic
 status: open
 priority: 1
-version: 6
+version: 13
 spec_path: docs/project/specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md
 labels: []
 dependencies: []
@@ -15,8 +15,15 @@ child_order_hints:
   - is-01kzpvt1vamkqp8fffnpwhd93v
   - is-01kzpvt22bex8ed6d155y014py
   - is-01kzpvt29hvtsrg1pyrq20awxa
+  - is-01kzvqcp0wf2y0fwh6cgq16dxp
+  - is-01kzvqcp8pzrxtc0m34fz17ymq
+  - is-01kzvqqawcnm795f25dd6dpbbg
+  - is-01kzw3t92p7d4512h8vn6ktch1
+  - is-01kzwt2czaa7ax4yrzbcsszejj
+  - is-01kzwt2d8dapafh6tmf9f92gek
+  - is-01kzwt2dggjhccjvvsbnarj4qd
 created_at: 2026-08-10T22:13:19.646Z
-updated_at: 2026-08-10T22:16:05.281Z
+updated_at: 2026-08-13T05:38:39.759Z
 ---
 Run a measurement-first optimization campaign on an operator-supplied checkout with tens of thousands of files and a large dependency tree, using the local metabrowser checkout as the first subject without persisting personal absolute paths. Measure snapshot-absent and compatible-snapshot behavior separately, keep filesystem-cache state explicit, profile before each change, commit each accepted improvement independently, and retain rejected experiments when gains are small, unstable, or not worth their complexity. This campaign coordinates the existing walker, revalidation, snapshot, and final-report beads rather than weakening their correctness gates.
 
