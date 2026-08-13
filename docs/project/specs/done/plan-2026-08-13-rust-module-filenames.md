@@ -9,7 +9,7 @@ author: Joshua Levy (github.com/jlevy) with LLM assistance
 
 **Author:** Joshua Levy (github.com/jlevy) with LLM assistance
 
-**Status:** In Review
+**Status:** Complete
 
 ## Overview
 
@@ -203,7 +203,7 @@ The branch remains on Python 3.12-compatible Rust bindings and keeps the existin
   changed.
 - [x] Run the multilingual repository language/document report as an end-to-end smoke
   check and compare it with the stacked-base output shape.
-- [ ] Close and sync all linked beads, push the stacked branch, open the pull request
+- [x] Close and sync all linked beads, push the stacked branch, open the pull request
   against `codex/file-content-metrics-plan`, and watch every CI check to completion.
 
 ## Testing Strategy
@@ -256,6 +256,11 @@ Two Makefiles were reported as explicitly unsupported by the code parser, so
 `--allow-partial` produced the intended successful partial report rather than silently
 claiming complete coverage.
 
+Pull request #11 targets `codex/file-content-metrics-plan` as a four-commit stack.
+Its GitHub Actions matrix passed on macOS, Linux, and Windows, including Rust 1.85,
+clippy, documentation, dependency and supply-chain checks, feature-boundary tests, and
+Python 3.12 and 3.14 wheel builds.
+
 ## Rollout Plan
 
 Deliver this as one reviewable stacked pull request on
@@ -273,8 +278,8 @@ fixed for this implementation.
 - [Rust API Guidelines: naming](https://rust-lang.github.io/api-guidelines/naming.html)
 - [Rust Reference: modules and source filenames](https://doc.rust-lang.org/stable/reference/items/modules.html)
 - [The Rust Programming Language: separating modules into files](https://doc.rust-lang.org/stable/book/ch07-05-separating-modules-into-different-files.html)
-- [fdu Rust engineering quality plan](plan-2026-08-09-fdu-rust-engineering-quality.md)
-- [fdu file-content metrics plan](../done/plan-2026-08-12-fdu-file-content-metrics.md)
+- [fdu Rust engineering quality plan](../active/plan-2026-08-09-fdu-rust-engineering-quality.md)
+- [fdu file-content metrics plan](plan-2026-08-12-fdu-file-content-metrics.md)
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.
