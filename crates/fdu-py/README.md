@@ -6,7 +6,7 @@ roll-up engine.
 ```python
 import fdu_py
 
-index = fdu_py.open("/path/to/tree", analyze="basic", max_file_size="16MiB")
+index = fdu_py.open("/path/to/tree", analyze="full", max_file_size="16MiB")
 print(index.complete)         # false when unreadable paths made the result partial
 print(index.freshness)        # fresh, reconciling, stale, or partial
 print(index.errors)           # details from the latest open/scan/refresh
@@ -31,8 +31,11 @@ dependency; no Python watcher API is implied yet.
 `open()` and `scan()` accept the same `none`, `basic`, `code`, `documents`, and `full`
 analysis profiles as the Rust CLI, plus bounded file-size and worker settings.
 The report dictionary exposes stable type/family groups, exact share fractions, line and
-word slots, page denominators, coverage outcomes, and analyzer provenance.
+word slots, page denominators, coverage outcomes, analyzer provenance, detection source
+and confidence, and generated/vendor/documentation flags.
 The original extension grouping remains available as the `extensions` view.
+The package supports Python 3.12 and newer and builds one `abi3-py312` extension rather
+than separate native payloads for every Python minor release.
 
 The wheel also exposes the native Rust CLI as the `fdu` console script.
 Argument parsing, help, streams, color, errors, broken-pipe handling, and exit status
@@ -49,7 +52,7 @@ uvx --from fdu==<version> fdu --help
 
 That registry command is conditional until the first release is actually on PyPI.
 
-**Status: early scaffold**, not yet published to PyPI.
+**Status: pre-release**, not yet published to PyPI.
 
 License: MIT.
 

@@ -151,8 +151,8 @@ Examples:
   fdu .
   fdu --view extensions ~/Downloads
   fdu --view types,families --format json .
-  fdu --analyze basic --view documents .
-  fdu --analyze basic --view languages --max-file-size 8MiB .
+  fdu --analyze documents --view documents .
+  fdu --analyze code --view languages --max-file-size 8MiB .
 
 Five axes, and every option belongs to exactly one:
   Scope      PATH, --scan-depth                         what is scanned and cached
@@ -175,6 +175,7 @@ Content analysis:
 
 Output and automation:
   Metadata-only machine output remains fdu.report/1; metric summaries use fdu.report/2.
+  Metric rows include detection source, confidence, origin flags, and coverage.
   Results go to stdout; warnings and errors go to stderr.
   The command never prompts, pages, or animates progress.
 
@@ -248,6 +249,11 @@ at query time. Narrowing a selection never costs a rescan.
 - Several views in one run share one scan: `--view summary,types,families`.
 
 Add `--analyze basic` to stream physical, blank, and nonblank lines and raw prose words.
+Use `--analyze code --view languages` for standard LOC, comment, and code-blank
+partitions across supported common languages.
+Use `--analyze documents --view documents` for normalized prose words, paragraphs,
+aggregate-derived pages, and reader-visible Markdown that excludes destinations and
+code. `--analyze full` computes both families in one bounded pass.
 Use `--max-file-size`, `--analysis-workers`, and `--words-per-page` to bound work and
 control page derivation.
 
@@ -293,6 +299,9 @@ Check the process exit status and these fields:
 - `complete` and `errors` before trusting totals
 - `freshness` and `source` before presenting data as current
 - `truncated` on a tree node before treating it as exhaustive
+- `coverage` before presenting a metric summary as complete
+- `detection.sources`, `detection.confidence`, and `detection.flags` before treating a
+  deep-detected type or origin label as exact
 
 `source` is `cold_scan`, `warm_revalidate`, or `cache_only`. Only `--cache only` can
 return `freshness: stale`, and it says so rather than implying currency; it fails
@@ -314,6 +323,12 @@ Sizes and timestamps need one stat per entry, because an in-place edit changes a
 without changing any directory.
 Questions answerable from names alone need only one stat per directory.
 Adding metrics within a tier is free; crossing a tier boundary is what costs.
+
+Exact names and ordinary extensions remain path-only classifications.
+Unresolved files and ambiguous `.h` headers may use bounded shebang, modeline, literal,
+or signature probes.
+Do not collapse their provenance into an unqualified language claim; retain the report’s
+source and confidence fields when summarizing or transforming machine output.
 
 Run `fdu --help` for the complete flag, cache, color, scope, and exit contract.
 

@@ -41,7 +41,42 @@ const CLI_STYLES: Styles = Styles::styled()
     .valid(AnsiColor::Green.on_default())
     .invalid(AnsiColor::Yellow.on_default());
 
-const CONTENT_AFTER_HELP: &str = "Examples:\n  fdu .\n  fdu --view extensions ~/Downloads\n  fdu --view types,families --format json .\n  fdu --analyze basic --view documents .\n  fdu --analyze basic --view languages --max-file-size 8MiB .\n\nFive axes, and every option belongs to exactly one:\n  Scope      PATH, --scan-depth                         what is scanned and cached\n  Selection  --include, --exclude, --depth, --limit    which entries are considered\n  View       tree,extensions,types,families,languages,documents,files,summary\n  Format     --format text|json|jsonl|yaml, --color\n  Mode       --cache, --analyze, --max-file-size, --analysis-workers\n\nContent analysis:\n  none       metadata only; source files are never opened (default)\n  basic      physical, blank, and nonblank lines plus raw prose words\n  code       basic metrics plus the versioned common-language SLOC analyzer\n  documents  basic metrics plus logical and reader-visible prose metrics\n  full       every shipped analyzer\n\n  Content reads are bounded by --max-file-size and --analysis-workers.\n  --words-per-page changes only report-time page derivation.\n  Unchanged results are restored from a separate versioned sidecar.\n  cache=only never opens source files and fails if requested content is absent.\n\nOutput and automation:\n  Metadata-only machine output remains fdu.report/1; metric summaries use fdu.report/2.\n  Results go to stdout; warnings and errors go to stderr.\n  The command never prompts, pages, or animates progress.\n\nExit status:\n  0  Complete result, or a partial result accepted with --allow-partial\n  1  Fatal filesystem or cache error\n  2  Partial result, or command-line usage error";
+const CONTENT_AFTER_HELP: &str = r"Examples:
+  fdu .
+  fdu --view extensions ~/Downloads
+  fdu --view types,families --format json .
+  fdu --analyze documents --view documents .
+  fdu --analyze code --view languages --max-file-size 8MiB .
+
+Five axes, and every option belongs to exactly one:
+  Scope      PATH, --scan-depth                         what is scanned and cached
+  Selection  --include, --exclude, --depth, --limit    which entries are considered
+  View       tree,extensions,types,families,languages,documents,files,summary
+  Format     --format text|json|jsonl|yaml, --color
+  Mode       --cache, --analyze, --max-file-size, --analysis-workers
+
+Content analysis:
+  none       metadata only; source files are never opened (default)
+  basic      physical, blank, and nonblank lines plus raw prose words
+  code       basic metrics plus the versioned common-language SLOC analyzer
+  documents  basic metrics plus logical and reader-visible prose metrics
+  full       every shipped analyzer
+
+  Content reads are bounded by --max-file-size and --analysis-workers.
+  --words-per-page changes only report-time page derivation.
+  Unchanged results are restored from a separate versioned sidecar.
+  cache=only never opens source files and fails if requested content is absent.
+
+Output and automation:
+  Metadata-only machine output remains fdu.report/1; metric summaries use fdu.report/2.
+  Metric rows include detection source, confidence, origin flags, and coverage.
+  Results go to stdout; warnings and errors go to stderr.
+  The command never prompts, pages, or animates progress.
+
+Exit status:
+  0  Complete result, or a partial result accepted with --allow-partial
+  1  Fatal filesystem or cache error
+  2  Partial result, or command-line usage error";
 
 /// When terminal styling should be enabled.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum)]

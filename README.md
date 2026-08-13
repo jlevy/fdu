@@ -151,6 +151,8 @@ Metadata-only machine reports retain the versioned `fdu.report/1` schema.
 The `types`, `families`, `languages`, and `documents` metric summaries use
 `fdu.report/2`, adding exact share numerators and denominators, analyzer coverage, and
 versioned rule, option, and analyzer identities.
+Every metric row also reports how its files were detected, the confidence of those
+decisions, and generated, vendored, and documentation flags.
 Scan completeness and each tree node’s rendered truncation are separate fields.
 Invalid-Unicode paths retain their display string and add a lossless, platform-tagged
 raw identity.
@@ -172,8 +174,19 @@ as code, treats multiline strings and docstrings as code, and uses code lines as
 default language-percentage denominator.
 Other code types remain visible as unsupported coverage rather than being mislabeled
 from nonblank lines.
-The `documents` and `full` profiles reserve the stable logical and markup-aware slots
-that land in the later phases of the same implementation plan.
+The `documents` profile adds FlexDoc-style normalized word counts, paragraph runs, and
+pages derived after aggregation.
+For Markdown it separately reports reader-visible words and excludes URLs, link
+destinations, code, metadata, footnote markers, and hidden markup; `full` combines the
+code and document analyzers.
+
+Classification is also a cost ladder.
+Exact filenames and recognized extensions stay path-only.
+Only unresolved files and the ambiguous `.h` extension receive bounded probes for
+shebangs, modelines, C++ literals, XML and manpage markers, binary signatures, and
+generated-file markers.
+NUL and named binary signatures take precedence over text hints, and every deeper
+decision is explainable in `fdu.report/2` rather than silently guessed.
 
 This surface — composable views, selection filters, time-window and watermark queries,
 cache policies, and a `tail -f`-style watch mode, all as orthogonal flags over one
@@ -210,15 +223,33 @@ if let Some(src) = index.rollup(Path::new("src")) {
 # Ok::<(), fdu::Error>(())
 ```
 
+Opt into the complete code-and-document tier explicitly; metadata-only remains the
+default:
+
+```rust
+use fdu::content::AnalysisProfile;
+use fdu::{OpenConfig, open};
+use std::path::Path;
+
+let mut config = OpenConfig::default();
+config.analysis.profile = AnalysisProfile::Full;
+let (index, report) = open(Path::new("."), &config)?;
+let content = index.content_rollup(Path::new("")).expect("analysis requested");
+println!("{} analyzed files", content.total.analyzed_files);
+assert!(report.analysis.is_some());
+# Ok::<(), fdu::Error>(())
+```
+
 ## As a Python Module
 
 ```python
 import fdu_py
 
-index = fdu_py.open("/path/to/tree")
+index = fdu_py.open("/path/to/tree", analyze="full", max_file_size="16MiB")
 print(index.complete, index.freshness, index.errors)
 print(index.total())          # {'files': ..., 'bytes': ..., 'by_extension': {...}}
 print(index.children("src"))  # one call returns every child with its roll-up
+print(index.report(views=["languages", "documents"]))
 
 mark = index.clock
 index.refresh()               # reconcile against the filesystem

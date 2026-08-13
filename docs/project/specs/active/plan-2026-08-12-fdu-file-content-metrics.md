@@ -654,6 +654,24 @@ cost; every content probe has a byte bound; ambiguous decisions are explainable 
 detection provenance; and deeper coverage improves without changing earlier metric
 dialects.
 
+### Phase 6: Compatibility, Documentation, and Release Validation
+
+- [x] Reconcile Rust, CLI, Python, cache, and machine-report documentation with every
+  shipped analyzer and detection field
+- [x] Document the Python 3.12 minimum and retain the `abi3-py312` wheel boundary
+- [x] Update the portable agent skill, public examples, changelog, cache lifecycle, and
+  measured-versus-deferred scope
+- [x] Run the repository-wide handoff gate, installed-wheel smoke on Python 3.12 and a
+  newer interpreter, exact tryscript goldens, multilingual self-host assertions, audits,
+  public-hygiene checks, and MSRV build
+- [ ] Reconcile and close the implementation beads, sync tbd, publish the isolated
+  branch, and watch the pull request checks to completion
+
+**Exit criteria:** public documentation describes only implemented semantics; Python
+3.12 remains a tested ABI floor; exact fixtures and the moving self-host corpus agree;
+all repository gates and pull request checks pass; and future SCC-breadth, embedded
+language, AST, and specialized-format work remains explicit rather than implied.
+
 ## File and Function Implementation Map
 
 The implementation stays inside the existing `fdu` and `fdu-py` crates.
@@ -948,17 +966,17 @@ None of these questions blocks Phases 1 or 2.
 | `fdu-96l2` | Complete | Workers, conditional deltas, incremental rollups, and sidecars |
 | `fdu-8kd8` | Complete | Basic Rust, CLI, report-schema, view, and Python surface |
 | `fdu-occl` | Complete | Basic tryscript golden and multilingual self-host semantic lock |
-| `fdu-tq3k` | Open; blocked by `fdu-occl` | Basic and binary-gate performance iterations |
-| `fdu-jmrs` | Open; blocked by `fdu-tq3k` | Tokei-versus-native SLOC decision spike |
-| `fdu-q3sx` | Open; blocked by `fdu-jmrs` | Production `code-sloc-v1` and language summary |
-| `fdu-d82z` | Open; blocked by `fdu-q3sx` | SLOC goldens and self-host semantic lock |
-| `fdu-zfjk` | Open; blocked by `fdu-d82z` | SLOC and comparator performance iterations |
-| `fdu-cq7i` | Open; blocked by `fdu-zfjk` | Additive logical words, paragraphs, and pages |
-| `fdu-6sas` | Open; blocked by `fdu-cq7i` | Reader-visible Markdown prose metrics |
-| `fdu-1ysa` | Open; blocked by `fdu-6sas` | Document goldens and self-host semantic lock |
-| `fdu-3b5a` | Open; blocked by `fdu-1ysa` | Text and Markdown performance iterations |
-| `fdu-kgml` | Open; blocked by `fdu-3b5a` | Bounded deep detection and specialized formats |
-| `fdu-eu80` | Open; blocked by `fdu-kgml` | Final compatibility, documentation, and release validation |
+| `fdu-tq3k` | Complete | Basic and binary-gate performance iterations |
+| `fdu-jmrs` | Complete | Tokei-versus-native SLOC decision spike |
+| `fdu-q3sx` | Complete | Production `code-sloc-v1` and language summary |
+| `fdu-d82z` | Complete | SLOC goldens and self-host semantic lock |
+| `fdu-zfjk` | Complete | SLOC and comparator performance iterations |
+| `fdu-cq7i` | Complete | Additive logical words, paragraphs, and pages |
+| `fdu-6sas` | Complete | Reader-visible Markdown prose metrics |
+| `fdu-1ysa` | Complete | Document goldens and self-host semantic lock |
+| `fdu-3b5a` | Complete | Text and Markdown performance iterations |
+| `fdu-kgml` | Complete | Bounded deep detection and specialized formats |
+| `fdu-eu80` | In progress | Final compatibility, documentation, and release validation |
 
 The epic’s child-order hints match this table, and every child was created with its
 blocker edge already attached.

@@ -45,18 +45,27 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   - **Opt-in content metrics** (`content`): compiled stable file-type rules; bounded
     parallel one-pass UTF-8, NUL, line, blank, and raw-word analysis; conditional
     fingerprint-checked commits; sparse type/family roll-ups; and independently
-    checksummed atomic sidecars that preserve metadata snapshot v2.
+    checksummed atomic sidecars that preserve metadata snapshot v2. The `code-sloc-v1`
+    dialect partitions code, comment, and blank lines for 15 common languages; logical
+    prose and reader-visible Markdown add normalized words, paragraphs, and
+    aggregate-derived pages.
+    Bounded shebang, modeline, ambiguous-header, format-signature, and origin probes run
+    only after path-only classification cannot decide.
   - **Metric summaries** (`fdu.report/2`): stable `types`, `families`, `languages`, and
     `documents` views with exact byte-share fractions, coverage, analyzer provenance,
-    logical page denominators, and matching Rust, CLI, and Python surfaces.
+    logical page denominators, detection source and confidence, origin flags, and
+    matching Rust, CLI, and Python surfaces.
     The original extension view is retained as `extensions`, while metadata-only
     `fdu.report/1` output remains unchanged.
 
 ### Known limitations
 
-- **No performance claims.** The walker is a portable `read_dir` + `symlink_metadata`
-  implementation. The `getdents64`/`statx` layer that Goal 1 requires is not built, and
-  no benchmark gate has been run.
+- Content performance evidence is currently local M1/APFS data rather than a controlled
+  cross-platform release matrix; CI checks semantics and benchmark contracts, not timing
+  thresholds.
+- Standard LOC covers 15 common languages rather than SCC or Tokei’s long tail.
+  Unsupported code stays explicit coverage, and embedded-language and AST metrics are
+  deferred rather than approximated.
 - The snapshot format is a bounded flat bootstrap format; compressed lazy blocks remain
   Phase 1 work.
 - Entry records are not yet packed to the ~25–32 bytes per file memory target.

@@ -46,24 +46,30 @@ is exactly what the two decisive warm paths consume — on a cloud runner the sn
 the *only* possible warm state, because the operating system’s own metadata cache cannot
 hold a large tree’s inodes in RAM.
 
-## Layer Two: Derived Data (Reserved)
+## Layer Two: Derived Content Data
 
 Content-derived metrics — line counts, word counts, hashes, and future plugin analyzers
 — do **not** belong in the core snapshot.
-They live in a separate per-analyzer layer keyed by
-`(fingerprint, analyzer id, analyzer version)`.
+They live in a separately checksummed `.content` sidecar keyed by the type-rule
+fingerprint, requested profile, semantic options, and ordered analyzer IDs and versions.
+Each sparse file record also carries size, mtime, ctime, and inode, so a reconciled
+metadata change rejects only the stale record.
+The current sidecar format is version 4; an absent, corrupt, oversized, foreign, or
+version-mismatched sidecar is a clean analyzer-cache miss and never invalidates the core
+snapshot.
 
-No analyzer ships today.
-The shape is fixed now so the content tier can arrive without a format break, and
-because the split is load-bearing rather than tidy:
+Four analyzer dialects ship: streaming physical lines and raw words, common-language
+SLOC, normalized plain-text volume, and reader-visible Markdown prose.
+Keeping them separate from metadata remains load-bearing rather than tidy:
 
 - The core snapshot stays small and fast to open.
   An analyzer’s output can be far larger than the tree’s metadata, and paying for it on
   every open would penalize the common query.
 - Per-analyzer invalidation never touches tree truth.
   Bumping a line counter’s version invalidates its own column, not the sizes.
-- The layer is loaded lazily, bounded in size, purgeable independently, and accumulates:
-  a run that asks for richer roll-ups enriches it, and a run that does not never pays.
+- The layer is loaded only for an explicitly requested analysis profile, bounded before
+  allocation, and removed through the same cache lifecycle as its recognized snapshot.
+  A metadata-only run never opens it and never pays for content structures.
 
 The payback is largest here.
 Re-deriving content over a large repository is minutes; re-deriving only what changed is
@@ -95,11 +101,12 @@ Three consequences worth stating plainly, because each is a way to be subtly wro
   inode together, so a sizes-only view costs the same as sizes-plus-timestamps.
   The jumps are at tier boundaries, not proportional to how many metrics a view carries.
 
-All views shipped today are stat tier, so verification is the per-entry sweep.
-Reducers will declare their tier when the reducer registry lands, at which point a
-counts-only query legitimately becomes a per-directory sweep — exactly, with no
-staleness label needed, because view selection changes verification cost by integer
-factors while staying sound.
+Metadata views shipped today are stat tier, so verification is the per-entry sweep.
+An explicitly requested content profile performs that same sweep, restores every
+fingerprint-compatible sidecar record, and opens only files whose requested metrics are
+absent or stale. A future reducer registry can let a counts-only query become a
+per-directory sweep — exactly, with no staleness label needed — because view selection
+changes verification cost by integer factors while staying sound.
 
 ## Fingerprints, and the Race They Have to Survive
 
