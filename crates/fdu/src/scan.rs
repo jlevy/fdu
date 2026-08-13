@@ -364,6 +364,11 @@ impl WalkAttribution {
 #[derive(Debug, Default)]
 pub struct ReconcileReport {
     /// Filesystem walk effects and partial errors.
+    ///
+    /// Read [`ScanReport::attribution`] here with care: only the parallel wave path
+    /// fills it, only with `wall_ns`, `work_ns`, and `claims`, and it accumulates one
+    /// worker lifetime per wave rather than an elapsed span. A serial sweep leaves it
+    /// at zero, which means "not measured", not "no work".
     pub scan: ScanReport,
     /// Index arbitration and mutation effects.
     pub apply: ApplyStats,
@@ -1148,6 +1153,14 @@ impl DirectoryQueue {
     }
 
     /// Give up a claim taken by [`claim`]. Wakes everyone if this was the last one.
+    ///
+    /// The chunk's own entry count and work time feed the shared service-time
+    /// calibration, so the decision uses the timing the walk already collects for
+    /// attribution rather than a second clock. Returns true exactly once, on the
+    /// release that both completes the calibration and finds the filesystem slow
+    /// enough to be worth more latency-hiding workers; the caller turns that into a
+    /// single pool expansion. A release that ends the walk returns false, because
+    /// there is no longer any work for a reserve worker to take.
     fn release(
         &self,
         observed_entries: u64,
@@ -1678,6 +1691,15 @@ enum DirectParallelOutcome {
 /// every entry through one consumer. Effective changes still enter through ordinary
 /// observations between waves, preserving both the index's sole mutation contract and
 /// progressive delta delivery.
+///
+/// Unlike every other reconciliation path, the operations a wave defers are
+/// unconditional: they carry no [`ObservationOp::if_state`] guard. Three properties
+/// have to hold together for that to be safe, and a change to any one of them puts the
+/// guards back. The target is an exclusive `&mut Index`, so no other producer can
+/// commit between a worker's read and the wave's write. Nothing is applied while
+/// workers run, so no baseline a worker compared against can go stale beneath it. And
+/// a directory is only reconciled in a wave after the wave that discovered it has
+/// committed, so a parent is never absent when its children arrive.
 fn reconcile_direct_parallel(
     index: &mut Index,
     root: &Path,
@@ -3221,6 +3243,13 @@ mod tests {
     #[test]
     fn reconciliation_metadata_errors_do_not_delete_enumerated_entries() {
         use std::os::unix::fs::PermissionsExt;
+
+        if !crate::test_support::permission_bits_are_enforced() {
+            // A privileged process still reads the directory it was denied, so the
+            // fixture cannot reach the metadata-error boundary this pins.
+            eprintln!("skipped: this process is not subject to Unix permission bits");
+            return;
+        }
 
         // macOS's parallel path may satisfy the whole directory through
         // getattrlistbulk even without search permission. One worker pins the portable
