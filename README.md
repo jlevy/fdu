@@ -6,6 +6,11 @@ fdu answers, for *every* directory in a tree at once: how big is it, how many fi
 it hold, what changed most recently, and what kinds of files live in it.
 One walk, many metrics, cached between runs.
 
+> **Typical live performance:** FDU built a reusable exact index and ten-row tree over
+> 901,963 entries in a **3.324-second median**, versus 5.657 seconds for pdu, 6.016 for
+> dust, and 6.782 for Go gdu on an M1 Pro MacBook with a local SSD. See
+> [the full comparison](#speed-and-the-cache).
+
 > **Status: pre-release.** The observation/commit contract, bounded in-process change
 > feed, cache lifecycle, applying reconciler, CLI, and Python wheel are tested end to
 > end, and the measured-improvement loop described below is running.
@@ -33,26 +38,33 @@ The full survey, with the techniques worth adapting and their sources, is in
 
 ## Speed and the Cache
 
-**Typical live scan:** on a 976,295-entry workspace, a fresh FDU process with its own
-cache disabled produced a ten-row tree in a **4.237-second median**, versus **7.546
-seconds for dust**, **6.684 seconds for pdu**, and **8.315 seconds for gdu**. This was
-12 paired trials per tool on an M1 Pro MacBook with a local APFS SSD and the operating
-system’s filesystem cache warm.
-The narrower scalar-only dumac took 3.566 seconds; it does not retain FDU’s reusable
-index or per-directory metrics.
-See the
-[technical white paper](docs/project/reports/report-2026-08-12-fdu-performance-architecture.md),
-[full comparison](docs/project/reports/report-2026-08-12-fdu-live-tool-comparison.md),
-and
-[reproduction manifest](docs/project/reports/fdu-live-tool-comparison-manifest-v1.json).
+**Typical live scan:** on a self-contained 901,963-entry tree, a fresh FDU process with
+its own cache disabled built a reusable exact index and ten-row tree in a **3.324-second
+median**. Pdu and dust took 5.657 and 6.016 seconds, and Go gdu took 6.782 seconds.
+FDU’s richer index-and-tree product was the fastest of every tree or index tool
+measured. This was 12 adjacent paired trials per tool on an M1 Pro MacBook with a local
+APFS SSD and the operating system’s filesystem cache warm.
 
-| Tool | Result | Typical median |
+The cache-off rich-summary plan took 3.125 seconds and beat diskus, dua, BSD du, and GNU
+du. Dumac’s narrower allocated-byte total had a 2.980-second median, but its paired 2.2%
+advantage was statistically unclear (95% interval -5.7% to +1.7%). FDU also returned
+file and directory counts, apparent bytes, and newest file time while using 13.6 MiB
+instead of dumac’s 44.4 MiB peak RSS. See the
+[technical white paper](docs/project/reports/report-2026-08-12-fdu-performance-architecture.md),
+[full comparison](docs/project/reports/report-2026-08-13-fdu-live-tool-comparison.md),
+and
+[reproduction manifest](docs/project/reports/fdu-live-tool-comparison-manifest-v2.json).
+
+| Tool | Work returned | Typical median |
 | --- | --- | ---: |
-| **fdu** | reusable index and ten-row tree | **4.237 s** |
-| pdu | rendered tree | 6.684 s |
-| dust | ten-row tree | 7.546 s |
-| gdu | ten-row tree | 8.315 s |
-| dumac | scalar total only | **3.566 s** |
+| **fdu** | reusable exact index and ten-row tree | **3.324 s** |
+| **fdu** | five-tally exact summary | **3.125 s** |
+| dumac | allocated-byte total only | 2.980 s (statistical tie) |
+| pdu | rendered depth-one tree | 5.657 s |
+| dust | rendered ten-row tree | 6.016 s |
+| gdu | rendered ten-row tree | 6.782 s |
+| diskus | scalar total only | 5.708 s |
+| dua | scalar total only | 5.459 s |
 
 fdu has two paths to an answer, and it labels which one you got.
 

@@ -151,9 +151,11 @@ docs-format-check:
 # PERF_TREE names the reference tree. Freeze all writers for the whole run; the
 # harness rejects any difference between its immediate pre/post fingerprints.
 
-PERF_TREE ?= benchmarks/corpus/realtree/metabrowser
-PERF_LABEL ?= $(notdir $(PERF_TREE))
-PERF_BASELINE ?= benchmarks/results/realtree/tree-$(PERF_LABEL).json
+PERF_TREE ?= benchmarks
+PERF_LABEL ?= benchmarks-self-contained
+PERF_RESULTS ?= /tmp/fdu-realtree/results
+PERF_SCRATCH ?= /tmp/fdu-realtree/scratch
+PERF_BASELINE ?= $(PERF_RESULTS)/tree-$(PERF_LABEL).json
 PERF_RELEASE := target/release/examples/perf_probe
 PERF_PROFILING := target/profiling/examples/perf_probe
 # The harness runs from the repo root against a committed, frozen environment, so a
@@ -178,7 +180,9 @@ perf-baseline:
 # Where does the time go? Attribution only; never a timing claim.
 perf-profile: perf-probe-profiling
 	$(PERF_RUN) profile --root $(PERF_TREE) --binary $(PERF_PROFILING) \
-		--job cold-scan-index --job warm-revalidate --label $(or $(NAME),latest)
+		--job cold-scan-index --job warm-revalidate --label $(or $(NAME),latest) \
+		--scratch $(PERF_SCRATCH) \
+		--output $(PERF_RESULTS)/profile-$(or $(NAME),latest).json
 
 # Is the candidate faster than the control? Set CONTROL to a saved reference binary.
 CONTROL ?= $(PERF_RELEASE)
@@ -189,6 +193,7 @@ perf-compare: perf-probe-release
 		--reference dust=$(shell command -v dust 2>/dev/null || echo /usr/bin/du) \
 		--job cold-scan-index --job warm-revalidate \
 		--trials $(or $(TRIALS),12) \
+		--scratch $(PERF_SCRATCH) --output-dir $(PERF_RESULTS) \
 		--baseline-fingerprint $(PERF_BASELINE) \
 		--name $(or $(NAME),adhoc)
 

@@ -232,6 +232,65 @@ class ToolComparisonTests(unittest.TestCase):
         self.assertIsNone(second_error)
         self.assertEqual(first_digest, second_digest)
 
+    def test_partial_or_cached_summary_cannot_be_timing_evidence(self) -> None:
+        base = {
+            "schema": "fdu.report/1",
+            "source": "cold_scan",
+            "freshness": "fresh",
+            "complete": True,
+            "errors": [],
+            "reports": [{"view": "summary", "summary": {"files": 3}}],
+        }
+        for change in (
+            {"source": "snapshot"},
+            {"freshness": "stale"},
+            {"complete": False},
+            {"errors": [{"message": "unreadable"}]},
+        ):
+            _digest, error = compare_tools._summary_semantic_digest(
+                json.dumps({**base, **change}).encode()
+            )
+            self.assertIsNotNone(error)
+
+    def test_summary_oracle_checks_counts_and_both_byte_totals(self) -> None:
+        oracle = {
+            "counts": {"directories": 5, "files": 9},
+            "sizes": {"apparent_bytes": 1234, "allocated_bytes": 4096},
+            "newest_file_mtime_ns": 17,
+        }
+        summary = {
+            "files": 9,
+            "dirs": 4,
+            "bytes": 1234,
+            "allocated": 4096,
+            "newest_mtime_ns": 17,
+        }
+
+        self.assertIsNone(compare_tools._summary_oracle_error(summary, oracle))
+
+        summary["allocated"] = 8192
+        error = compare_tools._summary_oracle_error(summary, oracle)
+
+        self.assertIsNotNone(error)
+        self.assertIn("allocated=8192", error or "")
+        self.assertIn("oracle 4096", error or "")
+
+    def test_summary_oracle_excludes_the_subject_root_from_directory_count(self) -> None:
+        oracle = {
+            "counts": {"directories": 1, "files": 0},
+            "sizes": {"apparent_bytes": 0, "allocated_bytes": 0},
+            "newest_file_mtime_ns": None,
+        }
+        summary = {
+            "files": 0,
+            "dirs": 0,
+            "bytes": 0,
+            "allocated": 0,
+            "newest_mtime_ns": None,
+        }
+
+        self.assertIsNone(compare_tools._summary_oracle_error(summary, oracle))
+
     def test_summary_semantic_mismatch_invalidates_both_sides_of_the_pair(self) -> None:
         samples = [
             {

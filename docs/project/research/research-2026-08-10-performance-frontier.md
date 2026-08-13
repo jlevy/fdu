@@ -140,15 +140,18 @@ BFS-sensitive questions: depth-first is 3.57% slower (exp-037), eight workers bu
 at this scale (exp-039). These results supersede the remaining suggestions to retune
 worker count, switch traversal order, or revisit buffer size without a new mechanism.
 
-The publishable product comparison used a later 976,295-entry fingerprint and twelve
-adjacent pairs per competitor.
-FDU’s fresh cache-off median was 4.237 seconds, ahead of dust (7.546), pdu (6.684), gdu
-(8.315), ncdu (28.576), dua (8.352), and diskus (7.064). Dumac’s scalar-only total was
-3.566 seconds. Its smaller attribute request and 45.3 MiB retained state, versus FDU’s
-roughly 585 MiB full index, reinforce the compact-entry H19–H22 ladder and motivate a
-dense immutable base with sparse mutation overlay (H61, `fdu-f67r`). See the
-[performance white paper](../reports/report-2026-08-12-fdu-performance-architecture.md)
-and [live comparison](../reports/report-2026-08-12-fdu-live-tool-comparison.md).
+The current product comparison uses the self-contained 901,963-entry benchmark tree and
+twelve adjacent pairs per competitor.
+FDU’s fresh cache-off reusable index and ten-row tree completed in 3.324 seconds, ahead
+of pdu (5.657), dust (6.016), Go gdu (6.782), and ncdu (20.550). Its derived rich
+summary took 3.125 seconds, ahead of diskus (5.708), dua (5.459), BSD du (13.075), and
+GNU du (20.426). Dumac’s narrower scalar-only total had a 2.980-second median, but its
+paired 2.2% advantage was statistically unclear [−5.7%, +1.7%]. It used 85.4% more CPU
+and 224.5% more RSS than FDU’s five-tally summary.
+Exact commands and caveats are in the
+[performance white paper](../reports/report-2026-08-12-fdu-performance-architecture.md),
+[manifest](../reports/fdu-live-tool-comparison-manifest-v2.json), and
+[live comparison](../reports/report-2026-08-13-fdu-live-tool-comparison.md).
 
 H59 then tested whether the smaller retained state could be derived without weakening
 the rich summary. On a frozen 978,339-entry fingerprint, the internal exact-summary plan
@@ -444,8 +447,9 @@ It yields four actionable conclusions and three negative ones:
 
 The retained-index candidates remain tracked beneath the performance-iteration bead:
 H19–H22 (`fdu-prph`), H58 (`fdu-r9he`), H60 (`fdu-weey`), and H61 (`fdu-f67r`). H59 is
-resolved by exp-040; its next derived-report layers are H62–H65. H57 is resolved by
-exp-036 rather than left in the queue.
+resolved by exp-040, while exp-041 through exp-044 reject all four additional
+derived-report layers H62–H65 for elapsed time.
+H57 is resolved by exp-036 rather than left in the queue.
 
 ### Healey/Dumac Follow-Up: Bulk Syscalls, Fixed Workers, and Inode Locality
 
@@ -518,10 +522,15 @@ The key results and their transfer limits are:
   Exp-041/042 show that removing generic observation/path work and index-only macOS
   fields cuts user CPU and memory sharply without moving the syscall-dominated wall
   floor; both prototypes were reverted.
-  H64 now isolates the semantic remainder by deriving only the selected apparent or
-  allocated total for a matched scalar workload.
-  H64 keeps rich `summary` unchanged and must compare FDU’s path accounting separately
-  from dumac’s hard-link-deduplicated total.
+  Exp-044 isolated the remaining semantic work with a selected-total prototype that
+  requested only the chosen size, folded files in the bulk buffer, and retained names
+  only for directories.
+  It cut user CPU 51.54% and RSS 39.19%, but wall changed only −1.15% [−2.24%, +0.44%]
+  and dumac remained statistically tied/slightly ahead.
+  The public view and second unsafe parser were reverted.
+  The repeated result establishes that another representation-only specialization cannot
+  move the warm-APFS directory-open and bulk-syscall floor enough to earn its design
+  cost.
 
 The profiling caveat is also recorded: `/usr/bin/sample` returned no usable stacks and
 the installed Xcode `xctrace` aborted in its Devices plugin before launching the target.
@@ -1428,7 +1437,7 @@ the loop extensions in H36–H39 to be trusted globally.
 | H61 | Store the completed bootstrap in a dense immutable base and apply later changes through a sparse mutable overlay with bounded compaction | million-scale RSS down ≥40% plus cold indexed wall down ≥3% or a decisive warm/query win | queued after H19–H22 as `fdu-f67r`; preserve all query, identity, snapshot, delta, watch, and progressive semantics |
 | H62 | Aggregate the exact rich summary inside existing scan workers, retaining paths only for directories that must be descended into | wall/user CPU/channel work down ≥3%; exact rich-summary hash | **Refuted** (exp-041): wall −1.38%; user CPU −36.23%; reverted after composition screen |
 | H63 | Derive a strict macOS bulk request/parser from rich-summary requirements and avoid allocating file names | wall/system/user CPU down ≥3%; malformed/mount/firmlink/one-filesystem fallback parity | **Refuted with H62** (exp-042): wall +1.86% [−1.96%, +4.56%]; reverted |
-| H64 | Derive only the selected size total for a workload matched to dumac | match or beat dumac wall; exact FDU path-accounting oracle | design-gated `fdu-8nfx`; rich summary unchanged, hard-link difference disclosed |
+| H64 | Derive only the selected size total for a workload matched to dumac | match or beat dumac wall; exact FDU path-accounting oracle | **Refuted** (exp-044): wall −1.15% [−2.24%, +0.44%], user CPU −51.54%, RSS −39.19%; did not beat dumac, and all prototype API/engine code was reverted |
 | H65 | Retune worker depth for the H59 transient-summary plan | 6/8/10/12/16 curve; wall down ≥3%, CPU/RSS bounded | **Refuted** (exp-043): eight workers changed 720k wall +0.67% [−1.56%, +3.99%] and CPU +40.66%; automatic/six retained |
 
 **Guardrails, so a fast-looking result cannot be a wrong one:**

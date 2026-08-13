@@ -14,6 +14,7 @@ import json
 import statistics
 import subprocess
 import sys
+import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -21,8 +22,8 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from benchmarks.realtree import measure, tree
 
-SCHEMA = "fdu-tool-comparison-v2"
-DEFAULT_RESULTS = Path("benchmarks/results/realtree")
+SCHEMA = "fdu-tool-comparison-v3"
+DEFAULT_RESULTS = Path(tempfile.gettempdir()) / "fdu-tool-comparison" / "results"
 
 
 class ComparisonError(RuntimeError):
@@ -338,6 +339,7 @@ def run(
                 ordinal=ordinal,
                 warmup=warmup,
                 root=root,
+                summary_oracle=before,
                 timeout_seconds=timeout_seconds,
             )
             samples.append(sample)
@@ -348,6 +350,17 @@ def run(
     semantic_mismatches = _invalidate_semantic_mismatches(
         samples, anchor=anchor.name
     )
+    oracle_mismatches = [
+        {
+            "pair": sample["pair"],
+            "tool": sample["tool"],
+            "ordinal": sample["ordinal"],
+            "warmup": sample["warmup"],
+            "reason": sample["summary_oracle_error"],
+        }
+        for sample in samples
+        if sample.get("summary_oracle_error") is not None
+    ]
     document: Dict[str, Any] = {
         "schema": SCHEMA,
         "started_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(started)),
@@ -370,6 +383,7 @@ def run(
         "tools": identities,
         "samples": samples,
         "semantic_mismatches": semantic_mismatches,
+        "summary_oracle_mismatches": oracle_mismatches,
     }
     document["invalid_samples"] = sum(
         1 for sample in samples if not sample["warmup"] and not sample["valid"]
@@ -449,6 +463,7 @@ def _run_one(
     ordinal: int,
     warmup: bool,
     root: Path,
+    summary_oracle: Mapping[str, Any],
     timeout_seconds: float,
 ) -> Dict[str, Any]:
     argv = _expand(tool.contract.argv, tool.binary, root)
@@ -467,10 +482,15 @@ def _run_one(
     if result["exit_code"] != 0:
         reasons.append(f"command exited with {result['exit_code']}")
     semantic_sha256: Optional[str] = None
+    summary_oracle_error: Optional[str] = None
     if tool.contract.name in {"fdu-index-summary", "fdu-transient-summary"}:
-        semantic_sha256, semantic_error = _summary_semantic_digest(result["stdout"])
+        semantic_sha256, summary, semantic_error = _summary_semantics(result["stdout"])
         if semantic_error is not None:
             reasons.append(semantic_error)
+        elif summary is not None:
+            summary_oracle_error = _summary_oracle_error(summary, summary_oracle)
+            if summary_oracle_error is not None:
+                reasons.append(summary_oracle_error)
     stderr = result["stderr"].encode("utf-8", errors="replace")
     return {
         "pair": pair,
@@ -483,6 +503,7 @@ def _run_one(
         "stdout_bytes": len(result["stdout"]),
         "stdout_sha256": hashlib.sha256(result["stdout"]).hexdigest(),
         "semantic_sha256": semantic_sha256,
+        "summary_oracle_error": summary_oracle_error,
         "stderr_bytes": len(stderr),
         "stderr_sha256": hashlib.sha256(stderr).hexdigest(),
     }
@@ -490,12 +511,24 @@ def _run_one(
 
 def _summary_semantic_digest(stdout: bytes) -> Tuple[Optional[str], Optional[str]]:
     """Hash stable report semantics while excluding timestamps and the absolute root."""
+    digest, _summary, error = _summary_semantics(stdout)
+    return digest, error
+
+
+def _summary_semantics(
+    stdout: bytes,
+) -> Tuple[Optional[str], Optional[Mapping[str, Any]], Optional[str]]:
+    """Return stable report identity and independently checkable summary values."""
     try:
         document = json.loads(stdout)
     except (UnicodeDecodeError, json.JSONDecodeError) as error:
-        return None, f"summary output was not JSON: {error}"
+        return None, None, f"summary output was not JSON: {error}"
     if not isinstance(document, dict):
-        return None, "summary output was not a JSON object"
+        return None, None, "summary output was not a JSON object"
+    if document.get("source") != "cold_scan" or document.get("freshness") != "fresh":
+        return None, None, "cache-off summary was not a fresh cold scan"
+    if document.get("complete") is not True or document.get("errors") != []:
+        return None, None, "summary output was partial or reported errors"
     reports = document.get("reports")
     if (
         not isinstance(reports, list)
@@ -503,7 +536,10 @@ def _summary_semantic_digest(stdout: bytes) -> Tuple[Optional[str], Optional[str
         or not isinstance(reports[0], dict)
         or reports[0].get("view") != "summary"
     ):
-        return None, "summary output did not contain exactly one summary report"
+        return None, None, "summary output did not contain exactly one summary report"
+    summary = reports[0].get("summary")
+    if not isinstance(summary, dict):
+        return None, None, "summary report did not contain a summary object"
     stable = {
         "schema": document.get("schema"),
         "source": document.get("source"),
@@ -513,7 +549,31 @@ def _summary_semantic_digest(stdout: bytes) -> Tuple[Optional[str], Optional[str
         "reports": reports,
     }
     encoded = json.dumps(stable, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    return hashlib.sha256(encoded).hexdigest(), None
+    return hashlib.sha256(encoded).hexdigest(), summary, None
+
+
+def _summary_oracle_error(
+    summary: Mapping[str, Any], oracle: Mapping[str, Any]
+) -> Optional[str]:
+    """Return why an FDU summary disagrees with the independent Python walk."""
+    counts = oracle["counts"]
+    sizes = oracle["sizes"]
+    expected = {
+        "files": counts["files"],
+        # FDU's summary describes descendants; the fingerprint also counts the root.
+        "dirs": counts["directories"] - 1,
+        "bytes": sizes["apparent_bytes"],
+        "allocated": sizes["allocated_bytes"],
+        "newest_mtime_ns": oracle["newest_file_mtime_ns"],
+    }
+    for field, wanted in expected.items():
+        observed = summary.get(field)
+        if observed != wanted:
+            return (
+                f"summary {field}={observed!r} disagrees with independent oracle "
+                f"{wanted!r}"
+            )
+    return None
 
 
 def _statistics(document: Mapping[str, Any]) -> Dict[str, Any]:
@@ -707,6 +767,10 @@ def render(document: Mapping[str, Any]) -> str:
             "",
             f"Invalid timed samples: {document['invalid_samples']}. ",
             f"Semantic mismatches: {len(document.get('semantic_mismatches', []))}. ",
+            (
+                "Independent summary-oracle mismatches: "
+                f"{len(document.get('summary_oracle_mismatches', []))}. "
+            ),
             f"Baseline drift: {document['baseline_drift'] or 'none'}. ",
             f"Mutation during run: {document['tree_mutated_during_run'] or 'none'}.",
             "",

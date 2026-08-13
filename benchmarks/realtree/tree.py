@@ -33,7 +33,7 @@ from benchmarks.corpus import (
     _SemanticAccumulator,
 )
 
-FINGERPRINT_SCHEMA = "fdu-reference-tree-v2"
+FINGERPRINT_SCHEMA = "fdu-reference-tree-v3"
 
 #: Extensions are structural, not private, but an unbounded histogram would leak the
 #: shape of a private tree one rare suffix at a time. Keep the head, count the tail.
@@ -66,6 +66,7 @@ def fingerprint(root: Path, *, label: str) -> Dict[str, Any]:
     counts = {"directories": 1, "files": 0, "other": 0, "symlinks": 0, "total": 1}
     apparent_bytes = 0
     allocated_bytes = 0
+    newest_file_mtime_ns: Optional[int] = None
     linked_files: Dict[Tuple[int, int], Tuple[int, int, int]] = {}
     depths: Dict[int, int] = {0: 1}
     extensions: Dict[str, int] = {}
@@ -84,6 +85,12 @@ def fingerprint(root: Path, *, label: str) -> Dict[str, Any]:
             allocated = int(getattr(metadata, "st_blocks", 0)) * 512
             apparent_bytes += apparent
             allocated_bytes += allocated
+            mtime_ns = int(metadata.st_mtime_ns)
+            newest_file_mtime_ns = (
+                mtime_ns
+                if newest_file_mtime_ns is None
+                else max(newest_file_mtime_ns, mtime_ns)
+            )
             if int(metadata.st_nlink) > 1:
                 key = (int(metadata.st_dev), int(metadata.st_ino))
                 occurrences, recorded_apparent, recorded_allocated = linked_files.get(
@@ -128,6 +135,7 @@ def fingerprint(root: Path, *, label: str) -> Dict[str, Any]:
             "allocated_bytes": allocated_bytes,
             "apparent_bytes": apparent_bytes,
         },
+        "newest_file_mtime_ns": newest_file_mtime_ns,
         "depth_histogram": {str(key): depths[key] for key in sorted(depths)},
     }
 
@@ -176,6 +184,7 @@ def probe_agrees(fingerprint_document: Dict[str, Any], summary: Any) -> Optional
         "symlinks": counts["symlinks"],
         "apparent_bytes": fingerprint_document["sizes"]["apparent_bytes"],
         "allocated_bytes": fingerprint_document["sizes"]["allocated_bytes"],
+        "newest_file_mtime_ns": fingerprint_document["newest_file_mtime_ns"],
         "engine_digest": fingerprint_document["engine_digest"],
     }
     for field, want in expected.items():

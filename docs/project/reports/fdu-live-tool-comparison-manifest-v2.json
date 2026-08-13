@@ -1,0 +1,308 @@
+{
+  "schema": "fdu-live-tool-comparison-manifest-v2",
+  "measured_commit": "33af4a86877b8c57ea1a2b48e1db903028162b6f",
+  "runs": {
+    "tree": {
+      "started_utc": "2026-08-13T13:23:45Z",
+      "duration_seconds": 865.906,
+      "anchor": "fdu",
+      "trials_per_pair": 12,
+      "warmups_per_pair": 3
+    },
+    "scalar": {
+      "started_utc": "2026-08-13T13:05:31Z",
+      "duration_seconds": 1082.015,
+      "anchor": "fdu-summary",
+      "trials_per_pair": 12,
+      "warmups_per_pair": 3
+    }
+  },
+  "conditions": {
+    "schedule": "competitor-adjacent-fdu-anchor-v1",
+    "interleaved": true,
+    "fdu_cache": "off",
+    "os_filesystem_cache": "warm-steady",
+    "storage": "M1 Pro MacBook local APFS SSD"
+  },
+  "host": {
+    "cpu": "Apple M1 Pro",
+    "architecture": "arm64",
+    "logical_cores": 10,
+    "performance_cores": 8,
+    "efficiency_cores": 2,
+    "memory_bytes": 34359738368,
+    "system": "Darwin 25.5.0",
+    "filesystem": "apfs",
+    "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+    "python": "3.14.6"
+  },
+  "subject": {
+    "label": "benchmarks-self-contained",
+    "entries": 901963,
+    "directories_including_root": 110369,
+    "files": 791261,
+    "symlinks": 333,
+    "other": 0,
+    "max_depth": 23,
+    "apparent_bytes": 16537467483,
+    "allocated_bytes": 18714214400,
+    "newest_file_mtime_ns": 1786626096603125419,
+    "hardlink_groups": 0,
+    "duplicate_file_entries": 0,
+    "engine_digest_algorithm": "fdu-index-record-v1/sha256-multiset-v1",
+    "engine_digest": "14dc5055091e31c0ebdd813ef0f036d25fe5673daed09c449721ff1cebbb98b7"
+  },
+  "validation": {
+    "tree_pre_digest": "14dc5055091e31c0ebdd813ef0f036d25fe5673daed09c449721ff1cebbb98b7",
+    "tree_post_digest": "14dc5055091e31c0ebdd813ef0f036d25fe5673daed09c449721ff1cebbb98b7",
+    "scalar_pre_digest": "14dc5055091e31c0ebdd813ef0f036d25fe5673daed09c449721ff1cebbb98b7",
+    "scalar_post_digest": "14dc5055091e31c0ebdd813ef0f036d25fe5673daed09c449721ff1cebbb98b7",
+    "invalid_timed_samples": 0,
+    "baseline_drift": [],
+    "tree_mutated_during_run": [],
+    "summary_semantic_mismatches": [],
+    "summary_oracle_mismatches": [],
+    "summary_stable_semantic_digest": "149563cec2afe7dc2b5e486b2198ee93f3a743fa30a6148c36472f28c6e8469b",
+    "summary_oracle": {
+      "files": 791261,
+      "descendant_directories": 110368,
+      "apparent_bytes": 16537467483,
+      "allocated_bytes": 18714214400,
+      "newest_file_mtime_ns": 1786626096603125419
+    },
+    "untimed_tree_root_oracle": {
+      "complete": true,
+      "errors": 0,
+      "files": 791261,
+      "descendant_directories": 110368,
+      "apparent_bytes": 16537467483,
+      "allocated_bytes": 18714214400,
+      "newest_file_mtime_ns": 1786626096603125419,
+      "truncated": false
+    }
+  },
+  "tools": {
+    "fdu": {
+      "version": "fdu 0.0.1-dev+g33af4a868",
+      "binary_sha256": "dd4d8a0030ae5967f275c6a38e219ec9e1364020f030b12f32568ddd2ed5a0f5",
+      "binary_size_bytes": 1299840,
+      "work_class": "indexed-tree",
+      "command": [
+        "{binary}",
+        "--cache",
+        "off",
+        "--color",
+        "never",
+        "--depth",
+        "1",
+        "--limit",
+        "10",
+        "{root}"
+      ]
+    },
+    "fdu-summary": {
+      "version": "fdu 0.0.1-dev+g33af4a868",
+      "binary_sha256": "dd4d8a0030ae5967f275c6a38e219ec9e1364020f030b12f32568ddd2ed5a0f5",
+      "binary_size_bytes": 1299840,
+      "work_class": "transient-summary",
+      "command": [
+        "{binary}",
+        "--cache",
+        "off",
+        "--view",
+        "summary",
+        "--format",
+        "json",
+        "--color",
+        "never",
+        "{root}"
+      ]
+    },
+    "dust": {
+      "version": "Dust 1.2.4",
+      "source_revision": "fabe19b8de4d1d36ad55dfa28b00698bc55297e6",
+      "binary_sha256": "e97c3b68f74afa7837fd8038132de2723568936d4d37c9fce94de0c2ce734188",
+      "work_class": "rendered-tree",
+      "command": [
+        "{binary}",
+        "-d",
+        "1",
+        "-n",
+        "10",
+        "--no-progress",
+        "--no-colors",
+        "{root}"
+      ]
+    },
+    "gdu": {
+      "version": "gdu v5.36.1",
+      "installed_executable": "gdu-go",
+      "source_revision": "8d64b4f1ef50bf6694cd17e060f9fd80aed3e297",
+      "binary_sha256": "f6b16958c9b4abae31cd3eee577519c2f5d4bbbfd2bbc286a115aa674be5b752",
+      "work_class": "rendered-tree",
+      "command": [
+        "{binary}",
+        "--non-interactive",
+        "--depth",
+        "1",
+        "--top",
+        "10",
+        "--no-progress",
+        "--no-color",
+        "--config-file",
+        "/dev/null",
+        "{root}"
+      ]
+    },
+    "pdu": {
+      "version": "pdu 0.24.0",
+      "source_revision": "4e192606dfafc4fb9fcc57d77785c80917e8389f",
+      "binary_sha256": "9ce723d37adb765dc4c752acc2b1470e04bcdc87a14b20079e2790a048c0698b",
+      "work_class": "rendered-tree",
+      "command": [
+        "{binary}",
+        "--max-depth",
+        "1",
+        "--silent-errors",
+        "{root}"
+      ]
+    },
+    "ncdu": {
+      "version": "ncdu 2.9.2",
+      "binary_sha256": "35ff4595ef984896c35b83b6f484bebadbb930446e78ad8b209c232ddda8d929",
+      "work_class": "indexed-tree",
+      "command": [
+        "{binary}",
+        "-0",
+        "--ignore-config",
+        "-o",
+        "/dev/null",
+        "{root}"
+      ]
+    },
+    "dumac": {
+      "version": "source revision 1ffbe3c; no version command",
+      "source_revision": "1ffbe3c38d1066c45cac9b4ec1e31eb74edc1076",
+      "binary_sha256": "d1381bb158cf64a2a0278b0452acaf83a83b741a13d7409edc38e6a6032d3360",
+      "work_class": "total-only",
+      "command": ["{binary}", "{root}"]
+    },
+    "diskus": {
+      "version": "diskus 0.9.0",
+      "source_revision": "d8a77db0f693ec32007cf337572b559cbbff50fe",
+      "binary_sha256": "5f6fd0677454028bda1c4b2ec9e5397c502ceab95391ce5b39aab60ef6b95c3a",
+      "work_class": "total-only",
+      "command": ["{binary}", "{root}"]
+    },
+    "dua": {
+      "version": "dua 2.41.1",
+      "source_revision": "90a59e15a681d50a64c0f86483100b257297f5a7",
+      "binary_sha256": "febc73f6faf61b00a943323c75d932c39d74af46a33bb8359911925c4a16b012",
+      "work_class": "total-only",
+      "command": ["{binary}", "{root}"]
+    },
+    "bsd-du": {
+      "version": "Darwin system du; binary hash is authoritative",
+      "binary_sha256": "95c489cf0c0e84cf235ab073500576efc6b681c7d8dcd0936cee4ebaefc15553",
+      "work_class": "total-only",
+      "command": ["{binary}", "-sk", "{root}"]
+    },
+    "gnu-du": {
+      "version": "GNU coreutils 9.9",
+      "installed_executable": "gdu",
+      "binary_sha256": "3be47b39c0474ad5ad4a95451adfa41c9bcae61fd5997c646f077578bd93fdec",
+      "work_class": "total-only",
+      "command": ["{binary}", "-sk", "{root}"]
+    }
+  },
+  "results": {
+    "tree": {
+      "fdu": {
+        "timed_samples": 48,
+        "median_wall_seconds": 3.3235930835,
+        "median_cpu_seconds": 13.1007635,
+        "median_peak_rss_mib": 398.0234375
+      },
+      "dust": {
+        "timed_samples": 12,
+        "median_wall_seconds": 6.016019937,
+        "paired_change_vs_fdu_pct": 78.281,
+        "paired_change_ci95_pct": [69.348, 80.164],
+        "median_cpu_seconds": 39.0628135,
+        "median_peak_rss_mib": 402.265625
+      },
+      "gdu": {
+        "timed_samples": 12,
+        "median_wall_seconds": 6.7824638335,
+        "paired_change_vs_fdu_pct": 107.149,
+        "paired_change_ci95_pct": [99.17, 110.368],
+        "median_cpu_seconds": 47.2567975,
+        "median_peak_rss_mib": 397.0625
+      },
+      "pdu": {
+        "timed_samples": 12,
+        "median_wall_seconds": 5.656545229,
+        "paired_change_vs_fdu_pct": 71.332,
+        "paired_change_ci95_pct": [66.229, 74.854],
+        "median_cpu_seconds": 38.040551,
+        "median_peak_rss_mib": 13.3203125
+      },
+      "ncdu": {
+        "timed_samples": 12,
+        "median_wall_seconds": 20.549523479,
+        "paired_change_vs_fdu_pct": 513.588,
+        "paired_change_ci95_pct": [497.219, 523.041],
+        "median_cpu_seconds": 11.8523095,
+        "median_peak_rss_mib": 1.984375
+      }
+    },
+    "scalar": {
+      "fdu-summary": {
+        "timed_samples": 60,
+        "median_wall_seconds": 3.124954604,
+        "median_cpu_seconds": 11.4987325,
+        "median_peak_rss_mib": 13.6484375
+      },
+      "dumac": {
+        "timed_samples": 12,
+        "median_wall_seconds": 2.980352042,
+        "paired_change_vs_fdu_pct": -2.248,
+        "paired_change_ci95_pct": [-5.733, 1.689],
+        "median_cpu_seconds": 20.183232,
+        "median_peak_rss_mib": 44.4453125
+      },
+      "diskus": {
+        "timed_samples": 12,
+        "median_wall_seconds": 5.708459271,
+        "paired_change_vs_fdu_pct": 81.698,
+        "paired_change_ci95_pct": [74.881, 87.054],
+        "median_cpu_seconds": 44.227537,
+        "median_peak_rss_mib": 28.8515625
+      },
+      "dua": {
+        "timed_samples": 12,
+        "median_wall_seconds": 5.4592528335,
+        "paired_change_vs_fdu_pct": 81.123,
+        "paired_change_ci95_pct": [67.517, 91.836],
+        "median_cpu_seconds": 33.693341,
+        "median_peak_rss_mib": 21.96875
+      },
+      "bsd-du": {
+        "timed_samples": 12,
+        "median_wall_seconds": 13.074724604,
+        "paired_change_vs_fdu_pct": 321.515,
+        "paired_change_ci95_pct": [284.969, 351.845],
+        "median_cpu_seconds": 6.273097,
+        "median_peak_rss_mib": 1.984375
+      },
+      "gnu-du": {
+        "timed_samples": 12,
+        "median_wall_seconds": 20.426256271,
+        "paired_change_vs_fdu_pct": 561.698,
+        "paired_change_ci95_pct": [552.262, 601.381],
+        "median_cpu_seconds": 11.664642,
+        "median_peak_rss_mib": 6.578125
+      }
+    }
+  }
+}

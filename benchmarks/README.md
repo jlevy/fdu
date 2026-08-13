@@ -126,42 +126,58 @@ dedicated-host eviction protocol and supporting collector evidence, which are ow
 `fdu-8z5l`. A successful cache-preparation command can establish `verified-warm`; normal
 developer and hosted-CI runs remain `uncontrolled`.
 
-### Canonical local million-entry comparison
+### Standard Local Near-Million-Entry Comparison
 
-This repository workspace is the standard local million-scale heterogeneous testbed.
-Its publishable 2026-08-12 fingerprint contained 976,295 entries; generated output and
-source checkouts move the exact count, so “million-scale” is the stable designation and
-one million is a useful milestone rather than an eligibility cliff.
-The ignored generated corpus, `target/`, package trees, Git data, and pinned `attic/`
-comparator checkouts are intentionally part of the subject.
-This makes it realistic and self-contained for one machine, but not reproducible by path
-or fixed count on another machine.
+The repository’s `benchmarks/` subtree is the standard self-contained large local
+testbed. Its 2026-08-13 fingerprint contained 901,963 entries: the ignored generated
+corpus, benchmark environment, harness, schemas, and prior result artifacts.
+It is large and heterogeneous enough to expose real directory topology while excluding
+volatile Git and Rust build state.
+Generated state moves the count, so fingerprint every run and treat “near-million scale”
+as the designation rather than assuming an exact size across machines.
 
-Freeze it before measuring: complete all builds, Git/tbd operations, source checkouts,
-and document writes; copy every immutable binary outside the workspace; and do not run
-an editor, build, Git command, tbd command, or indexer until the post-run fingerprint is
-finished. Evidence outputs and the immediate baseline must also be outside the root.
+Finish every change under `benchmarks/` before measuring.
+Copy immutable binaries outside the subtree, and do not run the benchmark test suite,
+update its environment, or write result artifacts there until the post-run fingerprint
+finishes.
+The Make defaults put baselines, scratch snapshots, profiles, and results under
+`/tmp/fdu-realtree`; the CLI also rejects explicit output or scratch paths inside the
+measured root.
 
-The paired external comparison is:
+Run tree and scalar work classes as separate matrices so the headline does not present a
+one-number total as equivalent to a reusable index and rendered tree:
 
 ```shell
 make perf-compare-tools \
-  PERF_TREE=. PERF_LABEL=live-workspace \
+  PERF_TREE=benchmarks PERF_LABEL=benchmarks-self-contained \
   PERF_TOOL_CONTROL=/tmp/fdu-tool-comparison/bin/fdu \
-  TOOL_ARGS='--tool dust=/path/to/dust --tool gdu=/path/to/gdu' \
-  STORAGE='local SSD' NAME=live-1m
+  TOOL_ARGS='--tool dust=/path/to/dust --tool gdu=/path/to/gdu-go --tool pdu=/path/to/pdu --tool ncdu=/path/to/ncdu' \
+  STORAGE='local APFS SSD' NAME=tree-900k
+
+PYTHONDONTWRITEBYTECODE=1 uv run --project benchmarks --frozen --group dev \
+  python -m benchmarks.realtree.compare_tools \
+  --root benchmarks --label benchmarks-self-contained \
+  --anchor fdu-transient-summary=/tmp/fdu-tool-comparison/bin/fdu \
+  --tool dumac=/path/to/dumac --tool diskus=/path/to/diskus \
+  --tool dua=/path/to/dua --tool bsd-du=/usr/bin/du \
+  --tool gnu-du=/path/to/gnu-du --trials 12 --warmups 3 \
+  --storage 'local APFS SSD' --name scalar-900k
 ```
 
-Add `pdu`, `dua`, `diskus`, `dumac`, or another supported contract with repeated
-`--tool`. Each competitor runs immediately beside fdu with alternating order.
-The v2 fingerprint records redacted counts, depth, bytes, and in-tree hard-link
-duplication; any baseline drift, pre/post mutation, timeout, or nonzero exit makes the
-run non-publishable.
-The report labels indexed-tree, rendered-tree, and total-only work classes because those
-jobs are not semantically identical.
+Homebrew installs the Go disk analyzer as `gdu-go` when GNU coreutils also owns `gdu`.
+Resolve and hash the actual executable rather than assuming the command name.
+Each competitor runs immediately beside FDU with alternating order.
+The v3 fingerprint records redacted counts, depth, bytes, newest file time, and in-tree
+hard-link duplication; any baseline drift, pre/post mutation, timeout, or nonzero exit
+makes the run non-publishable.
+The v3 summary oracle additionally checks files, descendant directories, apparent bytes,
+allocated bytes, and newest regular-file mtime on every FDU sample.
+Partial, stale, cached, or error-bearing output is invalid.
+Reports label indexed-tree, rendered-tree, transient-summary, and total-only work
+classes because those jobs are not semantically identical.
 
 The reviewed M1/APFS result and exact manifest are in the
-[live tool comparison](../docs/project/reports/report-2026-08-12-fdu-live-tool-comparison.md).
+[live tool comparison](../docs/project/reports/report-2026-08-13-fdu-live-tool-comparison.md).
 The architecture-level synthesis is the
 [performance white paper](../docs/project/reports/report-2026-08-12-fdu-performance-architecture.md).
 

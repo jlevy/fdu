@@ -100,6 +100,7 @@ dead end.
 | 041 | [Reduce transient summaries inside scan workers](#exp041--reduce-transient-summaries-inside-scan-workers) | H62 | `rich-summary-report` | -1.4% | ❌ rejected |
 | 042 | [Derive macOS summary bulk records](#exp042--derive-macos-summary-bulk-records) | H63 | `rich-summary-report` | +1.9% | ❌ rejected |
 | 043 | [Retune workers for transient summary](#exp043--retune-workers-for-transient-summary) | H65 | `rich-summary-report` | +0.7% | ❌ rejected |
+| 044 | [Specialize a selected size total](#exp044--specialize-a-selected-size-total) | H64 | `selected-allocated-total` | -1.1% | ❌ rejected |
 
 ## The experiments
 
@@ -1653,6 +1654,42 @@ while CPU rose 40.66%; automatic six remains the policy.
 
 Full record:
 [`exp-043-retune-workers-for-transient-summary.md`](../experiments/exp-043-retune-workers-for-transient-summary.md)
+
+### exp-044 — Specialize a selected size total
+
+❌ rejected · 2026-08-13 · H64
+
+Control: selected allocated total reduced through the existing generic H59 transient
+scan
+
+Candidate: selected allocated total folded inside a strict requirement-derived macOS
+bulk reader
+
+**`selected-allocated-total`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 2980.1 | 2954.7 | -1.15% (n.s.) | [-2.24%, +0.44%] |
+| cpu (ms) | 10641.8 | 10340.3 | -2.70% | [-3.49%, -1.70%] |
+| user (ms) | 485.8 | 234.0 | -51.54% | [-52.74%, -50.84%] |
+| system (ms) | 10164.0 | 10110.3 | -0.40% (n.s.) | [-1.15%, +0.79%] |
+| peak rss (MiB) | 13.6 | 8.3 | -39.19% | [-39.76%, -38.66%] |
+
+Cost to carry: 636 lines; no new dependencies; 1 unsafe blocks; new failure mode: A
+second macOS walker and parser could drift from the full reader’s fallback and scope
+semantics; new failure mode: A new public total view would enlarge the CLI, report,
+Python, and test contracts.
+
+The prototype included a typed total view, exact portable fallback, strict macOS parser,
+worker-local scalar reduction, and in-buffer file folding; every production change was
+reverted after measurement
+
+**Rejected:** The complete specialization improved paired wall only 1.15%
+[-2.24%, +0.44%], did not beat dumac, and required a second unsafe parser plus a new
+public view; all prototype code was reverted.
+
+Full record:
+[`exp-044-specialize-a-selected-size-total.md`](../experiments/exp-044-specialize-a-selected-size-total.md)
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

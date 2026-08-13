@@ -1,4 +1,4 @@
-# fdu Performance Architecture: Evidence From Forty-One Experiments
+# fdu Performance Architecture: Evidence From Forty-Five Experiments
 
 **Date:** 2026-08-12
 
@@ -15,13 +15,13 @@ producer, reduce kernel transitions with platform bulk metadata, remove repeated
 work from the single-writer consumer, and compare immutable state in parallel before
 sending only real changes through the mutation contract.
 
-Forty-one measured experiments produced a 54.5% improvement in snapshot-absent indexed
+Forty-five measured experiments produced a 54.5% improvement in snapshot-absent indexed
 wall time and a 52.0% improvement in verified warm-open wall time against the original
 implementation on the primary 60,067-entry subject.
 On a heterogeneous 1,007,659-entry workspace, the integrated branch was 31.3% faster
 than merged `origin/main` with exact oracle parity.
-A separate 976,295-entry product comparison measured a 4.237-second FDU median, versus
-7.546 seconds for dust, 6.684 for pdu, and 8.315 for gdu on an M1 Pro MacBook with a
+A separate 901,963-entry product comparison measured a 3.324-second FDU median, versus
+6.016 seconds for dust, 5.657 for pdu, and 6.782 for Go gdu on an M1 Pro MacBook with a
 local APFS SSD.
 
 The largest gains came from architectural changes, not constant tuning.
@@ -30,8 +30,10 @@ macOS `getattrlistbulk`, bulk reconciliation, and producer-side no-op eliminatio
 paid.
 Larger buffers, allocation reuse, extra workers, path clone removal, and descriptor
 frontiers did not. The main remaining cost is the size and construction of the reusable
-index: it used about 585 MiB at million-entry scale, and the only faster comparator was
-dumac, which retained only a scalar total and an inode set.
+index: it used about 398 MiB at near-million-entry scale.
+The only comparator with a lower scalar-arm median was dumac, which retained only a
+selected total and inode set; its paired interval crossed zero, so neither tool had a
+statistically established wall-time lead.
 The first requirement-derived plan now closes most of that retained-state cost for the
 existing rich summary composition: exp-040 avoids index retention when no later consumer
 can use it, improving wall 14.56% and cutting RSS 95.28% on the heterogeneous acceptance
@@ -39,7 +41,10 @@ tree without changing report bytes.
 Exact-final-binary runs on two more uniform 720,805- and 901,963-entry trees reproduced
 the roughly 3× user-CPU and 23–30× memory advantage, while wall improved only 1.8–2.8%.
 That contrast localizes the remaining floor to filesystem work and topology rather than
-index construction.
+index construction. Exp-041 through exp-044 then removed progressively more summary
+representation work, including a selected-total scanner matched to dumac.
+They cut user CPU and memory but failed the wall-time gate, confirming that directory
+opens and bulk system calls now own the warm-APFS floor.
 
 ## The Product Being Optimized
 
@@ -205,35 +210,39 @@ faster for cold indexing and 70.9% faster for warm revalidation on the 720,805-e
 pressure tree (exp-034). On the then-1,007,659-entry workspace it was 31.3% faster for
 cold indexing and 36.6% faster for the producer (exp-035).
 
-The final fresh-process comparison used a later 976,295-entry fingerprint of that
-workspace. It ran twelve adjacent interleaved pairs per competitor after three warmups,
-with FDU’s persisted cache disabled:
+The final fresh-process comparison used the self-contained 901,963-entry benchmark tree.
+It ran twelve adjacent interleaved pairs per competitor after three warmups, with FDU’s
+persisted cache disabled.
+Tree/index and scalar work classes ran as separate matrices:
 
 | Tool | Product | Median wall |
 | --- | --- | ---: |
-| **fdu** | complete reusable index and 10-row tree | **4.237 s** |
-| pdu | depth-one rendered tree | 6.684 s |
-| dust | depth-one 10-row rendered tree | 7.546 s |
-| gdu | depth-one 10-row rendered tree | 8.315 s |
-| ncdu | retained index, UI disabled | 28.576 s |
-| dumac | scalar allocated-byte total | **3.566 s** |
-| diskus | scalar total | 7.064 s |
-| dua | scalar total | 8.352 s |
+| **fdu** | complete reusable index and 10-row tree | **3.324 s** |
+| **fdu** | exact five-tally summary | **3.125 s** |
+| dumac | scalar allocated-byte total | 2.980 s (statistical tie) |
+| pdu | depth-one rendered tree | 5.657 s |
+| dust | depth-one 10-row rendered tree | 6.016 s |
+| gdu | depth-one 10-row rendered tree | 6.782 s |
+| ncdu | retained index, UI disabled | 20.550 s |
+| diskus | scalar total | 5.708 s |
+| dua | scalar total | 5.459 s |
 
-FDU beat every tree or index product and every scalar tool except dumac.
-Dumac’s 17.6% paired advantage is an upper-bound signal: it requests fewer attributes
-and retains only a total and hard-link inode set.
-FDU’s current index used about 585 MiB at this scale, versus dumac’s 45 MiB. The next
-material opportunity is therefore compact index construction, not more APFS worker
-threads.
+FDU beat every tree or index product and every scalar tool other than the statistically
+tied dumac comparison.
+Dumac’s 2.2% lower paired point estimate is an upper-bound signal: it requests fewer
+attributes and retains only a total and hard-link inode set.
+The interval [−5.7%, +1.7%] crosses zero, and dumac nevertheless used 85.4% more
+aggregate CPU and 224.5% more peak RSS than FDU’s richer summary.
+The next material tree-product opportunity is compact index construction, not more APFS
+worker threads.
 
 Full method, intervals, semantic caveats, and source analysis are in the
-[live tool comparison](report-2026-08-12-fdu-live-tool-comparison.md), with exact facts
-in its [reproduction manifest](fdu-live-tool-comparison-manifest-v1.json).
+[live tool comparison](report-2026-08-13-fdu-live-tool-comparison.md), with exact facts
+in its [reproduction manifest](fdu-live-tool-comparison-manifest-v2.json).
 
 ## The Most Useful Negative Results
 
-Forty-one experiments are valuable partly because they close plausible but unproductive
+Forty-five experiments are valuable partly because they close plausible but unproductive
 paths:
 
 - **Parallelism without moving the serialization boundary:** the first parallel
@@ -257,6 +266,9 @@ paths:
   the useful share (exp-011)
 - **Changing traversal order on intuition:** depth-first was measurably slower on the
   final heterogeneous tree, despite its reputation for locality (exp-037)
+- **Removing summary representation after the syscall floor:** worker-local reduction,
+  narrower macOS records, and a selected-total in-buffer fold cut user CPU by 36–52% and
+  RSS by 35–40% without clearing the 3% wall gate (exp-041, exp-042, exp-044)
 
 These failures support a general rule: profile the current architecture, because a
 successful change moves the bottleneck and invalidates earlier tuning.
@@ -302,31 +314,29 @@ keeping raw samples so means or Hyperfine-compatible summaries can be reconstruc
 ## Next Performance Frontier
 
 The experiment queue is ordered by potential impact and by design risk.
-Two proposed layers have now been measured and removed: H62 cut user CPU 36.23% but
-improved wall only 1.38% (exp-041), and the H62 plus H63 composition changed wall by
-+1.86% [−1.96%, +4.56%] (exp-042). That evidence says another rich-summary allocation
-optimization is unlikely to move the warm APFS syscall floor.
+Three proposed representation layers have now been measured and removed: H62 cut user
+CPU 36.23% but improved wall only 1.38% (exp-041), and the H62 plus H63 composition
+changed wall by +1.86% [−1.96%, +4.56%] (exp-042). That evidence says another
+rich-summary allocation optimization is unlikely to move the warm APFS syscall floor.
 Exp-043 also retained six workers: eight looked promising on the 901k screen but changed
 720k wall by +0.67% while raising CPU 40.66%; deeper pools were neutral or slower.
+H64’s complete selected-total specialization then changed wall by only −1.15%
+[−2.24%, +0.44%] and did not beat dumac despite halving user CPU (exp-044).
 
-1. **Selected-total matched challenge (H64, `fdu-8nfx`).** Derive only the requested
-   apparent or allocated total for a fair dumac-class workload.
-   Keep rich `summary` unchanged and publish hard-link/symlink accounting differences
-   beside any claim.
-2. **Compact reusable entries (H19–H22, `fdu-prph`).** Measure the entry layout, remove
+1. **Compact reusable entries (H19–H22, `fdu-prph`).** Measure the entry layout, remove
    duplicate name storage, move directory-only state out of files, and compact IDs and
    revisions one arm at a time.
    Million-entry RSS is the clearest current defect.
-3. **Worker-local subtree construction (H60, `fdu-weey`).** Build disjoint local arenas
+2. **Worker-local subtree construction (H60, `fdu-weey`).** Build disjoint local arenas
    and splice them with one roll-up at region completion, reducing path and channel work
    without bypassing the index contract.
-4. **Dense immutable base plus sparse overlay (H61, `fdu-f67r`).** After the layout
+3. **Dense immutable base plus sparse overlay (H61, `fdu-f67r`).** After the layout
    floor is known, test whether bootstrap state can remain dense while later mutations
    use a bounded overlay and compaction cycle.
-5. **Portable wide-directory stat chunks (H58, `fdu-r9he`).** On Linux or the portable
+4. **Portable wide-directory stat chunks (H58, `fdu-r9he`).** On Linux or the portable
    backend, test dua-style small stealable metadata jobs.
    This is not expected to help the macOS bulk path.
-6. **Journal scoping.** FSEvents can turn a quiet warm run from O(entries) into
+5. **Journal scoping.** FSEvents can turn a quiet warm run from O(entries) into
    O(changed regions), but the same fast full scan remains the fallback and the basis
    for first use, invalid journals, and explicit cache-off runs.
 
@@ -365,9 +375,11 @@ Together these changes more than halved both cold indexed scans and verified war
 without changing query or cache semantics.
 The million-scale product comparison now places FDU ahead of the established tree
 renderers on the measured M1/APFS host.
-The remaining scalar-only gap and memory footprint point to one frontier: construct and
-store the same complete index more densely, rather than doing less work and calling it
-the same result.
+The small scalar-only gap is now experimentally resistant to representation changes; the
+reusable tree’s memory footprint remains the larger defect.
+The next frontier is to construct and store the same complete index more densely, while
+journal scoping changes the amount of filesystem work only when trusted OS history
+proves that is safe.
 
 The complete numerical record, including every rejection, remains in the
 [experiment ledger](report-2026-08-10-fdu-performance-experiments.md).

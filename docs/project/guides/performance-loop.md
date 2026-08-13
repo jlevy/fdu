@@ -101,14 +101,13 @@ as immutable and confidential:
   If it changed, the run says so and exits nonzero, because timings taken against two
   different trees are not comparable.
 
-The project workspace itself is the standard local million-scale testbed.
-Its publishable 2026-08-12 comparison fingerprint contained 976,295 entries, and earlier
-experiment fingerprints crossed one million.
-Generated output and source checkouts move the exact count, so the protocol records it
-every time rather than treating one million as an eligibility cliff.
-It is self-contained in the operational sense: the repository root, ignored generated
-corpus, build output, dependency trees, and `attic/` source checkouts all live below one
-root and are scanned together.
+The repository’s `benchmarks/` subtree is the standard self-contained large local
+testbed. Its 2026-08-13 comparison fingerprint contained 901,963 entries across the
+ignored generated corpus, benchmark environment, harness, schemas, and result fixtures.
+It excludes volatile Git and Rust build state while retaining realistic language,
+dependency, and generated-file distributions.
+Generated state moves the exact count, so the protocol fingerprints every run rather
+than treating one million as an eligibility cliff.
 It is not a committed reproducible corpus and must never be compared by path or assumed
 count across machines.
 The inactive `cache-pressure-12x` tree under the ignored benchmark corpus is the stable
@@ -116,12 +115,14 @@ The inactive `cache-pressure-12x` tree under the ignored benchmark corpus is the
 Use it when background builds make the live workspace mutate, and fingerprint it afresh
 because it is generated state, not a committed fixture.
 
-For a publishable workspace run, first finish every build, checkout, Git operation, tbd
-update, and document write.
-Copy immutable release binaries outside the root; write the immediate baseline, JSON,
-Markdown, and command output outside the root too.
-Then run no editor, build, Git, tbd, IDE indexer, or other writer until the harness’s
-post-run fingerprint completes.
+For a publishable `benchmarks/` run, first finish every benchmark-harness, environment,
+corpus, schema, and result-fixture change.
+Copy immutable release binaries outside the root; write scratch snapshots, immediate
+baselines, JSON, Markdown, and command output outside the root too.
+The Make defaults use `/tmp/fdu-realtree`, and the harness rejects explicit state paths
+inside the measured root.
+Then run no benchmark test, environment update, corpus mutation, or other writer until
+the post-run fingerprint completes.
 The v2 fingerprint records redacted counts, depth, byte totals, and in-tree hard-link
 duplication.
 A precomputed baseline is optional: the tool-comparison harness always takes
@@ -218,7 +219,7 @@ Status is updated as experiments resolve them; see the ledger for results.
 | H59 | A cache-off report might retain only state required by the complete requested view set, as `pdu` discards subtrees below its output depth. | large RSS reduction and wall down at least 3%, with byte-identical output | **Confirmed, topology-sensitive** (exp-040): heterogeneous wall −14.56% [−18.55%, −9.04%], RSS −95.28%, and one stable semantic hash. Exact-final-binary uniform-tree replications retained the CPU/RSS mechanism but measured only 1.8–2.8% wall. |
 | H62 | Rich summaries can reduce inside scan workers rather than materializing file paths and sending observation batches through one consumer. | wall/user CPU/channel work down at least 3%; exact summary hash | **Refuted as production code** (exp-041): user CPU fell 36.23% and RSS 34.77%, but wall improved only 1.38%; the independent 720k replication was 1.26%. Reverted after the H63 composition also failed. |
 | H63 | A macOS bulk request derived from rich-summary requirements can omit index-only fields and avoid copying names for files. | system/user CPU and wall down at least 3%; strict parser and portable fallback parity | **Refuted in composition with H62** (exp-042): wall changed +1.86% [−1.96%, +4.56%] despite 50.96% lower user CPU and 39.70% lower RSS. Both layers were reverted. |
-| H64 | A selected-total projection can gather only the requested size metric for a workload matched to dumac. | beat or match dumac wall with exact FDU path-accounting oracle | **Design-gated** (`fdu-8nfx`). Keep rich `summary` unchanged and disclose hard-link/symlink differences. |
+| H64 | A selected-total projection can gather only the requested size metric for a workload matched to dumac. | beat or match dumac wall with exact FDU path-accounting oracle | **Refuted** (exp-044): the full narrow-reader and in-buffer-folding composition changed wall −1.15% [−2.24%, +0.44%] and did not beat dumac despite halving user CPU; all prototype API and engine code was reverted. |
 | H65 | Removing the index consumer may move the reduction-only worker-depth knee above six. | 6/8/10/12/16 curve; wall down at least 3% with bounded CPU/RSS | **Refuted** (exp-043): eight workers’ promising 901k screen did not replicate at 720k (+0.67% wall [−1.56%, +3.99%]); CPU rose 40.66%. Automatic/six remains shared by transient and indexed scans. |
 | H60 | Cold bootstrap workers can build disjoint local subtree arenas and splice them plus one roll-up at region completion, replacing one path operation per entry through the single consumer. | cold-index component/user CPU and channel allocation down; end-to-end wall down at least 3%; RSS bounded | **Queued** (`fdu-weey`). Preserve deterministic identity, progressive publication, errors, and the delta contract. |
 | H61 | A completed bootstrap can live in a dense immutable base while subsequent changes use a sparse overlay and bounded compaction, avoiding the full mutable-entry overhead on nearly every record. | million-scale RSS down at least 40% plus cold indexed wall down at least 3% or a decisive warm/query win | **Queued after H19–H22** (`fdu-f67r`). Preserve stable identities, exact snapshots, all views, progressive publication, errors, deltas, and watch semantics. |
@@ -266,8 +267,9 @@ uv run --no-project python -m benchmarks.realtree measure \
 `make perf-baseline`, `make perf-profile`, and `make perf-compare` wrap these with the
 project’s usual arguments; `PERF_TREE` selects the tree.
 
-Results land in `benchmarks/results/realtree/`, which is gitignored — they are
-machine-specific and large.
+Results land under `/tmp/fdu-realtree/results/` by default because the standard measured
+tree contains `benchmarks/results/`; writing evidence into the subject would invalidate
+the run. Host-specific raw artifacts remain outside the repository.
 What gets committed is the ledger entry: the numbers that mattered, the verdict, and the
 reasoning.
 
@@ -279,10 +281,13 @@ The immediate pre/post v2 fingerprints must agree; results and the baseline live
 the measured root.
 Each artifact retains binary hashes, versions, command templates, work
 classes, resource use, and redacted output hashes.
-When two FDU summary contracts are compared, the harness also hashes the stable report
-payload after removing only generator, absolute root, and timestamps.
-A mismatch invalidates both sides of that pair; a timing for a changed answer is not a
-performance sample.
+When FDU summary contracts are measured, the harness hashes the stable report payload
+after removing only generator, absolute root, and timestamps.
+It also checks all five summary tallies against the independent v3 tree fingerprint:
+files, descendant directories, apparent bytes, allocated bytes, and newest regular-file
+mtime. Partial, stale, cached, or error-bearing reports are invalid.
+A semantic or oracle mismatch invalidates the sample; a timing for a changed answer is
+not performance evidence.
 
 The default comparison should include rendered-tree peers (`dust`, `gdu`, `pdu`) and
 fast total-only lower bounds (`dua`, `diskus`, and macOS `dumac`). `ncdu` is a useful
@@ -302,8 +307,9 @@ H59 and its local aggregation helps motivate H60. H59 is now confirmed by exp-04
 `dumac` confirms FDU’s existing `getattrlistbulk` mechanism and motivated H62
 worker-local reduction, H63 report-derived macOS metadata, H64 a selected-total matched
 workload, and H65 reduction-only worker calibration.
-Exp-041/042 rejected the first two layers, and exp-043 found no transferable H65 worker
-retuning; H64 remains the clean matched-workload experiment.
+Exp-041 through exp-044 rejected all four additional layers for wall time.
+Their decisive CPU and memory reductions show that the remaining elapsed-time floor is
+directory-open and kernel work, not the rich summary representation.
 `dust`, `gdu`, and `diskus` mainly reinforce work already measured: recursive high
 concurrency is not a new hypothesis after H52/H57 rejected over-threading on APFS.
 

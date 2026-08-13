@@ -112,14 +112,16 @@ What it found, first against a roughly 60k-entry checkout and then against a
   frontier is neutral (exp-038), and the 256 KiB bulk buffer remains a rejection
   (exp-039). Peak indexed RSS rises 44.32%, so compact full-index layout is now the
   clearest retained cost.
-- **The local product comparison now has publishable evidence.** On the later
-  976,295-entry workspace fingerprint, fresh cache-off FDU completed in a 4.237-second
-  median versus 7.546 seconds for dust, 6.684 for pdu, 8.315 for gdu, and 28.576 for
-  ncdu. FDU also beat dua and diskus scalar totals.
-  Dumac was 17.6% faster in paired wall time while performing a narrower scalar-only job
-  and using 45.3 MiB instead of FDU’s 585.2 MiB. The
-  [live comparison](../../reports/report-2026-08-12-fdu-live-tool-comparison.md),
-  [manifest](../../reports/fdu-live-tool-comparison-manifest-v1.json), and
+- **The local product comparison now has oracle-checked near-million evidence.** On the
+  self-contained 901,963-entry benchmark tree, fresh cache-off FDU built its reusable
+  index and ten-row tree in a 3.324-second median versus 5.657 seconds for pdu, 6.016
+  for dust, 6.782 for Go gdu, and 20.550 for ncdu.
+  Its derived five-tally summary took 3.125 seconds and beat diskus, dua, BSD du, and
+  GNU du. Dumac’s allocated-byte-only total had a 2.980-second median, but its paired
+  2.2% advantage was statistically unclear [−5.7%, +1.7%]; it used 44.4 MiB versus FDU’s
+  13.6 MiB and 85.4% more aggregate CPU. The
+  [live comparison](../../reports/report-2026-08-13-fdu-live-tool-comparison.md),
+  [manifest](../../reports/fdu-live-tool-comparison-manifest-v2.json), and
   [performance white paper](../../reports/report-2026-08-12-fdu-performance-architecture.md)
   own the claim and its architectural interpretation.
 - **The first requirement-derived execution plan is accepted.** For the existing
@@ -142,6 +144,12 @@ What it found, first against a roughly 60k-entry checkout and then against a
   wall by +0.67% [−1.56%, +3.99%] while CPU rose 40.66% (exp-043). Ten, twelve, and
   sixteen workers were neutral or slower in the screen; the experiment-only override was
   removed.
+- **A selected-total specialization is rejected.** The complete H64 prototype added a
+  typed total view, strict selected-attribute macOS reader, portable fallback,
+  worker-local scalar reduction, and in-buffer file folding.
+  It cut user CPU 51.54% and RSS 39.19%, but changed paired wall only −1.15%
+  [−2.24%, +0.44%] and did not beat dumac (exp-044). All API and engine code was
+  reverted; the rich H59 summary remains the smallest useful execution tier.
 
 Rejected experiments remain as important as accepted ones.
 The original parallel revalidation funnel bought only 2.6%, root-relative `openat` was
@@ -657,7 +665,11 @@ Each competitor runs immediately beside fdu with alternating order and paired bo
 intervals; the same immutable fdu binary anchors every pair.
 The harness can also anchor an FDU derived-summary plan beside its indexed control.
 It hashes stable report semantics after excluding only run-specific timestamps,
-generator, and absolute root, and invalidates both samples in a mismatched pair.
+generator, and absolute root.
+The v3 fingerprint also checks every FDU rich-summary tally independently: files,
+descendant directories, apparent bytes, allocated bytes, and newest regular-file mtime.
+Partial, stale, cached, error-bearing, semantically mismatched, or oracle-mismatched
+samples are invalid.
 Contracts label five work classes:
 
 - `indexed-tree`: complete scan plus a retained browseable/reusable index;
@@ -684,11 +696,10 @@ Dumac validates the already-landed bulk syscall mechanism but performs a smaller
 total-only, reduced-attribute job.
 Its two implementation reports and source diff motivated worker-local rich-summary
 reduction (H62), report-derived macOS metadata (H63), a selected-total matched-workload
-challenge (H64), and reduction-only worker calibration (H65). Exp-041/042 rejected
-H62/H63 despite strong CPU and memory reductions, and exp-043 rejected H65 after its
-promising eight-worker screen failed to reproduce.
-H64 remains design-gated and isolated from the accepted indexed worker policy and the
-open hard-link attribution design.
+challenge (H64), and reduction-only worker calibration (H65). Exp-041 through exp-044
+rejected every additional layer for wall time despite strong CPU and memory reductions.
+The repeated resource/wall split localizes the current warm-APFS floor to directory-open
+and kernel work rather than summary representation.
 
 The
 [current diskus benchmark](https://github.com/sharkdp/diskus/blob/90196e950017d25b2940e8e0fda51a321ca66e1a/README.md#benchmark)
