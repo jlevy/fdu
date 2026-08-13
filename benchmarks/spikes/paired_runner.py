@@ -34,8 +34,11 @@ def run_once(name):
     proc = subprocess.Popen(cmd, stdout=DEVNULL, stderr=DEVNULL)
     _, status, ru = os.wait4(proc.pid, 0)
     wall = time.perf_counter_ns() - t0
-    if os.waitstatus_to_exitcode(status) != 0:
-        raise RuntimeError(f"{name} failed: {status}")
+    # Record the reaped status on the Popen so its destructor knows the child
+    # is gone (otherwise every sample emits a ResourceWarning).
+    proc.returncode = os.waitstatus_to_exitcode(status)
+    if proc.returncode != 0:
+        raise RuntimeError(f"{name} failed: {proc.returncode}")
     return {"wall_ns": wall, "utime": ru.ru_utime, "stime": ru.ru_stime,
             "maxrss_kb": ru.ru_maxrss, "minflt": ru.ru_minflt, "majflt": ru.ru_majflt}
 
@@ -92,15 +95,18 @@ def main():
     pairs = int(sys.argv[3]) if len(sys.argv) > 3 else 10
     cold = mode == "cold"
     if not cold:
-        # explicit warmups: three full-tree metadata passes + one run of each tool
-        for _ in range(2):
-            run_once("spike-statx")
-        seen = set()
+        # Explicit warmups using only the tools the matchups reference: every
+        # tool is itself a full-tree metadata pass, so two rounds warm the OS
+        # caches and per-tool state without depending on binaries outside the
+        # requested matchups.
+        ordered = []
         for a, b in matchups:
             for t in (a, b):
-                if t not in seen:
-                    run_once(t)
-                    seen.add(t)
+                if t not in ordered:
+                    ordered.append(t)
+        for _ in range(2):
+            for t in ordered:
+                run_once(t)
     for a, b in matchups:
         rows = paired(a, b, pairs, cold=cold)
         summarize(mode, a, b, rows)
