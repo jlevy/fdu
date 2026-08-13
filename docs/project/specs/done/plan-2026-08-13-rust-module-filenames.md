@@ -256,10 +256,13 @@ Two Makefiles were reported as explicitly unsupported by the code parser, so
 `--allow-partial` produced the intended successful partial report rather than silently
 claiming complete coverage.
 
-Pull request #11 targets `codex/file-content-metrics-plan` as a four-commit stack.
+Pull request #11 targets `codex/file-content-metrics-plan` as a focused stack.
 Its GitHub Actions matrix passed on macOS, Linux, and Windows, including Rust 1.85,
 clippy, documentation, dependency and supply-chain checks, feature-boundary tests, and
 Python 3.12 and 3.14 wheel builds.
+After review, the filename-policy test normalized native separators at its assertion
+boundary, and both the focused test and repository audit were added directly to the
+cross-platform CI test job.
 
 ## Rollout Plan
 

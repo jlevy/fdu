@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join, relative } from "node:path";
+import { dirname, join, relative, sep } from "node:path";
 import test from "node:test";
 
 import {
@@ -38,7 +38,7 @@ test("collects crate Rust surfaces but excludes fixture source trees", async () 
     async (root) => {
       const files = await collectRustFiles(root);
       assert.deepEqual(
-        files.map((path) => relative(root, path)),
+        files.map((path) => relative(root, path).split(sep).join("/")),
         [
           "crates/alpha/build.rs",
           "crates/alpha/examples/perf_probe.rs",
