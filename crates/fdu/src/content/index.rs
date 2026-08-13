@@ -117,6 +117,10 @@ impl ContentIndex {
         self.rollups.get(path)
     }
 
+    pub(crate) fn records(&self) -> impl Iterator<Item = (&Path, &FileAnalysis)> {
+        self.files.iter().map(|(path, analysis)| (path.as_path(), analysis))
+    }
+
     pub(crate) fn commit(&mut self, path: PathBuf, analysis: FileAnalysis) {
         if let Some(previous) = self.files.remove(&path) {
             self.merge_ancestors(&path, &previous, false);

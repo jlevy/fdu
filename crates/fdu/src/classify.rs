@@ -51,6 +51,10 @@ impl FileTypeId {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    pub(crate) fn from_cache(value: String) -> Self {
+        Self(value)
+    }
 }
 
 impl fmt::Display for FileTypeId {

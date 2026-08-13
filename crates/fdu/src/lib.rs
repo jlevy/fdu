@@ -101,6 +101,8 @@ pub struct OpenConfig {
     pub cache_path: Option<PathBuf>,
     /// How the snapshot may be used.
     pub policy: CachePolicy,
+    /// Optional bounded content analysis. Disabled preserves metadata-only behavior.
+    pub analysis: content::AnalysisRequest,
 }
 
 /// How an [`open`] may use the snapshot cache.
@@ -165,13 +167,13 @@ pub enum OpenPath {
 #[derive(Debug)]
 #[must_use = "join the save before exiting or the snapshot may be abandoned"]
 pub struct PendingSave {
-    worker: Option<std::thread::JoinHandle<Result<()>>>,
+    workers: Vec<(&'static str, std::thread::JoinHandle<Result<()>>)>,
 }
 
 impl PendingSave {
     /// Nothing to wait for.
     fn none() -> Self {
-        Self { worker: None }
+        Self { workers: Vec::new() }
     }
 
     /// Wait for the write to finish, returning its result.
@@ -179,12 +181,16 @@ impl PendingSave {
     /// A failed save is the caller's to report, not to die on: the answer already
     /// rendered is still correct, and only the next run's warmth is lost.
     pub fn join(mut self) -> Result<()> {
-        match self.worker.take() {
-            Some(worker) => worker
+        let mut first_error = None;
+        for (name, worker) in self.workers.drain(..) {
+            let outcome = worker
                 .join()
-                .unwrap_or_else(|_| Err(Error::Snapshot("snapshot writer panicked".to_string()))),
-            None => Ok(()),
+                .unwrap_or_else(|_| Err(Error::Snapshot(format!("{name} cache writer panicked"))));
+            if first_error.is_none() {
+                first_error = outcome.err();
+            }
         }
+        first_error.map_or(Ok(()), Err)
     }
 }
 
@@ -192,7 +198,7 @@ impl Drop for PendingSave {
     fn drop(&mut self) {
         // A dropped handle still waits: losing the write silently would be worse than
         // the brief delay, and this only happens on a path that forgot to join.
-        if let Some(worker) = self.worker.take() {
+        for (_, worker) in self.workers.drain(..) {
             let _ = worker.join();
         }
     }
@@ -205,12 +211,16 @@ pub struct OpenReport {
     pub path_taken: OpenPath,
     /// Filesystem walk results, including any partial errors.
     pub scan: ScanReport,
+    /// Content-analysis work performed after metadata reconciliation.
+    pub analysis: Option<content::AnalysisReport>,
+    /// Reusable records restored from the independently versioned content sidecar.
+    pub content_cache: content::ContentCacheLoad,
 }
 
 impl OpenReport {
     /// Whether every path in the requested scan scope was read successfully.
     pub fn is_complete(&self) -> bool {
-        self.scan.is_complete()
+        self.scan.is_complete() && self.analysis.is_none_or(content::AnalysisReport::is_complete)
     }
 
     /// Per-path errors that make this result partial.
@@ -260,9 +270,24 @@ pub fn open_with_pending_save(
         // marked unverified so the answer cannot claim a currency it has not earned — a
         // snapshot records the freshness it was written with, which was true then.
         index.mark_unverified();
+        let content_cache = load_content(&mut index, config)?;
+        if config.analysis.profile.is_enabled()
+            && content_cache.hits
+                != u64::try_from(index.analysis_candidates(config.analysis.profile).len())
+                    .unwrap_or(u64::MAX)
+        {
+            return Err(Error::Snapshot(
+                "no complete usable content sidecar for this root and analysis profile".into(),
+            ));
+        }
         return Ok((
             index,
-            OpenReport { path_taken: OpenPath::CacheOnly, scan: ScanReport::default() },
+            OpenReport {
+                path_taken: OpenPath::CacheOnly,
+                scan: ScanReport::default(),
+                analysis: None,
+                content_cache,
+            },
             PendingSave::none(),
         ));
     }
@@ -270,17 +295,45 @@ pub fn open_with_pending_save(
     if let Some(mut index) = loaded {
         let scan_report = scan::reconcile(&mut index, &config.scan, &mut |_| {})?.scan;
         index.establish_baseline();
+        let content_cache = load_content(&mut index, config)?;
+        let analysis = config
+            .analysis
+            .profile
+            .is_enabled()
+            .then(|| content::analyze_index(&mut index, config.analysis));
         let pending = spawn_save(&index, config, scan_report.is_complete());
         return Ok((
             index,
-            OpenReport { path_taken: OpenPath::WarmRevalidate, scan: scan_report },
+            OpenReport {
+                path_taken: OpenPath::WarmRevalidate,
+                scan: scan_report,
+                analysis,
+                content_cache,
+            },
             pending,
         ));
     }
 
-    let (index, scan_report) = scan::scan_into_index(&root, &config.scan)?;
+    let (mut index, scan_report) = scan::scan_into_index(&root, &config.scan)?;
+    let content_cache = load_content(&mut index, config)?;
+    let analysis = config
+        .analysis
+        .profile
+        .is_enabled()
+        .then(|| content::analyze_index(&mut index, config.analysis));
     let pending = spawn_save(&index, config, scan_report.is_complete());
-    Ok((index, OpenReport { path_taken: OpenPath::ColdScan, scan: scan_report }, pending))
+    Ok((
+        index,
+        OpenReport { path_taken: OpenPath::ColdScan, scan: scan_report, analysis, content_cache },
+        pending,
+    ))
+}
+
+fn load_content(index: &mut Index, config: &OpenConfig) -> Result<content::ContentCacheLoad> {
+    let (true, Some(snapshot_path)) = (config.policy.reads(), config.cache_path.as_deref()) else {
+        return Ok(content::ContentCacheLoad::default());
+    };
+    content::load_content_cache(index, config.analysis, &content::content_cache_path(snapshot_path))
 }
 
 /// Start a snapshot write, when policy and completeness allow one.
@@ -296,16 +349,29 @@ fn spawn_save(index: &Index, config: &OpenConfig, complete: bool) -> PendingSave
 
     // The index is read-only from here, so the writer's clone and the caller's rendering
     // are two readers. Cloning is what buys that independence.
-    let snapshot_source = index.clone();
-    match std::thread::Builder::new()
+    let snapshot_source = std::sync::Arc::new(index.clone());
+    let analysis = config.analysis;
+    let mut workers = Vec::with_capacity(2);
+    let metadata_source = std::sync::Arc::clone(&snapshot_source);
+    let metadata_path = cache_path.clone();
+    if let Ok(worker) = std::thread::Builder::new()
         .name("fdu-snapshot".to_string())
-        .spawn(move || snapshot::save(&snapshot_source, &cache_path))
+        .spawn(move || snapshot::save(&metadata_source, &metadata_path))
     {
-        Ok(worker) => PendingSave { worker: Some(worker) },
-        // A machine that cannot spawn a thread can still answer; it just answers cold
-        // next time.
-        Err(_) => PendingSave::none(),
+        workers.push(("metadata", worker));
     }
+    if analysis.profile.is_enabled() {
+        let content_path = content::content_cache_path(&cache_path);
+        if let Ok(worker) = std::thread::Builder::new()
+            .name("fdu-content-cache".to_string())
+            .spawn(move || content::save_content_cache(&snapshot_source, analysis, &content_path))
+        {
+            workers.push(("content", worker));
+        }
+    }
+    // A machine that cannot spawn either thread can still answer; it just answers cold
+    // next time.
+    PendingSave { workers }
 }
 
 /// The conventional snapshot location for a root.
@@ -496,6 +562,69 @@ mod tests {
     }
 
     #[test]
+    fn content_sidecar_skips_unchanged_reads_and_serves_cache_only() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let cache = tempfile::tempdir().expect("cache dir");
+        let snapshot_path = cache.path().join("snap.fdu");
+        write_file(&dir.path().join("notes.md"), b"one two\n");
+        let analysis = content::AnalysisRequest {
+            profile: content::AnalysisProfile::Basic,
+            ..content::AnalysisRequest::default()
+        };
+        let auto = OpenConfig {
+            cache_path: Some(snapshot_path.clone()),
+            policy: CachePolicy::Auto,
+            analysis,
+            ..OpenConfig::default()
+        };
+
+        let (first, first_report) = open(dir.path(), &auto).expect("cold analyzed open");
+        assert_eq!(first_report.analysis.expect("analysis").analyzed, 1);
+        assert_eq!(
+            first.content_rollup(Path::new("")).expect("content").total.metrics.raw_words,
+            2
+        );
+        assert!(content::content_cache_path(&snapshot_path).exists());
+
+        let (_, warm_report) = open(dir.path(), &auto).expect("warm analyzed open");
+        assert_eq!(warm_report.content_cache.hits, 1);
+        assert_eq!(warm_report.analysis.expect("analysis").candidates, 0);
+
+        fs::remove_file(dir.path().join("notes.md")).expect("remove source");
+        let only = OpenConfig { policy: CachePolicy::Only, ..auto };
+        let (cached, cached_report) = open(dir.path(), &only).expect("cache-only content");
+        assert_eq!(cached_report.content_cache.hits, 1);
+        assert_eq!(
+            cached.content_rollup(Path::new("")).expect("content").total.metrics.raw_words,
+            2
+        );
+    }
+
+    #[test]
+    fn cache_only_analysis_fails_closed_without_its_sidecar() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let cache = tempfile::tempdir().expect("cache dir");
+        let snapshot_path = cache.path().join("snap.fdu");
+        write_file(&dir.path().join("notes.md"), b"one two\n");
+        let metadata_only = OpenConfig {
+            cache_path: Some(snapshot_path),
+            policy: CachePolicy::Auto,
+            ..OpenConfig::default()
+        };
+        open(dir.path(), &metadata_only).expect("seed metadata");
+
+        let only = OpenConfig {
+            policy: CachePolicy::Only,
+            analysis: content::AnalysisRequest {
+                profile: content::AnalysisProfile::Basic,
+                ..content::AnalysisRequest::default()
+            },
+            ..metadata_only
+        };
+        assert!(matches!(open(dir.path(), &only), Err(Error::Snapshot(_))));
+    }
+
+    #[test]
     fn a_snapshot_for_another_root_is_treated_as_absent() {
         let one = tempfile::tempdir().expect("tempdir");
         let two = tempfile::tempdir().expect("tempdir");
@@ -598,6 +727,7 @@ mod tests {
             scan: ScanConfig { max_depth: Some(1), ..ScanConfig::default() },
             cache_path: Some(cache_path),
             policy: CachePolicy::ReadOnly,
+            analysis: content::AnalysisRequest::default(),
         };
         let (index, report) = open(dir.path(), &shallow).expect("shallow open");
 
@@ -617,6 +747,7 @@ mod tests {
             scan: ScanConfig { batch_size: 1, ..ScanConfig::default() },
             cache_path: Some(cache_path.clone()),
             policy: CachePolicy::Auto,
+            analysis: content::AnalysisRequest::default(),
         };
         open(dir.path(), &first).expect("first open");
 
@@ -624,6 +755,7 @@ mod tests {
             scan: ScanConfig { batch_size: 17, ..ScanConfig::default() },
             cache_path: Some(cache_path),
             policy: CachePolicy::ReadOnly,
+            analysis: content::AnalysisRequest::default(),
         };
         let (_, report) = open(dir.path(), &second).expect("second open");
         assert_eq!(report.path_taken, OpenPath::WarmRevalidate);

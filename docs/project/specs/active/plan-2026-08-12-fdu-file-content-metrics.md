@@ -541,18 +541,18 @@ is opened; and the disabled-path performance verdict is “no measurable regress
 
 - [x] Implement `content-basic-v1` as one allocation-light streaming pass over each
   eligible file
-- [ ] Share one 16 KiB prefix among byte-order-mark recognition, NUL detection, UTF-8
+- [x] Share one 16 KiB prefix among byte-order-mark recognition, NUL detection, UTF-8
   admission, and the continuing line/word scan
 - [ ] Pin empty-file, final-boundary, LF, CRLF, lone-CR, mixed-ending,
   boundary-across-chunk, whitespace-only, invalid-UTF-8, BOM, long-line, and
   adversarial-binary semantics in golden fixtures
-- [ ] Add conditional analysis observations, stale-read rejection, derived delta
+- [x] Add conditional analysis observations, stale-read rejection, derived delta
   application, and subtract/add directory and type rollups
-- [ ] Add per-analyzer atomic persistence keyed by strong file fingerprint, type rules,
+- [x] Add per-analyzer atomic persistence keyed by strong file fingerprint, type rules,
   analyzer version, and options
 - [ ] Expose physical, blank, and nonblank lines for accepted text; expose raw words and
   query-derived pages only for prose-family files
-- [ ] Expose analyzer coverage and make requested-analysis failures participate in the
+- [x] Expose analyzer coverage and make requested-analysis failures participate in the
   existing partial-result contract
 - [ ] Add `basic` analysis selection and metric projection to Rust, CLI, Python, and the
   versioned machine schema
@@ -939,7 +939,7 @@ None of these questions blocks Phases 1 or 2.
 | `fdu-j5ny` | In progress | Implement this approved spec in an isolated feature worktree |
 | `fdu-m7n5` | Complete | Stable classification, metric contracts, and disabled sparse boundary |
 | `fdu-ciq7` | Complete | Fused basic streaming analyzer and boundary/property tests |
-| `fdu-96l2` | Open; blocked by `fdu-ciq7` | Workers, conditional deltas, incremental rollups, and sidecars |
+| `fdu-96l2` | Complete | Workers, conditional deltas, incremental rollups, and sidecars |
 | `fdu-8kd8` | Open; blocked by `fdu-96l2` | Basic Rust, CLI, report-schema, view, and Python surface |
 | `fdu-occl` | Open; blocked by `fdu-8kd8` | Basic tryscript golden and multilingual self-host semantic lock |
 | `fdu-tq3k` | Open; blocked by `fdu-occl` | Basic and binary-gate performance iterations |

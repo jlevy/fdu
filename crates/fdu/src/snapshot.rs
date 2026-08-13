@@ -345,7 +345,7 @@ fn read_footer_checksum(reader: &mut impl Read) -> std::io::Result<u32> {
     Ok(u32::from_le_bytes(bytes))
 }
 
-fn crc32c(bytes: &[u8]) -> u32 {
+pub(crate) fn crc32c(bytes: &[u8]) -> u32 {
     !crc32c_update(u32::MAX, bytes)
 }
 
@@ -667,28 +667,28 @@ fn read_scope(reader: &mut impl Read) -> ParseResult<ScanScope> {
 }
 
 #[cfg(unix)]
-fn path_encoding() -> u8 {
+pub(crate) fn path_encoding() -> u8 {
     PATH_ENCODING_UNIX_BYTES
 }
 
 #[cfg(windows)]
-fn path_encoding() -> u8 {
+pub(crate) fn path_encoding() -> u8 {
     PATH_ENCODING_WINDOWS_WIDE
 }
 
 #[cfg(not(any(unix, windows)))]
-fn path_encoding() -> u8 {
+pub(crate) fn path_encoding() -> u8 {
     PATH_ENCODING_UTF8
 }
 
 #[cfg(unix)]
-fn put_os_str(buf: &mut Vec<u8>, value: &OsStr) -> Result<()> {
+pub(crate) fn put_os_str(buf: &mut Vec<u8>, value: &OsStr) -> Result<()> {
     use std::os::unix::ffi::OsStrExt;
     put_bytes(buf, value.as_bytes())
 }
 
 #[cfg(windows)]
-fn put_os_str(buf: &mut Vec<u8>, value: &OsStr) -> Result<()> {
+pub(crate) fn put_os_str(buf: &mut Vec<u8>, value: &OsStr) -> Result<()> {
     use std::os::windows::ffi::OsStrExt;
     let mut bytes = Vec::new();
     for unit in value.encode_wide() {
@@ -698,7 +698,7 @@ fn put_os_str(buf: &mut Vec<u8>, value: &OsStr) -> Result<()> {
 }
 
 #[cfg(not(any(unix, windows)))]
-fn put_os_str(buf: &mut Vec<u8>, value: &OsStr) -> Result<()> {
+pub(crate) fn put_os_str(buf: &mut Vec<u8>, value: &OsStr) -> Result<()> {
     let text = value
         .to_str()
         .ok_or_else(|| Error::Snapshot("path is not valid UTF-8 on this platform".into()))?;
@@ -734,7 +734,7 @@ fn os_string_from_bytes(bytes: &[u8]) -> Option<OsString> {
 /// Rename is atomic within a filesystem, so a reader either sees the whole old snapshot
 /// or the whole new one. The temporary must be a sibling for that to hold — a rename
 /// across filesystems is a copy, and copies are not atomic.
-fn write_atomically(path: &Path, bytes: &[u8]) -> Result<()> {
+pub(crate) fn write_atomically(path: &Path, bytes: &[u8]) -> Result<()> {
     let parent = parent_dir(path);
     fs::create_dir_all(parent).map_err(|e| Error::io(parent, e))?;
 

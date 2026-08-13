@@ -981,6 +981,25 @@ impl Index {
         candidates
     }
 
+    pub(crate) fn pending_analysis_candidates(
+        &self,
+        request: crate::content::AnalysisRequest,
+    ) -> Vec<AnalysisCandidate> {
+        let provenance = crate::content::ContentProvenance::for_request(request);
+        self.analysis_candidates(request.profile)
+            .into_iter()
+            .filter(|candidate| {
+                self.content()
+                    .and_then(|content| content.file(&candidate.relative_path))
+                    .is_none_or(|record| {
+                        record.fingerprint != candidate.attrs.fingerprint()
+                            || record.profile != request.profile
+                            || record.provenance != provenance
+                    })
+            })
+            .collect()
+    }
+
     /// Conditionally commit a worker result if its entry and metadata expectation still
     /// match.
     pub fn apply_analysis(&mut self, observation: AnalysisObservation) -> AnalysisApplyOutcome {

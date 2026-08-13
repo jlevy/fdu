@@ -336,6 +336,7 @@ impl Cli {
             },
             cache_path: default_cache_path(path),
             policy,
+            analysis: crate::content::AnalysisRequest::default(),
         };
 
         #[cfg(feature = "watch")]

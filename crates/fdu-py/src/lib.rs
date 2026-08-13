@@ -746,6 +746,7 @@ fn open(py: Python<'_>, root: PathBuf, cache: &str, max_depth: Option<usize>) ->
         scan: ScanConfig { max_depth, ..ScanConfig::default() },
         cache_path: fdu::default_cache_path(&root),
         policy,
+        analysis: fdu::content::AnalysisRequest::default(),
     };
 
     let opened = py.detach(|| fdu::open(&root, &config));

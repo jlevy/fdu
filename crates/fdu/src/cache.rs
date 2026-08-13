@@ -21,6 +21,8 @@ pub struct CacheStatus {
     pub path: PathBuf,
     /// Size on disk, in bytes.
     pub bytes: u64,
+    /// Size of a recognized content sidecar paired with this snapshot.
+    pub content_bytes: Option<u64>,
     /// What the header says, when the file is a snapshot this build can read.
     pub snapshot: Option<SnapshotInfo>,
 }
@@ -46,7 +48,16 @@ pub struct SnapshotInfo {
 /// Read one cache file's status without materializing its index.
 pub fn cache_status(path: &Path) -> Result<CacheStatus> {
     let bytes = fs::metadata(path).map_or(0, |meta| meta.len());
-    Ok(CacheStatus { path: path.to_path_buf(), bytes, snapshot: snapshot::read_header(path)? })
+    let snapshot = snapshot::read_header(path)?;
+    let content_path = crate::content::content_cache_path(path);
+    let content_bytes = if snapshot.is_some()
+        && crate::content::is_recognized_content_cache(&content_path)?
+    {
+        Some(fs::metadata(&content_path).map_err(|error| Error::io(&content_path, error))?.len())
+    } else {
+        None
+    };
+    Ok(CacheStatus { path: path.to_path_buf(), bytes, content_bytes, snapshot })
 }
 
 /// Enumerate every file in the cache directory holding fdu snapshots.
@@ -69,6 +80,12 @@ pub fn list_caches(cache_dir: &Path) -> Result<Vec<CacheStatus>> {
             found.push(cache_status(&path)?);
         }
     }
+    let paired_sidecars = found
+        .iter()
+        .filter(|status| status.snapshot.is_some() && status.content_bytes.is_some())
+        .map(|status| crate::content::content_cache_path(&status.path))
+        .collect::<std::collections::BTreeSet<_>>();
+    found.retain(|status| !paired_sidecars.contains(&status.path));
     // Deterministic order, so two runs of a status command agree.
     found.sort_by(|left, right| left.path.cmp(&right.path));
     Ok(found)
@@ -84,7 +101,13 @@ pub fn clear_cache(path: &Path) -> Result<bool> {
         return Ok(false);
     }
     match fs::remove_file(path) {
-        Ok(()) => Ok(true),
+        Ok(()) => {
+            let content_path = crate::content::content_cache_path(path);
+            if crate::content::is_recognized_content_cache(&content_path)? {
+                fs::remove_file(&content_path).map_err(|error| Error::io(&content_path, error))?;
+            }
+            Ok(true)
+        }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
         Err(error) => Err(Error::io(path, error)),
     }
@@ -133,6 +156,31 @@ mod tests {
         let info = status.snapshot.expect("header");
         assert_eq!(info.root, tree.path().canonicalize().expect("canonical"));
         assert_eq!(info.entries, 2, "the root plus one file");
+    }
+
+    #[test]
+    fn content_sidecar_is_reported_and_cleared_with_its_snapshot() {
+        let tree = tempfile::tempdir().expect("tempdir");
+        let cache = tempfile::tempdir().expect("cache");
+        let path = cache.path().join("snap.fdu");
+        std::fs::write(tree.path().join("notes.md"), b"one two\n").expect("write");
+        let config = OpenConfig {
+            cache_path: Some(path.clone()),
+            policy: CachePolicy::Auto,
+            analysis: crate::content::AnalysisRequest {
+                profile: crate::content::AnalysisProfile::Basic,
+                ..crate::content::AnalysisRequest::default()
+            },
+            ..OpenConfig::default()
+        };
+        open(tree.path(), &config).expect("seed analyzed cache");
+
+        let listed = list_caches(cache.path()).expect("list");
+        assert_eq!(listed.len(), 1, "a sidecar is grouped with its snapshot");
+        assert!(listed[0].content_bytes.is_some());
+        assert!(clear_cache(&path).expect("clear"));
+        assert!(!path.exists());
+        assert!(!crate::content::content_cache_path(&path).exists());
     }
 
     #[test]

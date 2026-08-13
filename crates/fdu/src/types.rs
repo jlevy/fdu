@@ -103,6 +103,7 @@ impl Attrs {
             mtime_ns: self.mtime_ns,
             ctime_ns: self.ctime_ns,
             inode: self.inode,
+            dev: self.dev,
         }
     }
 }
@@ -124,6 +125,8 @@ pub struct Fingerprint {
     pub ctime_ns: i64,
     /// Platform inode or file identity component.
     pub inode: u64,
+    /// Platform device or volume identity component.
+    pub dev: u64,
 }
 
 /// Semantic inputs that decide which entries and derived values belong in an index.
