@@ -2424,39 +2424,52 @@ mod tests {
     fn a_walk_moves_every_counter_it_should() {
         // Both walkers, because they are separate loops with separate call sites. The
         // first version of this test only exercised the parallel one, and deleting the
-        // serial walker's counter still passed — a guard that covers one path gives
-        // false confidence about the other.
+        // serial walker's counter still passed — a guard covering one path gives false
+        // confidence about the other.
         let _serial = crate::counters::test_serial();
         perfkit::enable(true);
         for threads in [Some(1), Some(4)] {
             let dir = sample_tree();
             let config = ScanConfig { threads, ..ScanConfig::default() };
-            crate::counters::reset();
 
+            // Deltas around the scan, not absolute totals. The counters are
+            // process-global, so a test running beside this one can add to them — and
+            // `test_serial` cannot prevent that, since it only serializes tests that
+            // take it, not every test that happens to walk a tree.
+            let before = crate::counters::snapshot();
             let report = scan(dir.path(), &config, &mut |_| {}).expect("scan");
             crate::counters::flush_thread();
-            let counts = crate::counters::snapshot();
+            let after = crate::counters::snapshot();
+            let observed_entries = after.dir_entries - before.dir_entries;
+            let observed_opens = after.dir_opens - before.dir_opens;
+            let observed_stats = after.stats - before.stats;
 
-            // Equality against the walk's own totals, not merely non-zero: a counter
-            // wired to the wrong site can still be positive.
-            assert_eq!(
-                counts.dir_entries, report.entries,
-                "enumerated entries match the walk's own count at {threads:?}: {counts:?}"
-            );
-            assert_eq!(
-                counts.dir_opens, report.dirs_read,
-                "directory opens match the walk's own count at {threads:?}: {counts:?}"
+            // `>=` rather than `==`, and the direction is the whole point: concurrent
+            // work can only inflate these, never deflate them. So a counter that is too
+            // low means a path ran uninstrumented, which is the failure worth catching
+            // and the one that has actually happened — the macOS bulk reader reported
+            // zero opens against three real ones. Equality would catch double-counting
+            // too, and would be flaky for it.
+            assert!(
+                observed_entries >= report.entries,
+                "every enumerated entry is counted at {threads:?}: {observed_entries} < {}",
+                report.entries
             );
             assert!(
-                counts.stats >= counts.dir_entries,
-                "each entry is stated at {threads:?}: {counts:?}"
+                observed_opens >= report.dirs_read,
+                "every directory open is counted at {threads:?}: {observed_opens} < {}",
+                report.dirs_read
+            );
+            assert!(
+                observed_stats >= report.entries,
+                "every entry is stated at {threads:?}: {observed_stats} < {}",
+                report.entries
             );
 
             // Deliberately not asserted: `allocs` stays zero in a library test, because
             // allocation counting needs a binary to install `CountingAlloc` as its
             // global allocator and a test harness installs its own. The probe covers
             // that half; this covers the counters the library itself drives.
-            crate::counters::reset();
         }
         perfkit::enable(false);
     }

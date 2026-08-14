@@ -5,6 +5,7 @@
 CARGO ?= cargo
 NODE ?= node
 NPM ?= npm
+UV ?= uv
 MSRV ?= 1.85.0
 NODE_INSTALL_STAMP := node_modules/.package-lock.json
 
@@ -58,8 +59,8 @@ content-selfcheck: build
 performance-probe:
 	$(CARGO) build --locked -p fdu --example perf_probe --no-default-features
 
-test-performance: uv-version performance-probe
-	uv run --no-project python -m unittest discover -s benchmarks/tests -p 'test_*.py'
+test-performance: performance-probe
+	$(UV) run --no-project python -m unittest discover -s benchmarks/tests -p 'test_*.py'
 	$(PERF_UV) --group dev python -m unittest discover -s benchmarks/realtree/tests -p 'test_*.py'
 
 # Tryscript returns nonzero when it updates a previously failing block. The immediate
@@ -80,24 +81,50 @@ check: uv-version supply-chain rust-module-names fmt-check clippy test docs docs
 # than a stale tool, and it takes out every uv-backed target (docs formatting, the
 # performance harness, the Python jobs) at once. Fail early and say so instead.
 #
-# CI installs uv through astral-sh/setup-uv in .github/workflows/ci.yml. Keep this
-# floor in step with that pin whenever it moves.
+# CI installs uv through astral-sh/setup-uv in .github/workflows/ci.yml. The
+# supply-chain policy verifies that this floor and both CI pins remain identical.
 UV_MIN_VERSION := 0.11.28
 
 uv-version:
-	@command -v uv >/dev/null 2>&1 || { \
+	@command -v "$(UV)" >/dev/null 2>&1 || { \
 		echo "error: uv is not installed, and this repository needs uv >= $(UV_MIN_VERSION)."; \
-		echo "       Install it: https://docs.astral.sh/uv/getting-started/installation/"; \
+		echo "       Install the reviewed $(UV_MIN_VERSION) release using the official instructions:"; \
+		echo "       https://docs.astral.sh/uv/getting-started/installation/"; \
 		exit 1; }
-	@have=$$(uv --version 2>/dev/null | awk '{print $$2}'); \
-	if [ "$$(printf '%s\n%s\n' "$(UV_MIN_VERSION)" "$$have" | sort -V | head -n1)" != "$(UV_MIN_VERSION)" ]; then \
+	@version_output=$$("$(UV)" --version 2>/dev/null) || { \
+		echo "error: could not run uv --version; reinstall the reviewed $(UV_MIN_VERSION) release."; \
+		exit 1; \
+	}; \
+	have=$$(printf '%s\n' "$$version_output" | awk 'NF >= 2 && $$1 == "uv" { print $$2; exit }'); \
+	relation=$$(awk -v have="$$have" -v need="$(UV_MIN_VERSION)" 'BEGIN { \
+		if (have !~ /^[0-9]+\.[0-9]+\.[0-9]+$$/ || need !~ /^[0-9]+\.[0-9]+\.[0-9]+$$/) { print "invalid"; exit; } \
+		split(have, actual, "."); split(need, minimum, "."); \
+		for (i = 1; i <= 3; i++) { \
+			if (actual[i] + 0 < minimum[i] + 0) { print "old"; exit; } \
+			if (actual[i] + 0 > minimum[i] + 0) { print "ok"; exit; } \
+		} \
+		print "ok"; \
+	}'); \
+	if [ "$$relation" = "old" ]; then \
 		echo "error: uv $$have is too old; this repository needs uv >= $(UV_MIN_VERSION)"; \
 		echo "       (the version CI pins in .github/workflows/ci.yml)."; \
 		echo "       Older releases cannot parse the relative 'exclude-newer' in the uv.toml"; \
 		echo "       files and fail with a misleading TOML date error."; \
-		echo "       Upgrade with: uv self update"; \
+		echo "       Upgrade to the reviewed release with: uv self update $(UV_MIN_VERSION)"; \
+		exit 1; \
+	elif [ "$$relation" != "ok" ]; then \
+		echo "error: could not determine a stable uv version from: $$version_output"; \
+		echo "       Reinstall the reviewed $(UV_MIN_VERSION) release before continuing."; \
 		exit 1; \
 	fi
+
+# Standalone entry points must fail before any recipe asks uv to parse repository
+# configuration. Keep this list aligned with the recipe-coverage test.
+UV_BACKED_TARGETS := test-performance python-concurrency python-smoke docs-format docs-format-check \
+	perf-baseline perf-profile perf-content-profile perf-compare perf-content-compare \
+	perf-compare-tools perf-record perf-test perf-ledger perf-schema perf-schema-check
+
+$(UV_BACKED_TARGETS): uv-version
 
 # Verify that synced beads match the local database, field by field.
 #
@@ -175,18 +202,18 @@ npm-audit: $(NODE_INSTALL_STAMP)
 	$(NPM) audit --audit-level=moderate
 
 python-concurrency:
-	uv run --directory crates/fdu-py --frozen --only-group dev \
+	$(UV) run --directory crates/fdu-py --frozen --only-group dev \
 		python tests/run_concurrency.py
 
 python-smoke:
 	cd crates/fdu-py && wheel_dir="$$(mktemp -d "$${TMPDIR:-/tmp}/fdu-wheel.XXXXXX")" && \
 		trap 'rm -r -- "$$wheel_dir"' EXIT && \
-		uv run --frozen --only-group dev maturin build --locked --release --out "$$wheel_dir" && \
-		uv venv --clear .venv-smoke && \
-		uv pip install --python .venv-smoke --no-index --find-links "$$wheel_dir" fdu && \
-		uv run --no-project --python .venv-smoke python tests/smoke.py && \
+		$(UV) run --frozen --only-group dev maturin build --locked --release --out "$$wheel_dir" && \
+		$(UV) venv --clear .venv-smoke && \
+		$(UV) pip install --python .venv-smoke --no-index --find-links "$$wheel_dir" fdu && \
+		$(UV) run --no-project --python .venv-smoke python tests/smoke.py && \
 		wheel_path="$$(find "$$wheel_dir" -maxdepth 1 -type f -name '*.whl' -print -quit)" && \
-		uvx --isolated --no-index --from "$$wheel_path" fdu --version
+		$(UV) tool run --isolated --no-index --from "$$wheel_path" fdu --version
 
 cli:
 	$(CARGO) run --locked --release --bin fdu -- --cache off -d 2 .
@@ -196,14 +223,14 @@ cli:
 # `--auto` owns repository-wide file discovery and applicable cleanups. The committed
 # tooling lock pins the native Rust formatter used locally and in CI. Generated Markdown
 # uses this same path after generation, so regenerating it cannot create format drift.
-FLOWMARK := uv run --project benchmarks --frozen --only-group docs flowmark
+FLOWMARK := $(UV) run --project benchmarks --frozen --only-group docs flowmark
 
-docs-format: uv-version
+docs-format:
 	@$(FLOWMARK) --auto .
 
 # Fails when a document is not in normal form, so drift is caught rather than
 # accumulating until someone reformats a file and buries a real change in noise.
-docs-format-check: uv-version
+docs-format-check:
 	@$(FLOWMARK) --auto --check .
 
 # --- Performance loop -------------------------------------------------------
@@ -225,7 +252,7 @@ PERF_PROFILING := target/profiling/examples/perf_probe
 # The harness runs from the repo root against a committed, frozen environment, so a
 # benchmark run resolves nothing at invocation time. `--project` (not `--directory`)
 # keeps the working directory here, which is what makes `-m benchmarks.realtree` work.
-PERF_UV := PYTHONDONTWRITEBYTECODE=1 uv run --project benchmarks --frozen
+PERF_UV := PYTHONDONTWRITEBYTECODE=1 $(UV) run --project benchmarks --frozen
 PERF_RUN := $(PERF_UV) python -m benchmarks.realtree
 
 .PHONY: perf-probe-release perf-probe-profiling perf-baseline perf-profile perf-compare perf-content-profile perf-content-compare perf-compare-tools perf-record perf-test perf-ledger perf-schema perf-schema-check

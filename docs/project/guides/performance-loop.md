@@ -260,6 +260,43 @@ says exactly that.
 A 4% win that adds a lock, a thread pool, and two new failure modes is
 not automatically worth taking, and the ledger records the reasoning when we decline it.
 
+## The record is a soft-schema artifact
+
+Every turn of the loop leaves one Markdown file in
+[docs/project/experiments/](../experiments/), and the split inside that file is what
+makes the loop cumulative rather than a pile of session notes.
+The YAML frontmatter carries what a tool reads: the tree fingerprint and host, the
+paired medians and bootstrap intervals per job and metric, the complexity cost, and a
+`decision` drawn from a fixed set.
+It is validated against
+[`experiment.schema.yaml`](../experiments/experiment.schema.yaml) at `status: enforced`.
+The Markdown body carries what no schema can hold: what the profile suggested, what was
+actually tried, and why the number meant what we said it meant.
+Neither half has to pretend to be the other, so a refuted hypothesis costs one file and
+stays findable months later.
+That is what lets the ledger lead with its failures.
+
+- **The contract is compiled, not hand-written.** `make perf-schema` compiles the schema
+  from the Pydantic model in
+  [`benchmarks/realtree/experiment.py`](../../../benchmarks/realtree/experiment.py), and
+  `make perf-schema-check` fails on drift.
+  The model is the source of truth, and its field descriptions are the documentation
+  every artifact ships with.
+- **The measured half is never retyped.** `make perf-record` lifts the medians and
+  intervals straight out of the run JSON and asks the operator only for what a
+  measurement cannot supply: the hypothesis, the change being tested, the complexity,
+  the verdict, and one sentence of reasoning.
+- **The ledger is a view, not a document.** `make perf-ledger` regenerates it from the
+  validated artifacts, so the report cannot drift from the record; an artifact that
+  stopped matching the contract fails the build instead of quietly contributing a wrong
+  row. Even the regime-coverage table is counted from artifacts rather than maintained by
+  hand.
+
+Structure earns its place here only because something reads it: the accept rule and the
+ledger tables. Any loop that proposes something, measures it, and decides can keep its
+record the same way; [softschema](https://github.com/jlevy/softschema) documents the
+format, the CLI, and this pattern as a playbook.
+
 ## Hypotheses
 
 Kept as a live list.

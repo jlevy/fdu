@@ -84,7 +84,8 @@
         "version": "0.11.28",
         "requireAssetDigestsInFiles": false,
         "files": [
-          ".github/workflows/ci.yml"
+          ".github/workflows/ci.yml",
+          "Makefile"
         ],
         "assets": {
           "uv-x86_64-unknown-linux-gnu.tar.gz": "sha256:e490a6464492183c5d4534a5527fb4440f7f2bb2f228162ad7e4afe076dc0224"
