@@ -8,7 +8,7 @@ Read it before changing engine behavior.
 This file covers how to operate on the repository; that one covers what the code must be
 true to.
 
-<!-- BEGIN TBD INTEGRATION format=f06 surface=agents-md -->
+<!-- BEGIN TBD INTEGRATION format=f07 surface=agents-md -->
 ## tbd
 
 This repository uses **tbd** for git-native issue tracking (beads), spec-driven
