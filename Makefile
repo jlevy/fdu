@@ -58,7 +58,7 @@ content-selfcheck: build
 performance-probe:
 	$(CARGO) build --locked -p fdu --example perf_probe --no-default-features
 
-test-performance: performance-probe
+test-performance: uv-version performance-probe
 	uv run --no-project python -m unittest discover -s benchmarks/tests -p 'test_*.py'
 	$(PERF_UV) --group dev python -m unittest discover -s benchmarks/realtree/tests -p 'test_*.py'
 
@@ -172,12 +172,12 @@ cli:
 # uses this same path after generation, so regenerating it cannot create format drift.
 FLOWMARK := uv run --project benchmarks --frozen --only-group docs flowmark
 
-docs-format:
+docs-format: uv-version
 	@$(FLOWMARK) --auto .
 
 # Fails when a document is not in normal form, so drift is caught rather than
 # accumulating until someone reformats a file and buries a real change in noise.
-docs-format-check:
+docs-format-check: uv-version
 	@$(FLOWMARK) --auto --check .
 
 # --- Performance loop -------------------------------------------------------

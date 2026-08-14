@@ -49,9 +49,12 @@ The uv.toml files express the supply-chain cool-off as a relative `exclude-newer
 `failed to parse year in date "14 days"`, which reads like a corrupt config rather than
 a stale tool. That one error takes out docs formatting, the performance harness, and the
 Python jobs at once, so an old uv looks like several unrelated repository failures.
-`make check` now fails fast with a version message instead; if you hit it on a
-pre-provisioned image, upgrade with `uv self update` rather than working around the
-config. `UV_MIN_VERSION` in the Makefile tracks the CI pin, so move both together.
+The `uv-version` preflight now fails fast with a version message instead, and guards
+`check`, `docs-format`, `docs-format-check`, and `test-performance` — the targets that
+would otherwise report the parse error.
+If you hit it on a pre-provisioned image, upgrade with `uv self update` rather than
+working around the config.
+`UV_MIN_VERSION` in the Makefile tracks the CI pin, so move both together.
 
 ## Performance Work
 
