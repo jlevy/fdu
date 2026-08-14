@@ -3,14 +3,16 @@ type: is
 id: is-01kzz2akt6txq8epjvdgcx0n5s
 title: blocked_ns is reported as zero for exactly the parallel jobs it should measure
 kind: bug
-status: open
+status: closed
 priority: 2
-version: 1
+version: 3
 labels: []
 dependencies: []
 parent_id: is-01kzz29dspd7bsy6jk98mpb9z3
 created_at: 2026-08-14T02:41:25.829Z
-updated_at: 2026-08-14T02:41:25.829Z
+updated_at: 2026-08-14T02:57:31.353Z
+closed_at: 2026-08-14T02:57:31.353Z
+close_reason: "Extracted add_cpu_metrics and added a Job.parallel_cpu declaration, set on the twelve jobs whose measured process runs the scan worker pool, the content analyzer pool, or a multi-threaded reference tool. Those jobs now report blocked_ns as null instead of a clamped zero. Added a data-driven safety net: any sample whose CPU exceeds wall withdraws blocked_ns regardless of the declaration, so a probe mode that quietly becomes parallel stops reporting rather than starts fabricating. Four regression tests; 73 realtree tests pass."
 ---
 benchmarks/realtree/measure.py computes metrics['blocked_ns'] = max(0, wall_ns - user_cpu_ns - system_cpu_ns) for every job.
 
