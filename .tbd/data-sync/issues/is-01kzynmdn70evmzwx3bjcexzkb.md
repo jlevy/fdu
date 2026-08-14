@@ -5,7 +5,7 @@ title: "Clarify and validate PR #15 content performance layers"
 kind: task
 status: in_progress
 priority: 1
-version: 19
+version: 20
 labels: []
 dependencies: []
 child_order_hints:
@@ -26,9 +26,9 @@ child_order_hints:
   - is-01kzysj77mzmh0rdct83a5rwaa
   - is-01kzyv83g6px1zbkrp5cj3bck2
 created_at: 2026-08-13T22:59:35.718Z
-updated_at: 2026-08-14T00:37:43.551Z
+updated_at: 2026-08-14T01:08:58.415Z
 ---
 
 ## Notes
 
-PR #15 review hardened and documented at c2b646c: full make check passes, all 16 required GitHub checks pass, the global binary is installed, and four common CLI recipes were verified end to end. Closed view/profile validation, Markdown boundaries, empty analysis identity, unavailable coverage, pinned whitespace/BOM semantics, and common-recipe documentation. Remaining readiness gaps are tracked in the open children: per-analyzer cache and coverage, generic metrics projection, use of content rollups, bounded candidate scheduling, content watch integration, per-path I/O diagnostics, and UTF-16 coverage.
+PR #15 review is hardened and documented through 1acebd0: language summaries are metadata-only by default with byte shares; code/full analysis additively supplies LOC and code-line shares; human language names are canonical and aligned; five common CLI recipes are documented and verified; make check and all 16 required GitHub checks pass; global binary 0.0.1-dev+g1acebd0d2 is installed. Remaining broader readiness gaps continue in the open child issues.
