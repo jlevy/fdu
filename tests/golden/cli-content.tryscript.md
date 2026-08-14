@@ -74,9 +74,9 @@ Views never enable analyzers implicitly, and analyzed views do not present missi
 measurements as zero.
 
 ```console
-$ fdu --cache off --view languages content-project
-   4.0 KiB   50.0%  Python  1 file
-   4.0 KiB   50.0%  Rust    1 file
+$ fdu --cache off --view languages --size apparent content-project
+      39 B   50.6%  Python  1 file
+      38 B   49.4%  Rust    1 file
 !
 ? 0
 ```
