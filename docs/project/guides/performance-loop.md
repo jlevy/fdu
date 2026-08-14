@@ -226,6 +226,43 @@ says exactly that.
 A 4% win that adds a lock, a thread pool, and two new failure modes is
 not automatically worth taking, and the ledger records the reasoning when we decline it.
 
+## The record is a soft-schema artifact
+
+Every turn of the loop leaves one Markdown file in
+[docs/project/experiments/](../experiments/), and the split inside that file is what
+makes the loop cumulative rather than a pile of session notes.
+The YAML frontmatter carries what a tool reads — the tree fingerprint and host, the
+paired medians and bootstrap intervals per job and metric, the complexity cost, and a
+`decision` drawn from a fixed set — validated against
+[`experiment.schema.yaml`](../experiments/experiment.schema.yaml) at `status: enforced`.
+The Markdown body carries what no schema can hold: what the profile suggested, what was
+actually tried, and why the number meant what we said it meant.
+Neither half has to pretend to be the other, so a refuted hypothesis costs one file and
+stays findable months later — which is the only reason the ledger can lead with its
+failures.
+
+- **The contract is compiled, not hand-written.** `make perf-schema` compiles the schema
+  from the Pydantic model in
+  [`benchmarks/realtree/experiment.py`](../../../benchmarks/realtree/experiment.py), and
+  `make perf-schema-check` fails on drift.
+  The model is the single source of truth, and its field descriptions are the
+  documentation every artifact ships with.
+- **The measured half is never retyped.** `make perf-record` lifts the medians and
+  intervals straight out of the run JSON and asks the operator only for what a
+  measurement cannot supply: the hypothesis, the complexity, the verdict, and one
+  sentence of reasoning.
+- **The ledger is a view, not a document.** `make perf-ledger` regenerates it from the
+  validated artifacts, so the report cannot drift from the record; an artifact that
+  stopped matching the contract fails the build instead of quietly contributing a wrong
+  row. Even the regime-coverage table is counted from artifacts rather than maintained by
+  hand.
+
+The practice generalizes past performance work: any loop that proposes something,
+measures it, and decides can keep its record this way.
+Structure earns its place only where a consumer reads it — here, the accept-rule
+arithmetic and the ledger tables — and the judgment stays prose.
+See [softschema](https://github.com/jlevy/softschema) for the format and the CLI.
+
 ## Hypotheses
 
 Kept as a live list.
