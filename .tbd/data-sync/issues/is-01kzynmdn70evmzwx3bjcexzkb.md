@@ -5,7 +5,7 @@ title: "Clarify and validate PR #15 content performance layers"
 kind: task
 status: in_progress
 priority: 1
-version: 27
+version: 28
 labels: []
 dependencies: []
 child_order_hints:
@@ -27,8 +27,9 @@ child_order_hints:
   - is-01kzyv83g6px1zbkrp5cj3bck2
   - is-01kzyx7d2nyh5gjx4gk6f4sfd0
   - is-01kzyzpjp5rz94mz5ma25t0tdz
+  - is-01kzz1krveqzt0ap63a4wjk961
 created_at: 2026-08-13T22:59:35.718Z
-updated_at: 2026-08-14T02:26:53.286Z
+updated_at: 2026-08-14T02:28:57.317Z
 ---
 
 ## Notes
