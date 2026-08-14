@@ -8,7 +8,7 @@ NPM ?= npm
 MSRV ?= 1.85.0
 NODE_INSTALL_STAMP := node_modules/.package-lock.json
 
-.PHONY: help build release test rust-test test-golden content-selfcheck performance-probe test-performance golden-update check supply-chain rust-module-names fix fmt fmt-check clippy docs docs-format docs-format-check lib-only msrv audit npm-audit python-concurrency python-smoke clean cli perf-help verify-beads
+.PHONY: help build release test rust-test test-golden content-selfcheck performance-probe test-performance golden-update check uv-version supply-chain rust-module-names fix fmt fmt-check clippy docs docs-format docs-format-check lib-only msrv audit npm-audit python-concurrency python-smoke clean cli perf-help verify-beads
 
 help:
 	@echo "make build      Debug build of the core library and CLI, all features"
@@ -58,7 +58,7 @@ content-selfcheck: build
 performance-probe:
 	$(CARGO) build --locked -p fdu --example perf_probe --no-default-features
 
-test-performance: performance-probe
+test-performance: uv-version performance-probe
 	uv run --no-project python -m unittest discover -s benchmarks/tests -p 'test_*.py'
 	$(PERF_UV) --group dev python -m unittest discover -s benchmarks/realtree/tests -p 'test_*.py'
 
@@ -72,7 +72,32 @@ $(NODE_INSTALL_STAMP): package.json package-lock.json .npmrc
 	$(NPM) ci
 
 # Everything CI enforces, in the order that fails fastest.
-check: supply-chain rust-module-names fmt-check clippy test docs docs-format-check lib-only msrv audit npm-audit python-concurrency python-smoke
+check: uv-version supply-chain rust-module-names fmt-check clippy test docs docs-format-check lib-only msrv audit npm-audit python-concurrency python-smoke
+
+# The uv.toml files express the supply-chain cool-off as a relative `exclude-newer`
+# ("14 days"). uv releases older than this cannot parse that form: they abort with
+# `failed to parse year in date "14 days"`, which reads like a corrupt config rather
+# than a stale tool, and it takes out every uv-backed target (docs formatting, the
+# performance harness, the Python jobs) at once. Fail early and say so instead.
+#
+# CI installs uv through astral-sh/setup-uv in .github/workflows/ci.yml. Keep this
+# floor in step with that pin whenever it moves.
+UV_MIN_VERSION := 0.11.28
+
+uv-version:
+	@command -v uv >/dev/null 2>&1 || { \
+		echo "error: uv is not installed, and this repository needs uv >= $(UV_MIN_VERSION)."; \
+		echo "       Install it: https://docs.astral.sh/uv/getting-started/installation/"; \
+		exit 1; }
+	@have=$$(uv --version 2>/dev/null | awk '{print $$2}'); \
+	if [ "$$(printf '%s\n%s\n' "$(UV_MIN_VERSION)" "$$have" | sort -V | head -n1)" != "$(UV_MIN_VERSION)" ]; then \
+		echo "error: uv $$have is too old; this repository needs uv >= $(UV_MIN_VERSION)"; \
+		echo "       (the version CI pins in .github/workflows/ci.yml)."; \
+		echo "       Older releases cannot parse the relative 'exclude-newer' in the uv.toml"; \
+		echo "       files and fail with a misleading TOML date error."; \
+		echo "       Upgrade with: uv self update"; \
+		exit 1; \
+	fi
 
 # Verify that synced beads match the local database, field by field.
 #
@@ -147,12 +172,12 @@ cli:
 # uses this same path after generation, so regenerating it cannot create format drift.
 FLOWMARK := uv run --project benchmarks --frozen --only-group docs flowmark
 
-docs-format:
+docs-format: uv-version
 	@$(FLOWMARK) --auto .
 
 # Fails when a document is not in normal form, so drift is caught rather than
 # accumulating until someone reformats a file and buries a real change in noise.
-docs-format-check:
+docs-format-check: uv-version
 	@$(FLOWMARK) --auto --check .
 
 # --- Performance loop -------------------------------------------------------

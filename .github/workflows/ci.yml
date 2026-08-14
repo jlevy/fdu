@@ -137,6 +137,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # 1.97.1
         with:
           toolchain: 1.97.1
+      # This pin is the floor the repository builds against, not just CI's choice:
+      # uv releases older than it cannot parse the relative `exclude-newer` in the
+      # uv.toml files and fail with a misleading TOML date error. `UV_MIN_VERSION`
+      # in the Makefile guards local builds against the same trap, so move the two
+      # together whenever this is bumped.
       - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
           version: "0.11.28"
@@ -180,6 +185,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # 1.97.1
         with:
           toolchain: 1.97.1
+      # Keep in step with the other setup-uv pin above and with `UV_MIN_VERSION`
+      # in the Makefile; see that step's comment for why the floor matters.
       - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
           version: "0.11.28"
