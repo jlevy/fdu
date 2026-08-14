@@ -332,6 +332,18 @@ This principle inverted a rule that used to exist: `--by-type` conflicted with `
 because the type breakdown was human-only.
 Under the axis design that combination is not merely legal but required to work.
 
+One-shot human text has one intentional presentation-only suffix: a compact performance
+line after the report.
+It is transient execution telemetry, not query data, so it stays outside `Report` and
+the versioned JSON, JSONL, and YAML schemas.
+The line records regular files and apparent bytes successfully walked, bytes actually
+returned by fresh content reads, content-analysis file and byte throughput,
+content-sidecar hits and the apparent bytes they represent, the metadata cache tier, and
+total report time. A cache-only answer reports zero walked files rather than pretending
+cached inventory was filesystem work.
+Watch has no final answer and therefore has no footer.
+Terminal text renders the footer in gray; uncolored text contains no escape sequences.
+
 ### Watch Is the Same Query, Repeated
 
 A watch run evaluates the same selection and views as a one-shot run, re-applied as
@@ -449,6 +461,15 @@ handoff, or idle.
 
 Coordination is measured in chunks, per claimed run of work rather than per file, so the
 instrumentation obeys the amortization rule it exists to verify.
+
+User-facing throughput follows the same evidence rule.
+Metadata walking counts files whose attributes were actually observed and their apparent
+lengths.
+Content I/O counts bytes returned by `read`, including partial binary probes and
+successful bytes before a read failure; it does not substitute the file’s metadata
+length. Fresh-analysis rates use the analyzer phase’s wall time, while cached records
+report both hit count and the apparent bytes they represent.
+These counters describe one run and are not benchmark claims.
 
 ## Boundaries
 

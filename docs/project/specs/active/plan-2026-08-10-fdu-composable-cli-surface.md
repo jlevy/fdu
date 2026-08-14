@@ -258,9 +258,10 @@ they extend this table’s *columns and groupings* — new metrics per row, cont
 `types` — rather than adding parallel flags, which is the extension contract that keeps
 the axis count fixed.
 
-In text format, `files` prints one path per line and nothing else, so it pipes straight
-into xargs and diff-friendly file lists; per-entry fields (size, mtime, kind) are
-carried in the machine formats.
+In text format, `files` prints one path per line, followed in a one-shot run by the
+standard performance footer.
+Programmatic consumers use a machine format, where per-entry fields (size, mtime, kind)
+are carried and transient performance telemetry is omitted.
 Two performance tiers, stated so nobody is surprised later: an unfiltered `tree`,
 `types`, or `summary` view reads the pre-computed `RollUp` state directly; any selection
 filter (and the `files` view) traverses the retained index in memory.
@@ -682,7 +683,8 @@ shared process boundary, as today.
   changes another view’s section.
 - Golden tryscript sessions per axis: view lists, each format, cache policies (using a
   scratch `XDG_CACHE_HOME`), cache utilities, and watch streaming with injected changes;
-  goldens are byte-stable (integer formatting, no floats in text output).
+  stable fields are byte-exact, while performance duration and throughput values use
+  named patterns that keep every field visible.
   The watch stream uses a bounded, causally sequenced capture helper rather than timing
   a process that never exits.
 - One concise, realistic nested-project session pins the complete natural human report
