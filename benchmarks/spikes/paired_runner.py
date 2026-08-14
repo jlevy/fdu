@@ -8,6 +8,11 @@ FDU = os.environ.get("SPIKE_FDU", "target/release/fdu")
 HOME = os.path.expanduser("~")
 DEVNULL = subprocess.DEVNULL
 
+# The competitor and spike entries name absolute paths from the rig that produced the
+# 2026-08-13 Linux scouting run, so the exact artifact behind each published number is
+# unambiguous. They are not portable: point SPIKE_TOOLS at a JSON object to add or
+# replace entries without editing this file, which is what makes a matchup reproducible
+# on a second machine. Values are argv lists; "{tree}" and "{fdu}" are substituted.
 TOOLS = {
     "fdu-tree":    [FDU, "--cache", "off", TREE],
     "fdu-summary": [FDU, "--cache", "off", "--view", "summary", TREE],
@@ -28,6 +33,20 @@ TOOLS = {
     "spike-uring":     ["/home/user/bench/walkspike", "uring", TREE],
 }
 
+# Content analysis reports exit 2 when a profile leaves files unanalyzed (unsupported
+# type, over --max-file-size), which is an ordinary outcome on a real tree rather than a
+# failure. Tools declare the statuses that still count as a valid sample, mirroring
+# measure.py's allowed_exit_codes; anything else still aborts the run.
+EXIT_OK = {name: {0} for name in TOOLS}
+
+_OVERRIDE = os.environ.get("SPIKE_TOOLS")
+if _OVERRIDE:
+    with open(_OVERRIDE, encoding="utf-8") as handle:
+        for name, entry in json.load(handle).items():
+            argv = entry["argv"] if isinstance(entry, dict) else entry
+            TOOLS[name] = [str(part).format(tree=TREE, fdu=FDU) for part in argv]
+            EXIT_OK[name] = set(entry.get("exit", [0])) if isinstance(entry, dict) else {0}
+
 def run_once(name):
     cmd = TOOLS[name]
     t0 = time.perf_counter_ns()
@@ -37,7 +56,7 @@ def run_once(name):
     # Record the reaped status on the Popen so its destructor knows the child
     # is gone (otherwise every sample emits a ResourceWarning).
     proc.returncode = os.waitstatus_to_exitcode(status)
-    if proc.returncode != 0:
+    if proc.returncode not in EXIT_OK.get(name, {0}):
         raise RuntimeError(f"{name} failed: {proc.returncode}")
     return {"wall_ns": wall, "utime": ru.ru_utime, "stime": ru.ru_stime,
             "maxrss_kb": ru.ru_maxrss, "minflt": ru.ru_minflt, "majflt": ru.ru_majflt}
