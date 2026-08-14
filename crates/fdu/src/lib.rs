@@ -47,8 +47,8 @@
 //!
 //! - `cli` *(default)* — the `fdu` binary and its dependencies. Library consumers should
 //!   take `default-features = false`.
-//! - `watch` — the OS-native watch layer. Strictly additive: without it everything else
-//!   works, just without live updates.
+//! - `watch` *(default)* — the OS-native watch layer. Strictly additive: without it
+//!   everything else works, just without live updates.
 
 pub mod cache;
 pub mod classify;

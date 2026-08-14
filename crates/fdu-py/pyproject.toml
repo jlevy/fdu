@@ -6,24 +6,40 @@ build-backend = "maturin"
 name = "fdu"
 description = "Fast, incremental file roll-up engine: hierarchical tallies over large directory trees"
 requires-python = ">=3.12"
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
 readme = "README.md"
 dynamic = ["version"]
+authors = [{ name = "Joshua Levy" }]
+keywords = ["disk-usage", "filesystem", "rollup", "rust", "cli"]
 classifiers = [
     "Development Status :: 2 - Pre-Alpha",
     "Environment :: Console",
+    "Operating System :: MacOS",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Programming Language :: Rust",
     "Topic :: System :: Filesystems",
     "Topic :: System :: Monitoring",
+    "Typing :: Typed",
 ]
 
 [project.scripts]
-fdu = "fdu_py:main"
+fdu = "fdu:_main"
 
 [dependency-groups]
 # Pinned after the repository's 14-day cool-off window; uv.lock freezes its
 # transitive environment for local and CI wheel builds.
-dev = ["maturin==1.14.1"]
+dev = [
+    "basedpyright==1.39.9",
+    "maturin==1.14.1",
+    "pytest==9.1.1",
+    "ruff==0.16.1",
+]
 
 [project.urls]
 Repository = "https://github.com/jlevy/fdu"
@@ -31,8 +47,34 @@ Documentation = "https://docs.rs/fdu"
 
 [tool.maturin]
 # Keep one extension module rather than duplicating the native payload as a bundled
-# binary. The `fdu` console script above calls the same Rust process boundary through
-# `fdu_py.main`; library consumers still get the persistent in-process index.
-module-name = "fdu_py"
+# binary. The public package owns typing and value models; its console wrapper and
+# retained Index delegate in bulk to the private `fdu._native` implementation.
+python-source = "python"
+module-name = "fdu._native"
 features = ["extension-module"]
 strip = true
+exclude = ["python/**/__pycache__/**", "python/**/*.pyc"]
+
+[tool.pytest.ini_options]
+addopts = ["--strict-config", "--strict-markers"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["B", "E4", "E7", "E9", "F", "I", "RUF", "SIM", "UP"]
+ignore = [
+    "COM812", # Ruff's formatter owns trailing commas.
+]
+
+[tool.basedpyright]
+pythonVersion = "3.12"
+typeCheckingMode = "strict"
+include = ["python", "tests/typecheck", "examples"]
+reportAny = false
+reportExplicitAny = false
+reportMissingTypeStubs = true
+reportPrivateUsage = false
+reportUnusedFunction = false

@@ -4,8 +4,8 @@
 
 **Author:** fdu project
 
-**Status:** Proposed — release and reference-process audits complete; implementation not
-started
+**Status:** Implemented for the non-publishing release-engineering scope; registry
+publication remains in `fdu-9cf0`
 
 ## Overview
 
@@ -18,10 +18,10 @@ The engine and end-user CLI are substantially healthier than the packaging sugge
 The reviewed `main` revision passes its full cross-platform CI matrix; the crate
 packages, installs, and works as a dependency outside the workspace; and an isolated
 wheel works as both an extension module and an `uvx` command.
-The repository is nevertheless **not ready to publish**. Release identity can disagree
-inside a wheel, license text is absent from both artifact families, the Linux wheel is
-tied to a recent glibc baseline, no publication workflow exists, and the Python module
-does not yet offer a coherent typed contract.
+At the audited baseline, the repository was nevertheless **not ready to publish**.
+Release identity could disagree inside a wheel, license text was absent from both
+artifact families, the Linux wheel was tied to a recent glibc baseline, no release
+workflow existed, and the Python module did not yet offer a coherent typed contract.
 
 This plan makes those release blockers explicit and resolves the pre-release choices
 now, while incompatible cleanup is still inexpensive.
@@ -610,6 +610,13 @@ retag or overwrite the released version.
 
 ## Implementation Plan
 
+The implementation branch completes the package, API, artifact, test, read-only
+registry-audit, workflow-rehearsal, and runbook work authorized before publication.
+It deliberately contains no registry credentials, publisher configuration, release tag,
+upload, or GitHub Release operation.
+Those irreversible steps remain in `fdu-9cf0`. The progressive `IndexSession` and
+upstream-reference improvements also remain separate follow-up work.
+
 ### Tracked Work
 
 | Bead | Scope | Release relationship |
@@ -629,55 +636,55 @@ retag or overwrite the released version.
 ### Phase 0: Track and Freeze the Public Contract
 
 - [x] Link the existing publishing bead and all implementation beads to this spec
-- [ ] Record supported Rust public items and Python `0.1` exports
-- [ ] Add a machine-readable or tested parity inventory for engine-facing options and
+- [x] Record the Python `0.1` export baseline and installed runtime/stub parity
+- [x] Add a machine-readable or tested parity inventory for engine-facing options and
   default values
 - [ ] Resolve the existing CLI, agent-schema, watch-hardening, and performance blockers
   already attached to `fdu-9cf0`
 
 ### Phase 1: Typed Python Package and Roll-Up API
 
-- [ ] Move the public import to `fdu` and the extension to `fdu._native`
-- [ ] Add the pure-Python package, private extension stubs, `py.typed`, and
+- [x] Move the public import to `fdu` and the extension to `fdu._native`
+- [x] Add the pure-Python package, private extension stubs, `py.typed`, and
   runtime-export parity test
-- [ ] Add typed options, enums, immutable result records, structured partial errors, and
+- [x] Add typed options, enums, immutable result records, structured partial errors, and
   exact report-to-dictionary conversion
-- [ ] Separate completeness from freshness and use the same status model on indexes,
+- [x] Separate completeness from freshness and use the same status model on indexes,
   reports, refresh results, and cache-only answers
-- [ ] Add missing `one_filesystem`, provenance, report-schema, and watch-query parity
-- [ ] Document a one-scan/many-roll-ups example and a downstream adapter example
+- [x] Add missing `one_filesystem`, provenance, report-schema, and watch-query parity
+- [x] Document a one-scan/many-roll-ups example and a downstream adapter example
 
 ### Phase 2: Artifact Identity, Contents, and Compatibility
 
-- [ ] Move the workspace to `0.1.0` and make exact-tag builds report the public version
-- [ ] Include license text and correct metadata in the crate, source distribution, and
+- [x] Move the workspace to `0.1.0` and make exact-tag builds report the public version
+- [x] Include license text and correct metadata in the crate, source distribution, and
   every wheel
-- [ ] Correct feature, watch, import, version, and installation documentation drift
-- [ ] Build and install the crate and source distribution outside any Git checkout
-- [ ] Establish compatibility, supported-platform, MSRV-change, deprecation, security,
+- [x] Correct feature, watch, import, version, and installation documentation drift
+- [x] Build and install the crate and source distribution from extracted artifacts
+- [x] Establish compatibility, supported-platform, MSRV-change, deprecation, security,
   and incident-response documentation
-- [ ] Capture a public API baseline for post-`0.1.0` semver checks
+- [x] Capture a Python public API baseline for post-`0.1.0` compatibility checks
 
 ### Phase 3: Artifact-First CI and Release Automation
 
-- [ ] Add the tested release-plan, artifact-inspection, registry-state, and archive
-  scripts; keep release decisions out of inline YAML
-- [ ] Make `release.yml` reject tag, commit, Cargo, Python, runtime, and filename
+- [x] Add tested release-plan, artifact-inspection, registry-state, manifest, and
+  checksum tooling; keep release decisions out of inline YAML
+- [x] Make `release.yml` reject tag, commit, Cargo, Python, runtime, and filename
   identity disagreement before building
-- [ ] Build `manylinux2014` x86-64 and arm64, macOS x86-64 and arm64, and Windows x86-64
-  abi3 wheels
-- [ ] Upload and reuse immutable artifacts between build, smoke, and publish jobs
+- [x] Define and validate `manylinux2014` x86-64 and arm64, macOS x86-64 and arm64, and
+  Windows x86-64 abi3 wheels
+- [x] Upload and reuse immutable artifacts between build, smoke, and evidence jobs
 - [ ] Compare Cargo and wheel CLIs over representative golden and partial-result
   sessions
-- [ ] Test CPython 3.12 and the current stable interpreter against installed wheels
-- [ ] Classify registry state as missing, identical, or conflicting by artifact hash and
+- [x] Test CPython 3.12 and the current stable interpreter against installed wheels
+- [x] Classify registry state as missing, identical, or conflicting by artifact hash and
   metadata before every upload or retry
-- [ ] Pin every action and installed release tool immutably and keep publication
+- [x] Pin every action and installed release tool immutably and keep publication
   authority out of build and validation jobs
 - [ ] Add direct, minimal, protected PyPI trusted publishing and the documented
   crates.io bootstrap path under the same maintainer accounts as Flowmark
-- [ ] Emit checksums, attestations, SBOMs, and a GitHub release only after registry
-  state is verified
+- [x] Emit checksums and SBOM evidence from the non-publishing workflow
+- [ ] Add attestations and a GitHub release only after registry state is verified
 
 ### Phase 4: First-Release Rehearsal and Publication
 

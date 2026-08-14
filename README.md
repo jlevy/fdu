@@ -167,7 +167,9 @@ fdu --help
 ```
 
 ```shell
-make python-smoke  # build the wheel; test its module, console script, and local uvx path
+make python-check        # lint, strict types, and unit tests
+make python-smoke        # installed wheel: public API, native boundary, CLI, and uvx
+make python-sdist-smoke  # build, install, and test the source distribution
 ```
 
 Publishing is Phase 1 work.
@@ -406,20 +408,32 @@ assert!(report.analysis.is_some());
 ## As a Python Module
 
 ```python
-import fdu_py
+from pathlib import Path
 
-index = fdu_py.open("/path/to/tree", analyze="full")
-print(index.complete, index.freshness, index.errors)
-print(index.total())          # {'files': ..., 'bytes': ..., 'by_extension': {...}}
-print(index.children("src"))  # one call returns every child with its roll-up
-print(index.report(views=["languages", "documents"]))
+import fdu
+
+index = fdu.open(
+    Path("/path/to/tree"),
+    analysis=fdu.AnalysisOptions(profile=fdu.AnalysisProfile.FULL),
+)
+print(index.status.complete, index.status.freshness, index.status.errors)
+print(index.total().files)
+print(index.children("src"))
+report = index.report(
+    fdu.Query(views=(fdu.View.LANGUAGES, fdu.View.DOCUMENTS))
+)
+print(report.sections)
 
 mark = index.clock
-index.refresh()               # reconcile against the filesystem
-print(index.since(mark))      # exactly what changed, or truncated=True if you fell behind
+index.refresh()
+print(index.since(mark).changes)
 ```
 
-Every method is bulk: it returns a whole structured result in one call.
+The public values are frozen, slotted dataclasses and enums, and `Report.as_dict()`
+returns the exact CLI JSON schema for serialization-oriented callers.
+Completeness and freshness stay independent: a cache-only index may cover its complete
+scope while remaining stale until it is revalidated.
+Every native method is bulk: it returns a whole structured result in one call.
 A million small zero-copy calls lose comfortably to one large call.
 The same wheel also installs an `fdu` console script backed by the native Rust CLI. Once
 a release is published, that makes an exact version directly runnable as

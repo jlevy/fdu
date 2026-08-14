@@ -1,0 +1,220 @@
+name: Release rehearsal
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_TERM_COLOR: always
+  NPM_CONFIG_IGNORE_SCRIPTS: "true"
+  RUSTFLAGS: "-D warnings"
+
+concurrency:
+  group: release-rehearsal-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    name: Resolve and audit release plan
+    runs-on: ubuntu-latest
+    outputs:
+      artifact_tag: ${{ steps.plan.outputs.artifact_tag }}
+      release_tag: ${{ steps.plan.outputs.release_tag }}
+      version: ${{ steps.plan.outputs.version }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.18.0
+      - run: npm ci --ignore-scripts
+      - run: node --test scripts/check-supply-chain.test.mjs scripts/check-uv-version.test.mjs
+      - run: node scripts/check-supply-chain.mjs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Resolve exact release identity
+        id: plan
+        run: >-
+          python3 scripts/release/resolve_plan.py
+          --root .
+          --mode rehearsal
+          --ref "${GITHUB_REF}"
+          --commit "${GITHUB_SHA}"
+          --validate-checkout
+          --github-output "${GITHUB_OUTPUT}"
+      - run: python3 -m unittest discover -s tests/release -p 'test_*.py'
+
+  crate:
+    name: Package crates.io preview
+    needs: plan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # 1.97.1
+        with:
+          toolchain: 1.97.1
+      - name: Package and verify crate
+        run: cargo package --locked -p fdu
+        env:
+          FDU_RELEASE_TAG: ${{ needs.plan.outputs.release_tag }}
+      - name: Smoke-test extracted crate CLI
+        run: >-
+          cargo install
+          --path "target/package/fdu-${{ needs.plan.outputs.version }}"
+          --locked
+          --root "${RUNNER_TEMP}/fdu-crate"
+        env:
+          FDU_RELEASE_TAG: ${{ needs.plan.outputs.release_tag }}
+      - run: '"${RUNNER_TEMP}/fdu-crate/bin/fdu" --version'
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-crate
+          path: target/package/fdu-${{ needs.plan.outputs.version }}.crate
+          if-no-files-found: error
+
+  sdist:
+    name: Build and install source distribution
+    needs: plan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # 1.97.1
+        with:
+          toolchain: 1.97.1
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          version: "0.11.28"
+          enable-cache: false
+          python-version: "3.12"
+      - name: Build source distribution
+        working-directory: crates/fdu-py
+        run: uv build --no-sources --sdist --out-dir dist
+        env:
+          FDU_RELEASE_TAG: ${{ needs.plan.outputs.release_tag }}
+      - name: Install and smoke-test source distribution
+        working-directory: crates/fdu-py
+        run: |
+          uv venv --clear .venv-sdist
+          uv pip install --python .venv-sdist dist/fdu-${{ needs.plan.outputs.version }}.tar.gz
+          uv run --no-project --python .venv-sdist python tests/public_smoke.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-sdist
+          path: crates/fdu-py/dist/fdu-${{ needs.plan.outputs.version }}.tar.gz
+          if-no-files-found: error
+
+  wheels:
+    name: Wheel ${{ matrix.target }}
+    needs: plan
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64
+            manylinux: "2014"
+            docker_options: -e FDU_RELEASE_TAG
+            native: true
+          - os: ubuntu-latest
+            target: aarch64
+            manylinux: "2014"
+            docker_options: -e FDU_RELEASE_TAG
+            native: false
+          - os: macos-15
+            target: x86_64-apple-darwin
+            manylinux: "off"
+            docker_options: ""
+            native: true
+          - os: macos-15-arm64
+            target: aarch64-apple-darwin
+            manylinux: "off"
+            docker_options: ""
+            native: true
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            manylinux: "off"
+            docker_options: ""
+            native: true
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          version: "0.11.28"
+          enable-cache: false
+          python-version: "3.12"
+      - name: Build portable abi3 wheel
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1
+        env:
+          FDU_RELEASE_TAG: ${{ needs.plan.outputs.release_tag }}
+        with:
+          working-directory: crates/fdu-py
+          target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux }}
+          docker-options: ${{ matrix.docker_options }}
+          maturin-version: v1.14.1
+          args: --release --locked --out dist
+      - name: Install and smoke-test native wheel
+        if: matrix.native
+        working-directory: crates/fdu-py
+        shell: bash
+        run: |
+          uv venv --clear .venv-release
+          uv pip install --python .venv-release --no-index --find-links dist fdu
+          uv run --no-project --python .venv-release python tests/public_smoke.py
+          uv run --no-project --python .venv-release python tests/smoke.py
+          uvx --isolated --no-index --find-links dist --from fdu fdu --version
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-wheel-${{ matrix.target }}
+          path: crates/fdu-py/dist/*.whl
+          if-no-files-found: error
+
+  evidence:
+    name: Inspect immutable artifact set
+    needs: [plan, crate, sdist, wheels]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: release
+      - name: Inspect metadata, contents, typing, license, SBOM, and hashes
+        run: >-
+          python3 scripts/release/inspect_artifacts.py release
+          --version "${{ needs.plan.outputs.version }}"
+          --manifest release-manifest.json
+          --checksums SHA256SUMS
+          --require-release-matrix
+      - name: Classify public registry state without publishing
+        run: >-
+          python3 scripts/release/registry_state.py
+          --manifest release-manifest.json
+          --version "${{ needs.plan.outputs.version }}"
+          --output registry-state.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-evidence-${{ needs.plan.outputs.artifact_tag }}
+          path: |
+            release-manifest.json
+            registry-state.json
+            SHA256SUMS
+          if-no-files-found: error
+
+# Publication is intentionally absent here. The separately tracked final-publication
+# work adds protected-environment registry jobs only after the project-specific PyPI and
+# crates.io publisher records exist and this rehearsal has completed successfully.

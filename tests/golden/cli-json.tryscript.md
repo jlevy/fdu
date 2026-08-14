@@ -24,7 +24,7 @@ patterns:
 $ fdu --cache off --format json --size apparent --depth 2 --limit 10 project
 {
   "schema": "fdu.report/1",
-  "generator": "fdu 0.0.1",
+  "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "scan_started_at": "[RFC3339]",
   "generated_at": "[RFC3339]",
@@ -48,7 +48,7 @@ $ fdu --cache off --format json --size apparent --depth 2 --limit 10 project
 $ fdu --cache off --format json --size apparent --depth 1 --limit 2 project
 {
   "schema": "fdu.report/1",
-  "generator": "fdu 0.0.1",
+  "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "scan_started_at": "[RFC3339]",
   "generated_at": "[RFC3339]",
@@ -72,7 +72,7 @@ $ fdu --cache off --format json --size apparent --depth 1 --limit 2 project
 $ fdu --cache off --format json --size apparent --scan-depth 1 --depth 2 --limit 10 project
 {
   "schema": "fdu.report/1",
-  "generator": "fdu 0.0.1",
+  "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "scan_started_at": "[RFC3339]",
   "generated_at": "[RFC3339]",
@@ -101,7 +101,7 @@ not just legal but required to work — formats are serializations, not features
 $ fdu --cache off --view types --format json --size apparent project
 {
   "schema": "fdu.report/2",
-  "generator": "fdu 0.0.1",
+  "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "scan_started_at": "[RFC3339]",
   "generated_at": "[RFC3339]",

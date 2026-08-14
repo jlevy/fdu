@@ -39,9 +39,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     lifecycle controls; and a `tail -f`-style watch stream.
     Reports require an explicit path, while bare `fdu` prints help without scanning the
     current directory.
-  - **Python bindings** (`fdu-py`): bulk API mirroring the query, provenance, cache, and
-    watch surfaces while releasing the GIL during native work.
-    The wheel does not compile the optional watch dependency.
+  - **Python package** (`fdu`): typed immutable options, reports, roll-ups, provenance,
+    cache values, and change feeds over a private `fdu._native` extension, with bulk
+    calls and GIL release during native work.
+    The same abi3 wheel includes watch support, a `py.typed` marker, exact extension
+    stubs, the native CLI console script, license text, and a CycloneDX SBOM.
+  - **Release rehearsal**: exact `0.1.0` identity checks, crate/sdist/wheel content
+    inspection, installed-wheel and installed-sdist consumer tests, strict downstream
+    type checking, and portable Linux, macOS, and Windows wheel build definitions.
   - **Opt-in content metrics** (`content`): compiled stable file-type rules; bounded
     parallel one-pass UTF-8, NUL, line, blank, and raw-word analysis; conditional
     fingerprint-checked commits; sparse type/family roll-ups; and independently

@@ -9,7 +9,7 @@ UV ?= uv
 MSRV ?= 1.85.0
 NODE_INSTALL_STAMP := node_modules/.package-lock.json
 
-.PHONY: help build release test rust-test test-golden content-selfcheck performance-probe test-performance golden-update check uv-version supply-chain rust-module-names fix fmt fmt-check clippy docs docs-format docs-format-check lib-only msrv audit npm-audit python-concurrency python-smoke clean cli perf-help verify-beads
+.PHONY: help build release test rust-test test-golden content-selfcheck performance-probe test-performance golden-update check uv-version supply-chain rust-module-names fix fmt fmt-check clippy docs docs-format docs-format-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke release-test release-rehearse clean cli perf-help verify-beads
 
 help:
 	@echo "make build      Debug build of the core library and CLI, all features"
@@ -73,7 +73,7 @@ $(NODE_INSTALL_STAMP): package.json package-lock.json .npmrc
 	$(NPM) ci
 
 # Everything CI enforces, in the order that fails fastest.
-check: uv-version supply-chain rust-module-names fmt-check clippy test docs docs-format-check lib-only msrv audit npm-audit python-concurrency python-smoke
+check: uv-version supply-chain rust-module-names fmt-check clippy test docs docs-format-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke release-test
 
 # The uv.toml files express the supply-chain cool-off as a relative `exclude-newer`
 # ("14 days"). uv releases older than this cannot parse that form: they abort with
@@ -120,7 +120,7 @@ uv-version:
 
 # Standalone entry points must fail before any recipe asks uv to parse repository
 # configuration. Keep this list aligned with the recipe-coverage test.
-UV_BACKED_TARGETS := test-performance python-concurrency python-smoke docs-format docs-format-check \
+UV_BACKED_TARGETS := test-performance python-check python-concurrency python-smoke python-sdist-smoke release-rehearse docs-format docs-format-check \
 	perf-baseline perf-profile perf-content-profile perf-compare perf-content-compare \
 	perf-compare-tools perf-record perf-test perf-ledger perf-schema perf-schema-check
 
@@ -205,15 +205,51 @@ python-concurrency:
 	$(UV) run --directory crates/fdu-py --frozen --only-group dev \
 		python tests/run_concurrency.py
 
+python-check:
+	$(UV) run --directory crates/fdu-py --frozen --only-group dev ruff format --check python tests
+	$(UV) run --directory crates/fdu-py --frozen --only-group dev ruff check python tests
+	$(UV) run --directory crates/fdu-py --frozen --only-group dev basedpyright
+	$(UV) run --directory crates/fdu-py --frozen --only-group dev pytest tests/test_models.py
+
 python-smoke:
 	cd crates/fdu-py && wheel_dir="$$(mktemp -d "$${TMPDIR:-/tmp}/fdu-wheel.XXXXXX")" && \
-		trap 'rm -r -- "$$wheel_dir"' EXIT && \
+		type_dir="$$(mktemp -d "$${TMPDIR:-/tmp}/fdu-typecheck.XXXXXX")" && \
+		trap 'rm -r -- "$$wheel_dir" "$$type_dir"' EXIT && \
 		$(UV) run --frozen --only-group dev maturin build --locked --release --out "$$wheel_dir" && \
 		$(UV) venv --clear .venv-smoke && \
 		$(UV) pip install --python .venv-smoke --no-index --find-links "$$wheel_dir" fdu && \
+		$(UV) run --no-project --python .venv-smoke python tests/public_smoke.py && \
 		$(UV) run --no-project --python .venv-smoke python tests/smoke.py && \
+		cp tests/typecheck/consumer.py tests/typecheck/pyrightconfig.json "$$type_dir/" && \
+		$(UV) run --frozen --only-group dev basedpyright --pythonpath .venv-smoke/bin/python \
+			--project "$$type_dir/pyrightconfig.json" && \
 		wheel_path="$$(find "$$wheel_dir" -maxdepth 1 -type f -name '*.whl' -print -quit)" && \
 		$(UV) tool run --isolated --no-index --from "$$wheel_path" fdu --version
+
+python-sdist-smoke:
+	cd crates/fdu-py && sdist_dir="$$(mktemp -d "$${TMPDIR:-/tmp}/fdu-sdist.XXXXXX")" && \
+		trap 'rm -r -- "$$sdist_dir"' EXIT && \
+		$(UV) build --no-sources --sdist --out-dir "$$sdist_dir" && \
+		$(UV) venv --clear .venv-sdist && \
+		$(UV) pip install --python .venv-sdist "$$sdist_dir/fdu-"*.tar.gz && \
+		$(UV) run --no-project --python .venv-sdist python tests/public_smoke.py
+
+release-test:
+	python3 -m unittest discover -s tests/release -p 'test_*.py'
+
+# Build and inspect the host artifacts without contacting either registry. The explicit
+# release tag exercises exact-version behavior even though a rehearsal runs on a branch.
+release-rehearse: release-test
+	artifact_dir="$$(mktemp -d "$${TMPDIR:-/tmp}/fdu-release.XXXXXX")" && \
+		trap 'rm -r -- "$$artifact_dir"' EXIT && \
+		version="$$(python3 -c 'import pathlib,tomllib; print(tomllib.loads(pathlib.Path("crates/fdu/Cargo.toml").read_text())["package"]["version"])')" && \
+		export FDU_RELEASE_TAG="v$$version" && \
+		$(CARGO) package --locked -p fdu --allow-dirty && \
+		cp "target/package/fdu-$$version.crate" "$$artifact_dir/" && \
+		$(UV) build --directory crates/fdu-py --no-sources --sdist --out-dir "$$artifact_dir" && \
+		$(UV) run --directory crates/fdu-py --frozen --only-group dev maturin build --locked --release --out "$$artifact_dir" && \
+		python3 scripts/release/inspect_artifacts.py "$$artifact_dir" --version "$$version" \
+			--manifest "$$artifact_dir/manifest.json" --checksums "$$artifact_dir/SHA256SUMS"
 
 cli:
 	$(CARGO) run --locked --release --bin fdu -- --cache off -d 2 .
