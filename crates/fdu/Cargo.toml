@@ -61,7 +61,6 @@ cli = ["dep:clap", "dep:anyhow"]
 # Gates the OS-native watch layer. Strictly additive: without it, scan, index,
 # snapshot, and the CLI are all fully functional, just without live updates.
 watch = ["dep:notify"]
-
 [dependencies]
 thiserror = "2.0"
 

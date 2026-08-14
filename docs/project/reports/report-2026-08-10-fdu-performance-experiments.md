@@ -14,27 +14,28 @@ a change is kept: [the performance loop guide](../guides/performance-loop.md).
 ## Where it stands
 
 Every accepted change together, measured against the pre-work baseline in one
-interleaved run of 12 paired trials (exp-032).
+interleaved run of 12 paired trials (exp-054).
 
 | job | before | after | change | 95% interval |
 | --- | ---: | ---: | ---: | --- |
-| `cold-scan-index` | 635 ms | 290 ms | **-54.5%** | [-55.3%, -53.7%] |
-| `cold-scan-producer` | 1219 ms | 457 ms | **-60.0%** | [-62.2%, -58.7%] |
-| `cold-snapshot-save` | 737 ms | 333 ms | **-52.4%** | [-56.6%, -51.0%] |
-| `warm-revalidate` | 902 ms | 442 ms | **-52.0%** | [-54.1%, -50.1%] |
-| `warm-snapshot-load` | 321 ms | 207 ms | **-35.7%** | [-36.2%, -35.3%] |
+| `cold-scan-index` | 298 ms | 306 ms | **+1.4%** | [-0.2%, +3.9%] |
+| `warm-revalidate` | 393 ms | 336 ms | **-15.7%** | [-16.3%, -14.0%] |
+
+Third-party tools on the same tree, for calibration only — they answer a slightly
+different question with different guarantees, and never enter the accept rule: `dust`
+246 ms.
 
 ## Reproducing the cumulative comparison
 
 **The tree.** Pinned by content, not by name.
 
-- Label `metabrowser-20260812`, 60,067 entries (7,350 directories, 52,695 files, 22
-  symlinks), max depth 19.
-- 1.01 GiB apparent, 1.15 GiB allocated.
-- Content digest `ce5a7430e152412a519ee9f9776c2fec73e59c58fa553aa3e9c2f8c085d26619`
+- Label `pr22-macos-benchmarks`, 60,993 entries (7,466 directories, 53,502 files, 25
+  symlinks), max depth 22.
+- 1.03 GiB apparent, 1.17 GiB allocated.
+- Content digest `f708694be70261d65046e934ef03aed21a52bfed19fe456a11e18f9305b62ca4`
   (`fdu-index-record-v1`). Two trees with this digest are the same tree in the same
   state.
-- Identified as `dbd79ed9c898f7a2…`, the SHA-256 of its path.
+- Identified as `c95b1edda5762c39…`, the SHA-256 of its path.
   The path itself is deliberately not recorded.
 
 **The machine.**
@@ -58,11 +59,8 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 
 | platform | host | cache state | experiments |
 | --- | --- | --- | ---: |
-| Darwin 25.5.0, apfs | unrecorded | warm-steady | 51 |
-
-All 51 experiments share one regime, so every number here is evidence about that regime
-and about no other. A constant chosen from them is portable only where a second
-measurement says it is.
+| Darwin 25.5.0, apfs | unrecorded | warm-steady | 53 |
+| Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 3 |
 
 ## Every experiment, including the failures
 
@@ -122,6 +120,11 @@ dead end.
 | 048 | [Reject prose collector gating for SLOC](#exp048--reject-prose-collector-gating-for-sloc) | H80 | `code-sloc` | +1.5% | ❌ rejected |
 | 049 | [Reject bounded Markdown source reserve](#exp049--reject-bounded-markdown-source-reserve) | H81 | `markdown-prose` | -3.5% | ❌ rejected |
 | 050 | [Decode complete UTF-8 chunks in place](#exp050--decode-complete-utf8-chunks-in-place) | H82 | `markdown-prose` | -12.0% | ✅ accepted |
+| 051 | [Memoize the parent resolved for the previous upsert](#exp051--memoize-the-parent-resolved-for-the-previous-upsert) | S1 | `cold-scan-index` | -7.3% | ✅ accepted |
+| 052 | [Per-layer counters cost less than the measurement can see](#exp052--perlayer-counters-cost-less-than-the-measurement-can-see) | — | `cold-scan-index` | +0.0% | ✅ accepted |
+| 053 | [Move instrumentation to a runtime toggle and measure all three of its costs](#exp053--move-instrumentation-to-a-runtime-toggle-and-measure-all-three-of-its-costs) | — | `cold-scan-index` | -1.3% | ✅ accepted |
+| 054 | [Validate the Linux campaign’s cumulative effect on macOS](#exp054--validate-the-linux-campaigns-cumulative-effect-on-macos) | — | `warm-revalidate` | -15.7% | ✅ accepted |
+| 055 | [Validate review fixes on macOS](#exp055--validate-review-fixes-on-macos) | — | `cold-scan-index` | -0.9% | ✅ accepted |
 
 ## The experiments
 
@@ -1808,7 +1811,7 @@ Cost to carry: 31 lines; no new dependencies.
 One mode bit and conditional prose counters; no dependency or unsafe code.
 
 **Rejected:** The 12-pair wall interval crossed zero and the median did not clear the 3%
-acceptance threshold; cache-hit and basic jobs were also neutral..
+acceptance threshold; cache-hit and basic jobs were also neutral.
 
 Full record:
 [`exp-048-reject-prose-collector-gating-for-sloc.md`](../experiments/exp-048-reject-prose-collector-gating-for-sloc.md)
@@ -1874,6 +1877,175 @@ self-host and cache-hit latency neutral.
 
 Full record:
 [`exp-050-decode-complete-utf-8-chunks-in-place.md`](../experiments/exp-050-decode-complete-utf-8-chunks-in-place.md)
+
+### exp-051 — Memoize the parent resolved for the previous upsert
+
+✅ accepted · 2026-08-14 · S1
+
+Control: fdu at 855aa2e
+
+Candidate: same, with a one-slot parent memo in apply_validated
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 2022.1 | 1852.9 | -7.35% | [-10.42%, -6.12%] |
+| component (ms) | 913.4 | 762.0 | -17.64% | [-19.63%, -12.65%] |
+| cpu (ms) | 3051.4 | 2846.3 | -5.40% | [-7.96%, -5.11%] |
+| user (ms) | 2108.0 | 1933.0 | -8.83% | [-11.16%, -7.43%] |
+| system (ms) | 951.3 | 947.7 | +0.55% (n.s.) | [-4.78%, +3.56%] |
+| peak rss (MiB) | 274.4 | 268.4 | -2.91% | [-4.14%, -0.17%] |
+
+Other jobs, wall time: `warm-revalidate` +0.5% (n.s.).
+
+Cost to carry: 78 lines; dependencies: none.
+
+One 40-line struct and a single call-site split; the memo is cleared on removal and
+invalidation.
+The clear on the kind-change path was removed after tracing showed the memo
+holds the entry’s parent rather than the entry, making it untestable defensive code.
+
+**Accepted:** cold-scan-index -7.35% [-10.42%, -6.12%] over 20 interleaved trials,
+clearing the 3% bar with the whole interval below zero; the index-build component itself
+fell 16.6%. warm-revalidate is unchanged (+0.54%, interval spans zero).
+normalize instructions fell 89%, confirming the memo hits.
+
+Full record:
+[`exp-051-memoize-the-parent-resolved-for-the-previous-upsert.md`](../experiments/exp-051-memoize-the-parent-resolved-for-the-previous-upsert.md)
+
+### exp-052 — Per-layer counters cost less than the measurement can see
+
+✅ accepted · 2026-08-14 · no hypothesis id
+
+Control: perf probe without perf-counters
+
+Candidate: same probe with perf-counters and a counting global allocator
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 1891.3 | 1870.1 | +0.03% (n.s.) | [-3.31%, +3.76%] |
+| component (ms) | 787.3 | 779.3 | +0.74% (n.s.) | [-4.61%, +5.53%] |
+| cpu (ms) | 2826.1 | 2862.2 | +0.17% (n.s.) | [-1.46%, +2.55%] |
+| user (ms) | 1901.1 | 1902.4 | -0.83% (n.s.) | [-1.62%, +3.69%] |
+| system (ms) | 931.1 | 944.2 | +0.55% (n.s.) | [-1.91%, +4.09%] |
+| peak rss (MiB) | 271.6 | 273.7 | -0.53% (n.s.) | [-5.06%, +5.44%] |
+
+Other jobs, wall time: `warm-revalidate` -1.1% (n.s.).
+
+Cost to carry: 420 lines; dependencies: none; 1 unsafe blocks.
+
+One unsafe impl GlobalAlloc, kept in the probe rather than the library so the engine’s
+unsafe-free guarantee stands; it forwards every argument unchanged and only adds to a
+Copy struct, which cannot unwind or re-enter the allocator.
+
+**Accepted:** Overhead is below the noise floor on both jobs: +0.03% [-3.31%, +3.76%]
+cold and -1.06% [-1.96%, +0.31%] warm, with roughly 13 million counter increments per
+cold run. Bounds the cost below about 3.3% rather than establishing zero.
+
+Full record:
+[`exp-052-per-layer-counters-cost-less-than-the-measurement-can-see.md`](../experiments/exp-052-per-layer-counters-cost-less-than-the-measurement-can-see.md)
+
+### exp-053 — Move instrumentation to a runtime toggle and measure all three of its costs
+
+✅ accepted · 2026-08-14 · no hypothesis id
+
+Control: probe with no instrumentation at all
+
+Candidate: probe with fdu counters compiled in and recording off
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 1858.8 | 1847.0 | -1.26% (n.s.) | [-2.96%, +1.40%] |
+| component (ms) | 774.1 | 757.1 | -3.45% | [-6.00%, -0.04%] |
+| cpu (ms) | 2834.1 | 2815.4 | -0.67% (n.s.) | [-2.73%, +0.42%] |
+| user (ms) | 1880.9 | 1884.9 | -0.51% (n.s.) | [-1.54%, +0.91%] |
+| system (ms) | 953.1 | 942.4 | -0.15% (n.s.) | [-5.83%, +3.14%] |
+| peak rss (MiB) | 272.6 | 264.0 | -2.73% (n.s.) | [-4.49%, +0.24%] |
+
+Cost to carry: 690 lines; no new dependencies; 1 unsafe blocks.
+
+The unsafe impl GlobalAlloc is confined to fdu’s counters/alloc.rs module.
+Its sink fields are private and custom construction is unsafe, so safe callers cannot
+violate the allocator’s non-unwind and non-reentrancy contract.
+
+**Accepted:** Idle cost -1.26% [-2.96%, +1.40%] and recording cost +0.64%
+[-0.68%, +2.13%], both spanning zero, so counters can stay compiled in and be switched
+on per run instead of per build.
+Bounds recording below about 2.1% rather than establishing zero.
+
+Full record:
+[`exp-053-move-instrumentation-to-a-runtime-toggle-and-measure-all-thr.md`](../experiments/exp-053-move-instrumentation-to-a-runtime-toggle-and-measure-all-thr.md)
+
+### exp-054 — Validate the Linux campaign’s cumulative effect on macOS
+
+✅ accepted · 2026-08-14 · no hypothesis id
+
+Control: main at 26280e4
+
+Candidate: PR 22 after cross-platform review fixes
+
+**`warm-revalidate`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 393.0 | 335.7 | -15.68% | [-16.29%, -13.99%] |
+| component (ms) | 168.0 | 168.6 | -1.20% (n.s.) | [-3.85%, +1.72%] |
+| cpu (ms) | 844.3 | 803.4 | -6.13% | [-8.43%, -0.84%] |
+| user (ms) | 271.1 | 217.6 | -20.14% | [-21.29%, -19.38%] |
+| system (ms) | 573.1 | 586.1 | +0.63% (n.s.) | [-2.84%, +8.59%] |
+| peak rss (MiB) | 34.3 | 33.0 | -3.28% | [-4.05%, -1.58%] |
+
+Other jobs, wall time: `cold-scan-index` +1.4% (n.s.).
+
+Cost to carry: 0 lines; no new dependencies.
+
+Validation-only experiment over the cumulative PR; no additional implementation was made
+for this run.
+
+**Accepted:** Warm revalidation improves 15.68% [13.99%, 16.29%], while cold scan moves
++1.39% [-0.19%, +3.90%] and remains statistically neutral; keep the campaign but do not
+generalize its Linux cold-scan gain to macOS.
+
+Full record:
+[`exp-054-validate-the-linux-campaign-cumulative-effect-on-macos.md`](../experiments/exp-054-validate-the-linux-campaign-cumulative-effect-on-macos.md)
+
+### exp-055 — Validate review fixes on macOS
+
+✅ accepted · 2026-08-14 · no hypothesis id
+
+Control: reviewed PR head fb99812
+
+Candidate: PR 22 with R1-R8 addressed
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 304.9 | 297.5 | -0.95% (n.s.) | [-3.07%, +0.98%] |
+| component (ms) | 173.0 | 165.4 | -1.87% (n.s.) | [-5.91%, +0.81%] |
+| cpu (ms) | 1176.2 | 1138.9 | -2.31% (n.s.) | [-4.68%, +0.83%] |
+| user (ms) | 218.7 | 217.0 | +0.39% (n.s.) | [-2.93%, +1.26%] |
+| system (ms) | 957.9 | 924.1 | -2.47% (n.s.) | [-6.11%, +0.48%] |
+| peak rss (MiB) | 35.3 | 35.5 | +1.15% (n.s.) | [-0.13%, +2.19%] |
+
+Other jobs, wall time: `warm-revalidate` -1.6% (n.s.).
+
+Cost to carry: 2796 lines; no new dependencies.
+
+Cross-platform correctness and soundness review rewrite; no new dependency and no net
+new unsafe implementation boundary.
+
+**Accepted:** Cold wall time moves -0.95% [-3.07%, +0.98%] and warm wall time moves
+-1.60% [-4.78%, +2.68%]; both span zero, so no macOS wall-time regression is detected
+from the correctness and safety fixes.
+
+Full record:
+[`exp-055-validate-review-fixes-on-macos.md`](../experiments/exp-055-validate-review-fixes-on-macos.md)
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

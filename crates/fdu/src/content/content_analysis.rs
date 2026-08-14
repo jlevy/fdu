@@ -97,6 +97,7 @@ pub fn analyze_index(index: &mut Index, request: AnalysisRequest) -> AnalysisRep
             let candidates = Arc::clone(&candidates);
             let next = &next;
             scope.spawn(move || {
+                let _counter_guard = crate::counters::thread_flush_guard();
                 loop {
                     let slot = next.fetch_add(1, Ordering::Relaxed);
                     let Some(candidate) = candidates.get(slot).cloned() else { break };
@@ -155,6 +156,7 @@ fn analyze_open_file(
     candidate: &AnalysisCandidate,
     request: AnalysisRequest,
 ) -> (FileAnalysis, u64) {
+    crate::counters::bump(|c| c.file_opens += 1);
     let mut file = match File::open(&candidate.absolute_path) {
         Ok(file) => file,
         Err(error) => return (io_record(candidate, request, &error), 0),
@@ -196,9 +198,11 @@ fn analyze_open_file(
     let mut early_binary = None;
     let mut bytes_read = 0_u64;
     loop {
+        crate::counters::bump(|c| c.file_reads += 1);
         match file.read(&mut chunk) {
             Ok(0) => break,
             Ok(count) => {
+                crate::counters::bump(|c| c.bytes_read += count as u64);
                 bytes_read = bytes_read.saturating_add(u64::try_from(count).unwrap_or(u64::MAX));
                 if prefix.len() < CLASSIFICATION_PREFIX_BYTES {
                     let take = count.min(CLASSIFICATION_PREFIX_BYTES - prefix.len());
@@ -447,6 +451,32 @@ mod tests {
         assert_eq!(root_rollup.total.files, 2);
         assert_eq!(root_rollup.total.metrics.physical_lines, 3);
         assert_eq!(root_rollup.total.metrics.raw_words, 3);
+    }
+
+    #[test]
+    fn content_workers_publish_their_file_io_counters() {
+        let _serial = crate::counters::test_serial();
+        let root = tempfile::tempdir().expect("tempdir");
+        fs::write(root.path().join("notes.md"), "one two\n\nthree\n").expect("write text");
+        let (mut index, scan) =
+            crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
+        assert!(scan.is_complete());
+
+        crate::counters::enable(true);
+        crate::counters::reset();
+        let report = analyze_index(
+            &mut index,
+            AnalysisRequest { profile: super::super::AnalysisProfile::Basic, workers: 2 },
+        );
+        crate::counters::flush_thread();
+        let counts = crate::counters::snapshot();
+        crate::counters::reset();
+        crate::counters::enable(false);
+
+        assert_eq!(report.analyzed, 1);
+        assert!(counts.file_opens >= 1, "content worker file open was folded: {counts:?}");
+        assert!(counts.file_reads >= 2, "data and EOF reads were folded: {counts:?}");
+        assert!(counts.bytes_read >= 15, "content bytes were folded: {counts:?}");
     }
 
     #[test]

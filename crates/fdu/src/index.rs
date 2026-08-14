@@ -705,6 +705,7 @@ impl Index {
     fn apply_validated(&mut self, observation: &Observation, next_clock: Clock) -> ApplyOutcome {
         let mut stats = ApplyStats::default();
         let mut effective = Vec::new();
+        let mut parent_memo = ParentMemo::default();
         let mut accepted = Vec::with_capacity(observation.len());
         for observed in &observation.ops {
             let op = &observed.op;
@@ -725,10 +726,19 @@ impl Index {
             let op = &observed.op;
             let changed = match op {
                 Op::Upsert { path, kind, attrs } => {
-                    self.apply_upsert(path, *kind, *attrs, &mut stats)
+                    self.apply_upsert(path, *kind, *attrs, &mut stats, &mut parent_memo)
                 }
-                Op::Remove { path } => self.apply_remove(path, &mut stats),
+                Op::Remove { path } => {
+                    // A removal takes a subtree with it, so a remembered id inside that
+                    // subtree would dangle. Both of the non-upsert arms drop the memo
+                    // rather than reason about whether this particular path could be an
+                    // ancestor of it: the memo is refilled by the next upsert, so the
+                    // cost of being conservative is one path resolution.
+                    parent_memo.clear();
+                    self.apply_remove(path, &mut stats)
+                }
                 Op::InvalidateSubtree { path, reason } => {
+                    parent_memo.clear();
                     self.pending_invalidations.push((path.clone(), *reason));
                     self.mark_unfresh(path, Freshness::Stale);
                     stats.invalidated += 1;
@@ -961,17 +971,6 @@ impl Index {
         id: EntryId,
     ) -> Option<impl DoubleEndedIterator<Item = (&OsStr, EntryId)> + ExactSizeIterator + '_> {
         Some(self.try_entry(id)?.children.iter().map(|(name, child)| (name.as_os_str(), *child)))
-    }
-
-    /// Resolve one direct child by name, without scanning its siblings.
-    ///
-    /// `children` is already a map, so a caller that knows the parent and the name is
-    /// one descent away from the id. Going through [`Self::children_of`] instead turns
-    /// that into a linear walk, which is quadratic for any caller resolving a whole
-    /// directory — snapshot load did exactly that, at roughly 8M name comparisons for a
-    /// single 4,096-entry directory.
-    pub(crate) fn child_id(&self, parent: EntryId, name: &OsStr) -> Option<EntryId> {
-        self.try_entry(parent)?.children.get(name).copied()
     }
 
     /// Reconstruct an entry's path relative to the root by walking parent pointers.
@@ -1210,6 +1209,7 @@ impl Index {
     }
 
     fn alloc(&mut self, entry: Entry) -> EntryId {
+        crate::counters::bump(|c| c.entries_allocated += 1);
         self.live += 1;
         if let Some(free_slot) = self.free_head {
             let free_idx = free_slot as usize;
@@ -1468,6 +1468,9 @@ impl Index {
     fn merge_upward(&mut self, from_parent: Option<EntryId>, contribution: &InternedRollUp) {
         let mut current = from_parent;
         while let Some(id) = current {
+            // Counted per level rather than per call: the O(depth) shape is the thing
+            // worth seeing, and it is what S4's bottom-up pass would collapse.
+            crate::counters::bump(|c| c.rollup_merges += 1);
             let entry = self.entry_mut(id);
             entry.rollup.merge(contribution);
             current = entry.parent;
@@ -1560,7 +1563,22 @@ impl Index {
         kind: EntryKind,
         attrs: Attrs,
         stats: &mut ApplyStats,
+        parent_memo: &mut ParentMemo,
     ) -> bool {
+        // A walker reports a directory's children consecutively, because that is the
+        // order one `getdents64` batch hands them over, so the parent resolved for the
+        // previous entry is almost always the parent of this one. Checking that first
+        // turns the common case into a single path comparison and skips both the
+        // component vector and the descent below.
+        crate::counters::bump(|c| c.upserts += 1);
+        if let (Some(dir), Some(name)) = (path.parent(), path.file_name()) {
+            if let Some(parent) = parent_memo.get(dir) {
+                crate::counters::bump(|c| c.parent_memo_hits += 1);
+                return self.upsert_beneath(parent, name, path, kind, attrs, stats);
+            }
+        }
+        crate::counters::bump(|c| c.parent_resolutions += 1);
+
         let Some(parts) = normalize(path) else {
             return false;
         };
@@ -1585,7 +1603,30 @@ impl Index {
             return true;
         };
         let parent = self.ensure_dir_chain(ancestors, stats);
-        let existing = self.entry(parent).children.get(*name).copied();
+        if let Some(dir) = path.parent() {
+            parent_memo.set(dir, parent);
+        }
+        self.upsert_beneath(parent, name, path, kind, attrs, stats)
+    }
+
+    /// Apply one upsert beneath a parent whose id is already resolved.
+    ///
+    /// This is the whole of [`apply_upsert`] except for finding the parent, split out so
+    /// that the memoized and the resolved paths share one body rather than two copies of
+    /// the arbitration rules.  Every guard the delta contract requires still runs here:
+    /// the caller has supplied a parent, not a decision.
+    #[allow(clippy::too_many_arguments)]
+    fn upsert_beneath(
+        &mut self,
+        parent: EntryId,
+        name: &OsStr,
+        path: &Path,
+        kind: EntryKind,
+        attrs: Attrs,
+        stats: &mut ApplyStats,
+    ) -> bool {
+        let source = self.applying_source;
+        let existing = self.entry(parent).children.get(name).copied();
 
         if let Some(id) = existing {
             let entry = self.entry(id);
@@ -1627,6 +1668,11 @@ impl Index {
             }
             // The kind changed (a file became a directory, say). Remove and re-insert
             // rather than trying to mutate one shape into the other.
+            //
+            // This drops a subtree but cannot invalidate the memo: the memo holds this
+            // entry's *parent*, and the subtree removed is rooted at the entry itself.
+            // Clearing here would be untestable defensive code, which reads as a hazard
+            // that does not exist.
             self.remove_entry(id, stats);
         }
 
@@ -1635,7 +1681,7 @@ impl Index {
             .flatten();
         let id = self.alloc(Entry {
             parent: Some(parent),
-            name: (*name).to_os_string(),
+            name: name.to_os_string(),
             ext_id,
             source,
             kind,
@@ -1645,11 +1691,66 @@ impl Index {
             revision: 0,
             children_revision: 0,
         });
-        self.insert_child(parent, (*name).to_os_string(), id);
+        self.insert_child(parent, name.to_os_string(), id);
         let contribution = self.contribution(id);
         self.merge_upward(Some(parent), &contribution);
         stats.inserted += 1;
         true
+    }
+
+    /// Insert one snapshot record beneath a parent whose id the caller already holds.
+    ///
+    /// The snapshot loader is not a producer.  It restores state that the delta contract
+    /// already arbitrated and serialized, in the order it was written, with parents
+    /// always preceding their children — so every fact [`apply_upsert`] rediscovers by
+    /// resolving a path is a fact the loader was handed.  Routing it through the
+    /// observation path made the loader pay, per record, a `PathBuf` join, an
+    /// `Observation` vector, a `normalize` vector, and a descent from the root through
+    /// one `BTreeMap` lookup per level, to arrive at a parent it had in a local variable.
+    /// A callgrind profile of a 450k-entry load put the allocator at about 27% of the
+    /// work and path-component iteration at about 15%; this removes both.
+    ///
+    /// It stays `pub(crate)` and takes an `EntryId` rather than a path precisely so it
+    /// cannot become a second mutation surface: no external producer can reach it, and
+    /// the guarantee that a loaded index equals the saved one is enforced by round-trip
+    /// tests rather than by making deserialization impersonate a producer.
+    ///
+    /// Returns `None` when the parent is not a live directory or already holds `name`,
+    /// which is how a corrupt snapshot fails closed.
+    pub(crate) fn insert_loaded_child(
+        &mut self,
+        parent: EntryId,
+        name: OsString,
+        kind: EntryKind,
+        attrs: Attrs,
+    ) -> Option<EntryId> {
+        let parent_entry = self.try_entry(parent)?;
+        if parent_entry.kind != EntryKind::Dir || parent_entry.children.contains_key(&name) {
+            return None;
+        }
+        let source = self.applying_source;
+        let ext_id = (kind == EntryKind::File)
+            .then(|| derive_ext(&name).map(|ext| self.intern_ext(&ext)))
+            .flatten();
+        let id = self.alloc(Entry {
+            parent: Some(parent),
+            name: name.clone(),
+            ext_id,
+            source,
+            kind,
+            attrs,
+            children: BTreeMap::new(),
+            rollup: InternedRollUp::default(),
+            revision: 0,
+            children_revision: 0,
+        });
+        self.insert_child(parent, name, id);
+        // Roll-ups stay eager. The same profile put `merge_upward` at about 3.5%, so
+        // deferring it to a bottom-up pass would buy little and would introduce a window
+        // in which the index is structurally complete but numerically wrong.
+        let contribution = self.contribution(id);
+        self.merge_upward(Some(parent), &contribution);
+        Some(id)
     }
 
     fn apply_remove(&mut self, path: &Path, stats: &mut ApplyStats) -> bool {
@@ -1744,6 +1845,49 @@ pub(crate) fn collect_child_expectations(
 /// entry, all of them holding bytes that the caller's `PathBuf` already owned and
 /// outlives. Only the returned `Vec` allocates now, and only where a slice is
 /// genuinely needed.
+/// The parent directory resolved for the previous upsert in a batch.
+///
+/// A walker reports a directory's children consecutively, so resolving the parent path
+/// once per directory rather than once per entry removes the dominant cost of applying a
+/// cold scan: a callgrind profile attributed about 25 path-component comparisons per
+/// entry to the descent, and the component vector `normalize` builds is an allocation
+/// per entry on top of that.
+///
+/// It is a single slot rather than a map on purpose.  A map would keep entries alive
+/// across structural changes and turn every miss into a hash, where consecutive runs are
+/// what the walker actually produces; one slot captures those and costs a path
+/// comparison when it misses.  The slot holds an id, so it must be cleared whenever a
+/// removal could unmake it — [`Index::apply_remove`], an invalidation, and the
+/// kind-change removal inside an upsert all do.
+#[derive(Default)]
+struct ParentMemo {
+    entry: Option<(PathBuf, EntryId)>,
+}
+
+impl ParentMemo {
+    /// The id remembered for `dir`, if the last resolved parent was that directory.
+    fn get(&self, dir: &Path) -> Option<EntryId> {
+        self.entry.as_ref().filter(|(cached, _)| cached == dir).map(|&(_, id)| id)
+    }
+
+    fn set(&mut self, dir: &Path, id: EntryId) {
+        match &mut self.entry {
+            // Overwriting in place keeps this to one allocation per directory rather
+            // than one per run, which matters because a wide tree alternates often.
+            Some((cached, cached_id)) => {
+                cached.clear();
+                cached.push(dir);
+                *cached_id = id;
+            }
+            slot => *slot = Some((dir.to_path_buf(), id)),
+        }
+    }
+
+    fn clear(&mut self) {
+        self.entry = None;
+    }
+}
+
 fn normalize(path: &Path) -> Option<Vec<&OsStr>> {
     let mut parts = Vec::new();
     for component in path.components() {
@@ -1806,6 +1950,120 @@ mod tests {
 
     fn upsert(path: &str, kind: EntryKind, attrs: Attrs) -> Op {
         Op::Upsert { path: PathBuf::from(path), kind, attrs }
+    }
+
+    /// The parent memo skips resolving a path when consecutive upserts share a parent,
+    /// so every test below puts the op that could invalidate it *between* two upserts
+    /// into the same directory — the arrangement where a stale hit would be believed.
+    /// A memo that never cleared would still pass an ordinary scan-shaped workload,
+    /// which is why these are written as batches rather than as separate applies: one
+    /// `apply_validated` call is the memo's whole lifetime.
+    #[test]
+    fn parent_memo_does_not_survive_removing_the_directory_it_remembers() {
+        let mut index = Index::new(PathBuf::from("/root"));
+        index.apply_ok(&Observation::new(vec![
+            upsert("dir", EntryKind::Dir, file_attrs(0, 1)),
+            upsert("dir/a.txt", EntryKind::File, file_attrs(10, 1)),
+        ]));
+
+        // The upsert after the removal must name a path *inside* the removed directory
+        // and must follow it immediately. Rebuilding `dir` first would refill the memo
+        // from the root and hide the bug — the window is exactly one op wide.
+        index.apply_ok(&Observation::new(vec![
+            upsert("dir/b.txt", EntryKind::File, file_attrs(20, 1)),
+            Op::Remove { path: PathBuf::from("dir") },
+            upsert("dir/c.txt", EntryKind::File, file_attrs(30, 2)),
+        ]));
+
+        let children = index.children(Path::new("dir")).expect("dir survives");
+        let names: Vec<_> = children.map(|(name, _)| name.to_os_string()).collect();
+        assert_eq!(names, vec![OsString::from("c.txt")], "only the re-added child remains");
+        assert_eq!(index.total().bytes, 30, "totals match the surviving child");
+    }
+
+    #[test]
+    fn a_kind_change_mid_batch_leaves_the_memo_usable_for_the_next_sibling() {
+        let mut index = Index::new(PathBuf::from("/root"));
+        index.apply_ok(&Observation::new(vec![
+            upsert("swap", EntryKind::Dir, file_attrs(0, 1)),
+            upsert("swap/inner", EntryKind::Dir, file_attrs(0, 1)),
+            upsert("swap/inner/deep.txt", EntryKind::File, file_attrs(40, 1)),
+        ]));
+
+        // A kind change drops a subtree, which looks like it should invalidate the memo
+        // and does not: the memo holds the changed entry's parent, and the subtree
+        // removed is rooted at the entry itself. This pins that reasoning, so that if
+        // the removal ever widens to touch the parent the failure lands here rather
+        // than as a dangling id in a scan.
+        index.apply_ok(&Observation::new(vec![
+            upsert("swap/inner/other.txt", EntryKind::File, file_attrs(50, 1)),
+            upsert("swap/inner", EntryKind::File, file_attrs(60, 2)),
+            upsert("swap/sibling.txt", EntryKind::File, file_attrs(70, 2)),
+        ]));
+
+        let children = index.children(Path::new("swap")).expect("swap survives");
+        let names: Vec<_> = children.map(|(name, _)| name.to_os_string()).collect();
+        assert_eq!(names, vec![OsString::from("inner"), OsString::from("sibling.txt")]);
+        assert_eq!(index.total().files, 2, "inner counts once, as a file");
+        assert_eq!(index.total().bytes, 130, "the dropped subtree's bytes are gone");
+    }
+
+    #[test]
+    fn parent_memo_distinguishes_directories_that_share_a_name_prefix() {
+        let mut index = Index::new(PathBuf::from("/root"));
+        // `src` and `src2` differ only after the memo's stored bytes end, which is the
+        // comparison a prefix check rather than an equality check would get wrong.
+        index.apply_ok(&Observation::new(vec![
+            upsert("src", EntryKind::Dir, file_attrs(0, 1)),
+            upsert("src2", EntryKind::Dir, file_attrs(0, 1)),
+            upsert("src/one.txt", EntryKind::File, file_attrs(11, 1)),
+            upsert("src2/two.txt", EntryKind::File, file_attrs(22, 1)),
+            upsert("src/three.txt", EntryKind::File, file_attrs(33, 1)),
+        ]));
+
+        let in_src: Vec<_> = index
+            .children(Path::new("src"))
+            .expect("src")
+            .map(|(name, _)| name.to_os_string())
+            .collect();
+        let in_src2: Vec<_> = index
+            .children(Path::new("src2"))
+            .expect("src2")
+            .map(|(name, _)| name.to_os_string())
+            .collect();
+        assert_eq!(in_src, vec![OsString::from("one.txt"), OsString::from("three.txt")]);
+        assert_eq!(in_src2, vec![OsString::from("two.txt")]);
+    }
+
+    #[test]
+    fn parent_memo_leaves_root_level_entries_alone() {
+        // A root-level path has `Some("")` as its parent, which must not be confused
+        // with the root entry itself or with a sibling's empty-parent lookup.
+        let mut index = Index::new(PathBuf::from("/root"));
+        index.apply_ok(&Observation::new(vec![
+            upsert("a.txt", EntryKind::File, file_attrs(5, 1)),
+            upsert("b.txt", EntryKind::File, file_attrs(6, 1)),
+            upsert("dir", EntryKind::Dir, file_attrs(0, 1)),
+            upsert("dir/c.txt", EntryKind::File, file_attrs(7, 1)),
+            upsert("d.txt", EntryKind::File, file_attrs(8, 1)),
+        ]));
+
+        let top: Vec<_> = index
+            .children(Path::new(""))
+            .expect("root children")
+            .map(|(name, _)| name.to_os_string())
+            .collect();
+        assert_eq!(
+            top,
+            vec![
+                OsString::from("a.txt"),
+                OsString::from("b.txt"),
+                OsString::from("d.txt"),
+                OsString::from("dir"),
+            ]
+        );
+        assert_eq!(index.total().files, 4);
+        assert_eq!(index.total().bytes, 26);
     }
 
     #[test]

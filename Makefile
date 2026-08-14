@@ -152,6 +152,32 @@ fmt-check:
 clippy:
 	$(CARGO) clippy --locked --all-targets --all-features -- -D warnings
 
+# Lint the code the host platform's build never sees.
+#
+# `cfg(target_os = ...)` code is invisible to a single-platform clippy run, and this
+# repository keeps its one unsafe exception behind exactly such a gate — the macOS
+# `getattrlistbulk` reader. CI lints on ubuntu only, so before this target that module
+# had never been linted anywhere. Three separate platform-gated defects reached CI in
+# one session for want of it.
+#
+# Checking, not building: no linker for the other platforms is needed, so this runs
+# anywhere. Add the targets once with
+#   rustup target add x86_64-apple-darwin x86_64-pc-windows-msvc
+# and this target skips any that are missing rather than failing, so it stays usable on
+# a machine that has not installed them.
+CROSS_TARGETS := x86_64-apple-darwin x86_64-pc-windows-msvc
+
+cross-lint:
+	@installed="$$(rustup target list --installed 2>/dev/null)"; \
+	for target in $(CROSS_TARGETS); do \
+		if echo "$$installed" | grep -qx "$$target"; then \
+			echo "== clippy: $$target"; \
+			$(CARGO) clippy --locked --all-targets --target "$$target" -- -D warnings || exit 1; \
+		else \
+			echo "== skipping $$target (rustup target add $$target)"; \
+		fi; \
+	done
+
 docs:
 	RUSTDOCFLAGS="-D warnings" $(CARGO) doc --locked --no-deps --all-features
 

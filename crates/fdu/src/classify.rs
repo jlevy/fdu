@@ -407,10 +407,12 @@ fn derive_ext_native(name: &OsStr) -> Option<String> {
 
     let units: Vec<u16> = name.encode_wide().collect();
     derive_ext_units(&units, u16::from(b'.'), |unit| {
-        if unit <= u16::from(u8::MAX) {
-            u16::from(u8::try_from(unit).expect("bounded to one byte").to_ascii_lowercase())
-        } else {
-            unit
+        // Lowercase the units that are single bytes and leave the rest alone. Asking
+        // `try_from` whether it fits says that directly, where a comparison plus an
+        // `expect` made the caller argue the bound was already checked.
+        match u8::try_from(unit) {
+            Ok(byte) => u16::from(byte.to_ascii_lowercase()),
+            Err(_) => unit,
         }
     })
     .and_then(|extension| String::from_utf16(&extension).ok())

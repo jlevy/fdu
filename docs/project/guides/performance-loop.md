@@ -7,6 +7,11 @@ Nothing here runs in `make check`, and nothing here blocks a merge.
 It exists so that any contributor — human or agent — can pick the loop up months later,
 re-run it, and get numbers comparable to the ones already recorded.
 
+New here? Start with
+[the campaign status report](../reports/report-2026-08-14-performance-campaign-status.md),
+which assumes no context and covers what has been achieved, what remains, and where the
+evidence is weak. This document is the protocol it describes.
+
 The companion documents are the
 [experiment ledger](../reports/report-2026-08-10-fdu-performance-experiments.md), which
 records every experiment and its verdict, the
@@ -118,6 +123,41 @@ marked as needing bare metal and the io_uring results were not treated as settli
 cold question. All three axes belong in every recorded result; the ledger counts them
 into its regime coverage table.
 
+### Per-layer counters
+
+Wall time says how long a run took; it does not say what the run *did*. Two results in
+this ledger were hard to read for exactly that reason — the allocator turned out to be
+about 35% of a cold scan’s engine work and only callgrind could see it, and `exp-051`
+predicted a component and was scored on a wall.
+
+The probe and shipped CLI always contain thread-local tallies at the filesystem, index,
+and allocation layers.
+`FDU_COUNTERS=1` records and prints them to stderr after the run; the probe’s JSON on
+stdout is unchanged, because counters describe an implementation rather than the
+measurement contract.
+
+```shell
+cargo build --release -p fdu --example perf_probe
+FDU_COUNTERS=1 ./target/release/examples/perf_probe scan-index --root TREE 2>&1 >/dev/null
+```
+
+A 450k-entry cold scan reports, per entry: 15.4 allocations, 11.0 reallocations, 11.9
+roll-up merges, and a 93.6% parent-memo hit rate.
+That last number is `exp-051`’s mechanism, which previously took a callgrind run to see.
+
+The counters are cheap enough to leave on — `exp-052` measured the overhead at +0.03%
+[−3.31%, +3.76%] cold and −1.06% [−1.96%, +0.31%] warm, both spanning zero, which bounds
+it below about 3.3% rather than establishing zero.
+Three choices buy that: counters are thread-local and non-atomic, per-entry paths are
+counted rather than timed, and allocation counting rides on an operation that already
+costs tens of nanoseconds.
+
+They localize cost to a layer without attributing it to a call site — no stack sampling,
+no live-byte tracking, both of which cost enough to change what they measure.
+When a counter raises a question it cannot answer, the answer is a callgrind caller
+tree, read as a tree and not as a flat profile.
+`fdu-zgxd` is currently that question.
+
 ## The reference tree
 
 Timings against a generated corpus answer a different question than timings against a
@@ -164,6 +204,75 @@ directory to Trash on macOS or use the platform’s equivalent recoverable clean
 Keep `benchmarks/corpus/realtree/` unless the base tree itself is intentionally being
 rebuilt. Moving data to Trash does not guarantee physical space is reclaimed until the
 user empties Trash.
+
+### Temporary volumes on macOS
+
+A RAM disk is not the default place for builds, temporary files, or claim-grade
+benchmarks. It can isolate a named synthetic experiment from device latency, but that is
+also why its result does not describe a normal APFS or HFS+ volume backed by storage.
+Use the ordinary filesystem for real-tree evidence and ordinary task-scoped scratch
+space for Cargo targets, virtual environments, package caches, and test output.
+
+If a synthetic experiment specifically requires a RAM-backed filesystem, use one image
+at a time and no larger than the measured need.
+Record its purpose, capacity, mount point, and cleanup owner in the active bead.
+Keep the primary checkout and every unique result outside the image.
+An experimental linked worktree may live on the image only while the experiment runs; it
+must be clean or have its changes committed or stashed before the experiment ends.
+
+Audit before creating an image so an interrupted agent does not leave a second one:
+
+```shell
+hdiutil info
+git worktree list --porcelain
+df -h /System/Volumes/Data
+```
+
+For every existing `ram://` image, map the image to its exact device and mount point
+from `hdiutil info`, then inspect the mount before deciding it is disposable:
+
+```shell
+diskutil info /Volumes/FDUPerfExperiment
+lsof +D /Volumes/FDUPerfExperiment
+git -C /Volumes/FDUPerfExperiment/fdu-worktree status --short --branch
+df -h /Volumes/FDUPerfExperiment
+```
+
+Do not interpret moving a file to Trash on the image as reclamation.
+macOS moves it to that volume’s `.Trashes` directory, so it still occupies the
+RAM-backed filesystem.
+APFS clones can also make Trash’s logical total exceed the physical blocks in `df`.
+Detaching destroys everything left on the RAM disk and is the reclamation step only
+after the preservation checks below.
+
+Before handoff, stop every writer, preserve dirty source and unique results outside the
+image, and verify `lsof` reports no open paths.
+Resolve the exact mount point again and detach without `-force`:
+
+```shell
+hdiutil info
+lsof +D /Volumes/FDUPerfExperiment
+hdiutil detach /Volumes/FDUPerfExperiment
+git worktree prune --dry-run --verbose
+```
+
+Run `git worktree prune --verbose` only when the dry run names the now-absent temporary
+worktree and no other entry.
+Then verify that `hdiutil info` no longer lists the image, the mount is gone, and system
+pressure has fallen:
+
+```shell
+hdiutil info
+git worktree list --porcelain
+df -h /System/Volumes/Data
+memory_pressure
+```
+
+If detach reports that the resource is busy, do not force it.
+Find the remaining process with `lsof`, stop that work normally, and repeat the
+preservation checks.
+A new agent must perform this audit before starting another performance run; an
+unexplained RAM disk is cleanup work, not a shared cache.
 
 For a publishable `benchmarks/` run, first finish every benchmark-harness, environment,
 corpus, schema, and result-fixture change.
@@ -316,7 +425,8 @@ Status is updated as experiments resolve them; see the ledger for results.
 | H66 | An unfiltered cache-off tree-only request can fold file observations into exact directory roll-ups and retain directory topology without file records. | byte-identical tree; wall down at least 3% or decisive RSS reduction without meaningful latency regression at 60k and near-million scale | **Queued** (`fdu-sk7v`). The planner must fall closed for cache, filters, multiple views, watch, or reusable-index requests; compare the Linux arm with dut’s rendered-tree job. |
 | H60 | Cold bootstrap workers can build disjoint local subtree arenas and splice them plus one roll-up at region completion, replacing one path operation per entry through the single consumer. | cold-index component/user CPU and channel allocation down; end-to-end wall down at least 3%; RSS bounded | **Queued** (`fdu-weey`). Preserve deterministic identity, progressive publication, errors, and the delta contract. |
 | H61 | A completed bootstrap can live in a dense immutable base while subsequent changes use a sparse overlay and bounded compaction, avoiding the full mutable-entry overhead on nearly every record. | million-scale RSS down at least 40% plus cold indexed wall down at least 3% or a decisive warm/query win | **Queued after H19–H22** (`fdu-f67r`). Preserve stable identities, exact snapshots, all views, progressive publication, errors, deltas, and watch semantics. |
-| H74 | Producers allocate paths and observation batches that the consumer frees, which is the cross-thread pattern glibc `malloc` handles worst. A different global allocator should recover that cost where the scan is not syscall-bound. | transient-summary wall down at least 3%; RSS increase bounded at million scale | **Promising, unconfirmed** (`fdu-cckr`). A local mimalloc build improved the scouting rig’s warm summary plan 30.3% [−32.9%, −25.6%] and left the full-index path within noise. Needs the supply-chain process, a macOS replication, a million-entry RSS check, and a ledger-protocol run before adoption. |
+| H74 | Producers allocate paths and observation batches that the consumer frees, which is the cross-thread pattern glibc `malloc` handles worst. A different global allocator should recover that cost where the scan is not syscall-bound. | transient-summary wall down at least 3%; RSS increase bounded at million scale | **Confirmed for one tier only, and not adopted.** A local mimalloc build on 450k entries measured the aggregate tier at −23.03% [−28.36%, −16.72%], the index tier at +3.66% [−17.62%, +17.53%] (spans zero), and snapshot load at −0.81% [−26.42%, +38.01%] (spans zero). The load result is the interaction to remember: `fdu-91ts` removed roughly four of five per-record allocations structurally first, so the allocator had nothing left to win there — the same competition H13 lost to H18. Peak RSS on the aggregate tier rose 18.1→43.3 MB, +139% on the tier whose whole pitch is low memory. Not adopted: it is a C-building dependency for a one-tier win, unmeasured on macOS, and H85 may capture the same cost without it. |
+| H85 | The aggregate tier’s cost is not allocation *volume* but glibc’s cross-thread free path: workers allocate, one consumer frees. Returning drained batch buffers to their producing worker would make each arena allocated and freed on one thread, capturing H74’s win without a dependency or its memory cost. | transient-summary wall down at least 20%, i.e. comparable to mimalloc; peak RSS no worse than today | **Queued** (`fdu-h7sw`). The evidence for the diagnosis is that H51 and H62 both *reduced allocation counts* on this tier and were both refuted on wall, while mimalloc changes no counts and wins 23%. Anything below about 20% is not capturing the same cost. |
 | H78 | H10’s remaining half: once load stops rebuilding the tree per record, the residue is parse-and-allocate. A format whose on-disk layout is usable directly, with roll-ups persisted rather than recomputed, makes warm open bound by the reconcile walk instead of the load. | `warm-snapshot-load` component down several-fold; warm open below cold-scan wall on Linux | **Queued after `fdu-91ts`** (`fdu-pdra`). Preserve exact snapshot semantics, a completeness boundary in the format version, endianness and alignment discipline, and allocation that is never sized from untrusted counts. |
 
 ### Content analysis
@@ -332,15 +442,16 @@ Status is updated as experiments resolve them; see the ledger for results.
 
 | # | Hypothesis | Predicted effect | Status |
 | --- | --- | --- | --- |
-| H9 | Warm revalidation is currently *slower* than a cold scan. Reconciliation does a full walk plus expectation lookups plus a snapshot load, so the cache costs more than it saves. | `warm-revalidate` wall below `cold-scan-index` wall | **Open, narrowed to snapshot load.** H12/exp-030 brings the verified 60k warm open from about 508 ms to 351 ms, versus about 296 ms cold; reconciliation itself is now about 151 ms, so persisted roll-ups/bulk load own most of the remaining gap. |
+| H9 | Warm revalidation is currently *slower* than a cold scan. Reconciliation does a full walk plus expectation lookups plus a snapshot load, so the cache costs more than it saves. | `warm-revalidate` wall below `cold-scan-index` wall | **Closed on Linux; re-measure on macOS.** H12/exp-030 brought the verified 60k warm open from about 508 ms to 351 ms against about 296 ms cold, leaving the load to blame. H75’s two fixes removed it: warm open is now below cold-scan wall on Linux with lower RSS. The macOS numbers predate both fixes and should be re-taken before the claim is made there. |
 | H12 | After H14 elided exclusive no-op applies and H26/H53 batched metadata, workers can compare bounded directory waves against one immutable baseline and send only changes through the delta contract. This revisits exp-002 without its single-consumer funnel. | 60k warm wall down at least 15% with its interval below zero; reconciliation component down at least 25%; exact parity and RSS increase no greater than 10% | **Confirmed** (exp-030): four-worker waves improve warm wall 30.25% at 60k and 59.53% at 720k; reconciliation component falls 50.31%/72.55%, 60k RSS rises 3.29%, and large RSS improves 0.99%. Shared/scoped/one-worker paths retain serial arbitration. |
 | H56 | exp-030’s post-profile attributes about 13% of 60k warm samples to scoped thread startup/waiting. Quadrupling the directory wave should amortize that residue while keeping both deferred changes and progressive publication bounded. | 60k warm wall or component down at least 3% with its interval below zero; RSS increase no greater than 5%; exact parity | **Refuted at 60k** (exp-031): 4,096-directory waves changed warm wall +1.64% [−3.88%, +10.07%] and component +13.24%; CPU/context-switch signals were unclear. Reverted without a 720k run. |
-| H10 | Snapshot load is ~320 ms of the warm start. A format whose on-disk layout can be used without rebuilding the tree would make the warm path open-latency-bound instead of parse-bound. | `warm-snapshot-load` wall down | **Partly addressed** (exp-005): the loader was resolving each entry’s path from the root three times over although the parent id was in hand. The format change itself remains open. |
-| H11 | `revalidate` builds a `BTreeSet<OsString>` of seen names per directory, cloning every name. Comparing against the index’s existing sorted children directly would remove that. | `user_cpu_ns` down on warm jobs | — |
+| H10 | Snapshot load is ~320 ms of the warm start. A format whose on-disk layout can be used without rebuilding the tree would make the warm path open-latency-bound instead of parse-bound. | `warm-snapshot-load` wall down | **Largely addressed without a format change** (exp-005, then `fdu-91ts`): the loader was rediscovering, per record, a parent it already held. Inserting beneath the known `EntryId` measured Linux load −51.9% [−53.2%, −51.0%]. What is left for H78 is the parse-and-allocate residue, now a much smaller share. |
+| H11 | `revalidate` builds a `BTreeSet<OsString>` of seen names per directory, cloning every name. Comparing against the index’s existing sorted children directly would remove that. | `user_cpu_ns` down on warm jobs | **Not a target, resolved without measuring.** The clone is real, but `scan::revalidate` has no production call site: `open` uses `reconcile`, and even the probe’s `revalidate` job calls `reconcile`. It is a public observation-only reference API exercised only by this crate’s tests, so the change would speed up nothing a user runs — and it is the one function whose clarity matters more than its speed, because its job is to be the obviously-correct reference the parallel paths are checked against. Re-open only if it acquires a caller. |
 | H53 | Full reconciliation still uses portable enumeration plus one `fstatat` per entry even though H26’s audited macOS reader returns the same complete stat-tier contract in bulk. Reusing it per directory should remove the warm profile’s 29.25% `fstatat` and 6.76% `getdirentries64` costs while preserving complete-directory fallback. | `warm-revalidate` wall and component down at least 3%; `system_cpu_ns` down; oracle parity at 60k and, if scale-sensitive, 720k | **Confirmed on macOS** (exp-026): warm wall −18.97% at 60k and −34.39% at 720k; large component −39.05%, CPU −44.06%, system CPU −53.97%, RSS neutral. Direct, shared, and scoped reconciliation reuse the existing reader. |
-| H75 | H9’s inversion persists on Linux, where no bulk reader hides it: snapshot load rebuilds every record through the full apply path, reconciliation re-stats every entry, and a quiet warm open still deep-clones the index and rewrites a byte-equivalent snapshot. Removing the load and save bookends should make warm open beat a cold scan. | verified warm open below cold-scan wall on Linux; warm RSS no higher than cold | **Open, narrowed to snapshot load.** Reproduced at both scales in the [three-tier baseline](../research/research-2026-08-13-linux-three-tier-baseline.md): +69% at 450k and +70% at 14.5k entries, so the inversion is scale-independent. `fdu-maxn` is fixed — the redundant rewrite was proven byte-identical across consecutive runs, and skipping it (with the clone it required) measured −20.6% [−21.2%, −16.6%] at 450k with peak RSS 411→195 MB. That leaves warm open at +32% against a cold scan, of which almost all is the 1,305 ms snapshot load: loading a snapshot is statistically indistinguishable from re-walking the tree, −3.7% [−9.9%, +0.1%]. `fdu-91ts` owns the remainder; `fdu-niuz` still owns the clone on the changed path. |
+| H75 | H9’s inversion persists on Linux, where no bulk reader hides it: snapshot load rebuilds every record through the full apply path, reconciliation re-stats every entry, and a quiet warm open still deep-clones the index and rewrites a byte-equivalent snapshot. Removing the load and save bookends should make warm open beat a cold scan. | verified warm open below cold-scan wall on Linux; warm RSS no higher than cold | **Confirmed and closed.** Both bookends are gone. `fdu-maxn` removed the byte-identical rewrite and the clone it required (−20.6% [−21.2%, −16.6%], RSS 411→195 MB); `fdu-91ts` removed the per-record path rediscovery in the loader (load −51.9% [−53.2%, −51.0%], warm open −41.9% [−43.3%, −40.6%]). At 450,463 entries a warm open now runs **762 ms against a 984 ms cold scan — 22.6% faster, with lower RSS** (191 vs 278 MB), where it began this campaign 69% slower. The cold path is untouched: +0.8% [−2.6%, +4.3%]. `fdu-niuz` still owns the clone on the *changed* path, which no longer sits on the quiet warm run. |
 | H83 | The content sidecar rebuilds per-record state on load exactly as the metadata snapshot does, so warm content runs are bound by restoring precomputed metrics rather than by analysis. | `--cache only` content load component down several-fold; warm content wall below the profile-independent floor | **Open, measured** (`fdu-78q6`): the sidecar load costs about 370 ms for 14,542 files, roughly 25 µs per file against about 3 µs per metadata record, and all three analysis profiles converge on the same ~520 ms warm floor regardless of how much analysis the sidecar saved. Same shape as H78 and probably the same answer. |
 | H84 | `ADAPTIVE_SCAN_SLOW_WORK_NS_PER_ENTRY` was placed between APFS regimes of ~18, 22 and 42 µs per entry, but the Linux warm floor is about 1.5 µs, so the adaptive unlock never fires on Linux and an automatic scan stays at its six-worker cap in every regime the threshold was meant to separate. | calibration never crossing the threshold on a Linux warm scan; a `--threads` sweep finding a knee above six | **Queued** (`fdu-mjwr`, with H76/`fdu-tk1b`). A mechanism for the cold scalar-class gap, not yet a measurement. See [platform tuning](platform-tuning.md). |
+| S1 | `apply_upsert` resolved every entry’s parent by splitting the path into a component vector and descending from the root, one `BTreeMap` lookup per level, to reach a directory the walker was standing in when it produced the record. A walker reports a directory’s children consecutively, so remembering the previous upsert’s parent answers almost every entry with one path comparison. | cold-scan-index wall down at least 15% | **Confirmed, at a different number than predicted** (exp-051, `fdu-ypk2`). Wall fell 7.35% [−10.42%, −6.12%]; the index-build *component* fell 16.6%, which is what the 15% prediction actually described. Stating a component prediction against a wall-clock accept rule is the mistake to avoid repeating. `normalize` instructions fell 89%, so the memo hits; the remaining gap to the loader’s −51.9% is the producer’s per-entry `PathBuf`, which needs a batch-shaped observation (`fdu-2ubt`). |
 
 ### Rejected or superseded
 

@@ -407,6 +407,15 @@ class SummaryRenderTests(unittest.TestCase):
         self.assertIn("-30.00%", text)
         self.assertIn("Test experiment", text)
 
+    def test_a_punctuated_reason_does_not_get_a_second_period(self) -> None:
+        experiment = self._experiment()
+        experiment["verdict"] = dict(experiment["verdict"], reason="already punctuated.")
+
+        text = summary.render([experiment])
+
+        self.assertIn("**Accepted:** already punctuated.", text)
+        self.assertNotIn("already punctuated..", text)
+
     def test_a_baseline_gets_a_single_measured_column(self) -> None:
         baseline = self._experiment()
         baseline["verdict"] = dict(baseline["verdict"], decision="baseline", change_pct=None)

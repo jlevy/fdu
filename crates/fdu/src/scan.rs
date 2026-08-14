@@ -38,7 +38,7 @@ mod macos_bulk;
 /// Batching matters for more than syscall economy: consumers coalesce per path within a
 /// batch and stat once per batch, and a live UI wants partial results while a large tree
 /// is still being walked rather than one delta at the end.
-const DEFAULT_BATCH_SIZE: usize = 1024;
+const DEFAULT_BATCH_SIZE: usize = crate::platform_tuning::tuning().batch_size.get();
 
 /// Largest producer batch accepted before work must be published incrementally.
 pub const MAX_SCAN_BATCH_SIZE: usize = 64 * 1024;
@@ -55,7 +55,8 @@ const MAX_DEFERRED_RECONCILE_OPS: usize = MAX_SCAN_BATCH_SIZE;
 ///
 /// The wave is large enough to amortize scoped worker creation and small enough that a
 /// changed tree publishes progress throughout a long reconciliation.
-const RECONCILE_WAVE_DIRECTORIES: usize = 1024;
+const RECONCILE_WAVE_DIRECTORIES: usize =
+    crate::platform_tuning::tuning().reconcile_wave_directories.get();
 
 /// Identity of the current built-in ignore policy. No ignore rules exist yet.
 const IGNORE_RULES_FINGERPRINT: u64 = 0;
@@ -479,11 +480,13 @@ impl ReconcileTarget<'_> {
 
 #[cfg(unix)]
 fn metadata_for_fingerprint(entry: &fs::DirEntry) -> std::io::Result<fs::Metadata> {
+    crate::counters::bump(|c| c.stats += 1);
     entry.metadata()
 }
 
 #[cfg(not(unix))]
 fn metadata_for_fingerprint(entry: &fs::DirEntry) -> std::io::Result<fs::Metadata> {
+    crate::counters::bump(|c| c.stats += 1);
     // Windows serves DirEntry metadata from directory-enumeration data, which the
     // platform permits to be stale. Fingerprints need a fresh non-following query.
     fs::symlink_metadata(entry.path())
@@ -496,7 +499,11 @@ pub fn scan(
     sink: &mut dyn FnMut(Observation),
 ) -> Result<ScanReport> {
     config.validate()?;
-    let root_meta = fs::symlink_metadata(root).map_err(|e| Error::io(root, e))?;
+    let root_meta = {
+        crate::counters::bump(|c| c.stats += 1);
+        fs::symlink_metadata(root)
+    }
+    .map_err(|e| Error::io(root, e))?;
     if !root_meta.is_dir() {
         return Err(Error::io(
             root,
@@ -519,6 +526,7 @@ pub fn scan(
 
     while let Some((rel_dir, depth)) = take_next(&mut queue, config.order) {
         let abs_dir = root.join(&rel_dir);
+        crate::counters::bump(|c| c.dir_opens += 1);
         let listing = match fs::read_dir(&abs_dir) {
             Ok(listing) => listing,
             Err(e) => {
@@ -536,6 +544,7 @@ pub fn scan(
                     continue;
                 }
             };
+            crate::counters::bump(|c| c.dir_entries += 1);
             let name = item.file_name();
             let rel_path = rel_dir.join(&name);
             let meta = match metadata_for_fingerprint(&item) {
@@ -601,26 +610,34 @@ const MAX_SCAN_THREADS: usize = 32;
 /// bound by the single index consumer, so past this point extra workers buy queue
 /// contention and efficiency-core scheduling rather than throughput. See
 /// `docs/project/reports/report-2026-08-10-fdu-performance-experiments.md`.
-const DEFAULT_SCAN_THREADS_CAP: usize = 6;
+///
+/// That measurement was taken on macOS, and every constant in this group now reads its
+/// value from [`crate::platform_tuning`], which records per platform whether the number
+/// was measured there or inherited. On Linux these are inherited.
+const DEFAULT_SCAN_THREADS_CAP: usize = crate::platform_tuning::tuning().scan_threads_cap.get();
 
 /// Ceiling on automatic workers for an immutable-baseline reconciliation wave.
 ///
 /// Reconciliation reads both filesystem and index state. Its measured knee arrives
 /// before the cold producer's because additional metadata calls amplify kernel work
 /// after the index comparisons already saturate the performance cores.
-const DEFAULT_RECONCILE_THREADS_CAP: usize = 4;
+const DEFAULT_RECONCILE_THREADS_CAP: usize =
+    crate::platform_tuning::tuning().reconcile_threads_cap.get();
 
 /// Ceiling an automatic scan may unlock after it establishes that the tree is large.
 ///
 /// Sixteen was the knee on the 720k-entry cache-pressure corpus in exp-015. Thirty-two
 /// did not improve on it and spent substantially more worker time waiting at the end.
-const ADAPTIVE_SCAN_THREADS_CAP: usize = 16;
+const ADAPTIVE_SCAN_THREADS_CAP: usize =
+    crate::platform_tuning::tuning().adaptive_scan_threads_cap.get();
 
 /// Maximum reserve depth relative to the host's reported parallelism.
-const ADAPTIVE_SCAN_PARALLELISM_MULTIPLIER: usize = 2;
+const ADAPTIVE_SCAN_PARALLELISM_MULTIPLIER: usize =
+    crate::platform_tuning::tuning().adaptive_scan_parallelism_multiplier.get();
 
 /// Entries used to calibrate the initial workers' filesystem service time.
-const ADAPTIVE_SCAN_CALIBRATION_ENTRIES: u64 = 16 * 1024;
+const ADAPTIVE_SCAN_CALIBRATION_ENTRIES: u64 =
+    crate::platform_tuning::tuning().adaptive_scan_calibration_entries.get();
 
 /// Average worker time per observed entry that identifies a latency-bound scan.
 ///
@@ -628,7 +645,12 @@ const ADAPTIVE_SCAN_CALIBRATION_ENTRIES: u64 = 16 * 1024;
 /// the 60k tree, 22 on the 120k boundary, and 42 or more on the 720k cache-pressure
 /// tree. Thirty leaves margin between them. The calibration uses the same chunk timing
 /// already collected for attribution, so it adds no per-entry clock reads.
-const ADAPTIVE_SCAN_SLOW_WORK_NS_PER_ENTRY: u64 = 30_000;
+///
+/// Those are APFS regimes. The Linux warm floor is about 1.5 µs per entry, twenty times
+/// below this threshold, so the trigger may never fire there — which is exactly the kind
+/// of inherited constant [`crate::platform_tuning`] exists to make visible (H84).
+const ADAPTIVE_SCAN_SLOW_WORK_NS_PER_ENTRY: u64 =
+    crate::platform_tuning::tuning().adaptive_scan_slow_work_ns_per_entry.get();
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct WorkerPool {
@@ -781,6 +803,7 @@ fn walk_worker(
     queue: &DirectoryQueue,
     sender: &std::sync::mpsc::Sender<WalkMessage>,
 ) -> ScanReport {
+    let _counter_guard = crate::counters::thread_flush_guard();
     let worker_started = std::time::Instant::now();
     let mut report = ScanReport::default();
     let mut batch: Vec<Op> = Vec::with_capacity(config.batch_size);
@@ -825,6 +848,8 @@ fn walk_worker(
                 continue;
             }
 
+            crate::counters::bump(|c| c.dir_opens += 1);
+
             let listing = match fs::read_dir(&abs_dir) {
                 Ok(listing) => listing,
                 Err(e) => {
@@ -842,6 +867,7 @@ fn walk_worker(
                         continue;
                     }
                 };
+                crate::counters::bump(|c| c.dir_entries += 1);
                 let name = item.file_name();
                 let meta = match metadata_for_fingerprint(&item) {
                     Ok(meta) => meta,
@@ -1329,7 +1355,11 @@ pub fn revalidate(
 ) -> Result<ScanReport> {
     config.validate_for_scope(index.scope())?;
     let root = index.root_path().to_path_buf();
-    let root_meta = fs::symlink_metadata(&root).map_err(|error| Error::io(&root, error))?;
+    let root_meta = {
+        crate::counters::bump(|c| c.stats += 1);
+        fs::symlink_metadata(&root)
+    }
+    .map_err(|error| Error::io(&root, error))?;
     if !root_meta.is_dir() {
         return Err(Error::io(
             &root,
@@ -1366,6 +1396,7 @@ pub fn revalidate(
 
     while let Some((rel_dir, depth)) = take_next(&mut queue, config.order) {
         let abs_dir = root.join(&rel_dir);
+        crate::counters::bump(|c| c.dir_opens += 1);
         let listing = match fs::read_dir(&abs_dir) {
             Ok(listing) => listing,
             Err(e) => {
@@ -1526,7 +1557,11 @@ fn reconcile_target_inner(
     sink: &mut dyn FnMut(&AppliedDelta),
 ) -> Result<ReconcileReport> {
     let root = target.root_path()?;
-    let root_meta = fs::symlink_metadata(&root).map_err(|error| Error::io(&root, error))?;
+    let root_meta = {
+        crate::counters::bump(|c| c.stats += 1);
+        fs::symlink_metadata(&root)
+    }
+    .map_err(|error| Error::io(&root, error))?;
     if !root_meta.is_dir() {
         return Err(Error::io(
             &root,
@@ -1676,6 +1711,7 @@ fn reconcile_target_inner(
         let used_bulk = false;
 
         if !used_bulk {
+            crate::counters::bump(|c| c.dir_opens += 1);
             let listing = match fs::read_dir(&abs_dir) {
                 Ok(listing) => listing,
                 Err(error) => {
@@ -1906,6 +1942,7 @@ fn reconcile_wave_worker(
     overflowed: &std::sync::atomic::AtomicBool,
     max_deferred_ops: usize,
 ) -> DeferredReconcile {
+    let _counter_guard = crate::counters::thread_flush_guard();
     let mut result = DeferredReconcile::default();
     #[cfg(target_os = "macos")]
     let mut bulk_reader = macos_bulk::Reader::new();
@@ -1976,6 +2013,7 @@ fn reconcile_wave_worker(
                 let used_bulk = false;
 
                 if !used_bulk {
+                    crate::counters::bump(|c| c.dir_opens += 1);
                     let listing = match fs::read_dir(&abs_dir) {
                         Ok(listing) => listing,
                         Err(error) => {
@@ -2232,6 +2270,7 @@ fn resolve_subtree_root(
         return Ok(PathBuf::new());
     }
     let root = target.root_path()?;
+    crate::counters::bump(|c| c.stats += 1);
     let Ok(root_metadata) = fs::symlink_metadata(&root) else {
         // The applying pass reports operational root failures as partial.
         return Ok(subtree.to_path_buf());
@@ -2323,7 +2362,7 @@ fn compose_ns(secs: i64, nanos: i64) -> i64 {
 
 #[cfg(not(unix))]
 pub(crate) fn attrs_from(meta: &fs::Metadata) -> Attrs {
-    let mtime_ns = meta.modified().map(system_time_ns).unwrap_or(0);
+    let mtime_ns = meta.modified().map_or(0, system_time_ns);
     Attrs {
         size: meta.len(),
         // No allocated size without platform-specific calls; apparent size is the
@@ -2368,6 +2407,69 @@ mod tests {
         write_file(&dir.path().join("src/main.rs"), b"fn main() {}");
         write_file(&dir.path().join("src/deep/nested.rs"), b"// nested");
         dir
+    }
+
+    /// A counter that silently reads zero is worse than a missing one, because a report
+    /// full of zeroes invites the conclusion that the work did not happen.
+    ///
+    /// This has already gone wrong twice: once when the per-entry counter was added to
+    /// the serial walk while the parallel walk went uninstrumented, and once when a
+    /// clippy fix hoisted a `read_dir` out of a match scrutinee and took the counter
+    /// with it. Both builds compiled, passed every other test, and reported zero. This
+    /// asserts the relationships a real walk must satisfy, so the next such edit fails
+    /// here instead of in a report someone believes.
+    #[test]
+    fn a_walk_moves_every_counter_it_should() {
+        // Both walkers, because they are separate loops with separate call sites. The
+        // first version of this test only exercised the parallel one, and deleting the
+        // serial walker's counter still passed — a guard covering one path gives false
+        // confidence about the other.
+        let _serial = crate::counters::test_serial();
+        crate::counters::enable(true);
+        for threads in [Some(1), Some(4)] {
+            let dir = sample_tree();
+            let config = ScanConfig { threads, ..ScanConfig::default() };
+
+            // Deltas around the scan, not absolute totals. The counters are
+            // process-global, so a test running beside this one can add to them — and
+            // `test_serial` cannot prevent that, since it only serializes tests that
+            // take it, not every test that happens to walk a tree.
+            let before = crate::counters::snapshot();
+            let report = scan(dir.path(), &config, &mut |_| {}).expect("scan");
+            crate::counters::flush_thread();
+            let after = crate::counters::snapshot();
+            let observed_entries = after.dir_entries - before.dir_entries;
+            let observed_opens = after.dir_opens - before.dir_opens;
+            let observed_stats = after.stats - before.stats;
+
+            // `>=` rather than `==`, and the direction is the whole point: concurrent
+            // work can only inflate these, never deflate them. So a counter that is too
+            // low means a path ran uninstrumented, which is the failure worth catching
+            // and the one that has actually happened — the macOS bulk reader reported
+            // zero opens against three real ones. Equality would catch double-counting
+            // too, and would be flaky for it.
+            assert!(
+                observed_entries >= report.entries,
+                "every enumerated entry is counted at {threads:?}: {observed_entries} < {}",
+                report.entries
+            );
+            assert!(
+                observed_opens >= report.dirs_read,
+                "every directory open is counted at {threads:?}: {observed_opens} < {}",
+                report.dirs_read
+            );
+            assert!(
+                observed_stats >= report.entries,
+                "every entry is stated at {threads:?}: {observed_stats} < {}",
+                report.entries
+            );
+
+            // Deliberately not asserted: `allocs` stays zero in a library test, because
+            // allocation counting needs a binary to install `CountingAlloc` as its
+            // global allocator and a test harness installs its own. The probe covers
+            // that half; this covers the counters the library itself drives.
+        }
+        crate::counters::enable(false);
     }
 
     #[test]
@@ -3259,6 +3361,30 @@ mod tests {
     }
 
     #[test]
+    fn parallel_reconciliation_workers_publish_directory_counters() {
+        let _serial = crate::counters::test_serial();
+        let dir = sample_tree();
+        let baseline = ScanConfig { threads: Some(1), ..ScanConfig::default() };
+        let (mut index, scan) = scan_into_index(dir.path(), &baseline).expect("baseline scan");
+        assert!(scan.is_complete());
+
+        crate::counters::enable(true);
+        crate::counters::reset();
+        let config = ScanConfig { threads: Some(4), ..baseline };
+        let report = reconcile(&mut index, &config, &mut |_| {}).expect("reconciliation");
+        crate::counters::flush_thread();
+        let counts = crate::counters::snapshot();
+        crate::counters::reset();
+        crate::counters::enable(false);
+
+        assert!(report.is_complete());
+        assert!(
+            counts.dir_opens >= report.scan.dirs_read,
+            "parallel worker directory opens were folded: {counts:?}, report={report:?}"
+        );
+    }
+
+    #[test]
     fn parallel_reconciliation_matches_serial_across_structural_transitions() {
         for max_depth in [None, Some(1), Some(2)] {
             for order in [ScanOrder::BreadthFirst, ScanOrder::DepthFirst] {
@@ -3398,7 +3524,11 @@ mod tests {
         write_file(&dir.path().join("src/main.rs"), b"fn main() { much longer }");
 
         let root = index.root_path().to_path_buf();
-        let root_meta = fs::symlink_metadata(&root).expect("root metadata");
+        let root_meta = {
+            crate::counters::bump(|c| c.stats += 1);
+            fs::symlink_metadata(&root)
+        }
+        .expect("root metadata");
         let mut deltas = Vec::new();
         let outcome = reconcile_direct_parallel(
             &mut index,
@@ -3800,7 +3930,12 @@ mod tests {
         use std::os::unix::fs::MetadataExt;
 
         let root = Path::new("/");
-        let root_dev = fs::symlink_metadata(root).expect("stat root").dev();
+        let root_dev = {
+            crate::counters::bump(|c| c.stats += 1);
+            fs::symlink_metadata(root)
+        }
+        .expect("stat root")
+        .dev();
         let Some(mount) = [Path::new("/dev"), Path::new("/proc"), Path::new("/sys")]
             .into_iter()
             .find(|candidate| {

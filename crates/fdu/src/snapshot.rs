@@ -477,8 +477,10 @@ fn parse_stream(
     // consumer paint them immediately and label them honestly; without it a loaded
     // index claims to be fresh when nothing has been checked since the file was read.
     index.set_applying_source(Source::Cached, captured_at_ns);
-    let mut ids: Vec<EntryId> = Vec::new();
-    let mut parent_path_memo: Option<(u32, PathBuf)> = None;
+    // The record count is validated against the bytes actually present above, so it is
+    // safe to size from: reserving here removes the geometric regrowth of a 450k-element
+    // vector without letting a corrupt count drive the allocation.
+    let mut ids: Vec<EntryId> = Vec::with_capacity(usize::try_from(count).unwrap_or(0));
     for slot in 0..count {
         let parent_slot = read_u32(reader)?;
         let kind = EntryKind::from_u8(read_u8(reader)?).ok_or(ParseError::Invalid)?;
@@ -510,36 +512,15 @@ fn parse_stream(
         let parent = *ids
             .get(usize::try_from(parent_slot).map_err(|_| ParseError::Invalid)?)
             .ok_or(ParseError::Invalid)?;
-        if index.kind_of(parent) != Some(EntryKind::Dir) || !is_snapshot_name(&name) {
+        if !is_snapshot_name(&name) {
             return Err(ParseError::Invalid);
         }
-        // Records arrive grouped by parent, so rebuilding the parent's path from its
-        // ancestors for every child walked the same chain over and over. Remember the
-        // last one. A miss costs exactly what the old code paid every time.
-        let parent_path = match &parent_path_memo {
-            Some((memo_slot, memo_path)) if *memo_slot == parent_slot => memo_path,
-            _ => {
-                let resolved = index.path_of(parent).ok_or(ParseError::Invalid)?;
-                &parent_path_memo.insert((parent_slot, resolved)).1
-            }
-        };
-        let path = parent_path.join(&name);
-
-        // A snapshot naming the same path twice is corrupt, and a corrupt snapshot is
-        // treated as absent rather than as data. The check used to be a lookup before
-        // the insert; the insert already reports whether it created an entry, so the
-        // same guarantee costs nothing.
-        let stats = index
-            .apply_baseline(&Observation::new(vec![Op::Upsert { path, kind, attrs }]))
-            .map_err(|_| ParseError::Invalid)?;
-        if stats.inserted != 1 {
-            return Err(ParseError::Invalid);
-        }
-        // The entry is a child of a parent we already hold, so its id comes from that
-        // parent's children rather than from resolving the whole path from the root.
-        // The lookup is a single map descent: scanning the sibling list instead made
-        // load quadratic in a directory's width, which a wide directory pays in full.
-        let id = index.child_id(parent, &name).ok_or(ParseError::Invalid)?;
+        // The parent's id is already in hand, so the record is inserted straight beneath
+        // it. Resolving a path to rediscover that parent, and then searching the parent's
+        // children to rediscover the id just created, were both work the format had
+        // already answered. A snapshot naming the same path twice, or parenting an entry
+        // to a non-directory, is corrupt, and `insert_loaded_child` fails closed on both.
+        let id = index.insert_loaded_child(parent, name, kind, attrs).ok_or(ParseError::Invalid)?;
         ids.push(id);
     }
 
@@ -547,6 +528,9 @@ fn parse_stream(
     if reader.read(&mut extra).map_err(ParseError::Io)? != 0 {
         return Err(ParseError::Invalid);
     }
+    // Once, rather than once per record: the loaded tree is the process baseline, and
+    // nothing it inserted was journalled.
+    index.establish_baseline();
     // Anything applied after the load is this process checking what the snapshot
     // claimed, which is a revalidation rather than a first sighting.
     index.set_applying_source(Source::Revalidated, 0);
@@ -713,7 +697,8 @@ fn os_string_from_bytes(bytes: &[u8]) -> OsString {
 #[cfg(windows)]
 fn os_string_from_bytes(bytes: &[u8]) -> Option<OsString> {
     use std::os::windows::ffi::OsStringExt;
-    if !bytes.len().is_multiple_of(std::mem::size_of::<u16>()) {
+    // Stable since 1.87, against an MSRV of 1.85 — see the note in content_cache.rs.
+    if bytes.len() % std::mem::size_of::<u16>() != 0 {
         return None;
     }
     let units: Vec<u16> = bytes
@@ -991,6 +976,105 @@ mod tests {
             "an unchanged entry that was freshly stat'd has still been verified"
         );
         assert!(provenance.is_verified());
+    }
+
+    /// Every entry, not just the root.
+    ///
+    /// The loader inserts beneath a known parent instead of replaying an observation, so
+    /// it no longer shares a code path with the producer that built the original. Root
+    /// totals cannot catch a roll-up that is wrong halfway down — the errors would have
+    /// to cancel at the root to hide, but a single misplaced subtree does not touch the
+    /// root at all. This walks both trees and compares each directory's own roll-up,
+    /// each entry's kind, attributes and extension tallies, and the shape of the tree.
+    #[test]
+    fn round_trip_preserves_every_entry_not_just_the_root() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let tree = dir.path().join("tree");
+        let snapshot_path = dir.path().join("cache").join("snap.fdu");
+        // Depth and fan-out both matter: a parent-relative insert that mis-parents an
+        // entry shows up as a wrong roll-up on an interior directory.
+        for (relative, contents) in [
+            ("a.rs", &b"fn main() {}"[..]),
+            ("deep/one/two/three/leaf.txt", b"leaf"),
+            ("deep/one/two/sibling.rs", b"sibling"),
+            ("deep/one/other.md", b"# other"),
+            ("wide/w1.txt", b"1"),
+            ("wide/w2.txt", b"22"),
+            ("wide/w3.rs", b"333"),
+            ("empty/.keep", b""),
+        ] {
+            let path = tree.join(relative);
+            fs::create_dir_all(path.parent().expect("parent")).expect("create dirs");
+            fs::write(&path, contents).expect("write");
+        }
+
+        let config = crate::ScanConfig::default();
+        let (original, report) = crate::scan::scan_into_index(&tree, &config).expect("scan");
+        assert!(report.is_complete());
+        save(&original, &snapshot_path).expect("save");
+        let restored = load(&snapshot_path).expect("load").expect("present");
+
+        assert_eq!(restored.len(), original.len(), "entry count");
+
+        // Walk the original and demand the same entry, in the same place, with the same
+        // numbers, in the restored index.
+        let mut stack = vec![crate::index::EntryId::ROOT];
+        let mut compared = 0_u64;
+        while let Some(id) = stack.pop() {
+            let path = original.path_of(id).expect("original path");
+            let mirrored = restored.lookup(&path).expect("restored entry at the same path");
+            assert_eq!(
+                original.kind_of(id),
+                restored.kind_of(mirrored),
+                "kind at {}",
+                path.display()
+            );
+            assert_eq!(
+                original.attrs_of(id),
+                restored.attrs_of(mirrored),
+                "attrs at {}",
+                path.display()
+            );
+            // Roll-ups and children exist only on directories; a file legitimately has
+            // neither, and demanding them would fail on the tree rather than the loader.
+            if original.kind_of(id) == Some(crate::EntryKind::Dir) {
+                let (before, after) = (
+                    original.rollup_of(id).expect("original rollup"),
+                    restored.rollup_of(mirrored).expect("restored rollup"),
+                );
+                assert_eq!(
+                    (
+                        before.files,
+                        before.dirs,
+                        before.bytes,
+                        before.allocated,
+                        before.newest_mtime_ns
+                    ),
+                    (after.files, after.dirs, after.bytes, after.allocated, after.newest_mtime_ns),
+                    "rollup at {}",
+                    path.display()
+                );
+                assert_eq!(before.by_ext, after.by_ext, "extension tallies at {}", path.display());
+                let names: Vec<_> = original
+                    .children_of(id)
+                    .expect("original children")
+                    .map(|(name, _)| name.to_os_string())
+                    .collect();
+                let mirrored_names: Vec<_> = restored
+                    .children_of(mirrored)
+                    .expect("restored children")
+                    .map(|(name, _)| name.to_os_string())
+                    .collect();
+                assert_eq!(names, mirrored_names, "children of {}", path.display());
+                stack.extend(original.children_of(id).expect("children").map(|(_, child)| child));
+            }
+            compared += 1;
+        }
+        assert_eq!(compared, original.len(), "every entry was compared");
+
+        // The loader must not leave the index looking like it has pending history.
+        assert_eq!(restored.clock(), crate::Clock::ZERO);
+        assert!(restored.since(crate::Clock::ZERO).deltas.is_empty());
     }
 
     #[test]

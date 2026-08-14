@@ -8,7 +8,7 @@ Read it before changing engine behavior.
 This file covers how to operate on the repository; that one covers what the code must be
 true to.
 
-<!-- BEGIN TBD INTEGRATION format=f06 surface=agents-md -->
+<!-- BEGIN TBD INTEGRATION format=f07 surface=agents-md -->
 ## tbd
 
 This repository uses **tbd** for git-native issue tracking (beads), spec-driven
@@ -33,10 +33,31 @@ make fix        # apply formatting and machine-applicable lint fixes
 make audit      # cargo-deny advisory and license audit
 ```
 
-`make check` is the required handoff gate.
+`make check` is the required handoff gate, and `make cross-lint` is its companion for
+anything platform-specific.
 If it passes, CI should.
 It runs the same feature combinations CI does, notably `--no-default-features`, which is
 how library consumers build and is otherwise never exercised locally.
+
+### Platform-gated code
+
+`cfg(target_os = ...)` code is invisible to a single-platform lint run, and this
+repository keeps its one unsafe exception behind exactly such a gate.
+CI lints on ubuntu only, so before `make cross-lint` existed that module had never been
+linted anywhere, and the MSRV job had never checked the Windows-only paths — two of
+which used an API stable since 1.87 against a declared MSRV of 1.85, so a Windows user
+on the minimum could not have built the crate.
+
+Run `make cross-lint` after touching anything under a platform gate.
+It checks rather than builds, so no cross-linker is needed:
+
+```shell
+rustup target add x86_64-apple-darwin x86_64-pc-windows-msvc
+make cross-lint
+```
+
+It skips targets that are not installed rather than failing, so it stays usable
+anywhere.
 
 ### Toolchain Versions
 
@@ -68,8 +89,19 @@ verdict is in
 and which regime each shipped tuning constant was measured in is in
 [the platform tuning guide](docs/project/guides/platform-tuning.md).
 
+The reusable method — how to instrument a system so each pass of the loop is cheaper
+than the last, which tier answers which question, and how to keep the instrument from
+distorting the measurement — is
+[the instrumentation playbook](docs/project/guides/performance-instrumentation-playbook.md).
+Read it before adding instrumentation or starting a fresh optimization campaign; the
+mechanism it describes lives in the [`fdu::counters`](crates/fdu/src/counters.rs)
+subsystem.
+
 In practice:
 
+- Instrument before optimizing.
+  Counters are compiled in and off by default; `FDU_COUNTERS=1` turns them on for any
+  run, so visibility costs a variable rather than a rebuild.
 - Profile before changing anything.
   Intuition about where a walker spends its time is reliably wrong, and the ledger has
   the rejected experiments to prove it.
@@ -81,6 +113,11 @@ In practice:
   Platform, host (bare metal or virtualized), and cache state decide what a result is
   evidence about; a constant tuned in one regime is inherited, not proven, in the
   others.
+- Do not use a RAM disk for ordinary builds or claim-grade real-tree measurements.
+  If a named synthetic experiment requires one on macOS, follow
+  [the temporary-volume lifecycle](docs/project/guides/performance-loop.md#temporary-volumes-on-macos):
+  audit existing images first, use at most one, keep source and unique results outside
+  it, and detach it before handoff.
 - None of this is in `make check`. A timing gate on a shared CI runner measures the
   runner.
 

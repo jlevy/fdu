@@ -5,6 +5,9 @@
 //! completed. The parent harness owns authoritative process timing and exact corpus
 //! validation.
 
+// Measurement scaffolding, kept out of the library so the engine's unsafe-free
+// guarantee stands: counting allocations needs `unsafe impl GlobalAlloc`, and the
+// probe is the right place to pay for that.
 use std::env;
 use std::ffi::OsString;
 use std::fmt::Write as _;
@@ -23,19 +26,41 @@ use fdu::{
 const PROBE_SCHEMA: &str = "fdu-perf-probe-v1";
 const DIGEST_ALGORITHM: &str = "fdu-index-record-v1/sha256-multiset-v1";
 
+/// Count what the run allocates.
+///
+/// Always installed, and inert until recording is enabled: the wrapper checks one
+/// relaxed atomic the branch predictor always gets right, which is nothing next to an
+/// allocation. One binary that can be asked for numbers beats two that differ in
+/// whether they have any. exp-052 measured the whole arrangement at no detectable cost.
+#[global_allocator]
+static ALLOCATOR: fdu::counters::alloc::CountingAlloc<std::alloc::System> =
+    fdu::counters::system_allocator();
+
 fn main() -> ExitCode {
-    match Arguments::parse(env::args_os().skip(1))
+    // `FDU_COUNTERS=1` turns recording on. Off by default so a probe run measured
+    // against a control is not measuring the instrument, and on by one environment
+    // variable when a run is meant to explain itself.
+    let measurement = fdu::counters::Measurement::from_env();
+    let exit = match Arguments::parse(env::args_os().skip(1))
         .and_then(|arguments| execute_repeated(&arguments))
     {
         Ok(output) => {
             println!("{}", output.render());
+            // stderr, not the JSON: the harness parses stdout against a versioned
+            // schema, and per-layer tallies describe an implementation rather than the
+            // measurement contract. A schema bump can follow if the harness ever wants
+            // to store them.
             if output.summary.complete { ExitCode::SUCCESS } else { ExitCode::from(2) }
         }
         Err(error) => {
             eprintln!("fdu perf probe: {}", error.0);
             ExitCode::from(1)
         }
+    };
+    if let Some(report) = measurement.finish() {
+        eprint!("{report}");
     }
+    exit
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -190,6 +190,7 @@ impl Watcher {
         let worker = std::thread::Builder::new()
             .name("fdu-watch".into())
             .spawn(move || {
+                let _counter_guard = crate::counters::thread_flush_guard();
                 run_tracked_worker(&tracked_status, || {
                     run_worker(
                         &worker_root,

@@ -3,15 +3,15 @@
   "minimumAgeDays": 14,
   "exceptions": [
     {
-      "id": "first-party-get-tbd-0.4.2",
+      "id": "first-party-get-tbd-0.6.2",
       "ecosystem": "npm",
       "name": "get-tbd",
-      "version": "0.4.2",
-      "reason": "The repository's AGENTS.md explicitly permits first-party tbd tooling; the exact fallback matches the reviewed managed integration.",
+      "version": "0.6.2",
+      "reason": "The repository's AGENTS.md explicitly permits first-party tbd tooling. This exact stable patch fixes get-tbd 0.6.0's dirty-development version provenance and matches the regenerated managed integration.",
       "approvedBy": "Repository maintainers in AGENTS.md",
-      "approvedAt": "2026-08-08T19:58:00Z",
-      "expiresAt": "2026-08-15T00:00:00Z",
-      "followUp": "Remove this record after get-tbd 0.4.2 clears the normal 14-day window and re-run the online provenance gate."
+      "approvedAt": "2026-08-14T19:30:00Z",
+      "expiresAt": "2026-08-29T00:00:00Z",
+      "followUp": "Remove this record after get-tbd 0.6.2 clears the normal 14-day window on 2026-08-28 and re-run the online provenance gate."
     },
     {
       "id": "first-party-tryscript-0.2.0",
@@ -51,9 +51,9 @@
     "npm": [
       {
         "name": "get-tbd",
-        "version": "0.4.2",
-        "integrity": "sha512-1IAtf/2/BpFjYLWiXtWyFdWw275Hr2XK2Kl2W93JMcdDQWEieMqraQJomc1HLRLmisQPAbwdfBUc8CdBMU/QwA==",
-        "tarball": "https://registry.npmjs.org/get-tbd/-/get-tbd-0.4.2.tgz",
+        "version": "0.6.2",
+        "integrity": "sha512-YLIO+APxlBQICUqY+sHTtp5LUrqLNXMCylsSq0qtNb3yKQYyzTFC8vnHOUzIsg9mXGh1ebhfn/0OYQkuKA58hA==",
+        "tarball": "https://registry.npmjs.org/get-tbd/-/get-tbd-0.6.2.tgz",
         "files": [
           ".claude/hooks/tbd-closing-reminder.sh",
           ".claude/scripts/tbd-session.sh",

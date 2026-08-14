@@ -1,6 +1,6 @@
 //! Versioned content sidecar, independent of the metadata snapshot format.
 
-use std::collections::BTreeMap;
+use std::collections::HashMap;
 use std::ffi::OsString;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -120,11 +120,24 @@ pub fn load_content_cache(
         return Ok(ContentCacheLoad::default());
     };
     index.prepare_content_analysis(request);
+    // Keyed by hash rather than by order. This map is only ever drained by lookup —
+    // nothing iterates it — so its ordering was never observable, and ordering a
+    // `PathBuf` costs more than it looks: `Ord` walks components, so building a tree
+    // pays about log2(n) comparisons per insert and each one walks the paths again.
+    //
+    // Worth about 3%, not more. A flat callgrind profile of a warm 14,542-file open
+    // shows `compare_components` at 34% of instructions and it is tempting to read that
+    // as this map; the caller tree says this map's sort is about 0.9%, and the measured
+    // change was −3.03% [−4.62%, −1.62%]. The 34% is mostly
+    // `classify::classify_path_with_prefix`, which `Index::analysis_candidates` runs
+    // over every file on every open — including a cache-only one, which then discards
+    // the result in favour of the classification the sidecar already stored. That is
+    // the real cost on this path and it is tracked separately (`fdu-926e`).
     let mut candidates = index
         .analysis_candidates(request.profile)
         .into_iter()
         .map(|candidate| (candidate.relative_path.clone(), candidate))
-        .collect::<BTreeMap<_, _>>();
+        .collect::<HashMap<_, _>>();
     let mut loaded = ContentCacheLoad { usable: true, ..ContentCacheLoad::default() };
     for (relative_path, analysis) in records {
         let Some(candidate) = candidates.remove(&relative_path) else {
@@ -557,7 +570,10 @@ fn decode_os_string(bytes: &[u8]) -> OsString {
 #[cfg(windows)]
 fn decode_os_string(bytes: &[u8]) -> Option<OsString> {
     use std::os::windows::ffi::OsStringExt;
-    if !bytes.len().is_multiple_of(2) {
+    // `usize::is_multiple_of` is stable since 1.87 and this crate's MSRV is 1.85, so a
+    // Windows user on the declared minimum could not build it. Nothing caught that
+    // because the MSRV job runs on ubuntu, where this function does not exist.
+    if bytes.len() % 2 != 0 {
         return None;
     }
     let units = bytes

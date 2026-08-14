@@ -97,7 +97,7 @@ Prefer the doc comment: it is what the next person editing the value will read.
 | `macos_bulk::BUFFER_BYTES` | 64 KiB | M1 Pro; 256 KiB refuted (exp-029/039) | Not applicable — macOS only |
 | `content_analysis::READ_CHUNK_BYTES` | 64 KiB | M1 Pro, 307–2,001-entry trees | **None** |
 | `DEFAULT_MAX_FILE_BYTES` | 16 MiB | Policy choice, not a measured knee | Not a tuning constant |
-| Global allocator | system | Never chosen by measurement | glibc `malloc` is the worst case for fdu’s cross-thread free pattern; a local mimalloc build measured −30.3% on the summary plan (H74, unconfirmed) |
+| Global allocator | system | Never chosen by measurement | Measured, not adopted. mimalloc wins **only the aggregate tier** (−23.0% [−28.4%, −16.7%]); the index tier and snapshot load both span zero. Costs +139% peak RSS on that tier and is unmeasured on macOS, where the system allocator differs. See H74/H85 |
 
 ### The adaptive threshold is the clearest suspected mismatch
 
@@ -120,6 +120,66 @@ This is a hypothesis (H76, `fdu-tk1b`), not a conclusion.
 It is stated here because the constant’s own documentation makes the platform dependence
 legible, and because a sweep is the cheap way to settle it: `perf_probe --threads N`
 takes the worker count directly.
+
+## How a divergence is expressed in code
+
+Two kinds of platform difference live in this engine, and only one of them is a tuning
+question.
+
+A platform **API** — `getattrlistbulk` — does not exist elsewhere and cannot compile
+elsewhere. Those stay `cfg`-gated at their call site as optional accelerators over a
+portable path, falling back rather than failing, exactly as
+[the design principles](../architecture/fdu-design-principles.md) require.
+
+A platform **tuning** is the same portable code wanting a different value, or a
+different one of two portable strategies.
+Those live in `crates/fdu/src/platform_tuning.rs` as data, one table per platform, and
+the module holds three properties that matter more than the values in it.
+
+**Both tables compile in every build.** `cfg` selects the *default*, never the
+*existence*. This is the load-bearing rule: an arm that only compiles where it is the
+default cannot be type-checked or parity-tested anywhere else, so it rots, and then a
+change made for one platform breaks the other invisibly.
+`ScanOrder` is the existing precedent — breadth-first and depth-first both compile
+everywhere and only the default is chosen.
+A strategy therefore needs no new machinery; it is a `Tuned<T>` whose `T` is an enum.
+
+**The guarantee is compile-time.** A `const` assertion block evaluates every table in
+every build, so an edit that broke the macOS table would fail a Linux build.
+Nobody has to own a Mac to keep the Mac arm honest, which is what makes it safe for a
+Linux measurement to land without a macOS replication in the same change.
+
+**An inherited default cannot pass for a measured one.** Each value carries `Measured`
+or `Inherited`, and the const block asserts that the portable table still says
+`Inherited`, with the message *promote this to `Tuned::measured` in the same change that
+lands the sweep*. The build therefore forces whoever lands a Linux number to say which
+experiment settled it, rather than letting a value quietly change standing.
+
+### What CI guarantees, and what it cannot
+
+Three layers, each catching something the others cannot:
+
+| Layer | Runs where | Catches |
+| --- | --- | --- |
+| `const` assertion block | Every build, every target | A table that stops being well-formed, on a platform nobody present can build |
+| `every_platform_table_produces_the_same_index` | Every platform’s test job | A tuning value that changes the *answer* rather than the speed. The swept settings are read out of the tables, so the test widens by itself when a platform diverges |
+| Golden tryscripts | ubuntu, macos, windows runners | Output drift: any field that renders differently per platform fails that runner, which is why unstable fields carry named patterns rather than elisions |
+
+The watch tests add a fourth, exercising inotify, FSEvents and ReadDirectoryChangesW on
+their own runners, which is the only way per-platform event semantics get caught before
+a user finds them.
+
+What none of this catches is a **speed** regression on the platform you are not on, and
+that is deliberate: a timing gate on a shared CI runner measures the runner.
+The protection there is procedural rather than automated — a divergence is landed with
+its regime recorded, and the platform that did not measure keeps `Evidence::Inherited`
+until someone runs the loop there.
+
+What this does **not** license is a `cfg` per disagreement.
+A divergence costs two values to keep true and two regimes to re-measure whenever either
+moves, so the bar is a measured reversal on a decision that matters, not a difference
+within noise. Prefer one adaptive mechanism that measures the machine over two constants
+that name it.
 
 ## The rule for a platform-specific constant
 
