@@ -1,12 +1,10 @@
 tbd_format: f06
-tbd_version: 0.5.0
+tbd_version: 0.4.2
 # tbd_upgrades: tbd versions that have run `tbd setup` in this repo (oldest first);
 # tbd_version above is the most recent. Informational; updated automatically by setup.
 tbd_upgrades:
   - version: 0.4.2
     at: 2026-08-08T07:23:32.279Z
-  - version: 0.5.0
-    at: 2026-08-14T07:00:19.809Z
 display:
   id_prefix: fdu
 sync:
