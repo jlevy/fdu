@@ -9,9 +9,15 @@ re-run it, and get numbers comparable to the ones already recorded.
 
 The companion documents are the
 [experiment ledger](../reports/report-2026-08-10-fdu-performance-experiments.md), which
-records every experiment and its verdict, and the
+records every experiment and its verdict, the
+[platform tuning guide](platform-tuning.md), which records which regime each tuning
+constant was measured in and therefore where it is evidence, and the
 [end-to-end performance plan](../specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md),
 which owns the generated-corpus evidence harness this loop borrows from.
+
+The division between them is that this guide owns the protocol, the ledger owns the
+results and is regenerated from artifacts rather than edited, and the platform guide
+owns the mapping from a shipped constant back to the run that chose it.
 
 ## Why a loop and not a list of optimizations
 
@@ -96,6 +102,21 @@ On macOS, `/usr/sbin/purge` only promises to *approximate* initial-boot buffer-c
 conditions. A purge-cold run is therefore a separately labeled diagnostic, not
 controlled-cold release evidence; a dedicated APFS test volume remounted between samples
 is the stronger future protocol.
+
+A third axis crosses these two: whether the host is bare metal or virtualized, recorded
+as `host_virtualization`. It changes what a *cold* sample can mean and nothing else.
+Virtualization has not been measured to distort user-space cost, syscall cost,
+allocation, or thread scheduling, so a **warm** result from a VM is ordinary evidence
+about the environment most fdu runs happen in — a container, a CI job, a cloud instance,
+a WSL session — and is not second-class for being virtual.
+What a hypervisor does distort is the storage beneath the guest: its page cache sits
+under the guest’s, so writing `3` to `drop_caches` inside the guest does not reach the
+disk.
+That makes exactly one class of claim untestable on a VM — anything whose mechanism
+is device latency or I/O ordering, which is why H73 and the queue-depth hypotheses are
+marked as needing bare metal and the io_uring results were not treated as settling the
+cold question. All three axes belong in every recorded result; the ledger counts them
+into its regime coverage table.
 
 ## The reference tree
 

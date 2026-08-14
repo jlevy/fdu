@@ -440,6 +440,21 @@ The protocol is [the performance loop](../guides/performance-loop.md); every ver
 including the failures, is in
 [the experiment ledger](../reports/report-2026-08-10-fdu-performance-experiments.md).
 
+### A Measurement Is Evidence About Its Own Regime
+
+A number describes the platform, host, and cache state it was taken in.
+Carrying a constant into a regime nothing measured is the same error as accepting a
+change on an interval that crosses zero: it asserts more than the evidence supports, and
+it is harder to notice because the value looks settled.
+
+So a shared default needs evidence in every regime it claims, and a constant with
+evidence in one is a constant the others inherit — which its doc comment should say.
+A `cfg(target_os)` branch with a guess on one side is worse than a shared value, because
+it looks like evidence.
+Which constant rests on which run is in
+[the platform tuning guide](../guides/platform-tuning.md); which regimes the ledger’s
+evidence spans is counted in the ledger itself.
+
 ### Say What Blocked, Not Just How Long It Took
 
 A profile reporting one undifferentiated “blocked” number cannot answer the question

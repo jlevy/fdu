@@ -10,13 +10,21 @@ A constant measured in one regime is evidence about that regime, and carrying it
 another without a second measurement is exactly the “believing an improvement that is
 not there” failure [the performance loop](performance-loop.md) exists to prevent.
 
-This guide names the regimes, records which constants have evidence in which, and states
-the rule for adding a platform-specific value.
+This guide maps each shipped constant back to the run that chose it, and states the rule
+for adding a platform-specific value.
+It is the third of the three performance documents: [the loop](performance-loop.md) owns
+the protocol, [the ledger](../reports/report-2026-08-10-fdu-performance-experiments.md)
+owns the results and is regenerated from artifacts, and this page owns the mapping from
+a value in the source to the evidence behind it.
 
 ## The three axes
 
-A measurement’s regime is a point in three dimensions, and all three belong in any
-recorded result.
+A measurement’s regime is a point in three dimensions — platform, host, and cache state
+— and all three belong in any recorded result.
+[The loop defines them](performance-loop.md#what-we-measure) and the ledger’s **regime
+coverage** table counts which combinations the evidence actually spans, generated from
+the artifacts rather than asserted here.
+What follows is only what each axis means *for choosing a constant*.
 
 ### Platform
 
@@ -55,22 +63,26 @@ Everything else does not.
 
 ### Cache state
 
-| State | Preparation | What it answers |
-| --- | --- | --- |
-| `warm-steady` | Explicit full-tree warmups per tool | Rerunning a CLI over a working tree, the dominant interactive case |
-| `controlled-cold` | `sync`, then `3` to `/proc/sys/vm/drop_caches`, per sample | First access after boot or eviction, and trees larger than RAM |
-
-macOS has no equivalent privileged control: `/usr/sbin/purge` only promises to
-*approximate* boot conditions, so a purge-cold macOS run is a labelled diagnostic rather
-than controlled-cold evidence.
-Linux is where the cold regime can be measured honestly, and on bare metal is where its
-device-latency conclusions become portable.
+`warm-steady` and `controlled-cold`, with their preparation and their labelling rules,
+are defined in [the loop](performance-loop.md#what-we-measure); that is the one place
+they are specified. What matters here is only that a constant tuned in one state is not
+evidence about the other — a worker count chosen where the walk is CPU-bound says
+nothing about the depth a latency-bound walk wants — so a default claiming both states
+needs a measurement in both.
 
 ## Constants and where their evidence comes from
 
 Every value below is in `crates/fdu/src/scan.rs` unless noted, and every one carries a
 doc comment citing the measurement that chose it.
 The column that matters is the last one.
+
+This table is written by hand because nothing else records the link it carries.
+An experiment artifact knows the regime it ran in, which is why the ledger can count
+regime coverage without anyone maintaining it; what no artifact records is *which
+shipped constant a run settled*. Until an experiment can name the constants it fixed,
+that mapping is asserted here and in the doc comments beside the values, and both have
+to be updated by whoever changes one.
+Prefer the doc comment: it is what the next person editing the value will read.
 
 | Constant | Value | Measured on | Linux evidence |
 | --- | ---: | --- | --- |
@@ -128,12 +140,24 @@ takes the worker count directly.
 
 ## What to measure next per platform
 
+Each hypothesis id below is stated in full, with its predicted metric and current
+status, in [the loop’s registry](performance-loop.md#hypotheses).
+
 | Platform | Open question |
 | --- | --- |
-| Linux | Worker-count sweep in both cache states (H76); allocator replacement (H74); the warm-open inversion, which is a defect rather than a tuning question (H75) |
+| Linux | Worker-count sweep in both cache states (H76, H84); allocator replacement (H74); the warm-open inversion, which is a defect rather than a tuning question (H75) |
 | Linux, bare metal | Inode-ordered statting (H73) and any queue-depth claim; these cannot be settled on a VM |
 | macOS | Whether the reconcile wave and batch sizes still hold after the content tier landed |
 | Windows | Everything; no speed measurement exists |
+
+The Linux evidence behind these is in two research notes, neither of them ledger
+artifacts:
+[the first Linux measurements](../research/research-2026-08-13-linux-first-measurements.md),
+which established that the syscall layer has no headroom and the index consumer is the
+gap, and
+[the three-tier baseline](../research/research-2026-08-13-linux-three-tier-baseline.md),
+which measured the aggregate, index, and content tiers together and found the warm-open
+inversion scale-independent.
 
 * * *
 
