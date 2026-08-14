@@ -1537,7 +1537,7 @@ known-present and known-absent names so the signals could be trusted:
 | --- | --- | --- |
 | PyPI | Simple index (PEP 503) and JSON API | free |
 | crates.io | API and sparse index (what cargo reads) | free |
-| crates.io | similarity blockers `f-du`, `f_du`, `fd-u`, `fd_u`, `fdu` | all free |
+| crates.io | similarity blockers `f-du`, `f_du`, `fd-u`, `fd_u`, `FDU` | all free |
 | Homebrew | formula API | free |
 
 So the crate, the PyPI distribution, the binary, and a future Homebrew formula can all
