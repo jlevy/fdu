@@ -44,7 +44,7 @@ if _OVERRIDE:
     with open(_OVERRIDE, encoding="utf-8") as handle:
         for name, entry in json.load(handle).items():
             argv = entry["argv"] if isinstance(entry, dict) else entry
-            TOOLS[name] = [str(part).format(tree=TREE, fdu=FDU) for part in argv]
+            TOOLS[name] = [str(part).format(tree=TREE, fdu=FDU_BIN) for part in argv]
             EXIT_OK[name] = set(entry.get("exit", [0])) if isinstance(entry, dict) else {0}
 
 def run_once(name):
