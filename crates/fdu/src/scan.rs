@@ -38,7 +38,7 @@ mod macos_bulk;
 /// Batching matters for more than syscall economy: consumers coalesce per path within a
 /// batch and stat once per batch, and a live UI wants partial results while a large tree
 /// is still being walked rather than one delta at the end.
-const DEFAULT_BATCH_SIZE: usize = 1024;
+const DEFAULT_BATCH_SIZE: usize = crate::platform_tuning::tuning().batch_size.get();
 
 /// Largest producer batch accepted before work must be published incrementally.
 pub const MAX_SCAN_BATCH_SIZE: usize = 64 * 1024;
@@ -55,7 +55,8 @@ const MAX_DEFERRED_RECONCILE_OPS: usize = MAX_SCAN_BATCH_SIZE;
 ///
 /// The wave is large enough to amortize scoped worker creation and small enough that a
 /// changed tree publishes progress throughout a long reconciliation.
-const RECONCILE_WAVE_DIRECTORIES: usize = 1024;
+const RECONCILE_WAVE_DIRECTORIES: usize =
+    crate::platform_tuning::tuning().reconcile_wave_directories.get();
 
 /// Identity of the current built-in ignore policy. No ignore rules exist yet.
 const IGNORE_RULES_FINGERPRINT: u64 = 0;
@@ -601,26 +602,34 @@ const MAX_SCAN_THREADS: usize = 32;
 /// bound by the single index consumer, so past this point extra workers buy queue
 /// contention and efficiency-core scheduling rather than throughput. See
 /// `docs/project/reports/report-2026-08-10-fdu-performance-experiments.md`.
-const DEFAULT_SCAN_THREADS_CAP: usize = 6;
+///
+/// That measurement was taken on macOS, and every constant in this group now reads its
+/// value from [`crate::platform_tuning`], which records per platform whether the number
+/// was measured there or inherited. On Linux these are inherited.
+const DEFAULT_SCAN_THREADS_CAP: usize = crate::platform_tuning::tuning().scan_threads_cap.get();
 
 /// Ceiling on automatic workers for an immutable-baseline reconciliation wave.
 ///
 /// Reconciliation reads both filesystem and index state. Its measured knee arrives
 /// before the cold producer's because additional metadata calls amplify kernel work
 /// after the index comparisons already saturate the performance cores.
-const DEFAULT_RECONCILE_THREADS_CAP: usize = 4;
+const DEFAULT_RECONCILE_THREADS_CAP: usize =
+    crate::platform_tuning::tuning().reconcile_threads_cap.get();
 
 /// Ceiling an automatic scan may unlock after it establishes that the tree is large.
 ///
 /// Sixteen was the knee on the 720k-entry cache-pressure corpus in exp-015. Thirty-two
 /// did not improve on it and spent substantially more worker time waiting at the end.
-const ADAPTIVE_SCAN_THREADS_CAP: usize = 16;
+const ADAPTIVE_SCAN_THREADS_CAP: usize =
+    crate::platform_tuning::tuning().adaptive_scan_threads_cap.get();
 
 /// Maximum reserve depth relative to the host's reported parallelism.
-const ADAPTIVE_SCAN_PARALLELISM_MULTIPLIER: usize = 2;
+const ADAPTIVE_SCAN_PARALLELISM_MULTIPLIER: usize =
+    crate::platform_tuning::tuning().adaptive_scan_parallelism_multiplier.get();
 
 /// Entries used to calibrate the initial workers' filesystem service time.
-const ADAPTIVE_SCAN_CALIBRATION_ENTRIES: u64 = 16 * 1024;
+const ADAPTIVE_SCAN_CALIBRATION_ENTRIES: u64 =
+    crate::platform_tuning::tuning().adaptive_scan_calibration_entries.get();
 
 /// Average worker time per observed entry that identifies a latency-bound scan.
 ///
@@ -628,7 +637,12 @@ const ADAPTIVE_SCAN_CALIBRATION_ENTRIES: u64 = 16 * 1024;
 /// the 60k tree, 22 on the 120k boundary, and 42 or more on the 720k cache-pressure
 /// tree. Thirty leaves margin between them. The calibration uses the same chunk timing
 /// already collected for attribution, so it adds no per-entry clock reads.
-const ADAPTIVE_SCAN_SLOW_WORK_NS_PER_ENTRY: u64 = 30_000;
+///
+/// Those are APFS regimes. The Linux warm floor is about 1.5 µs per entry, twenty times
+/// below this threshold, so the trigger may never fire there — which is exactly the kind
+/// of inherited constant [`crate::platform_tuning`] exists to make visible (H84).
+const ADAPTIVE_SCAN_SLOW_WORK_NS_PER_ENTRY: u64 =
+    crate::platform_tuning::tuning().adaptive_scan_slow_work_ns_per_entry.get();
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct WorkerPool {

@@ -121,6 +121,46 @@ It is stated here because the constant’s own documentation makes the platform 
 legible, and because a sweep is the cheap way to settle it: `perf_probe --threads N`
 takes the worker count directly.
 
+## How a divergence is expressed in code
+
+Two kinds of platform difference live in this engine, and only one of them is a tuning
+question.
+
+A platform **API** — `getattrlistbulk` — does not exist elsewhere and cannot compile
+elsewhere. Those stay `cfg`-gated at their call site as optional accelerators over a
+portable path, falling back rather than failing, exactly as
+[the design principles](../architecture/fdu-design-principles.md) require.
+
+A platform **tuning** is the same portable code wanting a different value, or a
+different one of two portable strategies.
+Those live in `crates/fdu/src/platform_tuning.rs` as data, one table per platform, and
+the module holds three properties that matter more than the values in it.
+
+**Both tables compile in every build.** `cfg` selects the *default*, never the
+*existence*. This is the load-bearing rule: an arm that only compiles where it is the
+default cannot be type-checked or parity-tested anywhere else, so it rots, and then a
+change made for one platform breaks the other invisibly.
+`ScanOrder` is the existing precedent — breadth-first and depth-first both compile
+everywhere and only the default is chosen.
+A strategy therefore needs no new machinery; it is a `Tuned<T>` whose `T` is an enum.
+
+**The guarantee is compile-time.** A `const` assertion block evaluates every table in
+every build, so an edit that broke the macOS table would fail a Linux build.
+Nobody has to own a Mac to keep the Mac arm honest, which is what makes it safe for a
+Linux measurement to land without a macOS replication in the same change.
+
+**An inherited default cannot pass for a measured one.** Each value carries `Measured`
+or `Inherited`, and the const block asserts that the portable table still says
+`Inherited`, with the message *promote this to `Tuned::measured` in the same change that
+lands the sweep*. The build therefore forces whoever lands a Linux number to say which
+experiment settled it, rather than letting a value quietly change standing.
+
+What this does **not** license is a `cfg` per disagreement.
+A divergence costs two values to keep true and two regimes to re-measure whenever either
+moves, so the bar is a measured reversal on a decision that matters, not a difference
+within noise. Prefer one adaptive mechanism that measures the machine over two constants
+that name it.
+
 ## The rule for a platform-specific constant
 
 1. **A shared default must have evidence in every regime it claims.** One measurement

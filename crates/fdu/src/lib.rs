@@ -57,6 +57,7 @@ mod engine_contract;
 #[cfg(feature = "cli")]
 mod execution;
 mod index;
+mod platform_tuning;
 pub mod query;
 pub mod scan;
 pub mod snapshot;
