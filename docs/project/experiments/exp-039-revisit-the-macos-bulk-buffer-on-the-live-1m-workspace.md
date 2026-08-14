@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-039
   title: Revisit the macOS bulk buffer on the live 1M workspace
-  date: 2026-08-13
+  date: "2026-08-13"
   hypotheses:
     - H55
   subject:

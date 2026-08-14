@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-029
   title: Increase macOS bulk metadata buffer to 256 KiB
-  date: 2026-08-12
+  date: "2026-08-12"
   hypotheses:
     - H55
   subject:

@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-020
   title: Delay adaptive workers until metadata-cache capacity
-  date: 2026-08-12
+  date: "2026-08-12"
   hypotheses:
     - H31
   subject:

@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-047
   title: Reject inline basic content analysis
-  date: 2026-08-13
+  date: "2026-08-13"
   hypotheses:
     - H79
   subject:

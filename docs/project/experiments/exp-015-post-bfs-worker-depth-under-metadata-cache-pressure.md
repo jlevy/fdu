@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-015
   title: Post-BFS worker depth under metadata-cache pressure
-  date: 2026-08-12
+  date: "2026-08-12"
   hypotheses:
     - H31
   subject:

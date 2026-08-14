@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-003
   title: Skip journalling on the bootstrap apply path
-  date: 2026-08-11
+  date: "2026-08-11"
   hypotheses:
     - H8
   subject:

@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-005
   title: Snapshot load resolves through the parent
-  date: 2026-08-11
+  date: "2026-08-11"
   hypotheses:
     - H10
   subject:

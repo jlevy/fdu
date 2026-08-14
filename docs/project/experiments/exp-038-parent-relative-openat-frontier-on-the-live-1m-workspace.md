@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-038
   title: Parent-relative openat frontier on the live 1M workspace
-  date: 2026-08-13
+  date: "2026-08-13"
   hypotheses:
     - H24
     - H29

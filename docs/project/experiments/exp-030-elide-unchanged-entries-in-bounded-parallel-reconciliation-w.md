@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-030
   title: Elide unchanged entries in bounded parallel reconciliation waves
-  date: 2026-08-12
+  date: "2026-08-12"
   hypotheses:
     - H12
     - H9

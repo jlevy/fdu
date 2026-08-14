@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-031
   title: Increase immutable-baseline reconciliation waves to 4096 directories
-  date: 2026-08-12
+  date: "2026-08-12"
   hypotheses:
     - H56
   subject:

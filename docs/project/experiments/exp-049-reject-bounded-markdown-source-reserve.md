@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-049
   title: Reject bounded Markdown source reserve
-  date: 2026-08-13
+  date: "2026-08-13"
   hypotheses:
     - H81
   subject:

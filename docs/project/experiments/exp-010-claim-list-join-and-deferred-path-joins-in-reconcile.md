@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-010
   title: Claim-list join and deferred path joins in reconcile
-  date: 2026-08-11
+  date: "2026-08-11"
   hypotheses:
     - H17
   subject:

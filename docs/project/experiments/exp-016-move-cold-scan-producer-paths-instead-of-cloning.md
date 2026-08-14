@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-016
   title: Move cold-scan producer paths instead of cloning
-  date: 2026-08-12
+  date: "2026-08-12"
   hypotheses:
     - H51
   subject:

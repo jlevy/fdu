@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-001
   title: Bounded parallel directory producer
-  date: 2026-08-10
+  date: "2026-08-10"
   hypotheses:
     - H1
   subject:

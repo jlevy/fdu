@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-008
   title: Extensions interned to integer ids
-  date: 2026-08-11
+  date: "2026-08-11"
   hypotheses:
     - H18
   subject:

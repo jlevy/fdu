@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-019
   title: Adaptive worker threshold at the first crossing scale
-  date: 2026-08-12
+  date: "2026-08-12"
   hypotheses:
     - H31
   subject:

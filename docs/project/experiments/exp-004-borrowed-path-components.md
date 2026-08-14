@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-004
   title: Borrowed path components
-  date: 2026-08-11
+  date: "2026-08-11"
   hypotheses:
     - H5
   subject:

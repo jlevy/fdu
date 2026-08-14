@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-006
   title: Cumulative effect of every accepted change
-  date: 2026-08-11
+  date: "2026-08-11"
   hypotheses:
     - H1
     - H5

@@ -324,10 +324,20 @@ pub struct Index {
     /// entries. Nested and repeated sweeps collapse: a new record replaces any it
     /// covers.
     verified: Vec<(PathBuf, i64)>,
-    /// Interner storage: id → name. Ids are indexes into this vector.
-    ext_names: Vec<String>,
+    /// Interner storage: id → live name. Ids are indexes into this vector, and a
+    /// vacant slot holds `None` until it is reissued.
+    ext_names: Vec<Option<String>>,
     /// Interner lookup: name → id.
     ext_ids: BTreeMap<String, ExtId>,
+    /// Live file entries holding each extension id, parallel to `ext_names`.
+    ///
+    /// Interning without a matching release is a leak in the case this engine is built
+    /// for: a watched tree that churns through editor temporaries, build outputs, and
+    /// content-hashed asset names keeps minting extensions the tree no longer contains,
+    /// and both maps grow for the life of the process.
+    ext_refcounts: Vec<u64>,
+    /// Slots whose last referencing file went away, available for reissue.
+    free_ext_ids: Vec<ExtId>,
     /// Sparse derived-data tier, allocated only after analysis is enabled.
     content: Option<Box<ContentIndex>>,
     freshness_epoch: u64,
@@ -572,6 +582,8 @@ impl Index {
             verified: Vec::new(),
             ext_names: Vec::new(),
             ext_ids: BTreeMap::new(),
+            ext_refcounts: Vec::new(),
+            free_ext_ids: Vec::new(),
             content: None,
         }
     }
@@ -912,6 +924,17 @@ impl Index {
         id: EntryId,
     ) -> Option<impl DoubleEndedIterator<Item = (&OsStr, EntryId)> + ExactSizeIterator + '_> {
         Some(self.try_entry(id)?.children.iter().map(|(name, child)| (name.as_os_str(), *child)))
+    }
+
+    /// Resolve one direct child by name, without scanning its siblings.
+    ///
+    /// `children` is already a map, so a caller that knows the parent and the name is
+    /// one descent away from the id. Going through [`Self::children_of`] instead turns
+    /// that into a linear walk, which is quadratic for any caller resolving a whole
+    /// directory — snapshot load did exactly that, at roughly 8M name comparisons for a
+    /// single 4,096-entry directory.
+    pub(crate) fn child_id(&self, parent: EntryId, name: &OsStr) -> Option<EntryId> {
+        self.try_entry(parent)?.children.get(name).copied()
     }
 
     /// Reconstruct an entry's path relative to the root by walking parent pointers.
@@ -1298,15 +1321,46 @@ impl Index {
         previous
     }
 
-    /// Intern an extension name, returning its stable id within this index.
+    /// Intern an extension name and retain one file's reference to it.
+    ///
+    /// Every call must be matched by a [`Self::release_ext`] when that file leaves the
+    /// index, which is what keeps the interner proportional to the extensions the tree
+    /// currently holds rather than to every extension it has ever held.
     fn intern_ext(&mut self, name: &str) -> ExtId {
-        if let Some(id) = self.ext_ids.get(name) {
-            return *id;
+        if let Some(&id) = self.ext_ids.get(name) {
+            let refcount =
+                self.ext_refcounts.get_mut(id as usize).expect("a live id has a refcount");
+            *refcount = refcount.checked_add(1).expect("extension refcount exhausted");
+            return id;
         }
-        let id = ExtId::try_from(self.ext_names.len()).expect("extension interner exhausted");
-        self.ext_names.push(name.to_string());
+        let id = if let Some(id) = self.free_ext_ids.pop() {
+            let slot = id as usize;
+            self.ext_names[slot] = Some(name.to_string());
+            self.ext_refcounts[slot] = 1;
+            id
+        } else {
+            let id = ExtId::try_from(self.ext_names.len()).expect("extension interner exhausted");
+            self.ext_names.push(Some(name.to_string()));
+            self.ext_refcounts.push(1);
+            id
+        };
         self.ext_ids.insert(name.to_string(), id);
         id
+    }
+
+    /// Drop one file's reference, freeing the id and its name after the last one.
+    fn release_ext(&mut self, id: ExtId) {
+        let slot = id as usize;
+        let refcount = self.ext_refcounts.get_mut(slot).expect("a live id has a refcount");
+        debug_assert!(*refcount > 0, "extension reference released twice");
+        *refcount -= 1;
+        if *refcount != 0 {
+            return;
+        }
+        let name = self.ext_names[slot].take().expect("a live id has a name");
+        let removed = self.ext_ids.remove(&name);
+        debug_assert_eq!(removed, Some(id), "the interner's two maps disagreed");
+        self.free_ext_ids.push(id);
     }
 
     /// Resolve a roll-up's interned extension tallies back to their names.
@@ -1318,8 +1372,11 @@ impl Index {
             .by_ext
             .iter()
             .map(|(id, tally)| {
-                let name =
-                    self.ext_names.get(*id as usize).expect("extension id from a foreign index");
+                let name = self
+                    .ext_names
+                    .get(*id as usize)
+                    .and_then(Option::as_ref)
+                    .expect("a roll-up's extension id must still be live in this index");
                 (name.clone(), *tally)
             })
             .collect()
@@ -1577,7 +1634,13 @@ impl Index {
         let mut queue = vec![id];
         while let Some(node) = queue.pop() {
             let children: Vec<EntryId> = self.entry(node).children.values().copied().collect();
+            let ext_id = self.entry(node).ext_id;
             queue.extend(children);
+            // Give the extension back before the entry itself goes, so the interner
+            // holds only what the tree still contains.
+            if let Some(ext_id) = ext_id {
+                self.release_ext(ext_id);
+            }
             self.free(node);
             stats.removed += 1;
         }
@@ -2236,6 +2299,49 @@ mod tests {
             upsert("docs/guide.md", EntryKind::File, file_attrs(300, 30)),
         ]));
         index
+    }
+
+    #[test]
+    fn the_extension_interner_reclaims_ids_after_churn() {
+        // The long-lived case: a watched tree that keeps creating and deleting files
+        // with distinct extensions. Without reclamation both interner maps grow for the
+        // life of the process, which for `fdu --watch` means forever.
+        let mut index = Index::new("/root");
+        for sequence in 0..128 {
+            let path = PathBuf::from(format!("build.out-{sequence}"));
+            index.apply_ok(&Observation::new(vec![Op::Upsert {
+                path: path.clone(),
+                kind: EntryKind::File,
+                attrs: file_attrs(1, sequence),
+            }]));
+            index.apply_ok(&Observation::new(vec![Op::Remove { path }]));
+        }
+
+        assert!(index.ext_ids.is_empty(), "no extension survives the file that named it");
+        assert_eq!(index.ext_names.len(), 1, "128 dead extensions reuse one interner slot");
+        assert!(index.total().by_ext.is_empty());
+    }
+
+    #[test]
+    fn a_reclaimed_extension_id_does_not_alias_a_live_tally() {
+        // Reissuing a slot is only safe if nothing still points at it. Keep one file on
+        // the recycled extension while another one comes and goes.
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![
+            upsert("keep.rs", EntryKind::File, file_attrs(10, 1)),
+            upsert("drop.tmp", EntryKind::File, file_attrs(20, 2)),
+        ]));
+        index.apply_ok(&Observation::new(vec![Op::Remove { path: PathBuf::from("drop.tmp") }]));
+        index.apply_ok(&Observation::new(vec![upsert(
+            "next.bak",
+            EntryKind::File,
+            file_attrs(30, 3),
+        )]));
+
+        let tallies = index.by_ext_named(index.total());
+        assert_eq!(tallies[".rs"], ExtTally { files: 1, bytes: 10, allocated: 512 });
+        assert_eq!(tallies[".bak"], ExtTally { files: 1, bytes: 30, allocated: 512 });
+        assert!(!tallies.contains_key(".tmp"), "the removed extension is gone");
     }
 
     #[test]

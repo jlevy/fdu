@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-025
   title: Revisit worker depth after macOS bulk metadata
-  date: 2026-08-12
+  date: "2026-08-12"
   hypotheses:
     - H52
   subject:

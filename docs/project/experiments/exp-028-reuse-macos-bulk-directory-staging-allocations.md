@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-028
   title: Reuse macOS bulk directory staging allocations
-  date: 2026-08-12
+  date: "2026-08-12"
   hypotheses:
     - H54
   subject:

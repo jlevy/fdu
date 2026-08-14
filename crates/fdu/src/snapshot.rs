@@ -537,10 +537,9 @@ fn parse_stream(
         }
         // The entry is a child of a parent we already hold, so its id comes from that
         // parent's children rather than from resolving the whole path from the root.
-        let id = index
-            .children_of(parent)
-            .and_then(|mut children| children.find_map(|(child, id)| (child == name).then_some(id)))
-            .ok_or(ParseError::Invalid)?;
+        // The lookup is a single map descent: scanning the sibling list instead made
+        // load quadratic in a directory's width, which a wide directory pays in full.
+        let id = index.child_id(parent, &name).ok_or(ParseError::Invalid)?;
         ids.push(id);
     }
 
@@ -1027,6 +1026,38 @@ mod tests {
         assert_eq!(
             restored.attrs(Path::new("src/deep/nested.rs")),
             original.attrs(Path::new("src/deep/nested.rs"))
+        );
+    }
+
+    #[test]
+    fn round_trip_handles_wide_directory_fanout() {
+        // Load resolves each record's id from its parent. Doing that by scanning the
+        // parent's children costs O(width^2) per directory, which is invisible on the
+        // handful of siblings every other test uses and dominates a real one — a
+        // node_modules or a Maildir is thousands wide.
+        const CHILDREN: u64 = 4_096;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("wide.fdu");
+        let mut original = Index::new("/some/root");
+        let ops = (0..CHILDREN)
+            .map(|sequence| Op::Upsert {
+                path: PathBuf::from(format!("child-{sequence:04}.dat")),
+                kind: EntryKind::File,
+                attrs: attrs(sequence + 1, i64::try_from(sequence).expect("fanout fits i64")),
+            })
+            .collect();
+        original.apply_baseline_ok(&Observation::new(ops));
+
+        save(&original, &path).expect("save wide snapshot");
+        let restored = load(&path).expect("load wide snapshot").expect("snapshot present");
+
+        assert_eq!(restored.total().files, CHILDREN);
+        assert_eq!(restored.len(), original.len());
+        // The last child is the one a linear scan reaches last, so it is the one that
+        // proves the resolution used the parent's map rather than its sibling order.
+        assert_eq!(
+            restored.attrs(Path::new("child-4095.dat")),
+            original.attrs(Path::new("child-4095.dat"))
         );
     }
 

@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-018
   title: Spawn reserve workers only after observed scan scale
-  date: 2026-08-12
+  date: "2026-08-12"
   hypotheses:
     - H31
   subject:

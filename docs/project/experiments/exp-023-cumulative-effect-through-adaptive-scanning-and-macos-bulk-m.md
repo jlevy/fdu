@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-023
   title: Cumulative effect through adaptive scanning and macOS bulk metadata
-  date: 2026-08-12
+  date: "2026-08-12"
   hypotheses:
     - H1
     - H5

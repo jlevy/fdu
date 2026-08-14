@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-037
   title: Revisit breadth-first versus depth-first on the live 1M workspace
-  date: 2026-08-13
+  date: "2026-08-13"
   hypotheses:
     - H4
   subject:

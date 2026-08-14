@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-022
   title: Batch macOS scan metadata with getattrlistbulk
-  date: 2026-08-12
+  date: "2026-08-12"
   hypotheses:
     - H3
     - H26

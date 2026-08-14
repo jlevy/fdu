@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-035
   title: Post-composable-CLI validation on the live 1M workspace
-  date: 2026-08-12
+  date: "2026-08-12"
   hypotheses:
     - H3
     - H31

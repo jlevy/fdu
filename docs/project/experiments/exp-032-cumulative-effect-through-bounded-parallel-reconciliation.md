@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-032
   title: Cumulative effect through bounded parallel reconciliation
-  date: 2026-08-12
+  date: "2026-08-12"
   hypotheses:
     - H1
     - H5

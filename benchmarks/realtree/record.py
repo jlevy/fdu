@@ -61,6 +61,10 @@ def main(argv: Sequence[str]) -> int:
     arguments = parser.parse_args(list(argv))
 
     run = json.loads(arguments.run.read_text(encoding="utf-8"))
+    try:
+        headline = _headline(run, arguments)
+    except ValueError as error:
+        parser.error(str(error))
     payload = experiment_model.from_run(
         run,
         experiment_id=arguments.id,
@@ -82,7 +86,7 @@ def main(argv: Sequence[str]) -> int:
             "decision": arguments.decision,
             "primary_job": arguments.primary_job,
             "primary_metric": arguments.primary_metric,
-            "change_pct": _headline(run, arguments),
+            "change_pct": headline,
             "reason": arguments.reason,
             "commit": arguments.commit,
         },
@@ -110,22 +114,44 @@ def _headline(run: Mapping[str, Any], arguments: argparse.Namespace) -> Any:
     would report the wrong pair — the two-thread result for a four-thread experiment,
     say. The recorded variant names are the ones that decide.
     """
+    comparison = _selected_comparison(run, arguments)
+    if comparison is None:
+        return None
+    entry = comparison["metrics"].get(arguments.primary_metric)
+    return entry["median_change_pct"] if entry else None
+
+
+def _selected_comparison(run: Mapping[str, Any], arguments: argparse.Namespace) -> Any:
+    """Exactly the comparison the recording arguments name, or an error.
+
+    Every ambiguous case is refused rather than resolved, because each one silently
+    records a number that belongs to a different pair of variants — and an experiment
+    artifact is the permanent record the ledger is regenerated from.
+    """
+    if bool(arguments.control_variant) != bool(arguments.candidate_variant):
+        raise ValueError("--control-variant and --candidate-variant must be given together")
+
     statistics = run["statistics"].get(arguments.primary_job)
     if not statistics:
         return None
     comparisons = statistics["comparisons"]
+
     if arguments.control_variant and arguments.candidate_variant:
         key = f"{arguments.candidate_variant}_vs_{arguments.control_variant}"
         comparison = comparisons.get(key)
-        if comparison:
-            entry = comparison["metrics"].get(arguments.primary_metric)
-            return entry["median_change_pct"] if entry else None
+        if comparison is None:
+            available = ", ".join(sorted(comparisons)) or "none"
+            raise ValueError(f"run has no comparison named {key!r}; it has {available}")
+        return comparison
+
+    if len(comparisons) > 1:
+        raise ValueError(
+            "a run with several comparisons needs --control-variant and "
+            "--candidate-variant to say which pair this experiment is about"
+        )
+    if not comparisons:
         return None
-    for comparison in comparisons.values():
-        entry = comparison["metrics"].get(arguments.primary_metric)
-        if entry:
-            return entry["median_change_pct"]
-    return None
+    return next(iter(comparisons.values()))
 
 
 def _render(payload: Mapping[str, Any], body: str) -> str:
@@ -200,6 +226,18 @@ _YAML_KEYWORDS = {
 }
 
 
+def _is_iso_date(text: str) -> bool:
+    """Whether YAML would read this plain scalar as a date rather than a string."""
+    return (
+        len(text) == 10
+        and text[4] == "-"
+        and text[7] == "-"
+        and text[:4].isdigit()
+        and text[5:7].isdigit()
+        and text[8:].isdigit()
+    )
+
+
 def _needs_quoting(text: str) -> bool:
     """Whether a string has to be quoted to survive a YAML round trip as a string.
 
@@ -210,6 +248,12 @@ def _needs_quoting(text: str) -> bool:
     if text == "" or text.strip() != text:
         return True
     if text.lower() in _YAML_KEYWORDS:
+        return True
+    if _is_iso_date(text):
+        # YAML resolves a plain ISO date to a date object, not a string, so an
+        # unquoted `date: 2026-08-13` fails the contract's `date: str` on the way back
+        # in. Every artifact written before this was quoted had that defect, invisible
+        # because `_validate` skips when the softschema CLI is unavailable.
         return True
     if any(character in _YAML_SPECIAL for character in text):
         return True

@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-050
   title: Decode complete UTF-8 chunks in place
-  date: 2026-08-13
+  date: "2026-08-13"
   hypotheses:
     - H82
   subject:

@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-036
   title: Revisit worker depth on the live 1M workspace
-  date: 2026-08-12
+  date: "2026-08-12"
   hypotheses:
     - H57
   subject:

@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-024
   title: Open macOS directories relative to one retained root fd
-  date: 2026-08-12
+  date: "2026-08-12"
   hypotheses:
     - H2
     - H24

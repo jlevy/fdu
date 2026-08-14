@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-048
   title: Reject prose collector gating for SLOC
-  date: 2026-08-13
+  date: "2026-08-13"
   hypotheses:
     - H80
   subject:

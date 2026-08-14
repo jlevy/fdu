@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-046
   title: Tune a shared macOS directory-opener pool
-  date: 2026-08-13
+  date: "2026-08-13"
   hypotheses:
     - H70
   subject:
@@ -44,7 +44,7 @@ experiment:
       size_bytes: 1299856
       args:
         - --cache
-        - off
+        - "off"
         - --view
         - summary
         - --format
@@ -57,7 +57,7 @@ experiment:
       size_bytes: 1332944
       args:
         - --cache
-        - off
+        - "off"
         - --view
         - summary
         - --format

@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-021
   title: Calibrate adaptive workers from initial filesystem service time
-  date: 2026-08-12
+  date: "2026-08-12"
   hypotheses:
     - H31
   subject:

@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-040
   title: Derive an exact rich summary without building an index
-  date: 2026-08-13
+  date: "2026-08-13"
   hypotheses:
     - H59
   subject:
@@ -44,7 +44,7 @@ experiment:
       size_bytes: 1299824
       args:
         - --cache
-        - off
+        - "off"
         - --view
         - summary
         - --format
@@ -57,7 +57,7 @@ experiment:
       size_bytes: 1299840
       args:
         - --cache
-        - off
+        - "off"
         - --view
         - summary
         - --format

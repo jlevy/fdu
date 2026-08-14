@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-002
   title: Parallel revalidation sweep
-  date: 2026-08-10
+  date: "2026-08-10"
   hypotheses:
     - H9
   subject:

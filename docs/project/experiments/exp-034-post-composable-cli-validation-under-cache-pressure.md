@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-034
   title: Post-composable-CLI validation under cache pressure
-  date: 2026-08-12
+  date: "2026-08-12"
   hypotheses:
     - H3
     - H31

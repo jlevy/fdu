@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-011
   title: One ancestor merge per same-parent insert run
-  date: 2026-08-11
+  date: "2026-08-11"
   hypotheses:
     - H13
   subject:

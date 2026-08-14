@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-017
   title: Pre-create dormant workers for adaptive scan depth
-  date: 2026-08-12
+  date: "2026-08-12"
   hypotheses:
     - H31
   subject:
