@@ -5,7 +5,7 @@
 
 ## Outcome
 
-FDU now supplies one opt-in capability ladder over its existing index, query, cache,
+fdu now supplies one opt-in capability ladder over its existing index, query, cache,
 CLI, Rust, and Python surfaces:
 
 1. Metadata-only scans classify exact names and extensions and roll up apparent and
@@ -32,13 +32,13 @@ JSONL, YAML, and Python output.
 
 ## SCC Parity and Deliberate Differences
 
-FDU matches the part of SCC that is straightforward to make an additive, incremental
+fdu matches the part of SCC that is straightforward to make an additive, incremental
 contract: physical/code/comment/blank partitions, mixed code-and-comment lines counted
 once as code, language summaries and percentages, common newline conventions, binary
 gating, and a bounded ambiguity path.
 The exact dialect is versioned rather than presented as parser-perfect source semantics.
 
-FDU goes beyond SCC for this product by retaining per-directory and per-type rollups,
+fdu goes beyond SCC for this product by retaining per-directory and per-type rollups,
 unknown and binary byte coverage, warm per-file content reuse, report provenance, and
 text/document volume with markup-aware word and page estimates.
 
@@ -56,7 +56,7 @@ On the local M1/APFS host, complete CLI comparisons over an immutable 233-file, 
 self-host archive measured fdu at 11.9 ± 0.4 ms, SCC 3.7.0 at 9.7 ± 0.5 ms, and Tokei 14
 at 13.3 ± 0.9 ms. On a generated 7,500-file common-language tree, the corresponding
 figures were 108.9 ± 4.2 ms, 90.9 ± 1.6 ms, and 111.2 ± 17.5 ms.
-FDU was close to Tokei and about 20–23 percent behind SCC while also building its
+fdu was close to Tokei and about 20–23 percent behind SCC while also building its
 reusable metadata/content index.
 These are host-specific product-scale checkpoints, not universal speed claims.
 

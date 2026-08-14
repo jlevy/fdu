@@ -62,7 +62,7 @@ Two axes cross these dimensions:
 - **Warm start** — a compatible snapshot exists and is revalidated against the tree.
   This is `warm-revalidate` (load plus reconcile) and `warm-snapshot-load` (load only).
 
-The names “cold scan” and “warm start” describe **FDU snapshot state**, not the
+The names “cold scan” and “warm start” describe **fdu snapshot state**, not the
 operating-system filesystem cache.
 Disk-usage tools read directory and inode/vnode metadata rather than file payloads, so
 “disk-cache warmth” here mostly means namespace and metadata state, not cached file
@@ -233,7 +233,7 @@ Status is updated as experiments resolve them; see the ledger for results.
 | H72 | The transient summary needs no directory or symlink attributes, so `d_type` can skip their `statx` calls entirely. | produced stat calls down by the directory share; warm wall down at least 3% on a directory-heavy tree | **Queued** (`fdu-i2f3`). Measured −1.4% alone on a 6.4%-directory tree, below the gate; the planner must prove the tier and `one_filesystem` still forces directory stats. |
 | H73 | Sorting each directory’s entries by `d_ino` before statting turns random inode reads into near-sequential ones on ext4 and btrfs. | controlled-cold wall down substantially; warm unchanged | **Unresolved** (`fdu-lf3v`). The scouting rig measured −2.3% cold with an interval crossing zero and +6.8% warm from the sort itself, but its guest-cold reads were host-cached, so the cold claim was untestable there. Needs bare metal, and any implementation must stay behind a cold-suspected trigger. |
 | H76 | Linux cold scans are under-parallelized: `diskus` runs three times the core count and the automatic policy’s thresholds were calibrated on APFS. | controlled-cold wall down at least 3% at the swept depth; warm unchanged | **Queued** (`fdu-tk1b`). The scouting rig measured `diskus` 22.8% ahead of the summary plan cold while tying warm. Sweep depth per regime and filesystem rather than inheriting the APFS constants. |
-| H77 | Both FDU and dumac pay at least one directory open plus one bulk call across 110,369 directories, and exp-045/046 profiles put about 95% of worker samples there. macOS `searchfs` reads the volume catalog without opening each directory, removing that per-directory work rather than shaving it. | macOS cold and warm wall down substantially at near-million scale, with exact oracle parity | **Speculative, unscreened** (`fdu-9716`). Needs parent-id tree reconstruction, subtree scoping, a permission-semantics audit, non-UTF-8 handling, and probe-and-fallback. Prototype standalone before any production path. |
+| H77 | Both fdu and dumac pay at least one directory open plus one bulk call across 110,369 directories, and exp-045/046 profiles put about 95% of worker samples there. macOS `searchfs` reads the volume catalog without opening each directory, removing that per-directory work rather than shaving it. | macOS cold and warm wall down substantially at near-million scale, with exact oracle parity | **Speculative, unscreened** (`fdu-9716`). Needs parent-id tree reconstruction, subtree scoping, a permission-semantics audit, non-UTF-8 handling, and probe-and-fallback. Prototype standalone before any production path. |
 
 ### Index and allocation
 
@@ -253,7 +253,7 @@ Status is updated as experiments resolve them; see the ledger for results.
 | H59 | A cache-off report might retain only state required by the complete requested view set, as `pdu` discards subtrees below its output depth. | large RSS reduction and wall down at least 3%, with byte-identical output | **Confirmed, topology-sensitive** (exp-040): heterogeneous wall −14.56% [−18.55%, −9.04%], RSS −95.28%, and one stable semantic hash. Exact-final-binary uniform-tree replications retained the CPU/RSS mechanism but measured only 1.8–2.8% wall. |
 | H62 | Rich summaries can reduce inside scan workers rather than materializing file paths and sending observation batches through one consumer. | wall/user CPU/channel work down at least 3%; exact summary hash | **Refuted as production code** (exp-041): user CPU fell 36.23% and RSS 34.77%, but wall improved only 1.38%; the independent 720k replication was 1.26%. Reverted after the H63 composition also failed. |
 | H63 | A macOS bulk request derived from rich-summary requirements can omit index-only fields and avoid copying names for files. | system/user CPU and wall down at least 3%; strict parser and portable fallback parity | **Refuted in composition with H62** (exp-042): wall changed +1.86% [−1.96%, +4.56%] despite 50.96% lower user CPU and 39.70% lower RSS. Both layers were reverted. |
-| H64 | A selected-total projection can gather only the requested size metric for a workload matched to dumac. | beat or match dumac wall with exact FDU path-accounting oracle | **Refuted** (exp-044): the full narrow-reader and in-buffer-folding composition changed wall −1.15% [−2.24%, +0.44%] and did not beat dumac despite halving user CPU; all prototype API and engine code was reverted. |
+| H64 | A selected-total projection can gather only the requested size metric for a workload matched to dumac. | beat or match dumac wall with exact fdu path-accounting oracle | **Refuted** (exp-044): the full narrow-reader and in-buffer-folding composition changed wall −1.15% [−2.24%, +0.44%] and did not beat dumac despite halving user CPU; all prototype API and engine code was reverted. |
 | H65 | Removing the index consumer may move the reduction-only worker-depth knee above six. | 6/8/10/12/16 curve; wall down at least 3% with bounded CPU/RSS | **Refuted** (exp-043): eight workers’ promising 901k screen did not replicate at 720k (+0.67% wall [−1.56%, +3.99%]); CPU rose 40.66%. Automatic/six remains shared by transient and indexed scans. |
 | H66 | An unfiltered cache-off tree-only request can fold file observations into exact directory roll-ups and retain directory topology without file records. | byte-identical tree; wall down at least 3% or decisive RSS reduction without meaningful latency regression at 60k and near-million scale | **Queued** (`fdu-sk7v`). The planner must fall closed for cache, filters, multiple views, watch, or reusable-index requests; compare the Linux arm with dut’s rendered-tree job. |
 | H60 | Cold bootstrap workers can build disjoint local subtree arenas and splice them plus one roll-up at region completion, replacing one path operation per entry through the single consumer. | cold-index component/user CPU and channel allocation down; end-to-end wall down at least 3%; RSS bounded | **Queued** (`fdu-weey`). Preserve deterministic identity, progressive publication, errors, and the delta contract. |
@@ -328,7 +328,7 @@ The immediate pre/post v2 fingerprints must agree; results and the baseline live
 the measured root.
 Each artifact retains binary hashes, versions, command templates, work
 classes, resource use, and redacted output hashes.
-When FDU summary contracts are measured, the harness hashes the stable report payload
+When fdu summary contracts are measured, the harness hashes the stable report payload
 after removing only generator, absolute root, and timestamps.
 It also checks all five summary tallies against the independent v3 tree fingerprint:
 files, descendant directories, apparent bytes, allocated bytes, and newest regular-file
@@ -339,8 +339,8 @@ not performance evidence.
 The default comparison should include rendered-tree peers (`dust`, `gdu`, `pdu`) and
 fast total-only lower bounds (`dua`, `diskus`, and macOS `dumac`). `ncdu` is a useful
 indexed-tree peer; BSD/GNU `du` are serial floors.
-These numbers never enter an FDU experiment verdict because the jobs differ.
-In particular, FDU builds a reusable exact metadata index and roll-ups; total-only tools
+These numbers never enter an fdu experiment verdict because the jobs differ.
+In particular, fdu builds a reusable exact metadata index and roll-ups; total-only tools
 retain much less state, and tools differ in hard-link attribution.
 The fingerprint quantifies that semantic difference rather than pretending byte totals
 are interchangeable.
@@ -351,7 +351,7 @@ record its license, and describe transferable mechanisms rather than copying
 implementation. Current findings are reflected in the queue: `dua`’s portable
 wide-directory chunks motivate H58; `pdu`’s bounded retention motivates the design-gated
 H59 and its local aggregation helps motivate H60. H59 is now confirmed by exp-040.
-`dumac` confirms FDU’s existing `getattrlistbulk` mechanism and motivated H62
+`dumac` confirms fdu’s existing `getattrlistbulk` mechanism and motivated H62
 worker-local reduction, H63 report-derived macOS metadata, H64 a selected-total matched
 workload, and H65 reduction-only worker calibration.
 Exp-041 through exp-044 rejected all four additional layers for wall time.

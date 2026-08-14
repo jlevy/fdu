@@ -188,24 +188,24 @@ experiment:
 
 ## Profile Result
 
-The exact current FDU and dumac binaries first ran in twelve adjacent pairs on the
-901,963-entry tree. In this busy interactive-host regime, FDU took a 3.595-second median
+The exact current fdu and dumac binaries first ran in twelve adjacent pairs on the
+901,963-entry tree. In this busy interactive-host regime, fdu took a 3.595-second median
 and dumac took 2.986 seconds, a clear 16.19% paired gap [12.23%, 19.10%]. Dumac spent
 34.88% more aggregate CPU and 231.70% more peak RSS. Its wall advantage therefore came
-from greater concurrency, not less machine work: FDU sustained 3.46 aggregate
+from greater concurrency, not less machine work: fdu sustained 3.46 aggregate
 core-equivalents and dumac sustained 5.64.
 
 Replaying the exact binaries from the published comparison on the same current host also
 produced an 11.1% five-pair dumac lead.
-That rules out the intervening FDU reconciliation-only code change as the cause.
+That rules out the intervening fdu reconciliation-only code change as the cause.
 It also prevents replacing the published quiet-host result with this run: the current
 machine had high and variable background load, and control samples later ranged from
 3.29 to 5.20 seconds.
-The durable conclusion is that the FDU–dumac wall relationship is sensitive to available
+The durable conclusion is that the fdu–dumac wall relationship is sensitive to available
 concurrency and host pressure.
 
 Two-second `sample` profiles localized both programs to the same boundary.
-FDU had six active workers; 96.10% of their sampled top frames were `open` (39.56%) or
+fdu had six active workers; 96.10% of their sampled top frames were `open` (39.56%) or
 `getattrlistbulk` (56.54%). Dumac had ten active workers; 94.21% were in the same calls
 (`open` 50.88%, `getattrlistbulk` 43.32%). Both main threads waited for workers.
 These are within-process stack-residency shares, not syscall-duration estimates, and raw

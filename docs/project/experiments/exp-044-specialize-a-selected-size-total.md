@@ -193,7 +193,7 @@ experiment:
 H64: the existing transient summary still gathers five tallies and uses the generic
 observation representation.
 A requirement-derived total plan might match dumac’s selected-size workload closely
-enough to beat it while preserving FDU’s exact path accounting, scope, partial-result,
+enough to beat it while preserving fdu’s exact path accounting, scope, partial-result,
 symlink, and fallback semantics.
 
 This was a deliberately isolated prototype.
