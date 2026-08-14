@@ -5,7 +5,7 @@ title: "Clarify and validate PR #15 content performance layers"
 kind: task
 status: in_progress
 priority: 1
-version: 17
+version: 28
 labels: []
 dependencies: []
 child_order_hints:
@@ -23,10 +23,15 @@ child_order_hints:
   - is-01kzyqkmswz9qha4knttpt9xzw
   - is-01kzyqkxp6g2r367dvkxvvahec
   - is-01kzyr76mpg2emh1sf1zktb7y4
+  - is-01kzysj77mzmh0rdct83a5rwaa
+  - is-01kzyv83g6px1zbkrp5cj3bck2
+  - is-01kzyx7d2nyh5gjx4gk6f4sfd0
+  - is-01kzyzpjp5rz94mz5ma25t0tdz
+  - is-01kzz1krveqzt0ap63a4wjk961
 created_at: 2026-08-13T22:59:35.718Z
-updated_at: 2026-08-14T00:04:20.693Z
+updated_at: 2026-08-14T02:28:57.317Z
 ---
 
 ## Notes
 
-PR #15 review hardened and documented at c2b646c: full make check passes, all 16 required GitHub checks pass, the global binary is installed, and four common CLI recipes were verified end to end. Closed view/profile validation, Markdown boundaries, empty analysis identity, unavailable coverage, pinned whitespace/BOM semantics, and common-recipe documentation. Remaining readiness gaps are tracked in the open children: per-analyzer cache and coverage, generic metrics projection, use of content rollups, bounded candidate scheduling, content watch integration, per-path I/O diagnostics, and UTF-16 coverage.
+PR #15 merged at 241a3c8 with the content-analysis hardening: eligible text is read through EOF with no size cap; expected binary/encoding/unsupported coverage is non-fatal; language summaries are aligned and metadata-only unless analysis is requested; help, README, design/spec/decision docs, benchmark contracts, and scratch-corpus cleanup guidance are aligned. Follow-up PR #18 at 4bce242 adds exact one-shot text walked/read/fresh/cache performance telemetry; machine formats and watch/lifecycle output omit it. Full local make check and all 16 required PR #18 checks pass across macOS/Linux/Windows and Python 3.12/3.14. Global fdu 0.0.1-dev+g4bce242 is installed. Remaining broader readiness gaps continue in the open child issues.
