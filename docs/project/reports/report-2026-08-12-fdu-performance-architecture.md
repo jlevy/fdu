@@ -1,6 +1,6 @@
 # fdu Performance Architecture: Evidence From Forty-Seven Experiments
 
-**Date:** 2026-08-12 (updated 2026-08-13)
+**Date:** 2026-08-12 (updated 2026-08-14)
 
 **Status:** Technical white paper
 
@@ -28,6 +28,7 @@ The largest gains came from architectural changes, not constant tuning.
 Bounded parallel traversal, integer-keyed roll-ups, service-time-adaptive concurrency,
 macOS `getattrlistbulk`, bulk reconciliation, and producer-side no-op elimination all
 paid.
+
 Larger buffers, allocation reuse, extra workers, path clone removal, and descriptor
 frontiers did not. The main remaining cost is the size and construction of the reusable
 index: it used about 398 MiB at near-million-entry scale.
@@ -48,6 +49,15 @@ opens and bulk system calls now own the warm-APFS floor.
 Exp-045 and exp-046 are the open-ahead follow-ups: exact-binary profiles localize both
 FDU and dumac to `open` plus `getattrlistbulk`; exp-045’s pairwise helper was superseded
 by exp-046’s shared pool, which remains unretained pending quiet-host confirmation.
+
+A subsequent Linux campaign closed the warm-open inversion those numbers did not cover —
+a verified warm open ran 69% slower than a cold scan there and now runs 22.6% faster —
+and established that **retained-state tier is an axis of the same standing as
+platform**. The same allocator change measures −23.0% on the aggregate tier and nothing
+on the index tier; the same worker depth that helps one hurts the other.
+Results here should be read as answers about a particular tier, on a particular
+platform, in a particular cache state, and
+[What a Result Transfers To](#what-a-result-transfers-to) says how far each carries.
 
 All M1/APFS numbers in this paper use a repeated-workload warm-steady operating-system
 filesystem cache, established by a complete independent fingerprint and explicit
@@ -342,30 +352,141 @@ shared-pool follow-up:
 - **Parallelism without moving the serialization boundary:** the first parallel
   reconcile funnel gained only 2.6%; immutable producer-side comparison later gained
   30–60% (exp-002 versus exp-030)
+
 - **More threads after syscall batching:** sixteen workers changed from helpful on the
   latency-bound portable path to a 19.2% regression after bulk metadata; queue depth
   must follow the current bottleneck (exp-015 versus exp-025)
+
 - **Allocation folklore:** moving producer paths, reusing directory staging vectors, and
   reducing bootstrap journaling changed wall time by less than the acceptance bar or
   regressed resources (exp-003, exp-016, exp-028)
+
 - **Bigger buffers:** increasing the macOS bulk buffer from 64 KiB to 256 KiB did not
   help at 60,067 entries and changed million-entry wall time by +2.22% with an interval
   crossing zero (exp-029 and exp-039)
+
 - **Descriptor-relative opening:** one retained root descriptor and a bounded
   parent-relative frontier were both neutral; repeated prefix resolution was no longer a
   dominant cost on the bulk path (exp-024 and exp-038)
+
 - **Locally sensible index batching:** accumulating same-parent roll-ups gained 2.5%
   after extension interning, below the gate.
   The two ideas competed for the same cost, and the simpler integer-key change captured
   the useful share (exp-011)
+
 - **Changing traversal order on intuition:** depth-first was measurably slower on the
   final heterogeneous tree, despite its reputation for locality (exp-037)
+
 - **Removing summary representation after the syscall floor:** worker-local reduction,
   narrower macOS records, and a selected-total in-buffer fold cut user CPU by 36–52% and
   RSS by 35–40% without clearing the 3% wall gate (exp-041, exp-042, exp-044)
 
+- **Optimizing a function nothing calls:** H11 proposed removing a per-directory name
+  clone from `scan::revalidate`. The clone is real, but the function is an
+  observation-only reference API with no production caller — `open` uses `reconcile`,
+  and even the probe’s `revalidate` job calls `reconcile`. Resolved by reading call
+  sites, at the cost of one grep and no measurement
+
+- **A one-tier allocator win read as a global one:** replacing the global allocator with
+  mimalloc measured −23.0% on the aggregate tier, and intervals spanning zero on both
+  the index tier and snapshot load.
+  It also raised aggregate-tier peak RSS by 139%, on the tier whose entire justification
+  is low memory (H74)
+
 These failures support a general rule: profile the current architecture, because a
 successful change moves the bottleneck and invalidates earlier tuning.
+
+## What a Result Transfers To
+
+A measured number answers a question narrower than the one it appears to answer.
+Three axes decide how far a result carries, and a hypothesis that does not name them
+tends to be re-litigated later against evidence that never applied to it.
+
+### Retained-state tier is an independent axis, not a detail
+
+The execution planner retains one of three amounts of state — an aggregate row, the full
+index, or the index plus content records — and results diverge across those tiers as
+sharply as they diverge across platforms:
+
+| Change | Aggregate tier | Index tier | Notes |
+| --- | --- | --- | --- |
+| mimalloc global allocator | **−23.0%** [−28.4%, −16.7%] | +3.7% [−17.6%, +17.5%] | Snapshot load −0.8%, spans zero |
+| Warm cache versus cold scan | Not applicable | Was +69%, now −22.6% | The content tier absorbed the same tax it could outrun |
+| Automatic worker depth | Unmeasured; `diskus` at 3× cores leads the class | Two workers tie four; six regresses 3.3% | The index consumer is what saturates |
+
+The mechanism is that each tier has a different bottleneck.
+The aggregate tier is producer-bound and allocator-sensitive because workers allocate
+paths and batches that one consumer frees.
+The index tier is bound by the single-writer consumer, which no allocator change
+reaches. Content is bound by bytes read rather than entries walked.
+
+The practical consequence: **a hypothesis should state which tier it applies to before
+it is measured**, and a result on one tier is not evidence about another.
+H76 is the worked example — it inferred that Linux was under-parallelized from `diskus`,
+which competes with the aggregate tier, and the indexed sweep found the opposite.
+
+### Two changes can compete for one cost, and order decides the winner
+
+This has now happened twice, with the same shape both times.
+H13 and H18 both targeted roll-up merge cost; interning landed first and captured it,
+leaving H13 measuring −2.5%. `fdu-91ts` and H74 both targeted snapshot-load allocation;
+the structural fix landed first, removing roughly four of five per-record allocations,
+and the allocator then measured −0.8% on a path a profile had previously put it at 27.5%
+of.
+
+Neither second measurement was wrong, and neither first result was luck.
+It means a queued hypothesis carries an implicit dependency on everything that lands
+before it, so **a number measured before a related change is a prediction, not a
+result**, and the queue is worth re-screening after any change that touches the same
+cost.
+
+### Allocation volume and allocation pattern are different targets
+
+Three experiments reduced the *number* of allocations on the aggregate tier — moving
+producer paths instead of cloning them, reusing staging vectors, worker-local reduction
+— and all three failed to clear the gate.
+An allocator swap that changes no counts at all won 23% on the same tier.
+
+The cost is therefore not how much is allocated but *who frees it*: producers allocate
+and a single consumer frees, which is the cross-thread pattern `glibc malloc` handles
+worst. That reframing turns a refuted line of work into a specific one — return drained
+buffers to their producing worker so each arena is allocated and freed on one thread —
+which is H85, screened against the allocator’s own number rather than against the 3%
+bar.
+
+### A flat profile attributes cost to a function, not to a reason
+
+Every profile in this project is now read twice: once flat, and once through the caller
+tree. Both readings were necessary in the same session.
+
+A flat profile of snapshot load put 31.9% of instructions in `Sha256::compress`, which
+is the *probe’s own* oracle digest rather than anything under test.
+A flat profile of a warm content open put 34.1% in `std::path::compare_components`,
+which looked exactly like the `BTreeMap<PathBuf, _>` the loader builds; the caller tree
+put that map at 0.9%, and swapping it for a hash map duly returned 3.0% rather than the
+large win predicted.
+The real 34% is file-type classification running over every file on every open —
+including a cache-only one, which then discards the result in favour of the
+classification the sidecar already stored.
+
+The rule that follows is cheap to apply: **before acting on a hot symbol, read its
+callers**, and separate harness cost from engine cost before quoting any percentage.
+
+### Deserialization is not production
+
+The snapshot loader routed every record through the observation path to honour the rule
+that no mutation bypasses `Delta`. That is the right instinct applied to the wrong
+category. A producer discovers facts about the filesystem and must be arbitrated; a
+deserializer restores state the contract already arbitrated, in an order it chose, with
+parents preceding children.
+Making it impersonate a producer cost a path join, an observation vector, a normalize
+vector, and a descent from the root per record, to rediscover a parent id the format had
+supplied.
+
+The invariant that actually matters — a loaded index equals the saved one — is enforced
+better by a round-trip test that compares every entry than by routing through `apply`.
+Restricting the bulk path to `pub(crate)` and to an `EntryId` argument keeps producers
+out of it, which is what the original rule was protecting.
 
 ## Benchmarking Lessons and the Diskus Protocol
 
@@ -478,19 +599,62 @@ H64’s complete selected-total specialization then changed wall by only −1.15
    O(changed regions), but the same fast full scan remains the fallback and the basis
    for first use, invalid journals, and explicit cache-off runs.
 
+The Linux campaign added three more, and the first is the largest single target now
+identified on any platform:
+
+8. **Stop classifying every file on every open (`fdu-926e`).**
+   `Index::analysis_candidates` runs `classify_path` over every file each time it
+   enumerates candidates, including on a `--cache only` run whose sidecar already stores
+   the classification that then replaces it.
+   A caller-tree profile of a warm 14,542-file content open attributes about 34% of
+   instructions to path comparison reached through `classify_path_with_prefix`, at
+   roughly 96 comparisons per file — the signature of a linear scan over the type-rules
+   table. Two independent fixes: index the rules by extension so classification is a hash
+   lookup, reusing the extension id the index already interns, or keep classification
+   out of candidate enumeration so a cache hit never computes a result it discards.
+9. **Free producer allocations in the producing thread (H85, `fdu-h7sw`).** The
+   dependency-free form of the allocator win: return drained batch buffers to their
+   producing worker so each arena is allocated and freed on one thread.
+   Screen against mimalloc’s own −23.0%, not against the 3% bar, because anything much
+   below that is not capturing the same cost.
+10. **A probe job for the aggregate tier (`fdu-tyjx`).** The tier with the clearest
+    remaining headroom is the one that cannot be measured under the accept rule: it has
+    no probe mode and therefore no `component_ns`, which is why exp-043 and exp-044 both
+    resolved on wall numbers diluted by process spawn and rendering.
+    It blocks the tier half of the worker-depth question as well.
+
 ## Linux Evidence Still Needed
 
 The current headline is deliberately limited to one M1 Pro and local APFS. Linux will
 exercise the portable per-entry metadata path and may produce a different ranking.
 
-A first paired scouting pass on a virtualized Linux host now exists in
-[the Linux first measurements](../research/research-2026-08-13-linux-first-measurements.md).
-It is not release evidence — the rig is a VM whose guest-cold reads can still be
-host-cached, and its subject was generated for that session — but it ranks the work: the
-enumeration layer is already at parity with dut and diskus in syscalls issued, the index
-consumer accounts for the tree-class gap, and the verified warm open runs slower than a
-cold scan. The claim-grade matrix below remains outstanding, and the scouting numbers do
-not substitute for any part of it.
+Two paired scouting passes on virtualized Linux hosts now exist:
+[the first measurements](../research/research-2026-08-13-linux-first-measurements.md)
+and
+[the three-tier baseline](../research/research-2026-08-13-linux-three-tier-baseline.md).
+Neither is release evidence — the rigs are VMs whose guest-cold reads can still be
+host-cached, and their subjects were generated or assembled for those sessions — but
+together they rank the work: the enumeration layer is already at parity with dut and
+diskus in syscalls issued, and the index consumer accounts for the tree-class gap.
+The claim-grade matrix below remains outstanding, and the scouting numbers do not
+substitute for any part of it.
+
+**The warm-open inversion those notes recorded is now closed.** A verified warm open ran
+69% *slower* than a cold scan of the same view at 450k entries, in both cache regimes
+and at both scales, which the design principles classify as a defect rather than a
+trade-off. Two changes resolved it.
+Skipping the byte-identical rewrite an unchanged reconciliation performed — proven
+redundant by hashing the snapshot across consecutive runs — removed 20.6% and halved
+peak RSS. Loading records beneath the parent id the format already supplies removed a
+further 41.9%. A warm open now runs 22.6% *faster* than a cold scan with lower peak RSS,
+so the cache is worth having on Linux; what remains of H9 is persisted roll-ups rather
+than the load path.
+
+That sequence is also the clearest instance of the profile redirecting the work.
+`fdu-91ts` was queued as a parent-id insert *and* a deferred bottom-up roll-up pass; the
+deferred half carries the correctness risk, and the profile put `merge_upward` at 3.5%
+against roughly 42% for allocation and path-walking.
+Roll-ups stayed eager and the whole win came from the safe half.
 
 A future report should repeat the exact comparator matrix on a controlled local-SSD
 Linux host with:
@@ -534,10 +698,25 @@ The next frontier is to construct and store the same complete index more densely
 journal scoping changes the amount of filesystem work only when trusted OS history
 proves that is safe.
 
+The first Linux campaign did not change that architecture, which is the useful result:
+the enumeration layer was already syscall-optimal, and the two changes that paid — not
+rewriting a snapshot an unchanged reconciliation had just read, and loading records
+beneath the parent id the format already supplies — were both removals of work rather
+than new mechanism. Together they turned a warm open from 69% slower than a cold scan
+into 22.6% faster. What the campaign did change is how results are read.
+Retained-state tier now sits alongside platform as an axis a hypothesis must name before
+it is measured, because an allocator that wins 23% on the aggregate tier does nothing on
+the index tier and nothing on a load path a structural fix reached first.
+Per-platform defaults are held as data with the standing of each number recorded, so an
+inherited constant cannot pass for a measured one, and every table is checked in every
+build so a change made for one platform cannot quietly break another.
+
 The complete numerical record, including every rejection, remains in the
 [experiment ledger](report-2026-08-10-fdu-performance-experiments.md).
 The measurement and acceptance protocol is the
-[performance loop](../guides/performance-loop.md).
+[performance loop](../guides/performance-loop.md), and which regime each shipped tuning
+constant was measured in is in
+[the platform tuning guide](../guides/platform-tuning.md).
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.
