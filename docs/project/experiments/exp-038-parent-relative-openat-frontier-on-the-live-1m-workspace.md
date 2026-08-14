@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-038
   title: Parent-relative openat frontier on the live 1M workspace
-  date: 2026-08-13
+  date: "2026-08-13"
   hypotheses:
     - H24
     - H29
@@ -112,17 +112,6 @@ experiment:
           ci_excludes_zero: false
           direction: unclear
           pairs: 6
-        blocked_ns:
-          control_median: 0.0
-          candidate_median: 0.0
-          change_pct: 0.0
-          ci95_low_pct: null
-          ci95_high_pct: null
-          significant: false
-          passes_acceptance: false
-          ci_excludes_zero: false
-          direction: unknown
-          pairs: 0
         peak_rss_bytes:
           control_median: 479166464.0
           candidate_median: 481804288.0

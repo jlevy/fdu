@@ -9,6 +9,17 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const DAY_MS = 24 * 60 * 60 * 1000;
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
+//: Every uv lockfile in the repository, relative to ROOT.
+//
+// Auditing one of them is worse than auditing none, because the summary line then
+// reports a clean Python surface while a whole environment goes unchecked. The
+// benchmark environment carries its own cool-off policy in `benchmarks/uv.toml` and is
+// as much a place a compromised release could land as the Python extension is.
+const UV_LOCKS = [
+  ["crates", "fdu-py", "uv.lock"],
+  ["benchmarks", "uv.lock"],
+];
+
 function fail(message) {
   throw new Error(message);
 }
@@ -707,15 +718,15 @@ async function main() {
     minimumAgeDays: policy.minimumAgeDays,
     exceptions: policy.exceptions,
   };
-  const [cargoText, npmText, uvText, workflows] = await Promise.all([
+  const [cargoText, npmText, uvTexts, workflows] = await Promise.all([
     readFile(path.join(ROOT, "Cargo.lock"), "utf8"),
     readFile(path.join(ROOT, "package-lock.json"), "utf8"),
-    readFile(path.join(ROOT, "crates", "fdu-py", "uv.lock"), "utf8"),
+    Promise.all(UV_LOCKS.map((lock) => readFile(path.join(ROOT, ...lock), "utf8"))),
     workflowFiles(ROOT),
   ]);
   const cargo = parseCargoLock(cargoText);
   const npm = parseNpmLock(npmText);
-  const python = parseUvLock(uvText);
+  const python = uvTexts.flatMap((text) => parseUvLock(text));
   const actions = parseActionUses(workflows);
   validateWorkflowSecurity(workflows);
 

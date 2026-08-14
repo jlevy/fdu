@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-014
   title: "What the breadth-first default costs, on the shipped scheduler"
-  date: 2026-08-11
+  date: "2026-08-11"
   hypotheses:
     - "H50: exp-012 measured a scheduler that no longer exists and exp-013 compared two breadth-first schedulers, so what the shipped default costs against depth-first is unmeasured"
   subject:
@@ -115,17 +115,6 @@ experiment:
           ci_excludes_zero: false
           direction: unclear
           pairs: 20
-        blocked_ns:
-          control_median: 0.0
-          candidate_median: 0.0
-          change_pct: 0.0
-          ci95_low_pct: null
-          ci95_high_pct: null
-          significant: false
-          passes_acceptance: false
-          ci_excludes_zero: false
-          direction: unknown
-          pairs: 0
         peak_rss_bytes:
           control_median: 34643968.0
           candidate_median: 34078720.0
@@ -196,17 +185,6 @@ experiment:
           ci_excludes_zero: true
           direction: improved
           pairs: 20
-        blocked_ns:
-          control_median: 0.0
-          candidate_median: 0.0
-          change_pct: 0.0
-          ci95_low_pct: null
-          ci95_high_pct: null
-          significant: false
-          passes_acceptance: false
-          ci_excludes_zero: false
-          direction: unknown
-          pairs: 0
         peak_rss_bytes:
           control_median: 34570240.0
           candidate_median: 34136064.0

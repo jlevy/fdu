@@ -6,18 +6,18 @@
 
 ## Outcome
 
-On a 976,295-entry workspace, a fresh FDU process with its persisted cache disabled
+On a 976,295-entry workspace, a fresh fdu process with its persisted cache disabled
 produced a depth-one, ten-row tree in a 4.237-second median.
 It was faster than every other tool that produced a tree or retained index.
 Dust took 7.546 seconds, pdu 6.684 seconds, gdu 8.315 seconds, and ncdu 28.576 seconds.
 
 Dumac was the only faster program at 3.566 seconds.
 It performs a narrower job: one hard-link-deduplicated allocated-byte total.
-FDU retains an exact entry index and per-directory roll-ups for subsequent size, count,
+fdu retains an exact entry index and per-directory roll-ups for subsequent size, count,
 recency, type, query, snapshot, and incremental-update operations.
 The dumac result is therefore an informative lower bound, not an equivalent-output loss.
 
-| Tool | Work class | Median wall | Versus paired FDU | 95% interval | Peak RSS |
+| Tool | Work class | Median wall | Versus paired fdu | 95% interval | Peak RSS |
 | --- | --- | ---: | ---: | ---: | ---: |
 | **fdu** | indexed tree and 10-row report | **4.237 s** | baseline | — | 585.2 MiB |
 | pdu | rendered tree | 6.684 s | +60.9% | +49.8% to +82.4% | 16.7 MiB |
@@ -28,7 +28,7 @@ The dumac result is therefore an informative lower bound, not an equivalent-outp
 | diskus | scalar total only | 7.064 s | +66.9% | +58.3% to +77.8% | 34.0 MiB |
 | dua | scalar total only | 8.352 s | +92.5% | +77.0% to +128.2% | 63.3 MiB |
 
-Positive percentages mean the competitor took longer than the immediately adjacent FDU
+Positive percentages mean the competitor took longer than the immediately adjacent fdu
 run. Medians in the table summarize each tool’s samples; paired percentages are the
 stronger comparison because they control for filesystem-cache drift.
 
@@ -42,15 +42,15 @@ allocated bytes.
 
 The benchmark used an Apple M1 Pro MacBook with 32 GiB RAM and a local APFS SSD. It ran
 with the operating system’s filesystem cache in its ordinary warm-steady state.
-“FDU cache off” means no FDU snapshot was read or written; it does not mean the APFS
+“fdu cache off” means no fdu snapshot was read or written; it does not mean the APFS
 metadata cache was purged.
 
-Each competitor ran next to the same immutable FDU binary, with order alternating at
+Each competitor ran next to the same immutable fdu binary, with order alternating at
 each ordinal.
 The run used three warmups and twelve timed pairs per competitor: 210 timed
 process invocations over 71 minutes.
 Every process started fresh.
-FDU, dust, gdu, and pdu emitted depth-one trees; FDU, dust, and gdu were limited to ten
+fdu, dust, gdu, and pdu emitted depth-one trees; fdu, dust, and gdu were limited to ten
 rows. Ncdu built its index with the interactive UI disabled.
 The scalar tools scanned the complete tree and emitted one total.
 
@@ -63,23 +63,23 @@ representing 3,138,498,560 path-counted allocated bytes.
 Tools differ in hard-link attribution, so this is a traversal comparison rather than an
 assertion that their byte totals are equal.
 
-The measured FDU executable was commit `aeac4875d`, version `fdu 0.0.1-dev+gaeac4875d`,
+The measured fdu executable was commit `aeac4875d`, version `fdu 0.0.1-dev+gaeac4875d`,
 with SHA-256 `bc6c69c0ac777e9ea7653ece1931e79a433fca63556dca516e3f76288b5ff910`. Exact
 commands, versions, hashes, host facts, tree facts, medians, and paired intervals are in
 the [reproduction manifest](fdu-live-tool-comparison-manifest-v1.json).
 The operational procedure is in the
 [performance harness README](../../../benchmarks/README.md).
 
-## Why FDU Is Faster Than the Tree Renderers
+## Why fdu Is Faster Than the Tree Renderers
 
 The source review and process metrics agree on the explanation.
 Dust, gdu, and pdu use portable recursive parallelism and spend 35–43 aggregate
 CPU-seconds on this subject.
-FDU uses macOS `getattrlistbulk` to enumerate a directory and retrieve its complete
+fdu uses macOS `getattrlistbulk` to enumerate a directory and retrieve its complete
 stat-tier metadata in batches, then feeds one bounded index consumer.
 It used 19.7 aggregate CPU-seconds while still retaining the complete entry inventory
 and roll-ups. The advantage is fewer kernel transitions and less repeated path
-resolution, not omitted entries: the independent FDU oracle validated the exact
+resolution, not omitted entries: the independent fdu oracle validated the exact
 976,295-entry result, and the pre/post fingerprint guarded the shared subject.
 
 The breadth-first region scheduler also remained the right operating point after the CLI
@@ -95,15 +95,15 @@ Dumac uses the same macOS bulk-enumeration family, but requests only name, objec
 file ID, and allocated size.
 It reduces each subtree immediately to an integer, retains only a 128-shard inode set
 for hard-link deduplication, and uses recursive Rayon work stealing.
-FDU additionally requests device identity, flags, apparent size, mtime, and ctime; it
+fdu additionally requests device identity, flags, apparent size, mtime, and ctime; it
 constructs stable paths and identities; and it retains queryable entries, directory
 roll-ups, extension tallies, errors, provenance, and change-feed state.
 
 That smaller contract explains both parts of the observed gap.
 In the paired dumac arm, dumac used 15.7% less aggregate CPU and 67.4% less user CPU
-than FDU. Its 45.3 MiB peak RSS was also far below FDU’s full index.
+than fdu. Its 45.3 MiB peak RSS was also far below fdu’s full index.
 The 17.6% wall advantage is significant, but copying dumac’s scalar-only retention would
-violate FDU’s one-scan-many-views and incremental-update design.
+violate fdu’s one-scan-many-views and incremental-update design.
 
 The useful response is to make the reusable index denser and cheaper to construct while
 preserving its semantics.
@@ -134,10 +134,10 @@ matrix. The full generated-corpus matrix, dedicated-host provenance, and
 platform-specific collectors remain separate gates.
 
 The tools also expose different products.
-Work classes keep those differences visible, but only FDU’s result was checked against
-FDU’s full semantic oracle.
+Work classes keep those differences visible, but only fdu’s result was checked against
+fdu’s full semantic oracle.
 External output stability and successful traversal are calibration evidence, not proof
-that another tool shares FDU’s hard-link, error, or metric contract.
+that another tool shares fdu’s hard-link, error, or metric contract.
 Dut was source-reviewed but not timed because its current implementation is Linux-only.
 
 <!-- This document follows common-doc-guidelines.md.

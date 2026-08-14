@@ -183,6 +183,48 @@ class StatisticsTests(unittest.TestCase):
         self.assertTrue(cached.needs_snapshot)
         self.assertEqual(cached.snapshot_preparation_mode, "document-seed")
 
+    def test_a_parallel_job_reports_no_blocked_time(self) -> None:
+        # The failure this guards: getrusage sums CPU across threads, so a parallel walk
+        # that keeps four cores busy for 1s reports 4s of CPU against 1s of wall. The
+        # old clamp turned that into "blocked_ns: 0" and the ledger printed it under
+        # "blocked (I/O+sched)" as though the walk had never waited on the filesystem.
+        metrics = {"user_cpu_ns": 3_000_000_000, "system_cpu_ns": 1_000_000_000}
+        measure.add_cpu_metrics(metrics, wall_ns=1_000_000_000, parallel_cpu=True)
+
+        self.assertEqual(metrics["cpu_ns"], 4_000_000_000)
+        self.assertIsNone(metrics["blocked_ns"])
+
+    def test_a_serial_job_still_reports_blocked_time(self) -> None:
+        metrics = {"user_cpu_ns": 200_000_000, "system_cpu_ns": 100_000_000}
+        measure.add_cpu_metrics(metrics, wall_ns=1_000_000_000, parallel_cpu=False)
+
+        self.assertEqual(metrics["cpu_ns"], 300_000_000)
+        self.assertEqual(metrics["blocked_ns"], 700_000_000)
+
+    def test_cpu_above_wall_withdraws_blocked_time_even_when_undeclared(self) -> None:
+        # The safety net for a probe mode that becomes parallel without the catalogue
+        # being updated: the sample itself proves more than one thread ran.
+        metrics = {"user_cpu_ns": 900_000_000, "system_cpu_ns": 400_000_000}
+        measure.add_cpu_metrics(metrics, wall_ns=1_000_000_000, parallel_cpu=False)
+
+        self.assertIsNone(metrics["blocked_ns"])
+
+    def test_every_job_that_walks_or_analyses_declares_parallel_cpu(self) -> None:
+        # These are the jobs whose measured process runs the scan worker pool or the
+        # content analyzer pool. Left undeclared, each would publish a zero.
+        for job_id in (
+            "cold-scan-index",
+            "cold-scan-producer",
+            "warm-revalidate",
+            "cold-snapshot-save",
+            "content-basic",
+            "code-sloc",
+            "markdown-prose",
+            "text-prose",
+        ):
+            with self.subTest(job=job_id):
+                self.assertTrue(measure.PROBE_JOBS[job_id].parallel_cpu)
+
     @staticmethod
     def _samples(job: str, variant: str, values, warmup: bool = False):
         return [

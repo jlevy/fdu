@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-040
   title: Derive an exact rich summary without building an index
-  date: 2026-08-13
+  date: "2026-08-13"
   hypotheses:
     - H59
   subject:
@@ -44,7 +44,7 @@ experiment:
       size_bytes: 1299824
       args:
         - --cache
-        - off
+        - "off"
         - --view
         - summary
         - --format
@@ -57,7 +57,7 @@ experiment:
       size_bytes: 1299840
       args:
         - --cache
-        - off
+        - "off"
         - --view
         - summary
         - --format
@@ -190,12 +190,12 @@ The candidate and the pre-change indexed-summary binary ran twelve adjacent inte
 pairs after three warmups on a frozen 978,339-entry APFS fingerprint.
 Both ran `--cache off --view summary --format json --color never`. The harness removed
 only run-specific generator, root, and timestamp fields before hashing report semantics.
-All 24 FDU samples produced the same semantic digest,
+All 24 fdu samples produced the same semantic digest,
 `e7e45d030a544253dca48f3a41aa912b0ae6f98f625b985731d34e6dfe858b48`.
 
 The independent tree fingerprint found 44,630 duplicate hard-link entries representing
 3,256,389,632 path-counted allocated bytes.
-Both FDU variants retained the same path-accounting semantics.
+Both fdu variants retained the same path-accounting semantics.
 Dumac ran beside the candidate only as a narrower total-only calibration reference; its
 hard-link-deduplicated allocated total is not the correctness oracle for this
 experiment.

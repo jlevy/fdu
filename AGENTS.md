@@ -38,6 +38,24 @@ If it passes, CI should.
 It runs the same feature combinations CI does, notably `--no-default-features`, which is
 how library consumers build and is otherwise never exercised locally.
 
+### Toolchain versions
+
+`make check` needs `uv` at or above the version CI pins through `astral-sh/setup-uv` in
+[the workflow](.github/workflows/ci.yml), and `cargo-deny` on the path for `make audit`.
+
+The uv floor is not cosmetic.
+The uv.toml files express the supply-chain cool-off as a relative `exclude-newer`
+(`"14 days"`), and releases older than the pin cannot parse that form: they abort with
+`failed to parse year in date "14 days"`, which reads like a corrupt config rather than
+a stale tool. That one error takes out docs formatting, the performance harness, and the
+Python jobs at once, so an old uv looks like several unrelated repository failures.
+The `uv-version` preflight now fails fast with a version message instead, and guards
+`check`, `docs-format`, `docs-format-check`, and `test-performance` — the targets that
+would otherwise report the parse error.
+If you hit it on a pre-provisioned image, upgrade with `uv self update` rather than
+working around the config.
+`UV_MIN_VERSION` in the Makefile tracks the CI pin, so move both together.
+
 ## Performance Work
 
 The rules that decide whether a speed change is kept are in

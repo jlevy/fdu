@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-013
   title: Region-scheduled breadth-first traversal
-  date: 2026-08-11
+  date: "2026-08-11"
   hypotheses:
     - "H49: exp-012's RSS cost and its missing ordering benefit both came from the global FIFO, not from preferring shallow work; per-region buckets with round-robin hand-off recover memory while making the shallow preference survive parallelism"
   subject:
@@ -111,17 +111,6 @@ experiment:
           ci_excludes_zero: false
           direction: unclear
           pairs: 12
-        blocked_ns:
-          control_median: 0.0
-          candidate_median: 0.0
-          change_pct: 0.0
-          ci95_low_pct: null
-          ci95_high_pct: null
-          significant: false
-          passes_acceptance: false
-          ci_excludes_zero: false
-          direction: unknown
-          pairs: 0
         peak_rss_bytes:
           control_median: 34963456.0
           candidate_median: 33628160.0

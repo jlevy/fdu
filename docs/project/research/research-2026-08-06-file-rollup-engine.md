@@ -358,17 +358,17 @@ write `1` to `/proc/sys/vm/drop_caches` without a preceding `sync`. The
 defines `1` as page-cache eviction only; reclaimable slab objects such as dentries and
 inodes require `2`, and `3` requests both.
 Those published runs are useful **pagecache-drop-only** evidence, not the per-sample
-`sync` plus `echo 3` controlled-cold regime FDU will use on Linux.
+`sync` plus `echo 3` controlled-cold regime fdu will use on Linux.
 
 The refreshed source at commit
 [`68d4ba2`](https://codeberg.org/201984/dut/commit/68d4ba2d66211e7ca93a2312bb12f5879d0179e1)
 also improves the experiment design.
 Its history reports about 10% from `fstatat`→`statx`, about 12% from per-thread top-N
 heaps, and only about 2% from raw `getdents64` versus `readdir`; these are
-author-reported directional clues, not FDU effect sizes.
+author-reported directional clues, not fdu effect sizes.
 Recent fixes cover a directory spanning multiple 1 MB buffers, an `EINVAL` path that
 previously grew the scratch buffer without bound, and a wrong hard-link-table resize.
-Any FDU raw-directory backend therefore needs bounded-buffer, multi-chunk
+Any fdu raw-directory backend therefore needs bounded-buffer, multi-chunk
 wide-directory, malformed-record, and high-cardinality hard-link tests before
 performance evidence is accepted.
 

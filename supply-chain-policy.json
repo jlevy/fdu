@@ -23,6 +23,28 @@
       "approvedAt": "2026-08-10T03:01:48Z",
       "expiresAt": "2026-08-25T00:00:00Z",
       "followUp": "Remove this record after tryscript 0.2.0 clears the normal 14-day window and re-run the online provenance gate."
+    },
+    {
+      "id": "first-party-softschema-0.6.0",
+      "ecosystem": "pypi",
+      "name": "softschema",
+      "version": "0.6.0",
+      "reason": "Surfaced the first time the audit read benchmarks/uv.lock, which it had never opened. First-party tooling named in AGENTS.md and exempt at resolution time through the exclude-newer-package entry in benchmarks/uv.toml. Published 2026-08-04, so it clears the normal window on 2026-08-18.",
+      "approvedBy": "Repository maintainers in AGENTS.md and SUPPLY-CHAIN-SECURITY.md",
+      "approvedAt": "2026-08-14T00:00:00Z",
+      "expiresAt": "2026-08-19T00:00:00Z",
+      "followUp": "Remove this record once softschema 0.6.0 clears the normal 14-day window on 2026-08-18. If first-party PyPI releases keep needing hand-written records, resolve fdu-3vum instead."
+    },
+    {
+      "id": "first-party-frontmatter-format-0.4.0",
+      "ecosystem": "pypi",
+      "name": "frontmatter-format",
+      "version": "0.4.0",
+      "reason": "Surfaced with softschema 0.6.0, which depends on it. Also first-party, and exempt at resolution time through the exclude-newer-package entries both uv.lock files record. Published 2026-08-01, so it clears the normal window on 2026-08-15.",
+      "approvedBy": "Repository maintainers in AGENTS.md and SUPPLY-CHAIN-SECURITY.md",
+      "approvedAt": "2026-08-14T00:00:00Z",
+      "expiresAt": "2026-08-16T00:00:00Z",
+      "followUp": "Remove this record once frontmatter-format 0.4.0 clears the normal 14-day window on 2026-08-15."
     }
   ],
   "bootstrap": {

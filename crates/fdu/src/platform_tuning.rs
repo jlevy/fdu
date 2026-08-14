@@ -44,8 +44,10 @@ pub(crate) enum Evidence {
 }
 
 impl Evidence {
+    // Reached only from the `const` block and the tests; see the note on `MACOS`.
     /// Usable in a `const` assertion, which is how the tables are checked in builds that
     /// do not select them.
+    #[allow(dead_code)]
     pub(crate) const fn is_measured(self) -> bool {
         matches!(self, Self::Measured)
     }
@@ -60,6 +62,7 @@ pub(crate) struct Tuned<T> {
 
 impl<T: Copy> Tuned<T> {
     /// An experiment on this platform settled this value.
+    #[allow(dead_code)]
     pub(crate) const fn measured(value: T) -> Self {
         Self { value, evidence: Evidence::Measured }
     }
@@ -75,6 +78,7 @@ impl<T: Copy> Tuned<T> {
         self.value
     }
 
+    #[allow(dead_code)]
     pub(crate) const fn evidence(self) -> Evidence {
         self.evidence
     }
@@ -107,6 +111,13 @@ pub(crate) struct Tuning {
 /// themselves are in the ledger; the short version is exp-015 through exp-021 for the
 /// adaptive policy, exp-025 and exp-036 for worker depth, and exp-030 and exp-031 for
 /// the reconciliation wave.
+///
+/// `allow(dead_code)` is a toolchain accommodation, not an admission.  The table is used
+/// by the `const` block below, which evaluates on every target; the MSRV compiler's
+/// dead-code pass does not trace uses through an anonymous `const _` item, so it reports
+/// as unused something the build is in fact checking.  The assertions still fire there,
+/// which is why the lint is silenced rather than the guarantee weakened.
+#[allow(dead_code)]
 const MACOS: Tuning = Tuning {
     scan_threads_cap: Tuned::measured(6),
     adaptive_scan_threads_cap: Tuned::measured(16),
@@ -279,7 +290,7 @@ mod tests {
                 total.dirs,
                 total.bytes,
                 total.newest_mtime_ns,
-                index.by_ext_named(total),
+                total.by_ext,
                 entries,
             )
         };

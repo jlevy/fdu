@@ -402,7 +402,7 @@ def run(
 def _invalidate_semantic_mismatches(
     samples: Sequence[Dict[str, Any]], *, anchor: str
 ) -> List[Dict[str, Any]]:
-    """Invalidate FDU pairs whose stable report semantics differ.
+    """Invalidate fdu pairs whose stable report semantics differ.
 
     Timestamp, generator, and absolute-root fields legitimately differ between two
     adjacent processes.  ``_summary_semantic_digest`` removes only those envelope
@@ -561,12 +561,12 @@ def _summary_semantics(
 def _summary_oracle_error(
     summary: Mapping[str, Any], oracle: Mapping[str, Any]
 ) -> Optional[str]:
-    """Return why an FDU summary disagrees with the independent Python walk."""
+    """Return why an fdu summary disagrees with the independent Python walk."""
     counts = oracle["counts"]
     sizes = oracle["sizes"]
     expected = {
         "files": counts["files"],
-        # FDU's summary describes descendants; the fingerprint also counts the root.
+        # fdu's summary describes descendants; the fingerprint also counts the root.
         "dirs": counts["directories"] - 1,
         "bytes": sizes["apparent_bytes"],
         "allocated": sizes["allocated_bytes"],

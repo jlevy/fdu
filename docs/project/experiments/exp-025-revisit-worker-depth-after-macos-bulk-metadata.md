@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-025
   title: Revisit worker depth after macOS bulk metadata
-  date: 2026-08-12
+  date: "2026-08-12"
   hypotheses:
     - H52
   subject:
@@ -115,17 +115,6 @@ experiment:
           ci_excludes_zero: true
           direction: regressed
           pairs: 12
-        blocked_ns:
-          control_median: 0.0
-          candidate_median: 0.0
-          change_pct: 0.0
-          ci95_low_pct: null
-          ci95_high_pct: null
-          significant: false
-          passes_acceptance: false
-          ci_excludes_zero: false
-          direction: unknown
-          pairs: 0
         peak_rss_bytes:
           control_median: 326819840.0
           candidate_median: 436051968.0
@@ -196,17 +185,6 @@ experiment:
           ci_excludes_zero: true
           direction: regressed
           pairs: 12
-        blocked_ns:
-          control_median: 0.0
-          candidate_median: 0.0
-          change_pct: 0.0
-          ci95_low_pct: null
-          ci95_high_pct: null
-          significant: false
-          passes_acceptance: false
-          ci_excludes_zero: false
-          direction: unknown
-          pairs: 0
         peak_rss_bytes:
           control_median: 327163904.0
           candidate_median: 435372032.0

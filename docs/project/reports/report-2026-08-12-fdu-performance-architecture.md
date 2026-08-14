@@ -6,7 +6,7 @@
 
 ## Abstract
 
-FDU builds a reusable index of an entire file tree while computing size, count, recency,
+fdu builds a reusable index of an entire file tree while computing size, count, recency,
 and file-type roll-ups for every directory.
 That product is more demanding than a scalar `du -sh` total, so speed cannot come from
 discarding the index or weakening its correctness contract.
@@ -20,7 +20,7 @@ wall time and a 52.0% improvement in verified warm-open wall time against the or
 implementation on the primary 60,067-entry subject.
 On a heterogeneous 1,007,659-entry workspace, the integrated branch was 31.3% faster
 than merged `origin/main` with exact oracle parity.
-A separate 901,963-entry product comparison measured a 3.324-second FDU median, versus
+A separate 901,963-entry product comparison measured a 3.324-second fdu median, versus
 6.016 seconds for dust, 5.657 for pdu, and 6.782 for Go gdu on an M1 Pro MacBook with a
 local APFS SSD.
 
@@ -47,7 +47,7 @@ representation work, including a selected-total scanner matched to dumac.
 They cut user CPU and memory but failed the wall-time gate, confirming that directory
 opens and bulk system calls now own the warm-APFS floor.
 Exp-045 and exp-046 are the open-ahead follow-ups: exact-binary profiles localize both
-FDU and dumac to `open` plus `getattrlistbulk`; exp-045’s pairwise helper was superseded
+fdu and dumac to `open` plus `getattrlistbulk`; exp-045’s pairwise helper was superseded
 by exp-046’s shared pool, which remains unretained pending quiet-host confirmation.
 
 A subsequent Linux campaign closed the warm-open inversion those numbers did not cover —
@@ -61,7 +61,7 @@ platform, in a particular cache state, and
 
 All M1/APFS numbers in this paper use a repeated-workload warm-steady operating-system
 filesystem cache, established by a complete independent fingerprint and explicit
-warmups. “Cold” job names refer to an absent FDU snapshot, not an evicted OS cache.
+warmups. “Cold” job names refer to an absent fdu snapshot, not an evicted OS cache.
 Warm-steady is not a full-residency claim: the near-million-entry subject exceeds the
 host’s vnode target.
 Controlled-cold Linux and dedicated-volume macOS results remain separate future evidence
@@ -70,7 +70,7 @@ advantage.
 
 ## The Product Being Optimized
 
-FDU’s cold path produces one complete inventory from which a caller can ask multiple
+fdu’s cold path produces one complete inventory from which a caller can ask multiple
 questions without another filesystem walk.
 Every entry has exact stat-tier metadata; every directory has precomputed roll-ups;
 stable identities support snapshots, queries, changes, and progressive results.
@@ -112,7 +112,7 @@ late deferred-change overflow resumes at the first unapplied wave instead of ret
 completed work and double-counting its statistics.
 The evidence review fixed two harness defects as well: the component probe now emits
 newest regular-file mtime as required by the real-tree oracle, and the real-tree
-allocated-byte aggregate uses apparent size on non-POSIX hosts, matching both FDU and
+allocated-byte aggregate uses apparent size on non-POSIX hosts, matching both fdu and
 the oracle’s own engine digest when native block counts are unavailable.
 
 Against freshly rebuilt merged `origin/main`, the integrated branch measured:
@@ -191,7 +191,7 @@ work, but retained a clear ownership boundary: producers observe the filesystem 
 the index consumer commits state.
 
 This was the foundational change.
-The original gap to dust was not that FDU performed intrinsically more expensive
+The original gap to dust was not that fdu performed intrinsically more expensive
 userland work; it was leaving cores idle while metadata requests waited.
 
 ### Cheaper Index and Snapshot Constants
@@ -250,7 +250,7 @@ while twelve and sixteen were slower (exp-036).
 ### macOS Bulk Metadata
 
 The largest platform-specific gain came from replacing separate directory enumeration
-and per-entry stat calls with `getattrlistbulk`. The reader requests all attributes FDU
+and per-entry stat calls with `getattrlistbulk`. The reader requests all attributes fdu
 needs for its stat-tier contract, validates record bounds and returned masks, and falls
 back for the complete directory on malformed data, unsupported filesystems, mount
 points, or firmlinks.
@@ -262,9 +262,9 @@ improved warm-open wall time 34.4% and cut system CPU 54.0% at that scale (exp-0
 The source reviews explain the cross-tool result.
 Dust, gdu, and pdu use portable recursive parallelism and consumed 35–43 aggregate
 CPU-seconds on the final workspace.
-FDU’s bulk path built its full index and report in 19.7 CPU-seconds.
+fdu’s bulk path built its full index and report in 19.7 CPU-seconds.
 Fewer kernel transitions, rather than skipped entries, account for the difference; exact
-FDU oracle checks and immutable tree fingerprints guard completeness.
+fdu oracle checks and immutable tree fingerprints guard completeness.
 
 ### Parallel Immutable Comparison and No-Op Elimination
 
@@ -303,7 +303,7 @@ pressure tree (exp-034). On the then-1,007,659-entry workspace it was 31.3% fast
 cold indexing and 36.6% faster for the producer (exp-035).
 
 The final fresh-process comparison used the self-contained 901,963-entry benchmark tree.
-It ran twelve adjacent interleaved pairs per competitor after three warmups, with FDU’s
+It ran twelve adjacent interleaved pairs per competitor after three warmups, with fdu’s
 persisted cache disabled.
 Tree/index and scalar work classes ran as separate matrices:
 
@@ -319,17 +319,17 @@ Tree/index and scalar work classes ran as separate matrices:
 | diskus | scalar total | 5.708 s |
 | dua | scalar total | 5.459 s |
 
-FDU beat every tree or index product and every scalar tool other than the statistically
+fdu beat every tree or index product and every scalar tool other than the statistically
 tied dumac comparison.
 Dumac’s 2.2% lower paired point estimate is an upper-bound signal: it requests fewer
 attributes and retains only a total and hard-link inode set.
 The interval [−5.7%, +1.7%] crosses zero, and dumac nevertheless used 85.4% more
-aggregate CPU and 224.5% more peak RSS than FDU’s richer summary.
+aggregate CPU and 224.5% more peak RSS than fdu’s richer summary.
 H67 then replayed both the current and published exact binary pairs under a busier host
-regime. Dumac led current FDU by 16.19% in twelve pairs and the published FDU binary by
+regime. Dumac led current fdu by 16.19% in twelve pairs and the published fdu binary by
 11.1% in a five-pair diagnostic.
 The intervening reconciliation-only change was therefore not a live-scan regression.
-FDU sustained 3.46 aggregate core-equivalents and dumac 5.64, while exact process
+fdu sustained 3.46 aggregate core-equivalents and dumac 5.64, while exact process
 samples put 96.10% and 94.21% of worker tops, respectively, in `open` or
 `getattrlistbulk`. The relative wall result is sensitive to host pressure and
 concurrency; the original quiet-host matrix remains the published typical comparison.
@@ -500,29 +500,29 @@ count. These are good practices: cold and warm cache states are separate product
 per-sample cache preparation is stronger than a one-time purge, and a concurrency claim
 should include a measured sweep.
 
-FDU’s protocol adds controls needed for an index whose correctness and output surface
+fdu’s protocol adds controls needed for an index whose correctness and output surface
 are richer:
 
 - adjacent paired scheduling with alternating order and bootstrap confidence intervals
 - exact executable hashes, versions, commands, host, filesystem, and tree fingerprints
 - pre-run and post-run mutation detection
-- an independent exact oracle for FDU experiment output
+- an independent exact oracle for fdu experiment output
 - retained invalid samples, stable-output digests, hard-link prevalence, and process
   resource metrics
 - explicit indexed-tree, rendered-tree, and scalar-total work classes
 
 The protocols are complementary.
-FDU already performs broader worker-depth experiments and stronger provenance and
+fdu already performs broader worker-depth experiments and stronger provenance and
 semantic validation.
 A future Linux run should add diskus’s per-sample `sync` plus `drop_caches` preparation
 as a **controlled-cold** regime while retaining a separate warm-steady regime and all
-FDU validity checks.
+fdu validity checks.
 A cache-preparation command succeeding is not enough by itself; the result should record
 the command, privilege boundary, kernel state or observable proof, and failures per
 sample.
 
 Diskus reports arithmetic means, standard deviations, minima, maxima, and relative
-ratios. FDU should retain its paired median and bootstrap interval as the decision
+ratios. fdu should retain its paired median and bootstrap interval as the decision
 statistic because filesystem timings are skewed and drift over long runs, while also
 keeping raw samples so means or Hyperfine-compatible summaries can be reconstructed.
 
@@ -537,7 +537,7 @@ bytes, or file counts as separate modes.
 Its transferable mechanisms are a reused 1 MiB `getdents64` buffer, dirfd-relative
 `statx`, one-CAS sibling-batch publication, demand-sized worker wakeups, early top-N
 rejection, and last-child bottom-up roll-up.
-Because the source is GPL, FDU uses these descriptions and measurements for independent
+Because the source is GPL, fdu uses these descriptions and measurements for independent
 experiments only; no implementation is copied or linked.
 
 The refresh also makes the validity bar stricter.
@@ -568,7 +568,7 @@ Exp-043 also retained six workers: eight looked promising on the 901k screen but
 H64’s complete selected-total specialization then changed wall by only −1.15%
 [−2.24%, +0.44%] and did not beat dumac despite halving user CPU (exp-044).
 
-1. **Confirm a shared directory-opener pool (H70, `fdu-druf`).** H67 found six FDU
+1. **Confirm a shared directory-opener pool (H70, `fdu-druf`).** H67 found six fdu
    workers and ten dumac workers at the same synchronous `open` and `getattrlistbulk`
    boundary. H69’s pairwise handoff was inconclusive.
    H70’s shared two-opener screen improved wall 3.98% [0.70%, 9.87%], but doubled
@@ -667,7 +667,7 @@ Linux host with:
 - ext4 and XFS results or an explicit record that only one filesystem was available,
   with a worker-count sweep rather than an inherited thread constant
 - exact binary, compiler, kernel, filesystem, mount, CPU, memory, and storage provenance
-- the FDU oracle, pre/post fingerprint, work classes, paired schedule, raw resource
+- the fdu oracle, pre/post fingerprint, work classes, paired schedule, raw resource
   metrics, and confidence intervals used on macOS
 - dut-specific wide-directory, hard-link-growth, selected-size-ordering, and partial
   error postconditions before comparator timing is accepted
@@ -680,7 +680,7 @@ would hide the mechanism the benchmark is meant to expose.
 
 ## Conclusion
 
-FDU’s performance campaign has validated a coherent architecture.
+fdu’s performance campaign has validated a coherent architecture.
 A bounded parallel producer hides metadata latency.
 Region scheduling makes breadth-first progress cheap.
 Adaptive concurrency responds to observed service time.
@@ -690,7 +690,7 @@ Immutable parallel comparison keeps no-ops away from the single mutation authori
 
 Together these changes more than halved both cold indexed scans and verified warm opens
 without changing query or cache semantics.
-The million-scale product comparison now places FDU ahead of the established tree
+The million-scale product comparison now places fdu ahead of the established tree
 renderers on the measured M1/APFS host.
 The small scalar-only gap is now experimentally resistant to representation changes; the
 reusable tree’s memory footprint remains the larger defect.

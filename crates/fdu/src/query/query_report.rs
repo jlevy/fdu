@@ -27,7 +27,7 @@ use crate::content::{
     MetricValues,
 };
 use crate::engine_contract::{EntryKind, Freshness, ScanScope};
-use crate::index::{EntryId, ExtTally, Index, RollUp};
+use crate::index::{EntryId, ExtTally, Index, RollUpScalars};
 use crate::query::query_selection::{Bound, Candidate, Selection, SizeMetric, SortKey};
 
 /// Which roll-up or listing a view reports.
@@ -583,7 +583,7 @@ fn merge_summary(into: &mut SummaryRow, from: &SummaryRow) {
 fn build_section(view: ViewSpec, index: &Index, query: &Query, walked: Option<&Walked>) -> Section {
     match view {
         ViewSpec::Summary => Section::Summary(match walked {
-            None => summary_from_rollup(index.total()),
+            None => summary_from_scalars(index.total_scalars()),
             Some(walked) => walked.per_directory.get(&EntryId::ROOT).copied().unwrap_or_default(),
         }),
         ViewSpec::Extensions => Section::Extensions(extension_rows(index, query, walked)),
@@ -596,7 +596,7 @@ fn build_section(view: ViewSpec, index: &Index, query: &Query, walked: Option<&W
 }
 
 /// A summary row taken straight from pre-computed roll-up state.
-fn summary_from_rollup(rollup: &RollUp) -> SummaryRow {
+fn summary_from_scalars(rollup: RollUpScalars) -> SummaryRow {
     SummaryRow {
         files: rollup.files,
         dirs: rollup.dirs,
@@ -609,7 +609,7 @@ fn summary_from_rollup(rollup: &RollUp) -> SummaryRow {
 /// Rows for the types view.
 fn extension_rows(index: &Index, query: &Query, walked: Option<&Walked>) -> Vec<TypeRow> {
     let tallies: BTreeMap<String, ExtTally> = match walked {
-        None => index.by_ext_named(index.total()),
+        None => index.total().by_ext,
         Some(walked) => walked.by_ext.clone(),
     };
 
@@ -882,7 +882,7 @@ fn every_entry(index: &Index) -> Vec<FileRow> {
 /// The tree view's root node, expanded to the requested depth.
 fn tree_node(index: &Index, query: &Query, walked: Option<&Walked>) -> TreeNode {
     let root_summary = match walked {
-        None => summary_from_rollup(index.total()),
+        None => summary_from_scalars(index.total_scalars()),
         Some(walked) => walked.per_directory.get(&EntryId::ROOT).copied().unwrap_or_default(),
     };
 
@@ -1016,7 +1016,7 @@ fn child_rows(
             continue;
         }
         let summary = match walked {
-            None => index.rollup_of(child).map(summary_from_rollup).unwrap_or_default(),
+            None => index.rollup_scalars_of(child).map(summary_from_scalars).unwrap_or_default(),
             Some(walked) => walked.per_directory.get(&child).copied().unwrap_or_default(),
         };
         let name = child_path

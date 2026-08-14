@@ -13,8 +13,8 @@ make malformed input, nested inline constructs, and reference links unreliable.
 ## Gate Results
 
 - The parser exposes borrowed streaming events and requires no owned document tree.
-- Fdu feeds it only files already admitted as UTF-8 and bounded by the existing 16 MiB
-  per-file default.
+- fdu streams every eligible file through EOF and retains Markdown metrics only for
+  content admitted as UTF-8.
 - Default `pulldown-cmark` features are disabled, so the HTML renderer, CLI, `getopts`,
   and serialization features are absent.
 - The locked addition is `pulldown-cmark` plus `memchr` and `unicase`; the repository’s
@@ -33,7 +33,7 @@ Runtime projection performance is measured separately after semantic goldens fre
 ## Owned Semantics
 
 Pulldown-cmark owns CommonMark parsing, but fdu owns the metric dialect.
-Fdu’s event reducer decides what is reader-visible, counts paragraph blocks, applies the
+fdu’s event reducer decides what is reader-visible, counts paragraph blocks, applies the
 same additive logical-word statistics as plain text, derives pages only after query
 aggregation, and versions the result as `markdown-prose-v1`. Changing parser options or
 projection rules requires a new analyzer version and fixture review.

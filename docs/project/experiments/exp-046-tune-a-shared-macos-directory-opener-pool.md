@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-046
   title: Tune a shared macOS directory-opener pool
-  date: 2026-08-13
+  date: "2026-08-13"
   hypotheses:
     - H70
   subject:
@@ -44,7 +44,7 @@ experiment:
       size_bytes: 1299856
       args:
         - --cache
-        - off
+        - "off"
         - --view
         - summary
         - --format
@@ -57,7 +57,7 @@ experiment:
       size_bytes: 1332944
       args:
         - --cache
-        - off
+        - "off"
         - --view
         - summary
         - --format
@@ -186,8 +186,8 @@ CPU and involuntary context switches also rose 3.42% and 217.15% in that arm.
 A direct twelve-pair four-opener comparison with dumac produced 3.156- and 3.050-second
 medians, respectively, with a paired dumac change of −0.09% [−7.83%, +37.54%]. Both
 tools suffered large outliers, so wall time was unresolved.
-Dumac used 40.68% more aggregate CPU and 223.23% more peak RSS than the experimental FDU
-binary; equivalently, FDU used 28.92% less CPU and 69.06% less memory than dumac.
+Dumac used 40.68% more aggregate CPU and 223.23% more peak RSS than the experimental fdu
+binary; equivalently, fdu used 28.92% less CPU and 69.06% less memory than dumac.
 
 ## Current Verdict
 

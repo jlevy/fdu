@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-003
   title: Skip journalling on the bootstrap apply path
-  date: 2026-08-11
+  date: "2026-08-11"
   hypotheses:
     - H8
   subject:
@@ -96,14 +96,6 @@ experiment:
           ci95_high_pct: 7.384
           significant: false
           pairs: 14
-        blocked_ns:
-          control_median: 0.0
-          candidate_median: 0.0
-          change_pct: 0.0
-          ci95_low_pct: null
-          ci95_high_pct: null
-          significant: false
-          pairs: 0
         peak_rss_bytes:
           control_median: 36806656.0
           candidate_median: 35422208.0
@@ -156,14 +148,6 @@ experiment:
           ci95_high_pct: 7.07
           significant: false
           pairs: 14
-        blocked_ns:
-          control_median: 0.0
-          candidate_median: 0.0
-          change_pct: 0.0
-          ci95_low_pct: null
-          ci95_high_pct: null
-          significant: false
-          pairs: 0
         peak_rss_bytes:
           control_median: 44998656.0
           candidate_median: 43507712.0

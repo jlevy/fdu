@@ -8,9 +8,9 @@
 
 ## Overview
 
-Make a warm start on macOS cost O(changes) instead of O(tree) by replaying the FSEvents
-persistent journal since the snapshot was written, and revalidating only the directories
-it names.
+Make a warm start on macOS cost O(changes) instead of O(tree) by replaying a
+device-relative FSEvents stream from the last boundary whose work was applied, and
+revalidating only the normalized scopes its events name.
 
 Today a warm start is a strict superset of a cold scan: load the snapshot, build the
 index, then walk the entire tree again to prove the snapshot still describes it.
@@ -20,11 +20,13 @@ edit is invisible to every ancestor directory, including its immediate parent (v
 empirically on APFS; see the
 [change-propagation analysis](../../research/research-2026-08-10-performance-frontier.md)).
 Beating the per-entry stat floor therefore requires an operation log, and macOS has one
-on disk already: `fseventsd` journals directory-level change events persistently, across
-process exits and reboots.
-Storing the journal cursor in the snapshot and replaying “what changed since” turns a
-quiet tree’s revalidation from ~700 ms at 60k entries into an approximately
-size-independent tens of milliseconds.
+on disk already: `fseventsd` journals change events persistently, across process exits
+and reboots. Storing an applied journal boundary in the snapshot and replaying “what
+changed since” can avoid most of that sweep.
+How much it avoids is a hypothesis until the state machine below is implemented and
+measured: no experiment in the ledger supports a size-independent latency claim for this
+path, and the honest statement is that a quiet tree should cost O(changes) work plus a
+fixed replay overhead of unknown size.
 The Background section replaces that original serial comparison with exp-030’s current
 bounded-parallel rung-1 baseline and states where the journal is transformative rather
 than incremental.
@@ -44,10 +46,12 @@ fails closed on every row, and why the full sweep remains the backstop on every 
 
 ## Goals
 
-- Persist an FSEvents journal cursor (platform tag, volume UUID, event ID, capture time)
-  in the snapshot, on macOS, at save time
-- On load, when a strict gate passes, replay the journal since the cursor and revalidate
-  only the named directories, emitting ordinary conditional deltas
+- Persist an FSEvents journal boundary (platform tag, volume UUID, applied event ID,
+  capture time) in the snapshot, on macOS, taking the fence *before* the scan and
+  storing only the boundary whose work reached the index
+- On load, when a strict gate passes, replay a device-relative stream since that
+  boundary, normalize the item events it delivers into directory scopes, and revalidate
+  only those scopes, emitting ordinary conditional deltas
 - Map every journal degradation signal onto the existing escalation vocabulary: scoped
   `InvalidateSubtree` where the flag is scoped, full sweep where it is not
 - Keep correctness identical to the sweep: same oracle, same digests, verified per trial
@@ -97,12 +101,15 @@ snapshot cache a net loss for a one-shot query today.
 Three experiments (exp-002, exp-004, exp-005 in the
 [ledger](../../reports/report-2026-08-10-fdu-performance-experiments.md)) improved
 constants; none can change the asymptotics, because the sweep must stat every entry to
-be sound. Only change information can — and `fseventsd` records it: directory-granular
-events, persisted to disk in per-volume journals, addressed by IDs from a machine-wide
-monotonic counter, replayable from a stored ID via `FSEventStreamCreate(sinceWhen:)`,
-with flags for *several* of the ways history can be insufficient
-(`kFSEventStreamEventFlagMustScanSubDirs`, `UserDropped`, `KernelDropped`,
-`EventIdsWrapped`, `HistoryDone`, `RootChanged`, `Mount`, `Unmount`).
+be sound. Only change information can — and `fseventsd` records it, persisted to disk in
+per-volume journals.
+Event IDs come from a system-wide monotonic counter, but the stream, its UUID, and the
+retained history are bound to a volume, so software that persists a cursor across
+launches is expected to create the stream per disk with
+`FSEventStreamCreateRelativeToDevice` rather than per path with `FSEventStreamCreate`. A
+stored ID is replayed as `sinceWhen` either way, with flags for *several* of the ways
+history can be insufficient (`kFSEventStreamEventFlagMustScanSubDirs`, `UserDropped`,
+`KernelDropped`, `EventIdsWrapped`, `HistoryDone`, `RootChanged`, `Mount`, `Unmount`).
 
 The iterative loop has since improved those constants without changing that shape.
 On the current 60,067-entry subject, exp-032 measures about 290 ms for cold index and
@@ -126,12 +133,20 @@ most of the intervening history, raising none of these flags.
 Every gate, every age bound, and the naming of [`Source::JournalScoped`] descends from
 that one observation.
 
-The journal’s directory granularity does carry exactly the information directory mtimes
-do not: a content edit to `a/b/c/file.txt` produces an event naming `a/b/c`, because
-`fseventsd` logs operations rather than namespace timestamps.
-That is what makes subtree skipping *informative* here and useless when inferred from
-mtimes — a strictly better signal, but still not a sound one, because being told the
-truth about what changed is not the same as being told the whole truth.
+The journal does carry exactly the information directory mtimes do not: a content edit
+to `a/b/c/file.txt` produces an event, because `fseventsd` logs operations rather than
+namespace timestamps.
+What it does not carry is a promise about *granularity*. This design requests
+`kFSEventStreamCreateFlagFileEvents`, so a callback names a filesystem item rather than
+a changed directory, and coalescing may report an item and its parent in either order.
+Soundness therefore comes from normalization, not from the callback shape: a file or
+symlink event becomes a relist of its parent directory, a directory create, remove, or
+rename becomes a parent relist plus a subtree invalidation when the directory still
+exists, and any item flag combination the normalizer cannot resolve falls back to the
+full sweep. That normalization is what makes subtree skipping *informative* here and
+useless when inferred from mtimes — a strictly better signal, but still not a sound one,
+because being told the truth about what changed is not the same as being told the whole
+truth.
 
 ### What the journal is worth, honestly
 
@@ -181,7 +196,7 @@ Binding options, evaluated against this repository’s supply-chain policy:
 
 | Option | New crates in the locked tree | Notes |
 | --- | --- | --- |
-| `fsevent-sys 4.1.0` (already present via `notify`) + own declarations | **0** | Ships `FSEventStreamCreate`, start/stop/invalidate/release, `FSEventsGetCurrentEventId`, and every event flag. Leaves `FSEventStreamSetDispatchQueue` and `FSEventsCopyUUIDForDevice` commented out; both are declared in our FFI module, alongside `dispatch_queue_create`/`dispatch_release` (libdispatch is part of libSystem, linked on every macOS binary — no crate needed). |
+| `fsevent-sys 4.1.0` (already present via `notify`) + own declarations | **0** | Ships `FSEventStreamCreate`, start/stop/invalidate/release, `FSEventsGetCurrentEventId`, and every event flag. Leaves `FSEventStreamCreateRelativeToDevice`, `FSEventStreamSetDispatchQueue`, and `FSEventsCopyUUIDForDevice` commented out; all three are declared in our FFI module, alongside `dispatch_queue_create`/`dispatch_release` (libdispatch is part of libSystem, linked on every macOS binary — no crate needed). |
 | `objc2-core-services` + `objc2-core-foundation` + `dispatch2` | ~4–5 | The modern generated bindings (verified: all four needed functions exist, including `FSEventStreamSetDispatchQueue` and `FSEventsCopyUUIDForDevice`). Signatures machine-derived from Apple headers. |
 
 **Decision: option 1.** The deciding fact is that `fsevent-sys` is *already in
@@ -204,8 +219,14 @@ Replay semantics that the implementation and its tests must honor, from Apple’
 documentation and Watchman’s source (mechanics only — see the Overview’s honesty note on
 how far its production use actually goes):
 
-- `sinceWhen` delivers events with IDs *strictly greater than* the stored ID, so the
-  cursor is `FSEventsGetCurrentEventId()` captured at save time.
+- `sinceWhen` delivers events with IDs *strictly greater than* the stored ID, so what is
+  persisted must be a boundary whose work is already in the index — never one sampled
+  later. Capturing `FSEventsGetCurrentEventId()` at save time gets this backwards: the
+  walk ran *before* the save, so a change made during the walk and missed by it sits
+  below the saved cursor and is never replayed.
+  The fence is therefore taken *before* the scan begins, and a replay advances the
+  stored boundary only as far as the events it actually applied.
+  Re-scanning a little on the next open is the safe direction; skipping a change is not.
 - The end of history is a sentinel event flagged `HistoryDone` whose path is meaningless
   and must be ignored.
 - Event IDs are allocated from a machine-wide monotonic counter, but the journals they
@@ -242,7 +263,8 @@ journal gate ──► pass ──► replay since cursor ──► changed-dir 
                                      index.apply  (unchanged contract)
                                               │
                                               ▼
-                                     snapshot.save with new cursor
+                                     snapshot.save persists the pre-scan
+                                     or replay-advanced cursor
 ```
 
 The scoped revalidation reuses the sweep’s own emission logic bounded to a directory
@@ -282,7 +304,7 @@ CoreServices. Every row falls closed to the sweep:
 | # | Condition | Decision |
 | --- | --- | --- |
 | G1 | Not macOS, feature off, or `--revalidate=full` | full sweep |
-| G2 | Snapshot has no cursor (older format, or first save) | full sweep; write cursor on save |
+| G2 | Snapshot has no cursor (older format, or first save) | full sweep; persist its pre-scan cursor with the snapshot |
 | G3 | Root’s current volume UUID ≠ stored UUID (moved disk, container change, UUID unreadable) | full sweep |
 | G4 | Stored event ID > current volume event ID (regression: journal purged, clock wrapped) | full sweep |
 | G5 | Snapshot older than `max_journal_age` (default **24 hours**) | full sweep — load-bearing, not paranoia: the spike showed history is purged *silently*, so age is the only protection |
@@ -313,8 +335,8 @@ information: a snapshot whose scan crossed devices simply never carries a cursor
 journal_cursor: u8 tag        0 = none, 1 = fsevents-v1  (room for usn-v1 = 2)
 if fsevents-v1:
   volume_uuid: 16 bytes
-  event_id:    u64            FSEventsGetCurrentEventId() at save time
-  captured_at: i64 ns         wall clock at save, for G5
+  event_id:    u64            FSEventsGetCurrentEventId() immediately before the scan
+  captured_at: i64 ns         wall clock at the same pre-scan fence, for G5
 ```
 
 The cursor is captured **before** the scan that populates the index begins, not after it
@@ -338,9 +360,12 @@ snapshot like any other parse failure.
   The only module in the workspace allowed `unsafe`.
 - `crates/fdu/src/scan.rs` — `revalidate_dirs(index, dirs, config, sink)`: the bounded
   sweep. Reuses the existing per-directory emission; no new op kinds.
-- `crates/fdu/src/snapshot.rs` — format v3 fields, cursor capture on save.
+- `crates/fdu/src/snapshot.rs` — format v3 fields; encode and decode the cursor supplied
+  by the caller.
 - `crates/fdu/src/cli.rs` — wire the gate into the cached path; `--revalidate=auto|full`
   (default `auto`; `full` forces the sweep).
+  Capture the event ID and timestamp before a full scan begins, carry that fence with
+  the resulting index, and pass it to snapshot save for persistence.
   `--cache off` remains the explicit full-scan, no-snapshot policy and bypasses the
   journal path unchanged.
 - Feature `journal` in `crates/fdu/Cargo.toml`: gates `dep:fsevent-sys` (macOS only via
@@ -351,7 +376,8 @@ snapshot like any other parse failure.
 
 ### API changes
 
-Additive only. `snapshot::save`/`load` signatures unchanged (cursor handled internally).
+Additive only. `snapshot::save`/`load` signatures stay unchanged: the index carries the
+optional pre-scan or replay-advanced cursor, `save` encodes it, and `load` restores it.
 New public surface: `JournalCursor`, `GateDecision`, and `scan::revalidate_dirs`, all
 documented as macOS-accelerator plumbing with the sweep as the portable contract.
 
@@ -690,8 +716,8 @@ Phase 2’s acceptance should be measured at 500k+ or on a cold cache.
 
 ### Phase 1: Format and gate (mergeable alone; unblocks the block-format spike)
 
-- [ ] Snapshot format v3: cursor section, save-side capture stub (writes `none` on all
-  platforms), load-side decode, corrupt-cursor fails closed
+- [ ] Snapshot format v3: cursor section, encode-side cursor field stub (writes `none`
+  on all platforms), load-side decode, corrupt-cursor fails closed
 - [ ] `journal/mod.rs`: cursor types, gate decision table as a pure function,
   changed-set normalization; exhaustive unit tests for every gate row
 - [ ] Golden and round-trip tests: v2 loads as cursor-absent; v3 round-trips
@@ -711,7 +737,8 @@ Phase 2’s acceptance should be measured at 500k+ or on a cold cache.
   replay with deadline; scoped `#[allow(unsafe_code)]` with per-call safety comments
 - [ ] `revalidate_dirs` orchestration in scan.rs, feeding changed roots into exp-026’s
   bulk-backed subtree reconciler, plus `InvalidateSubtree` resolution for G8
-- [ ] CLI: gate wiring, `--revalidate` flag, save-side cursor capture on macOS
+- [ ] CLI: gate wiring and `--revalidate` flag; capture the cursor immediately before a
+  full scan and pass that pre-scan fence through to snapshot save on macOS
 - [ ] Integration tests (macOS CI leg): mutate-then-journal-revalidate equals fresh scan
   by engine digest; UUID mismatch, event-ID regression, and forced `MustScanSubDirs`
   each degrade correctly

@@ -170,12 +170,12 @@ PYTHONDONTWRITEBYTECODE=1 uv run --project benchmarks --frozen --group dev \
 
 Homebrew installs the Go disk analyzer as `gdu-go` when GNU coreutils also owns `gdu`.
 Resolve and hash the actual executable rather than assuming the command name.
-Each competitor runs immediately beside FDU with alternating order.
+Each competitor runs immediately beside fdu with alternating order.
 The v3 fingerprint records redacted counts, depth, bytes, newest file time, and in-tree
 hard-link duplication; any baseline drift, pre/post mutation, timeout, or nonzero exit
 makes the run non-publishable.
 The v3 summary oracle additionally checks files, descendant directories, apparent bytes,
-allocated bytes, and newest regular-file mtime on every FDU sample.
+allocated bytes, and newest regular-file mtime on every fdu sample.
 Partial, stale, cached, or error-bearing output is invalid.
 Reports label indexed-tree, rendered-tree, transient-summary, and total-only work
 classes because those jobs are not semantically identical.
@@ -190,7 +190,7 @@ RAM.” Before timing, the independent fingerprint walks every entry, and every 
 receives explicit full-tree warmups; future JSON records retain both facts.
 The label means repeated-workload steady state under whatever metadata-cache pressure
 the subject creates.
-It never means an FDU snapshot was used, and it never implies that all dentries, inodes,
+It never means an fdu snapshot was used, and it never implies that all dentries, inodes,
 vnodes, or APFS metadata blocks remained resident.
 
 ### Future Linux warm and cold comparison
@@ -204,7 +204,7 @@ It also uses a parameter scan before selecting a comparator’s worker count.
 
 The future Linux matrix adopts that per-sample cache preparation for its
 `controlled-cold` regime and reports a separate `verified-warm` regime.
-It retains the stronger FDU evidence contract: adjacent paired scheduling, exact
+It retains the stronger fdu evidence contract: adjacent paired scheduling, exact
 binaries and host facts, immutable pre/post fingerprints, correctness oracles, work
 classes, output digests, resource metrics, raw samples, and bootstrap confidence
 intervals.

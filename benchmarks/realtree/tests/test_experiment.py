@@ -190,6 +190,93 @@ class FromRunTests(unittest.TestCase):
         self.assertIn("{root}", payload["reference_tools"][0]["argv"])
 
 
+class HeadlineSelectionTests(unittest.TestCase):
+    """The recorded change must belong to the pair the experiment claims to be about.
+
+    Every case here used to return quietly: a wrong number, or a null that reads as
+    "this experiment was not comparative". The artifact is the permanent record the
+    ledger is regenerated from, so a wrong number here outlives the run that made it.
+    """
+
+    @staticmethod
+    def _arguments(**overrides):
+        import argparse
+
+        values = {
+            "primary_job": "cold-scan-index",
+            "primary_metric": "wall_ns",
+            "control_variant": None,
+            "candidate_variant": None,
+        }
+        values.update(overrides)
+        return argparse.Namespace(**values)
+
+    @staticmethod
+    def _sweep_run() -> dict:
+        """A run holding two comparisons, as a thread or batch sweep produces."""
+        run = _run_document()
+        comparisons = run["statistics"]["cold-scan-index"]["comparisons"]
+        comparisons["four_threads_vs_control"] = {
+            "control": "control",
+            "candidate": "four_threads",
+            "metrics": {
+                "wall_ns": {
+                    "pairs": 12,
+                    "median_delta": -100.0,
+                    "median_change_pct": -10.0,
+                    "ci95_change_pct": [-12.0, -8.0],
+                    "improved": True,
+                    "significant": True,
+                }
+            },
+        }
+        return run
+
+    def test_a_single_comparison_needs_no_variant_names(self) -> None:
+        self.assertEqual(record._headline(_run_document(), self._arguments()), -30.0)
+
+    def test_a_named_pair_selects_that_pair(self) -> None:
+        headline = record._headline(
+            self._sweep_run(),
+            self._arguments(control_variant="control", candidate_variant="four_threads"),
+        )
+        self.assertEqual(headline, -10.0)
+
+    def test_a_sweep_without_variant_names_is_refused(self) -> None:
+        with self.assertRaises(ValueError) as caught:
+            record._headline(self._sweep_run(), self._arguments())
+        self.assertIn("several comparisons", str(caught.exception))
+
+    def test_half_a_pair_is_refused(self) -> None:
+        with self.assertRaises(ValueError) as caught:
+            record._headline(_run_document(), self._arguments(candidate_variant="candidate"))
+        self.assertIn("together", str(caught.exception))
+
+    def test_a_pair_the_run_does_not_hold_is_refused(self) -> None:
+        with self.assertRaises(ValueError) as caught:
+            record._headline(
+                _run_document(),
+                self._arguments(control_variant="control", candidate_variant="absent"),
+            )
+        self.assertIn("absent_vs_control", str(caught.exception))
+
+    def test_an_existing_job_without_comparisons_is_non_comparative(self) -> None:
+        run = _run_document()
+        run["statistics"]["cold-scan-index"]["comparisons"] = {}
+
+        self.assertIsNone(record._headline(run, self._arguments()))
+
+    def test_a_missing_primary_job_is_refused(self) -> None:
+        with self.assertRaises(ValueError) as caught:
+            record._headline(_run_document(), self._arguments(primary_job="warm-revalidate"))
+        self.assertIn("warm-revalidate", str(caught.exception))
+
+    def test_a_missing_primary_metric_is_refused(self) -> None:
+        with self.assertRaises(ValueError) as caught:
+            record._headline(_run_document(), self._arguments(primary_metric="cpu_ns"))
+        self.assertIn("cpu_ns", str(caught.exception))
+
+
 class YamlScalarTests(unittest.TestCase):
     """A string has to come back as a string, or the schema rejects it downstream."""
 
@@ -217,6 +304,31 @@ class YamlScalarTests(unittest.TestCase):
 
     def test_text_with_a_colon_is_quoted(self) -> None:
         self.assertTrue(record._scalar("exp-001: faster").startswith('"'))
+
+    def test_iso_dates_are_quoted(self) -> None:
+        # The contract declares `date: str`. Written plainly, YAML resolves the scalar
+        # to a date object, so the artifact fails its own schema on the way back in --
+        # which every artifact recorded before this quoting did.
+        self.assertEqual(record._scalar("2026-08-13"), '"2026-08-13"')
+
+    def test_a_rendered_artifact_carries_its_date_as_a_string(self) -> None:
+        payload = experiment_model.from_run(
+            _run_document(),
+            experiment_id="exp-042",
+            title="Round trip",
+            hypotheses=["H1"],
+            control="before",
+            candidate="after",
+            complexity={"lines_changed": 10, "new_dependencies": [], "notes": ""},
+            verdict={
+                "decision": "accepted",
+                "primary_job": "cold-scan-index",
+                "reason": "faster",
+            },
+        )
+        rendered = record._render(payload, "# body\n")
+
+        self.assertIn(f'  date: "{payload["date"]}"', rendered)
 
 
 class RenderRoundTripTests(unittest.TestCase):

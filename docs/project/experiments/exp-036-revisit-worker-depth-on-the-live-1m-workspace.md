@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-036
   title: Revisit worker depth on the live 1M workspace
-  date: 2026-08-12
+  date: "2026-08-12"
   hypotheses:
     - H57
   subject:
@@ -113,17 +113,6 @@ experiment:
           ci_excludes_zero: true
           direction: regressed
           pairs: 12
-        blocked_ns:
-          control_median: 0.0
-          candidate_median: 0.0
-          change_pct: 0.0
-          ci95_low_pct: null
-          ci95_high_pct: null
-          significant: false
-          passes_acceptance: false
-          ci_excludes_zero: false
-          direction: unknown
-          pairs: 0
         peak_rss_bytes:
           control_median: 478535680.0
           candidate_median: 479617024.0
@@ -176,7 +165,7 @@ workers regressed 2.46%; sixteen regressed 10.65%, more than doubled CPU, and ra
 28.66%.
 
 The result also explains why simply copying the much higher concurrency limits in
-`diskus` or `gdu` is not a promising FDU experiment on this machine: the metadata path
+`diskus` or `gdu` is not a promising fdu experiment on this machine: the metadata path
 is already beyond its efficient parallelism point.
 
 ## Verdict

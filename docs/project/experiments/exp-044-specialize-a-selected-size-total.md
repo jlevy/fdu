@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-044
   title: Specialize a selected size total
-  date: 2026-08-13
+  date: "2026-08-13"
   hypotheses:
     - H64
   subject:
@@ -44,7 +44,7 @@ experiment:
       size_bytes: 1299840
       args:
         - --cache
-        - off
+        - "off"
         - --view
         - total
         - --size
@@ -59,7 +59,7 @@ experiment:
       size_bytes: 1316384
       args:
         - --cache
-        - off
+        - "off"
         - --view
         - total
         - --size
@@ -193,7 +193,7 @@ experiment:
 H64: the existing transient summary still gathers five tallies and uses the generic
 observation representation.
 A requirement-derived total plan might match dumac’s selected-size workload closely
-enough to beat it while preserving FDU’s exact path accounting, scope, partial-result,
+enough to beat it while preserving fdu’s exact path accounting, scope, partial-result,
 symlink, and fallback semantics.
 
 This was a deliberately isolated prototype.
