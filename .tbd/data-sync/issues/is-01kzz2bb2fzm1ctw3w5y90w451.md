@@ -3,14 +3,16 @@ type: is
 id: is-01kzz2bb2fzm1ctw3w5y90w451
 title: Decide what to do about ExtId and RollUp.by_ext crossing the public API boundary
 kind: task
-status: open
-priority: 3
-version: 1
+status: closed
+priority: 1
+version: 5
 labels: []
 dependencies: []
 parent_id: is-01kzz29dspd7bsy6jk98mpb9z3
 created_at: 2026-08-14T02:41:49.647Z
-updated_at: 2026-08-14T02:41:49.647Z
+updated_at: 2026-08-14T05:39:03.572Z
+closed_at: 2026-08-14T05:39:03.571Z
+close_reason: Completed the public/internal RollUp split, retained-rollup regression, map-free internal report path, all Rust/Python caller migrations, and present-state design, integration, and README documentation updates.
 ---
 crates/fdu/src/index.rs exports pub type ExtId = u32 and pub by_ext: BTreeMap<ExtId, ExtTally> on RollUp. The ids are index-private interner slots, so a public roll-up is only interpretable by asking the same Index that produced it via by_ext_named. Comparing two indexes' by_ext maps, or holding a roll-up past a mutation, is meaningless in a way the type system does not prevent.
 
