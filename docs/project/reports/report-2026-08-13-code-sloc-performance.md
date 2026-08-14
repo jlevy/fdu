@@ -4,7 +4,7 @@ This checkpoint measures the frozen `code-sloc-v1` implementation after its exac
 semantic fixtures were committed.
 It is engineering evidence for the next optimization, not a universal speed ranking.
 
-## Fdu Component Profile
+## fdu Component Profile
 
 The symbol-bearing probe repeated analysis of an immutable archive containing 233 files
 and 3,175,738 apparent bytes.
@@ -35,7 +35,7 @@ These figures include each tool’s own walk, ignore handling, classification, a
 aggregation, and JSON serialization, so they are useful product-scale context rather
 than parser-only throughput.
 On these two macOS warm-filesystem corpora, fdu is close to Tokei and approximately
-20–23% behind SCC. Fdu additionally builds its reusable metadata/content index and
+20–23% behind SCC. fdu additionally builds its reusable metadata/content index and
 exposes exact coverage and cache provenance; SCC and Tokei have broader language
 grammars.
 

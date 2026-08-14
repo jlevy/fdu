@@ -159,7 +159,7 @@ experiment:
 H4: changes to breadth-first region scheduling may have made its queue-management and
 locality costs worse than depth-first traversal on a heterogeneous million-entry tree.
 If so, depth-first order should improve indexed wall time by at least 3%; any memory win
-must be weighed against FDU’s progressive shallow-coverage guarantee.
+must be weighed against fdu’s progressive shallow-coverage guarantee.
 
 ## Method
 

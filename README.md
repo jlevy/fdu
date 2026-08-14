@@ -6,7 +6,7 @@ fdu answers, for *every* directory in a tree at once: how big is it, how many fi
 it hold, what changed most recently, and what kinds of files live in it.
 One walk, many metrics, cached between runs.
 
-> **Typical macOS/APFS live performance:** FDU built a reusable exact index and ten-row
+> **Typical macOS/APFS live performance:** fdu built a reusable exact index and ten-row
 > tree over 901,963 entries in a **3.324-second median**, versus 5.657 seconds for pdu,
 > 6.016 for dust, and 6.782 for Go gdu on an M1 Pro MacBook with a local SSD. See
 > [the full comparison](#speed-and-the-cache).
@@ -69,10 +69,10 @@ The full survey, with the techniques worth adapting and their sources, is in
 
 ## Speed and the Cache
 
-**Typical live scan:** on a self-contained 901,963-entry tree, a fresh FDU process with
+**Typical live scan:** on a self-contained 901,963-entry tree, a fresh fdu process with
 its own cache disabled built a reusable exact index and ten-row tree in a **3.324-second
 median**. Pdu and dust took 5.657 and 6.016 seconds, and Go gdu took 6.782 seconds.
-FDU’s richer index-and-tree product was the fastest of every tree or index tool
+fdu’s richer index-and-tree product was the fastest of every tree or index tool
 measured. This was 12 adjacent paired trials per tool on an M1 Pro MacBook with a local
 APFS SSD in a repeated-workload warm-steady filesystem-cache state.
 One independent full-tree fingerprint and three warmups per tool preceded timing; this
@@ -80,7 +80,7 @@ does not claim that every metadata object remained resident.
 
 The cache-off rich-summary plan took 3.125 seconds and beat diskus, dua, BSD du, and GNU
 du. Dumac’s narrower allocated-byte total had a 2.980-second median, but its paired 2.2%
-advantage was statistically unclear (95% interval -5.7% to +1.7%). FDU also returned
+advantage was statistically unclear (95% interval -5.7% to +1.7%). fdu also returned
 file and directory counts, apparent bytes, and newest file time while using 13.6 MiB
 instead of dumac’s 44.4 MiB peak RSS. See the
 [technical white paper](docs/project/reports/report-2026-08-12-fdu-performance-architecture.md),
@@ -105,7 +105,7 @@ fdu has two paths to an answer, and it labels which one you got.
 statted once, and per-directory roll-ups accumulate as the walk proceeds.
 That is the same job `du` does, plus the extra metrics, and it is bounded by syscall
 count and storage latency.
-For the existing `--cache off --view summary` composition, FDU now derives an exact
+For the existing `--cache off --view summary` composition, fdu now derives an exact
 summary-only execution plan instead of retaining a reusable index.
 On a frozen heterogeneous 978,339-entry run that improved paired wall time 14.56% and
 cut peak RSS 95.28%, with identical stable report semantics (exp-040). Exact-binary

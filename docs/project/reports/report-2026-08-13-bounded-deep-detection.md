@@ -7,7 +7,7 @@ classification cost
 
 ## Outcome
 
-FDU now has a bounded second classification tier without putting regexes, parsers, or
+fdu now has a bounded second classification tier without putting regexes, parsers, or
 statistical models on the ordinary resolved path.
 Exact filenames and ordinary extensions remain path-only decisions.
 Only an unresolved file or the explicitly ambiguous `.h` extension can invoke deeper
