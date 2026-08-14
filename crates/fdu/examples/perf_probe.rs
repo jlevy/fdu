@@ -8,14 +8,6 @@
 // Measurement scaffolding, kept out of the library so the engine's unsafe-free
 // guarantee stands: counting allocations needs `unsafe impl GlobalAlloc`, and the
 // probe is the right place to pay for that.
-// Gated with the feature rather than carrying `allow(dead_code)`: without counters
-// there is no allocator to install, so the module is genuinely absent instead of
-// present-but-silenced.
-#[cfg(feature = "perf-counters")]
-#[allow(unsafe_code)]
-#[path = "support/counting_alloc.rs"]
-mod counting_alloc;
-
 use std::env;
 use std::ffi::OsString;
 use std::fmt::Write as _;
@@ -36,18 +28,35 @@ const DIGEST_ALGORITHM: &str = "fdu-index-record-v1/sha256-multiset-v1";
 
 /// Count what the run allocates.
 ///
-/// Installed only when `perf-counters` is on, so an ordinary probe build is byte for
-/// byte the allocator the shipped binary uses and a measurement taken without counters
-/// is not measuring this wrapper.
-#[cfg(feature = "perf-counters")]
+/// Always installed, and inert until `perfkit::enable(true)`: the wrapper checks one
+/// relaxed atomic the branch predictor always gets right, which is nothing next to an
+/// allocation. One binary that can be asked for numbers beats two that differ in
+/// whether they have any. exp-052 measured the whole arrangement at no detectable cost.
 #[global_allocator]
-static ALLOCATOR: counting_alloc::CountingAlloc<std::alloc::System> =
-    counting_alloc::CountingAlloc::system();
+static ALLOCATOR: perfkit::alloc::CountingAlloc<std::alloc::System> =
+    perfkit::alloc::CountingAlloc::system(perfkit::alloc::Sinks {
+        alloc: |size| {
+            fdu::counters::bump(|c| {
+                c.allocs += 1;
+                c.bytes_allocated += size;
+            });
+        },
+        realloc: |growth| {
+            fdu::counters::bump(|c| {
+                c.reallocs += 1;
+                c.bytes_allocated += growth;
+            });
+        },
+        dealloc: || fdu::counters::bump(|c| c.frees += 1),
+    });
 
 fn main() -> ExitCode {
-    // Counting from here excludes argument parsing and includes every phase the probe
-    // then runs; the harness owns process-level timing either way.
+    // `FDU_COUNTERS=1` turns recording on. Off by default so a probe run measured
+    // against a control is not measuring the instrument, and on by one environment
+    // variable when a run is meant to explain itself.
+    fdu::counters::enable_from_env();
     fdu::counters::reset();
+    let process_before = perfkit::process::Snapshot::now();
     match Arguments::parse(env::args_os().skip(1))
         .and_then(|arguments| execute_repeated(&arguments))
     {
@@ -58,7 +67,9 @@ fn main() -> ExitCode {
             // measurement contract. A schema bump can follow if the harness ever wants
             // to store them.
             if fdu::counters::enabled() {
-                eprint!("{}", fdu::counters::render(&fdu::counters::snapshot()));
+                fdu::counters::flush_thread();
+                let process = perfkit::process::Snapshot::now().since(&process_before);
+                eprint!("{}", fdu::counters::render(&fdu::counters::snapshot(), &process));
             }
             if output.summary.complete { ExitCode::SUCCESS } else { ExitCode::from(2) }
         }

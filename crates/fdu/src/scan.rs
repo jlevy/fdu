@@ -2420,13 +2420,14 @@ mod tests {
     /// with it. Both builds compiled, passed every other test, and reported zero. This
     /// asserts the relationships a real walk must satisfy, so the next such edit fails
     /// here instead of in a report someone believes.
-    #[cfg(feature = "perf-counters")]
     #[test]
     fn a_walk_moves_every_counter_it_should() {
         // Both walkers, because they are separate loops with separate call sites. The
         // first version of this test only exercised the parallel one, and deleting the
         // serial walker's counter still passed — a guard that covers one path gives
         // false confidence about the other.
+        let _serial = crate::counters::test_serial();
+        perfkit::enable(true);
         for threads in [Some(1), Some(4)] {
             let dir = sample_tree();
             let config = ScanConfig { threads, ..ScanConfig::default() };
@@ -2457,6 +2458,7 @@ mod tests {
             // that half; this covers the counters the library itself drives.
             crate::counters::reset();
         }
+        perfkit::enable(false);
     }
 
     #[test]

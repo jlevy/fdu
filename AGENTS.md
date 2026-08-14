@@ -66,8 +66,18 @@ verdict is in
 and which regime each shipped tuning constant was measured in is in
 [the platform tuning guide](docs/project/guides/platform-tuning.md).
 
+The reusable method — how to instrument a system so each pass of the loop is cheaper
+than the last, which tier answers which question, and how to keep the instrument from
+distorting the measurement — is
+[the instrumentation playbook](docs/project/guides/performance-instrumentation-playbook.md).
+Read it before adding instrumentation or starting a fresh optimization campaign; the
+mechanism it describes lives in the [perfkit](crates/perfkit) crate.
+
 In practice:
 
+- Instrument before optimizing.
+  Counters are compiled in and off by default; `FDU_COUNTERS=1` turns them on for any
+  run, so visibility costs a variable rather than a rebuild.
 - Profile before changing anything.
   Intuition about where a walker spends its time is reliably wrong, and the ledger has
   the rejected experiments to prove it.

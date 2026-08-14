@@ -1,0 +1,25 @@
+[package]
+name = "perfkit"
+version = "0.1.0"
+description = "Reusable, low-distortion performance instrumentation for iterative optimization loops"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+# The counting allocator needs `unsafe impl GlobalAlloc`; there is no safe way to
+# observe allocation. It is confined to alloc.rs, which forwards every argument
+# unchanged and whose sinks cannot unwind, allocate, or lock.
+[lints.rust]
+unsafe_code = "allow"
+missing_docs = "deny"
+warnings = "deny"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "deny"
+
+[dependencies]
+
+[features]
+default = []

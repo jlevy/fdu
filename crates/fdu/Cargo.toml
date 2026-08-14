@@ -61,13 +61,14 @@ cli = ["dep:clap", "dep:anyhow"]
 # Gates the OS-native watch layer. Strictly additive: without it, scan, index,
 # snapshot, and the CLI are all fully functional, just without live updates.
 watch = ["dep:notify"]
-# Per-layer operation tallies: syscalls, allocations, and index work. Off in the
-# shipped binary and on in the performance probe, so that a measurement can say what
-# a run *did* and not only how long it took. The overhead of leaving it on is
-# recorded in exp-052 rather than assumed.
+# Retired: counters are always compiled in and toggled at runtime instead, because a
+# build flag meant keeping two binaries and rebuilding to see anything — friction in
+# exactly the loop that should be frictionless. Kept as a no-op so existing build
+# commands and CI matrices do not break.
 perf-counters = []
 
 [dependencies]
+perfkit = { path = "../perfkit" }
 thiserror = "2.0"
 
 clap = { version = "4.5", features = ["derive"], optional = true }

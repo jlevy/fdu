@@ -1,0 +1,228 @@
+//! Kernel-reported process counters, sampled at phase boundaries.
+//!
+//! # Why this tier exists
+//!
+//! Application counters say which layer did the work, but they count what your code
+//! *thinks* it did. If a library allocates behind your back, or a syscall you believed
+//! was one call is three, an application counter will confidently report the wrong
+//! number. These come from the kernel and cannot be talked out of the truth.
+//!
+//! The cost is one small file read per sample, so sample at phase boundaries — before
+//! and after a walk, a load, a query — never per event.
+//!
+//! # What is actually available, which is less than it looks
+//!
+//! `/proc/self/io` reports `syscr` and `syscw`. They read like syscall counts and are
+//! not: they count the read and write families only. Measured directly, a walk over
+//! 17,128 directory entries — every one a `getdents64` or a `statx` — moved `syscr` by
+//! **30**.
+//!
+//! The consequence is worth stating plainly, because assuming otherwise produces
+//! confident nonsense:
+//!
+//! | Want to count | Cheap in-process source | Use instead |
+//! | --- | --- | --- |
+//! | `read`/`write` calls | `syscr`, `syscw` | — |
+//! | Bytes through the syscall layer | `rchar`, `wchar` | — |
+//! | Bytes actually fetched from a block device | `read_bytes` | — |
+//! | `getdents64`, `statx`, `openat` | **none** | application counters, checked against `strace -c` |
+//! | Page faults, context switches | `/proc/self/stat` | — |
+//!
+//! `read_bytes` against `rchar` is the page-cache hit rate, which is the number that
+//! decides whether a "cold" measurement was actually cold — worth more than it looks
+//! when a hypervisor sits under the guest and `drop_caches` does not reach the disk.
+//!
+//! # Portability
+//!
+//! Linux only. Everywhere else every field reads zero and [`Snapshot::available`] is
+//! false, so a report can say "not available here" instead of implying the process did
+//! nothing.
+
+use std::fmt::Write as _;
+
+/// Kernel-reported counters at one instant.
+///
+/// Subtract two snapshots with [`Snapshot::since`] to get a phase's activity.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct Snapshot {
+    /// Whether the kernel supplied these numbers. False on platforms without
+    /// `/proc/self`, where every other field is zero and means nothing.
+    pub available: bool,
+    /// `read`-family syscalls. Not directory reads or stats — see the module docs.
+    pub read_syscalls: u64,
+    /// `write`-family syscalls.
+    pub write_syscalls: u64,
+    /// Bytes read through the syscall layer, cache hits included.
+    pub bytes_through_read: u64,
+    /// Bytes written through the syscall layer.
+    pub bytes_through_write: u64,
+    /// Bytes actually fetched from a block device. Below `bytes_through_read` by
+    /// whatever the page cache served.
+    pub bytes_from_device: u64,
+    /// Minor page faults: memory touched that needed no I/O. Tracks allocation and
+    /// first-touch behaviour closely.
+    pub minor_faults: u64,
+    /// Major page faults: memory touched that needed I/O.
+    pub major_faults: u64,
+}
+
+impl Snapshot {
+    /// Read the current values.
+    ///
+    /// Never fails: an unreadable or absent `/proc` yields an unavailable snapshot
+    /// rather than an error, because instrumentation must not be able to break the
+    /// program it is watching.
+    #[must_use]
+    pub fn now() -> Self {
+        #[cfg(target_os = "linux")]
+        {
+            let mut snapshot = Self::default();
+            if let Ok(io) = std::fs::read_to_string("/proc/self/io") {
+                snapshot.available = true;
+                for line in io.lines() {
+                    let Some((key, value)) = line.split_once(':') else { continue };
+                    let Ok(value) = value.trim().parse::<u64>() else { continue };
+                    match key {
+                        "syscr" => snapshot.read_syscalls = value,
+                        "syscw" => snapshot.write_syscalls = value,
+                        "rchar" => snapshot.bytes_through_read = value,
+                        "wchar" => snapshot.bytes_through_write = value,
+                        "read_bytes" => snapshot.bytes_from_device = value,
+                        _ => {}
+                    }
+                }
+            }
+            // Fields 10 and 12 of /proc/self/stat are minflt and majflt. They sit after
+            // the comm field, which may itself contain spaces and parentheses, so the
+            // split has to start after the last ')' rather than at the first space.
+            if let Ok(stat) = std::fs::read_to_string("/proc/self/stat") {
+                if let Some(rest) = stat.rsplit_once(')').map(|(_, rest)| rest) {
+                    let fields: Vec<&str> = rest.split_whitespace().collect();
+                    // `rest` starts at field 3 (state), so minflt is index 7 and majflt
+                    // index 9.
+                    if let Some(value) = fields.get(7).and_then(|v| v.parse().ok()) {
+                        snapshot.minor_faults = value;
+                        snapshot.available = true;
+                    }
+                    if let Some(value) = fields.get(9).and_then(|v| v.parse().ok()) {
+                        snapshot.major_faults = value;
+                    }
+                }
+            }
+            snapshot
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            Self::default()
+        }
+    }
+
+    /// This snapshot minus an earlier one: what happened in between.
+    ///
+    /// Saturating, so a counter that wrapped or a snapshot taken out of order yields
+    /// zero rather than an absurd number.
+    #[must_use]
+    pub fn since(&self, earlier: &Self) -> Self {
+        Self {
+            available: self.available && earlier.available,
+            read_syscalls: self.read_syscalls.saturating_sub(earlier.read_syscalls),
+            write_syscalls: self.write_syscalls.saturating_sub(earlier.write_syscalls),
+            bytes_through_read: self.bytes_through_read.saturating_sub(earlier.bytes_through_read),
+            bytes_through_write: self
+                .bytes_through_write
+                .saturating_sub(earlier.bytes_through_write),
+            bytes_from_device: self.bytes_from_device.saturating_sub(earlier.bytes_from_device),
+            minor_faults: self.minor_faults.saturating_sub(earlier.minor_faults),
+            major_faults: self.major_faults.saturating_sub(earlier.major_faults),
+        }
+    }
+
+    /// The share of read bytes the page cache served, if any reads happened.
+    ///
+    /// `None` when nothing was read, which is different from a hit rate of zero and
+    /// should be rendered differently.
+    #[must_use]
+    pub fn cache_hit_ratio(&self) -> Option<f64> {
+        if self.bytes_through_read == 0 {
+            return None;
+        }
+        let served = self.bytes_through_read.saturating_sub(self.bytes_from_device);
+        Some(crate::ratio(served, self.bytes_through_read))
+    }
+
+    /// Render as grouped lines, matching the application counters' format.
+    #[must_use]
+    pub fn render(&self) -> String {
+        if !self.available {
+            return "process counters: not available on this platform\n".to_string();
+        }
+        let rows = [
+            ("process", "read syscalls", self.read_syscalls),
+            ("process", "write syscalls", self.write_syscalls),
+            ("process", "bytes through read", self.bytes_through_read),
+            ("process", "bytes from device", self.bytes_from_device),
+            ("process", "minor page faults", self.minor_faults),
+            ("process", "major page faults", self.major_faults),
+        ];
+        let mut out = crate::render_rows(&rows);
+        if let Some(ratio) = self.cache_hit_ratio() {
+            let _ = writeln!(out, "  {:<20}  {:>13.1}%", "page cache served", ratio * 100.0);
+        }
+        out
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_snapshot_is_readable_and_differences_are_sane() {
+        let before = Snapshot::now();
+        if !before.available {
+            // Not Linux: the contract is that everything reads zero and says so.
+            assert!(before.render().contains("not available"));
+            return;
+        }
+
+        // Read enough to move the read counters unambiguously.
+        let mut total = 0_usize;
+        for _ in 0..64 {
+            total += std::fs::read_to_string("/proc/self/stat").map_or(0, |s| s.len());
+        }
+        assert!(total > 0, "the reads actually happened");
+
+        let delta = Snapshot::now().since(&before);
+        assert!(delta.read_syscalls > 0, "reading files moves the read counter: {delta:?}");
+        assert!(delta.bytes_through_read > 0, "and the byte counter: {delta:?}");
+    }
+
+    #[test]
+    fn differences_never_go_negative() {
+        let later = Snapshot { available: true, read_syscalls: 5, ..Snapshot::default() };
+        let earlier = Snapshot { available: true, read_syscalls: 9, ..Snapshot::default() };
+        assert_eq!(later.since(&earlier).read_syscalls, 0, "out-of-order snapshots saturate");
+    }
+
+    #[test]
+    fn cache_hit_ratio_distinguishes_nothing_read_from_nothing_cached() {
+        let nothing = Snapshot { available: true, ..Snapshot::default() };
+        assert_eq!(nothing.cache_hit_ratio(), None, "no reads is not a zero hit rate");
+
+        let all_cached = Snapshot {
+            available: true,
+            bytes_through_read: 1000,
+            bytes_from_device: 0,
+            ..Snapshot::default()
+        };
+        assert_eq!(all_cached.cache_hit_ratio(), Some(1.0));
+
+        let none_cached = Snapshot {
+            available: true,
+            bytes_through_read: 1000,
+            bytes_from_device: 1000,
+            ..Snapshot::default()
+        };
+        assert_eq!(none_cached.cache_hit_ratio(), Some(0.0));
+    }
+}
