@@ -155,6 +155,26 @@ or `Inherited`, and the const block asserts that the portable table still says
 lands the sweep*. The build therefore forces whoever lands a Linux number to say which
 experiment settled it, rather than letting a value quietly change standing.
 
+### What CI guarantees, and what it cannot
+
+Three layers, each catching something the others cannot:
+
+| Layer | Runs where | Catches |
+| --- | --- | --- |
+| `const` assertion block | Every build, every target | A table that stops being well-formed, on a platform nobody present can build |
+| `every_platform_table_produces_the_same_index` | Every platform’s test job | A tuning value that changes the *answer* rather than the speed. The swept settings are read out of the tables, so the test widens by itself when a platform diverges |
+| Golden tryscripts | ubuntu, macos, windows runners | Output drift: any field that renders differently per platform fails that runner, which is why unstable fields carry named patterns rather than elisions |
+
+The watch tests add a fourth, exercising inotify, FSEvents and ReadDirectoryChangesW on
+their own runners, which is the only way per-platform event semantics get caught before
+a user finds them.
+
+What none of this catches is a **speed** regression on the platform you are not on, and
+that is deliberate: a timing gate on a shared CI runner measures the runner.
+The protection there is procedural rather than automated — a divergence is landed with
+its regime recorded, and the platform that did not measure keeps `Evidence::Inherited`
+until someone runs the loop there.
+
 What this does **not** license is a `cfg` per disagreement.
 A divergence costs two values to keep true and two regimes to re-measure whenever either
 moves, so the bar is a measured reversal on a decision that matters, not a difference

@@ -224,6 +224,92 @@ mod tests {
         assert_eq!(PORTABLE.reconcile_wave_directories.evidence(), Evidence::Inherited);
     }
 
+    /// Every table's values produce the same answer, on whatever platform runs this.
+    ///
+    /// The `const` block proves each table is *well-formed* everywhere. This proves the
+    /// engine still agrees with itself when driven by values it would not normally see,
+    /// which is the property that actually protects the other platform: a divergence
+    /// landed for Linux is exercised by macOS CI and vice versa, so a tuning change that
+    /// altered the answer rather than just the speed fails on both runners rather than
+    /// waiting for someone to boot the other one.
+    ///
+    /// Speed may differ between tables — that is the entire point of having two. The
+    /// answer may not.
+    #[test]
+    fn every_platform_table_produces_the_same_index() {
+        let dir = tempfile::Builder::new().prefix("fdu-tuning-").tempdir().expect("tempdir");
+        let root = dir.path();
+        // Enough fan-out and depth that a worker count and a batch size can actually
+        // change how the walk is scheduled, rather than everything landing in one batch.
+        for directory in 0..12 {
+            for file in 0..24 {
+                let path = root.join(format!("d{directory}/nested/f{file}.rs"));
+                std::fs::create_dir_all(path.parent().expect("parent")).expect("dirs");
+                std::fs::write(&path, vec![b'x'; directory * 16 + file]).expect("write");
+            }
+            std::fs::write(root.join(format!("d{directory}/top.md")), b"# top").expect("write");
+        }
+
+        let image_for = |threads: usize, batch_size: usize| {
+            let config = crate::ScanConfig {
+                threads: Some(threads),
+                batch_size,
+                ..crate::ScanConfig::default()
+            };
+            let (index, report) = crate::scan::scan_into_index(root, &config).expect("scan");
+            assert!(report.is_complete(), "the fixture scan must be complete");
+            let total = index.total();
+            // Kind is compared through its `Debug` form: the enum is deliberately not
+            // `Ord`, and sorting is what makes two walk orders comparable at all.
+            let mut entries: Vec<(std::path::PathBuf, String, u64)> = Vec::new();
+            let mut stack = vec![crate::index::EntryId::ROOT];
+            while let Some(id) = stack.pop() {
+                let path = index.path_of(id).expect("path");
+                let kind = format!("{:?}", index.kind_of(id).expect("kind"));
+                let size = index.attrs_of(id).expect("attrs").size;
+                entries.push((path, kind, size));
+                if let Some(children) = index.children_of(id) {
+                    stack.extend(children.map(|(_, child)| child));
+                }
+            }
+            entries.sort();
+            (
+                index.len(),
+                total.files,
+                total.dirs,
+                total.bytes,
+                total.newest_mtime_ns,
+                index.by_ext_named(total),
+                entries,
+            )
+        };
+
+        // The tables hold the same values today, so comparing only those two would be
+        // comparing a scan with itself. The sweep is over every distinct setting any
+        // table asks for, plus a one-worker serial reference, which keeps the assertion
+        // load-bearing now and turns it into a genuine cross-table check the moment a
+        // platform diverges.
+        let mut settings: Vec<(usize, usize)> = vec![(1, 1)];
+        for table in [MACOS, PORTABLE] {
+            settings.push((table.scan_threads_cap.get(), table.batch_size.get()));
+            settings.push((table.reconcile_threads_cap.get(), table.batch_size.get()));
+            settings.push((table.adaptive_scan_threads_cap.get(), table.batch_size.get()));
+        }
+        settings.sort_unstable();
+        settings.dedup();
+
+        let reference = image_for(settings[0].0, settings[0].1);
+        for &(threads, batch_size) in &settings[1..] {
+            assert_eq!(
+                image_for(threads, batch_size),
+                reference,
+                "a scan with {threads} workers and a batch size of {batch_size} \
+                 disagreed with the serial reference; a tuning value may change speed \
+                 but never the answer"
+            );
+        }
+    }
+
     /// The engine reads the table its target actually selected.
     #[test]
     fn the_selected_table_matches_the_target() {
