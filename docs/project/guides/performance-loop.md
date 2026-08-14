@@ -205,6 +205,75 @@ Keep `benchmarks/corpus/realtree/` unless the base tree itself is intentionally 
 rebuilt. Moving data to Trash does not guarantee physical space is reclaimed until the
 user empties Trash.
 
+### Temporary volumes on macOS
+
+A RAM disk is not the default place for builds, temporary files, or claim-grade
+benchmarks. It can isolate a named synthetic experiment from device latency, but that is
+also why its result does not describe a normal APFS or HFS+ volume backed by storage.
+Use the ordinary filesystem for real-tree evidence and ordinary task-scoped scratch
+space for Cargo targets, virtual environments, package caches, and test output.
+
+If a synthetic experiment specifically requires a RAM-backed filesystem, use one image
+at a time and no larger than the measured need.
+Record its purpose, capacity, mount point, and cleanup owner in the active bead.
+Keep the primary checkout and every unique result outside the image.
+An experimental linked worktree may live on the image only while the experiment runs; it
+must be clean or have its changes committed or stashed before the experiment ends.
+
+Audit before creating an image so an interrupted agent does not leave a second one:
+
+```shell
+hdiutil info
+git worktree list --porcelain
+df -h /System/Volumes/Data
+```
+
+For every existing `ram://` image, map the image to its exact device and mount point
+from `hdiutil info`, then inspect the mount before deciding it is disposable:
+
+```shell
+diskutil info /Volumes/FDUPerfExperiment
+lsof +D /Volumes/FDUPerfExperiment
+git -C /Volumes/FDUPerfExperiment/fdu-worktree status --short --branch
+df -h /Volumes/FDUPerfExperiment
+```
+
+Do not interpret moving a file to Trash on the image as reclamation.
+macOS moves it to that volume’s `.Trashes` directory, so it still occupies the
+RAM-backed filesystem.
+APFS clones can also make Trash’s logical total exceed the physical blocks in `df`.
+Detaching destroys everything left on the RAM disk and is the reclamation step only
+after the preservation checks below.
+
+Before handoff, stop every writer, preserve dirty source and unique results outside the
+image, and verify `lsof` reports no open paths.
+Resolve the exact mount point again and detach without `-force`:
+
+```shell
+hdiutil info
+lsof +D /Volumes/FDUPerfExperiment
+hdiutil detach /Volumes/FDUPerfExperiment
+git worktree prune --dry-run --verbose
+```
+
+Run `git worktree prune --verbose` only when the dry run names the now-absent temporary
+worktree and no other entry.
+Then verify that `hdiutil info` no longer lists the image, the mount is gone, and system
+pressure has fallen:
+
+```shell
+hdiutil info
+git worktree list --porcelain
+df -h /System/Volumes/Data
+memory_pressure
+```
+
+If detach reports that the resource is busy, do not force it.
+Find the remaining process with `lsof`, stop that work normally, and repeat the
+preservation checks.
+A new agent must perform this audit before starting another performance run; an
+unexplained RAM disk is cleanup work, not a shared cache.
+
 For a publishable `benchmarks/` run, first finish every benchmark-harness, environment,
 corpus, schema, and result-fixture change.
 Copy immutable release binaries outside the root; write scratch snapshots, immediate

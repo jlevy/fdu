@@ -113,6 +113,11 @@ In practice:
   Platform, host (bare metal or virtualized), and cache state decide what a result is
   evidence about; a constant tuned in one regime is inherited, not proven, in the
   others.
+- Do not use a RAM disk for ordinary builds or claim-grade real-tree measurements.
+  If a named synthetic experiment requires one on macOS, follow
+  [the temporary-volume lifecycle](docs/project/guides/performance-loop.md#temporary-volumes-on-macos):
+  audit existing images first, use at most one, keep source and unique results outside
+  it, and detach it before handoff.
 - None of this is in `make check`. A timing gate on a shared CI runner measures the
   runner.
 
