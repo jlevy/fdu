@@ -21,5 +21,11 @@ unwrap_used = "deny"
 
 [dependencies]
 
+[target.'cfg(target_os = "macos")'.dependencies]
+# `proc_pidinfo` is the only unprivileged source of a process's own syscall count on
+# macOS. Pinned to the version already reviewed and locked in this workspace, and kept
+# target-specific so the crate stays dependency-free everywhere else.
+libc = "=0.2.189"
+
 [features]
 default = []

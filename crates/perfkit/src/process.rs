@@ -64,6 +64,17 @@ pub struct Snapshot {
     pub minor_faults: u64,
     /// Major page faults: memory touched that needed I/O.
     pub major_faults: u64,
+    /// Every syscall the process has made, where the platform will say.
+    ///
+    /// macOS only, via `proc_pidinfo`. Linux has no unprivileged in-process equivalent —
+    /// `syscr` above covers the read family alone — so this stays zero there, and a
+    /// report should not present its absence as "no syscalls".
+    ///
+    /// It is a **total**, not a per-type breakdown, which is still exactly the
+    /// denominator a cross-check wants: if the application counters sum to N and the
+    /// kernel says N + M, then M syscalls are unaccounted for and something is calling
+    /// more than the call sites admit to.
+    pub total_syscalls: u64,
 }
 
 impl Snapshot {
@@ -111,7 +122,59 @@ impl Snapshot {
             }
             snapshot
         }
-        #[cfg(not(target_os = "linux"))]
+        #[cfg(target_os = "macos")]
+        {
+            let mut info = libc::proc_taskinfo {
+                pti_virtual_size: 0,
+                pti_resident_size: 0,
+                pti_total_user: 0,
+                pti_total_system: 0,
+                pti_threads_user: 0,
+                pti_threads_system: 0,
+                pti_policy: 0,
+                pti_faults: 0,
+                pti_pageins: 0,
+                pti_cow_faults: 0,
+                pti_messages_sent: 0,
+                pti_messages_received: 0,
+                pti_syscalls_mach: 0,
+                pti_syscalls_unix: 0,
+                pti_csw: 0,
+                pti_threadnum: 0,
+                pti_numrunning: 0,
+                pti_priority: 0,
+            };
+            let size = i32::try_from(size_of::<libc::proc_taskinfo>()).unwrap_or(0);
+            // SAFETY: `info` is a fully initialized `proc_taskinfo` and its exact size is
+            // passed alongside a pointer to it, which is what `proc_pidinfo` requires.
+            // Querying one's own pid needs no privilege. The return value is checked
+            // against the requested size before any field is read, because a short
+            // return means the kernel filled less than the struct.
+            let filled = unsafe {
+                libc::proc_pidinfo(
+                    std::process::id() as i32,
+                    libc::PROC_PIDTASKINFO,
+                    0,
+                    (&raw mut info).cast(),
+                    size,
+                )
+            };
+            if filled != size {
+                return Self::default();
+            }
+            Self {
+                available: true,
+                // These are `i32` in the kernel struct and wrap somewhere past two
+                // billion. Saturating rather than wrapping keeps a long run's report
+                // implausible-looking instead of quietly wrong.
+                total_syscalls: u64::try_from(info.pti_syscalls_unix).unwrap_or(0)
+                    + u64::try_from(info.pti_syscalls_mach).unwrap_or(0),
+                minor_faults: u64::try_from(info.pti_faults).unwrap_or(0),
+                major_faults: u64::try_from(info.pti_pageins).unwrap_or(0),
+                ..Self::default()
+            }
+        }
+        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
         {
             Self::default()
         }
@@ -134,6 +197,7 @@ impl Snapshot {
             bytes_from_device: self.bytes_from_device.saturating_sub(earlier.bytes_from_device),
             minor_faults: self.minor_faults.saturating_sub(earlier.minor_faults),
             major_faults: self.major_faults.saturating_sub(earlier.major_faults),
+            total_syscalls: self.total_syscalls.saturating_sub(earlier.total_syscalls),
         }
     }
 
@@ -163,6 +227,7 @@ impl Snapshot {
             ("process", "bytes from device", self.bytes_from_device),
             ("process", "minor page faults", self.minor_faults),
             ("process", "major page faults", self.major_faults),
+            ("process", "syscalls (total)", self.total_syscalls),
         ];
         let mut out = crate::render_rows(&rows);
         if let Some(ratio) = self.cache_hit_ratio() {
