@@ -38,7 +38,7 @@ If it passes, CI should.
 It runs the same feature combinations CI does, notably `--no-default-features`, which is
 how library consumers build and is otherwise never exercised locally.
 
-### Toolchain versions
+### Toolchain Versions
 
 `make check` needs `uv` at or above the version CI pins through `astral-sh/setup-uv` in
 [the workflow](.github/workflows/ci.yml), and `cargo-deny` on the path for `make audit`.
@@ -49,12 +49,14 @@ The uv.toml files express the supply-chain cool-off as a relative `exclude-newer
 `failed to parse year in date "14 days"`, which reads like a corrupt config rather than
 a stale tool. That one error takes out docs formatting, the performance harness, and the
 Python jobs at once, so an old uv looks like several unrelated repository failures.
-The `uv-version` preflight now fails fast with a version message instead, and guards
-`check`, `docs-format`, `docs-format-check`, and `test-performance` — the targets that
-would otherwise report the parse error.
-If you hit it on a pre-provisioned image, upgrade with `uv self update` rather than
-working around the config.
-`UV_MIN_VERSION` in the Makefile tracks the CI pin, so move both together.
+The `uv-version` preflight now fails fast with a version message instead, and every
+directly uv-backed Make target depends on it, including the check, documentation,
+Python, and performance entry points.
+If you hit it on a pre-provisioned image, follow the supply-chain policy and use the
+exact `uv self update <version>` command printed by the preflight rather than installing
+an unreviewed latest release or working around the config.
+The bootstrap policy enforces one reviewed version across `UV_MIN_VERSION` and both CI
+pins.
 
 ## Performance Work
 
@@ -115,3 +117,7 @@ Keep changes focused and preserve unrelated work.
 Before handoff: review the diff, run `make check`, update and close the relevant tbd
 issues, run `tbd sync`, commit, push, open or update the pull request, and watch CI to
 completion.
+
+<!-- This document follows common-doc-guidelines.md.
+See github.com/jlevy/practical-prose and review guidelines before editing.
+-->
