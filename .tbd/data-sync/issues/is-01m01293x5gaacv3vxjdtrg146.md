@@ -5,7 +5,7 @@ title: Polish fdu 0.1.0 packaging and Python API
 kind: epic
 status: open
 priority: 1
-version: 8
+version: 10
 spec_path: docs/project/specs/active/plan-2026-08-14-fdu-release-packaging-python-api-polish.md
 labels: []
 dependencies:
@@ -19,7 +19,9 @@ child_order_hints:
   - is-01m0129sjsp6xht1ae8aebvx0r
   - is-01m0129stsv3wn03hy6m3j4r4t
   - is-01m0129t2wsdsv20mt3bq7s0zh
+  - is-01m0142ay3r0xt3823pjarcms6
+  - is-01m014dn9rhtwryk6v1e9qnjqs
 created_at: 2026-08-14T21:19:05.636Z
-updated_at: 2026-08-14T21:19:41.861Z
+updated_at: 2026-08-14T21:56:31.671Z
 ---
 Close the release-audit gaps between the working Rust engine and supportable crates.io, PyPI, uvx, and typed Python artifacts. This epic owns the public Python package contract, artifact identity and contents, portable wheel matrix, artifact-first automation, and installed-consumer acceptance gates. The existing fdu-9cf0 bead remains the final publication action and depends on this epic.
