@@ -20,21 +20,24 @@ One walk, many metrics, cached between runs.
 > matrices remain open.
 > See [the Phase 1 plan](docs/project/specs/active/plan-2026-08-08-fdu-phase-1.md).
 
-## Four Common Reports
+## Five Common Reports
 
 These commands cover the common cost and reporting choices:
 
 | Report | Command | Regular-file content | Result |
 | --- | --- | --- | --- |
-| Languages and lines of code | `fdu --analyze code --view languages PATH` | Reads eligible files | One row per detected code type with bytes, standard code lines, comment lines, blank lines, exact shares, and explicit unsupported coverage |
-| File types by name | `fdu --view types PATH` | Never read | Stable file-type rows classified from exact filenames and extensions, with file counts and sizes |
+| Language sizes | `fdu --view languages PATH` | Never read | One row per code type detected from exact filenames and extensions, with file counts, sizes, and exact byte shares |
+| Languages and lines of code | `fdu --analyze code --view languages PATH` | Reads eligible files | The same language rows with standard code lines, comment lines, blank lines, code-line shares, and explicit unsupported coverage |
+| All file types | `fdu --view types PATH` | Never read | Stable rows for code, prose, markup, data, binary, and unknown types classified from exact filenames and extensions |
 | Folder sizes | `fdu PATH` | Never read | The default directory tree with rolled-up sizes and file counts; builds or refreshes the reusable metadata index |
 | Fast totals only | `fdu --cache off --view summary PATH` | Never read | One aggregate row with total size, file count, and directory count; retains no index or cache |
 
-The language command intentionally names two independent choices.
-`--analyze code` authorizes bounded content reads and computes standard lines of code;
-`--view languages` selects the grouped language report.
-A view never turns on content analysis by itself.
+`--view languages` selects the detected code-type roll-up.
+By itself it classifies from exact filenames and extensions, reports byte shares, and
+never reads file content.
+Adding `--analyze code` authorizes bounded reads, adds standard lines of code, and uses
+code lines for the shares.
+The view never turns on content analysis by itself.
 Human text uses language names such as `CSS`, `C++`, `JavaScript`, and
 `Protocol Buffers`; JSON, JSONL, and YAML retain stable lowercase IDs such as `css`,
 `cpp`, `javascript`, and `protobuf` for scripts.
@@ -193,7 +196,8 @@ With no `--analyze`, the default is strictly metadata-only:
 - no regular file is opened for content
 - no analyzer worker pool or sparse content index is created
 - `tree`, `files`, `summary`, and `extensions` retain their metadata behavior
-- `types` and `families` add path-only classification by exact filename and extension
+- `types`, `families`, and `languages` add path-only classification by exact filename
+  and extension
 - the content sidecar is not loaded, and analyzer settings do not alter metadata
   snapshot v2
 
@@ -202,14 +206,15 @@ Views select a report from the requested bundle:
 
 | `--analyze` | Adds | Views that expose those metrics |
 | --- | --- | --- |
-| `none` | Nothing; the default metadata-only path | None |
+| `none` | Nothing; the default metadata-only path | `languages` remains a byte and count view |
 | `basic` | Physical, blank, and nonblank lines; raw prose words | `types`, `families`, `documents` |
 | `code` | `basic` plus standard code, comment, and code-blank lines | `languages`; also the basic document report |
 | `documents` | `basic` plus logical words, paragraphs, and reader-visible Markdown | `documents` |
 | `full` | Every shipped analyzer | `languages,documents` together |
 
-`languages` therefore requires `--analyze code` or `full`, while `documents` requires
-any enabled profile.
+`languages` therefore works without analysis and uses byte shares; `code` or `full` adds
+standard LOC and switches its shares to code lines.
+`documents` requires any enabled profile.
 The metadata views remain legal with every profile, so one command can compose byte,
 type, code, and prose summaries over the same observed tree.
 Content analysis is currently one-shot; `--watch` remains metadata-only and rejects an

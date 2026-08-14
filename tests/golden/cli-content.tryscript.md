@@ -68,13 +68,17 @@ $ node -e "const {execFileSync}=require('node:child_process'); const r=JSON.pars
 
 ## Human Summaries Separate Code and Documents
 
-Content views never enable their analyzers implicitly, and they do not present missing
+The language view is a metadata report until analysis is requested; the document view
+has no metadata-only projection.
+Views never enable analyzers implicitly, and analyzed views do not present missing
 measurements as zero.
 
 ```console
 $ fdu --cache off --view languages content-project
-! fdu: --view languages requires --analyze code or full; views never enable content analysis implicitly
-? 2
+   4.0 KiB   50.0%  Python  1 file
+   4.0 KiB   50.0%  Rust    1 file
+!
+? 0
 ```
 
 ```console

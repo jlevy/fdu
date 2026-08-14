@@ -285,6 +285,14 @@ def main() -> None:
         "flags": {"generated": 0, "vendored": 0, "documentation": 0},
     }, types
 
+    languages_report = index.report(views=["languages"])
+    assert languages_report["analysis"] is None, languages_report
+    languages = languages_report["reports"][0]["metrics"]
+    assert languages["share_metric"] == "allocated_bytes", languages
+    assert [(row["id"], row["files"]) for row in languages["rows"]] == [
+        ("rust", 2)
+    ], languages
+
     analyzed = fdu_py.scan(str(query_root), analyze="basic", max_file_size="1MiB")
     documents = analyzed.report(views=["documents"], words_per_page=250)
     assert documents["analysis"]["profile"] == "basic", documents
@@ -311,7 +319,6 @@ def main() -> None:
         {"min_size": "10X"},
         {"modified_since": "1.5h"},
         {"views": ["bogus"]},
-        {"views": ["languages"]},
         {"views": ["documents"]},
         {"sort": "sideways"},
     ]:

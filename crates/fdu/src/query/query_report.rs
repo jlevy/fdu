@@ -23,7 +23,8 @@ use crate::classify::{
     ContentFamily, DetectionConfidence, DetectionSource, classify_path, derive_ext,
 };
 use crate::content::{
-    AnalysisProfile, ContentProvenance, CoverageReason, LogicalWordStats, MetricValues,
+    AnalysisProfile, ContentIndex, ContentProvenance, CoverageReason, LogicalWordStats,
+    MetricValues,
 };
 use crate::engine_contract::{EntryKind, Freshness, ScanScope};
 use crate::index::{EntryId, ExtTally, Index, RollUp};
@@ -86,15 +87,10 @@ impl Default for Query {
 }
 
 impl Query {
-    /// Reject views whose primary metric was not populated by the requested analysis.
+    /// Reject views that have no metadata-only projection and lack required analysis.
     pub fn validate_analysis(&self, profile: AnalysisProfile) -> Result<(), &'static str> {
         for view in &self.views {
             match view {
-                ViewSpec::Languages if !profile.includes_code() => {
-                    return Err(
-                        "--view languages requires --analyze code or full; views never enable content analysis implicitly",
-                    );
-                }
                 ViewSpec::Documents if !profile.is_enabled() => {
                     return Err(
                         "--view documents requires --analyze basic, code, documents, or full; views never enable content analysis implicitly",
@@ -769,13 +765,21 @@ fn metric_summary(
         total.documentation_files =
             total.documentation_files.saturating_add(row.documentation_files);
     }
+    let byte_share_metric = match query.selection.size {
+        SizeMetric::Apparent => ShareMetric::ApparentBytes,
+        SizeMetric::Allocated => ShareMetric::AllocatedBytes,
+    };
     let share_metric = match view {
-        ViewSpec::Languages => ShareMetric::CodeLines,
+        ViewSpec::Languages
+            if index
+                .content()
+                .and_then(ContentIndex::profile)
+                .is_some_and(AnalysisProfile::includes_code) =>
+        {
+            ShareMetric::CodeLines
+        }
         ViewSpec::Documents => ShareMetric::DocumentWords,
-        ViewSpec::Types | ViewSpec::Families => match query.selection.size {
-            SizeMetric::Apparent => ShareMetric::ApparentBytes,
-            SizeMetric::Allocated => ShareMetric::AllocatedBytes,
-        },
+        ViewSpec::Languages | ViewSpec::Types | ViewSpec::Families => byte_share_metric,
         ViewSpec::Tree | ViewSpec::Extensions | ViewSpec::Files | ViewSpec::Summary => {
             unreachable!("only grouped views reach metric_summary")
         }
@@ -1162,15 +1166,18 @@ mod tests {
     }
 
     #[test]
-    fn content_views_require_profiles_that_populate_their_primary_metric() {
+    fn language_grouping_is_metadata_only_while_documents_require_analysis() {
         let languages = query(&[ViewSpec::Languages], Selection::default());
-        assert!(languages.validate_analysis(AnalysisProfile::Code).is_ok());
-        assert!(languages.validate_analysis(AnalysisProfile::Full).is_ok());
-        for profile in
-            [AnalysisProfile::Disabled, AnalysisProfile::Basic, AnalysisProfile::Documents]
-        {
-            let error = languages.validate_analysis(profile).expect_err("SLOC was not requested");
-            assert!(error.contains("--analyze code or full"), "{error}");
+        for profile in [
+            AnalysisProfile::Disabled,
+            AnalysisProfile::Basic,
+            AnalysisProfile::Code,
+            AnalysisProfile::Documents,
+            AnalysisProfile::Full,
+        ] {
+            languages
+                .validate_analysis(profile)
+                .expect("language grouping never requires content I/O");
         }
 
         let documents = query(&[ViewSpec::Documents], Selection::default());
@@ -1432,10 +1439,15 @@ mod tests {
     }
 
     #[test]
-    fn stable_type_and_family_views_use_the_generic_metric_projection() {
+    fn metadata_grouping_views_use_the_generic_metric_projection() {
         let index = sample();
-        let report =
-            run(&index, &query(&[ViewSpec::Types, ViewSpec::Families], Selection::default()));
+        let report = run(
+            &index,
+            &query(
+                &[ViewSpec::Types, ViewSpec::Families, ViewSpec::Languages],
+                Selection::default(),
+            ),
+        );
         let Section::Metrics { summary: types, .. } = &report.sections[0] else {
             panic!("expected type metrics")
         };
@@ -1450,5 +1462,13 @@ mod tests {
         assert!(families.rows.iter().any(|row| row.id == "code"));
         assert!(families.rows.iter().any(|row| row.id == "prose"));
         assert_eq!(families.share_metric, ShareMetric::ApparentBytes);
+
+        let Section::Metrics { summary: languages, .. } = &report.sections[2] else {
+            panic!("expected language metrics")
+        };
+        let rust = languages.rows.iter().find(|row| row.id == "rust").expect("rust");
+        assert_eq!((rust.files, rust.bytes), (3, 350));
+        assert_eq!((rust.share.numerator, rust.share.denominator), (350, 350));
+        assert_eq!(languages.share_metric, ShareMetric::ApparentBytes);
     }
 }

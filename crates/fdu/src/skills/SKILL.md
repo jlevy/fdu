@@ -17,14 +17,16 @@ current directory.
 Start with the report that answers the question:
 
 ```bash
-fdu --analyze code --view languages PATH  # language and standard LOC; reads content
-fdu --view types PATH                     # file types from names; metadata only
+fdu --view languages PATH                 # detected language sizes; metadata only
+fdu --analyze code --view languages PATH  # add standard LOC; reads content
+fdu --view types PATH                     # all file types; metadata only
 fdu PATH                                  # folder-size tree; metadata only
 fdu --cache off --view summary PATH       # one totals row; no retained index
 ```
 
 `--analyze` chooses what may be read and `--view` chooses what is printed.
-The language command needs both because a view never enables content reads implicitly.
+The two language commands differ only on the analysis axis: the first uses byte shares
+without content reads, while the second adds code, comment, and blank-line metrics.
 Use `--size apparent` when logical file lengths are wanted instead of allocated bytes.
 
 For a bounded machine-readable tree, use:
@@ -73,7 +75,7 @@ metadata visible but does not retain a separate lower-level metric record for th
 - `--view extensions` for the original raw-extension breakdown.
 - `--view types` for stable detected file types and exact byte shares.
 - `--view families` for code, prose, markup, data, binary, and unknown roll-ups.
-- `--view languages` for code-family rows; it requires `--analyze code` or `full`.
+- `--view languages` for code-family rows and byte shares from path-only detection.
 - `--view documents` for prose metrics; it requires any enabled analysis profile.
 - `--view files` for a flat listing; in text output it prints one path per line and
   nothing else, so it pipes directly into other commands.
@@ -81,11 +83,12 @@ metadata visible but does not retain a separate lower-level metric record for th
 - Several views in one run share one scan: `--view summary,types,families`.
 
 Add `--analyze basic` to stream physical, blank, and nonblank lines and raw prose words.
-Use `--analyze code --view languages` for standard LOC, comment, and code-blank
-partitions across supported common languages.
-Use `--analyze documents --view documents` for normalized prose words, paragraphs,
-aggregate-derived pages, and reader-visible Markdown that excludes destinations and
-code. `--analyze full` computes both families in one bounded pass.
+Add `--analyze code` to the language view for standard LOC, comment, and code-blank
+partitions across supported common languages; the percentage column then uses code lines
+instead of bytes. Use `--analyze documents --view documents` for normalized prose words,
+paragraphs, aggregate-derived pages, and reader-visible Markdown that excludes
+destinations and code.
+`--analyze full` computes both families in one bounded pass.
 Use `--max-file-size`, `--analysis-workers`, and `--words-per-page` to bound work and
 control page derivation.
 Content analysis is currently one-shot and cannot be combined with `--watch`.

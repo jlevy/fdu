@@ -42,11 +42,13 @@ const CLI_STYLES: Styles = Styles::styled()
     .valid(AnsiColor::Green.on_default())
     .invalid(AnsiColor::Yellow.on_default());
 
-const COMMON_REPORTS_HELP: &str = r"Four common reports:
+const COMMON_REPORTS_HELP: &str = r"Five common reports:
+  Language sizes      fdu --view languages PATH
+                      Uses exact names and extensions; never reads file contents.
   Languages and LOC   fdu --analyze code --view languages PATH
                       Reads eligible files for code, comment, and blank lines.
-  File types by name  fdu --view types PATH
-                      Uses exact names and extensions; never reads file contents.
+  All file types      fdu --view types PATH
+                      Includes every family from names and extensions; never reads content.
   Folder sizes        fdu PATH
                       Uses the metadata-only tree view and reusable index.
   Fast totals only    fdu --cache off --view summary PATH
@@ -74,7 +76,8 @@ Content analysis:
   documents  basic metrics plus logical and reader-visible prose metrics
   full       every shipped analyzer
 
-  languages requires code or full; documents requires any enabled profile.
+  languages is metadata-only by default; code or full adds standard LOC.
+  documents requires any enabled profile.
   Views never enable content analysis implicitly.
   Content reads are bounded by --max-file-size and --analysis-workers.
   --words-per-page changes only report-time page derivation.
