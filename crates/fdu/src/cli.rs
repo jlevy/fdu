@@ -83,6 +83,7 @@ Content analysis:
 
 Output and automation:
   Metadata-only machine output remains fdu.report/1; metric summaries use fdu.report/2.
+  Text language rows use canonical names; machine formats retain lowercase IDs.
   Metric rows include detection source, confidence, origin flags, and coverage.
   Results go to stdout; warnings and errors go to stderr.
   The command never prompts, pages, or animates progress.

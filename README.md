@@ -35,9 +35,14 @@ The language command intentionally names two independent choices.
 `--analyze code` authorizes bounded content reads and computes standard lines of code;
 `--view languages` selects the grouped language report.
 A view never turns on content analysis by itself.
+Human text uses language names such as `CSS`, `C++`, `JavaScript`, and
+`Protocol Buffers`; JSON, JSONL, and YAML retain stable lowercase IDs such as `css`,
+`cpp`, `javascript`, and `protobuf` for scripts.
 
 For metadata classification, `--view types` applies stable exact-name and extension
-rules; use `--view extensions` when the raw extension is the desired grouping.
+rules. The language roll-up uses those detected types and may refine unresolved or
+ambiguous paths with bounded probes once analysis is enabled.
+Use `--view extensions` when the raw filename extension is the desired grouping.
 For folder sizes, `tree` is the default view, so `fdu PATH` is the complete command.
 For the no-index totals path, both `--cache off` and the single unfiltered `summary`
 view are required. Sizes use allocated bytes by default; add `--size apparent` for

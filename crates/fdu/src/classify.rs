@@ -169,6 +169,57 @@ pub const fn type_rule_fingerprint() -> u64 {
     TYPE_RULE_FINGERPRINT
 }
 
+/// Human-facing name for a stable code-type identifier.
+///
+/// Reports and caches retain the identifier; only terminal language views use this
+/// presentation layer. Unknown identifiers are returned unchanged.
+#[cfg(feature = "cli")]
+pub(crate) fn human_language_name(id: &str) -> &str {
+    match id {
+        "rust" => "Rust",
+        "python" => "Python",
+        "javascript" => "JavaScript",
+        "typescript" => "TypeScript",
+        "go" => "Go",
+        "c" => "C",
+        "cpp" => "C++",
+        "csharp" => "C#",
+        "java" => "Java",
+        "kotlin" => "Kotlin",
+        "swift" => "Swift",
+        "ruby" => "Ruby",
+        "php" => "PHP",
+        "shell" => "Shell",
+        "powershell" => "PowerShell",
+        "lua" => "Lua",
+        "perl" => "Perl",
+        "r" => "R",
+        "dart" => "Dart",
+        "scala" => "Scala",
+        "haskell" => "Haskell",
+        "elixir" => "Elixir",
+        "erlang" => "Erlang",
+        "clojure" => "Clojure",
+        "fsharp" => "F#",
+        "ocaml" => "OCaml",
+        "objective-c" => "Objective-C",
+        "julia" => "Julia",
+        "zig" => "Zig",
+        "nim" => "Nim",
+        "solidity" => "Solidity",
+        "assembly" => "Assembly",
+        "sql" => "SQL",
+        "make" => "Make",
+        "dockerfile" => "Dockerfile",
+        "cmake" => "CMake",
+        "protobuf" => "Protocol Buffers",
+        "terraform" => "Terraform",
+        "nix" => "Nix",
+        "css" => "CSS",
+        _ => id,
+    }
+}
+
 /// Classify from path metadata only, without opening the file.
 pub fn classify_path(path: &Path) -> Classification {
     classify_path_with_prefix(path, None)
@@ -429,6 +480,8 @@ mod tests {
         ContentFamily, DetectionConfidence, DetectionSource, classify_path,
         classify_path_with_prefix, derive_ext, type_rule_fingerprint,
     };
+    #[cfg(feature = "cli")]
+    use super::{GENERATED_RULES, human_language_name};
     use std::ffi::OsStr;
     use std::path::Path;
 
@@ -480,6 +533,27 @@ mod tests {
         assert_eq!(unknown.file_type.as_str(), "unknown:.widget");
         assert_eq!(unknown.family, ContentFamily::Unknown);
         assert_ne!(type_rule_fingerprint(), 0);
+    }
+
+    #[cfg(feature = "cli")]
+    #[test]
+    fn every_code_rule_has_a_canonical_human_language_name() {
+        for rule in GENERATED_RULES.iter().filter(|rule| rule.family == ContentFamily::Code) {
+            assert_ne!(
+                human_language_name(rule.id),
+                rule.id,
+                "code rule {} needs a human-facing language name",
+                rule.id
+            );
+        }
+
+        assert_eq!(human_language_name("css"), "CSS");
+        assert_eq!(human_language_name("cpp"), "C++");
+        assert_eq!(human_language_name("csharp"), "C#");
+        assert_eq!(human_language_name("javascript"), "JavaScript");
+        assert_eq!(human_language_name("powershell"), "PowerShell");
+        assert_eq!(human_language_name("protobuf"), "Protocol Buffers");
+        assert_eq!(human_language_name("unknown"), "unknown");
     }
 
     #[test]

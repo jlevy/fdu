@@ -97,14 +97,14 @@ the human row.
 ```console
 $ fdu --cache off --allow-partial --analyze code --view languages --size apparent unsupported-project
 ! warning: content analysis incomplete: 0 invalid UTF-8, 0 too large, 0 I/O errors, 0 changed during read, 1 unsupported, 0 stale
-      15 B       —  haskell            1 file, 1 unsupported
+      15 B       —  Haskell  1 file, 1 unsupported
 ? 0
 ```
 
 ```console
 $ fdu --cache off --analyze code --view languages,documents --size apparent content-project
-      38 B   75.0%  rust               1 file, 4 lines (3 code, 0 comment, 1 blank)
-      39 B   25.0%  python             1 file, 3 lines (1 code, 1 comment, 1 blank)
+      38 B   75.0%  Rust    1 file, 4 lines (3 code, 0 comment, 1 blank)
+      39 B   25.0%  Python  1 file, 3 lines (1 code, 1 comment, 1 blank)
 
       42 B   63.6%  markdown           1 file, 5 lines (3 nonblank, 2 blank), 7 words (0.0 pages), 1 documentation
       35 B   36.4%  text               2 files, 3 lines (2 nonblank, 1 blank), 4 words (0.0 pages), 1 documentation, 1 binary
@@ -397,21 +397,21 @@ comments.
 
 ```console
 $ fdu --cache off --analyze code --view languages --limit all --size apparent code-project
-      97 B   12.5%  python             1 file, 7 lines (5 code, 1 comment, 1 blank)
-     129 B   10.0%  shell              1 file, 7 lines (4 code, 2 comment, 1 blank)
-     104 B    7.5%  cpp                1 file, 7 lines (3 code, 3 comment, 1 blank)
-     106 B    7.5%  csharp             1 file, 7 lines (3 code, 3 comment, 1 blank)
-      88 B    7.5%  go                 1 file, 7 lines (3 code, 4 comment, 0 blank)
-     119 B    7.5%  javascript         1 file, 7 lines (3 code, 4 comment, 0 blank)
-      98 B    7.5%  php                1 file, 7 lines (3 code, 4 comment, 0 blank)
-      70 B    5.0%  c                  1 file, 7 lines (2 code, 4 comment, 1 blank)
-      66 B    5.0%  java               1 file, 7 lines (2 code, 4 comment, 1 blank)
-      97 B    5.0%  kotlin             1 file, 7 lines (2 code, 4 comment, 1 blank)
-      75 B    5.0%  ruby               1 file, 7 lines (2 code, 4 comment, 1 blank)
-     116 B    5.0%  rust               1 file, 7 lines (2 code, 4 comment, 1 blank)
-      84 B    5.0%  sql                1 file, 7 lines (2 code, 4 comment, 1 blank)
-      95 B    5.0%  swift              1 file, 7 lines (2 code, 4 comment, 1 blank)
-      97 B    5.0%  typescript         1 file, 7 lines (2 code, 4 comment, 1 blank)
+      97 B   12.5%  Python      1 file, 7 lines (5 code, 1 comment, 1 blank)
+     129 B   10.0%  Shell       1 file, 7 lines (4 code, 2 comment, 1 blank)
+     104 B    7.5%  C++         1 file, 7 lines (3 code, 3 comment, 1 blank)
+     106 B    7.5%  C#          1 file, 7 lines (3 code, 3 comment, 1 blank)
+      88 B    7.5%  Go          1 file, 7 lines (3 code, 4 comment, 0 blank)
+     119 B    7.5%  JavaScript  1 file, 7 lines (3 code, 4 comment, 0 blank)
+      98 B    7.5%  PHP         1 file, 7 lines (3 code, 4 comment, 0 blank)
+      70 B    5.0%  C           1 file, 7 lines (2 code, 4 comment, 1 blank)
+      66 B    5.0%  Java        1 file, 7 lines (2 code, 4 comment, 1 blank)
+      97 B    5.0%  Kotlin      1 file, 7 lines (2 code, 4 comment, 1 blank)
+      75 B    5.0%  Ruby        1 file, 7 lines (2 code, 4 comment, 1 blank)
+     116 B    5.0%  Rust        1 file, 7 lines (2 code, 4 comment, 1 blank)
+      84 B    5.0%  SQL         1 file, 7 lines (2 code, 4 comment, 1 blank)
+      95 B    5.0%  Swift       1 file, 7 lines (2 code, 4 comment, 1 blank)
+      97 B    5.0%  TypeScript  1 file, 7 lines (2 code, 4 comment, 1 blank)
 ? 0
 ```
 

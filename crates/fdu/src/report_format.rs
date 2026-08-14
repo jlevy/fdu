@@ -17,7 +17,7 @@ use std::path::Path;
 
 use clap::builder::styling::{AnsiColor, Style as AnsiStyle};
 
-use crate::classify::{DetectionConfidence, DetectionSource};
+use crate::classify::{DetectionConfidence, DetectionSource, human_language_name};
 use crate::content::{CoverageReason, MetricValues};
 use crate::engine_contract::{EntryKind, Freshness};
 use crate::query::{
@@ -33,6 +33,9 @@ const STYLE_BAR: AnsiStyle = AnsiColor::Green.on_default();
 
 /// Extensions in a type breakdown.
 const STYLE_TYPE: AnsiStyle = AnsiColor::Green.on_default();
+
+/// Established label width for non-language metric summaries.
+const TEXT_METRIC_LABEL_WIDTH: usize = 18;
 
 /// Machine-output schema identity.
 ///
@@ -102,8 +105,8 @@ fn render_text(report: &Report, color: bool) -> String {
         match section {
             Section::Tree(root) => render_text_tree(&mut out, root, report.size, color),
             Section::Extensions(rows) => render_text_types(&mut out, rows, report.size, color),
-            Section::Metrics { summary, .. } => {
-                render_text_metrics(&mut out, summary, report.size, color);
+            Section::Metrics { view, summary } => {
+                render_text_metrics(&mut out, *view, summary, report.size, color);
             }
             // A flat listing prints one path per line and nothing else, so it pipes
             // straight into xargs and diffs cleanly against another run.
@@ -118,7 +121,24 @@ fn render_text(report: &Report, color: bool) -> String {
     out
 }
 
-fn render_text_metrics(out: &mut String, summary: &MetricSummary, size: SizeMetric, color: bool) {
+fn render_text_metrics(
+    out: &mut String,
+    view: ViewSpec,
+    summary: &MetricSummary,
+    size: SizeMetric,
+    color: bool,
+) {
+    let longest_label = summary
+        .rows
+        .iter()
+        .map(|row| human_metric_label(view, &row.id).chars().count())
+        .max()
+        .unwrap_or_default();
+    let label_width = if view == ViewSpec::Languages {
+        longest_label.saturating_add(1)
+    } else {
+        TEXT_METRIC_LABEL_WIDTH.max(longest_label)
+    };
     for row in &summary.rows {
         let selected = pick(size, row.bytes, row.allocated);
         let percentage = if row.share.denominator == 0 {
@@ -170,14 +190,21 @@ fn render_text_metrics(out: &mut String, summary: &MetricSummary, size: SizeMetr
                 let _ = write!(suffix, ", {count} {}", human_coverage_label(*reason));
             }
         }
+        let label = human_metric_label(view, &row.id);
+        let padding = " ".repeat(label_width.saturating_sub(label.chars().count()));
         let _ = writeln!(
             out,
-            "{:>10}  {:>6}  {:<18} {suffix}",
+            "{:>10}  {:>6}  {}{} {suffix}",
             human_bytes(selected),
             percentage,
-            paint(&row.id, STYLE_TYPE, color),
+            paint(label, STYLE_TYPE, color),
+            padding,
         );
     }
+}
+
+fn human_metric_label(view: ViewSpec, id: &str) -> &str {
+    if view == ViewSpec::Languages { human_language_name(id) } else { id }
 }
 
 fn human_coverage_label(reason: CoverageReason) -> &'static str {
@@ -1318,6 +1345,58 @@ mod tests {
         let lines: Vec<&str> = text.lines().collect();
         assert_eq!(lines[0].find("120 B"), lines[1].find("100 B"));
         assert_eq!(lines[0].find('█'), lines[1].find('█'));
+    }
+
+    #[test]
+    fn language_text_uses_human_names_and_aligns_suffixes_with_color() {
+        let mut index = Index::new_with_scope("/root", ScanScope::default());
+        index
+            .apply(&Observation::new(vec![
+                Op::Upsert {
+                    path: PathBuf::from("main.cpp"),
+                    kind: EntryKind::File,
+                    attrs: attrs(100, 10),
+                },
+                Op::Upsert {
+                    path: PathBuf::from("main.js"),
+                    kind: EntryKind::File,
+                    attrs: attrs(100, 20),
+                },
+            ]))
+            .expect("apply");
+        let report = report(
+            &index,
+            &Query { views: vec![ViewSpec::Languages], ..Query::default() },
+            &Provenance {
+                scan_started_at: None,
+                generated_at: UNIX_EPOCH,
+                source: ReportSource::ColdScan,
+                complete: true,
+                errors: Vec::new(),
+            },
+        );
+
+        let plain = render(&report, Format::Text, false);
+        assert!(plain.contains("C++"), "{plain}");
+        assert!(plain.contains("JavaScript"), "{plain}");
+        let plain_suffixes = plain
+            .lines()
+            .map(|line| line.find("1 file").expect("file count suffix"))
+            .collect::<Vec<_>>();
+        assert_eq!(plain_suffixes[0], plain_suffixes[1], "{plain}");
+
+        let colored = render(&report, Format::Text, true);
+        let colored_suffixes = colored
+            .lines()
+            .map(|line| line.find("1 file").expect("colored file count suffix"))
+            .collect::<Vec<_>>();
+        assert_eq!(colored_suffixes[0], colored_suffixes[1], "{colored:?}");
+
+        let json = render(&report, Format::Json, false);
+        assert!(json.contains("\"id\": \"cpp\""), "{json}");
+        assert!(json.contains("\"id\": \"javascript\""), "{json}");
+        assert!(!json.contains("\"id\": \"C++\""), "{json}");
+        assert!(!json.contains("\"id\": \"JavaScript\""), "{json}");
     }
 
     #[test]
