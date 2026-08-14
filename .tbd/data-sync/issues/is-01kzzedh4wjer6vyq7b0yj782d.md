@@ -5,7 +5,7 @@ title: "Retrospective senior review and follow-up for PR #21"
 kind: task
 status: in_progress
 priority: 1
-version: 7
+version: 11
 labels:
   - pr-review
 dependencies: []
@@ -15,7 +15,11 @@ child_order_hints:
   - is-01kzzeeepmydzcptwb0k3fg64z
   - is-01kzzeef2cdx7x1qd6wnb6xe03
   - is-01kzzeefcnwppwtr6x3660g9gj
+  - is-01kzzf4f7e2mdrn6ea47b09t64
+  - is-01kzzf4fmfaavqhy0h4ksbmw2b
+  - is-01kzzf4fxx9g43rj7qa0m3f9pk
+  - is-01kzzf4g6xj5gx1fgy2ymbdhaw
 created_at: 2026-08-14T06:12:44.315Z
-updated_at: 2026-08-14T06:13:15.284Z
+updated_at: 2026-08-14T06:25:17.020Z
 ---
 Perform a full senior review of merged PR #21, update its source branch from origin/main with the merge-upstream shortcut, track every actionable finding as a child bead, implement and validate fixes, publish a follow-up PR if needed, watch CI, and merge it.
