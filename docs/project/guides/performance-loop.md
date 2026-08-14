@@ -246,12 +246,12 @@ That is what lets the ledger lead with its failures.
   from the Pydantic model in
   [`benchmarks/realtree/experiment.py`](../../../benchmarks/realtree/experiment.py), and
   `make perf-schema-check` fails on drift.
-  The model is the single source of truth, and its field descriptions are the
-  documentation every artifact ships with.
+  The model is the source of truth, and its field descriptions are the documentation
+  every artifact ships with.
 - **The measured half is never retyped.** `make perf-record` lifts the medians and
   intervals straight out of the run JSON and asks the operator only for what a
-  measurement cannot supply: the hypothesis, the complexity, the verdict, and one
-  sentence of reasoning.
+  measurement cannot supply: the hypothesis, the change being tested, the complexity,
+  the verdict, and one sentence of reasoning.
 - **The ledger is a view, not a document.** `make perf-ledger` regenerates it from the
   validated artifacts, so the report cannot drift from the record; an artifact that
   stopped matching the contract fails the build instead of quietly contributing a wrong
@@ -259,10 +259,9 @@ That is what lets the ledger lead with its failures.
   hand.
 
 Structure earns its place here only because something reads it: the accept rule and the
-ledger tables. The judgment stays prose.
-Any loop that proposes something, measures it, and decides can keep its record the same
-way; [softschema](https://github.com/jlevy/softschema) documents the format, the CLI,
-and this pattern as a playbook.
+ledger tables. Any loop that proposes something, measures it, and decides can keep its
+record the same way; [softschema](https://github.com/jlevy/softschema) documents the
+format, the CLI, and this pattern as a playbook.
 
 ## Hypotheses
 
