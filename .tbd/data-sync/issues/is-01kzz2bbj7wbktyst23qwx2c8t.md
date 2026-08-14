@@ -3,14 +3,16 @@ type: is
 id: is-01kzz2bbj7wbktyst23qwx2c8t
 title: "Retire PR #4 as superseded"
 kind: task
-status: open
+status: closed
 priority: 2
-version: 1
+version: 2
 labels: []
 dependencies: []
 parent_id: is-01kzz29dspd7bsy6jk98mpb9z3
 created_at: 2026-08-14T02:41:50.150Z
-updated_at: 2026-08-14T02:41:50.150Z
+updated_at: 2026-08-14T03:14:46.829Z
+closed_at: 2026-08-14T03:14:46.828Z
+close_reason: "Closed PR #4 as superseded, with a comment recording the eight ported fixes and their beads, the four superseded areas and why, and the two open decisions (fdu-k377, fdu-3vum). Replacement is PR #20: https://github.com/jlevy/fdu/pull/20"
 ---
 Close https://github.com/jlevy/fdu/pull/4 once the salvaged fixes land, with a comment recording what was ported, what was dropped, and why, so the branch's review history stays findable.
 
