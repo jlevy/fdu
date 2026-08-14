@@ -5,7 +5,7 @@ title: "Clarify and validate PR #15 content performance layers"
 kind: task
 status: in_progress
 priority: 1
-version: 23
+version: 25
 labels: []
 dependencies: []
 child_order_hints:
@@ -26,10 +26,11 @@ child_order_hints:
   - is-01kzysj77mzmh0rdct83a5rwaa
   - is-01kzyv83g6px1zbkrp5cj3bck2
   - is-01kzyx7d2nyh5gjx4gk6f4sfd0
+  - is-01kzyzpjp5rz94mz5ma25t0tdz
 created_at: 2026-08-13T22:59:35.718Z
-updated_at: 2026-08-14T01:54:06.445Z
+updated_at: 2026-08-14T02:16:34.734Z
 ---
 
 ## Notes
 
-PR #15 is hardened through 241a3c8: eligible text is read through EOF with no size cap; expected binary/encoding/unsupported coverage is non-fatal; language summaries are aligned and metadata-only unless analysis is requested; help, README, design/spec/decision docs, benchmark contracts, and scratch-corpus cleanup guidance are aligned. Full local make check passes, all required GitHub checks pass across macOS/Linux/Windows and Python 3.12/3.14, and global fdu 0.0.1-dev+g241a3c88d is installed. Remaining broader readiness gaps continue in the open child issues.
+PR #15 is hardened through 9664230: eligible text is read through EOF with no size cap; expected binary/encoding/unsupported coverage is non-fatal; language summaries are aligned and metadata-only unless analysis is requested; help, README, design/spec/decision docs, benchmark contracts, and scratch-corpus cleanup guidance are aligned. One-shot text reports now end with exact walked/read/fresh/cache performance telemetry; machine formats and watch/lifecycle output omit it. Full local make check and all 16 required GitHub checks pass across macOS/Linux/Windows and Python 3.12/3.14. Global fdu 0.0.1-dev+g9664230be is installed. Remaining broader readiness gaps continue in the open child issues.
