@@ -152,7 +152,9 @@ impl Snapshot {
             // return means the kernel filled less than the struct.
             let filled = unsafe {
                 libc::proc_pidinfo(
-                    std::process::id() as i32,
+                    // A pid always fits an i32; the fallback simply makes the call fail
+                    // rather than silently querying a wrapped pid.
+                    i32::try_from(std::process::id()).unwrap_or(-1),
                     libc::PROC_PIDTASKINFO,
                     0,
                     (&raw mut info).cast(),
