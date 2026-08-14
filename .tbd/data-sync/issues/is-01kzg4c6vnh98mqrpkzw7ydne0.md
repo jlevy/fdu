@@ -5,8 +5,8 @@ title: "Publishing: crates.io, PyPI abi3 wheels, and a name re-verification gate
 kind: task
 status: open
 priority: 2
-version: 7
-spec_path: docs/project/specs/active/plan-2026-08-08-fdu-phase-1.md
+version: 8
+spec_path: docs/project/specs/active/plan-2026-08-14-fdu-release-packaging-python-api-polish.md
 labels: []
 dependencies:
   - type: blocks
@@ -21,7 +21,7 @@ dependencies:
     target: is-01kzg4d2saym31t884vf6me2p7
 parent_id: is-01kzg48ekn4sm0azybr010qgmn
 created_at: 2026-08-08T07:28:38.772Z
-updated_at: 2026-08-09T20:45:48.453Z
+updated_at: 2026-08-14T21:19:42.062Z
 ---
 Ship both artifacts from one workspace.
 - crates.io: fdu, with cli as a default feature so 'cargo install fdu' just works. Library consumers write default-features = false; that trade-off is accepted and must be one documented line in the README.

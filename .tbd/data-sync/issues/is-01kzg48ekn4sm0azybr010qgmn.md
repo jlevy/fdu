@@ -5,7 +5,7 @@ title: "fdu phase 1: fastest walker with full stats, proven by benchmark"
 kind: epic
 status: open
 priority: 1
-version: 31
+version: 32
 spec_path: docs/project/specs/active/plan-2026-08-08-fdu-phase-1.md
 labels: []
 dependencies: []
@@ -34,8 +34,9 @@ child_order_hints:
   - is-01kzg4c6vnh98mqrpkzw7ydne0
   - is-01kzkskszrb20xkk7g3gt32za6
   - is-01kzmnx3taexx4cq4m722p0yp0
+  - is-01m01293x5gaacv3vxjdtrg146
 created_at: 2026-08-08T07:26:35.637Z
-updated_at: 2026-08-10T02:04:36.562Z
+updated_at: 2026-08-14T21:19:05.636Z
 ---
 Root execution epic for fdu. PR #1 merged the Phase 0 product slice and all Wave 0 supply-chain, atomicity, ownership, concurrency, cross-platform, and final-validation gates into main. Execute the remaining Rust refactor guards and shared performance-evidence foundation, resolve measured design gates, build the optimized engine, finish product surfaces, publish the complete performance report, then release. The CLI UX and zero-install skill follow-up is owned by fdu-6c8n on a new branch from main. Future-only extensions live under fdu-x746 and do not compete with the critical path. Exit criteria include measured cold/full-stat, warm 500k, memory, CLI/schema, reproducible evidence, ratified goals, and bounded provable concurrency contracts from the linked plan.
 
