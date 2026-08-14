@@ -5,7 +5,7 @@ title: "Clarify and validate PR #15 content performance layers"
 kind: task
 status: in_progress
 priority: 1
-version: 22
+version: 23
 labels: []
 dependencies: []
 child_order_hints:
@@ -27,9 +27,9 @@ child_order_hints:
   - is-01kzyv83g6px1zbkrp5cj3bck2
   - is-01kzyx7d2nyh5gjx4gk6f4sfd0
 created_at: 2026-08-13T22:59:35.718Z
-updated_at: 2026-08-14T01:46:54.389Z
+updated_at: 2026-08-14T01:54:06.445Z
 ---
 
 ## Notes
 
-PR #15 review is hardened through 241a3c8: language summaries are metadata-only by default with aligned canonical names; code/full analysis additively supplies LOC; eligible text is read through EOF with no size cap; expected binary/encoding/unsupported coverage is non-fatal while operational failures remain partial; help and README document the three performance tiers and common compositions; generated benchmark scratch cleanup is documented. Full make check passes and global fdu 0.0.1-dev+g241a3c88d is installed. Remaining broader readiness gaps continue in the open child issues.
+PR #15 is hardened through 241a3c8: eligible text is read through EOF with no size cap; expected binary/encoding/unsupported coverage is non-fatal; language summaries are aligned and metadata-only unless analysis is requested; help, README, design/spec/decision docs, benchmark contracts, and scratch-corpus cleanup guidance are aligned. Full local make check passes, all required GitHub checks pass across macOS/Linux/Windows and Python 3.12/3.14, and global fdu 0.0.1-dev+g241a3c88d is installed. Remaining broader readiness gaps continue in the open child issues.
