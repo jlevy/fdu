@@ -243,6 +243,18 @@ pub struct ApplyStats {
     pub stale: u64,
 }
 
+impl ApplyStats {
+    /// True when any operation changed indexed state.
+    ///
+    /// `unchanged` and `stale` are decisions not to mutate, so a pass reporting only
+    /// those left the index exactly as it was loaded.  Callers use this to tell a
+    /// reconciliation that found real changes from one that confirmed a tree is still
+    /// what the snapshot already says it is.
+    pub const fn mutated(&self) -> bool {
+        self.inserted > 0 || self.updated > 0 || self.removed > 0 || self.invalidated > 0
+    }
+}
+
 /// Result of arbitrating and applying one producer observation.
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 pub struct ApplyOutcome {

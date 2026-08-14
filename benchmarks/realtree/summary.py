@@ -135,6 +135,7 @@ def render(experiments: Sequence[Mapping[str, Any]]) -> str:
 
     lines.extend(_headline(experiments))
     lines.extend(_conditions(experiments))
+    lines.extend(_regimes(experiments))
     lines.extend(_index(experiments))
 
     lines.append("## The experiments")
@@ -280,6 +281,56 @@ def _conditions(experiments: Sequence[Mapping[str, Any]]) -> List[str]:
             "independent oracle."
         )
     lines.append("")
+    return lines
+
+
+def _regimes(experiments: Sequence[Mapping[str, Any]]) -> List[str]:
+    """Which measurement regimes this evidence actually covers.
+
+    A result is evidence about the regime it was measured in, and the ledger is where a
+    reader finds out which that was.  Stating the coverage in hand-written prose puts it
+    one edit behind the artifacts from the moment a new regime lands, so it is derived
+    here instead: the artifacts already carry platform, host, and cache state, and this
+    only counts them.
+    """
+    if not experiments:
+        return []
+    counts: Dict[tuple, int] = {}
+    for experiment in experiments:
+        subject = experiment["subject"]
+        platform = ", ".join(
+            part for part in (subject.get("host_system"), subject.get("filesystem")) if part
+        )
+        regime = (
+            platform or "unrecorded",
+            subject.get("host_virtualization") or "unrecorded",
+            subject.get("os_cache") or "unrecorded",
+        )
+        counts[regime] = counts.get(regime, 0) + 1
+
+    lines = ["## Regime coverage", ""]
+    lines.append(
+        "Every artifact records the regime it measured. This table is counted from "
+        "them rather than written by hand, so it cannot fall behind the evidence. "
+        "Which tuning constants that evidence supports, and which are inherited "
+        "without it, is in "
+        "[the platform tuning guide](../guides/platform-tuning.md)."
+    )
+    lines.append("")
+    lines.append("| platform | host | cache state | experiments |")
+    lines.append("| --- | --- | --- | ---: |")
+    for regime, count in sorted(counts.items(), key=lambda item: (-item[1], item[0])):
+        platform, host, cache = regime
+        lines.append(f"| {platform} | {host} | {cache} | {count} |")
+    lines.append("")
+    if len(counts) == 1:
+        total = sum(counts.values())
+        lines.append(
+            f"All {total} experiments share one regime, so every number here is "
+            "evidence about that regime and about no other. A constant chosen from "
+            "them is portable only where a second measurement says it is."
+        )
+        lines.append("")
     return lines
 
 

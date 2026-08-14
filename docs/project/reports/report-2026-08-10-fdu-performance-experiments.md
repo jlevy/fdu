@@ -49,6 +49,21 @@ interleaved run of 12 paired trials (exp-032).
 Every run fingerprinted the tree before and after and confirmed it unchanged, and every
 trial’s engine digest was checked against an independent oracle.
 
+## Regime coverage
+
+Every artifact records the regime it measured.
+This table is counted from them rather than written by hand, so it cannot fall behind
+the evidence. Which tuning constants that evidence supports, and which are inherited
+without it, is in [the platform tuning guide](../guides/platform-tuning.md).
+
+| platform | host | cache state | experiments |
+| --- | --- | --- | ---: |
+| Darwin 25.5.0, apfs | unrecorded | warm-steady | 51 |
+
+All 51 experiments share one regime, so every number here is evidence about that regime
+and about no other. A constant chosen from them is portable only where a second
+measurement says it is.
+
 ## Every experiment, including the failures
 
 The rejected ones are the reusable part: they stop the next person spending a day on a

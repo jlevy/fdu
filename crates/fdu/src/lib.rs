@@ -313,7 +313,8 @@ pub fn open_with_pending_save(
     }
 
     if let Some(mut index) = loaded {
-        let scan_report = scan::reconcile(&mut index, &config.scan, &mut |_| {})?.scan;
+        let reconciled = scan::reconcile(&mut index, &config.scan, &mut |_| {})?;
+        let scan_report = reconciled.scan;
         index.establish_baseline();
         let content_cache = load_content(&mut index, config)?;
         let analysis = config
@@ -321,7 +322,19 @@ pub fn open_with_pending_save(
             .profile
             .is_enabled()
             .then(|| content::analyze_index(&mut index, config.analysis));
-        let pending = spawn_save(&index, config, scan_report.is_complete());
+        // A reconciliation that mutated nothing leaves an index that serializes to the
+        // bytes already on disk, so rewriting it is pure cost: the clone, the encode,
+        // and the write all produce a file identical to the one just read. Each artifact
+        // is judged separately because content and metadata are invalidated separately.
+        let writes = SaveTargets {
+            metadata: reconciled.apply.mutated(),
+            // Stale sidecar records no longer match a live candidate; rewriting is what
+            // drops them, so a load that saw any is a reason to write even when the
+            // analysis added nothing.
+            content: analysis.as_ref().is_some_and(|report| report.applied > 0)
+                || content_cache.stale > 0,
+        };
+        let pending = spawn_save(&index, config, scan_report.is_complete(), writes);
         return Ok((
             index,
             OpenReport {
@@ -341,12 +354,32 @@ pub fn open_with_pending_save(
         .profile
         .is_enabled()
         .then(|| content::analyze_index(&mut index, config.analysis));
-    let pending = spawn_save(&index, config, scan_report.is_complete());
+    let pending = spawn_save(&index, config, scan_report.is_complete(), SaveTargets::all());
     Ok((
         index,
         OpenReport { path_taken: OpenPath::ColdScan, scan: scan_report, analysis, content_cache },
         pending,
     ))
+}
+
+/// Which cache artifacts a completed open still needs to write.
+///
+/// A cold scan established both from nothing and writes both.  A warm open writes only
+/// what its own pass changed, which on an unchanged tree is neither.
+#[derive(Clone, Copy, Debug)]
+struct SaveTargets {
+    metadata: bool,
+    content: bool,
+}
+
+impl SaveTargets {
+    const fn all() -> Self {
+        Self { metadata: true, content: true }
+    }
+
+    const fn none(self) -> bool {
+        !self.metadata && !self.content
+    }
 }
 
 fn load_content(index: &mut Index, config: &OpenConfig) -> Result<content::ContentCacheLoad> {
@@ -360,27 +393,35 @@ fn load_content(index: &mut Index, config: &OpenConfig) -> Result<content::Conte
 ///
 /// Only a complete scan is written: a snapshot recording a partial view would be served
 /// as fact on the next run, and the existing complete snapshot is better than that.
-fn spawn_save(index: &Index, config: &OpenConfig, complete: bool) -> PendingSave {
-    let (Some(cache_path), true, true) =
-        (config.cache_path.clone(), config.policy.writes(), complete)
+fn spawn_save(
+    index: &Index,
+    config: &OpenConfig,
+    complete: bool,
+    writes: SaveTargets,
+) -> PendingSave {
+    let (Some(cache_path), true, true, false) =
+        (config.cache_path.clone(), config.policy.writes(), complete, writes.none())
     else {
         return PendingSave::none();
     };
 
     // The index is read-only from here, so the writer's clone and the caller's rendering
-    // are two readers. Cloning is what buys that independence.
+    // are two readers. Cloning is what buys that independence, and it is why a run with
+    // nothing to write returns above rather than reaching this point.
     let snapshot_source = std::sync::Arc::new(index.clone());
     let analysis = config.analysis;
     let mut workers = Vec::with_capacity(2);
-    let metadata_source = std::sync::Arc::clone(&snapshot_source);
-    let metadata_path = cache_path.clone();
-    if let Ok(worker) = std::thread::Builder::new()
-        .name("fdu-snapshot".to_string())
-        .spawn(move || snapshot::save(&metadata_source, &metadata_path))
-    {
-        workers.push(("metadata", worker));
+    if writes.metadata {
+        let metadata_source = std::sync::Arc::clone(&snapshot_source);
+        let metadata_path = cache_path.clone();
+        if let Ok(worker) = std::thread::Builder::new()
+            .name("fdu-snapshot".to_string())
+            .spawn(move || snapshot::save(&metadata_source, &metadata_path))
+        {
+            workers.push(("metadata", worker));
+        }
     }
-    if analysis.profile.is_enabled() {
+    if writes.content && analysis.profile.is_enabled() {
         let content_path = content::content_cache_path(&cache_path);
         if let Ok(worker) = std::thread::Builder::new()
             .name("fdu-content-cache".to_string())
@@ -516,6 +557,58 @@ mod tests {
         assert_eq!(report.path_taken, OpenPath::WarmRevalidate);
         assert_eq!(index.total().files, 1);
         assert_eq!(fs::metadata(&snapshot_path).expect("still there").len(), before);
+    }
+
+    /// A verified warm open over an unchanged tree rewrote a byte-identical snapshot on
+    /// every run, paying a full index clone, encode, and write to reproduce the file it
+    /// had just read.  The bytes are the assertion: if a future change makes an
+    /// unchanged reconciliation produce different serialized state, this fails loudly
+    /// rather than letting the skip silently drop it.
+    #[test]
+    fn an_unchanged_warm_open_leaves_the_snapshot_alone_and_a_changed_one_rewrites_it() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let cache = tempfile::tempdir().expect("cache dir");
+        let snapshot_path = cache.path().join("snap.fdu");
+        write_file(&dir.path().join("a.txt"), b"hello");
+        write_file(&dir.path().join("sub/b.txt"), b"world");
+
+        let auto = OpenConfig {
+            cache_path: Some(snapshot_path.clone()),
+            policy: CachePolicy::Auto,
+            ..OpenConfig::default()
+        };
+        open(dir.path(), &auto).expect("seed");
+        let seeded = fs::read(&snapshot_path).expect("seeded snapshot");
+
+        let (index, report) = open(dir.path(), &auto).expect("warm open");
+        assert_eq!(report.path_taken, OpenPath::WarmRevalidate);
+        assert_eq!(index.total().files, 2);
+        assert_eq!(
+            fs::read(&snapshot_path).expect("snapshot still there"),
+            seeded,
+            "an unchanged warm open must not rewrite the snapshot"
+        );
+
+        write_file(&dir.path().join("sub/c.txt"), b"new file");
+        let (index, report) = open(dir.path(), &auto).expect("warm open after a change");
+        assert_eq!(report.path_taken, OpenPath::WarmRevalidate);
+        assert_eq!(index.total().files, 3);
+        let after_add = fs::read(&snapshot_path).expect("rewritten snapshot");
+        assert_ne!(after_add, seeded, "a warm open that found a new file must persist it");
+
+        fs::remove_file(dir.path().join("sub/c.txt")).expect("remove");
+        let (index, _) = open(dir.path(), &auto).expect("warm open after a removal");
+        assert_eq!(index.total().files, 2);
+        assert_ne!(
+            fs::read(&snapshot_path).expect("rewritten snapshot"),
+            after_add,
+            "a warm open that found a removal must persist it"
+        );
+
+        // The skip must leave a snapshot a later cache-only open can still serve.
+        let cache_only = OpenConfig { policy: CachePolicy::Only, ..auto };
+        let (restored, _) = open(dir.path(), &cache_only).expect("cache-only open");
+        assert_eq!(restored.total().files, 2);
     }
 
     #[test]

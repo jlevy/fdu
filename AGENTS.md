@@ -42,9 +42,11 @@ how library consumers build and is otherwise never exercised locally.
 
 The rules that decide whether a speed change is kept are in
 [fdu-design-principles.md](docs/project/architecture/fdu-design-principles.md); the
-protocol is [the performance loop](docs/project/guides/performance-loop.md) and every
+protocol is [the performance loop](docs/project/guides/performance-loop.md), every
 verdict is in
-[the experiment ledger](docs/project/reports/report-2026-08-10-fdu-performance-experiments.md).
+[the experiment ledger](docs/project/reports/report-2026-08-10-fdu-performance-experiments.md),
+and which regime each shipped tuning constant was measured in is in
+[the platform tuning guide](docs/project/guides/platform-tuning.md).
 
 In practice:
 
@@ -55,6 +57,10 @@ In practice:
 - Record every experiment, including the ones that failed, with `make perf-record`. The
   negative results are the most reusable part of the ledger: they stop the next person
   re-running a dead end.
+- Record the regime, not just the number.
+  Platform, host (bare metal or virtualized), and cache state decide what a result is
+  evidence about; a constant tuned in one regime is inherited, not proven, in the
+  others.
 - None of this is in `make check`. A timing gate on a shared CI runner measures the
   runner.
 

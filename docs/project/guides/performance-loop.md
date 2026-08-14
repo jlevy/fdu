@@ -9,9 +9,15 @@ re-run it, and get numbers comparable to the ones already recorded.
 
 The companion documents are the
 [experiment ledger](../reports/report-2026-08-10-fdu-performance-experiments.md), which
-records every experiment and its verdict, and the
+records every experiment and its verdict, the
+[platform tuning guide](platform-tuning.md), which records which regime each tuning
+constant was measured in and therefore where it is evidence, and the
 [end-to-end performance plan](../specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md),
 which owns the generated-corpus evidence harness this loop borrows from.
+
+The division between them is that this guide owns the protocol, the ledger owns the
+results and is regenerated from artifacts rather than edited, and the platform guide
+owns the mapping from a shipped constant back to the run that chose it.
 
 ## Why a loop and not a list of optimizations
 
@@ -96,6 +102,21 @@ On macOS, `/usr/sbin/purge` only promises to *approximate* initial-boot buffer-c
 conditions. A purge-cold run is therefore a separately labeled diagnostic, not
 controlled-cold release evidence; a dedicated APFS test volume remounted between samples
 is the stronger future protocol.
+
+A third axis crosses these two: whether the host is bare metal or virtualized, recorded
+as `host_virtualization`. It changes what a *cold* sample can mean and nothing else.
+Virtualization has not been measured to distort user-space cost, syscall cost,
+allocation, or thread scheduling, so a **warm** result from a VM is ordinary evidence
+about the environment most fdu runs happen in — a container, a CI job, a cloud instance,
+a WSL session — and is not second-class for being virtual.
+What a hypervisor does distort is the storage beneath the guest: its page cache sits
+under the guest’s, so writing `3` to `drop_caches` inside the guest does not reach the
+disk.
+That makes exactly one class of claim untestable on a VM — anything whose mechanism
+is device latency or I/O ordering, which is why H73 and the queue-depth hypotheses are
+marked as needing bare metal and the io_uring results were not treated as settling the
+cold question. All three axes belong in every recorded result; the ledger counts them
+into its regime coverage table.
 
 ## The reference tree
 
@@ -280,7 +301,9 @@ Status is updated as experiments resolve them; see the ledger for results.
 | H10 | Snapshot load is ~320 ms of the warm start. A format whose on-disk layout can be used without rebuilding the tree would make the warm path open-latency-bound instead of parse-bound. | `warm-snapshot-load` wall down | **Partly addressed** (exp-005): the loader was resolving each entry’s path from the root three times over although the parent id was in hand. The format change itself remains open. |
 | H11 | `revalidate` builds a `BTreeSet<OsString>` of seen names per directory, cloning every name. Comparing against the index’s existing sorted children directly would remove that. | `user_cpu_ns` down on warm jobs | — |
 | H53 | Full reconciliation still uses portable enumeration plus one `fstatat` per entry even though H26’s audited macOS reader returns the same complete stat-tier contract in bulk. Reusing it per directory should remove the warm profile’s 29.25% `fstatat` and 6.76% `getdirentries64` costs while preserving complete-directory fallback. | `warm-revalidate` wall and component down at least 3%; `system_cpu_ns` down; oracle parity at 60k and, if scale-sensitive, 720k | **Confirmed on macOS** (exp-026): warm wall −18.97% at 60k and −34.39% at 720k; large component −39.05%, CPU −44.06%, system CPU −53.97%, RSS neutral. Direct, shared, and scoped reconciliation reuse the existing reader. |
-| H75 | H9’s inversion persists on Linux, where no bulk reader hides it: snapshot load rebuilds every record through the full apply path, reconciliation re-stats every entry, and a quiet warm open still deep-clones the index and rewrites a byte-equivalent snapshot. Removing the load and save bookends should make warm open beat a cold scan. | verified warm open below cold-scan wall on Linux; warm RSS no higher than cold | **Open, measured as a defect** ([Linux first measurements](../research/research-2026-08-13-linux-first-measurements.md)): warm open ran 72% slower than a cold scan at 450k entries in both cache regimes, with peak RSS 44% higher. Three tracked pieces: skip the save when reconciliation applied nothing (`fdu-maxn`), share the index with the writer instead of cloning it (`fdu-niuz`), and load records through their known parent id with one deferred bottom-up roll-up pass (`fdu-91ts`). |
+| H75 | H9’s inversion persists on Linux, where no bulk reader hides it: snapshot load rebuilds every record through the full apply path, reconciliation re-stats every entry, and a quiet warm open still deep-clones the index and rewrites a byte-equivalent snapshot. Removing the load and save bookends should make warm open beat a cold scan. | verified warm open below cold-scan wall on Linux; warm RSS no higher than cold | **Open, narrowed to snapshot load.** Reproduced at both scales in the [three-tier baseline](../research/research-2026-08-13-linux-three-tier-baseline.md): +69% at 450k and +70% at 14.5k entries, so the inversion is scale-independent. `fdu-maxn` is fixed — the redundant rewrite was proven byte-identical across consecutive runs, and skipping it (with the clone it required) measured −20.6% [−21.2%, −16.6%] at 450k with peak RSS 411→195 MB. That leaves warm open at +32% against a cold scan, of which almost all is the 1,305 ms snapshot load: loading a snapshot is statistically indistinguishable from re-walking the tree, −3.7% [−9.9%, +0.1%]. `fdu-91ts` owns the remainder; `fdu-niuz` still owns the clone on the changed path. |
+| H83 | The content sidecar rebuilds per-record state on load exactly as the metadata snapshot does, so warm content runs are bound by restoring precomputed metrics rather than by analysis. | `--cache only` content load component down several-fold; warm content wall below the profile-independent floor | **Open, measured** (`fdu-78q6`): the sidecar load costs about 370 ms for 14,542 files, roughly 25 µs per file against about 3 µs per metadata record, and all three analysis profiles converge on the same ~520 ms warm floor regardless of how much analysis the sidecar saved. Same shape as H78 and probably the same answer. |
+| H84 | `ADAPTIVE_SCAN_SLOW_WORK_NS_PER_ENTRY` was placed between APFS regimes of ~18, 22 and 42 µs per entry, but the Linux warm floor is about 1.5 µs, so the adaptive unlock never fires on Linux and an automatic scan stays at its six-worker cap in every regime the threshold was meant to separate. | calibration never crossing the threshold on a Linux warm scan; a `--threads` sweep finding a knee above six | **Queued** (`fdu-mjwr`, with H76/`fdu-tk1b`). A mechanism for the cold scalar-class gap, not yet a measurement. See [platform tuning](platform-tuning.md). |
 
 ### Rejected or superseded
 

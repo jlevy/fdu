@@ -174,6 +174,14 @@ class Subject(Strict):
     host_memory_bytes: int = Field(default=0, ge=0)
     host_system: str = Field(default="")
     filesystem: str = Field(default="")
+    host_virtualization: str = Field(
+        default="",
+        description=(
+            "bare-metal or virtualized. Decides what a cold sample can mean: a "
+            "hypervisor's page cache sits under the guest's, so dropping the guest's "
+            "does not reach the disk. Empty means the run did not record it."
+        ),
+    )
     os_cache: str = Field(
         default="warm-steady",
         description="Page-cache condition. Dropping it needs root, so say which it was.",

@@ -290,6 +290,11 @@ $defs:
         default: ''
         title: Host System
         type: string
+      host_virtualization:
+        default: ''
+        description: "bare-metal or virtualized. Decides what a cold sample can mean: a hypervisor's page cache sits under the guest's, so dropping the guest's does not reach the disk. Empty means the run did not record it."
+        title: Host Virtualization
+        type: string
       os_cache:
         default: warm-steady
         description: Page-cache condition. Dropping it needs root, so say which it was.
@@ -455,4 +460,4 @@ title: Experiment
 type: object
 x-softschema:
   contract: fdu.performance:Experiment/v1
-  schema_sha256: 0059ae2d92a21313c57b819ec2f777552d7851ace5f092dcfde84b3e2fa33bce
+  schema_sha256: 23c34d961850049f4a52121fc91e7806526b176c983dd93ae105948f683af5fa
