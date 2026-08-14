@@ -97,7 +97,7 @@ Prefer the doc comment: it is what the next person editing the value will read.
 | `macos_bulk::BUFFER_BYTES` | 64 KiB | M1 Pro; 256 KiB refuted (exp-029/039) | Not applicable — macOS only |
 | `content_analysis::READ_CHUNK_BYTES` | 64 KiB | M1 Pro, 307–2,001-entry trees | **None** |
 | `DEFAULT_MAX_FILE_BYTES` | 16 MiB | Policy choice, not a measured knee | Not a tuning constant |
-| Global allocator | system | Never chosen by measurement | glibc `malloc` is the worst case for fdu’s cross-thread free pattern; a local mimalloc build measured −30.3% on the summary plan (H74, unconfirmed) |
+| Global allocator | system | Never chosen by measurement | Measured, not adopted. mimalloc wins **only the aggregate tier** (−23.0% [−28.4%, −16.7%]); the index tier and snapshot load both span zero. Costs +139% peak RSS on that tier and is unmeasured on macOS, where the system allocator differs. See H74/H85 |
 
 ### The adaptive threshold is the clearest suspected mismatch
 
