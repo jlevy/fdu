@@ -4,7 +4,8 @@
 
 **Author:** fdu project
 
-**Status:** Proposed — release audit complete; implementation not started
+**Status:** Proposed — release and reference-process audits complete; implementation not
+started
 
 ## Overview
 
@@ -24,6 +25,12 @@ does not yet offer a coherent typed contract.
 
 This plan makes those release blockers explicit and resolves the pre-release choices
 now, while incompatible cleanup is still inexpensive.
+
+The release design also incorporates a production comparison against Flowmark 0.3.2 and
+the current Rust porting playbook.
+It adopts the parts that have already worked in the same maintainer’s GitHub, crates.io,
+and PyPI accounts, while deliberately diverging where fdu’s mixed Rust/Python library
+contract needs stronger guarantees than a binary-only Python distribution.
 
 ## Goals
 
@@ -60,6 +67,14 @@ The audit used `main` at `043e5a7fd2eb556b25c02d046a0e7d8a80c639ad`, fetched fro
 [run 31839766503](https://github.com/jlevy/fdu/actions/runs/31839766503) passed Linux,
 macOS, Windows, MSRV 1.85, feature-boundary, documentation, dependency, provenance, and
 Python wheel jobs.
+
+The process comparison used fetched, immutable references rather than the local working
+branches: Flowmark `015f23989af3e5cfb3f8b58dfc72822c534df25a`, released as `v0.3.2`, and
+Rust porting playbook `d24760a3fbd2951c730a199269aeb082abb46a42`. Flowmark’s release was
+verified against its successful GitHub Actions run, GitHub release archives and
+checksums, crates.io crate, and PyPI wheel and source-distribution matrix.
+The playbook review used its stable release, project setup, testing, review, and CLI
+rules rather than historical research notes as normative guidance.
 
 Local and artifact-level checks found:
 
@@ -211,6 +226,105 @@ Rust API docs call only `cli` a default feature, while the manifest defaults to 
 `uvx --from ...` form.
 These are small defects, but they show why packaged README, help, metadata, and runtime
 assertions belong in the release gate.
+
+## Flowmark and Rust Porting Playbook Review
+
+### What the References Prove
+
+Flowmark 0.3.2 demonstrates that the same public maintainer identity intended for fdu
+can publish one Rust version through GitHub Releases, crates.io, and PyPI. Its shipped
+PyPI matrix includes Linux x86-64 and arm64, macOS x86-64 and arm64, Windows x86-64, and
+a source distribution.
+Its release automation also establishes useful operating patterns: a dry-run entry
+point, independently retryable channels, checked-in release scripts with unit tests,
+registry-state probes, native artifact smoke tests, target- and version-qualified
+archives, and a checksum manifest.
+
+The current Rust porting playbook independently supports the architectural parts of that
+process: one release identity, explicit feature boundaries, MSRV and
+`--no-default-features` checks, artifact-first validation, per-job permissions, trusted
+publishing, explicit channel audiences, rerun safety, source-distribution testing, and
+runbook-driven partial-failure recovery.
+
+### Practices Adopted for fdu
+
+| Reference practice | fdu adaptation |
+| --- | --- |
+| Cargo metadata is the product-version authority | Keep the workspace version authoritative and derive Python metadata, the extension version, CLI identity, filenames, and release notes from it. |
+| One release orchestrator owns planning, building, publishing, and announcement | Use one top-level `release.yml` with narrow jobs and a non-uploading dispatch mode. |
+| Cross-platform Maturin builds produce a predictable wheel set plus an sdist | Use the same five native architecture/OS combinations, but build abi3 extension wheels and install-test the sdist. |
+| Complex release decisions live in tested scripts | Check in small scripts for release-plan resolution, artifact inspection, registry-state comparison, and archive assembly, with fixture-based unit tests. |
+| Published channels are independently retryable | Probe each registry, skip only an identical published artifact, and resume the missing channel without retagging. |
+| Native archives are smoke-tested and checksummed | Exercise each supported binary or wheel natively where possible and publish one deterministic checksum manifest. |
+| The crate separates CLI conveniences from its core library | Preserve fdu’s default-feature and core-only consumer gates, which are already stronger than the reference release. |
+| The runbook covers dry runs and partial publication | Rehearse both the happy path and one-channel-already-published recovery before `0.1.0`. |
+
+fdu retains its existing exact action revisions, dependency cool-off, artifact SBOM,
+feature matrix, and `make check` handoff gate.
+Workflow or tool versions from Flowmark are examples of structure, not dependency pins
+to copy.
+
+### Deliberate Divergences
+
+- Flowmark’s PyPI project is a binary-only distribution with a different distribution
+  name and two console scripts.
+  fdu uses one `fdu` identity and a mixed project with a private `fdu._native` extension
+  behind a typed public package.
+- Flowmark’s wheels are `py3-none` binaries.
+  fdu’s wheels are abi3 extension artifacts with stubs, `py.typed`, immutable public
+  models, structured errors, and CLI/API parity tests.
+- Flowmark’s release profile aborts on panic.
+  fdu must retain unwind behavior at the Python boundary so PyO3 can convert a Rust
+  panic into an exception rather than terminating the host interpreter.
+- fdu does not add Homebrew or another distribution channel to `0.1.0`. The initial
+  crate, PyPI, `uvx`, and GitHub artifacts already cover the agreed audiences.
+- A cross-built artifact that cannot run on its build host is not counted as fully
+  smoke-tested. The matrix records native, emulated, or structural evidence explicitly
+  rather than treating a skipped architecture as a pass.
+- fdu installs and tests its source distribution because it advertises source builds as
+  the fallback for unsupported wheel platforms.
+
+### Publication Ownership and Credentials
+
+Use the same public maintainer accounts and ownership model as Flowmark, but create
+project-specific trusted-publisher records.
+Account reuse establishes continuity of ownership; it does not mean copying a token or
+sharing one project’s publisher subject with another project.
+
+| Channel | fdu setup |
+| --- | --- |
+| GitHub Releases | Publish from `jlevy/fdu` with the workflow’s built-in token, granting `contents: write` only to the announcement job. |
+| PyPI | Create the pending `fdu` project for repository `jlevy/fdu`, top-level workflow `release.yml`, and protected environment `release`. The publish job receives `id-token: write`, downloads only validated artifacts, and holds no API token. |
+| crates.io bootstrap | Publish `fdu 0.1.0` from the same crates.io owner account with a narrowly scoped, short-lived token because trusted publishing cannot be configured until the crate exists. Remove the token after verifying the release. |
+| crates.io steady state | Configure the new `fdu` crate’s trusted publisher for `jlevy/fdu`, `release.yml`, and environment `release`; exchange OIDC only inside the publish job. |
+
+No credential is committed, inherited across workflows, printed, or retained in an
+artifact. The protected environment separates approval from build jobs.
+PyPI currently matches trusted-publisher identity to the top-level workflow filename and
+does not allow a reusable workflow to be registered as that identity, so the OIDC
+publish job stays directly in `release.yml` even if non-credentialed build logic is
+reusable.
+
+### Upstream Improvement Candidates
+
+The fdu implementation should validate these findings before proposing changes upstream.
+They are tracked in `fdu-8bn9` and do not block fdu `0.1.0` unless the same defect is
+copied locally.
+
+| Target | Class | Finding and proposed improvement |
+| --- | --- | --- |
+| Flowmark | FIX — high | Split source checkout, third-party tool installation, build, and validation away from the job holding `id-token: write`; pin actions and installed tools to reviewed immutable versions. |
+| Flowmark | FIX — high | Derive the Python parity package version from Cargo metadata instead of keeping the release workflow’s stale `0.7.0` beside manifest `0.7.2`. |
+| Flowmark | ADD — high | Make release-plan resolution reject a tag that differs from `v{Cargo version}` or does not identify the release commit. |
+| Flowmark | ADD — medium | Compare local artifact hashes and metadata with an existing registry version; skip an identical version but fail on a conflicting immutable version. |
+| Flowmark | VALIDATE — medium | Install-test the sdist, record evidence for cross-built wheels, and reconcile the PyPI publisher runbook with the top-level workflow that actually publishes. |
+| Rust porting playbook | ADD — high | Add a mixed PyO3 package pattern covering a private extension, typed facade, stubs, `py.typed`, abi3 floor, structured FFI errors, source builds, and unwind-safe profiles. |
+| Rust porting playbook | CLARIFY — high | State that trusted-publisher owner, repository, workflow, and environment records are project-specific, and document PyPI’s current reusable-workflow limitation. |
+| Rust porting playbook | ADD — medium | Supply executable templates for tag/manifest identity checks, artifact-manifest inspection, and registry hash conflict detection; clarify Cargo’s repackaging exception to literal build-once promotion. |
+
+Historical playbook research that recommends `bindings = "bin"` remains valid for a
+binary-only port such as Flowmark, but should route mixed library consumers to the new
+pattern instead of appearing universal.
 
 ## Design Decisions
 
@@ -410,40 +524,86 @@ experience.
 
 ### Release Pipeline
 
-Use one tag and independently retryable registry jobs.
-Registry uploads cannot be atomic, and published versions cannot be replaced, so
-pretending otherwise would make partial failure harder to recover from.
+Use one top-level workflow, one tag, and independently retryable registry jobs.
+Registry uploads cannot be atomic, and published versions cannot be replaced, so the
+workflow models partial success instead of hiding it.
 
 ```text
-prepare 0.1.0 + changelog
-        |
-        v
-tag v0.1.0 and verify exact identity
-        |
-        v
-build crate + sdist + platform wheels once
-        |
-        v
-inspect, attest, install, type-check, and compare artifacts
-        |
-        v
-protected release approval
-       / \
-      v   v
- crates.io  PyPI
-      \   /
-       v v
-GitHub release, checksums, and retained evidence
+resolve tag, commit, Cargo version, mode, and expected artifact manifest
+                              |
+                              v
+package crate preview + sdist + wheels + native archives
+                              |
+                              v
+inspect, install, type-check, smoke, compare, checksum, and attest
+                              |
+                              v
+                    protected approval
+                           /       \
+                          v         v
+              crates.io publish   PyPI promote
+                           \       /
+                            v     v
+                    verify registry hashes
+                              |
+                              v
+              GitHub release + retained evidence
 ```
 
-The build stage uploads immutable workflow artifacts.
-Smoke and publication jobs download those exact files and verify checksums; they never
-rebuild. The release environment has manual approval, minimal `contents` and `id-token`
-permissions, and no persisted checkout credential.
+`workflow_dispatch` runs the same graph in a non-uploading rehearsal mode; a release tag
+runs publication mode.
+The resolver rejects a dirty or non-tagged source, a tag that differs from
+`v{Cargo version}`, a tag that does not identify the workflow commit, an unexpected
+package version, or an incomplete artifact matrix.
+
+The build stage uploads immutable workflow artifacts and a machine-readable manifest.
+Wheel and source-distribution smoke and publication jobs download those exact files and
+verify checksums; they never rebuild them.
+Cargo’s supported `cargo publish` command does not accept a prebuilt `.crate`, so its
+narrow publish job is the documented exception: it downloads the exact tagged source
+bundle, reproduces the package, checks that its checksum equals the validated preview,
+publishes it, and then checks the registry checksum.
+A mismatch is a release failure, not a reason to rebuild from a different source.
+
+Registry probes classify each expected version as `missing`, `identical`, or `conflict`.
+A retry uploads only `missing` channels, safely skips `identical` ones, and stops on
+`conflict`. Merely observing that a version number exists is not enough.
+
+The top-level workflow is intentionally thin:
+
+```text
+.github/workflows/release.yml
+scripts/release/
+  resolve_plan.py
+  inspect_artifacts.py
+  registry_state.py
+  package_archives.py
+tests/release/
+  test_resolve_plan.py
+  test_inspect_artifacts.py
+  test_registry_state.py
+  test_package_archives.py
+```
+
+Decision logic belongs in these checked-in, fixture-tested scripts rather than inline
+shell or YAML expressions.
+The scripts use machine-readable registry APIs, reject unknown fields or missing
+artifacts, and produce summaries suitable for retained release evidence.
+
+Build and validation jobs have no publication authority.
+The protected `release` environment approves the two narrow publisher jobs.
+The PyPI job has no source checkout and only downloads verified files before its OIDC
+upload.
+The crates.io job uses only the exact source bundle and Cargo tooling required to
+publish. The GitHub announcement job alone receives `contents: write`. Every action is
+pinned to a reviewed commit, every installed tool is pinned through the repository’s
+supply-chain policy, and no job persists checkout credentials.
 
 PyPI uses a pending trusted publisher for the first release.
 The crates.io bootstrap uses a narrowly scoped short-lived API token for `0.1.0`, then
 configures the repository’s trusted publisher for later releases.
+Both records use the same owner account as Flowmark but identify the `jlevy/fdu`
+repository, top-level `release.yml`, and protected `release` environment.
 The runbook records the unavoidable asymmetric case where one registry succeeds and the
 other fails: verify the successful checksum, resume only the missing upload, and never
 retag or overwrite the released version.
@@ -456,6 +616,7 @@ retag or overwrite the released version.
 | --- | --- | --- |
 | `fdu-3d8c` | Packaging and Python API polish epic | Blocks final publication |
 | `fdu-2orl` | Release audit and this plan | Closes when the reviewed plan and evidence land |
+| `fdu-vhbz` | Flowmark and Rust porting playbook comparison | Closes when the adopted practices, divergences, credential model, and upstream findings land in this plan |
 | `fdu-t5lh` | Typed `fdu` Python package and roll-up API | Release blocker |
 | `fdu-8d28` | Version identity, license, metadata, and documentation exactness | Release blocker |
 | `fdu-5eqk` | Portable abi3 matrix and artifact-first release workflow | Depends on API layout and artifact identity |
@@ -463,6 +624,7 @@ retag or overwrite the released version.
 | `fdu-lidi` | Policy, rehearsal, and first-release evidence | Depends on workflow and acceptance gates |
 | `fdu-9cf0` | Existing final crates.io and PyPI publication gate | Depends on `fdu-3d8c` plus its earlier Phase 1 blockers |
 | `fdu-eu8t` | Progressive Python `IndexSession` | Post-release; does not block `0.1.0` |
+| `fdu-8bn9` | Upstream validated release-hardening findings | Post-release; does not block `0.1.0` |
 
 ### Phase 0: Track and Freeze the Public Contract
 
@@ -498,24 +660,37 @@ retag or overwrite the released version.
 
 ### Phase 3: Artifact-First CI and Release Automation
 
+- [ ] Add the tested release-plan, artifact-inspection, registry-state, and archive
+  scripts; keep release decisions out of inline YAML
+- [ ] Make `release.yml` reject tag, commit, Cargo, Python, runtime, and filename
+  identity disagreement before building
 - [ ] Build `manylinux2014` x86-64 and arm64, macOS x86-64 and arm64, and Windows x86-64
   abi3 wheels
 - [ ] Upload and reuse immutable artifacts between build, smoke, and publish jobs
 - [ ] Compare Cargo and wheel CLIs over representative golden and partial-result
   sessions
 - [ ] Test CPython 3.12 and the current stable interpreter against installed wheels
-- [ ] Add protected PyPI trusted publishing and the documented crates.io bootstrap path
+- [ ] Classify registry state as missing, identical, or conflicting by artifact hash and
+  metadata before every upload or retry
+- [ ] Pin every action and installed release tool immutably and keep publication
+  authority out of build and validation jobs
+- [ ] Add direct, minimal, protected PyPI trusted publishing and the documented
+  crates.io bootstrap path under the same maintainer accounts as Flowmark
 - [ ] Emit checksums, attestations, SBOMs, and a GitHub release only after registry
   state is verified
 
 ### Phase 4: First-Release Rehearsal and Publication
 
 - [ ] Re-verify registry names through authoritative APIs immediately before release
-- [ ] Run a non-uploading rehearsal from the exact proposed tag
+- [ ] Configure the PyPI pending publisher for `jlevy/fdu`, `release.yml`, and the
+  protected `release` environment
+- [ ] Run the workflow’s non-uploading mode from the exact proposed tag and rehearse an
+  identical-channel retry and a simulated conflicting-channel stop
 - [ ] Inspect every archive and execute every supported install path
 - [ ] Publish `0.1.0`, verify registry metadata and fresh-user installs, and retain
   release evidence
-- [ ] Configure crates.io trusted publishing after the manual bootstrap release
+- [ ] Remove the one-time crates.io bootstrap token, then configure trusted publishing
+  for `jlevy/fdu`, `release.yml`, and the `release` environment
 
 ### Phase 5: Progressive Downstream Adapter
 
@@ -572,8 +747,15 @@ racing path. It then:
 
 ### Publication Gates
 
-- trusted-publisher subject, protected environment, and workflow-permission assertions
+- trusted-publisher owner, repository, top-level workflow, protected environment, and
+  workflow-permission assertions
+- no mutable action tags, unpinned tool installs, inherited secrets, or source checkout
+  in the PyPI publisher job
 - artifact checksums unchanged between build, test, and upload jobs
+- crates.io package preview checksum reproduced from the exact source bundle and matched
+  against the published registry checksum
+- registry-state tests distinguish missing, identical, and conflicting immutable
+  versions
 - TestPyPI or equivalent install rehearsal for the Python artifact
 - crates.io dry run and manual first-release bootstrap checklist
 - fresh registry installs, docs.rs build, PyPI metadata, and `uvx` verification after
@@ -605,9 +787,14 @@ outstanding Phase 1 CLI, agent-schema, watch, or performance dependencies.
 | Python models drift from Rust and CLI concepts | Generate or mechanically compare enum vocabulary, defaults, schemas, and normalized fixture output. |
 | The platform matrix becomes expensive | Build one abi3 wheel per OS/architecture rather than per Python minor; smoke the oldest and current stable interpreters. |
 | One registry publishes while the other fails | Use independent idempotent jobs, immutable versions, checksum verification, and a documented resume path. |
+| A retry silently accepts a different artifact under the same version | Compare registry hashes and metadata; treat existence with disagreement as an unrecoverable conflict requiring a new version. |
+| Publication authority leaks into a build step | Put OIDC or the one-time bootstrap token only in protected, single-purpose publisher jobs and install no mutable tools there. |
+| PyPI publisher configuration points at a reusable workflow | Register the top-level `release.yml` identity and keep its minimal publish job direct until PyPI documents support for reusable workflow identities. |
+| Cargo cannot promote a prebuilt `.crate` through `cargo publish` | Reproduce it from the exact source bundle, compare with the validated preview, and verify the resulting registry checksum. |
 | A package name is claimed before release | Re-check through authoritative APIs at the protected approval boundary; stop rather than silently renaming one ecosystem. |
 | Progressive serving leaks concurrency complexity into `0.1` | Ship the blocking typed API first and specify `IndexSession` separately against the existing Rust ownership rules. |
 | A downstream-specific reducer bloats the core | Keep Git-ignore and UI ranking policy in adapters until repeated consumers justify a general engine concept. |
+| A reference repository changes after this review | Keep immutable reference commits in the plan and re-evaluate newer practices deliberately rather than copying a moving branch. |
 
 ## References
 
@@ -622,7 +809,15 @@ outstanding Phase 1 CLI, agent-schema, watch, or performance dependencies.
 - [uv tool execution](https://docs.astral.sh/uv/guides/tools/)
 - [Python typing information in packages](https://typing.python.org/en/latest/spec/distributing.html)
 - [PyPI first-release trusted publishing](https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/)
+- [PyPI trusted-publisher setup](https://docs.pypi.org/trusted-publishers/adding-a-publisher/)
+- [PyPI trusted-publisher security model](https://docs.pypi.org/trusted-publishers/security-model/)
+- [PyPI trusted-publisher troubleshooting](https://docs.pypi.org/trusted-publishers/troubleshooting/)
 - [crates.io trusted publishing announcement](https://blog.rust-lang.org/2025/07/11/crates-io-development-update-2025-07/)
+- [Flowmark 0.3.2 source](https://github.com/jlevy/flowmark-rs/tree/015f23989af3e5cfb3f8b58dfc72822c534df25a)
+- [Flowmark 0.3.2 release](https://github.com/jlevy/flowmark-rs/releases/tag/v0.3.2)
+- [Flowmark publishing runbook](https://github.com/jlevy/flowmark-rs/blob/015f23989af3e5cfb3f8b58dfc72822c534df25a/docs/publishing.md)
+- [Rust porting playbook reference](https://github.com/jlevy/rust-porting-playbook/tree/d24760a3fbd2951c730a199269aeb082abb46a42)
+- [Rust porting playbook release rules](https://github.com/jlevy/rust-porting-playbook/blob/d24760a3fbd2951c730a199269aeb082abb46a42/guidelines/rust-release-rules.md)
 - [metabrowser](https://github.com/jlevy/metabrowser)
 
 <!-- This document follows common-doc-guidelines.md.
