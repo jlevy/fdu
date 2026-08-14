@@ -3,14 +3,16 @@ type: is
 id: is-01kzz2bak4xbxszt2na2yhmeq0
 title: FSEvents plan documents a stream shape Apple does not recommend for persistent replay
 kind: task
-status: open
+status: closed
 priority: 2
-version: 1
+version: 3
 labels: []
 dependencies: []
 parent_id: is-01kzz29dspd7bsy6jk98mpb9z3
 created_at: 2026-08-14T02:41:49.156Z
-updated_at: 2026-08-14T02:41:49.156Z
+updated_at: 2026-08-14T03:01:49.948Z
+closed_at: 2026-08-14T03:01:49.947Z
+close_reason: "Corrected the still-active FSEvents plan on the three points PR #4 identified: replay is a device-relative stream (FSEventStreamCreateRelativeToDevice, with the FFI table updated to declare it) rather than a per-path FSEventStreamCreate; the design requests FileEvents so soundness comes from normalizing item events into parent relists and subtree invalidations rather than from an assumed directory granularity; and the unsupported 'size-independent tens of milliseconds' claim is retracted to a hypothesis. Also fixed the boundary semantics: the fence must be taken before the scan and persisted only as far as applied, because capturing the current event ID at save time silently drops changes made during the walk."
 ---
 docs/project/specs/active/plan-2026-08-10-fdu-fsevents-scoped-revalidation.md is still active and unimplemented, so it is the document someone will build from. PR #4 corrected three things in it that main still has wrong:
 
