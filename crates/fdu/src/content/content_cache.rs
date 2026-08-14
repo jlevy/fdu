@@ -36,8 +36,8 @@ pub struct ContentCacheLoad {
     pub usable: bool,
     /// Records accepted by the current metadata index.
     pub hits: u64,
-    /// Accepted records whose coverage keeps the requested analysis partial.
-    pub incomplete: u64,
+    /// Accepted records with an expected non-analyzed coverage outcome.
+    pub coverage_exclusions: u64,
     /// Records that no longer matched a live candidate.
     pub stale: u64,
 }
@@ -133,12 +133,13 @@ pub fn load_content_cache(
             loaded.stale = loaded.stale.saturating_add(1);
             continue;
         }
-        let incomplete =
+        let coverage_exclusion =
             !matches!(analysis.coverage, CoverageReason::Analyzed | CoverageReason::Binary);
         match index.apply_analysis(AnalysisObservation { candidate, analysis }) {
             AnalysisApplyOutcome::Applied => {
                 loaded.hits = loaded.hits.saturating_add(1);
-                loaded.incomplete = loaded.incomplete.saturating_add(u64::from(incomplete));
+                loaded.coverage_exclusions =
+                    loaded.coverage_exclusions.saturating_add(u64::from(coverage_exclusion));
             }
             AnalysisApplyOutcome::Stale => loaded.stale = loaded.stale.saturating_add(1),
         }
@@ -468,7 +469,6 @@ fn coverage_code(value: CoverageReason) -> u8 {
         CoverageReason::Analyzed => 0,
         CoverageReason::Binary => 1,
         CoverageReason::InvalidUtf8 => 2,
-        CoverageReason::TooLarge => 3,
         CoverageReason::Unsupported => 4,
         CoverageReason::IoError => 5,
         CoverageReason::ChangedDuringRead => 6,
@@ -480,7 +480,6 @@ fn read_coverage(code: u8) -> Option<CoverageReason> {
         0 => Some(CoverageReason::Analyzed),
         1 => Some(CoverageReason::Binary),
         2 => Some(CoverageReason::InvalidUtf8),
-        3 => Some(CoverageReason::TooLarge),
         4 => Some(CoverageReason::Unsupported),
         5 => Some(CoverageReason::IoError),
         6 => Some(CoverageReason::ChangedDuringRead),
@@ -598,7 +597,10 @@ mod tests {
             crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
 
         let loaded = load_content_cache(&mut restored, request, &cache).expect("load");
-        assert_eq!(loaded, ContentCacheLoad { usable: true, hits: 1, incomplete: 0, stale: 0 });
+        assert_eq!(
+            loaded,
+            ContentCacheLoad { usable: true, hits: 1, coverage_exclusions: 0, stale: 0 }
+        );
         assert_eq!(
             restored.content_rollup(Path::new("")).expect("rollup").total.metrics.raw_words,
             expected_words
@@ -608,7 +610,7 @@ mod tests {
     }
 
     #[test]
-    fn corruption_and_option_mismatch_are_clean_misses() {
+    fn corruption_is_a_clean_miss() {
         let (root, index, request) = analyzed_index();
         let cache = root.path().join("content.cache");
         save_content_cache(&index, request, &cache).expect("save");
@@ -619,13 +621,6 @@ mod tests {
             crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
         assert_eq!(
             load_content_cache(&mut restored, request, &cache).expect("load"),
-            ContentCacheLoad::default()
-        );
-
-        save_content_cache(&index, request, &cache).expect("save again");
-        let changed = AnalysisRequest { max_file_bytes: 10, ..request };
-        assert_eq!(
-            load_content_cache(&mut restored, changed, &cache).expect("load changed"),
             ContentCacheLoad::default()
         );
     }

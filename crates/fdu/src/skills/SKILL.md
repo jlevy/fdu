@@ -63,8 +63,8 @@ Cost has three layers.
 `--cache off --view summary PATH` is the one exact composition that retains only
 aggregate tallies and no index.
 Ordinary metadata requests retain the reusable index but never read regular-file
-contents. Any non-`none` `--analyze` profile opts into bounded content reads and a
-separate profile-scoped sidecar.
+contents. Any non-`none` `--analyze` profile opts into streaming reads through every
+eligible file and a separate profile-scoped sidecar.
 A repeated run with the same profile and semantic settings reuses unchanged content
 records. Coverage is profile-scoped too: an unsupported deeper analyzer leaves byte
 metadata visible but does not retain a separate lower-level metric record for that file.
@@ -88,9 +88,12 @@ partitions across supported common languages; the percentage column then uses co
 instead of bytes. Use `--analyze documents --view documents` for normalized prose words,
 paragraphs, aggregate-derived pages, and reader-visible Markdown that excludes
 destinations and code.
-`--analyze full` computes both families in one bounded pass.
-Use `--max-file-size`, `--analysis-workers`, and `--words-per-page` to bound work and
-control page derivation.
+`--analyze full` computes both families in one streaming pass.
+Use `--analysis-workers` to bound concurrent reads and `--words-per-page` to control
+page derivation. Analysis never truncates a file or excludes it because of size.
+Invalid UTF-8, binary data, and unsupported SLOC languages remain visible as normal
+coverage outcomes. Only I/O failures, files changed during a read, or stale commits make
+analysis operationally partial.
 Content analysis is currently one-shot and cannot be combined with `--watch`.
 
 Common shapes are compositions rather than dedicated flags:

@@ -1,4 +1,4 @@
-//! Reader-visible Markdown projection over a bounded UTF-8 buffer.
+//! Reader-visible Markdown projection over admitted UTF-8 source.
 
 use pulldown_cmark::{Event, Options, Parser, Tag, TagEnd};
 
@@ -134,7 +134,7 @@ impl MarkdownAccumulator {
     }
 }
 
-/// Analyze one already-bounded and UTF-8-admitted Markdown source buffer.
+/// Analyze one UTF-8-admitted Markdown source buffer.
 pub(crate) fn analyze_markdown(source: &str) -> MetricValues {
     let options = Options::ENABLE_TABLES
         | Options::ENABLE_FOOTNOTES
@@ -209,7 +209,7 @@ Reference[^note].
     }
 
     #[test]
-    fn malformed_markdown_remains_bounded_and_deterministic() {
+    fn malformed_markdown_remains_deterministic() {
         let source = "Text [with](broken and `unterminated\n<style>hidden";
         assert_eq!(analyze_markdown(source), analyze_markdown(source));
     }

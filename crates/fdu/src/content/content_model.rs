@@ -63,25 +63,18 @@ impl AnalysisProfile {
     }
 }
 
-/// Bounded settings for one analysis pass.
+/// Settings for one analysis pass.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct AnalysisRequest {
     /// Analyzer bundle to run.
     pub profile: AnalysisProfile,
-    /// Maximum bytes read from one file.
-    pub max_file_bytes: u64,
     /// Maximum worker count; zero selects the available parallelism.
     pub workers: usize,
 }
 
 impl Default for AnalysisRequest {
     fn default() -> Self {
-        const DEFAULT_MAX_FILE_BYTES: u64 = 16 * 1024 * 1024;
-        Self {
-            profile: AnalysisProfile::Disabled,
-            max_file_bytes: DEFAULT_MAX_FILE_BYTES,
-            workers: 0,
-        }
+        Self { profile: AnalysisProfile::Disabled, workers: 0 }
     }
 }
 
@@ -99,7 +92,6 @@ impl AnalysisRequest {
         };
         let hash = [profile]
             .into_iter()
-            .chain(self.max_file_bytes.to_le_bytes())
             .fold(OFFSET, |hash, byte| (hash ^ u64::from(byte)).wrapping_mul(PRIME));
         OptionsFingerprint(hash)
     }
@@ -285,8 +277,6 @@ pub enum CoverageReason {
     Binary,
     /// Input was not valid UTF-8.
     InvalidUtf8,
-    /// The configured per-file read bound was exceeded.
-    TooLarge,
     /// No shipped analyzer accepts this type.
     Unsupported,
     /// File I/O failed; the human error is retained separately.

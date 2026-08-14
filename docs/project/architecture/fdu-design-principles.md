@@ -200,7 +200,7 @@ Every option belongs to exactly one axis:
 | Selection | Which retained entries does this query consider, and how are results shaped? | `--include`, `--exclude`, `--min-size`, `--modified-since`, `--modified-before`, `--kind`, `--depth`, `--limit`, `--sort`, `--reverse`, `--size` |
 | View | Which roll-up is reported? | `--view tree,extensions,types,families,languages,documents,files,summary`, `--words-per-page` |
 | Format | How is it serialized? | `--format`, `--color` |
-| Mode | One answer or a live feed, how is the cache used, and is content read? | `--watch`, `--interval`, `--cache`, `--analyze`, `--max-file-size`, `--analysis-workers`, `--allow-partial` |
+| Mode | One answer or a live feed, how is the cache used, and is content read? | `--watch`, `--interval`, `--cache`, `--analyze`, `--analysis-workers`, `--allow-partial` |
 
 A proposed flag that fits no axis is a design smell: either it generalizes into an axis
 value, or it does not ship.
@@ -242,11 +242,20 @@ identically to the indexed summary.
 Content analysis adds a third, explicit I/O tier without changing either metadata tier.
 No analysis profile means no regular-file content opens, analyzer workers, sparse
 content index, or content-sidecar load.
-Any enabled `--analyze` profile retains the full metadata index, then performs bounded
-content reads for records absent from the matching sidecar.
-`languages` requires the code analyzer and `documents` requires at least the basic
-analyzer; a view rejects missing analyzers instead of enabling them or presenting
-unmeasured values as zero.
+Any enabled `--analyze` profile retains the full metadata index, then streams every
+eligible file absent from the matching sidecar through EOF. Worker count bounds
+concurrency, never per-file coverage.
+`languages` is a metadata-only byte and count view by default; the code analyzer adds
+standard LOC. `documents` requires at least the basic analyzer.
+A view never enables an analyzer implicitly or presents an unmeasured value as zero.
+
+Expected content coverage is distinct from operational completeness.
+Binary data, invalid UTF-8, and file types without a requested analyzer remain explicit
+coverage outcomes while metadata file and byte totals stay complete.
+I/O failures, a file that changes while being read, and stale conditional commits make
+the content operation partial and must be surfaced as errors.
+An implementation may stop reading once a file is proven binary, but it never truncates
+or size-skips an eligible text file.
 
 ### Views Are Readers
 

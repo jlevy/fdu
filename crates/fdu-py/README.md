@@ -6,7 +6,7 @@ roll-up engine.
 ```python
 import fdu_py
 
-index = fdu_py.open("/path/to/tree", analyze="full", max_file_size="16MiB")
+index = fdu_py.open("/path/to/tree", analyze="full")
 print(index.complete)         # false when unreadable paths made the result partial
 print(index.freshness)        # fresh, reconciling, stale, or partial
 print(index.errors)           # details from the latest open/scan/refresh
@@ -23,6 +23,9 @@ Every method is bulk: it returns a whole structured result in one call rather th
 cursor Python iterates.
 Open, scan, and the native reconciliation phase of refresh run with the GIL released, so
 unrelated Python threads and independent indexes can progress.
+Content analysis streams every eligible file through EOF. Binary data, invalid UTF-8,
+and unsupported SLOC languages remain visible as coverage without making the operation
+partial; I/O failures and files changed during a read remain operational errors.
 One `Index` object still has `PyO3` runtime borrow exclusion: an overlapping call on
 that same object is rejected rather than becoming an unsynchronized shared-index access.
 The wheel enables the optional watch dependency and exposes `Index.watch()` as a
@@ -31,7 +34,7 @@ Content analysis itself remains one-shot: refresh reanalyzes after metadata
 reconciliation, while a watch feed reports metadata changes.
 
 `open()` and `scan()` accept the same `none`, `basic`, `code`, `documents`, and `full`
-analysis profiles as the Rust CLI, plus bounded file-size and worker settings.
+analysis profiles as the Rust CLI, plus the worker-concurrency setting.
 The report dictionary exposes stable type/family groups, exact share fractions, line and
 word slots, page denominators, coverage outcomes, analyzer provenance, detection source
 and confidence, and generated/vendor/documentation flags.

@@ -67,7 +67,7 @@ Five axes, and every option belongs to exactly one:
   Selection  --include, --exclude, --depth, --limit    which entries are considered
   View       tree,extensions,types,families,languages,documents,files,summary
   Format     --format text|json|jsonl|yaml, --color
-  Mode       --cache, --analyze, --max-file-size, --analysis-workers
+  Mode       --cache, --analyze, --analysis-workers
 
 Content analysis:
   none       metadata only; source files are never opened (default)
@@ -79,7 +79,8 @@ Content analysis:
   languages is metadata-only by default; code or full adds standard LOC.
   documents requires any enabled profile.
   Views never enable content analysis implicitly.
-  Content reads are bounded by --max-file-size and --analysis-workers.
+  Analysis streams every eligible file through EOF; files are never size-truncated.
+  --analysis-workers bounds concurrency.
   --words-per-page changes only report-time page derivation.
   Unchanged results for the same profile are restored from a separate sidecar.
   cache=only never opens source files and fails if requested content is absent.
@@ -230,119 +231,121 @@ pub struct Cli {
     pub path: Option<PathBuf>,
 
     /// Limit scanning and retention to N entry levels.
-    #[arg(long, value_name = "N")]
+    #[arg(long, value_name = "N", help_heading = "Scope")]
     pub scan_depth: Option<usize>,
 
     /// Stay on the filesystem the root lives on.
-    #[arg(long, action = ArgAction::SetTrue)]
+    #[arg(long, action = ArgAction::SetTrue, help_heading = "Scope")]
     pub one_filesystem: bool,
 
     // ---- selection: which retained entries this query considers ----
     /// Report only entries matching this glob; repeatable.
-    #[arg(long, value_name = "GLOB")]
+    #[arg(long, value_name = "GLOB", help_heading = "Selection")]
     pub include: Vec<String>,
 
     /// Exclude entries matching this glob; repeatable, and wins over --include.
-    #[arg(long, value_name = "GLOB")]
+    #[arg(long, value_name = "GLOB", help_heading = "Selection")]
     pub exclude: Vec<String>,
 
     /// Report only entries at least this large, as 512, 10M, or 1.5GiB.
-    #[arg(long, value_name = "SIZE")]
+    #[arg(long, value_name = "SIZE", help_heading = "Selection")]
     pub min_size: Option<String>,
 
     /// Report only entries modified at or after this time, as 2h or an RFC 3339 stamp.
-    #[arg(long, value_name = "WHEN")]
+    #[arg(long, value_name = "WHEN", help_heading = "Selection")]
     pub modified_since: Option<String>,
 
     /// Report only entries modified before this time.
-    #[arg(long, value_name = "WHEN")]
+    #[arg(long, value_name = "WHEN", help_heading = "Selection")]
     pub modified_before: Option<String>,
 
     /// Entry kinds to report: file, dir, symlink, other.
-    #[arg(long, value_name = "LIST")]
+    #[arg(long, value_name = "LIST", help_heading = "Selection")]
     pub kind: Option<String>,
 
     /// Directory levels to show; does not limit scanning. Accepts `all`.
-    #[arg(short, long, default_value = "2", value_name = "N")]
+    #[arg(short, long, default_value = "2", value_name = "N", help_heading = "Selection")]
     pub depth: String,
 
     /// Entries to show per directory. Accepts `all`.
-    #[arg(short = 'n', long, default_value = "10", value_name = "N")]
+    #[arg(short = 'n', long, default_value = "10", value_name = "N", help_heading = "Selection")]
     pub limit: String,
 
     /// Order results: size, count, mtime, or name.
-    #[arg(long, value_name = "KEY")]
+    #[arg(long, value_name = "KEY", help_heading = "Selection")]
     pub sort: Option<String>,
 
     /// Reverse the ordering.
-    #[arg(long, action = ArgAction::SetTrue)]
+    #[arg(long, action = ArgAction::SetTrue, help_heading = "Selection")]
     pub reverse: bool,
 
     /// Which size metric to report: allocated or apparent.
-    #[arg(long, value_name = "METRIC", default_value = "allocated")]
+    #[arg(long, value_name = "METRIC", default_value = "allocated", help_heading = "Selection")]
     pub size: String,
 
     // ---- view: which roll-ups are reported ----
     /// Views: tree, extensions, types, families, languages, documents, files, summary.
-    #[arg(long, value_name = "LIST", default_value = "tree")]
+    #[arg(long, value_name = "LIST", default_value = "tree", help_heading = "Views")]
     pub view: String,
 
     /// Content depth: none, basic, code, documents, or full.
-    #[arg(long, value_name = "PROFILE", default_value = "none")]
+    #[arg(long, value_name = "PROFILE", default_value = "none", help_heading = "Content analysis")]
     pub analyze: String,
 
-    /// Maximum bytes read from one analyzed file.
-    #[arg(long, value_name = "SIZE", default_value = "16MiB")]
-    pub max_file_size: String,
-
     /// Content reader workers; zero selects available parallelism.
-    #[arg(long, value_name = "N", default_value_t = 0)]
+    #[arg(long, value_name = "N", default_value_t = 0, help_heading = "Content analysis")]
     pub analysis_workers: usize,
 
     /// Logical words per derived document page.
-    #[arg(long, value_name = "N", default_value_t = 250)]
+    #[arg(long, value_name = "N", default_value_t = 250, help_heading = "Views")]
     pub words_per_page: u64,
 
     // ---- format: how the report is serialized ----
     /// Output format: text, json, jsonl, or yaml.
-    #[arg(long, value_name = "FORMAT", default_value = "text")]
+    #[arg(long, value_name = "FORMAT", default_value = "text", help_heading = "Output")]
     pub format: String,
 
     /// Colorize human output: auto, always, or never.
-    #[arg(long, value_name = "WHEN", default_value = "auto", hide_possible_values = true)]
+    #[arg(
+        long,
+        value_name = "WHEN",
+        default_value = "auto",
+        hide_possible_values = true,
+        help_heading = "Output"
+    )]
     pub color: ColorWhen,
 
     // ---- mode: how the cache is used ----
     /// Cache policy: auto, refresh, read-only, only, or off.
-    #[arg(long, value_name = "POLICY", default_value = "auto")]
+    #[arg(long, value_name = "POLICY", default_value = "auto", help_heading = "Execution")]
     pub cache: String,
 
-    /// Accept incomplete totals when paths cannot be read.
-    #[arg(long, action = ArgAction::SetTrue)]
+    /// Accept operationally partial results, including filesystem or analysis failures.
+    #[arg(long, action = ArgAction::SetTrue, help_heading = "Execution")]
     pub allow_partial: bool,
 
     /// Report cache contents instead of scanning: root (default) or all.
-    #[arg(long, value_name = "SCOPE", num_args = 0..=1, require_equals = true, default_missing_value = "root")]
+    #[arg(long, value_name = "SCOPE", num_args = 0..=1, require_equals = true, default_missing_value = "root", help_heading = "Cache management")]
     pub cache_status: Option<String>,
 
     /// Remove cached snapshots instead of scanning: root (default) or all.
-    #[arg(long, value_name = "SCOPE", num_args = 0..=1, require_equals = true, default_missing_value = "root")]
+    #[arg(long, value_name = "SCOPE", num_args = 0..=1, require_equals = true, default_missing_value = "root", help_heading = "Cache management")]
     pub cache_clear: Option<String>,
 
     /// Stream changes continuously instead of returning one report.
     #[cfg(feature = "watch")]
-    #[arg(long, action = ArgAction::SetTrue)]
+    #[arg(long, action = ArgAction::SetTrue, help_heading = "Execution")]
     pub watch: bool,
 
     /// How often aggregate views re-render while watching, as a duration.
     ///
     /// Throttles rendering only; change detection is event-driven and unaffected.
     #[cfg(feature = "watch")]
-    #[arg(long, value_name = "DUR", default_value = "2s")]
+    #[arg(long, value_name = "DUR", default_value = "2s", help_heading = "Execution")]
     pub interval: String,
 
     /// Print a portable agent skill to stdout.
-    #[arg(long, action = ArgAction::SetTrue)]
+    #[arg(long, action = ArgAction::SetTrue, help_heading = "Other")]
     pub skill: bool,
 }
 
@@ -886,13 +889,7 @@ impl Cli {
                 "invalid --analyze {other:?}: expected one of none, basic, code, documents, full"
             ),
         };
-        Ok(AnalysisRequest {
-            profile,
-            max_file_bytes: parse_size(&self.max_file_size).map_err(|error| {
-                anyhow::anyhow!("invalid --max-file-size {:?}: {error}", self.max_file_size)
-            })?,
-            workers: self.analysis_workers,
-        })
+        Ok(AnalysisRequest { profile, workers: self.analysis_workers })
     }
 }
 
@@ -1361,7 +1358,6 @@ mod tests {
             size: "allocated".to_string(),
             view: "tree".to_string(),
             analyze: "none".to_string(),
-            max_file_size: "16MiB".to_string(),
             analysis_workers: 0,
             words_per_page: 250,
             format: "text".to_string(),
@@ -1523,21 +1519,12 @@ mod tests {
     }
 
     #[test]
-    fn analysis_profile_bounds_and_page_denominator_parse_before_io() {
-        let parsed = Cli {
-            analyze: "basic".to_string(),
-            max_file_size: "2MiB".to_string(),
-            analysis_workers: 3,
-            words_per_page: 250,
-            ..cli()
-        };
+    fn analysis_profile_workers_and_page_denominator_parse_before_io() {
+        let parsed =
+            Cli { analyze: "basic".to_string(), analysis_workers: 3, words_per_page: 250, ..cli() };
         assert_eq!(
             parsed.parse_analysis().expect("analysis"),
-            AnalysisRequest {
-                profile: AnalysisProfile::Basic,
-                max_file_bytes: 2 * 1024 * 1024,
-                workers: 3,
-            }
+            AnalysisRequest { profile: AnalysisProfile::Basic, workers: 3 }
         );
         assert_eq!(parsed.parse_query().expect("query").words_per_page, 250);
 

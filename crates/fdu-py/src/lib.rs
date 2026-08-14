@@ -348,14 +348,7 @@ impl PyIndex {
                 py.detach(|| fdu::content::analyze_index(&mut self.inner, self.analysis));
             let analysis_complete = analysis.is_complete();
             append_analysis_error(&mut self.errors, analysis);
-            let retained_incomplete = incomplete_content_records(&self.inner);
-            if analysis_complete && retained_incomplete > 0 {
-                let suffix = if retained_incomplete == 1 { "result" } else { "results" };
-                self.errors.push(format!(
-                    "content index retains {retained_incomplete} incomplete analysis {suffix}; inspect coverage for details"
-                ));
-            }
-            complete &= analysis_complete && retained_incomplete == 0;
+            complete &= analysis_complete;
         }
         self.operation_complete = complete;
         let stats = report.apply;
@@ -432,11 +425,7 @@ fn parse_cache_policy(value: &str) -> PyResult<CachePolicy> {
     }
 }
 
-fn parse_analysis_request(
-    profile: &str,
-    max_file_size: &str,
-    workers: usize,
-) -> PyResult<AnalysisRequest> {
+fn parse_analysis_request(profile: &str, workers: usize) -> PyResult<AnalysisRequest> {
     let profile = match profile.trim().to_ascii_lowercase().as_str() {
         "none" | "off" | "disabled" => AnalysisProfile::Disabled,
         "basic" => AnalysisProfile::Basic,
@@ -449,34 +438,13 @@ fn parse_analysis_request(
             )));
         }
     };
-    let max_file_bytes = fdu::query::parse_size(max_file_size).map_err(to_py_err)?;
-    Ok(AnalysisRequest { profile, max_file_bytes, workers })
+    Ok(AnalysisRequest { profile, workers })
 }
 
 fn append_analysis_error(errors: &mut Vec<String>, analysis: fdu::content::AnalysisReport) {
-    if !analysis.is_complete() {
-        errors.push(format!(
-            "content analysis incomplete: {} invalid UTF-8, {} too large, {} I/O errors, {} changed during read, {} unsupported, {} stale",
-            analysis.invalid_utf8,
-            analysis.too_large,
-            analysis.io_errors,
-            analysis.changed_during_read,
-            analysis.unsupported,
-            analysis.stale
-        ));
+    if let Some(message) = analysis.failure_message() {
+        errors.push(message);
     }
-}
-
-fn incomplete_content_records(index: &fdu::Index) -> u64 {
-    index.content_rollup(Path::new("")).map_or(0, |rollup| {
-        rollup
-            .coverage
-            .iter()
-            .filter(|(reason, _)| {
-                !matches!(reason, CoverageReason::Analyzed | CoverageReason::Binary)
-            })
-            .fold(0_u64, |total, (_, count)| total.saturating_add(*count))
-    })
 }
 
 /// Name a cache tier for Python callers, matching the CLI's machine output.
@@ -675,7 +643,6 @@ fn coverage_label(reason: CoverageReason) -> &'static str {
         CoverageReason::Analyzed => "analyzed",
         CoverageReason::Binary => "binary",
         CoverageReason::InvalidUtf8 => "invalid_utf8",
-        CoverageReason::TooLarge => "too_large",
         CoverageReason::Unsupported => "unsupported",
         CoverageReason::IoError => "io_error",
         CoverageReason::ChangedDuringRead => "changed_during_read",
@@ -950,7 +917,7 @@ fn clear_all_caches(root: PathBuf) -> PyResult<usize> {
 
 /// Open a directory tree, using the snapshot cache according to `cache`.
 #[pyfunction]
-#[pyo3(signature = (root, *, cache = "auto", max_depth = None, analyze = "none", max_file_size = "16MiB", analysis_workers = 0))]
+#[pyo3(signature = (root, *, cache = "auto", max_depth = None, analyze = "none", analysis_workers = 0))]
 #[allow(clippy::needless_pass_by_value)]
 fn open(
     py: Python<'_>,
@@ -958,11 +925,10 @@ fn open(
     cache: &str,
     max_depth: Option<usize>,
     analyze: &str,
-    max_file_size: &str,
     analysis_workers: usize,
 ) -> PyResult<PyIndex> {
     let policy = parse_cache_policy(cache)?;
-    let analysis = parse_analysis_request(analyze, max_file_size, analysis_workers)?;
+    let analysis = parse_analysis_request(analyze, analysis_workers)?;
     let config = OpenConfig {
         scan: ScanConfig { max_depth, ..ScanConfig::default() },
         cache_path: fdu::default_cache_path(&root),
@@ -984,17 +950,16 @@ fn open(
 
 /// Walk a tree with no cache at all and return the index.
 #[pyfunction]
-#[pyo3(signature = (root, *, max_depth = None, analyze = "none", max_file_size = "16MiB", analysis_workers = 0))]
+#[pyo3(signature = (root, *, max_depth = None, analyze = "none", analysis_workers = 0))]
 #[allow(clippy::needless_pass_by_value)]
 fn scan(
     py: Python<'_>,
     root: PathBuf,
     max_depth: Option<usize>,
     analyze: &str,
-    max_file_size: &str,
     analysis_workers: usize,
 ) -> PyResult<PyIndex> {
-    let analysis = parse_analysis_request(analyze, max_file_size, analysis_workers)?;
+    let analysis = parse_analysis_request(analyze, analysis_workers)?;
     let config = OpenConfig {
         scan: ScanConfig { max_depth, ..ScanConfig::default() },
         cache_path: None,

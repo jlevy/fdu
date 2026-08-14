@@ -293,7 +293,7 @@ def main() -> None:
         ("rust", 2)
     ], languages
 
-    analyzed = fdu_py.scan(str(query_root), analyze="basic", max_file_size="1MiB")
+    analyzed = fdu_py.scan(str(query_root), analyze="basic")
     documents = analyzed.report(views=["documents"], words_per_page=250)
     assert documents["analysis"]["profile"] == "basic", documents
     document_metrics = documents["reports"][0]["metrics"]
@@ -344,34 +344,24 @@ def main() -> None:
     assert fdu_py.clear_cache(str(cache_root)) is True
     assert fdu_py.cache_status(str(cache_root))["recognized"] is False
 
-    # A cached analysis failure remains partial even when cache-only mode cannot reread
-    # the source file. The generic diagnostic points callers to the preserved coverage.
+    # Expected coverage exclusions remain queryable without becoming operational errors.
     partial_root = pathlib.Path(tempfile.mkdtemp())
     (partial_root / "invalid.txt").write_bytes(b"valid prefix\xff")
     partial = fdu_py.open(str(partial_root), cache="auto", analyze="basic")
-    assert partial.complete is False, partial.errors
-    assert partial.errors == [
-        "content analysis incomplete: 1 invalid UTF-8, 0 too large, 0 I/O errors, "
-        "0 changed during read, 0 unsupported, 0 stale"
-    ], partial.errors
+    assert partial.complete is True, partial.errors
+    assert partial.errors == [], partial.errors
 
     cached_partial = fdu_py.open(str(partial_root), cache="only", analyze="basic")
-    cached_error = (
-        "content cache restored 1 incomplete analysis result; "
-        "inspect coverage for details"
-    )
     assert cached_partial.complete is False, cached_partial.errors
-    assert cached_partial.errors == [cached_error], cached_partial.errors
+    assert cached_partial.errors == [], cached_partial.errors
     partial_report = cached_partial.report(views=["types"], size="apparent")
-    assert partial_report["complete"] is False, partial_report
-    assert partial_report["errors"] == [cached_error], partial_report
+    assert partial_report["complete"] is True, partial_report
+    assert partial_report["errors"] == [], partial_report
     coverage = partial_report["reports"][0]["metrics"]["total"]["coverage"]
     assert coverage == {"invalid_utf8": 1}, coverage
     refreshed = cached_partial.refresh()
-    assert refreshed["complete"] is False, refreshed
-    assert refreshed["errors"] == [
-        "content index retains 1 incomplete analysis result; inspect coverage for details"
-    ], refreshed
+    assert refreshed["complete"] is True, refreshed
+    assert refreshed["errors"] == [], refreshed
 
     # Cache policy is the same closed vocabulary the CLI accepts.
     try:

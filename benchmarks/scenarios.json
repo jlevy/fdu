@@ -716,7 +716,7 @@
       "process_state": "same-process",
       "snapshot_state": "absent",
       "validation": {
-        "allowed_exit_codes": [2],
+        "allowed_exit_codes": [0],
         "corpus": "unchanged",
         "snapshot": "absent",
         "stderr": "empty",
@@ -725,7 +725,7 @@
             "mode": "content-basic",
             "schema": "fdu-perf-probe-v1",
             "source": "scan",
-            "summary.complete": false
+            "summary.complete": true
           },
           "matches_manifest": {
             "summary.engine_digest": "oracle.engine_digest",
@@ -773,7 +773,7 @@
       "process_state": "same-process",
       "snapshot_state": "absent",
       "validation": {
-        "allowed_exit_codes": [2],
+        "allowed_exit_codes": [0],
         "corpus": "unchanged",
         "snapshot": "absent",
         "stderr": "empty",
@@ -782,7 +782,7 @@
             "mode": "content-basic",
             "schema": "fdu-perf-probe-v1",
             "source": "scan",
-            "summary.complete": false
+            "summary.complete": true
           },
           "matches_manifest": {
             "summary.engine_digest": "oracle.engine_digest",
@@ -825,7 +825,7 @@
       "process_state": "same-process",
       "snapshot_state": "compatible-unchanged",
       "validation": {
-        "allowed_exit_codes": [2],
+        "allowed_exit_codes": [0],
         "corpus": "unchanged",
         "snapshot": "exists",
         "stderr": "empty",
@@ -834,7 +834,7 @@
             "mode": "content-cache-hit",
             "schema": "fdu-perf-probe-v1",
             "source": "content-cache",
-            "summary.complete": false
+            "summary.complete": true
           },
           "matches_manifest": {
             "summary.engine_digest": "oracle.engine_digest",
@@ -882,7 +882,7 @@
       "process_state": "same-process",
       "snapshot_state": "compatible-changed",
       "validation": {
-        "allowed_exit_codes": [2],
+        "allowed_exit_codes": [0],
         "corpus": "unchanged",
         "snapshot": "exists",
         "stderr": "empty",
@@ -891,7 +891,7 @@
             "mode": "content-open",
             "schema": "fdu-perf-probe-v1",
             "source": "warm-revalidate",
-            "summary.complete": false
+            "summary.complete": true
           },
           "matches_manifest": {
             "summary.engine_digest": "oracle.engine_digest",
@@ -936,7 +936,7 @@
       "process_state": "same-process",
       "snapshot_state": "absent",
       "validation": {
-        "allowed_exit_codes": [2],
+        "allowed_exit_codes": [0],
         "corpus": "unchanged",
         "snapshot": "absent",
         "stderr": "empty",
@@ -945,7 +945,7 @@
             "mode": "content-binary-gate",
             "schema": "fdu-perf-probe-v1",
             "source": "scan",
-            "summary.complete": false
+            "summary.complete": true
           },
           "matches_manifest": {
             "summary.engine_digest": "oracle.engine_digest",
@@ -990,7 +990,7 @@
       "process_state": "same-process",
       "snapshot_state": "absent",
       "validation": {
-        "allowed_exit_codes": [2],
+        "allowed_exit_codes": [0],
         "corpus": "unchanged",
         "snapshot": "absent",
         "stderr": "empty",
@@ -999,7 +999,7 @@
             "mode": "content-query",
             "schema": "fdu-perf-probe-v1",
             "source": "scan",
-            "summary.complete": false,
+            "summary.complete": true,
             "summary.query_iterations": 100
           },
           "matches_manifest": {

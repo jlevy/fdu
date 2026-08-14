@@ -35,8 +35,8 @@ These commands cover the common cost and reporting choices:
 `--view languages` selects the detected code-type roll-up.
 By itself it classifies from exact filenames and extensions, reports byte shares, and
 never reads file content.
-Adding `--analyze code` authorizes bounded reads, adds standard lines of code, and uses
-code lines for the shares.
+Adding `--analyze code` authorizes streaming reads through the end of every eligible
+file, adds standard lines of code, and uses code lines for the shares.
 The view never turns on content analysis by itself.
 Human text uses language names such as `CSS`, `C++`, `JavaScript`, and
 `Protocol Buffers`; JSON, JSONL, and YAML retain stable lowercase IDs such as `css`,
@@ -183,7 +183,7 @@ A view never enables an analyzer implicitly.
 | --- | --- | --- | --- |
 | Exact summary | `fdu --cache off --view summary PATH` | Enumerate and stat every entry; never read file contents | Five aggregate tallies; no index or cache |
 | Metadata index | `fdu PATH` | Enumerate and stat every entry; classify recognized paths without reading contents | Reusable parent-pointer index and, unless disabled, metadata snapshot v2 |
-| Content index | `fdu --analyze PROFILE PATH` | Metadata work plus bounded reads of eligible files missing from a compatible content sidecar | Metadata index plus sparse content roll-ups and a separate `.content` sidecar |
+| Content index | `fdu --analyze PROFILE PATH` | Metadata work plus streaming reads through every eligible file missing from a compatible content sidecar | Metadata index plus sparse content roll-ups and a separate `.content` sidecar |
 
 The summary-only plan applies only to one unfiltered `summary` view with `--cache off`.
 Filters, multiple views, cache participation, watch mode, or content analysis fall
@@ -219,9 +219,14 @@ The metadata views remain legal with every profile, so one command can compose b
 type, code, and prose summaries over the same observed tree.
 Content analysis is currently one-shot; `--watch` remains metadata-only and rejects an
 enabled analysis profile.
-Content reads are bounded by `--max-file-size` and `--analysis-workers`; known binary
-types are rejected before opening, and other binary or unsupported inputs appear as
-coverage rather than invented zeroes.
+Content analysis reads every eligible file through EOF; `--analysis-workers` bounds
+concurrency, not coverage.
+Known binary types are rejected before opening.
+Invalid UTF-8, binary data, and code types without a shipped SLOC analyzer remain
+explicit coverage outcomes: they still contribute file and byte totals and do not make
+the run partial.
+I/O failures, files that change during their read, and stale conditional
+commits are operational failures; those make the result partial and produce a warning.
 Selection flags such as `--include` shape the report, not the retained analysis scope.
 An enabled profile analyzes eligible files in the chosen `PATH` and `--scan-depth` so
 the resulting sidecar can serve later selections without rereading them.
@@ -292,8 +297,8 @@ Content analysis is opt-in through `--analyze none|basic|code|documents|full`. T
 profile streams each eligible file once, recognizes LF, CRLF, lone CR, and mixed line
 endings, separates blank and nonblank lines, rejects NUL-containing and invalid UTF-8
 files explicitly, and counts raw words only for prose and markup types.
-`--max-file-size` bounds every read, `--analysis-workers` bounds concurrency, and
-`--words-per-page` controls the report-time page denominator.
+Every eligible file is streamed through EOF. `--analysis-workers` bounds concurrent
+readers, and `--words-per-page` controls only the report-time page denominator.
 Content results use a separately versioned, profile-scoped sidecar, so an unchanged warm
 run with the same profile and semantic settings does not reopen files.
 Changing profiles can require content reanalysis, but it never invalidates the separate
@@ -379,7 +384,7 @@ assert!(report.analysis.is_some());
 ```python
 import fdu_py
 
-index = fdu_py.open("/path/to/tree", analyze="full", max_file_size="16MiB")
+index = fdu_py.open("/path/to/tree", analyze="full")
 print(index.complete, index.freshness, index.errors)
 print(index.total())          # {'files': ..., 'bytes': ..., 'by_extension': {...}}
 print(index.children("src"))  # one call returns every child with its roll-up

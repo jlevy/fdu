@@ -50,14 +50,14 @@ Agreement by accident is not an acceptance criterion.
 
 - It was about 1.6 times faster in the isolated per-buffer self-host spike and produced
   a much smaller linked artifact.
-- It preserves fdu’s bounded file-worker ownership.
+- It preserves fdu’s fixed-size file-worker ownership.
   Tokei’s per-buffer path can invoke Rayon internally, so placing it inside fdu’s worker
   pool creates nested scheduling and weakens cancellation and oversubscription
   guarantees.
 - It adds no crate, build script, generated language table, transitive advisory surface,
   or 14-day supply-chain review obligation.
-- Streaming state means cancellation and the existing per-file byte bound remain at
-  chunk boundaries. Tokei needs a complete buffer for the public adapter.
+- Streaming state lets the native analyzer read through EOF with constant parser state.
+  Tokei needs a complete buffer for the public adapter.
 - Existing file fingerprints, analyzer versions, conditional commits, and content
   sidecars work without another cache or traversal owner.
 

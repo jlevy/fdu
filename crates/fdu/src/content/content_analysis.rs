@@ -1,4 +1,4 @@
-//! Bounded parallel file reads and conditional analysis commits.
+//! Parallel streaming file reads and conditional analysis commits.
 
 use std::fs::File;
 use std::io::Read;
@@ -32,8 +32,6 @@ pub struct AnalysisReport {
     pub analyzed: u64,
     /// Known or observed binary files.
     pub binary: u64,
-    /// Files rejected by the configured byte bound.
-    pub too_large: u64,
     /// Files whose byte stream was not valid UTF-8.
     pub invalid_utf8: u64,
     /// Files that changed during their read.
@@ -45,14 +43,22 @@ pub struct AnalysisReport {
 }
 
 impl AnalysisReport {
-    /// Whether every candidate reached an analyzed or known-binary terminal outcome.
+    /// Whether content analysis completed without an operational failure.
+    ///
+    /// Binary data, invalid UTF-8, and unsupported analyzers are coverage outcomes. They
+    /// remain visible in roll-ups but do not mean the filesystem operation failed.
     pub const fn is_complete(&self) -> bool {
-        self.stale == 0
-            && self.too_large == 0
-            && self.invalid_utf8 == 0
-            && self.changed_during_read == 0
-            && self.io_errors == 0
-            && self.unsupported == 0
+        self.stale == 0 && self.changed_during_read == 0 && self.io_errors == 0
+    }
+
+    /// Explain operational failures without presenting expected coverage as an error.
+    pub fn failure_message(&self) -> Option<String> {
+        (!self.is_complete()).then(|| {
+            format!(
+                "content analysis had operational failures (I/O errors: {}; changed during read: {}; stale results: {}). File and byte totals remain complete; content metrics omit affected files",
+                self.io_errors, self.changed_during_read, self.stale
+            )
+        })
     }
 }
 
@@ -119,14 +125,6 @@ fn analyze_candidate(
 ) -> AnalysisObservation {
     let analysis = if candidate.classification.family == ContentFamily::Binary {
         record(&candidate, request, candidate.classification.clone(), CoverageReason::Binary, None)
-    } else if candidate.attrs.size > request.max_file_bytes {
-        record(
-            &candidate,
-            request,
-            candidate.classification.clone(),
-            CoverageReason::TooLarge,
-            None,
-        )
     } else {
         analyze_open_file(&candidate, request)
     };
@@ -168,22 +166,12 @@ fn analyze_open_file(candidate: &AnalysisCandidate, request: AnalysisRequest) ->
         .then(Vec::new);
     let mut prefix = Vec::with_capacity(CLASSIFICATION_PREFIX_BYTES);
     let mut chunk = vec![0_u8; READ_CHUNK_BYTES];
-    let mut bytes_read = 0_u64;
     let mut read_failure = None;
-    let mut exceeded = false;
     let mut early_binary = None;
     loop {
-        let remaining = request.max_file_bytes.saturating_sub(bytes_read);
-        let allowance = usize::try_from(remaining.saturating_add(1).min(READ_CHUNK_BYTES as u64))
-            .expect("read allowance is capped at a usize constant");
-        if allowance == 0 {
-            exceeded = true;
-            break;
-        }
-        match file.read(&mut chunk[..allowance]) {
+        match file.read(&mut chunk) {
             Ok(0) => break,
             Ok(count) => {
-                bytes_read = bytes_read.saturating_add(count as u64);
                 if prefix.len() < CLASSIFICATION_PREFIX_BYTES {
                     let take = count.min(CLASSIFICATION_PREFIX_BYTES - prefix.len());
                     prefix.extend_from_slice(&chunk[..take]);
@@ -195,10 +183,6 @@ fn analyze_open_file(candidate: &AnalysisCandidate, request: AnalysisRequest) ->
                         early_binary = Some(classification);
                         break;
                     }
-                }
-                if bytes_read > request.max_file_bytes {
-                    exceeded = true;
-                    break;
                 }
                 accumulator.push(&chunk[..count]);
                 if let Some(code) = &mut code_accumulator {
@@ -238,9 +222,6 @@ fn analyze_open_file(candidate: &AnalysisCandidate, request: AnalysisRequest) ->
         return record(candidate, request, classification, CoverageReason::Binary, None);
     }
     let classification = classify_path_with_prefix(&candidate.relative_path, Some(&prefix));
-    if exceeded {
-        return record(candidate, request, classification, CoverageReason::TooLarge, None);
-    }
     if classification.family == ContentFamily::Binary {
         return record(candidate, request, classification, CoverageReason::Binary, None);
     }
@@ -360,7 +341,6 @@ fn count_coverage(report: &mut AnalysisReport, coverage: CoverageReason) {
         CoverageReason::Analyzed => &mut report.analyzed,
         CoverageReason::Binary => &mut report.binary,
         CoverageReason::InvalidUtf8 => &mut report.invalid_utf8,
-        CoverageReason::TooLarge => &mut report.too_large,
         CoverageReason::IoError => &mut report.io_errors,
         CoverageReason::ChangedDuringRead => &mut report.changed_during_read,
         CoverageReason::Unsupported => &mut report.unsupported,
@@ -377,33 +357,77 @@ mod tests {
 
     use super::*;
 
+    /// Exercises many streaming chunks with a realistically large generated source file.
+    const LARGE_CODE_FILE_BYTES: usize = 17 * 1024 * 1024;
+
     #[test]
-    fn pool_analyzes_text_and_skips_known_binary_and_oversized_files() {
+    fn expected_coverage_gaps_are_not_operational_failures() {
+        let report =
+            AnalysisReport { invalid_utf8: 1, unsupported: 3, ..AnalysisReport::default() };
+
+        assert!(report.is_complete());
+        assert_eq!(report.failure_message(), None);
+
+        let failed = AnalysisReport {
+            io_errors: 1,
+            changed_during_read: 2,
+            stale: 3,
+            ..AnalysisReport::default()
+        };
+        assert!(!failed.is_complete());
+        assert_eq!(
+            failed.failure_message().as_deref(),
+            Some(
+                "content analysis had operational failures (I/O errors: 1; changed during read: 2; stale results: 3). File and byte totals remain complete; content metrics omit affected files"
+            )
+        );
+    }
+
+    #[test]
+    fn pool_analyzes_text_and_skips_known_binary_files() {
         let root = tempfile::tempdir().expect("tempdir");
         fs::write(root.path().join("notes.md"), "one two\n\nthree\n").expect("write text");
         fs::write(root.path().join("image.png"), b"not opened as text").expect("write binary");
-        fs::write(root.path().join("large.txt"), b"12345678901234567").expect("write large");
         let (mut index, scan) =
             crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
         assert!(scan.is_complete());
 
         let report = analyze_index(
             &mut index,
-            AnalysisRequest {
-                profile: super::super::AnalysisProfile::Basic,
-                max_file_bytes: 16,
-                workers: 2,
-            },
+            AnalysisRequest { profile: super::super::AnalysisProfile::Basic, workers: 2 },
         );
 
-        assert_eq!(report.candidates, 3);
+        assert_eq!(report.candidates, 2);
         assert_eq!(report.analyzed, 1);
         assert_eq!(report.binary, 1);
-        assert_eq!(report.too_large, 1);
         let root_rollup = index.content_rollup(std::path::Path::new("")).expect("content root");
-        assert_eq!(root_rollup.total.files, 3);
+        assert_eq!(root_rollup.total.files, 2);
         assert_eq!(root_rollup.total.metrics.physical_lines, 3);
         assert_eq!(root_rollup.total.metrics.raw_words, 3);
+    }
+
+    #[test]
+    fn large_generated_code_is_analyzed_through_eof() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let mut source = b"/* generated */\n".to_vec();
+        source.resize(LARGE_CODE_FILE_BYTES - 1, b'x');
+        source.push(b'\n');
+        fs::write(root.path().join("generated.c"), source).expect("write generated C");
+        let (mut index, _) =
+            crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
+
+        let report = analyze_index(
+            &mut index,
+            AnalysisRequest { profile: super::super::AnalysisProfile::Code, workers: 1 },
+        );
+
+        assert_eq!(report.analyzed, 1);
+        assert!(report.is_complete());
+        let metrics = &index.content_rollup(std::path::Path::new("")).expect("content root").total;
+        assert_eq!(metrics.bytes, LARGE_CODE_FILE_BYTES as u64);
+        assert_eq!(metrics.metrics.physical_lines, 2);
+        assert_eq!(metrics.metrics.code_lines, 1);
+        assert_eq!(metrics.metrics.comment_lines, 1);
     }
 
     #[test]

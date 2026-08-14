@@ -135,6 +135,15 @@ The inactive `cache-pressure-12x` tree under the ignored benchmark corpus is the
 Use it when background builds make the live workspace mutate, and fingerprint it afresh
 because it is generated state, not a committed fixture.
 
+Clean up generated replication subjects after an experiment unless the next planned run
+needs them. `benchmarks/corpus/realtree-scratch/` is ignored, can grow to tens of
+gigabytes and hundreds of thousands of entries, and is reproducible from the retained
+base tree. First confirm that no benchmark process is using it, then move that scratch
+directory to Trash on macOS or use the platform’s equivalent recoverable cleanup.
+Keep `benchmarks/corpus/realtree/` unless the base tree itself is intentionally being
+rebuilt. Moving data to Trash does not guarantee physical space is reclaimed until the
+user empties Trash.
+
 For a publishable `benchmarks/` run, first finish every benchmark-harness, environment,
 corpus, schema, and result-fixture change.
 Copy immutable release binaries outside the root; write scratch snapshots, immediate

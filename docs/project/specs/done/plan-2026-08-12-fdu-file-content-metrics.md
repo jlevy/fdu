@@ -277,22 +277,25 @@ totals independent of file boundaries.
 Each analyzer rollup carries additive coverage counters:
 
 ```text
-eligible_files, eligible_bytes
-analyzed_files, analyzed_bytes
-skipped_binary_files, skipped_binary_bytes
-skipped_encoding_files, skipped_encoding_bytes
-skipped_too_large_files, skipped_too_large_bytes
-failed_files, failed_bytes
+analyzed
+binary
+invalid_utf8
+unsupported
+io_error
+changed_during_read
 ```
 
-Zero metrics with `eligible_files == analyzed_files` mean that the analyzer found zero.
-Zero metrics with `analyzed_files == 0` mean that it did not measure the eligible files.
-Human output summarizes incomplete coverage; JSON and YAML retain every counter and the
-bounded per-path errors already used by reports.
+Zero metrics with `analyzed` coverage mean that the analyzer found zero.
+Zero metrics with another coverage outcome mean that it did not measure that file.
+Human output summarizes coverage; JSON and YAML retain every counter and the bounded
+per-path errors already used by reports.
 
-When a requested analyzer is incomplete, the report’s overall `complete` value is false
-and the CLI follows the existing partial-result exit contract.
-Metadata completeness remains independently visible.
+Binary data, invalid UTF-8, and file types without a requested analyzer are expected
+coverage outcomes, not operational failures.
+They retain file and byte totals, leave the report complete, and do not emit a warning.
+I/O errors, files changed during a read, and stale conditional commits make content
+analysis operationally partial, so the CLI follows the existing partial-result exit
+contract. Metadata completeness remains independently visible.
 
 ### Derived Updates Obey the Delta Contract
 
@@ -321,10 +324,10 @@ index changes and is visible to sessions and watchers as a typed derived delta.
 ### Analysis Is Scheduled Behind Metadata
 
 The metadata producer remains responsible for traversal and stat work.
-Accepted regular-file observations enqueue bounded content jobs only when an analyzer is
-enabled and no matching cached result exists.
-A separate bounded worker pool performs content reads, so slow files cannot stop partial
-metadata rollups from becoming available.
+Accepted regular-file observations enqueue content jobs only when an analyzer is enabled
+and no matching cached result exists.
+A fixed-size worker pool performs content reads, so concurrency and queued work remain
+bounded while each eligible file is read through EOF.
 
 The one-shot CLI waits for every requested analyzer before rendering a complete result.
 Streaming consumers may read partial content rollups with explicit coverage while jobs
@@ -332,10 +335,11 @@ are in flight. Backpressure bounds queued paths and bytes.
 Each worker reuses its read buffer and releases buffers above a measured retention
 limit.
 
-The basic analyzer is streaming and has constant memory with file size.
-Analyzers that require a complete buffer, including the Tokei and Markdown prototypes,
-have a configurable per-file buffer limit and report `too_large` when they skip a file.
-They never allocate directly from an untrusted file-size declaration.
+The basic and native code analyzers are streaming and have constant parser state with
+file size. Reader-visible Markdown analysis retains the admitted UTF-8 source for its
+document parser, so its per-worker memory scales with the Markdown file being analyzed.
+The worker count bounds concurrent readers.
+No analyzer truncates or skips an eligible text file because of its size.
 
 ### Binary and Text Admission Are Conservative
 

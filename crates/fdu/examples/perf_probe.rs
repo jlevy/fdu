@@ -613,7 +613,6 @@ struct Summary {
     content_digest: Option<String>,
     content_invalid_utf8: u64,
     content_records: u64,
-    content_too_large: u64,
     dirs: u64,
     dirs_read: u64,
     engine_digest: Option<String>,
@@ -645,7 +644,6 @@ impl Default for Summary {
             content_digest: None,
             content_invalid_utf8: 0,
             content_records: 0,
-            content_too_large: 0,
             dirs: 0,
             dirs_read: 0,
             engine_digest: None,
@@ -677,12 +675,11 @@ fn attach_content_summary(summary: &mut Summary, index: &Index) {
     summary.content_binary = root.coverage.get(&CoverageReason::Binary).copied().unwrap_or(0);
     summary.content_invalid_utf8 =
         root.coverage.get(&CoverageReason::InvalidUtf8).copied().unwrap_or(0);
-    summary.content_too_large = root.coverage.get(&CoverageReason::TooLarge).copied().unwrap_or(0);
     let metrics = root.total.metrics;
     let record = format!(
         concat!(
             "fdu-content-summary-v1\0records={}\0analyzed={}\0binary={}\0invalid_utf8={}\0",
-            "too_large={}\0physical={}\0blank={}\0nonblank={}\0code={}\0comment={}\0",
+            "physical={}\0blank={}\0nonblank={}\0code={}\0comment={}\0",
             "code_blank={}\0raw_words={}\0logical_words={}\0paragraphs={}\0visible_words={}\0",
             "visible_logical_words={}"
         ),
@@ -690,7 +687,6 @@ fn attach_content_summary(summary: &mut Summary, index: &Index) {
         summary.content_analyzed,
         summary.content_binary,
         summary.content_invalid_utf8,
-        summary.content_too_large,
         metrics.physical_lines,
         metrics.blank_lines,
         metrics.nonblank_lines,
@@ -834,7 +830,7 @@ impl ProbeOutput {
                 "\"complete\":{},\"dirs\":{},\"dirs_read\":{},",
                 "\"content\":{{\"analyzed\":{},\"applied\":{},\"binary\":{},",
                 "\"cache_hits\":{},\"candidates\":{},\"digest\":{},",
-                "\"invalid_utf8\":{},\"records\":{},\"too_large\":{}}},",
+                "\"invalid_utf8\":{},\"records\":{}}},",
                 "\"engine_digest\":{},\"entries\":{},\"errors\":{},",
                 "\"files\":{},\"index_len\":{},\"newest_file_mtime_ns\":{},\"other\":{},",
                 "\"query_iterations\":{},\"query_observations\":{},",
@@ -865,7 +861,6 @@ impl ProbeOutput {
             content_digest,
             summary.content_invalid_utf8,
             summary.content_records,
-            summary.content_too_large,
             digest,
             summary.entries,
             summary.errors,

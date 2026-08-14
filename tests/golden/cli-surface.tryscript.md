@@ -53,12 +53,20 @@ Arguments:
           Report root; optional only for cache lifecycle operations
 
 Options:
+  -h, --help
+          Print help (see a summary with '-h')
+
+  -V, --version
+          Print version
+
+Scope:
       --scan-depth <N>
           Limit scanning and retention to N entry levels
 
       --one-filesystem
           Stay on the filesystem the root lives on
 
+Selection:
       --include <GLOB>
           Report only entries matching this glob; repeatable
 
@@ -98,31 +106,29 @@ Options:
 
           [default: allocated]
 
+Views:
       --view <LIST>
           Views: tree, extensions, types, families, languages, documents, files, summary
 
           [default: tree]
-
-      --analyze <PROFILE>
-          Content depth: none, basic, code, documents, or full
-
-          [default: none]
-
-      --max-file-size <SIZE>
-          Maximum bytes read from one analyzed file
-
-          [default: 16MiB]
-
-      --analysis-workers <N>
-          Content reader workers; zero selects available parallelism
-
-          [default: 0]
 
       --words-per-page <N>
           Logical words per derived document page
 
           [default: 250]
 
+Content analysis:
+      --analyze <PROFILE>
+          Content depth: none, basic, code, documents, or full
+
+          [default: none]
+
+      --analysis-workers <N>
+          Content reader workers; zero selects available parallelism
+
+          [default: 0]
+
+Output:
       --format <FORMAT>
           Output format: text, json, jsonl, or yaml
 
@@ -133,19 +139,14 @@ Options:
 
           [default: auto]
 
+Execution:
       --cache <POLICY>
           Cache policy: auto, refresh, read-only, only, or off
 
           [default: auto]
 
       --allow-partial
-          Accept incomplete totals when paths cannot be read
-
-      --cache-status[=<SCOPE>]
-          Report cache contents instead of scanning: root (default) or all
-
-      --cache-clear[=<SCOPE>]
-          Remove cached snapshots instead of scanning: root (default) or all
+          Accept operationally partial results, including filesystem or analysis failures
 
       --watch
           Stream changes continuously instead of returning one report
@@ -157,14 +158,16 @@ Options:
 
           [default: 2s]
 
+Cache management:
+      --cache-status[=<SCOPE>]
+          Report cache contents instead of scanning: root (default) or all
+
+      --cache-clear[=<SCOPE>]
+          Remove cached snapshots instead of scanning: root (default) or all
+
+Other:
       --skill
           Print a portable agent skill to stdout
-
-  -h, --help
-          Print help (see a summary with '-h')
-
-  -V, --version
-          Print version
 
 More compositions:
   fdu --view extensions ~/Downloads
@@ -176,7 +179,7 @@ Five axes, and every option belongs to exactly one:
   Selection  --include, --exclude, --depth, --limit    which entries are considered
   View       tree,extensions,types,families,languages,documents,files,summary
   Format     --format text|json|jsonl|yaml, --color
-  Mode       --cache, --analyze, --max-file-size, --analysis-workers
+  Mode       --cache, --analyze, --analysis-workers
 
 Content analysis:
   none       metadata only; source files are never opened (default)
@@ -188,7 +191,8 @@ Content analysis:
   languages is metadata-only by default; code or full adds standard LOC.
   documents requires any enabled profile.
   Views never enable content analysis implicitly.
-  Content reads are bounded by --max-file-size and --analysis-workers.
+  Analysis streams every eligible file through EOF; files are never size-truncated.
+  --analysis-workers bounds concurrency.
   --words-per-page changes only report-time page derivation.
   Unchanged results for the same profile are restored from a separate sidecar.
   cache=only never opens source files and fails if requested content is absent.
@@ -276,8 +280,8 @@ Cost has three layers.
 `--cache off --view summary PATH` is the one exact composition that retains only
 aggregate tallies and no index.
 Ordinary metadata requests retain the reusable index but never read regular-file
-contents. Any non-`none` `--analyze` profile opts into bounded content reads and a
-separate profile-scoped sidecar.
+contents. Any non-`none` `--analyze` profile opts into streaming reads through every
+eligible file and a separate profile-scoped sidecar.
 A repeated run with the same profile and semantic settings reuses unchanged content
 records. Coverage is profile-scoped too: an unsupported deeper analyzer leaves byte
 metadata visible but does not retain a separate lower-level metric record for that file.
@@ -301,9 +305,12 @@ partitions across supported common languages; the percentage column then uses co
 instead of bytes. Use `--analyze documents --view documents` for normalized prose words,
 paragraphs, aggregate-derived pages, and reader-visible Markdown that excludes
 destinations and code.
-`--analyze full` computes both families in one bounded pass.
-Use `--max-file-size`, `--analysis-workers`, and `--words-per-page` to bound work and
-control page derivation.
+`--analyze full` computes both families in one streaming pass.
+Use `--analysis-workers` to bound concurrent reads and `--words-per-page` to control
+page derivation. Analysis never truncates a file or excludes it because of size.
+Invalid UTF-8, binary data, and unsupported SLOC languages remain visible as normal
+coverage outcomes. Only I/O failures, files changed during a read, or stale commits make
+analysis operationally partial.
 Content analysis is currently one-shot and cannot be combined with `--watch`.
 
 Common shapes are compositions rather than dedicated flags:
