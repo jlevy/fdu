@@ -209,7 +209,7 @@ python-check:
 	$(UV) run --directory crates/fdu-py --frozen --only-group dev ruff format --check python tests
 	$(UV) run --directory crates/fdu-py --frozen --only-group dev ruff check python tests
 	$(UV) run --directory crates/fdu-py --frozen --only-group dev basedpyright
-	$(UV) run --directory crates/fdu-py --frozen --only-group dev pytest tests/test_models.py
+	$(UV) run --directory crates/fdu-py --frozen --group dev pytest tests/test_models.py
 
 python-smoke:
 	cd crates/fdu-py && wheel_dir="$$(mktemp -d "$${TMPDIR:-/tmp}/fdu-wheel.XXXXXX")" && \
