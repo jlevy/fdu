@@ -176,7 +176,7 @@ workers regressed 2.46%; sixteen regressed 10.65%, more than doubled CPU, and ra
 28.66%.
 
 The result also explains why simply copying the much higher concurrency limits in
-`diskus` or `gdu` is not a promising FDU experiment on this machine: the metadata path
+`diskus` or `gdu` is not a promising fdu experiment on this machine: the metadata path
 is already beyond its efficient parallelism point.
 
 ## Verdict

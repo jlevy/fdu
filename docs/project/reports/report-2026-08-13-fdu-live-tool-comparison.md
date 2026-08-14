@@ -6,12 +6,12 @@
 
 ## Outcome
 
-On a self-contained 901,963-entry tree, a fresh FDU process with its persisted cache
+On a self-contained 901,963-entry tree, a fresh fdu process with its persisted cache
 disabled built a reusable exact index and rendered a depth-one, ten-row tree in a
 3.324-second median.
 The maintained tree and index peers took 5.657–20.550 seconds.
 
-| Tool | Work class | Median wall | Versus paired FDU | 95% interval | Peak RSS |
+| Tool | Work class | Median wall | Versus paired fdu | 95% interval | Peak RSS |
 | --- | --- | ---: | ---: | ---: | ---: |
 | **fdu** | reusable exact index and 10-row tree | **3.324 s** | baseline | — | 398.0 MiB |
 | pdu | rendered depth-one tree | 5.657 s | +71.3% | +66.2% to +74.9% | 13.3 MiB |
@@ -19,12 +19,12 @@ The maintained tree and index peers took 5.657–20.550 seconds.
 | gdu | rendered 10-row tree | 6.782 s | +107.1% | +99.2% to +110.4% | 397.1 MiB |
 | ncdu | browseable index, UI disabled | 20.550 s | +513.6% | +497.2% to +523.0% | 2.0 MiB |
 
-FDU also has a derived execution plan for the existing cache-off, unfiltered summary
+fdu also has a derived execution plan for the existing cache-off, unfiltered summary
 composition. It retains only the exact five summary tallies and does not build a path
 index. That richer summary took 3.125 seconds and was faster than every scalar tool
 except dumac, which was statistically tied in the paired comparison.
 
-| Tool | Work class | Median wall | Versus paired FDU | 95% interval | Peak RSS |
+| Tool | Work class | Median wall | Versus paired fdu | 95% interval | Peak RSS |
 | --- | --- | ---: | ---: | ---: | ---: |
 | **fdu** | files, dirs, both byte totals, newest time | **3.125 s** | baseline | — | 13.6 MiB |
 | dumac | allocated-byte total only | 2.980 s | -2.2% | -5.7% to +1.7% | 44.4 MiB |
@@ -33,7 +33,7 @@ except dumac, which was statistically tied in the paired comparison.
 | BSD du | scalar total only | 13.075 s | +321.5% | +285.0% to +351.8% | 2.0 MiB |
 | GNU du | scalar total only | 20.426 s | +561.7% | +552.3% to +601.4% | 6.6 MiB |
 
-Positive percentages mean the competitor took longer than the immediately adjacent FDU
+Positive percentages mean the competitor took longer than the immediately adjacent fdu
 run. The paired percentages are stronger than differences between the displayed medians
 because they control for filesystem-cache and machine drift.
 
@@ -48,7 +48,7 @@ Its immediate redacted fingerprint contained 110,369 directories including the r
 
 The benchmark used an Apple M1 Pro MacBook with 32 GiB RAM and a local APFS SSD. The
 operating system’s filesystem cache was in its ordinary warm-steady state.
-“FDU cache off” means no FDU snapshot was read or written; it does not imply that APFS
+“fdu cache off” means no fdu snapshot was read or written; it does not imply that APFS
 metadata was purged.
 
 ### What Warm-Steady Means
@@ -56,7 +56,7 @@ metadata was purged.
 This run did intentionally benchmark a warm operating-system filesystem cache.
 The immediate independent fingerprint was itself a complete metadata walk over all
 901,963 entries. Every comparator then received three complete warmup traversals before
-its twelve timed pairs; FDU ran beside every one of those warmups.
+its twelve timed pairs; fdu ran beside every one of those warmups.
 That is at least as explicit as the three-warmup Hyperfine protocol used in the
 [dumac benchmark](https://healeycodes.com/maybe-the-fastest-disk-usage-program-on-macos)
 and differs from merely rerunning a command and assuming the cache is warm.
@@ -92,7 +92,7 @@ conditions, so a purge run must be labeled separately; a dedicated APFS volume r
 between samples is the stronger future cold protocol.
 
 The two matrices each used three warmups and twelve timed pairs per competitor.
-Every competitor ran immediately beside the same immutable FDU binary, and pair order
+Every competitor ran immediately beside the same immutable fdu binary, and pair order
 alternated at each ordinal.
 In total, 270 fresh processes traversed the subject over 32.5 minutes.
 The scalar and tree matrices had separate immediate pre/post fingerprints because they
@@ -101,7 +101,7 @@ are separate runs.
 Both matrices observed the same independent digest before and after:
 `14dc5055091e31c0ebdd813ef0f036d25fe5673daed09c449721ff1cebbb98b7`. There were no
 invalid timed samples, semantic mismatches, baseline drift, or mutations.
-All sixty timed FDU summary anchors produced one stable semantic digest after excluding
+All sixty timed fdu summary anchors produced one stable semantic digest after excluding
 only generator, root, and timestamps.
 Each sample independently matched the Python fingerprint’s regular-file count,
 descendant-directory count, apparent bytes, allocated bytes, and newest-file time.
@@ -113,9 +113,9 @@ error-free root with exactly 791,261 files, 110,368 descendant directories,
 16,537,467,483 apparent bytes, 18,714,214,400 allocated bytes, and newest-file mtime
 1,786,626,096,603,125,419 ns.
 External tools were required to exit successfully with stable output, but their totals
-are calibration references rather than FDU correctness oracles.
+are calibration references rather than fdu correctness oracles.
 
-The measured FDU executable was commit `33af4a868`, version `fdu 0.0.1-dev+g33af4a868`,
+The measured fdu executable was commit `33af4a868`, version `fdu 0.0.1-dev+g33af4a868`,
 with SHA-256 `dd4d8a0030ae5967f275c6a38e219ec9e1364020f030b12f32568ddd2ed5a0f5`. Exact
 commands, versions, hashes, host facts, tree facts, resources, and intervals are in the
 [reproduction manifest](fdu-live-tool-comparison-manifest-v2.json).
@@ -124,14 +124,14 @@ The operational procedure is in the
 
 ## Why the Tree Product Leads
 
-FDU, dust, gdu, and pdu all traversed the full tree and produced directory roll-ups.
-FDU additionally retained stable entry identity and exact metadata for later views,
+fdu, dust, gdu, and pdu all traversed the full tree and produced directory roll-ups.
+fdu additionally retained stable entry identity and exact metadata for later views,
 queries, snapshots, and incremental changes.
 
 The process metrics and source review agree on the main difference.
 Dust, gdu, and pdu use portable recursive parallelism and consumed 38.0–47.3 aggregate
 CPU-seconds on this subject.
-FDU used 13.1 seconds.
+fdu used 13.1 seconds.
 Its macOS backend obtains directory enumeration and the complete stat-tier attributes in
 `getattrlistbulk` batches, avoiding one metadata system call and repeated path
 resolution per file.
@@ -140,9 +140,9 @@ without the CPU and contention costs that the worker-depth experiments measured 
 larger pools.
 
 Pdu demonstrates a different tradeoff.
-Its 13.4 MiB peak RSS is excellent because it does not retain FDU’s complete reusable
+Its 13.4 MiB peak RSS is excellent because it does not retain fdu’s complete reusable
 index, but it took 71.3% longer in paired wall time.
-Compacting FDU’s retained tree remains a worthwhile memory project even though the
+Compacting fdu’s retained tree remains a worthwhile memory project even though the
 current construction path is faster.
 
 ## What the Dumac Result Means
@@ -151,15 +151,15 @@ Dumac’s median was lower because it requests and retains much less: one select
 allocated-size metric plus inode state for hard-link deduplication.
 Its paired wall change was -2.2%, but the -5.7% to +1.7% interval makes this a
 statistical tie rather than evidence that either tool leads.
-FDU’s summary also returns exact file and directory counts, apparent bytes, and newest
+fdu’s summary also returns exact file and directory counts, apparent bytes, and newest
 file time, with strict malformed-record, mount, firmlink, one-filesystem, non-UTF-8
 name, partial-result, and portable-fallback behavior.
 
 The wall advantage does not come from using fewer machine resources.
 Dumac consumed 85.4% more aggregate CPU, 87.8% more system CPU, and 224.5% more peak RSS
-than FDU in the paired samples.
+than fdu in the paired samples.
 It finished slightly earlier by sustaining more concurrent kernel work.
-FDU’s richer summary used 13.6 MiB and statistically remained close to the same
+fdu’s richer summary used 13.6 MiB and statistically remained close to the same
 directory-open and bulk-syscall floor.
 
 Experiment 044 tested the obvious matched-workload response rather than assuming it
@@ -170,27 +170,27 @@ crossing zero, did not beat dumac, and required a second unsafe parser plus a ne
 view. The prototype was reverted.
 The existing rich summary remains the smallest useful execution tier.
 
-This is not evidence of a fundamental limit or of a remaining proved FDU deficit.
+This is not evidence of a fundamental limit or of a remaining proved fdu deficit.
 `getattrlistbulk` batches the children of one open directory; it does not traverse
 several directories in one call.
 This subject has 110,369 directories including root, so both implementations still pay a
 directory-open and at least one bulk-call boundary for every directory they visit.
-Experiment 044 removed most of the plausible FDU-only user-space work without changing
+Experiment 044 removed most of the plausible fdu-only user-space work without changing
 system CPU or elapsed time materially.
 Dumac’s lower point estimate came with 87.8% more system CPU, consistent with pushing
 more concurrent work through the same kernel boundary rather than executing fewer
 required tree steps.
-FDU separately tested dumac-like 128 KiB buffers, depth-first order, smaller directory
+fdu separately tested dumac-like 128 KiB buffers, depth-first order, smaller directory
 claims, and deeper worker pools; none produced a confirmed wall improvement.
 
 The claim for this published matrix is therefore that the two tools match within its
-resolution and the current FDU path is kernel/topology-bound on this tree.
+resolution and the current fdu path is kernel/topology-bound on this tree.
 H67 later replayed both the current and published binary pairs under a much busier
-interactive host. Dumac led current FDU by 16.19% in twelve pairs and the published FDU
+interactive host. Dumac led current fdu by 16.19% in twelve pairs and the published fdu
 binary by 11.1% in a five-pair diagnostic, ruling out the intervening
 reconciliation-only change as the cause.
-FDU sustained 3.46 aggregate core-equivalents versus dumac’s 5.64. Exact process samples
-put 96.10% of FDU worker tops and 94.21% of dumac worker tops in `open` or
+fdu sustained 3.46 aggregate core-equivalents versus dumac’s 5.64. Exact process samples
+put 96.10% of fdu worker tops and 94.21% of dumac worker tops in `open` or
 `getattrlistbulk`, with both main threads waiting for workers.
 
 That follow-up does not replace this quiet-host matrix; it establishes that the relative
@@ -203,7 +203,7 @@ H70 replaced the pairwise handoff with a shared pool.
 Two openers improved wall 3.98% [0.70%, 9.87%] and aggregate CPU 15.98% in one exact
 five-pair screen, at the cost of 111.80% more involuntary context switches.
 A two/three/four-opener sweep and direct twelve-pair four-opener comparison with dumac
-were too noisy to select a count; that four-opener FDU/dumac comparison was a wall-time
+were too noisy to select a count; that four-opener fdu/dumac comparison was a wall-time
 tie while dumac used 40.68% more aggregate CPU and 223.23% more peak RSS. A different
 platform primitive or journal-scoped work may still win; neither a noisy gap nor a short
 screen justifies duplicating an unsafe parser or weakening semantics.
@@ -211,7 +211,7 @@ screen justifies duplicating an unsafe parser or weakening semantics.
 This subject contained no duplicate in-tree hard-link paths, so hard-link deduplication
 did not affect its regular-file total.
 It did contain 333 symlinks.
-FDU excludes symlinks from regular-file roll-ups, while the reviewed dumac revision
+fdu excludes symlinks from regular-file roll-ups, while the reviewed dumac revision
 counts each as one 512-byte block.
 That 170,496-byte semantic difference is negligible for timing but must remain visible
 in any total comparison.

@@ -201,7 +201,7 @@ APFS tree. Both commands used the same `fdu-transient-summary` contract and ever
 produced the same stable semantic digest.
 There were no invalid samples, semantic mismatches, baseline drift, or tree mutation.
 
-The candidate kept FDU’s directory queue, scope rules, adaptive pool, partial-error
+The candidate kept fdu’s directory queue, scope rules, adaptive pool, partial-error
 contract, and portable fail-closed fallback.
 Its macOS parser required returned attribute bitmaps, per-entry errors, names, object
 types, modification times, flags, file logical and allocated sizes, and directory mount

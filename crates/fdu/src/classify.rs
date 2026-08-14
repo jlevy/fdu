@@ -609,7 +609,7 @@ mod tests {
 
         let manual = classify_path_with_prefix(
             Path::new("fdu.1"),
-            Some(b".TH FDU 1\n.SH NAME\nfdu - disk usage\n"),
+            Some(b".TH fdu 1\n.SH NAME\nfdu - disk usage\n"),
         );
         assert_eq!(manual.file_type.as_str(), "manpage");
 

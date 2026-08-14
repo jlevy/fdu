@@ -179,7 +179,7 @@ mod tests {
             Some(PrefixMatch::Rule("python", super::DetectionSource::Modeline))
         );
         assert_eq!(
-            probe_unresolved(b"\n.TH FDU 1\n.SH NAME\n"),
+            probe_unresolved(b"\n.TH fdu 1\n.SH NAME\n"),
             Some(PrefixMatch::Rule("manpage", super::DetectionSource::FormatSignature))
         );
     }

@@ -4,7 +4,7 @@ monotonic clock around spawn+wait, rusage via os.wait4, paired bootstrap CI."""
 import json, os, random, statistics, subprocess, sys, time
 
 TREE = os.environ.get("SPIKE_TREE", "/tmp/fdu-spike/tree")
-FDU = os.environ.get("SPIKE_FDU", "target/release/fdu")
+FDU_BIN = os.environ.get("SPIKE_FDU", "target/release/fdu")
 HOME = os.path.expanduser("~")
 DEVNULL = subprocess.DEVNULL
 
@@ -14,9 +14,9 @@ DEVNULL = subprocess.DEVNULL
 # replace entries without editing this file, which is what makes a matchup reproducible
 # on a second machine. Values are argv lists; "{tree}" and "{fdu}" are substituted.
 TOOLS = {
-    "fdu-tree":    [FDU, "--cache", "off", TREE],
-    "fdu-summary": [FDU, "--cache", "off", "--view", "summary", TREE],
-    "fdu-warm":    [FDU, TREE],  # cache auto: verified warm open after seed
+    "fdu-tree":    [FDU_BIN, "--cache", "off", TREE],
+    "fdu-summary": [FDU_BIN, "--cache", "off", "--view", "summary", TREE],
+    "fdu-warm":    [FDU_BIN, TREE],  # cache auto: verified warm open after seed
     "dut":         ["/home/user/dut-src/dut", TREE],
     "dust":        [HOME + "/.cargo/bin/dust", "-n", "10", TREE],
     "pdu":         [HOME + "/.cargo/bin/pdu", "--max-depth", "1", TREE],

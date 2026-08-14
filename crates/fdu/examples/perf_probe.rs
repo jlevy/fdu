@@ -295,7 +295,7 @@ fn classification_probe(arguments: &Arguments, ambiguous: bool) -> ProbeResult<P
     let ambiguous_cases = [
         ("include/value.h", b"namespace demo { constexpr int value = 1; }\n" as &[u8]),
         ("script.inc", b"# vim: set filetype=rust:\nfn main() {}\n"),
-        ("manual.1", b".TH FDU 1\n.SH NAME\nfdu - disk usage\n"),
+        ("manual.1", b".TH fdu 1\n.SH NAME\nfdu - disk usage\n"),
         ("document.unknown", b"<?xml version=\"1.0\"?><root/>"),
         ("download", b"%PDF-1.7\nfixture"),
         ("program", b"#!/usr/bin/env python3\nprint('ok')\n"),

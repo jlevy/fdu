@@ -117,12 +117,12 @@ What it found, first against a roughly 60k-entry checkout and then against a
   (exp-039). Peak indexed RSS rises 44.32%, so compact full-index layout is now the
   clearest retained cost.
 - **The local product comparison now has oracle-checked near-million evidence.** On the
-  self-contained 901,963-entry benchmark tree, fresh cache-off FDU built its reusable
+  self-contained 901,963-entry benchmark tree, fresh cache-off fdu built its reusable
   index and ten-row tree in a 3.324-second median versus 5.657 seconds for pdu, 6.016
   for dust, 6.782 for Go gdu, and 20.550 for ncdu.
   Its derived five-tally summary took 3.125 seconds and beat diskus, dua, BSD du, and
   GNU du. Dumac’s allocated-byte-only total had a 2.980-second median, but its paired
-  2.2% advantage was statistically unclear [−5.7%, +1.7%]; it used 44.4 MiB versus FDU’s
+  2.2% advantage was statistically unclear [−5.7%, +1.7%]; it used 44.4 MiB versus fdu’s
   13.6 MiB and 85.4% more aggregate CPU. The
   [live comparison](../../reports/report-2026-08-13-fdu-live-tool-comparison.md),
   [manifest](../../reports/fdu-live-tool-comparison-manifest-v2.json), and
@@ -174,12 +174,12 @@ What it found, first against a roughly 60k-entry checkout and then against a
   [−2.24%, +0.44%] and did not beat dumac (exp-044). All API and engine code was
   reverted; the rich H59 summary remains the smallest useful execution tier.
 - **The dumac difference is concurrency-sensitive, and an open-only pipeline is now the
-  narrow follow-up.** H67 replayed current FDU and dumac in twelve pairs under a busy
+  narrow follow-up.** H67 replayed current fdu and dumac in twelve pairs under a busy
   interactive host: dumac led by 16.19% [12.23%, 19.10%] while spending 34.88% more CPU
   and 231.70% more RSS. Replaying the exact published binaries on the same host also
   produced an 11.1% five-pair dumac lead, ruling out the later reconciliation-only
-  change. Exact process samples put 96.10% of FDU worker tops and 94.21% of dumac worker
-  tops in `open` or `getattrlistbulk`; FDU sustained 3.46 aggregate core-equivalents and
+  change. Exact process samples put 96.10% of fdu worker tops and 94.21% of dumac worker
+  tops in `open` or `getattrlistbulk`; fdu sustained 3.46 aggregate core-equivalents and
   dumac 5.64. The paired-helper H69 screen was promising at −4.47%, but its
   [−31.04%, +33.91%] interval under severe host noise is not acceptance evidence
   (exp-045). H70 replaced that handoff with one shared opener pool.
@@ -730,10 +730,10 @@ for tools that do not expose the full generated-corpus oracle.
 It supports fdu, dust, gdu, pdu, ncdu, dua, diskus, dumac, and BSD/GNU du.
 Each competitor runs immediately beside fdu with alternating order and paired bootstrap
 intervals; the same immutable fdu binary anchors every pair.
-The harness can also anchor an FDU derived-summary plan beside its indexed control.
+The harness can also anchor an fdu derived-summary plan beside its indexed control.
 It hashes stable report semantics after excluding only run-specific timestamps,
 generator, and absolute root.
-The v3 fingerprint also checks every FDU rich-summary tally independently: files,
+The v3 fingerprint also checks every fdu rich-summary tally independently: files,
 descendant directories, apparent bytes, allocated bytes, and newest regular-file mtime.
 Partial, stale, cached, error-bearing, semantically mismatched, or oracle-mismatched
 samples are invalid.
@@ -750,17 +750,17 @@ The classes prevent a total-only result from being presented as equivalent work.
 The v2 fingerprint also counts duplicate in-tree hard-link entries and bytes because fdu
 currently attributes sizes to paths while several comparators deduplicate inode
 identity. External output must be stable and successful, but competitor byte totals are
-not used as an FDU semantic oracle; the repository’s independent probe remains the
+not used as an fdu semantic oracle; the repository’s independent probe remains the
 correctness gate for optimization experiments.
 
-The current pinned source review queues only mechanisms that survive FDU’s design: dua
+The current pinned source review queues only mechanisms that survive fdu’s design: dua
 v2.41.1 motivates portable wide-directory stat chunks (H58), pdu 0.24.0 motivates a
 requirement-derived retention path (H59, now accepted in exp-040) and worker-local
 subtree construction (H60), and the 1M RSS result raises the existing compact-index
 H19–H22 ladder. Recursive high-concurrency implementations in dust, gdu, and diskus do
 not create a new APFS hypothesis after exp-036 refuted over-threading.
 Dut commit `68d4ba2` reinforces the Linux raw `getdents64`/relative-`statx`, batched
-publication, and last-child roll-up experiments without supplying FDU effect sizes.
+publication, and last-child roll-up experiments without supplying fdu effect sizes.
 Its bounded retention also motivates H66: an unfiltered cache-off tree-only request may
 retain exact directory topology and roll-ups without per-file records, but only through
 the same requirement-derived planner and never by allowing display depth to prune the
@@ -778,7 +778,7 @@ heavier host pressure.
 H70 owns the remaining overlap question after H69 established that pairwise pre-opening
 is possible but too noisy to retain.
 It may tune a shared two-to-four-thread opener pool around the accepted six scan
-workers, but it must preserve FDU’s strict parser, exact paths, fallback, scope, and
+workers, but it must preserve fdu’s strict parser, exact paths, fallback, scope, and
 partial-result semantics; share one budget with the adaptive reserve; clear the normal
 3% paired gate on a quiet 12-pair run; and reproduce on an independent large topology
 before being retained.
@@ -789,7 +789,7 @@ adds a useful Linux control to the future matrix.
 It uses Hyperfine on a roughly 500k-entry tree, separates five-warmup and cold regimes,
 runs `sync` plus `/proc/sys/vm/drop_caches` before every cold sample, and uses a
 parameter scan to choose a configurable competitor’s thread count.
-FDU’s Linux run will adopt the per-sample cold-cache preparation while retaining
+fdu’s Linux run will adopt the per-sample cold-cache preparation while retaining
 adjacent paired scheduling, the independent oracle, pre/post fingerprints, exact binary
 and host provenance, work classes, resource metrics, stable-output checks, and bootstrap
 intervals. Warm and cold Linux results remain separate from M1/APFS numbers.
@@ -802,7 +802,7 @@ not the older 1.0 tag; source and binary provenance must record that it identifi
 itself as 1.1 without a matching tag.
 Its GPL source is used only to describe behavior and design independent tests.
 The binary may be executed as a comparator but is never linked into or distributed with
-FDU.
+fdu.
 
 Before any timing is valid, the adapter proves its human-output parser and independent
 postconditions on Linux fixtures covering:
@@ -813,7 +813,7 @@ postconditions on Linux fixtures covering:
 - unreadable/stat-failure cases, because dut may warn yet return success; and
 - symlinks, one-filesystem boundaries, supported non-UTF-8 names, and exact root totals.
 
-The raw FDU Linux backend adds bounded `EINVAL`, malformed-record, short-record, and
+The raw fdu Linux backend adds bounded `EINVAL`, malformed-record, short-record, and
 multi-chunk tests before it may consume performance evidence.
 These are direct guards for recent dut fixes involving lost wide-directory entries,
 unbounded buffer growth, and a hard-link-table resize error; implementation remains an
@@ -1234,7 +1234,7 @@ The planning bead retains the same stable IDs.
 | PEV-35 | High | Treating dut’s successful `echo 1 > drop_caches` preparation as cold implies directory and inode metadata were evicted even though the kernel contract says `1` targets page cache and the command omits `sync` | Label that reproduction `pagecache-drop-only`; publish it beside verified warm and a distinct dedicated-host controlled-cold regime that requires successful per-sample `sync` plus `echo 3` |
 | PEV-36 | High | A fast dut trial can silently omit entries or selected bytes because human output, warning-plus-zero-exit errors, multi-buffer enumeration, hard-link resizing, and early top-N rejection are not a machine oracle | Pin the exact source/binary, reject warning-bearing partial scans, and pass independent wide-directory, hard-link, sparse/preallocated, symlink, mount-boundary, non-UTF-8, and root-total postconditions before accepting timing |
 | PEV-37 | High | The real-tree oracle required newest regular-file mtime, but the component probe omitted that field, so valid nonempty-tree runs failed closed while the normal handoff gate did not exercise the separate real-tree suite | Emit and self-validate `newest_file_mtime_ns` in both producer and index summaries, compare a real probe process with an independent tree fingerprint, and include both performance-harness suites in `make check` |
-| PEV-38 | High | On non-POSIX hosts, the real-tree engine digest used apparent size as FDU’s documented fallback for unavailable allocated blocks, but the fingerprint aggregate independently substituted zero, so one oracle document disagreed with itself | Centralize allocated-byte observation: use native 512-byte block counts on POSIX when available and apparent size otherwise; test both cases and run the real-process oracle on every CI platform |
+| PEV-38 | High | On non-POSIX hosts, the real-tree engine digest used apparent size as fdu’s documented fallback for unavailable allocated blocks, but the fingerprint aggregate independently substituted zero, so one oracle document disagreed with itself | Centralize allocated-byte observation: use native 512-byte block counts on POSIX when available and apparent size otherwise; test both cases and run the real-process oracle on every CI platform |
 
 ## Beads
 
