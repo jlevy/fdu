@@ -16,8 +16,11 @@ One walk, many metrics, cached between runs.
 > end, and the measured-improvement loop described below is running.
 > The portable walker has a bounded parallel pool; macOS additionally uses an audited
 > `getattrlistbulk` backend.
-> Local M1/APFS evidence is published below, while the controlled Linux and full release
-> matrices remain open.
+> Local M1/APFS evidence is published below and is the bulk of what has been measured.
+> Linux evidence is early: real and improving, but virtualized rather than bare metal,
+> so claims whose mechanism is device latency remain untested there.
+> The full release matrix is open, and Windows builds and passes tests with no
+> performance evidence claimed at all.
 > See [the Phase 1 plan](docs/project/specs/active/plan-2026-08-08-fdu-phase-1.md).
 
 ## Five Common Reports
@@ -69,117 +72,92 @@ The full survey, with the techniques worth adapting and their sources, is in
 
 ## Speed and the Cache
 
-**Typical live scan:** on a self-contained 901,963-entry tree, a fresh fdu process with
+**macOS, measured.** On a self-contained 901,963-entry tree, a fresh fdu process with
 its own cache disabled built a reusable exact index and ten-row tree in a **3.324-second
-median**. Pdu and dust took 5.657 and 6.016 seconds, and Go gdu took 6.782 seconds.
-fdu’s richer index-and-tree product was the fastest of every tree or index tool
-measured. This was 12 adjacent paired trials per tool on an M1 Pro MacBook with a local
-APFS SSD in a repeated-workload warm-steady filesystem-cache state.
-One independent full-tree fingerprint and three warmups per tool preceded timing; this
-does not claim that every metadata object remained resident.
-
-The cache-off rich-summary plan took 3.125 seconds and beat diskus, dua, BSD du, and GNU
-du. Dumac’s narrower allocated-byte total had a 2.980-second median, but its paired 2.2%
-advantage was statistically unclear (95% interval -5.7% to +1.7%). fdu also returned
-file and directory counts, apparent bytes, and newest file time while using 13.6 MiB
-instead of dumac’s 44.4 MiB peak RSS. See the
-[technical white paper](docs/project/reports/report-2026-08-12-fdu-performance-architecture.md),
-[full comparison](docs/project/reports/report-2026-08-13-fdu-live-tool-comparison.md),
-and
-[reproduction manifest](docs/project/reports/fdu-live-tool-comparison-manifest-v2.json).
+median** — the fastest of every tree or index tool measured, while returning more than
+any of them. Twelve adjacent paired trials per tool on an M1 Pro MacBook with a local
+APFS SSD, in a warm-steady filesystem-cache state, with one independent full-tree
+fingerprint verifying every tool agreed on the answer.
 
 | Tool | Work returned | Typical median |
 | --- | --- | ---: |
 | **fdu** | reusable exact index and ten-row tree | **3.324 s** |
 | **fdu** | five-tally exact summary | **3.125 s** |
 | dumac | allocated-byte total only | 2.980 s (statistical tie) |
+| dua | scalar total only | 5.459 s |
 | pdu | rendered depth-one tree | 5.657 s |
+| diskus | scalar total only | 5.708 s |
 | dust | rendered ten-row tree | 6.016 s |
 | gdu | rendered ten-row tree | 6.782 s |
-| diskus | scalar total only | 5.708 s |
-| dua | scalar total only | 5.459 s |
 
-fdu has two paths to an answer, and it labels which one you got.
+Dumac’s narrower total was a statistical tie (95% interval −5.7% to +1.7%), and fdu
+returned file and directory counts, apparent bytes, and newest file time while using
+13.6 MiB against dumac’s 44.4 MiB peak RSS.
+
+**Linux, recent and improving.** The most recent campaign measured, end to end against
+its own starting point on a 450k-entry tree: warm snapshot load **−31.4%**, warm
+revalidate **−25.3%**, cold indexed scan **−9.1%**. A warm open now runs about 23%
+faster than a cold scan, where that campaign began with it 69% *slower*.
+
+### Two paths to an answer, and fdu labels which one you got
 
 **Without a usable cache, it is a fast walk and roll-up.** Every entry is enumerated and
-statted once, and per-directory roll-ups accumulate as the walk proceeds.
-That is the same job `du` does, plus the extra metrics, and it is bounded by syscall
-count and storage latency.
-For the existing `--cache off --view summary` composition, fdu now derives an exact
-summary-only execution plan instead of retaining a reusable index.
-On a frozen heterogeneous 978,339-entry run that improved paired wall time 14.56% and
-cut peak RSS 95.28%, with identical stable report semantics (exp-040). Exact-binary
-replications on uniform 720,805- and 901,963-entry trees reproduced the resource
-mechanism but only 1.8–2.8% wall gains, showing that syscall-bound topology can hide
-most of the saved user-space work.
-Tree, filtered, multi-view, cached, and live requests still use the full index.
+statted once, and per-directory roll-ups accumulate as the walk proceeds — the job `du`
+does, plus the extra metrics, bounded by syscall count and storage latency.
+A summary-only request derives an exact plan instead of retaining an index, which on one
+978,339-entry run cut peak RSS by 95%.
 
-**With a usable cache, it can be much faster** — but only where the cache can supply
+**With a usable cache, it can be much faster** — but only where the cache supplies
 something the filesystem will not.
-This is worth stating plainly, because it is where naive du-caches go wrong: change
-information does not propagate up a directory tree.
-An in-place file edit changes no directory’s mtime, not even its parent’s, so a
-directory fingerprint proves that no entry was *added, removed, or renamed*, and nothing
-about any child’s bytes.
+This is where naive du-caches go wrong: change information does not propagate up a
+directory tree. An in-place file edit changes no directory’s mtime, not even its
+parent’s, so a directory fingerprint proves only that no entry was *added, removed, or
+renamed*, and nothing about any child’s bytes.
+
 The trustworthy floor for a warm run is therefore one stat per entry, and the cache pays
-off decisively in the cases that beat that floor:
-
-- **Environments where the OS metadata cache cannot hold the tree** — CI runners, cloud
-  hosts, whole-drive scans.
-  There the snapshot is not an optimization; it is the only warm state available.
-- **Journal-assisted revalidation**, where the OS already recorded what changed.
-  Replaying the macOS FSEvents journal would make a quiet tree’s warm start cost
-  O(changes) rather than O(entries) — incremental on a warm laptop, decisive where no
-  sweep can be fast. It is designed but not built, and cross-restart replay is
-  Apple-documented yet unproven in shipping tools, so a spike validates it first; see
-  [the FSEvents-scoped revalidation plan](docs/project/specs/active/plan-2026-08-10-fdu-fsevents-scoped-revalidation.md).
-- **Expensive derived metrics** such as line counts, where an unchanged fingerprint
-  skips re-reading the file entirely.
-
-On a warm laptop against a mid-size tree, none of those apply, and a warm run used to be
-*slower* than a cold one — an inversion that was measured rather than assumed.
-**That has closed on Linux:** a warm open now runs about 23% faster than a cold scan,
-where the campaign began with it 69% slower.
-The macOS picture is not yet re-measured, and the distinction matters — see below.
+off decisively where something beats that floor: environments whose OS metadata cache
+cannot hold the tree (CI runners, cloud hosts, whole-drive scans), journal-assisted
+revalidation where the OS already recorded what changed, and expensive derived metrics
+like line counts that an unchanged fingerprint lets you skip entirely.
 
 ### How performance work is done here
 
 fdu runs a disciplined optimization loop rather than a list of tweaks: instrument,
 profile, write the hypothesis down, change one thing, measure paired and interleaved
-against a control, keep it only if it clears a fixed bar, and record the verdict —
+against a control with an independent oracle checking that faster output is still
+*identical* output, keep it only if it clears a fixed bar, and record the verdict —
 **including the failures**. Of 55 recorded experiments, 24 were rejected, several
 despite a real working mechanism that simply did not clear the bar.
 
-**Start here:**
-[the performance campaign status report](docs/project/reports/report-2026-08-14-performance-campaign-status.md)
-is written for a reader with no context and covers what has been achieved, how, what
-remains, and where the evidence is weak.
-[The instrumentation playbook](docs/project/guides/performance-instrumentation-playbook.md)
-is the reusable method, written to apply to any systems program rather than this one.
-
-One caveat worth carrying into any number you read: **51 of those 55 experiments were
+One caveat worth carrying into any number above: **51 of those 55 experiments were
 measured on macOS and 3 on Linux.** A constant measured on one platform is inherited,
-not proven, on the other, and
-[the platform tuning guide](docs/project/guides/platform-tuning.md) records which is
-which.
+not proven, on the other.
 
-Speed changes here are decided by paired, interleaved measurement against a real tree,
-with an independent oracle verifying that faster output is still identical output.
-Every accepted and rejected experiment is recorded in
-[the experiment ledger](docs/project/reports/report-2026-08-10-fdu-performance-experiments.md);
-the key architectural conclusions are in
-[the performance white paper](docs/project/reports/report-2026-08-12-fdu-performance-architecture.md),
-and the protocol is [the performance loop](docs/project/guides/performance-loop.md).
-The cost model, the platform levers that change constants by integer factors, and the
-ranked backlog are in
-[the performance frontier research](docs/project/research/research-2026-08-10-performance-frontier.md),
-which draws on source review of bfs, dut,
+**→
+[The performance campaign status report](docs/project/reports/report-2026-08-14-performance-campaign-status.md)**
+is the place to start.
+It assumes no prior context and covers what has been achieved, in what order, how it was
+measured, what remains, and where the evidence is weak.
+
+Further detail:
+[the experiment ledger](docs/project/reports/report-2026-08-10-fdu-performance-experiments.md)
+records every experiment and verdict;
+[the white paper](docs/project/reports/report-2026-08-12-fdu-performance-architecture.md)
+holds the cost model and architectural conclusions;
+[the performance loop](docs/project/guides/performance-loop.md) is the protocol;
+[the instrumentation playbook](docs/project/guides/performance-instrumentation-playbook.md)
+is the reusable method, written to apply to any systems program rather than this one;
+and
+[the full tool comparison](docs/project/reports/report-2026-08-13-fdu-live-tool-comparison.md)
+has the peer measurements with a
+[reproduction manifest](docs/project/reports/fdu-live-tool-comparison-manifest-v2.json).
+The ranked backlog and the source review behind it — bfs, dut,
 [pdu](https://github.com/KSXGitHub/parallel-disk-usage),
-[diskus](https://github.com/sharkdp/diskus), and
-[jwalk](https://github.com/jessegrosjean/jwalk), plus
-[dumac](https://healeycodes.com/maybe-the-fastest-disk-usage-program-on-macos)’s macOS
-bulk-attribute design and
-[follow-up scheduler and inode-sharding work](https://healeycodes.com/optimizing-my-disk-usage-program).
+[diskus](https://github.com/sharkdp/diskus),
+[jwalk](https://github.com/jessegrosjean/jwalk), and
+[dumac](https://healeycodes.com/maybe-the-fastest-disk-usage-program-on-macos)’s
+bulk-attribute design — are in
+[the performance frontier research](docs/project/research/research-2026-08-10-performance-frontier.md).
 
 ## Build Locally
 
