@@ -3,9 +3,9 @@ type: is
 id: is-01m0129s2s8ctztpscxkjz6vnt
 title: Stabilize the typed fdu Python package and roll-up API
 kind: task
-status: in_progress
+status: closed
 priority: 1
-version: 4
+version: 5
 spec_path: docs/project/specs/active/plan-2026-08-14-fdu-release-packaging-python-api-polish.md
 labels: []
 dependencies:
@@ -15,7 +15,9 @@ dependencies:
     target: is-01m0129sjsp6xht1ae8aebvx0r
 parent_id: is-01m01293x5gaacv3vxjdtrg146
 created_at: 2026-08-14T21:19:27.320Z
-updated_at: 2026-08-14T22:42:43.110Z
+updated_at: 2026-08-14T23:36:36.041Z
+closed_at: 2026-08-14T23:36:36.040Z
+close_reason: "Implemented and validated the public typed fdu package over private fdu._native: immutable options/results, structured errors/status, completeness/freshness separation, provenance, one_filesystem, exact report conversion, query/watch parity, stubs, py.typed, export/enum parity, and downstream roll-up example. Strict BasedPyright and installed-wheel tests pass."
 ---
 Replace the unpublished fdu_py public import with an fdu package over a private native extension. Add typed options, enums, immutable report and roll-up records, structured partial errors, py.typed and extension stubs; separate completeness from freshness; expose provenance and missing scope/query parity; and prove runtime-to-stub exports under strict downstream type checking.
 

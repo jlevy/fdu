@@ -5,7 +5,7 @@ title: "Publishing: crates.io, PyPI abi3 wheels, and a name re-verification gate
 kind: task
 status: open
 priority: 2
-version: 8
+version: 9
 spec_path: docs/project/specs/active/plan-2026-08-14-fdu-release-packaging-python-api-polish.md
 labels: []
 dependencies:
@@ -21,7 +21,7 @@ dependencies:
     target: is-01kzg4d2saym31t884vf6me2p7
 parent_id: is-01kzg48ekn4sm0azybr010qgmn
 created_at: 2026-08-08T07:28:38.772Z
-updated_at: 2026-08-14T21:19:42.062Z
+updated_at: 2026-08-14T23:36:22.395Z
 ---
 Ship both artifacts from one workspace.
 - crates.io: fdu, with cli as a default feature so 'cargo install fdu' just works. Library consumers write default-features = false; that trade-off is accepted and must be one documented line in the README.
@@ -37,4 +37,4 @@ Two prior uses of the name exist, neither blocking: an npm package 'fdu' (disk u
 
 ## Notes
 
-The 2026-08-09 Rust release audit found that cargo package --list -p fdu omits the license file. Before first publish, inspect and smoke-test the packaged crate and every native artifact, include expected license/readme content, define one tag/version identity, use least-privilege trusted publishing, and document supported platforms, MSRV-change policy, deprecation policy, security reporting, rerun behavior, and incident recovery. This bead is blocked on cool-off-clean tooling, the pinned compatibility matrix, the minimal documented Rust API, and the lossless Python boundary.
+Packaging prerequisites are implemented on codex/python-packaging-release-engineering and tracked by fdu-3d8c. This final publication bead now owns the remaining external/irreversible work: run and retain the five-platform rehearsal; configure the protected release environment and PyPI pending publisher; add narrowly scoped publisher, attestation, and GitHub Release jobs; create and verify the signed tag; use/remove the one-time crates.io token; upload and verify both registries; configure crates.io OIDC for later releases; then establish post-0.1 semver checks. Do not publish from the implementation PR.
