@@ -68,7 +68,7 @@ Its value is not any single step but that each pass leaves the next one cheaper.
 
 ### Why the accept rule is strict
 
-Of 55 recorded experiments, **24 were rejected** — nearly as many as the 25 accepted.
+Of 56 recorded experiments, **24 were rejected** — close to the 27 accepted.
 Several were rejected despite a real, working mechanism, because the measured effect did
 not clear 3%. That is the rule doing its job: a real mechanism is exactly what makes a
 small number feel worth keeping, and a codebase that accumulates 1% wins for 50 lines
@@ -116,10 +116,10 @@ code — but it counts what the code *believes* it did.
 The process tier is real kernel data that cannot be fooled and cannot attribute.
 The external tier is authoritative and far too slow to leave on.
 
-The mechanism lives in [`perfkit`](../../../crates/perfkit), a dependency-free
-in-workspace crate: a `counters!` macro, thread-local non-atomic storage folded into
-process globals, a runtime enable flag, a counting global allocator, and a kernel
-process tier. `fdu` supplies only the counter names.
+The mechanism lives in the [`fdu::counters`](../../../crates/fdu/src/counters.rs)
+subsystem: thread-local non-atomic storage folded into process globals, a runtime enable
+flag, a certified counting global allocator, and capability-specific Linux and macOS
+process collectors.
 
 Recording is off by default and enabled per run with `FDU_COUNTERS=1` — a runtime toggle
 rather than a build flag, so visibility costs an environment variable instead of a
@@ -254,7 +254,7 @@ wide shallow trees.
 This is the most important section for anyone reading a number and deciding what it
 means.
 
-**The evidence is overwhelmingly macOS.** Of 55 recorded experiments, **51 were measured
+**The evidence is overwhelmingly macOS.** Of 56 recorded experiments, **53 were measured
 on Darwin and 3 on Linux.** The macOS work is mature — a bulk-attribute reader using
 `getattrlistbulk`, tuning constants measured across three APFS regimes, a scheduler
 tuned against a real device.
@@ -308,7 +308,7 @@ the loop’s first step).
 
 Stated plainly, because these are the places a confident number could mislead.
 
-**Platform asymmetry.** 51 experiments on macOS, 3 on Linux.
+**Platform asymmetry.** 53 experiments on macOS, 3 on Linux.
 Every Linux constant not explicitly measured is inherited.
 
 **No bare metal.** All Linux measurement here is virtualized.

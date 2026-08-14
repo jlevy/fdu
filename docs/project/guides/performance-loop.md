@@ -130,14 +130,15 @@ this ledger were hard to read for exactly that reason — the allocator turned o
 about 35% of a cold scan’s engine work and only callgrind could see it, and `exp-051`
 predicted a component and was scored on a wall.
 
-Building with `--features perf-counters` turns on thread-local tallies at the syscall,
-index and allocation layers, and installs a counting global allocator in the probe.
-The probe prints them to stderr after the run; the JSON on stdout is unchanged, because
-counters describe an implementation rather than the measurement contract.
+The probe and shipped CLI always contain thread-local tallies at the filesystem, index,
+and allocation layers.
+`FDU_COUNTERS=1` records and prints them to stderr after the run; the probe’s JSON on
+stdout is unchanged, because counters describe an implementation rather than the
+measurement contract.
 
 ```shell
-cargo build --release -p fdu --example perf_probe --features perf-counters
-./target/release/examples/perf_probe scan-index --root TREE 2>&1 >/dev/null
+cargo build --release -p fdu --example perf_probe
+FDU_COUNTERS=1 ./target/release/examples/perf_probe scan-index --root TREE 2>&1 >/dev/null
 ```
 
 A 450k-entry cold scan reports, per entry: 15.4 allocations, 11.0 reallocations, 11.9

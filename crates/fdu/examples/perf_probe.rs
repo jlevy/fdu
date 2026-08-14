@@ -28,36 +28,20 @@ const DIGEST_ALGORITHM: &str = "fdu-index-record-v1/sha256-multiset-v1";
 
 /// Count what the run allocates.
 ///
-/// Always installed, and inert until `perfkit::enable(true)`: the wrapper checks one
+/// Always installed, and inert until recording is enabled: the wrapper checks one
 /// relaxed atomic the branch predictor always gets right, which is nothing next to an
 /// allocation. One binary that can be asked for numbers beats two that differ in
 /// whether they have any. exp-052 measured the whole arrangement at no detectable cost.
 #[global_allocator]
-static ALLOCATOR: perfkit::alloc::CountingAlloc<std::alloc::System> =
-    perfkit::alloc::CountingAlloc::system(perfkit::alloc::Sinks {
-        alloc: |size| {
-            fdu::counters::bump(|c| {
-                c.allocs += 1;
-                c.bytes_allocated += size;
-            });
-        },
-        realloc: |growth| {
-            fdu::counters::bump(|c| {
-                c.reallocs += 1;
-                c.bytes_allocated += growth;
-            });
-        },
-        dealloc: || fdu::counters::bump(|c| c.frees += 1),
-    });
+static ALLOCATOR: fdu::counters::alloc::CountingAlloc<std::alloc::System> =
+    fdu::counters::system_allocator();
 
 fn main() -> ExitCode {
     // `FDU_COUNTERS=1` turns recording on. Off by default so a probe run measured
     // against a control is not measuring the instrument, and on by one environment
     // variable when a run is meant to explain itself.
-    fdu::counters::enable_from_env();
-    fdu::counters::reset();
-    let process_before = perfkit::process::Snapshot::now();
-    match Arguments::parse(env::args_os().skip(1))
+    let measurement = fdu::counters::Measurement::from_env();
+    let exit = match Arguments::parse(env::args_os().skip(1))
         .and_then(|arguments| execute_repeated(&arguments))
     {
         Ok(output) => {
@@ -66,18 +50,17 @@ fn main() -> ExitCode {
             // schema, and per-layer tallies describe an implementation rather than the
             // measurement contract. A schema bump can follow if the harness ever wants
             // to store them.
-            if fdu::counters::enabled() {
-                fdu::counters::flush_thread();
-                let process = perfkit::process::Snapshot::now().since(&process_before);
-                eprint!("{}", fdu::counters::render(&fdu::counters::snapshot(), &process));
-            }
             if output.summary.complete { ExitCode::SUCCESS } else { ExitCode::from(2) }
         }
         Err(error) => {
             eprintln!("fdu perf probe: {}", error.0);
             ExitCode::from(1)
         }
+    };
+    if let Some(report) = measurement.finish() {
+        eprint!("{report}");
     }
+    exit
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

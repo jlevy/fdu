@@ -40,6 +40,7 @@ pub(crate) enum Evidence {
     /// An experiment on this platform chose this value.
     Measured,
     /// Carried over from a platform that measured it.  Not a claim about this one.
+    #[allow(dead_code)]
     Inherited,
 }
 
@@ -68,6 +69,7 @@ impl<T: Copy> Tuned<T> {
     }
 
     /// This platform has no measurement; the value comes from one that does.
+    #[allow(dead_code)]
     pub(crate) const fn inherited(value: T) -> Self {
         Self { value, evidence: Evidence::Inherited }
     }
@@ -139,6 +141,11 @@ const MACOS: Tuning = Tuning {
 /// The adaptive threshold is the one with a specific reason to doubt it: 30 µs was
 /// placed between APFS regimes of roughly 18, 22 and 42 µs per entry, and the Linux warm
 /// floor is about 1.5 µs, so the trigger may never fire here at all (H84, `fdu-tk1b`).
+///
+/// The allowance is the macOS-side counterpart of the one on `MACOS`: Rust 1.85's
+/// dead-code pass does not count the anonymous compile-time anti-rot assertions below as
+/// uses. The table is still compiled and every invariant is still evaluated.
+#[allow(dead_code)]
 const PORTABLE: Tuning = Tuning {
     scan_threads_cap: Tuned::inherited(6),
     adaptive_scan_threads_cap: Tuned::inherited(16),

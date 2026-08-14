@@ -70,3 +70,29 @@ fn partial_results_use_exit_two_unless_explicitly_allowed() {
     assert!(!human_stdout.contains("warning:"), "diagnostic leaked to stdout: {human_stdout}");
     assert!(human_stderr.starts_with("warning:"), "missing stderr warning: {human_stderr}");
 }
+
+#[test]
+fn runtime_instrumentation_is_available_on_the_shipped_binary() {
+    let enabled = Command::new(env!("CARGO_BIN_EXE_fdu"))
+        .arg("--version")
+        .env("FDU_COUNTERS", "1")
+        .output()
+        .expect("run instrumented fdu");
+    let disabled = Command::new(env!("CARGO_BIN_EXE_fdu"))
+        .arg("--version")
+        .env("FDU_COUNTERS", "0")
+        .output()
+        .expect("run ordinary fdu");
+
+    assert!(enabled.status.success());
+    let enabled_stderr = String::from_utf8(enabled.stderr).expect("counter report is UTF-8");
+    assert!(enabled_stderr.contains("[filesystem operations]"), "{enabled_stderr}");
+    assert!(enabled_stderr.contains("[memory]"), "{enabled_stderr}");
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    assert!(enabled_stderr.contains("[process ("), "{enabled_stderr}");
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    assert!(enabled_stderr.contains("process counters: not available"), "{enabled_stderr}");
+
+    assert!(disabled.status.success());
+    assert!(disabled.stderr.is_empty(), "falsey toggle emitted a report");
+}

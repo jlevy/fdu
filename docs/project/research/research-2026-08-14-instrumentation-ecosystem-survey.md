@@ -8,15 +8,17 @@
 
 ## Overview
 
-`perfkit` was written before checking whether the ecosystem had already solved the
-problem, which is the wrong order.
-This survey asked three questions after the fact: should that crate exist, what
-profiling tooling is missing, and can syscalls actually be counted properly.
+The first instrumentation subsystem was written before checking whether the ecosystem
+had already solved the problem, which is the wrong order.
+This survey asked four questions after the fact: should the mechanism exist, should it
+be a separate crate, what profiling tooling is missing, and can syscalls be counted
+properly.
 
-The first answer is yes, for structural reasons rather than preference.
-The other two found four real gaps and two dead ends worth not re-walking.
+The mechanism should exist; a separately published crate should not exist until an
+external consumer proves the boundary.
+The other questions found four real gaps and two dead ends worth not re-walking.
 
-## Should perfkit exist
+## Should the instrumentation exist
 
 Yes. Every mainstream crate surveyed — `tracing`, the `metrics` family, `fastrace`,
 `opentelemetry`, `prometheus` — is built for **observability**: telemetry exported to a
@@ -27,7 +29,7 @@ It shows up as cost.
 
 |  | Per event | 13M events/run | Dependencies |
 | --- | ---: | ---: | ---: |
-| `perfkit` thread-local `Cell` | 1–2 ns | ~20 ms | 0 |
+| fdu thread-local `Cell` | 1–2 ns | ~20 ms | 0 |
 | `metrics` + a recorder | ~20–100 ns | 260 ms – 1.3 s | 20+ |
 | `tracing`, span enabled | ~1,000–4,000 ns | prohibitive | 10+ |
 
@@ -48,6 +50,9 @@ request-level telemetry exported somewhere, `tracing` is the right answer and th
 survey does not argue otherwise.
 The claim is narrower: hot-path counters in an optimization loop are a use case none of
 these crates targets.
+That supports the mechanism, not a package boundary.
+With no external consumer, the implementation belongs in `fdu::counters`; extraction can
+follow when another application needs the same API.
 
 ## What is missing, and now filed
 
@@ -76,14 +81,14 @@ eleven reallocations per entry to a layer and cannot name the site.
 Its testing mode also supports “this path performs exactly N allocations” assertions,
 which would turn the per-entry figures from an observation into a guard.
 
-**perfkit’s process tier is Linux-only — `fdu-3b7v`.** Elsewhere `Snapshot::now()`
-reports nothing, so the three-tier cross-check collapses to one tier.
-macOS has `proc_pidinfo` with `PROC_PIDTASKINFO`: unprivileged, unaffected by SIP
-because it is a process-info query rather than a tracing facility, giving a total
-syscall count rather than a per-type breakdown — which is still the denominator a
-cross-check needs. Windows has `GetProcessIoCounters`, whose mapping from directory
-enumeration to `OtherOperationCount` is undocumented and must be established empirically
-before anything is claimed from it.
+**The process tier began Linux-only — `fdu-3b7v`, now closed for macOS.** macOS has
+`proc_pidinfo` with `PROC_PIDTASKINFO`: unprivileged, unaffected by SIP because it is a
+process-info query rather than a tracing facility, giving total syscalls, page faults,
+and page-ins. The shared snapshot model now renders those fields on macOS and omits the
+Linux-only read/write/byte rows rather than printing false zeroes.
+Windows has `GetProcessIoCounters`, whose mapping from directory enumeration to
+`OtherOperationCount` is undocumented and must be established empirically before
+anything is claimed from it.
 
 ## Dead ends, recorded so nobody re-walks them
 
@@ -113,9 +118,9 @@ that fact rather than a preference.
 Nothing structural, which is itself the finding.
 The tier model, the cross-check discipline, and the rule that application counters are
 primary all survive contact with the ecosystem.
-What changes is the priority list: a partial CI gate is now reachable, and the process
-tier’s Linux-only limitation is a hole to close rather than an accepted platform
-difference.
+What changes is the priority list: a partial CI gate is now reachable, macOS has a
+truthful native process tier, and Windows remains an evidence gap rather than a place to
+invent zeroes.
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

@@ -16,8 +16,10 @@ hypothesis registry; and
 [the design principles](../architecture/fdu-design-principles.md), which decide what a
 change is allowed to break.
 This one is deliberately domain-neutral: it applies to a filesystem walker, a parser, or
-a request handler equally, and the reusable mechanism is factored into the
-[`perfkit`](../../../crates/perfkit) crate for that reason.
+a request handler equally.
+fdu’s concrete implementation lives in the
+[`fdu::counters`](../../../crates/fdu/src/counters.rs) subsystem; the method transfers,
+while the code stays with the application that currently consumes it.
 
 ## The shape of the loop
 

@@ -36,7 +36,7 @@ experiment:
     warmups: 3
     interleaved: true
     control: probe with no instrumentation at all
-    candidate: probe with perfkit counters compiled in and recording off
+    candidate: probe with fdu counters compiled in and recording off
     control_binary:
       name: control
       sha256: 96fa343e4a6f15474d2cfc3f0dba21dc9eea7d026d84d8f3a2c5050a6e5cdeb3
@@ -124,11 +124,10 @@ experiment:
   reference_tools: []
   complexity:
     lines_changed: 690
-    new_dependencies:
-      - "perfkit (first-party, in-workspace, no external dependencies)"
+    new_dependencies: []
     new_unsafe_blocks: 1
     new_failure_modes: []
-    notes: "The unsafe impl GlobalAlloc moves into perfkit where it is the crate's stated purpose, rather than sitting as an exception inside an engine that denies unsafe. fdu declares counter names and nothing else."
+    notes: "The unsafe impl GlobalAlloc is confined to fdu's counters/alloc.rs module. Its sink fields are private and custom construction is unsafe, so safe callers cannot violate the allocator's non-unwind and non-reentrancy contract."
   verdict:
     decision: accepted
     primary_job: cold-scan-index
@@ -145,8 +144,9 @@ A build flag means two binaries, a rebuild to see anything, and a standing risk 
 measured build and the shipped build differ in ways nobody tracks — friction in exactly
 the loop that is supposed to be frictionless.
 
-They are now always compiled in and toggled at runtime, with the mechanism factored into
-a reusable `perfkit` crate and `fdu::counters` supplying only the names.
+They are now always compiled in and toggled at runtime, with the reusable mechanism and
+fdu-specific names kept together under `fdu::counters`. A separate crate would add a
+publication boundary before any external consumer exists.
 
 ## Three costs, measured separately
 
@@ -179,9 +179,9 @@ right every time.
 
 ## The three tiers, and one that does not do what it looks like
 
-`perfkit` now provides the process tier from `/proc/self/io` and `/proc/self/stat`: real
-kernel numbers, sampled once per phase, that application counters can be checked
-against.
+`fdu::counters::process` provides the process tier: Linux reads `/proc/self/io` and
+`/proc/self/stat`, while macOS uses `proc_pidinfo`. Both are sampled once per phase, and
+unsupported metrics remain absent rather than appearing as zero.
 
 One finding is worth more than the code: **`syscr` is not a syscall count.** It counts
 the read and write families only.
@@ -197,11 +197,15 @@ assumption.
 
 ## What is reusable
 
-`perfkit` is domain-neutral: a `counters!` macro for declaring a set, thread-local
-storage with a global fold, the runtime toggle, a generic `CountingAlloc` that reports
-through function-pointer sinks so it works in a `const` initializer, and the
-process-tier snapshot with its coverage limits documented rather than implied.
+The reusable parts are thread-local storage with deterministic and destructor-backed
+global folding, the runtime toggle, a generic `CountingAlloc` with certified
+function-pointer sinks for a `const` initializer, and a shared process snapshot whose
+platform capabilities are explicit.
 
 The method is written up separately in
 `docs/project/guides/performance-instrumentation-playbook.md`, including the failures
 that produced each rule — which is the part that transfers.
+
+<!-- This document follows common-doc-guidelines.md.
+See github.com/jlevy/practical-prose and review guidelines before editing.
+-->

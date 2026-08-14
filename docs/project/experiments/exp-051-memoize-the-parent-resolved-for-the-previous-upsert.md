@@ -280,3 +280,7 @@ Warm revalidation walks all 421,690 files and does reach this code, so a regress
 mechanically plausible rather than obviously spurious — which is exactly why it needed
 three measurements instead of an argument.
 Recorded because the first number was believable and wrong.
+
+<!-- This document follows common-doc-guidelines.md.
+See github.com/jlevy/practical-prose and review guidelines before editing.
+-->

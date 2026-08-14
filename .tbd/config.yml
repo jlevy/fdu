@@ -1,12 +1,12 @@
 tbd_format: f07
-tbd_version: 0.6.1-dev.0.fa42a70-dirty
+tbd_version: 0.6.2
 # tbd_upgrades: tbd versions that have run `tbd setup` in this repo (oldest first);
 # tbd_version above is the most recent. Informational; updated automatically by setup.
 tbd_upgrades:
   - version: 0.4.2
     at: 2026-08-08T07:23:32.279Z
-  - version: 0.6.1-dev.0.fa42a70-dirty
-    at: 2026-08-14T07:08:48.768Z
+  - version: 0.6.2
+    at: 2026-08-14T19:30:03.438Z
 display:
   id_prefix: fdu
 sync:

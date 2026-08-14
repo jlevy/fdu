@@ -94,7 +94,8 @@ than the last, which tier answers which question, and how to keep the instrument
 distorting the measurement — is
 [the instrumentation playbook](docs/project/guides/performance-instrumentation-playbook.md).
 Read it before adding instrumentation or starting a fresh optimization campaign; the
-mechanism it describes lives in the [perfkit](crates/perfkit) crate.
+mechanism it describes lives in the [`fdu::counters`](crates/fdu/src/counters.rs)
+subsystem.
 
 In practice:
 

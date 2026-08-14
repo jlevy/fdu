@@ -416,18 +416,22 @@ fn spawn_save(
     if writes.metadata {
         let metadata_source = std::sync::Arc::clone(&snapshot_source);
         let metadata_path = cache_path.clone();
-        if let Ok(worker) = std::thread::Builder::new()
-            .name("fdu-snapshot".to_string())
-            .spawn(move || snapshot::save(&metadata_source, &metadata_path))
+        if let Ok(worker) =
+            std::thread::Builder::new().name("fdu-snapshot".to_string()).spawn(move || {
+                let _counter_guard = counters::thread_flush_guard();
+                snapshot::save(&metadata_source, &metadata_path)
+            })
         {
             workers.push(("metadata", worker));
         }
     }
     if writes.content && analysis.profile.is_enabled() {
         let content_path = content::content_cache_path(&cache_path);
-        if let Ok(worker) = std::thread::Builder::new()
-            .name("fdu-content-cache".to_string())
-            .spawn(move || content::save_content_cache(&snapshot_source, analysis, &content_path))
+        if let Ok(worker) =
+            std::thread::Builder::new().name("fdu-content-cache".to_string()).spawn(move || {
+                let _counter_guard = counters::thread_flush_guard();
+                content::save_content_cache(&snapshot_source, analysis, &content_path)
+            })
         {
             workers.push(("content", worker));
         }

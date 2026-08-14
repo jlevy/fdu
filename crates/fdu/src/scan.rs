@@ -803,6 +803,7 @@ fn walk_worker(
     queue: &DirectoryQueue,
     sender: &std::sync::mpsc::Sender<WalkMessage>,
 ) -> ScanReport {
+    let _counter_guard = crate::counters::thread_flush_guard();
     let worker_started = std::time::Instant::now();
     let mut report = ScanReport::default();
     let mut batch: Vec<Op> = Vec::with_capacity(config.batch_size);
@@ -926,10 +927,6 @@ fn walk_worker(
         report.attribution.send_ns += elapsed_ns(send_started);
     }
     report.attribution.wall_ns = elapsed_ns(worker_started);
-    // Fold this worker's tallies into the process totals before it exits. Counters are
-    // thread-local precisely so the walk pays no contention for them, and the price of
-    // that choice is this one call: without it a worker's counts die with the thread.
-    crate::counters::flush_thread();
     report
 }
 
@@ -1945,6 +1942,7 @@ fn reconcile_wave_worker(
     overflowed: &std::sync::atomic::AtomicBool,
     max_deferred_ops: usize,
 ) -> DeferredReconcile {
+    let _counter_guard = crate::counters::thread_flush_guard();
     let mut result = DeferredReconcile::default();
     #[cfg(target_os = "macos")]
     let mut bulk_reader = macos_bulk::Reader::new();
@@ -2427,7 +2425,7 @@ mod tests {
         // serial walker's counter still passed — a guard covering one path gives false
         // confidence about the other.
         let _serial = crate::counters::test_serial();
-        perfkit::enable(true);
+        crate::counters::enable(true);
         for threads in [Some(1), Some(4)] {
             let dir = sample_tree();
             let config = ScanConfig { threads, ..ScanConfig::default() };
@@ -2471,7 +2469,7 @@ mod tests {
             // global allocator and a test harness installs its own. The probe covers
             // that half; this covers the counters the library itself drives.
         }
-        perfkit::enable(false);
+        crate::counters::enable(false);
     }
 
     #[test]
@@ -3360,6 +3358,30 @@ mod tests {
         assert_eq!(bulk_report.apply, portable_report.apply);
         assert_eq!(index_fingerprint(&bulk), index_fingerprint(&portable));
         assert_eq!(bulk.total(), portable.total());
+    }
+
+    #[test]
+    fn parallel_reconciliation_workers_publish_directory_counters() {
+        let _serial = crate::counters::test_serial();
+        let dir = sample_tree();
+        let baseline = ScanConfig { threads: Some(1), ..ScanConfig::default() };
+        let (mut index, scan) = scan_into_index(dir.path(), &baseline).expect("baseline scan");
+        assert!(scan.is_complete());
+
+        crate::counters::enable(true);
+        crate::counters::reset();
+        let config = ScanConfig { threads: Some(4), ..baseline };
+        let report = reconcile(&mut index, &config, &mut |_| {}).expect("reconciliation");
+        crate::counters::flush_thread();
+        let counts = crate::counters::snapshot();
+        crate::counters::reset();
+        crate::counters::enable(false);
+
+        assert!(report.is_complete());
+        assert!(
+            counts.dir_opens >= report.scan.dirs_read,
+            "parallel worker directory opens were folded: {counts:?}, report={report:?}"
+        );
     }
 
     #[test]

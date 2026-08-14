@@ -286,3 +286,11 @@ It does not sample stacks, attribute allocations to call sites, or track live by
 Each needs either a profiler or a shadow map, and both cost enough to change what they
 measure. Counts and totals are what a paired A/B needs — they answer whether a change
 moved allocation *volume*, which is the question H51, H62, H74 and H85 all turn on.
+
+The `perf-counters` build feature described here is the historical experiment control.
+`exp-053` replaced it with the current `FDU_COUNTERS=1` runtime toggle and removed the
+feature after measuring both its idle and recording costs.
+
+<!-- This document follows common-doc-guidelines.md.
+See github.com/jlevy/practical-prose and review guidelines before editing.
+-->

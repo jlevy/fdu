@@ -459,7 +459,9 @@ def _section(experiment: Mapping[str, Any]) -> List[str]:
             lines.append(complexity["notes"])
             lines.append("")
 
-    lines.append(f"**{verdict['decision'].capitalize()}:** {verdict['reason']}.")
+    reason = verdict["reason"].rstrip()
+    punctuation = "" if reason.endswith((".", "!", "?")) else "."
+    lines.append(f"**{verdict['decision'].capitalize()}:** {reason}{punctuation}")
     lines.append("")
     name = Path(experiment["_path"]).name
     lines.append(f"Full record: [`{name}`](../experiments/{name})")
