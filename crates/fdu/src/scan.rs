@@ -2364,7 +2364,7 @@ fn compose_ns(secs: i64, nanos: i64) -> i64 {
 
 #[cfg(not(unix))]
 pub(crate) fn attrs_from(meta: &fs::Metadata) -> Attrs {
-    let mtime_ns = meta.modified().map(system_time_ns).unwrap_or(0);
+    let mtime_ns = meta.modified().map_or(0, system_time_ns);
     Attrs {
         size: meta.len(),
         // No allocated size without platform-specific calls; apparent size is the

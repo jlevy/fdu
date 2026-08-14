@@ -266,20 +266,25 @@ mod tests {
         let _ = std::fs::remove_file(&scratch);
         assert!(total > 0, "the reads actually happened");
 
-        let delta = Snapshot::now().since(&before);
-
         // Which counters move is a platform fact, not an implementation detail, so the
         // assertions differ by platform rather than being weakened to their intersection.
-        #[cfg(target_os = "linux")]
+        // The outer gate matches exactly the platforms where `available` can be true, so
+        // that `delta` is not an unused binding everywhere else — `warnings = "deny"`
+        // makes that a build failure rather than a lint, and only on that platform.
+        #[cfg(any(target_os = "linux", target_os = "macos"))]
         {
-            assert!(delta.read_syscalls > 0, "reading files moves the read counter: {delta:?}");
-            assert!(delta.bytes_through_read > 0, "and the byte counter: {delta:?}");
-        }
-        #[cfg(target_os = "macos")]
-        {
-            // macOS reports a total syscall count and no per-family breakdown, so the
-            // read-specific counters stay zero here by design.
-            assert!(delta.total_syscalls > 0, "reads move the total syscall count: {delta:?}");
+            let delta = Snapshot::now().since(&before);
+            #[cfg(target_os = "linux")]
+            {
+                assert!(delta.read_syscalls > 0, "reading files moves the read counter: {delta:?}");
+                assert!(delta.bytes_through_read > 0, "and the byte counter: {delta:?}");
+            }
+            #[cfg(target_os = "macos")]
+            {
+                // macOS reports a total syscall count and no per-family breakdown, so
+                // the read-specific counters stay zero here by design.
+                assert!(delta.total_syscalls > 0, "reads move the total count: {delta:?}");
+            }
         }
     }
 

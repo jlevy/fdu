@@ -570,7 +570,10 @@ fn decode_os_string(bytes: &[u8]) -> OsString {
 #[cfg(windows)]
 fn decode_os_string(bytes: &[u8]) -> Option<OsString> {
     use std::os::windows::ffi::OsStringExt;
-    if !bytes.len().is_multiple_of(2) {
+    // `usize::is_multiple_of` is stable since 1.87 and this crate's MSRV is 1.85, so a
+    // Windows user on the declared minimum could not build it. Nothing caught that
+    // because the MSRV job runs on ubuntu, where this function does not exist.
+    if bytes.len() % 2 != 0 {
         return None;
     }
     let units = bytes

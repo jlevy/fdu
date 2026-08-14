@@ -33,10 +33,31 @@ make fix        # apply formatting and machine-applicable lint fixes
 make audit      # cargo-deny advisory and license audit
 ```
 
-`make check` is the required handoff gate.
+`make check` is the required handoff gate, and `make cross-lint` is its companion for
+anything platform-specific.
 If it passes, CI should.
 It runs the same feature combinations CI does, notably `--no-default-features`, which is
 how library consumers build and is otherwise never exercised locally.
+
+### Platform-gated code
+
+`cfg(target_os = ...)` code is invisible to a single-platform lint run, and this
+repository keeps its one unsafe exception behind exactly such a gate.
+CI lints on ubuntu only, so before `make cross-lint` existed that module had never been
+linted anywhere, and the MSRV job had never checked the Windows-only paths — two of
+which used an API stable since 1.87 against a declared MSRV of 1.85, so a Windows user
+on the minimum could not have built the crate.
+
+Run `make cross-lint` after touching anything under a platform gate.
+It checks rather than builds, so no cross-linker is needed:
+
+```shell
+rustup target add x86_64-apple-darwin x86_64-pc-windows-msvc
+make cross-lint
+```
+
+It skips targets that are not installed rather than failing, so it stays usable
+anywhere.
 
 ### Toolchain versions
 
