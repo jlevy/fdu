@@ -268,6 +268,10 @@ pub struct ScanReport {
     pub dirs_read: u64,
     /// Entries observed, directories included.
     pub entries: u64,
+    /// Regular files whose metadata was observed.
+    pub files_walked: u64,
+    /// Apparent bytes represented by the regular files whose metadata was observed.
+    pub bytes_walked: u64,
     /// Paths that could not be read, with the reason.
     pub errors: Vec<Error>,
     /// Where the walk's time went, summed across workers.
@@ -284,8 +288,19 @@ impl ScanReport {
     fn absorb(&mut self, other: Self) {
         self.dirs_read += other.dirs_read;
         self.entries += other.entries;
+        self.files_walked += other.files_walked;
+        self.bytes_walked += other.bytes_walked;
         self.errors.extend(other.errors);
         self.attribution.absorb(other.attribution);
+    }
+
+    /// Record one successfully stated directory entry.
+    fn observe(&mut self, kind: EntryKind, attrs: Attrs) {
+        self.entries += 1;
+        if kind == EntryKind::File {
+            self.files_walked += 1;
+            self.bytes_walked += attrs.size;
+        }
     }
 }
 
@@ -533,7 +548,7 @@ pub fn scan(
 
             let attrs = attrs_from(&meta);
             let kind = kind_from(&meta);
-            report.entries += 1;
+            report.observe(kind, attrs);
             batch.push(Op::Upsert { path: rel_path.clone(), kind, attrs });
             if batch.len() >= config.batch_size {
                 let send_started = std::time::Instant::now();
@@ -907,7 +922,7 @@ fn record_walk_entry(
 ) -> bool {
     let rel_path = rel_dir.join(name);
     let descend = should_descend(kind, attrs, depth, root_dev, config);
-    report.entries += 1;
+    report.observe(kind, attrs);
     batch.push(Op::Upsert { path: rel_path.clone(), kind, attrs });
     if batch.len() >= config.batch_size {
         let send_started = std::time::Instant::now();
@@ -1326,7 +1341,7 @@ pub fn revalidate(
 
             let kind = kind_from(&meta);
             let attrs = attrs_from(&meta);
-            report.entries += 1;
+            report.observe(kind, attrs);
             batch.push(ObservationOp::if_state(
                 Op::Upsert { path: rel_path.clone(), kind, attrs },
                 baseline,
@@ -1493,7 +1508,7 @@ fn reconcile_target_inner(
         };
         let kind = kind_from(&meta);
         let attrs = attrs_from(&meta);
-        report.scan.entries += 1;
+        report.scan.observe(kind, attrs);
         push_reconcile_upsert(
             target,
             subtree,
@@ -1551,7 +1566,7 @@ fn reconcile_target_inner(
                              report: &mut ReconcileReport|
          -> Result<()> {
             let rel_path = rel_dir.join(&name);
-            report.scan.entries += 1;
+            report.scan.observe(kind, attrs);
             push_reconcile_upsert(
                 target,
                 &rel_path,
@@ -1852,6 +1867,10 @@ fn reconcile_wave_worker(
                     |name: OsString, kind: EntryKind, attrs: Attrs, baseline: PathExpectation| {
                         let rel_path = rel_dir.join(&name);
                         result.scan.entries += 1;
+                        if kind == EntryKind::File {
+                            result.scan.files_walked += 1;
+                            result.scan.bytes_walked += attrs.size;
+                        }
                         if baseline.state == (PathState::Present { kind, attrs }) {
                             result.unchanged += 1;
                         } else {
@@ -2113,6 +2132,8 @@ fn merge_apply_stats(total: &mut ApplyStats, addition: ApplyStats) {
 fn merge_reconcile_report(total: &mut ReconcileReport, addition: ReconcileReport) {
     total.scan.dirs_read += addition.scan.dirs_read;
     total.scan.entries += addition.scan.entries;
+    total.scan.files_walked += addition.scan.files_walked;
+    total.scan.bytes_walked += addition.scan.bytes_walked;
     total.scan.errors.extend(addition.scan.errors);
     merge_apply_stats(&mut total.apply, addition.apply);
 }
@@ -2397,6 +2418,8 @@ mod tests {
             assert!(report.is_complete(), "{threads} threads reported errors");
             assert_eq!(report.entries, serial_report.entries, "{threads} threads");
             assert_eq!(report.dirs_read, serial_report.dirs_read, "{threads} threads");
+            assert_eq!(report.files_walked, serial_report.files_walked, "{threads} threads");
+            assert_eq!(report.bytes_walked, serial_report.bytes_walked, "{threads} threads");
             // Extension ids are interner handles assigned in first-seen order, which
             // legitimately differs between serial and parallel arrival order; compare
             // roll-ups through the named boundary, never by raw id.

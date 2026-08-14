@@ -36,6 +36,8 @@ pub struct ContentCacheLoad {
     pub usable: bool,
     /// Records accepted by the current metadata index.
     pub hits: u64,
+    /// Apparent bytes represented by accepted records.
+    pub bytes: u64,
     /// Accepted records with an expected non-analyzed coverage outcome.
     pub coverage_exclusions: u64,
     /// Records that no longer matched a live candidate.
@@ -135,9 +137,11 @@ pub fn load_content_cache(
         }
         let coverage_exclusion =
             !matches!(analysis.coverage, CoverageReason::Analyzed | CoverageReason::Binary);
+        let bytes = analysis.bytes;
         match index.apply_analysis(AnalysisObservation { candidate, analysis }) {
             AnalysisApplyOutcome::Applied => {
                 loaded.hits = loaded.hits.saturating_add(1);
+                loaded.bytes = loaded.bytes.saturating_add(bytes);
                 loaded.coverage_exclusions =
                     loaded.coverage_exclusions.saturating_add(u64::from(coverage_exclusion));
             }
@@ -599,7 +603,7 @@ mod tests {
         let loaded = load_content_cache(&mut restored, request, &cache).expect("load");
         assert_eq!(
             loaded,
-            ContentCacheLoad { usable: true, hits: 1, coverage_exclusions: 0, stale: 0 }
+            ContentCacheLoad { usable: true, hits: 1, bytes: 28, coverage_exclusions: 0, stale: 0 }
         );
         assert_eq!(
             restored.content_rollup(Path::new("")).expect("rollup").total.metrics.raw_words,

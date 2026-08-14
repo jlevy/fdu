@@ -608,12 +608,14 @@ mod tests {
 
         let (_, warm_report) = open(dir.path(), &auto).expect("warm analyzed open");
         assert_eq!(warm_report.content_cache.hits, 1);
+        assert_eq!(warm_report.content_cache.bytes, 8);
         assert_eq!(warm_report.analysis.expect("analysis").candidates, 0);
 
         fs::remove_file(dir.path().join("notes.md")).expect("remove source");
         let only = OpenConfig { policy: CachePolicy::Only, ..auto };
         let (cached, cached_report) = open(dir.path(), &only).expect("cache-only content");
         assert_eq!(cached_report.content_cache.hits, 1);
+        assert_eq!(cached_report.content_cache.bytes, 8);
         assert_eq!(
             cached.content_rollup(Path::new("")).expect("content").total.metrics.raw_words,
             2

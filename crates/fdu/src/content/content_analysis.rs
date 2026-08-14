@@ -24,6 +24,10 @@ const MAX_ERROR_BYTES: usize = 512;
 pub struct AnalysisReport {
     /// Regular files considered by the requested profile.
     pub candidates: u64,
+    /// Bytes actually returned by fresh file reads, including partial binary probes.
+    pub bytes_read: u64,
+    /// Wall time spent processing fresh candidates.
+    pub elapsed_ns: u64,
     /// Results accepted by the index's conditional mutation boundary.
     pub applied: u64,
     /// Results discarded because indexed metadata changed while workers ran.
@@ -81,6 +85,7 @@ pub fn analyze_index(index: &mut Index, request: AnalysisRequest) -> AnalysisRep
         return report;
     }
 
+    let started = std::time::Instant::now();
     let workers = worker_count(request.workers, candidates.len());
     let next = AtomicUsize::new(0);
     let candidates = Arc::new(candidates);
@@ -102,7 +107,8 @@ pub fn analyze_index(index: &mut Index, request: AnalysisRequest) -> AnalysisRep
             });
         }
         drop(sender);
-        for observation in receiver {
+        for (observation, bytes_read) in receiver {
+            report.bytes_read = report.bytes_read.saturating_add(bytes_read);
             count_coverage(&mut report, observation.analysis.coverage);
             match index.apply_analysis(observation) {
                 AnalysisApplyOutcome::Applied => report.applied = report.applied.saturating_add(1),
@@ -110,7 +116,12 @@ pub fn analyze_index(index: &mut Index, request: AnalysisRequest) -> AnalysisRep
             }
         }
     });
+    report.elapsed_ns = elapsed_ns(started);
     report
+}
+
+fn elapsed_ns(started: std::time::Instant) -> u64 {
+    u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX)
 }
 
 fn worker_count(requested: usize, candidates: usize) -> usize {
@@ -122,31 +133,46 @@ fn worker_count(requested: usize, candidates: usize) -> usize {
 fn analyze_candidate(
     candidate: AnalysisCandidate,
     request: AnalysisRequest,
-) -> AnalysisObservation {
-    let analysis = if candidate.classification.family == ContentFamily::Binary {
-        record(&candidate, request, candidate.classification.clone(), CoverageReason::Binary, None)
+) -> (AnalysisObservation, u64) {
+    let (analysis, bytes_read) = if candidate.classification.family == ContentFamily::Binary {
+        (
+            record(
+                &candidate,
+                request,
+                candidate.classification.clone(),
+                CoverageReason::Binary,
+                None,
+            ),
+            0,
+        )
     } else {
         analyze_open_file(&candidate, request)
     };
-    AnalysisObservation { candidate, analysis }
+    (AnalysisObservation { candidate, analysis }, bytes_read)
 }
 
-fn analyze_open_file(candidate: &AnalysisCandidate, request: AnalysisRequest) -> FileAnalysis {
+fn analyze_open_file(
+    candidate: &AnalysisCandidate,
+    request: AnalysisRequest,
+) -> (FileAnalysis, u64) {
     let mut file = match File::open(&candidate.absolute_path) {
         Ok(file) => file,
-        Err(error) => return io_record(candidate, request, &error),
+        Err(error) => return (io_record(candidate, request, &error), 0),
     };
     let before = match file.metadata() {
         Ok(metadata) => crate::scan::attrs_from(&metadata).fingerprint(),
-        Err(error) => return io_record(candidate, request, &error),
+        Err(error) => return (io_record(candidate, request, &error), 0),
     };
     if before != candidate.attrs.fingerprint() {
-        return record(
-            candidate,
-            request,
-            candidate.classification.clone(),
-            CoverageReason::ChangedDuringRead,
-            None,
+        return (
+            record(
+                candidate,
+                request,
+                candidate.classification.clone(),
+                CoverageReason::ChangedDuringRead,
+                None,
+            ),
+            0,
         );
     }
 
@@ -168,10 +194,12 @@ fn analyze_open_file(candidate: &AnalysisCandidate, request: AnalysisRequest) ->
     let mut chunk = vec![0_u8; READ_CHUNK_BYTES];
     let mut read_failure = None;
     let mut early_binary = None;
+    let mut bytes_read = 0_u64;
     loop {
         match file.read(&mut chunk) {
             Ok(0) => break,
             Ok(count) => {
+                bytes_read = bytes_read.saturating_add(u64::try_from(count).unwrap_or(u64::MAX));
                 if prefix.len() < CLASSIFICATION_PREFIX_BYTES {
                     let take = count.min(CLASSIFICATION_PREFIX_BYTES - prefix.len());
                     prefix.extend_from_slice(&chunk[..take]);
@@ -204,28 +232,37 @@ fn analyze_open_file(candidate: &AnalysisCandidate, request: AnalysisRequest) ->
 
     let after = match file.metadata() {
         Ok(metadata) => crate::scan::attrs_from(&metadata).fingerprint(),
-        Err(error) => return io_record(candidate, request, &error),
+        Err(error) => return (io_record(candidate, request, &error), bytes_read),
     };
     if before != after {
-        return record(
-            candidate,
-            request,
-            candidate.classification.clone(),
-            CoverageReason::ChangedDuringRead,
-            None,
+        return (
+            record(
+                candidate,
+                request,
+                candidate.classification.clone(),
+                CoverageReason::ChangedDuringRead,
+                None,
+            ),
+            bytes_read,
         );
     }
     if let Some(error) = read_failure {
-        return io_record(candidate, request, &error);
+        return (io_record(candidate, request, &error), bytes_read);
     }
     if let Some(classification) = early_binary {
-        return record(candidate, request, classification, CoverageReason::Binary, None);
+        return (
+            record(candidate, request, classification, CoverageReason::Binary, None),
+            bytes_read,
+        );
     }
     let classification = classify_path_with_prefix(&candidate.relative_path, Some(&prefix));
     if classification.family == ContentFamily::Binary {
-        return record(candidate, request, classification, CoverageReason::Binary, None);
+        return (
+            record(candidate, request, classification, CoverageReason::Binary, None),
+            bytes_read,
+        );
     }
-    match accumulator.finish() {
+    let analysis = match accumulator.finish() {
         TextAdmission::Accepted(mut metrics) => {
             if !matches!(classification.family, ContentFamily::Prose | ContentFamily::Markup) {
                 metrics.raw_words = 0;
@@ -244,12 +281,15 @@ fn analyze_open_file(candidate: &AnalysisCandidate, request: AnalysisRequest) ->
                     }
                 }
                 let Some(code) = code_accumulator else {
-                    return record(
-                        candidate,
-                        request,
-                        classification,
-                        CoverageReason::Unsupported,
-                        None,
+                    return (
+                        record(
+                            candidate,
+                            request,
+                            classification,
+                            CoverageReason::Unsupported,
+                            None,
+                        ),
+                        bytes_read,
                     );
                 };
                 let code_metrics = code.finish();
@@ -278,7 +318,8 @@ fn analyze_open_file(candidate: &AnalysisCandidate, request: AnalysisRequest) ->
         TextAdmission::InvalidUtf8 => {
             record(candidate, request, classification, CoverageReason::InvalidUtf8, None)
         }
-    }
+    };
+    (analysis, bytes_read)
 }
 
 fn analyzed_record(
@@ -400,6 +441,8 @@ mod tests {
         assert_eq!(report.candidates, 2);
         assert_eq!(report.analyzed, 1);
         assert_eq!(report.binary, 1);
+        assert_eq!(report.bytes_read, 15, "known binary files must not be opened");
+        assert!(report.elapsed_ns > 0);
         let root_rollup = index.content_rollup(std::path::Path::new("")).expect("content root");
         assert_eq!(root_rollup.total.files, 2);
         assert_eq!(root_rollup.total.metrics.physical_lines, 3);
@@ -422,6 +465,8 @@ mod tests {
         );
 
         assert_eq!(report.analyzed, 1);
+        assert_eq!(report.bytes_read, LARGE_CODE_FILE_BYTES as u64);
+        assert!(report.elapsed_ns > 0);
         assert!(report.is_complete());
         let metrics = &index.content_rollup(std::path::Path::new("")).expect("content root").total;
         assert_eq!(metrics.bytes, LARGE_CODE_FILE_BYTES as u64);

@@ -16,6 +16,7 @@ patterns:
   CACHE_FILE: '[^\r\n]+\.fdu'
   CACHE_DIR: '[^\r\n]+'
   SCAN_PATH: '[^\r\n]+'
+  PERF_TIME: '[\d.]+ (ns|µs|ms|s)'
 ---
 # Cache Lifecycle Flags
 
@@ -37,6 +38,7 @@ No cached snapshots.
 ```console
 $ fdu --view summary --size apparent project
      263 B  6 files, 3 directories
+Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -89,6 +91,7 @@ Cache already empty.
 ```console
 $ fdu --view summary --size apparent project
      263 B  6 files, 3 directories
+Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 

@@ -77,8 +77,9 @@ metadata visible but does not retain a separate lower-level metric record for th
 - `--view families` for code, prose, markup, data, binary, and unknown roll-ups.
 - `--view languages` for code-family rows and byte shares from path-only detection.
 - `--view documents` for prose metrics; it requires any enabled analysis profile.
-- `--view files` for a flat listing; in text output it prints one path per line and
-  nothing else, so it pipes directly into other commands.
+- `--view files` for a flat listing.
+  One-shot text adds the performance footer described below; use a machine format when
+  output is consumed programmatically.
 - `--view summary` for one aggregate row.
 - Several views in one run share one scan: `--view summary,types,families`.
 
@@ -95,6 +96,15 @@ Invalid UTF-8, binary data, and unsupported SLOC languages remain visible as nor
 coverage outcomes. Only I/O failures, files changed during a read, or stale commits make
 analysis operationally partial.
 Content analysis is currently one-shot and cannot be combined with `--watch`.
+
+One-shot text reports end with a compact performance line.
+It reports regular files and apparent bytes walked, content bytes actually read,
+fresh-analysis file and byte rates, content-sidecar files and apparent bytes restored
+from cache, the metadata cache tier, and total report time.
+Known binary files can contribute walked bytes but zero read bytes.
+Cache-only runs report zero walked files because they never consult the tree.
+The line is gray only when color is active and has no ANSI escapes otherwise.
+JSON, JSONL, YAML, skill output, lifecycle output, and watch streams omit it.
 
 Common shapes are compositions rather than dedicated flags:
 

@@ -38,6 +38,65 @@ pub(crate) struct ReportPlan {
     pub retained_state: RetainedState,
 }
 
+/// Operational work behind one one-shot report.
+///
+/// This is deliberately separate from [`Report`]: it is transient CLI telemetry, not
+/// part of the stable machine-report schema or the pure query result.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) struct PerformanceSummary {
+    /// Regular files whose metadata was observed during this run.
+    pub walked_files: u64,
+    /// Apparent bytes represented by those walked files.
+    pub walked_bytes: u64,
+    /// Fresh content-analysis candidates processed.
+    pub fresh_files: u64,
+    /// Bytes actually returned by fresh content reads.
+    pub bytes_read: u64,
+    /// Wall time spent processing fresh analysis candidates.
+    pub analysis_ns: u64,
+    /// Content-analysis records restored from the sidecar.
+    pub cached_files: u64,
+    /// Apparent bytes represented by restored content records.
+    pub cached_bytes: u64,
+    /// Metadata cache tier used for this report.
+    pub source: ReportSource,
+}
+
+impl Default for PerformanceSummary {
+    fn default() -> Self {
+        Self {
+            walked_files: 0,
+            walked_bytes: 0,
+            fresh_files: 0,
+            bytes_read: 0,
+            analysis_ns: 0,
+            cached_files: 0,
+            cached_bytes: 0,
+            source: ReportSource::ColdScan,
+        }
+    }
+}
+
+impl PerformanceSummary {
+    fn from_open_report(report: &crate::OpenReport) -> Self {
+        let analysis = report.analysis.unwrap_or_default();
+        Self {
+            walked_files: report.scan.files_walked,
+            walked_bytes: report.scan.bytes_walked,
+            fresh_files: analysis.candidates,
+            bytes_read: analysis.bytes_read,
+            analysis_ns: analysis.elapsed_ns,
+            cached_files: report.content_cache.hits,
+            cached_bytes: report.content_cache.bytes,
+            source: match report.path_taken {
+                OpenPath::ColdScan => ReportSource::ColdScan,
+                OpenPath::WarmRevalidate => ReportSource::WarmRevalidate,
+                OpenPath::CacheOnly => ReportSource::CacheOnly,
+            },
+        }
+    }
+}
+
 /// Derive the least-retention plan that can answer `query` under `config`.
 ///
 /// A summary reducer is legal only when no snapshot can participate, no content analysis
@@ -71,7 +130,7 @@ pub(crate) fn prepare_report(
     root: &Path,
     config: &OpenConfig,
     query: &Query,
-) -> Result<(Report, PendingSave)> {
+) -> Result<(Report, PendingSave, PerformanceSummary)> {
     let scan_started_at = SystemTime::now();
     match plan_report(config, query).retained_state {
         RetainedState::Summary => {
@@ -114,7 +173,13 @@ pub(crate) fn prepare_report(
                 if complete { Freshness::Fresh } else { Freshness::Partial },
                 &provenance,
             );
-            Ok((report, PendingSave::none()))
+            let performance = PerformanceSummary {
+                walked_files: scan.files_walked,
+                walked_bytes: scan.bytes_walked,
+                source: ReportSource::ColdScan,
+                ..PerformanceSummary::default()
+            };
+            Ok((report, PendingSave::none(), performance))
         }
         RetainedState::FullIndex => {
             let (index, open_report, pending_save) = open_with_pending_save(root, config)?;
@@ -131,7 +196,8 @@ pub(crate) fn prepare_report(
                 // diagnostics, which errors() alone would drop on a warm or cache-only open.
                 errors: open_report.error_messages(),
             };
-            Ok((report(&index, query, &provenance), pending_save))
+            let performance = PerformanceSummary::from_open_report(&open_report);
+            Ok((report(&index, query, &provenance), pending_save, performance))
         }
     }
 }
@@ -219,8 +285,11 @@ mod tests {
 
         let query = summary_query();
         let off = config(CachePolicy::Off, None);
-        let (compact, pending) = prepare_report(root.path(), &off, &query).expect("compact report");
+        let (compact, pending, performance) =
+            prepare_report(root.path(), &off, &query).expect("compact report");
         pending.join().expect("no pending compact save");
+        assert_eq!(performance.walked_files, 2);
+        assert_eq!(performance.walked_bytes, 14);
 
         let (index, open_report) = crate::open(root.path(), &off).expect("indexed scan");
         let indexed = report(
@@ -258,7 +327,7 @@ mod tests {
         fs::write(root.path().join("payload"), b"payload").expect("file");
         let cache = root.path().join("must-not-exist.fdu");
 
-        let (report, pending) = prepare_report(
+        let (report, pending, _) = prepare_report(
             root.path(),
             &config(CachePolicy::Off, Some(cache.clone())),
             &summary_query(),

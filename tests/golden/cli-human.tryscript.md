@@ -12,6 +12,7 @@ env:
   TZ: UTC
 patterns:
   SCAN_PATH: '[^\r\n]+'
+  PERF_TIME: '[\d.]+ (ns|µs|ms|s)'
 ---
 # Human CLI Output
 
@@ -23,6 +24,7 @@ $ fdu --cache off --color never --size apparent --depth 2 --limit 10 project
      128 B  █████░░░░░    49%    dist (1 file)
       36 B  █░░░░░░░░░    14%    src (2 files)
       23 B  █░░░░░░░░░     9%    docs (1 file)
+Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -34,6 +36,7 @@ $ fdu --cache off --color never --size apparent --depth 1 --limit 2 project
      128 B  █████░░░░░    49%    dist (1 file)
       36 B  █░░░░░░░░░    14%    src (2 files)
                                  …
+Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -51,6 +54,7 @@ $ fdu --cache off --color never --view types --limit 10 --size apparent project
       71 B   27.0%  markdown           2 files, 2 documentation
       36 B   13.7%  rust               2 files
       28 B   10.6%  make               1 file
+Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
