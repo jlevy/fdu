@@ -61,6 +61,11 @@ cli = ["dep:clap", "dep:anyhow"]
 # Gates the OS-native watch layer. Strictly additive: without it, scan, index,
 # snapshot, and the CLI are all fully functional, just without live updates.
 watch = ["dep:notify"]
+# Per-layer operation tallies: syscalls, allocations, and index work. Off in the
+# shipped binary and on in the performance probe, so that a measurement can say what
+# a run *did* and not only how long it took. The overhead of leaving it on is
+# recorded in exp-052 rather than assumed.
+perf-counters = []
 
 [dependencies]
 thiserror = "2.0"

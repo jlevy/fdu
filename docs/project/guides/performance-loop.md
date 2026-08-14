@@ -118,6 +118,40 @@ marked as needing bare metal and the io_uring results were not treated as settli
 cold question. All three axes belong in every recorded result; the ledger counts them
 into its regime coverage table.
 
+### Per-layer counters
+
+Wall time says how long a run took; it does not say what the run *did*. Two results in
+this ledger were hard to read for exactly that reason — the allocator turned out to be
+about 35% of a cold scan’s engine work and only callgrind could see it, and `exp-051`
+predicted a component and was scored on a wall.
+
+Building with `--features perf-counters` turns on thread-local tallies at the syscall,
+index and allocation layers, and installs a counting global allocator in the probe.
+The probe prints them to stderr after the run; the JSON on stdout is unchanged, because
+counters describe an implementation rather than the measurement contract.
+
+```shell
+cargo build --release -p fdu --example perf_probe --features perf-counters
+./target/release/examples/perf_probe scan-index --root TREE 2>&1 >/dev/null
+```
+
+A 450k-entry cold scan reports, per entry: 15.4 allocations, 11.0 reallocations, 11.9
+roll-up merges, and a 93.6% parent-memo hit rate.
+That last number is `exp-051`’s mechanism, which previously took a callgrind run to see.
+
+The counters are cheap enough to leave on — `exp-052` measured the overhead at +0.03%
+[−3.31%, +3.76%] cold and −1.06% [−1.96%, +0.31%] warm, both spanning zero, which bounds
+it below about 3.3% rather than establishing zero.
+Three choices buy that: counters are thread-local and non-atomic, per-entry paths are
+counted rather than timed, and allocation counting rides on an operation that already
+costs tens of nanoseconds.
+
+They localize cost to a layer without attributing it to a call site — no stack sampling,
+no live-byte tracking, both of which cost enough to change what they measure.
+When a counter raises a question it cannot answer, the answer is a callgrind caller
+tree, read as a tree and not as a flat profile.
+`fdu-zgxd` is currently that question.
+
 ## The reference tree
 
 Timings against a generated corpus answer a different question than timings against a

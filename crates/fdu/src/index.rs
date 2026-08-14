@@ -1209,6 +1209,7 @@ impl Index {
     }
 
     fn alloc(&mut self, entry: Entry) -> EntryId {
+        crate::counters::bump(|c| c.entries_allocated += 1);
         self.live += 1;
         if let Some(free_slot) = self.free_head {
             let free_idx = free_slot as usize;
@@ -1467,6 +1468,9 @@ impl Index {
     fn merge_upward(&mut self, from_parent: Option<EntryId>, contribution: &InternedRollUp) {
         let mut current = from_parent;
         while let Some(id) = current {
+            // Counted per level rather than per call: the O(depth) shape is the thing
+            // worth seeing, and it is what S4's bottom-up pass would collapse.
+            crate::counters::bump(|c| c.rollup_merges += 1);
             let entry = self.entry_mut(id);
             entry.rollup.merge(contribution);
             current = entry.parent;
@@ -1566,11 +1570,14 @@ impl Index {
         // previous entry is almost always the parent of this one. Checking that first
         // turns the common case into a single path comparison and skips both the
         // component vector and the descent below.
+        crate::counters::bump(|c| c.upserts += 1);
         if let (Some(dir), Some(name)) = (path.parent(), path.file_name()) {
             if let Some(parent) = parent_memo.get(dir) {
+                crate::counters::bump(|c| c.parent_memo_hits += 1);
                 return self.upsert_beneath(parent, name, path, kind, attrs, stats);
             }
         }
+        crate::counters::bump(|c| c.parent_resolutions += 1);
 
         let Some(parts) = normalize(path) else {
             return false;

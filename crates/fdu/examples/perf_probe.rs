@@ -5,6 +5,17 @@
 //! completed. The parent harness owns authoritative process timing and exact corpus
 //! validation.
 
+// Measurement scaffolding, kept out of the library so the engine's unsafe-free
+// guarantee stands: counting allocations needs `unsafe impl GlobalAlloc`, and the
+// probe is the right place to pay for that.
+// Gated with the feature rather than carrying `allow(dead_code)`: without counters
+// there is no allocator to install, so the module is genuinely absent instead of
+// present-but-silenced.
+#[cfg(feature = "perf-counters")]
+#[allow(unsafe_code)]
+#[path = "support/counting_alloc.rs"]
+mod counting_alloc;
+
 use std::env;
 use std::ffi::OsString;
 use std::fmt::Write as _;
@@ -23,12 +34,32 @@ use fdu::{
 const PROBE_SCHEMA: &str = "fdu-perf-probe-v1";
 const DIGEST_ALGORITHM: &str = "fdu-index-record-v1/sha256-multiset-v1";
 
+/// Count what the run allocates.
+///
+/// Installed only when `perf-counters` is on, so an ordinary probe build is byte for
+/// byte the allocator the shipped binary uses and a measurement taken without counters
+/// is not measuring this wrapper.
+#[cfg(feature = "perf-counters")]
+#[global_allocator]
+static ALLOCATOR: counting_alloc::CountingAlloc<std::alloc::System> =
+    counting_alloc::CountingAlloc::system();
+
 fn main() -> ExitCode {
+    // Counting from here excludes argument parsing and includes every phase the probe
+    // then runs; the harness owns process-level timing either way.
+    fdu::counters::reset();
     match Arguments::parse(env::args_os().skip(1))
         .and_then(|arguments| execute_repeated(&arguments))
     {
         Ok(output) => {
             println!("{}", output.render());
+            // stderr, not the JSON: the harness parses stdout against a versioned
+            // schema, and per-layer tallies describe an implementation rather than the
+            // measurement contract. A schema bump can follow if the harness ever wants
+            // to store them.
+            if fdu::counters::enabled() {
+                eprint!("{}", fdu::counters::render(&fdu::counters::snapshot()));
+            }
             if output.summary.complete { ExitCode::SUCCESS } else { ExitCode::from(2) }
         }
         Err(error) => {

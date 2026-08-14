@@ -155,6 +155,7 @@ fn analyze_open_file(
     candidate: &AnalysisCandidate,
     request: AnalysisRequest,
 ) -> (FileAnalysis, u64) {
+    crate::counters::bump(|c| c.file_opens += 1);
     let mut file = match File::open(&candidate.absolute_path) {
         Ok(file) => file,
         Err(error) => return (io_record(candidate, request, &error), 0),
@@ -196,9 +197,11 @@ fn analyze_open_file(
     let mut early_binary = None;
     let mut bytes_read = 0_u64;
     loop {
+        crate::counters::bump(|c| c.file_reads += 1);
         match file.read(&mut chunk) {
             Ok(0) => break,
             Ok(count) => {
+                crate::counters::bump(|c| c.bytes_read += count as u64);
                 bytes_read = bytes_read.saturating_add(u64::try_from(count).unwrap_or(u64::MAX));
                 if prefix.len() < CLASSIFICATION_PREFIX_BYTES {
                     let take = count.min(CLASSIFICATION_PREFIX_BYTES - prefix.len());

@@ -53,6 +53,7 @@
 pub mod cache;
 pub mod classify;
 pub mod content;
+pub mod counters;
 mod engine_contract;
 #[cfg(feature = "cli")]
 mod execution;

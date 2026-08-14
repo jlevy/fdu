@@ -480,11 +480,13 @@ impl ReconcileTarget<'_> {
 
 #[cfg(unix)]
 fn metadata_for_fingerprint(entry: &fs::DirEntry) -> std::io::Result<fs::Metadata> {
+    crate::counters::bump(|c| c.stats += 1);
     entry.metadata()
 }
 
 #[cfg(not(unix))]
 fn metadata_for_fingerprint(entry: &fs::DirEntry) -> std::io::Result<fs::Metadata> {
+    crate::counters::bump(|c| c.stats += 1);
     // Windows serves DirEntry metadata from directory-enumeration data, which the
     // platform permits to be stale. Fingerprints need a fresh non-following query.
     fs::symlink_metadata(entry.path())
@@ -497,7 +499,11 @@ pub fn scan(
     sink: &mut dyn FnMut(Observation),
 ) -> Result<ScanReport> {
     config.validate()?;
-    let root_meta = fs::symlink_metadata(root).map_err(|e| Error::io(root, e))?;
+    let root_meta = {
+        crate::counters::bump(|c| c.stats += 1);
+        fs::symlink_metadata(root)
+    }
+    .map_err(|e| Error::io(root, e))?;
     if !root_meta.is_dir() {
         return Err(Error::io(
             root,
@@ -520,6 +526,7 @@ pub fn scan(
 
     while let Some((rel_dir, depth)) = take_next(&mut queue, config.order) {
         let abs_dir = root.join(&rel_dir);
+        crate::counters::bump(|c| c.dir_opens += 1);
         let listing = match fs::read_dir(&abs_dir) {
             Ok(listing) => listing,
             Err(e) => {
@@ -537,6 +544,7 @@ pub fn scan(
                     continue;
                 }
             };
+            crate::counters::bump(|c| c.dir_entries += 1);
             let name = item.file_name();
             let rel_path = rel_dir.join(&name);
             let meta = match metadata_for_fingerprint(&item) {
@@ -839,6 +847,8 @@ fn walk_worker(
                 continue;
             }
 
+            crate::counters::bump(|c| c.dir_opens += 1);
+
             let listing = match fs::read_dir(&abs_dir) {
                 Ok(listing) => listing,
                 Err(e) => {
@@ -856,6 +866,7 @@ fn walk_worker(
                         continue;
                     }
                 };
+                crate::counters::bump(|c| c.dir_entries += 1);
                 let name = item.file_name();
                 let meta = match metadata_for_fingerprint(&item) {
                     Ok(meta) => meta,
@@ -915,6 +926,10 @@ fn walk_worker(
         report.attribution.send_ns += elapsed_ns(send_started);
     }
     report.attribution.wall_ns = elapsed_ns(worker_started);
+    // Fold this worker's tallies into the process totals before it exits. Counters are
+    // thread-local precisely so the walk pays no contention for them, and the price of
+    // that choice is this one call: without it a worker's counts die with the thread.
+    crate::counters::flush_thread();
     report
 }
 
@@ -1343,7 +1358,11 @@ pub fn revalidate(
 ) -> Result<ScanReport> {
     config.validate_for_scope(index.scope())?;
     let root = index.root_path().to_path_buf();
-    let root_meta = fs::symlink_metadata(&root).map_err(|error| Error::io(&root, error))?;
+    let root_meta = {
+        crate::counters::bump(|c| c.stats += 1);
+        fs::symlink_metadata(&root)
+    }
+    .map_err(|error| Error::io(&root, error))?;
     if !root_meta.is_dir() {
         return Err(Error::io(
             &root,
@@ -1380,6 +1399,7 @@ pub fn revalidate(
 
     while let Some((rel_dir, depth)) = take_next(&mut queue, config.order) {
         let abs_dir = root.join(&rel_dir);
+        crate::counters::bump(|c| c.dir_opens += 1);
         let listing = match fs::read_dir(&abs_dir) {
             Ok(listing) => listing,
             Err(e) => {
@@ -1540,7 +1560,11 @@ fn reconcile_target_inner(
     sink: &mut dyn FnMut(&AppliedDelta),
 ) -> Result<ReconcileReport> {
     let root = target.root_path()?;
-    let root_meta = fs::symlink_metadata(&root).map_err(|error| Error::io(&root, error))?;
+    let root_meta = {
+        crate::counters::bump(|c| c.stats += 1);
+        fs::symlink_metadata(&root)
+    }
+    .map_err(|error| Error::io(&root, error))?;
     if !root_meta.is_dir() {
         return Err(Error::io(
             &root,
@@ -1690,6 +1714,7 @@ fn reconcile_target_inner(
         let used_bulk = false;
 
         if !used_bulk {
+            crate::counters::bump(|c| c.dir_opens += 1);
             let listing = match fs::read_dir(&abs_dir) {
                 Ok(listing) => listing,
                 Err(error) => {
@@ -1990,6 +2015,7 @@ fn reconcile_wave_worker(
                 let used_bulk = false;
 
                 if !used_bulk {
+                    crate::counters::bump(|c| c.dir_opens += 1);
                     let listing = match fs::read_dir(&abs_dir) {
                         Ok(listing) => listing,
                         Err(error) => {
@@ -2246,6 +2272,7 @@ fn resolve_subtree_root(
         return Ok(PathBuf::new());
     }
     let root = target.root_path()?;
+    crate::counters::bump(|c| c.stats += 1);
     let Ok(root_metadata) = fs::symlink_metadata(&root) else {
         // The applying pass reports operational root failures as partial.
         return Ok(subtree.to_path_buf());
@@ -2382,6 +2409,54 @@ mod tests {
         write_file(&dir.path().join("src/main.rs"), b"fn main() {}");
         write_file(&dir.path().join("src/deep/nested.rs"), b"// nested");
         dir
+    }
+
+    /// A counter that silently reads zero is worse than a missing one, because a report
+    /// full of zeroes invites the conclusion that the work did not happen.
+    ///
+    /// This has already gone wrong twice: once when the per-entry counter was added to
+    /// the serial walk while the parallel walk went uninstrumented, and once when a
+    /// clippy fix hoisted a `read_dir` out of a match scrutinee and took the counter
+    /// with it. Both builds compiled, passed every other test, and reported zero. This
+    /// asserts the relationships a real walk must satisfy, so the next such edit fails
+    /// here instead of in a report someone believes.
+    #[cfg(feature = "perf-counters")]
+    #[test]
+    fn a_walk_moves_every_counter_it_should() {
+        // Both walkers, because they are separate loops with separate call sites. The
+        // first version of this test only exercised the parallel one, and deleting the
+        // serial walker's counter still passed — a guard that covers one path gives
+        // false confidence about the other.
+        for threads in [Some(1), Some(4)] {
+            let dir = sample_tree();
+            let config = ScanConfig { threads, ..ScanConfig::default() };
+            crate::counters::reset();
+
+            let report = scan(dir.path(), &config, &mut |_| {}).expect("scan");
+            crate::counters::flush_thread();
+            let counts = crate::counters::snapshot();
+
+            // Equality against the walk's own totals, not merely non-zero: a counter
+            // wired to the wrong site can still be positive.
+            assert_eq!(
+                counts.dir_entries, report.entries,
+                "enumerated entries match the walk's own count at {threads:?}: {counts:?}"
+            );
+            assert_eq!(
+                counts.dir_opens, report.dirs_read,
+                "directory opens match the walk's own count at {threads:?}: {counts:?}"
+            );
+            assert!(
+                counts.stats >= counts.dir_entries,
+                "each entry is stated at {threads:?}: {counts:?}"
+            );
+
+            // Deliberately not asserted: `allocs` stays zero in a library test, because
+            // allocation counting needs a binary to install `CountingAlloc` as its
+            // global allocator and a test harness installs its own. The probe covers
+            // that half; this covers the counters the library itself drives.
+            crate::counters::reset();
+        }
     }
 
     #[test]
@@ -3412,7 +3487,11 @@ mod tests {
         write_file(&dir.path().join("src/main.rs"), b"fn main() { much longer }");
 
         let root = index.root_path().to_path_buf();
-        let root_meta = fs::symlink_metadata(&root).expect("root metadata");
+        let root_meta = {
+            crate::counters::bump(|c| c.stats += 1);
+            fs::symlink_metadata(&root)
+        }
+        .expect("root metadata");
         let mut deltas = Vec::new();
         let outcome = reconcile_direct_parallel(
             &mut index,
@@ -3814,7 +3893,12 @@ mod tests {
         use std::os::unix::fs::MetadataExt;
 
         let root = Path::new("/");
-        let root_dev = fs::symlink_metadata(root).expect("stat root").dev();
+        let root_dev = {
+            crate::counters::bump(|c| c.stats += 1);
+            fs::symlink_metadata(root)
+        }
+        .expect("stat root")
+        .dev();
         let Some(mount) = [Path::new("/dev"), Path::new("/proc"), Path::new("/sys")]
             .into_iter()
             .find(|candidate| {
