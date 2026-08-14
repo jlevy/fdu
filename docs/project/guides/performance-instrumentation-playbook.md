@@ -8,8 +8,11 @@ the context that produced these rules.
 Everything here was learned by getting it wrong first, and the failures are named,
 because the failure is the part that transfers.
 
-The companion documents are [the performance loop](performance-loop.md), which is fdu’s
-specific protocol and hypothesis registry, and
+The companion documents are
+[the campaign status report](../reports/report-2026-08-14-performance-campaign-status.md),
+the zero-context orientation to what has been achieved and what remains;
+[the performance loop](performance-loop.md), which is fdu’s specific protocol and
+hypothesis registry; and
 [the design principles](../architecture/fdu-design-principles.md), which decide what a
 change is allowed to break.
 This one is deliberately domain-neutral: it applies to a filesystem walker, a parser, or

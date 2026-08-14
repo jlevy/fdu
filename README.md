@@ -136,9 +136,32 @@ off decisively in the cases that beat that floor:
 - **Expensive derived metrics** such as line counts, where an unchanged fingerprint
   skips re-reading the file entirely.
 
-On a warm laptop against a mid-size tree, none of those apply, and a warm run is
-currently *slower* than a cold one.
-That inversion is measured rather than assumed, and closing it is the current work.
+On a warm laptop against a mid-size tree, none of those apply, and a warm run used to be
+*slower* than a cold one — an inversion that was measured rather than assumed.
+**That has closed on Linux:** a warm open now runs about 23% faster than a cold scan,
+where the campaign began with it 69% slower.
+The macOS picture is not yet re-measured, and the distinction matters — see below.
+
+### How performance work is done here
+
+fdu runs a disciplined optimization loop rather than a list of tweaks: instrument,
+profile, write the hypothesis down, change one thing, measure paired and interleaved
+against a control, keep it only if it clears a fixed bar, and record the verdict —
+**including the failures**. Of 55 recorded experiments, 24 were rejected, several
+despite a real working mechanism that simply did not clear the bar.
+
+**Start here:**
+[the performance campaign status report](docs/project/reports/report-2026-08-14-performance-campaign-status.md)
+is written for a reader with no context and covers what has been achieved, how, what
+remains, and where the evidence is weak.
+[The instrumentation playbook](docs/project/guides/performance-instrumentation-playbook.md)
+is the reusable method, written to apply to any systems program rather than this one.
+
+One caveat worth carrying into any number you read: **51 of those 55 experiments were
+measured on macOS and 3 on Linux.** A constant measured on one platform is inherited,
+not proven, on the other, and
+[the platform tuning guide](docs/project/guides/platform-tuning.md) records which is
+which.
 
 Speed changes here are decided by paired, interleaved measurement against a real tree,
 with an independent oracle verifying that faster output is still identical output.

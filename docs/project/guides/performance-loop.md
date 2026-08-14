@@ -7,6 +7,11 @@ Nothing here runs in `make check`, and nothing here blocks a merge.
 It exists so that any contributor — human or agent — can pick the loop up months later,
 re-run it, and get numbers comparable to the ones already recorded.
 
+New here? Start with
+[the campaign status report](../reports/report-2026-08-14-performance-campaign-status.md),
+which assumes no context and covers what has been achieved, what remains, and where the
+evidence is weak. This document is the protocol it describes.
+
 The companion documents are the
 [experiment ledger](../reports/report-2026-08-10-fdu-performance-experiments.md), which
 records every experiment and its verdict, the
