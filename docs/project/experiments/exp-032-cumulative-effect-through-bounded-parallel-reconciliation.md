@@ -124,17 +124,6 @@ experiment:
           ci_excludes_zero: true
           direction: regressed
           pairs: 12
-        blocked_ns:
-          control_median: 6925354.0
-          candidate_median: 0.0
-          change_pct: -100.0
-          ci95_low_pct: -100.0
-          ci95_high_pct: -100.0
-          significant: true
-          passes_acceptance: true
-          ci_excludes_zero: true
-          direction: improved
-          pairs: 12
         peak_rss_bytes:
           control_median: 33570816.0
           candidate_median: 34996224.0
@@ -204,17 +193,6 @@ experiment:
           passes_acceptance: false
           ci_excludes_zero: true
           direction: regressed
-          pairs: 12
-        blocked_ns:
-          control_median: 92364708.0
-          candidate_median: 0.0
-          change_pct: -100.0
-          ci95_low_pct: -100.0
-          ci95_high_pct: -100.0
-          significant: true
-          passes_acceptance: true
-          ci_excludes_zero: true
-          direction: improved
           pairs: 12
         peak_rss_bytes:
           control_median: 33734656.0
@@ -286,17 +264,6 @@ experiment:
           ci_excludes_zero: true
           direction: regressed
           pairs: 12
-        blocked_ns:
-          control_median: 44430916.5
-          candidate_median: 0.0
-          change_pct: -100.0
-          ci95_low_pct: -100.0
-          ci95_high_pct: -100.0
-          significant: true
-          passes_acceptance: true
-          ci_excludes_zero: true
-          direction: improved
-          pairs: 12
         peak_rss_bytes:
           control_median: 41738240.0
           candidate_median: 43401216.0
@@ -366,17 +333,6 @@ experiment:
           passes_acceptance: false
           ci_excludes_zero: true
           direction: regressed
-          pairs: 12
-        blocked_ns:
-          control_median: 40040750.0
-          candidate_median: 0.0
-          change_pct: -100.0
-          ci95_low_pct: -100.0
-          ci95_high_pct: -100.0
-          significant: true
-          passes_acceptance: true
-          ci_excludes_zero: true
-          direction: improved
           pairs: 12
         peak_rss_bytes:
           control_median: 33955840.0

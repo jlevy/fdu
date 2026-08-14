@@ -112,17 +112,6 @@ experiment:
           ci_excludes_zero: true
           direction: regressed
           pairs: 12
-        blocked_ns:
-          control_median: 6399438708.5
-          candidate_median: 0.0
-          change_pct: -100.0
-          ci95_low_pct: -100.0
-          ci95_high_pct: -100.0
-          significant: true
-          passes_acceptance: true
-          ci_excludes_zero: true
-          direction: improved
-          pairs: 12
         peak_rss_bytes:
           control_median: 358211584.0
           candidate_median: 354623488.0

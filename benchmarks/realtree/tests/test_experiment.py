@@ -260,11 +260,21 @@ class HeadlineSelectionTests(unittest.TestCase):
             )
         self.assertIn("absent_vs_control", str(caught.exception))
 
-    def test_a_job_the_run_does_not_hold_is_still_non_comparative(self) -> None:
-        # A baseline recording names a job with no comparison at all, which stays a
-        # null change rather than an error.
-        headline = record._headline(_run_document(), self._arguments(primary_job="warm-revalidate"))
-        self.assertIsNone(headline)
+    def test_an_existing_job_without_comparisons_is_non_comparative(self) -> None:
+        run = _run_document()
+        run["statistics"]["cold-scan-index"]["comparisons"] = {}
+
+        self.assertIsNone(record._headline(run, self._arguments()))
+
+    def test_a_missing_primary_job_is_refused(self) -> None:
+        with self.assertRaises(ValueError) as caught:
+            record._headline(_run_document(), self._arguments(primary_job="warm-revalidate"))
+        self.assertIn("warm-revalidate", str(caught.exception))
+
+    def test_a_missing_primary_metric_is_refused(self) -> None:
+        with self.assertRaises(ValueError) as caught:
+            record._headline(_run_document(), self._arguments(primary_metric="cpu_ns"))
+        self.assertIn("cpu_ns", str(caught.exception))
 
 
 class YamlScalarTests(unittest.TestCase):

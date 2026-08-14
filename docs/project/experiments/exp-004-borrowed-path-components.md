@@ -96,14 +96,6 @@ experiment:
           ci95_high_pct: 6.322
           significant: false
           pairs: 14
-        blocked_ns:
-          control_median: 0.0
-          candidate_median: 0.0
-          change_pct: 0.0
-          ci95_low_pct: null
-          ci95_high_pct: null
-          significant: false
-          pairs: 0
         peak_rss_bytes:
           control_median: 36790272.0
           candidate_median: 36331520.0
@@ -156,14 +148,6 @@ experiment:
           ci95_high_pct: 6.317
           significant: false
           pairs: 14
-        blocked_ns:
-          control_median: 0.0
-          candidate_median: 0.0
-          change_pct: 0.0
-          ci95_low_pct: null
-          ci95_high_pct: null
-          significant: false
-          pairs: 0
         peak_rss_bytes:
           control_median: 45686784.0
           candidate_median: 44916736.0

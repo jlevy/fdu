@@ -402,9 +402,10 @@ absence of spurious omission markers move together as one visible product contra
 
 Two hazards worth remembering, both found the hard way:
 
-- Comparing roll-ups by raw interned extension id fails across walks.
-  Ids are assigned in first-seen order, so serial and parallel runs assign them
-  differently. Compare through `by_ext_named()`.
+- Interned extension ids never cross the public roll-up boundary.
+  Ids are assigned in first-seen order, so serial and parallel walks legitimately assign
+  them differently; public `RollUp` values resolve their maps to owned names and can be
+  retained or compared directly.
 - Deep trees must be handled iteratively everywhere — expansion, all three renderers,
   and `Drop`. Derived drop glue recurses per level, so a deep tree overflowed the stack
   on release even after rendering was fixed.

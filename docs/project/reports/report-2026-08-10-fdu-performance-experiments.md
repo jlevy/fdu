@@ -167,7 +167,6 @@ Candidate: four producer threads feeding one index consumer (--threads 4)
 | cpu (ms) | 612.0 | 973.6 | +58.05% (regression) | [+54.55%, +66.56%] |
 | user (ms) | 231.0 | 271.9 | +17.36% (regression) | [+16.39%, +22.58%] |
 | system (ms) | 379.4 | 702.6 | +83.50% (regression) | [+77.06%, +92.72%] |
-| blocked (ms) | 8.1 | 0.0 | -100.00% | [-100.00%, -100.00%] |
 | peak rss (MiB) | 31.7 | 34.1 | +7.49% (regression) | [+6.21%, +9.83%] |
 
 Other jobs, wall time: `cold-scan-producer` -50.7%, `warm-revalidate` +0.3% (n.s.).
@@ -203,7 +202,6 @@ Candidate: revalidation sweep parallelized with the same worker pool
 | cpu (ms) | 801.1 | 780.5 | -2.36% (n.s.) | [-4.02%, +0.05%] |
 | user (ms) | 427.6 | 416.6 | -2.31% | [-3.31%, -1.79%] |
 | system (ms) | 371.8 | 365.3 | -1.64% (n.s.) | [-4.63%, +2.33%] |
-| blocked (ms) | 8.0 | 5.1 | -34.33% (n.s.) | [-69.52%, +11.33%] |
 | peak rss (MiB) | 32.3 | 32.5 | -0.05% (n.s.) | [-0.19%, +2.81%] |
 
 Other jobs, wall time: `cold-scan-index` -1.3% (n.s.), `warm-snapshot-load` -2.4%.
@@ -238,7 +236,6 @@ Candidate: bootstrap applies directly, with no effective-op list and no journal 
 | cpu (ms) | 1283.5 | 1258.6 | -1.01% (n.s.) | [-5.47%, +4.70%] |
 | user (ms) | 282.5 | 270.3 | -3.27% | [-4.13%, -2.46%] |
 | system (ms) | 1002.2 | 978.1 | -0.26% (n.s.) | [-5.67%, +7.38%] |
-| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
 | peak rss (MiB) | 35.1 | 33.8 | -3.97% | [-4.81%, -2.64%] |
 
 Other jobs, wall time: `cold-snapshot-save` -4.9% (n.s.), `warm-revalidate` -2.3%.
@@ -345,7 +342,6 @@ Candidate: HEAD 954d27b: exp-001, exp-004 and exp-005 together
 | cpu (ms) | 612.5 | 1266.6 | +104.13% (regression) | [+100.93%, +108.56%] |
 | user (ms) | 231.7 | 253.2 | +8.81% (regression) | [+7.82%, +10.43%] |
 | system (ms) | 379.9 | 1006.4 | +161.31% (regression) | [+157.21%, +166.31%] |
-| blocked (ms) | 11.1 | 0.0 | -100.00% | [-100.00%, -100.00%] |
 | peak rss (MiB) | 31.9 | 34.8 | +9.21% (regression) | [+8.85%, +9.56%] |
 
 Other jobs, wall time: `cold-scan-producer` -51.6%, `cold-snapshot-save` -46.2%,
@@ -420,7 +416,6 @@ only at query time
 | cpu (ms) | 1065.6 | 1078.0 | -0.17% (n.s.) | [-2.54%, +5.79%] |
 | user (ms) | 265.2 | 248.2 | -6.31% | [-9.03%, -5.53%] |
 | system (ms) | 802.1 | 826.7 | +1.43% (n.s.) | [-1.90%, +9.86%] |
-| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
 | peak rss (MiB) | 36.6 | 33.5 | -10.22% | [-14.06%, -7.10%] |
 
 Other jobs, wall time: `cold-scan-producer` -3.1% (n.s.), `warm-revalidate` -4.5%
@@ -540,7 +535,6 @@ merge per run instead of per file
 | cpu (ms) | 1256.9 | 1204.0 | -2.14% | [-5.42%, -0.29%] |
 | user (ms) | 282.1 | 271.6 | -3.66% | [-4.95%, -1.61%] |
 | system (ms) | 968.7 | 933.4 | -1.83% (n.s.) | [-6.62%, +0.46%] |
-| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
 | peak rss (MiB) | 33.0 | 32.6 | -1.47% (n.s.) | [-2.22%, +0.14%] |
 
 Other jobs, wall time: `cold-scan-producer` -0.3% (n.s.), `warm-revalidate` -0.7%.
@@ -575,7 +569,6 @@ Candidate: breadth-first, the new default, so partial results are monotone lower
 | cpu (ms) | 1178.2 | 1205.4 | +0.49% (n.s.) | [-0.71%, +3.49%] |
 | user (ms) | 242.7 | 245.7 | +0.49% (n.s.) | [-1.44%, +3.12%] |
 | system (ms) | 943.5 | 955.7 | +0.68% (n.s.) | [-1.12%, +4.30%] |
-| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
 | peak rss (MiB) | 33.1 | 33.7 | +1.51% (regression) | [+0.84%, +2.88%] |
 
 Other jobs, wall time: `cold-scan-producer` +1.5% (n.s.), `warm-revalidate` +0.0%
@@ -624,7 +617,6 @@ Candidate: per-region LIFO buckets with a round-robin ready ring
 | cpu (ms) | 1241.5 | 1174.0 | -4.85% (n.s.) | [-9.45%, +1.56%] |
 | user (ms) | 235.3 | 230.9 | -1.66% | [-3.70%, -0.57%] |
 | system (ms) | 1005.6 | 945.4 | -5.42% (n.s.) | [-10.57%, +2.11%] |
-| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
 | peak rss (MiB) | 33.3 | 32.1 | -3.77% | [-5.18%, -2.99%] |
 
 Other jobs, wall time: `warm-revalidate` -0.0% (n.s.).
@@ -660,7 +652,6 @@ depth-first is unmeasured
 | cpu (ms) | 2122.0 |
 | user (ms) | 312.5 |
 | system (ms) | 1812.2 |
-| blocked (ms) | 0.0 |
 | peak rss (MiB) | 33.0 |
 
 Other jobs, wall time: `cold-scan-index` 322 ms, `warm-revalidate` 624 ms.
@@ -692,7 +683,6 @@ Candidate: sixteen workers on a tree larger than the vnode cache
 | cpu (ms) | 22555.6 | 32602.3 | +42.64% (regression) | [+28.82%, +52.30%] |
 | user (ms) | 3079.2 | 3353.4 | +7.79% (regression) | [+5.97%, +12.62%] |
 | system (ms) | 19523.9 | 29249.9 | +47.67% (regression) | [+31.73%, +59.69%] |
-| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
 | peak rss (MiB) | 310.4 | 315.1 | +1.55% (regression) | [+1.41%, +1.95%] |
 
 Other jobs, wall time: `cold-scan-producer` -9.3%.
@@ -726,7 +716,6 @@ Candidate: move non-directory relative paths into observation ops
 | cpu (ms) | 1198.5 | 1217.5 | +0.92% (n.s.) | [-3.81%, +5.84%] |
 | user (ms) | 251.0 | 251.0 | -1.16% (n.s.) | [-2.73%, +2.27%] |
 | system (ms) | 947.3 | 963.9 | +1.18% (n.s.) | [-5.18%, +7.95%] |
-| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
 | peak rss (MiB) | 32.6 | 33.8 | +3.88% (regression) | [+1.50%, +4.78%] |
 
 Other jobs, wall time: `cold-scan-producer` +1.4% (n.s.).
@@ -759,7 +748,6 @@ Candidate: six active workers plus ten dormant reserve threads
 | cpu (ms) | 2041.1 | 2116.9 | +5.67% (regression) | [+1.33%, +8.44%] |
 | user (ms) | 307.9 | 320.3 | +3.33% (regression) | [+2.47%, +5.03%] |
 | system (ms) | 1733.5 | 1791.6 | +5.57% (regression) | [+0.95%, +9.41%] |
-| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
 | peak rss (MiB) | 32.5 | 33.0 | +1.40% (regression) | [+0.53%, +2.77%] |
 
 Other jobs, wall time: `cold-scan-index` -2.2% (n.s.).
@@ -793,7 +781,6 @@ Candidate: start at six and spawn up to sixteen after 100k observed entries
 | cpu (ms) | 22952.0 | 32294.3 | +41.24% (regression) | [+37.73%, +44.26%] |
 | user (ms) | 2951.3 | 3368.8 | +13.84% (regression) | [+11.40%, +14.51%] |
 | system (ms) | 20003.2 | 28918.4 | +45.12% (regression) | [+41.54%, +48.81%] |
-| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
 | peak rss (MiB) | 309.9 | 314.9 | +1.56% (regression) | [+1.31%, +1.79%] |
 
 Other jobs, wall time: `cold-scan-producer` -4.6% (n.s.).
@@ -828,7 +815,6 @@ Candidate: spawn ten reserve workers after 100k observed entries
 | cpu (ms) | 2622.3 | 2701.1 | +1.70% (n.s.) | [-2.05%, +8.04%] |
 | user (ms) | 491.8 | 498.3 | +3.39% (regression) | [+0.10%, +5.98%] |
 | system (ms) | 2161.3 | 2213.6 | +0.95% (n.s.) | [-2.83%, +9.12%] |
-| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
 | peak rss (MiB) | 60.2 | 61.0 | +1.64% (regression) | [+0.52%, +2.32%] |
 
 Other jobs, wall time: `cold-scan-producer` -2.7% (n.s.).
@@ -861,7 +847,6 @@ Candidate: spawn reserve workers after 262144 observed entries
 | cpu (ms) | 22821.8 | 31111.4 | +35.58% (regression) | [+9.01%, +43.22%] |
 | user (ms) | 2879.1 | 3184.0 | +11.41% (regression) | [+5.60%, +14.50%] |
 | system (ms) | 19960.6 | 27890.0 | +38.75% (regression) | [+9.57%, +47.64%] |
-| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
 | peak rss (MiB) | 310.1 | 313.8 | +1.19% (regression) | [+0.91%, +1.29%] |
 
 Other jobs, wall time: `cold-scan-producer` -4.2%.
@@ -895,7 +880,6 @@ service per entry
 | cpu (ms) | 22674.6 | 34479.0 | +51.16% (regression) | [+43.81%, +55.44%] |
 | user (ms) | 2953.8 | 3328.4 | +12.93% (regression) | [+11.13%, +15.11%] |
 | system (ms) | 19734.9 | 31109.0 | +56.75% (regression) | [+48.33%, +60.64%] |
-| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
 | peak rss (MiB) | 310.6 | 314.5 | +1.43% (regression) | [+0.85%, +1.64%] |
 
 Other jobs, wall time: `cold-scan-producer` -10.1%.
@@ -930,7 +914,6 @@ directory fallback
 | cpu (ms) | 29818.1 | 15046.7 | -43.56% | [-60.05%, -34.03%] |
 | user (ms) | 3371.1 | 2688.9 | -19.60% | [-21.06%, -17.74%] |
 | system (ms) | 26468.6 | 12039.1 | -46.62% | [-65.75%, -36.63%] |
-| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
 | peak rss (MiB) | 315.2 | 317.5 | +2.71% (n.s.) | [-1.42%, +37.00%] |
 
 Other jobs, wall time: `cold-scan-producer` -41.6%.
@@ -971,7 +954,6 @@ scheduling, adaptive-depth, and macOS bulk-metadata changes
 | cpu (ms) | 617.3 | 1068.9 | +64.87% (regression) | [+62.60%, +92.64%] |
 | user (ms) | 240.4 | 228.5 | -4.22% | [-7.60%, -0.53%] |
 | system (ms) | 376.0 | 839.7 | +111.31% (regression) | [+102.85%, +149.98%] |
-| blocked (ms) | 9.5 | 0.0 | -100.00% | [-100.00%, -100.00%] |
 | peak rss (MiB) | 32.0 | 33.6 | +4.66% (regression) | [+3.40%, +6.49%] |
 
 Other jobs, wall time: `cold-scan-producer` -58.2%, `cold-snapshot-save` -51.3%,
@@ -1006,7 +988,6 @@ Candidate: one retained root fd per worker and root-relative openat
 | cpu (ms) | 11396.8 | 10831.6 | -0.42% (n.s.) | [-2.79%, +1.07%] |
 | user (ms) | 2420.3 | 2415.9 | +1.37% (n.s.) | [-0.69%, +1.99%] |
 | system (ms) | 8938.7 | 8428.1 | -1.03% (n.s.) | [-3.75%, +0.85%] |
-| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
 | peak rss (MiB) | 311.1 | 312.2 | +0.30% (regression) | [+0.17%, +0.44%] |
 
 Other jobs, wall time: `cold-scan-producer` -6.3%.
@@ -1043,7 +1024,6 @@ Candidate: the pre-H26 sixteen-worker large-tree target
 | cpu (ms) | 11127.6 | 23309.3 | +107.02% (regression) | [+98.70%, +122.91%] |
 | user (ms) | 2443.1 | 2730.0 | +11.82% (regression) | [+9.83%, +14.01%] |
 | system (ms) | 8574.6 | 20601.6 | +135.38% (regression) | [+125.96%, +153.35%] |
-| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
 | peak rss (MiB) | 311.7 | 415.9 | +33.46% (regression) | [+31.53%, +35.57%] |
 
 Other jobs, wall time: `cold-scan-producer` +12.7% (regression).
@@ -1115,7 +1095,6 @@ BFS scheduling, adaptive-depth, and macOS bulk cold/warm changes
 | cpu (ms) | 582.7 | 1113.6 | +91.36% (regression) | [+89.21%, +92.77%] |
 | user (ms) | 228.9 | 195.3 | -14.53% | [-15.90%, -6.57%] |
 | system (ms) | 352.7 | 917.0 | +160.21% (regression) | [+154.24%, +163.66%] |
-| blocked (ms) | 4.3 | 0.0 | -100.00% | [-100.00%, -100.00%] |
 | peak rss (MiB) | 32.0 | 32.9 | +2.62% (regression) | [+2.03%, +3.42%] |
 
 Other jobs, wall time: `cold-scan-producer` -58.3%, `cold-snapshot-save` -51.1%,
@@ -1150,7 +1129,6 @@ Candidate: one retained entry vector per bulk reader, drained after complete val
 | cpu (ms) | 1384.3 | 1183.4 | -2.81% (n.s.) | [-20.03%, +1.10%] |
 | user (ms) | 225.8 | 225.6 | -0.76% (n.s.) | [-3.33%, +4.16%] |
 | system (ms) | 1169.9 | 956.0 | -3.64% (n.s.) | [-23.26%, +2.29%] |
-| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
 | peak rss (MiB) | 33.7 | 33.2 | -1.29% (n.s.) | [-2.42%, +1.34%] |
 
 Other jobs, wall time: `cold-scan-producer` +1.3% (regression), `warm-revalidate` -0.8%
@@ -1187,7 +1165,6 @@ Candidate: 256 KiB macOS bulk metadata buffer
 | cpu (ms) | 1061.7 | 1112.1 | +1.15% (n.s.) | [-4.43%, +8.81%] |
 | user (ms) | 229.4 | 233.4 | +3.65% (n.s.) | [-5.07%, +7.68%] |
 | system (ms) | 832.5 | 883.7 | +3.36% (n.s.) | [-7.16%, +10.72%] |
-| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
 | peak rss (MiB) | 33.6 | 34.2 | +2.38% (regression) | [+0.25%, +3.11%] |
 
 Other jobs, wall time: `cold-scan-producer` +1.8% (n.s.), `warm-revalidate` -0.0%
@@ -1223,7 +1200,6 @@ Candidate: four-worker bounded immutable-baseline waves with producer-side no-op
 | cpu (ms) | 8001.7 | 9258.7 | +17.30% (regression) | [+5.94%, +30.62%] |
 | user (ms) | 2900.2 | 3072.3 | +6.93% (regression) | [+1.95%, +12.93%] |
 | system (ms) | 5094.1 | 6186.4 | +23.68% (regression) | [+8.49%, +40.34%] |
-| blocked (ms) | 6399.4 | 0.0 | -100.00% | [-100.00%, -100.00%] |
 | peak rss (MiB) | 341.6 | 338.2 | -0.99% | [-1.15%, -0.91%] |
 
 Cost to carry: 419 lines; no new dependencies; new failure mode: a panicking
@@ -1260,7 +1236,6 @@ Candidate: 4096-directory immutable-baseline waves
 | cpu (ms) | 866.9 | 884.9 | +4.87% (n.s.) | [-2.17%, +10.10%] |
 | user (ms) | 277.5 | 275.5 | +1.33% (n.s.) | [-3.38%, +5.17%] |
 | system (ms) | 585.5 | 613.6 | +5.34% (n.s.) | [-1.08%, +13.88%] |
-| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
 | peak rss (MiB) | 32.4 | 32.2 | -0.46% (n.s.) | [-2.06%, +1.40%] |
 
 Cost to carry: 1 lines; no new dependencies; new failure mode: effective changed-tree
@@ -1295,7 +1270,6 @@ snapshot, BFS, bulk metadata, and bounded parallel reconciliation changes
 | cpu (ms) | 629.7 | 1142.7 | +82.43% (regression) | [+73.39%, +86.30%] |
 | user (ms) | 236.3 | 223.7 | -5.08% | [-8.16%, -3.41%] |
 | system (ms) | 391.3 | 933.2 | +133.84% (regression) | [+122.04%, +142.88%] |
-| blocked (ms) | 6.9 | 0.0 | -100.00% | [-100.00%, -100.00%] |
 | peak rss (MiB) | 32.0 | 33.4 | +4.04% (regression) | [+3.42%, +6.80%] |
 
 Other jobs, wall time: `cold-scan-producer` -60.0%, `cold-snapshot-save` -52.4%,
@@ -1331,7 +1305,6 @@ CLI-equivalence checks
 | cpu (ms) | 806.3 | 1077.6 | +34.79% (regression) | [+30.66%, +37.70%] |
 | user (ms) | 292.8 | 292.3 | +0.10% (n.s.) | [-0.84%, +0.70%] |
 | system (ms) | 513.8 | 782.5 | +55.74% (regression) | [+49.21%, +59.09%] |
-| blocked (ms) | 39.3 | 0.0 | -100.00% | [-100.00%, -100.00%] |
 | peak rss (MiB) | 31.8 | 32.9 | +3.16% (regression) | [+2.52%, +4.59%] |
 
 Other jobs, wall time: `cold-scan-index` -5.1%, `cold-scan-producer` -8.8%,
@@ -1374,7 +1347,6 @@ Candidate: PR #8 after merging origin/main and correctness review
 | cpu (ms) | 25916.0 | 24018.7 | -10.39% (n.s.) | [-49.03%, +10.21%] |
 | user (ms) | 3343.8 | 2910.9 | -14.16% | [-17.85%, -11.02%] |
 | system (ms) | 22601.5 | 21042.8 | -9.76% (n.s.) | [-53.66%, +13.77%] |
-| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
 | peak rss (MiB) | 316.3 | 417.5 | +32.27% (regression) | [+0.15%, +44.49%] |
 
 Other jobs, wall time: `warm-revalidate` -70.9%.
@@ -1408,7 +1380,6 @@ Candidate: PR #8 after merging origin/main and correctness review
 | cpu (ms) | 34712.1 | 34847.9 | -0.57% (n.s.) | [-13.77%, +2.53%] |
 | user (ms) | 5219.2 | 4773.0 | -8.61% | [-13.02%, -7.12%] |
 | system (ms) | 29509.1 | 30064.3 | +0.70% (n.s.) | [-14.02%, +4.17%] |
-| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
 | peak rss (MiB) | 437.6 | 631.1 | +44.32% (regression) | [+37.01%, +47.71%] |
 
 Other jobs, wall time: `cold-scan-producer` -36.6%.
@@ -1442,7 +1413,6 @@ Candidate: fixed 8, 10, 12, and 16-worker sweep
 | cpu (ms) | 16488.3 | 22152.4 | +34.47% (regression) | [+33.26%, +35.57%] |
 | user (ms) | 4333.5 | 4419.3 | +1.79% (regression) | [+1.34%, +2.60%] |
 | system (ms) | 12160.1 | 17702.3 | +46.16% (regression) | [+44.30%, +47.89%] |
-| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
 | peak rss (MiB) | 456.4 | 457.4 | -0.01% (n.s.) | [-0.27%, +0.39%] |
 
 Cost to carry: 0 lines; no new dependencies.
@@ -1473,7 +1443,6 @@ Candidate: depth-first traversal
 | cpu (ms) | 16656.3 | 16532.8 | -0.50% (n.s.) | [-1.20%, +0.47%] |
 | user (ms) | 4356.5 | 4328.4 | -0.34% (n.s.) | [-0.67%, +0.04%] |
 | system (ms) | 12323.2 | 12186.6 | -0.67% (n.s.) | [-1.73%, +0.84%] |
-| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
 | peak rss (MiB) | 458.4 | 453.0 | -1.03% | [-1.49%, -0.55%] |
 
 Cost to carry: 0 lines; no new dependencies.
@@ -1504,7 +1473,6 @@ Candidate: bounded parent-relative openat frontier
 | cpu (ms) | 16966.0 | 17105.7 | +1.23% (n.s.) | [-2.01%, +2.48%] |
 | user (ms) | 4446.4 | 4457.6 | +0.25% (n.s.) | [-0.75%, +1.49%] |
 | system (ms) | 12528.8 | 12657.1 | +1.44% (n.s.) | [-2.44%, +2.98%] |
-| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
 | peak rss (MiB) | 457.0 | 459.5 | +0.53% (regression) | [+0.31%, +1.11%] |
 
 Cost to carry: 0 lines; no new dependencies; new failure mode: A retained parent
@@ -1535,7 +1503,6 @@ Candidate: 256 KiB getattrlistbulk buffer
 | cpu (ms) | 28563.9 | 28307.3 | +0.08% (n.s.) | [-11.57%, +5.48%] |
 | user (ms) | 4729.7 | 4740.8 | -0.08% (n.s.) | [-1.31%, +1.19%] |
 | system (ms) | 23781.8 | 23545.8 | +0.04% (n.s.) | [-13.24%, +6.41%] |
-| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
 | peak rss (MiB) | 635.1 | 671.6 | +5.07% (n.s.) | [-2.25%, +15.49%] |
 
 Cost to carry: 0 lines; no new dependencies.
@@ -1798,7 +1765,6 @@ Candidate: inline analysis at or below 512 files and 8 MiB
 | cpu (ms) | 85.9 | 33.1 | -61.52% | [-65.64%, -56.77%] |
 | user (ms) | 17.4 | 15.0 | -13.07% | [-14.47%, -11.22%] |
 | system (ms) | 68.2 | 18.0 | -73.79% | [-76.85%, -69.87%] |
-| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
 | peak rss (MiB) | 5.2 | 8.1 | +56.44% (regression) | [+55.46%, +58.14%] |
 
 Other jobs, wall time: `content-cache-hit` +50.3% (regression), `content-disabled`
@@ -1832,7 +1798,6 @@ Candidate: skip prose-only collectors for code families
 | cpu (ms) | 71.7 | 73.3 | +2.13% (n.s.) | [-3.84%, +8.28%] |
 | user (ms) | 29.2 | 28.1 | -4.67% | [-6.06%, -2.87%] |
 | system (ms) | 42.2 | 45.0 | +8.02% (n.s.) | [-3.40%, +16.99%] |
-| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
 | peak rss (MiB) | 9.2 | 9.4 | +0.51% (n.s.) | [-1.89%, +2.29%] |
 
 Other jobs, wall time: `code-sloc-cache-hit` -0.6% (n.s.), `content-basic` -2.2% (n.s.),
@@ -1865,7 +1830,6 @@ Candidate: reserve up to the known bounded file size
 | cpu (ms) | 1321.5 | 1275.5 | -3.25% (n.s.) | [-10.20%, +3.13%] |
 | user (ms) | 870.7 | 864.4 | -0.77% (n.s.) | [-2.54%, +1.09%] |
 | system (ms) | 458.9 | 415.8 | -6.19% (n.s.) | [-26.63%, +7.87%] |
-| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
 | peak rss (MiB) | 15.4 | 15.6 | -0.05% (n.s.) | [-3.00%, +4.94%] |
 
 Other jobs, wall time: `document-cache-hit` +1.0% (n.s.).
@@ -1897,7 +1861,6 @@ Candidate: decode directly unless a UTF-8 carry is pending
 | cpu (ms) | 1293.8 | 1195.2 | -6.79% | [-8.67%, -5.21%] |
 | user (ms) | 851.5 | 745.5 | -12.24% | [-13.19%, -11.66%] |
 | system (ms) | 436.2 | 443.0 | +4.77% (n.s.) | [-1.58%, +7.58%] |
-| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
 | peak rss (MiB) | 15.3 | 13.9 | -9.12% | [-11.21%, -4.83%] |
 
 Cost to carry: 7 lines; no new dependencies.

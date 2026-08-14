@@ -98,14 +98,6 @@ experiment:
           ci95_high_pct: 166.314
           significant: false
           pairs: 16
-        blocked_ns:
-          control_median: 11112604.0
-          candidate_median: 0.0
-          change_pct: -100.0
-          ci95_low_pct: -100.0
-          ci95_high_pct: -100.0
-          significant: true
-          pairs: 16
         peak_rss_bytes:
           control_median: 33406976.0
           candidate_median: 36519936.0
@@ -158,14 +150,6 @@ experiment:
           ci95_high_pct: 168.583
           significant: false
           pairs: 16
-        blocked_ns:
-          control_median: 12462166.5
-          candidate_median: 0.0
-          change_pct: -100.0
-          ci95_low_pct: -100.0
-          ci95_high_pct: -100.0
-          significant: true
-          pairs: 16
         peak_rss_bytes:
           control_median: 33464320.0
           candidate_median: 36503552.0
@@ -217,14 +201,6 @@ experiment:
           ci95_low_pct: 145.793
           ci95_high_pct: 171.891
           significant: false
-          pairs: 16
-        blocked_ns:
-          control_median: 21250333.5
-          candidate_median: 0.0
-          change_pct: -100.0
-          ci95_low_pct: -100.0
-          ci95_high_pct: -100.0
-          significant: true
           pairs: 16
         peak_rss_bytes:
           control_median: 41918464.0

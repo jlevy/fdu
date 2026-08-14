@@ -263,7 +263,8 @@ journal gate ──► pass ──► replay since cursor ──► changed-dir 
                                      index.apply  (unchanged contract)
                                               │
                                               ▼
-                                     snapshot.save with new cursor
+                                     snapshot.save persists the pre-scan
+                                     or replay-advanced cursor
 ```
 
 The scoped revalidation reuses the sweep’s own emission logic bounded to a directory
@@ -303,7 +304,7 @@ CoreServices. Every row falls closed to the sweep:
 | # | Condition | Decision |
 | --- | --- | --- |
 | G1 | Not macOS, feature off, or `--revalidate=full` | full sweep |
-| G2 | Snapshot has no cursor (older format, or first save) | full sweep; write cursor on save |
+| G2 | Snapshot has no cursor (older format, or first save) | full sweep; persist its pre-scan cursor with the snapshot |
 | G3 | Root’s current volume UUID ≠ stored UUID (moved disk, container change, UUID unreadable) | full sweep |
 | G4 | Stored event ID > current volume event ID (regression: journal purged, clock wrapped) | full sweep |
 | G5 | Snapshot older than `max_journal_age` (default **24 hours**) | full sweep — load-bearing, not paranoia: the spike showed history is purged *silently*, so age is the only protection |
@@ -334,8 +335,8 @@ information: a snapshot whose scan crossed devices simply never carries a cursor
 journal_cursor: u8 tag        0 = none, 1 = fsevents-v1  (room for usn-v1 = 2)
 if fsevents-v1:
   volume_uuid: 16 bytes
-  event_id:    u64            FSEventsGetCurrentEventId() at save time
-  captured_at: i64 ns         wall clock at save, for G5
+  event_id:    u64            FSEventsGetCurrentEventId() immediately before the scan
+  captured_at: i64 ns         wall clock at the same pre-scan fence, for G5
 ```
 
 The cursor is captured **before** the scan that populates the index begins, not after it
@@ -359,9 +360,12 @@ snapshot like any other parse failure.
   The only module in the workspace allowed `unsafe`.
 - `crates/fdu/src/scan.rs` — `revalidate_dirs(index, dirs, config, sink)`: the bounded
   sweep. Reuses the existing per-directory emission; no new op kinds.
-- `crates/fdu/src/snapshot.rs` — format v3 fields, cursor capture on save.
+- `crates/fdu/src/snapshot.rs` — format v3 fields; encode and decode the cursor supplied
+  by the caller.
 - `crates/fdu/src/cli.rs` — wire the gate into the cached path; `--revalidate=auto|full`
   (default `auto`; `full` forces the sweep).
+  Capture the event ID and timestamp before a full scan begins, carry that fence with
+  the resulting index, and pass it to snapshot save for persistence.
   `--cache off` remains the explicit full-scan, no-snapshot policy and bypasses the
   journal path unchanged.
 - Feature `journal` in `crates/fdu/Cargo.toml`: gates `dep:fsevent-sys` (macOS only via
@@ -372,7 +376,8 @@ snapshot like any other parse failure.
 
 ### API changes
 
-Additive only. `snapshot::save`/`load` signatures unchanged (cursor handled internally).
+Additive only. `snapshot::save`/`load` signatures stay unchanged: the index carries the
+optional pre-scan or replay-advanced cursor, `save` encodes it, and `load` restores it.
 New public surface: `JournalCursor`, `GateDecision`, and `scan::revalidate_dirs`, all
 documented as macOS-accelerator plumbing with the sweep as the portable contract.
 
@@ -711,8 +716,8 @@ Phase 2’s acceptance should be measured at 500k+ or on a cold cache.
 
 ### Phase 1: Format and gate (mergeable alone; unblocks the block-format spike)
 
-- [ ] Snapshot format v3: cursor section, save-side capture stub (writes `none` on all
-  platforms), load-side decode, corrupt-cursor fails closed
+- [ ] Snapshot format v3: cursor section, encode-side cursor field stub (writes `none`
+  on all platforms), load-side decode, corrupt-cursor fails closed
 - [ ] `journal/mod.rs`: cursor types, gate decision table as a pure function,
   changed-set normalization; exhaustive unit tests for every gate row
 - [ ] Golden and round-trip tests: v2 loads as cursor-absent; v3 round-trips
@@ -732,7 +737,8 @@ Phase 2’s acceptance should be measured at 500k+ or on a cold cache.
   replay with deadline; scoped `#[allow(unsafe_code)]` with per-call safety comments
 - [ ] `revalidate_dirs` orchestration in scan.rs, feeding changed roots into exp-026’s
   bulk-backed subtree reconciler, plus `InvalidateSubtree` resolution for G8
-- [ ] CLI: gate wiring, `--revalidate` flag, save-side cursor capture on macOS
+- [ ] CLI: gate wiring and `--revalidate` flag; capture the cursor immediately before a
+  full scan and pass that pre-scan fence through to snapshot save on macOS
 - [ ] Integration tests (macOS CI leg): mutate-then-journal-revalidate equals fresh scan
   by engine digest; UUID mismatch, event-ID regression, and forced `MustScanSubDirs`
   each degrade correctly

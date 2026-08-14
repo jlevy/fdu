@@ -117,8 +117,14 @@ def _headline(run: Mapping[str, Any], arguments: argparse.Namespace) -> Any:
     comparison = _selected_comparison(run, arguments)
     if comparison is None:
         return None
-    entry = comparison["metrics"].get(arguments.primary_metric)
-    return entry["median_change_pct"] if entry else None
+    metrics = comparison["metrics"]
+    entry = metrics.get(arguments.primary_metric)
+    if entry is None:
+        available = ", ".join(sorted(metrics)) or "none"
+        raise ValueError(
+            f"comparison has no metric named {arguments.primary_metric!r}; it has {available}"
+        )
+    return entry["median_change_pct"]
 
 
 def _selected_comparison(run: Mapping[str, Any], arguments: argparse.Namespace) -> Any:
@@ -131,9 +137,11 @@ def _selected_comparison(run: Mapping[str, Any], arguments: argparse.Namespace) 
     if bool(arguments.control_variant) != bool(arguments.candidate_variant):
         raise ValueError("--control-variant and --candidate-variant must be given together")
 
-    statistics = run["statistics"].get(arguments.primary_job)
-    if not statistics:
-        return None
+    statistics_by_job = run["statistics"]
+    statistics = statistics_by_job.get(arguments.primary_job)
+    if statistics is None:
+        available = ", ".join(sorted(statistics_by_job)) or "none"
+        raise ValueError(f"run has no job named {arguments.primary_job!r}; it has {available}")
     comparisons = statistics["comparisons"]
 
     if arguments.control_variant and arguments.candidate_variant:

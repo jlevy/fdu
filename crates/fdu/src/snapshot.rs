@@ -1006,8 +1006,7 @@ mod tests {
         assert_eq!(restored.clock(), crate::Clock::ZERO);
         assert!(restored.since(crate::Clock::ZERO).deltas.is_empty());
         assert_eq!(restored.len(), original.len());
-        // Interned extension ids are assignment-ordered, so equality across two
-        // indexes is only meaningful through the resolved names.
+        // Public roll-ups resolve assignment-ordered extension ids to stable names.
         let (restored_total, original_total) = (restored.total(), original.total());
         assert_eq!(
             (restored_total.files, restored_total.dirs, restored_total.bytes),
@@ -1015,12 +1014,12 @@ mod tests {
         );
         assert_eq!(restored_total.allocated, original_total.allocated);
         assert_eq!(restored_total.newest_mtime_ns, original_total.newest_mtime_ns);
-        assert_eq!(restored.by_ext_named(restored_total), original.by_ext_named(original_total));
+        assert_eq!(restored_total.by_ext, original_total.by_ext);
         assert_eq!(restored.total().files, 3);
         assert_eq!(restored.total().dirs, 2);
         assert_eq!(restored.total().bytes, 157);
         assert_eq!(
-            restored.by_ext_named(restored.total())[".rs"],
+            restored.total().by_ext[".rs"],
             ExtTally { files: 2, bytes: 150, allocated: 1024 }
         );
         assert_eq!(

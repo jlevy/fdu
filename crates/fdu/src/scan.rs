@@ -1159,7 +1159,7 @@ impl DirectoryQueue {
     }
 
     /// Take up to [`DIR_CLAIM`] directories, blocking until there is work or the walk
-    /// is over. Returns false once no more work will ever arrive.
+    /// is over. Returns `None` once no more work will ever arrive.
     ///
     /// Time spent waiting is charged to `timing`: lock acquisition to `lock_wait_ns`
     /// when contended, condvar waits to `starved_ns`. The condvar span includes the
@@ -2479,9 +2479,8 @@ mod tests {
             assert_eq!(report.dirs_read, serial_report.dirs_read, "{threads} threads");
             assert_eq!(report.files_walked, serial_report.files_walked, "{threads} threads");
             assert_eq!(report.bytes_walked, serial_report.bytes_walked, "{threads} threads");
-            // Extension ids are interner handles assigned in first-seen order, which
-            // legitimately differs between serial and parallel arrival order; compare
-            // roll-ups through the named boundary, never by raw id.
+            // Public roll-ups carry extension names even though the internal merge path
+            // uses ids whose assignment order differs between serial and parallel walks.
             let (serial_total, parallel_total) = (serial.total(), parallel.total());
             assert_eq!(
                 (
@@ -2501,8 +2500,7 @@ mod tests {
                 "{threads} threads roll-up"
             );
             assert_eq!(
-                parallel.by_ext_named(parallel_total),
-                serial.by_ext_named(serial_total),
+                parallel_total.by_ext, serial_total.by_ext,
                 "{threads} threads per-extension roll-up"
             );
             assert_eq!(
@@ -2566,11 +2564,8 @@ mod tests {
             let (index, report) = scan_into_index(dir.path(), &config).expect("scan");
             assert_eq!(report.entries, expected_report.entries, "{order:?}/{threads}");
             assert_eq!(report.dirs_read, expected_report.dirs_read, "{order:?}/{threads}");
-            // Compare roll-ups through resolved extension names, not raw `RollUp`
-            // equality: interned `ExtId`s are assigned in first-encounter order, so
-            // two orders (or two thread counts) label the same tallies differently
-            // while meaning the same thing. Asserting on the raw map tests id
-            // assignment order, which is nondeterministic under a parallel walk.
+            // Public roll-ups resolve internal ids, so their named maps are stable even
+            // when traversal order changes id assignment.
             let (totals, expected_totals) = (index.total(), expected.total());
             assert_eq!(
                 (totals.files, totals.dirs, totals.bytes, totals.allocated),
@@ -2587,8 +2582,7 @@ mod tests {
                 "{order:?}/{threads} newest mtime"
             );
             assert_eq!(
-                index.by_ext_named(totals),
-                expected.by_ext_named(expected_totals),
+                totals.by_ext, expected_totals.by_ext,
                 "{order:?}/{threads} extension tallies"
             );
             assert_eq!(
@@ -2990,8 +2984,8 @@ mod tests {
         assert_eq!(total.files, 3);
         assert_eq!(total.dirs, 2);
         assert_eq!(total.bytes, 5 + 12 + 9);
-        assert_eq!(index.by_ext_named(total)[".rs"].files, 2);
-        assert_eq!(index.by_ext_named(total)[".txt"].files, 1);
+        assert_eq!(total.by_ext[".rs"].files, 2);
+        assert_eq!(total.by_ext[".txt"].files, 1);
 
         let src = index.rollup(Path::new("src")).expect("src");
         assert_eq!(src.files, 2);
@@ -3202,7 +3196,7 @@ mod tests {
     fn revalidate_is_a_no_op_against_an_unchanged_tree() {
         let dir = sample_tree();
         let (mut index, _) = scan_into_index(dir.path(), &ScanConfig::default()).expect("scan");
-        let before = index.total().clone();
+        let before = index.total();
 
         let mut deltas = Vec::new();
         revalidate(&index, &ScanConfig::default(), &mut |d| deltas.push(d)).expect("revalidate");
@@ -3212,14 +3206,14 @@ mod tests {
         }
 
         assert_eq!(unchanged, 5, "3 files + 2 dirs all already known");
-        assert_eq!(index.total(), &before);
+        assert_eq!(index.total(), before);
     }
 
     #[test]
     fn direct_reconciliation_counts_unchanged_entries_without_publishing_deltas() {
         let dir = sample_tree();
         let (mut index, _) = scan_into_index(dir.path(), &ScanConfig::default()).expect("scan");
-        let before_total = index.total().clone();
+        let before_total = index.total();
         let before_clock = index.clock();
         let mut deltas = Vec::new();
 
@@ -3232,7 +3226,7 @@ mod tests {
         assert_eq!(report.apply.unchanged, 5, "3 files + 2 dirs all already known");
         assert!(deltas.is_empty());
         assert_eq!(index.clock(), before_clock);
-        assert_eq!(index.total(), &before_total);
+        assert_eq!(index.total(), before_total);
     }
 
     #[test]
@@ -3262,7 +3256,6 @@ mod tests {
         assert_eq!(bulk_report.apply, portable_report.apply);
         assert_eq!(index_fingerprint(&bulk), index_fingerprint(&portable));
         assert_eq!(bulk.total(), portable.total());
-        assert_eq!(bulk.by_ext_named(bulk.total()), portable.by_ext_named(portable.total()));
     }
 
     #[test]
@@ -3341,8 +3334,7 @@ mod tests {
                         "{context}: roll-up differs"
                     );
                     assert_eq!(
-                        parallel.by_ext_named(parallel_total),
-                        serial.by_ext_named(serial_total),
+                        parallel_total.by_ext, serial_total.by_ext,
                         "{context}: extension roll-up differs"
                     );
                 }
@@ -3437,7 +3429,7 @@ mod tests {
         assert_eq!(index.total().bytes, expected.total().bytes);
         assert_eq!(index.total().allocated, expected.total().allocated);
         assert_eq!(index.total().newest_mtime_ns, expected.total().newest_mtime_ns);
-        assert_eq!(index.by_ext_named(index.total()), expected.by_ext_named(expected.total()));
+        assert_eq!(index.total().by_ext, expected.total().by_ext);
     }
 
     #[test]
@@ -3524,8 +3516,8 @@ mod tests {
         let total = index.total();
         assert_eq!(total.files, 3);
         assert_eq!(total.bytes, 20 + 9 + 3);
-        assert!(!index.by_ext_named(total).contains_key(".txt"));
-        assert_eq!(index.by_ext_named(total)[".md"].files, 1);
+        assert!(!total.by_ext.contains_key(".txt"));
+        assert_eq!(total.by_ext[".md"].files, 1);
     }
 
     #[test]

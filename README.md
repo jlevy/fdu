@@ -376,7 +376,7 @@ let (index, report) = open(Path::new("."), &OpenConfig::default())?;
 let total = index.total();
 println!("{} files, {} bytes", total.files, total.bytes);
 
-// Per-directory roll-ups are pre-computed: this is a field read, not a traversal.
+// Per-directory roll-ups are materialized from pre-computed state, with no tree walk.
 if let Some(src) = index.rollup(Path::new("src")) {
     println!("src/: {} files, newest {}", src.files, src.newest_mtime_ns);
 }
