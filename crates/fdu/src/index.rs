@@ -1546,6 +1546,61 @@ impl Index {
         true
     }
 
+    /// Insert one snapshot record beneath a parent whose id the caller already holds.
+    ///
+    /// The snapshot loader is not a producer.  It restores state that the delta contract
+    /// already arbitrated and serialized, in the order it was written, with parents
+    /// always preceding their children — so every fact [`apply_upsert`] rediscovers by
+    /// resolving a path is a fact the loader was handed.  Routing it through the
+    /// observation path made the loader pay, per record, a `PathBuf` join, an
+    /// `Observation` vector, a `normalize` vector, and a descent from the root through
+    /// one `BTreeMap` lookup per level, to arrive at a parent it had in a local variable.
+    /// A callgrind profile of a 450k-entry load put the allocator at about 27% of the
+    /// work and path-component iteration at about 15%; this removes both.
+    ///
+    /// It stays `pub(crate)` and takes an `EntryId` rather than a path precisely so it
+    /// cannot become a second mutation surface: no external producer can reach it, and
+    /// the guarantee that a loaded index equals the saved one is enforced by round-trip
+    /// tests rather than by making deserialization impersonate a producer.
+    ///
+    /// Returns `None` when the parent is not a live directory or already holds `name`,
+    /// which is how a corrupt snapshot fails closed.
+    pub(crate) fn insert_loaded_child(
+        &mut self,
+        parent: EntryId,
+        name: OsString,
+        kind: EntryKind,
+        attrs: Attrs,
+    ) -> Option<EntryId> {
+        let parent_entry = self.try_entry(parent)?;
+        if parent_entry.kind != EntryKind::Dir || parent_entry.children.contains_key(&name) {
+            return None;
+        }
+        let source = self.applying_source;
+        let ext_id = (kind == EntryKind::File)
+            .then(|| derive_ext(&name).map(|ext| self.intern_ext(&ext)))
+            .flatten();
+        let id = self.alloc(Entry {
+            parent: Some(parent),
+            name: name.clone(),
+            ext_id,
+            source,
+            kind,
+            attrs,
+            children: BTreeMap::new(),
+            rollup: RollUp::default(),
+            revision: 0,
+            children_revision: 0,
+        });
+        self.insert_child(parent, name, id);
+        // Roll-ups stay eager. The same profile put `merge_upward` at about 3.5%, so
+        // deferring it to a bottom-up pass would buy little and would introduce a window
+        // in which the index is structurally complete but numerically wrong.
+        let contribution = self.contribution(id);
+        self.merge_upward(Some(parent), &contribution);
+        Some(id)
+    }
+
     fn apply_remove(&mut self, path: &Path, stats: &mut ApplyStats) -> bool {
         let Some(id) = self.lookup(path) else {
             stats.unchanged += 1;
