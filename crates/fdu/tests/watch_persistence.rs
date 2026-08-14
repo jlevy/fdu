@@ -25,6 +25,10 @@ fn snapshot_fingerprint(cache_dir: &Path) -> Option<(u64, std::time::SystemTime)
     let entries = fs::read_dir(cache_dir.join("fdu")).ok()?;
     entries
         .flatten()
+        // An atomic save writes a non-`.fdu` sibling temporary before renaming it over
+        // the snapshot. Observing that temporary is not proof that the replacement has
+        // committed, and killing the child at that point can preserve the old snapshot.
+        .filter(|entry| entry.path().extension().is_some_and(|extension| extension == "fdu"))
         .filter_map(|entry| entry.metadata().ok())
         .filter(|meta| meta.len() > 0)
         .find_map(|meta| Some((meta.len(), meta.modified().ok()?)))

@@ -29,7 +29,7 @@
 
 use std::path::Path;
 
-use crate::types::{Error, Result};
+use crate::engine_contract::{Error, Result};
 
 /// How many alternatives one pattern may expand to before it is rejected.
 ///

@@ -3,21 +3,24 @@
 .DEFAULT_GOAL := help
 
 CARGO ?= cargo
+NODE ?= node
 NPM ?= npm
 MSRV ?= 1.85.0
 NODE_INSTALL_STAMP := node_modules/.package-lock.json
 
-.PHONY: help build release test rust-test test-golden performance-probe test-performance golden-update check supply-chain fix fmt fmt-check clippy docs docs-format docs-format-check lib-only msrv audit npm-audit python-concurrency python-smoke clean cli perf-help verify-beads
+.PHONY: help build release test rust-test test-golden content-selfcheck performance-probe test-performance golden-update check supply-chain rust-module-names fix fmt fmt-check clippy docs docs-format docs-format-check lib-only msrv audit npm-audit python-concurrency python-smoke clean cli perf-help verify-beads
 
 help:
 	@echo "make build      Debug build of the core library and CLI, all features"
 	@echo "make release    Optimized build of the core library and CLI"
 	@echo "make test       Run Rust, CLI golden, and performance-harness tests"
 	@echo "make test-golden  Build and compare the CLI golden contract"
+	@echo "make content-selfcheck  Analyze an archive of tracked repository files"
 	@echo "make test-performance  Test the performance harness and every fdu probe job"
 	@echo "make golden-update  Regenerate intentional golden changes, then compare"
 	@echo "make check      Handoff gate: tests, audits, docs, and installed-wheel smoke"
 	@echo "make supply-chain  Verify release age, provenance, pins, and CI trust controls"
+	@echo "make rust-module-names  Check Rust source filenames for ambiguity"
 	@echo "make msrv       Compile all features and test the core contract on Rust $(MSRV)"
 	@echo "make fix        Apply formatting and machine-applicable lint fixes"
 	@echo "make audit      Dependency advisory and license audit (needs cargo-deny)"
@@ -30,6 +33,8 @@ help:
 	@echo "make perf-baseline  Fingerprint the reference tree named by PERF_TREE"
 	@echo "make perf-profile   Attribute time to functions on a symbol-bearing build"
 	@echo "make perf-compare   Measure a candidate against CONTROL, interleaved and paired"
+	@echo "make perf-content-profile  Attribute basic content, cache-hit, and query time"
+	@echo "make perf-content-compare  Compare content jobs in 12 paired trials"
 	@echo "make perf-test      Test the real-tree harness itself"
 	@echo "make perf-ledger    Regenerate the experiment ledger from its artifacts"
 
@@ -39,13 +44,16 @@ build:
 release:
 	$(CARGO) build --locked --release -p fdu --all-features
 
-test: rust-test test-golden test-performance
+test: rust-test test-golden content-selfcheck test-performance
 
 rust-test:
 	$(CARGO) test --locked --all-features
 
 test-golden: build $(NODE_INSTALL_STAMP)
 	$(NPM) run test:golden
+
+content-selfcheck: build
+	$(NODE) scripts/content-selfcheck.mjs
 
 performance-probe:
 	$(CARGO) build --locked -p fdu --example perf_probe --no-default-features
@@ -64,7 +72,7 @@ $(NODE_INSTALL_STAMP): package.json package-lock.json .npmrc
 	$(NPM) ci
 
 # Everything CI enforces, in the order that fails fastest.
-check: supply-chain fmt-check clippy test docs docs-format-check lib-only msrv audit npm-audit python-concurrency python-smoke
+check: supply-chain rust-module-names fmt-check clippy test docs docs-format-check lib-only msrv audit npm-audit python-concurrency python-smoke
 
 # Verify that synced beads match the local database, field by field.
 #
@@ -78,6 +86,10 @@ verify-beads:
 supply-chain:
 	$(NPM) run test:supply-chain
 	$(NPM) run check:supply-chain
+
+rust-module-names:
+	$(NODE) --test scripts/check-rust-module-names.test.mjs
+	$(NODE) scripts/check-rust-module-names.mjs
 
 fmt:
 	$(CARGO) fmt --all
@@ -113,7 +125,7 @@ npm-audit: $(NODE_INSTALL_STAMP)
 
 python-concurrency:
 	uv run --directory crates/fdu-py --frozen --only-group dev \
-		cargo test --locked -p fdu-py --lib --no-default-features
+		python tests/run_concurrency.py
 
 python-smoke:
 	cd crates/fdu-py && wheel_dir="$$(mktemp -d "$${TMPDIR:-/tmp}/fdu-wheel.XXXXXX")" && \
@@ -165,7 +177,7 @@ PERF_PROFILING := target/profiling/examples/perf_probe
 PERF_UV := PYTHONDONTWRITEBYTECODE=1 uv run --project benchmarks --frozen
 PERF_RUN := $(PERF_UV) python -m benchmarks.realtree
 
-.PHONY: perf-probe-release perf-probe-profiling perf-baseline perf-profile perf-compare perf-compare-tools perf-record perf-test perf-ledger perf-schema perf-schema-check
+.PHONY: perf-probe-release perf-probe-profiling perf-baseline perf-profile perf-compare perf-content-profile perf-content-compare perf-compare-tools perf-record perf-test perf-ledger perf-schema perf-schema-check
 
 perf-probe-release:
 	$(CARGO) build --locked --release -p fdu --example perf_probe --no-default-features
@@ -185,6 +197,13 @@ perf-profile: perf-probe-profiling
 		--scratch $(PERF_SCRATCH) \
 		--output $(PERF_RESULTS)/profile-$(or $(NAME),latest).json
 
+perf-content-profile: perf-probe-profiling
+	$(PERF_RUN) profile --root $(PERF_TREE) --binary $(PERF_PROFILING) \
+		--job content-basic --job content-cache-hit --job code-sloc \
+		--job code-sloc-cache-hit --job text-prose --job markdown-prose \
+		--job document-cache-hit --job content-query \
+		--label $(or $(NAME),content-latest)
+
 # Is the candidate faster than the control? Set CONTROL to a saved reference binary.
 CONTROL ?= $(PERF_RELEASE)
 perf-compare: perf-probe-release
@@ -197,6 +216,17 @@ perf-compare: perf-probe-release
 		--scratch $(PERF_SCRATCH) --output-dir $(PERF_RESULTS) \
 		--baseline-fingerprint $(PERF_BASELINE) \
 		--name $(or $(NAME),adhoc)
+
+perf-content-compare: perf-probe-release
+	$(PERF_RUN) measure --root $(PERF_TREE) --label $(PERF_LABEL) \
+		--variant "control=$(CONTROL)" \
+		--variant "candidate=$(PERF_RELEASE)" \
+		--job content-basic --job content-cache-hit --job code-sloc \
+		--job code-sloc-cache-hit --job text-prose --job markdown-prose \
+		--job document-cache-hit --job content-query \
+		--trials $(or $(TRIALS),12) \
+		--baseline-fingerprint $(PERF_BASELINE) \
+		--name $(or $(NAME),content-adhoc)
 
 # Compare one immutable fdu release binary with external tools on the same live tree.
 # TOOL_ARGS supplies repeated `--tool name=/path/to/binary` arguments. Results must

@@ -17,11 +17,13 @@ use std::path::Path;
 
 use clap::builder::styling::{AnsiColor, Style as AnsiStyle};
 
+use crate::classify::{DetectionConfidence, DetectionSource, human_language_name};
+use crate::content::{CoverageReason, MetricValues};
+use crate::engine_contract::{EntryKind, Freshness};
 use crate::query::{
-    FileRow, Report, ReportSource, Section, SizeMetric, SummaryRow, TreeNode, TypeRow, ViewSpec,
-    format_rfc3339,
+    FileRow, MetricGroup, MetricRow, MetricSummary, Report, ReportSource, Section, SizeMetric,
+    SummaryRow, TreeNode, TypeRow, ViewSpec, document_words, format_rfc3339,
 };
-use crate::types::{EntryKind, Freshness};
 
 /// Directory names in a tree, so structure reads at a glance.
 const STYLE_DIRECTORY: AnsiStyle = AnsiColor::Cyan.on_default();
@@ -32,11 +34,16 @@ const STYLE_BAR: AnsiStyle = AnsiColor::Green.on_default();
 /// Extensions in a type breakdown.
 const STYLE_TYPE: AnsiStyle = AnsiColor::Green.on_default();
 
+/// Established label width for non-language metric summaries.
+const TEXT_METRIC_LABEL_WIDTH: usize = 18;
+
 /// Machine-output schema identity.
 ///
 /// Any change to a field's name, type, or meaning bumps this, and a golden test fails if
 /// the schema moves without it — the versioning is the promise, not the intention.
 pub const REPORT_SCHEMA: &str = "fdu.report/1";
+/// Machine schema used when a generic metric-summary section is present.
+pub const CONTENT_REPORT_SCHEMA: &str = "fdu.report/2";
 
 /// How a report is serialized.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
@@ -97,7 +104,10 @@ fn render_text(report: &Report, color: bool) -> String {
         }
         match section {
             Section::Tree(root) => render_text_tree(&mut out, root, report.size, color),
-            Section::Types(rows) => render_text_types(&mut out, rows, report.size, color),
+            Section::Extensions(rows) => render_text_types(&mut out, rows, report.size, color),
+            Section::Metrics { view, summary } => {
+                render_text_metrics(&mut out, *view, summary, report.size, color);
+            }
             // A flat listing prints one path per line and nothing else, so it pipes
             // straight into xargs and diffs cleanly against another run.
             Section::Files(rows) => {
@@ -109,6 +119,103 @@ fn render_text(report: &Report, color: bool) -> String {
         }
     }
     out
+}
+
+fn render_text_metrics(
+    out: &mut String,
+    view: ViewSpec,
+    summary: &MetricSummary,
+    size: SizeMetric,
+    color: bool,
+) {
+    let longest_label = summary
+        .rows
+        .iter()
+        .map(|row| human_metric_label(view, &row.id).chars().count())
+        .max()
+        .unwrap_or_default();
+    let label_width = if view == ViewSpec::Languages {
+        longest_label.saturating_add(1)
+    } else {
+        TEXT_METRIC_LABEL_WIDTH.max(longest_label)
+    };
+    for row in &summary.rows {
+        let selected = pick(size, row.bytes, row.allocated);
+        let percentage = if row.share.denominator == 0 {
+            "—".to_string()
+        } else {
+            format!("{:.1}%", ratio(row.share.numerator, row.share.denominator) * 100.0)
+        };
+        let mut suffix = format!("{} {}", row.files, plural(row.files, "file", "files"));
+        if row.metrics.physical_lines > 0 {
+            if row.metrics.code_lines > 0 || row.metrics.comment_lines > 0 {
+                let _ = write!(
+                    suffix,
+                    ", {} lines ({} code, {} comment, {} blank)",
+                    row.metrics.physical_lines,
+                    row.metrics.code_lines,
+                    row.metrics.comment_lines,
+                    row.metrics.code_blank_lines
+                );
+            } else {
+                let _ = write!(
+                    suffix,
+                    ", {} lines ({} nonblank, {} blank)",
+                    row.metrics.physical_lines, row.metrics.nonblank_lines, row.metrics.blank_lines
+                );
+            }
+        }
+        let words = document_words(row);
+        if words > 0 {
+            let page_tenths = words.saturating_mul(10) / summary.words_per_page;
+            let _ = write!(
+                suffix,
+                ", {} words ({}.{:01} pages)",
+                words,
+                page_tenths / 10,
+                page_tenths % 10
+            );
+        }
+        if row.generated_files > 0 {
+            let _ = write!(suffix, ", {} generated", row.generated_files);
+        }
+        if row.vendored_files > 0 {
+            let _ = write!(suffix, ", {} vendored", row.vendored_files);
+        }
+        if row.documentation_files > 0 {
+            let _ = write!(suffix, ", {} documentation", row.documentation_files);
+        }
+        for (reason, count) in &row.coverage {
+            if *reason != CoverageReason::Analyzed {
+                let _ = write!(suffix, ", {count} {}", human_coverage_label(*reason));
+            }
+        }
+        let label = human_metric_label(view, &row.id);
+        let padding = " ".repeat(label_width.saturating_sub(label.chars().count()));
+        let _ = writeln!(
+            out,
+            "{:>10}  {:>6}  {}{} {suffix}",
+            human_bytes(selected),
+            percentage,
+            paint(label, STYLE_TYPE, color),
+            padding,
+        );
+    }
+}
+
+fn human_metric_label(view: ViewSpec, id: &str) -> &str {
+    if view == ViewSpec::Languages { human_language_name(id) } else { id }
+}
+
+fn human_coverage_label(reason: CoverageReason) -> &'static str {
+    match reason {
+        CoverageReason::Analyzed => "analyzed",
+        CoverageReason::Binary => "binary",
+        CoverageReason::InvalidUtf8 => "invalid UTF-8",
+        CoverageReason::Unsupported => "unsupported",
+        CoverageReason::IoError => "I/O error",
+        CoverageReason::ChangedDuringRead => "changed during read",
+    }
 }
 
 /// Render a tree section with fixed size, bar, and percentage columns.
@@ -228,7 +335,7 @@ fn render_jsonl(report: &Report) -> String {
 
 /// The provenance fields every machine format carries.
 fn write_envelope_json(out: &mut String, report: &Report) {
-    let _ = write!(out, "  \"schema\": {}", quote(REPORT_SCHEMA));
+    let _ = write!(out, "  \"schema\": {}", quote(report_schema(report)));
     let _ = write!(out, ",\n  \"generator\": {}", quote(&generator()));
     let _ = write!(out, ",\n  \"root\": {}", quote(&report.root.to_string_lossy()));
     if let Some(raw) = raw_identity_object(&report.root) {
@@ -248,6 +355,30 @@ fn write_envelope_json(out: &mut String, report: &Report) {
         let _ = write!(out, "{}\n    {}", if index > 0 { "," } else { "" }, quote(error));
     }
     out.push_str(if report.errors.is_empty() { "]" } else { "\n  ]" });
+    if report_schema(report) == CONTENT_REPORT_SCHEMA {
+        let _ = write!(out, ",\n  \"analysis\": {}", analysis_json(report.analysis.as_ref()));
+    }
+}
+
+fn analysis_json(analysis: Option<&crate::query::ContentReportMetadata>) -> String {
+    let Some(analysis) = analysis else { return "null".to_string() };
+    let mut analyzers = String::from("[");
+    for (index, (id, version)) in analysis.provenance.analyzers.iter().enumerate() {
+        let _ = write!(
+            analyzers,
+            "{}{{\"id\": {}, \"version\": {}}}",
+            if index > 0 { ", " } else { "" },
+            quote(id.0),
+            version.0
+        );
+    }
+    analyzers.push(']');
+    format!(
+        "{{\"profile\": {}, \"type_rules_fingerprint\": {}, \"options_fingerprint\": {}, \"analyzers\": {analyzers}}}",
+        quote(analysis_profile_label(analysis.profile)),
+        analysis.provenance.type_rules_fingerprint,
+        analysis.provenance.options_fingerprint.0,
+    )
 }
 
 /// One section as a JSON object.
@@ -258,8 +389,8 @@ fn section_json(section: &Section, _indent: usize) -> String {
         Section::Tree(root) => {
             let _ = write!(out, "\"tree\": {}", indent(&tree_json(root), 2).trim_start());
         }
-        Section::Types(rows) => {
-            let _ = write!(out, "\"types\": [");
+        Section::Extensions(rows) => {
+            let _ = write!(out, "\"extensions\": [");
             for (index, row) in rows.iter().enumerate() {
                 let _ = write!(
                     out,
@@ -273,6 +404,9 @@ fn section_json(section: &Section, _indent: usize) -> String {
             }
             out.push_str(if rows.is_empty() { "]" } else { "\n  ]" });
         }
+        Section::Metrics { summary, .. } => {
+            let _ = write!(out, "\"metrics\": {}", metric_summary_json(summary));
+        }
         Section::Files(rows) => {
             let _ = write!(out, "\"files\": [");
             for (index, row) in rows.iter().enumerate() {
@@ -285,6 +419,109 @@ fn section_json(section: &Section, _indent: usize) -> String {
         }
     }
     out.push_str("\n}");
+    out
+}
+
+fn metric_summary_json(summary: &MetricSummary) -> String {
+    let mut out = String::new();
+    let _ = write!(
+        out,
+        "{{\"group\": {}, \"share_metric\": {}, \"words_per_page\": {}, \"total\": {}, \"rows\": [",
+        quote(metric_group_label(summary.group)),
+        quote(summary.share_metric.as_str()),
+        summary.words_per_page,
+        metric_row_json(&summary.total, summary.words_per_page)
+    );
+    for (index, row) in summary.rows.iter().enumerate() {
+        let _ = write!(
+            out,
+            "{}\n  {}",
+            if index > 0 { "," } else { "" },
+            metric_row_json(row, summary.words_per_page)
+        );
+    }
+    out.push_str(if summary.rows.is_empty() { "]}" } else { "\n]}" });
+    out
+}
+
+fn metric_row_json(row: &MetricRow, words_per_page: u64) -> String {
+    format!(
+        "{{\"id\": {}, \"family\": {}, \"files\": {}, \"bytes\": {}, \"allocated\": {}, \"analyzed_files\": {}, \"share\": {{\"numerator\": {}, \"denominator\": {}}}, \"metrics\": {}, \"coverage\": {}, \"detection\": {}, \"pages\": {{\"words\": {}, \"words_per_page\": {}}}}}",
+        quote(&row.id),
+        quote(row.family.as_str()),
+        row.files,
+        row.bytes,
+        row.allocated,
+        row.analyzed_files,
+        row.share.numerator,
+        row.share.denominator,
+        metric_values_json(row.metrics, document_words(row)),
+        coverage_json(&row.coverage),
+        detection_json(row),
+        document_words(row),
+        words_per_page,
+    )
+}
+
+fn detection_json(row: &MetricRow) -> String {
+    let mut sources = String::from("{");
+    for (index, (source, count)) in row.detection_sources.iter().enumerate() {
+        let _ = write!(
+            sources,
+            "{}{}: {}",
+            if index > 0 { ", " } else { "" },
+            quote(source.as_str()),
+            count
+        );
+    }
+    sources.push('}');
+    let mut confidence = String::from("{");
+    for (index, (level, count)) in row.detection_confidence.iter().enumerate() {
+        let _ = write!(
+            confidence,
+            "{}{}: {}",
+            if index > 0 { ", " } else { "" },
+            quote(level.as_str()),
+            count
+        );
+    }
+    confidence.push('}');
+    format!(
+        "{{\"sources\": {sources}, \"confidence\": {confidence}, \"flags\": {{\"generated\": {}, \"vendored\": {}, \"documentation\": {}}}}}",
+        row.generated_files, row.vendored_files, row.documentation_files
+    )
+}
+
+fn metric_values_json(metrics: MetricValues, document_words: u64) -> String {
+    format!(
+        "{{\"physical_lines\": {}, \"blank_lines\": {}, \"nonblank_lines\": {}, \"code_lines\": {}, \"comment_lines\": {}, \"code_blank_lines\": {}, \"raw_words\": {}, \"logical_words\": {}, \"paragraphs\": {}, \"visible_words\": {}, \"visible_logical_words\": {}, \"document_words\": {}}}",
+        metrics.physical_lines,
+        metrics.blank_lines,
+        metrics.nonblank_lines,
+        metrics.code_lines,
+        metrics.comment_lines,
+        metrics.code_blank_lines,
+        metrics.raw_words,
+        metrics.logical_word_stats.logical_words(),
+        metrics.paragraphs,
+        metrics.visible_words,
+        metrics.visible_logical_word_stats.logical_words(),
+        document_words,
+    )
+}
+
+fn coverage_json(coverage: &std::collections::BTreeMap<CoverageReason, u64>) -> String {
+    let mut out = String::from("{");
+    for (index, (reason, count)) in coverage.iter().enumerate() {
+        let _ = write!(
+            out,
+            "{}{}: {}",
+            if index > 0 { ", " } else { "" },
+            quote(coverage_label(*reason)),
+            count
+        );
+    }
+    out.push('}');
     out
 }
 
@@ -383,7 +620,7 @@ fn tree_json(node: &TreeNode) -> String {
 /// Render the report as YAML.
 fn render_yaml(report: &Report) -> String {
     let mut out = String::new();
-    let _ = writeln!(out, "schema: {}", yaml_scalar(REPORT_SCHEMA));
+    let _ = writeln!(out, "schema: {}", yaml_scalar(report_schema(report)));
     let _ = writeln!(out, "generator: {}", yaml_scalar(&generator()));
     let _ = writeln!(out, "root: {}", yaml_scalar(&report.root.to_string_lossy()));
     match report.scan_started_at {
@@ -404,6 +641,34 @@ fn render_yaml(report: &Report) -> String {
             let _ = writeln!(out, "  - {}", yaml_scalar(error));
         }
     }
+    if report_schema(report) == CONTENT_REPORT_SCHEMA {
+        match report.analysis.as_ref() {
+            None => out.push_str("analysis: null\n"),
+            Some(analysis) => {
+                out.push_str("analysis:\n");
+                let _ = writeln!(out, "  profile: {}", analysis_profile_label(analysis.profile));
+                let _ = writeln!(
+                    out,
+                    "  type_rules_fingerprint: {}",
+                    analysis.provenance.type_rules_fingerprint
+                );
+                let _ = writeln!(
+                    out,
+                    "  options_fingerprint: {}",
+                    analysis.provenance.options_fingerprint.0
+                );
+                if analysis.provenance.analyzers.is_empty() {
+                    out.push_str("  analyzers: []\n");
+                } else {
+                    out.push_str("  analyzers:\n");
+                    for (id, version) in &analysis.provenance.analyzers {
+                        let _ = writeln!(out, "    - id: {}", id.0);
+                        let _ = writeln!(out, "      version: {}", version.0);
+                    }
+                }
+            }
+        }
+    }
     out.push_str("reports:\n");
 
     for section in &report.sections {
@@ -413,11 +678,11 @@ fn render_yaml(report: &Report) -> String {
                 out.push_str("    tree:\n");
                 yaml_tree(&mut out, root, 6);
             }
-            Section::Types(rows) => {
+            Section::Extensions(rows) => {
                 if rows.is_empty() {
-                    out.push_str("    types: []\n");
+                    out.push_str("    extensions: []\n");
                 } else {
-                    out.push_str("    types:\n");
+                    out.push_str("    extensions:\n");
                     for row in rows {
                         let _ = writeln!(out, "      - extension: {}", yaml_scalar(&row.extension));
                         let _ = writeln!(out, "        files: {}", row.files);
@@ -426,6 +691,7 @@ fn render_yaml(report: &Report) -> String {
                     }
                 }
             }
+            Section::Metrics { summary, .. } => yaml_metrics(&mut out, summary),
             Section::Files(rows) => {
                 if rows.is_empty() {
                     out.push_str("    files: []\n");
@@ -457,6 +723,94 @@ fn render_yaml(report: &Report) -> String {
         }
     }
     out
+}
+
+fn yaml_metrics(out: &mut String, summary: &MetricSummary) {
+    out.push_str("    metrics:\n");
+    let _ = writeln!(out, "      group: {}", metric_group_label(summary.group));
+    let _ = writeln!(out, "      share_metric: {}", summary.share_metric.as_str());
+    let _ = writeln!(out, "      words_per_page: {}", summary.words_per_page);
+    out.push_str("      total:\n");
+    yaml_metric_row(out, &summary.total, summary.words_per_page, 8, false);
+    if summary.rows.is_empty() {
+        out.push_str("      rows: []\n");
+    } else {
+        out.push_str("      rows:\n");
+        for row in &summary.rows {
+            yaml_metric_row(out, row, summary.words_per_page, 8, true);
+        }
+    }
+}
+
+fn yaml_metric_row(out: &mut String, row: &MetricRow, words_per_page: u64, pad: usize, item: bool) {
+    let indent = " ".repeat(pad);
+    let lead = if item { format!("{indent}- ") } else { indent.clone() };
+    let rest = if item { format!("{indent}  ") } else { indent };
+    let _ = writeln!(out, "{lead}id: {}", yaml_scalar(&row.id));
+    let _ = writeln!(out, "{rest}family: {}", row.family.as_str());
+    let _ = writeln!(out, "{rest}files: {}", row.files);
+    let _ = writeln!(out, "{rest}bytes: {}", row.bytes);
+    let _ = writeln!(out, "{rest}allocated: {}", row.allocated);
+    let _ = writeln!(out, "{rest}analyzed_files: {}", row.analyzed_files);
+    let _ = writeln!(out, "{rest}share_numerator: {}", row.share.numerator);
+    let _ = writeln!(out, "{rest}share_denominator: {}", row.share.denominator);
+    let _ = writeln!(out, "{rest}physical_lines: {}", row.metrics.physical_lines);
+    let _ = writeln!(out, "{rest}blank_lines: {}", row.metrics.blank_lines);
+    let _ = writeln!(out, "{rest}nonblank_lines: {}", row.metrics.nonblank_lines);
+    let _ = writeln!(out, "{rest}code_lines: {}", row.metrics.code_lines);
+    let _ = writeln!(out, "{rest}comment_lines: {}", row.metrics.comment_lines);
+    let _ = writeln!(out, "{rest}code_blank_lines: {}", row.metrics.code_blank_lines);
+    let _ = writeln!(out, "{rest}raw_words: {}", row.metrics.raw_words);
+    let _ =
+        writeln!(out, "{rest}logical_words: {}", row.metrics.logical_word_stats.logical_words());
+    let _ = writeln!(out, "{rest}paragraphs: {}", row.metrics.paragraphs);
+    let _ = writeln!(out, "{rest}visible_words: {}", row.metrics.visible_words);
+    let _ = writeln!(
+        out,
+        "{rest}visible_logical_words: {}",
+        row.metrics.visible_logical_word_stats.logical_words()
+    );
+    let _ = writeln!(out, "{rest}document_words: {}", document_words(row));
+    let _ = writeln!(out, "{rest}page_words: {}", document_words(row));
+    let _ = writeln!(out, "{rest}words_per_page: {words_per_page}");
+    if row.coverage.is_empty() {
+        let _ = writeln!(out, "{rest}coverage: {{}}");
+    } else {
+        let _ = writeln!(out, "{rest}coverage:");
+        for (reason, count) in &row.coverage {
+            let _ = writeln!(out, "{rest}  {}: {count}", coverage_label(*reason));
+        }
+    }
+    let _ = writeln!(out, "{rest}detection:");
+    yaml_detection_map(out, "sources", &row.detection_sources, &rest, DetectionSource::as_str);
+    yaml_detection_map(
+        out,
+        "confidence",
+        &row.detection_confidence,
+        &rest,
+        DetectionConfidence::as_str,
+    );
+    let _ = writeln!(out, "{rest}  flags:");
+    let _ = writeln!(out, "{rest}    generated: {}", row.generated_files);
+    let _ = writeln!(out, "{rest}    vendored: {}", row.vendored_files);
+    let _ = writeln!(out, "{rest}    documentation: {}", row.documentation_files);
+}
+
+fn yaml_detection_map<K: Ord + Copy>(
+    out: &mut String,
+    name: &str,
+    values: &std::collections::BTreeMap<K, u64>,
+    indent: &str,
+    label: impl Fn(K) -> &'static str,
+) {
+    if values.is_empty() {
+        let _ = writeln!(out, "{indent}  {name}: {{}}");
+        return;
+    }
+    let _ = writeln!(out, "{indent}  {name}:");
+    for (key, count) in values {
+        let _ = writeln!(out, "{indent}    {}: {count}", label(*key));
+    }
 }
 
 /// Render a tree node as YAML at a given indent.
@@ -568,8 +922,50 @@ fn view_label(view: ViewSpec) -> &'static str {
     match view {
         ViewSpec::Tree => "tree",
         ViewSpec::Types => "types",
+        ViewSpec::Extensions => "extensions",
+        ViewSpec::Families => "families",
+        ViewSpec::Languages => "languages",
+        ViewSpec::Documents => "documents",
         ViewSpec::Files => "files",
         ViewSpec::Summary => "summary",
+    }
+}
+
+fn report_schema(report: &Report) -> &'static str {
+    if report.analysis.is_some()
+        || report.sections.iter().any(|section| matches!(section, Section::Metrics { .. }))
+    {
+        CONTENT_REPORT_SCHEMA
+    } else {
+        REPORT_SCHEMA
+    }
+}
+
+fn metric_group_label(group: MetricGroup) -> &'static str {
+    match group {
+        MetricGroup::Type => "type",
+        MetricGroup::Family => "family",
+    }
+}
+
+fn coverage_label(reason: CoverageReason) -> &'static str {
+    match reason {
+        CoverageReason::Analyzed => "analyzed",
+        CoverageReason::Binary => "binary",
+        CoverageReason::InvalidUtf8 => "invalid_utf8",
+        CoverageReason::Unsupported => "unsupported",
+        CoverageReason::IoError => "io_error",
+        CoverageReason::ChangedDuringRead => "changed_during_read",
+    }
+}
+
+fn analysis_profile_label(profile: crate::content::AnalysisProfile) -> &'static str {
+    match profile {
+        crate::content::AnalysisProfile::Disabled => "none",
+        crate::content::AnalysisProfile::Basic => "basic",
+        crate::content::AnalysisProfile::Code => "code",
+        crate::content::AnalysisProfile::Documents => "documents",
+        crate::content::AnalysisProfile::Full => "full",
     }
 }
 
@@ -769,9 +1165,10 @@ fn raw_identity_object(path: &Path) -> Option<String> {
 pub fn render_cache_status(statuses: &[crate::CacheStatus], format: Format) -> String {
     let row = |status: &crate::CacheStatus| match &status.snapshot {
         Some(info) => format!(
-            "{{\"path\": {}, \"bytes\": {}, \"recognized\": true, \"root\": {}, \"entries\": {}}}",
+            "{{\"path\": {}, \"bytes\": {}, \"content_bytes\": {}, \"recognized\": true, \"root\": {}, \"entries\": {}}}",
             quote(&status.path.to_string_lossy()),
             status.bytes,
+            status.content_bytes.map_or_else(|| "null".to_string(), |bytes| bytes.to_string()),
             quote(&info.root.to_string_lossy()),
             info.entries
         ),
@@ -789,6 +1186,13 @@ pub fn render_cache_status(statuses: &[crate::CacheStatus], format: Format) -> S
             for status in statuses {
                 let _ = write!(out, "\n  - path: {}", yaml_scalar(&status.path.to_string_lossy()));
                 let _ = write!(out, "\n    bytes: {}", status.bytes);
+                let _ = write!(
+                    out,
+                    "\n    content_bytes: {}",
+                    status
+                        .content_bytes
+                        .map_or_else(|| "null".to_string(), |bytes| bytes.to_string())
+                );
                 match &status.snapshot {
                     Some(info) => {
                         let _ = write!(out, "\n    recognized: true");
@@ -823,8 +1227,8 @@ pub fn render_cache_status(statuses: &[crate::CacheStatus], format: Format) -> S
 mod tests {
     use super::*;
     use crate::Index;
+    use crate::engine_contract::{Attrs, Observation, Op, ScanScope};
     use crate::query::{Bound, Provenance, Query, Selection, report};
-    use crate::types::{Attrs, Observation, Op, ScanScope};
     use std::path::PathBuf;
     use std::time::{Duration, UNIX_EPOCH};
 
@@ -862,7 +1266,7 @@ mod tests {
             .expect("apply");
         report(
             &index,
-            &Query { selection: Selection::default(), views: views.to_vec() },
+            &Query { selection: Selection::default(), views: views.to_vec(), ..Query::default() },
             &Provenance {
                 scan_started_at: Some(UNIX_EPOCH + Duration::from_secs(1_786_386_151)),
                 generated_at: UNIX_EPOCH + Duration::from_secs(1_786_386_152),
@@ -907,7 +1311,16 @@ mod tests {
     #[test]
     fn every_view_renders_in_every_format() {
         // Formats are serializations, not features: no view may lack one.
-        for view in [ViewSpec::Tree, ViewSpec::Types, ViewSpec::Files, ViewSpec::Summary] {
+        for view in [
+            ViewSpec::Tree,
+            ViewSpec::Extensions,
+            ViewSpec::Types,
+            ViewSpec::Families,
+            ViewSpec::Languages,
+            ViewSpec::Documents,
+            ViewSpec::Files,
+            ViewSpec::Summary,
+        ] {
             let report = fixture(&[view]);
             for format in [Format::Text, Format::Json, Format::Jsonl, Format::Yaml] {
                 let rendered = render(&report, format, false);
@@ -933,13 +1346,80 @@ mod tests {
     }
 
     #[test]
+    fn language_text_uses_human_names_and_aligns_suffixes_with_color() {
+        let mut index = Index::new_with_scope("/root", ScanScope::default());
+        index
+            .apply(&Observation::new(vec![
+                Op::Upsert {
+                    path: PathBuf::from("main.cpp"),
+                    kind: EntryKind::File,
+                    attrs: attrs(100, 10),
+                },
+                Op::Upsert {
+                    path: PathBuf::from("main.js"),
+                    kind: EntryKind::File,
+                    attrs: attrs(100, 20),
+                },
+            ]))
+            .expect("apply");
+        let report = report(
+            &index,
+            &Query { views: vec![ViewSpec::Languages], ..Query::default() },
+            &Provenance {
+                scan_started_at: None,
+                generated_at: UNIX_EPOCH,
+                source: ReportSource::ColdScan,
+                complete: true,
+                errors: Vec::new(),
+            },
+        );
+
+        let plain = render(&report, Format::Text, false);
+        assert!(plain.contains("C++"), "{plain}");
+        assert!(plain.contains("JavaScript"), "{plain}");
+        let plain_suffixes = plain
+            .lines()
+            .map(|line| line.find("1 file").expect("file count suffix"))
+            .collect::<Vec<_>>();
+        assert_eq!(plain_suffixes[0], plain_suffixes[1], "{plain}");
+
+        let colored = render(&report, Format::Text, true);
+        let colored_suffixes = colored
+            .lines()
+            .map(|line| line.find("1 file").expect("colored file count suffix"))
+            .collect::<Vec<_>>();
+        assert_eq!(colored_suffixes[0], colored_suffixes[1], "{colored:?}");
+
+        let json = render(&report, Format::Json, false);
+        assert!(json.contains("\"id\": \"cpp\""), "{json}");
+        assert!(json.contains("\"id\": \"javascript\""), "{json}");
+        assert!(!json.contains("\"id\": \"C++\""), "{json}");
+        assert!(!json.contains("\"id\": \"JavaScript\""), "{json}");
+    }
+
+    #[test]
     fn json_output_is_well_formed_for_every_view() {
-        for view in [ViewSpec::Tree, ViewSpec::Types, ViewSpec::Files, ViewSpec::Summary] {
+        for view in [
+            ViewSpec::Tree,
+            ViewSpec::Extensions,
+            ViewSpec::Types,
+            ViewSpec::Families,
+            ViewSpec::Languages,
+            ViewSpec::Documents,
+            ViewSpec::Files,
+            ViewSpec::Summary,
+        ] {
             let json = render(&fixture(&[view]), Format::Json, false);
             assert!(is_valid_json(&json), "unbalanced JSON for {view:?}:\n{json}");
         }
         let all = render(
-            &fixture(&[ViewSpec::Tree, ViewSpec::Types, ViewSpec::Files, ViewSpec::Summary]),
+            &fixture(&[
+                ViewSpec::Tree,
+                ViewSpec::Extensions,
+                ViewSpec::Types,
+                ViewSpec::Files,
+                ViewSpec::Summary,
+            ]),
             Format::Json,
             false,
         );
@@ -986,6 +1466,7 @@ mod tests {
             &Query {
                 selection: Selection { depth: Bound::All, ..Selection::default() },
                 views: vec![ViewSpec::Tree],
+                ..Query::default()
             },
             &Provenance {
                 scan_started_at: None,
@@ -1010,7 +1491,7 @@ mod tests {
     #[test]
     fn jsonl_emits_one_document_per_line() {
         let rendered =
-            render(&fixture(&[ViewSpec::Types, ViewSpec::Summary]), Format::Jsonl, false);
+            render(&fixture(&[ViewSpec::Extensions, ViewSpec::Summary]), Format::Jsonl, false);
         let lines: Vec<&str> = rendered.lines().collect();
         assert_eq!(lines.len(), 3, "one envelope plus one line per section");
         for line in &lines {
@@ -1035,6 +1516,19 @@ mod tests {
         // Fails loudly when the schema string moves, so a field rename cannot ship
         // without a deliberate version bump and a golden update.
         assert_eq!(REPORT_SCHEMA, "fdu.report/1");
+        assert_eq!(CONTENT_REPORT_SCHEMA, "fdu.report/2");
+    }
+
+    #[test]
+    fn metric_sections_upgrade_schema_while_metadata_sections_stay_on_v1() {
+        let metadata = render(&fixture(&[ViewSpec::Tree]), Format::Json, false);
+        assert!(metadata.contains("\"schema\": \"fdu.report/1\""));
+        assert!(!metadata.contains("\"analysis\""));
+
+        let metrics = render(&fixture(&[ViewSpec::Types]), Format::Json, false);
+        assert!(metrics.contains("\"schema\": \"fdu.report/2\""));
+        assert!(metrics.contains("\"analysis\": null"));
+        assert!(metrics.contains("\"share\": {\"numerator\":"));
     }
 
     /// The change stream carries the same promise the report does.

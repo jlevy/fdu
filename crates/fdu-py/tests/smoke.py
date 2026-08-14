@@ -32,7 +32,7 @@ def main() -> None:
     (root / "src").mkdir()
     (root / "src" / "main.rs").write_text("fn main() {}")
 
-    index = fdu_py.scan(str(root))
+    index = fdu_py.scan(root)
 
     # Rust preserves Windows canonical verbatim paths (`\\?\`), while Python's
     # realpath commonly returns the conventional spelling. Compare the filesystem
@@ -42,6 +42,16 @@ def main() -> None:
     assert index.freshness == "fresh", index.freshness
     assert index.errors == [], index.errors
     assert len(index) == 4, f"root + 2 files + 1 dir, got {len(index)}"
+
+    missing = root / "missing"
+    try:
+        fdu_py.scan(missing)
+    except OSError as error:
+        assert error.errno is not None, error
+        assert os.path.samefile(pathlib.Path(error.filename).parent, root), error
+        assert pathlib.Path(error.filename).name == missing.name, error
+    else:
+        raise AssertionError("a missing scan root must raise OSError with its path")
 
     total = index.total()
     assert total["files"] == 2, total
@@ -160,6 +170,28 @@ def main() -> None:
         else:
             with open(raw_root + b"/data.bin", "wb") as raw_file:
                 raw_file.write(b"raw")
+            raw_name = b"source-\xfe.RS"
+            with open(raw_root + b"/" + raw_name, "wb") as raw_file:
+                raw_file.write(b"fn main() {}")
+
+            # PathBuf follows Python's path-string protocol. Decode through the native
+            # filesystem codec so undecodable bytes become surrogateescape code points
+            # that PyO3 can round-trip to the original Unix OsString.
+            raw_index = fdu_py.scan(os.fsdecode(raw_root))
+            assert os.fsencode(raw_index.root) == os.path.realpath(raw_root), raw_index.root
+            raw_children = raw_index.children()
+            assert raw_children is not None
+            assert raw_name in {os.fsencode(child["name"]) for child in raw_children}, raw_children
+            assert raw_index.total()["by_extension"][".rs"]["files"] == 1
+
+            raw_mark = raw_index.clock
+            added_name = b"notes-\xfd.md"
+            with open(raw_root + b"/" + added_name, "wb") as raw_file:
+                raw_file.write(b"notes")
+            raw_index.refresh()
+            raw_ops = raw_index.since(raw_mark)["ops"]
+            assert added_name in {os.fsencode(op["path"]) for op in raw_ops}, raw_ops
+
             raw_scan = subprocess.run(
                 [os.fsencode(entrypoint), b"--cache", b"off", b"--format", b"json", raw_root],
                 check=False,
@@ -241,23 +273,53 @@ def main() -> None:
     )
     assert paths == ["src/lib.rs", "src/main.rs"], paths
 
-    types = index.report(views=["types"])["reports"][0]["types"]
-    extensions = sorted(row["extension"] for row in types)
+    extension_rows = index.report(views=["extensions"])["reports"][0]["extensions"]
+    extensions = sorted(row["extension"] for row in extension_rows)
     assert extensions == [".md", ".rs"], extensions
+
+    types = index.report(views=["types"])["reports"][0]["metrics"]
+    assert sorted(row["id"] for row in types["rows"]) == ["markdown", "rust"], types
+    assert types["total"]["detection"] == {
+        "sources": {"extension": 3},
+        "confidence": {"certain": 3},
+        "flags": {"generated": 0, "vendored": 0, "documentation": 0},
+    }, types
+
+    languages_report = index.report(views=["languages"])
+    assert languages_report["analysis"] is None, languages_report
+    languages = languages_report["reports"][0]["metrics"]
+    assert languages["share_metric"] == "allocated_bytes", languages
+    assert [(row["id"], row["files"]) for row in languages["rows"]] == [
+        ("rust", 2)
+    ], languages
+
+    analyzed = fdu_py.scan(str(query_root), analyze="basic")
+    documents = analyzed.report(views=["documents"], words_per_page=250)
+    assert documents["analysis"]["profile"] == "basic", documents
+    document_metrics = documents["reports"][0]["metrics"]
+    markdown = document_metrics["rows"][0]
+    assert markdown["physical_lines"] == 1, markdown
+    assert markdown["raw_words"] == 1, markdown
+    assert markdown["words_per_page"] == 250, markdown
 
     tree = index.report(views=["tree"], depth="all")["reports"][0]["tree"]
     assert tree["name"] == ".", tree
     assert any(child["name"] == "src" for child in tree["children"]), tree
 
     # Several views come back in request order, from one index.
-    ordered = index.report(views=["types", "summary"])["reports"]
-    assert [section["view"] for section in ordered] == ["types", "summary"], ordered
+    ordered = index.report(views=["extensions", "types", "summary"])["reports"]
+    assert [section["view"] for section in ordered] == [
+        "extensions",
+        "types",
+        "summary",
+    ], ordered
 
     # Value grammars are shared, so a bad value is rejected the same way everywhere.
     for bad in [
         {"min_size": "10X"},
         {"modified_since": "1.5h"},
         {"views": ["bogus"]},
+        {"views": ["documents"]},
         {"sort": "sideways"},
     ]:
         try:
@@ -273,11 +335,33 @@ def main() -> None:
     fdu_py.open(str(cache_root), cache="auto")
     status = fdu_py.cache_status(str(cache_root))
     assert status is not None and status["recognized"], status
+    cached_index = fdu_py.open(str(cache_root), cache="only")
+    assert cached_index.complete is False, cached_index.freshness
+    assert cached_index.report(views=["summary"])["complete"] is True
     # Rust keeps Windows verbatim paths (\\?\); compare filesystem identity rather than
     # weakening native long-path behavior to satisfy a string.
     assert os.path.samefile(status["root"], cache_root), status
     assert fdu_py.clear_cache(str(cache_root)) is True
     assert fdu_py.cache_status(str(cache_root))["recognized"] is False
+
+    # Expected coverage exclusions remain queryable without becoming operational errors.
+    partial_root = pathlib.Path(tempfile.mkdtemp())
+    (partial_root / "invalid.txt").write_bytes(b"valid prefix\xff")
+    partial = fdu_py.open(str(partial_root), cache="auto", analyze="basic")
+    assert partial.complete is True, partial.errors
+    assert partial.errors == [], partial.errors
+
+    cached_partial = fdu_py.open(str(partial_root), cache="only", analyze="basic")
+    assert cached_partial.complete is False, cached_partial.errors
+    assert cached_partial.errors == [], cached_partial.errors
+    partial_report = cached_partial.report(views=["types"], size="apparent")
+    assert partial_report["complete"] is True, partial_report
+    assert partial_report["errors"] == [], partial_report
+    coverage = partial_report["reports"][0]["metrics"]["total"]["coverage"]
+    assert coverage == {"invalid_utf8": 1}, coverage
+    refreshed = cached_partial.refresh()
+    assert refreshed["complete"] is True, refreshed
+    assert refreshed["errors"] == [], refreshed
 
     # Cache policy is the same closed vocabulary the CLI accepts.
     try:

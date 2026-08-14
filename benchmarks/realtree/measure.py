@@ -74,12 +74,17 @@ class Job:
     argv: Sequence[str]
     start_state: str
     description: str
+    allowed_exit_codes: Sequence[int] = (0,)
+    allow_incomplete: bool = False
     needs_snapshot: bool = False
     verify_oracle: bool = True
     #: The job writes the snapshot itself, so it needs a path but not a prepared
     #: file — and the path must be empty at the start of every trial, or the job
     #: would be measured overwriting rather than creating.
     writes_snapshot: bool = False
+    #: Probe mode used by untimed snapshot preparation. Content-cache jobs need both
+    #: the metadata snapshot and its independently versioned content sidecar.
+    snapshot_preparation_mode: str = "snapshot-save"
 
 
 @dataclass
@@ -148,6 +153,101 @@ class Sample:
 #: cases. Dropping it on macOS needs root, so a run that does not opt into
 #: ``--purge`` records ``os_cache: "warm-steady"`` and means it.
 PROBE_JOBS: Dict[str, Job] = {
+    "code-sloc": Job(
+        id="code-sloc",
+        argv=("{binary}", "code-sloc", "--root", "{root}"),
+        start_state="cold",
+        description="Analyze common-language code with code-sloc-v1 after metadata setup.",
+        allowed_exit_codes=(0, 2),
+        allow_incomplete=True,
+    ),
+    "code-sloc-cache-hit": Job(
+        id="code-sloc-cache-hit",
+        argv=(
+            "{binary}",
+            "code-sloc-cache-hit",
+            "--root",
+            "{root}",
+            "--snapshot",
+            "{snapshot}",
+        ),
+        start_state="warm",
+        description="Load code-sloc-v1 metrics entirely from compatible sidecars.",
+        needs_snapshot=True,
+        snapshot_preparation_mode="code-sloc-seed",
+    ),
+    "content-basic": Job(
+        id="content-basic",
+        argv=("{binary}", "content-basic", "--root", "{root}"),
+        start_state="cold",
+        description="Analyze every eligible file with content-basic-v1 after metadata setup.",
+    ),
+    "content-binary-gate": Job(
+        id="content-binary-gate",
+        argv=("{binary}", "content-binary-gate", "--root", "{root}"),
+        start_state="cold",
+        description="Exercise early binary admission on a binary-heavy immutable tree.",
+    ),
+    "content-cache-hit": Job(
+        id="content-cache-hit",
+        argv=(
+            "{binary}",
+            "content-cache-hit",
+            "--root",
+            "{root}",
+            "--snapshot",
+            "{snapshot}",
+        ),
+        start_state="warm",
+        description="Load metadata and basic content entirely from compatible sidecars.",
+        needs_snapshot=True,
+        snapshot_preparation_mode="content-seed",
+    ),
+    "content-query": Job(
+        id="content-query",
+        argv=("{binary}", "content-query", "--root", "{root}", "--queries", "100"),
+        start_state="warm",
+        description="Build type, family, language, and document summaries 100 times.",
+    ),
+    "content-disabled": Job(
+        id="content-disabled",
+        argv=("{binary}", "content-disabled", "--root", "{root}"),
+        start_state="cold",
+        description="Call the disabled content boundary after metadata setup.",
+    ),
+    "document-cache-hit": Job(
+        id="document-cache-hit",
+        argv=(
+            "{binary}",
+            "document-cache-hit",
+            "--root",
+            "{root}",
+            "--snapshot",
+            "{snapshot}",
+        ),
+        start_state="warm",
+        description="Load reader-visible document metrics from compatible sidecars.",
+        needs_snapshot=True,
+        snapshot_preparation_mode="document-seed",
+    ),
+    "markdown-prose": Job(
+        id="markdown-prose",
+        argv=("{binary}", "markdown-prose", "--root", "{root}"),
+        start_state="cold",
+        description=(
+            "Analyze Markdown with raw, logical, reader-visible, paragraph, and page "
+            "sufficient statistics after metadata setup."
+        ),
+    ),
+    "text-prose": Job(
+        id="text-prose",
+        argv=("{binary}", "text-prose", "--root", "{root}"),
+        start_state="cold",
+        description=(
+            "Analyze plain text with raw and normalized words, paragraphs, and page "
+            "sufficient statistics after metadata setup."
+        ),
+    ),
     "cold-scan-index": Job(
         id="cold-scan-index",
         argv=("{binary}", "scan-index", "--root", "{root}"),
@@ -350,7 +450,14 @@ def _prepare_snapshots(
             if path.exists():
                 path.unlink()
             argv = _expand(
-                ("{binary}", "snapshot-save", "--root", "{root}", "--snapshot", "{snapshot}"),
+                (
+                    "{binary}",
+                    job.snapshot_preparation_mode,
+                    "--root",
+                    "{root}",
+                    "--snapshot",
+                    "{snapshot}",
+                ),
                 binary=variant.path,
                 root=root,
                 snapshot=path,
@@ -415,13 +522,15 @@ def _measure_once(
     reasons: List[str] = []
     if result["timed_out"]:
         reasons.append("command timed out")
-    if result["exit_code"] != 0:
+    if result["exit_code"] not in job.allowed_exit_codes:
         reasons.append(f"command exited with {result['exit_code']}")
 
     probe: Dict[str, Any] = {}
     component_ns: Optional[int] = None
     if variant.kind == "fdu-probe":
-        probe, probe_reasons = _read_probe_output(result["stdout"])
+        probe, probe_reasons = _read_probe_output(
+            result["stdout"], allow_incomplete=job.allow_incomplete
+        )
         reasons.extend(probe_reasons)
         component_ns = probe.get("component_ns")
         if job.verify_oracle and probe:
@@ -454,12 +563,12 @@ def _measure_once(
         probe={
             key: value
             for key, value in probe.items()
-            if key in {"component_ns", "attribution", "mode", "source"}
+            if key in {"component_ns", "attribution", "mode", "source", "summary"}
         },
     )
 
 
-def _read_probe_output(stdout: bytes):
+def _read_probe_output(stdout: bytes, *, allow_incomplete: bool = False):
     reasons: List[str] = []
     text = stdout.decode("utf-8", errors="replace").strip()
     if not text:
@@ -474,7 +583,7 @@ def _read_probe_output(stdout: bytes):
         reasons.append(f"unexpected probe schema {document.get('schema')!r}")
     summary = document.get("summary")
     if isinstance(summary, dict):
-        if summary.get("complete") is not True:
+        if summary.get("complete") is not True and not allow_incomplete:
             reasons.append("probe reported an incomplete traversal")
         if summary.get("errors"):
             reasons.append(f"probe reported {summary['errors']} traversal errors")

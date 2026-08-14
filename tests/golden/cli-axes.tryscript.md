@@ -38,13 +38,28 @@ $ fdu --cache off --view summary --size apparent project
 ? 0
 ```
 
-### Types Groups by Derived Extension
+### Types Use Stable Classification IDs
+
+Exact filenames, compound extensions, and ordinary extensions resolve through the
+compiled type rules.
+The extensionless `Makefile` therefore remains visible as `make`.
+
+```console
+$ fdu --cache off --view types --size apparent project
+     128 B   48.7%  archive            1 file
+      71 B   27.0%  markdown           2 files, 2 documentation
+      36 B   13.7%  rust               2 files
+      28 B   10.6%  make               1 file
+? 0
+```
+
+### Extensions Preserve the Original Raw Grouping
 
 Compound extensions fold to their full tail, so `archive.tar.gz` is `.tar.gz` rather
 than `.gz`.
 
 ```console
-$ fdu --cache off --view types --size apparent project
+$ fdu --cache off --view extensions --size apparent project
      128 B  .tar.gz      1 file
       71 B  .md          2 files
       36 B  .rs          2 files
@@ -83,7 +98,7 @@ $ fdu --cache off --view tree --size apparent --depth all project
 $ fdu --cache off --view summary,types --size apparent --limit 1 project
      263 B  6 files, 3 directories
 
-     128 B  .tar.gz      1 file
+     128 B   48.7%  archive            1 file
 ? 0
 ```
 
@@ -194,8 +209,8 @@ $ fdu --cache off --view summary --format json --size apparent project
 
 ```console
 $ fdu --cache off --view types --format jsonl --size apparent --limit 1 project
-{"schema": "fdu.report/1", "generator": "fdu 0.0.1", "root": "[SCAN_PATH]", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "source": "cold_scan", "freshness": "fresh", "complete": true, "errors": []}
-{"view": "types", "types": [{"extension": ".tar.gz", "files": 1, "bytes": 128, "allocated": [ALLOCATED]}]}
+{"schema": "fdu.report/2", "generator": "fdu 0.0.1", "root": "[SCAN_PATH]", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "source": "cold_scan", "freshness": "fresh", "complete": true, "errors": [], "analysis": null}
+{"view": "types", "metrics": {"group": "type", "share_metric": "apparent_bytes", "words_per_page": 250, "total": {"id": "total", "family": "unknown", "files": 6, "bytes": 263, "allocated": [ALLOCATED], "analyzed_files": 0, "share": {"numerator": 263, "denominator": 263}, "metrics": {"physical_lines": 0, "blank_lines": 0, "nonblank_lines": 0, "code_lines": 0, "comment_lines": 0, "code_blank_lines": 0, "raw_words": 0, "logical_words": 0, "paragraphs": 0, "visible_words": 0, "visible_logical_words": 0, "document_words": 0}, "coverage": {}, "detection": {"sources": {"exact_filename": 1, "compound_extension": 1, "extension": 4}, "confidence": {"certain": 6}, "flags": {"generated": 0, "vendored": 0, "documentation": 2}}, "pages": {"words": 0, "words_per_page": 250}}, "rows": [{"id": "archive", "family": "binary", "files": 1, "bytes": 128, "allocated": [ALLOCATED], "analyzed_files": 0, "share": {"numerator": 128, "denominator": 263}, "metrics": {"physical_lines": 0, "blank_lines": 0, "nonblank_lines": 0, "code_lines": 0, "comment_lines": 0, "code_blank_lines": 0, "raw_words": 0, "logical_words": 0, "paragraphs": 0, "visible_words": 0, "visible_logical_words": 0, "document_words": 0}, "coverage": {}, "detection": {"sources": {"compound_extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 0}}, "pages": {"words": 0, "words_per_page": 250}}]}}
 ? 0
 ```
 
@@ -231,7 +246,7 @@ An agent should be able to correct a command from its rejection alone.
 
 ```console
 $ fdu --cache off --view bogus project
-fdu: invalid --view "bogus": expected one of tree, types, files, summary
+fdu: invalid --view "bogus": expected one of tree, extensions, types, families, languages, documents, files, summary
 ? 2
 ```
 

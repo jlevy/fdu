@@ -8,8 +8,8 @@
 
 use std::path::Path;
 
-use crate::query::glob::Pattern;
-use crate::types::EntryKind;
+use crate::engine_contract::EntryKind;
+use crate::query::query_glob::Pattern;
 
 /// Which size metric a report answers in.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]

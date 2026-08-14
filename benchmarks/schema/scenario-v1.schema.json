@@ -215,6 +215,18 @@
         },
         "job": {
           "enum": [
+            "code-sloc-cold",
+            "code-sloc-cache-hit",
+            "content-basic-cold",
+            "content-basic-warm-fs",
+            "content-binary-gate",
+            "content-cache-hit",
+            "content-churn",
+            "content-disabled",
+            "content-query",
+            "detect-ambiguous",
+            "detect-resolved",
+            "selfhost-content",
             "scan-producer",
             "scan-index",
             "snapshot-save",

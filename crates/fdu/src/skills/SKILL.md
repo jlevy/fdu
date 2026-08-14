@@ -14,7 +14,22 @@ current directory.
 
 ## Run fdu
 
-Use the local command when it is available:
+Start with the report that answers the question:
+
+```bash
+fdu --view languages PATH                 # detected language sizes; metadata only
+fdu --analyze code --view languages PATH  # add standard LOC; reads content
+fdu --view types PATH                     # all file types; metadata only
+fdu PATH                                  # folder-size tree; metadata only
+fdu --cache off --view summary PATH       # one totals row; no retained index
+```
+
+`--analyze` chooses what may be read and `--view` chooses what is printed.
+The two language commands differ only on the analysis axis: the first uses byte shares
+without content reads, while the second adds code, comment, and blank-line metrics.
+Use `--size apparent` when logical file lengths are wanted instead of allocated bytes.
+
+For a bounded machine-readable tree, use:
 
 ```bash
 fdu --format json --view tree --depth 2 --limit 20 PATH
@@ -36,22 +51,50 @@ There are no subcommands: the grammar is always “report on a path”.
 | --- | --- | --- |
 | Scope | What is scanned and cached? | `PATH`, `--scan-depth N` |
 | Selection | Which entries does this query consider? | `--include`, `--exclude`, `--min-size`, `--modified-since`, `--modified-before`, `--kind`, `--depth`, `-n/--limit`, `--sort`, `--reverse`, `--size` |
-| View | Which roll-up is reported? | `--view tree,types,files,summary` |
+| View | Which roll-up is reported? | `--view tree,extensions,types,families,languages,documents,files,summary` |
 | Format | How is it serialized? | `--format text\|json\|jsonl\|yaml`, `--color` |
-| Mode | How is the cache used? | `--cache auto\|refresh\|read-only\|only\|off` |
+| Mode | How is work performed? | `--cache auto\|refresh\|read-only\|only\|off`, `--analyze none\|basic\|code\|documents\|full` |
 
 Scope versus selection is the distinction that matters: scope decides what is scanned
 and cached, so one cache serves every query, while selection filters the retained index
 at query time. Narrowing a selection never costs a rescan.
 
+Cost has three layers.
+`--cache off --view summary PATH` is the one exact composition that retains only
+aggregate tallies and no index.
+Ordinary metadata requests retain the reusable index but never read regular-file
+contents. Any non-`none` `--analyze` profile opts into streaming reads through every
+eligible file and a separate profile-scoped sidecar.
+A repeated run with the same profile and semantic settings reuses unchanged content
+records. Coverage is profile-scoped too: an unsupported deeper analyzer leaves byte
+metadata visible but does not retain a separate lower-level metric record for that file.
+
 ## Pick the View, Then Shape It
 
 - `--view tree` (default) for per-directory roll-ups.
-- `--view types` for an extension breakdown.
+- `--view extensions` for the original raw-extension breakdown.
+- `--view types` for stable detected file types and exact byte shares.
+- `--view families` for code, prose, markup, data, binary, and unknown roll-ups.
+- `--view languages` for code-family rows and byte shares from path-only detection.
+- `--view documents` for prose metrics; it requires any enabled analysis profile.
 - `--view files` for a flat listing; in text output it prints one path per line and
   nothing else, so it pipes directly into other commands.
 - `--view summary` for one aggregate row.
-- Several views in one run share one scan: `--view summary,types`.
+- Several views in one run share one scan: `--view summary,types,families`.
+
+Add `--analyze basic` to stream physical, blank, and nonblank lines and raw prose words.
+Add `--analyze code` to the language view for standard LOC, comment, and code-blank
+partitions across supported common languages; the percentage column then uses code lines
+instead of bytes. Use `--analyze documents --view documents` for normalized prose words,
+paragraphs, aggregate-derived pages, and reader-visible Markdown that excludes
+destinations and code.
+`--analyze full` computes both families in one streaming pass.
+Use `--analysis-workers` to bound concurrent reads and `--words-per-page` to control
+page derivation. Analysis never truncates a file or excludes it because of size.
+Invalid UTF-8, binary data, and unsupported SLOC languages remain visible as normal
+coverage outcomes. Only I/O failures, files changed during a read, or stale commits make
+analysis operationally partial.
+Content analysis is currently one-shot and cannot be combined with `--watch`.
 
 Common shapes are compositions rather than dedicated flags:
 
@@ -95,6 +138,9 @@ Check the process exit status and these fields:
 - `complete` and `errors` before trusting totals
 - `freshness` and `source` before presenting data as current
 - `truncated` on a tree node before treating it as exhaustive
+- `coverage` before presenting a metric summary as complete
+- `detection.sources`, `detection.confidence`, and `detection.flags` before treating a
+  deep-detected type or origin label as exact
 
 `source` is `cold_scan`, `warm_revalidate`, or `cache_only`. Only `--cache only` can
 return `freshness: stale`, and it says so rather than implying currency; it fails
@@ -116,6 +162,12 @@ Sizes and timestamps need one stat per entry, because an in-place edit changes a
 without changing any directory.
 Questions answerable from names alone need only one stat per directory.
 Adding metrics within a tier is free; crossing a tier boundary is what costs.
+
+Exact names and ordinary extensions remain path-only classifications.
+When analysis is enabled, unresolved files and ambiguous `.h` headers may use bounded
+shebang, modeline, literal, or signature probes.
+Do not collapse their provenance into an unqualified language claim; retain the report’s
+source and confidence fields when summarizing or transforming machine output.
 
 Run `fdu --help` for the complete flag, cache, color, scope, and exit contract.
 

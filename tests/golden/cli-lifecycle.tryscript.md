@@ -48,7 +48,7 @@ The header carries the answer.
 
 ```console
 $ fdu --cache-status project
-[CACHE_FILE]  10 entries, [BYTES] bytes  [SCAN_PATH]
+[CACHE_FILE]  10 entries, [BYTES] metadata bytes, 0 content bytes  [SCAN_PATH]
 ? 0
 ```
 
@@ -60,7 +60,7 @@ Agents get cache observability without a second schema style.
 $ fdu --cache-status --format json project
 {
   "caches": [
-    {"path": "[CACHE_FILE]", "bytes": [BYTES], "recognized": true, "root": "[SCAN_PATH]", "entries": 10}
+    {"path": "[CACHE_FILE]", "bytes": [BYTES], "content_bytes": null, "recognized": true, "root": "[SCAN_PATH]", "entries": 10}
   ]
 }
 ? 0

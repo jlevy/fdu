@@ -20,11 +20,11 @@ use std::fs;
 use std::path::{Component, Path, PathBuf};
 
 use crate::ApplyStats;
-use crate::index::{Index, IndexHandle, collect_child_expectations};
-use crate::types::{
+use crate::engine_contract::{
     AppliedDelta, Attrs, EntryKind, Error, Observation, ObservationOp, Op, PathExpectation,
     PathState, Result, ScanScope,
 };
+use crate::index::{Index, IndexHandle, collect_child_expectations};
 
 // Keep the FFI exception at the platform boundary. The rest of the engine, including
 // every consumer of these observations, remains under the workspace's unsafe-code
@@ -59,9 +59,6 @@ const RECONCILE_WAVE_DIRECTORIES: usize = 1024;
 
 /// Identity of the current built-in ignore policy. No ignore rules exist yet.
 const IGNORE_RULES_FINGERPRINT: u64 = 0;
-
-/// Identity of the current compound-extension classifier.
-const TYPE_RULES_FINGERPRINT: u64 = 1;
 
 /// Identity of the fixed stat-tier reducer set.
 const REDUCERS_FINGERPRINT: u64 = 1;
@@ -183,7 +180,7 @@ impl ScanConfig {
             follow_symlinks: self.follow_symlinks,
             one_filesystem: self.one_filesystem,
             ignore_rules_fingerprint: IGNORE_RULES_FINGERPRINT,
-            type_rules_fingerprint: TYPE_RULES_FINGERPRINT,
+            type_rules_fingerprint: crate::classify::type_rule_fingerprint(),
             reducers_fingerprint: REDUCERS_FINGERPRINT,
         }
     }
@@ -2225,7 +2222,7 @@ fn kind_from(meta: &fs::Metadata) -> EntryKind {
 }
 
 #[cfg(unix)]
-fn attrs_from(meta: &fs::Metadata) -> Attrs {
+pub(crate) fn attrs_from(meta: &fs::Metadata) -> Attrs {
     use std::os::unix::fs::MetadataExt;
     Attrs {
         size: meta.size(),
@@ -2245,7 +2242,7 @@ fn compose_ns(secs: i64, nanos: i64) -> i64 {
 }
 
 #[cfg(not(unix))]
-fn attrs_from(meta: &fs::Metadata) -> Attrs {
+pub(crate) fn attrs_from(meta: &fs::Metadata) -> Attrs {
     let mtime_ns = meta.modified().map(system_time_ns).unwrap_or(0);
     Attrs {
         size: meta.len(),

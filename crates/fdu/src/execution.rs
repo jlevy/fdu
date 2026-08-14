@@ -40,18 +40,22 @@ pub(crate) struct ReportPlan {
 
 /// Derive the least-retention plan that can answer `query` under `config`.
 ///
-/// A summary reducer is legal only when no snapshot can participate, the sole requested
-/// view is an unfiltered summary, and the caller asks for a one-shot report through this
-/// API.  [`crate::open`] and live sessions still promise an index and therefore never use
-/// this planner.  Any future requirement the compact tier cannot prove falls closed to
-/// [`RetainedState::FullIndex`].
+/// A summary reducer is legal only when no snapshot can participate, no content analysis
+/// is requested, the sole requested view is an unfiltered summary, and the caller asks for
+/// a one-shot report through this API.  [`crate::open`] and live sessions still promise an
+/// index and therefore never use this planner.  Any future requirement the compact tier
+/// cannot prove falls closed to [`RetainedState::FullIndex`].
 pub(crate) fn plan_report(config: &OpenConfig, query: &Query) -> ReportPlan {
     let cache_cannot_participate = config.policy == CachePolicy::Off
         || (config.cache_path.is_none() && config.policy != CachePolicy::Only);
+    // Analysis reads file contents keyed by retained entries and writes its own sidecar,
+    // so the aggregate-only tier cannot answer it.
+    let analysis_requested = config.analysis.profile.is_enabled();
     let summary_is_sufficient =
         query.views.as_slice() == [ViewSpec::Summary] && query.selection.is_unfiltered();
     ReportPlan {
-        retained_state: if cache_cannot_participate && summary_is_sufficient {
+        retained_state: if cache_cannot_participate && !analysis_requested && summary_is_sufficient
+        {
             RetainedState::Summary
         } else {
             RetainedState::FullIndex
@@ -123,7 +127,9 @@ pub(crate) fn prepare_report(
                     OpenPath::CacheOnly => ReportSource::CacheOnly,
                 },
                 complete: open_report.is_complete(),
-                errors: open_report.errors().iter().map(ToString::to_string).collect(),
+                // error_messages() also surfaces analysis and restored content-cache
+                // diagnostics, which errors() alone would drop on a warm or cache-only open.
+                errors: open_report.error_messages(),
             };
             Ok((report(&index, query, &provenance), pending_save))
         }
@@ -137,14 +143,14 @@ mod tests {
 
     use super::*;
     use crate::ScanConfig;
-    use crate::query::{Pattern, Section, Selection};
+    use crate::query::{Pattern, Section};
 
     fn summary_query() -> Query {
-        Query { selection: Selection::default(), views: vec![ViewSpec::Summary] }
+        Query { views: vec![ViewSpec::Summary], ..Query::default() }
     }
 
     fn config(policy: CachePolicy, cache_path: Option<PathBuf>) -> OpenConfig {
-        OpenConfig { scan: ScanConfig::default(), cache_path, policy }
+        OpenConfig { scan: ScanConfig::default(), cache_path, policy, ..OpenConfig::default() }
     }
 
     #[test]
@@ -176,6 +182,32 @@ mod tests {
         let mut filtered = summary_query();
         filtered.selection.include.push(Pattern::parse("*.rs").expect("pattern"));
         assert_eq!(plan_report(&off, &filtered).retained_state, RetainedState::FullIndex);
+    }
+
+    #[test]
+    fn an_analysis_request_never_selects_the_compact_summary_tier() {
+        // Analysis reads file contents keyed by retained entries and writes its own
+        // sidecar, so the aggregate-only tier cannot answer it even though the request
+        // otherwise looks like the uncached unfiltered summary the planner compacts.
+        let off = config(CachePolicy::Off, None);
+        assert_eq!(plan_report(&off, &summary_query()).retained_state, RetainedState::Summary);
+
+        for profile in [
+            crate::content::AnalysisProfile::Basic,
+            crate::content::AnalysisProfile::Code,
+            crate::content::AnalysisProfile::Documents,
+            crate::content::AnalysisProfile::Full,
+        ] {
+            let analyzed = OpenConfig {
+                analysis: crate::content::AnalysisRequest { profile, ..Default::default() },
+                ..config(CachePolicy::Off, None)
+            };
+            assert_eq!(
+                plan_report(&analyzed, &summary_query()).retained_state,
+                RetainedState::FullIndex,
+                "{profile:?} must retain the index"
+            );
+        }
     }
 
     #[test]

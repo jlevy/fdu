@@ -135,6 +135,15 @@ The inactive `cache-pressure-12x` tree under the ignored benchmark corpus is the
 Use it when background builds make the live workspace mutate, and fingerprint it afresh
 because it is generated state, not a committed fixture.
 
+Clean up generated replication subjects after an experiment unless the next planned run
+needs them. `benchmarks/corpus/realtree-scratch/` is ignored, can grow to tens of
+gigabytes and hundreds of thousands of entries, and is reproducible from the retained
+base tree. First confirm that no benchmark process is using it, then move that scratch
+directory to Trash on macOS or use the platform’s equivalent recoverable cleanup.
+Keep `benchmarks/corpus/realtree/` unless the base tree itself is intentionally being
+rebuilt. Moving data to Trash does not guarantee physical space is reclaimed until the
+user empties Trash.
+
 For a publishable `benchmarks/` run, first finish every benchmark-harness, environment,
 corpus, schema, and result-fixture change.
 Copy immutable release binaries outside the root; write scratch snapshots, immediate
@@ -251,6 +260,15 @@ Status is updated as experiments resolve them; see the ledger for results.
 | H61 | A completed bootstrap can live in a dense immutable base while subsequent changes use a sparse overlay and bounded compaction, avoiding the full mutable-entry overhead on nearly every record. | million-scale RSS down at least 40% plus cold indexed wall down at least 3% or a decisive warm/query win | **Queued after H19–H22** (`fdu-f67r`). Preserve stable identities, exact snapshots, all views, progressive publication, errors, deltas, and watch semantics. |
 | H74 | Producers allocate paths and observation batches that the consumer frees, which is the cross-thread pattern glibc `malloc` handles worst. A different global allocator should recover that cost where the scan is not syscall-bound. | transient-summary wall down at least 3%; RSS increase bounded at million scale | **Promising, unconfirmed** (`fdu-cckr`). A local mimalloc build improved the scouting rig’s warm summary plan 30.3% [−32.9%, −25.6%] and left the full-index path within noise. Needs the supply-chain process, a macOS replication, a million-entry RSS check, and a ledger-protocol run before adoption. |
 | H78 | H10’s remaining half: once load stops rebuilding the tree per record, the residue is parse-and-allocate. A format whose on-disk layout is usable directly, with roll-ups persisted rather than recomputed, makes warm open bound by the reconcile walk instead of the load. | `warm-snapshot-load` component down several-fold; warm open below cold-scan wall on Linux | **Queued after `fdu-91ts`** (`fdu-pdra`). Preserve exact snapshot semantics, a completeness boundary in the format version, endianness and alignment discipline, and allocation that is never sized from untrusted counts. |
+
+### Content analysis
+
+| # | Hypothesis | Predicted effect | Status |
+| --- | --- | --- | --- |
+| H79 | The basic analyzer always starts a scoped worker pool, even for a few hundred files. On the immutable 233-file self-host corpus, thread bootstrap and synchronization account for more profile samples than allocation. Running auto-selected workloads of at most 512 files and 8 MiB inline should remove that fixed cost without changing large-tree parallelism or an explicit worker request. | Self-host `content-basic` wall and component down at least 3%; CPU, RSS, and semantic digest no worse; large-tree automatic and explicit parallel paths unchanged | **Refuted** (exp-047): inline analysis regressed self-host wall 66.34% and the content component 92.93%; serial reads saved aggregate CPU but discarded useful I/O parallelism. Reverted. |
+| H80 | `BasicAccumulator::push_text` is the largest named analyzer cost in the frozen SLOC profile because it computes prose-only word, paragraph, and logical-word statistics for code files and discards them afterward. Selecting its prose collectors from the already-known content family should remove that work without changing admission or line semantics. | Immutable self-host `code-sloc` wall and component down at least 3%; CPU and semantic digest no worse; `content-basic`, cache-hit, golden, and unit semantics unchanged | **Refuted** (exp-048): the 12-pair `code-sloc` wall interval crossed zero and the median failed the 3% bar; cache-hit and basic jobs were neutral. Reverted. |
+| H81 | `markdown-prose-v1` knows the admitted file size before reading but grows its retained parser buffer from zero. Reserving the bounded file size once should remove repeated growth and copying from the Markdown path. | Generated `markdown-prose` wall and component down at least 3% with both intervals below zero; peak RSS, document-cache-hit, semantic digest, goldens, and self-host behavior no worse | **Refuted** (exp-049): Markdown wall moved −3.55%, but its paired interval [−14.49%, +7.45%] crossed zero; cache-hit behavior was neutral. Most files already fit one 64 KiB read, so the hint removed too little work. Reverted. |
+| H82 | `BasicAccumulator::push()` allocates and copies every read chunk into a temporary vector even when no split UTF-8 sequence is pending. Decoding ordinary complete chunks in place should remove one allocation and one full byte copy per read while retaining the carry path for boundary splits. | Generated `text-prose` and `markdown-prose` wall and component down at least 3% with intervals below zero on the primary Markdown job; peak RSS, cache-hit, semantic digests, chunk-boundary tests, goldens, and self-host behavior no worse | **Confirmed** (exp-050, `2fef9bf`): the 32-pair Markdown run improved wall 12.04% [−16.46%, −8.38%], component 13.67%, user CPU 12.24%, and peak RSS 9.12%. Plain text, self-host wall, and cache hits were neutral; all semantic oracles passed. |
 
 ### Warm start
 

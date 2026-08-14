@@ -103,6 +103,10 @@ dead end.
 | 044 | [Specialize a selected size total](#exp044--specialize-a-selected-size-total) | H64 | `selected-allocated-total` | -1.1% | ❌ rejected |
 | 045 | [Pipeline macOS directory opens](#exp045--pipeline-macos-directory-opens) | H67, H69 | `rich-summary-open-pipeline` | -4.5% | ↩︎ superseded |
 | 046 | [Tune a shared macOS directory-opener pool](#exp046--tune-a-shared-macos-directoryopener-pool) | H70 | `rich-summary-shared-openers` | -4.0% | ⏳ in progress |
+| 047 | [Reject inline basic content analysis](#exp047--reject-inline-basic-content-analysis) | H79 | `content-basic` | +66.3% | ❌ rejected |
+| 048 | [Reject prose collector gating for SLOC](#exp048--reject-prose-collector-gating-for-sloc) | H80 | `code-sloc` | +1.5% | ❌ rejected |
+| 049 | [Reject bounded Markdown source reserve](#exp049--reject-bounded-markdown-source-reserve) | H81 | `markdown-prose` | -3.5% | ❌ rejected |
+| 050 | [Decode complete UTF-8 chunks in place](#exp050--decode-complete-utf8-chunks-in-place) | H82 | `markdown-prose` | -12.0% | ✅ accepted |
 
 ## The experiments
 
@@ -1761,6 +1765,137 @@ host outliers; quiet 12-pair and independent-topology confirmation remain requir
 
 Full record:
 [`exp-046-tune-a-shared-macos-directory-opener-pool.md`](../experiments/exp-046-tune-a-shared-macos-directory-opener-pool.md)
+
+### exp-047 — Reject inline basic content analysis
+
+❌ rejected · 2026-08-13 · H79
+
+Control: automatic bounded worker pool
+
+Candidate: inline analysis at or below 512 files and 8 MiB
+
+**`content-basic`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 16.7 | 27.8 | +66.34% (regression) | [+61.51%, +80.48%] |
+| component (ms) | 9.1 | 17.6 | +92.93% (regression) | [+79.03%, +109.28%] |
+| cpu (ms) | 85.9 | 33.1 | -61.52% | [-65.64%, -56.77%] |
+| user (ms) | 17.4 | 15.0 | -13.07% | [-14.47%, -11.22%] |
+| system (ms) | 68.2 | 18.0 | -73.79% | [-76.85%, -69.87%] |
+| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
+| peak rss (MiB) | 5.2 | 8.1 | +56.44% (regression) | [+55.46%, +58.14%] |
+
+Other jobs, wall time: `content-cache-hit` +50.3% (regression), `content-disabled`
++44.3% (regression), `content-query` +15.8% (regression).
+
+Cost to carry: 54 lines; no new dependencies; new failure mode: serial file reads on
+small repositories.
+
+One bounded dispatch branch and one unit test; production change reverted
+
+**Rejected:** Inline self-host analysis regressed wall 66.34% and component 92.93%; the
+worker pool was doing useful parallel I/O, so the change is reverted.
+
+Full record:
+[`exp-047-reject-inline-basic-content-analysis.md`](../experiments/exp-047-reject-inline-basic-content-analysis.md)
+
+### exp-048 — Reject prose collector gating for SLOC
+
+❌ rejected · 2026-08-13 · H80 · commit `d7363a298ac58905597b2ede8c9f3240938a3129`
+
+Control: frozen code-sloc-v1 semantic baseline
+
+Candidate: skip prose-only collectors for code families
+
+**`code-sloc`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 20.2 | 19.9 | +1.50% (n.s.) | [-4.59%, +4.23%] |
+| component (ms) | 9.2 | 8.9 | +1.34% (n.s.) | [-6.43%, +4.95%] |
+| cpu (ms) | 71.7 | 73.3 | +2.13% (n.s.) | [-3.84%, +8.28%] |
+| user (ms) | 29.2 | 28.1 | -4.67% | [-6.06%, -2.87%] |
+| system (ms) | 42.2 | 45.0 | +8.02% (n.s.) | [-3.40%, +16.99%] |
+| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
+| peak rss (MiB) | 9.2 | 9.4 | +0.51% (n.s.) | [-1.89%, +2.29%] |
+
+Other jobs, wall time: `code-sloc-cache-hit` -0.6% (n.s.), `content-basic` -2.2% (n.s.),
+`content-cache-hit` +1.4% (n.s.).
+
+Cost to carry: 31 lines; no new dependencies.
+
+One mode bit and conditional prose counters; no dependency or unsafe code.
+
+**Rejected:** The 12-pair wall interval crossed zero and the median did not clear the 3%
+acceptance threshold; cache-hit and basic jobs were also neutral..
+
+Full record:
+[`exp-048-reject-prose-collector-gating-for-sloc.md`](../experiments/exp-048-reject-prose-collector-gating-for-sloc.md)
+
+### exp-049 — Reject bounded Markdown source reserve
+
+❌ rejected · 2026-08-13 · H81
+
+Control: zero-capacity retained Markdown buffer
+
+Candidate: reserve up to the known bounded file size
+
+**`markdown-prose`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 382.0 | 365.6 | -3.55% (n.s.) | [-14.49%, +7.45%] |
+| component (ms) | 334.2 | 332.3 | +0.87% (n.s.) | [-9.24%, +10.44%] |
+| cpu (ms) | 1321.5 | 1275.5 | -3.25% (n.s.) | [-10.20%, +3.13%] |
+| user (ms) | 870.7 | 864.4 | -0.77% (n.s.) | [-2.54%, +1.09%] |
+| system (ms) | 458.9 | 415.8 | -6.19% (n.s.) | [-26.63%, +7.87%] |
+| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
+| peak rss (MiB) | 15.4 | 15.6 | -0.05% (n.s.) | [-3.00%, +4.94%] |
+
+Other jobs, wall time: `document-cache-hit` +1.0% (n.s.).
+
+Cost to carry: 5 lines; no new dependencies.
+
+One bounded capacity hint; production change reverted
+
+**Rejected:** Markdown wall moved -3.55%, but the 95% paired interval [-14.49%, +7.45%]
+crossed zero; cache hits were neutral, so the capacity hint is reverted.
+
+Full record:
+[`exp-049-reject-bounded-markdown-source-reserve.md`](../experiments/exp-049-reject-bounded-markdown-source-reserve.md)
+
+### exp-050 — Decode complete UTF-8 chunks in place
+
+✅ accepted · 2026-08-13 · H82 · commit `2fef9bf`
+
+Control: copy every chunk through a temporary vector
+
+Candidate: decode directly unless a UTF-8 carry is pending
+
+**`markdown-prose`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 251.5 | 218.9 | -12.04% | [-16.46%, -8.38%] |
+| component (ms) | 235.4 | 203.5 | -13.67% | [-19.22%, -8.82%] |
+| cpu (ms) | 1293.8 | 1195.2 | -6.79% | [-8.67%, -5.21%] |
+| user (ms) | 851.5 | 745.5 | -12.24% | [-13.19%, -11.66%] |
+| system (ms) | 436.2 | 443.0 | +4.77% (n.s.) | [-1.58%, +7.58%] |
+| blocked (ms) | 0.0 | 0.0 | +0.00% (n.s.) | — |
+| peak rss (MiB) | 15.3 | 13.9 | -9.12% | [-11.21%, -4.83%] |
+
+Cost to carry: 7 lines; no new dependencies.
+
+One direct fast path plus the existing bounded carry path; no new dependency, unsafe
+code, or failure mode
+
+**Accepted:** The 32-pair Markdown run improved wall 12.04% with a 95% interval of
+[-16.46%, -8.38%], cut user CPU and peak RSS, preserved digests and goldens, and left
+self-host and cache-hit latency neutral.
+
+Full record:
+[`exp-050-decode-complete-utf-8-chunks-in-place.md`](../experiments/exp-050-decode-complete-utf-8-chunks-in-place.md)
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

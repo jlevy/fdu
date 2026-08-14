@@ -32,6 +32,18 @@ _PLACEHOLDERS = {
     "snapshot_path",
 }
 _JOBS = {
+    "code-sloc-cache-hit",
+    "code-sloc-cold",
+    "content-basic-cold",
+    "content-basic-warm-fs",
+    "content-binary-gate",
+    "content-cache-hit",
+    "content-churn",
+    "content-disabled",
+    "content-query",
+    "detect-ambiguous",
+    "detect-resolved",
+    "selfhost-content",
     "watch-stream",
     "cli-files",
     "cli-human",

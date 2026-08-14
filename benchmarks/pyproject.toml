@@ -2,7 +2,7 @@
 name = "fdu-benchmarks"
 version = "0.0.0"
 description = "Performance harness for fdu: measurement, profiling, and the experiment contract."
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 
 # The harness itself is deliberately stdlib-only, so this list stays at one entry.
 # `experiment.py` compiles the soft-schema contract from a Pydantic model, and that is

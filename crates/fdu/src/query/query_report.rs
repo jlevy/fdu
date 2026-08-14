@@ -4,7 +4,7 @@
 //! else. Producers submit observations and the index commits them; a report can never
 //! become a third way to change state.
 //!
-//! # Two performance tiers
+//! # Two metadata query tiers
 //!
 //! An unfiltered request reads the roll-up state the index already maintains, so it costs
 //! O(directories) for a tree and O(1) for a summary regardless of how many files the tree
@@ -12,23 +12,39 @@
 //! entries and re-aggregates only what the filter admits, because a pre-computed roll-up
 //! cannot answer a question about a subset. Both tiers are milliseconds warm and neither
 //! touches the filesystem; the difference is visible in a profile, not in a user's wait.
+//! Optional content I/O happens before this pure reader boundary and is retained in the
+//! index's separate derived tier.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-use crate::classify::derive_ext;
+use crate::classify::{
+    ContentFamily, DetectionConfidence, DetectionSource, classify_path, derive_ext,
+};
+use crate::content::{
+    AnalysisProfile, ContentIndex, ContentProvenance, CoverageReason, LogicalWordStats,
+    MetricValues,
+};
+use crate::engine_contract::{EntryKind, Freshness, ScanScope};
 use crate::index::{EntryId, ExtTally, Index, RollUp};
-use crate::query::selection::{Bound, Candidate, Selection, SizeMetric, SortKey};
-use crate::types::{EntryKind, Freshness, ScanScope};
+use crate::query::query_selection::{Bound, Candidate, Selection, SizeMetric, SortKey};
 
 /// Which roll-up or listing a view reports.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ViewSpec {
     /// Per-directory roll-ups down the hierarchy.
     Tree,
-    /// One row per derived extension.
+    /// One row per stable detected file type.
     Types,
+    /// One row per raw derived extension (the original `types` behavior).
+    Extensions,
+    /// One row per broad content family.
+    Families,
+    /// Code-family rows grouped by language/type.
+    Languages,
+    /// Prose and markup rows with text-volume metrics.
+    Documents,
     /// A flat listing of matching entries.
     Files,
     /// One aggregate row for everything selected.
@@ -40,7 +56,13 @@ impl ViewSpec {
     fn default_sort(self) -> SortKey {
         match self {
             // Size-ranked by default, because "what is big" is the question these answer.
-            Self::Tree | Self::Types | Self::Summary => SortKey::Size,
+            Self::Tree
+            | Self::Types
+            | Self::Extensions
+            | Self::Families
+            | Self::Languages
+            | Self::Documents
+            | Self::Summary => SortKey::Size,
             // A flat listing is a file list first, so it reads and diffs in name order.
             Self::Files => SortKey::Name,
         }
@@ -48,12 +70,44 @@ impl ViewSpec {
 }
 
 /// What a report was asked for.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct Query {
     /// Which entries to consider and how to shape results.
     pub selection: Selection,
     /// Which views to report, in the order they were requested.
     pub views: Vec<ViewSpec>,
+    /// Fixed logical-word denominator used to derive page equivalents after aggregation.
+    pub words_per_page: u64,
+}
+
+impl Default for Query {
+    fn default() -> Self {
+        Self { selection: Selection::default(), views: Vec::new(), words_per_page: 250 }
+    }
+}
+
+impl Query {
+    /// Reject views that have no metadata-only projection and lack required analysis.
+    pub fn validate_analysis(&self, profile: AnalysisProfile) -> Result<(), &'static str> {
+        for view in &self.views {
+            match view {
+                ViewSpec::Documents if !profile.is_enabled() => {
+                    return Err(
+                        "--view documents requires --analyze basic, code, documents, or full; views never enable content analysis implicitly",
+                    );
+                }
+                ViewSpec::Tree
+                | ViewSpec::Types
+                | ViewSpec::Extensions
+                | ViewSpec::Families
+                | ViewSpec::Languages
+                | ViewSpec::Documents
+                | ViewSpec::Files
+                | ViewSpec::Summary => {}
+            }
+        }
+        Ok(())
+    }
 }
 
 /// Which tier of the freshness ladder produced the index behind a report.
@@ -146,6 +200,112 @@ pub struct TypeRow {
     pub allocated: u64,
 }
 
+/// Dimension used by a generic metric-summary section.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum MetricGroup {
+    /// Stable detected file type or language ID.
+    Type,
+    /// Broad code/prose/markup/data/binary family.
+    Family,
+}
+
+/// Exact share represented as an integer fraction.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub struct MetricShare {
+    /// Selected size contributed by this row.
+    pub numerator: u64,
+    /// Selected size across every row before display truncation.
+    pub denominator: u64,
+}
+
+/// Metric used as the numerator and denominator of grouped percentages.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ShareMetric {
+    /// Apparent file bytes selected by the query.
+    ApparentBytes,
+    /// Allocated filesystem bytes selected by the query.
+    AllocatedBytes,
+    /// Standard code lines from `code-sloc-v1`.
+    CodeLines,
+    /// Raw or reader-visible normalized document words, selected by analysis depth.
+    DocumentWords,
+}
+
+impl ShareMetric {
+    /// Stable machine label.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::ApparentBytes => "apparent_bytes",
+            Self::AllocatedBytes => "allocated_bytes",
+            Self::CodeLines => "code_lines",
+            Self::DocumentWords => "document_words",
+        }
+    }
+}
+
+/// One stable group in a metric-summary section.
+#[derive(Clone, Debug)]
+pub struct MetricRow {
+    /// Stable type or family label.
+    pub id: String,
+    /// Broad family for type-grouped rows.
+    pub family: ContentFamily,
+    /// Matching regular files.
+    pub files: u64,
+    /// Apparent bytes.
+    pub bytes: u64,
+    /// Allocated bytes.
+    pub allocated: u64,
+    /// Files whose requested metrics completed.
+    pub analyzed_files: u64,
+    /// Additive content metric slots.
+    pub metrics: MetricValues,
+    /// Query-selected raw document words before normalization.
+    pub document_raw_words: u64,
+    /// Additive sufficient statistics for the query-selected document projection.
+    pub document_word_stats: LogicalWordStats,
+    /// Analyzed files that supplied normalized document statistics.
+    pub document_metric_files: u64,
+    /// Explicit content-analysis outcomes.
+    pub coverage: BTreeMap<CoverageReason, u64>,
+    /// Files by the classification tier that established their type.
+    pub detection_sources: BTreeMap<DetectionSource, u64>,
+    /// Files by classification confidence.
+    pub detection_confidence: BTreeMap<DetectionConfidence, u64>,
+    /// Files carrying a bounded generated-file marker.
+    pub generated_files: u64,
+    /// Files below a conventional vendored path.
+    pub vendored_files: u64,
+    /// Files below a conventional documentation path or basename.
+    pub documentation_files: u64,
+    /// Exact share in the report's selected size metric.
+    pub share: MetricShare,
+}
+
+/// Totals and grouped rows for types, families, languages, or documents.
+#[derive(Clone, Debug)]
+pub struct MetricSummary {
+    /// Grouping dimension.
+    pub group: MetricGroup,
+    /// Totals across every row before display truncation.
+    pub total: MetricRow,
+    /// Sorted, display-bounded rows.
+    pub rows: Vec<MetricRow>,
+    /// Metric used for every row's exact share.
+    pub share_metric: ShareMetric,
+    /// Logical words per derived page.
+    pub words_per_page: u64,
+}
+
+/// Analyzer identity attached to a content-capable report.
+#[derive(Clone, Debug)]
+pub struct ContentReportMetadata {
+    /// Requested analysis profile.
+    pub profile: AnalysisProfile,
+    /// Type-rule, option, and analyzer dialect identity.
+    pub provenance: ContentProvenance,
+}
+
 /// One entry's row in a files view.
 #[derive(Clone, Debug)]
 pub struct FileRow {
@@ -181,8 +341,15 @@ pub struct SummaryRow {
 pub enum Section {
     /// A tree view.
     Tree(TreeNode),
-    /// A types view.
-    Types(Vec<TypeRow>),
+    /// A raw-extension view.
+    Extensions(Vec<TypeRow>),
+    /// A generic type/family content summary.
+    Metrics {
+        /// Requested preset that selected grouping and family filters.
+        view: ViewSpec,
+        /// Generic grouped metrics.
+        summary: Box<MetricSummary>,
+    },
     /// A files view.
     Files(Vec<FileRow>),
     /// A summary view.
@@ -194,7 +361,8 @@ impl Section {
     pub fn view(&self) -> ViewSpec {
         match self {
             Self::Tree(_) => ViewSpec::Tree,
-            Self::Types(_) => ViewSpec::Types,
+            Self::Extensions(_) => ViewSpec::Extensions,
+            Self::Metrics { view, .. } => *view,
             Self::Files(_) => ViewSpec::Files,
             Self::Summary(_) => ViewSpec::Summary,
         }
@@ -226,6 +394,8 @@ pub struct Report {
     /// printing apparent bytes beside an allocated-bytes ranking looks like a sorting
     /// bug and is worse than either metric alone.
     pub size: SizeMetric,
+    /// Analyzer identity when sparse content records are present.
+    pub analysis: Option<ContentReportMetadata>,
     /// One section per requested view, in request order.
     pub sections: Vec<Section>,
 }
@@ -255,6 +425,12 @@ pub fn report(index: &Index, query: &Query, provenance: &Provenance) -> Report {
         scope: index.scope(),
         root: index.root_path().to_path_buf(),
         size: query.selection.size,
+        analysis: index.content().and_then(|content| {
+            Some(ContentReportMetadata {
+                profile: content.profile()?,
+                provenance: content.provenance()?.clone(),
+            })
+        }),
         sections,
     }
 }
@@ -283,6 +459,9 @@ pub(crate) fn report_summary(
         scope,
         root: root.to_path_buf(),
         size,
+        // The planner only selects this tier when no analysis was requested, so there is
+        // no analyzer provenance to report.
+        analysis: None,
         sections: vec![Section::Summary(summary)],
     }
 }
@@ -370,7 +549,7 @@ fn walk(index: &Index, selection: &Selection) -> Walked {
                         own.newest_mtime_ns.map_or(attrs.mtime_ns, |seen| seen.max(attrs.mtime_ns)),
                     );
 
-                    if let Some(ext) = derive_ext(&name) {
+                    if let Some(ext) = child_path.file_name().and_then(derive_ext) {
                         let tally = walked.by_ext.entry(ext).or_default();
                         tally.files += 1;
                         tally.bytes += attrs.size;
@@ -407,7 +586,10 @@ fn build_section(view: ViewSpec, index: &Index, query: &Query, walked: Option<&W
             None => summary_from_rollup(index.total()),
             Some(walked) => walked.per_directory.get(&EntryId::ROOT).copied().unwrap_or_default(),
         }),
-        ViewSpec::Types => Section::Types(types_rows(index, query, walked)),
+        ViewSpec::Extensions => Section::Extensions(extension_rows(index, query, walked)),
+        ViewSpec::Types | ViewSpec::Families | ViewSpec::Languages | ViewSpec::Documents => {
+            Section::Metrics { view, summary: Box::new(metric_summary(view, index, query, walked)) }
+        }
         ViewSpec::Files => Section::Files(file_rows(index, query, walked)),
         ViewSpec::Tree => Section::Tree(tree_node(index, query, walked)),
     }
@@ -425,7 +607,7 @@ fn summary_from_rollup(rollup: &RollUp) -> SummaryRow {
 }
 
 /// Rows for the types view.
-fn types_rows(index: &Index, query: &Query, walked: Option<&Walked>) -> Vec<TypeRow> {
+fn extension_rows(index: &Index, query: &Query, walked: Option<&Walked>) -> Vec<TypeRow> {
     let tallies: BTreeMap<String, ExtTally> = match walked {
         None => index.by_ext_named(index.total()),
         Some(walked) => walked.by_ext.clone(),
@@ -444,7 +626,7 @@ fn types_rows(index: &Index, query: &Query, walked: Option<&Walked>) -> Vec<Type
     sort_rows(
         &mut rows,
         query,
-        ViewSpec::Types,
+        ViewSpec::Extensions,
         |row, metric| match metric {
             SizeMetric::Apparent => row.bytes,
             SizeMetric::Allocated => row.allocated,
@@ -455,6 +637,194 @@ fn types_rows(index: &Index, query: &Query, walked: Option<&Walked>) -> Vec<Type
     );
     truncate(&mut rows, query.selection.limit);
     rows
+}
+
+fn metric_summary(
+    view: ViewSpec,
+    index: &Index,
+    query: &Query,
+    walked: Option<&Walked>,
+) -> MetricSummary {
+    let group = if view == ViewSpec::Families { MetricGroup::Family } else { MetricGroup::Type };
+    let files = walked.map_or_else(|| every_entry(index), |walked| walked.rows.clone());
+    let mut grouped = BTreeMap::<String, MetricRow>::new();
+    for file in files.into_iter().filter(|row| row.kind == EntryKind::File) {
+        let cached = index.content().and_then(|content| content.file(&file.path));
+        let classification = cached
+            .map_or_else(|| classify_path(&file.path), |record| record.classification.clone());
+        let included = match view {
+            ViewSpec::Languages => classification.family == ContentFamily::Code,
+            ViewSpec::Documents => {
+                matches!(classification.family, ContentFamily::Prose | ContentFamily::Markup)
+            }
+            ViewSpec::Types | ViewSpec::Families => true,
+            ViewSpec::Tree | ViewSpec::Extensions | ViewSpec::Files | ViewSpec::Summary => false,
+        };
+        if !included {
+            continue;
+        }
+        let id = match group {
+            MetricGroup::Type => classification.file_type.as_str().to_string(),
+            MetricGroup::Family => classification.family.as_str().to_string(),
+        };
+        let row = grouped.entry(id.clone()).or_insert_with(|| MetricRow {
+            id,
+            family: classification.family,
+            files: 0,
+            bytes: 0,
+            allocated: 0,
+            analyzed_files: 0,
+            metrics: MetricValues::default(),
+            document_raw_words: 0,
+            document_word_stats: LogicalWordStats::default(),
+            document_metric_files: 0,
+            coverage: BTreeMap::new(),
+            detection_sources: BTreeMap::new(),
+            detection_confidence: BTreeMap::new(),
+            generated_files: 0,
+            vendored_files: 0,
+            documentation_files: 0,
+            share: MetricShare::default(),
+        });
+        row.files = row.files.saturating_add(1);
+        row.bytes = row.bytes.saturating_add(file.bytes);
+        row.allocated = row.allocated.saturating_add(file.allocated);
+        *row.detection_sources.entry(classification.source).or_default() += 1;
+        *row.detection_confidence.entry(classification.confidence).or_default() += 1;
+        row.generated_files =
+            row.generated_files.saturating_add(u64::from(classification.flags.generated));
+        row.vendored_files =
+            row.vendored_files.saturating_add(u64::from(classification.flags.vendored));
+        row.documentation_files =
+            row.documentation_files.saturating_add(u64::from(classification.flags.documentation));
+        if let Some(record) = cached {
+            *row.coverage.entry(record.coverage).or_default() += 1;
+            if record.coverage == CoverageReason::Analyzed {
+                row.analyzed_files = row.analyzed_files.saturating_add(1);
+                row.metrics.add_assign(&record.metrics);
+                if record.profile.includes_documents() {
+                    row.document_metric_files = row.document_metric_files.saturating_add(1);
+                    if classification.file_type.as_str() == "markdown" {
+                        row.document_raw_words =
+                            row.document_raw_words.saturating_add(record.metrics.visible_words);
+                        row.document_word_stats
+                            .add_assign(record.metrics.visible_logical_word_stats);
+                    } else {
+                        row.document_raw_words =
+                            row.document_raw_words.saturating_add(record.metrics.raw_words);
+                        row.document_word_stats.add_assign(record.metrics.logical_word_stats);
+                    }
+                } else {
+                    row.document_raw_words =
+                        row.document_raw_words.saturating_add(record.metrics.raw_words);
+                }
+            }
+        }
+    }
+
+    let mut total = MetricRow {
+        id: "total".to_string(),
+        family: ContentFamily::Unknown,
+        files: 0,
+        bytes: 0,
+        allocated: 0,
+        analyzed_files: 0,
+        metrics: MetricValues::default(),
+        document_raw_words: 0,
+        document_word_stats: LogicalWordStats::default(),
+        document_metric_files: 0,
+        coverage: BTreeMap::new(),
+        detection_sources: BTreeMap::new(),
+        detection_confidence: BTreeMap::new(),
+        generated_files: 0,
+        vendored_files: 0,
+        documentation_files: 0,
+        share: MetricShare::default(),
+    };
+    for row in grouped.values() {
+        total.files = total.files.saturating_add(row.files);
+        total.bytes = total.bytes.saturating_add(row.bytes);
+        total.allocated = total.allocated.saturating_add(row.allocated);
+        total.analyzed_files = total.analyzed_files.saturating_add(row.analyzed_files);
+        total.metrics.add_assign(&row.metrics);
+        total.document_raw_words = total.document_raw_words.saturating_add(row.document_raw_words);
+        total.document_word_stats.add_assign(row.document_word_stats);
+        total.document_metric_files =
+            total.document_metric_files.saturating_add(row.document_metric_files);
+        for (reason, count) in &row.coverage {
+            *total.coverage.entry(*reason).or_default() += count;
+        }
+        for (source, count) in &row.detection_sources {
+            *total.detection_sources.entry(*source).or_default() += count;
+        }
+        for (confidence, count) in &row.detection_confidence {
+            *total.detection_confidence.entry(*confidence).or_default() += count;
+        }
+        total.generated_files = total.generated_files.saturating_add(row.generated_files);
+        total.vendored_files = total.vendored_files.saturating_add(row.vendored_files);
+        total.documentation_files =
+            total.documentation_files.saturating_add(row.documentation_files);
+    }
+    let byte_share_metric = match query.selection.size {
+        SizeMetric::Apparent => ShareMetric::ApparentBytes,
+        SizeMetric::Allocated => ShareMetric::AllocatedBytes,
+    };
+    let share_metric = match view {
+        ViewSpec::Languages
+            if index
+                .content()
+                .and_then(ContentIndex::profile)
+                .is_some_and(AnalysisProfile::includes_code) =>
+        {
+            ShareMetric::CodeLines
+        }
+        ViewSpec::Documents => ShareMetric::DocumentWords,
+        ViewSpec::Languages | ViewSpec::Types | ViewSpec::Families => byte_share_metric,
+        ViewSpec::Tree | ViewSpec::Extensions | ViewSpec::Files | ViewSpec::Summary => {
+            unreachable!("only grouped views reach metric_summary")
+        }
+    };
+    let denominator = share_value(&total, share_metric);
+    total.share = MetricShare { numerator: denominator, denominator };
+    let mut rows = grouped.into_values().collect::<Vec<_>>();
+    for row in &mut rows {
+        row.share = MetricShare { numerator: share_value(row, share_metric), denominator };
+    }
+    sort_rows(
+        &mut rows,
+        query,
+        view,
+        |row, metric| match view {
+            ViewSpec::Languages | ViewSpec::Documents => share_value(row, share_metric),
+            _ => match metric {
+                SizeMetric::Apparent => row.bytes,
+                SizeMetric::Allocated => row.allocated,
+            },
+        },
+        |row| row.files,
+        |_| None,
+        |row| row.id.clone(),
+    );
+    truncate(&mut rows, query.selection.limit);
+    MetricSummary { group, total, rows, share_metric, words_per_page: query.words_per_page.max(1) }
+}
+
+fn share_value(row: &MetricRow, metric: ShareMetric) -> u64 {
+    match metric {
+        ShareMetric::ApparentBytes => row.bytes,
+        ShareMetric::AllocatedBytes => row.allocated,
+        ShareMetric::CodeLines => row.metrics.code_lines,
+        ShareMetric::DocumentWords => document_words(row),
+    }
+}
+
+/// Derive the selected document volume only after every sufficient statistic is added.
+pub fn document_words(row: &MetricRow) -> u64 {
+    if row.document_metric_files > 0 {
+        row.document_word_stats.logical_words()
+    } else {
+        row.document_raw_words
+    }
 }
 
 /// Rows for the files view.
@@ -739,9 +1109,9 @@ fn sort_rows_by<T>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::query::glob::Pattern;
-    use crate::query::selection::ModifiedWindow;
-    use crate::types::{Attrs, Observation, Op};
+    use crate::engine_contract::{Attrs, Observation, Op};
+    use crate::query::query_glob::Pattern;
+    use crate::query::query_selection::ModifiedWindow;
     use std::time::{Duration, UNIX_EPOCH};
 
     fn attrs(size: u64, mtime_ns: i64) -> Attrs {
@@ -792,7 +1162,40 @@ mod tests {
     }
 
     fn query(views: &[ViewSpec], selection: Selection) -> Query {
-        Query { selection, views: views.to_vec() }
+        Query { selection, views: views.to_vec(), ..Query::default() }
+    }
+
+    #[test]
+    fn language_grouping_is_metadata_only_while_documents_require_analysis() {
+        let languages = query(&[ViewSpec::Languages], Selection::default());
+        for profile in [
+            AnalysisProfile::Disabled,
+            AnalysisProfile::Basic,
+            AnalysisProfile::Code,
+            AnalysisProfile::Documents,
+            AnalysisProfile::Full,
+        ] {
+            languages
+                .validate_analysis(profile)
+                .expect("language grouping never requires content I/O");
+        }
+
+        let documents = query(&[ViewSpec::Documents], Selection::default());
+        assert!(documents.validate_analysis(AnalysisProfile::Disabled).is_err());
+        for profile in [
+            AnalysisProfile::Basic,
+            AnalysisProfile::Code,
+            AnalysisProfile::Documents,
+            AnalysisProfile::Full,
+        ] {
+            documents
+                .validate_analysis(profile)
+                .expect("every enabled profile includes the basic document metrics");
+        }
+
+        query(&[ViewSpec::Types, ViewSpec::Families], Selection::default())
+            .validate_analysis(AnalysisProfile::Disabled)
+            .expect("metadata grouping never requires content I/O");
     }
 
     fn pattern(source: &str) -> Pattern {
@@ -815,7 +1218,7 @@ mod tests {
 
     fn types_of(report: &Report) -> Vec<TypeRow> {
         match report.sections.first().expect("a section") {
-            Section::Types(rows) => rows.clone(),
+            Section::Extensions(rows) => rows.clone(),
             other => panic!("expected types, got {other:?}"),
         }
     }
@@ -928,7 +1331,7 @@ mod tests {
     #[test]
     fn a_types_view_reports_both_size_metrics_per_extension() {
         let index = sample();
-        let rows = types_of(&run(&index, &query(&[ViewSpec::Types], Selection::default())));
+        let rows = types_of(&run(&index, &query(&[ViewSpec::Extensions], Selection::default())));
         let rs = rows.iter().find(|row| row.extension == ".rs").expect(".rs present");
         assert_eq!((rs.files, rs.bytes), (3, 350));
         assert_eq!(rs.allocated, 1536, "three files, one 512-byte block each");
@@ -992,13 +1395,16 @@ mod tests {
     fn requesting_more_views_never_changes_another_views_answer() {
         // The property that makes `--view types,tree` one scan and one consistent state.
         let index = sample();
-        let alone = types_of(&run(&index, &query(&[ViewSpec::Types], Selection::default())));
+        let alone = types_of(&run(&index, &query(&[ViewSpec::Extensions], Selection::default())));
         let together = run(
             &index,
-            &query(&[ViewSpec::Types, ViewSpec::Tree, ViewSpec::Summary], Selection::default()),
+            &query(
+                &[ViewSpec::Extensions, ViewSpec::Tree, ViewSpec::Summary],
+                Selection::default(),
+            ),
         );
         let with_others = match &together.sections[0] {
-            Section::Types(rows) => rows.clone(),
+            Section::Extensions(rows) => rows.clone(),
             other => panic!("expected types first, got {other:?}"),
         };
 
@@ -1028,7 +1434,41 @@ mod tests {
     #[test]
     fn reporting_is_pure_and_repeatable() {
         let index = sample();
-        let request = query(&[ViewSpec::Tree, ViewSpec::Types], Selection::default());
+        let request = query(&[ViewSpec::Tree, ViewSpec::Extensions], Selection::default());
         assert_eq!(format!("{:?}", run(&index, &request)), format!("{:?}", run(&index, &request)));
+    }
+
+    #[test]
+    fn metadata_grouping_views_use_the_generic_metric_projection() {
+        let index = sample();
+        let report = run(
+            &index,
+            &query(
+                &[ViewSpec::Types, ViewSpec::Families, ViewSpec::Languages],
+                Selection::default(),
+            ),
+        );
+        let Section::Metrics { summary: types, .. } = &report.sections[0] else {
+            panic!("expected type metrics")
+        };
+        let rust = types.rows.iter().find(|row| row.id == "rust").expect("rust");
+        assert_eq!((rust.files, rust.bytes), (3, 350));
+        assert_eq!((rust.share.numerator, rust.share.denominator), (350, 657));
+        assert_eq!(types.share_metric, ShareMetric::ApparentBytes);
+
+        let Section::Metrics { summary: families, .. } = &report.sections[1] else {
+            panic!("expected family metrics")
+        };
+        assert!(families.rows.iter().any(|row| row.id == "code"));
+        assert!(families.rows.iter().any(|row| row.id == "prose"));
+        assert_eq!(families.share_metric, ShareMetric::ApparentBytes);
+
+        let Section::Metrics { summary: languages, .. } = &report.sections[2] else {
+            panic!("expected language metrics")
+        };
+        let rust = languages.rows.iter().find(|row| row.id == "rust").expect("rust");
+        assert_eq!((rust.files, rust.bytes), (3, 350));
+        assert_eq!((rust.share.numerator, rust.share.denominator), (350, 350));
+        assert_eq!(languages.share_metric, ShareMetric::ApparentBytes);
     }
 }

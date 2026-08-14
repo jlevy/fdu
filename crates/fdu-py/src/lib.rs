@@ -22,18 +22,23 @@ use pyo3::exceptions::{PyOSError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 
+use fdu::content::{AnalysisProfile, AnalysisRequest, CoverageReason};
 use fdu::query::{
-    Bound as Bound_, Pattern, Provenance, Query, Report, ReportSource, Section, Selection,
-    SizeMetric, SortKey, SummaryRow, TreeNode, ViewSpec,
+    Bound as Bound_, MetricRow, MetricSummary, Pattern, Provenance, Query, Report, ReportSource,
+    Section, Selection, SizeMetric, SortKey, SummaryRow, TreeNode, ViewSpec, document_words,
 };
-use fdu::session::{ChangeKind, Session};
 use fdu::watch::WatchConfig;
+use fdu::watch_session::{ChangeKind, Session};
 use fdu::{CachePolicy, EntryKind, Freshness, IndexHandle, OpenConfig, RollUp, ScanConfig};
 use std::time::{Duration, SystemTime};
 
 fn to_py_err(err: fdu::Error) -> PyErr {
     match err {
-        fdu::Error::Io { .. } => PyOSError::new_err(err.to_string()),
+        fdu::Error::Io { path, source } => PyOSError::new_err((
+            source.raw_os_error(),
+            source.to_string(),
+            path.as_os_str().to_os_string(),
+        )),
         other => PyValueError::new_err(other.to_string()),
     }
 }
@@ -87,7 +92,9 @@ fn freshness_label(freshness: Freshness) -> &'static str {
 pub struct PyIndex {
     inner: fdu::Index,
     config: ScanConfig,
+    analysis: AnalysisRequest,
     errors: Vec<String>,
+    operation_complete: bool,
     /// Which cache tier produced this index.
     ///
     /// Carried rather than assumed: reporting `warm_revalidate` for an index built by a
@@ -100,8 +107,8 @@ pub struct PyIndex {
 impl PyIndex {
     /// The absolute root this index covers.
     #[getter]
-    fn root(&self) -> String {
-        self.inner.root_path().display().to_string()
+    fn root(&self) -> OsString {
+        self.inner.root_path().as_os_str().to_os_string()
     }
 
     /// The current logical clock. Pass it to `since()` later to get what changed.
@@ -113,7 +120,7 @@ impl PyIndex {
     /// Whether every path in this index's configured scope is currently trustworthy.
     #[getter]
     fn complete(&self) -> bool {
-        self.inner.freshness() == Freshness::Fresh
+        self.inner.freshness() == Freshness::Fresh && self.operation_complete
     }
 
     /// Current trust state: fresh, reconciling, stale, or partial.
@@ -151,7 +158,8 @@ impl PyIndex {
         limit = None,
         sort = None,
         reverse = false,
-        size = "allocated"
+        size = "allocated",
+        words_per_page = 250
     ))]
     #[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
     fn report<'py>(
@@ -169,6 +177,7 @@ impl PyIndex {
         sort: Option<&str>,
         reverse: bool,
         size: &str,
+        words_per_page: u64,
     ) -> PyResult<Bound<'py, PyDict>> {
         let now = SystemTime::now();
         let mut selection =
@@ -214,10 +223,15 @@ impl PyIndex {
             scan_started_at: None,
             generated_at: now,
             source: self.source,
-            complete: self.errors.is_empty(),
+            complete: self.operation_complete,
             errors: self.errors.clone(),
         };
-        let report = fdu::query::report(&self.inner, &Query { selection, views }, &provenance);
+        if words_per_page == 0 {
+            return Err(PyValueError::new_err("words_per_page must be positive"));
+        }
+        let query = Query { selection, views, words_per_page };
+        query.validate_analysis(self.analysis.profile).map_err(PyValueError::new_err)?;
+        let report = fdu::query::report(&self.inner, &query, &provenance);
         report_dict(py, &report)
     }
 
@@ -261,7 +275,7 @@ impl PyIndex {
         let session = Session::new(
             handle,
             self.config.clone(),
-            Query { selection, views },
+            Query { selection, views, ..Query::default() },
             WatchConfig::default(),
         )
         .map_err(to_py_err)?;
@@ -276,8 +290,9 @@ impl PyIndex {
 
     /// Roll-up totals for one directory, or `None` if it is absent or not a directory.
     #[pyo3(signature = (path))]
-    fn rollup<'py>(&self, py: Python<'py>, path: &str) -> PyResult<Option<Bound<'py, PyDict>>> {
-        match self.inner.rollup(Path::new(path)) {
+    #[allow(clippy::needless_pass_by_value)]
+    fn rollup<'py>(&self, py: Python<'py>, path: PathBuf) -> PyResult<Option<Bound<'py, PyDict>>> {
+        match self.inner.rollup(&path) {
             Some(roll) => Ok(Some(rollup_dict(py, &self.inner, roll)?)),
             None => Ok(None),
         }
@@ -287,16 +302,21 @@ impl PyIndex {
     ///
     /// Returns `None` when the path is absent or is not a directory — distinct from an
     /// empty list, which means a directory with no children.
-    #[pyo3(signature = (path = ""))]
-    fn children<'py>(&self, py: Python<'py>, path: &str) -> PyResult<Option<Bound<'py, PyList>>> {
-        let Some(children) = self.inner.children(Path::new(path)) else {
+    #[pyo3(signature = (path = None))]
+    fn children<'py>(
+        &self,
+        py: Python<'py>,
+        path: Option<PathBuf>,
+    ) -> PyResult<Option<Bound<'py, PyList>>> {
+        let path = path.unwrap_or_default();
+        let Some(children) = self.inner.children(&path) else {
             return Ok(None);
         };
 
         let out = PyList::empty(py);
         for (name, id) in children {
             let entry = PyDict::new(py);
-            entry.set_item("name", name.to_string_lossy().as_ref())?;
+            entry.set_item("name", name)?;
             let kind = self.inner.kind_of(id).expect("child handle is live");
             entry.set_item("kind", entry_kind_label(kind))?;
             if let Some(roll) = self.inner.rollup_of(id) {
@@ -321,7 +341,16 @@ impl PyIndex {
         let report = py
             .detach(|| fdu::scan::reconcile(&mut self.inner, &config, &mut |_| {}))
             .map_err(to_py_err)?;
+        let mut complete = report.scan.is_complete();
         self.errors = report.scan.errors.iter().map(ToString::to_string).collect();
+        if self.analysis.profile.is_enabled() {
+            let analysis =
+                py.detach(|| fdu::content::analyze_index(&mut self.inner, self.analysis));
+            let analysis_complete = analysis.is_complete();
+            append_analysis_error(&mut self.errors, analysis);
+            complete &= analysis_complete;
+        }
+        self.operation_complete = complete;
         let stats = report.apply;
 
         let out = PyDict::new(py);
@@ -351,7 +380,7 @@ impl PyIndex {
             for op in &delta.ops {
                 let item = PyDict::new(py);
                 item.set_item("clock", delta.clock.0)?;
-                item.set_item("path", op.path().display().to_string())?;
+                item.set_item("path", op.path().as_os_str())?;
                 match op {
                     fdu::Op::Upsert { kind, attrs, .. } => {
                         item.set_item("op", "upsert")?;
@@ -396,6 +425,28 @@ fn parse_cache_policy(value: &str) -> PyResult<CachePolicy> {
     }
 }
 
+fn parse_analysis_request(profile: &str, workers: usize) -> PyResult<AnalysisRequest> {
+    let profile = match profile.trim().to_ascii_lowercase().as_str() {
+        "none" | "off" | "disabled" => AnalysisProfile::Disabled,
+        "basic" => AnalysisProfile::Basic,
+        "code" => AnalysisProfile::Code,
+        "documents" | "docs" => AnalysisProfile::Documents,
+        "full" => AnalysisProfile::Full,
+        other => {
+            return Err(PyValueError::new_err(format!(
+                "invalid analysis profile {other:?}: expected one of none, basic, code, documents, full"
+            )));
+        }
+    };
+    Ok(AnalysisRequest { profile, workers })
+}
+
+fn append_analysis_error(errors: &mut Vec<String>, analysis: fdu::content::AnalysisReport) {
+    if let Some(message) = analysis.failure_message() {
+        errors.push(message);
+    }
+}
+
 /// Name a cache tier for Python callers, matching the CLI's machine output.
 fn source_label(source: fdu::query::ReportSource) -> &'static str {
     match source {
@@ -421,13 +472,32 @@ fn bound_nanos(input: &str, when: std::time::SystemTime, field: &str) -> PyResul
 /// Convert a report into the dict shape Python callers get.
 fn report_dict<'py>(py: Python<'py>, report: &Report) -> PyResult<Bound<'py, PyDict>> {
     let dict = PyDict::new(py);
-    dict.set_item("root", report.root.display().to_string())?;
+    dict.set_item("root", report.root.as_os_str())?;
     dict.set_item("complete", report.complete)?;
     dict.set_item("errors", report.errors.clone())?;
     dict.set_item("source", source_label(report.source))?;
     dict.set_item("freshness", freshness_label(report.freshness))?;
     dict.set_item("generated_at", fdu::query::format_rfc3339(report.generated_at))?;
     dict.set_item("scan_started_at", report.scan_started_at.map(fdu::query::format_rfc3339))?;
+    match report.analysis.as_ref() {
+        None => dict.set_item("analysis", py.None())?,
+        Some(analysis) => {
+            let metadata = PyDict::new(py);
+            metadata.set_item("profile", analysis_profile_label(analysis.profile))?;
+            metadata
+                .set_item("type_rules_fingerprint", analysis.provenance.type_rules_fingerprint)?;
+            metadata.set_item("options_fingerprint", analysis.provenance.options_fingerprint.0)?;
+            let analyzers = PyList::empty(py);
+            for (id, version) in &analysis.provenance.analyzers {
+                let analyzer = PyDict::new(py);
+                analyzer.set_item("id", id.0)?;
+                analyzer.set_item("version", version.0)?;
+                analyzers.append(analyzer)?;
+            }
+            metadata.set_item("analyzers", analyzers)?;
+            dict.set_item("analysis", metadata)?;
+        }
+    }
 
     let sections = PyList::empty(py);
     for section in &report.sections {
@@ -437,8 +507,8 @@ fn report_dict<'py>(py: Python<'py>, report: &Report) -> PyResult<Bound<'py, PyD
                 entry.set_item("view", "summary")?;
                 entry.set_item("summary", summary_dict(py, row)?)?;
             }
-            Section::Types(rows) => {
-                entry.set_item("view", "types")?;
+            Section::Extensions(rows) => {
+                entry.set_item("view", "extensions")?;
                 let list = PyList::empty(py);
                 for row in rows {
                     let item = PyDict::new(py);
@@ -448,14 +518,18 @@ fn report_dict<'py>(py: Python<'py>, report: &Report) -> PyResult<Bound<'py, PyD
                     item.set_item("allocated", row.allocated)?;
                     list.append(item)?;
                 }
-                entry.set_item("types", list)?;
+                entry.set_item("extensions", list)?;
+            }
+            Section::Metrics { view, summary } => {
+                entry.set_item("view", view_label(*view))?;
+                entry.set_item("metrics", metric_summary_dict(py, summary)?)?;
             }
             Section::Files(rows) => {
                 entry.set_item("view", "files")?;
                 let list = PyList::empty(py);
                 for row in rows {
                     let item = PyDict::new(py);
-                    item.set_item("path", row.path.display().to_string())?;
+                    item.set_item("path", row.path.as_os_str())?;
                     item.set_item("kind", entry_kind_label(row.kind))?;
                     item.set_item("bytes", row.bytes)?;
                     item.set_item("allocated", row.allocated)?;
@@ -473,6 +547,116 @@ fn report_dict<'py>(py: Python<'py>, report: &Report) -> PyResult<Bound<'py, PyD
     }
     dict.set_item("reports", sections)?;
     Ok(dict)
+}
+
+fn metric_summary_dict<'py>(
+    py: Python<'py>,
+    summary: &MetricSummary,
+) -> PyResult<Bound<'py, PyDict>> {
+    let dict = PyDict::new(py);
+    dict.set_item(
+        "group",
+        match summary.group {
+            fdu::query::MetricGroup::Type => "type",
+            fdu::query::MetricGroup::Family => "family",
+        },
+    )?;
+    dict.set_item("share_metric", summary.share_metric.as_str())?;
+    dict.set_item("words_per_page", summary.words_per_page)?;
+    dict.set_item("total", metric_row_dict(py, &summary.total, summary.words_per_page)?)?;
+    let rows = PyList::empty(py);
+    for row in &summary.rows {
+        rows.append(metric_row_dict(py, row, summary.words_per_page)?)?;
+    }
+    dict.set_item("rows", rows)?;
+    Ok(dict)
+}
+
+fn metric_row_dict<'py>(
+    py: Python<'py>,
+    row: &MetricRow,
+    words_per_page: u64,
+) -> PyResult<Bound<'py, PyDict>> {
+    let dict = PyDict::new(py);
+    dict.set_item("id", &row.id)?;
+    dict.set_item("family", row.family.as_str())?;
+    dict.set_item("files", row.files)?;
+    dict.set_item("bytes", row.bytes)?;
+    dict.set_item("allocated", row.allocated)?;
+    dict.set_item("analyzed_files", row.analyzed_files)?;
+    dict.set_item("share_numerator", row.share.numerator)?;
+    dict.set_item("share_denominator", row.share.denominator)?;
+    dict.set_item("physical_lines", row.metrics.physical_lines)?;
+    dict.set_item("blank_lines", row.metrics.blank_lines)?;
+    dict.set_item("nonblank_lines", row.metrics.nonblank_lines)?;
+    dict.set_item("code_lines", row.metrics.code_lines)?;
+    dict.set_item("comment_lines", row.metrics.comment_lines)?;
+    dict.set_item("code_blank_lines", row.metrics.code_blank_lines)?;
+    dict.set_item("raw_words", row.metrics.raw_words)?;
+    dict.set_item("logical_words", row.metrics.logical_word_stats.logical_words())?;
+    dict.set_item("paragraphs", row.metrics.paragraphs)?;
+    dict.set_item("visible_words", row.metrics.visible_words)?;
+    dict.set_item("visible_logical_words", row.metrics.visible_logical_word_stats.logical_words())?;
+    dict.set_item("document_words", document_words(row))?;
+    dict.set_item("page_words", document_words(row))?;
+    dict.set_item("words_per_page", words_per_page)?;
+    let coverage = PyDict::new(py);
+    for (reason, count) in &row.coverage {
+        coverage.set_item(coverage_label(*reason), count)?;
+    }
+    dict.set_item("coverage", coverage)?;
+    let detection = PyDict::new(py);
+    let sources = PyDict::new(py);
+    for (source, count) in &row.detection_sources {
+        sources.set_item(source.as_str(), count)?;
+    }
+    detection.set_item("sources", sources)?;
+    let confidence = PyDict::new(py);
+    for (level, count) in &row.detection_confidence {
+        confidence.set_item(level.as_str(), count)?;
+    }
+    detection.set_item("confidence", confidence)?;
+    let flags = PyDict::new(py);
+    flags.set_item("generated", row.generated_files)?;
+    flags.set_item("vendored", row.vendored_files)?;
+    flags.set_item("documentation", row.documentation_files)?;
+    detection.set_item("flags", flags)?;
+    dict.set_item("detection", detection)?;
+    Ok(dict)
+}
+
+fn view_label(view: ViewSpec) -> &'static str {
+    match view {
+        ViewSpec::Tree => "tree",
+        ViewSpec::Extensions => "extensions",
+        ViewSpec::Types => "types",
+        ViewSpec::Families => "families",
+        ViewSpec::Languages => "languages",
+        ViewSpec::Documents => "documents",
+        ViewSpec::Files => "files",
+        ViewSpec::Summary => "summary",
+    }
+}
+
+fn coverage_label(reason: CoverageReason) -> &'static str {
+    match reason {
+        CoverageReason::Analyzed => "analyzed",
+        CoverageReason::Binary => "binary",
+        CoverageReason::InvalidUtf8 => "invalid_utf8",
+        CoverageReason::Unsupported => "unsupported",
+        CoverageReason::IoError => "io_error",
+        CoverageReason::ChangedDuringRead => "changed_during_read",
+    }
+}
+
+fn analysis_profile_label(profile: AnalysisProfile) -> &'static str {
+    match profile {
+        AnalysisProfile::Disabled => "none",
+        AnalysisProfile::Basic => "basic",
+        AnalysisProfile::Code => "code",
+        AnalysisProfile::Documents => "documents",
+        AnalysisProfile::Full => "full",
+    }
 }
 
 /// One summary row as a dict.
@@ -494,7 +678,7 @@ fn tree_dict<'py>(py: Python<'py>, root: &TreeNode) -> PyResult<Bound<'py, PyDic
     fn node_dict<'py>(py: Python<'py>, node: &TreeNode) -> PyResult<Bound<'py, PyDict>> {
         let dict = PyDict::new(py);
         dict.set_item("name", &node.name)?;
-        dict.set_item("path", node.path.display().to_string())?;
+        dict.set_item("path", node.path.as_os_str())?;
         dict.set_item("bytes", node.bytes)?;
         dict.set_item("allocated", node.allocated)?;
         dict.set_item("files", node.files)?;
@@ -525,10 +709,14 @@ fn parse_view(value: &str) -> PyResult<ViewSpec> {
     match value.trim().to_ascii_lowercase().as_str() {
         "tree" => Ok(ViewSpec::Tree),
         "types" => Ok(ViewSpec::Types),
+        "extensions" => Ok(ViewSpec::Extensions),
+        "families" => Ok(ViewSpec::Families),
+        "languages" => Ok(ViewSpec::Languages),
+        "documents" | "docs" => Ok(ViewSpec::Documents),
         "files" => Ok(ViewSpec::Files),
         "summary" => Ok(ViewSpec::Summary),
         other => Err(PyValueError::new_err(format!(
-            "invalid view {other:?}: expected one of tree, types, files, summary"
+            "invalid view {other:?}: expected one of tree, extensions, types, families, languages, documents, files, summary"
         ))),
     }
 }
@@ -618,7 +806,7 @@ impl PyWatch {
         if let Some(batch) = batch {
             for change in &batch.changes {
                 let dict = PyDict::new(py);
-                dict.set_item("path", change.path.display().to_string())?;
+                dict.set_item("path", change.path.as_os_str())?;
                 dict.set_item(
                     "op",
                     match change.kind {
@@ -660,11 +848,12 @@ fn cache_status_dict<'py>(
     status: &fdu::CacheStatus,
 ) -> PyResult<Bound<'py, PyDict>> {
     let dict = PyDict::new(py);
-    dict.set_item("path", status.path.display().to_string())?;
+    dict.set_item("path", status.path.as_os_str())?;
     dict.set_item("bytes", status.bytes)?;
+    dict.set_item("content_bytes", status.content_bytes)?;
     dict.set_item("recognized", status.is_recognized())?;
     if let Some(info) = &status.snapshot {
-        dict.set_item("root", info.root.display().to_string())?;
+        dict.set_item("root", info.root.as_os_str())?;
         dict.set_item("entries", info.entries)?;
     } else {
         dict.set_item("root", py.None())?;
@@ -675,14 +864,16 @@ fn cache_status_dict<'py>(
 
 /// The cache directory this build would use for a root.
 #[pyfunction]
-fn cache_path(root: &str) -> Option<String> {
-    fdu::default_cache_path(Path::new(root)).map(|path| path.display().to_string())
+#[allow(clippy::needless_pass_by_value)]
+fn cache_path(root: PathBuf) -> Option<PathBuf> {
+    fdu::default_cache_path(&root)
 }
 
 /// Status of the snapshot for one root.
 #[pyfunction]
-fn cache_status<'py>(py: Python<'py>, root: &str) -> PyResult<Option<Bound<'py, PyDict>>> {
-    let Some(path) = fdu::default_cache_path(Path::new(root)) else {
+#[allow(clippy::needless_pass_by_value)]
+fn cache_status(py: Python<'_>, root: PathBuf) -> PyResult<Option<Bound<'_, PyDict>>> {
+    let Some(path) = fdu::default_cache_path(&root) else {
         return Ok(None);
     };
     let status = fdu::cache_status(&path).map_err(to_py_err)?;
@@ -691,10 +882,10 @@ fn cache_status<'py>(py: Python<'py>, root: &str) -> PyResult<Option<Bound<'py, 
 
 /// Every cache file this build can see, recognized or not.
 #[pyfunction]
-fn list_caches<'py>(py: Python<'py>, root: &str) -> PyResult<Bound<'py, PyList>> {
+#[allow(clippy::needless_pass_by_value)]
+fn list_caches(py: Python<'_>, root: PathBuf) -> PyResult<Bound<'_, PyList>> {
     let list = PyList::empty(py);
-    let Some(dir) =
-        fdu::default_cache_path(Path::new(root)).and_then(|p| p.parent().map(Path::to_path_buf))
+    let Some(dir) = fdu::default_cache_path(&root).and_then(|p| p.parent().map(Path::to_path_buf))
     else {
         return Ok(list);
     };
@@ -706,8 +897,9 @@ fn list_caches<'py>(py: Python<'py>, root: &str) -> PyResult<Bound<'py, PyList>>
 
 /// Remove the snapshot for one root. Returns whether a file was removed.
 #[pyfunction]
-fn clear_cache(root: &str) -> PyResult<bool> {
-    match fdu::default_cache_path(Path::new(root)) {
+#[allow(clippy::needless_pass_by_value)]
+fn clear_cache(root: PathBuf) -> PyResult<bool> {
+    match fdu::default_cache_path(&root) {
         Some(path) => fdu::clear_cache(&path).map_err(to_py_err),
         None => Ok(false),
     }
@@ -715,8 +907,9 @@ fn clear_cache(root: &str) -> PyResult<bool> {
 
 /// Remove every recognized snapshot, leaving unrecognized files alone.
 #[pyfunction]
-fn clear_all_caches(root: &str) -> PyResult<usize> {
-    match fdu::default_cache_path(Path::new(root)).and_then(|p| p.parent().map(Path::to_path_buf)) {
+#[allow(clippy::needless_pass_by_value)]
+fn clear_all_caches(root: PathBuf) -> PyResult<usize> {
+    match fdu::default_cache_path(&root).and_then(|p| p.parent().map(Path::to_path_buf)) {
         Some(dir) => fdu::clear_all_caches(&dir).map_err(to_py_err),
         None => Ok(0),
     }
@@ -724,38 +917,68 @@ fn clear_all_caches(root: &str) -> PyResult<usize> {
 
 /// Open a directory tree, using the snapshot cache according to `cache`.
 #[pyfunction]
-#[pyo3(signature = (root, *, cache = "auto", max_depth = None))]
-fn open(py: Python<'_>, root: &str, cache: &str, max_depth: Option<usize>) -> PyResult<PyIndex> {
-    let root = PathBuf::from(root);
+#[pyo3(signature = (root, *, cache = "auto", max_depth = None, analyze = "none", analysis_workers = 0))]
+#[allow(clippy::needless_pass_by_value)]
+fn open(
+    py: Python<'_>,
+    root: PathBuf,
+    cache: &str,
+    max_depth: Option<usize>,
+    analyze: &str,
+    analysis_workers: usize,
+) -> PyResult<PyIndex> {
     let policy = parse_cache_policy(cache)?;
+    let analysis = parse_analysis_request(analyze, analysis_workers)?;
     let config = OpenConfig {
         scan: ScanConfig { max_depth, ..ScanConfig::default() },
         cache_path: fdu::default_cache_path(&root),
         policy,
+        analysis,
     };
 
     let opened = py.detach(|| fdu::open(&root, &config));
     let (index, report) = opened.map_err(to_py_err)?;
-    let errors = report.errors().iter().map(ToString::to_string).collect();
+    let operation_complete = report.is_complete();
+    let errors = report.error_messages();
     let source = match report.path_taken {
         fdu::OpenPath::ColdScan => ReportSource::ColdScan,
         fdu::OpenPath::WarmRevalidate => ReportSource::WarmRevalidate,
         fdu::OpenPath::CacheOnly => ReportSource::CacheOnly,
     };
-    Ok(PyIndex { inner: index, config: config.scan, errors, source })
+    Ok(PyIndex { inner: index, config: config.scan, analysis, errors, operation_complete, source })
 }
 
 /// Walk a tree with no cache at all and return the index.
 #[pyfunction]
-#[pyo3(signature = (root, *, max_depth = None))]
-fn scan(py: Python<'_>, root: &str, max_depth: Option<usize>) -> PyResult<PyIndex> {
-    let root = PathBuf::from(root);
-    let config = ScanConfig { max_depth, ..ScanConfig::default() };
-    let scanned = py.detach(|| fdu::scan::scan_into_index(&root, &config));
+#[pyo3(signature = (root, *, max_depth = None, analyze = "none", analysis_workers = 0))]
+#[allow(clippy::needless_pass_by_value)]
+fn scan(
+    py: Python<'_>,
+    root: PathBuf,
+    max_depth: Option<usize>,
+    analyze: &str,
+    analysis_workers: usize,
+) -> PyResult<PyIndex> {
+    let analysis = parse_analysis_request(analyze, analysis_workers)?;
+    let config = OpenConfig {
+        scan: ScanConfig { max_depth, ..ScanConfig::default() },
+        cache_path: None,
+        policy: CachePolicy::Off,
+        analysis,
+    };
+    let scanned = py.detach(|| fdu::open(&root, &config));
     let (index, report) = scanned.map_err(to_py_err)?;
-    let errors = report.errors.iter().map(ToString::to_string).collect();
+    let operation_complete = report.is_complete();
+    let errors = report.error_messages();
     // A bare scan never consults the cache, so it is always cold.
-    Ok(PyIndex { inner: index, config, errors, source: ReportSource::ColdScan })
+    Ok(PyIndex {
+        inner: index,
+        config: config.scan,
+        analysis,
+        errors,
+        operation_complete,
+        source: ReportSource::ColdScan,
+    })
 }
 
 /// Run the native CLI using Python's process arguments.
@@ -806,7 +1029,9 @@ mod tests {
                 PyIndex {
                     inner: fdu::Index::new("/unused"),
                     config: ScanConfig::default(),
+                    analysis: AnalysisRequest::default(),
                     errors: Vec::new(),
+                    operation_complete: true,
                     source: ReportSource::ColdScan,
                 },
             )

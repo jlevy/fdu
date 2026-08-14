@@ -16,6 +16,7 @@ use std::time::{Duration, SystemTime};
 use clap::builder::styling::{AnsiColor, Style as AnsiStyle, Styles};
 use clap::{ArgAction, ColorChoice, CommandFactory, FromArgMatches, Parser, ValueEnum};
 
+use crate::content::{AnalysisProfile, AnalysisRequest};
 use crate::execution::prepare_report;
 use crate::query::{
     Bound, Pattern, Provenance, Query, ReportSource, Selection, SizeMetric, SortKey, ViewSpec,
@@ -41,7 +42,60 @@ const CLI_STYLES: Styles = Styles::styled()
     .valid(AnsiColor::Green.on_default())
     .invalid(AnsiColor::Yellow.on_default());
 
-const AFTER_HELP: &str = "Examples:\n  fdu .\n  fdu --view types ~/Downloads\n  fdu --view files --sort size --limit 20 ~/src\n  fdu --view files --modified-since 2h --format jsonl .\n  fdu --view summary,types --format json .\n\nFive axes, and every option belongs to exactly one:\n  Scope      PATH, --scan-depth        what is scanned and cached\n  Selection  --include, --exclude, --min-size, --modified-since, --modified-before,\n             --kind, --depth, --limit, --sort, --reverse, --size\n  View       --view tree,types,files,summary\n  Format     --format text|json|jsonl|yaml, --color\n  Mode       --cache auto|refresh|read-only|only|off\n\nScope versus selection:\n  Reports require PATH; bare `fdu` prints this help and never scans the current directory.\n  --scan-depth limits what is scanned and retained; one cache then serves every query.\n  --depth and --limit bound only the rendered view, and never cost a rescan.\n  --depth 0 reports totals for the root and nothing beneath it.\n  --depth and --limit accept `all` for no bound.\n\nValues:\n  SIZE   512, 10k, 10M, 1.5GiB (decimal and binary units, case-insensitive)\n  WHEN   now, an age (45s, 2h, 1h30m), RFC 3339 with an offset, or @epoch seconds\n  --modified-since is inclusive; --modified-before is exclusive\n  --include and --exclude are repeatable globs; --view and --kind are comma lists\n\nCache:\n  auto       read, revalidate, and write back when complete (default)\n  refresh    ignore any snapshot, scan cold, and rewrite it\n  read-only  read and revalidate, but never write\n  only       answer from the snapshot without touching the tree; labeled stale,\n             and fails when no usable snapshot exists rather than scanning\n  off        ignore the snapshot and leave nothing behind\n\nOutput and automation:\n  Results go to stdout; warnings and errors go to stderr.\n  Machine formats are schema-versioned and never colorized.\n  Every report carries schema, source, freshness, complete, errors, and both timestamps.\n  Feed a report's scan_started_at back as --modified-since to list what changed since.\n  The command never prompts, pages, or animates progress.\n\nColor:\n  --color overrides NO_COLOR and FORCE_COLOR. In auto mode, NO_COLOR disables color,\n  FORCE_COLOR enables it, and otherwise the destination must be a terminal.\n\nExit status:\n  0  Complete result, or a partial result accepted with --allow-partial\n  1  Fatal filesystem or cache error\n  2  Partial result, or command-line usage error";
+const COMMON_REPORTS_HELP: &str = r"Five common reports:
+  Language sizes      fdu --view languages PATH
+                      Uses exact names and extensions; never reads file contents.
+  Languages and LOC   fdu --analyze code --view languages PATH
+                      Reads eligible files for code, comment, and blank lines.
+  All file types      fdu --view types PATH
+                      Includes every family from names and extensions; never reads content.
+  Folder sizes        fdu PATH
+                      Uses the metadata-only tree view and reusable index.
+  Fast totals only    fdu --cache off --view summary PATH
+                      Returns bytes plus file and directory counts;
+                      retains no index or cache.
+
+--analyze chooses what may be read; --view chooses what is printed.";
+
+const CONTENT_AFTER_HELP: &str = r"More compositions:
+  fdu --view extensions ~/Downloads
+  fdu --view types,families --format json .
+  fdu --analyze documents --view documents .
+
+Five axes, and every option belongs to exactly one:
+  Scope      PATH, --scan-depth                         what is scanned and cached
+  Selection  --include, --exclude, --depth, --limit    which entries are considered
+  View       tree,extensions,types,families,languages,documents,files,summary
+  Format     --format text|json|jsonl|yaml, --color
+  Mode       --cache, --analyze, --analysis-workers
+
+Content analysis:
+  none       metadata only; source files are never opened (default)
+  basic      physical, blank, and nonblank lines plus raw prose words
+  code       basic metrics plus the versioned common-language SLOC analyzer
+  documents  basic metrics plus logical and reader-visible prose metrics
+  full       every shipped analyzer
+
+  languages is metadata-only by default; code or full adds standard LOC.
+  documents requires any enabled profile.
+  Views never enable content analysis implicitly.
+  Analysis streams every eligible file through EOF; files are never size-truncated.
+  --analysis-workers bounds concurrency.
+  --words-per-page changes only report-time page derivation.
+  Unchanged results for the same profile are restored from a separate sidecar.
+  cache=only never opens source files and fails if requested content is absent.
+
+Output and automation:
+  Metadata-only machine output remains fdu.report/1; metric summaries use fdu.report/2.
+  Text language rows use canonical names; machine formats retain lowercase IDs.
+  Metric rows include detection source, confidence, origin flags, and coverage.
+  Results go to stdout; warnings and errors go to stderr.
+  The command never prompts, pages, or animates progress.
+
+Exit status:
+  0  Complete result, or a partial result accepted with --allow-partial
+  1  Fatal filesystem or cache error
+  2  Partial result, or command-line usage error";
 
 /// When terminal styling should be enabled.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum)]
@@ -161,7 +215,8 @@ pub enum RunOutcome {
     about,
     long_about = None,
     styles = CLI_STYLES,
-    after_help = AFTER_HELP,
+    before_help = COMMON_REPORTS_HELP,
+    after_help = CONTENT_AFTER_HELP,
     arg_required_else_help = true,
     override_usage = "fdu [OPTIONS] <PATH>\n       fdu [PATH] --cache-status[=<SCOPE>] [--cache-clear[=<SCOPE>]]\n       fdu [PATH] --cache-clear[=<SCOPE>]\n       fdu --skill"
 )]
@@ -176,103 +231,121 @@ pub struct Cli {
     pub path: Option<PathBuf>,
 
     /// Limit scanning and retention to N entry levels.
-    #[arg(long, value_name = "N")]
+    #[arg(long, value_name = "N", help_heading = "Scope")]
     pub scan_depth: Option<usize>,
 
     /// Stay on the filesystem the root lives on.
-    #[arg(long, action = ArgAction::SetTrue)]
+    #[arg(long, action = ArgAction::SetTrue, help_heading = "Scope")]
     pub one_filesystem: bool,
 
     // ---- selection: which retained entries this query considers ----
     /// Report only entries matching this glob; repeatable.
-    #[arg(long, value_name = "GLOB")]
+    #[arg(long, value_name = "GLOB", help_heading = "Selection")]
     pub include: Vec<String>,
 
     /// Exclude entries matching this glob; repeatable, and wins over --include.
-    #[arg(long, value_name = "GLOB")]
+    #[arg(long, value_name = "GLOB", help_heading = "Selection")]
     pub exclude: Vec<String>,
 
     /// Report only entries at least this large, as 512, 10M, or 1.5GiB.
-    #[arg(long, value_name = "SIZE")]
+    #[arg(long, value_name = "SIZE", help_heading = "Selection")]
     pub min_size: Option<String>,
 
     /// Report only entries modified at or after this time, as 2h or an RFC 3339 stamp.
-    #[arg(long, value_name = "WHEN")]
+    #[arg(long, value_name = "WHEN", help_heading = "Selection")]
     pub modified_since: Option<String>,
 
     /// Report only entries modified before this time.
-    #[arg(long, value_name = "WHEN")]
+    #[arg(long, value_name = "WHEN", help_heading = "Selection")]
     pub modified_before: Option<String>,
 
     /// Entry kinds to report: file, dir, symlink, other.
-    #[arg(long, value_name = "LIST")]
+    #[arg(long, value_name = "LIST", help_heading = "Selection")]
     pub kind: Option<String>,
 
     /// Directory levels to show; does not limit scanning. Accepts `all`.
-    #[arg(short, long, default_value = "2", value_name = "N")]
+    #[arg(short, long, default_value = "2", value_name = "N", help_heading = "Selection")]
     pub depth: String,
 
     /// Entries to show per directory. Accepts `all`.
-    #[arg(short = 'n', long, default_value = "10", value_name = "N")]
+    #[arg(short = 'n', long, default_value = "10", value_name = "N", help_heading = "Selection")]
     pub limit: String,
 
     /// Order results: size, count, mtime, or name.
-    #[arg(long, value_name = "KEY")]
+    #[arg(long, value_name = "KEY", help_heading = "Selection")]
     pub sort: Option<String>,
 
     /// Reverse the ordering.
-    #[arg(long, action = ArgAction::SetTrue)]
+    #[arg(long, action = ArgAction::SetTrue, help_heading = "Selection")]
     pub reverse: bool,
 
     /// Which size metric to report: allocated or apparent.
-    #[arg(long, value_name = "METRIC", default_value = "allocated")]
+    #[arg(long, value_name = "METRIC", default_value = "allocated", help_heading = "Selection")]
     pub size: String,
 
     // ---- view: which roll-ups are reported ----
-    /// Views to report: tree, types, files, summary.
-    #[arg(long, value_name = "LIST", default_value = "tree")]
+    /// Views: tree, extensions, types, families, languages, documents, files, summary.
+    #[arg(long, value_name = "LIST", default_value = "tree", help_heading = "Views")]
     pub view: String,
+
+    /// Content depth: none, basic, code, documents, or full.
+    #[arg(long, value_name = "PROFILE", default_value = "none", help_heading = "Content analysis")]
+    pub analyze: String,
+
+    /// Content reader workers; zero selects available parallelism.
+    #[arg(long, value_name = "N", default_value_t = 0, help_heading = "Content analysis")]
+    pub analysis_workers: usize,
+
+    /// Logical words per derived document page.
+    #[arg(long, value_name = "N", default_value_t = 250, help_heading = "Views")]
+    pub words_per_page: u64,
 
     // ---- format: how the report is serialized ----
     /// Output format: text, json, jsonl, or yaml.
-    #[arg(long, value_name = "FORMAT", default_value = "text")]
+    #[arg(long, value_name = "FORMAT", default_value = "text", help_heading = "Output")]
     pub format: String,
 
     /// Colorize human output: auto, always, or never.
-    #[arg(long, value_name = "WHEN", default_value = "auto", hide_possible_values = true)]
+    #[arg(
+        long,
+        value_name = "WHEN",
+        default_value = "auto",
+        hide_possible_values = true,
+        help_heading = "Output"
+    )]
     pub color: ColorWhen,
 
     // ---- mode: how the cache is used ----
     /// Cache policy: auto, refresh, read-only, only, or off.
-    #[arg(long, value_name = "POLICY", default_value = "auto")]
+    #[arg(long, value_name = "POLICY", default_value = "auto", help_heading = "Execution")]
     pub cache: String,
 
-    /// Accept incomplete totals when paths cannot be read.
-    #[arg(long, action = ArgAction::SetTrue)]
+    /// Accept operationally partial results, including filesystem or analysis failures.
+    #[arg(long, action = ArgAction::SetTrue, help_heading = "Execution")]
     pub allow_partial: bool,
 
     /// Report cache contents instead of scanning: root (default) or all.
-    #[arg(long, value_name = "SCOPE", num_args = 0..=1, require_equals = true, default_missing_value = "root")]
+    #[arg(long, value_name = "SCOPE", num_args = 0..=1, require_equals = true, default_missing_value = "root", help_heading = "Cache management")]
     pub cache_status: Option<String>,
 
     /// Remove cached snapshots instead of scanning: root (default) or all.
-    #[arg(long, value_name = "SCOPE", num_args = 0..=1, require_equals = true, default_missing_value = "root")]
+    #[arg(long, value_name = "SCOPE", num_args = 0..=1, require_equals = true, default_missing_value = "root", help_heading = "Cache management")]
     pub cache_clear: Option<String>,
 
     /// Stream changes continuously instead of returning one report.
     #[cfg(feature = "watch")]
-    #[arg(long, action = ArgAction::SetTrue)]
+    #[arg(long, action = ArgAction::SetTrue, help_heading = "Execution")]
     pub watch: bool,
 
     /// How often aggregate views re-render while watching, as a duration.
     ///
     /// Throttles rendering only; change detection is event-driven and unaffected.
     #[cfg(feature = "watch")]
-    #[arg(long, value_name = "DUR", default_value = "2s")]
+    #[arg(long, value_name = "DUR", default_value = "2s", help_heading = "Execution")]
     pub interval: String,
 
     /// Print a portable agent skill to stdout.
-    #[arg(long, action = ArgAction::SetTrue)]
+    #[arg(long, action = ArgAction::SetTrue, help_heading = "Other")]
     pub skill: bool,
 }
 
@@ -329,6 +402,10 @@ impl Cli {
         })?;
 
         let policy = self.parse_cache_policy().map_err(|error| usage(&error))?;
+        let analysis = self.parse_analysis().map_err(|error| usage(&error))?;
+        query
+            .validate_analysis(analysis.profile)
+            .map_err(|message| usage(&anyhow::anyhow!(message)))?;
         let config = OpenConfig {
             scan: ScanConfig {
                 max_depth: self.scan_depth,
@@ -337,6 +414,7 @@ impl Cli {
             },
             cache_path: default_cache_path(path),
             policy,
+            analysis,
         };
 
         #[cfg(feature = "watch")]
@@ -351,6 +429,13 @@ impl Cli {
                 "Selection flags such as --depth, --include, and --modified-since do work with ",
                 "--watch, because they filter the index rather than narrowing the scan"
             ))));
+        }
+
+        #[cfg(feature = "watch")]
+        if self.watch && analysis.profile.is_enabled() {
+            return Err(usage(&anyhow::anyhow!(
+                "--analyze is not yet supported with --watch; use a one-shot report"
+            )));
         }
 
         #[cfg(feature = "watch")]
@@ -432,8 +517,8 @@ impl Cli {
         color: bool,
     ) -> anyhow::Result<RunOutcome> {
         use crate::query::ViewSpec;
-        use crate::session::{ChangeKind, Session};
         use crate::watch::WatchConfig;
+        use crate::watch_session::{ChangeKind, Session};
 
         let path = self.path.as_deref().expect("run() validates the report path first");
         let interval = parse_duration(&self.interval).map_err(|error| usage(&error))?;
@@ -467,7 +552,7 @@ impl Cli {
                 crate::OpenPath::CacheOnly => ReportSource::CacheOnly,
             },
             complete: open_report.is_complete(),
-            errors: open_report.errors().iter().map(ToString::to_string).collect(),
+            errors: open_report.error_messages(),
         };
         write!(out, "{}", report_format::render(&session.report(&provenance)?, format, color))?;
         out.flush()?;
@@ -547,7 +632,7 @@ impl Cli {
     #[cfg(feature = "watch")]
     #[allow(clippy::too_many_arguments)]
     fn save_if_pending(
-        session: &crate::session::Session,
+        session: &crate::watch_session::Session,
         config: &OpenConfig,
         pending: &mut bool,
         last_save: &mut SystemTime,
@@ -588,7 +673,10 @@ impl Cli {
     /// exit. A failure here is a warning: the stream is still correct, and only the next
     /// run's warmth is lost.
     #[cfg(feature = "watch")]
-    fn save_live(session: &crate::session::Session, config: &OpenConfig) -> anyhow::Result<bool> {
+    fn save_live(
+        session: &crate::watch_session::Session,
+        config: &OpenConfig,
+    ) -> anyhow::Result<bool> {
         let (Some(cache_path), true) = (config.cache_path.as_deref(), config.policy.writes())
         else {
             return Ok(false);
@@ -608,7 +696,7 @@ impl Cli {
     #[cfg(feature = "watch")]
     fn render_live(
         out: &mut dyn Write,
-        session: &crate::session::Session,
+        session: &crate::watch_session::Session,
         format: report_format::Format,
         color: bool,
     ) -> anyhow::Result<()> {
@@ -700,10 +788,11 @@ impl Cli {
                 match &status.snapshot {
                     Some(info) => writeln!(
                         out,
-                        "{}  {} entries, {} bytes  {}",
+                        "{}  {} entries, {} metadata bytes, {} content bytes  {}",
                         status.path.display(),
                         info.entries,
                         status.bytes,
+                        status.content_bytes.unwrap_or(0),
                         info.root.display()
                     )?,
                     None => writeln!(out, "{}  unrecognized", status.path.display())?,
@@ -782,7 +871,25 @@ impl Cli {
             selection.sort = Some(parse_sort(sort)?);
         }
 
-        Ok(Query { selection, views: parse_list(&self.view, "--view", parse_view)? })
+        let views = parse_list(&self.view, "--view", parse_view)?;
+        if self.words_per_page == 0 {
+            anyhow::bail!("invalid --words-per-page 0: expected a positive integer");
+        }
+        Ok(Query { selection, views, words_per_page: self.words_per_page })
+    }
+
+    fn parse_analysis(&self) -> anyhow::Result<AnalysisRequest> {
+        let profile = match self.analyze.trim().to_ascii_lowercase().as_str() {
+            "none" | "off" | "disabled" => AnalysisProfile::Disabled,
+            "basic" => AnalysisProfile::Basic,
+            "code" => AnalysisProfile::Code,
+            "documents" | "docs" => AnalysisProfile::Documents,
+            "full" => AnalysisProfile::Full,
+            other => anyhow::bail!(
+                "invalid --analyze {other:?}: expected one of none, basic, code, documents, full"
+            ),
+        };
+        Ok(AnalysisRequest { profile, workers: self.analysis_workers })
     }
 }
 
@@ -846,9 +953,15 @@ fn parse_view(token: &str, flag: &str) -> anyhow::Result<ViewSpec> {
     match token.to_ascii_lowercase().as_str() {
         "tree" => Ok(ViewSpec::Tree),
         "types" => Ok(ViewSpec::Types),
+        "extensions" => Ok(ViewSpec::Extensions),
+        "families" => Ok(ViewSpec::Families),
+        "languages" => Ok(ViewSpec::Languages),
+        "documents" | "docs" => Ok(ViewSpec::Documents),
         "files" => Ok(ViewSpec::Files),
         "summary" => Ok(ViewSpec::Summary),
-        _ => anyhow::bail!("invalid {flag} {token:?}: expected one of tree, types, files, summary"),
+        _ => anyhow::bail!(
+            "invalid {flag} {token:?}: expected one of tree, extensions, types, families, languages, documents, files, summary"
+        ),
     }
 }
 
@@ -1244,6 +1357,9 @@ mod tests {
             reverse: false,
             size: "allocated".to_string(),
             view: "tree".to_string(),
+            analyze: "none".to_string(),
+            analysis_workers: 0,
+            words_per_page: 250,
             format: "text".to_string(),
             color: ColorWhen::Auto,
             cache: "off".to_string(),
@@ -1313,7 +1429,12 @@ mod tests {
     #[test]
     fn an_unknown_view_names_every_valid_value() {
         let message = query_error(&Cli { view: "bogus".to_string(), ..cli() });
-        assert!(message.contains("tree, types, files, summary"), "{message}");
+        assert!(
+            message.contains(
+                "tree, extensions, types, families, languages, documents, files, summary"
+            ),
+            "{message}"
+        );
     }
 
     #[test]
@@ -1395,6 +1516,48 @@ mod tests {
         assert_eq!(parsed.selection.sort, Some(SortKey::Mtime));
         assert_eq!(parsed.selection.size, SizeMetric::Apparent);
         assert!(parsed.selection.reverse);
+    }
+
+    #[test]
+    fn analysis_profile_workers_and_page_denominator_parse_before_io() {
+        let parsed =
+            Cli { analyze: "basic".to_string(), analysis_workers: 3, words_per_page: 250, ..cli() };
+        assert_eq!(
+            parsed.parse_analysis().expect("analysis"),
+            AnalysisRequest { profile: AnalysisProfile::Basic, workers: 3 }
+        );
+        assert_eq!(parsed.parse_query().expect("query").words_per_page, 250);
+
+        let invalid = Cli { analyze: "deep".to_string(), ..cli() }
+            .parse_analysis()
+            .expect_err("invalid profile")
+            .to_string();
+        assert!(invalid.contains("none, basic, code, documents, full"));
+        assert!(query_error(&Cli { words_per_page: 0, ..cli() }).contains("positive"));
+    }
+
+    #[test]
+    fn real_basic_documents_report_exposes_lines_words_pages_and_schema_two() {
+        let root = tempfile::tempdir().expect("tempdir");
+        std::fs::write(root.path().join("notes.md"), b"one two\n\nthree\n").expect("write");
+        let command = Cli {
+            path: Some(root.path().to_path_buf()),
+            analyze: "basic".to_string(),
+            view: "documents".to_string(),
+            format: "json".to_string(),
+            size: "apparent".to_string(),
+            ..cli()
+        };
+        let mut output = Vec::new();
+        let outcome =
+            command.run(&mut output, &mut Vec::new(), false, false).expect("run content report");
+        assert_eq!(outcome, RunOutcome::Complete);
+        let output = String::from_utf8(output).expect("UTF-8 JSON");
+        assert!(output.contains("\"schema\": \"fdu.report/2\""), "{output}");
+        assert!(output.contains("\"physical_lines\": 3"), "{output}");
+        assert!(output.contains("\"raw_words\": 3"), "{output}");
+        assert!(output.contains("\"words_per_page\": 250"), "{output}");
+        assert!(output.contains("\"content-basic-v1\""), "{output}");
     }
 
     #[test]
@@ -1554,6 +1717,7 @@ mod tests {
                 let query = Query {
                     selection: Selection { depth: Bound::All, ..Selection::default() },
                     views: vec![ViewSpec::Tree],
+                    ..Query::default()
                 };
                 let provenance = Provenance {
                     scan_started_at: None,

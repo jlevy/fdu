@@ -173,6 +173,16 @@ class ReferenceTreeTests(unittest.TestCase):
 
 
 class StatisticsTests(unittest.TestCase):
+    def test_document_jobs_are_catalogued_with_their_cache_seed(self) -> None:
+        text = measure.PROBE_JOBS["text-prose"]
+        markdown = measure.PROBE_JOBS["markdown-prose"]
+        cached = measure.PROBE_JOBS["document-cache-hit"]
+
+        self.assertEqual(text.argv[1], "text-prose")
+        self.assertEqual(markdown.argv[1], "markdown-prose")
+        self.assertTrue(cached.needs_snapshot)
+        self.assertEqual(cached.snapshot_preparation_mode, "document-seed")
+
     @staticmethod
     def _samples(job: str, variant: str, values, warmup: bool = False):
         return [

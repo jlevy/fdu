@@ -7,9 +7,10 @@
 ## Overview
 
 Keep useful but nonessential extensions out of the Phase 1 critical path.
-PR #1 has already merged without activating them.
-These workstreams have reserved architectural seams, but each requires evidence or a
-stable Phase 1 surface that does not exist yet.
+Three workstreams retain reserved architectural seams and require evidence or a stable
+Phase 1 surface that does not exist yet.
+Content-tier metrics are complete under the
+[file-content metrics plan](../done/plan-2026-08-12-fdu-file-content-metrics.md).
 
 The active [Phase 1 plan](../active/plan-2026-08-08-fdu-phase-1.md) owns the optimized
 stat-tier engine, product surfaces, performance proof, and first release.
@@ -39,15 +40,14 @@ backstop.
 Activation gate: block snapshot `fdu-xihx`, optimized revalidation `fdu-wbis`, and the
 first release gate `fdu-9cf0` are complete.
 
-### Content-Tier Metrics
+### Completed Content-Tier Metrics
 
-`fdu-3n8c` adds opt-in content analysis such as line and word counts.
-It starts only after the reducer registry, native type rules, block snapshot, and Phase
-1 performance report establish the cost and extension boundaries.
-Content reads remain bounded and cached by analyzer identity and version.
-
-Activation gate: `fdu-a6dz`, `fdu-v4lc`, `fdu-xihx`, `fdu-ywu0`, and the first release
-gate `fdu-9cf0` are complete.
+`fdu-3n8c` delivers bounded, opt-in line, source-code, and document metrics with
+analyzer-versioned cache identity.
+The sparse `ContentIndex` and separate content sidecar preserved the reducer and block
+snapshot extension boundaries, so the work did not require those future storage changes.
+The completed contract and remaining analyzer ideas are in the
+[file-content metrics plan](../done/plan-2026-08-12-fdu-file-content-metrics.md).
 
 ### Metabrowser Integration
 
@@ -76,7 +76,6 @@ These are independent tracks after their activation gates, not one forced serial
 | --- | --- | --- | --- |
 | 1 | `fdu-3dtq` | Snapshot plus append-only delta journal | `fdu-xihx`, `fdu-wbis`, `fdu-9cf0` |
 | 1 | `fdu-p02b` | Metabrowser integration | `fdu-9cf0` |
-| 2 | `fdu-3n8c` | Content-tier metrics | `fdu-a6dz`, `fdu-v4lc`, `fdu-xihx`, `fdu-ywu0`, `fdu-9cf0` |
 | 2 | `fdu-ktka` | Evidence-gated io_uring accelerator | `fdu-ywu0`, `fdu-9cf0` |
 
 The order number groups the earliest plausible activation point.
@@ -86,8 +85,6 @@ It does not imply a dependency between workstreams in the same or later group.
 
 - Journal work reuses the snapshot fault-state tests and proves replay, compaction,
   corruption, and crash-boundary behavior.
-- Content metrics use deterministic fixtures, bounded reads, analyzer-version cache
-  invalidation, and before/after performance evidence.
 - Metabrowser integration uses installed artifacts and end-to-end parity over scan,
   refresh, error, identity, and watcher transitions.
 - io_uring keeps synchronous per-operation fallbacks and must demonstrate an end-to-end
@@ -103,19 +100,22 @@ queue before Phase 1 is complete.
 | --- | --- | --- | --- |
 | `fdu-p02b` | P2 | Replace metabrowser’s Python inventory hot path | `fdu-9cf0` |
 | `fdu-3dtq` | P3 | Add a compacting cross-restart delta journal | `fdu-xihx`, `fdu-wbis`, `fdu-9cf0` |
-| `fdu-3n8c` | P3 | Add opt-in content-tier metrics | `fdu-a6dz`, `fdu-v4lc`, `fdu-xihx`, `fdu-ywu0`, `fdu-9cf0` |
 | `fdu-ktka` | P3 | Add io_uring only when Phase 1 profiles justify it | `fdu-ywu0`, `fdu-9cf0` |
 
-All four beads are children of `fdu-x746`, carry the `future` label, and link back to
-this plan. Because parent blockers do not propagate to children in tbd, every child also
-names `fdu-9cf0` directly.
+The three open beads are children of `fdu-x746`, carry the `future` label, and link back
+to this plan. Because parent blockers do not propagate to children in tbd, every child
+also names `fdu-9cf0` directly.
 None is ready while its activation dependencies remain open.
+The former fourth child, `fdu-3n8c`, is complete and links to the done content-metrics
+plan.
 
 ## References
 
 - [fdu Phase 1 plan](../active/plan-2026-08-08-fdu-phase-1.md)
 - [End-to-end performance plan](../active/plan-2026-08-09-fdu-end-to-end-performance-testing.md)
 - [Rust engineering quality plan](../active/plan-2026-08-09-fdu-rust-engineering-quality.md)
+- [File-content metrics plan](../done/plan-2026-08-12-fdu-file-content-metrics.md)
+- [File-content metrics implementation report](../../reports/report-2026-08-13-file-content-metrics-implementation.md)
 - [File roll-up engine research](../../research/research-2026-08-06-file-rollup-engine.md)
 
 <!-- This document follows common-doc-guidelines.md.
