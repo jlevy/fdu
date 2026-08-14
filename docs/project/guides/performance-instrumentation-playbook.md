@@ -58,6 +58,20 @@ The external tier is authoritative about both and far too slow to leave on.
 reaching for the external tier only when they disagree or when neither can name a call
 site.
 
+Here is that check catching something, on this project, in the time it takes to run one
+`strace`. Application counters reported 2,559 directory opens over a 17,128-entry tree.
+`strace -c` on the same run reported 2,565 `openat` and 17,131 `statx` — both matching
+the counters within noise, so those counters are sound — and **5,118 `getdents64`,
+exactly 2.00 per directory read**.
+
+Half of every directory-read syscall pair carries no data: the second returns zero to
+say the directory is exhausted, because the standard library cannot know otherwise.
+No application counter could have shown that, because at the call site there is exactly
+one call. The counter was accurate about what the code *did* and wrong about what the
+kernel did, which is precisely the failure the cross-check exists to catch — and the
+cost it found scales with directory count, so it lands hardest on the wide shallow trees
+that are most common.
+
 ### Know what each tier can actually tell you
 
 Assuming coverage is uniform produces confident nonsense.

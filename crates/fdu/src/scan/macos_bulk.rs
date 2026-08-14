@@ -59,7 +59,26 @@ impl Reader {
     }
 
     /// Read one complete directory, or decline so the portable backend can retry it.
+    ///
+    /// Counting happens here rather than inside, and only on success, because a decline
+    /// is retried by the portable backend — which counts the same directory itself.
+    /// Counting on entry would double every declined read and make the totals disagree
+    /// with the walk's own, which is exactly what the guard test checks.
+    ///
+    /// This backend replaces `read_dir` *and* the per-entry `stat` in one call, so a
+    /// successful read reports both. That is the point of the backend, and counting it
+    /// this way is what makes the saving legible beside the portable path.
     pub(super) fn read(&mut self, path: &Path) -> Option<Vec<Entry>> {
+        let entries = self.read_bulk(path)?;
+        crate::counters::bump(|c| {
+            c.dir_opens += 1;
+            c.dir_entries += entries.len() as u64;
+            c.stats += entries.len() as u64;
+        });
+        Some(entries)
+    }
+
+    fn read_bulk(&mut self, path: &Path) -> Option<Vec<Entry>> {
         let directory = File::open(path).ok()?;
         let mut request = libc::attrlist {
             bitmapcount: libc::ATTR_BIT_MAP_COUNT,
