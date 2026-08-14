@@ -235,6 +235,29 @@ If a deeper analyzer such as standard LOC does not support a file, its byte meta
 remains visible but that profile does not retain a separate lower-level line result for
 the same file.
 
+## Reading the Performance Footer
+
+Every one-shot text report ends with one compact operational summary:
+
+```text
+Performance: walked 12,345 files / 8.2 GiB; content read 1.4 GiB at 920 MiB/s; analysis 2,104 fresh at 1.3k files/s, 10,241 cached / 6.8 GiB; warm revalidation; total 2.08 s
+```
+
+“Walked” counts regular files successfully stated during this run and sums their
+apparent lengths, independent of the report’s selected `--size` metric.
+“Content read” counts bytes actually returned by fresh analyzer reads, so a known binary
+file can be walked without being opened and an observed binary probe can read less than
+the file’s full length.
+Fresh file and byte rates use the content-analysis phase’s wall time.
+Cached files and bytes are unchanged content records restored from the profile-scoped
+sidecar. The final label distinguishes a cold metadata scan, warm revalidation, and a
+cache-only answer; cache-only therefore reports zero files walked.
+
+The line is gray when terminal color is active and contains no ANSI escapes when color
+is disabled or redirected.
+JSON, JSONL, YAML, skill output, lifecycle commands, and watch streams omit it.
+The timing line is human telemetry rather than part of the versioned machine schema.
+
 ## Compose Other Queries
 
 ```shell

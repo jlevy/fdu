@@ -21,6 +21,7 @@ patterns:
   RFC3339: '\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{9}Z'
   SOURCE: 'cold_scan|warm_revalidate'
   HUMAN_SIZE: '\s*[\d.]+ (B|KiB|MiB|GiB)'
+  PERF_TIME: '[\d.]+ (ns|µs|ms|s)'
 ---
 # The Five Axes Compose
 
@@ -35,6 +36,7 @@ rather than elided — the field stays visible in a diff, which is the point of 
 ```console
 $ fdu --cache off --view summary --size apparent project
      263 B  6 files, 3 directories
+Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -50,6 +52,7 @@ $ fdu --cache off --view types --size apparent project
       71 B   27.0%  markdown           2 files, 2 documentation
       36 B   13.7%  rust               2 files
       28 B   10.6%  make               1 file
+Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -63,12 +66,14 @@ $ fdu --cache off --view extensions --size apparent project
      128 B  .tar.gz      1 file
       71 B  .md          2 files
       36 B  .rs          2 files
+Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
-### Files Is a Bare Path List
+### Files Keep One Path per Row
 
-Nothing but paths, so the output pipes straight into another command.
+The report section keeps one path per row; the one-shot text footer follows it.
+Programmatic consumers use a machine format, which omits transient performance data.
 
 ```console
 $ fdu --cache off --view files --kind file --size apparent project
@@ -78,6 +83,7 @@ dist[SEP]acorn-0.1.0.tar.gz
 docs[SEP]FAQ.MD
 src[SEP]alpha.rs
 src[SEP]omega.rs
+Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -89,6 +95,7 @@ $ fdu --cache off --view tree --size apparent --depth all project
      128 B  █████░░░░░    49%    dist (1 file)
       36 B  █░░░░░░░░░    14%    src (2 files)
       23 B  █░░░░░░░░░     9%    docs (1 file)
+Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -99,6 +106,7 @@ $ fdu --cache off --view summary,types --size apparent --limit 1 project
      263 B  6 files, 3 directories
 
      128 B   48.7%  archive            1 file
+Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -110,6 +118,7 @@ $ fdu --cache off --view summary,types --size apparent --limit 1 project
 $ fdu --cache off --view files --include "*.rs" project
 src[SEP]alpha.rs
 src[SEP]omega.rs
+Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -122,6 +131,7 @@ $ fdu --cache off --view files --include "*.{md,rs}" project
 README.md
 src[SEP]alpha.rs
 src[SEP]omega.rs
+Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -130,6 +140,7 @@ src[SEP]omega.rs
 ```console
 $ fdu --cache off --view files --include "*.{md,rs}" --exclude "src/**" project
 README.md
+Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -140,6 +151,7 @@ $ fdu --cache off --view files --kind dir project
 dist
 docs
 src
+Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -148,6 +160,7 @@ src
 ```console
 $ fdu --cache off --view files --kind file --min-size 100 --size apparent project
 dist[SEP]acorn-0.1.0.tar.gz
+Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -157,6 +170,7 @@ dist[SEP]acorn-0.1.0.tar.gz
 $ fdu --cache off --view files --kind file --sort size --limit 2 --size apparent project
 dist[SEP]acorn-0.1.0.tar.gz
 README.md
+Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -166,6 +180,7 @@ README.md
 $ fdu --cache off --view files --kind file --sort size --reverse --limit 2 --size apparent project
 src[SEP]omega.rs
 src[SEP]alpha.rs
+Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
@@ -176,6 +191,7 @@ src[SEP]alpha.rs
 ```console
 $ fdu --cache off --view tree --depth 0 --size apparent project
      263 B  ██████████   100%  . (6 files)
+Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 

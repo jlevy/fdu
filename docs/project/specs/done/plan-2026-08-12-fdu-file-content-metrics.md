@@ -793,6 +793,13 @@ Exact values live in the small tryscript fixture.
 Performance runs use an immutable `git archive` of a recorded commit outside the
 measured root and record its fingerprint, so candidate and control see identical bytes.
 
+The shipped one-shot text surface also reports operational work in a single footer.
+Fresh analysis counts bytes actually returned by file reads and measures candidate and
+byte rates over the analysis phase.
+Content-sidecar hits report accepted record count and represented apparent bytes.
+These transient counters remain outside `Report` and all machine schemas; they explain
+the current run and do not replace the controlled performance harness.
+
 ### Merge Slices and Required Gates
 
 Each row below is independently reviewable and keeps metadata-only behavior intact:

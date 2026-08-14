@@ -11,13 +11,13 @@
 use std::ffi::{OsStr, OsString};
 use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime};
+use std::time::{Duration, Instant, SystemTime};
 
 use clap::builder::styling::{AnsiColor, Style as AnsiStyle, Styles};
 use clap::{ArgAction, ColorChoice, CommandFactory, FromArgMatches, Parser, ValueEnum};
 
 use crate::content::{AnalysisProfile, AnalysisRequest};
-use crate::execution::prepare_report;
+use crate::execution::{PerformanceSummary, prepare_report};
 use crate::query::{
     Bound, Pattern, Provenance, Query, ReportSource, Selection, SizeMetric, SortKey, ViewSpec,
     parse_size, parse_when, system_time_to_nanos,
@@ -33,6 +33,7 @@ const STYLE_HEADING: AnsiStyle = AnsiColor::Cyan.on_default().bold();
 const STYLE_WARNING: AnsiStyle = AnsiColor::Yellow.on_default().bold();
 const STYLE_ERROR: AnsiStyle = AnsiColor::Red.on_default().bold();
 const STYLE_CAUSE: AnsiStyle = AnsiStyle::new().dimmed();
+const STYLE_PERFORMANCE: AnsiStyle = AnsiColor::BrightBlack.on_default();
 const CLI_STYLES: Styles = Styles::styled()
     .header(STYLE_HEADING)
     .usage(STYLE_HEADING)
@@ -89,6 +90,7 @@ Output and automation:
   Metadata-only machine output remains fdu.report/1; metric summaries use fdu.report/2.
   Text language rows use canonical names; machine formats retain lowercase IDs.
   Metric rows include detection source, confidence, origin flags, and coverage.
+  One-shot text reports end with a gray performance line; machine formats omit it.
   Results go to stdout; warnings and errors go to stderr.
   The command never prompts, pages, or animates progress.
 
@@ -450,7 +452,8 @@ impl Cli {
             return self.run_watch(out, diagnostic, format, query, &config, color);
         }
 
-        let (report, pending_save) = prepare_report(path, &config, &query)?;
+        let report_started = Instant::now();
+        let (report, pending_save, performance) = prepare_report(path, &config, &query)?;
 
         let color = ColorContext::from_environment(
             self.color,
@@ -475,6 +478,21 @@ impl Cli {
             );
         }
         render_result?;
+
+        if format == report_format::Format::Text {
+            if !rendered.is_empty() && !rendered.ends_with('\n') {
+                writeln!(out)?;
+            }
+            writeln!(
+                out,
+                "{}",
+                paint(
+                    &performance_footer(performance, report_started.elapsed()),
+                    STYLE_PERFORMANCE,
+                    color,
+                )
+            )?;
+        }
 
         if format == report_format::Format::Text && !report.complete {
             let color =
@@ -891,6 +909,113 @@ impl Cli {
         };
         Ok(AnalysisRequest { profile, workers: self.analysis_workers })
     }
+}
+
+/// Format transient one-shot work without adding it to the machine-report schema.
+fn performance_footer(performance: PerformanceSummary, total: Duration) -> String {
+    let fresh = match (performance.fresh_files, performance.analysis_ns) {
+        (0, _) | (_, 0) => format!("{} fresh", human_count(performance.fresh_files)),
+        (files, elapsed_ns) => {
+            format!("{} fresh at {} files/s", human_count(files), human_rate(files, elapsed_ns))
+        }
+    };
+    let cached = if performance.cached_files == 0 {
+        "0 cached".to_string()
+    } else {
+        format!(
+            "{} cached / {}",
+            human_count(performance.cached_files),
+            report_format::human_bytes(performance.cached_bytes)
+        )
+    };
+    let read_rate = if performance.bytes_read == 0 || performance.analysis_ns == 0 {
+        String::new()
+    } else {
+        format!(
+            " at {}/s",
+            report_format::human_bytes(rate_per_second(
+                performance.bytes_read,
+                performance.analysis_ns,
+            ))
+        )
+    };
+    format!(
+        "Performance: walked {} {} / {}; content read {}{}; analysis {fresh}, {cached}; {}; total {}",
+        human_count(performance.walked_files),
+        plural_u64(performance.walked_files, "file", "files"),
+        report_format::human_bytes(performance.walked_bytes),
+        report_format::human_bytes(performance.bytes_read),
+        read_rate,
+        performance_source(performance.source),
+        human_duration(total),
+    )
+}
+
+fn performance_source(source: ReportSource) -> &'static str {
+    match source {
+        ReportSource::ColdScan => "cold scan",
+        ReportSource::WarmRevalidate => "warm revalidation",
+        ReportSource::CacheOnly => "cache only",
+    }
+}
+
+fn rate_per_second(units: u64, elapsed_ns: u64) -> u64 {
+    if elapsed_ns == 0 {
+        return 0;
+    }
+    let scaled = u128::from(units).saturating_mul(1_000_000_000);
+    u64::try_from(scaled / u128::from(elapsed_ns)).unwrap_or(u64::MAX)
+}
+
+fn human_rate(units: u64, elapsed_ns: u64) -> String {
+    let rate = rate_per_second(units, elapsed_ns);
+    match rate {
+        0..=999 => human_count(rate),
+        1_000..=999_999 => format!("{}k", scaled_decimal(u128::from(rate), 1_000, 1)),
+        1_000_000..=999_999_999 => {
+            format!("{}M", scaled_decimal(u128::from(rate), 1_000_000, 1))
+        }
+        _ => format!("{}G", scaled_decimal(u128::from(rate), 1_000_000_000, 1)),
+    }
+}
+
+fn human_count(value: u64) -> String {
+    let digits = value.to_string();
+    let mut grouped = String::with_capacity(digits.len() + digits.len() / 3);
+    for (index, byte) in digits.bytes().enumerate() {
+        if index > 0 && (digits.len() - index) % 3 == 0 {
+            grouped.push(',');
+        }
+        grouped.push(char::from(byte));
+    }
+    grouped
+}
+
+fn human_duration(duration: Duration) -> String {
+    let nanos = duration.as_nanos();
+    if nanos < 1_000 {
+        format!("{nanos} ns")
+    } else if nanos < 1_000_000 {
+        format!("{} µs", scaled_decimal(nanos, 1_000, 1))
+    } else if nanos < 1_000_000_000 {
+        format!("{} ms", scaled_decimal(nanos, 1_000_000, 1))
+    } else {
+        format!("{} s", scaled_decimal(nanos, 1_000_000_000, 2))
+    }
+}
+
+/// Round an integer ratio to a fixed number of decimal places without losing precision.
+fn scaled_decimal(value: u128, unit: u128, precision: u32) -> String {
+    let factor = 10_u128.pow(precision);
+    let scaled = value.saturating_mul(factor).saturating_add(unit / 2) / unit;
+    let whole = scaled / factor;
+    let fraction = scaled % factor;
+    let width = usize::try_from(precision).expect("decimal precision fits usize");
+    format!("{whole}.{fraction:0width$}")
+}
+
+fn plural_u64<'a>(count: u64, singular: &'a str, plural: &'a str) -> &'a str {
+    if count == 1 { singular } else { plural }
 }
 
 /// Anchor for reading an interval as an age.
@@ -1558,6 +1683,85 @@ mod tests {
         assert!(output.contains("\"raw_words\": 3"), "{output}");
         assert!(output.contains("\"words_per_page\": 250"), "{output}");
         assert!(output.contains("\"content-basic-v1\""), "{output}");
+    }
+
+    #[test]
+    fn one_shot_text_ends_with_a_plain_or_dimmed_performance_footer() {
+        let root = tempfile::tempdir().expect("tempdir");
+        std::fs::write(root.path().join("one.txt"), b"one\n").expect("write");
+        std::fs::write(root.path().join("two.txt"), b"two\n").expect("write");
+        let command = Cli {
+            path: Some(root.path().to_path_buf()),
+            analyze: "basic".to_string(),
+            view: "summary".to_string(),
+            size: "apparent".to_string(),
+            ..cli()
+        };
+
+        let mut plain = Vec::new();
+        command.run(&mut plain, &mut Vec::new(), false, false).expect("plain report");
+        let plain = String::from_utf8(plain).expect("plain UTF-8");
+        let footer = plain.lines().last().expect("performance footer");
+        assert!(
+            footer.starts_with("Performance: walked 2 files / 8 B; content read 8 B at "),
+            "{plain}"
+        );
+        assert!(footer.contains("2 fresh at "), "{footer}");
+        assert!(footer.contains("0 cached"), "{footer}");
+        assert!(footer.contains("cold scan; total "), "{footer}");
+        assert!(!footer.contains('\u{1b}'), "color-disabled output must not contain ANSI");
+
+        let mut colored = Vec::new();
+        Cli { color: ColorWhen::Always, ..command }
+            .run(&mut colored, &mut Vec::new(), false, false)
+            .expect("colored report");
+        let colored = String::from_utf8(colored).expect("colored UTF-8");
+        let footer = colored.lines().last().expect("colored performance footer");
+        assert!(
+            footer.starts_with("\u{1b}[90mPerformance:"),
+            "the footer must use terminal gray when color is active: {colored:?}"
+        );
+    }
+
+    #[test]
+    fn performance_footer_names_units_cache_work_and_metadata_tier() {
+        let footer = performance_footer(
+            PerformanceSummary {
+                walked_files: 12_345,
+                walked_bytes: 2_048,
+                fresh_files: 3_000,
+                bytes_read: 2_048,
+                analysis_ns: 2_000_000_000,
+                cached_files: 2,
+                cached_bytes: 4_096,
+                source: ReportSource::WarmRevalidate,
+            },
+            Duration::from_millis(2_500),
+        );
+
+        assert_eq!(
+            footer,
+            "Performance: walked 12,345 files / 2.0 KiB; content read 2.0 KiB at 1.0 KiB/s; analysis 3,000 fresh at 1.5k files/s, 2 cached / 4.0 KiB; warm revalidation; total 2.50 s"
+        );
+    }
+
+    #[test]
+    fn machine_formats_omit_the_performance_footer() {
+        let root = tempfile::tempdir().expect("tempdir");
+        std::fs::write(root.path().join("one.txt"), b"one\n").expect("write");
+        for format in ["json", "jsonl", "yaml"] {
+            let command = Cli {
+                path: Some(root.path().to_path_buf()),
+                view: "summary".to_string(),
+                size: "apparent".to_string(),
+                format: format.to_string(),
+                ..cli()
+            };
+            let mut output = Vec::new();
+            command.run(&mut output, &mut Vec::new(), false, false).expect("machine report");
+            let output = String::from_utf8(output).expect("machine UTF-8");
+            assert!(!output.contains("Performance:"), "{format}: {output}");
+        }
     }
 
     #[test]

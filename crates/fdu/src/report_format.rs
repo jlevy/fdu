@@ -108,8 +108,8 @@ fn render_text(report: &Report, color: bool) -> String {
             Section::Metrics { view, summary } => {
                 render_text_metrics(&mut out, *view, summary, report.size, color);
             }
-            // A flat listing prints one path per line and nothing else, so it pipes
-            // straight into xargs and diffs cleanly against another run.
+            // The section itself remains one path per line. The CLI may append transient
+            // human telemetry after the serialized report; machine formats never do.
             Section::Files(rows) => {
                 for row in rows {
                     let _ = writeln!(out, "{}", row.path.display());
@@ -1033,7 +1033,7 @@ fn bar(share: f64, color: bool) -> String {
 }
 
 /// Render a byte count at human scale.
-fn human_bytes(bytes: u64) -> String {
+pub(crate) fn human_bytes(bytes: u64) -> String {
     const UNITS: [&str; 6] = ["B", "KiB", "MiB", "GiB", "TiB", "PiB"];
     // Integer arithmetic to the unit, then one bounded division for the tenths digit:
     // a byte count can exceed f64's exact-integer range, and a size that renders wrong
