@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-024
   title: Open macOS directories relative to one retained root fd
-  date: 2026-08-12
+  date: "2026-08-12"
   hypotheses:
     - H2
     - H24
@@ -112,17 +112,6 @@ experiment:
           ci_excludes_zero: false
           direction: unclear
           pairs: 12
-        blocked_ns:
-          control_median: 0.0
-          candidate_median: 0.0
-          change_pct: 0.0
-          ci95_low_pct: null
-          ci95_high_pct: null
-          significant: false
-          passes_acceptance: false
-          ci_excludes_zero: false
-          direction: unknown
-          pairs: 0
         peak_rss_bytes:
           control_median: 326230016.0
           candidate_median: 327401472.0
@@ -193,17 +182,6 @@ experiment:
           ci_excludes_zero: false
           direction: unclear
           pairs: 12
-        blocked_ns:
-          control_median: 0.0
-          candidate_median: 0.0
-          change_pct: 0.0
-          ci95_low_pct: null
-          ci95_high_pct: null
-          significant: false
-          passes_acceptance: false
-          ci_excludes_zero: false
-          direction: unknown
-          pairs: 0
         peak_rss_bytes:
           control_median: 327139328.0
           candidate_median: 327262208.0

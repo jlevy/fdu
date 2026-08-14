@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-009
   title: Single-pass checksum and parse on snapshot load
-  date: 2026-08-11
+  date: "2026-08-11"
   hypotheses:
     - H32
   subject:

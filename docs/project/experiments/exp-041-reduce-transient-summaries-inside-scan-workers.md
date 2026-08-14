@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-041
   title: Reduce transient summaries inside scan workers
-  date: 2026-08-13
+  date: "2026-08-13"
   hypotheses:
     - H62
   subject:
@@ -44,7 +44,7 @@ experiment:
       size_bytes: 1299840
       args:
         - --cache
-        - off
+        - "off"
         - --view
         - summary
         - --format
@@ -57,7 +57,7 @@ experiment:
       size_bytes: 1332912
       args:
         - --cache
-        - off
+        - "off"
         - --view
         - summary
         - --format

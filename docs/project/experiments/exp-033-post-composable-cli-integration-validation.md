@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-033
   title: Post-composable-CLI integration validation
-  date: 2026-08-12
+  date: "2026-08-12"
   hypotheses:
     - H3
     - H31
@@ -115,17 +115,6 @@ experiment:
           ci_excludes_zero: false
           direction: unclear
           pairs: 12
-        blocked_ns:
-          control_median: 0.0
-          candidate_median: 0.0
-          change_pct: 0.0
-          ci95_low_pct: null
-          ci95_high_pct: null
-          significant: false
-          passes_acceptance: false
-          ci_excludes_zero: false
-          direction: unknown
-          pairs: 0
         peak_rss_bytes:
           control_median: 34037760.0
           candidate_median: 34160640.0
@@ -196,17 +185,6 @@ experiment:
           ci_excludes_zero: true
           direction: improved
           pairs: 12
-        blocked_ns:
-          control_median: 0.0
-          candidate_median: 0.0
-          change_pct: 0.0
-          ci95_low_pct: null
-          ci95_high_pct: null
-          significant: false
-          passes_acceptance: false
-          ci_excludes_zero: false
-          direction: unknown
-          pairs: 0
         peak_rss_bytes:
           control_median: 34422784.0
           candidate_median: 34955264.0
@@ -277,17 +255,6 @@ experiment:
           ci_excludes_zero: false
           direction: unclear
           pairs: 12
-        blocked_ns:
-          control_median: 0.0
-          candidate_median: 0.0
-          change_pct: 0.0
-          ci95_low_pct: null
-          ci95_high_pct: null
-          significant: false
-          passes_acceptance: false
-          ci_excludes_zero: false
-          direction: unknown
-          pairs: 0
         peak_rss_bytes:
           control_median: 42975232.0
           candidate_median: 43163648.0
@@ -357,17 +324,6 @@ experiment:
           passes_acceptance: false
           ci_excludes_zero: true
           direction: regressed
-          pairs: 12
-        blocked_ns:
-          control_median: 39256770.5
-          candidate_median: 0.0
-          change_pct: -100.0
-          ci95_low_pct: -100.0
-          ci95_high_pct: -100.0
-          significant: true
-          passes_acceptance: true
-          ci_excludes_zero: true
-          direction: improved
           pairs: 12
         peak_rss_bytes:
           control_median: 33341440.0

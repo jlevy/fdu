@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-034
   title: Post-composable-CLI validation under cache pressure
-  date: 2026-08-12
+  date: "2026-08-12"
   hypotheses:
     - H3
     - H31
@@ -115,17 +115,6 @@ experiment:
           ci_excludes_zero: false
           direction: unclear
           pairs: 12
-        blocked_ns:
-          control_median: 0.0
-          candidate_median: 0.0
-          change_pct: 0.0
-          ci95_low_pct: null
-          ci95_high_pct: null
-          significant: false
-          passes_acceptance: false
-          ci_excludes_zero: false
-          direction: unknown
-          pairs: 0
         peak_rss_bytes:
           control_median: 331677696.0
           candidate_median: 437788672.0
@@ -191,17 +180,6 @@ experiment:
           change_pct: -37.638
           ci95_low_pct: -39.11
           ci95_high_pct: -28.247
-          significant: true
-          passes_acceptance: true
-          ci_excludes_zero: true
-          direction: improved
-          pairs: 12
-        blocked_ns:
-          control_median: 6892119583.5
-          candidate_median: 0.0
-          change_pct: -100.0
-          ci95_low_pct: -100.0
-          ci95_high_pct: -100.0
           significant: true
           passes_acceptance: true
           ci_excludes_zero: true

@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-048
   title: Reject prose collector gating for SLOC
-  date: 2026-08-13
+  date: "2026-08-13"
   hypotheses:
     - H80
   subject:
@@ -111,17 +111,6 @@ experiment:
           ci_excludes_zero: false
           direction: unclear
           pairs: 12
-        blocked_ns:
-          control_median: 0.0
-          candidate_median: 0.0
-          change_pct: 0.0
-          ci95_low_pct: null
-          ci95_high_pct: null
-          significant: false
-          passes_acceptance: false
-          ci_excludes_zero: false
-          direction: unknown
-          pairs: 0
         peak_rss_bytes:
           control_median: 9699328.0
           candidate_median: 9830400.0
@@ -273,17 +262,6 @@ experiment:
           ci_excludes_zero: false
           direction: unclear
           pairs: 12
-        blocked_ns:
-          control_median: 0.0
-          candidate_median: 0.0
-          change_pct: 0.0
-          ci95_low_pct: null
-          ci95_high_pct: null
-          significant: false
-          passes_acceptance: false
-          ci_excludes_zero: false
-          direction: unknown
-          pairs: 0
         peak_rss_bytes:
           control_median: 9953280.0
           candidate_median: 9764864.0

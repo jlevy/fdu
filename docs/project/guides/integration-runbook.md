@@ -63,10 +63,9 @@ ignored tests that were not deliberately ignored.
 
 Worth knowing when a failure looks strange:
 
-- Roll-up comparisons must go through `by_ext_named()`, never raw interned extension
-  ids. Ids are assigned in first-seen order, so a serial walk and a parallel walk
-  legitimately assign them differently — a test comparing `RollUp` values directly fails
-  on macOS CI and passes locally, which is exactly how that bug was found.
+- Interned extension ids stay inside `Index`. Public `RollUp` values carry owned
+  extension names and can be compared directly even when serial and parallel walks
+  assign their internal ids in different first-seen orders.
 - Timestamps in tests come from injected constants, never `SystemTime::now()`. A test
   that reads the clock is a test that fails at midnight or in another timezone.
 - A test that spawns the `fdu` binary needs a `[[test]]` entry in

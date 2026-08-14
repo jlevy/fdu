@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-026
   title: Reuse macOS bulk metadata during full reconciliation
-  date: 2026-08-12
+  date: "2026-08-12"
   hypotheses:
     - H53
     - H26

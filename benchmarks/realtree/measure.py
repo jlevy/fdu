@@ -85,6 +85,15 @@ class Job:
     #: Probe mode used by untimed snapshot preparation. Content-cache jobs need both
     #: the metadata snapshot and its independently versioned content sidecar.
     snapshot_preparation_mode: str = "snapshot-save"
+    #: Whether the measured process may run more than one thread.
+    #:
+    #: ``getrusage`` sums CPU across threads, so for a job that walks with the worker
+    #: pool or analyses with the content pool, ``wall - cpu`` is not off-CPU time — it
+    #: is wall minus aggregate thread CPU, which goes negative as soon as the job keeps
+    #: two cores busy. Clamping that to zero publishes a confident "never blocked" for
+    #: exactly the jobs whose I/O wait the ledger is trying to see, so those jobs report
+    #: no ``blocked_ns`` at all instead.
+    parallel_cpu: bool = False
 
 
 @dataclass
@@ -160,6 +169,7 @@ PROBE_JOBS: Dict[str, Job] = {
         description="Analyze common-language code with code-sloc-v1 after metadata setup.",
         allowed_exit_codes=(0, 2),
         allow_incomplete=True,
+        parallel_cpu=True,
     ),
     "code-sloc-cache-hit": Job(
         id="code-sloc-cache-hit",
@@ -181,12 +191,14 @@ PROBE_JOBS: Dict[str, Job] = {
         argv=("{binary}", "content-basic", "--root", "{root}"),
         start_state="cold",
         description="Analyze every eligible file with content-basic-v1 after metadata setup.",
+        parallel_cpu=True,
     ),
     "content-binary-gate": Job(
         id="content-binary-gate",
         argv=("{binary}", "content-binary-gate", "--root", "{root}"),
         start_state="cold",
         description="Exercise early binary admission on a binary-heavy immutable tree.",
+        parallel_cpu=True,
     ),
     "content-cache-hit": Job(
         id="content-cache-hit",
@@ -208,12 +220,14 @@ PROBE_JOBS: Dict[str, Job] = {
         argv=("{binary}", "content-query", "--root", "{root}", "--queries", "100"),
         start_state="warm",
         description="Build type, family, language, and document summaries 100 times.",
+        parallel_cpu=True,
     ),
     "content-disabled": Job(
         id="content-disabled",
         argv=("{binary}", "content-disabled", "--root", "{root}"),
         start_state="cold",
         description="Call the disabled content boundary after metadata setup.",
+        parallel_cpu=True,
     ),
     "document-cache-hit": Job(
         id="document-cache-hit",
@@ -238,6 +252,7 @@ PROBE_JOBS: Dict[str, Job] = {
             "Analyze Markdown with raw, logical, reader-visible, paragraph, and page "
             "sufficient statistics after metadata setup."
         ),
+        parallel_cpu=True,
     ),
     "text-prose": Job(
         id="text-prose",
@@ -247,12 +262,14 @@ PROBE_JOBS: Dict[str, Job] = {
             "Analyze plain text with raw and normalized words, paragraphs, and page "
             "sufficient statistics after metadata setup."
         ),
+        parallel_cpu=True,
     ),
     "cold-scan-index": Job(
         id="cold-scan-index",
         argv=("{binary}", "scan-index", "--root", "{root}"),
         start_state="cold",
         description="Full walk with metadata into a complete index. No snapshot.",
+        parallel_cpu=True,
     ),
     "cold-scan-producer": Job(
         id="cold-scan-producer",
@@ -262,6 +279,7 @@ PROBE_JOBS: Dict[str, Job] = {
             "Walk and metadata only, no index build. Isolates the syscall layer. "
             "Wall time includes an untimed exact validation scan; read component_ns."
         ),
+        parallel_cpu=True,
     ),
     "warm-revalidate": Job(
         id="warm-revalidate",
@@ -272,6 +290,7 @@ PROBE_JOBS: Dict[str, Job] = {
             "component_ns is reconciliation; wall_ns is the whole warm start."
         ),
         needs_snapshot=True,
+        parallel_cpu=True,
     ),
     "warm-snapshot-load": Job(
         id="warm-snapshot-load",
@@ -300,6 +319,7 @@ PROBE_JOBS: Dict[str, Job] = {
         start_state="cold",
         description="Serialize a populated index. Wall includes the untimed setup scan.",
         writes_snapshot=True,
+        parallel_cpu=True,
     ),
 }
 
@@ -314,6 +334,7 @@ REFERENCE_JOBS: Dict[str, Job] = {
         start_state="cold",
         description="Third-party whole-tree size roll-up, for context only.",
         verify_oracle=False,
+        parallel_cpu=True,
     ),
 }
 
@@ -497,6 +518,32 @@ def _interleave(
     return schedule
 
 
+def add_cpu_metrics(
+    metrics: Dict[str, Optional[int]], *, wall_ns: int, parallel_cpu: bool
+) -> None:
+    """Derive ``cpu_ns`` and, where it means anything, ``blocked_ns``.
+
+    Off-CPU time is ``wall - cpu`` only for a process that ran one thread. ``getrusage``
+    sums CPU across threads, so for a parallel job the difference is wall minus
+    aggregate thread CPU: negative as soon as two cores stay busy, and clamping it to
+    zero would publish "never blocked" for exactly the jobs whose I/O wait matters. Such
+    jobs report no blocked time rather than a fabricated one.
+    """
+    user = metrics.get("user_cpu_ns")
+    system = metrics.get("system_cpu_ns")
+    if user is None or system is None:
+        metrics["cpu_ns"] = None
+        metrics["blocked_ns"] = None
+        return
+
+    cpu_ns = user + system
+    metrics["cpu_ns"] = cpu_ns
+    # CPU above wall proves a second thread whatever the job declared, so a probe mode
+    # that quietly becomes parallel stops reporting blocked time instead of reporting
+    # zero.
+    metrics["blocked_ns"] = None if parallel_cpu or cpu_ns > wall_ns else wall_ns - cpu_ns
+
+
 def _measure_once(
     *,
     variant: Variant,
@@ -543,14 +590,7 @@ def _measure_once(
     metrics = dict(result["resources"])
     metrics["wall_ns"] = result["wall_ns"]
     metrics["component_ns"] = component_ns
-    user = metrics.get("user_cpu_ns")
-    system = metrics.get("system_cpu_ns")
-    if user is not None and system is not None:
-        metrics["cpu_ns"] = user + system
-        metrics["blocked_ns"] = max(0, result["wall_ns"] - user - system)
-    else:
-        metrics["cpu_ns"] = None
-        metrics["blocked_ns"] = None
+    add_cpu_metrics(metrics, wall_ns=result["wall_ns"], parallel_cpu=job.parallel_cpu)
 
     return Sample(
         variant=variant.name,

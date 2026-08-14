@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-001
   title: Bounded parallel directory producer
-  date: 2026-08-10
+  date: "2026-08-10"
   hypotheses:
     - H1
   subject:
@@ -100,14 +100,6 @@ experiment:
           ci95_high_pct: 92.721
           significant: false
           pairs: 12
-        blocked_ns:
-          control_median: 8143396.0
-          candidate_median: 0.0
-          change_pct: -100.0
-          ci95_low_pct: -100.0
-          ci95_high_pct: -100.0
-          significant: true
-          pairs: 12
         peak_rss_bytes:
           control_median: 33275904.0
           candidate_median: 35758080.0
@@ -159,14 +151,6 @@ experiment:
           ci95_low_pct: 79.888
           ci95_high_pct: 97.51
           significant: false
-          pairs: 12
-        blocked_ns:
-          control_median: 10342729.0
-          candidate_median: 0.0
-          change_pct: -100.0
-          ci95_low_pct: -100.0
-          ci95_high_pct: -100.0
-          significant: true
           pairs: 12
         peak_rss_bytes:
           control_median: 33259520.0

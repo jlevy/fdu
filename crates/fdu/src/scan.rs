@@ -790,7 +790,7 @@ fn walk_worker(
     #[cfg(target_os = "macos")]
     let mut bulk_reader = macos_bulk::Reader::new();
 
-    'walk: while queue.claim(&mut claimed, &mut report.attribution) {
+    'walk: while let Some(claim) = queue.claim(&mut claimed, &mut report.attribution) {
         // One timing pair per claimed chunk, never per entry: the chunk is the unit
         // the amortization argument is made in, so it is the unit the evidence is
         // collected in.
@@ -882,7 +882,7 @@ fn walk_worker(
         if !discovered.is_empty() {
             queue.extend(discovered.drain(..), &mut report.attribution);
         }
-        if queue.release(
+        if claim.release(
             report.entries.saturating_sub(entries_before),
             chunk_work_ns,
             &mut report.attribution,
@@ -994,6 +994,49 @@ struct DirectoryQueue {
     state: std::sync::Mutex<DirectoryQueueState>,
     ready: std::sync::Condvar,
     order: ScanOrder,
+}
+
+/// One outstanding claim, held for exactly as long as the worker owes the queue the
+/// work it took.
+///
+/// Giving the claim back is the queue's liveness condition, not a courtesy: [`claim`]
+/// parks every other worker on the condvar while `outstanding` is nonzero, so a single
+/// claim that is never returned stops the whole walk and the scoped join that waits on
+/// it. That makes `Drop` the only safe place to put the release, because the paths that
+/// skip a hand-written call are exactly the ones that matter — the `break` taken when
+/// the consumer disconnects, and an unwinding panic inside a directory read.
+///
+/// [`claim`]: DirectoryQueue::claim
+struct DirectoryClaim<'a> {
+    queue: &'a DirectoryQueue,
+    /// Whether the worker already returned this claim through [`Self::release`].
+    released: bool,
+}
+
+impl DirectoryClaim<'_> {
+    /// Return the claim at the end of a completed chunk, feeding the chunk's own
+    /// measurements to the shared calibration.
+    ///
+    /// Returns the queue's scale-up decision, which is why the normal path cannot be
+    /// `Drop`: a destructor has neither the chunk's timing nor anywhere to put an
+    /// answer.
+    fn release(mut self, entries: u64, work_ns: u64, timing: &mut WalkAttribution) -> bool {
+        self.released = true;
+        self.queue.release(entries, work_ns, timing)
+    }
+}
+
+impl Drop for DirectoryClaim<'_> {
+    fn drop(&mut self) {
+        if self.released {
+            return;
+        }
+        // An abandoned chunk: the consumer went away mid-directory, or a read panicked.
+        // Either way the partial timing describes an aborted chunk rather than the cost
+        // of reading directories, so it must not reach the calibration that sizes the
+        // worker pool. Returning the claim is the whole job.
+        self.queue.abandon();
+    }
 }
 
 struct DirectoryQueueState {
@@ -1116,33 +1159,33 @@ impl DirectoryQueue {
     }
 
     /// Take up to [`DIR_CLAIM`] directories, blocking until there is work or the walk
-    /// is over. Returns false once no more work will ever arrive.
+    /// is over. Returns `None` once no more work will ever arrive.
     ///
     /// Time spent waiting is charged to `timing`: lock acquisition to `lock_wait_ns`
     /// when contended, condvar waits to `starved_ns`. The condvar span includes the
     /// lock re-acquisition on wake, which slightly overstates starvation rather than
     /// understating contention — the fail-honest direction for the number that is
     /// supposed to stay near zero.
-    fn claim(
-        &self,
+    fn claim<'a>(
+        &'a self,
         into: &mut Vec<(PathBuf, usize, RegionId)>,
         timing: &mut WalkAttribution,
-    ) -> bool {
+    ) -> Option<DirectoryClaim<'a>> {
         let mut state = self.lock_timed(timing);
         loop {
             if !state.is_empty(self.order) {
                 state.take(DIR_CLAIM, self.order, into);
                 state.outstanding += 1;
                 timing.claims += 1;
-                return true;
+                return Some(DirectoryClaim { queue: self, released: false });
             }
             if state.finished {
-                return false;
+                return None;
             }
             if state.outstanding == 0 {
                 state.finished = true;
                 self.ready.notify_all();
-                return false;
+                return None;
             }
             let started = std::time::Instant::now();
             state = self.ready.wait(state).unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -1161,6 +1204,22 @@ impl DirectoryQueue {
         }
         drop(state);
         self.ready.notify_all();
+    }
+
+    /// Give up a claim whose chunk never finished. Wakes everyone if it was the last.
+    ///
+    /// Reached only from [`DirectoryClaim::drop`], where there is no `WalkAttribution`
+    /// to charge and nothing worth charging: an abandoned chunk read some unknown
+    /// fraction of its directories, so its lock wait says nothing about contention
+    /// during the walk.
+    fn abandon(&self) {
+        let mut state = self.lock();
+        state.outstanding -= 1;
+        if state.outstanding == 0 && state.is_empty(self.order) {
+            state.finished = true;
+            drop(state);
+            self.ready.notify_all();
+        }
     }
 
     /// Give up a claim taken by [`claim`]. Wakes everyone if this was the last one.
@@ -2420,9 +2479,8 @@ mod tests {
             assert_eq!(report.dirs_read, serial_report.dirs_read, "{threads} threads");
             assert_eq!(report.files_walked, serial_report.files_walked, "{threads} threads");
             assert_eq!(report.bytes_walked, serial_report.bytes_walked, "{threads} threads");
-            // Extension ids are interner handles assigned in first-seen order, which
-            // legitimately differs between serial and parallel arrival order; compare
-            // roll-ups through the named boundary, never by raw id.
+            // Public roll-ups carry extension names even though the internal merge path
+            // uses ids whose assignment order differs between serial and parallel walks.
             let (serial_total, parallel_total) = (serial.total(), parallel.total());
             assert_eq!(
                 (
@@ -2442,8 +2500,7 @@ mod tests {
                 "{threads} threads roll-up"
             );
             assert_eq!(
-                parallel.by_ext_named(parallel_total),
-                serial.by_ext_named(serial_total),
+                parallel_total.by_ext, serial_total.by_ext,
                 "{threads} threads per-extension roll-up"
             );
             assert_eq!(
@@ -2507,11 +2564,8 @@ mod tests {
             let (index, report) = scan_into_index(dir.path(), &config).expect("scan");
             assert_eq!(report.entries, expected_report.entries, "{order:?}/{threads}");
             assert_eq!(report.dirs_read, expected_report.dirs_read, "{order:?}/{threads}");
-            // Compare roll-ups through resolved extension names, not raw `RollUp`
-            // equality: interned `ExtId`s are assigned in first-encounter order, so
-            // two orders (or two thread counts) label the same tallies differently
-            // while meaning the same thing. Asserting on the raw map tests id
-            // assignment order, which is nondeterministic under a parallel walk.
+            // Public roll-ups resolve internal ids, so their named maps are stable even
+            // when traversal order changes id assignment.
             let (totals, expected_totals) = (index.total(), expected.total());
             assert_eq!(
                 (totals.files, totals.dirs, totals.bytes, totals.allocated),
@@ -2528,8 +2582,7 @@ mod tests {
                 "{order:?}/{threads} newest mtime"
             );
             assert_eq!(
-                index.by_ext_named(totals),
-                expected.by_ext_named(expected_totals),
+                totals.by_ext, expected_totals.by_ext,
                 "{order:?}/{threads} extension tallies"
             );
             assert_eq!(
@@ -2756,19 +2809,22 @@ mod tests {
 
         // Bootstrap: drain the root, then seed four top-level regions.
         let mut claimed = Vec::new();
-        assert!(queue.claim(&mut claimed, &mut timing));
+        let root = queue.claim(&mut claimed, &mut timing).expect("root is claimable");
         claimed.clear();
         queue.extend(
             (0..4).map(|top| (PathBuf::from(format!("t{top}")), 1, RegionId::UNASSIGNED)),
             &mut timing,
         );
-        assert!(!queue.release(0, 0, &mut timing));
+        assert!(!root.release(0, 0, &mut timing));
 
-        // Four workers with no affinity must each be handed a different region.
+        // Four workers with no affinity must each be handed a different region. The
+        // claims are held for the whole loop, as four concurrent workers would hold
+        // them, because releasing between them would let one worker take every region.
         let mut regions = BTreeSet::new();
+        let mut held = Vec::new();
         for _ in 0..4 {
             let mut claimed = Vec::new();
-            assert!(queue.claim(&mut claimed, &mut timing));
+            held.push(queue.claim(&mut claimed, &mut timing).expect("a region has work"));
             regions.insert(claimed[0].2.0);
             assert_eq!(claimed.len(), 1, "one directory per region so far");
         }
@@ -2849,27 +2905,63 @@ mod tests {
     }
 
     #[test]
+    fn an_abandoned_claim_does_not_strand_the_other_workers() {
+        // The liveness property behind `DirectoryClaim`. A worker that stops mid-chunk
+        // — consumer gone, or a panic unwinding through the directory read — still owes
+        // the queue its claim, and `claim` parks everyone else until `outstanding`
+        // reaches zero. Before the claim was an RAII guard both of those exits skipped
+        // the release, and every remaining worker waited on the condvar forever while
+        // the scoped join waited on them.
+        let queue = std::sync::Arc::new(DirectoryQueue::new(
+            (PathBuf::new(), 0),
+            ScanOrder::BreadthFirst,
+            None,
+        ));
+        let mut timing = WalkAttribution::default();
+        let mut claimed = Vec::new();
+
+        // One worker takes the root and abandons it without publishing anything.
+        drop(queue.claim(&mut claimed, &mut timing).expect("root is claimable"));
+
+        // A second worker must now be told the walk is over rather than parking.
+        let waiter = queue.clone();
+        let (done, finished) = std::sync::mpsc::sync_channel(1);
+        std::thread::spawn(move || {
+            let mut timing = WalkAttribution::default();
+            let mut claimed = Vec::new();
+            let outcome = waiter.claim(&mut claimed, &mut timing).is_some();
+            done.send(outcome).expect("publish the claim outcome");
+        });
+
+        assert_eq!(
+            finished.recv_timeout(std::time::Duration::from_secs(5)),
+            Ok(false),
+            "the queue must report the walk finished instead of parking the worker"
+        );
+    }
+
+    #[test]
     fn automatic_queue_activates_its_reserve_only_for_slow_initial_work() {
         let slow = WorkerCalibration::new(3, 10);
         let queue = DirectoryQueue::new((PathBuf::new(), 0), ScanOrder::BreadthFirst, Some(slow));
         let mut timing = WalkAttribution::default();
         let mut claimed = Vec::new();
 
-        assert!(queue.claim(&mut claimed, &mut timing));
+        let claim = queue.claim(&mut claimed, &mut timing).expect("root is claimable");
         queue.extend([(PathBuf::from("child"), 1, RegionId::UNASSIGNED)].into_iter(), &mut timing);
-        assert!(!queue.release(2, 20, &mut timing));
+        assert!(!claim.release(2, 20, &mut timing));
 
         claimed.clear();
-        assert!(queue.claim(&mut claimed, &mut timing));
+        let claim = queue.claim(&mut claimed, &mut timing).expect("child is claimable");
         queue.extend([(PathBuf::from("grandchild"), 2, claimed[0].2)].into_iter(), &mut timing);
-        assert!(queue.release(1, 10, &mut timing));
+        assert!(claim.release(1, 10, &mut timing));
 
         let fast = WorkerCalibration::new(3, 11);
         let queue = DirectoryQueue::new((PathBuf::new(), 0), ScanOrder::BreadthFirst, Some(fast));
         let mut timing = WalkAttribution::default();
         let mut claimed = Vec::new();
-        assert!(queue.claim(&mut claimed, &mut timing));
-        assert!(!queue.release(3, 30, &mut timing));
+        let claim = queue.claim(&mut claimed, &mut timing).expect("root is claimable");
+        assert!(!claim.release(3, 30, &mut timing));
         assert!(queue.lock().calibration.is_none(), "calibration decides only once");
     }
 
@@ -2892,8 +2984,8 @@ mod tests {
         assert_eq!(total.files, 3);
         assert_eq!(total.dirs, 2);
         assert_eq!(total.bytes, 5 + 12 + 9);
-        assert_eq!(index.by_ext_named(total)[".rs"].files, 2);
-        assert_eq!(index.by_ext_named(total)[".txt"].files, 1);
+        assert_eq!(total.by_ext[".rs"].files, 2);
+        assert_eq!(total.by_ext[".txt"].files, 1);
 
         let src = index.rollup(Path::new("src")).expect("src");
         assert_eq!(src.files, 2);
@@ -3104,7 +3196,7 @@ mod tests {
     fn revalidate_is_a_no_op_against_an_unchanged_tree() {
         let dir = sample_tree();
         let (mut index, _) = scan_into_index(dir.path(), &ScanConfig::default()).expect("scan");
-        let before = index.total().clone();
+        let before = index.total();
 
         let mut deltas = Vec::new();
         revalidate(&index, &ScanConfig::default(), &mut |d| deltas.push(d)).expect("revalidate");
@@ -3114,14 +3206,14 @@ mod tests {
         }
 
         assert_eq!(unchanged, 5, "3 files + 2 dirs all already known");
-        assert_eq!(index.total(), &before);
+        assert_eq!(index.total(), before);
     }
 
     #[test]
     fn direct_reconciliation_counts_unchanged_entries_without_publishing_deltas() {
         let dir = sample_tree();
         let (mut index, _) = scan_into_index(dir.path(), &ScanConfig::default()).expect("scan");
-        let before_total = index.total().clone();
+        let before_total = index.total();
         let before_clock = index.clock();
         let mut deltas = Vec::new();
 
@@ -3134,7 +3226,7 @@ mod tests {
         assert_eq!(report.apply.unchanged, 5, "3 files + 2 dirs all already known");
         assert!(deltas.is_empty());
         assert_eq!(index.clock(), before_clock);
-        assert_eq!(index.total(), &before_total);
+        assert_eq!(index.total(), before_total);
     }
 
     #[test]
@@ -3164,7 +3256,6 @@ mod tests {
         assert_eq!(bulk_report.apply, portable_report.apply);
         assert_eq!(index_fingerprint(&bulk), index_fingerprint(&portable));
         assert_eq!(bulk.total(), portable.total());
-        assert_eq!(bulk.by_ext_named(bulk.total()), portable.by_ext_named(portable.total()));
     }
 
     #[test]
@@ -3243,8 +3334,7 @@ mod tests {
                         "{context}: roll-up differs"
                     );
                     assert_eq!(
-                        parallel.by_ext_named(parallel_total),
-                        serial.by_ext_named(serial_total),
+                        parallel_total.by_ext, serial_total.by_ext,
                         "{context}: extension roll-up differs"
                     );
                 }
@@ -3339,7 +3429,7 @@ mod tests {
         assert_eq!(index.total().bytes, expected.total().bytes);
         assert_eq!(index.total().allocated, expected.total().allocated);
         assert_eq!(index.total().newest_mtime_ns, expected.total().newest_mtime_ns);
-        assert_eq!(index.by_ext_named(index.total()), expected.by_ext_named(expected.total()));
+        assert_eq!(index.total().by_ext, expected.total().by_ext);
     }
 
     #[test]
@@ -3426,8 +3516,8 @@ mod tests {
         let total = index.total();
         assert_eq!(total.files, 3);
         assert_eq!(total.bytes, 20 + 9 + 3);
-        assert!(!index.by_ext_named(total).contains_key(".txt"));
-        assert_eq!(index.by_ext_named(total)[".md"].files, 1);
+        assert!(!total.by_ext.contains_key(".txt"));
+        assert_eq!(total.by_ext[".md"].files, 1);
     }
 
     #[test]

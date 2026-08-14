@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-012
   title: Breadth-first traversal order
-  date: 2026-08-11
+  date: "2026-08-11"
   hypotheses:
     - H48
   subject:
@@ -100,14 +100,6 @@ experiment:
           ci95_high_pct: 4.302
           significant: false
           pairs: 16
-        blocked_ns:
-          control_median: 0.0
-          candidate_median: 0.0
-          change_pct: 0.0
-          ci95_low_pct: null
-          ci95_high_pct: null
-          significant: false
-          pairs: 0
         peak_rss_bytes:
           control_median: 34668544.0
           candidate_median: 35373056.0
@@ -160,14 +152,6 @@ experiment:
           ci95_high_pct: 4.135
           significant: false
           pairs: 16
-        blocked_ns:
-          control_median: 0.0
-          candidate_median: 0.0
-          change_pct: 0.0
-          ci95_low_pct: null
-          ci95_high_pct: null
-          significant: false
-          pairs: 0
         peak_rss_bytes:
           control_median: 34652160.0
           candidate_median: 35774464.0

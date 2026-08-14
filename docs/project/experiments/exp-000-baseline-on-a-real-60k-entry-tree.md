@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-000
   title: Baseline on a real 60k-entry tree
-  date: 2026-08-10
+  date: "2026-08-10"
   hypotheses: []
   subject:
     tree_label: metabrowser-clone

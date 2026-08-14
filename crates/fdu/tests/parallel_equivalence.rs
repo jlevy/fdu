@@ -51,8 +51,8 @@ fn image(index: &Index) -> Vec<String> {
             attrs.dev,
         );
         if let Some(rollup) = index.rollup_of(id) {
-            let by_ext: BTreeMap<_, _> = index
-                .by_ext_named(rollup)
+            let by_ext: BTreeMap<_, _> = rollup
+                .by_ext
                 .into_iter()
                 .map(|(ext, tally)| (ext, (tally.files, tally.bytes, tally.allocated)))
                 .collect();

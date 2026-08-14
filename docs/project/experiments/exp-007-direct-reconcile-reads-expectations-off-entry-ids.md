@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-007
   title: Direct reconcile reads expectations off entry ids
-  date: 2026-08-11
+  date: "2026-08-11"
   hypotheses:
     - H14
   subject:

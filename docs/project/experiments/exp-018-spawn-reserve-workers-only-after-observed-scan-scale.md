@@ -8,7 +8,7 @@ softschema:
 experiment:
   id: exp-018
   title: Spawn reserve workers only after observed scan scale
-  date: 2026-08-12
+  date: "2026-08-12"
   hypotheses:
     - H31
   subject:
@@ -111,17 +111,6 @@ experiment:
           ci_excludes_zero: true
           direction: regressed
           pairs: 12
-        blocked_ns:
-          control_median: 0.0
-          candidate_median: 0.0
-          change_pct: 0.0
-          ci95_low_pct: null
-          ci95_high_pct: null
-          significant: false
-          passes_acceptance: false
-          ci_excludes_zero: false
-          direction: unknown
-          pairs: 0
         peak_rss_bytes:
           control_median: 324935680.0
           candidate_median: 330244096.0
@@ -192,17 +181,6 @@ experiment:
           ci_excludes_zero: true
           direction: regressed
           pairs: 12
-        blocked_ns:
-          control_median: 0.0
-          candidate_median: 0.0
-          change_pct: 0.0
-          ci95_low_pct: null
-          ci95_high_pct: null
-          significant: false
-          passes_acceptance: false
-          ci_excludes_zero: false
-          direction: unknown
-          pairs: 0
         peak_rss_bytes:
           control_median: 325640192.0
           candidate_median: 330260480.0
