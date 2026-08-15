@@ -357,9 +357,8 @@ pub(crate) fn crc32c(bytes: &[u8]) -> u32 {
 fn crc32c_update(mut state: u32, bytes: &[u8]) -> u32 {
     let mut chunks = bytes.chunks_exact(8);
     for chunk in &mut chunks {
-        let low =
-            (state ^ u32::from_le_bytes(chunk[..4].try_into().expect("chunk holds 8 bytes")))
-                .to_le_bytes();
+        let low = (state ^ u32::from_le_bytes(chunk[..4].try_into().expect("chunk holds 8 bytes")))
+            .to_le_bytes();
         let high =
             u32::from_le_bytes(chunk[4..].try_into().expect("chunk holds 8 bytes")).to_le_bytes();
         state = CRC32C_TABLES[7][usize::from(low[0])]
@@ -400,8 +399,7 @@ const fn make_crc32c_tables() -> [[u32; 256]; 8] {
         let mut index = 0usize;
         while index < 256 {
             let previous = tables[table - 1][index];
-            tables[table][index] =
-                tables[0][(previous & 0xFF) as usize] ^ (previous >> 8);
+            tables[table][index] = tables[0][(previous & 0xFF) as usize] ^ (previous >> 8);
             index += 1;
         }
         table += 1;

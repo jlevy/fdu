@@ -214,19 +214,19 @@ experiment:
     reason: "Wall +1.59% [-1.62%, +6.08%] and user CPU regressed +1.42% [+0.39%, +3.98%]: the per-file suffix extraction and byte compare cost as much as the small-Vec derive and intern they replaced, the H51/H62 pattern on a new site"
     commit: 3bda5c8
 ---
-The callgrind profile put `derive_ext`'s `from_utf8` at ~3% of engine instructions and
+The callgrind profile put `derive_ext`’s `from_utf8` at ~3% of engine instructions and
 dhat showed ~0.9 allocations per file, so a one-slot memo keyed on the raw extension
-suffix looked like a clean cut: equal raw bytes derive equal extensions, a hit bumps
-the same refcount `intern_ext` would, and every `release_ext` clears the memo so a
-reissued id can never be answered from stale bytes.
+suffix looked like a clean cut: equal raw bytes derive equal extensions, a hit bumps the
+same refcount `intern_ext` would, and every `release_ext` clears the memo so a reissued
+id can never be answered from stale bytes.
 
 The mechanism worked - an agreement test pinned the selection to `derive_ext_units`
-across dotfiles, `.tar` widening, and trailing dots, and a churn test held the
-refcounts exact - but the measurement refused it: the memo's own extraction and
-compare per file costs what the derive-and-intern path saved. glibc's same-thread
-small-allocation fast path is again cheaper than modeled, which is the third time
-this campaign has measured that shape (H51 move-not-clone, H62 worker-local
-reduction).
+across dotfiles, `.tar` widening, and trailing dots, and a churn test held the refcounts
+exact - but the measurement refused it: the memo’s own extraction and compare per file
+costs what the derive-and-intern path saved.
+glibc’s same-thread small-allocation fast path is again cheaper than modeled, which is
+the third time this campaign has measured that shape (H51 move-not-clone, H62
+worker-local reduction).
 
 The residual truth accrues to H86: the win is not shaving this path but deleting it -
 arena entries intern from a batch context where the run-length structure is explicit.

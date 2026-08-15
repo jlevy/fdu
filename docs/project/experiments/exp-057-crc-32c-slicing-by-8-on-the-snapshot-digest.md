@@ -218,25 +218,24 @@ experiment:
     reason: "Accepted on the pre-registered component signal: save component -12.20% [-36.02%, -0.10%] clears the bar decisively, load component -2.02% and both walls improved with all intervals below zero, for ~55 dependency-free lines with a bit-identity test"
     commit: 3bda5c8
 ---
-The snapshot digest folded one byte per step through one table; slicing-by-8 folds
-eight bytes per step through eight const-derived tables whose table 0 is the classic
-byte table, so the remainder loop and the fast path share one source of truth. The
-digest is bit-identical, pinned by a new equivalence test across uneven lengths
+The snapshot digest folded one byte per step through one table; slicing-by-8 folds eight
+bytes per step through eight const-derived tables whose table 0 is the classic byte
+table, so the remainder loop and the fast path share one source of truth.
+The digest is bit-identical, pinned by a new equivalence test across uneven lengths
 beside the standard check value, and the change is ~55 lines of straight-line
 arithmetic: no dependency, no unsafe, no new failure mode.
 
-Scored under the pre-registered-signal exception, exp-009's precedent. The registry
-row declared the component signal for both snapshot jobs before measurement. The
-save component cleared it decisively (-12.20% [-36.02%, -0.10%]); the load component
-came in real but under the bar (-2.02% [-7.00%, -0.34%]), because CRC is a smaller
-share of a load that also parses than of a save that only serializes and digests.
-Both walls improved with intervals entirely below zero (-2.95% [-6.77%, -1.19%]
-save, -1.97% [-2.88%, -0.60%] load), as did total and user CPU on both jobs -
-direction is unambiguous on every timing metric, and the fourth arm of the accept
-rule (is the complexity worth it) faces its cheapest possible case.
+Scored under the pre-registered-signal exception, exp-009’s precedent.
+The registry row declared the component signal for both snapshot jobs before
+measurement. The save component cleared it decisively (-12.20% [-36.02%, -0.10%]); the
+load component came in real but under the bar (-2.02% [-7.00%, -0.34%]), because CRC is
+a smaller share of a load that also parses than of a save that only serializes and
+digests. Both walls improved with intervals entirely below zero (-2.95% [-6.77%, -1.19%]
+save, -1.97% [-2.88%, -0.60%] load), as did total and user CPU on both jobs - direction
+is unambiguous on every timing metric, and the fourth arm of the accept rule (is the
+complexity worth it) faces its cheapest possible case.
 
-The reasoning is stated rather than assumed because the wall medians alone would
-read as reject: the acceptance rests on the declared component metric and the
-near-zero carrying cost together. Hardware CRC32C (SSE 4.2 / ARMv8) remains
-available behind the same interface if a future format revision makes the digest a
-larger share again.
+The reasoning is stated rather than assumed because the wall medians alone would read as
+reject: the acceptance rests on the declared component metric and the near-zero carrying
+cost together. Hardware CRC32C (SSE 4.2 / ARMv8) remains available behind the same
+interface if a future format revision makes the digest a larger share again.
