@@ -3,15 +3,15 @@ type: is
 id: is-01m01cm1sb8xyw9ag3pabb5s3h
 title: Stabilize adaptive scan scaling on heterogeneous macOS trees
 kind: bug
-status: open
+status: in_progress
 priority: 1
-version: 3
+version: 4
 labels:
   - perf
   - macos
 dependencies: []
 created_at: 2026-08-15T00:19:49.615Z
-updated_at: 2026-08-15T00:27:34.014Z
+updated_at: 2026-08-15T00:35:38.970Z
 ---
 
 ## Notes
