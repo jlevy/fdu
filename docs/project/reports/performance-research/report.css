@@ -761,6 +761,15 @@ input[type="search"] {
   border-radius: var(--radius-pill);
 }
 
+.legend-control {
+  background: var(--surface);
+  border: 1.5px solid var(--neutral);
+}
+
+.legend-candidate {
+  background: var(--neutral);
+}
+
 .legend-good {
   background: var(--good);
 }
@@ -804,7 +813,11 @@ input[type="search"] {
 
 .plot-grid,
 .plot-axis,
-.plot-threshold {
+.plot-threshold,
+.plot-frame,
+.absolute-connector,
+.absolute-control-mark,
+.absolute-candidate-mark {
   vector-effect: non-scaling-stroke;
 }
 
@@ -824,10 +837,22 @@ input[type="search"] {
   stroke-dasharray: 5 5;
 }
 
+.plot-frame {
+  fill: none;
+  stroke: var(--border-strong);
+  stroke-width: 1;
+}
+
 .plot-label,
 .plot-phase-label {
   fill: var(--muted);
   font-size: 11px;
+}
+
+.plot-panel-title {
+  fill: var(--text);
+  font-size: 12px;
+  font-weight: var(--weight-bold);
 }
 
 .plot-phase-label {
@@ -845,9 +870,74 @@ input[type="search"] {
   vector-effect: non-scaling-stroke;
 }
 
+.absolute-point,
 .plot-point {
   cursor: pointer;
   outline: none;
+}
+
+.absolute-point .absolute-hit {
+  fill: transparent;
+  stroke: transparent;
+  stroke-width: 24;
+}
+
+.absolute-point .absolute-connector {
+  stroke: var(--neutral);
+  stroke-width: 1.5;
+}
+
+.absolute-point .absolute-control-mark,
+.absolute-point .absolute-candidate-mark {
+  transition: transform var(--transition);
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.absolute-point .absolute-control-mark {
+  fill: var(--surface);
+  stroke: var(--neutral);
+  stroke-width: 1.5;
+}
+
+.absolute-point .absolute-candidate-mark {
+  fill: var(--neutral);
+  stroke: var(--surface);
+  stroke-width: 1.5;
+}
+
+.absolute-point.effect-improved .absolute-connector {
+  stroke: var(--good);
+}
+
+.absolute-point.effect-improved .absolute-candidate-mark {
+  fill: var(--good);
+}
+
+.absolute-point.effect-regressed .absolute-connector {
+  stroke: var(--bad);
+}
+
+.absolute-point.effect-regressed .absolute-candidate-mark {
+  fill: var(--bad);
+}
+
+.absolute-point:hover .absolute-control-mark,
+.absolute-point:hover .absolute-candidate-mark,
+.absolute-point:focus-visible .absolute-control-mark,
+.absolute-point:focus-visible .absolute-candidate-mark,
+.absolute-point.is-selected .absolute-control-mark,
+.absolute-point.is-selected .absolute-candidate-mark {
+  stroke: var(--focus);
+  stroke-width: 3;
+  transform: scale(1.35);
+}
+
+.absolute-point:hover .absolute-connector,
+.absolute-point:focus-visible .absolute-connector,
+.absolute-point.is-selected .absolute-connector {
+  stroke: var(--focus);
+  stroke-width: 2.5;
 }
 
 .plot-point .point-hit {

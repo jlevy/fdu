@@ -37,6 +37,13 @@
 
   const formatPercent = (value, digits = 1) => `${signedNumber(value, digits)}%`;
 
+  const formatImprovementPercent = (changePercent, digits = 1) => {
+    if (changePercent === null || changePercent === undefined || Number.isNaN(Number(changePercent))) {
+      return "—";
+    }
+    return formatPercent(-Number(changePercent), digits);
+  };
+
   const formatInteger = (value) => {
     if (value === null || value === undefined) return "—";
     return new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(Number(value));
@@ -90,6 +97,11 @@
   const formatInterval = (interval, digits = 1) => {
     if (!interval || interval[0] === null || interval[1] === null) return "not recorded";
     return `[${formatPercent(interval[0], digits)}, ${formatPercent(interval[1], digits)}]`;
+  };
+
+  const formatImprovementInterval = (interval, digits = 1) => {
+    if (!interval || interval[0] === null || interval[1] === null) return "not recorded";
+    return formatInterval([-Number(interval[1]), -Number(interval[0])], digits);
   };
 
   const formatMetricValue = (value, metric) => {
@@ -279,7 +291,10 @@
     const badges = element("div", "detail-badges");
     badges.append(
       decisionBadge(experiment.verdict.decision),
-      badge(formatPercent(experiment.primary.change_pct, 2), effectClass(experiment.effect)),
+      badge(
+        `${formatImprovementPercent(experiment.primary.change_pct, 2)} improvement`,
+        effectClass(experiment.effect),
+      ),
     );
     header.append(identity, badges);
 
@@ -298,7 +313,7 @@
       element(
         "p",
         "",
-        `Medians: ${formatMetricValue(experiment.primary.control_median, experiment.primary.metric)} → ${formatMetricValue(experiment.primary.candidate_median, experiment.primary.metric)}; 95% interval ${formatInterval(experiment.primary.ci95_pct, 2)}.`,
+        `Medians: ${formatMetricValue(experiment.primary.control_median, experiment.primary.metric)} → ${formatMetricValue(experiment.primary.candidate_median, experiment.primary.metric)}. Relative improvement: ${formatImprovementPercent(experiment.primary.change_pct, 2)}; 95% interval ${formatImprovementInterval(experiment.primary.ci95_pct, 2)}.`,
       ),
     );
     const verdict = element("div");
@@ -324,12 +339,35 @@
     const phaseFilter = byId("plot-phase");
     const effectFilter = byId("plot-effect");
     const width = 1240;
-    const height = 500;
-    const margin = { top: 52, right: 24, bottom: 58, left: 72 };
+    const height = 760;
+    const margin = { right: 24, left: 82 };
     const innerWidth = width - margin.left - margin.right;
-    const innerHeight = height - margin.top - margin.bottom;
-    const maximumMagnitude = 70;
+    const experimentCount = report.experiments.length;
+    const absolutePanel = { top: 72, bottom: 315 };
+    const relativePanel = { top: 400, bottom: 690 };
+    const improvementValues = report.experiments
+      .map((experiment) => experiment.primary.change_pct)
+      .filter((value) => Number.isFinite(value))
+      .map((value) => -Number(value));
+    const maximumMagnitude =
+      Math.ceil((Math.max(3, ...improvementValues.map((value) => Math.abs(value))) * 1.05) / 10) * 10;
     const transformedLimit = Math.sqrt(maximumMagnitude);
+    const durationExperiments = report.experiments.filter(
+      (experiment) =>
+        String(experiment.primary.metric).endsWith("_ns") &&
+        Number(experiment.primary.control_median) > 0 &&
+        Number(experiment.primary.candidate_median) > 0,
+    );
+    const durationValues = durationExperiments.flatMap((experiment) => [
+      Number(experiment.primary.control_median) / 1_000_000,
+      Number(experiment.primary.candidate_median) / 1_000_000,
+    ]);
+    const observedDurationLogs = durationValues.map((value) => Math.log10(value));
+    const observedLogMinimum = observedDurationLogs.length ? Math.min(...observedDurationLogs) : 0;
+    const observedLogMaximum = observedDurationLogs.length ? Math.max(...observedDurationLogs) : 3;
+    const logPadding = Math.max(0.08, (observedLogMaximum - observedLogMinimum) * 0.06);
+    const durationLogMinimum = observedLogMinimum - logPadding;
+    const durationLogMaximum = observedLogMaximum + logPadding;
     let pinned = experimentsById.get("exp-054") || report.experiments.at(-1);
 
     for (const phase of report.phases) {
@@ -338,10 +376,48 @@
       phaseFilter.append(option);
     }
 
-    const x = (number) => margin.left + ((number + 0.5) / 56) * innerWidth;
+    const x = (number) => margin.left + ((number + 0.5) / experimentCount) * innerWidth;
     const transformEffect = (value) => Math.sign(value) * Math.sqrt(Math.abs(value));
-    const y = (improvement) =>
-      margin.top + ((transformedLimit - transformEffect(improvement)) / (2 * transformedLimit)) * innerHeight;
+    const relativeY = (improvement) =>
+      relativePanel.top +
+      ((transformedLimit - transformEffect(improvement)) / (2 * transformedLimit)) *
+        (relativePanel.bottom - relativePanel.top);
+    const absoluteY = (milliseconds) =>
+      absolutePanel.top +
+      ((Math.log10(milliseconds) - durationLogMinimum) /
+        (durationLogMaximum - durationLogMinimum)) *
+        (absolutePanel.bottom - absolutePanel.top);
+    const isDurationExperiment = (experiment) => durationExperiments.includes(experiment);
+    const improvementFor = (experiment) => -Number(experiment.primary.change_pct);
+    const formatDurationTick = (value) =>
+      new Intl.NumberFormat("en-US", {
+        maximumFractionDigits: value < 10 ? 1 : 0,
+      }).format(value);
+
+    const durationTicks = [];
+    for (
+      let exponent = Math.floor(durationLogMinimum);
+      exponent <= Math.ceil(durationLogMaximum);
+      exponent += 1
+    ) {
+      for (const multiplier of [1, 2, 5]) {
+        const value = multiplier * 10 ** exponent;
+        const valueLog = Math.log10(value);
+        if (valueLog >= durationLogMinimum && valueLog <= durationLogMaximum) {
+          durationTicks.push(value);
+        }
+      }
+    }
+
+    const relativeMagnitudes = [3, 10, 25, 50, 100, 200, 500].filter(
+      (value) => value < maximumMagnitude,
+    );
+    relativeMagnitudes.push(maximumMagnitude);
+    const relativeTicks = [
+      ...relativeMagnitudes.map((value) => -value).reverse(),
+      0,
+      ...relativeMagnitudes,
+    ];
 
     const visibleExperiments = () =>
       report.experiments.filter((experiment) => {
@@ -356,7 +432,7 @@
       });
 
     const markSelected = (id) => {
-      for (const point of svg.querySelectorAll(".plot-point")) {
+      for (const point of svg.querySelectorAll("[data-experiment-id]")) {
         point.classList.toggle("is-selected", point.dataset.experimentId === id);
       }
     };
@@ -373,41 +449,148 @@
       }
     };
 
+    const attachInteraction = (group, experiment) => {
+      group.addEventListener("mouseenter", () => showTemporary(experiment));
+      group.addEventListener("mouseleave", restorePinned);
+      group.addEventListener("focus", () => showTemporary(experiment));
+      group.addEventListener("blur", restorePinned);
+      group.addEventListener("click", () => {
+        pinned = experiment;
+        restorePinned();
+      });
+      group.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          pinned = experiment;
+          restorePinned();
+        }
+      });
+    };
+
+    const appendPlatformMarker = (group, experiment, markerX, markerY, className, size) => {
+      if (experiment.platform === "Linux") {
+        group.append(
+          svgElement("polygon", {
+            points: `${markerX},${markerY - size} ${markerX + size},${markerY} ${markerX},${markerY + size} ${markerX - size},${markerY}`,
+            class: className,
+          }),
+        );
+      } else {
+        group.append(
+          svgElement("circle", {
+            cx: markerX,
+            cy: markerY,
+            r: size * 0.78,
+            class: className,
+          }),
+        );
+      }
+    };
+
+    const appendPhaseBands = (panel) => {
+      for (const [index, phase] of report.phases.entries()) {
+        const start = margin.left + (phase.first / experimentCount) * innerWidth;
+        const end = margin.left + ((phase.last + 1) / experimentCount) * innerWidth;
+        svg.append(
+          svgElement("rect", {
+            x: start,
+            y: panel.top,
+            width: end - start,
+            height: panel.bottom - panel.top,
+            class: index % 2 === 0 ? "plot-phase-a" : "plot-phase-b",
+          }),
+        );
+      }
+    };
+
+    const appendPanelTitle = (text, panel) => {
+      const title = svgElement("text", {
+        x: margin.left,
+        y: panel.top - 14,
+        class: "plot-panel-title",
+      });
+      title.textContent = text;
+      svg.append(title);
+    };
+
+    const appendFrame = (panel) => {
+      svg.append(
+        svgElement("rect", {
+          x: margin.left,
+          y: panel.top,
+          width: innerWidth,
+          height: panel.bottom - panel.top,
+          class: "plot-frame",
+        }),
+      );
+    };
+
+    const appendYAxisTitle = (text, panel) => {
+      const center = panel.top + (panel.bottom - panel.top) / 2;
+      const title = svgElement("text", {
+        x: 18,
+        y: center,
+        transform: `rotate(-90 18 ${center})`,
+        "text-anchor": "middle",
+        class: "plot-label",
+      });
+      title.textContent = text;
+      svg.append(title);
+    };
+
     const render = () => {
       while (svg.children.length > 2) svg.removeChild(svg.lastElementChild);
       const visible = visibleExperiments();
       const visibleIds = new Set(visible.map((experiment) => experiment.id));
 
-      for (const [index, phase] of report.phases.entries()) {
-        const start = margin.left + (phase.first / 56) * innerWidth;
-        const end = margin.left + ((phase.last + 1) / 56) * innerWidth;
-        svg.append(
-          svgElement("rect", {
-            x: start,
-            y: margin.top,
-            width: end - start,
-            height: innerHeight,
-            class: index % 2 === 0 ? "plot-phase-a" : "plot-phase-b",
-          }),
-        );
+      appendPhaseBands(absolutePanel);
+      appendPhaseBands(relativePanel);
+
+      for (const phase of report.phases) {
+        const start = margin.left + (phase.first / experimentCount) * innerWidth;
         const phaseLabel = svgElement("text", {
           x: start + 7,
-          y: margin.top - 15,
+          y: 27,
           class: "plot-phase-label",
         });
         phaseLabel.textContent = `${phase.first}–${phase.last}`;
         svg.append(phaseLabel);
       }
 
-      const ticks = [-70, -50, -25, -10, -3, 0, 3, 10, 25, 50, 70];
-      for (const tick of ticks) {
-        const tickY = y(tick);
+      appendPanelTitle(
+        "Absolute primary runtime · control → candidate · time metrics only",
+        absolutePanel,
+      );
+      appendPanelTitle("Relative primary-metric improvement · candidate vs control", relativePanel);
+
+      for (const tick of durationTicks) {
+        const tickY = absoluteY(tick);
         const line = svgElement("line", {
           x1: margin.left,
           y1: tickY,
           x2: width - margin.right,
           y2: tickY,
-          class: tick === 0 ? "plot-axis" : tick === 3 ? "plot-threshold" : "plot-grid",
+          class: "plot-grid",
+        });
+        const label = svgElement("text", {
+          x: margin.left - 10,
+          y: tickY + 4,
+          "text-anchor": "end",
+          class: "plot-label",
+        });
+        label.textContent = formatDurationTick(tick);
+        svg.append(line, label);
+      }
+
+      for (const tick of relativeTicks) {
+        const tickY = relativeY(tick);
+        const line = svgElement("line", {
+          x1: margin.left,
+          y1: tickY,
+          x2: width - margin.right,
+          y2: tickY,
+          class:
+            tick === 0 ? "plot-axis" : Math.abs(tick) === 3 ? "plot-threshold" : "plot-grid",
         });
         const label = svgElement("text", {
           x: margin.left - 10,
@@ -419,28 +602,23 @@
         svg.append(line, label);
       }
 
-      const axisTitle = svgElement("text", {
-        x: 18,
-        y: height / 2,
-        transform: `rotate(-90 18 ${height / 2})`,
-        "text-anchor": "middle",
-        class: "plot-label",
-      });
-      axisTitle.textContent = "Primary result: better ↑ · poorer ↓ (square-root scale)";
-      svg.append(axisTitle);
+      appendFrame(absolutePanel);
+      appendFrame(relativePanel);
+      appendYAxisTitle("Runtime (ms, log scale) · faster ↑", absolutePanel);
+      appendYAxisTitle("Improvement (%) · square-root scale · better ↑", relativePanel);
 
-      for (let number = 0; number <= 55; number += 5) {
+      for (let number = 0; number < experimentCount; number += 5) {
         const tickX = x(number);
         const tick = svgElement("line", {
           x1: tickX,
-          y1: height - margin.bottom,
+          y1: relativePanel.bottom,
           x2: tickX,
-          y2: height - margin.bottom + 5,
+          y2: relativePanel.bottom + 5,
           class: "plot-axis",
         });
         const label = svgElement("text", {
           x: tickX,
-          y: height - margin.bottom + 20,
+          y: relativePanel.bottom + 20,
           "text-anchor": "middle",
           class: "plot-label",
         });
@@ -456,6 +634,61 @@
       xTitle.textContent = "Experiment sequence";
       svg.append(xTitle);
 
+      for (const experiment of visible.filter(isDurationExperiment)) {
+        const pointX = x(experiment.number);
+        const controlX = pointX - 4;
+        const candidateX = pointX + 4;
+        const controlMilliseconds = Number(experiment.primary.control_median) / 1_000_000;
+        const candidateMilliseconds = Number(experiment.primary.candidate_median) / 1_000_000;
+        const controlY = absoluteY(controlMilliseconds);
+        const candidateY = absoluteY(candidateMilliseconds);
+        const improvement = improvementFor(experiment);
+        const group = svgElement("g", {
+          class: `absolute-point ${pointEffectClass(experiment.effect)}`,
+          tabindex: "0",
+          role: "button",
+          "aria-label": `${experiment.id}, ${experiment.title}, control ${formatMetricValue(experiment.primary.control_median, experiment.primary.metric)}, candidate ${formatMetricValue(experiment.primary.candidate_median, experiment.primary.metric)}, ${formatPercent(improvement, 2)} relative improvement, ${experiment.verdict.decision}`,
+        });
+        group.dataset.experimentId = experiment.id;
+        group.append(
+          svgElement("line", {
+            x1: controlX,
+            y1: controlY,
+            x2: candidateX,
+            y2: candidateY,
+            class: "absolute-connector",
+          }),
+          svgElement("line", {
+            x1: controlX,
+            y1: controlY,
+            x2: candidateX,
+            y2: candidateY,
+            class: "absolute-hit",
+          }),
+        );
+        appendPlatformMarker(
+          group,
+          experiment,
+          controlX,
+          controlY,
+          "absolute-control-mark",
+          5.5,
+        );
+        appendPlatformMarker(
+          group,
+          experiment,
+          candidateX,
+          candidateY,
+          "absolute-candidate-mark",
+          5.5,
+        );
+        const title = svgElement("title");
+        title.textContent = `${experiment.id} · ${formatMetricValue(experiment.primary.control_median, experiment.primary.metric)} control → ${formatMetricValue(experiment.primary.candidate_median, experiment.primary.metric)} candidate · ${formatPercent(improvement, 2)} improvement`;
+        group.append(title);
+        attachInteraction(group, experiment);
+        svg.append(group);
+      }
+
       for (const platform of ["macOS", "Linux"]) {
         const points = visible
           .filter(
@@ -469,8 +702,8 @@
         if (points.length > 1) {
           const pathData = points
             .map((experiment, index) => {
-              const improvement = -Number(experiment.primary.change_pct);
-              return `${index === 0 ? "M" : "L"}${x(experiment.number).toFixed(2)},${y(improvement).toFixed(2)}`;
+              const improvement = improvementFor(experiment);
+              return `${index === 0 ? "M" : "L"}${x(experiment.number).toFixed(2)},${relativeY(improvement).toFixed(2)}`;
             })
             .join(" ");
           svg.append(svgElement("path", { d: pathData, class: "plot-line-good" }));
@@ -479,54 +712,29 @@
 
       for (const experiment of visible) {
         if (experiment.primary.change_pct === null) continue;
-        const improvement = Math.max(
-          -maximumMagnitude,
-          Math.min(maximumMagnitude, -Number(experiment.primary.change_pct)),
-        );
+        const improvement = improvementFor(experiment);
         const pointX = x(experiment.number);
-        const pointY = y(improvement);
+        const pointY = relativeY(improvement);
         const group = svgElement("g", {
           class: `plot-point ${pointEffectClass(experiment.effect)}`,
           tabindex: "0",
           role: "button",
-          "aria-label": `${experiment.id}, ${experiment.title}, ${formatPercent(experiment.primary.change_pct, 2)}, ${experiment.verdict.decision}`,
+          "aria-label": `${experiment.id}, ${experiment.title}, ${formatPercent(improvement, 2)} relative improvement, ${experiment.verdict.decision}`,
         });
         group.dataset.experimentId = experiment.id;
         group.append(svgElement("circle", { cx: pointX, cy: pointY, r: 13, class: "point-hit" }));
-        if (experiment.platform === "Linux") {
-          group.append(
-            svgElement("polygon", {
-              points: `${pointX},${pointY - 7} ${pointX + 7},${pointY} ${pointX},${pointY + 7} ${pointX - 7},${pointY}`,
-              class: "point-mark",
-            }),
-          );
-        } else {
-          group.append(svgElement("circle", { cx: pointX, cy: pointY, r: 5.5, class: "point-mark" }));
-        }
+        appendPlatformMarker(group, experiment, pointX, pointY, "point-mark", 7);
         const title = svgElement("title");
-        title.textContent = `${experiment.id} · ${experiment.title} · ${formatPercent(experiment.primary.change_pct, 2)}`;
+        title.textContent = `${experiment.id} · ${experiment.title} · ${formatPercent(improvement, 2)} relative improvement`;
         group.append(title);
-        group.addEventListener("mouseenter", () => showTemporary(experiment));
-        group.addEventListener("mouseleave", restorePinned);
-        group.addEventListener("focus", () => showTemporary(experiment));
-        group.addEventListener("blur", restorePinned);
-        group.addEventListener("click", () => {
-          pinned = experiment;
-          restorePinned();
-        });
-        group.addEventListener("keydown", (event) => {
-          if (event.key === "Enter" || event.key === " ") {
-            event.preventDefault();
-            pinned = experiment;
-            restorePinned();
-          }
-        });
+        attachInteraction(group, experiment);
         svg.append(group);
       }
 
       if (!visibleIds.has(pinned?.id)) pinned = visible.at(-1) || null;
       if (pinned) restorePinned();
-      byId("plot-status").textContent = `${visible.length} experiments shown.`;
+      const absoluteCount = visible.filter(isDurationExperiment).length;
+      byId("plot-status").textContent = `${visible.length} experiments shown; ${absoluteCount} have time-based absolute runtimes.`;
     };
 
     platformFilter.addEventListener("change", render);

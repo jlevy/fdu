@@ -150,9 +150,11 @@
               <h2 id="experiments-title">Every attempt remains visible</h2>
             </div>
             <p>
-              Points show the signed primary result on a symmetric square-root scale so
-              small effects remain legible. Green points are better, red points poorer,
-              and gray points unclear or neutral.
+              The upper panel compares measured control and candidate runtimes. The lower
+              panel shows the same experiments as relative primary-metric improvement,
+              using a symmetric square-root scale to keep small effects legible and
+              positive percentages above zero. Hover either panel to inspect the setup and
+              verdict.
             </p>
           </div>
 
@@ -181,6 +183,8 @@
               </select>
             </label>
             <div class="chart-legend" aria-label="Chart legend">
+              <span><i class="legend-mark legend-control"></i> Control</span>
+              <span><i class="legend-mark legend-candidate"></i> Candidate</span>
               <span><i class="legend-mark legend-good"></i> Better</span>
               <span><i class="legend-mark legend-bad"></i> Poorer</span>
               <span><i class="legend-mark legend-neutral"></i> Unclear</span>
@@ -193,23 +197,27 @@
               <svg
                 id="experiment-plot"
                 class="experiment-plot"
-                viewBox="0 0 1240 500"
+                viewBox="0 0 1240 760"
                 role="img"
                 aria-labelledby="plot-title plot-description"
               >
-                <title id="plot-title">Primary performance result by experiment</title>
+                <title id="plot-title">Absolute runtime and relative improvement by experiment</title>
                 <desc id="plot-description">
-                  Fifty-six experiments ordered from zero to fifty-five. Points above zero
-                  are improvements and points below zero are regressions. Accepted clear
-                  improvements are connected by platform as a sequence guide, not a
-                  cumulative performance curve.
+                  Fifty-six experiments ordered from zero to fifty-five. The upper panel
+                  compares control and candidate duration for time-based primary metrics on
+                  a logarithmic scale. The lower panel shows relative primary-metric
+                  improvement; points above zero are better and points below zero are
+                  poorer. Accepted clear improvements are connected by platform as a
+                  sequence guide, not a cumulative performance curve.
                 </desc>
               </svg>
             </div>
             <figcaption>
-              The thin green connection follows accepted, clearly favorable results in
-              experiment order. It is a navigation aid—not cumulative arithmetic—because
-              controls, jobs, metrics, trees, and regimes differ between points.
+              Each upper-panel connector is one paired measurement: hollow control to solid
+              candidate. Absolute runtimes are comparable within a pair; jobs, trees, and
+              regimes differ across the sequence. The lower panel includes all primary
+              metrics, including the one memory experiment; its thin green line is a
+              navigation aid through accepted favorable results, not cumulative arithmetic.
             </figcaption>
           </figure>
           <p class="sr-only" id="plot-status" aria-live="polite"></p>
