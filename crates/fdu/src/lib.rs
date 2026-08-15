@@ -396,7 +396,8 @@ impl SaveTargets {
 /// Entry count at or above which a first scan's metadata snapshot is worth writing.
 ///
 /// `None` persists unconditionally, which is what every release has shipped and what
-/// this build still does. The value is deliberately not set yet.
+/// this build still does. It stays unset because APFS measurement argued against a
+/// threshold, not because the measurement is outstanding.
 ///
 /// A snapshot repays its write only if a later run reads it *and* that read beats
 /// rescanning. For metadata neither half is free. Revalidating a loaded snapshot stats
@@ -412,12 +413,18 @@ impl SaveTargets {
 /// cache will be warm again and the snapshot will never pay, while one that does not
 /// will be cold and it always will.
 ///
-/// That reasoning does not itself produce a number, and the number cannot be inherited:
-/// it depends on page-cache behaviour and on filesystem metadata layout, neither of which
-/// ext4 on a virtualised host predicts for APFS on Apple Silicon. Setting it also
-/// introduces a visible cliff — below it, `fdu PATH` would stop leaving a snapshot for a
-/// later `--cache only` — so it is a product decision as much as a measurement.
-/// `fdu-hvs5` holds both.
+/// That reasoning is ext4's, and it did not survive the crossing. Measured on APFS over
+/// 175,128 entries, warm, the `Only` read took 146 ms against 521 ms to scan — a win
+/// rather than ext4's loss, because deserialisation costs about the same on both while an
+/// APFS metadata walk costs roughly three and a half times as much per entry. The 90 ms
+/// write repays about fourfold on the first later `Only` read, at any size, so the
+/// premise that metadata pays back only under a cold cache is false here.
+///
+/// A threshold would therefore give up real value on exactly the trees it gated, and it
+/// would also introduce a visible cliff: below it, `fdu PATH` would stop leaving a
+/// snapshot for a later `--cache only`. `fdu-hvs5` carries the evidence, and
+/// `docs/project/guides/platform-tuning.md` carries why this one is a constant worth
+/// not having.
 const SNAPSHOT_MIN_ENTRIES: Option<u64> = None;
 
 /// Which artifacts a first, cold scan should persist.
@@ -1199,9 +1206,10 @@ mod cold_scan_persistence_tests {
 
     #[test]
     fn an_unset_threshold_preserves_the_behaviour_every_release_has_shipped() {
-        // SNAPSHOT_MIN_ENTRIES is None until Apple Silicon/APFS measurement sets it
-        // (fdu-hvs5). Until then a cold metadata scan must persist exactly as before,
-        // so `fdu PATH` keeps leaving a snapshot for a later `--cache only`.
+        // SNAPSHOT_MIN_ENTRIES stays None because APFS measurement argued against a
+        // threshold rather than supplying one (fdu-hvs5): there the snapshot repays its
+        // write on the first later `Only` read at any size. A cold metadata scan must
+        // persist exactly as before, so `fdu PATH` keeps leaving a snapshot behind.
         let plain = config(CachePolicy::Auto, content::AnalysisProfile::Disabled);
         assert!(
             cold_scan_save_targets_with(1, &plain, None).metadata,
