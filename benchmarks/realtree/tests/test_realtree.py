@@ -834,7 +834,7 @@ class HostRegimeTests(unittest.TestCase):
 
         self.assertEqual(busy, 50.0)
         self.assertIsNone(reason)
-        sleep.assert_called_once_with(0.1)
+        sleep.assert_called_once_with(measure.HOST_CPU_BOUNDARY_INTERVAL_SECONDS)
 
 
 class ProfileParsingTests(unittest.TestCase):

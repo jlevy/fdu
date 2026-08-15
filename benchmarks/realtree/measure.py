@@ -78,6 +78,7 @@ QUIET_MAX_LOAD_PER_CPU = 0.25
 CONTROLLED_MAX_EXCESS_LOAD_PER_CPU = 0.25
 QUIET_MAX_CPU_BUSY_PCT = 25.0
 CONTROLLED_MAX_EXCESS_CPU_BUSY_PCT = 25.0
+HOST_CPU_BOUNDARY_INTERVAL_SECONDS = 0.5
 HOST_REGIMES = {"controlled-interactive", "quiet", "uncontrolled"}
 
 
@@ -523,7 +524,7 @@ def _darwin_cpu_busy_pct() -> tuple[Optional[float], Optional[str]]:
 
     A fixed-N benchmark creates runnable workers by design. Darwin's load average keeps
     counting that work after the child exits, so it cannot distinguish later background
-    pressure from the benchmark's own previous samples. A 100 ms Mach host-counter
+    pressure from the benchmark's own previous samples. A 500 ms Mach host-counter
     delta observes a short boundary interval after the child is gone; the lagging load
     averages remain in the artifact as context but do not accept or reject macOS
     samples.
@@ -531,7 +532,7 @@ def _darwin_cpu_busy_pct() -> tuple[Optional[float], Optional[str]]:
     first, reason = _darwin_cpu_ticks()
     if first is None:
         return None, reason
-    time.sleep(0.1)
+    time.sleep(HOST_CPU_BOUNDARY_INTERVAL_SECONDS)
     second, reason = _darwin_cpu_ticks()
     if second is None:
         return None, reason
