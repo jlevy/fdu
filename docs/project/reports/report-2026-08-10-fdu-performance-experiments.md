@@ -60,7 +60,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | platform | host | cache state | experiments |
 | --- | --- | --- | ---: |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 53 |
-| Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 6 |
+| Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 
 ## Every experiment, including the failures
 
@@ -128,6 +128,7 @@ dead end.
 | 056 | [One-slot extension memo in front of derive-and-intern](#exp056--oneslot-extension-memo-in-front-of-deriveandintern) | H89 | `cold-scan-index` | +1.6% | ❌ rejected |
 | 057 | [CRC-32C slicing-by-8 on the snapshot digest](#exp057--crc32c-slicingby8-on-the-snapshot-digest) | H88 | `cold-snapshot-save` | -12.2% | ✅ accepted |
 | 058 | [Skip unread journal capture on the bootstrap apply path](#exp058--skip-unread-journal-capture-on-the-bootstrap-apply-path) | H90 | `cold-scan-index` | -5.1% | ✅ accepted |
+| 059 | [Share the index with the snapshot writer instead of deep-cloning it](#exp059--share-the-index-with-the-snapshot-writer-instead-of-deepcloning-it) | H87 | `cold-open-save` | -10.5% | ✅ accepted |
 
 ## The experiments
 
@@ -2142,6 +2143,38 @@ and the reproducing context-switch increase costs no wall or CPU.
 
 Full record:
 [`exp-058-skip-unread-journal-capture-on-the-bootstrap-apply-path.md`](../experiments/exp-058-skip-unread-journal-capture-on-the-bootstrap-apply-path.md)
+
+### exp-059 — Share the index with the snapshot writer instead of deep-cloning it
+
+✅ accepted · 2026-08-15 · H87 · commit `bd9779d`
+
+Control: post-exp-058 head: spawn_save deep-clones the index before rendering
+
+Candidate: open_with_pending_save returns Arc<Index>; the writer takes a reference
+
+**`cold-open-save`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 2080.1 | 1821.4 | -10.50% | [-21.96%, -8.11%] |
+| component (ms) | 1078.6 | 858.6 | -17.26% | [-35.82%, -12.18%] |
+| cpu (ms) | 2995.6 | 2761.5 | -6.53% | [-15.11%, -5.52%] |
+| user (ms) | 1839.5 | 1717.8 | -6.09% | [-8.34%, -5.49%] |
+| system (ms) | 1150.0 | 1032.0 | -6.45% | [-24.29%, -2.53%] |
+| peak rss (MiB) | 492.5 | 316.5 | -35.26% | [-38.16%, -33.08%] |
+
+Other jobs, wall time: `cold-scan-index` +1.7% (n.s.).
+
+Cost to carry: 45 lines; no new dependencies; new failure mode: open_with_pending_save’s
+return type is a breaking change for library consumers of that entry point; open() is
+unchanged.
+
+**Accepted:** cold-open-save wall -10.50% [-21.96%, -8.11%], component -17.26%, peak RSS
+-35.26% [-38.16%, -33.08%] - the second copy of the index disappearing; cold-scan-index
+unmoved as the placebo at +1.69% [-0.86%, +3.07%].
+
+Full record:
+[`exp-059-share-the-index-with-the-snapshot-writer-instead-of-deep-clo.md`](../experiments/exp-059-share-the-index-with-the-snapshot-writer-instead-of-deep-clo.md)
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

@@ -258,7 +258,14 @@ impl OpenReport {
 /// or [`Index::freshness`] before treating totals as complete.
 pub fn open(root: &Path, config: &OpenConfig) -> Result<(Index, OpenReport)> {
     let (index, report, pending) = open_with_pending_save(root, config)?;
+    // Joining first is what makes the unwrap infallible: the writer held the only other
+    // reference, and this is the blocking entry point, so by here it has finished and
+    // dropped it. `try_unwrap` rather than a clone keeps the owned-`Index` signature
+    // honest — a fallback clone here would quietly reintroduce the copy the shared
+    // writer exists to avoid.
     pending.join()?;
+    let index = std::sync::Arc::into_inner(index)
+        .expect("the joined writer released the only other reference");
     Ok((index, report))
 }
 
@@ -269,7 +276,7 @@ pub fn open(root: &Path, config: &OpenConfig) -> Result<(Index, OpenReport)> {
 pub fn open_with_pending_save(
     root: &Path,
     config: &OpenConfig,
-) -> Result<(Index, OpenReport, PendingSave)> {
+) -> Result<(std::sync::Arc<Index>, OpenReport, PendingSave)> {
     let root = root.canonicalize().map_err(|e| Error::io(root, e))?;
     let policy = config.policy;
 
@@ -303,7 +310,7 @@ pub fn open_with_pending_save(
             ));
         }
         return Ok((
-            index,
+            std::sync::Arc::new(index),
             OpenReport {
                 path_taken: OpenPath::CacheOnly,
                 scan: ScanReport::default(),
@@ -336,6 +343,7 @@ pub fn open_with_pending_save(
             content: analysis.as_ref().is_some_and(|report| report.applied > 0)
                 || content_cache.stale > 0,
         };
+        let index = std::sync::Arc::new(index);
         let pending = spawn_save(&index, config, scan_report.is_complete(), writes);
         return Ok((
             index,
@@ -356,6 +364,7 @@ pub fn open_with_pending_save(
         .profile
         .is_enabled()
         .then(|| content::analyze_index(&mut index, config.analysis));
+    let index = std::sync::Arc::new(index);
     let pending = spawn_save(&index, config, scan_report.is_complete(), SaveTargets::all());
     Ok((
         index,
@@ -396,7 +405,7 @@ fn load_content(index: &mut Index, config: &OpenConfig) -> Result<content::Conte
 /// Only a complete scan is written: a snapshot recording a partial view would be served
 /// as fact on the next run, and the existing complete snapshot is better than that.
 fn spawn_save(
-    index: &Index,
+    index: &std::sync::Arc<Index>,
     config: &OpenConfig,
     complete: bool,
     writes: SaveTargets,
@@ -407,10 +416,13 @@ fn spawn_save(
         return PendingSave::none();
     };
 
-    // The index is read-only from here, so the writer's clone and the caller's rendering
-    // are two readers. Cloning is what buys that independence, and it is why a run with
-    // nothing to write returns above rather than reaching this point.
-    let snapshot_source = std::sync::Arc::new(index.clone());
+    // The index is read-only from here, so the writer and the caller's rendering are two
+    // readers of one index rather than of two copies. This used to deep-clone — every
+    // boxed entry, both stored copies of every name, and every `BTreeMap` — on the
+    // caller's thread, before rendering could start, on every cache-writing run.
+    // Sharing is what buys the independence a clone was buying; a run with nothing to
+    // write still returns above rather than reaching this point.
+    let snapshot_source = std::sync::Arc::clone(index);
     let analysis = config.analysis;
     let mut workers = Vec::with_capacity(2);
     if writes.metadata {
