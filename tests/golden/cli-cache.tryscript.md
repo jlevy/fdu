@@ -87,7 +87,12 @@ snapshot present
 ? 0
 ```
 
-## An Unchanged Second Open Revalidates the Snapshot
+## A Second One-Shot Report Scans Cold Again
+
+Loading the snapshot cannot save a one-shot metadata report any work: revalidation stats
+every entry regardless, so the read would only ever add to the walk.
+The report scans fresh and rewrites the snapshot, and the tier below shows what the
+rewrite is for.
 
 ```console
 $ fdu --format json --size apparent --depth 0 --limit 0 project
@@ -97,7 +102,7 @@ $ fdu --format json --size apparent --depth 0 --limit 0 project
   "root": "[SCAN_PATH]",
   "scan_started_at": "[RFC3339]",
   "generated_at": "[RFC3339]",
-  "source": "warm_revalidate",
+  "source": "cold_scan",
   "freshness": "fresh",
   "complete": true,
   "errors": [],
@@ -111,7 +116,7 @@ $ fdu --format json --size apparent --depth 0 --limit 0 project
 ? 0
 ```
 
-## Revalidation Detects a File Size Change
+## A Change Shows Up Without the Snapshot’s Help
 
 ### Expand the Fixture
 
@@ -121,7 +126,7 @@ fixture expanded
 ? 0
 ```
 
-### Revalidate the Changed Tree
+### Report the Changed Tree
 
 ```console
 $ fdu --format json --size apparent --depth 0 --limit 0 project
@@ -131,8 +136,35 @@ $ fdu --format json --size apparent --depth 0 --limit 0 project
   "root": "[SCAN_PATH]",
   "scan_started_at": "[RFC3339]",
   "generated_at": "[RFC3339]",
-  "source": "warm_revalidate",
+  "source": "cold_scan",
   "freshness": "fresh",
+  "complete": true,
+  "errors": [],
+  "reports": [
+    {
+      "view": "tree",
+      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 288, "allocated": [ALLOCATED], "files": 6, "dirs": 3, "newest_mtime_ns": [MTIME_NS], "truncated": true, "children": []}
+    }
+  ]
+}
+? 0
+```
+
+### The Rewrite Kept the Snapshot Current for Cache-Only
+
+Every one-shot report rewrites the snapshot it skipped reading, so the no-scan tier
+answers with the changed total rather than the one the first run recorded.
+
+```console
+$ fdu --cache only --format json --size apparent --depth 0 --limit 0 project
+{
+  "schema": "fdu.report/1",
+  "generator": "fdu 0.1.0",
+  "root": "[SCAN_PATH]",
+  "scan_started_at": "[RFC3339]",
+  "generated_at": "[RFC3339]",
+  "source": "cache_only",
+  "freshness": "stale",
   "complete": true,
   "errors": [],
   "reports": [

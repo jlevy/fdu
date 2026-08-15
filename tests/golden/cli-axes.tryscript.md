@@ -353,11 +353,17 @@ $ fdu --view tree --format jsonl --size apparent project
 ? 0
 ```
 
-### The Next Run Revalidates It
+### The Next Run Scans Cold Again, Because Reading Cannot Pay
+
+A one-shot report never loads the snapshot for a metadata query: revalidating one stats
+every entry regardless, so the load would be added to the walk, never instead of it.
+The run rewrites the snapshot instead, which is what keeps the cache-only tier below
+current. Sessions opened through the library hold their index and do amortise the load;
+this is the one-shot contract only.
 
 ```console
 $ fdu --view tree --format jsonl --size apparent project
-{"schema": "fdu.report/1", "generator": "fdu [..]", "root": "[SCAN_PATH]", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "source": "warm_revalidate", "freshness": "fresh", "complete": true, "errors": []}
+{"schema": "fdu.report/1", "generator": "fdu [..]", "root": "[SCAN_PATH]", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "source": "cold_scan", "freshness": "fresh", "complete": true, "errors": []}
 {"view": "tree", "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 263, "allocated": [ALLOCATED], "files": 6, "dirs": 3, "newest_mtime_ns": [MTIME_NS], "truncated": false, "children": [{"name": "dist", "path": "dist", "kind": "dir", "bytes": 128, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "children": []},{"name": "src", "path": "src", "kind": "dir", "bytes": 36, "allocated": [ALLOCATED], "files": 2, "dirs": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "children": []},{"name": "docs", "path": "docs", "kind": "dir", "bytes": 23, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "children": []}]}}
 ? 0
 ```

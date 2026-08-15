@@ -266,14 +266,40 @@ pub fn open(root: &Path, config: &OpenConfig) -> Result<(Index, OpenReport)> {
 ///
 /// The blocking [`open`] is the right default; a caller that renders its own output can
 /// use this to overlap the write with rendering and join before exiting.
+///
+/// This path always loads a usable snapshot, because its callers — live sessions and
+/// library consumers holding the index — amortise the load across everything they do
+/// with it. A one-shot report cannot; the internal report planner decides per request
+/// whether the read pays and routes through the gated variant below.
 pub fn open_with_pending_save(
     root: &Path,
     config: &OpenConfig,
 ) -> Result<(Index, OpenReport, PendingSave)> {
+    open_for_report(root, config, true)
+}
+
+/// [`open_with_pending_save`] with the snapshot read under the caller's control.
+///
+/// `read_snapshot: false` skips loading an existing snapshot and takes the cold-scan
+/// path: for a one-shot metadata query, revalidation stats every entry regardless, so
+/// the load and the reconciliation against it are additive cost with nothing to
+/// amortise them — measured on macOS/APFS over 494,031 entries, warm revalidation cost
+/// 4.8 s against 3.6 s for the cold path, whose write-behind the read could at best
+/// have saved ~50 ms of. Persistence is unaffected: the cold path still writes per
+/// [`cold_scan_save_targets`], so the snapshot stays fresh for [`CachePolicy::Only`]
+/// and for content-analysis reuse.
+///
+/// A policy that cannot scan reads regardless of the flag — for [`CachePolicy::Only`]
+/// the snapshot is the contract, not a cost choice.
+pub(crate) fn open_for_report(
+    root: &Path,
+    config: &OpenConfig,
+    read_snapshot: bool,
+) -> Result<(Index, OpenReport, PendingSave)> {
     let root = root.canonicalize().map_err(|e| Error::io(root, e))?;
     let policy = config.policy;
 
-    let loaded = match (policy.reads(), &config.cache_path) {
+    let loaded = match ((read_snapshot || !policy.scans()) && policy.reads(), &config.cache_path) {
         (true, Some(cache_path)) => snapshot::load(cache_path)?
             // A snapshot describing another root or a different scan scope is not this
             // tree's answer; treat it as absent rather than as data.
