@@ -59,9 +59,9 @@ const COMMON_REPORTS_HELP: &str = r"Five common reports:
                       Includes every family from names and extensions; never reads content.
   Folder sizes        fdu PATH
                       Uses the metadata-only tree view and reusable index.
-  Fast totals only    fdu --cache off --view summary PATH
+  Fast totals only    fdu --view summary PATH
                       Returns bytes plus file and directory counts;
-                      retains no index or cache.
+                      retains no index and writes no cache.
 
 --analyze chooses what may be read; --view chooses what is printed.";
 
@@ -814,8 +814,15 @@ impl Cli {
         statuses: &[crate::CacheStatus],
     ) -> anyhow::Result<()> {
         let format = self.parse_format().map_err(|e| usage(&e))?;
+        // Root scope synthesises a status for the path a snapshot *would* occupy, so a
+        // tree that has never been cached still yields one unrecognized entry. Both
+        // renderings resolve that the same way, or the human and machine answers would
+        // disagree about whether a cache exists: a request whose every candidate is
+        // unrecognized reports no snapshots rather than describing absent files.
+        let statuses: &[crate::CacheStatus] =
+            if statuses.iter().all(|status| !status.is_recognized()) { &[] } else { statuses };
         if format == report_format::Format::Text {
-            if statuses.iter().all(|status| !status.is_recognized()) {
+            if statuses.is_empty() {
                 writeln!(out, "No cached snapshots.")?;
                 return Ok(());
             }

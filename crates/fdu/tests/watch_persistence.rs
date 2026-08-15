@@ -77,8 +77,13 @@ fn a_watch_started_from_a_warm_cache_still_persists_what_it_sees() {
     fs::write(tree.join("first.txt"), b"first").expect("write first file");
 
     // Two runs: the second must come from the cache, or this is not a warm start.
-    report(&tree, cache.path(), &["--view", "summary", "--format", "json"]);
-    let warm = report(&tree, cache.path(), &["--view", "summary", "--format", "json"]);
+    //
+    // These use `files` rather than `summary` because an unfiltered metadata summary is
+    // answered by the compact transient tier, which neither reads nor writes a snapshot —
+    // for that request the cache cannot save the walk it is already doing. `files` needs
+    // the reusable index, which is the path a warm start and this test's watch both take.
+    report(&tree, cache.path(), &["--view", "files", "--format", "json"]);
+    let warm = report(&tree, cache.path(), &["--view", "files", "--format", "json"]);
     assert!(
         warm.contains("warm_revalidate"),
         "expected the second run to read the cache, got: {warm}",
