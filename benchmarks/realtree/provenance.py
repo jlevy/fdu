@@ -146,7 +146,13 @@ def verify(
     current_source = _source_facts(source_root)
     if not isinstance(recorded_source, Mapping):
         raise ProvenanceError("source provenance is missing")
-    for field in ("commit", "remote", "cargo_lock_sha256", "rust_toolchain"):
+    for field in (
+        "commit",
+        "remote",
+        "cargo_lock_sha256",
+        "rust_toolchain",
+        "tags_at_commit",
+    ):
         if recorded_source.get(field) != current_source.get(field):
             raise ProvenanceError(f"source provenance field {field} no longer matches")
     if recorded_source.get("clean") is not current_source.get("clean"):
@@ -213,6 +219,7 @@ def _artifact_facts(
     if artifact.kind == "python-fdu" and not supporting:
         reasons.append("Python console script has no hashed native extension payload")
 
+    version = _version(executable)
     if artifact.kind == "homebrew-dust":
         origin, origin_reasons = _homebrew_dust_facts(executable)
         reasons.extend(origin_reasons)
@@ -229,6 +236,8 @@ def _artifact_facts(
         if artifact.kind == "python-fdu":
             uv_lock = source_root / "crates" / "fdu-py" / "uv.lock"
             origin["python_lock_sha256"] = _sha256_file(uv_lock)
+        if "tags_at_commit" in source:
+            reasons.extend(_fdu_revision_reasons(version, source))
     for field in ("license", "source_revision", "source_url", "target", "toolchain"):
         if origin.get(field) in {None, ""}:
             reasons.append(f"origin field {field} is missing")
@@ -240,7 +249,7 @@ def _artifact_facts(
             "kind": artifact.kind,
             "origin": origin,
             "profile": "release",
-            "version": _version(executable),
+            "version": version,
         },
         reasons,
     )
@@ -269,7 +278,24 @@ def _source_facts(source_root: Path) -> Dict[str, Any]:
         "remote": _normalize_remote(remote),
         "rust_target": rust_target,
         "rust_toolchain": rust_toolchain,
+        "tags_at_commit": sorted(
+            tag for tag in _git(root, "tag", "--points-at", "HEAD").splitlines() if tag
+        ),
     }
+
+
+def _fdu_revision_reasons(version: str, source: Mapping[str, Any]) -> list[str]:
+    """Bind a development binary to HEAD, or a release binary to an exact tag."""
+    commit = source.get("commit")
+    tags = source.get("tags_at_commit")
+    if not isinstance(commit, str) or len(commit) < 9 or not isinstance(tags, list):
+        return ["source revision cannot be matched to the executable version"]
+    if f"g{commit[:9]}" in version:
+        return []
+    version_token = version.rsplit(maxsplit=1)[-1] if version else ""
+    if version_token and f"v{version_token}" in tags:
+        return []
+    return ["executable version does not identify the current source revision"]
 
 
 def _homebrew_dust_facts(executable: Path) -> Tuple[Dict[str, Any], list[str]]:
