@@ -5,14 +5,22 @@ title: Stabilize adaptive scan scaling on heterogeneous macOS trees
 kind: bug
 status: open
 priority: 1
-version: 8
+version: 10
+spec_path: docs/project/specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md
 labels:
   - perf
   - macos
-dependencies: []
+  - fix
+dependencies:
+  - type: blocks
+    target: is-01m01ed61j7yty2bqp0zw8v0xc
+parent_id: is-01m01ea0psdcnb2sdwdj6vh171
 created_at: 2026-08-15T00:19:49.615Z
-updated_at: 2026-08-15T00:45:47.667Z
+updated_at: 2026-08-15T00:51:01.809Z
 ---
+Fix the production defect in which automatic scans can make an irreversible worker decision from the first 16,384 successfully completed entries and therefore run the same heterogeneous macOS tree with materially different effective concurrency and latency. Implement only the controller selected by the prerequisite experiments; do not retune the 30-microsecond constant or replace auto with a fixed CPU count without evidence.
+
+Acceptance: the completion-order model reproduces the old defect and passes with the new policy; hardware remains a safe bound; explicit thread counts retain exact semantics and disable or scope adaptation as documented; queue shutdown, panic, consumer-disconnect, partial-result, macOS bulk/fallback, one-filesystem, and traversal-order behavior remain correct; automatic mode passes the pre-registered topology, stability, resource, and non-regression gates; every platform table remains compiled/parity-tested; make check and make cross-lint pass; the accepted experiment is recorded and rejected prototypes are absent from production.
 
 ## Notes
 
