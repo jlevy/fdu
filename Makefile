@@ -9,7 +9,7 @@ UV ?= uv
 MSRV ?= 1.85.0
 NODE_INSTALL_STAMP := node_modules/.package-lock.json
 
-.PHONY: help build release test rust-test test-golden content-selfcheck performance-probe test-performance golden-update check uv-version supply-chain rust-module-names fix fmt fmt-check clippy docs docs-format docs-format-check lib-only msrv audit npm-audit python-concurrency python-smoke clean cli perf-help verify-beads
+.PHONY: help build release test rust-test test-golden content-selfcheck performance-probe test-performance golden-update check uv-version supply-chain rust-module-names fix fmt fmt-check clippy docs docs-format docs-format-check lib-only msrv audit npm-audit python-concurrency python-smoke clean cli perf-help verify-beads perf-research-report perf-research-report-check
 
 help:
 	@echo "make build      Debug build of the core library and CLI, all features"
@@ -38,6 +38,8 @@ help:
 	@echo "make perf-content-compare  Compare content jobs in 12 paired trials"
 	@echo "make perf-test      Test the real-tree harness itself"
 	@echo "make perf-ledger    Regenerate the experiment ledger from its artifacts"
+	@echo "make perf-research-report  Regenerate the interactive research report data"
+	@echo "make perf-research-report-check  Check report data and browser syntax for drift"
 
 build:
 	$(CARGO) build --locked -p fdu --all-features
@@ -73,7 +75,7 @@ $(NODE_INSTALL_STAMP): package.json package-lock.json .npmrc
 	$(NPM) ci
 
 # Everything CI enforces, in the order that fails fastest.
-check: uv-version supply-chain rust-module-names fmt-check clippy test docs docs-format-check lib-only msrv audit npm-audit python-concurrency python-smoke
+check: uv-version supply-chain rust-module-names fmt-check clippy test docs docs-format-check perf-research-report-check lib-only msrv audit npm-audit python-concurrency python-smoke
 
 # The uv.toml files express the supply-chain cool-off as a relative `exclude-newer`
 # ("14 days"). uv releases older than this cannot parse that form: they abort with
@@ -122,7 +124,8 @@ uv-version:
 # configuration. Keep this list aligned with the recipe-coverage test.
 UV_BACKED_TARGETS := test-performance python-concurrency python-smoke docs-format docs-format-check \
 	perf-baseline perf-profile perf-content-profile perf-compare perf-content-compare \
-	perf-compare-tools perf-record perf-test perf-ledger perf-schema perf-schema-check
+	perf-compare-tools perf-record perf-test perf-ledger perf-schema perf-schema-check \
+	perf-research-report perf-research-report-check
 
 $(UV_BACKED_TARGETS): uv-version
 
@@ -255,7 +258,7 @@ PERF_PROFILING := target/profiling/examples/perf_probe
 PERF_UV := PYTHONDONTWRITEBYTECODE=1 $(UV) run --project benchmarks --frozen
 PERF_RUN := $(PERF_UV) python -m benchmarks.realtree
 
-.PHONY: perf-probe-release perf-probe-profiling perf-baseline perf-profile perf-compare perf-content-profile perf-content-compare perf-compare-tools perf-record perf-test perf-ledger perf-schema perf-schema-check
+.PHONY: perf-probe-release perf-probe-profiling perf-baseline perf-profile perf-compare perf-content-profile perf-content-compare perf-compare-tools perf-record perf-test perf-ledger perf-schema perf-schema-check perf-research-report perf-research-report-check
 
 perf-probe-release:
 	$(CARGO) build --locked --release -p fdu --example perf_probe --no-default-features
@@ -335,7 +338,18 @@ perf-test:
 # validator lives in that group.
 perf-ledger:
 	$(PERF_UV) --group dev python -m benchmarks.realtree.summary
+	$(MAKE) perf-research-report
 	$(MAKE) docs-format
+
+# Build the local-first graphical companion from the same validated frontmatter as the
+# ledger. The generated JavaScript is committed so the report works from a checkout and
+# from a file URL without a server or network dependency.
+perf-research-report:
+	$(PERF_UV) --group dev python -m benchmarks.realtree.html_report
+
+perf-research-report-check:
+	$(PERF_UV) --group dev python -m benchmarks.realtree.html_report --check
+	$(NODE) --check docs/project/reports/performance-research/report.js
 
 # The experiment contract is compiled from the Pydantic model; --check fails on drift.
 # Pinned in benchmarks/pyproject.toml, not `@latest`: this validator is the

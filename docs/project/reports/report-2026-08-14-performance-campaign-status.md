@@ -386,6 +386,8 @@ The full protocol, including the accept rule and the hypothesis registry, is in
 | Document | What it is |
 | --- | --- |
 | This report | Orientation: status, method, history, what remains |
+| [Research white paper](report-2026-08-14-performance-research-white-paper.md) | Complete synthesis and reusable campaign template |
+| [Interactive evidence map](performance-research/index.html) | Cross-platform graphics, experiment explorer, and generic soft-schema table |
 | [Instrumentation playbook](../guides/performance-instrumentation-playbook.md) | The reusable method, domain-neutral |
 | [Performance loop](../guides/performance-loop.md) | Protocol and live hypothesis registry |
 | [Platform tuning](../guides/platform-tuning.md) | Which constants were measured where |

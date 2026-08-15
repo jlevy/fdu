@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta
+      name="description"
+      content="Interactive evidence map for the fdu performance research campaign."
+    >
+    <title>The fdu Performance Research Loop</title>
+    <link rel="stylesheet" href="report.css">
+    <script defer src="report-data.js"></script>
+    <script defer src="report.js"></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to report</a>
+
+    <header class="topbar">
+      <a class="brand" href="#top" aria-label="Performance research report home">
+        <span class="brand-mark" aria-hidden="true">fdu</span>
+        <span class="brand-copy">Performance research</span>
+      </a>
+      <nav class="topnav" aria-label="Report sections">
+        <a href="#outcomes">Outcomes</a>
+        <a href="#experiments">Experiments</a>
+        <a href="#schema">Soft schema</a>
+        <a href="../report-2026-08-14-performance-research-white-paper.md">Paper</a>
+      </nav>
+      <button class="icon-btn" id="theme-toggle" type="button" aria-label="Use dark theme">
+        <span aria-hidden="true" id="theme-icon">◐</span>
+      </button>
+    </header>
+
+    <div class="page-shell" id="top">
+      <aside class="rail" aria-label="On this page">
+        <p class="rail-label">Research map</p>
+        <ol>
+          <li><a href="#outcomes">Current outcome</a></li>
+          <li><a href="#composite">Weighted view</a></li>
+          <li><a href="#experiments">Experiment sequence</a></li>
+          <li><a href="#mechanisms">Mechanisms</a></li>
+          <li><a href="#schema">Schema table</a></li>
+          <li><a href="#limits">Evidence limits</a></li>
+        </ol>
+        <div class="rail-note">
+          <span class="status-dot status-dot-good" aria-hidden="true"></span>
+          Green means a clearly better measured primary result.
+        </div>
+        <div class="rail-note">
+          <span class="status-dot status-dot-bad" aria-hidden="true"></span>
+          Red means clearly poorer performance.
+        </div>
+      </aside>
+
+      <main id="main">
+        <section class="hero" aria-labelledby="report-title">
+          <p class="eyebrow">Research synthesis · 2026-08-14</p>
+          <h1 id="report-title">The fdu performance research loop</h1>
+          <p class="hero-deck">
+            How profiles, falsifiable hypotheses, exact oracles, and 56 soft-schema
+            experiments produced shipped gains—and made failed ideas reusable.
+          </p>
+          <div class="hero-actions">
+            <a class="btn btn-primary" href="#experiments">Explore the evidence</a>
+            <a class="btn" href="../report-2026-08-14-performance-research-white-paper.md">
+              Read the white paper
+            </a>
+          </div>
+
+          <dl class="stat-grid" aria-label="Campaign totals">
+            <div class="stat">
+              <dt>Experiments</dt>
+              <dd id="stat-experiments">—</dd>
+              <span>Every attempt recorded</span>
+            </div>
+            <div class="stat stat-good">
+              <dt>Accepted decisions</dt>
+              <dd id="stat-accepted">—</dd>
+              <span>Includes controls and validations</span>
+            </div>
+            <div class="stat stat-bad">
+              <dt>Rejected</dt>
+              <dd id="stat-rejected">—</dd>
+              <span>Reusable negative evidence</span>
+            </div>
+            <div class="stat">
+              <dt>Platform records</dt>
+              <dd id="stat-platforms">—</dd>
+              <span>macOS / Linux</span>
+            </div>
+          </dl>
+        </section>
+
+        <section class="report-section" id="outcomes" aria-labelledby="outcomes-title">
+          <div class="section-heading">
+            <div>
+              <p class="section-index">01 · Current outcome</p>
+              <h2 id="outcomes-title">Faster where the evidence says so</h2>
+            </div>
+            <p>
+              Current cumulative comparisons, kept separate by platform and start state.
+              Negative latency change is faster.
+            </p>
+          </div>
+
+          <div class="outcome-grid" id="outcome-grid"></div>
+
+          <div class="callout callout-caution">
+            <strong>Do not collapse the Linux producer probe into a product claim.</strong>
+            Its wall time moved while its isolated component did not. The visualization
+            keeps the caveat attached to the row rather than hiding it in a footnote.
+          </div>
+        </section>
+
+        <section class="report-section" id="composite" aria-labelledby="composite-title">
+          <div class="section-heading">
+            <div>
+              <p class="section-index">02 · Weighted view</p>
+              <h2 id="composite-title">One index, with visible assumptions</h2>
+            </div>
+            <p>
+              A weighted geometric mean of latency ratios. This is a scenario tool, not a
+              benchmark run and not an average of raw milliseconds.
+            </p>
+          </div>
+
+          <div class="composite-layout">
+            <div class="composite-score panel">
+              <p class="panel-label">Derived latency reduction</p>
+              <output id="composite-score" for="linux-weight warm-weight">—</output>
+              <p id="composite-throughput">—</p>
+              <div class="score-track" aria-hidden="true">
+                <span id="composite-fill"></span>
+              </div>
+              <p class="panel-note">
+                Default: equal platform weight and equal cold/warm weight.
+              </p>
+            </div>
+
+            <form class="weight-controls panel" aria-label="Composite weighting controls">
+              <div class="range-control">
+                <div class="range-label">
+                  <label for="linux-weight">Platform mix</label>
+                  <output id="linux-weight-output" for="linux-weight">50% Linux</output>
+                </div>
+                <input id="linux-weight" type="range" min="0" max="100" value="50">
+                <div class="range-ends" aria-hidden="true"><span>macOS</span><span>Linux</span></div>
+              </div>
+              <div class="range-control">
+                <div class="range-label">
+                  <label for="warm-weight">Start-state mix</label>
+                  <output id="warm-weight-output" for="warm-weight">50% warm</output>
+                </div>
+                <input id="warm-weight" type="range" min="0" max="100" value="50">
+                <div class="range-ends" aria-hidden="true"><span>Cold</span><span>Warm</span></div>
+              </div>
+            </form>
+
+            <div class="panel composite-breakdown">
+              <p class="panel-label">Cells in the index</p>
+              <div id="composite-cells"></div>
+            </div>
+          </div>
+          <p class="formula-note">
+            Formula: 1 − exp(Σ weight × ln(candidate latency ÷ control latency)).
+            Throughput equivalent is the reciprocal of the resulting latency ratio.
+          </p>
+        </section>
+
+        <section class="report-section" id="experiments" aria-labelledby="experiments-title">
+          <div class="section-heading">
+            <div>
+              <p class="section-index">03 · Experiment sequence</p>
+              <h2 id="experiments-title">Every attempt remains visible</h2>
+            </div>
+            <p>
+              Points show the signed primary result on a symmetric square-root scale so
+              small effects remain legible. Green points are better, red points poorer,
+              and gray points unclear or neutral.
+            </p>
+          </div>
+
+          <div class="chart-toolbar" aria-label="Experiment chart filters">
+            <label>
+              Platform
+              <select id="plot-platform">
+                <option value="all">All platforms</option>
+                <option value="macOS">macOS</option>
+                <option value="Linux">Linux</option>
+              </select>
+            </label>
+            <label>
+              Phase
+              <select id="plot-phase">
+                <option value="all">All phases</option>
+              </select>
+            </label>
+            <label>
+              Effect
+              <select id="plot-effect">
+                <option value="all">All effects</option>
+                <option value="improved">Better</option>
+                <option value="regressed">Poorer</option>
+                <option value="unclear">Unclear / neutral</option>
+              </select>
+            </label>
+            <div class="chart-legend" aria-label="Chart legend">
+              <span><i class="legend-mark legend-good"></i> Better</span>
+              <span><i class="legend-mark legend-bad"></i> Poorer</span>
+              <span><i class="legend-mark legend-neutral"></i> Unclear</span>
+              <span><i class="legend-mark legend-linux"></i> Linux diamond</span>
+            </div>
+          </div>
+
+          <figure class="experiment-figure panel">
+            <div class="plot-scroll">
+              <svg
+                id="experiment-plot"
+                class="experiment-plot"
+                viewBox="0 0 1240 500"
+                role="img"
+                aria-labelledby="plot-title plot-description"
+              >
+                <title id="plot-title">Primary performance result by experiment</title>
+                <desc id="plot-description">
+                  Fifty-six experiments ordered from zero to fifty-five. Points above zero
+                  are improvements and points below zero are regressions. Accepted clear
+                  improvements are connected by platform as a sequence guide, not a
+                  cumulative performance curve.
+                </desc>
+              </svg>
+            </div>
+            <figcaption>
+              The thin green connection follows accepted, clearly favorable results in
+              experiment order. It is a navigation aid—not cumulative arithmetic—because
+              controls, jobs, metrics, trees, and regimes differ between points.
+            </figcaption>
+          </figure>
+          <p class="sr-only" id="plot-status" aria-live="polite"></p>
+
+          <div class="experiment-detail panel" id="experiment-detail" aria-live="polite">
+            <p class="empty-state">Focus, hover, or select a point to inspect its setup and verdict.</p>
+          </div>
+
+          <div class="phase-strip" id="phase-strip" aria-label="Campaign phases"></div>
+        </section>
+
+        <section class="report-section" id="mechanisms" aria-labelledby="mechanisms-title">
+          <div class="section-heading">
+            <div>
+              <p class="section-index">04 · Mechanisms</p>
+              <h2 id="mechanisms-title">The result is the changed cost shape</h2>
+            </div>
+            <p>
+              Wins and failures are grouped by the work they attempted to remove or
+              overlap. This is the reusable layer above individual patches.
+            </p>
+          </div>
+
+          <div class="mechanism-grid" id="mechanism-grid"></div>
+
+          <h3 class="subsection-title">Supporting studies outside the 56-row ledger</h3>
+          <div class="study-grid" id="study-grid"></div>
+        </section>
+
+        <section class="report-section" id="schema" aria-labelledby="schema-title">
+          <div class="section-heading">
+            <div>
+              <p class="section-index">05 · Soft-schema directory</p>
+              <h2 id="schema-title">Prose for judgment, frontmatter for evidence</h2>
+            </div>
+            <p>
+              The table below is not hard-coded to experiment HTML. A generic projector
+              reads one shared contract, resolves selected fields through its compiled
+              schema, and emits typed rows from authoritative frontmatter only.
+            </p>
+          </div>
+
+          <div class="schema-flow" aria-label="Soft-schema report pipeline">
+            <div><span>1</span><strong>Markdown artifacts</strong><small>One attempt per file</small></div>
+            <b aria-hidden="true">→</b>
+            <div><span>2</span><strong>Enforced contract</strong><small>Schema + semantic model</small></div>
+            <b aria-hidden="true">→</b>
+            <div><span>3</span><strong>Typed projection</strong><small>Explicit field profile</small></div>
+            <b aria-hidden="true">→</b>
+            <div><span>4</span><strong>Reusable views</strong><small>Ledger, charts, table</small></div>
+          </div>
+
+          <div class="schema-meta panel" id="schema-meta"></div>
+
+          <div class="table-toolbar" aria-label="Experiment table filters">
+            <label class="search-field">
+              <span>Search artifacts</span>
+              <input id="table-search" type="search" placeholder="ID, title, hypothesis, job…">
+            </label>
+            <label>
+              Decision
+              <select id="table-decision"><option value="all">All decisions</option></select>
+            </label>
+            <label>
+              Platform
+              <select id="table-platform">
+                <option value="all">All platforms</option>
+                <option value="macOS">macOS</option>
+                <option value="Linux">Linux</option>
+              </select>
+            </label>
+            <output id="table-count" for="table-search table-decision table-platform">—</output>
+          </div>
+
+          <div class="table-wrap panel" tabindex="0" aria-label="Scrollable experiment artifact table">
+            <table class="artifact-table">
+              <thead><tr id="artifact-head"></tr></thead>
+              <tbody id="artifact-body"></tbody>
+            </table>
+          </div>
+
+          <div class="record-detail panel" id="record-detail" aria-live="polite">
+            <p class="empty-state">Choose an experiment ID in the table to inspect the typed row and payload.</p>
+          </div>
+        </section>
+
+        <section class="report-section" id="limits" aria-labelledby="limits-title">
+          <div class="section-heading">
+            <div>
+              <p class="section-index">06 · Evidence boundary</p>
+              <h2 id="limits-title">What this report does not prove</h2>
+            </div>
+            <p>
+              A research map is trustworthy only when missing regimes and derived claims
+              are as visible as the green points.
+            </p>
+          </div>
+
+          <div class="limit-grid">
+            <article class="limit">
+              <strong>53 macOS, 3 Linux</strong>
+              <p>The experiment ledger is platform-asymmetric. Linux cold-device claims still need bare metal.</p>
+            </article>
+            <article class="limit">
+              <strong>No Windows timing evidence</strong>
+              <p>Windows builds and tests; that does not establish a performance regime.</p>
+            </article>
+            <article class="limit">
+              <strong>One result remains open</strong>
+              <p>Exp-046 needs quiet claim-grade and independent-topology confirmation.</p>
+            </article>
+            <article class="limit">
+              <strong>The composite is derived</strong>
+              <p>It combines measured ratios through chosen weights and is not a benchmark sample.</p>
+            </article>
+          </div>
+
+          <div class="source-list panel">
+            <p class="panel-label">Source documents</p>
+            <ul id="source-list"></ul>
+          </div>
+        </section>
+
+        <footer class="report-footer">
+          <p>
+            Generated from validated experiment frontmatter. Narrative conclusions live in
+            the <a href="../report-2026-08-14-performance-research-white-paper.md">Markdown white paper</a>.
+          </p>
+          <p>Local-first · no network dependencies · printable</p>
+        </footer>
+      </main>
+    </div>
+
+    <noscript>
+      <div class="noscript">
+        JavaScript is required for interactive charts and filters. The complete narrative
+        remains available in the Markdown white paper linked above.
+      </div>
+    </noscript>
+  </body>
+</html>

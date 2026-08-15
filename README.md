@@ -140,9 +140,13 @@ It assumes no prior context and covers what has been achieved, in what order, ho
 measured, what remains, and where the evidence is weak.
 
 Further detail:
+[the performance research white paper](docs/project/reports/report-2026-08-14-performance-research-white-paper.md)
+synthesizes the complete approach, experiment sequence, wins, failures, and reusable
+soft-schema template, with an
+[interactive evidence map](docs/project/reports/performance-research/index.html);
 [the experiment ledger](docs/project/reports/report-2026-08-10-fdu-performance-experiments.md)
 records every experiment and verdict;
-[the white paper](docs/project/reports/report-2026-08-12-fdu-performance-architecture.md)
+[the performance architecture](docs/project/reports/report-2026-08-12-fdu-performance-architecture.md)
 holds the cost model and architectural conclusions;
 [the performance loop](docs/project/guides/performance-loop.md) is the protocol;
 [the instrumentation playbook](docs/project/guides/performance-instrumentation-playbook.md)
