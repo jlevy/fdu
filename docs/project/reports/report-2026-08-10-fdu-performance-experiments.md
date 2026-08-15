@@ -60,7 +60,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | platform | host | cache state | experiments |
 | --- | --- | --- | ---: |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 53 |
-| Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 5 |
+| Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 6 |
 
 ## Every experiment, including the failures
 
@@ -127,6 +127,7 @@ dead end.
 | 055 | [Validate review fixes on macOS](#exp055--validate-review-fixes-on-macos) | — | `cold-scan-index` | -0.9% | ✅ accepted |
 | 056 | [One-slot extension memo in front of derive-and-intern](#exp056--oneslot-extension-memo-in-front-of-deriveandintern) | H89 | `cold-scan-index` | +1.6% | ❌ rejected |
 | 057 | [CRC-32C slicing-by-8 on the snapshot digest](#exp057--crc32c-slicingby8-on-the-snapshot-digest) | H88 | `cold-snapshot-save` | -12.2% | ✅ accepted |
+| 058 | [Skip unread journal capture on the bootstrap apply path](#exp058--skip-unread-journal-capture-on-the-bootstrap-apply-path) | H90 | `cold-scan-index` | -5.1% | ✅ accepted |
 
 ## The experiments
 
@@ -2110,6 +2111,37 @@ bit-identity test.
 
 Full record:
 [`exp-057-crc-32c-slicing-by-8-on-the-snapshot-digest.md`](../experiments/exp-057-crc-32c-slicing-by-8-on-the-snapshot-digest.md)
+
+### exp-058 — Skip unread journal capture on the bootstrap apply path
+
+✅ accepted · 2026-08-15 · H90 · commit `8286c7e`
+
+Control: post-exp-057 head: bootstrap batches journalled then cleared
+
+Candidate: apply_with(journal: false) on the baseline path; arbitration identical,
+history capture skipped
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 1725.2 | 1655.3 | -5.06% | [-6.03%, -3.54%] |
+| component (ms) | 681.6 | 644.1 | -6.54% | [-8.43%, -4.49%] |
+| cpu (ms) | 2682.2 | 2607.6 | -1.96% | [-3.72%, -1.14%] |
+| user (ms) | 1823.2 | 1730.9 | -6.17% | [-7.31%, -4.32%] |
+| system (ms) | 821.5 | 882.2 | +4.79% (regression) | [+1.56%, +10.41%] |
+| peak rss (MiB) | 263.3 | 264.3 | -0.34% (n.s.) | [-3.58%, +3.00%] |
+
+Other jobs, wall time: `warm-revalidate` +1.6% (n.s.).
+
+Cost to carry: 40 lines; no new dependencies.
+
+**Accepted:** Cold wall -5.06% [-6.03%, -3.54%] on the confirming re-run after -4.62%
+[-8.45%, -1.02%] first time; the first run’s RSS and warm-path alarms did not reproduce,
+and the reproducing context-switch increase costs no wall or CPU.
+
+Full record:
+[`exp-058-skip-unread-journal-capture-on-the-bootstrap-apply-path.md`](../experiments/exp-058-skip-unread-journal-capture-on-the-bootstrap-apply-path.md)
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.
