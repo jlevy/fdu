@@ -23,6 +23,7 @@ import subprocess
 import sys
 import threading
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence
@@ -54,6 +55,27 @@ LOWER_IS_BETTER = (
 DEFAULT_TRIALS = 12
 DEFAULT_WARMUPS = 3
 DEFAULT_TIMEOUT_SECONDS = 600.0
+
+# Pre-registered adaptive-controller decision boundaries. Positive percent change is
+# worse for every metric here. The runtime noninferiority margin comes from fdu-8slr;
+# resource limits are intentionally separate so a faster controller cannot hide an
+# unbounded CPU, memory, fault, or scheduling regression behind wall time.
+SUPERIORITY_FLOOR_PCT = -3.0
+NONINFERIORITY_MARGIN_PCT = 3.0
+RESOURCE_REGRESSION_LIMITS_PCT = {
+    "cpu_ns": 50.0,
+    "system_cpu_ns": 75.0,
+    "peak_rss_bytes": 5.0,
+    "minor_faults": 10.0,
+    "voluntary_context_switches": 50.0,
+    "involuntary_context_switches": 50.0,
+}
+# Major faults are usually zero on a warm-steady run. Relative ratios are undefined at
+# zero, so this gate is expressed as an absolute paired-median increase.
+MAJOR_FAULT_DELTA_LIMIT = 0.0
+QUIET_MAX_LOAD_PER_CPU = 0.25
+CONTROLLED_MAX_EXCESS_LOAD_PER_CPU = 0.25
+HOST_REGIMES = {"controlled-interactive", "quiet", "uncontrolled"}
 
 
 class MeasureError(RuntimeError):
@@ -94,6 +116,10 @@ class Job:
     #: exactly the jobs whose I/O wait the ledger is trying to see, so those jobs report
     #: no ``blocked_ns`` at all instead.
     parallel_cpu: bool = False
+    #: Require the opt-in scan trace and reject incomplete or unobservable policy state.
+    require_scan_diagnostics: bool = False
+    #: Require macOS bulk/fallback counts rather than the portable null+reason form.
+    require_macos_backend: bool = False
 
 
 @dataclass
@@ -125,6 +151,21 @@ class Variant:
 
 
 @dataclass
+class HostRegime:
+    """One predeclared host-pressure cell and its optional controlled load."""
+
+    name: str
+    initial: Dict[str, Any]
+    load_workers: int = 0
+    process: Optional[subprocess.Popen[str]] = None
+
+    def load_alive(self) -> Optional[bool]:
+        if self.process is None:
+            return None
+        return self.process.poll() is None
+
+
+@dataclass
 class Sample:
     variant: str
     job: str
@@ -134,6 +175,7 @@ class Sample:
     reasons: List[str] = field(default_factory=list)
     metrics: Dict[str, Optional[int]] = field(default_factory=dict)
     probe: Dict[str, Any] = field(default_factory=dict)
+    host_pressure: Dict[str, Any] = field(default_factory=dict)
 
     def as_json(self) -> Dict[str, Any]:
         return {
@@ -141,6 +183,7 @@ class Sample:
             "metrics": self.metrics,
             "ordinal": self.ordinal,
             "probe": self.probe,
+            "host_pressure": self.host_pressure,
             "reasons": self.reasons,
             "valid": self.valid,
             "variant": self.variant,
@@ -281,6 +324,18 @@ PROBE_JOBS: Dict[str, Job] = {
         ),
         parallel_cpu=True,
     ),
+    "adaptive-scan-index": Job(
+        id="adaptive-scan-index",
+        argv=("{binary}", "scan-index", "--root", "{root}", "--diagnostics"),
+        start_state="cold",
+        description=(
+            "Full Apple Silicon/APFS policy-qualification walk with a bounded, "
+            "fail-closed worker and directory-backend trace."
+        ),
+        parallel_cpu=True,
+        require_scan_diagnostics=True,
+        require_macos_backend=True,
+    ),
     "warm-revalidate": Job(
         id="warm-revalidate",
         argv=("{binary}", "revalidate", "--root", "{root}", "--snapshot", "{snapshot}"),
@@ -350,6 +405,143 @@ REFERENCE_ARGV: Dict[str, Sequence[str]] = {
 # --------------------------------------------------------------------------------
 
 
+@contextmanager
+def _host_regime(name: str, load_workers: int):
+    initial = _host_pressure_snapshot(None)
+    if name in {"quiet", "controlled-interactive"}:
+        load_per_cpu = initial.get("load_1m_per_cpu")
+        if load_per_cpu is None:
+            raise MeasureError("host load is unavailable for a controlled evidence regime")
+        if load_per_cpu > QUIET_MAX_LOAD_PER_CPU:
+            raise MeasureError(
+                "host is not quiet enough to begin a controlled cell: "
+                f"load/core {load_per_cpu:.3f} > {QUIET_MAX_LOAD_PER_CPU:.3f}"
+            )
+
+    regime = HostRegime(name=name, initial=initial)
+    if name != "controlled-interactive":
+        yield regime
+        return
+    if load_workers < 1 or load_workers > 64:
+        raise MeasureError("controlled background workers must be between 1 and 64")
+    environment = dict(BASE_ENVIRONMENT)
+    environment["PATH"] = os.environ.get("PATH", "")
+    environment["PYTHONPATH"] = str(Path(__file__).resolve().parents[2])
+    process = subprocess.Popen(
+        [
+            sys.executable,
+            "-m",
+            "benchmarks.realtree.load",
+            "--workers",
+            str(load_workers),
+        ],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        env=environment,
+        start_new_session=os.name == "posix",
+    )
+    try:
+        ready = process.stdout.readline().strip() if process.stdout is not None else ""
+        if ready != "ready" or process.poll() is not None:
+            raise MeasureError("controlled background load failed to become ready")
+        regime.load_workers = load_workers
+        regime.process = process
+        yield regime
+    finally:
+        if process.poll() is None:
+            if os.name == "posix":
+                try:
+                    os.killpg(process.pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+            else:
+                process.terminate()
+        try:
+            process.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            if os.name == "posix":
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            else:
+                process.kill()
+            process.wait(timeout=10)
+        if process.stdout is not None:
+            process.stdout.close()
+
+
+def _host_pressure_snapshot(regime: Optional[HostRegime]) -> Dict[str, Any]:
+    cpu_count = os.cpu_count() or 1
+    try:
+        load_1m, load_5m, load_15m = os.getloadavg()
+        unavailable_reason = None
+    except (AttributeError, OSError):
+        load_1m = load_5m = load_15m = None
+        unavailable_reason = "load average is unavailable on this platform"
+    return {
+        "controlled_load_alive": regime.load_alive() if regime is not None else None,
+        "logical_cpu_count": cpu_count,
+        "load_1m": round(load_1m, 3) if load_1m is not None else None,
+        "load_1m_per_cpu": round(load_1m / cpu_count, 4) if load_1m is not None else None,
+        "load_5m": round(load_5m, 3) if load_5m is not None else None,
+        "load_15m": round(load_15m, 3) if load_15m is not None else None,
+        "power_source": _darwin_power_source(),
+        "system": platform.system(),
+        "thermal_pressure": _darwin_thermal_pressure(),
+        "unavailable_reason": unavailable_reason,
+    }
+
+
+def _host_pressure_reasons(
+    regime: HostRegime, before: Mapping[str, Any], after: Mapping[str, Any]
+) -> List[str]:
+    if regime.name == "uncontrolled":
+        return []
+    environmental_reasons: List[str] = []
+    for boundary, snapshot in (("before", before), ("after", after)):
+        if snapshot.get("system") != "Darwin":
+            continue
+        if snapshot.get("power_source") != "AC":
+            environmental_reasons.append(f"AC power was not established {boundary} the sample")
+        if snapshot.get("thermal_pressure") != "normal":
+            environmental_reasons.append(
+                f"normal thermal pressure was not established {boundary} the sample"
+            )
+    if regime.name == "controlled-interactive":
+        reasons = list(environmental_reasons)
+        if (
+            before.get("controlled_load_alive") is not True
+            or after.get("controlled_load_alive") is not True
+        ):
+            reasons.append("controlled background load was not alive for the whole sample")
+        for boundary, snapshot in (("before", before), ("after", after)):
+            value = snapshot.get("load_1m_per_cpu")
+            cpu_count = snapshot.get("logical_cpu_count")
+            if not isinstance(value, (int, float)) or not isinstance(cpu_count, int):
+                reasons.append(f"controlled-host load was unavailable {boundary} the sample")
+                continue
+            maximum = regime.load_workers / cpu_count + CONTROLLED_MAX_EXCESS_LOAD_PER_CPU
+            if value > maximum:
+                reasons.append(
+                    "controlled-host load/core exceeded the synthetic-load envelope "
+                    f"{maximum:.3f} {boundary} the sample"
+                )
+        return reasons
+    reasons = list(environmental_reasons)
+    for boundary, snapshot in (("before", before), ("after", after)):
+        value = snapshot.get("load_1m_per_cpu")
+        if not isinstance(value, (int, float)):
+            reasons.append(f"quiet-host load was unavailable {boundary} the sample")
+        elif value > QUIET_MAX_LOAD_PER_CPU:
+            reasons.append(
+                f"quiet-host load/core exceeded {QUIET_MAX_LOAD_PER_CPU:.3f} {boundary} the sample"
+            )
+    return reasons
+
+
 def run(
     *,
     root: Path,
@@ -362,7 +554,12 @@ def run(
     baseline_fingerprint: Optional[Dict[str, Any]] = None,
     purge: bool = False,
     note: str = "",
+    campaign_stage: str = "exploratory",
+    corpus: Optional[Dict[str, Any]] = None,
+    host_regime: str = "uncontrolled",
+    background_load_workers: int = 2,
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+    provenance_document: Optional[Mapping[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Measure every ``variant`` against every ``job``, interleaved, and return a run."""
     if not variants:
@@ -371,11 +568,36 @@ def run(
         raise MeasureError("at least one job is required")
     if trials < 1:
         raise MeasureError("trials must be at least 1")
+    if host_regime not in HOST_REGIMES:
+        raise MeasureError(f"unknown host regime {host_regime!r}")
+    if campaign_stage == "held-out" and host_regime == "uncontrolled":
+        raise MeasureError(
+            "held-out evidence requires a quiet or controlled-interactive host regime"
+        )
+    if campaign_stage == "held-out" and (
+        provenance_document is None or provenance_document.get("claim_grade") is not True
+    ):
+        raise MeasureError("held-out evidence requires claim-grade build and host provenance")
+    if campaign_stage == "held-out":
+        # Imported lazily because provenance itself uses this module's portable host
+        # collectors. At execution time both modules are fully initialized.
+        from benchmarks.realtree import provenance as provenance_contract
+
+        scope_reasons = provenance_contract.apple_silicon_apfs_scope_reasons(provenance_document)
+        if scope_reasons:
+            raise MeasureError(
+                "held-out Apple Silicon/APFS scope is not established: " + "; ".join(scope_reasons)
+            )
 
     scratch.mkdir(parents=True, exist_ok=True)
     started = time.time()
 
     before = reference_tree.fingerprint(root, label=label)
+    if corpus is not None and (
+        (corpus.get("oracle") or {}).get("engine_digest") != before["engine_digest"]
+    ):
+        raise MeasureError("generated-corpus oracle disagrees with the measured tree")
+    phase_profile = ((corpus or {}).get("recipe") or {}).get("phase_profile")
     drift = (
         reference_tree.compare(before, baseline_fingerprint)
         if baseline_fingerprint is not None
@@ -387,24 +609,39 @@ def run(
     samples: List[Sample] = []
     schedule = _interleave(variants, jobs, trials, warmups)
     total = len(schedule)
-    for position, (variant, job, ordinal, warmup) in enumerate(schedule, start=1):
-        if purge:
-            _purge_page_cache()
-        sample = _measure_once(
-            variant=variant,
-            job=job,
-            root=root,
-            snapshot=snapshots.get((variant.name, job.id)),
-            ordinal=ordinal,
-            warmup=warmup,
-            fingerprint_document=before,
-            timeout_seconds=timeout_seconds,
-        )
-        samples.append(sample)
-        _progress(position, total, sample)
+    with _host_regime(host_regime, background_load_workers) as regime:
+        for position, (variant, job, ordinal, warmup) in enumerate(schedule, start=1):
+            if purge:
+                _purge_page_cache()
+            sample = _measure_once(
+                variant=variant,
+                job=job,
+                root=root,
+                snapshot=snapshots.get((variant.name, job.id)),
+                ordinal=ordinal,
+                warmup=warmup,
+                fingerprint_document=before,
+                expected_phase_profile=phase_profile,
+                host_regime=regime,
+                timeout_seconds=timeout_seconds,
+            )
+            samples.append(sample)
+            _progress(position, total, sample)
+        final_host_pressure = _host_pressure_snapshot(regime)
 
     after = reference_tree.fingerprint(root, label=label)
     mutation = reference_tree.compare(after, before)
+    global_reasons: List[str] = []
+    if drift:
+        global_reasons.append("the measured tree disagreed with its preregistered baseline")
+    if mutation:
+        global_reasons.append("the measured tree changed during the run")
+    if global_reasons:
+        for sample in samples:
+            sample.valid = False
+            for reason in global_reasons:
+                if reason not in sample.reasons:
+                    sample.reasons.append(reason)
 
     document = {
         "schema": RUN_SCHEMA,
@@ -413,10 +650,21 @@ def run(
         "note": note,
         "host": host_facts(),
         "conditions": {
+            "campaign_stage": campaign_stage,
+            "confidence_interval": "paired-bootstrap-median-95-v1",
             "os_cache": "purged-per-trial" if purge else "warm-steady",
+            "stopping_rule": "fixed-N-no-optional-stopping-v1",
             "trials": trials,
             "warmups": warmups,
             "interleaved": True,
+            "host_regime": host_regime,
+            "host_acceptance": {
+                "controlled_load_workers": regime.load_workers,
+                "initial": regime.initial,
+                "final": final_host_pressure,
+                "quiet_max_load_per_cpu": QUIET_MAX_LOAD_PER_CPU,
+                "controlled_max_excess_load_per_cpu": (CONTROLLED_MAX_EXCESS_LOAD_PER_CPU),
+            },
             "schedule": "round-robin-by-ordinal-v1",
         },
         "tree": before,
@@ -433,13 +681,22 @@ def run(
             job.id: {
                 "argv": list(job.argv),
                 "description": job.description,
+                "require_macos_backend": job.require_macos_backend,
+                "require_scan_diagnostics": job.require_scan_diagnostics,
                 "start_state": job.start_state,
             }
             for job in jobs
         },
         "samples": [sample.as_json() for sample in samples],
     }
+    if provenance_document is not None:
+        document["provenance"] = dict(provenance_document)
+    document["invalid_samples"] = sum(
+        1 for sample in samples if not sample.warmup and not sample.valid
+    )
     document["statistics"] = summarize(document)
+    if corpus is not None:
+        document["corpus"] = corpus
     return document
 
 
@@ -518,9 +775,7 @@ def _interleave(
     return schedule
 
 
-def add_cpu_metrics(
-    metrics: Dict[str, Optional[int]], *, wall_ns: int, parallel_cpu: bool
-) -> None:
+def add_cpu_metrics(metrics: Dict[str, Optional[int]], *, wall_ns: int, parallel_cpu: bool) -> None:
     """Derive ``cpu_ns`` and, where it means anything, ``blocked_ns``.
 
     Off-CPU time is ``wall - cpu`` only for a process that ran one thread. ``getrusage``
@@ -553,6 +808,8 @@ def _measure_once(
     ordinal: int,
     warmup: bool,
     fingerprint_document: Dict[str, Any],
+    expected_phase_profile: Optional[str],
+    host_regime: HostRegime,
     timeout_seconds: float,
 ) -> Sample:
     if job.writes_snapshot and snapshot is not None:
@@ -564,26 +821,31 @@ def _measure_once(
         snapshot=snapshot,
         extra=variant.extra_args,
     )
+    pressure_before = _host_pressure_snapshot(host_regime)
     result = _spawn(argv, timeout_seconds=timeout_seconds)
+    pressure_after = _host_pressure_snapshot(host_regime)
 
     reasons: List[str] = []
     if result["timed_out"]:
         reasons.append("command timed out")
     if result["exit_code"] not in job.allowed_exit_codes:
         reasons.append(f"command exited with {result['exit_code']}")
+    reasons.extend(_host_pressure_reasons(host_regime, pressure_before, pressure_after))
 
     probe: Dict[str, Any] = {}
     component_ns: Optional[int] = None
     if variant.kind == "fdu-probe":
         probe, probe_reasons = _read_probe_output(
-            result["stdout"], allow_incomplete=job.allow_incomplete
+            result["stdout"],
+            allow_incomplete=job.allow_incomplete,
+            require_scan_diagnostics=job.require_scan_diagnostics,
+            require_macos_backend=job.require_macos_backend,
+            expected_phase_profile=expected_phase_profile,
         )
         reasons.extend(probe_reasons)
         component_ns = probe.get("component_ns")
         if job.verify_oracle and probe:
-            disagreement = reference_tree.probe_agrees(
-                fingerprint_document, probe.get("summary")
-            )
+            disagreement = reference_tree.probe_agrees(fingerprint_document, probe.get("summary"))
             if disagreement is not None:
                 reasons.append(disagreement)
 
@@ -600,15 +862,31 @@ def _measure_once(
         valid=not reasons,
         reasons=reasons,
         metrics=metrics,
+        host_pressure={"after": pressure_after, "before": pressure_before},
         probe={
             key: value
             for key, value in probe.items()
-            if key in {"component_ns", "attribution", "mode", "source", "summary"}
+            if key
+            in {
+                "component_ns",
+                "attribution",
+                "mode",
+                "scan_diagnostics",
+                "source",
+                "summary",
+            }
         },
     )
 
 
-def _read_probe_output(stdout: bytes, *, allow_incomplete: bool = False):
+def _read_probe_output(
+    stdout: bytes,
+    *,
+    allow_incomplete: bool = False,
+    require_scan_diagnostics: bool = False,
+    require_macos_backend: bool = False,
+    expected_phase_profile: Optional[str] = None,
+):
     reasons: List[str] = []
     text = stdout.decode("utf-8", errors="replace").strip()
     if not text:
@@ -627,7 +905,353 @@ def _read_probe_output(stdout: bytes, *, allow_incomplete: bool = False):
             reasons.append("probe reported an incomplete traversal")
         if summary.get("errors"):
             reasons.append(f"probe reported {summary['errors']} traversal errors")
+    if require_scan_diagnostics:
+        reasons.extend(
+            _validate_scan_diagnostics(
+                document.get("scan_diagnostics"),
+                require_macos_backend=require_macos_backend,
+                expected_dirs_read=summary.get("dirs_read") if isinstance(summary, dict) else None,
+                expected_phase_profile=expected_phase_profile,
+            )
+        )
     return document, reasons
+
+
+def _validate_scan_diagnostics(
+    diagnostics: Any,
+    *,
+    require_macos_backend: bool,
+    expected_dirs_read: Any = None,
+    expected_phase_profile: Optional[str] = None,
+) -> List[str]:
+    """Reject traces that cannot support a policy claim.
+
+    Timing without the policy path that produced it describes a mixture, not a
+    controller. This validator is intentionally stricter than the probe parser: the
+    probe may emit an honest null or undecided result, while a claim-grade adaptive
+    job must treat that honesty as an inconclusive sample rather than filling gaps.
+    """
+    reasons: List[str] = []
+    if not isinstance(diagnostics, dict):
+        return ["required scan diagnostics are missing"]
+    if diagnostics.get("schema") != "fdu-scan-diagnostics-v1":
+        reasons.append(f"unexpected scan diagnostics schema {diagnostics.get('schema')!r}")
+    policy = diagnostics.get("worker_policy")
+    backend = diagnostics.get("backend")
+    if not isinstance(policy, dict):
+        reasons.append("scan diagnostics worker_policy is missing")
+    else:
+        controller = policy.get("controller")
+        if controller not in {
+            "shipped_one_shot",
+            "repeated_windows",
+            "staged_gated_windows",
+        }:
+            reasons.append(f"unknown adaptive worker controller {controller!r}")
+        if policy.get("events_truncated") is not False:
+            reasons.append("scan diagnostics policy trace is truncated or unspecified")
+        for field in (
+            "ready_directories_at_finish",
+            "in_flight_directories_at_finish",
+            "handoff_backlog_at_finish",
+        ):
+            if policy.get(field) != 0:
+                reasons.append(f"scan diagnostics ended with nonzero {field}")
+        outcome = policy.get("outcome")
+        if outcome in {None, "not_run", "undecided"}:
+            reasons.append(f"adaptive worker policy was not observable: {outcome!r}")
+        elif outcome not in {
+            "fixed",
+            "held",
+            "scaled_up",
+            "held_no_useful_work",
+        }:
+            reasons.append(f"unknown adaptive worker outcome {outcome!r}")
+        windows = policy.get("windows")
+        available = policy.get("available_parallelism")
+        initial = policy.get("initial_workers")
+        maximum = policy.get("maximum_workers")
+        if (
+            not all(isinstance(value, int) and value > 0 for value in (available, initial, maximum))
+            or initial > maximum
+        ):
+            reasons.append("scan diagnostics worker configuration is inconsistent")
+        calibration_window = policy.get("calibration_window_entries")
+        slow_threshold = policy.get("slow_threshold_ns_per_entry")
+        if outcome == "fixed":
+            if calibration_window is not None or slow_threshold is not None:
+                reasons.append("fixed worker policy unexpectedly reported adaptive thresholds")
+        elif not (
+            isinstance(calibration_window, int)
+            and calibration_window > 0
+            and isinstance(slow_threshold, int)
+            and slow_threshold > 0
+        ):
+            reasons.append("adaptive worker thresholds are missing")
+        calibration_chunks = policy.get("calibration_chunks")
+        calibration_entries = policy.get("calibration_entries")
+        calibration_work_ns = policy.get("calibration_work_ns")
+        worker_expansions = policy.get("worker_expansions")
+        aggregates = (
+            calibration_chunks,
+            calibration_entries,
+            calibration_work_ns,
+            worker_expansions,
+        )
+        if not all(isinstance(value, int) and value >= 0 for value in aggregates):
+            reasons.append("scan diagnostics calibration aggregates are missing")
+        if not isinstance(windows, list):
+            reasons.append("scan diagnostics policy windows are missing")
+        else:
+            previous_end = 0
+            traced_entries = 0
+            traced_chunks = 0
+            traced_work_ns = 0
+            scale_decisions = 0
+            previous_target = initial if isinstance(initial, int) else 0
+            for sequence, window in enumerate(windows):
+                if not isinstance(window, dict):
+                    reasons.append(f"scan diagnostics policy window {sequence} is malformed")
+                    continue
+                if window.get("sequence") != sequence:
+                    reasons.append("scan diagnostics policy window sequence is not contiguous")
+                start = window.get("start_entry_ordinal")
+                end = window.get("end_entry_ordinal")
+                if not isinstance(start, int) or not isinstance(end, int) or end < start:
+                    reasons.append(
+                        f"scan diagnostics policy window {sequence} has invalid ordinals"
+                    )
+                elif start < previous_end or end < previous_end:
+                    reasons.append("scan diagnostics policy windows overlap or moved backward")
+                else:
+                    previous_end = end
+                decision = window.get("decision")
+                if decision not in {
+                    "undecided",
+                    "hold",
+                    "scale_up",
+                    "hold_no_useful_work",
+                    "hold_insufficient_frontier",
+                    "hold_handoff_backlog",
+                    "observe_fast",
+                    "observe_slow",
+                    "observe_incomplete",
+                    "incomplete",
+                }:
+                    reasons.append(
+                        f"scan diagnostics policy window {sequence} has unknown decision"
+                    )
+                requested = window.get("requested_workers")
+                if decision == "scale_up" and not isinstance(requested, int):
+                    reasons.append("scan diagnostics scale decision has no worker target")
+                elif decision == "scale_up" and isinstance(requested, int):
+                    if not (
+                        requested > previous_target
+                        and isinstance(maximum, int)
+                        and requested <= maximum
+                    ):
+                        reasons.append("scan diagnostics scale target is not strictly bounded")
+                    previous_target = max(previous_target, requested)
+                elif decision != "scale_up" and requested is not None:
+                    reasons.append("non-scale policy decision requested workers")
+                observed_entries = window.get("observed_entries")
+                observed_chunks = window.get("observed_chunks")
+                observed_work_ns = window.get("observed_work_ns")
+                if not isinstance(observed_entries, int) or observed_entries < 0:
+                    reasons.append(
+                        f"scan diagnostics policy window {sequence} has invalid entry work"
+                    )
+                elif (
+                    isinstance(start, int)
+                    and isinstance(end, int)
+                    and (end - start != observed_entries)
+                ):
+                    reasons.append(
+                        f"scan diagnostics policy window {sequence} entry ordinals disagree"
+                    )
+                if not isinstance(observed_work_ns, int) or observed_work_ns < 0:
+                    reasons.append(
+                        f"scan diagnostics policy window {sequence} has invalid timed work"
+                    )
+                if not isinstance(observed_chunks, int) or observed_chunks < 0:
+                    reasons.append(
+                        f"scan diagnostics policy window {sequence} has invalid chunk count"
+                    )
+                derived_work = window.get("work_ns_per_entry")
+                unavailable = window.get("work_ns_per_entry_unavailable_reason")
+                if isinstance(observed_entries, int) and observed_entries > 0:
+                    expected_work = (
+                        observed_work_ns // observed_entries
+                        if isinstance(observed_work_ns, int)
+                        else None
+                    )
+                    if derived_work != expected_work or unavailable is not None:
+                        reasons.append(
+                            f"scan diagnostics policy window {sequence} has an inconsistent signal"
+                        )
+                    if isinstance(slow_threshold, int) and isinstance(derived_work, int):
+                        slow_decisions = {
+                            "scale_up",
+                            "hold_no_useful_work",
+                            "hold_insufficient_frontier",
+                            "hold_handoff_backlog",
+                            "observe_slow",
+                        }
+                        fast_decisions = {"hold", "observe_fast"}
+                        if decision in slow_decisions and derived_work < slow_threshold:
+                            reasons.append(
+                                f"scan diagnostics policy window {sequence} slow decision disagrees with its signal"
+                            )
+                        if decision in fast_decisions and derived_work >= slow_threshold:
+                            reasons.append(
+                                f"scan diagnostics policy window {sequence} fast decision disagrees with its signal"
+                            )
+                elif derived_work is not None or not isinstance(unavailable, str):
+                    reasons.append(
+                        f"scan diagnostics policy window {sequence} lacks a null-signal reason"
+                    )
+                for field in (
+                    "ready_directories",
+                    "in_flight_directories",
+                    "active_workers",
+                    "handoff_backlog",
+                ):
+                    value = window.get(field)
+                    if not isinstance(value, int) or value < 0:
+                        reasons.append(
+                            f"scan diagnostics policy window {sequence} has invalid {field}"
+                        )
+                active = window.get("active_workers")
+                backlog = window.get("handoff_backlog")
+                high_water = policy.get("handoff_backlog_high_water")
+                if isinstance(active, int) and isinstance(maximum, int) and active > maximum:
+                    reasons.append(
+                        f"scan diagnostics policy window {sequence} exceeded the worker bound"
+                    )
+                if (
+                    isinstance(backlog, int)
+                    and isinstance(high_water, int)
+                    and backlog > high_water
+                ):
+                    reasons.append(
+                        f"scan diagnostics policy window {sequence} exceeded the handoff high-water"
+                    )
+                if decision not in {
+                    "observe_fast",
+                    "observe_slow",
+                    "observe_incomplete",
+                }:
+                    if isinstance(observed_entries, int) and observed_entries >= 0:
+                        traced_entries += observed_entries
+                    if isinstance(observed_chunks, int) and observed_chunks >= 0:
+                        traced_chunks += observed_chunks
+                    if isinstance(observed_work_ns, int) and observed_work_ns >= 0:
+                        traced_work_ns += observed_work_ns
+                if decision == "scale_up":
+                    scale_decisions += 1
+            if outcome in {"held", "scaled_up", "held_no_useful_work"} and not windows:
+                reasons.append("observable adaptive outcome has no policy window")
+            if isinstance(calibration_entries, int) and calibration_entries != traced_entries:
+                reasons.append("calibration entry aggregate disagrees with policy windows")
+            if isinstance(calibration_chunks, int) and calibration_chunks != traced_chunks:
+                reasons.append("calibration chunk aggregate disagrees with policy windows")
+            if isinstance(calibration_work_ns, int) and calibration_work_ns != traced_work_ns:
+                reasons.append("calibration work aggregate disagrees with policy windows")
+            if isinstance(worker_expansions, int) and not (
+                0 <= worker_expansions <= scale_decisions
+            ):
+                reasons.append("worker expansion aggregate disagrees with policy windows")
+            if outcome == "scaled_up" and worker_expansions == 0:
+                reasons.append("scaled policy outcome performed no worker expansion")
+        spawned = policy.get("workers_spawned")
+        peak = policy.get("peak_active_workers")
+        maximum = policy.get("maximum_workers")
+        if not all(isinstance(value, int) for value in (spawned, peak, maximum)):
+            reasons.append("scan diagnostics worker bounds are missing")
+        elif not (0 <= peak <= spawned <= maximum):
+            reasons.append("scan diagnostics worker bounds are inconsistent")
+        high_water = policy.get("handoff_backlog_high_water")
+        if not isinstance(high_water, int) or high_water < 0:
+            reasons.append("scan diagnostics handoff high-water is missing")
+        if expected_phase_profile is not None and outcome != "fixed":
+            reasons.extend(_validate_phase_history(policy, expected_phase_profile))
+    if not isinstance(backend, dict):
+        reasons.append("scan diagnostics backend is missing")
+    else:
+        portable_attempts = backend.get("portable_attempts")
+        portable_reads = backend.get("portable_directory_reads")
+        if not isinstance(portable_attempts, int) or not isinstance(portable_reads, int):
+            reasons.append("portable backend counts are missing")
+        elif not 0 <= portable_reads <= portable_attempts:
+            reasons.append("portable backend counts are inconsistent")
+        attempts = backend.get("macos_bulk_attempts")
+        successes = backend.get("macos_bulk_successes")
+        fallbacks = backend.get("macos_bulk_fallbacks")
+        if require_macos_backend and not all(
+            isinstance(value, int) for value in (attempts, successes, fallbacks)
+        ):
+            reasons.append("required macOS bulk/fallback counts are unavailable")
+        elif all(isinstance(value, int) for value in (attempts, successes, fallbacks)):
+            if attempts != successes + fallbacks:
+                reasons.append("macOS bulk/fallback counts are inconsistent")
+            if isinstance(expected_dirs_read, int) and expected_dirs_read != (
+                successes + portable_reads
+            ):
+                reasons.append("backend counts disagree with reported directories read")
+        elif backend.get("unavailable_reason") in (None, ""):
+            reasons.append("unavailable macOS backend counts have no reason")
+        if (
+            not isinstance(attempts, int)
+            and isinstance(expected_dirs_read, int)
+            and isinstance(portable_reads, int)
+            and expected_dirs_read != portable_reads
+        ):
+            reasons.append("portable backend count disagrees with reported directories read")
+    return reasons
+
+
+def _validate_phase_history(policy: Mapping[str, Any], expected_phase_profile: str) -> List[str]:
+    """Require a generated phase hypothesis to appear in the measured trace.
+
+    Corpus path prefixes describe deterministic topology, not enumeration or completion
+    order. Only the service-time trace can establish that the hypothesized phases
+    occurred in one run, so a missing or reversed signal invalidates that sample.
+    """
+    decision_signal = {
+        "hold": "fast",
+        "observe_fast": "fast",
+        "scale_up": "slow",
+        "hold_no_useful_work": "slow",
+        "hold_insufficient_frontier": "slow",
+        "hold_handoff_backlog": "slow",
+        "observe_slow": "slow",
+    }
+    signals = [
+        decision_signal.get(window.get("decision"))
+        for window in policy.get("windows", [])
+        if isinstance(window, Mapping)
+    ]
+    signals = [signal for signal in signals if signal is not None]
+    compressed = [
+        signal for index, signal in enumerate(signals) if index == 0 or signal != signals[index - 1]
+    ]
+    expected = {
+        "fast-prefix-slow-suffix": ["fast", "slow"],
+        "slow-prefix-fast-suffix": ["slow", "fast"],
+        "alternating-regions": ["fast", "slow", "fast", "slow"],
+    }.get(expected_phase_profile)
+    if expected is None:
+        return [f"unknown generated-corpus phase profile {expected_phase_profile!r}"]
+    cursor = 0
+    for signal in compressed:
+        if cursor < len(expected) and signal == expected[cursor]:
+            cursor += 1
+    if cursor != len(expected):
+        return [
+            "generated-corpus phase hypothesis was not observed: "
+            f"expected {'/'.join(expected)}, observed {'/'.join(compressed) or 'none'}"
+        ]
+    return []
 
 
 def _expand(
@@ -657,7 +1281,12 @@ def _expand(
     return expanded + list(extra)
 
 
-def _spawn(argv: Sequence[str], *, timeout_seconds: float) -> Dict[str, Any]:
+def _spawn(
+    argv: Sequence[str],
+    *,
+    timeout_seconds: float,
+    environment_overrides: Optional[Mapping[str, str]] = None,
+) -> Dict[str, Any]:
     """Run one command and collect wall time plus that child's own rusage.
 
     Output goes to temporary files rather than pipes. Pipes would need a draining
@@ -669,6 +1298,10 @@ def _spawn(argv: Sequence[str], *, timeout_seconds: float) -> Dict[str, Any]:
     ``subprocess``.
     """
     import tempfile
+
+    environment = dict(BASE_ENVIRONMENT)
+    if environment_overrides is not None:
+        environment.update(environment_overrides)
 
     timed_out = False
     exit_code: Optional[int] = None
@@ -684,7 +1317,7 @@ def _spawn(argv: Sequence[str], *, timeout_seconds: float) -> Dict[str, Any]:
                 stdin=subprocess.DEVNULL,
                 stdout=out,
                 stderr=err,
-                env=dict(BASE_ENVIRONMENT),
+                env=environment,
                 start_new_session=os.name == "posix",
             )
             if os.name == "posix" and hasattr(os, "wait4"):
@@ -818,8 +1451,7 @@ def _progress(position: int, total: int, sample: Sample) -> None:
     flag = "" if sample.valid else f"  INVALID: {'; '.join(sample.reasons)[:90]}"
     tag = "warmup" if sample.warmup else f"#{sample.ordinal:02d}  "
     print(
-        f"[{position:4d}/{total}] {sample.job:<22} {sample.variant:<14} "
-        f"{tag} {shown}{flag}",
+        f"[{position:4d}/{total}] {sample.job:<22} {sample.variant:<14} {tag} {shown}{flag}",
         file=sys.stderr,
         flush=True,
     )
@@ -833,11 +1465,25 @@ def _progress(position: int, total: int, sample: Sample) -> None:
 def summarize(document: Mapping[str, Any]) -> Dict[str, Any]:
     """Per-job, per-variant distributions plus paired comparisons against the first."""
     samples = [
-        Sample(**{**sample, "reasons": list(sample["reasons"])})
-        for sample in document["samples"]
+        Sample(**{**sample, "reasons": list(sample["reasons"])}) for sample in document["samples"]
     ]
-    variants = list(document["variants"])
+    variant_mapping = document["variants"]
+    declared_order = document.get("variant_order")
+    if declared_order is not None:
+        if (
+            not isinstance(declared_order, list)
+            or len(declared_order) != len(variant_mapping)
+            or set(declared_order) != set(variant_mapping)
+        ):
+            raise MeasureError(
+                "variant_order does not identify every measured variant exactly once"
+            )
+        variants = list(declared_order)
+    else:
+        variants = list(variant_mapping)
     jobs = list(document["jobs"])
+    campaign_stage = (document.get("conditions") or {}).get("campaign_stage", "exploratory")
+    required_pairs = (document.get("conditions") or {}).get("trials")
     statistics_document: Dict[str, Any] = {}
     for job in jobs:
         per_variant: Dict[str, Any] = {}
@@ -876,7 +1522,12 @@ def summarize(document: Mapping[str, Any]) -> Dict[str, Any]:
             control = variants[0]
             for variant in variants[1:]:
                 comparisons[f"{variant}_vs_{control}"] = paired_comparison(
-                    samples, job=job, control=control, candidate=variant
+                    samples,
+                    job=job,
+                    control=control,
+                    candidate=variant,
+                    campaign_stage=campaign_stage,
+                    required_pairs=required_pairs,
                 )
             # Successive pairs, for stacked-change runs: variant i measured against
             # variant i-1 isolates the i-th change, while everything still shares one
@@ -884,7 +1535,12 @@ def summarize(document: Mapping[str, Any]) -> Dict[str, Any]:
             # only be judged in aggregate or in three runs on a drifting machine.
             for previous, current in zip(variants[1:], variants[2:]):
                 comparisons[f"{current}_vs_{previous}"] = paired_comparison(
-                    samples, job=job, control=previous, candidate=current
+                    samples,
+                    job=job,
+                    control=previous,
+                    candidate=current,
+                    campaign_stage=campaign_stage,
+                    required_pairs=required_pairs,
                 )
         statistics_document[job] = {
             "variants": per_variant,
@@ -913,7 +1569,13 @@ def distribution(values: Sequence[int]) -> Optional[Dict[str, float]]:
 
 
 def paired_comparison(
-    samples: Sequence[Sample], *, job: str, control: str, candidate: str
+    samples: Sequence[Sample],
+    *,
+    job: str,
+    control: str,
+    candidate: str,
+    campaign_stage: str = "exploratory",
+    required_pairs: Optional[int] = None,
 ) -> Dict[str, Any]:
     """Compare two variants using differences at equal ordinals.
 
@@ -934,15 +1596,15 @@ def paired_comparison(
         ]
         median_ratio = statistics.median(ratios) if ratios else None
         low, high = _bootstrap_median_interval(ratios) if ratios else (None, None)
+        delta_low, delta_high = _bootstrap_median_interval(deltas)
+        median_change_pct = round(median_ratio * 100, 3) if median_ratio is not None else None
+        interval_pct = [round(low * 100, 3), round(high * 100, 3)] if low is not None else None
         result["metrics"][metric] = {
             "pairs": len(pairs),
             "median_delta": statistics.median(deltas),
-            "median_change_pct": round(median_ratio * 100, 3)
-            if median_ratio is not None
-            else None,
-            "ci95_change_pct": [round(low * 100, 3), round(high * 100, 3)]
-            if low is not None
-            else None,
+            "ci95_delta": [round(delta_low, 3), round(delta_high, 3)],
+            "median_change_pct": median_change_pct,
+            "ci95_change_pct": interval_pct,
             "improved": median_ratio is not None and median_ratio < 0,
             # Three separate questions that used to be collapsed into one flag.
             #
@@ -953,12 +1615,28 @@ def paired_comparison(
             # which is how exp-012 came to be described as free when its own RSS
             # intervals sat entirely above zero.
             "passes_acceptance": low is not None and high is not None and high < 0,
-            "ci_excludes_zero": low is not None
-            and high is not None
-            and (high < 0 or low > 0),
+            "ci_excludes_zero": low is not None and high is not None and (high < 0 or low > 0),
             "direction": _direction(low, high),
             "significant": low is not None and high is not None and high < 0,
+            "noninferiority": _noninferiority_classification(
+                median_change_pct,
+                interval_pct,
+            ),
         }
+    policy_stability = _adaptive_policy_stability(
+        samples,
+        job,
+        control,
+        candidate,
+        required_histories=required_pairs,
+    )
+    result["policy_stability"] = policy_stability
+    result["qualification"] = _qualification(
+        result,
+        policy_stability,
+        campaign_stage=campaign_stage,
+        required_pairs=required_pairs,
+    )
     return result
 
 
@@ -982,11 +1660,186 @@ def _pairs(
 
     left = indexed(control)
     right = indexed(candidate)
-    return [
-        (left[ordinal], right[ordinal])
-        for ordinal in sorted(set(left) & set(right))
-        if left[ordinal]
-    ]
+    return [(left[ordinal], right[ordinal]) for ordinal in sorted(set(left) & set(right))]
+
+
+def _noninferiority_classification(
+    median_change_pct: Optional[float], interval: Optional[Sequence[float]]
+) -> str:
+    """Classify superiority separately from the +3% noninferiority decision."""
+    if median_change_pct is None or interval is None or len(interval) != 2:
+        return "inconclusive"
+    low, high = interval
+    if median_change_pct <= SUPERIORITY_FLOOR_PCT and high < 0:
+        return "superior"
+    if high <= NONINFERIORITY_MARGIN_PCT:
+        return "noninferior"
+    if low > NONINFERIORITY_MARGIN_PCT:
+        return "inferior"
+    return "inconclusive"
+
+
+def _adaptive_policy_stability(
+    samples: Sequence[Sample],
+    job: str,
+    control: str,
+    candidate: str,
+    *,
+    required_histories: Optional[int] = None,
+) -> Optional[Dict[str, Any]]:
+    if job != "adaptive-scan-index":
+        return None
+    variants: Dict[str, Any] = {}
+    for variant in (control, candidate):
+        histories = []
+        missing = 0
+        for sample in samples:
+            if sample.job != job or sample.variant != variant or sample.warmup:
+                continue
+            if not sample.valid:
+                missing += 1
+                continue
+            diagnostics = sample.probe.get("scan_diagnostics")
+            policy = diagnostics.get("worker_policy") if isinstance(diagnostics, dict) else None
+            if not isinstance(policy, dict):
+                missing += 1
+                continue
+            outcome = policy.get("outcome")
+            windows = policy.get("windows")
+            if not isinstance(windows, list):
+                missing += 1
+                continue
+            harmful = _harmful_policy_history(outcome, windows)
+            histories.append((outcome, harmful))
+        signatures = sorted({history for history in histories}, key=repr)
+        harmful_count = sum(harmful is not None for _outcome, harmful in histories)
+        variants[variant] = {
+            "expected_histories": required_histories,
+            "histories": len(histories),
+            "harmful_histories": harmful_count,
+            "harmful_frequency": (round(harmful_count / len(histories), 6) if histories else None),
+            "missing_histories": missing,
+            "signatures": [{"outcome": outcome, "harm": harm} for outcome, harm in signatures],
+            # Pre-registered rule: held-out qualification tolerates no trace-defined
+            # harmful history and no outcome/harm mixture across identical trials.
+            "stable": bool(histories)
+            and missing == 0
+            and harmful_count == 0
+            and len(signatures) == 1
+            and (required_histories is None or len(histories) == required_histories),
+        }
+    return {
+        "rule": "zero-harmful-histories-and-one-outcome-signature-v1",
+        "variants": variants,
+        "stable": all(entry["stable"] for entry in variants.values()),
+    }
+
+
+def _harmful_policy_history(outcome: Any, windows: Sequence[Any]) -> Optional[str]:
+    decisions = [window.get("decision") for window in windows if isinstance(window, Mapping)]
+    if outcome in {"held", "held_no_useful_work"} and "observe_slow" in decisions:
+        return "held-before-later-slow-window"
+    if outcome == "scaled_up":
+        try:
+            scale_index = decisions.index("scale_up")
+        except ValueError:
+            return "scaled-without-recorded-decision"
+        later_fast = sum(
+            decision in {"hold", "observe_fast"} for decision in decisions[scale_index + 1 :]
+        )
+        if later_fast >= 2 and "observe_slow" not in decisions[scale_index + 1 :]:
+            return "scaled-before-two-later-fast-windows"
+    return None
+
+
+def _qualification(
+    comparison: Mapping[str, Any],
+    policy_stability: Optional[Mapping[str, Any]],
+    *,
+    campaign_stage: str,
+    required_pairs: Optional[int] = None,
+) -> Dict[str, Any]:
+    metrics = comparison.get("metrics") or {}
+    primary = metrics.get("wall_ns")
+    if not isinstance(primary, Mapping):
+        return {
+            "classification": "inconclusive",
+            "campaign_stage": campaign_stage,
+            "confirmable": False,
+            "reasons": ["missing wall_ns evidence"],
+        }
+    classification = primary.get("noninferiority", "inconclusive")
+    reasons: List[str] = []
+    if campaign_stage == "held-out" and (
+        not isinstance(required_pairs, int) or primary.get("pairs") != required_pairs
+    ):
+        reasons.append("held-out wall evidence does not contain every fixed-N pair")
+    resource_results: Dict[str, Any] = {}
+    for metric, limit in RESOURCE_REGRESSION_LIMITS_PCT.items():
+        entry = metrics.get(metric)
+        if campaign_stage == "held-out" and (
+            not isinstance(required_pairs, int)
+            or not isinstance(entry, Mapping)
+            or entry.get("pairs") != required_pairs
+        ):
+            resource_results[metric] = "inconclusive"
+            reasons.append(f"{metric} does not contain every fixed-N pair")
+            continue
+        interval = entry.get("ci95_change_pct") if isinstance(entry, Mapping) else None
+        if not isinstance(interval, list) or len(interval) != 2:
+            resource_results[metric] = "inconclusive"
+            reasons.append(f"{metric} is missing a paired percent interval")
+            continue
+        low, high = interval
+        if high <= limit:
+            resource_results[metric] = "within-limit"
+        elif low > limit:
+            resource_results[metric] = "rejected"
+            reasons.append(f"{metric} exceeds its +{limit:g}% regression limit")
+        else:
+            resource_results[metric] = "inconclusive"
+            reasons.append(f"{metric} straddles its +{limit:g}% regression limit")
+    major = metrics.get("major_faults")
+    if campaign_stage == "held-out" and (
+        not isinstance(required_pairs, int)
+        or not isinstance(major, Mapping)
+        or major.get("pairs") != required_pairs
+    ):
+        resource_results["major_faults"] = "inconclusive"
+        reasons.append("major_faults does not contain every fixed-N pair")
+        major_interval = None
+    else:
+        major_interval = major.get("ci95_delta") if isinstance(major, Mapping) else None
+    if not isinstance(major_interval, list) or len(major_interval) != 2:
+        resource_results["major_faults"] = "inconclusive"
+        reasons.append("major_faults is missing a paired absolute interval")
+    elif major_interval[1] <= MAJOR_FAULT_DELTA_LIMIT:
+        resource_results["major_faults"] = "within-limit"
+    elif major_interval[0] > MAJOR_FAULT_DELTA_LIMIT:
+        resource_results["major_faults"] = "rejected"
+        reasons.append("major_faults establishes a positive paired increase")
+    else:
+        resource_results["major_faults"] = "inconclusive"
+        reasons.append("major_faults does not establish non-regression")
+
+    if policy_stability is not None and not policy_stability.get("stable"):
+        reasons.append("trace-defined adaptive policy history is unstable or harmful")
+    if any(value == "rejected" for value in resource_results.values()):
+        classification = "inferior"
+    elif reasons or classification == "inconclusive":
+        classification = "inconclusive"
+    return {
+        "classification": classification,
+        "campaign_stage": campaign_stage,
+        "confirmable": campaign_stage == "held-out"
+        and classification in {"superior", "noninferior"}
+        and not reasons,
+        "noninferiority_margin_pct": NONINFERIORITY_MARGIN_PCT,
+        "resource_limits_pct": dict(RESOURCE_REGRESSION_LIMITS_PCT),
+        "major_fault_delta_limit": MAJOR_FAULT_DELTA_LIMIT,
+        "resources": resource_results,
+        "reasons": reasons,
+    }
 
 
 def _direction(low: Optional[float], high: Optional[float]) -> str:
@@ -1096,3 +1949,44 @@ def _darwin_filesystem() -> Optional[str]:
             if start != -1:
                 return line[start + 1 :].split(",")[0]
     return None
+
+
+def _darwin_power_source() -> Optional[str]:
+    if sys.platform != "darwin":
+        return None
+    binary = shutil.which("pmset")
+    if binary is None:
+        return None
+    completed = subprocess.run([binary, "-g", "batt"], capture_output=True, check=False)
+    if completed.returncode != 0:
+        return None
+    output = completed.stdout.decode("utf-8", errors="replace")
+    if "AC Power" in output:
+        return "AC"
+    if "Battery Power" in output:
+        return "battery"
+    return None
+
+
+def _darwin_thermal_pressure() -> Optional[str]:
+    """Read the current Foundation thermal state without compiling a helper."""
+    if sys.platform != "darwin":
+        return None
+    binary = Path("/usr/bin/osascript")
+    if not binary.is_file():
+        return None
+    completed = subprocess.run(
+        [
+            str(binary),
+            "-l",
+            "JavaScript",
+            "-e",
+            'ObjC.import("Foundation"); $.NSProcessInfo.processInfo.thermalState',
+        ],
+        capture_output=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        return None
+    states = {"0": "normal", "1": "fair", "2": "serious", "3": "critical"}
+    return states.get(completed.stdout.decode("ascii", errors="ignore").strip())

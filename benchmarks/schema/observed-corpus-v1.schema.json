@@ -278,6 +278,18 @@
             "null"
           ]
         },
+        "phase_profile": {
+          "enum": [
+            "alternating-regions",
+            "fast-prefix-slow-suffix",
+            "slow-prefix-fast-suffix",
+            null
+          ],
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "optional_links": {
           "items": {
             "type": "string"
@@ -317,6 +329,7 @@
         "max_depth",
         "metadata_profile",
         "mutation_locality",
+        "phase_profile",
         "optional_links",
         "recipe_id",
         "scale_points",
@@ -540,11 +553,72 @@
         "max_directory_fanout": {
           "minimum": 0,
           "type": "integer"
+        },
+        "phases": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "counts": {
+                "additionalProperties": false,
+                "properties": {
+                  "directories": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "files": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "other": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "symlinks": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "total": {
+                    "minimum": 1,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "directories",
+                  "files",
+                  "other",
+                  "symlinks",
+                  "total"
+                ],
+                "type": "object"
+              },
+              "max_depth": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "max_directory_fanout": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "path_prefix": {
+                "pattern": "^phase-[a-z0-9-]+$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "counts",
+              "max_depth",
+              "max_directory_fanout",
+              "path_prefix"
+            ],
+            "type": "object"
+          },
+          "type": "array"
         }
       },
       "required": [
         "max_depth",
-        "max_directory_fanout"
+        "max_directory_fanout",
+        "phases"
       ],
       "type": "object"
     },

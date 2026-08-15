@@ -76,17 +76,15 @@ def verdict(comparison: Mapping[str, Any], *, metric: str = "wall_ns") -> Dict[s
     # is required: the interval alone determines the answer.
     accepted = entry.get(
         "passes_acceptance",
-        entry.get("significant", interval is not None and interval[1] is not None and interval[1] < 0),
+        entry.get(
+            "significant", interval is not None and interval[1] is not None and interval[1] < 0
+        ),
     )
     if not accepted:
         # Two different failures, and saying "includes no change" for both is how a
         # measured regression gets filed as noise.
         regressed = interval and interval[0] is not None and interval[0] > 0
-        detail = (
-            "is a regression"
-            if regressed
-            else "includes no change"
-        )
+        detail = "is a regression" if regressed else "includes no change"
         return {
             "accepted": False,
             "reason": (
@@ -107,8 +105,7 @@ def verdict(comparison: Mapping[str, Any], *, metric: str = "wall_ns") -> Dict[s
     return {
         "accepted": True,
         "reason": (
-            f"{change:+.2f}% median, 95% interval "
-            f"[{interval[0]:+.2f}%, {interval[1]:+.2f}%]"
+            f"{change:+.2f}% median, 95% interval [{interval[0]:+.2f}%, {interval[1]:+.2f}%]"
         ),
         "change_pct": change,
     }
@@ -152,6 +149,12 @@ def render(document: Mapping[str, Any], *, profiles: Sequence[Mapping[str, Any]]
         f"({conditions['schedule']})."
     )
     lines.append(f"- OS page cache: {conditions['os_cache']}.")
+    if conditions.get("campaign_stage"):
+        lines.append(
+            f"- Campaign stage: `{conditions['campaign_stage']}`; "
+            f"interval `{conditions.get('confidence_interval', 'unspecified')}`; "
+            f"stopping rule `{conditions.get('stopping_rule', 'unspecified')}`."
+        )
     lines.append(
         "- Tree verified unchanged across the run"
         if not document["tree_mutated_during_run"]
@@ -163,6 +166,21 @@ def render(document: Mapping[str, Any], *, profiles: Sequence[Mapping[str, Any]]
             + "; ".join(document["baseline_drift"])
             + "**"
         )
+    corpus = document.get("corpus")
+    if isinstance(corpus, Mapping):
+        lines.append(
+            f"- Generated corpus `{corpus.get('recipe_id')}`; manifest "
+            f"`{str(corpus.get('manifest_hash', ''))[:16]}…`; semantic digest "
+            f"`{str(corpus.get('semantic_digest', ''))[:16]}…`."
+        )
+        phases = (corpus.get("topology") or {}).get("phases") or []
+        for phase in phases:
+            counts = phase.get("counts") or {}
+            lines.append(
+                f"  - `{phase.get('path_prefix')}`: {counts.get('total', 0):,} entries, "
+                f"depth {phase.get('max_depth')}, fanout "
+                f"{phase.get('max_directory_fanout')}."
+            )
     lines.append("")
 
     lines.append("## Variants")
@@ -195,9 +213,11 @@ def render(document: Mapping[str, Any], *, profiles: Sequence[Mapping[str, Any]]
                 continue
             lines.append(f"| {label} | " + " | ".join(cells) + " |")
         lines.append("")
-        lines.append("_median ± MAD; n = " + ", ".join(
-            f"{name}:{stats['variants'][name]['samples']}" for name in variants
-        ) + "_")
+        lines.append(
+            "_median ± MAD; n = "
+            + ", ".join(f"{name}:{stats['variants'][name]['samples']}" for name in variants)
+            + "_"
+        )
         invalid = {
             name: stats["variants"][name]["invalid"]
             for name in variants
@@ -215,8 +235,8 @@ def render(document: Mapping[str, Any], *, profiles: Sequence[Mapping[str, Any]]
         for key, comparison in stats["comparisons"].items():
             lines.append(f"### Paired comparison: {key}")
             lines.append("")
-            lines.append("| metric | median change | 95% interval | evidence |")
-            lines.append("| --- | --- | --- | --- |")
+            lines.append("| metric | median change | 95% interval | evidence | +3% decision |")
+            lines.append("| --- | --- | --- | --- | --- |")
             for metric, label, _unit in REPORT_METRICS:
                 entry = comparison["metrics"].get(metric)
                 if not entry or entry["median_change_pct"] is None:
@@ -224,12 +244,8 @@ def render(document: Mapping[str, Any], *, profiles: Sequence[Mapping[str, Any]]
                 interval = entry["ci95_change_pct"]
                 lines.append(
                     f"| {label} | {entry['median_change_pct']:+.2f}% | "
-                    + (
-                        f"[{interval[0]:+.2f}%, {interval[1]:+.2f}%]"
-                        if interval
-                        else "—"
-                    )
-                    + f" | {evidence_label(entry)} |"
+                    + (f"[{interval[0]:+.2f}%, {interval[1]:+.2f}%]" if interval else "—")
+                    + f" | {evidence_label(entry)} | {entry.get('noninferiority', '—')} |"
                 )
             decision = verdict(comparison)
             lines.append("")
@@ -237,6 +253,20 @@ def render(document: Mapping[str, Any], *, profiles: Sequence[Mapping[str, Any]]
                 f"**Verdict on wall time: "
                 f"{'ACCEPT' if decision['accepted'] else 'REJECT'}** — {decision['reason']}"
             )
+            qualification = comparison.get("qualification")
+            if isinstance(qualification, Mapping):
+                confirmable = (
+                    "confirmable" if qualification.get("confirmable") else "not confirmable"
+                )
+                lines.append("")
+                lines.append(
+                    f"**Adaptive qualification: "
+                    f"{str(qualification.get('classification', 'inconclusive')).upper()}** "
+                    f"(`{qualification.get('campaign_stage', 'exploratory')}`, {confirmable})."
+                )
+                reasons = qualification.get("reasons") or []
+                if reasons:
+                    lines.append("Reasons: " + "; ".join(str(reason) for reason in reasons) + ".")
             lines.append("")
 
     if profiles:
@@ -248,9 +278,7 @@ def render(document: Mapping[str, Any], *, profiles: Sequence[Mapping[str, Any]]
         )
         lines.append("")
         for entry in profiles:
-            lines.append(
-                f"### {entry['label']} ({entry['total_samples']:,} samples)"
-            )
+            lines.append(f"### {entry['label']} ({entry['total_samples']:,} samples)")
             lines.append("")
             lines.append("| layer | self time |")
             lines.append("| --- | --- |")

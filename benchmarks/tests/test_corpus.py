@@ -29,17 +29,13 @@ class CorpusGenerationTests(unittest.TestCase):
                 self.path = str(path)
 
             def stat(self, *, follow_symlinks: bool) -> os.stat_result:
-                raise AssertionError(
-                    "non-authoritative directory metadata must not be consulted"
-                )
+                raise AssertionError("non-authoritative directory metadata must not be consulted")
 
         with tempfile.TemporaryDirectory() as temporary_directory:
             path = Path(temporary_directory) / "identity.txt"
             path.write_bytes(b"identity")
             expected = path.lstat()
-            with mock.patch(
-                "benchmarks.corpus._DIRENTRY_METADATA_IS_AUTHORITATIVE", False
-            ):
+            with mock.patch("benchmarks.corpus._DIRENTRY_METADATA_IS_AUTHORITATIVE", False):
                 observed = _metadata_for_observation(CachedEntry(path), path)
 
         self.assertEqual(observed.st_ino, expected.st_ino)
@@ -54,36 +50,29 @@ class CorpusGenerationTests(unittest.TestCase):
             real_utime(*args, **kwargs)
 
         with tempfile.TemporaryDirectory() as temporary_directory:
-            with mock.patch.object(
-                os, "supports_follow_symlinks", set()
-            ), mock.patch(
-                "benchmarks.corpus.os.utime",
-                side_effect=emulate_platform_utime,
+            with (
+                mock.patch.object(os, "supports_follow_symlinks", set()),
+                mock.patch(
+                    "benchmarks.corpus.os.utime",
+                    side_effect=emulate_platform_utime,
+                ),
             ):
                 run_root = reserve_run_directory(Path(temporary_directory))
-                manifest = create_corpus(
-                    run_root, "balanced", target_entries=20
-                )
+                manifest = create_corpus(run_root, "balanced", target_entries=20)
 
             verified = verify_corpus(run_root)
 
         self.assertEqual(verified["semantic_digest"], manifest["semantic_digest"])
 
     def test_contract_matches_committed_exact_expectations(self) -> None:
-        expectations_path = (
-            Path(__file__).resolve().parents[1] / "expected" / "contract-v1.json"
-        )
+        expectations_path = Path(__file__).resolve().parents[1] / "expected" / "contract-v1.json"
         expectations = json.loads(expectations_path.read_text(encoding="utf-8"))
         with tempfile.TemporaryDirectory() as temporary_directory:
-            manifest = create_corpus(
-                reserve_run_directory(Path(temporary_directory)), "contract"
-            )
+            manifest = create_corpus(reserve_run_directory(Path(temporary_directory)), "contract")
 
         records = {record["path"]: record for record in manifest["records"]}
         required_directories = {
-            path
-            for path, record in records.items()
-            if record["kind"] == "directory"
+            path for path, record in records.items() if record["kind"] == "directory"
         }
         required_files = {
             path: record["size"]
@@ -91,13 +80,9 @@ class CorpusGenerationTests(unittest.TestCase):
             if record["kind"] == "file"
             and path != expectations["optional_records"]["hardlink"]["path"]
         }
-        self.assertEqual(
-            required_directories, set(expectations["required_directories"])
-        )
+        self.assertEqual(required_directories, set(expectations["required_directories"]))
         self.assertEqual(required_files, expectations["required_files"])
-        for capability_name, optional_record in expectations[
-            "optional_records"
-        ].items():
+        for capability_name, optional_record in expectations["optional_records"].items():
             capability = manifest["capabilities"][capability_name]
             if capability["supported"]:
                 actual = records[optional_record["path"]]
@@ -114,15 +99,13 @@ class CorpusGenerationTests(unittest.TestCase):
             expectations["required_sizes"]["unique_apparent_bytes"],
         )
         required_extensions = {
-            extension: dict(totals)
-            for extension, totals in manifest["extensions"].items()
+            extension: dict(totals) for extension, totals in manifest["extensions"].items()
         }
         if manifest["capabilities"]["hardlink"]["supported"]:
             required_extensions[".bin"]["count"] -= 1
             required_extensions[".bin"]["apparent_bytes"] -= 257
-        self.assertEqual(
-            required_extensions, expectations["required_extension_totals"]
-        )
+        self.assertEqual(required_extensions, expectations["required_extension_totals"])
+
     def test_same_recipe_produces_same_semantic_manifest(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             work_directory = Path(temporary_directory)
@@ -156,9 +139,7 @@ class CorpusGenerationTests(unittest.TestCase):
             self.assertNotEqual(first["recipe_hash"], second["recipe_hash"])
             self.assertNotEqual(first["semantic_digest"], second["semantic_digest"])
             self.assertEqual(first["counts"], second["counts"])
-            self.assertEqual(
-                first["topology"]["max_depth"], second["topology"]["max_depth"]
-            )
+            self.assertEqual(first["topology"]["max_depth"], second["topology"]["max_depth"])
 
     def test_every_recipe_family_generates_and_verifies_at_smoke_scale(self) -> None:
         recipe_ids = (
@@ -167,8 +148,13 @@ class CorpusGenerationTests(unittest.TestCase):
             "churn-local",
             "contract",
             "deep",
+            "few-wide-directories",
+            "many-small-directories",
             "mixed-metadata",
             "partial",
+            "phased-alternating",
+            "phased-fast-slow",
+            "phased-slow-fast",
             "wide",
         )
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -177,9 +163,7 @@ class CorpusGenerationTests(unittest.TestCase):
                 with self.subTest(recipe_id=recipe_id):
                     run_root = reserve_run_directory(work_directory)
                     target = None if recipe_id == "contract" else 40
-                    manifest = create_corpus(
-                        run_root, recipe_id, target_entries=target
-                    )
+                    manifest = create_corpus(run_root, recipe_id, target_entries=target)
                     optional_entries = sum(
                         capability.get("entries_added", 0)
                         for name, capability in manifest["capabilities"].items()
@@ -191,6 +175,72 @@ class CorpusGenerationTests(unittest.TestCase):
                         required_entries + 1 + optional_entries,
                     )
                     self.assertEqual(verify_corpus(run_root), manifest)
+
+    def test_phased_corpora_record_each_topology_partition_independently(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            work_directory = Path(temporary_directory)
+            fast_slow = create_corpus(
+                reserve_run_directory(work_directory),
+                "phased-fast-slow",
+                target_entries=100,
+            )
+            slow_fast = create_corpus(
+                reserve_run_directory(work_directory),
+                "phased-slow-fast",
+                target_entries=100,
+            )
+            alternating = create_corpus(
+                reserve_run_directory(work_directory),
+                "phased-alternating",
+                target_entries=100,
+            )
+
+        for manifest in (fast_slow, slow_fast):
+            phases = manifest["topology"]["phases"]
+            self.assertEqual(len(phases), 2)
+            self.assertEqual(sum(phase["counts"]["total"] for phase in phases), 100)
+            self.assertEqual(manifest["counts"]["total"], 101)
+            self.assertEqual(
+                [phase["path_prefix"] for phase in phases],
+                sorted(phase["path_prefix"] for phase in phases),
+            )
+        self.assertIn("shallow", fast_slow["topology"]["phases"][0]["path_prefix"])
+        self.assertIn(
+            "directory-heavy",
+            slow_fast["topology"]["phases"][0]["path_prefix"],
+        )
+        alternating_phases = alternating["topology"]["phases"]
+        self.assertEqual(len(alternating_phases), 4)
+        self.assertEqual(sum(phase["counts"]["total"] for phase in alternating_phases), 100)
+        self.assertEqual(alternating["counts"]["total"], 101)
+        self.assertEqual(
+            ["shallow", "directory-heavy", "shallow", "directory-heavy"],
+            [
+                "directory-heavy" if "directory-heavy" in phase["path_prefix"] else "shallow"
+                for phase in alternating_phases
+            ],
+        )
+        shallow = alternating_phases[0]["counts"]["directories"]
+        directory_heavy = alternating_phases[1]["counts"]["directories"]
+        self.assertGreater(directory_heavy, shallow * 5)
+
+    def test_directory_stress_recipes_are_structurally_distinct(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            work_directory = Path(temporary_directory)
+            many = create_corpus(
+                reserve_run_directory(work_directory),
+                "many-small-directories",
+                target_entries=100,
+            )
+            few = create_corpus(
+                reserve_run_directory(work_directory),
+                "few-wide-directories",
+                target_entries=100,
+            )
+
+        self.assertGreater(many["counts"]["directories"], 70)
+        self.assertLess(few["counts"]["directories"], 10)
+        self.assertGreater(few["topology"]["max_directory_fanout"], 40)
 
     def test_balanced_1k_smoke_scale_uses_bounded_manifest_memory(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -220,9 +270,7 @@ class CorpusGenerationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary_directory:
             run_root = reserve_run_directory(Path(temporary_directory))
             manifest = create_corpus(run_root, "balanced", target_entries=20)
-            file_record = next(
-                record for record in manifest["records"] if record["kind"] == "file"
-            )
+            file_record = next(record for record in manifest["records"] if record["kind"] == "file")
             with (run_root / "corpus" / file_record["path"]).open("ab") as output:
                 output.write(b"tamper")
 
@@ -233,9 +281,7 @@ class CorpusGenerationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary_directory:
             run_root = reserve_run_directory(Path(temporary_directory))
             manifest = create_corpus(run_root, "balanced", target_entries=20)
-            file_record = next(
-                record for record in manifest["records"] if record["kind"] == "file"
-            )
+            file_record = next(record for record in manifest["records"] if record["kind"] == "file")
             path = run_root / "corpus" / file_record["path"]
             before = path.stat()
             _set_path_times_ns(
@@ -252,26 +298,20 @@ class CorpusGenerationTests(unittest.TestCase):
     def test_churn_transitions_change_only_declared_records(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             run_root = reserve_run_directory(Path(temporary_directory))
-            baseline = create_corpus(
-                run_root, "churn-distributed", target_entries=80
-            )
+            baseline = create_corpus(run_root, "churn-distributed", target_entries=80)
             before = {record["path"]: record for record in baseline["records"]}
 
             transitioned = apply_transition(run_root, "one-change")
 
             after = {record["path"]: record for record in transitioned["records"]}
             changed_paths = {
-                path
-                for path in before.keys() | after.keys()
-                if before.get(path) != after.get(path)
+                path for path in before.keys() | after.keys() if before.get(path) != after.get(path)
             }
             self.assertEqual(
                 changed_paths,
                 set(transitioned["transition_history"][-1]["changed_paths"]),
             )
-            self.assertNotEqual(
-                baseline["semantic_digest"], transitioned["semantic_digest"]
-            )
+            self.assertNotEqual(baseline["semantic_digest"], transitioned["semantic_digest"])
             self.assertEqual(baseline["counts"], transitioned["counts"])
             self.assertEqual(baseline["extensions"], transitioned["extensions"])
             self.assertEqual(
@@ -322,9 +362,7 @@ class CorpusGenerationTests(unittest.TestCase):
                 for run_root in runs
             ]
             for transition_id in ("one-change", "modify-1pct", "mixed-1pct"):
-                manifests = [
-                    apply_transition(run_root, transition_id) for run_root in runs
-                ]
+                manifests = [apply_transition(run_root, transition_id) for run_root in runs]
                 self.assertEqual(
                     manifests[0]["semantic_digest"],
                     manifests[1]["semantic_digest"],
@@ -335,9 +373,7 @@ class CorpusGenerationTests(unittest.TestCase):
                     first_transition["changed_paths"],
                     second_transition["changed_paths"],
                 )
-                self.assertEqual(
-                    first_transition["operations"], second_transition["operations"]
-                )
+                self.assertEqual(first_transition["operations"], second_transition["operations"])
             for run_root in runs:
                 with self.assertRaisesRegex(CorpusError, "no remaining transitions"):
                     apply_transition(run_root, "mixed-1pct")
@@ -345,21 +381,15 @@ class CorpusGenerationTests(unittest.TestCase):
     def test_mutation_refuses_a_tampered_precondition(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             run_root = reserve_run_directory(Path(temporary_directory))
-            manifest = create_corpus(
-                run_root, "churn-distributed", target_entries=40
-            )
-            file_record = next(
-                record for record in manifest["records"] if record["kind"] == "file"
-            )
+            manifest = create_corpus(run_root, "churn-distributed", target_entries=40)
+            file_record = next(record for record in manifest["records"] if record["kind"] == "file")
             with (run_root / "corpus" / file_record["path"]).open("ab") as output:
                 output.write(b"tamper")
 
             with self.assertRaisesRegex(CorpusError, "verification failed"):
                 apply_transition(run_root, "one-change")
 
-            stored = json.loads(
-                (run_root / "observed-corpus.json").read_text(encoding="utf-8")
-            )
+            stored = json.loads((run_root / "observed-corpus.json").read_text(encoding="utf-8"))
             self.assertEqual(stored["state"]["id"], "baseline")
             self.assertNotIn("transition_history", stored)
 
@@ -463,9 +493,7 @@ class CorpusSafetyTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary_directory:
             run_root = reserve_run_directory(Path(temporary_directory))
             manifest = create_corpus(run_root, "balanced", target_entries=10)
-            file_record = next(
-                record for record in manifest["records"] if record["kind"] == "file"
-            )
+            file_record = next(record for record in manifest["records"] if record["kind"] == "file")
             with (run_root / "corpus" / file_record["path"]).open("ab") as output:
                 output.write(b"tamper")
 

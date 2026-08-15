@@ -12,12 +12,14 @@ import json
 import os
 import shutil
 import statistics
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
+from benchmarks import corpus as corpus_tools
 from benchmarks.realtree import __main__ as realtree_cli
 from benchmarks.realtree import ledger, measure, profile, tree
 
@@ -60,9 +62,7 @@ class ReferenceTreeTests(unittest.TestCase):
         document = tree.fingerprint(self.root, label="fixture")
         serialized = json.dumps(document)
         for secret in ("alpha", "beta", "gamma", "nested", "deeper", str(self.root)):
-            self.assertNotIn(
-                secret, serialized, f"fingerprint leaked {secret!r} from the tree"
-            )
+            self.assertNotIn(secret, serialized, f"fingerprint leaked {secret!r} from the tree")
 
     def test_fingerprint_quantifies_hardlinks_without_disclosing_names(self) -> None:
         linked = self.root / "nested" / "linked-copy.txt"
@@ -131,7 +131,11 @@ class ReferenceTreeTests(unittest.TestCase):
         shutil.copytree(self.root, other)
         self.assertIn(
             "root differs from the baseline root",
-            " ".join(tree.compare(tree.fingerprint(other, label="x"), tree.fingerprint(self.root, label="x"))),
+            " ".join(
+                tree.compare(
+                    tree.fingerprint(other, label="x"), tree.fingerprint(self.root, label="x")
+                )
+            ),
         )
 
     def test_probe_summary_must_match_the_oracle(self) -> None:
@@ -171,8 +175,203 @@ class ReferenceTreeTests(unittest.TestCase):
             self.root, self.scratch / "results", description="result directory"
         )
 
+    def test_generated_corpus_binding_is_verified_and_path_free(self) -> None:
+        run_root = corpus_tools.reserve_run_directory(self.scratch / "generated")
+        corpus_tools.create_corpus(run_root, "phased-fast-slow", target_entries=40)
+        manifest_path = run_root / corpus_tools.MANIFEST_NAME
+
+        bound = realtree_cli._verified_corpus_manifest(
+            run_root / corpus_tools.CORPUS_NAME, manifest_path
+        )
+
+        self.assertEqual(bound["recipe_id"], "phased-fast-slow")
+        serialized = json.dumps(bound)
+        self.assertNotIn(str(run_root), serialized)
+        self.assertNotIn("records", bound)
+        with self.assertRaisesRegex(SystemExit, "does not describe"):
+            realtree_cli._verified_corpus_manifest(self.root, manifest_path)
+
 
 class StatisticsTests(unittest.TestCase):
+    @staticmethod
+    def _diagnostic_probe(outcome: str = "fixed") -> bytes:
+        windows = []
+        if outcome != "fixed":
+            windows = [
+                {
+                    "active_workers": 6,
+                    "decision": {
+                        "held": "hold",
+                        "scaled_up": "scale_up",
+                        "undecided": "undecided",
+                    }.get(outcome, "hold"),
+                    "end_entry_ordinal": 16_384,
+                    "handoff_backlog": 1,
+                    "in_flight_directories": 4,
+                    "observed_chunks": 1,
+                    "observed_entries": 16_384,
+                    "observed_work_ns": 16_384_000,
+                    "ready_directories": 8,
+                    "requested_workers": 16 if outcome == "scaled_up" else None,
+                    "sequence": 0,
+                    "start_entry_ordinal": 0,
+                    "work_ns_per_entry": 1_000,
+                    "work_ns_per_entry_unavailable_reason": None,
+                }
+            ]
+        document = {
+            "component_ns": 1,
+            "schema": "fdu-perf-probe-v1",
+            "summary": {"complete": True, "dirs_read": 4, "errors": 0},
+            "scan_diagnostics": {
+                "schema": "fdu-scan-diagnostics-v1",
+                "backend": {
+                    "macos_bulk_attempts": 4,
+                    "macos_bulk_successes": 3,
+                    "macos_bulk_fallbacks": 1,
+                    "portable_attempts": 1,
+                    "portable_directory_reads": 1,
+                    "unavailable_reason": None,
+                },
+                "worker_policy": {
+                    "available_parallelism": 16,
+                    "calibration_chunks": 0 if outcome == "fixed" else 1,
+                    "calibration_entries": 0 if outcome == "fixed" else 16_384,
+                    "calibration_window_entries": None if outcome == "fixed" else 16_384,
+                    "calibration_work_ns": 0 if outcome == "fixed" else 16_384_000,
+                    "controller": "shipped_one_shot",
+                    "events_truncated": False,
+                    "handoff_backlog_at_finish": 0,
+                    "handoff_backlog_high_water": 2,
+                    "in_flight_directories_at_finish": 0,
+                    "initial_workers": 6,
+                    "maximum_workers": 16,
+                    "outcome": outcome,
+                    "peak_active_workers": 16 if outcome == "scaled_up" else 6,
+                    "ready_directories_at_finish": 0,
+                    "slow_threshold_ns_per_entry": None if outcome == "fixed" else 20_000,
+                    "windows": windows,
+                    "worker_expansions": 1 if outcome == "scaled_up" else 0,
+                    "workers_spawned": 16 if outcome == "scaled_up" else 6,
+                },
+            },
+        }
+        return json.dumps(document).encode()
+
+    def test_claim_grade_scan_diagnostics_are_retained_and_validated(self) -> None:
+        document, reasons = measure._read_probe_output(
+            self._diagnostic_probe(),
+            require_scan_diagnostics=True,
+            require_macos_backend=True,
+        )
+
+        self.assertEqual(reasons, [])
+        self.assertEqual(document["scan_diagnostics"]["schema"], "fdu-scan-diagnostics-v1")
+
+    def test_claim_grade_scan_rejects_truncated_or_unobservable_policy(self) -> None:
+        encoded = self._diagnostic_probe("undecided")
+        document = json.loads(encoded)
+        document["scan_diagnostics"]["worker_policy"]["events_truncated"] = True
+
+        _, reasons = measure._read_probe_output(
+            json.dumps(document).encode(), require_scan_diagnostics=True
+        )
+
+        joined = "\n".join(reasons)
+        self.assertIn("trace is truncated", joined)
+        self.assertIn("policy was not observable", joined)
+
+    def test_claim_grade_macos_scan_rejects_null_backend_counts(self) -> None:
+        document = json.loads(self._diagnostic_probe())
+        backend = document["scan_diagnostics"]["backend"]
+        backend["macos_bulk_attempts"] = None
+        backend["macos_bulk_successes"] = None
+        backend["macos_bulk_fallbacks"] = None
+        backend["unavailable_reason"] = "not macOS"
+
+        _, reasons = measure._read_probe_output(
+            json.dumps(document).encode(),
+            require_scan_diagnostics=True,
+            require_macos_backend=True,
+        )
+
+        self.assertIn("required macOS bulk/fallback counts are unavailable", reasons)
+
+    def test_claim_grade_scan_cross_checks_trace_and_backend_aggregates(self) -> None:
+        document = json.loads(self._diagnostic_probe("held"))
+        policy = document["scan_diagnostics"]["worker_policy"]
+        policy["calibration_entries"] -= 1
+        document["summary"]["dirs_read"] += 1
+
+        _, reasons = measure._read_probe_output(
+            json.dumps(document).encode(),
+            require_scan_diagnostics=True,
+            require_macos_backend=True,
+        )
+
+        self.assertIn("calibration entry aggregate disagrees with policy windows", reasons)
+        self.assertIn("backend counts disagree with reported directories read", reasons)
+
+    def test_generated_phase_claim_is_validated_from_the_trace(self) -> None:
+        document = json.loads(self._diagnostic_probe("held"))
+        policy = document["scan_diagnostics"]["worker_policy"]
+        policy["windows"].append(
+            {
+                "active_workers": 6,
+                "decision": "observe_slow",
+                "end_entry_ordinal": 32_768,
+                "handoff_backlog": 1,
+                "in_flight_directories": 4,
+                "observed_chunks": 1,
+                "observed_entries": 16_384,
+                "observed_work_ns": 655_360_000,
+                "ready_directories": 8,
+                "requested_workers": None,
+                "sequence": 1,
+                "start_entry_ordinal": 16_384,
+                "work_ns_per_entry": 40_000,
+                "work_ns_per_entry_unavailable_reason": None,
+            }
+        )
+
+        _, reasons = measure._read_probe_output(
+            json.dumps(document).encode(),
+            require_scan_diagnostics=True,
+            require_macos_backend=True,
+            expected_phase_profile="fast-prefix-slow-suffix",
+        )
+        self.assertEqual(reasons, [])
+
+        _, reversed_reasons = measure._read_probe_output(
+            json.dumps(document).encode(),
+            require_scan_diagnostics=True,
+            require_macos_backend=True,
+            expected_phase_profile="slow-prefix-fast-suffix",
+        )
+        self.assertIn(
+            "generated-corpus phase hypothesis was not observed",
+            "\n".join(reversed_reasons),
+        )
+
+    def test_alternating_phase_claim_requires_every_transition(self) -> None:
+        complete = {
+            "windows": [
+                {"decision": "hold"},
+                {"decision": "observe_slow"},
+                {"decision": "observe_fast"},
+                {"decision": "observe_slow"},
+            ]
+        }
+        incomplete = {
+            "windows": [
+                {"decision": "hold"},
+                {"decision": "observe_slow"},
+                {"decision": "observe_fast"},
+            ]
+        }
+        self.assertEqual(measure._validate_phase_history(complete, "alternating-regions"), [])
+        self.assertTrue(measure._validate_phase_history(incomplete, "alternating-regions"))
+
     def test_document_jobs_are_catalogued_with_their_cache_seed(self) -> None:
         text = measure.PROBE_JOBS["text-prose"]
         markdown = measure.PROBE_JOBS["markdown-prose"]
@@ -239,6 +438,177 @@ class StatisticsTests(unittest.TestCase):
             for ordinal, value in enumerate(values)
         ]
 
+    @staticmethod
+    def _qualification_samples(
+        job: str,
+        variant: str,
+        wall_values,
+        *,
+        rss_multiplier: float = 1.0,
+        policy_outcome: str = "fixed",
+        policy_decisions=(),
+    ):
+        samples = []
+        for ordinal, wall in enumerate(wall_values):
+            metrics = {
+                "wall_ns": wall,
+                "component_ns": wall,
+                "cpu_ns": 1_000,
+                "user_cpu_ns": 500,
+                "system_cpu_ns": 500,
+                "peak_rss_bytes": round(1_000 * rss_multiplier),
+                "major_faults": 0,
+                "minor_faults": 100,
+                "voluntary_context_switches": 100,
+                "involuntary_context_switches": 100,
+            }
+            probe = {}
+            if job == "adaptive-scan-index":
+                probe = {
+                    "scan_diagnostics": {
+                        "worker_policy": {
+                            "outcome": policy_outcome,
+                            "windows": [{"decision": decision} for decision in policy_decisions],
+                        }
+                    }
+                }
+            samples.append(
+                measure.Sample(
+                    variant=variant,
+                    job=job,
+                    ordinal=ordinal,
+                    warmup=False,
+                    valid=True,
+                    metrics=metrics,
+                    probe=probe,
+                )
+            )
+        return samples
+
+    def test_noninferiority_contract_distinguishes_all_four_outcomes(self) -> None:
+        self.assertEqual(
+            measure._noninferiority_classification(-5.0, [-6.0, -4.0]),
+            "superior",
+        )
+        self.assertEqual(
+            measure._noninferiority_classification(1.0, [-1.0, 2.0]),
+            "noninferior",
+        )
+        self.assertEqual(
+            measure._noninferiority_classification(5.0, [4.0, 6.0]),
+            "inferior",
+        )
+        self.assertEqual(
+            measure._noninferiority_classification(3.0, [2.0, 4.0]),
+            "inconclusive",
+        )
+
+    def test_resource_regression_rejects_a_faster_candidate(self) -> None:
+        samples = self._qualification_samples("job", "control", [1_000] * 12)
+        samples += self._qualification_samples("job", "candidate", [900] * 12, rss_multiplier=1.10)
+
+        comparison = measure.paired_comparison(
+            samples,
+            job="job",
+            control="control",
+            candidate="candidate",
+            campaign_stage="held-out",
+            required_pairs=12,
+        )
+
+        self.assertEqual(comparison["metrics"]["wall_ns"]["noninferiority"], "superior")
+        self.assertEqual(comparison["qualification"]["classification"], "inferior")
+        self.assertFalse(comparison["qualification"]["confirmable"])
+        self.assertIn("peak_rss_bytes exceeds", "\n".join(comparison["qualification"]["reasons"]))
+
+    def test_missing_resource_field_makes_qualification_inconclusive(self) -> None:
+        samples = self._samples("job", "control", [1_000] * 12)
+        samples += self._samples("job", "candidate", [950] * 12)
+
+        comparison = measure.paired_comparison(
+            samples, job="job", control="control", candidate="candidate"
+        )
+
+        self.assertEqual(comparison["qualification"]["classification"], "inconclusive")
+        self.assertIn("missing", "\n".join(comparison["qualification"]["reasons"]))
+
+    def test_trace_defined_harm_makes_adaptive_qualification_inconclusive(self) -> None:
+        control = self._qualification_samples(
+            "adaptive-scan-index",
+            "control",
+            [1_000] * 12,
+            policy_outcome="held",
+            policy_decisions=("hold", "observe_fast"),
+        )
+        # One identical-tree trial records the completion-order false negative.
+        control[5].probe["scan_diagnostics"]["worker_policy"]["windows"].append(
+            {"decision": "observe_slow"}
+        )
+        candidate = self._qualification_samples(
+            "adaptive-scan-index",
+            "candidate",
+            [950] * 12,
+            policy_outcome="fixed",
+        )
+
+        comparison = measure.paired_comparison(
+            control + candidate,
+            job="adaptive-scan-index",
+            control="control",
+            candidate="candidate",
+            campaign_stage="held-out",
+        )
+
+        self.assertFalse(comparison["policy_stability"]["stable"])
+        self.assertEqual(comparison["qualification"]["classification"], "inconclusive")
+        self.assertIn(
+            "adaptive policy history is unstable",
+            "\n".join(comparison["qualification"]["reasons"]),
+        )
+
+    def test_held_out_qualification_requires_every_preregistered_pair_and_trace(self) -> None:
+        control = self._qualification_samples("adaptive-scan-index", "control", [1_000] * 12)
+        candidate = self._qualification_samples("adaptive-scan-index", "candidate", [950] * 12)
+        candidate[-1].valid = False
+        candidate[-1].reasons.append("fixture invalidation")
+
+        comparison = measure.paired_comparison(
+            control + candidate,
+            job="adaptive-scan-index",
+            control="control",
+            candidate="candidate",
+            campaign_stage="held-out",
+            required_pairs=12,
+        )
+
+        self.assertFalse(comparison["policy_stability"]["stable"])
+        self.assertEqual(
+            comparison["policy_stability"]["variants"]["candidate"]["missing_histories"],
+            1,
+        )
+        self.assertFalse(comparison["qualification"]["confirmable"])
+        self.assertIn(
+            "every fixed-N pair",
+            "\n".join(comparison["qualification"]["reasons"]),
+        )
+
+    def test_complete_stable_held_out_evidence_is_confirmable(self) -> None:
+        samples = self._qualification_samples("adaptive-scan-index", "control", [1_000] * 12)
+        samples += self._qualification_samples("adaptive-scan-index", "candidate", [990] * 12)
+
+        comparison = measure.paired_comparison(
+            samples,
+            job="adaptive-scan-index",
+            control="control",
+            candidate="candidate",
+            campaign_stage="held-out",
+            required_pairs=12,
+        )
+
+        self.assertTrue(comparison["policy_stability"]["stable"])
+        self.assertEqual(comparison["qualification"]["classification"], "noninferior")
+        self.assertTrue(comparison["qualification"]["confirmable"])
+
     def test_distribution_reports_median_and_spread(self) -> None:
         summary = measure.distribution([10, 20, 30, 40, 100])
         self.assertEqual(summary["count"], 5)
@@ -302,7 +672,11 @@ class StatisticsTests(unittest.TestCase):
         # A warmup that would look like a huge win, and an invalid one likewise.
         samples += self._samples("job", "candidate", [1], warmup=True)
         rogue = measure.Sample(
-            variant="candidate", job="job", ordinal=99, warmup=False, valid=False,
+            variant="candidate",
+            job="job",
+            ordinal=99,
+            warmup=False,
+            valid=False,
             metrics={"wall_ns": 1},
         )
         samples.append(rogue)
@@ -327,6 +701,80 @@ class StatisticsTests(unittest.TestCase):
         second = measure._bootstrap_median_interval(values)
         self.assertEqual(first, second)
         self.assertLess(first[0], statistics.median(values) + 1e-9)
+
+
+class HostRegimeTests(unittest.TestCase):
+    def test_spawn_applies_only_explicit_environment_overrides(self) -> None:
+        result = measure._spawn(
+            [
+                sys.executable,
+                "-c",
+                "import os; print(os.environ.get('FDU_FIXTURE', 'missing'))",
+            ],
+            timeout_seconds=5,
+            environment_overrides={"FDU_FIXTURE": "present"},
+        )
+
+        self.assertEqual(result["exit_code"], 0)
+        self.assertEqual(result["stdout"], b"present\n")
+
+    def test_held_out_measurement_rejects_an_uncontrolled_host(self) -> None:
+        with self.assertRaisesRegex(measure.MeasureError, "held-out evidence"):
+            measure.run(
+                root=Path("/does/not-matter"),
+                label="fixture",
+                variants=[measure.Variant("control", Path("/bin/true"))],
+                jobs=[measure.PROBE_JOBS["cold-scan-index"]],
+                trials=1,
+                warmups=0,
+                scratch=Path("/does/not-matter-either"),
+                campaign_stage="held-out",
+                host_regime="uncontrolled",
+            )
+
+    def test_quiet_host_rejects_pressure_at_either_sample_boundary(self) -> None:
+        regime = measure.HostRegime(name="quiet", initial={})
+
+        reasons = measure._host_pressure_reasons(
+            regime,
+            {"load_1m_per_cpu": measure.QUIET_MAX_LOAD_PER_CPU + 0.01},
+            {"load_1m_per_cpu": 0.01},
+        )
+
+        self.assertEqual(len(reasons), 1)
+        self.assertIn("before the sample", reasons[0])
+
+    def test_controlled_host_rejects_load_beyond_the_predeclared_envelope(self) -> None:
+        regime = measure.HostRegime(name="controlled-interactive", initial={}, load_workers=2)
+        within = {
+            "controlled_load_alive": True,
+            "load_1m_per_cpu": 0.4,
+            "logical_cpu_count": 10,
+        }
+        excess = {**within, "load_1m_per_cpu": 0.46}
+
+        self.assertEqual(measure._host_pressure_reasons(regime, within, within), [])
+        reasons = measure._host_pressure_reasons(regime, within, excess)
+        self.assertEqual(len(reasons), 1)
+        self.assertIn("synthetic-load envelope", reasons[0])
+
+    def test_controlled_load_lifecycle_is_observable(self) -> None:
+        quiet = {
+            "controlled_load_alive": None,
+            "load_1m": 0.0,
+            "load_1m_per_cpu": 0.0,
+            "load_5m": 0.0,
+            "load_15m": 0.0,
+            "unavailable_reason": None,
+        }
+        with mock.patch("benchmarks.realtree.measure._host_pressure_snapshot", return_value=quiet):
+            with measure._host_regime("controlled-interactive", 1) as regime:
+                process = regime.process
+                self.assertEqual(regime.load_workers, 1)
+                self.assertTrue(regime.load_alive())
+
+        self.assertIsNotNone(process)
+        self.assertIsNotNone(process.poll())
 
 
 class ProfileParsingTests(unittest.TestCase):
@@ -357,6 +805,47 @@ Call graph:
             sum(entry["percent"] for entry in parsed["self_time"]), 100.0, places=1
         )
 
+    def test_counter_report_is_structured_without_raw_text(self) -> None:
+        parsed = profile.parse_counter_report(
+            "[filesystem operations]\n"
+            "  directory opens             17\n\n"
+            "[adaptive scan policy]\n"
+            "  reserve expansions           1\n"
+        )
+
+        self.assertEqual(parsed["groups"]["filesystem operations"]["directory opens"], 17)
+        self.assertEqual(parsed["groups"]["adaptive scan policy"]["reserve expansions"], 1)
+        self.assertIsNone(parsed["unavailable_reason"])
+
+    def test_profile_command_redacts_subject_and_snapshot_paths(self) -> None:
+        shown = profile._redacted_command(
+            [
+                "/tmp/bin/perf_probe",
+                "scan-index",
+                "--root",
+                "/private/subject",
+                "--snapshot",
+                "/private/snapshot.fdu",
+                "--repeat",
+                "4",
+            ],
+            Path("/tmp/bin/perf_probe"),
+        )
+
+        self.assertEqual(
+            shown,
+            [
+                "{binary}",
+                "scan-index",
+                "--root",
+                "{root}",
+                "--snapshot",
+                "{snapshot}",
+                "--repeat",
+                "4",
+            ],
+        )
+
     def test_layers_partition_the_samples(self) -> None:
         parsed = profile.parse(self.SAMPLE)
         self.assertEqual(
@@ -372,10 +861,7 @@ Call graph:
 
 class ScheduleTests(unittest.TestCase):
     def _variants(self, count: int):
-        return [
-            measure.Variant(name=f"v{index}", path=Path(__file__))
-            for index in range(count)
-        ]
+        return [measure.Variant(name=f"v{index}", path=Path(__file__)) for index in range(count)]
 
     def test_every_variant_runs_at_every_ordinal(self) -> None:
         variants = self._variants(3)
@@ -384,8 +870,7 @@ class ScheduleTests(unittest.TestCase):
         self.assertEqual(len(schedule), 3 * 7)
         for ordinal in range(-2, 5):
             at_ordinal = {
-                variant.name for variant, _job, position, _warmup in schedule
-                if position == ordinal
+                variant.name for variant, _job, position, _warmup in schedule if position == ordinal
             }
             self.assertEqual(at_ordinal, {"v0", "v1", "v2"})
 
@@ -394,7 +879,9 @@ class ScheduleTests(unittest.TestCase):
         jobs = [measure.PROBE_JOBS["cold-scan-index"]]
         schedule = measure._interleave(variants, jobs, trials=4, warmups=0)
         first_at = [
-            [variant.name for variant, _job, position, _warmup in schedule if position == ordinal][0]
+            [variant.name for variant, _job, position, _warmup in schedule if position == ordinal][
+                0
+            ]
             for ordinal in range(4)
         ]
         self.assertEqual(len(set(first_at)), 2, "one variant always ran first")

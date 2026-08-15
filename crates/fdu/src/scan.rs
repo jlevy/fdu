@@ -16,6 +16,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::ffi::OsString;
+use std::fmt::Write as _;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
@@ -187,6 +188,7 @@ impl ScanConfig {
     }
 
     /// Resolve [`Self::threads`] to the workers active when a scan begins.
+    #[cfg(any(target_os = "macos", test))]
     fn worker_threads(&self) -> usize {
         self.worker_pool().initial
     }
@@ -202,12 +204,16 @@ impl ScanConfig {
     }
 
     /// Resolve the initial and maximum worker counts for one scan.
+    #[cfg(any(target_os = "macos", test))]
     fn worker_pool(&self) -> WorkerPool {
+        self.worker_pool_for(std::thread::available_parallelism().map_or(1, std::num::NonZero::get))
+    }
+
+    /// Resolve the worker pool from one captured operating-system parallelism value.
+    fn worker_pool_for(&self, available_parallelism: usize) -> WorkerPool {
         match self.threads {
             Some(threads) => WorkerPool::fixed(threads.clamp(1, MAX_SCAN_THREADS)),
-            None => automatic_worker_pool(
-                std::thread::available_parallelism().map_or(1, std::num::NonZero::get),
-            ),
+            None => automatic_worker_pool(available_parallelism),
         }
     }
 
@@ -303,6 +309,341 @@ impl ScanReport {
             self.bytes_walked += attrs.size;
         }
     }
+}
+
+/// Schema carried by [`ScanDiagnostics`].
+///
+/// Diagnostics are an opt-in measurement contract rather than stable human output.
+/// Consumers must reject an unknown schema instead of guessing that fields retained
+/// their meaning.
+pub const SCAN_DIAGNOSTICS_SCHEMA: &str = "fdu-scan-diagnostics-v1";
+
+/// Maximum policy-window records retained by one diagnostic scan.
+///
+/// The bound is on controller evaluations, not filesystem entries. A controller that
+/// needs more history must mark the artifact truncated; claim-grade consumers reject
+/// that artifact rather than silently analyzing an incomplete policy history.
+const MAX_POLICY_TRACE_EVENTS: usize = 256;
+
+/// Opt-in, run-scoped evidence about a filesystem scan.
+///
+/// Obtain this through [`scan_with_diagnostics`] or
+/// [`scan_into_index_with_diagnostics`]. Keeping it out of [`ScanReport`] preserves the
+/// existing scan API and keeps ordinary callers off the measurement path entirely.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ScanDiagnostics {
+    /// Version of this diagnostic contract.
+    pub schema: &'static str,
+    /// Automatic worker-controller history and queue state.
+    pub worker_policy: WorkerPolicyDiagnostics,
+    /// Directory-enumeration backends used by this run.
+    pub backend: ScanBackendDiagnostics,
+}
+
+/// Repository-only controller variants used by the performance evidence probe.
+///
+/// These variants are not selected by [`scan`] or [`scan_with_diagnostics`]; both keep
+/// the shipped one-shot policy. The explicit experimental APIs make candidate behavior
+/// measurable without hiding a production change behind an environment variable.
+#[doc(hidden)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum WorkerPolicyExperiment {
+    /// The production controller: one prefix window and at most one expansion.
+    #[default]
+    ShippedOneShot,
+    /// Re-evaluate independent windows until a slow phase requests the full reserve.
+    RepeatedWindows,
+    /// Re-evaluate independent windows, gate on useful frontier/handoff backlog, and grow
+    /// the pool in stages.
+    StagedGatedWindows,
+}
+
+/// Final state of the automatic worker controller.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WorkerPolicyOutcome {
+    /// The scan did no walking, for example because `max_depth` was zero.
+    NotRun,
+    /// A fixed pool had no adaptive decision to make.
+    Fixed,
+    /// The walk ended before an adaptive window became observable.
+    Undecided,
+    /// The controller measured a window and retained the initial pool.
+    Held,
+    /// The controller requested and activated the reserve workers.
+    ScaledUp,
+    /// Slow work was observed only after no useful queued or in-flight work remained.
+    HeldNoUsefulWork,
+}
+
+/// One controller evaluation over a half-open range of completed entry ordinals.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WorkerPolicyWindow {
+    /// Monotonic record number within this scan.
+    pub sequence: u64,
+    /// First completed-entry ordinal represented by this window, inclusive.
+    pub start_entry_ordinal: u64,
+    /// Ordinal immediately after the last represented entry.
+    pub end_entry_ordinal: u64,
+    /// Entries contributing to the service-time signal.
+    pub observed_entries: u64,
+    /// Completed directory claims contributing to the service-time signal.
+    pub observed_chunks: u64,
+    /// Worker time contributing to the service-time signal.
+    pub observed_work_ns: u64,
+    /// Derived service time, or null when no entry made the signal observable.
+    pub work_ns_per_entry: Option<u64>,
+    /// Why `work_ns_per_entry` is null.
+    pub work_ns_per_entry_unavailable_reason: Option<&'static str>,
+    /// Directories ready to claim when the controller evaluated the window.
+    pub ready_directories: usize,
+    /// Claimed directories still being processed at that point.
+    pub in_flight_directories: usize,
+    /// Live worker threads at that point, including workers waiting for a claim.
+    pub active_workers: usize,
+    /// Observation batches sent but not yet received by the consumer.
+    pub handoff_backlog: usize,
+    /// Worker target requested by a scale decision.
+    pub requested_workers: Option<usize>,
+    /// What the controller concluded from this window.
+    pub decision: WorkerPolicyDecision,
+}
+
+/// Decision represented by a [`WorkerPolicyWindow`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum WorkerPolicyDecision {
+    /// The walk ended before the window could support a decision.
+    Undecided,
+    /// The observed window retained the current pool.
+    Hold,
+    /// The observed window activated reserve workers.
+    ScaleUp,
+    /// The trigger fired after all useful work had drained.
+    HoldNoUsefulWork,
+    /// A complete window held because reserve workers had no useful frontier to claim.
+    HoldInsufficientFrontier,
+    /// A complete window held because the unbounded handoff backlog was already high.
+    HoldHandoffBacklog,
+    /// A post-decision observation window remained below the slow threshold.
+    ObserveFast,
+    /// A post-decision observation window met the slow threshold.
+    ObserveSlow,
+    /// A trailing partial window carried no new terminal decision.
+    Incomplete,
+    /// A trailing partial post-decision observation carried no policy decision.
+    ObserveIncomplete,
+}
+
+/// Worker-controller configuration, trace, and terminal queue state.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct WorkerPolicyDiagnostics {
+    /// Controller variant exercised by this scan.
+    pub controller: &'static str,
+    /// Parallelism reported by the operating system when the scan began.
+    pub available_parallelism: usize,
+    /// Workers in the pool before any adaptive decision.
+    pub initial_workers: usize,
+    /// Hard maximum workers this scan could activate.
+    pub maximum_workers: usize,
+    /// Entry target for an adaptive window, or null for a fixed pool.
+    pub calibration_window_entries: Option<u64>,
+    /// Slow-service trigger, or null for a fixed pool.
+    pub slow_threshold_ns_per_entry: Option<u64>,
+    /// Directory chunks folded into live controller windows.
+    pub calibration_chunks: u64,
+    /// Entries folded into live controller windows.
+    pub calibration_entries: u64,
+    /// Worker time folded into live controller windows.
+    pub calibration_work_ns: u64,
+    /// Expansion messages that caused the consumer to create more workers.
+    pub worker_expansions: u64,
+    /// Terminal policy outcome.
+    pub outcome: WorkerPolicyOutcome,
+    /// Explanation when no adaptive evaluation exists.
+    pub outcome_reason: Option<&'static str>,
+    /// Total worker threads created during the walk.
+    pub workers_spawned: usize,
+    /// Maximum simultaneously live worker threads, including workers waiting for work.
+    pub peak_active_workers: usize,
+    /// Ready directories at scan completion; a complete walk must leave zero.
+    pub ready_directories_at_finish: usize,
+    /// In-flight directories at scan completion; a complete walk must leave zero.
+    pub in_flight_directories_at_finish: usize,
+    /// Observation batches outstanding at scan completion.
+    pub handoff_backlog_at_finish: usize,
+    /// Maximum outstanding observation batches during the scan.
+    pub handoff_backlog_high_water: usize,
+    /// Bounded controller history.
+    pub windows: Vec<WorkerPolicyWindow>,
+    /// True when controller history exceeded the 256-event diagnostic bound.
+    pub events_truncated: bool,
+}
+
+/// Directory enumeration backends used by one scan.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ScanBackendDiagnostics {
+    /// Portable `read_dir` calls attempted.
+    pub portable_attempts: u64,
+    /// Portable directory listings completed successfully.
+    pub portable_directory_reads: u64,
+    /// macOS bulk enumeration attempts, or null off macOS.
+    pub macos_bulk_attempts: Option<u64>,
+    /// Successful macOS bulk listings, or null off macOS.
+    pub macos_bulk_successes: Option<u64>,
+    /// Bulk attempts that fell back to portable enumeration, or null off macOS.
+    pub macos_bulk_fallbacks: Option<u64>,
+    /// Why macOS fields are null.
+    pub unavailable_reason: Option<&'static str>,
+}
+
+impl ScanDiagnostics {
+    /// Serialize this versioned diagnostic contract as compact JSON.
+    ///
+    /// This deliberately lives beside the contract instead of in a benchmark binary:
+    /// claim-grade installed-command measurements and the repository probe must emit
+    /// byte-for-byte equivalent evidence without adding a serialization dependency to
+    /// the core crate.
+    pub fn to_json(&self) -> String {
+        let policy = &self.worker_policy;
+        let backend = &self.backend;
+        let mut windows = String::from("[");
+        for (index, window) in policy.windows.iter().enumerate() {
+            if index > 0 {
+                windows.push(',');
+            }
+            let _ = write!(
+                windows,
+                concat!(
+                    "{{\"active_workers\":{},\"decision\":\"{}\",",
+                    "\"end_entry_ordinal\":{},\"handoff_backlog\":{},",
+                    "\"in_flight_directories\":{},\"observed_chunks\":{},",
+                    "\"observed_entries\":{},",
+                    "\"observed_work_ns\":{},\"ready_directories\":{},",
+                    "\"requested_workers\":{},\"sequence\":{},\"start_entry_ordinal\":{},",
+                    "\"work_ns_per_entry\":{},",
+                    "\"work_ns_per_entry_unavailable_reason\":{}}}"
+                ),
+                window.active_workers,
+                worker_policy_decision_name(window.decision),
+                window.end_entry_ordinal,
+                window.handoff_backlog,
+                window.in_flight_directories,
+                window.observed_chunks,
+                window.observed_entries,
+                window.observed_work_ns,
+                window.ready_directories,
+                json_optional_usize(window.requested_workers),
+                window.sequence,
+                window.start_entry_ordinal,
+                json_optional_u64(window.work_ns_per_entry),
+                json_optional_string(window.work_ns_per_entry_unavailable_reason),
+            );
+        }
+        windows.push(']');
+        format!(
+            concat!(
+                "{{\"backend\":{{\"macos_bulk_attempts\":{},",
+                "\"macos_bulk_fallbacks\":{},\"macos_bulk_successes\":{},",
+                "\"portable_attempts\":{},\"portable_directory_reads\":{},",
+                "\"unavailable_reason\":{}}},",
+                "\"schema\":\"{}\",\"worker_policy\":{{",
+                "\"available_parallelism\":{},\"calibration_chunks\":{},",
+                "\"calibration_entries\":{},\"calibration_window_entries\":{},",
+                "\"calibration_work_ns\":{},",
+                "\"controller\":\"{}\",",
+                "\"events_truncated\":{},\"handoff_backlog_at_finish\":{},",
+                "\"handoff_backlog_high_water\":{},\"in_flight_directories_at_finish\":{},",
+                "\"initial_workers\":{},\"maximum_workers\":{},\"outcome\":\"{}\",",
+                "\"outcome_reason\":{},\"peak_active_workers\":{},",
+                "\"ready_directories_at_finish\":{},\"slow_threshold_ns_per_entry\":{},",
+                "\"windows\":{},\"worker_expansions\":{},\"workers_spawned\":{}}}}}"
+            ),
+            json_optional_u64(backend.macos_bulk_attempts),
+            json_optional_u64(backend.macos_bulk_fallbacks),
+            json_optional_u64(backend.macos_bulk_successes),
+            backend.portable_attempts,
+            backend.portable_directory_reads,
+            json_optional_string(backend.unavailable_reason),
+            self.schema,
+            policy.available_parallelism,
+            policy.calibration_chunks,
+            policy.calibration_entries,
+            json_optional_u64(policy.calibration_window_entries),
+            policy.calibration_work_ns,
+            policy.controller,
+            policy.events_truncated,
+            policy.handoff_backlog_at_finish,
+            policy.handoff_backlog_high_water,
+            policy.in_flight_directories_at_finish,
+            policy.initial_workers,
+            policy.maximum_workers,
+            worker_policy_outcome_name(policy.outcome),
+            json_optional_string(policy.outcome_reason),
+            policy.peak_active_workers,
+            policy.ready_directories_at_finish,
+            json_optional_u64(policy.slow_threshold_ns_per_entry),
+            windows,
+            policy.worker_expansions,
+            policy.workers_spawned,
+        )
+    }
+}
+
+const fn worker_policy_outcome_name(value: WorkerPolicyOutcome) -> &'static str {
+    match value {
+        WorkerPolicyOutcome::NotRun => "not_run",
+        WorkerPolicyOutcome::Fixed => "fixed",
+        WorkerPolicyOutcome::Undecided => "undecided",
+        WorkerPolicyOutcome::Held => "held",
+        WorkerPolicyOutcome::ScaledUp => "scaled_up",
+        WorkerPolicyOutcome::HeldNoUsefulWork => "held_no_useful_work",
+    }
+}
+
+const fn worker_policy_decision_name(value: WorkerPolicyDecision) -> &'static str {
+    match value {
+        WorkerPolicyDecision::Undecided => "undecided",
+        WorkerPolicyDecision::Hold => "hold",
+        WorkerPolicyDecision::ScaleUp => "scale_up",
+        WorkerPolicyDecision::HoldNoUsefulWork => "hold_no_useful_work",
+        WorkerPolicyDecision::HoldInsufficientFrontier => "hold_insufficient_frontier",
+        WorkerPolicyDecision::HoldHandoffBacklog => "hold_handoff_backlog",
+        WorkerPolicyDecision::ObserveFast => "observe_fast",
+        WorkerPolicyDecision::ObserveSlow => "observe_slow",
+        WorkerPolicyDecision::Incomplete => "incomplete",
+        WorkerPolicyDecision::ObserveIncomplete => "observe_incomplete",
+    }
+}
+
+fn json_optional_string(value: Option<&str>) -> String {
+    value.map_or_else(|| "null".into(), |value| format!("\"{}\"", json_escape(value)))
+}
+
+fn json_optional_u64(value: Option<u64>) -> String {
+    value.map_or_else(|| "null".into(), |value| value.to_string())
+}
+
+fn json_optional_usize(value: Option<usize>) -> String {
+    value.map_or_else(|| "null".into(), |value| value.to_string())
+}
+
+fn json_escape(value: &str) -> String {
+    let mut escaped = String::new();
+    for character in value.chars() {
+        match character {
+            '"' => escaped.push_str("\\\""),
+            '\\' => escaped.push_str("\\\\"),
+            '\u{08}' => escaped.push_str("\\b"),
+            '\u{0c}' => escaped.push_str("\\f"),
+            '\n' => escaped.push_str("\\n"),
+            '\r' => escaped.push_str("\\r"),
+            '\t' => escaped.push_str("\\t"),
+            character if character <= '\u{1f}' => {
+                let _ = write!(escaped, "\\u{:04x}", u32::from(character));
+            }
+            character => escaped.push(character),
+        }
+    }
+    escaped
 }
 
 /// Where a walk's time went, so "blocked" is never one undifferentiated number.
@@ -498,6 +839,42 @@ pub fn scan(
     config: &ScanConfig,
     sink: &mut dyn FnMut(Observation),
 ) -> Result<ScanReport> {
+    scan_internal(root, config, sink, false, WorkerPolicyExperiment::ShippedOneShot)
+        .map(|(report, _diagnostics)| report)
+}
+
+/// Walk `root`, emitting observations and a bounded run-scoped diagnostic trace.
+///
+/// This is the measurement counterpart to [`scan`]. It produces the same observation
+/// stream and report while recording controller and backend evidence that ordinary
+/// scans intentionally do not collect.
+pub fn scan_with_diagnostics(
+    root: &Path,
+    config: &ScanConfig,
+    sink: &mut dyn FnMut(Observation),
+) -> Result<(ScanReport, ScanDiagnostics)> {
+    scan_with_policy_diagnostics(root, config, sink, WorkerPolicyExperiment::ShippedOneShot)
+}
+
+/// Exercise a repository-only worker-controller candidate and retain its trace.
+#[doc(hidden)]
+pub fn scan_with_policy_diagnostics(
+    root: &Path,
+    config: &ScanConfig,
+    sink: &mut dyn FnMut(Observation),
+    policy: WorkerPolicyExperiment,
+) -> Result<(ScanReport, ScanDiagnostics)> {
+    let (report, diagnostics) = scan_internal(root, config, sink, true, policy)?;
+    Ok((report, diagnostics.expect("diagnostic scan creates a recorder")))
+}
+
+fn scan_internal(
+    root: &Path,
+    config: &ScanConfig,
+    sink: &mut dyn FnMut(Observation),
+    collect_diagnostics: bool,
+    policy: WorkerPolicyExperiment,
+) -> Result<(ScanReport, Option<ScanDiagnostics>)> {
     config.validate()?;
     let root_meta = {
         crate::counters::bump(|c| c.stats += 1);
@@ -511,15 +888,27 @@ pub fn scan(
         ));
     }
     let root_dev = attrs_from(&root_meta).dev;
+    let available_parallelism =
+        std::thread::available_parallelism().map_or(1, std::num::NonZero::get);
+    let pool = config.worker_pool_for(available_parallelism);
+    let diagnostics = collect_diagnostics
+        .then(|| ScanDiagnosticsRecorder::new(pool, available_parallelism, policy));
 
-    if config.max_depth != Some(0) && config.worker_threads() > 1 {
-        return Ok(scan_concurrent(root, config, root_dev, sink));
+    if config.max_depth != Some(0) && pool.initial > 1 {
+        let report =
+            scan_concurrent(root, config, root_dev, sink, pool, diagnostics.as_ref(), policy);
+        return Ok((report, diagnostics.as_ref().map(|value| value.finish())));
     }
 
     let mut report = ScanReport::default();
     if config.max_depth == Some(0) {
-        return Ok(report);
+        if let Some(diagnostics) = &diagnostics {
+            diagnostics.mark_not_run();
+            diagnostics.record_queue_finish(0, 0);
+        }
+        return Ok((report, diagnostics.as_ref().map(|value| value.finish())));
     }
+    let worker_guard = diagnostics.as_ref().map(ScanDiagnosticsRecorder::worker_guard);
     let walk_started = std::time::Instant::now();
     let mut batch: Vec<Op> = Vec::with_capacity(config.batch_size);
     let mut queue: VecDeque<(PathBuf, usize)> = VecDeque::from(vec![(PathBuf::new(), 0)]);
@@ -527,8 +916,16 @@ pub fn scan(
     while let Some((rel_dir, depth)) = take_next(&mut queue, config.order) {
         let abs_dir = root.join(&rel_dir);
         crate::counters::bump(|c| c.dir_opens += 1);
+        if let Some(diagnostics) = &diagnostics {
+            diagnostics.portable_attempted();
+        }
         let listing = match fs::read_dir(&abs_dir) {
-            Ok(listing) => listing,
+            Ok(listing) => {
+                if let Some(diagnostics) = &diagnostics {
+                    diagnostics.portable_succeeded();
+                }
+                listing
+            }
             Err(e) => {
                 report.errors.push(Error::io(abs_dir, e));
                 continue;
@@ -582,7 +979,11 @@ pub fn scan(
     report.attribution.wall_ns = elapsed_ns(walk_started);
     report.attribution.work_ns =
         report.attribution.wall_ns.saturating_sub(report.attribution.send_ns);
-    Ok(report)
+    drop(worker_guard);
+    if let Some(diagnostics) = &diagnostics {
+        diagnostics.record_queue_finish(0, 0);
+    }
+    Ok((report, diagnostics.as_ref().map(|value| value.finish())))
 }
 
 /// Take the next directory in the configured order.
@@ -665,11 +1066,380 @@ struct WorkerCalibration {
     slow_work_ns_per_entry: u64,
     entries: u64,
     work_ns: u64,
+    chunks: u64,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct PolicyWindowSnapshot {
+    sequence: u64,
+    start_entry_ordinal: u64,
+    end_entry_ordinal: u64,
+    observed_entries: u64,
+    observed_chunks: u64,
+    observed_work_ns: u64,
+    ready_directories: usize,
+    in_flight_directories: usize,
+    active_workers: usize,
+    handoff_backlog: usize,
+    requested_workers: Option<usize>,
+    decision: WorkerPolicyDecision,
+}
+
+struct PolicyTraceState {
+    outcome: WorkerPolicyOutcome,
+    outcome_reason: Option<&'static str>,
+    outcome_sequence: Option<u64>,
+    windows: Vec<WorkerPolicyWindow>,
+    events_truncated: bool,
+    ready_directories_at_finish: usize,
+    in_flight_directories_at_finish: usize,
+}
+
+/// Shared state used only by the opt-in diagnostic scan APIs.
+///
+/// Normal scans pass no recorder and therefore never touch these atomics or locks. The
+/// trace mutex is deliberately separate from the directory queue: recording a policy
+/// window may add diagnostic cost, but it cannot alter the queue's synchronization or
+/// the controller's decision.
+struct ScanDiagnosticsRecorder {
+    available_parallelism: usize,
+    pool: WorkerPool,
+    policy: WorkerPolicyExperiment,
+    trace: std::sync::Mutex<PolicyTraceState>,
+    workers_spawned: std::sync::atomic::AtomicUsize,
+    active_workers: std::sync::atomic::AtomicUsize,
+    peak_active_workers: std::sync::atomic::AtomicUsize,
+    handoff_backlog: std::sync::atomic::AtomicUsize,
+    handoff_backlog_high_water: std::sync::atomic::AtomicUsize,
+    calibration_chunks: std::sync::atomic::AtomicU64,
+    calibration_entries: std::sync::atomic::AtomicU64,
+    calibration_work_ns: std::sync::atomic::AtomicU64,
+    worker_expansions: std::sync::atomic::AtomicU64,
+    portable_attempts: std::sync::atomic::AtomicU64,
+    portable_successes: std::sync::atomic::AtomicU64,
+    #[cfg(target_os = "macos")]
+    macos_bulk_attempts: std::sync::atomic::AtomicU64,
+    #[cfg(target_os = "macos")]
+    macos_bulk_successes: std::sync::atomic::AtomicU64,
+    #[cfg(target_os = "macos")]
+    macos_bulk_fallbacks: std::sync::atomic::AtomicU64,
+}
+
+impl ScanDiagnosticsRecorder {
+    fn new(
+        pool: WorkerPool,
+        available_parallelism: usize,
+        policy: WorkerPolicyExperiment,
+    ) -> std::sync::Arc<Self> {
+        let (outcome, outcome_reason) = if pool.calibration.is_some() {
+            (
+                WorkerPolicyOutcome::Undecided,
+                Some("the adaptive calibration window has not completed"),
+            )
+        } else {
+            (WorkerPolicyOutcome::Fixed, Some("this worker pool has no adaptive reserve"))
+        };
+        std::sync::Arc::new(Self {
+            available_parallelism,
+            pool,
+            policy,
+            trace: std::sync::Mutex::new(PolicyTraceState {
+                outcome,
+                outcome_reason,
+                outcome_sequence: None,
+                windows: Vec::new(),
+                events_truncated: false,
+                ready_directories_at_finish: 0,
+                in_flight_directories_at_finish: 0,
+            }),
+            workers_spawned: std::sync::atomic::AtomicUsize::new(0),
+            active_workers: std::sync::atomic::AtomicUsize::new(0),
+            peak_active_workers: std::sync::atomic::AtomicUsize::new(0),
+            handoff_backlog: std::sync::atomic::AtomicUsize::new(0),
+            handoff_backlog_high_water: std::sync::atomic::AtomicUsize::new(0),
+            calibration_chunks: std::sync::atomic::AtomicU64::new(0),
+            calibration_entries: std::sync::atomic::AtomicU64::new(0),
+            calibration_work_ns: std::sync::atomic::AtomicU64::new(0),
+            worker_expansions: std::sync::atomic::AtomicU64::new(0),
+            portable_attempts: std::sync::atomic::AtomicU64::new(0),
+            portable_successes: std::sync::atomic::AtomicU64::new(0),
+            #[cfg(target_os = "macos")]
+            macos_bulk_attempts: std::sync::atomic::AtomicU64::new(0),
+            #[cfg(target_os = "macos")]
+            macos_bulk_successes: std::sync::atomic::AtomicU64::new(0),
+            #[cfg(target_os = "macos")]
+            macos_bulk_fallbacks: std::sync::atomic::AtomicU64::new(0),
+        })
+    }
+
+    fn worker_guard(self: &std::sync::Arc<Self>) -> ScanWorkerGuard {
+        let active = self
+            .active_workers
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            .saturating_add(1);
+        self.workers_spawned.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        atomic_update_max(&self.peak_active_workers, active);
+        ScanWorkerGuard { recorder: self.clone() }
+    }
+
+    fn record_policy_window(&self, snapshot: PolicyWindowSnapshot) {
+        let mut trace = self.trace.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let sequence = snapshot.sequence;
+        let supersedes = trace.outcome_sequence.is_none_or(|current| sequence >= current);
+        match snapshot.decision {
+            WorkerPolicyDecision::Undecided if supersedes => {
+                trace.outcome = WorkerPolicyOutcome::Undecided;
+                trace.outcome_reason =
+                    Some("the walk ended before the adaptive calibration window completed");
+                trace.outcome_sequence = Some(sequence);
+            }
+            WorkerPolicyDecision::Hold
+                if trace.outcome != WorkerPolicyOutcome::ScaledUp && supersedes =>
+            {
+                trace.outcome = WorkerPolicyOutcome::Held;
+                trace.outcome_reason = None;
+                trace.outcome_sequence = Some(sequence);
+            }
+            WorkerPolicyDecision::ScaleUp => {
+                trace.outcome = WorkerPolicyOutcome::ScaledUp;
+                trace.outcome_reason = None;
+                trace.outcome_sequence = Some(sequence);
+            }
+            WorkerPolicyDecision::HoldNoUsefulWork
+                if trace.outcome != WorkerPolicyOutcome::ScaledUp && supersedes =>
+            {
+                trace.outcome = WorkerPolicyOutcome::HeldNoUsefulWork;
+                trace.outcome_reason =
+                    Some("the slow trigger fired only after ready and in-flight work had drained");
+                trace.outcome_sequence = Some(sequence);
+            }
+            WorkerPolicyDecision::HoldInsufficientFrontier
+                if trace.outcome != WorkerPolicyOutcome::ScaledUp && supersedes =>
+            {
+                trace.outcome = WorkerPolicyOutcome::Held;
+                trace.outcome_reason =
+                    Some("the observed frontier could not use additional workers");
+                trace.outcome_sequence = Some(sequence);
+            }
+            WorkerPolicyDecision::HoldHandoffBacklog
+                if trace.outcome != WorkerPolicyOutcome::ScaledUp && supersedes =>
+            {
+                trace.outcome = WorkerPolicyOutcome::Held;
+                trace.outcome_reason =
+                    Some("the observation handoff backlog was already at the controller limit");
+                trace.outcome_sequence = Some(sequence);
+            }
+            WorkerPolicyDecision::Incomplete
+                if supersedes && trace.outcome == WorkerPolicyOutcome::Undecided =>
+            {
+                trace.outcome_reason =
+                    Some("the walk ended before any adaptive calibration window completed");
+                trace.outcome_sequence = Some(sequence);
+            }
+            _ => {}
+        }
+        if sequence >= MAX_POLICY_TRACE_EVENTS as u64 {
+            trace.events_truncated = true;
+            return;
+        }
+        let work_ns_per_entry = (snapshot.observed_entries > 0)
+            .then(|| snapshot.observed_work_ns / snapshot.observed_entries);
+        trace.windows.push(WorkerPolicyWindow {
+            sequence,
+            start_entry_ordinal: snapshot.start_entry_ordinal,
+            end_entry_ordinal: snapshot.end_entry_ordinal,
+            observed_entries: snapshot.observed_entries,
+            observed_chunks: snapshot.observed_chunks,
+            observed_work_ns: snapshot.observed_work_ns,
+            work_ns_per_entry,
+            work_ns_per_entry_unavailable_reason: work_ns_per_entry
+                .is_none()
+                .then_some("the window observed no entries"),
+            ready_directories: snapshot.ready_directories,
+            in_flight_directories: snapshot.in_flight_directories,
+            active_workers: snapshot.active_workers,
+            handoff_backlog: snapshot.handoff_backlog,
+            requested_workers: snapshot.requested_workers,
+            decision: snapshot.decision,
+        });
+    }
+
+    fn mark_not_run(&self) {
+        let mut trace = self.trace.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        trace.outcome = WorkerPolicyOutcome::NotRun;
+        trace.outcome_reason = Some("max_depth zero requested no directory walk");
+    }
+
+    fn record_queue_finish(&self, ready_directories: usize, in_flight_directories: usize) {
+        let mut trace = self.trace.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        trace.ready_directories_at_finish = ready_directories;
+        trace.in_flight_directories_at_finish = in_flight_directories;
+    }
+
+    fn handoff_sent(&self) {
+        let backlog = self
+            .handoff_backlog
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            .saturating_add(1);
+        atomic_update_max(&self.handoff_backlog_high_water, backlog);
+    }
+
+    fn handoff_received(&self) {
+        let previous = self.handoff_backlog.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+        debug_assert!(previous > 0, "received handoff must have been sent");
+    }
+
+    fn calibration_chunk(&self, entries: u64, work_ns: u64) {
+        self.calibration_chunks.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.calibration_entries.fetch_add(entries, std::sync::atomic::Ordering::Relaxed);
+        self.calibration_work_ns.fetch_add(work_ns, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn worker_expanded(&self) {
+        self.worker_expansions.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn portable_attempted(&self) {
+        self.portable_attempts.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn portable_succeeded(&self) {
+        self.portable_successes.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    #[cfg(target_os = "macos")]
+    fn macos_bulk_attempted(&self) {
+        self.macos_bulk_attempts.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    #[cfg(target_os = "macos")]
+    fn macos_bulk_succeeded(&self) {
+        self.macos_bulk_successes.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    #[cfg(target_os = "macos")]
+    fn macos_bulk_fell_back(&self) {
+        self.macos_bulk_fallbacks.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn finish(&self) -> ScanDiagnostics {
+        let trace = self.trace.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let calibration = self.pool.calibration;
+        let backend = ScanBackendDiagnostics {
+            portable_attempts: self.portable_attempts.load(std::sync::atomic::Ordering::Relaxed),
+            portable_directory_reads: self
+                .portable_successes
+                .load(std::sync::atomic::Ordering::Relaxed),
+            #[cfg(target_os = "macos")]
+            macos_bulk_attempts: Some(
+                self.macos_bulk_attempts.load(std::sync::atomic::Ordering::Relaxed),
+            ),
+            #[cfg(not(target_os = "macos"))]
+            macos_bulk_attempts: None,
+            #[cfg(target_os = "macos")]
+            macos_bulk_successes: Some(
+                self.macos_bulk_successes.load(std::sync::atomic::Ordering::Relaxed),
+            ),
+            #[cfg(not(target_os = "macos"))]
+            macos_bulk_successes: None,
+            #[cfg(target_os = "macos")]
+            macos_bulk_fallbacks: Some(
+                self.macos_bulk_fallbacks.load(std::sync::atomic::Ordering::Relaxed),
+            ),
+            #[cfg(not(target_os = "macos"))]
+            macos_bulk_fallbacks: None,
+            #[cfg(target_os = "macos")]
+            unavailable_reason: None,
+            #[cfg(not(target_os = "macos"))]
+            unavailable_reason: Some(
+                "macOS bulk directory enumeration is unavailable on this platform",
+            ),
+        };
+        ScanDiagnostics {
+            schema: SCAN_DIAGNOSTICS_SCHEMA,
+            worker_policy: WorkerPolicyDiagnostics {
+                controller: worker_policy_experiment_name(self.policy),
+                available_parallelism: self.available_parallelism,
+                initial_workers: self.pool.initial,
+                maximum_workers: self.pool.maximum,
+                calibration_window_entries: calibration.map(|value| value.minimum_entries),
+                slow_threshold_ns_per_entry: calibration.map(|value| value.slow_work_ns_per_entry),
+                calibration_chunks: self
+                    .calibration_chunks
+                    .load(std::sync::atomic::Ordering::Relaxed),
+                calibration_entries: self
+                    .calibration_entries
+                    .load(std::sync::atomic::Ordering::Relaxed),
+                calibration_work_ns: self
+                    .calibration_work_ns
+                    .load(std::sync::atomic::Ordering::Relaxed),
+                worker_expansions: self
+                    .worker_expansions
+                    .load(std::sync::atomic::Ordering::Relaxed),
+                outcome: trace.outcome,
+                outcome_reason: trace.outcome_reason,
+                workers_spawned: self.workers_spawned.load(std::sync::atomic::Ordering::Relaxed),
+                peak_active_workers: self
+                    .peak_active_workers
+                    .load(std::sync::atomic::Ordering::Relaxed),
+                ready_directories_at_finish: trace.ready_directories_at_finish,
+                in_flight_directories_at_finish: trace.in_flight_directories_at_finish,
+                handoff_backlog_at_finish: self
+                    .handoff_backlog
+                    .load(std::sync::atomic::Ordering::Relaxed),
+                handoff_backlog_high_water: self
+                    .handoff_backlog_high_water
+                    .load(std::sync::atomic::Ordering::Relaxed),
+                windows: {
+                    let mut windows = trace.windows.clone();
+                    windows.sort_by_key(|window| window.sequence);
+                    windows
+                },
+                events_truncated: trace.events_truncated,
+            },
+            backend,
+        }
+    }
+}
+
+const fn worker_policy_experiment_name(value: WorkerPolicyExperiment) -> &'static str {
+    match value {
+        WorkerPolicyExperiment::ShippedOneShot => "shipped_one_shot",
+        WorkerPolicyExperiment::RepeatedWindows => "repeated_windows",
+        WorkerPolicyExperiment::StagedGatedWindows => "staged_gated_windows",
+    }
+}
+
+struct ScanWorkerGuard {
+    recorder: std::sync::Arc<ScanDiagnosticsRecorder>,
+}
+
+impl Drop for ScanWorkerGuard {
+    fn drop(&mut self) {
+        let previous =
+            self.recorder.active_workers.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+        debug_assert!(previous > 0, "worker guard must balance worker start");
+    }
+}
+
+fn atomic_update_max(target: &std::sync::atomic::AtomicUsize, value: usize) {
+    let mut observed = target.load(std::sync::atomic::Ordering::Relaxed);
+    while value > observed {
+        match target.compare_exchange_weak(
+            observed,
+            value,
+            std::sync::atomic::Ordering::Relaxed,
+            std::sync::atomic::Ordering::Relaxed,
+        ) {
+            Ok(_) => break,
+            Err(actual) => observed = actual,
+        }
+    }
 }
 
 enum WalkMessage {
     Observation(Observation),
-    ScaleUp(std::sync::mpsc::Sender<Self>),
+    ScaleUp { sender: std::sync::mpsc::Sender<Self>, target_workers: usize },
 }
 
 impl WorkerPool {
@@ -680,14 +1450,171 @@ impl WorkerPool {
 
 impl WorkerCalibration {
     const fn new(minimum_entries: u64, slow_work_ns_per_entry: u64) -> Self {
-        Self { minimum_entries, slow_work_ns_per_entry, entries: 0, work_ns: 0 }
+        Self { minimum_entries, slow_work_ns_per_entry, entries: 0, work_ns: 0, chunks: 0 }
     }
 
     fn observe(&mut self, entries: u64, work_ns: u64) -> Option<bool> {
+        self.chunks = self.chunks.saturating_add(1);
         self.entries = self.entries.saturating_add(entries);
         self.work_ns = self.work_ns.saturating_add(work_ns);
         (self.entries >= self.minimum_entries)
             .then(|| self.work_ns / self.entries >= self.slow_work_ns_per_entry)
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct CalibrationWindow {
+    start_entry_ordinal: u64,
+    end_entry_ordinal: u64,
+    entries: u64,
+    chunks: u64,
+    work_ns: u64,
+    slow: bool,
+}
+
+#[derive(Debug)]
+struct RepeatedCalibration {
+    minimum_entries: u64,
+    slow_work_ns_per_entry: u64,
+    window_start: u64,
+    entries: u64,
+    chunks: u64,
+    work_ns: u64,
+    completed_windows: u64,
+}
+
+impl RepeatedCalibration {
+    const fn new(calibration: WorkerCalibration) -> Self {
+        Self {
+            minimum_entries: calibration.minimum_entries,
+            slow_work_ns_per_entry: calibration.slow_work_ns_per_entry,
+            window_start: 0,
+            entries: 0,
+            chunks: 0,
+            work_ns: 0,
+            completed_windows: 0,
+        }
+    }
+
+    const fn starting_at(calibration: WorkerCalibration, window_start: u64) -> Self {
+        let mut repeated = Self::new(calibration);
+        repeated.window_start = window_start;
+        repeated
+    }
+
+    fn observe(&mut self, entries: u64, work_ns: u64) -> Option<CalibrationWindow> {
+        self.chunks = self.chunks.saturating_add(1);
+        self.entries = self.entries.saturating_add(entries);
+        self.work_ns = self.work_ns.saturating_add(work_ns);
+        if self.entries < self.minimum_entries {
+            return None;
+        }
+        let end_entry_ordinal = self.window_start.saturating_add(self.entries);
+        let window = CalibrationWindow {
+            start_entry_ordinal: self.window_start,
+            end_entry_ordinal,
+            entries: self.entries,
+            chunks: self.chunks,
+            work_ns: self.work_ns,
+            slow: self.work_ns / self.entries >= self.slow_work_ns_per_entry,
+        };
+        self.window_start = end_entry_ordinal;
+        self.entries = 0;
+        self.chunks = 0;
+        self.work_ns = 0;
+        self.completed_windows = self.completed_windows.saturating_add(1);
+        Some(window)
+    }
+}
+
+#[derive(Debug)]
+enum WorkerController {
+    OneShot(WorkerCalibration),
+    Repeated { calibration: RepeatedCalibration, staged_gated: bool },
+}
+
+impl WorkerController {
+    fn new(calibration: WorkerCalibration, policy: WorkerPolicyExperiment) -> Self {
+        match policy {
+            WorkerPolicyExperiment::ShippedOneShot => Self::OneShot(calibration),
+            WorkerPolicyExperiment::RepeatedWindows => Self::Repeated {
+                calibration: RepeatedCalibration::new(calibration),
+                staged_gated: false,
+            },
+            WorkerPolicyExperiment::StagedGatedWindows => Self::Repeated {
+                calibration: RepeatedCalibration::new(calibration),
+                staged_gated: true,
+            },
+        }
+    }
+
+    fn observe(&mut self, entries: u64, work_ns: u64) -> Option<CalibrationWindow> {
+        match self {
+            Self::OneShot(calibration) => {
+                let slow = calibration.observe(entries, work_ns)?;
+                Some(CalibrationWindow {
+                    start_entry_ordinal: 0,
+                    end_entry_ordinal: calibration.entries,
+                    entries: calibration.entries,
+                    chunks: calibration.chunks,
+                    work_ns: calibration.work_ns,
+                    slow,
+                })
+            }
+            Self::Repeated { calibration, .. } => calibration.observe(entries, work_ns),
+        }
+    }
+
+    fn partial_window(&self) -> (CalibrationWindow, WorkerPolicyDecision) {
+        match self {
+            Self::OneShot(calibration) => (
+                CalibrationWindow {
+                    start_entry_ordinal: 0,
+                    end_entry_ordinal: calibration.entries,
+                    entries: calibration.entries,
+                    chunks: calibration.chunks,
+                    work_ns: calibration.work_ns,
+                    slow: false,
+                },
+                WorkerPolicyDecision::Undecided,
+            ),
+            Self::Repeated { calibration, .. } => (
+                CalibrationWindow {
+                    start_entry_ordinal: calibration.window_start,
+                    end_entry_ordinal: calibration.window_start.saturating_add(calibration.entries),
+                    entries: calibration.entries,
+                    chunks: calibration.chunks,
+                    work_ns: calibration.work_ns,
+                    slow: false,
+                },
+                if calibration.completed_windows == 0 {
+                    WorkerPolicyDecision::Undecided
+                } else {
+                    WorkerPolicyDecision::Incomplete
+                },
+            ),
+        }
+    }
+
+    const fn is_staged_gated(&self) -> bool {
+        matches!(self, Self::Repeated { staged_gated: true, .. })
+    }
+
+    const fn is_one_shot(&self) -> bool {
+        matches!(self, Self::OneShot(_))
+    }
+
+    const fn calibration_spec(&self) -> WorkerCalibration {
+        match self {
+            Self::OneShot(calibration) => WorkerCalibration::new(
+                calibration.minimum_entries,
+                calibration.slow_work_ns_per_entry,
+            ),
+            Self::Repeated { calibration, .. } => WorkerCalibration::new(
+                calibration.minimum_entries,
+                calibration.slow_work_ns_per_entry,
+            ),
+        }
     }
 }
 
@@ -736,9 +1663,20 @@ fn scan_concurrent(
     config: &ScanConfig,
     root_dev: u64,
     sink: &mut dyn FnMut(Observation),
+    pool: WorkerPool,
+    diagnostics: Option<&std::sync::Arc<ScanDiagnosticsRecorder>>,
+    policy: WorkerPolicyExperiment,
 ) -> ScanReport {
-    let pool = config.worker_pool();
-    let queue = DirectoryQueue::new((PathBuf::new(), 0), config.order, pool.calibration);
+    let diagnostics = diagnostics.cloned();
+    let queue = DirectoryQueue::new_with_policy(
+        (PathBuf::new(), 0),
+        config.order,
+        pool.calibration,
+        diagnostics.clone(),
+        pool.initial,
+        pool.maximum,
+        policy,
+    );
     let (sender, receiver) = std::sync::mpsc::channel::<WalkMessage>();
 
     let mut report = std::thread::scope(|scope| {
@@ -746,31 +1684,47 @@ fn scan_concurrent(
             .map(|_| {
                 let sender = sender.clone();
                 let queue = &queue;
-                scope.spawn(move || walk_worker(root, config, root_dev, queue, &sender))
+                let diagnostics = diagnostics.clone();
+                scope.spawn(move || {
+                    walk_worker(root, config, root_dev, queue, &sender, diagnostics.as_ref())
+                })
             })
             .collect();
         // The loop below ends when every sender is gone, so this one must go first.
         drop(sender);
 
-        let mut scaled_up = false;
+        let mut spawned_workers = pool.initial;
         for message in receiver {
             match message {
-                WalkMessage::Observation(observation) => sink(observation),
-                WalkMessage::ScaleUp(sender) if !scaled_up => {
-                    scaled_up = true;
-                    crate::counters::bump(|counts| {
-                        counts.adaptive_scale_ups = counts.adaptive_scale_ups.saturating_add(1);
-                    });
-                    for _ in pool.initial..pool.maximum {
+                WalkMessage::Observation(observation) => {
+                    if let Some(diagnostics) = &diagnostics {
+                        diagnostics.handoff_received();
+                    }
+                    sink(observation);
+                }
+                WalkMessage::ScaleUp { sender, target_workers }
+                    if target_workers > spawned_workers =>
+                {
+                    let target_workers = target_workers.min(pool.maximum);
+                    record_adaptive_worker_expansion(diagnostics.as_ref());
+                    for _ in spawned_workers..target_workers {
                         let sender = sender.clone();
                         let queue = &queue;
-                        handles
-                            .push(scope.spawn(move || {
-                                walk_worker(root, config, root_dev, queue, &sender)
-                            }));
+                        let diagnostics = diagnostics.clone();
+                        handles.push(scope.spawn(move || {
+                            walk_worker(
+                                root,
+                                config,
+                                root_dev,
+                                queue,
+                                &sender,
+                                diagnostics.as_ref(),
+                            )
+                        }));
                     }
+                    spawned_workers = target_workers;
                 }
-                WalkMessage::ScaleUp(_) => {}
+                WalkMessage::ScaleUp { .. } => {}
             }
         }
 
@@ -778,11 +1732,76 @@ fn scan_concurrent(
         // decide anything. That is an *unobservable* policy, not a decision to hold the
         // initial pool, and an artifact that conflated the two would report a held pool
         // as if the walk had measured one and chosen it.
-        if pool.calibration.is_some() && queue.lock().calibration.is_some() {
-            crate::counters::bump(|counts| {
-                counts.adaptive_policy_undecided =
-                    counts.adaptive_policy_undecided.saturating_add(1);
-            });
+        let queue_finish = {
+            let mut state = queue.lock();
+            let mut trailing_window = None;
+            if let Some(controller) = &state.controller {
+                let (window, decision) = controller.partial_window();
+                if decision == WorkerPolicyDecision::Undecided {
+                    crate::counters::bump(|counts| {
+                        counts.adaptive_policy_undecided =
+                            counts.adaptive_policy_undecided.saturating_add(1);
+                    });
+                }
+                if diagnostics.is_some() {
+                    let sequence = state.allocate_policy_sequence();
+                    trailing_window = Some(PolicyWindowSnapshot {
+                        sequence,
+                        start_entry_ordinal: window.start_entry_ordinal,
+                        end_entry_ordinal: window.end_entry_ordinal,
+                        observed_entries: window.entries,
+                        observed_chunks: window.chunks,
+                        observed_work_ns: window.work_ns,
+                        ready_directories: state.ready_directories,
+                        in_flight_directories: state.in_flight_directories,
+                        active_workers: diagnostics.as_ref().map_or(0, |diagnostics| {
+                            diagnostics.active_workers.load(std::sync::atomic::Ordering::Relaxed)
+                        }),
+                        handoff_backlog: diagnostics.as_ref().map_or(0, |diagnostics| {
+                            diagnostics.handoff_backlog.load(std::sync::atomic::Ordering::Relaxed)
+                        }),
+                        requested_workers: None,
+                        decision,
+                    });
+                }
+            } else if diagnostics.is_some() {
+                let shadow = state.shadow_calibration.as_ref().and_then(|shadow| {
+                    (shadow.entries > 0).then_some((
+                        shadow.window_start,
+                        shadow.entries,
+                        shadow.chunks,
+                        shadow.work_ns,
+                    ))
+                });
+                if let Some((window_start, entries, chunks, work_ns)) = shadow {
+                    let sequence = state.allocate_policy_sequence();
+                    trailing_window = Some(PolicyWindowSnapshot {
+                        sequence,
+                        start_entry_ordinal: window_start,
+                        end_entry_ordinal: window_start.saturating_add(entries),
+                        observed_entries: entries,
+                        observed_chunks: chunks,
+                        observed_work_ns: work_ns,
+                        ready_directories: state.ready_directories,
+                        in_flight_directories: state.in_flight_directories,
+                        active_workers: diagnostics.as_ref().map_or(0, |diagnostics| {
+                            diagnostics.active_workers.load(std::sync::atomic::Ordering::Relaxed)
+                        }),
+                        handoff_backlog: diagnostics.as_ref().map_or(0, |diagnostics| {
+                            diagnostics.handoff_backlog.load(std::sync::atomic::Ordering::Relaxed)
+                        }),
+                        requested_workers: None,
+                        decision: WorkerPolicyDecision::ObserveIncomplete,
+                    });
+                }
+            }
+            (state.ready_directories, state.in_flight_directories, trailing_window)
+        };
+        if let Some(diagnostics) = &diagnostics {
+            diagnostics.record_queue_finish(queue_finish.0, queue_finish.1);
+            if let Some(window) = queue_finish.2 {
+                diagnostics.record_policy_window(window);
+            }
         }
 
         let mut report = ScanReport::default();
@@ -816,8 +1835,10 @@ fn walk_worker(
     root_dev: u64,
     queue: &DirectoryQueue,
     sender: &std::sync::mpsc::Sender<WalkMessage>,
+    diagnostics: Option<&std::sync::Arc<ScanDiagnosticsRecorder>>,
 ) -> ScanReport {
     let _counter_guard = crate::counters::thread_flush_guard();
+    let _worker_guard = diagnostics.map(ScanDiagnosticsRecorder::worker_guard);
     let worker_started = std::time::Instant::now();
     let mut report = ScanReport::default();
     let mut batch: Vec<Op> = Vec::with_capacity(config.batch_size);
@@ -837,35 +1858,55 @@ fn walk_worker(
         for (rel_dir, depth, region) in claimed.drain(..) {
             let abs_dir = root.join(&rel_dir);
             #[cfg(target_os = "macos")]
-            if let Some(entries) = bulk_reader.read(&abs_dir) {
-                report.dirs_read += 1;
-                for entry in entries {
-                    if !record_walk_entry(
-                        &rel_dir,
-                        depth,
-                        region,
-                        entry.name,
-                        entry.kind,
-                        entry.attrs,
-                        root_dev,
-                        config,
-                        &mut batch,
-                        &mut discovered,
-                        &mut report,
-                        sender,
-                        &mut chunk_send_ns,
-                    ) {
-                        consumer_gone = true;
-                        break 'walk;
-                    }
+            {
+                if let Some(diagnostics) = diagnostics {
+                    diagnostics.macos_bulk_attempted();
                 }
-                continue;
+                if let Some(entries) = bulk_reader.read(&abs_dir) {
+                    if let Some(diagnostics) = diagnostics {
+                        diagnostics.macos_bulk_succeeded();
+                    }
+                    report.dirs_read += 1;
+                    for entry in entries {
+                        if !record_walk_entry(
+                            &rel_dir,
+                            depth,
+                            region,
+                            entry.name,
+                            entry.kind,
+                            entry.attrs,
+                            root_dev,
+                            config,
+                            &mut batch,
+                            &mut discovered,
+                            &mut report,
+                            sender,
+                            &mut chunk_send_ns,
+                            diagnostics.map(AsRef::as_ref),
+                        ) {
+                            consumer_gone = true;
+                            break 'walk;
+                        }
+                    }
+                    continue;
+                }
+                if let Some(diagnostics) = diagnostics {
+                    diagnostics.macos_bulk_fell_back();
+                }
             }
 
             crate::counters::bump(|c| c.dir_opens += 1);
+            if let Some(diagnostics) = diagnostics {
+                diagnostics.portable_attempted();
+            }
 
             let listing = match fs::read_dir(&abs_dir) {
-                Ok(listing) => listing,
+                Ok(listing) => {
+                    if let Some(diagnostics) = diagnostics {
+                        diagnostics.portable_succeeded();
+                    }
+                    listing
+                }
                 Err(e) => {
                     report.errors.push(Error::io(abs_dir, e));
                     continue;
@@ -907,6 +1948,7 @@ fn walk_worker(
                     &mut report,
                     sender,
                     &mut chunk_send_ns,
+                    diagnostics.map(AsRef::as_ref),
                 ) {
                     // The consumer is gone; nothing further will be read.
                     consumer_gone = true;
@@ -922,7 +1964,7 @@ fn walk_worker(
         if !discovered.is_empty() {
             queue.extend(discovered.drain(..), &mut report.attribution);
         }
-        if claim.release(
+        if let Some(target_workers) = claim.release(
             report.entries.saturating_sub(entries_before),
             chunk_work_ns,
             &mut report.attribution,
@@ -931,13 +1973,13 @@ fn walk_worker(
             // without retaining a channel endpoint that would keep a small scan alive.
             // Only the release that completes a slow calibration returns true, so one
             // message expands the pool exactly once.
-            let _ = sender.send(WalkMessage::ScaleUp(sender.clone()));
+            let _ = sender.send(WalkMessage::ScaleUp { sender: sender.clone(), target_workers });
         }
     }
 
     if !consumer_gone && !batch.is_empty() {
         let send_started = std::time::Instant::now();
-        let _ = sender.send(WalkMessage::Observation(Observation::new(batch)));
+        let _ = send_observation(sender, Observation::new(batch), diagnostics.map(AsRef::as_ref));
         report.attribution.send_ns += elapsed_ns(send_started);
     }
     report.attribution.wall_ns = elapsed_ns(worker_started);
@@ -959,6 +2001,7 @@ fn record_walk_entry(
     report: &mut ScanReport,
     sender: &std::sync::mpsc::Sender<WalkMessage>,
     chunk_send_ns: &mut u64,
+    diagnostics: Option<&ScanDiagnosticsRecorder>,
 ) -> bool {
     let rel_path = rel_dir.join(name);
     let descend = should_descend(kind, attrs, depth, root_dev, config);
@@ -966,8 +2009,7 @@ fn record_walk_entry(
     batch.push(Op::Upsert { path: rel_path.clone(), kind, attrs });
     if batch.len() >= config.batch_size {
         let send_started = std::time::Instant::now();
-        let sent =
-            sender.send(WalkMessage::Observation(Observation::new(std::mem::take(batch)))).is_ok();
+        let sent = send_observation(sender, Observation::new(std::mem::take(batch)), diagnostics);
         *chunk_send_ns += elapsed_ns(send_started);
         if !sent {
             return false;
@@ -981,6 +2023,24 @@ fn record_walk_entry(
         discovered.push((rel_path, depth + 1, child_region));
     }
     true
+}
+
+fn send_observation(
+    sender: &std::sync::mpsc::Sender<WalkMessage>,
+    observation: Observation,
+    diagnostics: Option<&ScanDiagnosticsRecorder>,
+) -> bool {
+    if let Some(diagnostics) = diagnostics {
+        diagnostics.handoff_sent();
+    }
+    let sent = sender.send(WalkMessage::Observation(observation)).is_ok();
+    if !sent {
+        // Balance the reservation when the receiver disappeared before accepting it.
+        if let Some(diagnostics) = diagnostics {
+            diagnostics.handoff_received();
+        }
+    }
+    sent
 }
 
 /// Nanoseconds since `started`, saturating rather than panicking on the absurd.
@@ -1034,6 +2094,7 @@ struct DirectoryQueue {
     state: std::sync::Mutex<DirectoryQueueState>,
     ready: std::sync::Condvar,
     order: ScanOrder,
+    diagnostics: Option<std::sync::Arc<ScanDiagnosticsRecorder>>,
 }
 
 /// One outstanding claim, held for exactly as long as the worker owes the queue the
@@ -1049,6 +2110,8 @@ struct DirectoryQueue {
 /// [`claim`]: DirectoryQueue::claim
 struct DirectoryClaim<'a> {
     queue: &'a DirectoryQueue,
+    /// Directories represented by the claim, for exact in-flight accounting.
+    directories: usize,
     /// Whether the worker already returned this claim through [`Self::release`].
     released: bool,
 }
@@ -1060,9 +2123,14 @@ impl DirectoryClaim<'_> {
     /// Returns the queue's scale-up decision, which is why the normal path cannot be
     /// `Drop`: a destructor has neither the chunk's timing nor anywhere to put an
     /// answer.
-    fn release(mut self, entries: u64, work_ns: u64, timing: &mut WalkAttribution) -> bool {
+    fn release(
+        mut self,
+        entries: u64,
+        work_ns: u64,
+        timing: &mut WalkAttribution,
+    ) -> Option<usize> {
         self.released = true;
-        self.queue.release(entries, work_ns, timing)
+        self.queue.release(self.directories, entries, work_ns, timing)
     }
 }
 
@@ -1075,7 +2143,7 @@ impl Drop for DirectoryClaim<'_> {
         // Either way the partial timing describes an aborted chunk rather than the cost
         // of reading directories, so it must not reach the calibration that sizes the
         // worker pool. Returning the claim is the whole job.
-        self.queue.abandon();
+        self.queue.abandon(self.directories);
     }
 }
 
@@ -1089,9 +2157,19 @@ struct DirectoryQueueState {
     ready_ring: VecDeque<RegionId>,
     /// Whether each region is currently in `ready_ring`.
     enqueued: Vec<bool>,
+    /// Directories currently available for a future claim.
+    ready_directories: usize,
+    /// Directories held by outstanding claims.
+    in_flight_directories: usize,
     outstanding: usize,
     finished: bool,
-    calibration: Option<WorkerCalibration>,
+    controller: Option<WorkerController>,
+    /// Observation-only windows retained after the shipped one-shot decision.
+    shadow_calibration: Option<RepeatedCalibration>,
+    /// Completion-order sequence assigned under the queue lock.
+    next_policy_sequence: u64,
+    worker_target: usize,
+    maximum_workers: usize,
 }
 
 impl DirectoryQueueState {
@@ -1099,15 +2177,24 @@ impl DirectoryQueueState {
         root: (PathBuf, usize),
         order: ScanOrder,
         calibration: Option<WorkerCalibration>,
+        initial_workers: usize,
+        maximum_workers: usize,
+        policy: WorkerPolicyExperiment,
     ) -> Self {
         let mut state = Self {
             pending: VecDeque::new(),
             regions: Vec::new(),
             ready_ring: VecDeque::new(),
             enqueued: Vec::new(),
+            ready_directories: 0,
+            in_flight_directories: 0,
             outstanding: 0,
             finished: false,
-            calibration,
+            controller: calibration.map(|value| WorkerController::new(value, policy)),
+            shadow_calibration: None,
+            next_policy_sequence: 0,
+            worker_target: initial_workers,
+            maximum_workers,
         };
         state.push((root.0, root.1, RegionId::ROOT), order);
         state
@@ -1115,6 +2202,7 @@ impl DirectoryQueueState {
 
     /// Push one directory into the structure the order uses.
     fn push(&mut self, item: (PathBuf, usize, RegionId), order: ScanOrder) {
+        self.ready_directories = self.ready_directories.saturating_add(1);
         match order {
             ScanOrder::DepthFirst => self.pending.push_back(item),
             ScanOrder::BreadthFirst => {
@@ -1162,7 +2250,13 @@ impl DirectoryQueueState {
     /// happen to fan across the root's children — spread wider than breadth-first did.
     /// Locality still comes from the claim being a run of directories out of one
     /// region; it must not come from a worker refusing to leave.
-    fn take(&mut self, limit: usize, order: ScanOrder, into: &mut Vec<(PathBuf, usize, RegionId)>) {
+    fn take(
+        &mut self,
+        limit: usize,
+        order: ScanOrder,
+        into: &mut Vec<(PathBuf, usize, RegionId)>,
+    ) -> usize {
+        let before = into.len();
         match order {
             ScanOrder::DepthFirst => {
                 let take = self.pending.len().min(limit);
@@ -1170,7 +2264,7 @@ impl DirectoryQueueState {
                 into.extend(self.pending.drain(start..));
             }
             ScanOrder::BreadthFirst => {
-                let Some(region) = self.ready_ring.pop_front() else { return };
+                let Some(region) = self.ready_ring.pop_front() else { return 0 };
                 self.enqueued[region.0] = false;
                 let bucket = &mut self.regions[region.0];
                 let take = bucket.len().min(limit);
@@ -1184,18 +2278,60 @@ impl DirectoryQueueState {
                 }
             }
         }
+        into.len().saturating_sub(before)
+    }
+
+    fn allocate_policy_sequence(&mut self) -> u64 {
+        let sequence = self.next_policy_sequence;
+        self.next_policy_sequence = self.next_policy_sequence.saturating_add(1);
+        sequence
     }
 }
 
 impl DirectoryQueue {
     /// Seed the queue with the root, which is region zero until its children fan out.
+    #[cfg(test)]
     fn new(
         root: (PathBuf, usize),
         order: ScanOrder,
         calibration: Option<WorkerCalibration>,
+        diagnostics: Option<std::sync::Arc<ScanDiagnosticsRecorder>>,
     ) -> Self {
-        let state = DirectoryQueueState::seeded(root, order, calibration);
-        Self { state: std::sync::Mutex::new(state), ready: std::sync::Condvar::new(), order }
+        Self::new_with_policy(
+            root,
+            order,
+            calibration,
+            diagnostics,
+            1,
+            2,
+            WorkerPolicyExperiment::ShippedOneShot,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn new_with_policy(
+        root: (PathBuf, usize),
+        order: ScanOrder,
+        calibration: Option<WorkerCalibration>,
+        diagnostics: Option<std::sync::Arc<ScanDiagnosticsRecorder>>,
+        initial_workers: usize,
+        maximum_workers: usize,
+        policy: WorkerPolicyExperiment,
+    ) -> Self {
+        let state = DirectoryQueueState::seeded(
+            root,
+            order,
+            calibration,
+            initial_workers,
+            maximum_workers,
+            policy,
+        );
+        Self {
+            state: std::sync::Mutex::new(state),
+            ready: std::sync::Condvar::new(),
+            order,
+            diagnostics,
+        }
     }
 
     /// Take up to [`DIR_CLAIM`] directories, blocking until there is work or the walk
@@ -1214,10 +2350,13 @@ impl DirectoryQueue {
         let mut state = self.lock_timed(timing);
         loop {
             if !state.is_empty(self.order) {
-                state.take(DIR_CLAIM, self.order, into);
+                let directories = state.take(DIR_CLAIM, self.order, into);
+                state.ready_directories = state.ready_directories.saturating_sub(directories);
+                state.in_flight_directories =
+                    state.in_flight_directories.saturating_add(directories);
                 state.outstanding += 1;
                 timing.claims += 1;
-                return Some(DirectoryClaim { queue: self, released: false });
+                return Some(DirectoryClaim { queue: self, directories, released: false });
             }
             if state.finished {
                 return None;
@@ -1252,9 +2391,10 @@ impl DirectoryQueue {
     /// to charge and nothing worth charging: an abandoned chunk read some unknown
     /// fraction of its directories, so its lock wait says nothing about contention
     /// during the walk.
-    fn abandon(&self) {
+    fn abandon(&self, directories: usize) {
         let mut state = self.lock();
         state.outstanding -= 1;
+        state.in_flight_directories = state.in_flight_directories.saturating_sub(directories);
         if state.outstanding == 0 && state.is_empty(self.order) {
             state.finished = true;
             drop(state);
@@ -1266,54 +2406,149 @@ impl DirectoryQueue {
     ///
     /// The chunk's own entry count and work time feed the shared service-time
     /// calibration, so the decision uses the timing the walk already collects for
-    /// attribution rather than a second clock. Returns true exactly once, on the
-    /// release that both completes the calibration and finds the filesystem slow
-    /// enough to be worth more latency-hiding workers; the caller turns that into a
-    /// single pool expansion. A release that ends the walk returns false, because
-    /// there is no longer any work for a reserve worker to take.
+    /// attribution rather than a second clock. Returns the new worker target when a
+    /// controller requests expansion. A release that ends the walk returns no target,
+    /// because there is no longer useful work for a reserve worker to take.
     fn release(
         &self,
+        directories: usize,
         observed_entries: u64,
         observed_work_ns: u64,
         timing: &mut WalkAttribution,
-    ) -> bool {
+    ) -> Option<usize> {
         let mut state = self.lock_timed(timing);
         // Whether this chunk reached the calibration at all. Only chunks released while
         // it is still live are policy history; later ones are ordinary walk work.
-        let calibrating = state.calibration.is_some();
-        let decision = state
-            .calibration
+        let calibrating = state.controller.is_some();
+        let one_shot = state.controller.as_ref().is_some_and(WorkerController::is_one_shot);
+        let controller_spec = state.controller.as_ref().map(WorkerController::calibration_spec);
+        let staged_gated = state.controller.as_ref().is_some_and(WorkerController::is_staged_gated);
+        let completed_window = state
+            .controller
             .as_mut()
             .and_then(|value| value.observe(observed_entries, observed_work_ns));
-        if decision.is_some() {
-            state.calibration = None;
-        }
+        let observed_window = state
+            .shadow_calibration
+            .as_mut()
+            .and_then(|value| value.observe(observed_entries, observed_work_ns));
+        let window_completed = completed_window.is_some();
         state.outstanding -= 1;
+        state.in_flight_directories = state.in_flight_directories.saturating_sub(directories);
         let finished = state.outstanding == 0 && state.is_empty(self.order);
         if finished {
             state.finished = true;
         }
+        let handoff_backlog = self.diagnostics.as_ref().map_or(0, |diagnostics| {
+            diagnostics.handoff_backlog.load(std::sync::atomic::Ordering::Relaxed)
+        });
+        let mut requested_workers = None;
+        let policy_window = completed_window.map(|window| {
+            let useful_frontier =
+                state.ready_directories.saturating_add(state.in_flight_directories);
+            let decision = if !window.slow {
+                WorkerPolicyDecision::Hold
+            } else if finished {
+                WorkerPolicyDecision::HoldNoUsefulWork
+            } else if staged_gated && useful_frontier <= state.worker_target {
+                WorkerPolicyDecision::HoldInsufficientFrontier
+            } else if staged_gated && handoff_backlog >= state.worker_target {
+                WorkerPolicyDecision::HoldHandoffBacklog
+            } else {
+                let target = if staged_gated {
+                    state.worker_target.saturating_mul(2).min(state.maximum_workers)
+                } else {
+                    state.maximum_workers
+                };
+                if target > state.worker_target {
+                    state.worker_target = target;
+                    requested_workers = Some(target);
+                    WorkerPolicyDecision::ScaleUp
+                } else {
+                    WorkerPolicyDecision::HoldInsufficientFrontier
+                }
+            };
+            let sequence = state.allocate_policy_sequence();
+            PolicyWindowSnapshot {
+                sequence,
+                start_entry_ordinal: window.start_entry_ordinal,
+                end_entry_ordinal: window.end_entry_ordinal,
+                observed_entries: window.entries,
+                observed_chunks: window.chunks,
+                observed_work_ns: window.work_ns,
+                ready_directories: state.ready_directories,
+                in_flight_directories: state.in_flight_directories,
+                active_workers: self.diagnostics.as_ref().map_or(0, |diagnostics| {
+                    diagnostics.active_workers.load(std::sync::atomic::Ordering::Relaxed)
+                }),
+                handoff_backlog,
+                requested_workers,
+                decision,
+            }
+        });
+        let shadow_window = observed_window.map(|window| {
+            let sequence = state.allocate_policy_sequence();
+            PolicyWindowSnapshot {
+                sequence,
+                start_entry_ordinal: window.start_entry_ordinal,
+                end_entry_ordinal: window.end_entry_ordinal,
+                observed_entries: window.entries,
+                observed_chunks: window.chunks,
+                observed_work_ns: window.work_ns,
+                ready_directories: state.ready_directories,
+                in_flight_directories: state.in_flight_directories,
+                active_workers: self.diagnostics.as_ref().map_or(0, |diagnostics| {
+                    diagnostics.active_workers.load(std::sync::atomic::Ordering::Relaxed)
+                }),
+                handoff_backlog,
+                requested_workers: None,
+                decision: if window.slow {
+                    WorkerPolicyDecision::ObserveSlow
+                } else {
+                    WorkerPolicyDecision::ObserveFast
+                },
+            }
+        });
+        let controller_terminates = (one_shot || finished) && window_completed
+            || requested_workers.is_some_and(|target| target == state.maximum_workers);
+        if controller_terminates {
+            // Continue observing after every terminal decision, including a candidate
+            // that reached the maximum pool. Without this shadow history a slow-prefix
+            // expansion makes a later fast phase unobservable, precisely the
+            // irreversible over-expansion case the evidence matrix must detect.
+            if let (Some(spec), Some(window)) = (controller_spec, completed_window) {
+                if self.diagnostics.is_some() && !finished {
+                    state.shadow_calibration =
+                        Some(RepeatedCalibration::starting_at(spec, window.end_entry_ordinal));
+                }
+            }
+            state.controller = None;
+        }
         drop(state);
+
+        // The sequence was assigned while the queue was locked, but the trace lock and
+        // bounded-vector update stay outside that critical section. Recorder arrival
+        // may differ from completion order; `finish` sorts the retained prefix.
+        if let (Some(diagnostics), Some(window)) = (&self.diagnostics, policy_window) {
+            diagnostics.record_policy_window(window);
+        }
+        if let (Some(diagnostics), Some(window)) = (&self.diagnostics, shadow_window) {
+            diagnostics.record_policy_window(window);
+        }
 
         // Recorded outside the lock: the sampling is off by default, and a disabled
         // counter must not lengthen the critical section it observes.
         if calibrating {
-            crate::counters::bump(|counts| {
-                counts.adaptive_calibration_chunks =
-                    counts.adaptive_calibration_chunks.saturating_add(1);
-                counts.adaptive_calibration_entries =
-                    counts.adaptive_calibration_entries.saturating_add(observed_entries);
-                counts.adaptive_calibration_work_us =
-                    counts.adaptive_calibration_work_us.saturating_add(observed_work_ns / 1_000);
-            });
+            record_adaptive_calibration_chunk(
+                self.diagnostics.as_ref(),
+                observed_entries,
+                observed_work_ns,
+            );
         }
 
         if finished {
             self.ready.notify_all();
-            false
-        } else {
-            decision.unwrap_or(false)
         }
+        requested_workers
     }
 
     /// Acquire the state lock, charging any contention to `timing`.
@@ -1348,6 +2583,32 @@ impl DirectoryQueue {
     }
 }
 
+fn record_adaptive_calibration_chunk(
+    diagnostics: Option<&std::sync::Arc<ScanDiagnosticsRecorder>>,
+    entries: u64,
+    work_ns: u64,
+) {
+    if let Some(diagnostics) = diagnostics {
+        diagnostics.calibration_chunk(entries, work_ns);
+    }
+    crate::counters::bump(|counts| {
+        counts.adaptive_calibration_chunks = counts.adaptive_calibration_chunks.saturating_add(1);
+        counts.adaptive_calibration_entries =
+            counts.adaptive_calibration_entries.saturating_add(entries);
+        counts.adaptive_calibration_work_us =
+            counts.adaptive_calibration_work_us.saturating_add(work_ns / 1_000);
+    });
+}
+
+fn record_adaptive_worker_expansion(diagnostics: Option<&std::sync::Arc<ScanDiagnosticsRecorder>>) {
+    if let Some(diagnostics) = diagnostics {
+        diagnostics.worker_expanded();
+    }
+    crate::counters::bump(|counts| {
+        counts.adaptive_scale_ups = counts.adaptive_scale_ups.saturating_add(1);
+    });
+}
+
 /// Walk `root` and return a fully populated index.
 pub fn scan_into_index(root: &Path, config: &ScanConfig) -> Result<(Index, ScanReport)> {
     config.validate()?;
@@ -1366,6 +2627,48 @@ pub fn scan_into_index(root: &Path, config: &ScanConfig) -> Result<(Index, ScanR
     }
     index.set_initial_freshness(report.is_complete());
     Ok((index, report))
+}
+
+/// Walk `root` into an index and retain the opt-in diagnostic trace for that run.
+///
+/// The index and [`ScanReport`] have the same semantics as [`scan_into_index`]. The
+/// additional trace is versioned independently so evidence tooling can fail closed on
+/// changes without coupling cache or engine behavior to measurement details.
+pub fn scan_into_index_with_diagnostics(
+    root: &Path,
+    config: &ScanConfig,
+) -> Result<(Index, ScanReport, ScanDiagnostics)> {
+    scan_into_index_with_policy_diagnostics(root, config, WorkerPolicyExperiment::ShippedOneShot)
+}
+
+/// Exercise a repository-only worker-controller candidate while building an index.
+#[doc(hidden)]
+pub fn scan_into_index_with_policy_diagnostics(
+    root: &Path,
+    config: &ScanConfig,
+    policy: WorkerPolicyExperiment,
+) -> Result<(Index, ScanReport, ScanDiagnostics)> {
+    config.validate()?;
+    let root = root.canonicalize().map_err(|error| Error::io(root, error))?;
+    let mut index = Index::new_with_scope(&root, config.scope());
+    let mut apply_error: Option<Error> = None;
+    let (report, diagnostics) = scan_with_policy_diagnostics(
+        &root,
+        config,
+        &mut |observation| {
+            if apply_error.is_none() {
+                if let Err(error) = index.apply_baseline(&observation) {
+                    apply_error = Some(error);
+                }
+            }
+        },
+        policy,
+    )?;
+    if let Some(error) = apply_error {
+        return Err(error);
+    }
+    index.set_initial_freshness(report.is_complete());
+    Ok((index, report, diagnostics))
 }
 
 /// Diff the filesystem against an existing index and emit conditional observations.
@@ -1848,7 +3151,14 @@ fn reconcile_direct_parallel(
     max_deferred_ops: usize,
     sink: &mut dyn FnMut(&AppliedDelta),
 ) -> Result<DirectParallelOutcome> {
-    let mut frontier = DirectoryQueueState::seeded((PathBuf::new(), 0), config.order, None);
+    let mut frontier = DirectoryQueueState::seeded(
+        (PathBuf::new(), 0),
+        config.order,
+        None,
+        1,
+        1,
+        WorkerPolicyExperiment::ShippedOneShot,
+    );
     let mut report = ReconcileReport::default();
     while !frontier.is_empty(config.order) {
         let mut wave = Vec::with_capacity(RECONCILE_WAVE_DIRECTORIES);
@@ -2541,6 +3851,223 @@ mod tests {
     }
 
     #[test]
+    fn diagnostics_make_a_fixed_pool_and_backend_choice_explicit() {
+        let dir = sample_tree();
+        let config = ScanConfig { threads: Some(1), ..ScanConfig::default() };
+
+        let (report, diagnostics) =
+            scan_with_diagnostics(dir.path(), &config, &mut |_| {}).expect("diagnostic scan");
+
+        assert_eq!(diagnostics.schema, SCAN_DIAGNOSTICS_SCHEMA);
+        assert_eq!(diagnostics.worker_policy.outcome, WorkerPolicyOutcome::Fixed);
+        assert_eq!(diagnostics.worker_policy.initial_workers, 1);
+        assert_eq!(diagnostics.worker_policy.maximum_workers, 1);
+        assert_eq!(diagnostics.worker_policy.peak_active_workers, 1);
+        assert!(diagnostics.worker_policy.windows.is_empty());
+        assert!(!diagnostics.worker_policy.events_truncated);
+        assert_eq!(diagnostics.worker_policy.ready_directories_at_finish, 0);
+        assert_eq!(diagnostics.worker_policy.in_flight_directories_at_finish, 0);
+        assert_eq!(diagnostics.backend.portable_directory_reads, report.dirs_read);
+
+        #[cfg(target_os = "macos")]
+        {
+            assert_eq!(diagnostics.backend.macos_bulk_attempts, Some(0));
+            assert_eq!(diagnostics.backend.macos_bulk_successes, Some(0));
+            assert_eq!(diagnostics.backend.macos_bulk_fallbacks, Some(0));
+            assert!(diagnostics.backend.unavailable_reason.is_none());
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            assert_eq!(diagnostics.backend.macos_bulk_attempts, None);
+            assert_eq!(diagnostics.backend.macos_bulk_successes, None);
+            assert_eq!(diagnostics.backend.macos_bulk_fallbacks, None);
+            assert_eq!(
+                diagnostics.backend.unavailable_reason,
+                Some("macOS bulk directory enumeration is unavailable on this platform")
+            );
+        }
+    }
+
+    #[test]
+    fn diagnostics_fail_closed_when_an_automatic_window_is_incomplete() {
+        let available = std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get);
+        let pool = automatic_worker_pool(available);
+        if pool.calibration.is_none() {
+            return;
+        }
+        let dir = sample_tree();
+        let config = ScanConfig { threads: None, ..ScanConfig::default() };
+
+        let (report, diagnostics) =
+            scan_with_diagnostics(dir.path(), &config, &mut |_| {}).expect("diagnostic scan");
+
+        assert_eq!(diagnostics.worker_policy.outcome, WorkerPolicyOutcome::Undecided);
+        assert_eq!(diagnostics.worker_policy.available_parallelism, available);
+        assert_eq!(diagnostics.worker_policy.initial_workers, pool.initial);
+        assert_eq!(diagnostics.worker_policy.maximum_workers, pool.maximum);
+        assert_eq!(
+            diagnostics.worker_policy.calibration_window_entries,
+            Some(ADAPTIVE_SCAN_CALIBRATION_ENTRIES)
+        );
+        assert_eq!(
+            diagnostics.worker_policy.slow_threshold_ns_per_entry,
+            Some(ADAPTIVE_SCAN_SLOW_WORK_NS_PER_ENTRY)
+        );
+        assert_eq!(diagnostics.worker_policy.windows.len(), 1);
+        let window = &diagnostics.worker_policy.windows[0];
+        assert_eq!(window.sequence, 0);
+        assert_eq!(window.start_entry_ordinal, 0);
+        assert_eq!(window.end_entry_ordinal, report.entries);
+        assert_eq!(window.observed_entries, report.entries);
+        assert_eq!(window.decision, WorkerPolicyDecision::Undecided);
+        assert!(window.end_entry_ordinal < ADAPTIVE_SCAN_CALIBRATION_ENTRIES);
+        assert!(window.active_workers <= diagnostics.worker_policy.peak_active_workers);
+        assert_eq!(diagnostics.worker_policy.ready_directories_at_finish, 0);
+        assert_eq!(diagnostics.worker_policy.in_flight_directories_at_finish, 0);
+        assert!(diagnostics.worker_policy.handoff_backlog_high_water >= 1);
+    }
+
+    #[test]
+    fn diagnostic_trace_is_bounded_and_marks_truncation() {
+        let recorder = ScanDiagnosticsRecorder::new(
+            WorkerPool::fixed(2),
+            2,
+            WorkerPolicyExperiment::ShippedOneShot,
+        );
+        for sequence in 0..=MAX_POLICY_TRACE_EVENTS {
+            recorder.record_policy_window(PolicyWindowSnapshot {
+                sequence: sequence as u64,
+                start_entry_ordinal: sequence as u64,
+                end_entry_ordinal: sequence as u64 + 1,
+                observed_entries: 1,
+                observed_chunks: 1,
+                observed_work_ns: 10,
+                ready_directories: 1,
+                in_flight_directories: 1,
+                active_workers: 1,
+                handoff_backlog: 0,
+                requested_workers: None,
+                decision: WorkerPolicyDecision::Hold,
+            });
+        }
+
+        let diagnostics = recorder.finish();
+        assert_eq!(diagnostics.worker_policy.windows.len(), MAX_POLICY_TRACE_EVENTS);
+        assert!(diagnostics.worker_policy.events_truncated);
+    }
+
+    #[test]
+    fn diagnostic_trace_preserves_queue_order_when_recorders_arrive_out_of_order() {
+        let pool =
+            WorkerPool { initial: 2, maximum: 4, calibration: Some(WorkerCalibration::new(1, 1)) };
+        let recorder =
+            ScanDiagnosticsRecorder::new(pool, 2, WorkerPolicyExperiment::RepeatedWindows);
+        let snapshot = |sequence, decision| PolicyWindowSnapshot {
+            sequence,
+            start_entry_ordinal: sequence,
+            end_entry_ordinal: sequence + 1,
+            observed_entries: 1,
+            observed_chunks: 1,
+            observed_work_ns: 1,
+            ready_directories: 0,
+            in_flight_directories: 0,
+            active_workers: 1,
+            handoff_backlog: 0,
+            requested_workers: None,
+            decision,
+        };
+
+        recorder.record_policy_window(snapshot(1, WorkerPolicyDecision::HoldNoUsefulWork));
+        recorder.record_policy_window(snapshot(0, WorkerPolicyDecision::Hold));
+
+        let diagnostics = recorder.finish();
+        assert_eq!(
+            diagnostics
+                .worker_policy
+                .windows
+                .iter()
+                .map(|window| window.sequence)
+                .collect::<Vec<_>>(),
+            vec![0, 1]
+        );
+        assert_eq!(diagnostics.worker_policy.outcome, WorkerPolicyOutcome::HeldNoUsefulWork);
+    }
+
+    #[test]
+    fn diagnostic_policy_aggregates_cross_check_runtime_counters() {
+        let _serial = crate::counters::test_serial();
+        let pool = WorkerPool {
+            initial: 2,
+            maximum: 4,
+            calibration: Some(WorkerCalibration::new(17, 100)),
+        };
+        let recorder =
+            ScanDiagnosticsRecorder::new(pool, 2, WorkerPolicyExperiment::ShippedOneShot);
+
+        crate::counters::enable(true);
+        let before = crate::counters::snapshot();
+        record_adaptive_calibration_chunk(Some(&recorder), 17, 2_100);
+        record_adaptive_worker_expansion(Some(&recorder));
+        crate::counters::flush_thread();
+        let after = crate::counters::snapshot();
+        crate::counters::enable(false);
+
+        recorder.record_policy_window(PolicyWindowSnapshot {
+            sequence: 0,
+            start_entry_ordinal: 0,
+            end_entry_ordinal: 17,
+            observed_entries: 17,
+            observed_chunks: 1,
+            observed_work_ns: 2_100,
+            ready_directories: 2,
+            in_flight_directories: 2,
+            active_workers: 2,
+            handoff_backlog: 0,
+            requested_workers: Some(4),
+            decision: WorkerPolicyDecision::ScaleUp,
+        });
+        let diagnostics = recorder.finish();
+        let policy = diagnostics.worker_policy;
+        assert_eq!(policy.calibration_chunks, 1);
+        assert_eq!(policy.calibration_entries, 17);
+        assert_eq!(policy.calibration_work_ns, 2_100);
+        assert_eq!(policy.worker_expansions, 1);
+        assert_eq!(policy.windows[0].observed_chunks, policy.calibration_chunks);
+        assert_eq!(policy.windows[0].observed_entries, policy.calibration_entries);
+        assert_eq!(policy.windows[0].observed_work_ns, policy.calibration_work_ns);
+
+        // Other tests can record while this process-global interval is enabled, so the
+        // counter delta may be larger but must never be smaller than this run-scoped
+        // trace. The shared helpers above make the two observations one event.
+        assert!(
+            after.adaptive_calibration_chunks - before.adaptive_calibration_chunks
+                >= policy.calibration_chunks
+        );
+        assert!(
+            after.adaptive_calibration_entries - before.adaptive_calibration_entries
+                >= policy.calibration_entries
+        );
+        assert!(
+            after.adaptive_calibration_work_us - before.adaptive_calibration_work_us
+                >= policy.calibration_work_ns / 1_000
+        );
+        assert!(after.adaptive_scale_ups - before.adaptive_scale_ups >= policy.worker_expansions);
+    }
+
+    #[test]
+    fn diagnostic_index_scan_preserves_the_regular_result() {
+        let dir = branching_tree();
+        let config = ScanConfig { threads: Some(4), ..ScanConfig::default() };
+        let (plain, plain_report) = scan_into_index(dir.path(), &config).expect("plain scan");
+        let (diagnostic, diagnostic_report, diagnostics) =
+            scan_into_index_with_diagnostics(dir.path(), &config).expect("diagnostic scan");
+
+        assert_eq!(index_fingerprint(&plain), index_fingerprint(&diagnostic));
+        assert_eq!(plain_report.entries, diagnostic_report.entries);
+        assert_eq!(diagnostics.worker_policy.outcome, WorkerPolicyOutcome::Fixed);
+    }
+
+    #[test]
     fn fingerprint_metadata_observes_mutation_after_directory_enumeration() {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("changing.bin");
@@ -2974,7 +4501,7 @@ mod tests {
         // walk: consecutive claims by *different* workers must land in different
         // regions while several regions have work. This is what the round-robin ready
         // ring buys, and it is the thing a global FIFO could not promise.
-        let queue = DirectoryQueue::new((PathBuf::new(), 0), ScanOrder::BreadthFirst, None);
+        let queue = DirectoryQueue::new((PathBuf::new(), 0), ScanOrder::BreadthFirst, None, None);
         let mut timing = WalkAttribution::default();
 
         // Bootstrap: drain the root, then seed four top-level regions.
@@ -2985,7 +4512,7 @@ mod tests {
             (0..4).map(|top| (PathBuf::from(format!("t{top}")), 1, RegionId::UNASSIGNED)),
             &mut timing,
         );
-        assert!(!root.release(0, 0, &mut timing));
+        assert!(root.release(0, 0, &mut timing).is_none());
 
         // Four workers with no affinity must each be handed a different region. The
         // claims are held for the whole loop, as four concurrent workers would hold
@@ -3086,6 +4613,7 @@ mod tests {
             (PathBuf::new(), 0),
             ScanOrder::BreadthFirst,
             None,
+            None,
         ));
         let mut timing = WalkAttribution::default();
         let mut claimed = Vec::new();
@@ -3113,26 +4641,252 @@ mod tests {
     #[test]
     fn automatic_queue_activates_its_reserve_only_for_slow_initial_work() {
         let slow = WorkerCalibration::new(3, 10);
-        let queue = DirectoryQueue::new((PathBuf::new(), 0), ScanOrder::BreadthFirst, Some(slow));
+        let queue =
+            DirectoryQueue::new((PathBuf::new(), 0), ScanOrder::BreadthFirst, Some(slow), None);
         let mut timing = WalkAttribution::default();
         let mut claimed = Vec::new();
 
         let claim = queue.claim(&mut claimed, &mut timing).expect("root is claimable");
         queue.extend([(PathBuf::from("child"), 1, RegionId::UNASSIGNED)].into_iter(), &mut timing);
-        assert!(!claim.release(2, 20, &mut timing));
+        assert!(claim.release(2, 20, &mut timing).is_none());
 
         claimed.clear();
         let claim = queue.claim(&mut claimed, &mut timing).expect("child is claimable");
         queue.extend([(PathBuf::from("grandchild"), 2, claimed[0].2)].into_iter(), &mut timing);
-        assert!(claim.release(1, 10, &mut timing));
+        assert_eq!(claim.release(1, 10, &mut timing), Some(2));
 
         let fast = WorkerCalibration::new(3, 11);
-        let queue = DirectoryQueue::new((PathBuf::new(), 0), ScanOrder::BreadthFirst, Some(fast));
+        let queue =
+            DirectoryQueue::new((PathBuf::new(), 0), ScanOrder::BreadthFirst, Some(fast), None);
         let mut timing = WalkAttribution::default();
         let mut claimed = Vec::new();
         let claim = queue.claim(&mut claimed, &mut timing).expect("root is claimable");
-        assert!(!claim.release(3, 30, &mut timing));
-        assert!(queue.lock().calibration.is_none(), "calibration decides only once");
+        assert!(claim.release(3, 30, &mut timing).is_none());
+        assert!(queue.lock().controller.is_none(), "calibration decides only once");
+    }
+
+    #[test]
+    fn repeated_windows_reconsider_a_late_slow_phase_in_entry_order() {
+        let calibration = WorkerCalibration::new(4, 10);
+        let mut controller =
+            WorkerController::new(calibration, WorkerPolicyExperiment::RepeatedWindows);
+
+        let fast = controller.observe(4, 20).expect("first complete window");
+        let slow = controller.observe(4, 80).expect("second complete window");
+
+        assert!(!fast.slow);
+        assert!(slow.slow);
+        assert_eq!((fast.start_entry_ordinal, fast.end_entry_ordinal), (0, 4));
+        assert_eq!((slow.start_entry_ordinal, slow.end_entry_ordinal), (4, 8));
+    }
+
+    #[test]
+    fn shipped_trace_retains_post_decision_windows_without_changing_policy() {
+        let calibration = WorkerCalibration::new(2, 10);
+        let pool = WorkerPool { initial: 2, maximum: 4, calibration: Some(calibration) };
+        let recorder =
+            ScanDiagnosticsRecorder::new(pool, 2, WorkerPolicyExperiment::ShippedOneShot);
+        let queue = DirectoryQueue::new_with_policy(
+            (PathBuf::new(), 0),
+            ScanOrder::BreadthFirst,
+            Some(calibration),
+            Some(recorder.clone()),
+            pool.initial,
+            pool.maximum,
+            WorkerPolicyExperiment::ShippedOneShot,
+        );
+        let mut timing = WalkAttribution::default();
+        let mut claimed = Vec::new();
+
+        let first = queue.claim(&mut claimed, &mut timing).expect("first window");
+        queue.extend([(PathBuf::from("late"), 1, RegionId::UNASSIGNED)].into_iter(), &mut timing);
+        assert_eq!(first.release(2, 10, &mut timing), None, "fast prefix holds");
+
+        claimed.clear();
+        let late = queue.claim(&mut claimed, &mut timing).expect("late phase");
+        queue.extend([(PathBuf::from("tail"), 2, RegionId::UNASSIGNED)].into_iter(), &mut timing);
+        assert_eq!(late.release(2, 40, &mut timing), None, "shadow cannot scale");
+
+        let diagnostics = recorder.finish();
+        assert_eq!(diagnostics.worker_policy.outcome, WorkerPolicyOutcome::Held);
+        assert_eq!(
+            diagnostics
+                .worker_policy
+                .windows
+                .iter()
+                .map(|window| window.decision)
+                .collect::<Vec<_>>(),
+            vec![WorkerPolicyDecision::Hold, WorkerPolicyDecision::ObserveSlow]
+        );
+    }
+
+    #[test]
+    fn staged_controller_requires_a_useful_frontier_then_stays_bounded() {
+        let calibration = WorkerCalibration::new(1, 10);
+        let pool = WorkerPool { initial: 2, maximum: 8, calibration: Some(calibration) };
+        let recorder =
+            ScanDiagnosticsRecorder::new(pool, 4, WorkerPolicyExperiment::StagedGatedWindows);
+        let queue = DirectoryQueue::new_with_policy(
+            (PathBuf::new(), 0),
+            ScanOrder::BreadthFirst,
+            Some(calibration),
+            Some(recorder.clone()),
+            pool.initial,
+            pool.maximum,
+            WorkerPolicyExperiment::StagedGatedWindows,
+        );
+        let mut timing = WalkAttribution::default();
+        let mut claimed = Vec::new();
+
+        let root = queue.claim(&mut claimed, &mut timing).expect("root");
+        queue.extend([(PathBuf::from("narrow"), 1, RegionId::UNASSIGNED)].into_iter(), &mut timing);
+        assert_eq!(root.release(1, 20, &mut timing), None);
+
+        claimed.clear();
+        let narrow = queue.claim(&mut claimed, &mut timing).expect("narrow child");
+        queue.extend(
+            (0..9).map(|index| (PathBuf::from(format!("wide-{index}")), 2, RegionId::UNASSIGNED)),
+            &mut timing,
+        );
+        assert_eq!(narrow.release(1, 20, &mut timing), Some(4));
+
+        claimed.clear();
+        let wide = queue.claim(&mut claimed, &mut timing).expect("wide claim");
+        queue.extend(
+            (0..9).map(|index| (PathBuf::from(format!("wider-{index}")), 3, RegionId::UNASSIGNED)),
+            &mut timing,
+        );
+        assert_eq!(wide.release(1, 20, &mut timing), Some(8));
+
+        let diagnostics = recorder.finish();
+        let decisions: Vec<_> = diagnostics
+            .worker_policy
+            .windows
+            .iter()
+            .map(|window| (window.decision, window.requested_workers))
+            .collect();
+        assert_eq!(
+            decisions,
+            vec![
+                (WorkerPolicyDecision::HoldInsufficientFrontier, None),
+                (WorkerPolicyDecision::ScaleUp, Some(4)),
+                (WorkerPolicyDecision::ScaleUp, Some(8)),
+            ]
+        );
+        assert!(
+            diagnostics
+                .worker_policy
+                .windows
+                .windows(2)
+                .all(|pair| pair[0].end_entry_ordinal <= pair[1].start_entry_ordinal)
+        );
+        assert!(diagnostics.worker_policy.windows.iter().all(|window| {
+            window.requested_workers.is_none_or(|workers| workers <= pool.maximum)
+        }));
+    }
+
+    #[test]
+    fn staged_controller_does_not_add_producers_to_a_delayed_handoff() {
+        let calibration = WorkerCalibration::new(1, 10);
+        let pool = WorkerPool { initial: 2, maximum: 8, calibration: Some(calibration) };
+        let recorder =
+            ScanDiagnosticsRecorder::new(pool, 4, WorkerPolicyExperiment::StagedGatedWindows);
+        recorder.handoff_sent();
+        recorder.handoff_sent();
+        let queue = DirectoryQueue::new_with_policy(
+            (PathBuf::new(), 0),
+            ScanOrder::BreadthFirst,
+            Some(calibration),
+            Some(recorder.clone()),
+            pool.initial,
+            pool.maximum,
+            WorkerPolicyExperiment::StagedGatedWindows,
+        );
+        let mut timing = WalkAttribution::default();
+        let mut claimed = Vec::new();
+        let claim = queue.claim(&mut claimed, &mut timing).expect("root");
+        queue.extend(
+            (0..9).map(|index| (PathBuf::from(format!("ready-{index}")), 1, RegionId::UNASSIGNED)),
+            &mut timing,
+        );
+
+        assert_eq!(claim.release(1, 20, &mut timing), None);
+        recorder.handoff_received();
+        recorder.handoff_received();
+        let diagnostics = recorder.finish();
+        assert_eq!(
+            diagnostics.worker_policy.windows[0].decision,
+            WorkerPolicyDecision::HoldHandoffBacklog
+        );
+    }
+
+    #[test]
+    fn candidate_retains_post_expansion_shadow_history() {
+        let calibration = WorkerCalibration::new(1, 10);
+        let pool = WorkerPool { initial: 2, maximum: 4, calibration: Some(calibration) };
+        let recorder =
+            ScanDiagnosticsRecorder::new(pool, 4, WorkerPolicyExperiment::RepeatedWindows);
+        let queue = DirectoryQueue::new_with_policy(
+            (PathBuf::new(), 0),
+            ScanOrder::BreadthFirst,
+            Some(calibration),
+            Some(recorder.clone()),
+            pool.initial,
+            pool.maximum,
+            WorkerPolicyExperiment::RepeatedWindows,
+        );
+        let mut timing = WalkAttribution::default();
+        let mut claimed = Vec::new();
+
+        let slow = queue.claim(&mut claimed, &mut timing).expect("slow prefix");
+        queue.extend(
+            (0..4).map(|index| (PathBuf::from(format!("fast-{index}")), 1, RegionId::UNASSIGNED)),
+            &mut timing,
+        );
+        assert_eq!(slow.release(1, 20, &mut timing), Some(4));
+
+        claimed.clear();
+        let fast = queue.claim(&mut claimed, &mut timing).expect("fast suffix");
+        queue.extend([(PathBuf::from("tail"), 2, RegionId::UNASSIGNED)].into_iter(), &mut timing);
+        assert_eq!(fast.release(1, 1, &mut timing), None);
+
+        let diagnostics = recorder.finish();
+        assert_eq!(
+            diagnostics
+                .worker_policy
+                .windows
+                .iter()
+                .map(|window| window.decision)
+                .collect::<Vec<_>>(),
+            vec![WorkerPolicyDecision::ScaleUp, WorkerPolicyDecision::ObserveFast]
+        );
+    }
+
+    #[test]
+    fn every_experimental_controller_preserves_exactness_and_shutdown() {
+        let dir = branching_tree();
+        let serial = ScanConfig { threads: Some(1), ..ScanConfig::default() };
+        let (reference, _) = scan_into_index(dir.path(), &serial).expect("serial reference");
+        let automatic = ScanConfig { threads: None, ..ScanConfig::default() };
+
+        for policy in [
+            WorkerPolicyExperiment::ShippedOneShot,
+            WorkerPolicyExperiment::RepeatedWindows,
+            WorkerPolicyExperiment::StagedGatedWindows,
+        ] {
+            let (index, report, diagnostics) =
+                scan_into_index_with_policy_diagnostics(dir.path(), &automatic, policy)
+                    .expect("candidate scan finishes");
+            assert!(report.is_complete(), "{policy:?}: {:?}", report.errors);
+            assert_eq!(index_fingerprint(&reference), index_fingerprint(&index), "{policy:?}");
+            assert_eq!(diagnostics.worker_policy.ready_directories_at_finish, 0);
+            assert_eq!(diagnostics.worker_policy.in_flight_directories_at_finish, 0);
+            assert_eq!(diagnostics.worker_policy.handoff_backlog_at_finish, 0);
+            assert!(
+                diagnostics.worker_policy.workers_spawned
+                    <= diagnostics.worker_policy.maximum_workers
+            );
+        }
     }
 
     /// A deterministic model of the automatic worker policy under *completion* order.
@@ -3269,6 +5023,55 @@ mod tests {
                 shipped(4 * CHUNK, ADAPTIVE_SCAN_SLOW_WORK_NS_PER_ENTRY, &trace),
                 Outcome::Held { after_chunks: 4 },
                 "1% of the walk decided the worker policy for the other 99%"
+            );
+        }
+
+        #[test]
+        fn slow_in_flight_work_is_censored_by_fast_completions() {
+            // Four slow chunks have already been claimed, but their filesystem calls
+            // remain in flight while four cache-warm chunks complete. Completion-order
+            // calibration cannot see owed work: the fast completions close the window
+            // and permanently hold before any slow claim returns.
+            let completed_before_slow_returns = [FAST, FAST, FAST, FAST];
+            assert_eq!(
+                shipped(
+                    4 * CHUNK,
+                    ADAPTIVE_SCAN_SLOW_WORK_NS_PER_ENTRY,
+                    &completed_before_slow_returns,
+                ),
+                Outcome::Held { after_chunks: 4 }
+            );
+
+            let mut eventual_completions = completed_before_slow_returns.to_vec();
+            eventual_completions.extend([SLOW, SLOW, SLOW, SLOW]);
+            assert!(
+                whole_trace_ns_per_entry(&eventual_completions)
+                    >= ADAPTIVE_SCAN_SLOW_WORK_NS_PER_ENTRY
+            );
+            assert_eq!(
+                shipped(4 * CHUNK, ADAPTIVE_SCAN_SLOW_WORK_NS_PER_ENTRY, &eventual_completions,),
+                Outcome::Held { after_chunks: 4 }
+            );
+        }
+
+        #[test]
+        fn a_slow_prefix_can_scale_a_walk_that_is_fast_overall() {
+            // The mirror-image error. A one-way expansion reacts correctly to the
+            // prefix by its local threshold, but the prefix is under 1% of this walk
+            // and the whole trace is firmly in the fast regime. A repeated trigger
+            // alone cannot undo an expansion; staged growth limits exposure but does
+            // not make reversible parking unnecessary.
+            let mut trace = vec![SLOW; 4];
+            trace.extend(std::iter::repeat_n(FAST, 400));
+            let observed = whole_trace_ns_per_entry(&trace);
+            assert!(observed < ADAPTIVE_SCAN_SLOW_WORK_NS_PER_ENTRY);
+            assert_eq!(
+                shipped(4 * CHUNK, ADAPTIVE_SCAN_SLOW_WORK_NS_PER_ENTRY, &trace),
+                Outcome::ScaledUp { after_chunks: 4 }
+            );
+            assert_eq!(
+                sliding(4 * CHUNK, ADAPTIVE_SCAN_SLOW_WORK_NS_PER_ENTRY, &trace),
+                Outcome::ScaledUp { after_chunks: 4 }
             );
         }
 

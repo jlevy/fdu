@@ -81,6 +81,11 @@ $defs:
         description: Keyed by metric name, e.g. wall_ns.
         title: Metrics
         type: object
+      qualification:
+        anyOf:
+        - $ref: '#/$defs/Qualification'
+        - type: 'null'
+        default: null
       start_state:
         description: Whether a compatible fdu snapshot existed before the timed work.
         enum:
@@ -101,6 +106,14 @@ $defs:
         description: Cargo profile. Timing evidence only ever comes from release.
         title: Build Profile
         type: string
+      campaign_stage:
+        default: exploratory
+        enum:
+        - exploratory
+        - discovery
+        - held-out
+        title: Campaign Stage
+        type: string
       candidate:
         description: What changed.
         title: Candidate
@@ -110,6 +123,10 @@ $defs:
         - $ref: '#/$defs/Binary'
         - type: 'null'
         default: null
+      confidence_interval:
+        default: ''
+        title: Confidence Interval
+        type: string
       control:
         description: What the candidate was compared against.
         title: Control
@@ -131,6 +148,10 @@ $defs:
         default: null
         description: Path to the raw run JSON this was derived from.
         title: Run Artifact
+      stopping_rule:
+        default: ''
+        title: Stopping Rule
+        type: string
       toolchain:
         default: ''
         description: Compiler version the binaries were built with.
@@ -196,6 +217,17 @@ $defs:
         - unknown
         title: Direction
         type: string
+      noninferiority:
+        default: unknown
+        description: Separate +3% noninferiority classification; never an alias of superiority.
+        enum:
+        - superior
+        - noninferior
+        - inferior
+        - inconclusive
+        - unknown
+        title: Noninferiority
+        type: string
       pairs:
         default: 0
         description: Trial pairs behind the comparison.
@@ -217,6 +249,73 @@ $defs:
     - change_pct
     - control_median
     title: MetricChange
+    type: object
+  Qualification:
+    additionalProperties: false
+    description: Fail-closed adaptive qualification derived from paired raw samples.
+    properties:
+      campaign_stage:
+        enum:
+        - exploratory
+        - discovery
+        - held-out
+        title: Campaign Stage
+        type: string
+      classification:
+        enum:
+        - superior
+        - noninferior
+        - inferior
+        - inconclusive
+        title: Classification
+        type: string
+      confirmable:
+        title: Confirmable
+        type: boolean
+      major_fault_delta_limit:
+        default: 0.0
+        title: Major Fault Delta Limit
+        type: number
+      noninferiority_margin_pct:
+        default: 3.0
+        title: Noninferiority Margin Pct
+        type: number
+      policy_rule:
+        anyOf:
+        - type: string
+        - type: 'null'
+        default: null
+        title: Policy Rule
+      policy_stable:
+        anyOf:
+        - type: boolean
+        - type: 'null'
+        default: null
+        title: Policy Stable
+      reasons:
+        items:
+          type: string
+        title: Reasons
+        type: array
+      resource_limits_pct:
+        additionalProperties:
+          type: number
+        title: Resource Limits Pct
+        type: object
+      resources:
+        additionalProperties:
+          enum:
+          - within-limit
+          - rejected
+          - inconclusive
+          type: string
+        title: Resources
+        type: object
+    required:
+    - campaign_stage
+    - classification
+    - confirmable
+    title: Qualification
     type: object
   ReferenceTool:
     additionalProperties: false
@@ -460,4 +559,4 @@ title: Experiment
 type: object
 x-softschema:
   contract: fdu.performance:Experiment/v1
-  schema_sha256: 23c34d961850049f4a52121fc91e7806526b176c983dd93ae105948f683af5fa
+  schema_sha256: 2d12b07839acd55238334330cd4e135883967272fa8fd07048eb331a233a24af

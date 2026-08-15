@@ -4,6 +4,7 @@ import copy
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -98,6 +99,49 @@ class FduProbeTests(unittest.TestCase):
                 disagreement = tree.probe_agrees(oracle, summary)
                 if disagreement is not None:
                     self.fail(self._oracle_forensics(root, mode, disagreement, oracle, summary))
+
+    def test_scan_diagnostics_are_versioned_and_run_scoped(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory) / "tree"
+            (root / "nested").mkdir(parents=True)
+            (root / "nested" / "entry.txt").write_text("evidence", encoding="utf-8")
+
+            completed = subprocess.run(
+                [
+                    str(self.probe),
+                    "scan-index",
+                    "--root",
+                    str(root),
+                    "--threads",
+                    "2",
+                    "--diagnostics",
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            document = json.loads(completed.stdout)
+
+        diagnostics = document["scan_diagnostics"]
+        self.assertEqual(diagnostics["schema"], "fdu-scan-diagnostics-v1")
+        policy = diagnostics["worker_policy"]
+        self.assertEqual(policy["outcome"], "fixed")
+        self.assertFalse(policy["events_truncated"])
+        self.assertEqual(policy["ready_directories_at_finish"], 0)
+        self.assertEqual(policy["in_flight_directories_at_finish"], 0)
+        self.assertEqual(policy["handoff_backlog_at_finish"], 0)
+        self.assertGreaterEqual(policy["handoff_backlog_high_water"], 1)
+        backend = diagnostics["backend"]
+        if sys.platform == "darwin":
+            self.assertEqual(
+                backend["macos_bulk_attempts"],
+                backend["macos_bulk_successes"] + backend["macos_bulk_fallbacks"],
+            )
+            self.assertIsNone(backend["unavailable_reason"])
+        else:
+            self.assertIsNone(backend["macos_bulk_attempts"])
+            self.assertTrue(backend["unavailable_reason"])
 
     def _oracle_forensics(
         self,

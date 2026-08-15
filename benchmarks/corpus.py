@@ -43,13 +43,27 @@ _RECIPE_KEYS = {
     "max_depth",
     "metadata_profile",
     "mutation_locality",
+    "phase_profile",
     "optional_links",
     "scale_points",
     "seed",
     "topology",
     "transitions",
 }
-_TOPOLOGIES = {"balanced", "contract", "deep", "wide"}
+_TOPOLOGIES = {
+    "balanced",
+    "contract",
+    "deep",
+    "few-wide-directories",
+    "many-small-directories",
+    "phased",
+    "wide",
+}
+_PHASE_PROFILES = {
+    "alternating-regions",
+    "fast-prefix-slow-suffix",
+    "slow-prefix-fast-suffix",
+}
 _METADATA_PROFILES = {"contract", "mixed", "partial", "standard"}
 _OPTIONAL_LINKS = {"hardlink", "symlink"}
 _TRANSITIONS = {"mixed-1pct", "modify-1pct", "one-change"}
@@ -73,6 +87,7 @@ class Recipe:
     optional_links: Tuple[str, ...]
     transitions: Tuple[str, ...]
     mutation_locality: Optional[str]
+    phase_profile: Optional[str]
     scale_points: Tuple[int, ...]
 
     def as_mapping(self) -> Dict[str, Any]:
@@ -82,6 +97,7 @@ class Recipe:
             "max_depth": self.max_depth,
             "metadata_profile": self.metadata_profile,
             "mutation_locality": self.mutation_locality,
+            "phase_profile": self.phase_profile,
             "optional_links": list(self.optional_links),
             "recipe_id": self.recipe_id,
             "scale_points": list(self.scale_points),
@@ -193,6 +209,9 @@ class _ManifestBuilder:
         self._entry_apparent_bytes = 0
         self._unique_apparent_bytes = 0
         self._max_depth = 0
+        self._phase_counts: Dict[str, Dict[str, int]] = {}
+        self._phase_child_counts: Dict[Tuple[str, str], int] = {}
+        self._phase_max_depth: Dict[str, int] = {}
 
     def add(self, record: Dict[str, Any]) -> None:
         relative_path = _require_relative_record_path(record.get("path"))
@@ -208,9 +227,21 @@ class _ManifestBuilder:
 
         self._counts[count_key] += 1
         self._max_depth = max(self._max_depth, _path_depth(relative_path))
+        phase = _phase_prefix(relative_path)
+        if phase is not None:
+            phase_counts = self._phase_counts.setdefault(
+                phase,
+                {"directories": 0, "files": 0, "other": 0, "symlinks": 0},
+            )
+            phase_counts[count_key] += 1
+            relative_depth = max(0, _path_depth(relative_path) - 1)
+            self._phase_max_depth[phase] = max(self._phase_max_depth.get(phase, 0), relative_depth)
         if relative_path != ".":
             parent = str(PurePosixPath(relative_path).parent)
             self._child_counts[parent] = self._child_counts.get(parent, 0) + 1
+            if phase is not None:
+                key = (phase, parent)
+                self._phase_child_counts[key] = self._phase_child_counts.get(key, 0) + 1
 
         if kind == "file":
             size = record.get("size")
@@ -239,6 +270,25 @@ class _ManifestBuilder:
         counts = dict(self._counts)
         counts["hardlink_groups"] = len(self._hardlink_groups)
         counts["total"] = sum(self._counts.values())
+        phases = []
+        for phase, phase_counts in sorted(self._phase_counts.items()):
+            phase_counts = dict(phase_counts)
+            phase_counts["total"] = sum(phase_counts.values())
+            phases.append(
+                {
+                    "counts": phase_counts,
+                    "max_depth": self._phase_max_depth[phase],
+                    "max_directory_fanout": max(
+                        (
+                            count
+                            for (candidate, _parent), count in self._phase_child_counts.items()
+                            if candidate == phase
+                        ),
+                        default=0,
+                    ),
+                    "path_prefix": phase,
+                }
+            )
         summary: Dict[str, Any] = {
             "counts": counts,
             "extensions": dict(sorted(self._extensions.items())),
@@ -251,12 +301,11 @@ class _ManifestBuilder:
             "topology": {
                 "max_depth": self._max_depth,
                 "max_directory_fanout": max(self._child_counts.values(), default=0),
+                "phases": phases,
             },
         }
         if self._capture_records:
-            summary["records"] = sorted(
-                self._records, key=lambda record: record["path"]
-            )
+            summary["records"] = sorted(self._records, key=lambda record: record["path"])
         return summary
 
 
@@ -293,9 +342,7 @@ def cleanup_run_directory(run_root: Path) -> None:
         try:
             shutil.rmtree(resolved)
         except OSError as error:
-            raise CorpusError(
-                f"cannot remove validated run directory: {error}"
-            ) from error
+            raise CorpusError(f"cannot remove validated run directory: {error}") from error
 
 
 def create_corpus(
@@ -357,9 +404,7 @@ def _create_corpus_unlocked(
             "digest_algorithm": SEMANTIC_DIGEST_ALGORITHM,
             "engine_digest": observed_summary["engine_digest"],
             "engine_digest_algorithm": ENGINE_DIGEST_ALGORITHM,
-            "engine_digest_components": observed_summary[
-                "engine_digest_components"
-            ],
+            "engine_digest_components": observed_summary["engine_digest_components"],
             "root_inclusive": True,
             "semantic_components": observed_summary["semantic_components"],
         },
@@ -386,9 +431,7 @@ def verify_corpus(run_root: Path) -> Dict[str, Any]:
         return _verify_corpus_unlocked(resolved_run_root)
 
 
-def refresh_copied_corpus(
-    run_root: Path, source_manifest: Mapping[str, Any]
-) -> Dict[str, Any]:
+def refresh_copied_corpus(run_root: Path, source_manifest: Mapping[str, Any]) -> Dict[str, Any]:
     """Validate a copied corpus and bind its manifest to fresh filesystem identity."""
     resolved_run_root = _validate_run_root(run_root)
     with _operation_lock(resolved_run_root):
@@ -418,9 +461,7 @@ def refresh_copied_corpus(
         refreshed["capabilities"].update(observed_capabilities)
         refreshed["sizes"] = observed["sizes"]
         refreshed["oracle"]["engine_digest"] = observed["engine_digest"]
-        refreshed["oracle"]["engine_digest_components"] = observed[
-            "engine_digest_components"
-        ]
+        refreshed["oracle"]["engine_digest_components"] = observed["engine_digest_components"]
         refreshed["manifest_hash"] = _manifest_hash(refreshed)
         _atomic_write_json(resolved_run_root / MANIFEST_NAME, refreshed)
         return _verify_corpus_unlocked(resolved_run_root)
@@ -445,13 +486,9 @@ def _verify_corpus_unlocked(run_root: Path) -> Dict[str, Any]:
             raise CorpusError(f"corpus verification failed for {field}")
     if capture_records and manifest.get("records") != observed.get("records"):
         raise CorpusError("corpus verification failed for records")
-    if manifest.get("oracle", {}).get("semantic_components") != observed.get(
-        "semantic_components"
-    ):
+    if manifest.get("oracle", {}).get("semantic_components") != observed.get("semantic_components"):
         raise CorpusError("corpus verification failed for semantic components")
-    if manifest.get("oracle", {}).get("engine_digest") != observed.get(
-        "engine_digest"
-    ):
+    if manifest.get("oracle", {}).get("engine_digest") != observed.get("engine_digest"):
         raise CorpusError("corpus verification failed for engine digest")
     if manifest.get("oracle", {}).get("engine_digest_components") != observed.get(
         "engine_digest_components"
@@ -467,18 +504,14 @@ def apply_transition(run_root: Path, transition_id: str) -> Dict[str, Any]:
         return _apply_transition_unlocked(resolved_run_root, transition_id)
 
 
-def _apply_transition_unlocked(
-    run_root: Path, transition_id: str
-) -> Dict[str, Any]:
+def _apply_transition_unlocked(run_root: Path, transition_id: str) -> Dict[str, Any]:
     resolved_run_root = _validate_run_root(run_root)
     manifest = _verify_corpus_unlocked(resolved_run_root)
     recipe, transition_index = _transition_recipe_and_index(manifest, transition_id)
     corpus_root = resolved_run_root / CORPUS_NAME
     selected = _selected_mutation_candidates(corpus_root, recipe, transition_id)
     ledger = _TransitionLedger(
-        semantic=_SemanticAccumulator(
-            manifest["oracle"].get("semantic_components")
-        ),
+        semantic=_SemanticAccumulator(manifest["oracle"].get("semantic_components")),
         operations=[],
         changed_paths=set(),
     )
@@ -491,9 +524,7 @@ def _apply_transition_unlocked(
         ledger,
     )
     capture_records = "records" in manifest
-    observed, observed_capabilities = _observe_corpus(
-        corpus_root, capture_records=capture_records
-    )
+    observed, observed_capabilities = _observe_corpus(corpus_root, capture_records=capture_records)
     _validate_transition_postcondition(manifest, observed, ledger.semantic)
     updated = _updated_transition_manifest(
         manifest,
@@ -574,14 +605,10 @@ def _apply_selected_transition(
         if operation_index % 3 in {1, 2}
     }
     original_directory_mtimes = {
-        relative: (
-            corpus_root if relative == "." else corpus_root / relative
-        ).stat().st_mtime_ns
+        relative: (corpus_root if relative == "." else corpus_root / relative).stat().st_mtime_ns
         for relative in touched_directories
     }
-    _apply_mixed_file_operations(
-        corpus_root, recipe, transition_index, selected, ledger
-    )
+    _apply_mixed_file_operations(corpus_root, recipe, transition_index, selected, ledger)
     _update_touched_directory_records(
         corpus_root,
         recipe,
@@ -601,12 +628,8 @@ def _apply_file_modification(
     ledger: _TransitionLedger,
 ) -> None:
     relative, size, old_mtime_ns = candidate
-    new_mtime_ns = _mutation_mtime_ns(
-        recipe.seed, transition_index, relative, operation_index
-    )
-    _rewrite_file_preserving_size(
-        corpus_root / relative, new_mtime_ns, recipe.seed
-    )
+    new_mtime_ns = _mutation_mtime_ns(recipe.seed, transition_index, relative, operation_index)
+    _rewrite_file_preserving_size(corpus_root / relative, new_mtime_ns, recipe.seed)
     ledger.semantic.remove(_file_record(relative, size, old_mtime_ns))
     ledger.semantic.add(_file_record(relative, size, new_mtime_ns))
     ledger.operations.append({"kind": "modify", "path": relative})
@@ -657,9 +680,7 @@ def _apply_mixed_file_operations(
             )
         else:
             os.replace(corpus_root / relative, destination)
-            ledger.operations.append(
-                {"from": relative, "kind": "rename", "to": new_relative}
-            )
+            ledger.operations.append({"from": relative, "kind": "rename", "to": new_relative})
         _set_path_times_ns(destination, new_mtime_ns, new_mtime_ns)
         ledger.semantic.add(_file_record(new_relative, size, new_mtime_ns))
         ledger.changed_paths.update({relative, new_relative})
@@ -682,13 +703,9 @@ def _update_touched_directory_records(
             f"directory:{relative}",
             directory_index,
         )
-        ledger.semantic.remove(
-            {"kind": "directory", "mtime_ns": old_mtime_ns, "path": relative}
-        )
+        ledger.semantic.remove({"kind": "directory", "mtime_ns": old_mtime_ns, "path": relative})
         _set_path_times_ns(directory_path, new_mtime_ns, new_mtime_ns)
-        ledger.semantic.add(
-            {"kind": "directory", "mtime_ns": new_mtime_ns, "path": relative}
-        )
+        ledger.semantic.add({"kind": "directory", "mtime_ns": new_mtime_ns, "path": relative})
         ledger.changed_paths.add(relative)
 
 
@@ -773,20 +790,16 @@ def load_recipe(
     if not isinstance(document, dict) or set(document) != {"recipes", "schema"}:
         raise CorpusError("corpora.json has unknown or missing top-level fields")
     if document.get("schema") != RECIPE_SCHEMA:
-        raise CorpusError(
-            f"unsupported corpus recipe schema: {document.get('schema')!r}"
-        )
+        raise CorpusError(f"unsupported corpus recipe schema: {document.get('schema')!r}")
     recipes = document.get("recipes")
     if not isinstance(recipes, dict) or recipe_id not in recipes:
         available = ", ".join(sorted(recipes)) if isinstance(recipes, dict) else "none"
-        raise CorpusError(
-            f"unknown recipe {recipe_id!r}; available recipes: {available}"
-        )
+        raise CorpusError(f"unknown recipe {recipe_id!r}; available recipes: {available}")
     raw = recipes[recipe_id]
     if not isinstance(raw, dict):
         raise CorpusError(f"recipe {recipe_id!r} is not an object")
     unknown = set(raw) - _RECIPE_KEYS
-    missing = _RECIPE_KEYS - {"mutation_locality"} - set(raw)
+    missing = _RECIPE_KEYS - {"mutation_locality", "phase_profile"} - set(raw)
     if unknown or missing:
         raise CorpusError(
             f"recipe {recipe_id!r} has unknown fields {sorted(unknown)} "
@@ -796,18 +809,11 @@ def load_recipe(
     effective_target = (
         _require_int("target_entries", target_entries, minimum=1)
         if target_entries is not None
-        else _require_int(
-            "default_target_entries", raw.get("default_target_entries"), 1
-        )
+        else _require_int("default_target_entries", raw.get("default_target_entries"), 1)
     )
     if effective_target > MAX_TARGET_ENTRIES:
-        raise CorpusError(
-            f"target_entries exceeds the safety limit of {MAX_TARGET_ENTRIES:,}"
-        )
-    if (
-        recipe_id == "contract"
-        and effective_target != raw.get("default_target_entries")
-    ):
+        raise CorpusError(f"target_entries exceeds the safety limit of {MAX_TARGET_ENTRIES:,}")
+    if recipe_id == "contract" and effective_target != raw.get("default_target_entries"):
         raise CorpusError("the exact contract recipe does not accept a target override")
 
     topology = _require_choice("topology", raw.get("topology"), _TOPOLOGIES)
@@ -817,9 +823,7 @@ def load_recipe(
     optional_links = _require_string_sequence(
         "optional_links", raw.get("optional_links"), _OPTIONAL_LINKS
     )
-    transitions = _require_string_sequence(
-        "transitions", raw.get("transitions"), _TRANSITIONS
-    )
+    transitions = _require_string_sequence("transitions", raw.get("transitions"), _TRANSITIONS)
     scale_points_raw = raw.get("scale_points")
     if not isinstance(scale_points_raw, list) or not scale_points_raw:
         raise CorpusError("scale_points must be a non-empty array")
@@ -832,6 +836,11 @@ def load_recipe(
     mutation_locality = raw.get("mutation_locality")
     if mutation_locality not in {None, "distributed", "local"}:
         raise CorpusError("mutation_locality must be local, distributed, or null")
+    phase_profile = raw.get("phase_profile")
+    if phase_profile not in _PHASE_PROFILES | {None}:
+        raise CorpusError("phase_profile is unsupported")
+    if (topology == "phased") != (phase_profile is not None):
+        raise CorpusError("phased topology and phase_profile must be declared together")
 
     return Recipe(
         recipe_id=recipe_id,
@@ -844,6 +853,7 @@ def load_recipe(
         optional_links=optional_links,
         transitions=transitions,
         mutation_locality=mutation_locality,
+        phase_profile=phase_profile,
         scale_points=scale_points,
     )
 
@@ -892,6 +902,9 @@ def _generate_parametric(
     capabilities: Dict[str, Any],
 ) -> None:
     builder.add(_directory_record(".", recipe.seed))
+    if recipe.topology == "phased":
+        _generate_phased(root, recipe, builder)
+        return
     directory_count = _directory_count(recipe)
     directories: List[str] = ["."]
     for index in range(directory_count):
@@ -921,6 +934,107 @@ def _generate_parametric(
             source = (relative, size, mtime)
     if source is not None:
         _create_optional_links(root, recipe, builder, capabilities, source)
+
+
+def _generate_phased(root: Path, recipe: Recipe, builder: _ManifestBuilder) -> None:
+    """Materialize two explicit topology phases without assuming completion order.
+
+    Phase names describe the preregistered order hypothesis. The observed manifest
+    independently records each prefix's actual counts, depth, and fanout, while the
+    policy trace decides whether distinct service-time phases really appeared on the
+    host. A name is never treated as evidence about scheduler order.
+    """
+    if recipe.target_entries < 4 or recipe.phase_profile is None:
+        raise CorpusError("phased corpora require at least four entries and a profile")
+    first_count = max(2, recipe.target_entries // 5)
+    second_count = recipe.target_entries - first_count
+    if recipe.phase_profile == "alternating-regions":
+        base, remainder = divmod(recipe.target_entries, 4)
+        counts = [base + (index < remainder) for index in range(4)]
+        phases = tuple(
+            (
+                f"phase-{index:02d}-{'shallow' if index % 2 == 0 else 'directory-heavy'}",
+                count,
+                "shallow" if index % 2 == 0 else "directory-heavy",
+            )
+            for index, count in enumerate(counts)
+        )
+    elif recipe.phase_profile == "fast-prefix-slow-suffix":
+        phases = (
+            ("phase-00-shallow", first_count, "shallow"),
+            ("phase-01-directory-heavy", second_count, "directory-heavy"),
+        )
+    else:
+        phases = (
+            ("phase-00-directory-heavy", first_count, "directory-heavy"),
+            ("phase-01-shallow", second_count, "shallow"),
+        )
+    for phase_index, (prefix, count, shape) in enumerate(phases):
+        _generate_phase_entries(
+            root,
+            recipe,
+            builder,
+            prefix=prefix,
+            count=count,
+            shape=shape,
+            phase_index=phase_index,
+        )
+
+
+def _generate_phase_entries(
+    root: Path,
+    recipe: Recipe,
+    builder: _ManifestBuilder,
+    *,
+    prefix: str,
+    count: int,
+    shape: str,
+    phase_index: int,
+) -> None:
+    (root / prefix).mkdir()
+    builder.add(_directory_record(prefix, recipe.seed))
+    remaining = count - 1
+    if remaining == 0:
+        return
+    if shape == "shallow":
+        directory_count = min(remaining, max(1, remaining // 64))
+    else:
+        # Directory-heavy phases deliberately put most entries in the directory
+        # frontier. On APFS this creates many small bulk-enumeration calls instead of
+        # one wide, cache-friendly listing, which is the service-time contrast the
+        # adaptive-worker trace must confirm after the run.
+        directory_count = min(remaining, max(1, remaining * 3 // 4))
+
+    directories: List[str] = [prefix]
+    leaf_directories: List[str] = []
+    chain_span = max(1, recipe.max_depth - 1)
+    for index in range(directory_count):
+        offset = 0
+        if shape == "shallow":
+            parent = prefix
+        else:
+            offset = index % chain_span
+            parent = prefix if offset == 0 else directories[-1]
+        name = f"d-{phase_index}-{index:07d}"
+        relative = f"{parent}/{name}"
+        (root / relative).mkdir()
+        directories.append(relative)
+        builder.add(_directory_record(relative, recipe.seed))
+        if shape == "shallow" or offset == chain_span - 1:
+            leaf_directories.append(relative)
+    if not leaf_directories:
+        leaf_directories = directories[1:] or directories
+
+    file_count = remaining - directory_count
+    for index in range(file_count):
+        parent = leaf_directories[index % len(leaf_directories)]
+        extension = _file_extension(recipe, index + phase_index * file_count)
+        suffix = "" if extension == "<none>" else extension
+        name = f"f-{phase_index}-{index:09d}{suffix}"
+        relative = f"{parent}/{name}"
+        size = _file_size(recipe, index + phase_index * file_count)
+        mtime = _create_file(root, relative, size, recipe.seed)
+        builder.add(_file_record(relative, size, mtime))
 
 
 def _create_optional_links(
@@ -968,9 +1082,7 @@ def _create_optional_links(
             }
 
 
-def _observe_corpus(
-    root: Path, *, capture_records: bool
-) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+def _observe_corpus(root: Path, *, capture_records: bool) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     if root.is_symlink() or not root.is_dir():
         raise CorpusError("corpus root must be a real directory")
     hardlinks: Dict[Tuple[int, int], Tuple[str, int]] = {}
@@ -1011,9 +1123,7 @@ def _observe_corpus(
             engine_kind = "file"
             identity = (metadata.st_dev, metadata.st_ino)
             canonical, occurrences = hardlinks.get(identity, (relative, 1))
-            hardlink_to = (
-                canonical if occurrences > 1 and relative != canonical else None
-            )
+            hardlink_to = canonical if occurrences > 1 and relative != canonical else None
             record = _file_record(
                 relative,
                 metadata.st_size,
@@ -1036,9 +1146,7 @@ def _observe_corpus(
         else:
             engine_kind = "other"
             record = {"kind": "other", "path": relative}
-        engine_digest.add_bytes(
-            _engine_record_bytes(relative, engine_kind, metadata)
-        )
+        engine_digest.add_bytes(_engine_record_bytes(relative, engine_kind, metadata))
         builder.add(record)
 
     summary = builder.summary()
@@ -1046,19 +1154,13 @@ def _observe_corpus(
     summary["engine_digest_components"] = engine_digest.components()
     summary["sizes"].update(
         {
-            "entry_allocated_bytes": entry_allocated_bytes
-            if allocated_supported
-            else None,
-            "unique_allocated_bytes": unique_allocated_bytes
-            if allocated_supported
-            else None,
+            "entry_allocated_bytes": entry_allocated_bytes if allocated_supported else None,
+            "unique_allocated_bytes": unique_allocated_bytes if allocated_supported else None,
         }
     )
     capability = {
         "allocated_size": {
-            "reason": (
-                None if allocated_supported else "os.stat_result has no st_blocks"
-            ),
+            "reason": (None if allocated_supported else "os.stat_result has no st_blocks"),
             "supported": allocated_supported,
         }
     }
@@ -1114,15 +1216,11 @@ def _walk_corpus(root: Path) -> Iterator[Tuple[Path, str, os.stat_result]]:
             with os.scandir(directory) as directory_entries:
                 entries = sorted(directory_entries, key=lambda entry: entry.name)
         except OSError as error:
-            raise CorpusError(
-                f"cannot enumerate corpus directory: {error.strerror}"
-            ) from error
+            raise CorpusError(f"cannot enumerate corpus directory: {error.strerror}") from error
         child_directories: List[Tuple[Path, str]] = []
         for entry in entries:
             relative = (
-                entry.name
-                if relative_directory == "."
-                else f"{relative_directory}/{entry.name}"
+                entry.name if relative_directory == "." else f"{relative_directory}/{entry.name}"
             )
             path = Path(entry.path)
             try:
@@ -1151,9 +1249,7 @@ def _set_directory_mtimes(root: Path, seed: str) -> None:
         if stat.S_ISDIR(metadata.st_mode)
     ]
     directories.append((root, "."))
-    for path, relative in sorted(
-        directories, key=lambda item: _path_depth(item[1]), reverse=True
-    ):
+    for path, relative in sorted(directories, key=lambda item: _path_depth(item[1]), reverse=True):
         mtime_ns = _mtime_ns_for(seed, relative)
         _set_path_times_ns(path, mtime_ns, mtime_ns)
 
@@ -1223,13 +1319,20 @@ def _directory_count(recipe: Recipe) -> int:
             recipe.target_entries - 1,
             max(1, min(recipe.fanout, recipe.target_entries // 8)),
         )
+    if recipe.topology == "many-small-directories":
+        return min(recipe.target_entries - 1, max(1, recipe.target_entries * 3 // 4))
+    if recipe.topology == "few-wide-directories":
+        return min(
+            recipe.target_entries - 1,
+            max(1, min(recipe.fanout, math.ceil(recipe.target_entries / 16_384))),
+        )
     return min(recipe.target_entries - 1, max(1, recipe.target_entries // 8))
 
 
 def _directory_parent(recipe: Recipe, directories: Sequence[str], index: int) -> str:
     if recipe.topology == "deep":
         return directories[-1]
-    if recipe.topology == "wide":
+    if recipe.topology in {"few-wide-directories", "wide"}:
         return "."
     return directories[index // recipe.fanout]
 
@@ -1239,7 +1342,7 @@ def _file_parent(recipe: Recipe, directories: Sequence[str], index: int) -> str:
         return "."
     if recipe.mutation_locality == "local":
         return directories[1]
-    if recipe.topology == "wide":
+    if recipe.topology in {"few-wide-directories", "wide"}:
         return directories[1 + index % (len(directories) - 1)]
     if recipe.topology == "deep":
         return directories[1 + index % (len(directories) - 1)]
@@ -1277,8 +1380,7 @@ def _initial_capabilities(recipe: Recipe) -> Dict[str, Any]:
         }
     capabilities["partial_permissions"] = {
         "reason": (
-            "portable baseline only; this host profile did not request permission "
-            "manipulation"
+            "portable baseline only; this host profile did not request permission manipulation"
             if recipe.metadata_profile == "partial"
             else "not requested"
         ),
@@ -1318,9 +1420,7 @@ def _assert_expected_matches_observed(
             )
     for field in ("entry_apparent_bytes", "unique_apparent_bytes"):
         if expected["sizes"].get(field) != observed["sizes"].get(field):
-            raise CorpusError(
-                f"creation ledger disagrees with observation for sizes.{field}"
-            )
+            raise CorpusError(f"creation ledger disagrees with observation for sizes.{field}")
     if "records" in expected and expected.get("records") != observed.get("records"):
         raise CorpusError("creation ledger disagrees with observation for records")
 
@@ -1335,9 +1435,7 @@ def _operation_lock(run_root: Path) -> Iterator[None]:
             "another corpus operation is already active or left a stale operation lock"
         ) from error
     except OSError as error:
-        raise CorpusError(
-            f"cannot acquire the corpus operation lock: {error}"
-        ) from error
+        raise CorpusError(f"cannot acquire the corpus operation lock: {error}") from error
     try:
         yield
     finally:
@@ -1380,9 +1478,7 @@ def _load_manifest(path: Path) -> Dict[str, Any]:
     if not isinstance(manifest, dict):
         raise CorpusError("observed corpus manifest is not an object")
     if manifest.get("schema") != MANIFEST_SCHEMA:
-        raise CorpusError(
-            f"unsupported observed corpus schema: {manifest.get('schema')!r}"
-        )
+        raise CorpusError(f"unsupported observed corpus schema: {manifest.get('schema')!r}")
     recorded_hash = manifest.get("manifest_hash")
     if not isinstance(recorded_hash, str) or recorded_hash != _manifest_hash(manifest):
         raise CorpusError("observed corpus manifest hash is invalid")
@@ -1427,9 +1523,7 @@ def _validate_manifest_shape(manifest: Mapping[str, Any]) -> None:
         "topology",
     ):
         if not isinstance(manifest.get(field), dict):
-            raise CorpusError(
-                f"observed corpus manifest field {field!r} must be an object"
-            )
+            raise CorpusError(f"observed corpus manifest field {field!r} must be an object")
     for field in (
         "generator_source_hash",
         "manifest_hash",
@@ -1438,18 +1532,13 @@ def _validate_manifest_shape(manifest: Mapping[str, Any]) -> None:
     ):
         _require_sha256(field, manifest.get(field))
     if not isinstance(manifest.get("recipe_id"), str) or not manifest["recipe_id"]:
-        raise CorpusError(
-            "observed corpus manifest recipe_id must be a non-empty string"
-        )
+        raise CorpusError("observed corpus manifest recipe_id must be a non-empty string")
     if manifest.get("generator_version") != GENERATOR_VERSION:
         raise CorpusError(
-            "unsupported corpus generator version: "
-            f"{manifest.get('generator_version')!r}"
+            f"unsupported corpus generator version: {manifest.get('generator_version')!r}"
         )
     state = manifest["state"]
-    if not isinstance(state.get("id"), str) or not isinstance(
-        state.get("transition_index"), int
-    ):
+    if not isinstance(state.get("id"), str) or not isinstance(state.get("transition_index"), int):
         raise CorpusError("observed corpus manifest transition state is malformed")
     oracle = manifest["oracle"]
     if oracle.get("digest_algorithm") != SEMANTIC_DIGEST_ALGORITHM:
@@ -1457,15 +1546,11 @@ def _validate_manifest_shape(manifest: Mapping[str, Any]) -> None:
     if oracle.get("engine_digest_algorithm") != ENGINE_DIGEST_ALGORITHM:
         raise CorpusError("observed corpus manifest engine digest is unsupported")
     components = oracle.get("semantic_components")
-    accumulator = _SemanticAccumulator(
-        components if isinstance(components, Mapping) else None
-    )
+    accumulator = _SemanticAccumulator(components if isinstance(components, Mapping) else None)
     if not isinstance(components, Mapping):
         raise CorpusError("observed corpus manifest semantic components are malformed")
     if accumulator.finish() != manifest["semantic_digest"]:
-        raise CorpusError(
-            "observed corpus semantic digest does not match its components"
-        )
+        raise CorpusError("observed corpus semantic digest does not match its components")
     engine_components = oracle.get("engine_digest_components")
     engine_accumulator = _SemanticAccumulator(
         engine_components if isinstance(engine_components, Mapping) else None,
@@ -1480,9 +1565,7 @@ def _validate_manifest_shape(manifest: Mapping[str, Any]) -> None:
         raise CorpusError("observed corpus manifest records must be an array")
     history = manifest.get("transition_history")
     if history is not None and not isinstance(history, list):
-        raise CorpusError(
-            "observed corpus manifest transition history must be an array"
-        )
+        raise CorpusError("observed corpus manifest transition history must be an array")
 
 
 def _manifest_hash(manifest: Mapping[str, Any]) -> str:
@@ -1499,9 +1582,7 @@ def _load_json(path: Path) -> Any:
         with path.open("r", encoding="utf-8") as input_file:
             return json.load(input_file, parse_constant=_reject_json_constant)
     except (OSError, json.JSONDecodeError) as error:
-        raise CorpusError(
-            f"cannot read valid JSON from {path.name}: {error}"
-        ) from error
+        raise CorpusError(f"cannot read valid JSON from {path.name}: {error}") from error
 
 
 def _reject_json_constant(value: str) -> None:
@@ -1530,9 +1611,9 @@ def _atomic_write_json(path: Path, value: Mapping[str, Any]) -> None:
 
 
 def _canonical_json(value: Mapping[str, Any]) -> bytes:
-    return json.dumps(
-        value, ensure_ascii=True, separators=(",", ":"), sort_keys=True
-    ).encode("utf-8")
+    return json.dumps(value, ensure_ascii=True, separators=(",", ":"), sort_keys=True).encode(
+        "utf-8"
+    )
 
 
 def _sha256_json(value: Mapping[str, Any]) -> str:
@@ -1663,22 +1744,25 @@ def _path_depth(relative: str) -> int:
     return 0 if relative == "." else len(PurePosixPath(relative).parts)
 
 
+def _phase_prefix(relative: str) -> Optional[str]:
+    if relative == ".":
+        return None
+    first = PurePosixPath(relative).parts[0]
+    return first if first.startswith("phase-") else None
+
+
 def _require_relative_record_path(value: Any) -> str:
     if not isinstance(value, str) or not value:
         raise CorpusError("record path must be a non-empty string")
     path = PurePosixPath(value)
-    if value != "." and (
-        path.is_absolute() or ".." in path.parts or str(path) != value
-    ):
+    if value != "." and (path.is_absolute() or ".." in path.parts or str(path) != value):
         raise CorpusError(f"record path is not normalized and relative: {value!r}")
     return value
 
 
 def _require_int(name: str, value: Any, minimum: int) -> int:
     if not isinstance(value, int) or isinstance(value, bool) or value < minimum:
-        raise CorpusError(
-            f"{name} must be an integer greater than or equal to {minimum}"
-        )
+        raise CorpusError(f"{name} must be an integer greater than or equal to {minimum}")
     return value
 
 
@@ -1700,9 +1784,7 @@ def _require_choice(name: str, value: Any, choices: set[str]) -> str:
     return value
 
 
-def _require_string_sequence(
-    name: str, value: Any, choices: set[str]
-) -> Tuple[str, ...]:
+def _require_string_sequence(name: str, value: Any, choices: set[str]) -> Tuple[str, ...]:
     if not isinstance(value, list) or any(
         not isinstance(item, str) or item not in choices for item in value
     ):

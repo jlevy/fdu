@@ -20,7 +20,8 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Sequence
 
-from benchmarks.realtree import ledger, measure, profile, tree
+from benchmarks import corpus as corpus_tools
+from benchmarks.realtree import ledger, measure, profile, provenance, tree
 
 DEFAULT_RESULTS = Path(tempfile.gettempdir()) / "fdu-realtree" / "results"
 DEFAULT_SCRATCH = Path(tempfile.gettempdir()) / "fdu-realtree" / "scratch"
@@ -64,10 +65,38 @@ def main(argv: Sequence[str]) -> int:
     run.add_argument("--trials", type=int, default=measure.DEFAULT_TRIALS)
     run.add_argument("--warmups", type=int, default=measure.DEFAULT_WARMUPS)
     run.add_argument("--baseline-fingerprint", type=Path)
+    run.add_argument(
+        "--corpus-manifest",
+        type=Path,
+        help="independently verify and bind a generated corpus manifest to this run",
+    )
+    run.add_argument(
+        "--provenance-manifest",
+        type=Path,
+        help="verified clean probe/build/host manifest; required for held-out evidence",
+    )
     run.add_argument("--scratch", type=Path, default=DEFAULT_SCRATCH)
     run.add_argument("--output-dir", type=Path, default=DEFAULT_RESULTS)
     run.add_argument("--name", default="", help="short slug for the output files")
     run.add_argument("--note", default="")
+    run.add_argument(
+        "--stage",
+        choices=("exploratory", "discovery", "held-out"),
+        default="exploratory",
+        help="evidence stage; only held-out runs can confirm a selected arm",
+    )
+    run.add_argument(
+        "--host-regime",
+        choices=sorted(measure.HOST_REGIMES),
+        default="uncontrolled",
+        help="predeclared host-pressure cell; held-out evidence must be controlled",
+    )
+    run.add_argument(
+        "--background-load-workers",
+        type=int,
+        default=2,
+        help="CPU load workers for the controlled-interactive host regime",
+    )
     run.add_argument(
         "--purge",
         action="store_true",
@@ -86,6 +115,12 @@ def main(argv: Sequence[str]) -> int:
     profiled.add_argument("--job", action="append", default=[], choices=sorted(measure.PROBE_JOBS))
     profiled.add_argument("--seconds", type=int, default=profile.DEFAULT_SAMPLE_SECONDS)
     profiled.add_argument("--repeat", type=int, default=40)
+    profiled.add_argument(
+        "--extra-arg",
+        action="append",
+        default=[],
+        help="probe flag appended after the job argv; use --extra-arg=--flag",
+    )
     profiled.add_argument("--scratch", type=Path, default=DEFAULT_SCRATCH)
     profiled.add_argument("--output", type=Path)
     profiled.add_argument("--label", default="")
@@ -106,9 +141,7 @@ def main(argv: Sequence[str]) -> int:
 
 
 def _baseline(arguments: argparse.Namespace) -> int:
-    destination = arguments.output or (
-        DEFAULT_RESULTS / f"tree-{arguments.label}.json"
-    )
+    destination = arguments.output or (DEFAULT_RESULTS / f"tree-{arguments.label}.json")
     _require_external(arguments.root, destination, description="baseline output")
     document = tree.fingerprint(arguments.root, label=arguments.label)
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -124,13 +157,26 @@ def _measure(arguments: argparse.Namespace) -> int:
     variants = [_variant(item, kind="fdu-probe") for item in arguments.variant]
     references = [_variant(item, kind="reference") for item in arguments.reference]
     jobs = [
-        measure.PROBE_JOBS[job]
-        for job in (arguments.job or ["cold-scan-index", "warm-revalidate"])
+        measure.PROBE_JOBS[job] for job in (arguments.job or ["cold-scan-index", "warm-revalidate"])
     ]
 
     baseline_document = (
         json.loads(arguments.baseline_fingerprint.read_text(encoding="utf-8"))
         if arguments.baseline_fingerprint
+        else None
+    )
+    corpus_document = (
+        _verified_corpus_manifest(arguments.root, arguments.corpus_manifest)
+        if arguments.corpus_manifest
+        else None
+    )
+    provenance_document = (
+        _verified_measurement_provenance(
+            arguments.provenance_manifest,
+            arguments.root,
+            variants,
+        )
+        if arguments.provenance_manifest
         else None
     )
 
@@ -145,7 +191,17 @@ def _measure(arguments: argparse.Namespace) -> int:
         baseline_fingerprint=baseline_document,
         purge=arguments.purge,
         note=arguments.note,
+        campaign_stage=arguments.stage,
+        corpus=corpus_document,
+        host_regime=arguments.host_regime,
+        background_load_workers=arguments.background_load_workers,
+        provenance_document=provenance_document,
     )
+
+    if arguments.corpus_manifest:
+        verified_after = _verified_corpus_manifest(arguments.root, arguments.corpus_manifest)
+        if verified_after != corpus_document:
+            raise SystemExit("generated-corpus manifest changed during measurement")
 
     if references:
         document["reference_tools"] = _measure_references(
@@ -164,7 +220,83 @@ def _measure(arguments: argparse.Namespace) -> int:
 
     print(f"\nwrote {run_path}\nwrote {report_path}", file=sys.stderr)
     _print_headline(document)
-    return 0 if not document["tree_mutated_during_run"] else 2
+    if document["tree_mutated_during_run"] or document["baseline_drift"]:
+        return 2
+    if document["invalid_samples"]:
+        return 3
+    return 0
+
+
+def _verified_corpus_manifest(root: Path, manifest_path: Path) -> Dict[str, Any]:
+    """Bind a path-free generated-corpus contract to a real-tree run."""
+    run_root = manifest_path.resolve(strict=True).parent
+    expected_root = (run_root / corpus_tools.CORPUS_NAME).resolve(strict=True)
+    if root.resolve(strict=True) != expected_root:
+        raise SystemExit("--corpus-manifest does not describe the measured --root")
+    manifest = corpus_tools.verify_corpus(run_root)
+    return {
+        "capabilities": manifest["capabilities"],
+        "counts": manifest["counts"],
+        "manifest_hash": manifest["manifest_hash"],
+        "oracle": {
+            "engine_digest": manifest["oracle"]["engine_digest"],
+            "engine_digest_algorithm": manifest["oracle"]["engine_digest_algorithm"],
+        },
+        "recipe": manifest["recipe"],
+        "recipe_hash": manifest["recipe_hash"],
+        "recipe_id": manifest["recipe_id"],
+        "schema": manifest["schema"],
+        "semantic_digest": manifest["semantic_digest"],
+        "state": manifest["state"],
+        "topology": manifest["topology"],
+    }
+
+
+def _verified_measurement_provenance(
+    manifest_path: Path,
+    root: Path,
+    variants: Sequence[measure.Variant],
+) -> Dict[str, Any]:
+    """Match every measured probe hash to a verified provenance artifact."""
+    try:
+        document = json.loads(manifest_path.read_text(encoding="utf-8"))
+        artifacts = document.get("artifacts") if isinstance(document, dict) else None
+        if not isinstance(artifacts, dict):
+            raise provenance.ProvenanceError("provenance artifacts are missing")
+        selected: Dict[str, Path] = {}
+        for variant in variants:
+            identity = variant.identity()
+            matches = [
+                label
+                for label, artifact in artifacts.items()
+                if isinstance(artifact, dict)
+                and artifact.get("kind") == "fdu-perf-probe"
+                and any(
+                    isinstance(file, dict)
+                    and file.get("name") == variant.path.name
+                    and file.get("sha256") == identity["sha256"]
+                    for file in artifact.get("files", [])
+                )
+            ]
+            if len(matches) != 1:
+                raise provenance.ProvenanceError(
+                    f"variant {variant.name!r} matches {len(matches)} perf-probe artifacts"
+                )
+            selected[matches[0]] = variant.path
+        return provenance.verify(
+            document,
+            source_root=provenance.PROJECT_ROOT,
+            subject_root=root,
+            artifacts=selected,
+            require_claim_grade=True,
+        )
+    except (
+        OSError,
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+        provenance.ProvenanceError,
+    ) as error:
+        raise SystemExit(f"cannot verify measurement provenance: {error}") from error
 
 
 def _measure_references(
@@ -208,8 +340,7 @@ def _measure_references(
 
 def _profile(arguments: argparse.Namespace) -> int:
     jobs = [
-        measure.PROBE_JOBS[job]
-        for job in (arguments.job or ["cold-scan-index", "warm-revalidate"])
+        measure.PROBE_JOBS[job] for job in (arguments.job or ["cold-scan-index", "warm-revalidate"])
     ]
     destination = arguments.output or (
         DEFAULT_RESULTS / f"profile-{arguments.label or 'latest'}.json"
@@ -229,6 +360,7 @@ def _profile(arguments: argparse.Namespace) -> int:
             binary=arguments.binary,
             root=arguments.root,
             snapshot=snapshots.get((variant.name, job.id)),
+            extra=arguments.extra_arg,
         )
         entry = profile.capture(
             binary=arguments.binary,
@@ -236,7 +368,20 @@ def _profile(arguments: argparse.Namespace) -> int:
             seconds=arguments.seconds,
             repeat=arguments.repeat,
             label=f"{arguments.label or 'profile'} / {job.id}",
+            require_diagnostics=job.require_scan_diagnostics,
         )
+        if job.require_scan_diagnostics:
+            probe_document = entry.get("probe") or {}
+            probe_summary = probe_document.get("summary") or {}
+            diagnostic_reasons = measure._validate_scan_diagnostics(
+                probe_document.get("scan_diagnostics"),
+                require_macos_backend=sys.platform == "darwin",
+                expected_dirs_read=probe_summary.get("dirs_read"),
+            )
+            if diagnostic_reasons:
+                raise profile.ProfileError(
+                    "profile companion diagnostics are invalid: " + "; ".join(diagnostic_reasons)
+                )
         captured.append(entry)
         print(f"\n=== {entry['label']} ({entry['total_samples']:,} samples) ===")
         for layer in entry["by_layer"]:
@@ -262,9 +407,7 @@ def _require_external(root: Path, path: Path, *, description: str) -> None:
 def _render(arguments: argparse.Namespace) -> int:
     document = ledger.load(arguments.run)
     profiles = (
-        json.loads(arguments.profiles.read_text(encoding="utf-8"))
-        if arguments.profiles
-        else ()
+        json.loads(arguments.profiles.read_text(encoding="utf-8")) if arguments.profiles else ()
     )
     text = ledger.render(document, profiles=profiles)
     if arguments.output:
@@ -311,18 +454,13 @@ def _print_headline(document: Dict[str, Any]) -> None:
             if wall:
                 print(
                     f"  {name:<16} wall {wall['median'] / 1e6:8.1f} ms"
-                    + (
-                        f"   component {component['median'] / 1e6:8.1f} ms"
-                        if component
-                        else ""
-                    )
+                    + (f"   component {component['median'] / 1e6:8.1f} ms" if component else "")
                     + f"   (n={entry['samples']})"
                 )
         for key, comparison in statistics["comparisons"].items():
             decision = ledger.verdict(comparison)
             print(
-                f"  {key}: {'ACCEPT' if decision['accepted'] else 'REJECT'} — "
-                f"{decision['reason']}"
+                f"  {key}: {'ACCEPT' if decision['accepted'] else 'REJECT'} — {decision['reason']}"
             )
     for name, entry in (document.get("reference_tools") or {}).items():
         if entry["wall_ns"]:
