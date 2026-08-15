@@ -123,6 +123,24 @@ marked as needing bare metal and the io_uring results were not treated as settli
 cold question. All three axes belong in every recorded result; the ledger counts them
 into its regime coverage table.
 
+### Host-pressure regimes
+
+Scheduling and release claims also declare one host-pressure regime before measurement:
+
+| Regime | Contract | What it can support |
+| --- | --- | --- |
+| `quiet` | At most 25% instantaneous CPU busy before and after every sample | Quiet-host confirmation |
+| `controlled-interactive` | A declared number of synthetic CPU workers, with at most 25 percentage points of unexplained busy time | Reproducible interactive-load evidence |
+| `uncontrolled` | Pressure is recorded but does not invalidate timing | Exploration and discovery only |
+
+On macOS the decision gate uses a one-second delta of Mach host CPU counters.
+Load average remains descriptive because it remembers the benchmark’s own worker threads
+after a sample exits.
+AC power, normal thermal pressure, the synthetic load process, and the boundary
+observations must all remain available.
+Missing or out-of-envelope data invalidates the sample; a later clean sample does not
+replace it inside the fixed-N cell.
+
 ### Per-layer counters
 
 Wall time says how long a run took; it does not say what the run *did*. Two results in
@@ -346,7 +364,7 @@ are samples of whichever policy path each run happened to take.
 A paired interval computed across them describes the mixture, and it will look like
 ordinary noise.
 
-So a scheduling policy is qualified in two stages, in this order:
+So a scheduling policy is qualified in three stages, in this order:
 
 1. **Characterize the policy deterministically.** Replay explicit completion orders
    through the real decision code and assert what it concludes.
@@ -355,9 +373,16 @@ So a scheduling policy is qualified in two stages, in this order:
    `scan::tests::completion_order` is the worked example; it holds a tree constant,
    varies only completion order, and shows the shipped calibration reaching opposite
    decisions.
-2. **Then measure the candidate.** Once the policy reaches one decision for a given
-   tree, the paired comparison is measuring the thing it claims to measure, and the
-   accept rule applies unchanged.
+2. **Screen on discovery samples.** Verify every real phase from the bounded runtime
+   trace rather than from generation order.
+   Discovery may eliminate candidates and select one arm, but it cannot confirm that
+   arm.
+3. **Confirm a survivor on held-out samples.** Use a disjoint paired/interleaved matrix
+   in the required quiet and controlled-interactive regimes.
+   For paired percent change where positive is slower, the 95% interval’s upper bound
+   must be at most +3% for noninferiority; a lower bound above +3% establishes
+   inferiority. CPU, system CPU, RSS, faults, context switches, exactness, and policy
+   stability have independent pre-registered gates.
 
 Running these in the other order wastes the measurement.
 A sweep over a trigger constant whose decision window still closes on an
@@ -369,8 +394,25 @@ Determinism establishes that a policy asks a well-posed question; it says nothin
 what the answer is worth, and a candidate that is only order-robust is screening output
 rather than a confirmed winner.
 [The adaptive-worker gap-closure report](../reports/report-2026-08-15-adaptive-worker-gap-closure.md)
-is the worked example of stopping between the two stages, and of why a workstream that
-produced no timing measurement adds no ledger entry.
+is the worked example: repeated and staged controllers corrected the late-window
+sensitivity but regressed wall time by about 59–61%, so no arm survived discovery and
+there was nothing legitimate to confirm.
+
+Policy claims consume `fdu-scan-diagnostics-v1`. The trace is bounded by policy events,
+not entries, and records decision ordinals, service windows, ready and in-flight work,
+worker counts, handoff backlog, and backend usage.
+An outcome difference is recorded as completion-order sensitivity; it is structural harm
+only when the history itself is impossible or violates a pre-registered invariant.
+Missing or truncated fields, an unverified generated phase, stale binary provenance,
+corpus mutation, baseline drift, or fewer than the fixed number of valid pairs makes the
+dependent decision inconclusive.
+
+Release comparisons add two more proofs.
+A claim-grade provenance manifest binds a clean source revision, lockfiles, build argv,
+artifact hashes, host, filesystem, and collectors.
+An installation attestation then proves the native Cargo or wheel-installed command, its
+effective bash/zsh resolution, its native payload, and a real cache-off scan.
+The competitor adapter must establish exact work before any timing is accepted.
 
 ## The record is a soft-schema artifact
 
@@ -521,6 +563,11 @@ uv run --no-project python -m benchmarks.realtree measure \
 
 `make perf-baseline`, `make perf-profile`, and `make perf-compare` wrap these with the
 project’s usual arguments; `PERF_TREE` selects the tree.
+Evidence qualification is explicit: `PERF_STAGE`, `PERF_HOST_REGIME`,
+`PERF_BACKGROUND_LOAD_WORKERS`, `PERF_PROVENANCE`, and `PERF_CORPUS_MANIFEST` map
+directly to the harness contracts.
+The defaults are exploratory and uncontrolled, so an omitted variable cannot
+accidentally create a held-out claim.
 
 Results land under `/tmp/fdu-realtree/results/` by default because the standard measured
 tree contains `benchmarks/results/`; writing evidence into the subject would invalidate
@@ -532,9 +579,11 @@ reasoning.
 
 `make perf-compare-tools` runs each competitor immediately beside an immutable fdu
 anchor, alternates pair order, and reports paired bootstrap intervals.
-The immediate pre/post v2 fingerprints must agree; results and the baseline live outside
-the measured root.
-Each artifact retains binary hashes, versions, command templates, work
+`PERF_TOOL_LABEL` and `PERF_TOOL_CONTRACT` identify that anchor in its provenance
+manifest; held-out installed-command cells also set `PERF_INSTALLATION_ATTESTATION` and,
+for a wheel, pass its native extension through `PERF_TOOL_SUPPORTING_ARGS`. The
+immediate pre/post v2 fingerprints must agree; results and the baseline live outside the
+measured root. Each artifact retains binary hashes, versions, command templates, work
 classes, resource use, and redacted output hashes.
 When fdu summary contracts are measured, the harness hashes the stable report payload
 after removing only generator, absolute root, and timestamps.

@@ -84,6 +84,19 @@ verdict is in
 What it found, first against a roughly 60k-entry checkout and then against a
 720,805-entry cache-pressure subject on a 10-core machine:
 
+- **The adaptive-worker evidence gap is closed without a production controller change.**
+  A bounded policy/backend trace, injected completion-order model, phase-checked
+  topology corpora, fail-closed discovery/confirmation contract, installed-command
+  attestation, and pinned dust adapter now make the decision path auditable.
+  On a 100,001-entry Apple Silicon/APFS mixed-phase corpus, repeated-window and staged
+  controllers regressed wall time 58.49% and 60.73%; fixed 8, 10, and 16 workers also
+  lost to 6. No arm survived discovery.
+  Native and wheel-installed release diagnostics were exact, but the quiet held-out cell
+  crossed the declared host-pressure ceiling and remains inconclusive rather than being
+  replaced by uncontrolled timing.
+  The
+  [gap-closure report](../../reports/report-2026-08-15-adaptive-worker-gap-closure.md)
+  owns the evidence and residual scope.
 - **The original gap to `dust` was parallelism, not efficiency.** At baseline fdu was
   three times slower in wall time while using *half* the total CPU — 541 ms against 1047
   ms. It was doing the same job on one core.
@@ -1276,6 +1289,7 @@ research and plan, assemble this graph, and validate it through CI.
 | `fdu-e4nq` | P1 | Publish the optimization decision ledger and multi-scale validation | `fdu-16py`, `fdu-xnyn` |
 | `fdu-849g` | P1 | Strict claim-grade build and anonymous host provenance manifests | `fdu-oj25` |
 | `fdu-bmhr` | P2 | Opt-in dedicated Linux byte-I/O, syscall, perf-stat, and profile collectors | `fdu-oj25` |
+| `fdu-5rpt` | P1 | Close the adaptive-worker evidence gap on Apple Silicon/APFS; complete with no production controller change | `fdu-849g` foundation |
 | `fdu-k5t5` | P1 | Pinned dut/gdu adapters, parsers, postconditions, and capability matrix | `fdu-rq5m`, `fdu-d8kq`, `fdu-ad45` |
 | `fdu-8z5l` | P2 | Pull-request smoke, stable scheduled baselines, regression triage, artifact retention, and claim governance | `fdu-d8kq`, `fdu-k5t5`, `fdu-zga3`, `fdu-849g`, `fdu-bmhr`, `fdu-6wu0` |
 | `fdu-ywu0` | P1 | Execute the complete Phase 1 matrix and publish the generated evidence report | all implementation/proof beads plus the existing engine blockers |
@@ -1306,7 +1320,8 @@ infrastructure:
   contention proof (`fdu-r27g`), and pinned toolchain (`fdu-zga3`) also block `fdu-ywu0`
   through the Phase 1 graph.
 
-The implementation tasks remain open after this planning record closes.
+The remaining implementation tasks stay open after this planning record; the
+adaptive-worker sub-epic is complete as documented above.
 
 ## References
 

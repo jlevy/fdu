@@ -121,23 +121,26 @@ It is stated here because the constant’s own documentation makes the platform 
 legible, and because a sweep is the cheap way to settle it: `perf_probe --threads N`
 takes the worker count directly.
 
-### The threshold is not the only thing in question; so is when it is asked
+### The one-shot timing is sensitive, but no replacement qualified
 
-A separate defect sits in the decision *procedure* rather than the constant.
-The calibration accumulates until the first 16,384 entries have completed, decides once,
-and is then discarded, so the answer is a function of which chunks finished first rather
-than of the tree. `scan::tests::completion_order` demonstrates this deterministically:
-one tree, two completion orders, opposite decisions, with both walks latency-bound by
-the 30 µs threshold itself.
+The calibration accumulates the first 16,384 entries to complete, decides once, and is
+then discarded. `scan::tests::completion_order` demonstrates the consequence
+deterministically: one tree can produce opposite decisions under different valid
+completion orders.
 
-This matters for tuning because it changes what a threshold sweep can conclude.
-Sweeping the constant while the window still closes after one unrepresentative prefix
-measures the prefix as much as the value, and a heterogeneous tree will not reproduce
-its own result run to run.
-Settle the procedure before reading a sweep as evidence about the number.
+The Apple Silicon/APFS campaign corrected the interpretation of that fact.
+Completion-order sensitivity is not automatically performance harm.
+On a trace-verified fast-then-slow corpus, the shipped controller held at six workers
+while repeated and staged alternatives expanded.
+The alternatives were 58.49% and 60.73% slower; fixed eight, ten, and sixteen workers
+also regressed. The profile showed more kernel work, lock wait, and scheduler pressure
+after expansion, with no macOS bulk fallbacks.
 
-The characterization, the screened alternative, and the reasons no controller was
-selected are in
+No candidate survived discovery, so the one-shot procedure, the 30 µs threshold, and all
+worker caps remain unchanged.
+Future sweeps must still record the bounded policy history: otherwise a threshold result
+describes an unknown mixture of decisions.
+The characterization, experiments, and no-change decision are in
 [the adaptive-worker gap-closure report](../reports/report-2026-08-15-adaptive-worker-gap-closure.md).
 
 ## How a divergence is expressed in code

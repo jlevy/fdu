@@ -152,6 +152,29 @@ Aim at the layers where systems actually spend time, not at whatever is easy to 
   “Allocations per entry” transfers between trees of different sizes; “6.9 million
   allocations” does not.
 
+### Use a bounded event trace when order is the signal
+
+Counters answer how much work happened; they cannot explain a controller whose decision
+depends on *when* work completed.
+For that case, add a versioned event trace with a different cost model:
+
+- Emit only at controller boundaries, not per item.
+- Cap the number of events and record truncation explicitly.
+- Include the entry ordinal, measured signal, decision, active workers, useful ready and
+  in-flight work, and any queue or handoff observation the decision consumes.
+- Record unavailable values as null plus a reason.
+  Never turn “not observed” into zero.
+- Keep outcome, order sensitivity, and structural harm separate.
+  A different valid completion order is not automatically a defect.
+- Cross-check the trace’s totals against the cheaper aggregate counters.
+
+`fdu-scan-diagnostics-v1` is the worked example.
+It caps policy windows at 256 and records worker and macOS bulk/fallback history.
+The probe enables it explicitly; the installed CLI uses `FDU_SCAN_DIAGNOSTICS=1` and a
+tagged stderr record so stable output does not change.
+exp-056 measured the complete enabled path at -0.55% [-1.09%, +0.17%], which accepts the
+instrument while making no claim that its cost is literally zero.
+
 ### A counter that reads zero is worse than no counter
 
 A page of zeroes invites the conclusion that the work did not happen.
