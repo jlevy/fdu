@@ -5,7 +5,7 @@ title: Close the adaptive-worker evidence gap on Apple Silicon/APFS
 kind: epic
 status: open
 priority: 1
-version: 26
+version: 27
 spec_path: docs/project/specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md
 labels:
   - performance
@@ -33,7 +33,7 @@ child_order_hints:
   - is-01m01eg0efe53jc3smgaza7wk7
   - is-01kzy1w2vbam0mr1z5we4y6fy0
 created_at: 2026-08-15T00:49:18.040Z
-updated_at: 2026-08-15T01:18:40.047Z
+updated_at: 2026-08-15T02:18:12.305Z
 ---
 Own the evidence-led response to completion-order-sensitive automatic worker scaling on the measured Apple Silicon and local APFS regime. The epic covers bounded policy/backend telemetry, profiling and falsification, deterministic controller modeling, topology stress corpora, pre-registered statistical gates, signal and controller research, conditional implementation, claim-grade dust and installed-command provenance, release qualification, durable documentation, and a final report. It does not claim Intel Mac or non-APFS coverage without new measurements and does not require a production change when the evidence supports retaining the current policy.
 
@@ -55,3 +55,24 @@ Side qualifications and related ownership:
 - fdu-9pg6 owns this epic’s Apple Silicon cells, reuses fdu-wfvx’s controlled-host contract, and publishes compatible results back without waiting for or cloning that bead’s Linux work.
 
 Decision rules: for paired percent difference Delta, where positive means the candidate is slower, pass a +3% noninferiority/non-regression margin only when the confidence interval upper bound is at most +3%; establish inferiority when the lower bound is above +3%; otherwise report inconclusive. Never select and confirm a winning arm on the same samples. Missing metrics are null plus a reason, never zero. Resource overrides require pre-registered thresholds or a Pareto rule. Claim-grade evidence requires a clean source state; dirty builds remain exploratory.
+
+Session status 2026-08-15 (branch codex/epic-fdu-5rpt-adaptive-workers): the epic is NOT
+complete and no bead was closed. Work ran on virtualized Linux x86_64, 4 vCPU, ext4,
+which cannot produce claim-grade evidence for an Apple Silicon/local-APFS epic. The
+release-blocking chain stalls at fdu-ileg: it profiles the failure on the target regime
+and formally blocks fdu-w3ra, fdu-7y4v, and fdu-8slr, so everything downstream is
+blocked too. GitHub macos-latest runners do not close the gap; they are shared and
+unquiet, and a timing gate there measures the runner.
+
+Advanced but still open: fdu-z17z (aggregate policy counters, no versioned trace) and
+fdu-7y4v (deterministic completion-order model proving the order-sensitivity and the
+never-revisited late slow phase). Both carry detailed gap lists in their own notes.
+
+Delivered without a production behavior change: policy-history counters, the
+fail-closed undecided-policy signal, the completion-order characterization tests, and
+report-2026-08-15-adaptive-worker-gap-closure.md, which states the evidence boundary
+and why this workstream adds no ledger entry. No timing measurement was taken, so no
+ledger entry was fabricated.
+
+Still requires Apple Silicon/APFS hardware: fdu-ileg, fdu-qzfi, fdu-9pg6, the held-out
+half of fdu-9x4o, fdu-j062, fdu-7ur3, and the confirmation fdu-8evu is conditional on.
