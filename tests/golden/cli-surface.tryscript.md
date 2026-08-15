@@ -280,8 +280,10 @@ at query time. Narrowing a selection never costs a rescan.
 
 Cost has three layers.
 A single unfiltered `--view summary PATH` is the one exact composition that retains only
-aggregate tallies and no index, whatever the cache policy: a snapshot cannot save the
-walk that request is already doing, so it neither reads nor writes one.
+aggregate tallies and no index, under every cache policy except `only` and `refresh`,
+whose contracts are about the snapshot itself.
+Under the rest a snapshot cannot save the walk that request is already doing, so it
+neither reads nor writes one.
 Ordinary metadata requests retain the reusable index but never read regular-file
 contents. Any non-`none` `--analyze` profile opts into streaming reads through every
 eligible file and a separate profile-scoped sidecar.
