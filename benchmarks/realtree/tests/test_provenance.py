@@ -53,9 +53,7 @@ class ProvenanceTests(unittest.TestCase):
             mock.patch.object(provenance, "_source_facts", return_value=self.source),
             mock.patch.object(provenance, "_host_facts", return_value=self.host),
             mock.patch.object(provenance, "_filesystem_facts", return_value=self.filesystem),
-            mock.patch.object(
-                provenance, "_collector_facts", return_value=self.collectors
-            ),
+            mock.patch.object(provenance, "_collector_facts", return_value=self.collectors),
         )
 
     def test_capture_is_path_redacted_and_verifies_every_identity(self) -> None:
@@ -100,9 +98,7 @@ class ProvenanceTests(unittest.TestCase):
                 mock.patch.object(provenance, "_source_facts", return_value=dirty),
                 mock.patch.object(provenance, "_host_facts", return_value=self.host),
                 mock.patch.object(provenance, "_filesystem_facts", return_value=self.filesystem),
-                mock.patch.object(
-                    provenance, "_collector_facts", return_value=self.collectors
-                ),
+                mock.patch.object(provenance, "_collector_facts", return_value=self.collectors),
             ):
                 document = provenance.capture(
                     source_root=root, subject_root=root, artifacts=[artifact]
@@ -142,9 +138,7 @@ class ProvenanceTests(unittest.TestCase):
                 mock.patch.object(provenance, "_source_facts", return_value=dirty),
                 mock.patch.object(provenance, "_host_facts", return_value=self.host),
                 mock.patch.object(provenance, "_filesystem_facts", return_value=self.filesystem),
-                mock.patch.object(
-                    provenance, "_collector_facts", return_value=self.collectors
-                ),
+                mock.patch.object(provenance, "_collector_facts", return_value=self.collectors),
             ):
                 document = provenance.capture(
                     source_root=root, subject_root=root, artifacts=[artifact]
@@ -154,9 +148,7 @@ class ProvenanceTests(unittest.TestCase):
                 mock.patch.object(provenance, "_source_facts", return_value=self.source),
                 mock.patch.object(provenance, "_host_facts", return_value=self.host),
                 mock.patch.object(provenance, "_filesystem_facts", return_value=self.filesystem),
-                mock.patch.object(
-                    provenance, "_collector_facts", return_value=self.collectors
-                ),
+                mock.patch.object(provenance, "_collector_facts", return_value=self.collectors),
                 self.assertRaisesRegex(provenance.ProvenanceError, "cleanliness"),
             ):
                 provenance.verify(
@@ -218,6 +210,25 @@ class ProvenanceTests(unittest.TestCase):
 
         self.assertFalse(document["claim_grade"])
         self.assertIn("absolute path", "\n".join(document["invalidation_reasons"]))
+
+    def test_stale_development_binary_is_rejected_from_claim_grade(self) -> None:
+        source = {**self.source, "tags_at_commit": []}
+        artifact = provenance.ArtifactSpec(
+            label="native",
+            kind="native-fdu",
+            executable=Path(sys.executable),
+            build_argv=("cargo", "install", "$SOURCE/crates/fdu"),
+        )
+
+        with mock.patch.object(provenance, "_version", return_value="fdu 0.1.0-dev+gdeadbeef0"):
+            _facts, reasons = provenance._artifact_facts(artifact, Path.cwd(), source)
+
+        self.assertIn("does not identify the current source revision", "\n".join(reasons))
+
+    def test_exact_release_tag_can_identify_a_release_binary(self) -> None:
+        source = {**self.source, "tags_at_commit": ["v0.1.0"]}
+
+        self.assertEqual(provenance._fdu_revision_reasons("fdu 0.1.0", source), [])
 
     def test_remote_normalization_removes_credentials_and_git_suffix(self) -> None:
         self.assertEqual(
