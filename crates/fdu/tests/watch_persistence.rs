@@ -76,17 +76,21 @@ fn a_watch_started_from_a_warm_cache_still_persists_what_it_sees() {
     fs::create_dir(&tree).expect("create tree");
     fs::write(tree.join("first.txt"), b"first").expect("write first file");
 
-    // Two runs: the second must come from the cache, or this is not a warm start.
+    // Prime the cache, then prove the snapshot is usable with a cache-only read.
     //
-    // These use `files` rather than `summary` because an unfiltered metadata summary is
-    // answered by the compact transient tier, which neither reads nor writes a snapshot —
-    // for that request the cache cannot save the walk it is already doing. `files` needs
-    // the reusable index, which is the path a warm start and this test's watch both take.
+    // The priming uses `files` rather than `summary` because an unfiltered metadata
+    // summary is answered by the compact transient tier, which retains nothing and so
+    // writes nothing. The usability proof uses `--cache only` rather than a second
+    // ordinary run, because a one-shot metadata report deliberately does not read the
+    // snapshot — the read cannot save the walk the report is already doing. The watch
+    // below opens through the library path, which does read it: a session amortises the
+    // load across its whole lifetime, and that warm start is what this test pins.
     report(&tree, cache.path(), &["--view", "files", "--format", "json"]);
-    let warm = report(&tree, cache.path(), &["--view", "files", "--format", "json"]);
+    let usable =
+        report(&tree, cache.path(), &["--view", "files", "--format", "json", "--cache", "only"]);
     assert!(
-        warm.contains("warm_revalidate"),
-        "expected the second run to read the cache, got: {warm}",
+        usable.contains("cache_only"),
+        "expected the priming run to leave a usable snapshot, got: {usable}",
     );
 
     let mut child = Command::new(env!("CARGO_BIN_EXE_fdu"))

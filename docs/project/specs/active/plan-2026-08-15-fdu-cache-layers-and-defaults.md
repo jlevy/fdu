@@ -132,7 +132,7 @@ the work done to produce it changes.
 Measured effect: `fdu --view summary PATH` went from 161 ms to 71 ms on the subject
 above, and no longer leaves a snapshot behind.
 
-### Phase 2: Stop persisting where the snapshot will not be read
+### Phase 2: Stop persisting where the snapshot will not be read — closed by measurement
 
 Phase 1 changed which requests retain an index.
 It did not change persistence: every index-retaining cold scan still writes a snapshot,
@@ -142,24 +142,52 @@ The compact tier is the only request that retains nothing, which is what that ti
 means; asking `--cache only` after nothing but compact runs fails with an explicit
 message rather than quietly scanning, and the golden contracts cover both halves.
 
-What remains is an optimisation, not a correctness gap.
-On the measured host the write cost +82 ms on a tree whose whole walk cost 132 ms, and a
-warm round-trip through the snapshot (162 ms) still lost to simply rebuilding the index
-(132 ms). For a small tree the snapshot is written and then never profitably read.
+The Apple Silicon/APFS measurement this phase was waiting on argued **against** the
+threshold rather than supplying one.
+Over 175,128 entries, warm, nine interleaved paired trials, a no-scan `only` read took
+146 ms against 521 ms to scan — a better-than-threefold win where ext4 had an 18% loss —
+because deserialisation costs about the same on both filesystems while an APFS metadata
+walk costs roughly three and a half times as much per entry.
+The write measured ~50–90 ms and is repaid several times over by the first later `only`
+read, at any tree size, so a size gate would give up real value on exactly the trees it
+gated. `SNAPSHOT_MIN_ENTRIES` stays `None` as a measured decision; the mechanism is in
+place should a future regime justify a value, and `fdu-hvs5` and
+[the platform tuning guide](../../guides/platform-tuning.md) carry the evidence.
 
-- [ ] Gate persistence on the cold-scan path so a snapshot is written when it will be
-  read profitably: when analysis was requested, when the policy is `refresh`, or when
-  the index is large enough that a future cold read saves meaningful time.
-  Gate on **entry count**, not wall time — entry count is a deterministic property of
-  the tree, so behaviour stays reproducible and paired benchmarking is not made
-  ambiguous.
-- [ ] Choose the threshold from Apple Silicon/APFS measurement.
-  The only value this review’s data supports is roughly 250,000 entries, a cold walk of
-  about a second on the measured host, and it is Linux/ext4 evidence on a virtualised
-  host.
-- [ ] Revisit the golden cache-lifecycle contracts, which use tiny fixture trees and
-  would stop producing snapshots under any threshold worth setting.
-  They need a way to exercise persistence that does not depend on the tree being large.
+### Phase 3: Stop reading where the snapshot cannot pay (landed)
+
+The same APFS campaign found the read side of the default path violating the cost model
+outright, on the tree class the field report described.
+Over 494,031 entries (macOS/APFS, warm, interleaved paired trials, uncontrolled host):
+
+| Arm | Median |
+| --- | ---: |
+| `fdu .` warm — load, walk, reconcile | 4.8 s |
+| `dust .` | 4.4 s |
+| `fdu .` cold — walk, build, write | 3.6–3.9 s |
+| `--cache off` — walk, build | 3.5 s |
+| `--cache only` — load, query | 0.4 s |
+
+`FDU_COUNTERS` showed the warm run performing filesystem work identical to the cold run
+(127,915 directory opens, 494,032 stats) plus the snapshot load and reconciliation on
+top, to save a write worth ~50 ms that an unchanged run skips anyway.
+The warm default lost to a cold scan of the same view — the design-principles defect
+clause verbatim — and was the one configuration slower than `dust`, which is the field
+report reproduced.
+
+- [x] `plan_report` now derives `read_snapshot` alongside the retained state: a one-shot
+  report loads the snapshot only when the policy is `only` (the snapshot is the
+  contract) or content analysis is enabled (the sidecar avoids re-reading file bodies,
+  measured −49% on ext4 and −3.7x on APFS). Under `auto` and `read-only` a metadata
+  query scans fresh; under `auto` it still persists write-behind, so `--cache only` and
+  later analysis stay served.
+  This extends Phase 1’s precedent — `read-only` already skipped the read for the
+  compact summary — to every one-shot metadata view.
+- [x] Library sessions are exempt by construction: [`crate::open`] amortises the load
+  across the caller’s whole session, keeps the warm path, and the watch tests pin it.
+- [x] Golden lifecycle contracts updated deliberately: a second one-shot run reports
+  `cold_scan`, and a new block pins that the rewrite keeps the snapshot current for
+  `--cache only`.
 
 ## Testing Strategy
 
@@ -188,12 +216,15 @@ Phase 2 is an independent optimisation and does not gate it.
 
 ## Open Questions
 
-- What entry-count threshold does Apple Silicon/APFS support, and does the mechanism —
-  revalidation walking the tree regardless — hold there as it does on ext4?
-- Should `--cache auto` read an existing fresh snapshot for a metadata summary once
+- ~~What entry-count threshold does Apple Silicon/APFS support, and does the mechanism —
+  revalidation walking the tree regardless — hold there as it does on ext4?~~ Answered:
+  the mechanism holds (one stat per entry, counter-verified), and the measurement argues
+  for no threshold at all; see Phase 2.
+- Should `--cache auto` read an existing fresh snapshot for a metadata query once
   FSEvents can narrow revalidation to changed subtrees?
-  Today a full revalidating walk makes that worthless; scoped revalidation may invert
-  it.
+  Today a full revalidating walk makes that worthless — Phase 3 stops paying for it —
+  but scoped revalidation may invert the economics, and the `read_snapshot` plan field
+  is where that inversion would land.
 - Does the progressive UI want a tier that prefers the snapshot and degrades to a scan,
   rather than the strict `only` that errors when none exists?
   Tracked as `fdu-wu6w`.
