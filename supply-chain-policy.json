@@ -80,8 +80,8 @@
       },
       {
         "repository": "astral-sh/uv",
-        "tag": "0.11.28",
-        "version": "0.11.28",
+        "tag": "0.12.1",
+        "version": "0.12.1",
         "requireAssetDigestsInFiles": false,
         "files": [
           ".github/workflows/ci.yml",
@@ -89,7 +89,7 @@
           "Makefile"
         ],
         "assets": {
-          "uv-x86_64-unknown-linux-gnu.tar.gz": "sha256:e490a6464492183c5d4534a5527fb4440f7f2bb2f228162ad7e4afe076dc0224"
+          "uv-x86_64-unknown-linux-gnu.tar.gz": "sha256:90b2f223fb69d19db49e117da601f64978593417988530aa733d456141b4bcbb"
         }
       }
     ],

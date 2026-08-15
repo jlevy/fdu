@@ -67,7 +67,7 @@ Three tools have to be there before the gate runs, each failing in a different t
 so install them up front rather than discovering them one by one:
 
 ```shell
-curl -LsSf https://astral.sh/uv/0.11.28/install.sh | sh       # match UV_MIN_VERSION
+curl -LsSf https://astral.sh/uv/0.12.1/install.sh | sh       # match UV_MIN_VERSION
 cargo install cargo-deny --locked --version 0.20.2            # make audit
 rustup toolchain install 1.85.0 --profile minimal             # match MSRV
 rustup target add x86_64-apple-darwin x86_64-pc-windows-msvc  # make cross-lint

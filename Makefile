@@ -83,7 +83,7 @@ check: uv-version supply-chain rust-module-names fmt-check clippy test docs docs
 #
 # CI installs uv through astral-sh/setup-uv in .github/workflows/ci.yml. The
 # supply-chain policy verifies that this floor and both CI pins remain identical.
-UV_MIN_VERSION := 0.11.28
+UV_MIN_VERSION := 0.12.1
 
 uv-version:
 	@command -v "$(UV)" >/dev/null 2>&1 || { \

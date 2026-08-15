@@ -7,7 +7,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
-const MINIMUM = "0.11.28";
+const MINIMUM = "0.12.1";
 
 function shellQuote(value) {
   return `'${value.replaceAll("'", `'"'"'`)}'`;
@@ -58,7 +58,7 @@ test("uv guard accepts only successful stable versions at or above the reviewed 
     assert.match(result.stdout, new RegExp(`uv self update ${MINIMUM}`));
   }
 
-  for (const output of ["uv 0.11.28rc1", "uv 0.11.28.dev1", "uv malformed", "not-uv 1.0.0"]) {
+  for (const output of ["uv 0.12.1rc1", "uv 0.12.1.dev1", "uv malformed", "not-uv 1.0.0"]) {
     const result = runGuard(output);
     assert.notEqual(result.status, 0, output);
     assert.match(result.stdout, /could not determine a stable uv version/);
