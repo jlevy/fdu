@@ -419,8 +419,9 @@ properties:
     title: Date
     type: string
   hypotheses:
-    description: Hypothesis ids from the performance-loop guide, e.g. H1.
+    description: Hypothesis ids from the performance-loop guide, e.g. H1 or S1.
     items:
+      pattern: ^[A-Z]\d+$
       type: string
     title: Hypotheses
     type: array
@@ -460,4 +461,4 @@ title: Experiment
 type: object
 x-softschema:
   contract: fdu.performance:Experiment/v1
-  schema_sha256: 23c34d961850049f4a52121fc91e7806526b176c983dd93ae105948f683af5fa
+  schema_sha256: 62153867fc919f1b295c1012a5181c4ac5e061cc168e82f881343ea6a719300e

@@ -49,6 +49,8 @@ try {
     "json",
     "--size",
     "apparent",
+    "--limit",
+    "all",
     tree,
   ]);
   const report = JSON.parse(output);

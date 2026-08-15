@@ -10,7 +10,7 @@ experiment:
   title: "What the breadth-first default costs, on the shipped scheduler"
   date: "2026-08-11"
   hypotheses:
-    - "H50: exp-012 measured a scheduler that no longer exists and exp-013 compared two breadth-first schedulers, so what the shipped default costs against depth-first is unmeasured"
+    - H50
   subject:
     tree_label: metabrowser
     tree_root_id: dbd79ed9c898f7a2f66530cd95bb61cab88e798375134b86c77ece761de580a9
@@ -376,3 +376,7 @@ and the warm cost is 2.7% of one job against an orientation property the interac
 case needs.
 The warm-path asymmetry is recorded rather than smoothed over, and is tracked
 as its own work item.
+
+<!-- This document follows common-doc-guidelines.md.
+See github.com/jlevy/practical-prose and review guidelines before editing.
+-->

@@ -15,6 +15,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from pydantic import ValidationError
+
 from benchmarks.realtree.summary import _validator
 from benchmarks.realtree import experiment as experiment_model
 from benchmarks.realtree import record, summary
@@ -166,6 +168,14 @@ class FromRunTests(unittest.TestCase):
         payload = self._payload()
         self.assertEqual(payload["reference_tools"][0]["name"], "dust")
         self.assertEqual(payload["reference_tools"][0]["wall_ns_median"], 900.0)
+
+    def test_hypotheses_are_compact_registry_ids(self) -> None:
+        experiment_model.Experiment.model_validate(self._payload(hypotheses=["H49", "S1"]))
+
+        with self.assertRaises(ValidationError):
+            experiment_model.Experiment.model_validate(
+                self._payload(hypotheses=["H49: explanatory prose belongs in the body"])
+            )
 
     def test_no_filesystem_path_from_the_tree_is_recorded(self) -> None:
         payload = self._payload()

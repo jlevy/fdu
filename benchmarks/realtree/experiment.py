@@ -23,7 +23,7 @@ The model here is the source of truth for the contract. Compile it with:
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Literal, Mapping, Optional, Sequence
+from typing import Annotated, Any, Dict, List, Literal, Mapping, Optional, Sequence
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -35,6 +35,11 @@ CONTRACT = "fdu.performance:Experiment/v1"
 Decision = Literal[
     "accepted", "rejected", "superseded", "blocked", "in-progress", "baseline"
 ]
+
+# Hypotheses are registry references. Their explanations belong in the experiment
+# body, where they can be read as prose without turning a compact table cell into a
+# paragraph-sized tag.
+HypothesisId = Annotated[str, Field(pattern=r"^[A-Z]\d+$")]
 
 
 class Strict(BaseModel):
@@ -236,9 +241,9 @@ class Experiment(Strict):
     id: str = Field(pattern=r"^exp-\d{3}$", description="Stable identifier, e.g. exp-002.")
     title: str
     date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
-    hypotheses: List[str] = Field(
+    hypotheses: List[HypothesisId] = Field(
         default_factory=list,
-        description="Hypothesis ids from the performance-loop guide, e.g. H1.",
+        description="Hypothesis ids from the performance-loop guide, e.g. H1 or S1.",
     )
     subject: Subject
     method: Method

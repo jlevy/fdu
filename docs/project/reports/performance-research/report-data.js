@@ -5421,7 +5421,7 @@ window.FDU_PERFORMANCE_RESEARCH = {
       "date": "2026-08-11",
       "effect": "improved",
       "hypotheses": [
-        "H49: exp-012's RSS cost and its missing ordering benefit both came from the global FIFO, not from preferring shallow work; per-region buckets with round-robin hand-off recover memory while making the shallow preference survive parallelism"
+        "H49"
       ],
       "id": "exp-013",
       "jobs": [
@@ -5706,7 +5706,7 @@ window.FDU_PERFORMANCE_RESEARCH = {
       "date": "2026-08-11",
       "effect": "improved",
       "hypotheses": [
-        "H50: exp-012 measured a scheduler that no longer exists and exp-013 compared two breadth-first schedulers, so what the shipped default costs against depth-first is unmeasured"
+        "H50"
       ],
       "id": "exp-014",
       "jobs": [
@@ -17676,7 +17676,7 @@ window.FDU_PERFORMANCE_RESEARCH = {
         "type": "string"
       },
       {
-        "description": "Hypothesis ids from the performance-loop guide, e.g. H1.",
+        "description": "Hypothesis ids from the performance-loop guide, e.g. H1 or S1.",
         "display": "tags",
         "label": "Hypotheses",
         "path": "hypotheses",
@@ -21941,7 +21941,7 @@ window.FDU_PERFORMANCE_RESEARCH = {
           },
           "date": "2026-08-11",
           "hypotheses": [
-            "H49: exp-012's RSS cost and its missing ordering benefit both came from the global FIFO, not from preferring shallow work; per-region buckets with round-robin hand-off recover memory while making the shallow preference survive parallelism"
+            "H49"
           ],
           "id": "exp-013",
           "method": {
@@ -22188,7 +22188,7 @@ window.FDU_PERFORMANCE_RESEARCH = {
           "complexity.lines_changed": 80,
           "date": "2026-08-11",
           "hypotheses": [
-            "H49: exp-012's RSS cost and its missing ordering benefit both came from the global FIFO, not from preferring shallow work; per-region buckets with round-robin hand-off recover memory while making the shallow preference survive parallelism"
+            "H49"
           ],
           "id": "exp-013",
           "method.trials": 12,
@@ -22214,7 +22214,7 @@ window.FDU_PERFORMANCE_RESEARCH = {
           },
           "date": "2026-08-11",
           "hypotheses": [
-            "H50: exp-012 measured a scheduler that no longer exists and exp-013 compared two breadth-first schedulers, so what the shipped default costs against depth-first is unmeasured"
+            "H50"
           ],
           "id": "exp-014",
           "method": {
@@ -22534,7 +22534,7 @@ window.FDU_PERFORMANCE_RESEARCH = {
           "complexity.lines_changed": 0,
           "date": "2026-08-11",
           "hypotheses": [
-            "H50: exp-012 measured a scheduler that no longer exists and exp-013 compared two breadth-first schedulers, so what the shipped default costs against depth-first is unmeasured"
+            "H50"
           ],
           "id": "exp-014",
           "method.trials": 20,
