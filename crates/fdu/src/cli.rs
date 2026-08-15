@@ -17,7 +17,7 @@ use clap::builder::styling::{AnsiColor, Style as AnsiStyle, Styles};
 use clap::{ArgAction, ColorChoice, CommandFactory, FromArgMatches, Parser, ValueEnum};
 
 use crate::content::{AnalysisProfile, AnalysisRequest};
-use crate::execution::{PerformanceSummary, prepare_report};
+use crate::execution::{PerformanceSummary, prepare_report, prepare_report_with_scan_diagnostics};
 use crate::query::{
     Bound, Pattern, Provenance, Query, ReportSource, Selection, SizeMetric, SortKey, ViewSpec,
     parse_size, parse_when, system_time_to_nanos,
@@ -28,6 +28,13 @@ use crate::{
 };
 
 const SKILL_TEMPLATE: &str = include_str!("skills/SKILL.md");
+
+/// Repository-measurement switch for the compact installed-command path.
+///
+/// This is intentionally not a user-facing CLI option. The performance harness owns
+/// both ends of the versioned contract and requires the exact value `1`.
+const SCAN_DIAGNOSTICS_ENV: &str = "FDU_SCAN_DIAGNOSTICS";
+const SCAN_DIAGNOSTICS_PREFIX: &str = "__FDU_SCAN_DIAGNOSTICS__=";
 
 const STYLE_HEADING: AnsiStyle = AnsiColor::Cyan.on_default().bold();
 const STYLE_WARNING: AnsiStyle = AnsiColor::Yellow.on_default().bold();
@@ -453,7 +460,17 @@ impl Cli {
         }
 
         let report_started = Instant::now();
-        let (report, pending_save, performance) = prepare_report(path, &config, &query)?;
+        let collect_scan_diagnostics =
+            std::env::var_os(SCAN_DIAGNOSTICS_ENV).is_some_and(|value| value == OsStr::new("1"));
+        let (report, pending_save, performance, scan_diagnostics) = if collect_scan_diagnostics {
+            prepare_report_with_scan_diagnostics(path, &config, &query)?
+        } else {
+            let (report, pending_save, performance) = prepare_report(path, &config, &query)?;
+            (report, pending_save, performance, None)
+        };
+        if let Some(scan_diagnostics) = scan_diagnostics {
+            writeln!(diagnostic, "{SCAN_DIAGNOSTICS_PREFIX}{}", scan_diagnostics.to_json())?;
+        }
 
         let color = ColorContext::from_environment(
             self.color,

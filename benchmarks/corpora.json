@@ -79,6 +79,85 @@
       "topology": "balanced",
       "transitions": []
     },
+    "few-wide-directories": {
+      "default_target_entries": 100000,
+      "fanout": 16,
+      "max_depth": 2,
+      "metadata_profile": "standard",
+      "optional_links": [],
+      "scale_points": [
+        16000,
+        32000,
+        100000,
+        400000
+      ],
+      "seed": "fdu-few-wide-directories-v1",
+      "topology": "few-wide-directories",
+      "transitions": []
+    },
+    "many-small-directories": {
+      "default_target_entries": 100000,
+      "fanout": 8,
+      "max_depth": 8,
+      "metadata_profile": "standard",
+      "optional_links": [],
+      "scale_points": [
+        16000,
+        32000,
+        100000,
+        400000
+      ],
+      "seed": "fdu-many-small-directories-v1",
+      "topology": "many-small-directories",
+      "transitions": []
+    },
+    "phased-alternating": {
+      "default_target_entries": 100000,
+      "fanout": 64,
+      "max_depth": 48,
+      "metadata_profile": "standard",
+      "optional_links": [],
+      "phase_profile": "alternating-regions",
+      "scale_points": [
+        16000,
+        32000,
+        100000,
+        400000
+      ],
+      "seed": "fdu-phased-alternating-v1",
+      "topology": "phased",
+      "transitions": []
+    },
+    "phased-fast-slow": {
+      "default_target_entries": 100000,
+      "fanout": 64,
+      "max_depth": 48,
+      "metadata_profile": "standard",
+      "optional_links": [],
+      "phase_profile": "fast-prefix-slow-suffix",
+      "scale_points": [
+        100000,
+        400000
+      ],
+      "seed": "fdu-phased-fast-slow-v1",
+      "topology": "phased",
+      "transitions": []
+    },
+    "phased-slow-fast": {
+      "default_target_entries": 100000,
+      "fanout": 64,
+      "max_depth": 48,
+      "metadata_profile": "standard",
+      "optional_links": [],
+      "phase_profile": "slow-prefix-fast-suffix",
+      "scale_points": [
+        100000,
+        400000
+      ],
+      "seed": "fdu-phased-slow-fast-v1",
+      "topology": "phased",
+      "transitions": []
+    },
     "wide": {
       "default_target_entries": 10000,
       "fanout": 2048,

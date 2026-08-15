@@ -32,9 +32,7 @@ CONTRACT = "fdu.performance:Experiment/v1"
 #: ``baseline`` is a ledger entry with no candidate: it establishes the numbers later
 #: experiments are measured against. ``blocked`` is a hypothesis we cannot test yet and
 #: the reason why, which is worth recording so nobody re-derives the obstacle.
-Decision = Literal[
-    "accepted", "rejected", "superseded", "blocked", "in-progress", "baseline"
-]
+Decision = Literal["accepted", "rejected", "superseded", "blocked", "in-progress", "baseline"]
 
 
 class Strict(BaseModel):
@@ -80,7 +78,30 @@ class MetricChange(Strict):
         default="unknown",
         description="Which way the evidence points, separate from whether we accept it.",
     )
+    noninferiority: Literal["superior", "noninferior", "inferior", "inconclusive", "unknown"] = (
+        Field(
+            default="unknown",
+            description="Separate +3% noninferiority classification; never an alias of superiority.",
+        )
+    )
     pairs: int = Field(default=0, ge=0, description="Trial pairs behind the comparison.")
+
+
+class Qualification(Strict):
+    """Fail-closed adaptive qualification derived from paired raw samples."""
+
+    classification: Literal["superior", "noninferior", "inferior", "inconclusive"]
+    campaign_stage: Literal["exploratory", "discovery", "held-out"]
+    confirmable: bool
+    noninferiority_margin_pct: float = 3.0
+    resource_limits_pct: Dict[str, float] = Field(default_factory=dict)
+    major_fault_delta_limit: float = 0.0
+    resources: Dict[str, Literal["within-limit", "rejected", "inconclusive"]] = Field(
+        default_factory=dict
+    )
+    reasons: List[str] = Field(default_factory=list)
+    policy_stable: Optional[bool] = None
+    policy_rule: Optional[str] = None
 
 
 class JobResult(Strict):
@@ -98,6 +119,7 @@ class JobResult(Strict):
     metrics: Dict[str, MetricChange] = Field(
         default_factory=dict, description="Keyed by metric name, e.g. wall_ns."
     )
+    qualification: Optional[Qualification] = None
 
 
 class Complexity(Strict):
@@ -210,13 +232,14 @@ class Method(Strict):
     candidate: str = Field(description="What changed.")
     control_binary: Optional[Binary] = Field(default=None)
     candidate_binary: Optional[Binary] = Field(default=None)
-    toolchain: str = Field(
-        default="", description="Compiler version the binaries were built with."
-    )
+    toolchain: str = Field(default="", description="Compiler version the binaries were built with.")
     build_profile: str = Field(
         default="release",
         description="Cargo profile. Timing evidence only ever comes from release.",
     )
+    campaign_stage: Literal["exploratory", "discovery", "held-out"] = "exploratory"
+    confidence_interval: str = ""
+    stopping_rule: str = ""
     run_artifact: Optional[str] = Field(
         default=None, description="Path to the raw run JSON this was derived from."
     )
@@ -352,8 +375,20 @@ def from_run(
                 # — an artifact that validates while its own flags disagree with its own
                 # interval is worse than one that lacks the fields.
                 **_flags_from_interval(interval[0], interval[1]),
+                "noninferiority": entry.get("noninferiority", "unknown"),
                 "pairs": int(entry.get("pairs", 0)),
             }
+        raw_qualification = (comparison or {}).get("qualification")
+        policy_stability = (comparison or {}).get("policy_stability")
+        qualification = None
+        if isinstance(raw_qualification, Mapping):
+            qualification = dict(raw_qualification)
+            qualification["policy_stable"] = (
+                policy_stability.get("stable") if isinstance(policy_stability, Mapping) else None
+            )
+            qualification["policy_rule"] = (
+                policy_stability.get("rule") if isinstance(policy_stability, Mapping) else None
+            )
         results.append(
             {
                 "job": job_id,
@@ -363,6 +398,7 @@ def from_run(
                     + statistics["variants"][candidate_name]["invalid"]
                 ),
                 "metrics": metrics,
+                "qualification": qualification,
             }
         )
 
@@ -413,6 +449,9 @@ def from_run(
             "candidate_binary": _binary(run, candidate_name),
             "toolchain": host.get("toolchain", ""),
             "build_profile": "release",
+            "campaign_stage": conditions.get("campaign_stage", "exploratory"),
+            "confidence_interval": conditions.get("confidence_interval", ""),
+            "stopping_rule": conditions.get("stopping_rule", ""),
             "run_artifact": run_artifact,
         },
         "results": results,

@@ -131,12 +131,35 @@ pub(crate) fn prepare_report(
     config: &OpenConfig,
     query: &Query,
 ) -> Result<(Report, PendingSave, PerformanceSummary)> {
+    prepare_report_internal(root, config, query, false)
+        .map(|(report, pending, performance, _diagnostics)| (report, pending, performance))
+}
+
+/// Execute a one-shot report and retain scan diagnostics when the compact plan permits it.
+///
+/// This path exists for repository-controlled installed-command measurements. It is
+/// deliberately separate from [`prepare_report`] so ordinary CLI and library callers
+/// incur neither trace collection nor serialization work.
+pub(crate) fn prepare_report_with_scan_diagnostics(
+    root: &Path,
+    config: &OpenConfig,
+    query: &Query,
+) -> Result<(Report, PendingSave, PerformanceSummary, Option<crate::scan::ScanDiagnostics>)> {
+    prepare_report_internal(root, config, query, true)
+}
+
+fn prepare_report_internal(
+    root: &Path,
+    config: &OpenConfig,
+    query: &Query,
+    collect_scan_diagnostics: bool,
+) -> Result<(Report, PendingSave, PerformanceSummary, Option<crate::scan::ScanDiagnostics>)> {
     let scan_started_at = SystemTime::now();
     match plan_report(config, query).retained_state {
         RetainedState::Summary => {
             let root = root.canonicalize().map_err(|error| Error::io(root, error))?;
             let mut summary = SummaryRow::default();
-            let scan = crate::scan::scan(&root, &config.scan, &mut |observation| {
+            let mut reduce = |observation: crate::Observation| {
                 for observed in observation.ops {
                     let crate::Op::Upsert { kind, attrs, .. } = observed.op else {
                         continue;
@@ -156,7 +179,14 @@ pub(crate) fn prepare_report(
                         EntryKind::Symlink | EntryKind::Other => {}
                     }
                 }
-            })?;
+            };
+            let (scan, scan_diagnostics) = if collect_scan_diagnostics {
+                let (scan, diagnostics) =
+                    crate::scan::scan_with_diagnostics(&root, &config.scan, &mut reduce)?;
+                (scan, Some(diagnostics))
+            } else {
+                (crate::scan::scan(&root, &config.scan, &mut reduce)?, None)
+            };
             let complete = scan.is_complete();
             let provenance = Provenance {
                 scan_started_at: Some(scan_started_at),
@@ -179,7 +209,7 @@ pub(crate) fn prepare_report(
                 source: ReportSource::ColdScan,
                 ..PerformanceSummary::default()
             };
-            Ok((report, PendingSave::none(), performance))
+            Ok((report, PendingSave::none(), performance, scan_diagnostics))
         }
         RetainedState::FullIndex => {
             let (index, open_report, pending_save) = open_with_pending_save(root, config)?;
@@ -197,7 +227,7 @@ pub(crate) fn prepare_report(
                 errors: open_report.error_messages(),
             };
             let performance = PerformanceSummary::from_open_report(&open_report);
-            Ok((report(&index, query, &provenance), pending_save, performance))
+            Ok((report(&index, query, &provenance), pending_save, performance, None))
         }
     }
 }

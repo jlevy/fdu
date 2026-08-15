@@ -37,11 +37,16 @@ static ALLOCATOR: fdu::counters::alloc::CountingAlloc<std::alloc::System> =
     fdu::counters::system_allocator();
 
 fn main() -> ExitCode {
+    let arguments: Vec<_> = env::args_os().skip(1).collect();
+    if arguments.len() == 1 && arguments[0] == "--version" {
+        println!("fdu-perf-probe {}", env!("FDU_BUILD_VERSION"));
+        return ExitCode::SUCCESS;
+    }
     // `FDU_COUNTERS=1` turns recording on. Off by default so a probe run measured
     // against a control is not measuring the instrument, and on by one environment
     // variable when a run is meant to explain itself.
     let measurement = fdu::counters::Measurement::from_env();
-    let exit = match Arguments::parse(env::args_os().skip(1))
+    let exit = match Arguments::parse(arguments.into_iter())
         .and_then(|arguments| execute_repeated(&arguments))
     {
         Ok(output) => {
@@ -160,6 +165,8 @@ struct Arguments {
     operations: usize,
     queries: usize,
     repeat: usize,
+    diagnostics: bool,
+    worker_policy: fdu::scan::WorkerPolicyExperiment,
     scan: ScanConfig,
 }
 
@@ -176,6 +183,8 @@ impl Arguments {
         let mut operations = 1_000_usize;
         let mut queries = 1_000_usize;
         let mut repeat = 1_usize;
+        let mut diagnostics = false;
+        let mut worker_policy = fdu::scan::WorkerPolicyExperiment::ShippedOneShot;
         let mut scan = ScanConfig::default();
         while let Some(flag) = arguments.next() {
             match flag.to_str() {
@@ -191,6 +200,21 @@ impl Arguments {
                 }
                 Some("--repeat") => {
                     repeat = next_usize(&mut arguments, "--repeat")?;
+                }
+                Some("--diagnostics") => diagnostics = true,
+                Some("--worker-policy") => {
+                    let value = arguments
+                        .next()
+                        .ok_or_else(|| ProbeError("--worker-policy requires a value".into()))?;
+                    worker_policy = match value.to_str() {
+                        Some("shipped") => fdu::scan::WorkerPolicyExperiment::ShippedOneShot,
+                        Some("repeated") => fdu::scan::WorkerPolicyExperiment::RepeatedWindows,
+                        Some("staged-gated") => {
+                            fdu::scan::WorkerPolicyExperiment::StagedGatedWindows
+                        }
+                        _ => return Err(ProbeError(format!("unknown worker policy {value:?}"))),
+                    };
+                    diagnostics = true;
                 }
                 Some("--batch-size") => {
                     scan.batch_size = next_usize(&mut arguments, "--batch-size")?;
@@ -221,7 +245,17 @@ impl Arguments {
         if repeat == 0 {
             return Err(ProbeError("--repeat must be nonzero".into()));
         }
-        Ok(Self { mode: Mode::parse(&mode)?, root, snapshot, operations, queries, repeat, scan })
+        Ok(Self {
+            mode: Mode::parse(&mode)?,
+            root,
+            snapshot,
+            operations,
+            queries,
+            repeat,
+            diagnostics,
+            worker_policy,
+            scan,
+        })
     }
 
     fn snapshot(&self) -> ProbeResult<&Path> {
@@ -443,9 +477,20 @@ fn content_query(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
 fn scan_producer(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     let mut summary = Summary::default();
     let started = Instant::now();
-    let report = fdu::scan::scan(&arguments.root, &arguments.scan, &mut |observation| {
-        summary.observe(&observation);
-    })?;
+    let report = if arguments.diagnostics {
+        let (report, diagnostics) = fdu::scan::scan_with_policy_diagnostics(
+            &arguments.root,
+            &arguments.scan,
+            &mut |observation| summary.observe(&observation),
+            arguments.worker_policy,
+        )?;
+        summary.scan_diagnostics = Some(diagnostics);
+        report
+    } else {
+        fdu::scan::scan(&arguments.root, &arguments.scan, &mut |observation| {
+            summary.observe(&observation);
+        })?
+    };
     let component = started.elapsed();
     summary.entries = summary.entries.saturating_add(1);
     summary.dirs = summary.dirs.saturating_add(1);
@@ -489,9 +534,20 @@ fn validate_producer_summary(producer: &Summary, validation: &Summary) -> ProbeR
 
 fn scan_index(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     let started = Instant::now();
-    let (index, report) = fdu::scan::scan_into_index(&arguments.root, &arguments.scan)?;
+    let (index, report, diagnostics) = if arguments.diagnostics {
+        let (index, report, diagnostics) = fdu::scan::scan_into_index_with_policy_diagnostics(
+            &arguments.root,
+            &arguments.scan,
+            arguments.worker_policy,
+        )?;
+        (index, report, Some(diagnostics))
+    } else {
+        let (index, report) = fdu::scan::scan_into_index(&arguments.root, &arguments.scan)?;
+        (index, report, None)
+    };
     let component = started.elapsed();
     let mut summary = summarize_index(&index)?;
+    summary.scan_diagnostics = diagnostics;
     summary.dirs_read = report.dirs_read;
     summary.attribution = Some(report.attribution);
     summary.errors = u64::try_from(report.errors.len()).unwrap_or(u64::MAX);
@@ -649,6 +705,7 @@ struct Summary {
     other: u64,
     query_iterations: u64,
     query_observations: u64,
+    scan_diagnostics: Option<fdu::scan::ScanDiagnostics>,
     snapshot_bytes: Option<u64>,
     symlinks: u64,
 }
@@ -680,6 +737,7 @@ impl Default for Summary {
             other: 0,
             query_iterations: 0,
             query_observations: 0,
+            scan_diagnostics: None,
             snapshot_bytes: None,
             symlinks: 0,
         }
@@ -848,7 +906,7 @@ impl ProbeOutput {
         format!(
             concat!(
                 "{{\"component_ns\":{},\"attribution\":{},\"mode\":\"{}\",\"schema\":\"{}\",",
-                "\"source\":\"{}\",\"summary\":{{",
+                "\"scan_diagnostics\":{},\"source\":\"{}\",\"summary\":{{",
                 "\"allocated_bytes\":{},\"apparent_bytes\":{},",
                 "\"apply\":{{\"inserted\":{},\"invalidated\":{},",
                 "\"removed\":{},\"stale\":{},\"unchanged\":{},\"updated\":{}}},",
@@ -866,6 +924,7 @@ impl ProbeOutput {
             json_attribution(self.summary.attribution.as_ref()),
             self.mode.name(),
             PROBE_SCHEMA,
+            json_scan_diagnostics(self.summary.scan_diagnostics.as_ref()),
             self.source,
             summary.allocated_bytes,
             summary.apparent_bytes,
@@ -899,6 +958,10 @@ impl ProbeOutput {
             summary.symlinks,
         )
     }
+}
+
+fn json_scan_diagnostics(value: Option<&fdu::scan::ScanDiagnostics>) -> String {
+    value.map_or_else(|| "null".into(), fdu::scan::ScanDiagnostics::to_json)
 }
 
 fn json_attribution(value: Option<&fdu::scan::WalkAttribution>) -> String {
