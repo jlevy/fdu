@@ -61,8 +61,30 @@ anywhere.
 
 ### Toolchain Versions
 
-`make check` needs `uv` at or above the version CI pins through `astral-sh/setup-uv` in
-[the workflow](.github/workflows/ci.yml), and `cargo-deny` on the path for `make audit`.
+A fresh clone does not have everything `make check` needs, and a container image that
+looks provisioned usually is not.
+Three tools have to be there before the gate runs, each failing in a different target,
+so install them up front rather than discovering them one by one:
+
+```shell
+curl -LsSf https://astral.sh/uv/0.11.28/install.sh | sh       # match UV_MIN_VERSION
+cargo install cargo-deny --locked --version 0.20.2            # make audit
+rustup toolchain install 1.85.0 --profile minimal             # match MSRV
+rustup target add x86_64-apple-darwin x86_64-pc-windows-msvc  # make cross-lint
+```
+
+The uv and Rust versions must match `UV_MIN_VERSION` and `MSRV` in the Makefile, which
+are what CI pins; the commands above spell them out for copy-paste, so re-read the
+Makefile rather than trusting these literals if the gate disagrees.
+`node_modules` needs no step: `$(NODE_INSTALL_STAMP)` runs `npm ci` on demand, and the
+supply-chain and module-name checks use only Node built-ins, so they pass on a clone
+that has never run npm.
+
+Pin what you install here as deliberately as any dependency.
+cargo-deny is the one tool with no pin in the repository — CI gets it from a SHA-pinned
+action, so a local install is the only version a reviewer never sees.
+Choose a release that clears the 14-day cool-off, the same rule
+[SUPPLY-CHAIN-SECURITY.md](SUPPLY-CHAIN-SECURITY.md) applies to dependencies.
 
 The uv floor is not cosmetic.
 The uv.toml files express the supply-chain cool-off as a relative `exclude-newer`
@@ -73,9 +95,16 @@ Python jobs at once, so an old uv looks like several unrelated repository failur
 The `uv-version` preflight now fails fast with a version message instead, and every
 directly uv-backed Make target depends on it, including the check, documentation,
 Python, and performance entry points.
-If you hit it on a pre-provisioned image, follow the supply-chain policy and use the
-exact `uv self update <version>` command printed by the preflight rather than installing
-an unreviewed latest release or working around the config.
+If you hit it on a pre-provisioned image, install the exact reviewed version the
+preflight names rather than an unreviewed latest release, and never work around the
+config. Prefer the version-pinned installer the preflight prints.
+`uv self update <version>` is the more obvious command and is worth trying, but it only
+works when uv owns its own install: where an external manager put the binary there it
+fails with `The version <x> was not found for the app uv in workspace uv`, which reads
+like the release does not exist rather than like the wrong updater.
+The installer is unambiguous, so reach for it first and keep the pinned version either
+way.
+
 The bootstrap policy enforces one reviewed version across `UV_MIN_VERSION` and both CI
 pins.
 

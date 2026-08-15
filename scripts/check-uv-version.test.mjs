@@ -51,6 +51,10 @@ test("uv guard accepts only successful stable versions at or above the reviewed 
     const result = runGuard(`uv ${version}`);
     assert.notEqual(result.status, 0, version);
     assert.match(result.stdout, new RegExp(`needs uv >= ${MINIMUM}`));
+    // The pinned installer is the remedy that works regardless of how uv was
+    // installed; `uv self update` is offered second because it fails outright when
+    // an external manager owns the binary.
+    assert.match(result.stdout, new RegExp(`astral\\.sh/uv/${MINIMUM}/install\\.sh`));
     assert.match(result.stdout, new RegExp(`uv self update ${MINIMUM}`));
   }
 
