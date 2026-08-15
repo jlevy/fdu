@@ -36,8 +36,11 @@ No cached snapshots.
 ## A Report Leaves a Snapshot Behind
 
 ```console
-$ fdu --view summary --size apparent project
-     263 B  6 files, 3 directories
+$ fdu --size apparent project
+     263 B  ██████████   100%  . (6 files)
+     128 B  █████░░░░░    49%    dist (1 file)
+      36 B  █░░░░░░░░░    14%    src (2 files)
+      23 B  █░░░░░░░░░     9%    docs (1 file)
 Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
@@ -89,8 +92,11 @@ Cache already empty.
 ## Clear and Status Compose, With Clear First
 
 ```console
-$ fdu --view summary --size apparent project
-     263 B  6 files, 3 directories
+$ fdu --size apparent project
+     263 B  ██████████   100%  . (6 files)
+     128 B  █████░░░░░    49%    dist (1 file)
+      36 B  █░░░░░░░░░    14%    src (2 files)
+      23 B  █░░░░░░░░░     9%    docs (1 file)
 Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
