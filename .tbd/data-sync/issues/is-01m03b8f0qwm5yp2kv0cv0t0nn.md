@@ -1,11 +1,11 @@
 ---
 type: is
 id: is-01m03b8f0qwm5yp2kv0cv0t0nn
-title: Gate snapshot persistence on measured benefit, and validate the threshold on macOS
+title: Stop persisting a snapshot where it will not be read profitably
 kind: task
 status: open
 priority: 1
-version: 3
+version: 4
 spec_path: docs/project/specs/active/plan-2026-08-15-fdu-cache-layers-and-defaults.md
 labels:
   - performance
@@ -14,7 +14,7 @@ labels:
 dependencies: []
 parent_id: is-01m03bjey08898z8t9a2vhakm1
 created_at: 2026-08-15T18:34:30.295Z
-updated_at: 2026-08-15T18:40:11.231Z
+updated_at: 2026-08-15T21:42:04.748Z
 ---
 Designed but deliberately unimplemented pending macOS measurement.
 
