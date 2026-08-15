@@ -27,7 +27,7 @@ patterns:
 $ fdu --cache off --format json --size apparent --depth 0 --limit 0 project
 {
   "schema": "fdu.report/1",
-  "generator": "fdu 0.0.1",
+  "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "scan_started_at": "[RFC3339]",
   "generated_at": "[RFC3339]",
@@ -61,7 +61,7 @@ cache absent
 $ fdu --format json --size apparent --depth 0 --limit 0 project
 {
   "schema": "fdu.report/1",
-  "generator": "fdu 0.0.1",
+  "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "scan_started_at": "[RFC3339]",
   "generated_at": "[RFC3339]",
@@ -93,7 +93,7 @@ snapshot present
 $ fdu --format json --size apparent --depth 0 --limit 0 project
 {
   "schema": "fdu.report/1",
-  "generator": "fdu 0.0.1",
+  "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "scan_started_at": "[RFC3339]",
   "generated_at": "[RFC3339]",
@@ -127,7 +127,7 @@ fixture expanded
 $ fdu --format json --size apparent --depth 0 --limit 0 project
 {
   "schema": "fdu.report/1",
-  "generator": "fdu 0.0.1",
+  "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "scan_started_at": "[RFC3339]",
   "generated_at": "[RFC3339]",
@@ -151,7 +151,7 @@ $ fdu --format json --size apparent --depth 0 --limit 0 project
 $ fdu --format json --size apparent --scan-depth 1 --depth 0 --limit 0 project
 {
   "schema": "fdu.report/1",
-  "generator": "fdu 0.0.1",
+  "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "scan_started_at": "[RFC3339]",
   "generated_at": "[RFC3339]",
@@ -185,7 +185,7 @@ snapshot corrupted
 $ fdu --format json --size apparent --scan-depth 1 --depth 0 --limit 0 project
 {
   "schema": "fdu.report/1",
-  "generator": "fdu 0.0.1",
+  "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "scan_started_at": "[RFC3339]",
   "generated_at": "[RFC3339]",

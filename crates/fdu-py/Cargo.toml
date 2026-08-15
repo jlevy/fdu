@@ -1,6 +1,6 @@
 [package]
 name = "fdu-py"
-version = "0.0.1"
+version = "0.1.0"
 description = "Python bindings for fdu, the incremental file roll-up engine"
 publish = false
 edition.workspace = true
@@ -10,7 +10,7 @@ repository.workspace = true
 authors.workspace = true
 
 [lib]
-name = "fdu_py"
+name = "_native"
 # The one genuinely compelled crate split in this workspace: a cdylib cannot also be the
 # library that Rust consumers depend on, and the pyo3 dependency and maturin build
 # backend have no business in the core crate's dependency tree.
