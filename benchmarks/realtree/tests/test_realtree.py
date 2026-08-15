@@ -821,22 +821,20 @@ class HostRegimeTests(unittest.TestCase):
         self.assertIsNotNone(process)
         self.assertIsNotNone(process.poll())
 
-    def test_darwin_cpu_pressure_parses_current_idle_percentage(self) -> None:
-        completed = measure.subprocess.CompletedProcess(
-            args=["top"],
-            returncode=0,
-            stdout=b"CPU usage: 12.5% user, 7.25% sys, 80.25% idle\n",
-            stderr=b"",
-        )
+    def test_darwin_cpu_pressure_uses_a_short_counter_delta(self) -> None:
         with (
-            mock.patch.object(measure.sys, "platform", "darwin"),
-            mock.patch.object(measure.Path, "is_file", return_value=True),
-            mock.patch.object(measure.subprocess, "run", return_value=completed),
+            mock.patch.object(
+                measure,
+                "_darwin_cpu_ticks",
+                side_effect=[((100, 50, 850, 0), None), ((125, 75, 900, 0), None)],
+            ),
+            mock.patch.object(measure.time, "sleep") as sleep,
         ):
             busy, reason = measure._darwin_cpu_busy_pct()
 
-        self.assertEqual(busy, 19.75)
+        self.assertEqual(busy, 50.0)
         self.assertIsNone(reason)
+        sleep.assert_called_once_with(0.1)
 
 
 class ProfileParsingTests(unittest.TestCase):

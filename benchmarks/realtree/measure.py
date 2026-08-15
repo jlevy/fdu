@@ -13,10 +13,10 @@ independently computed medians.
 
 from __future__ import annotations
 
+import ctypes
 import json
 import os
 import platform
-import re
 import shutil
 import signal
 import statistics
@@ -523,31 +523,63 @@ def _darwin_cpu_busy_pct() -> tuple[Optional[float], Optional[str]]:
 
     A fixed-N benchmark creates runnable workers by design. Darwin's load average keeps
     counting that work after the child exits, so it cannot distinguish later background
-    pressure from the benchmark's own previous samples. ``top -l 1`` observes a short
-    boundary interval after the child is gone; the lagging load averages remain in the
-    artifact as context but do not accept or reject macOS samples.
+    pressure from the benchmark's own previous samples. A 100 ms Mach host-counter
+    delta observes a short boundary interval after the child is gone; the lagging load
+    averages remain in the artifact as context but do not accept or reject macOS
+    samples.
     """
+    first, reason = _darwin_cpu_ticks()
+    if first is None:
+        return None, reason
+    time.sleep(0.1)
+    second, reason = _darwin_cpu_ticks()
+    if second is None:
+        return None, reason
+    deltas = [(after - before) & 0xFFFF_FFFF for before, after in zip(first, second, strict=True)]
+    total = sum(deltas)
+    if total == 0:
+        return None, "Mach CPU counters did not advance during the boundary interval"
+    user, system, idle, nice = deltas
+    busy = (user + system + nice) / total * 100.0
+    return round(busy, 2), None
+
+
+def _darwin_cpu_ticks() -> tuple[Optional[tuple[int, int, int, int]], Optional[str]]:
+    """Read Darwin's user/system/idle/nice host tick counters."""
     if sys.platform != "darwin":
         return None, "instantaneous CPU occupancy is currently collected only on macOS"
-    top = Path("/usr/bin/top")
-    if not top.is_file():
-        return None, "/usr/bin/top is unavailable"
-    completed = subprocess.run(
-        [str(top), "-l", "1", "-n", "0"],
-        stdin=subprocess.DEVNULL,
-        capture_output=True,
-        env=BASE_ENVIRONMENT,
-        timeout=10,
-    )
-    if completed.returncode != 0:
-        return None, "top could not collect instantaneous CPU occupancy"
-    matches = re.findall(rb"CPU usage:.*?([0-9]+(?:\.[0-9]+)?)% idle", completed.stdout)
-    if not matches:
-        return None, "top output did not contain CPU idle percentage"
-    idle = float(matches[-1])
-    if not 0.0 <= idle <= 100.0:
-        return None, "top reported CPU idle percentage outside 0..100"
-    return round(100.0 - idle, 2), None
+
+    class HostCpuLoadInfo(ctypes.Structure):
+        _fields_ = [
+            ("user", ctypes.c_uint),
+            ("system", ctypes.c_uint),
+            ("idle", ctypes.c_uint),
+            ("nice", ctypes.c_uint),
+        ]
+
+    try:
+        system_library = ctypes.CDLL("/usr/lib/libSystem.B.dylib")
+        system_library.mach_host_self.restype = ctypes.c_uint
+        system_library.host_statistics.argtypes = [
+            ctypes.c_uint,
+            ctypes.c_int,
+            ctypes.POINTER(ctypes.c_int),
+            ctypes.POINTER(ctypes.c_uint),
+        ]
+        system_library.host_statistics.restype = ctypes.c_int
+        info = HostCpuLoadInfo()
+        count = ctypes.c_uint(ctypes.sizeof(info) // ctypes.sizeof(ctypes.c_int))
+        result = system_library.host_statistics(
+            system_library.mach_host_self(),
+            3,  # HOST_CPU_LOAD_INFO
+            ctypes.cast(ctypes.byref(info), ctypes.POINTER(ctypes.c_int)),
+            ctypes.byref(count),
+        )
+    except (AttributeError, OSError) as error:
+        return None, f"Mach CPU counters are unavailable: {type(error).__name__}"
+    if result != 0 or count.value < 4:
+        return None, f"host_statistics failed with code {result}"
+    return (info.user, info.system, info.idle, info.nice), None
 
 
 def _host_pressure_reasons(
