@@ -24,6 +24,10 @@ experiment:
     - H53
     - H12
     - H9
+  checkpoint:
+    profile: index-core-v1
+    kept_variant: candidate
+    source_revision: c9c91d9518ef1324531ecd79a3a43b9e96e95eef
   subject:
     tree_label: metabrowser-20260812
     tree_root_id: dbd79ed9c898f7a2f66530cd95bb61cab88e798375134b86c77ece761de580a9

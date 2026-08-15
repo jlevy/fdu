@@ -12,6 +12,10 @@ experiment:
   hypotheses:
     - H53
     - H26
+  checkpoint:
+    profile: index-core-v1
+    kept_variant: candidate
+    source_revision: 824f2c416aadead1b4fa7db3b8421d5c47e85969
   subject:
     tree_label: cache-pressure-12x
     tree_root_id: ffd40fd8482e8ed64bd19bcd1a724389532ca4889be43adf830122279ac63180

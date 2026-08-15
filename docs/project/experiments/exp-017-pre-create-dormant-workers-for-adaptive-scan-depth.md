@@ -11,6 +11,9 @@ experiment:
   date: "2026-08-12"
   hypotheses:
     - H31
+  checkpoint:
+    profile: index-core-v1
+    kept_variant: control
   subject:
     tree_label: metabrowser
     tree_root_id: dbd79ed9c898f7a2f66530cd95bb61cab88e798375134b86c77ece761de580a9

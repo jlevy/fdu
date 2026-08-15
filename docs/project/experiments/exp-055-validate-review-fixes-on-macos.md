@@ -10,6 +10,10 @@ experiment:
   title: Validate review fixes on macOS
   date: "2026-08-14"
   hypotheses: []
+  checkpoint:
+    profile: index-core-v1
+    kept_variant: candidate
+    source_revision: 3bc650d920d2ccfb0db4943c5800ba80d54686f8
   subject:
     tree_label: pr22-macos-benchmarks
     tree_root_id: c95b1edda5762c399d4eaaf8494b1e1866f5554814d9db5c3fe353a5a13bc7a0

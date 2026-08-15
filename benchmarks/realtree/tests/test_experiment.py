@@ -177,6 +177,45 @@ class FromRunTests(unittest.TestCase):
                 self._payload(hypotheses=["H49: explanatory prose belongs in the body"])
             )
 
+    def test_checkpoint_selects_the_kept_arm_and_source_revision(self) -> None:
+        revision = "abcdef1234567890abcdef1234567890abcdef12"
+        payload = self._payload(
+            checkpoint={
+                "profile": "index-core-v1",
+                "kept_variant": "candidate",
+                "source_revision": revision,
+            }
+        )
+        experiment = experiment_model.Experiment.model_validate(payload)
+
+        self.assertEqual(experiment.checkpoint.profile, "index-core-v1")
+        self.assertEqual(experiment.checkpoint.kept_variant, "candidate")
+        self.assertEqual(experiment.checkpoint.source_revision, revision)
+
+    def test_checkpoint_rejects_a_non_git_source_revision(self) -> None:
+        with self.assertRaises(ValidationError):
+            experiment_model.Experiment.model_validate(
+                self._payload(
+                    checkpoint={
+                        "profile": "index-core-v1",
+                        "kept_variant": "candidate",
+                        "source_revision": "HEAD",
+                    }
+                )
+            )
+
+    def test_checkpoint_rejects_an_abbreviated_source_revision(self) -> None:
+        with self.assertRaises(ValidationError):
+            experiment_model.Experiment.model_validate(
+                self._payload(
+                    checkpoint={
+                        "profile": "index-core-v1",
+                        "kept_variant": "candidate",
+                        "source_revision": "abcdef1",
+                    }
+                )
+            )
+
     def test_no_filesystem_path_from_the_tree_is_recorded(self) -> None:
         payload = self._payload()
         # Nothing in the payload may be an absolute path or a path-looking fragment

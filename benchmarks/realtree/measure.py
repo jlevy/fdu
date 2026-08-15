@@ -109,12 +109,15 @@ class Variant:
     #: count, a batch size — which is both fairer and far quicker than building a
     #: binary per setting.
     extra_args: List[str] = field(default_factory=list)
+    #: Exact Git commit used to build this binary, when the build orchestrator knows
+    #: it. Manual comparisons may leave this empty; revision-series runs never do.
+    source_revision: str = ""
 
     def identity(self) -> Dict[str, Any]:
         import hashlib
 
         digest = hashlib.sha256(self.path.read_bytes()).hexdigest()
-        return {
+        identity = {
             "args": list(self.extra_args),
             "kind": self.kind,
             "name": self.name,
@@ -122,6 +125,9 @@ class Variant:
             "sha256": digest,
             "size_bytes": self.path.stat().st_size,
         }
+        if self.source_revision:
+            identity["source_revision"] = self.source_revision
+        return identity
 
 
 @dataclass

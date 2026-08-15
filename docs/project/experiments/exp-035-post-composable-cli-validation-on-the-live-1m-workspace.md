@@ -12,6 +12,9 @@ experiment:
   hypotheses:
     - H3
     - H31
+  checkpoint:
+    profile: index-core-v1
+    kept_variant: candidate
   subject:
     tree_label: live-workspace-20260812
     tree_root_id: 585f55000d4d135311f162954e1cc5fe3e0a729823acc02400e1c308d57a2949

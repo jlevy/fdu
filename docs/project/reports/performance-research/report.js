@@ -333,6 +333,425 @@
     replaceChildren(target, header, facts, columns);
   };
 
+  const renderCheckpointDetail = (checkpoint, measurement) => {
+    const target = byId("checkpoint-detail");
+    const hasLocalComparison =
+      measurement &&
+      Number(measurement.pairs) > 0 &&
+      measurement.ci95_pct?.every((bound) => bound !== null);
+    const header = element("div", "detail-header");
+    const identity = element("div");
+    identity.append(
+      element(
+        "p",
+        "detail-kicker",
+        `${checkpoint.experiment_id} · ${checkpoint.platform} · ${checkpoint.date}`,
+      ),
+      element("h3", "", checkpoint.title),
+    );
+    const badges = element("div", "detail-badges");
+    badges.append(decisionBadge(checkpoint.decision));
+    if (measurement) {
+      badges.append(
+        badge(
+          !hasLocalComparison
+            ? "baseline measurement"
+            : measurement.effect === "retained"
+            ? "control retained"
+            : `${formatImprovementPercent(measurement.paired_change_pct, 2)} local improvement`,
+          hasLocalComparison ? effectClass(measurement.effect) : "effect-neutral",
+        ),
+      );
+    } else {
+      badges.append(badge("not measured", "effect-neutral"));
+    }
+    header.append(identity, badges);
+
+    const facts = element("dl", "detail-grid checkpoint-detail-grid");
+    addDefinition(facts, "Dimension", measurement?.label || "not measured in this run");
+    addDefinition(
+      facts,
+      "Kept value",
+      measurement ? formatMetricValue(measurement.value, measurement.metric) : "—",
+    );
+    addDefinition(facts, "Kept arm", checkpoint.kept_variant);
+    addDefinition(
+      facts,
+      "Matrix coverage",
+      `${checkpoint.coverage.measured} of ${checkpoint.coverage.expected} dimensions`,
+    );
+    addDefinition(facts, "Tree", `${formatInteger(checkpoint.regime.tree_entries)} entries`);
+    addDefinition(facts, "Regime", checkpoint.regime.id);
+    addDefinition(
+      facts,
+      "Source revision",
+      checkpoint.source_revision || "not recorded",
+    );
+
+    const columns = element("div", "detail-columns");
+    const evidence = element("div");
+    evidence.append(element("h4", "", "Measurement"));
+    if (measurement) {
+      evidence.append(
+        element(
+          "p",
+          "",
+          hasLocalComparison
+            ? `The ${checkpoint.kept_variant} arm measured ${formatMetricValue(measurement.value, measurement.metric)}. The local candidate changed ${formatPercent(measurement.paired_change_pct, 2)} versus control; 95% interval ${formatInterval(measurement.ci95_pct, 2)} over ${formatInteger(measurement.pairs)} pairs.`
+            : `The ${checkpoint.kept_variant} arm measured ${formatMetricValue(measurement.value, measurement.metric)}. This baseline has no local control-candidate comparison.`,
+        ),
+      );
+    } else {
+      evidence.append(
+        element(
+          "p",
+          "",
+          "This experiment did not run the job and metric required for this checkpoint row. No value is inferred from neighboring experiments.",
+        ),
+      );
+    }
+    const regime = element("div");
+    regime.append(
+      element("h4", "", "Comparable regime"),
+      element(
+        "p",
+        "",
+        `${checkpoint.regime.host_cpu || checkpoint.regime.host_arch}; ${checkpoint.regime.host_system}; ${checkpoint.regime.filesystem || "filesystem not recorded"}; ${checkpoint.regime.os_cache}. Tree digest ${checkpoint.regime.tree_engine_digest || "not recorded"}.`,
+      ),
+      element(
+        "p",
+        checkpoint.source_revision ? "" : "detail-warning",
+        checkpoint.source_revision
+          ? `The kept binary is tied to Git revision ${checkpoint.source_revision}.`
+          : "The binary hash is preserved, but the source revision is not. This point cannot be rebuilt exactly from the artifact alone.",
+      ),
+    );
+    const source = element("a", "detail-link", "Open the complete experiment artifact →");
+    source.href = checkpoint.source;
+    regime.append(source);
+    columns.append(evidence, regime);
+    replaceChildren(target, header, facts, columns);
+  };
+
+  const setupCheckpointPlot = () => {
+    const history = report.checkpoint_history;
+    const svg = byId("checkpoint-plot");
+    if (!history || !svg) return;
+
+    const profile = history.profiles["index-core-v1"];
+    const checkpoints = history.checkpoints.filter(
+      (checkpoint) => checkpoint.profile === "index-core-v1",
+    );
+    const platforms = ["macOS", "Linux"].filter((platform) =>
+      checkpoints.some((checkpoint) => checkpoint.platform === platform),
+    );
+    const width = 1240;
+    const height = 940;
+    const columnGap = 36;
+    const outer = { left: 18, right: 18, top: 68, bottom: 52 };
+    const columnWidth =
+      (width - outer.left - outer.right - columnGap * (platforms.length - 1)) /
+      platforms.length;
+    const labelWidth = 76;
+    const rowGap = 34;
+    const rowHeight =
+      (height - outer.top - outer.bottom - rowGap * (profile.dimensions.length - 1)) /
+      profile.dimensions.length;
+    let pinned = null;
+
+    const displayValue = (value, metric) =>
+      String(metric).endsWith("_ns")
+        ? Number(value) / 1_000_000
+        : String(metric).endsWith("_bytes")
+          ? Number(value) / (1024 * 1024)
+          : Number(value);
+    const axisUnit = (metric) =>
+      String(metric).endsWith("_ns")
+        ? "ms"
+        : String(metric).endsWith("_bytes")
+          ? "MiB"
+          : metric;
+    const axisText = (value) =>
+      new Intl.NumberFormat("en-US", {
+        maximumFractionDigits: value < 10 ? 1 : 0,
+      }).format(value);
+    const logarithmicTicks = (minimum, maximum) => {
+      const values = [];
+      for (
+        let exponent = Math.floor(Math.log10(minimum));
+        exponent <= Math.ceil(Math.log10(maximum));
+        exponent += 1
+      ) {
+        for (const multiplier of [1, 2, 5]) {
+          const value = multiplier * 10 ** exponent;
+          if (value >= minimum && value <= maximum) values.push(value);
+        }
+      }
+      if (values.length <= 5) return values;
+      const step = Math.ceil(values.length / 5);
+      return values.filter((_value, index) => index % step === 0);
+    };
+    const measurementFor = (checkpoint, dimensionId) =>
+      checkpoint.measurements.find((measurement) => measurement.id === dimensionId) || null;
+
+    const markSelected = (key) => {
+      for (const point of svg.querySelectorAll("[data-checkpoint-key]")) {
+        point.classList.toggle("is-selected", point.dataset.checkpointKey === key);
+      }
+    };
+    const show = (checkpoint, measurement, key) => {
+      renderCheckpointDetail(checkpoint, measurement);
+      markSelected(key);
+    };
+    const restorePinned = () => {
+      if (!pinned) return;
+      show(pinned.checkpoint, pinned.measurement, pinned.key);
+    };
+    const attachInteraction = (group, checkpoint, measurement, key) => {
+      group.dataset.checkpointKey = key;
+      group.addEventListener("mouseenter", () => show(checkpoint, measurement, key));
+      group.addEventListener("mouseleave", restorePinned);
+      group.addEventListener("focus", () => show(checkpoint, measurement, key));
+      group.addEventListener("blur", restorePinned);
+      group.addEventListener("click", () => {
+        pinned = { checkpoint, measurement, key };
+        restorePinned();
+      });
+      group.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          pinned = { checkpoint, measurement, key };
+          restorePinned();
+        }
+      });
+    };
+
+    while (svg.children.length > 2) svg.removeChild(svg.lastElementChild);
+
+    for (const [platformIndex, platform] of platforms.entries()) {
+      const platformCheckpoints = checkpoints.filter(
+        (checkpoint) => checkpoint.platform === platform,
+      );
+      const minimumNumber = Math.min(...platformCheckpoints.map((item) => item.number));
+      const maximumNumber = Math.max(...platformCheckpoints.map((item) => item.number));
+      const columnLeft = outer.left + platformIndex * (columnWidth + columnGap);
+      const panelLeft = columnLeft + labelWidth;
+      const panelRight = columnLeft + columnWidth;
+      const panelWidth = panelRight - panelLeft;
+      const x = (number) =>
+        minimumNumber === maximumNumber
+          ? panelLeft + panelWidth / 2
+          : panelLeft + ((number - minimumNumber) / (maximumNumber - minimumNumber)) * panelWidth;
+
+      const platformTitle = svgElement("text", {
+        x: panelLeft,
+        y: 28,
+        class: "checkpoint-platform-title",
+      });
+      platformTitle.textContent = platform;
+      const platformMeta = svgElement("text", {
+        x: panelRight,
+        y: 28,
+        "text-anchor": "end",
+        class: "checkpoint-platform-meta",
+      });
+      const revisions = platformCheckpoints.filter((item) => item.source_revision).length;
+      platformMeta.textContent = `${platformCheckpoints.length} checkpoints · ${revisions} revisions`;
+      svg.append(platformTitle, platformMeta);
+
+      for (const [rowIndex, dimension] of profile.dimensions.entries()) {
+        const top = outer.top + rowIndex * (rowHeight + rowGap);
+        const bottom = top + rowHeight;
+        const measured = platformCheckpoints
+          .map((checkpoint, index) => ({
+            checkpoint,
+            index,
+            measurement: measurementFor(checkpoint, dimension.id),
+          }))
+          .filter((item) => item.measurement);
+        const values = measured.map((item) =>
+          displayValue(item.measurement.value, item.measurement.metric),
+        );
+        const observedMinimum = values.length ? Math.min(...values) : 1;
+        const observedMaximum = values.length ? Math.max(...values) : 10;
+        const observedLogMinimum = Math.log10(observedMinimum);
+        const observedLogMaximum = Math.log10(observedMaximum);
+        const padding = Math.max(0.035, (observedLogMaximum - observedLogMinimum) * 0.08);
+        const logMinimum = observedLogMinimum - padding;
+        const logMaximum = observedLogMaximum + padding;
+        const y = (value) =>
+          top +
+          ((Math.log10(displayValue(value, dimension.metric)) - logMinimum) /
+            (logMaximum - logMinimum || 1)) *
+            rowHeight;
+
+        const rowTitle = svgElement("text", {
+          x: panelLeft,
+          y: top - 10,
+          class: "checkpoint-row-title",
+        });
+        rowTitle.textContent = dimension.label;
+        const coverage = svgElement("text", {
+          x: panelRight,
+          y: top - 10,
+          "text-anchor": "end",
+          class: "checkpoint-coverage",
+        });
+        coverage.textContent = measured.length
+          ? `${measured.length} / ${platformCheckpoints.length} · ${axisUnit(dimension.metric)} · log`
+          : `0 / ${platformCheckpoints.length} · not measured`;
+        svg.append(rowTitle, coverage);
+
+        const tickMinimum = 10 ** logMinimum;
+        const tickMaximum = 10 ** logMaximum;
+        if (measured.length) {
+          for (const tick of logarithmicTicks(tickMinimum, tickMaximum)) {
+            const tickY = y(
+              String(dimension.metric).endsWith("_ns")
+                ? tick * 1_000_000
+                : String(dimension.metric).endsWith("_bytes")
+                  ? tick * 1024 * 1024
+                  : tick,
+            );
+            const grid = svgElement("line", {
+              x1: panelLeft,
+              y1: tickY,
+              x2: panelRight,
+              y2: tickY,
+              class: "plot-grid",
+            });
+            const label = svgElement("text", {
+              x: panelLeft - 7,
+              y: tickY + 4,
+              "text-anchor": "end",
+              class: "plot-label",
+            });
+            label.textContent = axisText(tick);
+            svg.append(grid, label);
+          }
+        }
+        svg.append(
+          svgElement("rect", {
+            x: panelLeft,
+            y: top,
+            width: panelWidth,
+            height: rowHeight,
+            class: "plot-frame",
+          }),
+        );
+        if (!measured.length) {
+          const empty = svgElement("text", {
+            x: panelLeft + panelWidth / 2,
+            y: top + rowHeight / 2 + 4,
+            "text-anchor": "middle",
+            class: "checkpoint-empty-label",
+          });
+          empty.textContent = "No checkpoint measurement";
+          svg.append(empty);
+        }
+
+        for (let index = 1; index < measured.length; index += 1) {
+          const previous = measured[index - 1];
+          const current = measured[index];
+          if (
+            current.index !== previous.index + 1 ||
+            current.checkpoint.regime.id !== previous.checkpoint.regime.id
+          ) {
+            continue;
+          }
+          svg.append(
+            svgElement("line", {
+              x1: x(previous.checkpoint.number),
+              y1: y(previous.measurement.value),
+              x2: x(current.checkpoint.number),
+              y2: y(current.measurement.value),
+              class: "checkpoint-connector",
+            }),
+          );
+        }
+
+        for (const checkpoint of platformCheckpoints) {
+          const measurement = measurementFor(checkpoint, dimension.id);
+          const key = `${checkpoint.experiment_id}:${dimension.id}`;
+          const pointX = x(checkpoint.number);
+          const group = svgElement("g", {
+            class: measurement
+              ? `checkpoint-point ${pointEffectClass(measurement.effect)}`
+              : "checkpoint-missing",
+            tabindex: "0",
+            role: "button",
+            "aria-label": measurement
+              ? `${checkpoint.experiment_id}, ${dimension.label}, kept ${checkpoint.kept_variant}, ${formatMetricValue(measurement.value, measurement.metric)}`
+              : `${checkpoint.experiment_id}, ${dimension.label}, not measured`,
+          });
+          if (measurement) {
+            const pointY = y(measurement.value);
+            group.append(
+              svgElement("circle", { cx: pointX, cy: pointY, r: 12, class: "point-hit" }),
+              svgElement("circle", { cx: pointX, cy: pointY, r: 5, class: "checkpoint-mark" }),
+            );
+            const title = svgElement("title");
+            title.textContent = `${checkpoint.experiment_id} · ${dimension.label} · ${formatMetricValue(measurement.value, measurement.metric)} kept ${checkpoint.kept_variant} · regime ${checkpoint.regime.id}`;
+            group.append(title);
+          } else {
+            const missing = svgElement("text", {
+              x: pointX,
+              y: bottom + 17,
+              "text-anchor": "middle",
+              class: "checkpoint-missing-mark",
+            });
+            missing.textContent = "×";
+            group.append(missing);
+          }
+          attachInteraction(group, checkpoint, measurement, key);
+          svg.append(group);
+        }
+      }
+
+      const axisY = height - 18;
+      const step = platform === "Linux" ? 1 : 10;
+      const firstTick = Math.ceil(minimumNumber / step) * step;
+      for (let number = firstTick; number <= maximumNumber; number += step) {
+        const tickX = x(number);
+        const tick = svgElement("line", {
+          x1: tickX,
+          y1: axisY - 12,
+          x2: tickX,
+          y2: axisY - 7,
+          class: "plot-axis",
+        });
+        const label = svgElement("text", {
+          x: tickX,
+          y: axisY + 6,
+          "text-anchor": "middle",
+          class: "plot-label",
+        });
+        label.textContent = String(number).padStart(3, "0");
+        svg.append(tick, label);
+      }
+    }
+
+    const defaultCheckpoint = checkpoints.at(-1);
+    const defaultMeasurement = defaultCheckpoint
+      ? measurementFor(defaultCheckpoint, profile.dimensions[0].id)
+      : null;
+    if (defaultCheckpoint) {
+      pinned = {
+        checkpoint: defaultCheckpoint,
+        measurement: defaultMeasurement,
+        key: `${defaultCheckpoint.experiment_id}:${profile.dimensions[0].id}`,
+      };
+      restorePinned();
+    }
+
+    const summary = history.summary;
+    byId("checkpoint-summary").textContent =
+      `${summary.checkpoint_count} index-core checkpoints are recorded; ` +
+      `${summary.source_revision_count} preserve an exact source revision for replay.`;
+    byId("checkpoint-status").textContent =
+      `${summary.checkpoint_count} checkpoints shown across ${platforms.length} platforms and ${profile.dimensions.length} dimensions.`;
+  };
+
   const setupExperimentPlot = () => {
     const svg = byId("experiment-plot");
     const platformFilter = byId("plot-platform");
@@ -968,6 +1387,7 @@
   initializeTheme();
   renderOutcomes();
   setupComposite();
+  setupCheckpointPlot();
   setupExperimentPlot();
   renderPhases();
   renderMechanisms();

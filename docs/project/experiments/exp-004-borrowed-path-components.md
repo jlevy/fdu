@@ -11,6 +11,10 @@ experiment:
   date: "2026-08-11"
   hypotheses:
     - H5
+  checkpoint:
+    profile: index-core-v1
+    kept_variant: candidate
+    source_revision: bf7a05a0c932ce85dc1f424056f4c97e42a5be88
   subject:
     tree_label: metabrowser-clone
     tree_root_id: dbd79ed9c898f7a2f66530cd95bb61cab88e798375134b86c77ece761de580a9

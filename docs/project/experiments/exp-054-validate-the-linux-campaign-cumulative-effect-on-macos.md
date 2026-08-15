@@ -10,6 +10,9 @@ experiment:
   title: Validate the Linux campaign's cumulative effect on macOS
   date: "2026-08-14"
   hypotheses: []
+  checkpoint:
+    profile: index-core-v1
+    kept_variant: candidate
   subject:
     tree_label: pr22-macos-benchmarks
     tree_root_id: c95b1edda5762c399d4eaaf8494b1e1866f5554814d9db5c3fe353a5a13bc7a0

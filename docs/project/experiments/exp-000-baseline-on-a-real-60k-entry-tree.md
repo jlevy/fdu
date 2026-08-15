@@ -10,6 +10,10 @@ experiment:
   title: Baseline on a real 60k-entry tree
   date: "2026-08-10"
   hypotheses: []
+  checkpoint:
+    profile: index-core-v1
+    kept_variant: candidate
+    source_revision: b565882bd9f2a877934bd96415d3a8eab6504f92
   subject:
     tree_label: metabrowser-clone
     tree_root_id: dbd79ed9c898f7a2f66530cd95bb61cab88e798375134b86c77ece761de580a9

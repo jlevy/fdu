@@ -11,6 +11,10 @@ experiment:
   date: "2026-08-14"
   hypotheses:
     - S1
+  checkpoint:
+    profile: index-core-v1
+    kept_variant: candidate
+    source_revision: 2475c82b346120903ff36bd9a1737b4f0adf6891
   subject:
     tree_label: meta450k
     tree_root_id: 49fd7bea88ee0b90566f01fb140e86707e2dd6979dd01af97f30cdb13c535aee

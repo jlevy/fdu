@@ -8,6 +8,7 @@ projection used by the static report. The Markdown bodies are never parsed for v
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import sys
@@ -151,6 +152,48 @@ COMPOSITE_CELLS = (
     {"platform": "macOS", "job": "cold-scan-index", "change_pct": 1.393},
     {"platform": "macOS", "job": "warm-revalidate", "change_pct": -15.682},
 )
+
+CHECKPOINT_PROFILES = {
+    "index-core-v1": {
+        "label": "Index core",
+        "description": (
+            "The kept build after each index experiment, measured across product "
+            "latency, CPU, and memory dimensions."
+        ),
+        "dimensions": (
+            {
+                "id": "cold-index-wall",
+                "label": "Cold indexed scan",
+                "job": "cold-scan-index",
+                "metric": "wall_ns",
+            },
+            {
+                "id": "warm-revalidate-wall",
+                "label": "Warm revalidation",
+                "job": "warm-revalidate",
+                "metric": "wall_ns",
+            },
+            {
+                "id": "snapshot-load-wall",
+                "label": "Warm snapshot load",
+                "job": "warm-snapshot-load",
+                "metric": "wall_ns",
+            },
+            {
+                "id": "cold-index-cpu",
+                "label": "Cold indexed CPU",
+                "job": "cold-scan-index",
+                "metric": "cpu_ns",
+            },
+            {
+                "id": "cold-index-rss",
+                "label": "Cold indexed peak RSS",
+                "job": "cold-scan-index",
+                "metric": "peak_rss_bytes",
+            },
+        ),
+    },
+}
 
 SUPPORTING_STUDIES = (
     {
@@ -348,6 +391,82 @@ def _serialize_metric(metric: experiment_model.MetricChange) -> dict[str, Any]:
     return values
 
 
+def _checkpoint_regime(experiment: experiment_model.Experiment) -> dict[str, Any]:
+    """Return the exact subject fields that make two absolute values comparable."""
+    subject = experiment.subject
+    values = {
+        "tree_engine_digest": subject.tree_engine_digest,
+        "tree_entries": subject.tree_entries,
+        "host_cpu": subject.host_cpu,
+        "host_arch": subject.host_arch,
+        "host_cores": subject.host_cores,
+        "host_memory_bytes": subject.host_memory_bytes,
+        "host_system": subject.host_system,
+        "filesystem": subject.filesystem,
+        "host_virtualization": subject.host_virtualization,
+        "os_cache": subject.os_cache,
+    }
+    encoded = json.dumps(values, sort_keys=True, separators=(",", ":")).encode()
+    return {"id": hashlib.sha256(encoded).hexdigest()[:12], **values}
+
+
+def _serialize_checkpoint(
+    experiment: experiment_model.Experiment,
+) -> dict[str, Any] | None:
+    checkpoint = experiment.checkpoint
+    if checkpoint is None:
+        return None
+    profile = CHECKPOINT_PROFILES.get(checkpoint.profile)
+    if profile is None:
+        raise ValueError(
+            f"{experiment.id}: unsupported checkpoint profile {checkpoint.profile!r}"
+        )
+
+    results = {result.job: result for result in experiment.results}
+    measurements = []
+    for dimension in profile["dimensions"]:
+        result = results.get(str(dimension["job"]))
+        metric = (
+            result.metrics.get(str(dimension["metric"])) if result is not None else None
+        )
+        if metric is None:
+            continue
+        value = (
+            metric.control_median
+            if checkpoint.kept_variant == "control"
+            else metric.candidate_median
+        )
+        measurements.append(
+            {
+                **dimension,
+                "value": value,
+                "paired_change_pct": metric.change_pct,
+                "ci95_pct": [metric.ci95_low_pct, metric.ci95_high_pct],
+                "effect": (
+                    "retained"
+                    if checkpoint.kept_variant == "control"
+                    else _metric_effect(metric)
+                ),
+                "pairs": metric.pairs,
+            }
+        )
+
+    expected = len(profile["dimensions"])
+    return {
+        "profile": checkpoint.profile,
+        "profile_label": profile["label"],
+        "kept_variant": checkpoint.kept_variant,
+        "source_revision": checkpoint.source_revision or None,
+        "coverage": {
+            "measured": len(measurements),
+            "expected": expected,
+            "complete": len(measurements) == expected,
+        },
+        "regime": _checkpoint_regime(experiment),
+        "measurements": measurements,
+    }
+
+
 def _serialize_experiment(
     path: Path, experiment: experiment_model.Experiment
 ) -> dict[str, Any]:
@@ -410,6 +529,7 @@ def _serialize_experiment(
         "platform": _platform(experiment.subject.host_system),
         "effect": _metric_effect(primary_metric),
         "hypotheses": experiment.hypotheses,
+        "checkpoint": _serialize_checkpoint(experiment),
         "source": f"../../experiments/{path.name}",
         "subject": experiment.subject.model_dump(mode="json"),
         "method": experiment.method.model_dump(mode="json"),
@@ -474,6 +594,34 @@ def build_report_data(
         pattern="exp-*.md",
         source_href_prefix="../../experiments",
     )
+    checkpoints = [
+        {
+            "experiment_id": item["id"],
+            "number": item["number"],
+            "title": item["title"],
+            "date": item["date"],
+            "platform": item["platform"],
+            "decision": item["verdict"]["decision"],
+            "source": item["source"],
+            **item["checkpoint"],
+        }
+        for item in experiments
+        if item["checkpoint"] is not None
+    ]
+    checkpoint_platform_counts = Counter(item["platform"] for item in checkpoints)
+    checkpoint_dimension_counts = Counter(
+        (item["platform"], measurement["id"])
+        for item in checkpoints
+        for measurement in item["measurements"]
+    )
+    checkpoint_profiles = {
+        name: {
+            "label": profile["label"],
+            "description": profile["description"],
+            "dimensions": list(profile["dimensions"]),
+        }
+        for name, profile in CHECKPOINT_PROFILES.items()
+    }
 
     return {
         "report": {
@@ -489,6 +637,29 @@ def build_report_data(
         },
         "phases": list(PHASES),
         "experiments": experiments,
+        "checkpoint_history": {
+            "profiles": checkpoint_profiles,
+            "checkpoints": checkpoints,
+            "summary": {
+                "checkpoint_count": len(checkpoints),
+                "platform_counts": dict(sorted(checkpoint_platform_counts.items())),
+                "source_revision_count": sum(
+                    bool(item["source_revision"]) for item in checkpoints
+                ),
+                "dimension_counts": {
+                    f"{platform}:{dimension}": count
+                    for (platform, dimension), count in sorted(
+                        checkpoint_dimension_counts.items()
+                    )
+                },
+            },
+            "caveat": (
+                "A point is the measured arm retained after that experiment. Lines "
+                "join only identical host, tree, filesystem, cache, workload, and "
+                "metric regimes. Missing cells were not measured; source revisions "
+                "are shown only when the historical artifact recorded them."
+            ),
+        },
         "current_outcomes": {
             "measurements": list(CURRENT_PLATFORM_OUTCOMES),
             "composite": {

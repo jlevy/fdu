@@ -34,16 +34,25 @@ behavior choices, instrumentation checks, cumulative controls, and cross-platfor
 validations. Each artifact pairs machine-readable measurements with rationale,
 interpretation, and provenance.
 
+Forty-four terminal index experiments preserve a decision-state checkpoint: 41 on macOS
+and three on Linux. The history is useful but incomplete.
+macOS has absolute cold wall, CPU, and RSS values for 36 checkpoints, warm wall for 27,
+and snapshot-load wall for 12; Linux has three cold vectors, two warm values, and no
+snapshot-load checkpoint.
+Only 21 of the 44 checkpoints can be tied to an exact source revision from the surviving
+records. The report shows those gaps instead of manufacturing a continuous trend.
+
 Low-overhead counters, caller-tree profiles, falsifiable hypotheses, interleaved trial
 pairs, exact correctness oracles, and a predeclared acceptance rule turned each attempt
 into durable evidence.
 Recording failed experiments with the same care as wins narrowed the next search and
 kept attractive dead ends from becoming folklore.
 
-The [interactive experiment map](performance-research/index.html) plots the same
-evidence by platform and mechanism.
-Hover and keyboard details expose each setup, and the aggregate controls expose every
-weight. Negative percentages mean lower latency.
+The [interactive experiment map](performance-research/index.html) plots absolute
+kept-state history separately from local paired effects, organized by platform and
+mechanism. Hover and keyboard details expose each setup, and the aggregate controls
+expose every weight.
+Negative percentages mean lower latency.
 A *clear* result has its entire 95% paired bootstrap interval on one side of zero; an
 ordinary production speedup must also clear the 3% acceptance threshold, preserve
 correctness, and justify its complexity.
@@ -181,9 +190,12 @@ recorded constraint on future work.
    reaches both arms.
 7. **Apply the acceptance rule.** Require the magnitude, interval, valid oracle, and
    complexity trade to pass together.
-8. **Record the verdict, including rejection.** Negative evidence is a reusable result.
-9. **Re-screen the queue.** A landed change may remove the headroom behind the next
-   hypothesis.
+8. **Settle the state.** Commit the accepted production change or restore the rejected
+   control, then resolve the exact source revision that remains.
+9. **Record the verdict and checkpoint.** Store the complete profile, kept arm, source
+   revision, and rejection evidence.
+10. **Re-screen the queue.** A landed change may remove the headroom behind the next
+    hypothesis.
 
 ### Paired, Interleaved Trials Control Host Drift
 
@@ -219,6 +231,30 @@ Exp-052 and exp-053 accepted instrumentation because their purpose was to bound
 measurement overhead.
 Exp-055 accepted correctness and safety fixes because neither macOS interval detected a
 wall regression.
+
+### Local Effects and Kept-State History Answer Different Questions
+
+The paired comparison decides one experiment.
+The absolute checkpoint records what remained after that decision.
+Accepted experiments keep the candidate; rejected experiments keep the control.
+A rejected candidate therefore cannot make the cumulative line slower, and a favorable
+percentage against an old control cannot masquerade as the next point in a time series.
+
+The `index-core-v1` profile runs cold indexed scan, cold producer, snapshot save, warm
+revalidation, and snapshot load, retaining every process metric for every job.
+The interactive history selects five absolute dimensions from that matrix: cold wall,
+warm wall, load wall, cold CPU, and cold peak RSS. Each dimension has its own scale and
+unit.
+Lines connect only adjacent checkpoints with the same tree, host class, filesystem,
+virtualization, operating-system cache state, job, and metric.
+
+Git revision replay audits that history independently.
+It archives a declared sequence of commits, builds each with one locked current
+toolchain, and measures every binary in one interleaved run against one frozen corpus.
+Running the same resolved commit list on macOS and Linux produces two platform histories
+without averaging raw milliseconds across machines.
+The source revision is the experimental variable; the current toolchain, profile, and
+local corpus are controlled conditions.
 
 ### Three Instrumentation Tiers Answer Different Questions
 
@@ -261,6 +297,10 @@ experiment:
   subject: { ... }
   method: { ... }
   results: [ ... ]
+  checkpoint:
+    profile: index-core-v1
+    kept_variant: candidate
+    source_revision: 0123456789abcdef0123456789abcdef01234567
   verdict: { ... }
   complexity: { ... }
 ---
@@ -281,7 +321,8 @@ The current contract captures:
 - control and candidate definitions, binaries, toolchain, warmups, trials, and
   interleaving;
 - per-job metrics, paired changes, intervals, effect direction, and invalid samples;
-- decision, primary metric, threshold, reason, and landing commit; and
+- decision, primary metric, threshold, reason, and landing commit;
+- the versioned checkpoint profile, surviving arm, and exact source revision; and
 - complexity: production lines, dependencies, unsafe blocks, failure modes, and notes.
 
 Exploration, judgment, profiler interpretation, and future ideas stay prose until a tool
@@ -545,13 +586,26 @@ instructions.
 The eventual hash-map change still cleared 3%, but by an order of magnitude
 less than a flat view suggested.
 
-### Cumulative Anchors Prevented Arithmetic Fiction
+### Cumulative Anchors Measured Composition Directly
 
 Exp-006, exp-023, exp-027, exp-032, and the integration/scale validations compared a
 current candidate with an earlier real binary.
 They answered whether individually accepted changes still composed after code and regime
 changes. Without those controls, adding headline percentages would overstate the result
 and hide interactions.
+
+The absolute checkpoints expose the same history without converting local percentages
+into a fictional cumulative line.
+In the first exact macOS regime, cold indexed wall fell from 627.5 ms at exp-000 to
+320.9 ms at exp-006, while warm wall moved from 795.2 ms to 688.0 ms.
+In a later exact regime, exp-023, exp-027, and exp-032 measured cold wall at 295.5,
+275.4, and 289.6 ms, while warm wall fell from 631.6 to 536.5 to 441.6 ms.
+
+The cold series is not monotonic because the campaign did not optimize one score.
+Several accepted changes targeted warm reconciliation, snapshot loading, behavior, or
+instrumentation; independent run medians also retain host noise.
+A checkpoint reports the observed surviving state across every dimension.
+Only the paired comparison beside it attributes a movement to that experiment.
 
 ### Separate Jobs Localized Each Mechanism
 
@@ -594,6 +648,36 @@ Virtualization is especially important for cold-device hypotheses.
 Dropping a guest page cache does not drop the hypervisor or host cache, so
 inode-ordering and physical-I/O claims remain unresolved until bare-metal Linux
 measurement.
+
+### Absolute Iteration History Is Incomplete
+
+The original protocol required enough jobs to decide each hypothesis, but it did not
+require one full metric matrix or exact surviving source revision after every verdict.
+That is a serious historical omission: the repository cannot honestly produce a
+continuous, multi-dimensional absolute trend for the whole campaign from the retained
+artifacts alone.
+
+| Absolute checkpoint dimension | macOS | Linux |
+| --- | ---: | ---: |
+| Cold indexed wall | 36 / 41 | 3 / 3 |
+| Warm revalidation wall | 27 / 41 | 2 / 3 |
+| Warm snapshot-load wall | 12 / 41 | 0 / 3 |
+| Cold indexed CPU | 36 / 41 | 3 / 3 |
+| Cold indexed peak RSS | 36 / 41 | 3 / 3 |
+
+Only 21 of all 44 checkpoints have an exact source revision recoverable from the
+artifact or Git history.
+Even populated cells cross several hosts, trees, and scale regimes, so a single
+connected line would still be false.
+The interactive chart leaves missing cells marked and breaks lines at every regime
+boundary.
+
+Future artifacts close the gap by requiring `index-core-v1`, the kept arm, the full
+source revision, and all five jobs.
+`make perf-replay-revisions` can backfill a chosen Git sequence under one controlled
+corpus and current toolchain.
+A backfill remains a new measurement, not a retroactive claim about the original host or
+compiler.
 
 ### Supporting Studies Use a Different Contract
 
@@ -640,8 +724,10 @@ Until then, its point remains gray.
 2. Enumerate platform, host, filesystem, cache, scale, and virtualization regimes.
 3. Establish exact correctness and subject-identity oracles.
 4. Separate end-to-end jobs from mechanism-isolating component jobs.
-5. Measure the harness and instrument before optimizing product code.
-6. Publish the acceptance rule before the first candidate.
+5. Version the post-decision checkpoint profile and require it after every terminal
+   experiment.
+6. Measure the harness and instrument before optimizing product code.
+7. Publish the acceptance rule before the first candidate.
 
 ### Hypothesis Card
 
@@ -668,7 +754,8 @@ The authoritative envelope should contain, at minimum:
 - paired schedule and artifacts;
 - per-job metrics and intervals;
 - oracle validity;
-- effect direction and product decision as separate fields; and
+- effect direction and product decision as separate fields;
+- checkpoint profile, kept arm, and exact source revision; and
 - complexity and landing/revert provenance.
 
 Use the Markdown body for rationale, profiler interpretation, anomalies, and follow-up
@@ -682,9 +769,11 @@ questions. Never ask a generated report to recover structured values from prose.
 4. Classify direction: improved, regressed, unclear, or unknown.
 5. Apply the predeclared threshold and complexity trade.
 6. Land or revert the candidate.
-7. Commit the artifact even when rejected.
-8. Run a cumulative anchor after a coherent group of changes.
-9. Re-profile the new baseline before selecting the next hypothesis.
+7. Run the complete checkpoint profile on the surviving state.
+8. Record the kept arm and exact source revision.
+9. Commit the artifact even when rejected.
+10. Run a cumulative anchor after a coherent group of changes.
+11. Re-profile the new baseline before selecting the next hypothesis.
 
 ### White-Paper Structure
 
@@ -706,9 +795,10 @@ A reusable campaign report should contain these sections in this order:
 Generate the graphical companion from the same artifacts, with:
 
 - a clearly labeled current-outcome panel;
-- one platform lane per measured regime;
-- green, red, and neutral experiment effects with accessible details;
-- connections only where their meaning is explicit;
+- an absolute kept-state small-multiple chart before local percentage effects;
+- simultaneous platform lanes with independent raw units;
+- green, red, and neutral local evidence with accessible details;
+- connections only between compatible absolute regimes;
 - an adjustable aggregate whose weights and formula are visible;
 - mechanism-level win/failure roll-ups; and
 - a searchable schema-directed artifact table.
@@ -718,6 +808,8 @@ Generate the graphical companion from the same artifacts, with:
 A campaign is ready to hand off when:
 
 - every attempted candidate has an artifact and verdict;
+- every terminal checkpoint names a profile, kept arm, full source revision, and
+  complete metric matrix;
 - generated views match authoritative frontmatter;
 - cumulative outcomes are rerun on each claimed platform;
 - neutral and environmental results are labeled conservatively;
@@ -772,6 +864,24 @@ Repository Make targets regenerate the committed HTML data from experiment front
 and check it for drift.
 The HTML has no network dependency, so a checkout preserves the visual evidence beside
 its source artifacts.
+
+Replay a source-history window by resolving its immutable plan first:
+
+```shell
+make perf-replay-revisions ARGS='\
+  --range 4af00b0..HEAD --path crates/fdu \
+  --root /path/to/frozen/tree --label index-history \
+  --baseline-fingerprint /path/to/tree-fingerprint.json \
+  --name index-history --dry-run'
+```
+
+Run the same command without `--dry-run` after reviewing the full commits and five jobs.
+The runner archives rather than checks out each revision, builds every probe under one
+current locked toolchain, then measures all binaries in one interleaved schedule.
+Repeat the resolved commit list on macOS and Linux with platform-local frozen corpora.
+The `4af00b0` anchor contains the committed real-tree probe and is production-engine
+equivalent to the earlier `b565882` campaign baseline; replaying an older revision
+requires a documented compatible probe reconstruction.
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

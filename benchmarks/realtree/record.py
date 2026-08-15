@@ -55,10 +55,48 @@ def main(argv: Sequence[str]) -> int:
     parser.add_argument("--complexity-note", default="")
     parser.add_argument("--control-variant", default=None)
     parser.add_argument("--candidate-variant", default=None)
+    parser.add_argument(
+        "--checkpoint-profile",
+        help="versioned post-decision matrix, for example index-core-v1",
+    )
+    parser.add_argument(
+        "--checkpoint-variant",
+        choices=("control", "candidate"),
+        help="arm that remains after the verdict",
+    )
+    parser.add_argument(
+        "--checkpoint-revision",
+        default="",
+        help="Git commit that produced the kept arm; required with --checkpoint-profile",
+    )
     parser.add_argument("--body", type=Path, help="Markdown body file; a stub is written otherwise")
     parser.add_argument("--output-dir", type=Path, default=EXPERIMENTS_DIR)
     parser.add_argument("--no-validate", action="store_true")
     arguments = parser.parse_args(list(argv))
+
+    checkpoint_values = (
+        arguments.checkpoint_profile,
+        arguments.checkpoint_variant,
+        arguments.checkpoint_revision,
+    )
+    if any(checkpoint_values) and not (
+        arguments.checkpoint_profile
+        and arguments.checkpoint_variant
+        and arguments.checkpoint_revision
+    ):
+        parser.error(
+            "--checkpoint-profile, --checkpoint-variant, and "
+            "--checkpoint-revision must be given together"
+        )
+
+    checkpoint_revision = ""
+    if arguments.checkpoint_profile:
+        try:
+            checkpoint_revision = _resolve_checkpoint_revision(
+                arguments.checkpoint_revision, Path.cwd()
+            )
+        except ValueError as error:
+            parser.error(str(error))
 
     run = json.loads(arguments.run.read_text(encoding="utf-8"))
     try:
@@ -75,6 +113,15 @@ def main(argv: Sequence[str]) -> int:
         run_artifact=str(arguments.run),
         control_variant=arguments.control_variant,
         candidate_variant=arguments.candidate_variant,
+        checkpoint=(
+            {
+                "profile": arguments.checkpoint_profile,
+                "kept_variant": arguments.checkpoint_variant,
+                "source_revision": checkpoint_revision,
+            }
+            if arguments.checkpoint_profile
+            else None
+        ),
         complexity={
             "lines_changed": arguments.lines_changed,
             "new_dependencies": arguments.new_dependency,
@@ -105,6 +152,29 @@ def main(argv: Sequence[str]) -> int:
     if not arguments.no_validate:
         return _validate(destination)
     return 0
+
+
+def _resolve_checkpoint_revision(requested: str, repository: Path) -> str:
+    """Resolve a checkpoint revision to the immutable full Git object name."""
+    if not requested or requested.startswith("-"):
+        raise ValueError(f"unsafe or empty checkpoint revision: {requested!r}")
+    completed = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repository),
+            "rev-parse",
+            "--verify",
+            f"{requested}^{{commit}}",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        detail = completed.stderr.strip() or completed.stdout.strip()
+        raise ValueError(f"cannot resolve checkpoint revision {requested!r}: {detail}")
+    return completed.stdout.strip()
 
 
 def _headline(run: Mapping[str, Any], arguments: argparse.Namespace) -> Any:

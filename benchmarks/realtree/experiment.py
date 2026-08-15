@@ -199,6 +199,11 @@ class Binary(Strict):
     name: str
     sha256: str = Field(default="", description="Of the binary itself, not its source.")
     size_bytes: int = Field(default=0, ge=0)
+    source_revision: str = Field(
+        default="",
+        pattern=r"^(?:[0-9a-f]{40})?$",
+        description="Exact Git commit used to build this binary, when recorded.",
+    )
     args: List[str] = Field(
         default_factory=list,
         description="Flags this variant carried, e.g. a thread count.",
@@ -235,6 +240,34 @@ class ReferenceTool(Strict):
     argv: List[str] = Field(default_factory=list)
 
 
+class Checkpoint(Strict):
+    """Which measured arm represents the kept build after the experiment.
+
+    The measurements stay in ``results``.  This small selector lets a report recover
+    absolute post-decision values without guessing that every accepted-looking point
+    is cumulative or that every rejected candidate became part of the product.
+    """
+
+    profile: str = Field(
+        pattern=r"^[a-z0-9][a-z0-9-]*-v\d+$",
+        description=(
+            "Versioned benchmark matrix whose expected jobs and metrics define "
+            "checkpoint coverage, for example index-core-v1."
+        ),
+    )
+    kept_variant: Literal["control", "candidate"] = Field(
+        description="Measured arm that remained after the verdict."
+    )
+    source_revision: str = Field(
+        default="",
+        pattern=r"^(?:[0-9a-f]{40})?$",
+        description=(
+            "Git commit that produced the kept binary. Empty means the historical "
+            "run did not preserve enough source provenance for revision replay."
+        ),
+    )
+
+
 class Experiment(Strict):
     """One turn of the performance loop, from hypothesis to verdict."""
 
@@ -244,6 +277,13 @@ class Experiment(Strict):
     hypotheses: List[HypothesisId] = Field(
         default_factory=list,
         description="Hypothesis ids from the performance-loop guide, e.g. H1 or S1.",
+    )
+    checkpoint: Optional[Checkpoint] = Field(
+        default=None,
+        description=(
+            "Post-decision benchmark selector. Omit when the run is exploratory, "
+            "unfinished, or does not belong to a stable checkpoint profile."
+        ),
     )
     subject: Subject
     method: Method
@@ -293,6 +333,7 @@ def _binary(run: Mapping[str, Any], name: str) -> Dict[str, Any]:
         "name": name,
         "sha256": identity.get("sha256", ""),
         "size_bytes": identity.get("size_bytes", 0),
+        "source_revision": identity.get("source_revision", ""),
         "args": list(identity.get("args") or []),
     }
 
@@ -310,6 +351,7 @@ def from_run(
     run_artifact: Optional[str] = None,
     control_variant: Optional[str] = None,
     candidate_variant: Optional[str] = None,
+    checkpoint: Optional[Mapping[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Derive an experiment payload from a measurement run document.
 
@@ -381,7 +423,7 @@ def from_run(
         if entry.get("wall_ns")
     ]
 
-    return {
+    payload = {
         "id": experiment_id,
         "title": title,
         "date": run["started_utc"][:10],
@@ -425,3 +467,6 @@ def from_run(
         "complexity": dict(complexity),
         "verdict": dict(verdict),
     }
+    if checkpoint is not None:
+        payload["checkpoint"] = dict(checkpoint)
+    return payload

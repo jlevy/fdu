@@ -12,6 +12,10 @@ experiment:
   hypotheses:
     - H12
     - H9
+  checkpoint:
+    profile: index-core-v1
+    kept_variant: candidate
+    source_revision: 09d65590514cdb9d51c26637539650b064c92f86
   subject:
     tree_label: cache-pressure-12x
     tree_root_id: ffd40fd8482e8ed64bd19bcd1a724389532ca4889be43adf830122279ac63180

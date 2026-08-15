@@ -34,6 +34,7 @@ help:
 	@echo "make perf-baseline  Fingerprint the reference tree named by PERF_TREE"
 	@echo "make perf-profile   Attribute time to functions on a symbol-bearing build"
 	@echo "make perf-compare   Measure a candidate against CONTROL, interleaved and paired"
+	@echo "make perf-replay-revisions  Build Git revisions and run one checkpoint matrix"
 	@echo "make perf-content-profile  Attribute basic content, cache-hit, and query time"
 	@echo "make perf-content-compare  Compare content jobs in 12 paired trials"
 	@echo "make perf-test      Test the real-tree harness itself"
@@ -125,7 +126,7 @@ uv-version:
 UV_BACKED_TARGETS := test-performance python-concurrency python-smoke docs-format docs-format-check \
 	perf-baseline perf-profile perf-content-profile perf-compare perf-content-compare \
 	perf-compare-tools perf-record perf-test perf-ledger perf-schema perf-schema-check \
-	perf-research-report perf-research-report-check
+	perf-research-report perf-research-report-check perf-replay-revisions
 
 $(UV_BACKED_TARGETS): uv-version
 
@@ -258,7 +259,7 @@ PERF_PROFILING := target/profiling/examples/perf_probe
 PERF_UV := PYTHONDONTWRITEBYTECODE=1 $(UV) run --project benchmarks --frozen
 PERF_RUN := $(PERF_UV) python -m benchmarks.realtree
 
-.PHONY: perf-probe-release perf-probe-profiling perf-baseline perf-profile perf-compare perf-content-profile perf-content-compare perf-compare-tools perf-record perf-test perf-ledger perf-schema perf-schema-check perf-research-report perf-research-report-check
+.PHONY: perf-probe-release perf-probe-profiling perf-baseline perf-profile perf-compare perf-content-profile perf-content-compare perf-compare-tools perf-record perf-test perf-ledger perf-schema perf-schema-check perf-research-report perf-research-report-check perf-replay-revisions
 
 perf-probe-release:
 	$(CARGO) build --locked --release -p fdu --example perf_probe --no-default-features
@@ -292,7 +293,9 @@ perf-compare: perf-probe-release
 		--variant "control=$(CONTROL)" \
 		--variant "candidate=$(PERF_RELEASE)" \
 		--reference dust=$(shell command -v dust 2>/dev/null || echo /usr/bin/du) \
-		--job cold-scan-index --job warm-revalidate \
+		--job cold-scan-index --job cold-scan-producer \
+		--job cold-snapshot-save --job warm-revalidate \
+		--job warm-snapshot-load \
 		--trials $(or $(TRIALS),12) \
 		--scratch $(PERF_SCRATCH) --output-dir $(PERF_RESULTS) \
 		--baseline-fingerprint $(PERF_BASELINE) \
@@ -328,6 +331,11 @@ perf-compare-tools:
 # Record an experiment artifact from a completed measurement run.
 perf-record:
 	$(PERF_UV) --group dev python -m benchmarks.realtree.record $(ARGS)
+
+# Build a frozen Git sequence and measure every revision in one interleaved run.
+# Run with ARGS="--help" or start with --dry-run to inspect the resolved sequence.
+perf-replay-revisions:
+	$(PERF_UV) --group dev python -m benchmarks.realtree.revision_series $(ARGS)
 
 perf-test:
 	$(PERF_UV) --group dev python -m unittest discover -s benchmarks/realtree/tests -p 'test_*.py'

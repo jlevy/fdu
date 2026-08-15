@@ -147,13 +147,67 @@
           <div class="section-heading">
             <div>
               <p class="section-index">03 · Experiment sequence</p>
-              <h2 id="experiments-title">Every attempt remains visible</h2>
+              <h2 id="experiments-title">Kept-state history and local comparisons</h2>
             </div>
             <p>
-              Each position is a separate paired experiment. The upper panel compares its
-              control and candidate runtimes; the lower panel expresses the same pair as a
-              relative primary-metric change. Hover either panel to inspect the workload,
-              tree, binaries, and verdict.
+              The first chart follows the arm retained after each decision across five
+              absolute dimensions. The second keeps every local control–candidate pair
+              available for causal inspection.
+            </p>
+          </div>
+
+          <div class="checkpoint-heading">
+            <div>
+              <p class="panel-label">Decision-state checkpoints</p>
+              <h3>Absolute performance of the kept build</h3>
+            </div>
+            <p id="checkpoint-summary"></p>
+          </div>
+          <div class="chart-legend checkpoint-legend" aria-label="Checkpoint chart legend">
+            <span><i class="legend-mark legend-good"></i> Kept candidate improved this dimension</span>
+            <span><i class="legend-mark legend-bad"></i> Kept candidate regressed this dimension</span>
+            <span><i class="legend-mark legend-neutral"></i> Unclear, baseline, or control retained</span>
+            <span><i class="legend-line"></i> Identical measurement regime</span>
+            <span><i class="legend-missing">×</i> Not measured</span>
+          </div>
+          <figure class="checkpoint-figure panel">
+            <div class="plot-scroll">
+              <svg
+                id="checkpoint-plot"
+                class="checkpoint-plot"
+                viewBox="0 0 1240 940"
+                role="img"
+                aria-labelledby="checkpoint-plot-title checkpoint-plot-description"
+              >
+                <title id="checkpoint-plot-title">Absolute kept-build performance checkpoints</title>
+                <desc id="checkpoint-plot-description">
+                  Small multiples show macOS and Linux absolute wall time, CPU time, and
+                  peak memory after each experiment decision. Lines join only measurements
+                  with identical host, tree, filesystem, cache, job, and metric regimes.
+                  Crosses identify dimensions that were not measured at that iteration.
+                </desc>
+              </svg>
+            </div>
+            <figcaption>
+              Candidate values are used after accepted decisions; control values are used
+              after rejections. Each row has its own absolute scale. A line stops when the
+              host, tree digest, filesystem, cache state, job, or metric changes. Missing
+              markers are evidence gaps, not interpolated values.
+            </figcaption>
+          </figure>
+          <p class="sr-only" id="checkpoint-status" aria-live="polite"></p>
+          <div class="checkpoint-detail panel" id="checkpoint-detail" aria-live="polite">
+            <p class="empty-state">Focus, hover, or select a checkpoint to inspect its value and regime.</p>
+          </div>
+
+          <div class="checkpoint-heading local-pair-heading">
+            <div>
+              <p class="panel-label">Local A/B evidence</p>
+              <h3>What each candidate changed against its own control</h3>
+            </div>
+            <p>
+              These pairs establish individual verdicts. They are not a cumulative trend
+              because their workloads and regimes vary.
             </p>
           </div>
 

@@ -7,10 +7,9 @@ Nothing here runs in `make check`, and nothing here blocks a merge.
 It exists so that any contributor — human or agent — can pick the loop up months later,
 re-run it, and get numbers comparable to the ones already recorded.
 
-New here? Start with
-[the campaign status report](../reports/report-2026-08-14-performance-campaign-status.md),
-which assumes no context and covers what has been achieved, what remains, and where the
-evidence is weak. This document is the protocol it describes.
+[The campaign status report](../reports/report-2026-08-14-performance-campaign-status.md)
+summarizes the measured outcome, remaining work, and evidence gaps.
+This guide defines the protocol behind those results.
 
 The companion documents are the
 [experiment ledger](../reports/report-2026-08-10-fdu-performance-experiments.md), which
@@ -72,6 +71,23 @@ Two axes cross these dimensions:
   which isolates the syscall layer from the index).
 - **Warm start** — a compatible snapshot exists and is revalidated against the tree.
   This is `warm-revalidate` (load plus reconcile) and `warm-snapshot-load` (load only).
+
+The versioned `index-core-v1` checkpoint profile runs five jobs after every terminal
+experiment:
+
+1. `cold-scan-index`;
+2. `cold-scan-producer`;
+3. `cold-snapshot-save`;
+4. `warm-revalidate`; and
+5. `warm-snapshot-load`.
+
+Every job records the full process-metric vector above.
+The report’s absolute-history chart selects five product dimensions from that matrix:
+cold indexed wall time, warm revalidation wall time, snapshot-load wall time, cold
+indexed CPU, and cold indexed peak RSS. Producer and snapshot-save results remain in the
+artifact as mechanism checks and regression guards.
+Versioning the profile prevents a later job change from silently changing what a
+checkpoint means.
 
 The names “cold scan” and “warm start” describe **fdu snapshot state**, not the
 operating-system filesystem cache.
@@ -296,11 +312,13 @@ non-publishable.
 2. HYPOTHESIS— write down what you think is slow, why, and what you expect
                to happen to which metric. Before the change.
 3. CHANGE    — smallest diff that tests the hypothesis. One idea per experiment.
-4. MEASURE   — release build, --repeat 1, interleaved against the control,
-               >= 12 paired trials.
+4. MEASURE   — release build, complete versioned checkpoint profile,
+               interleaved against the control, >= 12 paired trials.
 5. DECIDE    — the accept rule below. Record the verdict either way.
-6. COMMIT    — accepted changes commit alone, with their numbers in the message.
-               Rejected changes are reverted and recorded in the ledger.
+6. SETTLE    — commit an accepted production change or restore the rejected control.
+               Resolve the exact Git revision of the implementation that survived.
+7. RECORD    — write the experiment, kept arm, profile, and source revision.
+               Rejections remain first-class evidence.
 ```
 
 Steps 1 and 4 use different builds on purpose.
@@ -335,15 +353,82 @@ says exactly that.
 A 4% win that adds a lock, a thread pool, and two new failure modes is
 not automatically worth taking, and the ledger records the reasoning when we decline it.
 
+### Decision-state checkpoints make a performance history
+
+A paired result answers a local question: did this candidate beat this control in this
+run? It does not, by itself, show how the shipped implementation changed across the
+campaign. The candidate may be rejected, the control may come from an older anchor, and
+the next experiment may use another tree or host.
+
+Each terminal index experiment therefore records a checkpoint for the implementation
+that survived the decision:
+
+- an accepted experiment keeps the candidate;
+- a rejected experiment keeps the control;
+- a baseline keeps its measured baseline arm; and
+- a superseded, blocked, or in-progress experiment creates no checkpoint.
+
+The checkpoint stores `profile`, `kept_variant`, and the exact `source_revision`. Its
+values come directly from the kept arm of the paired run; they are not reconstructed
+from percentage changes.
+A complete `index-core-v1` checkpoint contains all five jobs and every recorded process
+metric. Missing legacy jobs stay visibly missing rather than being interpolated.
+
+The absolute-history chart connects adjacent checkpoints only when their comparison
+regime is identical: tree digest and entry count, platform, CPU, architecture, core and
+memory class, filesystem, virtualization, operating-system cache state, job, and metric.
+A line break means the absolute values are not directly comparable.
+Point color reports the local experiment evidence; the line reports the kept
+implementation state.
+Those are different claims and must remain visually distinct.
+
+### Git revision replay fills and audits the checkpoint history
+
+The revision runner archives each selected commit without changing the working tree,
+builds every probe with one current locked Rust toolchain, and measures all resulting
+binaries in a single interleaved run.
+Start with the immutable plan:
+
+```shell
+make perf-replay-revisions ARGS='\
+  --range 4af00b0..TIP --path crates/fdu \
+  --root /path/to/frozen/tree --label index-history \
+  --baseline-fingerprint /path/to/tree-fingerprint.json \
+  --name index-history --dry-run'
+```
+
+Inspect the full commit list and five-job matrix, then rerun the same command without
+`--dry-run`. Use explicit repeated `--revision` arguments when the desired checkpoints
+are not a first-parent path-filtered range.
+The output records every full commit, commit subject, job, binary identity, tree
+fingerprint, trial, and build-toolchain version.
+Scratch space, extracted sources, binaries, and results remain outside the measured
+tree.
+
+Run the same resolved revision list separately on macOS and Linux.
+Each platform needs a stable local corpus and its own fingerprint; raw milliseconds are
+never averaged across machines.
+Using one current toolchain isolates source revision.
+Reproducing the historical compiler is a separate experiment and requires recording that
+toolchain as a second axis.
+
+The first campaign baseline commit, `b565882`, predates the committed real-tree
+`perf_probe` contract.
+Revision replay can begin at `4af00b0`, which introduced the probe without changing the
+baseline production engine, or an older compatible probe must be reconstructed and
+documented. A replay result becomes published history only after its source revision,
+regime, and checkpoint profile are committed in an artifact; raw replay output alone is
+not a ledger row.
+
 ## The record is a soft-schema artifact
 
 Every turn of the loop leaves one Markdown file in
 [docs/project/experiments/](../experiments/), and the split inside that file is what
 makes the loop cumulative rather than a pile of session notes.
 The YAML frontmatter carries what a tool reads: the tree fingerprint and host, the
-paired medians and bootstrap intervals per job and metric, the complexity cost, and a
-`decision` drawn from a fixed set.
-It is validated against
+paired medians and bootstrap intervals per job and metric, the complexity cost, a
+`decision` drawn from a fixed set, and the kept-state checkpoint profile, arm, and
+source revision. It is validated against
 [`experiment.schema.yaml`](../experiments/experiment.schema.yaml) at `status: enforced`.
 The Markdown body carries what no schema can hold: what the profile suggested, what was
 actually tried, and why the number meant what we said it meant.
@@ -360,7 +445,7 @@ That is what lets the ledger lead with its failures.
 - **The measured half is never retyped.** `make perf-record` lifts the medians and
   intervals straight out of the run JSON and asks the operator only for what a
   measurement cannot supply: the hypothesis, the change being tested, the complexity,
-  the verdict, and one sentence of reasoning.
+  the verdict, the kept arm and settled revision, and one sentence of reasoning.
 - **The ledger is a view, not a document.** `make perf-ledger` regenerates it from the
   validated artifacts, so the report cannot drift from the record; an artifact that
   stopped matching the contract fails the build instead of quietly contributing a wrong
@@ -477,9 +562,24 @@ uv run --no-project python -m benchmarks.realtree measure \
   --root /path/to/tree --label mytree \
   --variant control=/tmp/perf_probe.control \
   --variant candidate=target/release/examples/perf_probe \
-  --job cold-scan-index --job warm-revalidate \
+  --job cold-scan-index --job cold-scan-producer \
+  --job cold-snapshot-save --job warm-revalidate \
+  --job warm-snapshot-load \
   --trials 12 --baseline-fingerprint benchmarks/results/realtree/tree-mytree.json \
   --name exp007-parallel-producer
+
+# Record the settled state after accepting the candidate or restoring the control.
+make perf-record ARGS='\
+  --run /tmp/fdu-realtree/results/run-exp007-parallel-producer.json \
+  --id exp-007 --title "Direct entry-ID reconciliation" \
+  --hypothesis H7 --control "previous shipped state" \
+  --candidate "direct entry-ID reads" --decision accepted \
+  --primary-job warm-revalidate \
+  --reason "paired wall time cleared the threshold and correctness held" \
+  --lines-changed 42 \
+  --checkpoint-profile index-core-v1 \
+  --checkpoint-variant candidate \
+  --checkpoint-revision 0123456789abcdef0123456789abcdef01234567'
 ```
 
 `make perf-baseline`, `make perf-profile`, and `make perf-compare` wrap these with the
@@ -488,8 +588,8 @@ project’s usual arguments; `PERF_TREE` selects the tree.
 Results land under `/tmp/fdu-realtree/results/` by default because the standard measured
 tree contains `benchmarks/results/`; writing evidence into the subject would invalidate
 the run. Host-specific raw artifacts remain outside the repository.
-What gets committed is the ledger entry: the numbers that mattered, the verdict, and the
-reasoning.
+What gets committed is the experiment artifact: the complete measured checkpoint,
+verdict, settled source revision, and reasoning.
 
 ### Comparing against other tools
 

@@ -21,6 +21,10 @@ experiment:
     - H31
     - H3
     - H26
+  checkpoint:
+    profile: index-core-v1
+    kept_variant: candidate
+    source_revision: b12272565d570ebb8237df6e58a96178b72ad965
   subject:
     tree_label: metabrowser
     tree_root_id: dbd79ed9c898f7a2f66530cd95bb61cab88e798375134b86c77ece761de580a9

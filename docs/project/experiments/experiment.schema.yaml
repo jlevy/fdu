@@ -22,9 +22,47 @@ $defs:
         minimum: 0
         title: Size Bytes
         type: integer
+      source_revision:
+        default: ''
+        description: Exact Git commit used to build this binary, when recorded.
+        pattern: ^(?:[0-9a-f]{40})?$
+        title: Source Revision
+        type: string
     required:
     - name
     title: Binary
+    type: object
+  Checkpoint:
+    additionalProperties: false
+    description: |-
+      Which measured arm represents the kept build after the experiment.
+
+      The measurements stay in ``results``.  This small selector lets a report recover
+      absolute post-decision values without guessing that every accepted-looking point
+      is cumulative or that every rejected candidate became part of the product.
+    properties:
+      kept_variant:
+        description: Measured arm that remained after the verdict.
+        enum:
+        - control
+        - candidate
+        title: Kept Variant
+        type: string
+      profile:
+        description: Versioned benchmark matrix whose expected jobs and metrics define checkpoint coverage, for example index-core-v1.
+        pattern: ^[a-z0-9][a-z0-9-]*-v\d+$
+        title: Profile
+        type: string
+      source_revision:
+        default: ''
+        description: Git commit that produced the kept binary. Empty means the historical run did not preserve enough source provenance for revision replay.
+        pattern: ^(?:[0-9a-f]{40})?$
+        title: Source Revision
+        type: string
+    required:
+    - kept_variant
+    - profile
+    title: Checkpoint
     type: object
   Complexity:
     additionalProperties: false
@@ -412,6 +450,12 @@ $schema: https://json-schema.org/draft/2020-12/schema
 additionalProperties: false
 description: One turn of the performance loop, from hypothesis to verdict.
 properties:
+  checkpoint:
+    anyOf:
+    - $ref: '#/$defs/Checkpoint'
+    - type: 'null'
+    default: null
+    description: Post-decision benchmark selector. Omit when the run is exploratory, unfinished, or does not belong to a stable checkpoint profile.
   complexity:
     $ref: '#/$defs/Complexity'
   date:
@@ -461,4 +505,4 @@ title: Experiment
 type: object
 x-softschema:
   contract: fdu.performance:Experiment/v1
-  schema_sha256: 62153867fc919f1b295c1012a5181c4ac5e061cc168e82f881343ea6a719300e
+  schema_sha256: 7c0cb156b711fd3e8413c5af7f3a0716f8eb3e4331772b602077a6af22162114

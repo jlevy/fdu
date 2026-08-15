@@ -1,4 +1,3730 @@
 window.FDU_PERFORMANCE_RESEARCH = {
+  "checkpoint_history": {
+    "caveat": "A point is the measured arm retained after that experiment. Lines join only identical host, tree, filesystem, cache, workload, and metric regimes. Missing cells were not measured; source revisions are shown only when the historical artifact recorded them.",
+    "checkpoints": [
+      {
+        "coverage": {
+          "complete": true,
+          "expected": 5,
+          "measured": 5
+        },
+        "date": "2026-08-10",
+        "decision": "baseline",
+        "experiment_id": "exp-000",
+        "kept_variant": "candidate",
+        "measurements": [
+          {
+            "ci95_pct": [
+              null,
+              null
+            ],
+            "effect": "unknown",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": 0.0,
+            "pairs": 0,
+            "value": 627512875.0
+          },
+          {
+            "ci95_pct": [
+              null,
+              null
+            ],
+            "effect": "unknown",
+            "id": "warm-revalidate-wall",
+            "job": "warm-revalidate",
+            "label": "Warm revalidation",
+            "metric": "wall_ns",
+            "paired_change_pct": 0.0,
+            "pairs": 0,
+            "value": 795170479.0
+          },
+          {
+            "ci95_pct": [
+              null,
+              null
+            ],
+            "effect": "unknown",
+            "id": "snapshot-load-wall",
+            "job": "warm-snapshot-load",
+            "label": "Warm snapshot load",
+            "metric": "wall_ns",
+            "paired_change_pct": 0.0,
+            "pairs": 0,
+            "value": 335995208.5
+          },
+          {
+            "ci95_pct": [
+              null,
+              null
+            ],
+            "effect": "unknown",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": 0.0,
+            "pairs": 0,
+            "value": 605256000.0
+          },
+          {
+            "ci95_pct": [
+              null,
+              null
+            ],
+            "effect": "unknown",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": 0.0,
+            "pairs": 0,
+            "value": 33570816.0
+          }
+        ],
+        "number": 0,
+        "platform": "macOS",
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "09260dd0cfd1",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "bf574331eca680372f7060d4f9ab3b3b175afd265ac27bda6b6dc67ed9c80798",
+          "tree_entries": 59654
+        },
+        "source": "../../experiments/exp-000-baseline-on-a-real-60k-entry-tree.md",
+        "source_revision": "b565882bd9f2a877934bd96415d3a8eab6504f92",
+        "title": "Baseline on a real 60k-entry tree"
+      },
+      {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 4
+        },
+        "date": "2026-08-10",
+        "decision": "accepted",
+        "experiment_id": "exp-001",
+        "kept_variant": "candidate",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -51.024,
+              -43.743
+            ],
+            "effect": "improved",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": -50.033,
+            "pairs": 12,
+            "value": 310774958.5
+          },
+          {
+            "ci95_pct": [
+              -0.534,
+              4.738
+            ],
+            "effect": "unclear",
+            "id": "warm-revalidate-wall",
+            "job": "warm-revalidate",
+            "label": "Warm revalidation",
+            "metric": "wall_ns",
+            "paired_change_pct": 0.279,
+            "pairs": 12,
+            "value": 818697583.5
+          },
+          {
+            "ci95_pct": [
+              54.555,
+              66.561
+            ],
+            "effect": "regressed",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": 58.046,
+            "pairs": 12,
+            "value": 973572500.0
+          },
+          {
+            "ci95_pct": [
+              6.214,
+              9.831
+            ],
+            "effect": "regressed",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": 7.486,
+            "pairs": 12,
+            "value": 35758080.0
+          }
+        ],
+        "number": 1,
+        "platform": "macOS",
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "09260dd0cfd1",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "bf574331eca680372f7060d4f9ab3b3b175afd265ac27bda6b6dc67ed9c80798",
+          "tree_entries": 59654
+        },
+        "source": "../../experiments/exp-001-bounded-parallel-directory-producer.md",
+        "source_revision": "a0cc981da037e3473a91360a0c41602a13b38a13",
+        "title": "Bounded parallel directory producer"
+      },
+      {
+        "coverage": {
+          "complete": true,
+          "expected": 5,
+          "measured": 5
+        },
+        "date": "2026-08-10",
+        "decision": "rejected",
+        "experiment_id": "exp-002",
+        "kept_variant": "control",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -4.196,
+              1.439
+            ],
+            "effect": "retained",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": -1.267,
+            "pairs": 12,
+            "value": 304994166.0
+          },
+          {
+            "ci95_pct": [
+              -4.548,
+              -0.223
+            ],
+            "effect": "retained",
+            "id": "warm-revalidate-wall",
+            "job": "warm-revalidate",
+            "label": "Warm revalidation",
+            "metric": "wall_ns",
+            "paired_change_pct": -2.593,
+            "pairs": 12,
+            "value": 810036833.5
+          },
+          {
+            "ci95_pct": [
+              -2.792,
+              -1.778
+            ],
+            "effect": "retained",
+            "id": "snapshot-load-wall",
+            "job": "warm-snapshot-load",
+            "label": "Warm snapshot load",
+            "metric": "wall_ns",
+            "paired_change_pct": -2.361,
+            "pairs": 12,
+            "value": 324355125.0
+          },
+          {
+            "ci95_pct": [
+              -5.509,
+              4.6
+            ],
+            "effect": "retained",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": -0.452,
+            "pairs": 12,
+            "value": 1254782000.0
+          },
+          {
+            "ci95_pct": [
+              -0.959,
+              2.455
+            ],
+            "effect": "retained",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": -0.158,
+            "pairs": 12,
+            "value": 36560896.0
+          }
+        ],
+        "number": 2,
+        "platform": "macOS",
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "09260dd0cfd1",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "bf574331eca680372f7060d4f9ab3b3b175afd265ac27bda6b6dc67ed9c80798",
+          "tree_entries": 59654
+        },
+        "source": "../../experiments/exp-002-parallel-revalidation-sweep.md",
+        "source_revision": null,
+        "title": "Parallel revalidation sweep"
+      },
+      {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 4
+        },
+        "date": "2026-08-11",
+        "decision": "rejected",
+        "experiment_id": "exp-003",
+        "kept_variant": "control",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -3.007,
+              4.886
+            ],
+            "effect": "retained",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": 1.019,
+            "pairs": 14,
+            "value": 309721687.5
+          },
+          {
+            "ci95_pct": [
+              -2.907,
+              -1.783
+            ],
+            "effect": "retained",
+            "id": "warm-revalidate-wall",
+            "job": "warm-revalidate",
+            "label": "Warm revalidation",
+            "metric": "wall_ns",
+            "paired_change_pct": -2.298,
+            "pairs": 14,
+            "value": 802365270.5
+          },
+          {
+            "ci95_pct": [
+              -5.475,
+              4.703
+            ],
+            "effect": "retained",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": -1.009,
+            "pairs": 14,
+            "value": 1283518000.0
+          },
+          {
+            "ci95_pct": [
+              -4.806,
+              -2.644
+            ],
+            "effect": "retained",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": -3.973,
+            "pairs": 14,
+            "value": 36806656.0
+          }
+        ],
+        "number": 3,
+        "platform": "macOS",
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "09260dd0cfd1",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "bf574331eca680372f7060d4f9ab3b3b175afd265ac27bda6b6dc67ed9c80798",
+          "tree_entries": 59654
+        },
+        "source": "../../experiments/exp-003-skip-journalling-on-the-bootstrap-apply-path.md",
+        "source_revision": null,
+        "title": "Skip journalling on the bootstrap apply path"
+      },
+      {
+        "coverage": {
+          "complete": true,
+          "expected": 5,
+          "measured": 5
+        },
+        "date": "2026-08-11",
+        "decision": "accepted",
+        "experiment_id": "exp-004",
+        "kept_variant": "candidate",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -5.331,
+              2.266
+            ],
+            "effect": "unclear",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": -1.137,
+            "pairs": 14,
+            "value": 312819000.0
+          },
+          {
+            "ci95_pct": [
+              -10.639,
+              -4.867
+            ],
+            "effect": "improved",
+            "id": "warm-revalidate-wall",
+            "job": "warm-revalidate",
+            "label": "Warm revalidation",
+            "metric": "wall_ns",
+            "paired_change_pct": -9.4,
+            "pairs": 14,
+            "value": 764745375.5
+          },
+          {
+            "ci95_pct": [
+              -22.486,
+              -15.562
+            ],
+            "effect": "improved",
+            "id": "snapshot-load-wall",
+            "job": "warm-snapshot-load",
+            "label": "Warm snapshot load",
+            "metric": "wall_ns",
+            "paired_change_pct": -17.804,
+            "pairs": 14,
+            "value": 556162583.5
+          },
+          {
+            "ci95_pct": [
+              -8.981,
+              2.278
+            ],
+            "effect": "unclear",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": -4.064,
+            "pairs": 14,
+            "value": 1214263000.0
+          },
+          {
+            "ci95_pct": [
+              -2.685,
+              -0.896
+            ],
+            "effect": "improved",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": -1.815,
+            "pairs": 14,
+            "value": 36331520.0
+          }
+        ],
+        "number": 4,
+        "platform": "macOS",
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "09260dd0cfd1",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "bf574331eca680372f7060d4f9ab3b3b175afd265ac27bda6b6dc67ed9c80798",
+          "tree_entries": 59654
+        },
+        "source": "../../experiments/exp-004-borrowed-path-components.md",
+        "source_revision": "bf7a05a0c932ce85dc1f424056f4c97e42a5be88",
+        "title": "Borrowed path components"
+      },
+      {
+        "coverage": {
+          "complete": true,
+          "expected": 5,
+          "measured": 5
+        },
+        "date": "2026-08-11",
+        "decision": "accepted",
+        "experiment_id": "exp-005",
+        "kept_variant": "candidate",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -10.869,
+              5.099
+            ],
+            "effect": "unclear",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": -3.851,
+            "pairs": 14,
+            "value": 436121958.5
+          },
+          {
+            "ci95_pct": [
+              -8.88,
+              13.741
+            ],
+            "effect": "unclear",
+            "id": "warm-revalidate-wall",
+            "job": "warm-revalidate",
+            "label": "Warm revalidation",
+            "metric": "wall_ns",
+            "paired_change_pct": -1.644,
+            "pairs": 14,
+            "value": 1138260041.5
+          },
+          {
+            "ci95_pct": [
+              -23.475,
+              -12.516
+            ],
+            "effect": "improved",
+            "id": "snapshot-load-wall",
+            "job": "warm-snapshot-load",
+            "label": "Warm snapshot load",
+            "metric": "wall_ns",
+            "paired_change_pct": -18.597,
+            "pairs": 14,
+            "value": 323610937.5
+          },
+          {
+            "ci95_pct": [
+              -3.827,
+              4.774
+            ],
+            "effect": "unclear",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": 3.474,
+            "pairs": 14,
+            "value": 1062209500.0
+          },
+          {
+            "ci95_pct": [
+              -4.797,
+              1.374
+            ],
+            "effect": "unclear",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": -0.708,
+            "pairs": 14,
+            "value": 37134336.0
+          }
+        ],
+        "number": 5,
+        "platform": "macOS",
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "09260dd0cfd1",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "bf574331eca680372f7060d4f9ab3b3b175afd265ac27bda6b6dc67ed9c80798",
+          "tree_entries": 59654
+        },
+        "source": "../../experiments/exp-005-snapshot-load-resolves-through-the-parent.md",
+        "source_revision": "954d27be986ef7a0862036efc8bbf2b8b11b7ea1",
+        "title": "Snapshot load resolves through the parent"
+      },
+      {
+        "coverage": {
+          "complete": true,
+          "expected": 5,
+          "measured": 5
+        },
+        "date": "2026-08-11",
+        "decision": "accepted",
+        "experiment_id": "exp-006",
+        "kept_variant": "candidate",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -51.135,
+              -47.516
+            ],
+            "effect": "improved",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": -48.909,
+            "pairs": 16,
+            "value": 320869395.5
+          },
+          {
+            "ci95_pct": [
+              -15.766,
+              -12.67
+            ],
+            "effect": "improved",
+            "id": "warm-revalidate-wall",
+            "job": "warm-revalidate",
+            "label": "Warm revalidation",
+            "metric": "wall_ns",
+            "paired_change_pct": -14.726,
+            "pairs": 16,
+            "value": 687997500.0
+          },
+          {
+            "ci95_pct": [
+              -29.589,
+              -28.054
+            ],
+            "effect": "improved",
+            "id": "snapshot-load-wall",
+            "job": "warm-snapshot-load",
+            "label": "Warm snapshot load",
+            "metric": "wall_ns",
+            "paired_change_pct": -29.106,
+            "pairs": 16,
+            "value": 229665604.0
+          },
+          {
+            "ci95_pct": [
+              100.929,
+              108.559
+            ],
+            "effect": "regressed",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": 104.134,
+            "pairs": 16,
+            "value": 1266600500.0
+          },
+          {
+            "ci95_pct": [
+              8.848,
+              9.559
+            ],
+            "effect": "regressed",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": 9.211,
+            "pairs": 16,
+            "value": 36519936.0
+          }
+        ],
+        "number": 6,
+        "platform": "macOS",
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "09260dd0cfd1",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "bf574331eca680372f7060d4f9ab3b3b175afd265ac27bda6b6dc67ed9c80798",
+          "tree_entries": 59654
+        },
+        "source": "../../experiments/exp-006-cumulative-effect-of-every-accepted-change.md",
+        "source_revision": "954d27be986ef7a0862036efc8bbf2b8b11b7ea1",
+        "title": "Cumulative effect of every accepted change"
+      },
+      {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 2
+        },
+        "date": "2026-08-11",
+        "decision": "accepted",
+        "experiment_id": "exp-007",
+        "kept_variant": "candidate",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -8.917,
+              -5.758
+            ],
+            "effect": "improved",
+            "id": "warm-revalidate-wall",
+            "job": "warm-revalidate",
+            "label": "Warm revalidation",
+            "metric": "wall_ns",
+            "paired_change_pct": -7.092,
+            "pairs": 20,
+            "value": 661987562.5
+          },
+          {
+            "ci95_pct": [
+              -2.82,
+              15.069
+            ],
+            "effect": "unclear",
+            "id": "snapshot-load-wall",
+            "job": "warm-snapshot-load",
+            "label": "Warm snapshot load",
+            "metric": "wall_ns",
+            "paired_change_pct": 5.742,
+            "pairs": 20,
+            "value": 369856750.0
+          }
+        ],
+        "number": 7,
+        "platform": "macOS",
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "09260dd0cfd1",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "bf574331eca680372f7060d4f9ab3b3b175afd265ac27bda6b6dc67ed9c80798",
+          "tree_entries": 59654
+        },
+        "source": "../../experiments/exp-007-direct-reconcile-reads-expectations-off-entry-ids.md",
+        "source_revision": "92d6212ea5d1e8da346457375023ad25d703459c",
+        "title": "Direct reconcile reads expectations off entry ids"
+      },
+      {
+        "coverage": {
+          "complete": true,
+          "expected": 5,
+          "measured": 5
+        },
+        "date": "2026-08-11",
+        "decision": "accepted",
+        "experiment_id": "exp-008",
+        "kept_variant": "candidate",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -32.766,
+              -0.783
+            ],
+            "effect": "improved",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": -15.652,
+            "pairs": 14,
+            "value": 462634895.5
+          },
+          {
+            "ci95_pct": [
+              -7.21,
+              8.602
+            ],
+            "effect": "unclear",
+            "id": "warm-revalidate-wall",
+            "job": "warm-revalidate",
+            "label": "Warm revalidation",
+            "metric": "wall_ns",
+            "paired_change_pct": -4.538,
+            "pairs": 14,
+            "value": 952780791.5
+          },
+          {
+            "ci95_pct": [
+              -14.786,
+              -4.237
+            ],
+            "effect": "improved",
+            "id": "snapshot-load-wall",
+            "job": "warm-snapshot-load",
+            "label": "Warm snapshot load",
+            "metric": "wall_ns",
+            "paired_change_pct": -6.896,
+            "pairs": 14,
+            "value": 278913250.0
+          },
+          {
+            "ci95_pct": [
+              -2.536,
+              5.787
+            ],
+            "effect": "unclear",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": -0.175,
+            "pairs": 14,
+            "value": 1078041500.0
+          },
+          {
+            "ci95_pct": [
+              -14.057,
+              -7.096
+            ],
+            "effect": "improved",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": -10.218,
+            "pairs": 14,
+            "value": 35086336.0
+          }
+        ],
+        "number": 8,
+        "platform": "macOS",
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "09260dd0cfd1",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "bf574331eca680372f7060d4f9ab3b3b175afd265ac27bda6b6dc67ed9c80798",
+          "tree_entries": 59654
+        },
+        "source": "../../experiments/exp-008-extensions-interned-to-integer-ids.md",
+        "source_revision": "bb1529d9488b48524f4527dd027ce067f6c70c34",
+        "title": "Extensions interned to integer ids"
+      },
+      {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 2
+        },
+        "date": "2026-08-11",
+        "decision": "accepted",
+        "experiment_id": "exp-009",
+        "kept_variant": "candidate",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -3.897,
+              0.133
+            ],
+            "effect": "unclear",
+            "id": "warm-revalidate-wall",
+            "job": "warm-revalidate",
+            "label": "Warm revalidation",
+            "metric": "wall_ns",
+            "paired_change_pct": -1.168,
+            "pairs": 20,
+            "value": 640465146.0
+          },
+          {
+            "ci95_pct": [
+              -21.493,
+              4.574
+            ],
+            "effect": "unclear",
+            "id": "snapshot-load-wall",
+            "job": "warm-snapshot-load",
+            "label": "Warm snapshot load",
+            "metric": "wall_ns",
+            "paired_change_pct": -7.98,
+            "pairs": 20,
+            "value": 318324479.5
+          }
+        ],
+        "number": 9,
+        "platform": "macOS",
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "09260dd0cfd1",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "bf574331eca680372f7060d4f9ab3b3b175afd265ac27bda6b6dc67ed9c80798",
+          "tree_entries": 59654
+        },
+        "source": "../../experiments/exp-009-single-pass-checksum-and-parse-on-snapshot-load.md",
+        "source_revision": "9f4f0296cf35733475cbfde36fcb506705b73b9c",
+        "title": "Single-pass checksum and parse on snapshot load"
+      },
+      {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 4
+        },
+        "date": "2026-08-11",
+        "decision": "rejected",
+        "experiment_id": "exp-010",
+        "kept_variant": "control",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -0.999,
+              4.055
+            ],
+            "effect": "retained",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": 1.497,
+            "pairs": 16,
+            "value": 463034854.0
+          },
+          {
+            "ci95_pct": [
+              -1.37,
+              1.638
+            ],
+            "effect": "retained",
+            "id": "warm-revalidate-wall",
+            "job": "warm-revalidate",
+            "label": "Warm revalidation",
+            "metric": "wall_ns",
+            "paired_change_pct": -0.031,
+            "pairs": 16,
+            "value": 698540250.0
+          },
+          {
+            "ci95_pct": [
+              -2.056,
+              6.345
+            ],
+            "effect": "retained",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": 1.755,
+            "pairs": 16,
+            "value": 1211369500.0
+          },
+          {
+            "ci95_pct": [
+              -2.197,
+              0.048
+            ],
+            "effect": "retained",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": -0.845,
+            "pairs": 16,
+            "value": 34742272.0
+          }
+        ],
+        "number": 10,
+        "platform": "macOS",
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "09260dd0cfd1",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "bf574331eca680372f7060d4f9ab3b3b175afd265ac27bda6b6dc67ed9c80798",
+          "tree_entries": 59654
+        },
+        "source": "../../experiments/exp-010-claim-list-join-and-deferred-path-joins-in-reconcile.md",
+        "source_revision": null,
+        "title": "Claim-list join and deferred path joins in reconcile"
+      },
+      {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 4
+        },
+        "date": "2026-08-11",
+        "decision": "rejected",
+        "experiment_id": "exp-011",
+        "kept_variant": "control",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -8.387,
+              0.226
+            ],
+            "effect": "retained",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": -2.531,
+            "pairs": 16,
+            "value": 483088125.0
+          },
+          {
+            "ci95_pct": [
+              -1.036,
+              -0.117
+            ],
+            "effect": "retained",
+            "id": "warm-revalidate-wall",
+            "job": "warm-revalidate",
+            "label": "Warm revalidation",
+            "metric": "wall_ns",
+            "paired_change_pct": -0.706,
+            "pairs": 16,
+            "value": 695578417.0
+          },
+          {
+            "ci95_pct": [
+              -5.421,
+              -0.294
+            ],
+            "effect": "retained",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": -2.137,
+            "pairs": 16,
+            "value": 1256933500.0
+          },
+          {
+            "ci95_pct": [
+              -2.223,
+              0.143
+            ],
+            "effect": "retained",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": -1.474,
+            "pairs": 16,
+            "value": 34553856.0
+          }
+        ],
+        "number": 11,
+        "platform": "macOS",
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "09260dd0cfd1",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "bf574331eca680372f7060d4f9ab3b3b175afd265ac27bda6b6dc67ed9c80798",
+          "tree_entries": 59654
+        },
+        "source": "../../experiments/exp-011-one-ancestor-merge-per-same-parent-insert-run.md",
+        "source_revision": null,
+        "title": "One ancestor merge per same-parent insert run"
+      },
+      {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 4
+        },
+        "date": "2026-08-11",
+        "decision": "accepted",
+        "experiment_id": "exp-012",
+        "kept_variant": "candidate",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -2.502,
+              1.195
+            ],
+            "effect": "unclear",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": -0.58,
+            "pairs": 16,
+            "value": 337040083.5
+          },
+          {
+            "ci95_pct": [
+              -3.834,
+              2.868
+            ],
+            "effect": "unclear",
+            "id": "warm-revalidate-wall",
+            "job": "warm-revalidate",
+            "label": "Warm revalidation",
+            "metric": "wall_ns",
+            "paired_change_pct": 0.027,
+            "pairs": 16,
+            "value": 700746291.0
+          },
+          {
+            "ci95_pct": [
+              -0.709,
+              3.487
+            ],
+            "effect": "unclear",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": 0.492,
+            "pairs": 16,
+            "value": 1205359500.0
+          },
+          {
+            "ci95_pct": [
+              0.845,
+              2.881
+            ],
+            "effect": "regressed",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": 1.512,
+            "pairs": 16,
+            "value": 35373056.0
+          }
+        ],
+        "number": 12,
+        "platform": "macOS",
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "362024d1f403",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "c631fbf39d7c7adace225d5c9935aaf991176d05da800abd7a69c56ceb0f3b0e",
+          "tree_entries": 60067
+        },
+        "source": "../../experiments/exp-012-breadth-first-traversal-order.md",
+        "source_revision": "fbc28f4acb0696ceb23598a3b3767edcb4002daf",
+        "title": "Breadth-first traversal order"
+      },
+      {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 4
+        },
+        "date": "2026-08-11",
+        "decision": "accepted",
+        "experiment_id": "exp-013",
+        "kept_variant": "candidate",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -6.563,
+              4.076
+            ],
+            "effect": "unclear",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": -4.829,
+            "pairs": 12,
+            "value": 297014666.5
+          },
+          {
+            "ci95_pct": [
+              -1.081,
+              2.194
+            ],
+            "effect": "unclear",
+            "id": "warm-revalidate-wall",
+            "job": "warm-revalidate",
+            "label": "Warm revalidation",
+            "metric": "wall_ns",
+            "paired_change_pct": -0.016,
+            "pairs": 12,
+            "value": 638008563.0
+          },
+          {
+            "ci95_pct": [
+              -9.449,
+              1.559
+            ],
+            "effect": "unclear",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": -4.854,
+            "pairs": 12,
+            "value": 1173955000.0
+          },
+          {
+            "ci95_pct": [
+              -5.184,
+              -2.99
+            ],
+            "effect": "improved",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": -3.772,
+            "pairs": 12,
+            "value": 33628160.0
+          }
+        ],
+        "number": 13,
+        "platform": "macOS",
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "362024d1f403",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "c631fbf39d7c7adace225d5c9935aaf991176d05da800abd7a69c56ceb0f3b0e",
+          "tree_entries": 60067
+        },
+        "source": "../../experiments/exp-013-region-scheduled-breadth-first-traversal.md",
+        "source_revision": "a7364236644a44c99e94630d5a2b4bc5f4fd9f31",
+        "title": "Region-scheduled breadth-first traversal"
+      },
+      {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 4
+        },
+        "date": "2026-08-11",
+        "decision": "baseline",
+        "experiment_id": "exp-014",
+        "kept_variant": "candidate",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -1.393,
+              1.977
+            ],
+            "effect": "unclear",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": 0.499,
+            "pairs": 20,
+            "value": 323481354.0
+          },
+          {
+            "ci95_pct": [
+              1.546,
+              3.367
+            ],
+            "effect": "regressed",
+            "id": "warm-revalidate-wall",
+            "job": "warm-revalidate",
+            "label": "Warm revalidation",
+            "metric": "wall_ns",
+            "paired_change_pct": 2.704,
+            "pairs": 20,
+            "value": 637653916.5
+          },
+          {
+            "ci95_pct": [
+              -3.77,
+              2.039
+            ],
+            "effect": "unclear",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": -0.645,
+            "pairs": 20,
+            "value": 1176841000.0
+          },
+          {
+            "ci95_pct": [
+              -2.633,
+              -0.736
+            ],
+            "effect": "improved",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": -1.763,
+            "pairs": 20,
+            "value": 34078720.0
+          }
+        ],
+        "number": 14,
+        "platform": "macOS",
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "362024d1f403",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "c631fbf39d7c7adace225d5c9935aaf991176d05da800abd7a69c56ceb0f3b0e",
+          "tree_entries": 60067
+        },
+        "source": "../../experiments/exp-014-what-the-breadth-first-default-costs-on-the-shipped-schedule.md",
+        "source_revision": null,
+        "title": "What the breadth-first default costs, on the shipped scheduler"
+      },
+      {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 3
+        },
+        "date": "2026-08-12",
+        "decision": "accepted",
+        "experiment_id": "exp-015",
+        "kept_variant": "candidate",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -16.829,
+              -2.417
+            ],
+            "effect": "improved",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": -11.723,
+            "pairs": 12,
+            "value": 6231851459.0
+          },
+          {
+            "ci95_pct": [
+              28.822,
+              52.295
+            ],
+            "effect": "regressed",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": 42.638,
+            "pairs": 12,
+            "value": 32602266500.0
+          },
+          {
+            "ci95_pct": [
+              1.41,
+              1.952
+            ],
+            "effect": "regressed",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": 1.555,
+            "pairs": 12,
+            "value": 330432512.0
+          }
+        ],
+        "number": 15,
+        "platform": "macOS",
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "d9b206106714",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "f2909250591b9b64d98956b0b2d8a9c3bd588b4c23f046a4660f3f174173dc23",
+          "tree_entries": 720805
+        },
+        "source": "../../experiments/exp-015-post-bfs-worker-depth-under-metadata-cache-pressure.md",
+        "source_revision": null,
+        "title": "Post-BFS worker depth under metadata-cache pressure"
+      },
+      {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 3
+        },
+        "date": "2026-08-12",
+        "decision": "rejected",
+        "experiment_id": "exp-016",
+        "kept_variant": "control",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -5.305,
+              1.516
+            ],
+            "effect": "retained",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": -0.437,
+            "pairs": 12,
+            "value": 336046979.5
+          },
+          {
+            "ci95_pct": [
+              -3.812,
+              5.838
+            ],
+            "effect": "retained",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": 0.917,
+            "pairs": 12,
+            "value": 1198457500.0
+          },
+          {
+            "ci95_pct": [
+              1.503,
+              4.777
+            ],
+            "effect": "retained",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": 3.876,
+            "pairs": 12,
+            "value": 34177024.0
+          }
+        ],
+        "number": 16,
+        "platform": "macOS",
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "7acc49ba3b44",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "ce5a7430e152412a519ee9f9776c2fec73e59c58fa553aa3e9c2f8c085d26619",
+          "tree_entries": 60067
+        },
+        "source": "../../experiments/exp-016-move-cold-scan-producer-paths-instead-of-cloning.md",
+        "source_revision": null,
+        "title": "Move cold-scan producer paths instead of cloning"
+      },
+      {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 3
+        },
+        "date": "2026-08-12",
+        "decision": "rejected",
+        "experiment_id": "exp-017",
+        "kept_variant": "control",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -12.303,
+              1.928
+            ],
+            "effect": "retained",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": -2.191,
+            "pairs": 12,
+            "value": 338600521.0
+          },
+          {
+            "ci95_pct": [
+              -8.702,
+              9.418
+            ],
+            "effect": "retained",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": 3.006,
+            "pairs": 12,
+            "value": 1251395500.0
+          },
+          {
+            "ci95_pct": [
+              -0.265,
+              2.181
+            ],
+            "effect": "retained",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": 0.532,
+            "pairs": 12,
+            "value": 34013184.0
+          }
+        ],
+        "number": 17,
+        "platform": "macOS",
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "7acc49ba3b44",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "ce5a7430e152412a519ee9f9776c2fec73e59c58fa553aa3e9c2f8c085d26619",
+          "tree_entries": 60067
+        },
+        "source": "../../experiments/exp-017-pre-create-dormant-workers-for-adaptive-scan-depth.md",
+        "source_revision": null,
+        "title": "Pre-create dormant workers for adaptive scan depth"
+      },
+      {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 3
+        },
+        "date": "2026-08-12",
+        "decision": "rejected",
+        "experiment_id": "exp-019",
+        "kept_variant": "control",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -1.846,
+              3.803
+            ],
+            "effect": "retained",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": 1.23,
+            "pairs": 12,
+            "value": 634205667.0
+          },
+          {
+            "ci95_pct": [
+              -2.051,
+              8.042
+            ],
+            "effect": "retained",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": 1.704,
+            "pairs": 12,
+            "value": 2622272000.0
+          },
+          {
+            "ci95_pct": [
+              0.523,
+              2.322
+            ],
+            "effect": "retained",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": 1.638,
+            "pairs": 12,
+            "value": 63094784.0
+          }
+        ],
+        "number": 19,
+        "platform": "macOS",
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "7b6210ef6d31",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "c3bede368a3f64ee946a26282ac4158b207225a33fd2e7208e73ccfc00967366",
+          "tree_entries": 120135
+        },
+        "source": "../../experiments/exp-019-adaptive-worker-threshold-at-the-first-crossing-scale.md",
+        "source_revision": null,
+        "title": "Adaptive worker threshold at the first crossing scale"
+      },
+      {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 3
+        },
+        "date": "2026-08-12",
+        "decision": "rejected",
+        "experiment_id": "exp-020",
+        "kept_variant": "control",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -2.898,
+              1.054
+            ],
+            "effect": "retained",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": -1.71,
+            "pairs": 12,
+            "value": 6185819229.0
+          },
+          {
+            "ci95_pct": [
+              9.009,
+              43.215
+            ],
+            "effect": "retained",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": 35.584,
+            "pairs": 12,
+            "value": 22821764500.0
+          },
+          {
+            "ci95_pct": [
+              0.911,
+              1.288
+            ],
+            "effect": "retained",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": 1.188,
+            "pairs": 12,
+            "value": 325206016.0
+          }
+        ],
+        "number": 20,
+        "platform": "macOS",
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "d9b206106714",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "f2909250591b9b64d98956b0b2d8a9c3bd588b4c23f046a4660f3f174173dc23",
+          "tree_entries": 720805
+        },
+        "source": "../../experiments/exp-020-delay-adaptive-workers-until-metadata-cache-capacity.md",
+        "source_revision": null,
+        "title": "Delay adaptive workers until metadata-cache capacity"
+      },
+      {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 3
+        },
+        "date": "2026-08-12",
+        "decision": "accepted",
+        "experiment_id": "exp-021",
+        "kept_variant": "candidate",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -8.371,
+              -2.704
+            ],
+            "effect": "improved",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": -5.313,
+            "pairs": 12,
+            "value": 6056068750.5
+          },
+          {
+            "ci95_pct": [
+              43.806,
+              55.435
+            ],
+            "effect": "regressed",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": 51.165,
+            "pairs": 12,
+            "value": 34478970500.0
+          },
+          {
+            "ci95_pct": [
+              0.847,
+              1.642
+            ],
+            "effect": "regressed",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": 1.429,
+            "pairs": 12,
+            "value": 329728000.0
+          }
+        ],
+        "number": 21,
+        "platform": "macOS",
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "d9b206106714",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "f2909250591b9b64d98956b0b2d8a9c3bd588b4c23f046a4660f3f174173dc23",
+          "tree_entries": 720805
+        },
+        "source": "../../experiments/exp-021-calibrate-adaptive-workers-from-initial-filesystem-service-t.md",
+        "source_revision": "2b1f99bba4826f3af2c0d9968f94dd57bcc3a167",
+        "title": "Calibrate adaptive workers from initial filesystem service time"
+      },
+      {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 3
+        },
+        "date": "2026-08-12",
+        "decision": "accepted",
+        "experiment_id": "exp-022",
+        "kept_variant": "candidate",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -32.186,
+              -25.106
+            ],
+            "effect": "improved",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": -30.132,
+            "pairs": 12,
+            "value": 4537002458.5
+          },
+          {
+            "ci95_pct": [
+              -60.045,
+              -34.03
+            ],
+            "effect": "improved",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": -43.564,
+            "pairs": 12,
+            "value": 15046679500.0
+          },
+          {
+            "ci95_pct": [
+              -1.416,
+              37.002
+            ],
+            "effect": "unclear",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": 2.715,
+            "pairs": 12,
+            "value": 332890112.0
+          }
+        ],
+        "number": 22,
+        "platform": "macOS",
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "d9b206106714",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "f2909250591b9b64d98956b0b2d8a9c3bd588b4c23f046a4660f3f174173dc23",
+          "tree_entries": 720805
+        },
+        "source": "../../experiments/exp-022-batch-macos-scan-metadata-with-getattrlistbulk.md",
+        "source_revision": "b12272565d570ebb8237df6e58a96178b72ad965",
+        "title": "Batch macOS scan metadata with getattrlistbulk"
+      },
+      {
+        "coverage": {
+          "complete": true,
+          "expected": 5,
+          "measured": 5
+        },
+        "date": "2026-08-12",
+        "decision": "accepted",
+        "experiment_id": "exp-023",
+        "kept_variant": "candidate",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -55.22,
+              -52.223
+            ],
+            "effect": "improved",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": -53.495,
+            "pairs": 12,
+            "value": 295511938.0
+          },
+          {
+            "ci95_pct": [
+              -21.124,
+              -20.215
+            ],
+            "effect": "improved",
+            "id": "warm-revalidate-wall",
+            "job": "warm-revalidate",
+            "label": "Warm revalidation",
+            "metric": "wall_ns",
+            "paired_change_pct": -20.6,
+            "pairs": 12,
+            "value": 631613333.5
+          },
+          {
+            "ci95_pct": [
+              -36.394,
+              -35.779
+            ],
+            "effect": "improved",
+            "id": "snapshot-load-wall",
+            "job": "warm-snapshot-load",
+            "label": "Warm snapshot load",
+            "metric": "wall_ns",
+            "paired_change_pct": -36.077,
+            "pairs": 12,
+            "value": 201158833.5
+          },
+          {
+            "ci95_pct": [
+              62.599,
+              92.642
+            ],
+            "effect": "regressed",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": 64.871,
+            "pairs": 12,
+            "value": 1068869000.0
+          },
+          {
+            "ci95_pct": [
+              3.404,
+              6.494
+            ],
+            "effect": "regressed",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": 4.657,
+            "pairs": 12,
+            "value": 35201024.0
+          }
+        ],
+        "number": 23,
+        "platform": "macOS",
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "7acc49ba3b44",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "ce5a7430e152412a519ee9f9776c2fec73e59c58fa553aa3e9c2f8c085d26619",
+          "tree_entries": 60067
+        },
+        "source": "../../experiments/exp-023-cumulative-effect-through-adaptive-scanning-and-macos-bulk-m.md",
+        "source_revision": "b12272565d570ebb8237df6e58a96178b72ad965",
+        "title": "Cumulative effect through adaptive scanning and macOS bulk metadata"
+      },
+      {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 3
+        },
+        "date": "2026-08-12",
+        "decision": "rejected",
+        "experiment_id": "exp-024",
+        "kept_variant": "control",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -4.059,
+              1.534
+            ],
+            "effect": "retained",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": -0.075,
+            "pairs": 12,
+            "value": 3685746250.0
+          },
+          {
+            "ci95_pct": [
+              -2.788,
+              1.069
+            ],
+            "effect": "retained",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": -0.418,
+            "pairs": 12,
+            "value": 11396792000.0
+          },
+          {
+            "ci95_pct": [
+              0.175,
+              0.439
+            ],
+            "effect": "retained",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": 0.301,
+            "pairs": 12,
+            "value": 326230016.0
+          }
+        ],
+        "number": 24,
+        "platform": "macOS",
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "d9b206106714",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "f2909250591b9b64d98956b0b2d8a9c3bd588b4c23f046a4660f3f174173dc23",
+          "tree_entries": 720805
+        },
+        "source": "../../experiments/exp-024-open-macos-directories-relative-to-one-retained-root-fd.md",
+        "source_revision": null,
+        "title": "Open macOS directories relative to one retained root fd"
+      },
+      {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 3
+        },
+        "date": "2026-08-12",
+        "decision": "rejected",
+        "experiment_id": "exp-025",
+        "kept_variant": "control",
+        "measurements": [
+          {
+            "ci95_pct": [
+              11.809,
+              25.0
+            ],
+            "effect": "retained",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": 19.193,
+            "pairs": 12,
+            "value": 3700514833.0
+          },
+          {
+            "ci95_pct": [
+              98.703,
+              122.91
+            ],
+            "effect": "retained",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": 107.021,
+            "pairs": 12,
+            "value": 11127563500.0
+          },
+          {
+            "ci95_pct": [
+              31.529,
+              35.571
+            ],
+            "effect": "retained",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": 33.463,
+            "pairs": 12,
+            "value": 326819840.0
+          }
+        ],
+        "number": 25,
+        "platform": "macOS",
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "d9b206106714",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "f2909250591b9b64d98956b0b2d8a9c3bd588b4c23f046a4660f3f174173dc23",
+          "tree_entries": 720805
+        },
+        "source": "../../experiments/exp-025-revisit-worker-depth-after-macos-bulk-metadata.md",
+        "source_revision": null,
+        "title": "Revisit worker depth after macOS bulk metadata"
+      },
+      {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 1
+        },
+        "date": "2026-08-12",
+        "decision": "accepted",
+        "experiment_id": "exp-026",
+        "kept_variant": "candidate",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -37.66,
+              -29.498
+            ],
+            "effect": "improved",
+            "id": "warm-revalidate-wall",
+            "job": "warm-revalidate",
+            "label": "Warm revalidation",
+            "metric": "wall_ns",
+            "paired_change_pct": -34.389,
+            "pairs": 12,
+            "value": 14014334666.5
+          }
+        ],
+        "number": 26,
+        "platform": "macOS",
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "d9b206106714",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "f2909250591b9b64d98956b0b2d8a9c3bd588b4c23f046a4660f3f174173dc23",
+          "tree_entries": 720805
+        },
+        "source": "../../experiments/exp-026-reuse-macos-bulk-metadata-during-full-reconciliation.md",
+        "source_revision": "824f2c416aadead1b4fa7db3b8421d5c47e85969",
+        "title": "Reuse macOS bulk metadata during full reconciliation"
+      },
+      {
+        "coverage": {
+          "complete": true,
+          "expected": 5,
+          "measured": 5
+        },
+        "date": "2026-08-12",
+        "decision": "accepted",
+        "experiment_id": "exp-027",
+        "kept_variant": "candidate",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -53.433,
+              -52.605
+            ],
+            "effect": "improved",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": -52.835,
+            "pairs": 12,
+            "value": 275416520.5
+          },
+          {
+            "ci95_pct": [
+              -37.161,
+              -31.029
+            ],
+            "effect": "improved",
+            "id": "warm-revalidate-wall",
+            "job": "warm-revalidate",
+            "label": "Warm revalidation",
+            "metric": "wall_ns",
+            "paired_change_pct": -34.776,
+            "pairs": 12,
+            "value": 536512333.0
+          },
+          {
+            "ci95_pct": [
+              -38.765,
+              -30.772
+            ],
+            "effect": "improved",
+            "id": "snapshot-load-wall",
+            "job": "warm-snapshot-load",
+            "label": "Warm snapshot load",
+            "metric": "wall_ns",
+            "paired_change_pct": -32.687,
+            "pairs": 12,
+            "value": 261126854.5
+          },
+          {
+            "ci95_pct": [
+              89.211,
+              92.772
+            ],
+            "effect": "regressed",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": 91.361,
+            "pairs": 12,
+            "value": 1113555500.0
+          },
+          {
+            "ci95_pct": [
+              2.031,
+              3.425
+            ],
+            "effect": "regressed",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": 2.622,
+            "pairs": 12,
+            "value": 34504704.0
+          }
+        ],
+        "number": 27,
+        "platform": "macOS",
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "7acc49ba3b44",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "ce5a7430e152412a519ee9f9776c2fec73e59c58fa553aa3e9c2f8c085d26619",
+          "tree_entries": 60067
+        },
+        "source": "../../experiments/exp-027-cumulative-effect-through-bulk-reconciliation.md",
+        "source_revision": "824f2c416aadead1b4fa7db3b8421d5c47e85969",
+        "title": "Cumulative effect through bulk reconciliation"
+      },
+      {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 4
+        },
+        "date": "2026-08-12",
+        "decision": "rejected",
+        "experiment_id": "exp-028",
+        "kept_variant": "control",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -7.089,
+              3.88
+            ],
+            "effect": "retained",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": 0.207,
+            "pairs": 12,
+            "value": 382236416.5
+          },
+          {
+            "ci95_pct": [
+              -1.531,
+              0.549
+            ],
+            "effect": "retained",
+            "id": "warm-revalidate-wall",
+            "job": "warm-revalidate",
+            "label": "Warm revalidation",
+            "metric": "wall_ns",
+            "paired_change_pct": -0.848,
+            "pairs": 12,
+            "value": 505724917.0
+          },
+          {
+            "ci95_pct": [
+              -20.026,
+              1.1
+            ],
+            "effect": "retained",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": -2.815,
+            "pairs": 12,
+            "value": 1384266000.0
+          },
+          {
+            "ci95_pct": [
+              -2.424,
+              1.336
+            ],
+            "effect": "retained",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": -1.294,
+            "pairs": 12,
+            "value": 35315712.0
+          }
+        ],
+        "number": 28,
+        "platform": "macOS",
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "7acc49ba3b44",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "ce5a7430e152412a519ee9f9776c2fec73e59c58fa553aa3e9c2f8c085d26619",
+          "tree_entries": 60067
+        },
+        "source": "../../experiments/exp-028-reuse-macos-bulk-directory-staging-allocations.md",
+        "source_revision": null,
+        "title": "Reuse macOS bulk directory staging allocations"
+      },
+      {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 4
+        },
+        "date": "2026-08-12",
+        "decision": "rejected",
+        "experiment_id": "exp-029",
+        "kept_variant": "control",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -5.948,
+              5.451
+            ],
+            "effect": "retained",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": -1.798,
+            "pairs": 12,
+            "value": 311045271.0
+          },
+          {
+            "ci95_pct": [
+              -0.858,
+              1.084
+            ],
+            "effect": "retained",
+            "id": "warm-revalidate-wall",
+            "job": "warm-revalidate",
+            "label": "Warm revalidation",
+            "metric": "wall_ns",
+            "paired_change_pct": -0.011,
+            "pairs": 12,
+            "value": 510575229.0
+          },
+          {
+            "ci95_pct": [
+              -4.426,
+              8.815
+            ],
+            "effect": "retained",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": 1.149,
+            "pairs": 12,
+            "value": 1061677000.0
+          },
+          {
+            "ci95_pct": [
+              0.253,
+              3.107
+            ],
+            "effect": "retained",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": 2.379,
+            "pairs": 12,
+            "value": 35274752.0
+          }
+        ],
+        "number": 29,
+        "platform": "macOS",
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "7acc49ba3b44",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "ce5a7430e152412a519ee9f9776c2fec73e59c58fa553aa3e9c2f8c085d26619",
+          "tree_entries": 60067
+        },
+        "source": "../../experiments/exp-029-increase-macos-bulk-metadata-buffer-to-256-kib.md",
+        "source_revision": null,
+        "title": "Increase macOS bulk metadata buffer to 256 KiB"
+      },
+      {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 1
+        },
+        "date": "2026-08-12",
+        "decision": "accepted",
+        "experiment_id": "exp-030",
+        "kept_variant": "candidate",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -62.799,
+              -50.433
+            ],
+            "effect": "improved",
+            "id": "warm-revalidate-wall",
+            "job": "warm-revalidate",
+            "label": "Warm revalidation",
+            "metric": "wall_ns",
+            "paired_change_pct": -59.53,
+            "pairs": 12,
+            "value": 5708114437.5
+          }
+        ],
+        "number": 30,
+        "platform": "macOS",
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "d9b206106714",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "f2909250591b9b64d98956b0b2d8a9c3bd588b4c23f046a4660f3f174173dc23",
+          "tree_entries": 720805
+        },
+        "source": "../../experiments/exp-030-elide-unchanged-entries-in-bounded-parallel-reconciliation-w.md",
+        "source_revision": "09d65590514cdb9d51c26637539650b064c92f86",
+        "title": "Elide unchanged entries in bounded parallel reconciliation waves"
+      },
+      {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 1
+        },
+        "date": "2026-08-12",
+        "decision": "rejected",
+        "experiment_id": "exp-031",
+        "kept_variant": "control",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -3.885,
+              10.067
+            ],
+            "effect": "retained",
+            "id": "warm-revalidate-wall",
+            "job": "warm-revalidate",
+            "label": "Warm revalidation",
+            "metric": "wall_ns",
+            "paired_change_pct": 1.642,
+            "pairs": 12,
+            "value": 477585979.0
+          }
+        ],
+        "number": 31,
+        "platform": "macOS",
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "7acc49ba3b44",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "ce5a7430e152412a519ee9f9776c2fec73e59c58fa553aa3e9c2f8c085d26619",
+          "tree_entries": 60067
+        },
+        "source": "../../experiments/exp-031-increase-immutable-baseline-reconciliation-waves-to-4096-dir.md",
+        "source_revision": null,
+        "title": "Increase immutable-baseline reconciliation waves to 4096 directories"
+      },
+      {
+        "coverage": {
+          "complete": true,
+          "expected": 5,
+          "measured": 5
+        },
+        "date": "2026-08-12",
+        "decision": "accepted",
+        "experiment_id": "exp-032",
+        "kept_variant": "candidate",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -55.328,
+              -53.715
+            ],
+            "effect": "improved",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": -54.532,
+            "pairs": 12,
+            "value": 289610104.0
+          },
+          {
+            "ci95_pct": [
+              -54.113,
+              -50.066
+            ],
+            "effect": "improved",
+            "id": "warm-revalidate-wall",
+            "job": "warm-revalidate",
+            "label": "Warm revalidation",
+            "metric": "wall_ns",
+            "paired_change_pct": -51.992,
+            "pairs": 12,
+            "value": 441569208.0
+          },
+          {
+            "ci95_pct": [
+              -36.177,
+              -35.322
+            ],
+            "effect": "improved",
+            "id": "snapshot-load-wall",
+            "job": "warm-snapshot-load",
+            "label": "Warm snapshot load",
+            "metric": "wall_ns",
+            "paired_change_pct": -35.657,
+            "pairs": 12,
+            "value": 206943125.0
+          },
+          {
+            "ci95_pct": [
+              73.391,
+              86.302
+            ],
+            "effect": "regressed",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": 82.427,
+            "pairs": 12,
+            "value": 1142684000.0
+          },
+          {
+            "ci95_pct": [
+              3.417,
+              6.796
+            ],
+            "effect": "regressed",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": 4.043,
+            "pairs": 12,
+            "value": 34996224.0
+          }
+        ],
+        "number": 32,
+        "platform": "macOS",
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "7acc49ba3b44",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "ce5a7430e152412a519ee9f9776c2fec73e59c58fa553aa3e9c2f8c085d26619",
+          "tree_entries": 60067
+        },
+        "source": "../../experiments/exp-032-cumulative-effect-through-bounded-parallel-reconciliation.md",
+        "source_revision": "c9c91d9518ef1324531ecd79a3a43b9e96e95eef",
+        "title": "Cumulative effect through bounded parallel reconciliation"
+      },
+      {
+        "coverage": {
+          "complete": true,
+          "expected": 5,
+          "measured": 5
+        },
+        "date": "2026-08-12",
+        "decision": "accepted",
+        "experiment_id": "exp-033",
+        "kept_variant": "candidate",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -7.314,
+              -2.144
+            ],
+            "effect": "improved",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": -5.058,
+            "pairs": 12,
+            "value": 315447458.5
+          },
+          {
+            "ci95_pct": [
+              -44.601,
+              -40.997
+            ],
+            "effect": "improved",
+            "id": "warm-revalidate-wall",
+            "job": "warm-revalidate",
+            "label": "Warm revalidation",
+            "metric": "wall_ns",
+            "paired_change_pct": -42.261,
+            "pairs": 12,
+            "value": 481882750.0
+          },
+          {
+            "ci95_pct": [
+              -4.587,
+              2.588
+            ],
+            "effect": "unclear",
+            "id": "snapshot-load-wall",
+            "job": "warm-snapshot-load",
+            "label": "Warm snapshot load",
+            "metric": "wall_ns",
+            "paired_change_pct": 0.181,
+            "pairs": 12,
+            "value": 251164666.5
+          },
+          {
+            "ci95_pct": [
+              -7.415,
+              -2.065
+            ],
+            "effect": "improved",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": -4.834,
+            "pairs": 12,
+            "value": 1278764500.0
+          },
+          {
+            "ci95_pct": [
+              -0.333,
+              1.135
+            ],
+            "effect": "unclear",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": 0.265,
+            "pairs": 12,
+            "value": 34160640.0
+          }
+        ],
+        "number": 33,
+        "platform": "macOS",
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "7acc49ba3b44",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "ce5a7430e152412a519ee9f9776c2fec73e59c58fa553aa3e9c2f8c085d26619",
+          "tree_entries": 60067
+        },
+        "source": "../../experiments/exp-033-post-composable-cli-integration-validation.md",
+        "source_revision": null,
+        "title": "Post-composable-CLI integration validation"
+      },
+      {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 4
+        },
+        "date": "2026-08-12",
+        "decision": "accepted",
+        "experiment_id": "exp-034",
+        "kept_variant": "candidate",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -37.711,
+              -18.198
+            ],
+            "effect": "improved",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": -30.458,
+            "pairs": 12,
+            "value": 5153956395.5
+          },
+          {
+            "ci95_pct": [
+              -71.858,
+              -69.565
+            ],
+            "effect": "improved",
+            "id": "warm-revalidate-wall",
+            "job": "warm-revalidate",
+            "label": "Warm revalidation",
+            "metric": "wall_ns",
+            "paired_change_pct": -70.916,
+            "pairs": 12,
+            "value": 6056398229.0
+          },
+          {
+            "ci95_pct": [
+              -49.03,
+              10.209
+            ],
+            "effect": "unclear",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": -10.39,
+            "pairs": 12,
+            "value": 24018713500.0
+          },
+          {
+            "ci95_pct": [
+              0.155,
+              44.49
+            ],
+            "effect": "regressed",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": 32.265,
+            "pairs": 12,
+            "value": 437788672.0
+          }
+        ],
+        "number": 34,
+        "platform": "macOS",
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "7cc33ab1c8f8",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "5afd8022acef9f5c6547f8aba90d307a6fa07cc996cc2c84eca9a76db0ff7483",
+          "tree_entries": 720805
+        },
+        "source": "../../experiments/exp-034-post-composable-cli-validation-under-cache-pressure.md",
+        "source_revision": null,
+        "title": "Post-composable-CLI validation under cache pressure"
+      },
+      {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 3
+        },
+        "date": "2026-08-12",
+        "decision": "accepted",
+        "experiment_id": "exp-035",
+        "kept_variant": "candidate",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -39.13,
+              -24.455
+            ],
+            "effect": "improved",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": -31.349,
+            "pairs": 12,
+            "value": 7332302000.0
+          },
+          {
+            "ci95_pct": [
+              -13.774,
+              2.53
+            ],
+            "effect": "unclear",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": -0.574,
+            "pairs": 12,
+            "value": 34847901000.0
+          },
+          {
+            "ci95_pct": [
+              37.014,
+              47.714
+            ],
+            "effect": "regressed",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": 44.32,
+            "pairs": 12,
+            "value": 661749760.0
+          }
+        ],
+        "number": 35,
+        "platform": "macOS",
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "7cedd702ca37",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "df4efc6129670710450b4fba2e895aab6699c64f288e0f6c680f42f40b80231b",
+          "tree_entries": 1007659
+        },
+        "source": "../../experiments/exp-035-post-composable-cli-validation-on-the-live-1m-workspace.md",
+        "source_revision": null,
+        "title": "Post-composable-CLI validation on the live 1M workspace"
+      },
+      {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 3
+        },
+        "date": "2026-08-12",
+        "decision": "rejected",
+        "experiment_id": "exp-036",
+        "kept_variant": "control",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -2.062,
+              -0.92
+            ],
+            "effect": "retained",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": -1.302,
+            "pairs": 12,
+            "value": 6188867667.0
+          },
+          {
+            "ci95_pct": [
+              33.256,
+              35.571
+            ],
+            "effect": "retained",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": 34.465,
+            "pairs": 12,
+            "value": 16488256000.0
+          },
+          {
+            "ci95_pct": [
+              -0.274,
+              0.386
+            ],
+            "effect": "retained",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": -0.014,
+            "pairs": 12,
+            "value": 478535680.0
+          }
+        ],
+        "number": 36,
+        "platform": "macOS",
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "7cedd702ca37",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "df4efc6129670710450b4fba2e895aab6699c64f288e0f6c680f42f40b80231b",
+          "tree_entries": 1007659
+        },
+        "source": "../../experiments/exp-036-revisit-worker-depth-on-the-live-1m-workspace.md",
+        "source_revision": null,
+        "title": "Revisit worker depth on the live 1M workspace"
+      },
+      {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 3
+        },
+        "date": "2026-08-13",
+        "decision": "rejected",
+        "experiment_id": "exp-037",
+        "kept_variant": "control",
+        "measurements": [
+          {
+            "ci95_pct": [
+              2.419,
+              5.227
+            ],
+            "effect": "retained",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": 3.573,
+            "pairs": 12,
+            "value": 6187496646.0
+          },
+          {
+            "ci95_pct": [
+              -1.202,
+              0.468
+            ],
+            "effect": "retained",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": -0.499,
+            "pairs": 12,
+            "value": 16656342500.0
+          },
+          {
+            "ci95_pct": [
+              -1.492,
+              -0.553
+            ],
+            "effect": "retained",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": -1.03,
+            "pairs": 12,
+            "value": 480673792.0
+          }
+        ],
+        "number": 37,
+        "platform": "macOS",
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "7cedd702ca37",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "df4efc6129670710450b4fba2e895aab6699c64f288e0f6c680f42f40b80231b",
+          "tree_entries": 1007659
+        },
+        "source": "../../experiments/exp-037-revisit-breadth-first-versus-depth-first-on-the-live-1m-work.md",
+        "source_revision": null,
+        "title": "Revisit breadth-first versus depth-first on the live 1M workspace"
+      },
+      {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 3
+        },
+        "date": "2026-08-13",
+        "decision": "rejected",
+        "experiment_id": "exp-038",
+        "kept_variant": "control",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -1.49,
+              0.491
+            ],
+            "effect": "retained",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": -0.694,
+            "pairs": 6,
+            "value": 6315833625.5
+          },
+          {
+            "ci95_pct": [
+              -2.011,
+              2.485
+            ],
+            "effect": "retained",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": 1.234,
+            "pairs": 6,
+            "value": 16966009500.0
+          },
+          {
+            "ci95_pct": [
+              0.312,
+              1.114
+            ],
+            "effect": "retained",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": 0.527,
+            "pairs": 6,
+            "value": 479166464.0
+          }
+        ],
+        "number": 38,
+        "platform": "macOS",
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "a4804158a43b",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "6b33356e83ab04d5b8cf9e149641fd1a1fd368b3a038220403263192611f2fd9",
+          "tree_entries": 1008723
+        },
+        "source": "../../experiments/exp-038-parent-relative-openat-frontier-on-the-live-1m-workspace.md",
+        "source_revision": null,
+        "title": "Parent-relative openat frontier on the live 1M workspace"
+      },
+      {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 3
+        },
+        "date": "2026-08-13",
+        "decision": "rejected",
+        "experiment_id": "exp-039",
+        "kept_variant": "control",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -1.619,
+              8.191
+            ],
+            "effect": "retained",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": 2.217,
+            "pairs": 6,
+            "value": 7821985604.5
+          },
+          {
+            "ci95_pct": [
+              -11.567,
+              5.476
+            ],
+            "effect": "retained",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": 0.083,
+            "pairs": 6,
+            "value": 28563871000.0
+          },
+          {
+            "ci95_pct": [
+              -2.245,
+              15.492
+            ],
+            "effect": "retained",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": 5.066,
+            "pairs": 6,
+            "value": 665952256.0
+          }
+        ],
+        "number": 39,
+        "platform": "macOS",
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "1f3ea3f83a69",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "71f21a5e1d0c377ec3d266243ef5590382a5fadb12c21983cbb4951be500d29a",
+          "tree_entries": 1009679
+        },
+        "source": "../../experiments/exp-039-revisit-the-macos-bulk-buffer-on-the-live-1m-workspace.md",
+        "source_revision": null,
+        "title": "Revisit the macOS bulk buffer on the live 1M workspace"
+      },
+      {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 4
+        },
+        "date": "2026-08-14",
+        "decision": "accepted",
+        "experiment_id": "exp-051",
+        "kept_variant": "candidate",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -10.424,
+              -6.119
+            ],
+            "effect": "improved",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": -7.348,
+            "pairs": 20,
+            "value": 1852852604.5
+          },
+          {
+            "ci95_pct": [
+              -1.095,
+              1.64
+            ],
+            "effect": "unclear",
+            "id": "warm-revalidate-wall",
+            "job": "warm-revalidate",
+            "label": "Warm revalidation",
+            "metric": "wall_ns",
+            "paired_change_pct": 0.539,
+            "pairs": 20,
+            "value": 1741208508.0
+          },
+          {
+            "ci95_pct": [
+              -7.956,
+              -5.11
+            ],
+            "effect": "improved",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": -5.403,
+            "pairs": 20,
+            "value": 2846333500.0
+          },
+          {
+            "ci95_pct": [
+              -4.139,
+              -0.171
+            ],
+            "effect": "improved",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": -2.914,
+            "pairs": 20,
+            "value": 281458688.0
+          }
+        ],
+        "number": 51,
+        "platform": "Linux",
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "",
+          "host_arch": "x86_64",
+          "host_cores": 4,
+          "host_cpu": "Linux",
+          "host_memory_bytes": 0,
+          "host_system": "Linux 6.18.5-fc-v20",
+          "host_virtualization": "",
+          "id": "202847d8a83c",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "5b894066affe6de8c7f0ba44d00eccd9bc3b7e5d0cf146786f3ae860f4b0c3bc",
+          "tree_entries": 450463
+        },
+        "source": "../../experiments/exp-051-memoize-the-parent-resolved-for-the-previous-upsert.md",
+        "source_revision": "2475c82b346120903ff36bd9a1737b4f0adf6891",
+        "title": "Memoize the parent resolved for the previous upsert"
+      },
+      {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 4
+        },
+        "date": "2026-08-14",
+        "decision": "accepted",
+        "experiment_id": "exp-052",
+        "kept_variant": "candidate",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -3.306,
+              3.764
+            ],
+            "effect": "unclear",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": 0.026,
+            "pairs": 20,
+            "value": 1870126871.0
+          },
+          {
+            "ci95_pct": [
+              -1.963,
+              0.312
+            ],
+            "effect": "unclear",
+            "id": "warm-revalidate-wall",
+            "job": "warm-revalidate",
+            "label": "Warm revalidation",
+            "metric": "wall_ns",
+            "paired_change_pct": -1.057,
+            "pairs": 20,
+            "value": 1712330259.0
+          },
+          {
+            "ci95_pct": [
+              -1.456,
+              2.554
+            ],
+            "effect": "unclear",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": 0.175,
+            "pairs": 20,
+            "value": 2862239000.0
+          },
+          {
+            "ci95_pct": [
+              -5.062,
+              5.442
+            ],
+            "effect": "unclear",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": -0.53,
+            "pairs": 20,
+            "value": 287041536.0
+          }
+        ],
+        "number": 52,
+        "platform": "Linux",
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "",
+          "host_arch": "x86_64",
+          "host_cores": 4,
+          "host_cpu": "Linux",
+          "host_memory_bytes": 0,
+          "host_system": "Linux 6.18.5-fc-v20",
+          "host_virtualization": "",
+          "id": "202847d8a83c",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "5b894066affe6de8c7f0ba44d00eccd9bc3b7e5d0cf146786f3ae860f4b0c3bc",
+          "tree_entries": 450463
+        },
+        "source": "../../experiments/exp-052-per-layer-counters-cost-less-than-the-measurement-can-see.md",
+        "source_revision": "f34ede9126f7fcaa82d58f0fe55d04b81e8d1dea",
+        "title": "Per-layer counters cost less than the measurement can see"
+      },
+      {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 3
+        },
+        "date": "2026-08-14",
+        "decision": "accepted",
+        "experiment_id": "exp-053",
+        "kept_variant": "candidate",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -2.961,
+              1.398
+            ],
+            "effect": "unclear",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": -1.257,
+            "pairs": 20,
+            "value": 1847042262.5
+          },
+          {
+            "ci95_pct": [
+              -2.728,
+              0.423
+            ],
+            "effect": "unclear",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": -0.669,
+            "pairs": 20,
+            "value": 2815443000.0
+          },
+          {
+            "ci95_pct": [
+              -4.485,
+              0.24
+            ],
+            "effect": "unclear",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": -2.73,
+            "pairs": 20,
+            "value": 276846592.0
+          }
+        ],
+        "number": 53,
+        "platform": "Linux",
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "",
+          "host_arch": "x86_64",
+          "host_cores": 4,
+          "host_cpu": "Linux",
+          "host_memory_bytes": 0,
+          "host_system": "Linux 6.18.5-fc-v20",
+          "host_virtualization": "",
+          "id": "202847d8a83c",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "5b894066affe6de8c7f0ba44d00eccd9bc3b7e5d0cf146786f3ae860f4b0c3bc",
+          "tree_entries": 450463
+        },
+        "source": "../../experiments/exp-053-move-instrumentation-to-a-runtime-toggle-and-measure-all-thr.md",
+        "source_revision": "844da388d4a2294a6015962f375f8c726f4bf7c8",
+        "title": "Move instrumentation to a runtime toggle and measure all three of its costs"
+      },
+      {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 4
+        },
+        "date": "2026-08-14",
+        "decision": "accepted",
+        "experiment_id": "exp-054",
+        "kept_variant": "candidate",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -0.186,
+              3.895
+            ],
+            "effect": "unclear",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": 1.393,
+            "pairs": 12,
+            "value": 306243333.5
+          },
+          {
+            "ci95_pct": [
+              -16.286,
+              -13.993
+            ],
+            "effect": "improved",
+            "id": "warm-revalidate-wall",
+            "job": "warm-revalidate",
+            "label": "Warm revalidation",
+            "metric": "wall_ns",
+            "paired_change_pct": -15.682,
+            "pairs": 12,
+            "value": 335746916.5
+          },
+          {
+            "ci95_pct": [
+              -1.077,
+              5.249
+            ],
+            "effect": "unclear",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": 0.435,
+            "pairs": 12,
+            "value": 1187892000.0
+          },
+          {
+            "ci95_pct": [
+              -2.721,
+              0.743
+            ],
+            "effect": "unclear",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": -1.335,
+            "pairs": 12,
+            "value": 37289984.0
+          }
+        ],
+        "number": 54,
+        "platform": "macOS",
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "1695dd644c80",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "f708694be70261d65046e934ef03aed21a52bfed19fe456a11e18f9305b62ca4",
+          "tree_entries": 60993
+        },
+        "source": "../../experiments/exp-054-validate-the-linux-campaign-cumulative-effect-on-macos.md",
+        "source_revision": null,
+        "title": "Validate the Linux campaign's cumulative effect on macOS"
+      },
+      {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 4
+        },
+        "date": "2026-08-14",
+        "decision": "accepted",
+        "experiment_id": "exp-055",
+        "kept_variant": "candidate",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -3.074,
+              0.976
+            ],
+            "effect": "unclear",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": -0.949,
+            "pairs": 12,
+            "value": 297538750.0
+          },
+          {
+            "ci95_pct": [
+              -4.778,
+              2.678
+            ],
+            "effect": "unclear",
+            "id": "warm-revalidate-wall",
+            "job": "warm-revalidate",
+            "label": "Warm revalidation",
+            "metric": "wall_ns",
+            "paired_change_pct": -1.598,
+            "pairs": 12,
+            "value": 340199062.5
+          },
+          {
+            "ci95_pct": [
+              -4.678,
+              0.829
+            ],
+            "effect": "unclear",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": -2.312,
+            "pairs": 12,
+            "value": 1138855000.0
+          },
+          {
+            "ci95_pct": [
+              -0.133,
+              2.191
+            ],
+            "effect": "unclear",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": 1.15,
+            "pairs": 12,
+            "value": 37199872.0
+          }
+        ],
+        "number": 55,
+        "platform": "macOS",
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "1695dd644c80",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "f708694be70261d65046e934ef03aed21a52bfed19fe456a11e18f9305b62ca4",
+          "tree_entries": 60993
+        },
+        "source": "../../experiments/exp-055-validate-review-fixes-on-macos.md",
+        "source_revision": "3bc650d920d2ccfb0db4943c5800ba80d54686f8",
+        "title": "Validate review fixes on macOS"
+      }
+    ],
+    "profiles": {
+      "index-core-v1": {
+        "description": "The kept build after each index experiment, measured across product latency, CPU, and memory dimensions.",
+        "dimensions": [
+          {
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns"
+          },
+          {
+            "id": "warm-revalidate-wall",
+            "job": "warm-revalidate",
+            "label": "Warm revalidation",
+            "metric": "wall_ns"
+          },
+          {
+            "id": "snapshot-load-wall",
+            "job": "warm-snapshot-load",
+            "label": "Warm snapshot load",
+            "metric": "wall_ns"
+          },
+          {
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns"
+          },
+          {
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes"
+          }
+        ],
+        "label": "Index core"
+      }
+    },
+    "summary": {
+      "checkpoint_count": 44,
+      "dimension_counts": {
+        "Linux:cold-index-cpu": 3,
+        "Linux:cold-index-rss": 3,
+        "Linux:cold-index-wall": 3,
+        "Linux:warm-revalidate-wall": 2,
+        "macOS:cold-index-cpu": 36,
+        "macOS:cold-index-rss": 36,
+        "macOS:cold-index-wall": 36,
+        "macOS:snapshot-load-wall": 12,
+        "macOS:warm-revalidate-wall": 27
+      },
+      "platform_counts": {
+        "Linux": 3,
+        "macOS": 41
+      },
+      "source_revision_count": 21
+    }
+  },
   "current_outcomes": {
     "composite": {
       "caveat": "A transparent decision index over unlike platform runs, not a measured benchmark. Default weights are equal across platform and cold/warm work.",
@@ -117,6 +3843,102 @@ window.FDU_PERFORMANCE_RESEARCH = {
   },
   "experiments": [
     {
+      "checkpoint": {
+        "coverage": {
+          "complete": true,
+          "expected": 5,
+          "measured": 5
+        },
+        "kept_variant": "candidate",
+        "measurements": [
+          {
+            "ci95_pct": [
+              null,
+              null
+            ],
+            "effect": "unknown",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": 0.0,
+            "pairs": 0,
+            "value": 627512875.0
+          },
+          {
+            "ci95_pct": [
+              null,
+              null
+            ],
+            "effect": "unknown",
+            "id": "warm-revalidate-wall",
+            "job": "warm-revalidate",
+            "label": "Warm revalidation",
+            "metric": "wall_ns",
+            "paired_change_pct": 0.0,
+            "pairs": 0,
+            "value": 795170479.0
+          },
+          {
+            "ci95_pct": [
+              null,
+              null
+            ],
+            "effect": "unknown",
+            "id": "snapshot-load-wall",
+            "job": "warm-snapshot-load",
+            "label": "Warm snapshot load",
+            "metric": "wall_ns",
+            "paired_change_pct": 0.0,
+            "pairs": 0,
+            "value": 335995208.5
+          },
+          {
+            "ci95_pct": [
+              null,
+              null
+            ],
+            "effect": "unknown",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": 0.0,
+            "pairs": 0,
+            "value": 605256000.0
+          },
+          {
+            "ci95_pct": [
+              null,
+              null
+            ],
+            "effect": "unknown",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": 0.0,
+            "pairs": 0,
+            "value": 33570816.0
+          }
+        ],
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "09260dd0cfd1",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "bf574331eca680372f7060d4f9ab3b3b175afd265ac27bda6b6dc67ed9c80798",
+          "tree_entries": 59654
+        },
+        "source_revision": "b565882bd9f2a877934bd96415d3a8eab6504f92"
+      },
       "complexity": {
         "lines_changed": 0,
         "new_dependencies": [],
@@ -627,14 +4449,16 @@ window.FDU_PERFORMANCE_RESEARCH = {
           "args": [],
           "name": "baseline",
           "sha256": "5584ac632e16b3feb2777089822da5923375e47fb36d8c16f75c29de39ec9241",
-          "size_bytes": 468832
+          "size_bytes": 468832,
+          "source_revision": ""
         },
         "control": "main @ b565882",
         "control_binary": {
           "args": [],
           "name": "baseline",
           "sha256": "5584ac632e16b3feb2777089822da5923375e47fb36d8c16f75c29de39ec9241",
-          "size_bytes": 468832
+          "size_bytes": 468832,
+          "source_revision": ""
         },
         "interleaved": true,
         "run_artifact": "benchmarks/results/realtree/run-exp000-baseline.json",
@@ -717,6 +4541,88 @@ window.FDU_PERFORMANCE_RESEARCH = {
       }
     },
     {
+      "checkpoint": {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 4
+        },
+        "kept_variant": "candidate",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -51.024,
+              -43.743
+            ],
+            "effect": "improved",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": -50.033,
+            "pairs": 12,
+            "value": 310774958.5
+          },
+          {
+            "ci95_pct": [
+              -0.534,
+              4.738
+            ],
+            "effect": "unclear",
+            "id": "warm-revalidate-wall",
+            "job": "warm-revalidate",
+            "label": "Warm revalidation",
+            "metric": "wall_ns",
+            "paired_change_pct": 0.279,
+            "pairs": 12,
+            "value": 818697583.5
+          },
+          {
+            "ci95_pct": [
+              54.555,
+              66.561
+            ],
+            "effect": "regressed",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": 58.046,
+            "pairs": 12,
+            "value": 973572500.0
+          },
+          {
+            "ci95_pct": [
+              6.214,
+              9.831
+            ],
+            "effect": "regressed",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": 7.486,
+            "pairs": 12,
+            "value": 35758080.0
+          }
+        ],
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "09260dd0cfd1",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "bf574331eca680372f7060d4f9ab3b3b175afd265ac27bda6b6dc67ed9c80798",
+          "tree_entries": 59654
+        },
+        "source_revision": "a0cc981da037e3473a91360a0c41602a13b38a13"
+      },
       "complexity": {
         "lines_changed": 210,
         "new_dependencies": [],
@@ -1012,7 +4918,8 @@ window.FDU_PERFORMANCE_RESEARCH = {
           ],
           "name": "par4",
           "sha256": "426e3ae76721f0642734c4a092323c3d3df673122391909ea345819bc2edb227",
-          "size_bytes": 519328
+          "size_bytes": 519328,
+          "source_revision": ""
         },
         "control": "serial read_dir walker (--threads 1)",
         "control_binary": {
@@ -1022,7 +4929,8 @@ window.FDU_PERFORMANCE_RESEARCH = {
           ],
           "name": "serial",
           "sha256": "426e3ae76721f0642734c4a092323c3d3df673122391909ea345819bc2edb227",
-          "size_bytes": 519328
+          "size_bytes": 519328,
+          "source_revision": ""
         },
         "interleaved": true,
         "run_artifact": "benchmarks/results/realtree/run-exp001-parallel-producer.json",
@@ -1083,6 +4991,102 @@ window.FDU_PERFORMANCE_RESEARCH = {
       }
     },
     {
+      "checkpoint": {
+        "coverage": {
+          "complete": true,
+          "expected": 5,
+          "measured": 5
+        },
+        "kept_variant": "control",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -4.196,
+              1.439
+            ],
+            "effect": "retained",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": -1.267,
+            "pairs": 12,
+            "value": 304994166.0
+          },
+          {
+            "ci95_pct": [
+              -4.548,
+              -0.223
+            ],
+            "effect": "retained",
+            "id": "warm-revalidate-wall",
+            "job": "warm-revalidate",
+            "label": "Warm revalidation",
+            "metric": "wall_ns",
+            "paired_change_pct": -2.593,
+            "pairs": 12,
+            "value": 810036833.5
+          },
+          {
+            "ci95_pct": [
+              -2.792,
+              -1.778
+            ],
+            "effect": "retained",
+            "id": "snapshot-load-wall",
+            "job": "warm-snapshot-load",
+            "label": "Warm snapshot load",
+            "metric": "wall_ns",
+            "paired_change_pct": -2.361,
+            "pairs": 12,
+            "value": 324355125.0
+          },
+          {
+            "ci95_pct": [
+              -5.509,
+              4.6
+            ],
+            "effect": "retained",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": -0.452,
+            "pairs": 12,
+            "value": 1254782000.0
+          },
+          {
+            "ci95_pct": [
+              -0.959,
+              2.455
+            ],
+            "effect": "retained",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": -0.158,
+            "pairs": 12,
+            "value": 36560896.0
+          }
+        ],
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "09260dd0cfd1",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "bf574331eca680372f7060d4f9ab3b3b175afd265ac27bda6b6dc67ed9c80798",
+          "tree_entries": 59654
+        },
+        "source_revision": null
+      },
       "complexity": {
         "lines_changed": 180,
         "new_dependencies": [],
@@ -1375,14 +5379,16 @@ window.FDU_PERFORMANCE_RESEARCH = {
           "args": [],
           "name": "candidate",
           "sha256": "767e8500bf323ff4d86547467542fd59367d0ad06a7caeb3529d9b993017618f",
-          "size_bytes": 519328
+          "size_bytes": 519328,
+          "source_revision": ""
         },
         "control": "exp-001 build: parallel scan, serial revalidation",
         "control_binary": {
           "args": [],
           "name": "control",
           "sha256": "80e6049b1259dc6c7a6438a6c684a668c096fdd298d9aaf6bd1417ae6c0b820c",
-          "size_bytes": 519328
+          "size_bytes": 519328,
+          "source_revision": ""
         },
         "interleaved": true,
         "run_artifact": "benchmarks/results/realtree/run-exp002-parallel-revalidation.json",
@@ -1455,6 +5461,88 @@ window.FDU_PERFORMANCE_RESEARCH = {
       }
     },
     {
+      "checkpoint": {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 4
+        },
+        "kept_variant": "control",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -3.007,
+              4.886
+            ],
+            "effect": "retained",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": 1.019,
+            "pairs": 14,
+            "value": 309721687.5
+          },
+          {
+            "ci95_pct": [
+              -2.907,
+              -1.783
+            ],
+            "effect": "retained",
+            "id": "warm-revalidate-wall",
+            "job": "warm-revalidate",
+            "label": "Warm revalidation",
+            "metric": "wall_ns",
+            "paired_change_pct": -2.298,
+            "pairs": 14,
+            "value": 802365270.5
+          },
+          {
+            "ci95_pct": [
+              -5.475,
+              4.703
+            ],
+            "effect": "retained",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": -1.009,
+            "pairs": 14,
+            "value": 1283518000.0
+          },
+          {
+            "ci95_pct": [
+              -4.806,
+              -2.644
+            ],
+            "effect": "retained",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": -3.973,
+            "pairs": 14,
+            "value": 36806656.0
+          }
+        ],
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "09260dd0cfd1",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "bf574331eca680372f7060d4f9ab3b3b175afd265ac27bda6b6dc67ed9c80798",
+          "tree_entries": 59654
+        },
+        "source_revision": null
+      },
       "complexity": {
         "lines_changed": 32,
         "new_dependencies": [],
@@ -1747,14 +5835,16 @@ window.FDU_PERFORMANCE_RESEARCH = {
           "args": [],
           "name": "candidate",
           "sha256": "85013f4a5510af26df54b2257e3c192f61004841864f1f7a08ee27a291153fdb",
-          "size_bytes": 519328
+          "size_bytes": 519328,
+          "source_revision": ""
         },
         "control": "HEAD a0cc981, bootstrap routed through the live journalling apply",
         "control_binary": {
           "args": [],
           "name": "control",
           "sha256": "80e6049b1259dc6c7a6438a6c684a668c096fdd298d9aaf6bd1417ae6c0b820c",
-          "size_bytes": 519328
+          "size_bytes": 519328,
+          "source_revision": ""
         },
         "interleaved": true,
         "run_artifact": "benchmarks/results/realtree/run-exp003-baseline-apply.json",
@@ -1827,6 +5917,102 @@ window.FDU_PERFORMANCE_RESEARCH = {
       }
     },
     {
+      "checkpoint": {
+        "coverage": {
+          "complete": true,
+          "expected": 5,
+          "measured": 5
+        },
+        "kept_variant": "candidate",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -5.331,
+              2.266
+            ],
+            "effect": "unclear",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": -1.137,
+            "pairs": 14,
+            "value": 312819000.0
+          },
+          {
+            "ci95_pct": [
+              -10.639,
+              -4.867
+            ],
+            "effect": "improved",
+            "id": "warm-revalidate-wall",
+            "job": "warm-revalidate",
+            "label": "Warm revalidation",
+            "metric": "wall_ns",
+            "paired_change_pct": -9.4,
+            "pairs": 14,
+            "value": 764745375.5
+          },
+          {
+            "ci95_pct": [
+              -22.486,
+              -15.562
+            ],
+            "effect": "improved",
+            "id": "snapshot-load-wall",
+            "job": "warm-snapshot-load",
+            "label": "Warm snapshot load",
+            "metric": "wall_ns",
+            "paired_change_pct": -17.804,
+            "pairs": 14,
+            "value": 556162583.5
+          },
+          {
+            "ci95_pct": [
+              -8.981,
+              2.278
+            ],
+            "effect": "unclear",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": -4.064,
+            "pairs": 14,
+            "value": 1214263000.0
+          },
+          {
+            "ci95_pct": [
+              -2.685,
+              -0.896
+            ],
+            "effect": "improved",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": -1.815,
+            "pairs": 14,
+            "value": 36331520.0
+          }
+        ],
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "09260dd0cfd1",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "bf574331eca680372f7060d4f9ab3b3b175afd265ac27bda6b6dc67ed9c80798",
+          "tree_entries": 59654
+        },
+        "source_revision": "bf7a05a0c932ce85dc1f424056f4c97e42a5be88"
+      },
       "complexity": {
         "lines_changed": 38,
         "new_dependencies": [],
@@ -2215,14 +6401,16 @@ window.FDU_PERFORMANCE_RESEARCH = {
           "args": [],
           "name": "candidate",
           "sha256": "599ed76f10cccb36935cdeef06baea9971615a7976558c0c68cca37cef804dcc",
-          "size_bytes": 519328
+          "size_bytes": 519328,
+          "source_revision": ""
         },
         "control": "HEAD a0cc981, components copied into owned OsStrings twice per operation",
         "control_binary": {
           "args": [],
           "name": "control",
           "sha256": "80e6049b1259dc6c7a6438a6c684a668c096fdd298d9aaf6bd1417ae6c0b820c",
-          "size_bytes": 519328
+          "size_bytes": 519328,
+          "source_revision": ""
         },
         "interleaved": true,
         "run_artifact": "benchmarks/results/realtree/run-exp004-borrowed-path-components.json",
@@ -2295,6 +6483,102 @@ window.FDU_PERFORMANCE_RESEARCH = {
       }
     },
     {
+      "checkpoint": {
+        "coverage": {
+          "complete": true,
+          "expected": 5,
+          "measured": 5
+        },
+        "kept_variant": "candidate",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -10.869,
+              5.099
+            ],
+            "effect": "unclear",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": -3.851,
+            "pairs": 14,
+            "value": 436121958.5
+          },
+          {
+            "ci95_pct": [
+              -8.88,
+              13.741
+            ],
+            "effect": "unclear",
+            "id": "warm-revalidate-wall",
+            "job": "warm-revalidate",
+            "label": "Warm revalidation",
+            "metric": "wall_ns",
+            "paired_change_pct": -1.644,
+            "pairs": 14,
+            "value": 1138260041.5
+          },
+          {
+            "ci95_pct": [
+              -23.475,
+              -12.516
+            ],
+            "effect": "improved",
+            "id": "snapshot-load-wall",
+            "job": "warm-snapshot-load",
+            "label": "Warm snapshot load",
+            "metric": "wall_ns",
+            "paired_change_pct": -18.597,
+            "pairs": 14,
+            "value": 323610937.5
+          },
+          {
+            "ci95_pct": [
+              -3.827,
+              4.774
+            ],
+            "effect": "unclear",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": 3.474,
+            "pairs": 14,
+            "value": 1062209500.0
+          },
+          {
+            "ci95_pct": [
+              -4.797,
+              1.374
+            ],
+            "effect": "unclear",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": -0.708,
+            "pairs": 14,
+            "value": 37134336.0
+          }
+        ],
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "09260dd0cfd1",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "bf574331eca680372f7060d4f9ab3b3b175afd265ac27bda6b6dc67ed9c80798",
+          "tree_entries": 59654
+        },
+        "source_revision": "954d27be986ef7a0862036efc8bbf2b8b11b7ea1"
+      },
       "complexity": {
         "lines_changed": 34,
         "new_dependencies": [],
@@ -2598,14 +6882,16 @@ window.FDU_PERFORMANCE_RESEARCH = {
           "args": [],
           "name": "candidate",
           "sha256": "43a2a043da5e20b1ae5cd6c8cf80acdbbf728f78b75174d412c88806c88e688a",
-          "size_bytes": 519328
+          "size_bytes": 519328,
+          "source_revision": ""
         },
         "control": "HEAD bf7a05a, each record's path rebuilt and resolved from the root",
         "control_binary": {
           "args": [],
           "name": "control",
           "sha256": "599ed76f10cccb36935cdeef06baea9971615a7976558c0c68cca37cef804dcc",
-          "size_bytes": 519328
+          "size_bytes": 519328,
+          "source_revision": ""
         },
         "interleaved": true,
         "run_artifact": "benchmarks/results/realtree/run-exp005-snapshot-load.json",
@@ -2678,6 +6964,102 @@ window.FDU_PERFORMANCE_RESEARCH = {
       }
     },
     {
+      "checkpoint": {
+        "coverage": {
+          "complete": true,
+          "expected": 5,
+          "measured": 5
+        },
+        "kept_variant": "candidate",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -51.135,
+              -47.516
+            ],
+            "effect": "improved",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": -48.909,
+            "pairs": 16,
+            "value": 320869395.5
+          },
+          {
+            "ci95_pct": [
+              -15.766,
+              -12.67
+            ],
+            "effect": "improved",
+            "id": "warm-revalidate-wall",
+            "job": "warm-revalidate",
+            "label": "Warm revalidation",
+            "metric": "wall_ns",
+            "paired_change_pct": -14.726,
+            "pairs": 16,
+            "value": 687997500.0
+          },
+          {
+            "ci95_pct": [
+              -29.589,
+              -28.054
+            ],
+            "effect": "improved",
+            "id": "snapshot-load-wall",
+            "job": "warm-snapshot-load",
+            "label": "Warm snapshot load",
+            "metric": "wall_ns",
+            "paired_change_pct": -29.106,
+            "pairs": 16,
+            "value": 229665604.0
+          },
+          {
+            "ci95_pct": [
+              100.929,
+              108.559
+            ],
+            "effect": "regressed",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": 104.134,
+            "pairs": 16,
+            "value": 1266600500.0
+          },
+          {
+            "ci95_pct": [
+              8.848,
+              9.559
+            ],
+            "effect": "regressed",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": 9.211,
+            "pairs": 16,
+            "value": 36519936.0
+          }
+        ],
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "09260dd0cfd1",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "bf574331eca680372f7060d4f9ab3b3b175afd265ac27bda6b6dc67ed9c80798",
+          "tree_entries": 59654
+        },
+        "source_revision": "954d27be986ef7a0862036efc8bbf2b8b11b7ea1"
+      },
       "complexity": {
         "lines_changed": 282,
         "new_dependencies": [],
@@ -3153,14 +7535,16 @@ window.FDU_PERFORMANCE_RESEARCH = {
           "args": [],
           "name": "optimized",
           "sha256": "43a2a043da5e20b1ae5cd6c8cf80acdbbf728f78b75174d412c88806c88e688a",
-          "size_bytes": 519328
+          "size_bytes": 519328,
+          "source_revision": ""
         },
         "control": "main @ b565882, before any of this work",
         "control_binary": {
           "args": [],
           "name": "baseline",
           "sha256": "dceca2d5de68e4a063f3afbedb53d27940e14462e9ce49a62e8a319454eea387",
-          "size_bytes": 468832
+          "size_bytes": 468832,
+          "source_revision": ""
         },
         "interleaved": true,
         "run_artifact": "benchmarks/results/realtree/run-exp006-cumulative.json",
@@ -3243,6 +7627,60 @@ window.FDU_PERFORMANCE_RESEARCH = {
       }
     },
     {
+      "checkpoint": {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 2
+        },
+        "kept_variant": "candidate",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -8.917,
+              -5.758
+            ],
+            "effect": "improved",
+            "id": "warm-revalidate-wall",
+            "job": "warm-revalidate",
+            "label": "Warm revalidation",
+            "metric": "wall_ns",
+            "paired_change_pct": -7.092,
+            "pairs": 20,
+            "value": 661987562.5
+          },
+          {
+            "ci95_pct": [
+              -2.82,
+              15.069
+            ],
+            "effect": "unclear",
+            "id": "snapshot-load-wall",
+            "job": "warm-snapshot-load",
+            "label": "Warm snapshot load",
+            "metric": "wall_ns",
+            "paired_change_pct": 5.742,
+            "pairs": 20,
+            "value": 369856750.0
+          }
+        ],
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "09260dd0cfd1",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "bf574331eca680372f7060d4f9ab3b3b175afd265ac27bda6b6dc67ed9c80798",
+          "tree_entries": 59654
+        },
+        "source_revision": "92d6212ea5d1e8da346457375023ad25d703459c"
+      },
       "complexity": {
         "lines_changed": 14,
         "new_dependencies": [],
@@ -3461,14 +7899,16 @@ window.FDU_PERFORMANCE_RESEARCH = {
           "args": [],
           "name": "h14",
           "sha256": "654ca229a3b89508fbe92d5c8ecf70190fa9a41940f991a7495ab2f95c39040b",
-          "size_bytes": 519328
+          "size_bytes": 519328,
+          "source_revision": ""
         },
         "control": "HEAD c428fbd: exclusive reconcile re-derives child expectations through path joins and root descents",
         "control_binary": {
           "args": [],
           "name": "control",
           "sha256": "eafe60a411c408c5024f0c0fea832f576a845518bb641a79d3e6445626026a0e",
-          "size_bytes": 519328
+          "size_bytes": 519328,
+          "source_revision": ""
         },
         "interleaved": true,
         "run_artifact": "benchmarks/results/realtree/run-exp007-009-requiem.json",
@@ -3541,6 +7981,102 @@ window.FDU_PERFORMANCE_RESEARCH = {
       }
     },
     {
+      "checkpoint": {
+        "coverage": {
+          "complete": true,
+          "expected": 5,
+          "measured": 5
+        },
+        "kept_variant": "candidate",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -32.766,
+              -0.783
+            ],
+            "effect": "improved",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": -15.652,
+            "pairs": 14,
+            "value": 462634895.5
+          },
+          {
+            "ci95_pct": [
+              -7.21,
+              8.602
+            ],
+            "effect": "unclear",
+            "id": "warm-revalidate-wall",
+            "job": "warm-revalidate",
+            "label": "Warm revalidation",
+            "metric": "wall_ns",
+            "paired_change_pct": -4.538,
+            "pairs": 14,
+            "value": 952780791.5
+          },
+          {
+            "ci95_pct": [
+              -14.786,
+              -4.237
+            ],
+            "effect": "improved",
+            "id": "snapshot-load-wall",
+            "job": "warm-snapshot-load",
+            "label": "Warm snapshot load",
+            "metric": "wall_ns",
+            "paired_change_pct": -6.896,
+            "pairs": 14,
+            "value": 278913250.0
+          },
+          {
+            "ci95_pct": [
+              -2.536,
+              5.787
+            ],
+            "effect": "unclear",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": -0.175,
+            "pairs": 14,
+            "value": 1078041500.0
+          },
+          {
+            "ci95_pct": [
+              -14.057,
+              -7.096
+            ],
+            "effect": "improved",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": -10.218,
+            "pairs": 14,
+            "value": 35086336.0
+          }
+        ],
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "09260dd0cfd1",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "bf574331eca680372f7060d4f9ab3b3b175afd265ac27bda6b6dc67ed9c80798",
+          "tree_entries": 59654
+        },
+        "source_revision": "bb1529d9488b48524f4527dd027ce067f6c70c34"
+      },
       "complexity": {
         "lines_changed": 120,
         "new_dependencies": [],
@@ -3929,14 +8465,16 @@ window.FDU_PERFORMANCE_RESEARCH = {
           "args": [],
           "name": "h14h18",
           "sha256": "fd188164cb635a257654f7cbb5d72d6faeec70fd53b9661f4da523db8c0ff448",
-          "size_bytes": 519328
+          "size_bytes": 519328,
+          "source_revision": ""
         },
         "control": "exp-007 build: by_ext keyed by owned String, cloned at every ancestor merge",
         "control_binary": {
           "args": [],
           "name": "h14",
           "sha256": "654ca229a3b89508fbe92d5c8ecf70190fa9a41940f991a7495ab2f95c39040b",
-          "size_bytes": 519328
+          "size_bytes": 519328,
+          "source_revision": ""
         },
         "interleaved": true,
         "run_artifact": "benchmarks/results/realtree/run-exp007-009-portable-stack.json",
@@ -4009,6 +8547,60 @@ window.FDU_PERFORMANCE_RESEARCH = {
       }
     },
     {
+      "checkpoint": {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 2
+        },
+        "kept_variant": "candidate",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -3.897,
+              0.133
+            ],
+            "effect": "unclear",
+            "id": "warm-revalidate-wall",
+            "job": "warm-revalidate",
+            "label": "Warm revalidation",
+            "metric": "wall_ns",
+            "paired_change_pct": -1.168,
+            "pairs": 20,
+            "value": 640465146.0
+          },
+          {
+            "ci95_pct": [
+              -21.493,
+              4.574
+            ],
+            "effect": "unclear",
+            "id": "snapshot-load-wall",
+            "job": "warm-snapshot-load",
+            "label": "Warm snapshot load",
+            "metric": "wall_ns",
+            "paired_change_pct": -7.98,
+            "pairs": 20,
+            "value": 318324479.5
+          }
+        ],
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "09260dd0cfd1",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "bf574331eca680372f7060d4f9ab3b3b175afd265ac27bda6b6dc67ed9c80798",
+          "tree_entries": 59654
+        },
+        "source_revision": "9f4f0296cf35733475cbfde36fcb506705b73b9c"
+      },
       "complexity": {
         "lines_changed": 60,
         "new_dependencies": [],
@@ -4227,14 +8819,16 @@ window.FDU_PERFORMANCE_RESEARCH = {
           "args": [],
           "name": "h14h18h32",
           "sha256": "eb25a8f293b17f8de9f481c2ca17790f7fd086196375e97d74eb9f4848ef8d2d",
-          "size_bytes": 519328
+          "size_bytes": 519328,
+          "source_revision": ""
         },
         "control": "exp-008 build: CRC pass over the whole image, seek to zero, second pass to parse",
         "control_binary": {
           "args": [],
           "name": "h14h18",
           "sha256": "fd188164cb635a257654f7cbb5d72d6faeec70fd53b9661f4da523db8c0ff448",
-          "size_bytes": 519328
+          "size_bytes": 519328,
+          "source_revision": ""
         },
         "interleaved": true,
         "run_artifact": "benchmarks/results/realtree/run-exp007-009-requiem.json",
@@ -4307,6 +8901,88 @@ window.FDU_PERFORMANCE_RESEARCH = {
       }
     },
     {
+      "checkpoint": {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 4
+        },
+        "kept_variant": "control",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -0.999,
+              4.055
+            ],
+            "effect": "retained",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": 1.497,
+            "pairs": 16,
+            "value": 463034854.0
+          },
+          {
+            "ci95_pct": [
+              -1.37,
+              1.638
+            ],
+            "effect": "retained",
+            "id": "warm-revalidate-wall",
+            "job": "warm-revalidate",
+            "label": "Warm revalidation",
+            "metric": "wall_ns",
+            "paired_change_pct": -0.031,
+            "pairs": 16,
+            "value": 698540250.0
+          },
+          {
+            "ci95_pct": [
+              -2.056,
+              6.345
+            ],
+            "effect": "retained",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": 1.755,
+            "pairs": 16,
+            "value": 1211369500.0
+          },
+          {
+            "ci95_pct": [
+              -2.197,
+              0.048
+            ],
+            "effect": "retained",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": -0.845,
+            "pairs": 16,
+            "value": 34742272.0
+          }
+        ],
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "09260dd0cfd1",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "bf574331eca680372f7060d4f9ab3b3b175afd265ac27bda6b6dc67ed9c80798",
+          "tree_entries": 59654
+        },
+        "source_revision": null
+      },
       "complexity": {
         "lines_changed": 90,
         "new_dependencies": [],
@@ -4597,14 +9273,16 @@ window.FDU_PERFORMANCE_RESEARCH = {
           "args": [],
           "name": "h17",
           "sha256": "cd39db9416cc9356bb75664f4bfdc65f395f4eef8e93426189e7f7116fe2dba2",
-          "size_bytes": 519328
+          "size_bytes": 519328,
+          "source_revision": ""
         },
         "control": "HEAD eb1c884: per-directory BTreeMap of child expectations, PathBuf join per entry",
         "control_binary": {
           "args": [],
           "name": "control",
           "sha256": "eb25a8f293b17f8de9f481c2ca17790f7fd086196375e97d74eb9f4848ef8d2d",
-          "size_bytes": 519328
+          "size_bytes": 519328,
+          "source_revision": ""
         },
         "interleaved": true,
         "run_artifact": "benchmarks/results/realtree/run-exp010-011-warm-join-and-grouped-merges.json",
@@ -4677,6 +9355,88 @@ window.FDU_PERFORMANCE_RESEARCH = {
       }
     },
     {
+      "checkpoint": {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 4
+        },
+        "kept_variant": "control",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -8.387,
+              0.226
+            ],
+            "effect": "retained",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": -2.531,
+            "pairs": 16,
+            "value": 483088125.0
+          },
+          {
+            "ci95_pct": [
+              -1.036,
+              -0.117
+            ],
+            "effect": "retained",
+            "id": "warm-revalidate-wall",
+            "job": "warm-revalidate",
+            "label": "Warm revalidation",
+            "metric": "wall_ns",
+            "paired_change_pct": -0.706,
+            "pairs": 16,
+            "value": 695578417.0
+          },
+          {
+            "ci95_pct": [
+              -5.421,
+              -0.294
+            ],
+            "effect": "retained",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": -2.137,
+            "pairs": 16,
+            "value": 1256933500.0
+          },
+          {
+            "ci95_pct": [
+              -2.223,
+              0.143
+            ],
+            "effect": "retained",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": -1.474,
+            "pairs": 16,
+            "value": 34553856.0
+          }
+        ],
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "09260dd0cfd1",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "bf574331eca680372f7060d4f9ab3b3b175afd265ac27bda6b6dc67ed9c80798",
+          "tree_entries": 59654
+        },
+        "source_revision": null
+      },
       "complexity": {
         "lines_changed": 80,
         "new_dependencies": [],
@@ -4967,14 +9727,16 @@ window.FDU_PERFORMANCE_RESEARCH = {
           "args": [],
           "name": "h17h13",
           "sha256": "2fd4e35e59f9ab4532822b24860a2ff55ab94d1628344ad392cc4cb206c2457f",
-          "size_bytes": 519328
+          "size_bytes": 519328,
+          "source_revision": ""
         },
         "control": "exp-010 build",
         "control_binary": {
           "args": [],
           "name": "h17",
           "sha256": "cd39db9416cc9356bb75664f4bfdc65f395f4eef8e93426189e7f7116fe2dba2",
-          "size_bytes": 519328
+          "size_bytes": 519328,
+          "source_revision": ""
         },
         "interleaved": true,
         "run_artifact": "benchmarks/results/realtree/run-exp010-011-warm-join-and-grouped-merges.json",
@@ -5047,6 +9809,88 @@ window.FDU_PERFORMANCE_RESEARCH = {
       }
     },
     {
+      "checkpoint": {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 4
+        },
+        "kept_variant": "candidate",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -2.502,
+              1.195
+            ],
+            "effect": "unclear",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": -0.58,
+            "pairs": 16,
+            "value": 337040083.5
+          },
+          {
+            "ci95_pct": [
+              -3.834,
+              2.868
+            ],
+            "effect": "unclear",
+            "id": "warm-revalidate-wall",
+            "job": "warm-revalidate",
+            "label": "Warm revalidation",
+            "metric": "wall_ns",
+            "paired_change_pct": 0.027,
+            "pairs": 16,
+            "value": 700746291.0
+          },
+          {
+            "ci95_pct": [
+              -0.709,
+              3.487
+            ],
+            "effect": "unclear",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": 0.492,
+            "pairs": 16,
+            "value": 1205359500.0
+          },
+          {
+            "ci95_pct": [
+              0.845,
+              2.881
+            ],
+            "effect": "regressed",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": 1.512,
+            "pairs": 16,
+            "value": 35373056.0
+          }
+        ],
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "362024d1f403",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "c631fbf39d7c7adace225d5c9935aaf991176d05da800abd7a69c56ceb0f3b0e",
+          "tree_entries": 60067
+        },
+        "source_revision": "fbc28f4acb0696ceb23598a3b3767edcb4002daf"
+      },
       "complexity": {
         "lines_changed": 153,
         "new_dependencies": [],
@@ -5340,7 +10184,8 @@ window.FDU_PERFORMANCE_RESEARCH = {
           ],
           "name": "breadth_first",
           "sha256": "a8b5b81f1b22e11bda07a04153e461c60d01220d24df9a6529007da41c700fec",
-          "size_bytes": 519344
+          "size_bytes": 519344,
+          "source_revision": ""
         },
         "control": "the previous hardcoded LIFO walk",
         "control_binary": {
@@ -5350,7 +10195,8 @@ window.FDU_PERFORMANCE_RESEARCH = {
           ],
           "name": "depth_first",
           "sha256": "a8b5b81f1b22e11bda07a04153e461c60d01220d24df9a6529007da41c700fec",
-          "size_bytes": 519344
+          "size_bytes": 519344,
+          "source_revision": ""
         },
         "interleaved": true,
         "run_artifact": "benchmarks/results/realtree/run-exp012-traversal-order.json",
@@ -5411,6 +10257,88 @@ window.FDU_PERFORMANCE_RESEARCH = {
       }
     },
     {
+      "checkpoint": {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 4
+        },
+        "kept_variant": "candidate",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -6.563,
+              4.076
+            ],
+            "effect": "unclear",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": -4.829,
+            "pairs": 12,
+            "value": 297014666.5
+          },
+          {
+            "ci95_pct": [
+              -1.081,
+              2.194
+            ],
+            "effect": "unclear",
+            "id": "warm-revalidate-wall",
+            "job": "warm-revalidate",
+            "label": "Warm revalidation",
+            "metric": "wall_ns",
+            "paired_change_pct": -0.016,
+            "pairs": 12,
+            "value": 638008563.0
+          },
+          {
+            "ci95_pct": [
+              -9.449,
+              1.559
+            ],
+            "effect": "unclear",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": -4.854,
+            "pairs": 12,
+            "value": 1173955000.0
+          },
+          {
+            "ci95_pct": [
+              -5.184,
+              -2.99
+            ],
+            "effect": "improved",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": -3.772,
+            "pairs": 12,
+            "value": 33628160.0
+          }
+        ],
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "362024d1f403",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "c631fbf39d7c7adace225d5c9935aaf991176d05da800abd7a69c56ceb0f3b0e",
+          "tree_entries": 60067
+        },
+        "source_revision": "a7364236644a44c99e94630d5a2b4bc5f4fd9f31"
+      },
       "complexity": {
         "lines_changed": 80,
         "new_dependencies": [],
@@ -5616,14 +10544,16 @@ window.FDU_PERFORMANCE_RESEARCH = {
           "args": [],
           "name": "candidate",
           "sha256": "1bc4da85fa40d31db9956da0175acb57faca2fc796a9931b36bf5db284780a07",
-          "size_bytes": 535872
+          "size_bytes": 535872,
+          "source_revision": ""
         },
         "control": "global FIFO breadth-first (bbc9cca)",
         "control_binary": {
           "args": [],
           "name": "control",
           "sha256": "9798917959662333159205a10d8587b74672f5c00e2376d0c2fdf10653d24192",
-          "size_bytes": 535872
+          "size_bytes": 535872,
+          "source_revision": ""
         },
         "interleaved": true,
         "run_artifact": "benchmarks/results/realtree/run-region-scheduler.json",
@@ -5696,6 +10626,88 @@ window.FDU_PERFORMANCE_RESEARCH = {
       }
     },
     {
+      "checkpoint": {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 4
+        },
+        "kept_variant": "candidate",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -1.393,
+              1.977
+            ],
+            "effect": "unclear",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": 0.499,
+            "pairs": 20,
+            "value": 323481354.0
+          },
+          {
+            "ci95_pct": [
+              1.546,
+              3.367
+            ],
+            "effect": "regressed",
+            "id": "warm-revalidate-wall",
+            "job": "warm-revalidate",
+            "label": "Warm revalidation",
+            "metric": "wall_ns",
+            "paired_change_pct": 2.704,
+            "pairs": 20,
+            "value": 637653916.5
+          },
+          {
+            "ci95_pct": [
+              -3.77,
+              2.039
+            ],
+            "effect": "unclear",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": -0.645,
+            "pairs": 20,
+            "value": 1176841000.0
+          },
+          {
+            "ci95_pct": [
+              -2.633,
+              -0.736
+            ],
+            "effect": "improved",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": -1.763,
+            "pairs": 20,
+            "value": 34078720.0
+          }
+        ],
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "362024d1f403",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "c631fbf39d7c7adace225d5c9935aaf991176d05da800abd7a69c56ceb0f3b0e",
+          "tree_entries": 60067
+        },
+        "source_revision": null
+      },
       "complexity": {
         "lines_changed": 0,
         "new_dependencies": [],
@@ -5989,7 +11001,8 @@ window.FDU_PERFORMANCE_RESEARCH = {
           ],
           "name": "candidate",
           "sha256": "1bc4da85fa40d31db9956da0175acb57faca2fc796a9931b36bf5db284780a07",
-          "size_bytes": 535872
+          "size_bytes": 535872,
+          "source_revision": ""
         },
         "control": "--order depth-first",
         "control_binary": {
@@ -5999,7 +11012,8 @@ window.FDU_PERFORMANCE_RESEARCH = {
           ],
           "name": "control",
           "sha256": "1bc4da85fa40d31db9956da0175acb57faca2fc796a9931b36bf5db284780a07",
-          "size_bytes": 535872
+          "size_bytes": 535872,
+          "source_revision": ""
         },
         "interleaved": true,
         "run_artifact": "benchmarks/results/realtree/run-order-current.json",
@@ -6060,6 +11074,74 @@ window.FDU_PERFORMANCE_RESEARCH = {
       }
     },
     {
+      "checkpoint": {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 3
+        },
+        "kept_variant": "candidate",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -16.829,
+              -2.417
+            ],
+            "effect": "improved",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": -11.723,
+            "pairs": 12,
+            "value": 6231851459.0
+          },
+          {
+            "ci95_pct": [
+              28.822,
+              52.295
+            ],
+            "effect": "regressed",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": 42.638,
+            "pairs": 12,
+            "value": 32602266500.0
+          },
+          {
+            "ci95_pct": [
+              1.41,
+              1.952
+            ],
+            "effect": "regressed",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": 1.555,
+            "pairs": 12,
+            "value": 330432512.0
+          }
+        ],
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "d9b206106714",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "f2909250591b9b64d98956b0b2d8a9c3bd588b4c23f046a4660f3f174173dc23",
+          "tree_entries": 720805
+        },
+        "source_revision": null
+      },
       "complexity": {
         "lines_changed": 0,
         "new_dependencies": [],
@@ -6255,7 +11337,8 @@ window.FDU_PERFORMANCE_RESEARCH = {
           ],
           "name": "t16",
           "sha256": "be3349ee5238da00b5bce9ff7f72e68fd3fc0a9f96eae16c969c520f0e90977f",
-          "size_bytes": 535968
+          "size_bytes": 535968,
+          "source_revision": ""
         },
         "control": "six workers, the current automatic ceiling",
         "control_binary": {
@@ -6265,7 +11348,8 @@ window.FDU_PERFORMANCE_RESEARCH = {
           ],
           "name": "t6",
           "sha256": "be3349ee5238da00b5bce9ff7f72e68fd3fc0a9f96eae16c969c520f0e90977f",
-          "size_bytes": 535968
+          "size_bytes": 535968,
+          "source_revision": ""
         },
         "interleaved": true,
         "run_artifact": "benchmarks/results/realtree/run-exp015-thread-curve-large.json",
@@ -6326,6 +11410,74 @@ window.FDU_PERFORMANCE_RESEARCH = {
       }
     },
     {
+      "checkpoint": {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 3
+        },
+        "kept_variant": "control",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -5.305,
+              1.516
+            ],
+            "effect": "retained",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": -0.437,
+            "pairs": 12,
+            "value": 336046979.5
+          },
+          {
+            "ci95_pct": [
+              -3.812,
+              5.838
+            ],
+            "effect": "retained",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": 0.917,
+            "pairs": 12,
+            "value": 1198457500.0
+          },
+          {
+            "ci95_pct": [
+              1.503,
+              4.777
+            ],
+            "effect": "retained",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": 3.876,
+            "pairs": 12,
+            "value": 34177024.0
+          }
+        ],
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "7acc49ba3b44",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "ce5a7430e152412a519ee9f9776c2fec73e59c58fa553aa3e9c2f8c085d26619",
+          "tree_entries": 60067
+        },
+        "source_revision": null
+      },
       "complexity": {
         "lines_changed": 5,
         "new_dependencies": [],
@@ -6518,14 +11670,16 @@ window.FDU_PERFORMANCE_RESEARCH = {
           "args": [],
           "name": "candidate",
           "sha256": "2a3329f3c4436109bbc34d2ec4bdb667bd3fcb94639fb51a4ad1fa2db9d01b1d",
-          "size_bytes": 552480
+          "size_bytes": 552480,
+          "source_revision": ""
         },
         "control": "current region-scheduled breadth-first producer",
         "control_binary": {
           "args": [],
           "name": "control",
           "sha256": "be3349ee5238da00b5bce9ff7f72e68fd3fc0a9f96eae16c969c520f0e90977f",
-          "size_bytes": 535968
+          "size_bytes": 535968,
+          "source_revision": ""
         },
         "interleaved": true,
         "run_artifact": "benchmarks/results/realtree/run-exp016-producer-path-ownership-small.json",
@@ -6586,6 +11740,74 @@ window.FDU_PERFORMANCE_RESEARCH = {
       }
     },
     {
+      "checkpoint": {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 3
+        },
+        "kept_variant": "control",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -12.303,
+              1.928
+            ],
+            "effect": "retained",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": -2.191,
+            "pairs": 12,
+            "value": 338600521.0
+          },
+          {
+            "ci95_pct": [
+              -8.702,
+              9.418
+            ],
+            "effect": "retained",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": 3.006,
+            "pairs": 12,
+            "value": 1251395500.0
+          },
+          {
+            "ci95_pct": [
+              -0.265,
+              2.181
+            ],
+            "effect": "retained",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": 0.532,
+            "pairs": 12,
+            "value": 34013184.0
+          }
+        ],
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "7acc49ba3b44",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "ce5a7430e152412a519ee9f9776c2fec73e59c58fa553aa3e9c2f8c085d26619",
+          "tree_entries": 60067
+        },
+        "source_revision": null
+      },
       "complexity": {
         "lines_changed": 126,
         "new_dependencies": [],
@@ -6780,14 +12002,16 @@ window.FDU_PERFORMANCE_RESEARCH = {
           "args": [],
           "name": "candidate",
           "sha256": "c7912bad3d33911fdd9536c58fe8627b0c411ef04cbb6e661caf595a4bab9b62",
-          "size_bytes": 552480
+          "size_bytes": 552480,
+          "source_revision": ""
         },
         "control": "fixed six-worker automatic pool",
         "control_binary": {
           "args": [],
           "name": "control",
           "sha256": "be3349ee5238da00b5bce9ff7f72e68fd3fc0a9f96eae16c969c520f0e90977f",
-          "size_bytes": 535968
+          "size_bytes": 535968,
+          "source_revision": ""
         },
         "interleaved": true,
         "run_artifact": "benchmarks/results/realtree/run-exp017-adaptive-workers-small.json",
@@ -6848,6 +12072,7 @@ window.FDU_PERFORMANCE_RESEARCH = {
       }
     },
     {
+      "checkpoint": null,
       "complexity": {
         "lines_changed": 128,
         "new_dependencies": [],
@@ -7042,14 +12267,16 @@ window.FDU_PERFORMANCE_RESEARCH = {
           "args": [],
           "name": "candidate",
           "sha256": "ca4c8918a82cd40c239f2bfcf9ca36c7bb9390f147a9b41d66b2e63fb250dd2c",
-          "size_bytes": 552512
+          "size_bytes": 552512,
+          "source_revision": ""
         },
         "control": "fixed six-worker automatic pool",
         "control_binary": {
           "args": [],
           "name": "control",
           "sha256": "be3349ee5238da00b5bce9ff7f72e68fd3fc0a9f96eae16c969c520f0e90977f",
-          "size_bytes": 535968
+          "size_bytes": 535968,
+          "source_revision": ""
         },
         "interleaved": true,
         "run_artifact": "benchmarks/results/realtree/run-exp018-threshold-spawn-large.json",
@@ -7110,6 +12337,74 @@ window.FDU_PERFORMANCE_RESEARCH = {
       }
     },
     {
+      "checkpoint": {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 3
+        },
+        "kept_variant": "control",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -1.846,
+              3.803
+            ],
+            "effect": "retained",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": 1.23,
+            "pairs": 12,
+            "value": 634205667.0
+          },
+          {
+            "ci95_pct": [
+              -2.051,
+              8.042
+            ],
+            "effect": "retained",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": 1.704,
+            "pairs": 12,
+            "value": 2622272000.0
+          },
+          {
+            "ci95_pct": [
+              0.523,
+              2.322
+            ],
+            "effect": "retained",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": 1.638,
+            "pairs": 12,
+            "value": 63094784.0
+          }
+        ],
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "7b6210ef6d31",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "c3bede368a3f64ee946a26282ac4158b207225a33fd2e7208e73ccfc00967366",
+          "tree_entries": 120135
+        },
+        "source_revision": null
+      },
       "complexity": {
         "lines_changed": 0,
         "new_dependencies": [],
@@ -7302,14 +12597,16 @@ window.FDU_PERFORMANCE_RESEARCH = {
           "args": [],
           "name": "candidate",
           "sha256": "ca4c8918a82cd40c239f2bfcf9ca36c7bb9390f147a9b41d66b2e63fb250dd2c",
-          "size_bytes": 552512
+          "size_bytes": 552512,
+          "source_revision": ""
         },
         "control": "fixed six-worker automatic pool",
         "control_binary": {
           "args": [],
           "name": "control",
           "sha256": "be3349ee5238da00b5bce9ff7f72e68fd3fc0a9f96eae16c969c520f0e90977f",
-          "size_bytes": 535968
+          "size_bytes": 535968,
+          "source_revision": ""
         },
         "interleaved": true,
         "run_artifact": "benchmarks/results/realtree/run-exp019-threshold-boundary.json",
@@ -7370,6 +12667,74 @@ window.FDU_PERFORMANCE_RESEARCH = {
       }
     },
     {
+      "checkpoint": {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 3
+        },
+        "kept_variant": "control",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -2.898,
+              1.054
+            ],
+            "effect": "retained",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": -1.71,
+            "pairs": 12,
+            "value": 6185819229.0
+          },
+          {
+            "ci95_pct": [
+              9.009,
+              43.215
+            ],
+            "effect": "retained",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": 35.584,
+            "pairs": 12,
+            "value": 22821764500.0
+          },
+          {
+            "ci95_pct": [
+              0.911,
+              1.288
+            ],
+            "effect": "retained",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": 1.188,
+            "pairs": 12,
+            "value": 325206016.0
+          }
+        ],
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "d9b206106714",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "f2909250591b9b64d98956b0b2d8a9c3bd588b4c23f046a4660f3f174173dc23",
+          "tree_entries": 720805
+        },
+        "source_revision": null
+      },
       "complexity": {
         "lines_changed": 0,
         "new_dependencies": [],
@@ -7562,14 +12927,16 @@ window.FDU_PERFORMANCE_RESEARCH = {
           "args": [],
           "name": "candidate",
           "sha256": "5745c3254acae638fc28ef687d0dc974a7101262bf893a3df9c8bee08e5bb369",
-          "size_bytes": 552512
+          "size_bytes": 552512,
+          "source_revision": ""
         },
         "control": "fixed six-worker automatic pool",
         "control_binary": {
           "args": [],
           "name": "control",
           "sha256": "be3349ee5238da00b5bce9ff7f72e68fd3fc0a9f96eae16c969c520f0e90977f",
-          "size_bytes": 535968
+          "size_bytes": 535968,
+          "source_revision": ""
         },
         "interleaved": true,
         "run_artifact": "benchmarks/results/realtree/run-exp020-capacity-threshold-large.json",
@@ -7630,6 +12997,74 @@ window.FDU_PERFORMANCE_RESEARCH = {
       }
     },
     {
+      "checkpoint": {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 3
+        },
+        "kept_variant": "candidate",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -8.371,
+              -2.704
+            ],
+            "effect": "improved",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": -5.313,
+            "pairs": 12,
+            "value": 6056068750.5
+          },
+          {
+            "ci95_pct": [
+              43.806,
+              55.435
+            ],
+            "effect": "regressed",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": 51.165,
+            "pairs": 12,
+            "value": 34478970500.0
+          },
+          {
+            "ci95_pct": [
+              0.847,
+              1.642
+            ],
+            "effect": "regressed",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": 1.429,
+            "pairs": 12,
+            "value": 329728000.0
+          }
+        ],
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "d9b206106714",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "f2909250591b9b64d98956b0b2d8a9c3bd588b4c23f046a4660f3f174173dc23",
+          "tree_entries": 720805
+        },
+        "source_revision": "2b1f99bba4826f3af2c0d9968f94dd57bcc3a167"
+      },
       "complexity": {
         "lines_changed": 181,
         "new_dependencies": [],
@@ -7824,14 +13259,16 @@ window.FDU_PERFORMANCE_RESEARCH = {
           "args": [],
           "name": "candidate",
           "sha256": "78ce1157d4ed6d86599b378ef6e831ba437973217280188b99c15975bd3b794f",
-          "size_bytes": 552512
+          "size_bytes": 552512,
+          "source_revision": ""
         },
         "control": "fixed six-worker automatic pool",
         "control_binary": {
           "args": [],
           "name": "control",
           "sha256": "be3349ee5238da00b5bce9ff7f72e68fd3fc0a9f96eae16c969c520f0e90977f",
-          "size_bytes": 535968
+          "size_bytes": 535968,
+          "source_revision": ""
         },
         "interleaved": true,
         "run_artifact": "benchmarks/results/realtree/run-exp021-service-calibration-large.json",
@@ -7892,6 +13329,74 @@ window.FDU_PERFORMANCE_RESEARCH = {
       }
     },
     {
+      "checkpoint": {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 3
+        },
+        "kept_variant": "candidate",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -32.186,
+              -25.106
+            ],
+            "effect": "improved",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": -30.132,
+            "pairs": 12,
+            "value": 4537002458.5
+          },
+          {
+            "ci95_pct": [
+              -60.045,
+              -34.03
+            ],
+            "effect": "improved",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": -43.564,
+            "pairs": 12,
+            "value": 15046679500.0
+          },
+          {
+            "ci95_pct": [
+              -1.416,
+              37.002
+            ],
+            "effect": "unclear",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": 2.715,
+            "pairs": 12,
+            "value": 332890112.0
+          }
+        ],
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "d9b206106714",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "f2909250591b9b64d98956b0b2d8a9c3bd588b4c23f046a4660f3f174173dc23",
+          "tree_entries": 720805
+        },
+        "source_revision": "b12272565d570ebb8237df6e58a96178b72ad965"
+      },
       "complexity": {
         "lines_changed": 542,
         "new_dependencies": [
@@ -8090,14 +13595,16 @@ window.FDU_PERFORMANCE_RESEARCH = {
           "args": [],
           "name": "candidate",
           "sha256": "52e0b303402ac0eafa11b06013b731126d81bef482acc962cca3ad9fa2ebc879",
-          "size_bytes": 552576
+          "size_bytes": 552576,
+          "source_revision": ""
         },
         "control": "portable read_dir plus one metadata syscall per entry, with adaptive workers",
         "control_binary": {
           "args": [],
           "name": "control",
           "sha256": "9e583fc7877f9b7a64a81787a7d6b5a0407225936ffae26079b8efe2b2a99db7",
-          "size_bytes": 552512
+          "size_bytes": 552512,
+          "source_revision": ""
         },
         "interleaved": true,
         "run_artifact": "benchmarks/results/realtree/run-exp022-getattrlistbulk-large-final.json",
@@ -8158,6 +13665,102 @@ window.FDU_PERFORMANCE_RESEARCH = {
       }
     },
     {
+      "checkpoint": {
+        "coverage": {
+          "complete": true,
+          "expected": 5,
+          "measured": 5
+        },
+        "kept_variant": "candidate",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -55.22,
+              -52.223
+            ],
+            "effect": "improved",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": -53.495,
+            "pairs": 12,
+            "value": 295511938.0
+          },
+          {
+            "ci95_pct": [
+              -21.124,
+              -20.215
+            ],
+            "effect": "improved",
+            "id": "warm-revalidate-wall",
+            "job": "warm-revalidate",
+            "label": "Warm revalidation",
+            "metric": "wall_ns",
+            "paired_change_pct": -20.6,
+            "pairs": 12,
+            "value": 631613333.5
+          },
+          {
+            "ci95_pct": [
+              -36.394,
+              -35.779
+            ],
+            "effect": "improved",
+            "id": "snapshot-load-wall",
+            "job": "warm-snapshot-load",
+            "label": "Warm snapshot load",
+            "metric": "wall_ns",
+            "paired_change_pct": -36.077,
+            "pairs": 12,
+            "value": 201158833.5
+          },
+          {
+            "ci95_pct": [
+              62.599,
+              92.642
+            ],
+            "effect": "regressed",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": 64.871,
+            "pairs": 12,
+            "value": 1068869000.0
+          },
+          {
+            "ci95_pct": [
+              3.404,
+              6.494
+            ],
+            "effect": "regressed",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": 4.657,
+            "pairs": 12,
+            "value": 35201024.0
+          }
+        ],
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "7acc49ba3b44",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "ce5a7430e152412a519ee9f9776c2fec73e59c58fa553aa3e9c2f8c085d26619",
+          "tree_entries": 60067
+        },
+        "source_revision": "b12272565d570ebb8237df6e58a96178b72ad965"
+      },
       "complexity": {
         "lines_changed": 0,
         "new_dependencies": [],
@@ -8641,14 +14244,16 @@ window.FDU_PERFORMANCE_RESEARCH = {
           "args": [],
           "name": "candidate",
           "sha256": "52e0b303402ac0eafa11b06013b731126d81bef482acc962cca3ad9fa2ebc879",
-          "size_bytes": 552576
+          "size_bytes": 552576,
+          "source_revision": ""
         },
         "control": "b565882 before the iterative performance work",
         "control_binary": {
           "args": [],
           "name": "control",
           "sha256": "713a7db449084172489d1e4fd3bc1c8b9f40cf3c352eb65f4af505e127b917d4",
-          "size_bytes": 468832
+          "size_bytes": 468832,
+          "source_revision": ""
         },
         "interleaved": true,
         "run_artifact": "benchmarks/results/realtree/run-exp023-cumulative-current.json",
@@ -8709,6 +14314,74 @@ window.FDU_PERFORMANCE_RESEARCH = {
       }
     },
     {
+      "checkpoint": {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 3
+        },
+        "kept_variant": "control",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -4.059,
+              1.534
+            ],
+            "effect": "retained",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": -0.075,
+            "pairs": 12,
+            "value": 3685746250.0
+          },
+          {
+            "ci95_pct": [
+              -2.788,
+              1.069
+            ],
+            "effect": "retained",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": -0.418,
+            "pairs": 12,
+            "value": 11396792000.0
+          },
+          {
+            "ci95_pct": [
+              0.175,
+              0.439
+            ],
+            "effect": "retained",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": 0.301,
+            "pairs": 12,
+            "value": 326230016.0
+          }
+        ],
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "d9b206106714",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "f2909250591b9b64d98956b0b2d8a9c3bd588b4c23f046a4660f3f174173dc23",
+          "tree_entries": 720805
+        },
+        "source_revision": null
+      },
       "complexity": {
         "lines_changed": 69,
         "new_dependencies": [],
@@ -8905,14 +14578,16 @@ window.FDU_PERFORMANCE_RESEARCH = {
           "args": [],
           "name": "candidate",
           "sha256": "f854174c15d483c2478e35293d994a4d89d4e9990970f913a301328d10459310",
-          "size_bytes": 552624
+          "size_bytes": 552624,
+          "source_revision": ""
         },
         "control": "exp-022 macOS bulk reader with absolute directory opens",
         "control_binary": {
           "args": [],
           "name": "control",
           "sha256": "52e0b303402ac0eafa11b06013b731126d81bef482acc962cca3ad9fa2ebc879",
-          "size_bytes": 552576
+          "size_bytes": 552576,
+          "source_revision": ""
         },
         "interleaved": true,
         "run_artifact": "benchmarks/results/realtree/run-exp024-root-relative-openat-large-final.json",
@@ -8973,6 +14648,74 @@ window.FDU_PERFORMANCE_RESEARCH = {
       }
     },
     {
+      "checkpoint": {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 3
+        },
+        "kept_variant": "control",
+        "measurements": [
+          {
+            "ci95_pct": [
+              11.809,
+              25.0
+            ],
+            "effect": "retained",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": 19.193,
+            "pairs": 12,
+            "value": 3700514833.0
+          },
+          {
+            "ci95_pct": [
+              98.703,
+              122.91
+            ],
+            "effect": "retained",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": 107.021,
+            "pairs": 12,
+            "value": 11127563500.0
+          },
+          {
+            "ci95_pct": [
+              31.529,
+              35.571
+            ],
+            "effect": "retained",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": 33.463,
+            "pairs": 12,
+            "value": 326819840.0
+          }
+        ],
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "d9b206106714",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "f2909250591b9b64d98956b0b2d8a9c3bd588b4c23f046a4660f3f174173dc23",
+          "tree_entries": 720805
+        },
+        "source_revision": null
+      },
       "complexity": {
         "lines_changed": 0,
         "new_dependencies": [],
@@ -9168,7 +14911,8 @@ window.FDU_PERFORMANCE_RESEARCH = {
           ],
           "name": "t16",
           "sha256": "52e0b303402ac0eafa11b06013b731126d81bef482acc962cca3ad9fa2ebc879",
-          "size_bytes": 552576
+          "size_bytes": 552576,
+          "source_revision": ""
         },
         "control": "six fixed workers on the exp-022 bulk backend",
         "control_binary": {
@@ -9178,7 +14922,8 @@ window.FDU_PERFORMANCE_RESEARCH = {
           ],
           "name": "t6",
           "sha256": "52e0b303402ac0eafa11b06013b731126d81bef482acc962cca3ad9fa2ebc879",
-          "size_bytes": 552576
+          "size_bytes": 552576,
+          "source_revision": ""
         },
         "interleaved": true,
         "run_artifact": "benchmarks/results/realtree/run-exp025-post-bulk-thread-depth-large-final.json",
@@ -9239,6 +14984,46 @@ window.FDU_PERFORMANCE_RESEARCH = {
       }
     },
     {
+      "checkpoint": {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 1
+        },
+        "kept_variant": "candidate",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -37.66,
+              -29.498
+            ],
+            "effect": "improved",
+            "id": "warm-revalidate-wall",
+            "job": "warm-revalidate",
+            "label": "Warm revalidation",
+            "metric": "wall_ns",
+            "paired_change_pct": -34.389,
+            "pairs": 12,
+            "value": 14014334666.5
+          }
+        ],
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "d9b206106714",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "f2909250591b9b64d98956b0b2d8a9c3bd588b4c23f046a4660f3f174173dc23",
+          "tree_entries": 720805
+        },
+        "source_revision": "824f2c416aadead1b4fa7db3b8421d5c47e85969"
+      },
       "complexity": {
         "lines_changed": 139,
         "new_dependencies": [],
@@ -9363,14 +15148,16 @@ window.FDU_PERFORMANCE_RESEARCH = {
           "args": [],
           "name": "candidate",
           "sha256": "35198f0525f9501b71bd6764362f35723c925a3689b99c587bfbc457da896019",
-          "size_bytes": 569104
+          "size_bytes": 569104,
+          "source_revision": ""
         },
         "control": "exp-022/025 current code with portable full reconciliation",
         "control_binary": {
           "args": [],
           "name": "control",
           "sha256": "52e0b303402ac0eafa11b06013b731126d81bef482acc962cca3ad9fa2ebc879",
-          "size_bytes": 552576
+          "size_bytes": 552576,
+          "source_revision": ""
         },
         "interleaved": true,
         "run_artifact": "benchmarks/results/realtree/run-exp026-bulk-warm-reconcile-large-final.json",
@@ -9431,6 +15218,102 @@ window.FDU_PERFORMANCE_RESEARCH = {
       }
     },
     {
+      "checkpoint": {
+        "coverage": {
+          "complete": true,
+          "expected": 5,
+          "measured": 5
+        },
+        "kept_variant": "candidate",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -53.433,
+              -52.605
+            ],
+            "effect": "improved",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": -52.835,
+            "pairs": 12,
+            "value": 275416520.5
+          },
+          {
+            "ci95_pct": [
+              -37.161,
+              -31.029
+            ],
+            "effect": "improved",
+            "id": "warm-revalidate-wall",
+            "job": "warm-revalidate",
+            "label": "Warm revalidation",
+            "metric": "wall_ns",
+            "paired_change_pct": -34.776,
+            "pairs": 12,
+            "value": 536512333.0
+          },
+          {
+            "ci95_pct": [
+              -38.765,
+              -30.772
+            ],
+            "effect": "improved",
+            "id": "snapshot-load-wall",
+            "job": "warm-snapshot-load",
+            "label": "Warm snapshot load",
+            "metric": "wall_ns",
+            "paired_change_pct": -32.687,
+            "pairs": 12,
+            "value": 261126854.5
+          },
+          {
+            "ci95_pct": [
+              89.211,
+              92.772
+            ],
+            "effect": "regressed",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": 91.361,
+            "pairs": 12,
+            "value": 1113555500.0
+          },
+          {
+            "ci95_pct": [
+              2.031,
+              3.425
+            ],
+            "effect": "regressed",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": 2.622,
+            "pairs": 12,
+            "value": 34504704.0
+          }
+        ],
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "7acc49ba3b44",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "ce5a7430e152412a519ee9f9776c2fec73e59c58fa553aa3e9c2f8c085d26619",
+          "tree_entries": 60067
+        },
+        "source_revision": "824f2c416aadead1b4fa7db3b8421d5c47e85969"
+      },
       "complexity": {
         "lines_changed": 0,
         "new_dependencies": [],
@@ -9915,14 +15798,16 @@ window.FDU_PERFORMANCE_RESEARCH = {
           "args": [],
           "name": "candidate",
           "sha256": "35198f0525f9501b71bd6764362f35723c925a3689b99c587bfbc457da896019",
-          "size_bytes": 569104
+          "size_bytes": 569104,
+          "source_revision": ""
         },
         "control": "b565882 before the iterative performance work",
         "control_binary": {
           "args": [],
           "name": "control",
           "sha256": "713a7db449084172489d1e4fd3bc1c8b9f40cf3c352eb65f4af505e127b917d4",
-          "size_bytes": 468832
+          "size_bytes": 468832,
+          "source_revision": ""
         },
         "interleaved": true,
         "run_artifact": "benchmarks/results/realtree/run-exp027-cumulative-through-bulk-reconciliation.json",
@@ -9983,6 +15868,88 @@ window.FDU_PERFORMANCE_RESEARCH = {
       }
     },
     {
+      "checkpoint": {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 4
+        },
+        "kept_variant": "control",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -7.089,
+              3.88
+            ],
+            "effect": "retained",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": 0.207,
+            "pairs": 12,
+            "value": 382236416.5
+          },
+          {
+            "ci95_pct": [
+              -1.531,
+              0.549
+            ],
+            "effect": "retained",
+            "id": "warm-revalidate-wall",
+            "job": "warm-revalidate",
+            "label": "Warm revalidation",
+            "metric": "wall_ns",
+            "paired_change_pct": -0.848,
+            "pairs": 12,
+            "value": 505724917.0
+          },
+          {
+            "ci95_pct": [
+              -20.026,
+              1.1
+            ],
+            "effect": "retained",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": -2.815,
+            "pairs": 12,
+            "value": 1384266000.0
+          },
+          {
+            "ci95_pct": [
+              -2.424,
+              1.336
+            ],
+            "effect": "retained",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": -1.294,
+            "pairs": 12,
+            "value": 35315712.0
+          }
+        ],
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "7acc49ba3b44",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "ce5a7430e152412a519ee9f9776c2fec73e59c58fa553aa3e9c2f8c085d26619",
+          "tree_entries": 60067
+        },
+        "source_revision": null
+      },
       "complexity": {
         "lines_changed": 20,
         "new_dependencies": [],
@@ -10275,14 +16242,16 @@ window.FDU_PERFORMANCE_RESEARCH = {
           "args": [],
           "name": "candidate",
           "sha256": "76c5a9e5fc4c49463a70489fa6faf5e81e47b16d9f4d8ead88cca7aa6cad4b5c",
-          "size_bytes": 569120
+          "size_bytes": 569120,
+          "source_revision": ""
         },
         "control": "exp-026 bulk reader with one fresh entry vector per directory",
         "control_binary": {
           "args": [],
           "name": "control",
           "sha256": "35198f0525f9501b71bd6764362f35723c925a3689b99c587bfbc457da896019",
-          "size_bytes": 569104
+          "size_bytes": 569104,
+          "source_revision": ""
         },
         "interleaved": true,
         "run_artifact": "benchmarks/results/realtree/run-exp028-reuse-bulk-staging-small-final.json",
@@ -10343,6 +16312,88 @@ window.FDU_PERFORMANCE_RESEARCH = {
       }
     },
     {
+      "checkpoint": {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 4
+        },
+        "kept_variant": "control",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -5.948,
+              5.451
+            ],
+            "effect": "retained",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": -1.798,
+            "pairs": 12,
+            "value": 311045271.0
+          },
+          {
+            "ci95_pct": [
+              -0.858,
+              1.084
+            ],
+            "effect": "retained",
+            "id": "warm-revalidate-wall",
+            "job": "warm-revalidate",
+            "label": "Warm revalidation",
+            "metric": "wall_ns",
+            "paired_change_pct": -0.011,
+            "pairs": 12,
+            "value": 510575229.0
+          },
+          {
+            "ci95_pct": [
+              -4.426,
+              8.815
+            ],
+            "effect": "retained",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": 1.149,
+            "pairs": 12,
+            "value": 1061677000.0
+          },
+          {
+            "ci95_pct": [
+              0.253,
+              3.107
+            ],
+            "effect": "retained",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": 2.379,
+            "pairs": 12,
+            "value": 35274752.0
+          }
+        ],
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "7acc49ba3b44",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "ce5a7430e152412a519ee9f9776c2fec73e59c58fa553aa3e9c2f8c085d26619",
+          "tree_entries": 60067
+        },
+        "source_revision": null
+      },
       "complexity": {
         "lines_changed": 1,
         "new_dependencies": [],
@@ -10635,14 +16686,16 @@ window.FDU_PERFORMANCE_RESEARCH = {
           "args": [],
           "name": "candidate",
           "sha256": "3c5b27d3113b38530845cf78ea317f80cc0c65eafdc341b4c29ab72a5d9e4f1c",
-          "size_bytes": 569104
+          "size_bytes": 569104,
+          "source_revision": ""
         },
         "control": "exp-026 64 KiB macOS bulk metadata buffer",
         "control_binary": {
           "args": [],
           "name": "control",
           "sha256": "35198f0525f9501b71bd6764362f35723c925a3689b99c587bfbc457da896019",
-          "size_bytes": 569104
+          "size_bytes": 569104,
+          "source_revision": ""
         },
         "interleaved": true,
         "run_artifact": "benchmarks/results/realtree/run-exp029-larger-bulk-buffer-small-final.json",
@@ -10703,6 +16756,46 @@ window.FDU_PERFORMANCE_RESEARCH = {
       }
     },
     {
+      "checkpoint": {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 1
+        },
+        "kept_variant": "candidate",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -62.799,
+              -50.433
+            ],
+            "effect": "improved",
+            "id": "warm-revalidate-wall",
+            "job": "warm-revalidate",
+            "label": "Warm revalidation",
+            "metric": "wall_ns",
+            "paired_change_pct": -59.53,
+            "pairs": 12,
+            "value": 5708114437.5
+          }
+        ],
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "d9b206106714",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "f2909250591b9b64d98956b0b2d8a9c3bd588b4c23f046a4660f3f174173dc23",
+          "tree_entries": 720805
+        },
+        "source_revision": "09d65590514cdb9d51c26637539650b064c92f86"
+      },
       "complexity": {
         "lines_changed": 419,
         "new_dependencies": [],
@@ -10815,14 +16908,16 @@ window.FDU_PERFORMANCE_RESEARCH = {
           "args": [],
           "name": "candidate",
           "sha256": "54db14278796b5ab1233ed71eefe07e2061c3913a957ac8e4f5fa79a8a4c2765",
-          "size_bytes": 585680
+          "size_bytes": 585680,
+          "source_revision": ""
         },
         "control": "exp-026 serial bulk-backed full reconciliation",
         "control_binary": {
           "args": [],
           "name": "control",
           "sha256": "35198f0525f9501b71bd6764362f35723c925a3689b99c587bfbc457da896019",
-          "size_bytes": 569104
+          "size_bytes": 569104,
+          "source_revision": ""
         },
         "interleaved": true,
         "run_artifact": "benchmarks/results/realtree/run-exp030-bounded-parallel-reconcile-large-exact.json",
@@ -10883,6 +16978,46 @@ window.FDU_PERFORMANCE_RESEARCH = {
       }
     },
     {
+      "checkpoint": {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 1
+        },
+        "kept_variant": "control",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -3.885,
+              10.067
+            ],
+            "effect": "retained",
+            "id": "warm-revalidate-wall",
+            "job": "warm-revalidate",
+            "label": "Warm revalidation",
+            "metric": "wall_ns",
+            "paired_change_pct": 1.642,
+            "pairs": 12,
+            "value": 477585979.0
+          }
+        ],
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "7acc49ba3b44",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "ce5a7430e152412a519ee9f9776c2fec73e59c58fa553aa3e9c2f8c085d26619",
+          "tree_entries": 60067
+        },
+        "source_revision": null
+      },
       "complexity": {
         "lines_changed": 1,
         "new_dependencies": [],
@@ -10992,14 +17127,16 @@ window.FDU_PERFORMANCE_RESEARCH = {
           "args": [],
           "name": "candidate",
           "sha256": "bd3efd16e2c9dc6ca8f5b6271454a4121464c3740b0a1a66a3193daebd5cd82b",
-          "size_bytes": 585680
+          "size_bytes": 585680,
+          "source_revision": ""
         },
         "control": "exp-030 1024-directory immutable-baseline waves",
         "control_binary": {
           "args": [],
           "name": "control",
           "sha256": "54db14278796b5ab1233ed71eefe07e2061c3913a957ac8e4f5fa79a8a4c2765",
-          "size_bytes": 585680
+          "size_bytes": 585680,
+          "source_revision": ""
         },
         "interleaved": true,
         "run_artifact": "benchmarks/results/realtree/run-exp031-larger-reconciliation-wave-small-final.json",
@@ -11060,6 +17197,102 @@ window.FDU_PERFORMANCE_RESEARCH = {
       }
     },
     {
+      "checkpoint": {
+        "coverage": {
+          "complete": true,
+          "expected": 5,
+          "measured": 5
+        },
+        "kept_variant": "candidate",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -55.328,
+              -53.715
+            ],
+            "effect": "improved",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": -54.532,
+            "pairs": 12,
+            "value": 289610104.0
+          },
+          {
+            "ci95_pct": [
+              -54.113,
+              -50.066
+            ],
+            "effect": "improved",
+            "id": "warm-revalidate-wall",
+            "job": "warm-revalidate",
+            "label": "Warm revalidation",
+            "metric": "wall_ns",
+            "paired_change_pct": -51.992,
+            "pairs": 12,
+            "value": 441569208.0
+          },
+          {
+            "ci95_pct": [
+              -36.177,
+              -35.322
+            ],
+            "effect": "improved",
+            "id": "snapshot-load-wall",
+            "job": "warm-snapshot-load",
+            "label": "Warm snapshot load",
+            "metric": "wall_ns",
+            "paired_change_pct": -35.657,
+            "pairs": 12,
+            "value": 206943125.0
+          },
+          {
+            "ci95_pct": [
+              73.391,
+              86.302
+            ],
+            "effect": "regressed",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": 82.427,
+            "pairs": 12,
+            "value": 1142684000.0
+          },
+          {
+            "ci95_pct": [
+              3.417,
+              6.796
+            ],
+            "effect": "regressed",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": 4.043,
+            "pairs": 12,
+            "value": 34996224.0
+          }
+        ],
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "7acc49ba3b44",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "ce5a7430e152412a519ee9f9776c2fec73e59c58fa553aa3e9c2f8c085d26619",
+          "tree_entries": 60067
+        },
+        "source_revision": "c9c91d9518ef1324531ecd79a3a43b9e96e95eef"
+      },
       "complexity": {
         "lines_changed": 0,
         "new_dependencies": [],
@@ -11533,14 +17766,16 @@ window.FDU_PERFORMANCE_RESEARCH = {
           "args": [],
           "name": "candidate",
           "sha256": "3ac1e1b2ef50a06fcea4779a06e3f62faebdfe8722daef03163130ec95ccf165",
-          "size_bytes": 585680
+          "size_bytes": 585680,
+          "source_revision": ""
         },
         "control": "b565882 before the iterative performance campaign",
         "control_binary": {
           "args": [],
           "name": "control",
           "sha256": "713a7db449084172489d1e4fd3bc1c8b9f40cf3c352eb65f4af505e127b917d4",
-          "size_bytes": 468832
+          "size_bytes": 468832,
+          "source_revision": ""
         },
         "interleaved": true,
         "run_artifact": "benchmarks/results/realtree/run-exp032-cumulative-through-parallel-reconciliation-msrv-final.json",
@@ -11601,6 +17836,102 @@ window.FDU_PERFORMANCE_RESEARCH = {
       }
     },
     {
+      "checkpoint": {
+        "coverage": {
+          "complete": true,
+          "expected": 5,
+          "measured": 5
+        },
+        "kept_variant": "candidate",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -7.314,
+              -2.144
+            ],
+            "effect": "improved",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": -5.058,
+            "pairs": 12,
+            "value": 315447458.5
+          },
+          {
+            "ci95_pct": [
+              -44.601,
+              -40.997
+            ],
+            "effect": "improved",
+            "id": "warm-revalidate-wall",
+            "job": "warm-revalidate",
+            "label": "Warm revalidation",
+            "metric": "wall_ns",
+            "paired_change_pct": -42.261,
+            "pairs": 12,
+            "value": 481882750.0
+          },
+          {
+            "ci95_pct": [
+              -4.587,
+              2.588
+            ],
+            "effect": "unclear",
+            "id": "snapshot-load-wall",
+            "job": "warm-snapshot-load",
+            "label": "Warm snapshot load",
+            "metric": "wall_ns",
+            "paired_change_pct": 0.181,
+            "pairs": 12,
+            "value": 251164666.5
+          },
+          {
+            "ci95_pct": [
+              -7.415,
+              -2.065
+            ],
+            "effect": "improved",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": -4.834,
+            "pairs": 12,
+            "value": 1278764500.0
+          },
+          {
+            "ci95_pct": [
+              -0.333,
+              1.135
+            ],
+            "effect": "unclear",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": 0.265,
+            "pairs": 12,
+            "value": 34160640.0
+          }
+        ],
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "7acc49ba3b44",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "ce5a7430e152412a519ee9f9776c2fec73e59c58fa553aa3e9c2f8c085d26619",
+          "tree_entries": 60067
+        },
+        "source_revision": null
+      },
       "complexity": {
         "lines_changed": 1514,
         "new_dependencies": [
@@ -12071,14 +18402,16 @@ window.FDU_PERFORMANCE_RESEARCH = {
           "args": [],
           "name": "candidate",
           "sha256": "3da6d0a6c284c6d89958204232a4647e5a9dced0c5316a4060439a2e23f2ff33",
-          "size_bytes": 602192
+          "size_bytes": 602192,
+          "source_revision": ""
         },
         "control": "origin/main dc56f77 after merged composable CLI PR #5",
         "control_binary": {
           "args": [],
           "name": "control",
           "sha256": "9d41606709d53bd13ea5311b4a33b796a43e39ba3f3c7fc50def2f80964091f3",
-          "size_bytes": 552480
+          "size_bytes": 552480,
+          "source_revision": ""
         },
         "interleaved": true,
         "run_artifact": "benchmarks/results/realtree/run-exp033-post-cli-merge-full.json",
@@ -12151,6 +18484,88 @@ window.FDU_PERFORMANCE_RESEARCH = {
       }
     },
     {
+      "checkpoint": {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 4
+        },
+        "kept_variant": "candidate",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -37.711,
+              -18.198
+            ],
+            "effect": "improved",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": -30.458,
+            "pairs": 12,
+            "value": 5153956395.5
+          },
+          {
+            "ci95_pct": [
+              -71.858,
+              -69.565
+            ],
+            "effect": "improved",
+            "id": "warm-revalidate-wall",
+            "job": "warm-revalidate",
+            "label": "Warm revalidation",
+            "metric": "wall_ns",
+            "paired_change_pct": -70.916,
+            "pairs": 12,
+            "value": 6056398229.0
+          },
+          {
+            "ci95_pct": [
+              -49.03,
+              10.209
+            ],
+            "effect": "unclear",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": -10.39,
+            "pairs": 12,
+            "value": 24018713500.0
+          },
+          {
+            "ci95_pct": [
+              0.155,
+              44.49
+            ],
+            "effect": "regressed",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": 32.265,
+            "pairs": 12,
+            "value": 437788672.0
+          }
+        ],
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "7cc33ab1c8f8",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "5afd8022acef9f5c6547f8aba90d307a6fa07cc996cc2c84eca9a76db0ff7483",
+          "tree_entries": 720805
+        },
+        "source_revision": null
+      },
       "complexity": {
         "lines_changed": 0,
         "new_dependencies": [],
@@ -12347,14 +18762,16 @@ window.FDU_PERFORMANCE_RESEARCH = {
           "args": [],
           "name": "candidate",
           "sha256": "3da6d0a6c284c6d89958204232a4647e5a9dced0c5316a4060439a2e23f2ff33",
-          "size_bytes": 602192
+          "size_bytes": 602192,
+          "source_revision": ""
         },
         "control": "origin/main dc56f77 after merged composable CLI PR #5",
         "control_binary": {
           "args": [],
           "name": "control",
           "sha256": "9d41606709d53bd13ea5311b4a33b796a43e39ba3f3c7fc50def2f80964091f3",
-          "size_bytes": 552480
+          "size_bytes": 552480,
+          "source_revision": ""
         },
         "interleaved": true,
         "run_artifact": "benchmarks/results/realtree/run-exp034-post-cli-cache-pressure.json",
@@ -12427,6 +18844,74 @@ window.FDU_PERFORMANCE_RESEARCH = {
       }
     },
     {
+      "checkpoint": {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 3
+        },
+        "kept_variant": "candidate",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -39.13,
+              -24.455
+            ],
+            "effect": "improved",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": -31.349,
+            "pairs": 12,
+            "value": 7332302000.0
+          },
+          {
+            "ci95_pct": [
+              -13.774,
+              2.53
+            ],
+            "effect": "unclear",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": -0.574,
+            "pairs": 12,
+            "value": 34847901000.0
+          },
+          {
+            "ci95_pct": [
+              37.014,
+              47.714
+            ],
+            "effect": "regressed",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": 44.32,
+            "pairs": 12,
+            "value": 661749760.0
+          }
+        ],
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "7cedd702ca37",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "df4efc6129670710450b4fba2e895aab6699c64f288e0f6c680f42f40b80231b",
+          "tree_entries": 1007659
+        },
+        "source_revision": null
+      },
       "complexity": {
         "lines_changed": 0,
         "new_dependencies": [],
@@ -12620,14 +19105,16 @@ window.FDU_PERFORMANCE_RESEARCH = {
           "args": [],
           "name": "candidate",
           "sha256": "3da6d0a6c284c6d89958204232a4647e5a9dced0c5316a4060439a2e23f2ff33",
-          "size_bytes": 602192
+          "size_bytes": 602192,
+          "source_revision": ""
         },
         "control": "origin/main dc56f77 after merged composable CLI PR #5",
         "control_binary": {
           "args": [],
           "name": "control",
           "sha256": "9d41606709d53bd13ea5311b4a33b796a43e39ba3f3c7fc50def2f80964091f3",
-          "size_bytes": 552480
+          "size_bytes": 552480,
+          "source_revision": ""
         },
         "interleaved": true,
         "run_artifact": "benchmarks/results/realtree/run-exp035-live-workspace.json",
@@ -12700,6 +19187,74 @@ window.FDU_PERFORMANCE_RESEARCH = {
       }
     },
     {
+      "checkpoint": {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 3
+        },
+        "kept_variant": "control",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -2.062,
+              -0.92
+            ],
+            "effect": "retained",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": -1.302,
+            "pairs": 12,
+            "value": 6188867667.0
+          },
+          {
+            "ci95_pct": [
+              33.256,
+              35.571
+            ],
+            "effect": "retained",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": 34.465,
+            "pairs": 12,
+            "value": 16488256000.0
+          },
+          {
+            "ci95_pct": [
+              -0.274,
+              0.386
+            ],
+            "effect": "retained",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": -0.014,
+            "pairs": 12,
+            "value": 478535680.0
+          }
+        ],
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "7cedd702ca37",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "df4efc6129670710450b4fba2e895aab6699c64f288e0f6c680f42f40b80231b",
+          "tree_entries": 1007659
+        },
+        "source_revision": null
+      },
       "complexity": {
         "lines_changed": 0,
         "new_dependencies": [],
@@ -12810,14 +19365,16 @@ window.FDU_PERFORMANCE_RESEARCH = {
           ],
           "name": "t8",
           "sha256": "3da6d0a6c284c6d89958204232a4647e5a9dced0c5316a4060439a2e23f2ff33",
-          "size_bytes": 602192
+          "size_bytes": 602192,
+          "source_revision": ""
         },
         "control": "automatic adaptive worker policy",
         "control_binary": {
           "args": [],
           "name": "auto",
           "sha256": "3da6d0a6c284c6d89958204232a4647e5a9dced0c5316a4060439a2e23f2ff33",
-          "size_bytes": 602192
+          "size_bytes": 602192,
+          "source_revision": ""
         },
         "interleaved": true,
         "run_artifact": "benchmarks/results/realtree/run-exp036-live-worker-sweep.json",
@@ -12878,6 +19435,74 @@ window.FDU_PERFORMANCE_RESEARCH = {
       }
     },
     {
+      "checkpoint": {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 3
+        },
+        "kept_variant": "control",
+        "measurements": [
+          {
+            "ci95_pct": [
+              2.419,
+              5.227
+            ],
+            "effect": "retained",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": 3.573,
+            "pairs": 12,
+            "value": 6187496646.0
+          },
+          {
+            "ci95_pct": [
+              -1.202,
+              0.468
+            ],
+            "effect": "retained",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": -0.499,
+            "pairs": 12,
+            "value": 16656342500.0
+          },
+          {
+            "ci95_pct": [
+              -1.492,
+              -0.553
+            ],
+            "effect": "retained",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": -1.03,
+            "pairs": 12,
+            "value": 480673792.0
+          }
+        ],
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "7cedd702ca37",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "df4efc6129670710450b4fba2e895aab6699c64f288e0f6c680f42f40b80231b",
+          "tree_entries": 1007659
+        },
+        "source_revision": null
+      },
       "complexity": {
         "lines_changed": 0,
         "new_dependencies": [],
@@ -12988,7 +19613,8 @@ window.FDU_PERFORMANCE_RESEARCH = {
           ],
           "name": "depth",
           "sha256": "3da6d0a6c284c6d89958204232a4647e5a9dced0c5316a4060439a2e23f2ff33",
-          "size_bytes": 602192
+          "size_bytes": 602192,
+          "source_revision": ""
         },
         "control": "region-scheduled breadth-first default",
         "control_binary": {
@@ -12998,7 +19624,8 @@ window.FDU_PERFORMANCE_RESEARCH = {
           ],
           "name": "breadth",
           "sha256": "3da6d0a6c284c6d89958204232a4647e5a9dced0c5316a4060439a2e23f2ff33",
-          "size_bytes": 602192
+          "size_bytes": 602192,
+          "source_revision": ""
         },
         "interleaved": true,
         "run_artifact": "benchmarks/results/realtree/run-exp037-live-order-revisit.json",
@@ -13059,6 +19686,74 @@ window.FDU_PERFORMANCE_RESEARCH = {
       }
     },
     {
+      "checkpoint": {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 3
+        },
+        "kept_variant": "control",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -1.49,
+              0.491
+            ],
+            "effect": "retained",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": -0.694,
+            "pairs": 6,
+            "value": 6315833625.5
+          },
+          {
+            "ci95_pct": [
+              -2.011,
+              2.485
+            ],
+            "effect": "retained",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": 1.234,
+            "pairs": 6,
+            "value": 16966009500.0
+          },
+          {
+            "ci95_pct": [
+              0.312,
+              1.114
+            ],
+            "effect": "retained",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": 0.527,
+            "pairs": 6,
+            "value": 479166464.0
+          }
+        ],
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "a4804158a43b",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "6b33356e83ab04d5b8cf9e149641fd1a1fd368b3a038220403263192611f2fd9",
+          "tree_entries": 1008723
+        },
+        "source_revision": null
+      },
       "complexity": {
         "lines_changed": 0,
         "new_dependencies": [],
@@ -13169,14 +19864,16 @@ window.FDU_PERFORMANCE_RESEARCH = {
           "args": [],
           "name": "candidate",
           "sha256": "c32dae5df133f96fb7f163254b43e0a036fe3812b7e52dcb0e492dfd8423d741",
-          "size_bytes": 602256
+          "size_bytes": 602256,
+          "source_revision": ""
         },
         "control": "absolute directory opens",
         "control_binary": {
           "args": [],
           "name": "control",
           "sha256": "3da6d0a6c284c6d89958204232a4647e5a9dced0c5316a4060439a2e23f2ff33",
-          "size_bytes": 602192
+          "size_bytes": 602192,
+          "source_revision": ""
         },
         "interleaved": true,
         "run_artifact": "benchmarks/results/realtree/run-exp038-parent-openat-final.json",
@@ -13237,6 +19934,74 @@ window.FDU_PERFORMANCE_RESEARCH = {
       }
     },
     {
+      "checkpoint": {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 3
+        },
+        "kept_variant": "control",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -1.619,
+              8.191
+            ],
+            "effect": "retained",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": 2.217,
+            "pairs": 6,
+            "value": 7821985604.5
+          },
+          {
+            "ci95_pct": [
+              -11.567,
+              5.476
+            ],
+            "effect": "retained",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": 0.083,
+            "pairs": 6,
+            "value": 28563871000.0
+          },
+          {
+            "ci95_pct": [
+              -2.245,
+              15.492
+            ],
+            "effect": "retained",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": 5.066,
+            "pairs": 6,
+            "value": 665952256.0
+          }
+        ],
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "1f3ea3f83a69",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "71f21a5e1d0c377ec3d266243ef5590382a5fadb12c21983cbb4951be500d29a",
+          "tree_entries": 1009679
+        },
+        "source_revision": null
+      },
       "complexity": {
         "lines_changed": 0,
         "new_dependencies": [],
@@ -13344,14 +20109,16 @@ window.FDU_PERFORMANCE_RESEARCH = {
           "args": [],
           "name": "buffer256",
           "sha256": "26899d199802937c30a655afd0499c7dd16eaa411da78c25862b05fbb33a7cf8",
-          "size_bytes": 602192
+          "size_bytes": 602192,
+          "source_revision": ""
         },
         "control": "64 KiB getattrlistbulk buffer",
         "control_binary": {
           "args": [],
           "name": "buffer64",
           "sha256": "3da6d0a6c284c6d89958204232a4647e5a9dced0c5316a4060439a2e23f2ff33",
-          "size_bytes": 602192
+          "size_bytes": 602192,
+          "source_revision": ""
         },
         "interleaved": true,
         "run_artifact": "benchmarks/results/realtree/run-exp039-buffer-revisit-screen.json",
@@ -13412,6 +20179,7 @@ window.FDU_PERFORMANCE_RESEARCH = {
       }
     },
     {
+      "checkpoint": null,
       "complexity": {
         "lines_changed": 273,
         "new_dependencies": [],
@@ -13543,7 +20311,8 @@ window.FDU_PERFORMANCE_RESEARCH = {
           ],
           "name": "fdu-transient-summary",
           "sha256": "45aab461bf35be6cf4caaad1ea0595293f7285875dbfec7bf4456dc1ef34c469",
-          "size_bytes": 1299840
+          "size_bytes": 1299840,
+          "source_revision": ""
         },
         "control": "cache-off summary after constructing the complete reusable index",
         "control_binary": {
@@ -13559,7 +20328,8 @@ window.FDU_PERFORMANCE_RESEARCH = {
           ],
           "name": "fdu-index-summary",
           "sha256": "bc6c69c0ac777e9ea7653ece1931e79a433fca63556dca516e3f76288b5ff910",
-          "size_bytes": 1299824
+          "size_bytes": 1299824,
+          "source_revision": ""
         },
         "interleaved": true,
         "run_artifact": "benchmarks/results/realtree/run-exp040-transient-summary.json",
@@ -13629,6 +20399,7 @@ window.FDU_PERFORMANCE_RESEARCH = {
       }
     },
     {
+      "checkpoint": null,
       "complexity": {
         "lines_changed": 299,
         "new_dependencies": [],
@@ -13760,7 +20531,8 @@ window.FDU_PERFORMANCE_RESEARCH = {
           ],
           "name": "h62",
           "sha256": "7e3cc13865837f98b530599a532dfc2e9b0b8634992ac26f8a7c755694fa79c1",
-          "size_bytes": 1332912
+          "size_bytes": 1332912,
+          "source_revision": ""
         },
         "control": "H59 transient summary reduced from generic observation batches",
         "control_binary": {
@@ -13776,7 +20548,8 @@ window.FDU_PERFORMANCE_RESEARCH = {
           ],
           "name": "h59",
           "sha256": "0a02839ffe9c0221c96fbca2d20e2d6f97636b1891860389fee468986a677f73",
-          "size_bytes": 1299840
+          "size_bytes": 1299840,
+          "source_revision": ""
         },
         "interleaved": true,
         "run_artifact": "benchmarks/results/realtree/run-exp041-worker-local-summary.json",
@@ -13837,6 +20610,7 @@ window.FDU_PERFORMANCE_RESEARCH = {
       }
     },
     {
+      "checkpoint": null,
       "complexity": {
         "lines_changed": 547,
         "new_dependencies": [],
@@ -13982,7 +20756,8 @@ window.FDU_PERFORMANCE_RESEARCH = {
           ],
           "name": "h63",
           "sha256": "d6c22fff47023051cd167175da7ede91b1fcb4e9cb167826d298af63f1dd5239",
-          "size_bytes": 1332912
+          "size_bytes": 1332912,
+          "source_revision": ""
         },
         "control": "H59 transient summary reduced from generic observation batches",
         "control_binary": {
@@ -13998,7 +20773,8 @@ window.FDU_PERFORMANCE_RESEARCH = {
           ],
           "name": "h59",
           "sha256": "0a02839ffe9c0221c96fbca2d20e2d6f97636b1891860389fee468986a677f73",
-          "size_bytes": 1299840
+          "size_bytes": 1299840,
+          "source_revision": ""
         },
         "interleaved": true,
         "run_artifact": "benchmarks/results/realtree/run-exp042-derived-summary-bulk.json",
@@ -14059,6 +20835,7 @@ window.FDU_PERFORMANCE_RESEARCH = {
       }
     },
     {
+      "checkpoint": null,
       "complexity": {
         "lines_changed": 12,
         "new_dependencies": [],
@@ -14203,7 +20980,8 @@ window.FDU_PERFORMANCE_RESEARCH = {
           ],
           "name": "t8",
           "sha256": "4ef4ba82689ce2f54fcfb7bee694616eae11a3d5bf3f0d17daec00276f82bce5",
-          "size_bytes": 1299840
+          "size_bytes": 1299840,
+          "source_revision": ""
         },
         "control": "H59 transient summary with the accepted automatic six-worker policy",
         "control_binary": {
@@ -14219,7 +20997,8 @@ window.FDU_PERFORMANCE_RESEARCH = {
           ],
           "name": "auto",
           "sha256": "0a02839ffe9c0221c96fbca2d20e2d6f97636b1891860389fee468986a677f73",
-          "size_bytes": 1299840
+          "size_bytes": 1299840,
+          "source_revision": ""
         },
         "interleaved": true,
         "run_artifact": "benchmarks/results/realtree/run-exp043-summary-worker-depth.json",
@@ -14280,6 +21059,7 @@ window.FDU_PERFORMANCE_RESEARCH = {
       }
     },
     {
+      "checkpoint": null,
       "complexity": {
         "lines_changed": 636,
         "new_dependencies": [],
@@ -14427,7 +21207,8 @@ window.FDU_PERFORMANCE_RESEARCH = {
           ],
           "name": "specialized",
           "sha256": "321deb4f5175213a78f20213dfd84ef2492186c9a8cb36a0c716f2075d2b4ebe",
-          "size_bytes": 1316384
+          "size_bytes": 1316384,
+          "source_revision": ""
         },
         "control": "selected allocated total reduced through the existing generic H59 transient scan",
         "control_binary": {
@@ -14445,7 +21226,8 @@ window.FDU_PERFORMANCE_RESEARCH = {
           ],
           "name": "generic",
           "sha256": "aae55521cececb29be6f11abf0edb5727f30c78ba6f38d5c879b6f44b37dac46",
-          "size_bytes": 1299840
+          "size_bytes": 1299840,
+          "source_revision": ""
         },
         "interleaved": true,
         "run_artifact": null,
@@ -14515,6 +21297,7 @@ window.FDU_PERFORMANCE_RESEARCH = {
       }
     },
     {
+      "checkpoint": null,
       "complexity": {
         "lines_changed": 78,
         "new_dependencies": [],
@@ -14662,7 +21445,8 @@ window.FDU_PERFORMANCE_RESEARCH = {
           ],
           "name": "open-pipeline-6p2",
           "sha256": "4dcc6f8750bace9cd42e27a5983ef0ed2fdde059237e900b44292ca9b7310a81",
-          "size_bytes": 1332928
+          "size_bytes": 1332928,
+          "source_revision": ""
         },
         "control": "current exact rich-summary path with its automatic six-worker operating point",
         "control_binary": {
@@ -14678,7 +21462,8 @@ window.FDU_PERFORMANCE_RESEARCH = {
           ],
           "name": "control",
           "sha256": "dc0bb7ccbb29ff32b270e91abd9baca980fe572cc456bc04b65c0f37ff37bf60",
-          "size_bytes": 1299856
+          "size_bytes": 1299856,
+          "source_revision": ""
         },
         "interleaved": true,
         "run_artifact": null,
@@ -14748,6 +21533,7 @@ window.FDU_PERFORMANCE_RESEARCH = {
       }
     },
     {
+      "checkpoint": null,
       "complexity": {
         "lines_changed": 121,
         "new_dependencies": [],
@@ -14855,7 +21641,8 @@ window.FDU_PERFORMANCE_RESEARCH = {
           ],
           "name": "open-shared-6p2",
           "sha256": "110243ffae9b5c6d897eab070b10f3b6f1fba5231c54bd65cda165ed81a920b3",
-          "size_bytes": 1332944
+          "size_bytes": 1332944,
+          "source_revision": ""
         },
         "control": "current exact rich-summary path with its automatic six-worker operating point",
         "control_binary": {
@@ -14871,7 +21658,8 @@ window.FDU_PERFORMANCE_RESEARCH = {
           ],
           "name": "control",
           "sha256": "dc0bb7ccbb29ff32b270e91abd9baca980fe572cc456bc04b65c0f37ff37bf60",
-          "size_bytes": 1299856
+          "size_bytes": 1299856,
+          "source_revision": ""
         },
         "interleaved": true,
         "run_artifact": null,
@@ -14941,6 +21729,7 @@ window.FDU_PERFORMANCE_RESEARCH = {
       }
     },
     {
+      "checkpoint": null,
       "complexity": {
         "lines_changed": 54,
         "new_dependencies": [],
@@ -15318,14 +22107,16 @@ window.FDU_PERFORMANCE_RESEARCH = {
           "args": [],
           "name": "candidate",
           "sha256": "79085c0c4cadc44f161391bff5b61e6e144de1407a287c758b752327026fd729",
-          "size_bytes": 850656
+          "size_bytes": 850656,
+          "source_revision": ""
         },
         "control": "automatic bounded worker pool",
         "control_binary": {
           "args": [],
           "name": "control",
           "sha256": "61e3053f92157bd3c44ab36e7eca0cd4f75f1dc6f3ac56d7a5164af766c7d2cf",
-          "size_bytes": 850624
+          "size_bytes": 850624,
+          "source_revision": ""
         },
         "interleaved": true,
         "run_artifact": null,
@@ -15386,6 +22177,7 @@ window.FDU_PERFORMANCE_RESEARCH = {
       }
     },
     {
+      "checkpoint": null,
       "complexity": {
         "lines_changed": 31,
         "new_dependencies": [],
@@ -15774,14 +22566,16 @@ window.FDU_PERFORMANCE_RESEARCH = {
           "args": [],
           "name": "candidate",
           "sha256": "0ab4bccf609fbc534067249d25a5b3dc5dd6082eda41838073a2a2f9bbc77150",
-          "size_bytes": 867168
+          "size_bytes": 867168,
+          "source_revision": ""
         },
         "control": "frozen code-sloc-v1 semantic baseline",
         "control_binary": {
           "args": [],
           "name": "control",
           "sha256": "d13aeb15098f4c3e74cba352d00e7fb1acd32c3f93585af6c2dc5007c16e11fc",
-          "size_bytes": 867168
+          "size_bytes": 867168,
+          "source_revision": ""
         },
         "interleaved": true,
         "run_artifact": null,
@@ -15842,6 +22636,7 @@ window.FDU_PERFORMANCE_RESEARCH = {
       }
     },
     {
+      "checkpoint": null,
       "complexity": {
         "lines_changed": 5,
         "new_dependencies": [],
@@ -16047,14 +22842,16 @@ window.FDU_PERFORMANCE_RESEARCH = {
           "args": [],
           "name": "candidate",
           "sha256": "8f098d830b621e7e1890f576d2e571b62e8f0b6870be8a59572c60463755b3db",
-          "size_bytes": 1115168
+          "size_bytes": 1115168,
+          "source_revision": ""
         },
         "control": "zero-capacity retained Markdown buffer",
         "control_binary": {
           "args": [],
           "name": "baseline",
           "sha256": "5a41e15cbc4199ce9ad790baf6fd1ad2426559cec4f3f71754488f9dba56d7a1",
-          "size_bytes": 1115168
+          "size_bytes": 1115168,
+          "source_revision": ""
         },
         "interleaved": true,
         "run_artifact": null,
@@ -16115,6 +22912,7 @@ window.FDU_PERFORMANCE_RESEARCH = {
       }
     },
     {
+      "checkpoint": null,
       "complexity": {
         "lines_changed": 7,
         "new_dependencies": [],
@@ -16225,7 +23023,8 @@ window.FDU_PERFORMANCE_RESEARCH = {
           ],
           "name": "candidate",
           "sha256": "fa15fe670cf5ef3d075539dc482a4cd4b6b6f0245d05b902fee8c766244310c2",
-          "size_bytes": 1115168
+          "size_bytes": 1115168,
+          "source_revision": ""
         },
         "control": "copy every chunk through a temporary vector",
         "control_binary": {
@@ -16235,7 +23034,8 @@ window.FDU_PERFORMANCE_RESEARCH = {
           ],
           "name": "baseline",
           "sha256": "5a41e15cbc4199ce9ad790baf6fd1ad2426559cec4f3f71754488f9dba56d7a1",
-          "size_bytes": 1115168
+          "size_bytes": 1115168,
+          "source_revision": ""
         },
         "interleaved": true,
         "run_artifact": null,
@@ -16296,6 +23096,88 @@ window.FDU_PERFORMANCE_RESEARCH = {
       }
     },
     {
+      "checkpoint": {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 4
+        },
+        "kept_variant": "candidate",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -10.424,
+              -6.119
+            ],
+            "effect": "improved",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": -7.348,
+            "pairs": 20,
+            "value": 1852852604.5
+          },
+          {
+            "ci95_pct": [
+              -1.095,
+              1.64
+            ],
+            "effect": "unclear",
+            "id": "warm-revalidate-wall",
+            "job": "warm-revalidate",
+            "label": "Warm revalidation",
+            "metric": "wall_ns",
+            "paired_change_pct": 0.539,
+            "pairs": 20,
+            "value": 1741208508.0
+          },
+          {
+            "ci95_pct": [
+              -7.956,
+              -5.11
+            ],
+            "effect": "improved",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": -5.403,
+            "pairs": 20,
+            "value": 2846333500.0
+          },
+          {
+            "ci95_pct": [
+              -4.139,
+              -0.171
+            ],
+            "effect": "improved",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": -2.914,
+            "pairs": 20,
+            "value": 281458688.0
+          }
+        ],
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "",
+          "host_arch": "x86_64",
+          "host_cores": 4,
+          "host_cpu": "Linux",
+          "host_memory_bytes": 0,
+          "host_system": "Linux 6.18.5-fc-v20",
+          "host_virtualization": "",
+          "id": "202847d8a83c",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "5b894066affe6de8c7f0ba44d00eccd9bc3b7e5d0cf146786f3ae860f4b0c3bc",
+          "tree_entries": 450463
+        },
+        "source_revision": "2475c82b346120903ff36bd9a1737b4f0adf6891"
+      },
       "complexity": {
         "lines_changed": 78,
         "new_dependencies": [
@@ -16490,14 +23372,16 @@ window.FDU_PERFORMANCE_RESEARCH = {
           "args": [],
           "name": "candidate",
           "sha256": "96fa343e4a6f15474d2cfc3f0dba21dc9eea7d026d84d8f3a2c5050a6e5cdeb3",
-          "size_bytes": 1444752
+          "size_bytes": 1444752,
+          "source_revision": ""
         },
         "control": "fdu at 855aa2e",
         "control_binary": {
           "args": [],
           "name": "control",
           "sha256": "eb7045ba931f314cc5c4c0213b1046176d2b2aab3503420cbae497ac5059822c",
-          "size_bytes": 1443648
+          "size_bytes": 1443648,
+          "source_revision": ""
         },
         "interleaved": true,
         "run_artifact": "/tmp/fdu-perf/results/run-s1-parent-memo.json",
@@ -16558,6 +23442,88 @@ window.FDU_PERFORMANCE_RESEARCH = {
       }
     },
     {
+      "checkpoint": {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 4
+        },
+        "kept_variant": "candidate",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -3.306,
+              3.764
+            ],
+            "effect": "unclear",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": 0.026,
+            "pairs": 20,
+            "value": 1870126871.0
+          },
+          {
+            "ci95_pct": [
+              -1.963,
+              0.312
+            ],
+            "effect": "unclear",
+            "id": "warm-revalidate-wall",
+            "job": "warm-revalidate",
+            "label": "Warm revalidation",
+            "metric": "wall_ns",
+            "paired_change_pct": -1.057,
+            "pairs": 20,
+            "value": 1712330259.0
+          },
+          {
+            "ci95_pct": [
+              -1.456,
+              2.554
+            ],
+            "effect": "unclear",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": 0.175,
+            "pairs": 20,
+            "value": 2862239000.0
+          },
+          {
+            "ci95_pct": [
+              -5.062,
+              5.442
+            ],
+            "effect": "unclear",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": -0.53,
+            "pairs": 20,
+            "value": 287041536.0
+          }
+        ],
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "",
+          "host_arch": "x86_64",
+          "host_cores": 4,
+          "host_cpu": "Linux",
+          "host_memory_bytes": 0,
+          "host_system": "Linux 6.18.5-fc-v20",
+          "host_virtualization": "",
+          "id": "202847d8a83c",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "5b894066affe6de8c7f0ba44d00eccd9bc3b7e5d0cf146786f3ae860f4b0c3bc",
+          "tree_entries": 450463
+        },
+        "source_revision": "f34ede9126f7fcaa82d58f0fe55d04b81e8d1dea"
+      },
       "complexity": {
         "lines_changed": 420,
         "new_dependencies": [
@@ -16750,14 +23716,16 @@ window.FDU_PERFORMANCE_RESEARCH = {
           "args": [],
           "name": "candidate",
           "sha256": "02d6451f118bac836e4ab6ed45996ff06d51f9b51b815220a484582364c53c96",
-          "size_bytes": 1472336
+          "size_bytes": 1472336,
+          "source_revision": ""
         },
         "control": "perf probe without perf-counters",
         "control_binary": {
           "args": [],
           "name": "control",
           "sha256": "a49b22e0a10dba1a50bdb5b19a1e982b73595211be6698953d084329fd5d179d",
-          "size_bytes": 1444752
+          "size_bytes": 1444752,
+          "source_revision": ""
         },
         "interleaved": true,
         "run_artifact": "/tmp/fdu-perf/results/run-counter-overhead.json",
@@ -16818,6 +23786,74 @@ window.FDU_PERFORMANCE_RESEARCH = {
       }
     },
     {
+      "checkpoint": {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 3
+        },
+        "kept_variant": "candidate",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -2.961,
+              1.398
+            ],
+            "effect": "unclear",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": -1.257,
+            "pairs": 20,
+            "value": 1847042262.5
+          },
+          {
+            "ci95_pct": [
+              -2.728,
+              0.423
+            ],
+            "effect": "unclear",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": -0.669,
+            "pairs": 20,
+            "value": 2815443000.0
+          },
+          {
+            "ci95_pct": [
+              -4.485,
+              0.24
+            ],
+            "effect": "unclear",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": -2.73,
+            "pairs": 20,
+            "value": 276846592.0
+          }
+        ],
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "",
+          "host_arch": "x86_64",
+          "host_cores": 4,
+          "host_cpu": "Linux",
+          "host_memory_bytes": 0,
+          "host_system": "Linux 6.18.5-fc-v20",
+          "host_virtualization": "",
+          "id": "202847d8a83c",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "5b894066affe6de8c7f0ba44d00eccd9bc3b7e5d0cf146786f3ae860f4b0c3bc",
+          "tree_entries": 450463
+        },
+        "source_revision": "844da388d4a2294a6015962f375f8c726f4bf7c8"
+      },
       "complexity": {
         "lines_changed": 690,
         "new_dependencies": [],
@@ -16923,14 +23959,16 @@ window.FDU_PERFORMANCE_RESEARCH = {
           "args": [],
           "name": "candidate",
           "sha256": "c1e3762c9519ed7ac5d725b0160243fb77f246ea7bfa3ed1591f6ddf7bc36374",
-          "size_bytes": 1521808
+          "size_bytes": 1521808,
+          "source_revision": ""
         },
         "control": "probe with no instrumentation at all",
         "control_binary": {
           "args": [],
           "name": "control",
           "sha256": "96fa343e4a6f15474d2cfc3f0dba21dc9eea7d026d84d8f3a2c5050a6e5cdeb3",
-          "size_bytes": 1444752
+          "size_bytes": 1444752,
+          "source_revision": ""
         },
         "interleaved": true,
         "run_artifact": "/tmp/fdu-perf/results/run-counters-idle-cost.json",
@@ -16991,6 +24029,88 @@ window.FDU_PERFORMANCE_RESEARCH = {
       }
     },
     {
+      "checkpoint": {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 4
+        },
+        "kept_variant": "candidate",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -0.186,
+              3.895
+            ],
+            "effect": "unclear",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": 1.393,
+            "pairs": 12,
+            "value": 306243333.5
+          },
+          {
+            "ci95_pct": [
+              -16.286,
+              -13.993
+            ],
+            "effect": "improved",
+            "id": "warm-revalidate-wall",
+            "job": "warm-revalidate",
+            "label": "Warm revalidation",
+            "metric": "wall_ns",
+            "paired_change_pct": -15.682,
+            "pairs": 12,
+            "value": 335746916.5
+          },
+          {
+            "ci95_pct": [
+              -1.077,
+              5.249
+            ],
+            "effect": "unclear",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": 0.435,
+            "pairs": 12,
+            "value": 1187892000.0
+          },
+          {
+            "ci95_pct": [
+              -2.721,
+              0.743
+            ],
+            "effect": "unclear",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": -1.335,
+            "pairs": 12,
+            "value": 37289984.0
+          }
+        ],
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "1695dd644c80",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "f708694be70261d65046e934ef03aed21a52bfed19fe456a11e18f9305b62ca4",
+          "tree_entries": 60993
+        },
+        "source_revision": null
+      },
       "complexity": {
         "lines_changed": 0,
         "new_dependencies": [],
@@ -17181,14 +24301,16 @@ window.FDU_PERFORMANCE_RESEARCH = {
           "args": [],
           "name": "candidate",
           "sha256": "696e08acce8c26a50b6fd780fb57dc2108f6459d1336894624695addb0173785",
-          "size_bytes": 1445664
+          "size_bytes": 1445664,
+          "source_revision": ""
         },
         "control": "main at 26280e4",
         "control_binary": {
           "args": [],
           "name": "control",
           "sha256": "27c2e3994638217e2b61cb79e6cfa7d2a7e4f1d671badec12039cc09dcd3ddc5",
-          "size_bytes": 1148240
+          "size_bytes": 1148240,
+          "source_revision": ""
         },
         "interleaved": true,
         "run_artifact": "benchmarks/results/realtree/run-pr22-current-vs-main-macos.json",
@@ -17261,6 +24383,88 @@ window.FDU_PERFORMANCE_RESEARCH = {
       }
     },
     {
+      "checkpoint": {
+        "coverage": {
+          "complete": false,
+          "expected": 5,
+          "measured": 4
+        },
+        "kept_variant": "candidate",
+        "measurements": [
+          {
+            "ci95_pct": [
+              -3.074,
+              0.976
+            ],
+            "effect": "unclear",
+            "id": "cold-index-wall",
+            "job": "cold-scan-index",
+            "label": "Cold indexed scan",
+            "metric": "wall_ns",
+            "paired_change_pct": -0.949,
+            "pairs": 12,
+            "value": 297538750.0
+          },
+          {
+            "ci95_pct": [
+              -4.778,
+              2.678
+            ],
+            "effect": "unclear",
+            "id": "warm-revalidate-wall",
+            "job": "warm-revalidate",
+            "label": "Warm revalidation",
+            "metric": "wall_ns",
+            "paired_change_pct": -1.598,
+            "pairs": 12,
+            "value": 340199062.5
+          },
+          {
+            "ci95_pct": [
+              -4.678,
+              0.829
+            ],
+            "effect": "unclear",
+            "id": "cold-index-cpu",
+            "job": "cold-scan-index",
+            "label": "Cold indexed CPU",
+            "metric": "cpu_ns",
+            "paired_change_pct": -2.312,
+            "pairs": 12,
+            "value": 1138855000.0
+          },
+          {
+            "ci95_pct": [
+              -0.133,
+              2.191
+            ],
+            "effect": "unclear",
+            "id": "cold-index-rss",
+            "job": "cold-scan-index",
+            "label": "Cold indexed peak RSS",
+            "metric": "peak_rss_bytes",
+            "paired_change_pct": 1.15,
+            "pairs": 12,
+            "value": 37199872.0
+          }
+        ],
+        "profile": "index-core-v1",
+        "profile_label": "Index core",
+        "regime": {
+          "filesystem": "apfs",
+          "host_arch": "arm64",
+          "host_cores": 10,
+          "host_cpu": "Apple M1 Pro",
+          "host_memory_bytes": 34359738368,
+          "host_system": "Darwin 25.5.0",
+          "host_virtualization": "",
+          "id": "1695dd644c80",
+          "os_cache": "warm-steady",
+          "tree_engine_digest": "f708694be70261d65046e934ef03aed21a52bfed19fe456a11e18f9305b62ca4",
+          "tree_entries": 60993
+        },
+        "source_revision": "3bc650d920d2ccfb0db4943c5800ba80d54686f8"
+      },
       "complexity": {
         "lines_changed": 2796,
         "new_dependencies": [],
@@ -17451,14 +24655,16 @@ window.FDU_PERFORMANCE_RESEARCH = {
           "args": [],
           "name": "candidate",
           "sha256": "696e08acce8c26a50b6fd780fb57dc2108f6459d1336894624695addb0173785",
-          "size_bytes": 1445664
+          "size_bytes": 1445664,
+          "source_revision": ""
         },
         "control": "reviewed PR head fb99812",
         "control_binary": {
           "args": [],
           "name": "control",
           "sha256": "b9a91242418133deca7891c0e419d3b8f88c7b7b18a555aa4cc2e3e7aee8b200",
-          "size_bytes": 1247520
+          "size_bytes": 1247520,
+          "source_revision": ""
         },
         "interleaved": true,
         "run_artifact": "benchmarks/results/realtree/run-pr22-current-vs-reviewed-head-macos.json",
@@ -17749,6 +24955,11 @@ window.FDU_PERFORMANCE_RESEARCH = {
         "identity": "exp-000",
         "key": "exp-000-baseline-on-a-real-60k-entry-tree.md",
         "payload": {
+          "checkpoint": {
+            "kept_variant": "candidate",
+            "profile": "index-core-v1",
+            "source_revision": "b565882bd9f2a877934bd96415d3a8eab6504f92"
+          },
           "complexity": {
             "lines_changed": 0,
             "new_dependencies": [],
@@ -18208,6 +25419,11 @@ window.FDU_PERFORMANCE_RESEARCH = {
         "identity": "exp-001",
         "key": "exp-001-bounded-parallel-directory-producer.md",
         "payload": {
+          "checkpoint": {
+            "kept_variant": "candidate",
+            "profile": "index-core-v1",
+            "source_revision": "a0cc981da037e3473a91360a0c41602a13b38a13"
+          },
           "complexity": {
             "lines_changed": 210,
             "new_dependencies": [],
@@ -18499,6 +25715,10 @@ window.FDU_PERFORMANCE_RESEARCH = {
         "identity": "exp-002",
         "key": "exp-002-parallel-revalidation-sweep.md",
         "payload": {
+          "checkpoint": {
+            "kept_variant": "control",
+            "profile": "index-core-v1"
+          },
           "complexity": {
             "lines_changed": 180,
             "new_dependencies": [],
@@ -18796,6 +26016,10 @@ window.FDU_PERFORMANCE_RESEARCH = {
         "identity": "exp-003",
         "key": "exp-003-skip-journalling-on-the-bootstrap-apply-path.md",
         "payload": {
+          "checkpoint": {
+            "kept_variant": "control",
+            "profile": "index-core-v1"
+          },
           "complexity": {
             "lines_changed": 32,
             "new_dependencies": [],
@@ -19093,6 +26317,11 @@ window.FDU_PERFORMANCE_RESEARCH = {
         "identity": "exp-004",
         "key": "exp-004-borrowed-path-components.md",
         "payload": {
+          "checkpoint": {
+            "kept_variant": "candidate",
+            "profile": "index-core-v1",
+            "source_revision": "bf7a05a0c932ce85dc1f424056f4c97e42a5be88"
+          },
           "complexity": {
             "lines_changed": 38,
             "new_dependencies": [],
@@ -19458,6 +26687,11 @@ window.FDU_PERFORMANCE_RESEARCH = {
         "identity": "exp-005",
         "key": "exp-005-snapshot-load-resolves-through-the-parent.md",
         "payload": {
+          "checkpoint": {
+            "kept_variant": "candidate",
+            "profile": "index-core-v1",
+            "source_revision": "954d27be986ef7a0862036efc8bbf2b8b11b7ea1"
+          },
           "complexity": {
             "lines_changed": 34,
             "new_dependencies": [],
@@ -19762,6 +26996,11 @@ window.FDU_PERFORMANCE_RESEARCH = {
         "identity": "exp-006",
         "key": "exp-006-cumulative-effect-of-every-accepted-change.md",
         "payload": {
+          "checkpoint": {
+            "kept_variant": "candidate",
+            "profile": "index-core-v1",
+            "source_revision": "954d27be986ef7a0862036efc8bbf2b8b11b7ea1"
+          },
           "complexity": {
             "lines_changed": 282,
             "new_dependencies": [],
@@ -20202,6 +27441,11 @@ window.FDU_PERFORMANCE_RESEARCH = {
         "identity": "exp-007",
         "key": "exp-007-direct-reconcile-reads-expectations-off-entry-ids.md",
         "payload": {
+          "checkpoint": {
+            "kept_variant": "candidate",
+            "profile": "index-core-v1",
+            "source_revision": "92d6212ea5d1e8da346457375023ad25d703459c"
+          },
           "complexity": {
             "lines_changed": 14,
             "new_dependencies": [],
@@ -20445,6 +27689,11 @@ window.FDU_PERFORMANCE_RESEARCH = {
         "identity": "exp-008",
         "key": "exp-008-extensions-interned-to-integer-ids.md",
         "payload": {
+          "checkpoint": {
+            "kept_variant": "candidate",
+            "profile": "index-core-v1",
+            "source_revision": "bb1529d9488b48524f4527dd027ce067f6c70c34"
+          },
           "complexity": {
             "lines_changed": 120,
             "new_dependencies": [],
@@ -20810,6 +28059,11 @@ window.FDU_PERFORMANCE_RESEARCH = {
         "identity": "exp-009",
         "key": "exp-009-single-pass-checksum-and-parse-on-snapshot-load.md",
         "payload": {
+          "checkpoint": {
+            "kept_variant": "candidate",
+            "profile": "index-core-v1",
+            "source_revision": "9f4f0296cf35733475cbfde36fcb506705b73b9c"
+          },
           "complexity": {
             "lines_changed": 60,
             "new_dependencies": [],
@@ -21053,6 +28307,10 @@ window.FDU_PERFORMANCE_RESEARCH = {
         "identity": "exp-010",
         "key": "exp-010-claim-list-join-and-deferred-path-joins-in-reconcile.md",
         "payload": {
+          "checkpoint": {
+            "kept_variant": "control",
+            "profile": "index-core-v1"
+          },
           "complexity": {
             "lines_changed": 90,
             "new_dependencies": [],
@@ -21348,6 +28606,10 @@ window.FDU_PERFORMANCE_RESEARCH = {
         "identity": "exp-011",
         "key": "exp-011-one-ancestor-merge-per-same-parent-insert-run.md",
         "payload": {
+          "checkpoint": {
+            "kept_variant": "control",
+            "profile": "index-core-v1"
+          },
           "complexity": {
             "lines_changed": 80,
             "new_dependencies": [],
@@ -21643,6 +28905,11 @@ window.FDU_PERFORMANCE_RESEARCH = {
         "identity": "exp-012",
         "key": "exp-012-breadth-first-traversal-order.md",
         "payload": {
+          "checkpoint": {
+            "kept_variant": "candidate",
+            "profile": "index-core-v1",
+            "source_revision": "fbc28f4acb0696ceb23598a3b3767edcb4002daf"
+          },
           "complexity": {
             "lines_changed": 153,
             "new_dependencies": [],
@@ -21932,6 +29199,11 @@ window.FDU_PERFORMANCE_RESEARCH = {
         "identity": "exp-013",
         "key": "exp-013-region-scheduled-breadth-first-traversal.md",
         "payload": {
+          "checkpoint": {
+            "kept_variant": "candidate",
+            "profile": "index-core-v1",
+            "source_revision": "a7364236644a44c99e94630d5a2b4bc5f4fd9f31"
+          },
           "complexity": {
             "lines_changed": 80,
             "new_dependencies": [],
@@ -22205,6 +29477,10 @@ window.FDU_PERFORMANCE_RESEARCH = {
         "identity": "exp-014",
         "key": "exp-014-what-the-breadth-first-default-costs-on-the-shipped-schedule.md",
         "payload": {
+          "checkpoint": {
+            "kept_variant": "candidate",
+            "profile": "index-core-v1"
+          },
           "complexity": {
             "lines_changed": 0,
             "new_dependencies": [],
@@ -22551,6 +29827,10 @@ window.FDU_PERFORMANCE_RESEARCH = {
         "identity": "exp-015",
         "key": "exp-015-post-bfs-worker-depth-under-metadata-cache-pressure.md",
         "payload": {
+          "checkpoint": {
+            "kept_variant": "candidate",
+            "profile": "index-core-v1"
+          },
           "complexity": {
             "lines_changed": 0,
             "new_dependencies": [],
@@ -22806,6 +30086,10 @@ window.FDU_PERFORMANCE_RESEARCH = {
         "identity": "exp-016",
         "key": "exp-016-move-cold-scan-producer-paths-instead-of-cloning.md",
         "payload": {
+          "checkpoint": {
+            "kept_variant": "control",
+            "profile": "index-core-v1"
+          },
           "complexity": {
             "lines_changed": 5,
             "new_dependencies": [],
@@ -23055,6 +30339,10 @@ window.FDU_PERFORMANCE_RESEARCH = {
         "identity": "exp-017",
         "key": "exp-017-pre-create-dormant-workers-for-adaptive-scan-depth.md",
         "payload": {
+          "checkpoint": {
+            "kept_variant": "control",
+            "profile": "index-core-v1"
+          },
           "complexity": {
             "lines_changed": 126,
             "new_dependencies": [],
@@ -23557,6 +30845,10 @@ window.FDU_PERFORMANCE_RESEARCH = {
         "identity": "exp-019",
         "key": "exp-019-adaptive-worker-threshold-at-the-first-crossing-scale.md",
         "payload": {
+          "checkpoint": {
+            "kept_variant": "control",
+            "profile": "index-core-v1"
+          },
           "complexity": {
             "lines_changed": 0,
             "new_dependencies": [],
@@ -23806,6 +31098,10 @@ window.FDU_PERFORMANCE_RESEARCH = {
         "identity": "exp-020",
         "key": "exp-020-delay-adaptive-workers-until-metadata-cache-capacity.md",
         "payload": {
+          "checkpoint": {
+            "kept_variant": "control",
+            "profile": "index-core-v1"
+          },
           "complexity": {
             "lines_changed": 0,
             "new_dependencies": [],
@@ -24055,6 +31351,11 @@ window.FDU_PERFORMANCE_RESEARCH = {
         "identity": "exp-021",
         "key": "exp-021-calibrate-adaptive-workers-from-initial-filesystem-service-t.md",
         "payload": {
+          "checkpoint": {
+            "kept_variant": "candidate",
+            "profile": "index-core-v1",
+            "source_revision": "2b1f99bba4826f3af2c0d9968f94dd57bcc3a167"
+          },
           "complexity": {
             "lines_changed": 181,
             "new_dependencies": [],
@@ -24306,6 +31607,11 @@ window.FDU_PERFORMANCE_RESEARCH = {
         "identity": "exp-022",
         "key": "exp-022-batch-macos-scan-metadata-with-getattrlistbulk.md",
         "payload": {
+          "checkpoint": {
+            "kept_variant": "candidate",
+            "profile": "index-core-v1",
+            "source_revision": "b12272565d570ebb8237df6e58a96178b72ad965"
+          },
           "complexity": {
             "lines_changed": 542,
             "new_dependencies": [
@@ -24562,6 +31868,11 @@ window.FDU_PERFORMANCE_RESEARCH = {
         "identity": "exp-023",
         "key": "exp-023-cumulative-effect-through-adaptive-scanning-and-macos-bulk-m.md",
         "payload": {
+          "checkpoint": {
+            "kept_variant": "candidate",
+            "profile": "index-core-v1",
+            "source_revision": "b12272565d570ebb8237df6e58a96178b72ad965"
+          },
           "complexity": {
             "lines_changed": 0,
             "new_dependencies": [],
@@ -25092,6 +32403,10 @@ window.FDU_PERFORMANCE_RESEARCH = {
         "identity": "exp-024",
         "key": "exp-024-open-macos-directories-relative-to-one-retained-root-fd.md",
         "payload": {
+          "checkpoint": {
+            "kept_variant": "control",
+            "profile": "index-core-v1"
+          },
           "complexity": {
             "lines_changed": 69,
             "new_dependencies": [],
@@ -25346,6 +32661,10 @@ window.FDU_PERFORMANCE_RESEARCH = {
         "identity": "exp-025",
         "key": "exp-025-revisit-worker-depth-after-macos-bulk-metadata.md",
         "payload": {
+          "checkpoint": {
+            "kept_variant": "control",
+            "profile": "index-core-v1"
+          },
           "complexity": {
             "lines_changed": 0,
             "new_dependencies": [],
@@ -25601,6 +32920,11 @@ window.FDU_PERFORMANCE_RESEARCH = {
         "identity": "exp-026",
         "key": "exp-026-reuse-macos-bulk-metadata-during-full-reconciliation.md",
         "payload": {
+          "checkpoint": {
+            "kept_variant": "candidate",
+            "profile": "index-core-v1",
+            "source_revision": "824f2c416aadead1b4fa7db3b8421d5c47e85969"
+          },
           "complexity": {
             "lines_changed": 139,
             "new_dependencies": [],
@@ -25788,6 +33112,11 @@ window.FDU_PERFORMANCE_RESEARCH = {
         "identity": "exp-027",
         "key": "exp-027-cumulative-effect-through-bulk-reconciliation.md",
         "payload": {
+          "checkpoint": {
+            "kept_variant": "candidate",
+            "profile": "index-core-v1",
+            "source_revision": "824f2c416aadead1b4fa7db3b8421d5c47e85969"
+          },
           "complexity": {
             "lines_changed": 0,
             "new_dependencies": [],
@@ -26320,6 +33649,10 @@ window.FDU_PERFORMANCE_RESEARCH = {
         "identity": "exp-028",
         "key": "exp-028-reuse-macos-bulk-directory-staging-allocations.md",
         "payload": {
+          "checkpoint": {
+            "kept_variant": "control",
+            "profile": "index-core-v1"
+          },
           "complexity": {
             "lines_changed": 20,
             "new_dependencies": [],
@@ -26662,6 +33995,10 @@ window.FDU_PERFORMANCE_RESEARCH = {
         "identity": "exp-029",
         "key": "exp-029-increase-macos-bulk-metadata-buffer-to-256-kib.md",
         "payload": {
+          "checkpoint": {
+            "kept_variant": "control",
+            "profile": "index-core-v1"
+          },
           "complexity": {
             "lines_changed": 1,
             "new_dependencies": [],
@@ -27004,6 +34341,11 @@ window.FDU_PERFORMANCE_RESEARCH = {
         "identity": "exp-030",
         "key": "exp-030-elide-unchanged-entries-in-bounded-parallel-reconciliation-w.md",
         "payload": {
+          "checkpoint": {
+            "kept_variant": "candidate",
+            "profile": "index-core-v1",
+            "source_revision": "09d65590514cdb9d51c26637539650b064c92f86"
+          },
           "complexity": {
             "lines_changed": 419,
             "new_dependencies": [],
@@ -27180,6 +34522,10 @@ window.FDU_PERFORMANCE_RESEARCH = {
         "identity": "exp-031",
         "key": "exp-031-increase-immutable-baseline-reconciliation-waves-to-4096-dir.md",
         "payload": {
+          "checkpoint": {
+            "kept_variant": "control",
+            "profile": "index-core-v1"
+          },
           "complexity": {
             "lines_changed": 1,
             "new_dependencies": [],
@@ -27352,6 +34698,11 @@ window.FDU_PERFORMANCE_RESEARCH = {
         "identity": "exp-032",
         "key": "exp-032-cumulative-effect-through-bounded-parallel-reconciliation.md",
         "payload": {
+          "checkpoint": {
+            "kept_variant": "candidate",
+            "profile": "index-core-v1",
+            "source_revision": "c9c91d9518ef1324531ecd79a3a43b9e96e95eef"
+          },
           "complexity": {
             "lines_changed": 0,
             "new_dependencies": [],
@@ -27876,6 +35227,10 @@ window.FDU_PERFORMANCE_RESEARCH = {
         "identity": "exp-033",
         "key": "exp-033-post-composable-cli-integration-validation.md",
         "payload": {
+          "checkpoint": {
+            "kept_variant": "candidate",
+            "profile": "index-core-v1"
+          },
           "complexity": {
             "lines_changed": 1514,
             "new_dependencies": [
@@ -28400,6 +35755,10 @@ window.FDU_PERFORMANCE_RESEARCH = {
         "identity": "exp-034",
         "key": "exp-034-post-composable-cli-validation-under-cache-pressure.md",
         "payload": {
+          "checkpoint": {
+            "kept_variant": "candidate",
+            "profile": "index-core-v1"
+          },
           "complexity": {
             "lines_changed": 0,
             "new_dependencies": [],
@@ -28669,6 +36028,10 @@ window.FDU_PERFORMANCE_RESEARCH = {
         "identity": "exp-035",
         "key": "exp-035-post-composable-cli-validation-on-the-live-1m-workspace.md",
         "payload": {
+          "checkpoint": {
+            "kept_variant": "candidate",
+            "profile": "index-core-v1"
+          },
           "complexity": {
             "lines_changed": 0,
             "new_dependencies": [],
@@ -28932,6 +36295,10 @@ window.FDU_PERFORMANCE_RESEARCH = {
         "identity": "exp-036",
         "key": "exp-036-revisit-worker-depth-on-the-live-1m-workspace.md",
         "payload": {
+          "checkpoint": {
+            "kept_variant": "control",
+            "profile": "index-core-v1"
+          },
           "complexity": {
             "lines_changed": 0,
             "new_dependencies": [],
@@ -29105,6 +36472,10 @@ window.FDU_PERFORMANCE_RESEARCH = {
         "identity": "exp-037",
         "key": "exp-037-revisit-breadth-first-versus-depth-first-on-the-live-1m-work.md",
         "payload": {
+          "checkpoint": {
+            "kept_variant": "control",
+            "profile": "index-core-v1"
+          },
           "complexity": {
             "lines_changed": 0,
             "new_dependencies": [],
@@ -29281,6 +36652,10 @@ window.FDU_PERFORMANCE_RESEARCH = {
         "identity": "exp-038",
         "key": "exp-038-parent-relative-openat-frontier-on-the-live-1m-workspace.md",
         "payload": {
+          "checkpoint": {
+            "kept_variant": "control",
+            "profile": "index-core-v1"
+          },
           "complexity": {
             "lines_changed": 0,
             "new_dependencies": [],
@@ -29455,6 +36830,10 @@ window.FDU_PERFORMANCE_RESEARCH = {
         "identity": "exp-039",
         "key": "exp-039-revisit-the-macos-bulk-buffer-on-the-live-1m-workspace.md",
         "payload": {
+          "checkpoint": {
+            "kept_variant": "control",
+            "profile": "index-core-v1"
+          },
           "complexity": {
             "lines_changed": 0,
             "new_dependencies": [],
@@ -32400,6 +39779,11 @@ window.FDU_PERFORMANCE_RESEARCH = {
         "identity": "exp-051",
         "key": "exp-051-memoize-the-parent-resolved-for-the-previous-upsert.md",
         "payload": {
+          "checkpoint": {
+            "kept_variant": "candidate",
+            "profile": "index-core-v1",
+            "source_revision": "2475c82b346120903ff36bd9a1737b4f0adf6891"
+          },
           "complexity": {
             "lines_changed": 78,
             "new_dependencies": [
@@ -32651,6 +40035,11 @@ window.FDU_PERFORMANCE_RESEARCH = {
         "identity": "exp-052",
         "key": "exp-052-per-layer-counters-cost-less-than-the-measurement-can-see.md",
         "payload": {
+          "checkpoint": {
+            "kept_variant": "candidate",
+            "profile": "index-core-v1",
+            "source_revision": "f34ede9126f7fcaa82d58f0fe55d04b81e8d1dea"
+          },
           "complexity": {
             "lines_changed": 420,
             "new_dependencies": [
@@ -32898,6 +40287,11 @@ window.FDU_PERFORMANCE_RESEARCH = {
         "identity": "exp-053",
         "key": "exp-053-move-instrumentation-to-a-runtime-toggle-and-measure-all-thr.md",
         "payload": {
+          "checkpoint": {
+            "kept_variant": "candidate",
+            "profile": "index-core-v1",
+            "source_revision": "844da388d4a2294a6015962f375f8c726f4bf7c8"
+          },
           "complexity": {
             "lines_changed": 690,
             "new_dependencies": [],
@@ -33064,6 +40458,10 @@ window.FDU_PERFORMANCE_RESEARCH = {
         "identity": "exp-054",
         "key": "exp-054-validate-the-linux-campaign-cumulative-effect-on-macos.md",
         "payload": {
+          "checkpoint": {
+            "kept_variant": "candidate",
+            "profile": "index-core-v1"
+          },
           "complexity": {
             "lines_changed": 0,
             "new_dependencies": [],
@@ -33321,6 +40719,11 @@ window.FDU_PERFORMANCE_RESEARCH = {
         "identity": "exp-055",
         "key": "exp-055-validate-review-fixes-on-macos.md",
         "payload": {
+          "checkpoint": {
+            "kept_variant": "candidate",
+            "profile": "index-core-v1",
+            "source_revision": "3bc650d920d2ccfb0db4943c5800ba80d54686f8"
+          },
           "complexity": {
             "lines_changed": 2796,
             "new_dependencies": [],

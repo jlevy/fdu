@@ -10,6 +10,10 @@ experiment:
   title: Move instrumentation to a runtime toggle and measure all three of its costs
   date: "2026-08-14"
   hypotheses: []
+  checkpoint:
+    profile: index-core-v1
+    kept_variant: candidate
+    source_revision: 844da388d4a2294a6015962f375f8c726f4bf7c8
   subject:
     tree_label: meta450k
     tree_root_id: 49fd7bea88ee0b90566f01fb140e86707e2dd6979dd01af97f30cdb13c535aee

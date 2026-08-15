@@ -11,6 +11,9 @@ experiment:
   date: "2026-08-12"
   hypotheses:
     - H31
+  checkpoint:
+    profile: index-core-v1
+    kept_variant: control
   subject:
     tree_label: threshold-boundary-2x
     tree_root_id: 377b56b314cb17ac9c2a01a84be98bc75bda3944893db80c36a28d0a1cd39acb

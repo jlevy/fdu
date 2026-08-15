@@ -10,6 +10,10 @@ experiment:
   title: Per-layer counters cost less than the measurement can see
   date: "2026-08-14"
   hypotheses: []
+  checkpoint:
+    profile: index-core-v1
+    kept_variant: candidate
+    source_revision: f34ede9126f7fcaa82d58f0fe55d04b81e8d1dea
   subject:
     tree_label: meta450k
     tree_root_id: 49fd7bea88ee0b90566f01fb140e86707e2dd6979dd01af97f30cdb13c535aee

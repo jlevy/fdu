@@ -45,9 +45,46 @@ class ResearchReportDataTests(unittest.TestCase):
             data["softschema_table"]["contract"], "fdu.performance:Experiment/v1"
         )
 
+        checkpoints = data["checkpoint_history"]
+        self.assertEqual(checkpoints["summary"]["checkpoint_count"], 44)
+        self.assertEqual(
+            checkpoints["summary"]["platform_counts"], {"Linux": 3, "macOS": 41}
+        )
+        self.assertEqual(checkpoints["summary"]["source_revision_count"], 21)
+        self.assertEqual(
+            checkpoints["summary"]["dimension_counts"]["macOS:cold-index-wall"],
+            36,
+        )
+        self.assertEqual(
+            checkpoints["summary"]["dimension_counts"]["macOS:snapshot-load-wall"],
+            12,
+        )
+        self.assertNotIn(
+            "Linux:snapshot-load-wall", checkpoints["summary"]["dimension_counts"]
+        )
+
         early_result = data["experiments"][1]
         self.assertEqual(early_result["effect"], "improved")
         self.assertEqual(early_result["primary"]["ci95_pct"], [-51.024, -43.743])
+
+        # Accepted candidates become the kept state; rejected candidates do not.
+        accepted_checkpoint = data["experiments"][1]["checkpoint"]
+        rejected_checkpoint = data["experiments"][2]["checkpoint"]
+        accepted_cold = next(
+            item
+            for item in accepted_checkpoint["measurements"]
+            if item["id"] == "cold-index-wall"
+        )
+        rejected_cold = next(
+            item
+            for item in rejected_checkpoint["measurements"]
+            if item["id"] == "cold-index-wall"
+        )
+        self.assertEqual(accepted_checkpoint["kept_variant"], "candidate")
+        self.assertEqual(accepted_cold["value"], 310_774_958.5)
+        self.assertEqual(rejected_checkpoint["kept_variant"], "control")
+        self.assertEqual(rejected_cold["value"], 304_994_166.0)
+        self.assertEqual(rejected_cold["effect"], "retained")
 
     def test_report_data_names_derived_cross_platform_results_as_derived(self) -> None:
         data = html_report.build_report_data()
@@ -103,6 +140,8 @@ class ResearchReportDataTests(unittest.TestCase):
         self.assertTrue(
             {
                 "composite-score",
+                "checkpoint-plot",
+                "checkpoint-detail",
                 "experiment-plot",
                 "experiment-detail",
                 "artifact-body",

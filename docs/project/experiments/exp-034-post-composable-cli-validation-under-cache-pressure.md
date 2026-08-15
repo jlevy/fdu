@@ -15,6 +15,9 @@ experiment:
     - H53
     - H12
     - H9
+  checkpoint:
+    profile: index-core-v1
+    kept_variant: candidate
   subject:
     tree_label: post-cli-cache-pressure-12x
     tree_root_id: aa81f45748e048288dde3ceb302680753b75633a5bad09643d4fd1195aeae5ab

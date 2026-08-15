@@ -11,6 +11,10 @@ experiment:
   date: "2026-08-12"
   hypotheses:
     - H31
+  checkpoint:
+    profile: index-core-v1
+    kept_variant: candidate
+    source_revision: 2b1f99bba4826f3af2c0d9968f94dd57bcc3a167
   subject:
     tree_label: cache-pressure-12x
     tree_root_id: ffd40fd8482e8ed64bd19bcd1a724389532ca4889be43adf830122279ac63180
