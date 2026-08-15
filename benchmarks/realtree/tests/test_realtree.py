@@ -767,8 +767,18 @@ class HostRegimeTests(unittest.TestCase):
 
         reasons = measure._host_pressure_reasons(
             regime,
-            {"load_1m_per_cpu": measure.QUIET_MAX_LOAD_PER_CPU + 0.01},
-            {"load_1m_per_cpu": 0.01},
+            {
+                "system": "Darwin",
+                "cpu_busy_pct": measure.QUIET_MAX_CPU_BUSY_PCT + 0.01,
+                "power_source": "AC",
+                "thermal_pressure": "normal",
+            },
+            {
+                "system": "Darwin",
+                "cpu_busy_pct": 0.01,
+                "power_source": "AC",
+                "thermal_pressure": "normal",
+            },
         )
 
         self.assertEqual(len(reasons), 1)
@@ -778,10 +788,13 @@ class HostRegimeTests(unittest.TestCase):
         regime = measure.HostRegime(name="controlled-interactive", initial={}, load_workers=2)
         within = {
             "controlled_load_alive": True,
-            "load_1m_per_cpu": 0.4,
+            "cpu_busy_pct": 40.0,
             "logical_cpu_count": 10,
+            "power_source": "AC",
+            "system": "Darwin",
+            "thermal_pressure": "normal",
         }
-        excess = {**within, "load_1m_per_cpu": 0.46}
+        excess = {**within, "cpu_busy_pct": 46.0}
 
         self.assertEqual(measure._host_pressure_reasons(regime, within, within), [])
         reasons = measure._host_pressure_reasons(regime, within, excess)
@@ -791,10 +804,12 @@ class HostRegimeTests(unittest.TestCase):
     def test_controlled_load_lifecycle_is_observable(self) -> None:
         quiet = {
             "controlled_load_alive": None,
+            "cpu_busy_pct": 0.0,
             "load_1m": 0.0,
             "load_1m_per_cpu": 0.0,
             "load_5m": 0.0,
             "load_15m": 0.0,
+            "system": "Darwin",
             "unavailable_reason": None,
         }
         with mock.patch("benchmarks.realtree.measure._host_pressure_snapshot", return_value=quiet):
@@ -805,6 +820,23 @@ class HostRegimeTests(unittest.TestCase):
 
         self.assertIsNotNone(process)
         self.assertIsNotNone(process.poll())
+
+    def test_darwin_cpu_pressure_parses_current_idle_percentage(self) -> None:
+        completed = measure.subprocess.CompletedProcess(
+            args=["top"],
+            returncode=0,
+            stdout=b"CPU usage: 12.5% user, 7.25% sys, 80.25% idle\n",
+            stderr=b"",
+        )
+        with (
+            mock.patch.object(measure.sys, "platform", "darwin"),
+            mock.patch.object(measure.Path, "is_file", return_value=True),
+            mock.patch.object(measure.subprocess, "run", return_value=completed),
+        ):
+            busy, reason = measure._darwin_cpu_busy_pct()
+
+        self.assertEqual(busy, 19.75)
+        self.assertIsNone(reason)
 
 
 class ProfileParsingTests(unittest.TestCase):

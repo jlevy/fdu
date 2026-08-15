@@ -515,6 +515,8 @@ def run(
                 "final": final_host_pressure,
                 "quiet_max_load_per_cpu": measure.QUIET_MAX_LOAD_PER_CPU,
                 "controlled_max_excess_load_per_cpu": (measure.CONTROLLED_MAX_EXCESS_LOAD_PER_CPU),
+                "quiet_max_cpu_busy_pct": measure.QUIET_MAX_CPU_BUSY_PCT,
+                "controlled_max_excess_cpu_busy_pct": (measure.CONTROLLED_MAX_EXCESS_CPU_BUSY_PCT),
             },
             "schedule": "competitor-adjacent-fdu-anchor-v1",
             "scan_diagnostics": {
