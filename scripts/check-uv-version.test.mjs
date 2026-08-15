@@ -7,7 +7,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
-const MINIMUM = "0.11.28";
+const MINIMUM = "0.12.1";
 
 function shellQuote(value) {
   return `'${value.replaceAll("'", `'"'"'`)}'`;
@@ -51,10 +51,14 @@ test("uv guard accepts only successful stable versions at or above the reviewed 
     const result = runGuard(`uv ${version}`);
     assert.notEqual(result.status, 0, version);
     assert.match(result.stdout, new RegExp(`needs uv >= ${MINIMUM}`));
+    // The pinned installer is the remedy that works regardless of how uv was
+    // installed; `uv self update` is offered second because it fails outright when
+    // an external manager owns the binary.
+    assert.match(result.stdout, new RegExp(`astral\\.sh/uv/${MINIMUM}/install\\.sh`));
     assert.match(result.stdout, new RegExp(`uv self update ${MINIMUM}`));
   }
 
-  for (const output of ["uv 0.11.28rc1", "uv 0.11.28.dev1", "uv malformed", "not-uv 1.0.0"]) {
+  for (const output of ["uv 0.12.1rc1", "uv 0.12.1.dev1", "uv malformed", "not-uv 1.0.0"]) {
     const result = runGuard(output);
     assert.notEqual(result.status, 0, output);
     assert.match(result.stdout, /could not determine a stable uv version/);

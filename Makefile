@@ -83,7 +83,7 @@ check: uv-version supply-chain rust-module-names fmt-check clippy test docs docs
 #
 # CI installs uv through astral-sh/setup-uv in .github/workflows/ci.yml. The
 # supply-chain policy verifies that this floor and both CI pins remain identical.
-UV_MIN_VERSION := 0.11.28
+UV_MIN_VERSION := 0.12.1
 
 uv-version:
 	@command -v "$(UV)" >/dev/null 2>&1 || { \
@@ -110,7 +110,10 @@ uv-version:
 		echo "       (the version CI pins in .github/workflows/ci.yml)."; \
 		echo "       Older releases cannot parse the relative 'exclude-newer' in the uv.toml"; \
 		echo "       files and fail with a misleading TOML date error."; \
-		echo "       Upgrade to the reviewed release with: uv self update $(UV_MIN_VERSION)"; \
+		echo "       Upgrade to the reviewed release with:"; \
+		echo "         curl -LsSf https://astral.sh/uv/$(UV_MIN_VERSION)/install.sh | sh"; \
+		echo "       'uv self update $(UV_MIN_VERSION)' also works, but only when uv owns its own"; \
+		echo "       install; it fails with 'not found for the app uv' under an external manager."; \
 		exit 1; \
 	elif [ "$$relation" != "ok" ]; then \
 		echo "error: could not determine a stable uv version from: $$version_output"; \
