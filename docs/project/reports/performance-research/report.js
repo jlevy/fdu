@@ -558,10 +558,13 @@
       }
 
       appendPanelTitle(
-        "Absolute primary runtime · control → candidate · time metrics only",
+        "Paired absolute runtime · control → candidate · time metrics only",
         absolutePanel,
       );
-      appendPanelTitle("Relative primary-metric improvement · candidate vs control", relativePanel);
+      appendPanelTitle(
+        "Paired relative improvement · candidate vs its control",
+        relativePanel,
+      );
 
       for (const tick of durationTicks) {
         const tickY = absoluteY(tick);
@@ -687,27 +690,6 @@
         group.append(title);
         attachInteraction(group, experiment);
         svg.append(group);
-      }
-
-      for (const platform of ["macOS", "Linux"]) {
-        const points = visible
-          .filter(
-            (experiment) =>
-              experiment.platform === platform &&
-              experiment.effect === "improved" &&
-              experiment.verdict.decision === "accepted" &&
-              experiment.primary.change_pct !== null,
-          )
-          .sort((left, right) => left.number - right.number);
-        if (points.length > 1) {
-          const pathData = points
-            .map((experiment, index) => {
-              const improvement = improvementFor(experiment);
-              return `${index === 0 ? "M" : "L"}${x(experiment.number).toFixed(2)},${relativeY(improvement).toFixed(2)}`;
-            })
-            .join(" ");
-          svg.append(svgElement("path", { d: pathData, class: "plot-line-good" }));
-        }
       }
 
       for (const experiment of visible) {

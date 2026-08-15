@@ -150,11 +150,10 @@
               <h2 id="experiments-title">Every attempt remains visible</h2>
             </div>
             <p>
-              The upper panel compares measured control and candidate runtimes. The lower
-              panel shows the same experiments as relative primary-metric improvement,
-              using a symmetric square-root scale to keep small effects legible and
-              positive percentages above zero. Hover either panel to inspect the setup and
-              verdict.
+              Each position is a separate paired experiment. The upper panel compares its
+              control and candidate runtimes; the lower panel expresses the same pair as a
+              relative primary-metric change. Hover either panel to inspect the workload,
+              tree, binaries, and verdict.
             </p>
           </div>
 
@@ -207,17 +206,18 @@
                   compares control and candidate duration for time-based primary metrics on
                   a logarithmic scale. The lower panel shows relative primary-metric
                   improvement; points above zero are better and points below zero are
-                  poorer. Accepted clear improvements are connected by platform as a
-                  sequence guide, not a cumulative performance curve.
+                  poorer. Points are independent paired comparisons because workloads,
+                  trees, binaries, and measurement regimes vary between experiments.
                 </desc>
               </svg>
             </div>
             <figcaption>
-              Each upper-panel connector is one paired measurement: hollow control to solid
-              candidate. Absolute runtimes are comparable within a pair; jobs, trees, and
-              regimes differ across the sequence. The lower panel includes all primary
-              metrics, including the one memory experiment; its thin green line is a
-              navigation aid through accepted favorable results, not cumulative arithmetic.
+              Read each position independently: hollow control to solid candidate. The
+              x-axis records research order, not one continuously evolving benchmark;
+              workloads, trees, binaries, and regimes change across the sequence. The
+              lower panel includes every primary metric, including the one memory
+              experiment. A cumulative trend requires repeated checkpoints against the
+              same baseline, workload, and regime, so no line joins these results.
             </figcaption>
           </figure>
           <p class="sr-only" id="plot-status" aria-live="polite"></p>
@@ -359,3 +359,6 @@
     </noscript>
   </body>
 </html>
+<!-- This document follows common-doc-guidelines.md.
+See github.com/jlevy/practical-prose and review guidelines before editing.
+-->
