@@ -167,6 +167,16 @@ class Selection:
     size: SizeMetric = SizeMetric.ALLOCATED
 
     def __post_init__(self) -> None:
+        # A bare string is iterable, so without this guard `include="*.rs"` would run
+        # as the per-character patterns `*`, `.`, `r`, `s` and silently match far too
+        # much. `StrEnum` members are strings, so this also catches a bare kind.
+        for name, value in (
+            ("include", self.include),
+            ("exclude", self.exclude),
+            ("kinds", self.kinds),
+        ):
+            if isinstance(value, str):
+                raise TypeError(f"{name} takes a tuple of values; wrap the single value in a tuple")
         for name, value in (("depth", self.depth), ("limit", self.limit)):
             if isinstance(value, int) and value < 0:
                 raise ValueError(f"{name} must be non-negative or Bound.ALL")
@@ -183,6 +193,10 @@ class Query:
     words_per_page: int = 250
 
     def __post_init__(self) -> None:
+        # A lone `View` is a `StrEnum` and therefore an iterable string; rejecting it
+        # here gives a clear error instead of a later per-character failure.
+        if isinstance(self.views, str):
+            raise TypeError("views takes a tuple of View values; wrap the single view in a tuple")
         if not self.views:
             raise ValueError("views must not be empty")
         if self.words_per_page <= 0:
@@ -570,7 +584,12 @@ def _tree(value: dict[str, Any]) -> TreeNode:
 
 
 def report_from_dict(wire: dict[str, Any]) -> Report:
-    """Parse the exact CLI JSON object into immutable public values."""
+    """
+    Parse the exact CLI JSON object into immutable public values.
+
+    Takes ownership of `wire`: the report retains it as its wire form, so the caller
+    must not mutate it afterwards. `Report.as_dict()` hands out independent copies.
+    """
 
     sections: list[ReportSection] = []
     raw_sections = wire["reports"]
@@ -582,15 +601,18 @@ def report_from_dict(wire: dict[str, Any]) -> Report:
         view = View(str(raw["view"]))
         if view is View.SUMMARY:
             row = raw["summary"]
-            assert isinstance(row, dict)
+            if not isinstance(row, dict):
+                raise TypeError("summary section must be an object")
             sections.append(SummarySection(view, SummaryRow(**row)))
         elif view is View.EXTENSIONS:
             rows = raw["extensions"]
-            assert isinstance(rows, list)
+            if not isinstance(rows, list):
+                raise TypeError("extensions section must be a list")
             sections.append(ExtensionsSection(view, tuple(ExtensionRow(**row) for row in rows)))
         elif view is View.FILES:
             rows = raw["files"]
-            assert isinstance(rows, list)
+            if not isinstance(rows, list):
+                raise TypeError("files section must be a list")
             sections.append(
                 FilesSection(
                     view,
@@ -608,14 +630,17 @@ def report_from_dict(wire: dict[str, Any]) -> Report:
             )
         elif view is View.TREE:
             tree = raw["tree"]
-            assert isinstance(tree, dict)
+            if not isinstance(tree, dict):
+                raise TypeError("tree section must be an object")
             sections.append(TreeSection(view, _tree(tree)))
         else:
             metrics = raw["metrics"]
-            assert isinstance(metrics, dict)
+            if not isinstance(metrics, dict):
+                raise TypeError("metrics section must be an object")
             rows = metrics["rows"]
             total = metrics["total"]
-            assert isinstance(rows, list) and isinstance(total, dict)
+            if not isinstance(rows, list) or not isinstance(total, dict):
+                raise TypeError("metrics section must carry a rows list and a total object")
             sections.append(
                 MetricsSection(
                     view=view,
@@ -628,7 +653,8 @@ def report_from_dict(wire: dict[str, Any]) -> Report:
             )
 
     raw_errors = wire.get("errors", [])
-    assert isinstance(raw_errors, list)
+    if not isinstance(raw_errors, list):
+        raise TypeError("report errors must be a list")
     status = Status(
         complete=bool(wire["complete"]),
         freshness=Freshness(str(wire["freshness"])),
@@ -639,7 +665,8 @@ def report_from_dict(wire: dict[str, Any]) -> Report:
     analysis = None
     if isinstance(raw_analysis, dict):
         raw_analyzers = raw_analysis["analyzers"]
-        assert isinstance(raw_analyzers, list)
+        if not isinstance(raw_analyzers, list):
+            raise TypeError("analysis analyzers must be a list")
         analysis = AnalysisMetadata(
             profile=AnalysisProfile(str(raw_analysis["profile"])),
             type_rules_fingerprint=int(raw_analysis["type_rules_fingerprint"]),
@@ -649,7 +676,8 @@ def report_from_dict(wire: dict[str, Any]) -> Report:
             ),
         )
     generated_at = _datetime(wire["generated_at"])
-    assert generated_at is not None
+    if generated_at is None:
+        raise TypeError("report generated_at must be present")
     return Report(
         schema=str(wire["schema"]),
         generator=str(wire["generator"]),
@@ -659,5 +687,5 @@ def report_from_dict(wire: dict[str, Any]) -> Report:
         status=status,
         analysis=analysis,
         sections=tuple(sections),
-        _wire=cast(dict[str, JsonValue], deepcopy(wire)),
+        _wire=cast(dict[str, JsonValue], wire),
     )

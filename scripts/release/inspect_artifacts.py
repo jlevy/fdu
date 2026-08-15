@@ -4,15 +4,14 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import asdict, dataclass
-from email.parser import Parser
 import hashlib
 import json
-from pathlib import Path
 import re
 import tarfile
 import zipfile
-
+from dataclasses import asdict, dataclass
+from email.parser import Parser
+from pathlib import Path
 
 RELEASE_WHEEL_PLATFORMS = {
     "manylinux x86-64": re.compile(r"manylinux[^-]*_x86_64\.whl$"),
@@ -169,7 +168,9 @@ def main() -> None:
         require_release_matrix=args.require_release_matrix,
     )
     args.manifest.write_text(
-        json.dumps({"version": args.version, "artifacts": [asdict(item) for item in artifacts]}, indent=2)
+        json.dumps(
+            {"version": args.version, "artifacts": [asdict(item) for item in artifacts]}, indent=2
+        )
         + "\n",
         encoding="utf-8",
     )

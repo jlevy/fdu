@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import io
-from pathlib import Path
 import tarfile
 import tempfile
 import unittest
 import zipfile
+from pathlib import Path
 
 from scripts.release.inspect_artifacts import inspect_directory
-
 
 VERSION = "0.1.0"
 

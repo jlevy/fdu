@@ -56,7 +56,12 @@ def _bound(value: int | Bound | None) -> str | None:
 
 def _when(value: datetime | str | None) -> str | None:
     if isinstance(value, datetime):
-        return value.isoformat()
+        # The engine's time grammar requires an explicit UTC offset because it has no
+        # time-zone database of its own. Python does, and a naive datetime means local
+        # time (as in `datetime.timestamp()`), so resolve it here instead of handing
+        # the native layer a timestamp it must reject.
+        aware = value.astimezone() if value.tzinfo is None else value
+        return aware.isoformat()
     return value
 
 
@@ -153,7 +158,7 @@ class Index:
 
     @property
     def status(self) -> Status:
-        return status_from_dict(self._native.status())
+        return status_from_dict(_call(self._native.status))
 
     def __len__(self) -> int:
         return len(self._native)
@@ -167,14 +172,14 @@ class Index:
         return replace(report, status=replace(report.status, errors=errors))
 
     def total(self) -> RollUp:
-        return rollup_from_dict(self._native.total(), self.provenance())
+        return rollup_from_dict(_call(self._native.total), self.provenance())
 
     def rollup(self, path: str | Path) -> RollUp | None:
-        raw = self._native.rollup(path)
+        raw = _call(self._native.rollup, path)
         return None if raw is None else rollup_from_dict(raw, self.provenance(path))
 
     def children(self, path: str | Path = Path()) -> tuple[Child, ...] | None:
-        raw = self._native.children(path)
+        raw = _call(self._native.children, path)
         if raw is None:
             return None
         return tuple(
@@ -195,7 +200,7 @@ class Index:
         )
 
     def provenance(self, path: str | Path = Path()) -> Provenance | None:
-        value = self._native.provenance(path)
+        value = _call(self._native.provenance, path)
         return None if value is None else provenance_from_dict(value)
 
     def refresh(self) -> RefreshResult:
@@ -211,7 +216,7 @@ class Index:
         )
 
     def since(self, clock: int) -> ChangeSet:
-        value = self._native.since(clock)
+        value = _call(self._native.since, clock)
         return ChangeSet(
             truncated=bool(value["truncated"]),
             clock=int(value["clock"]),
@@ -288,7 +293,7 @@ def scan(
 
 
 def cache_path(root: str | Path) -> Path | None:
-    value = _native.cache_path(root)
+    value = _call(_native.cache_path, root)
     return None if value is None else Path(value)
 
 

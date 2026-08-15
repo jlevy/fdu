@@ -14,6 +14,7 @@ import os
 import subprocess
 import sys
 import tempfile
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import fdu
@@ -108,6 +109,18 @@ def main() -> None:
     changes = index.since(mark)
     assert changes.truncated is False
     assert any(change.path == Path("new.txt") for change in changes.changes)
+
+    # A naive datetime means local time; the facade must resolve it to the explicit
+    # offset the engine's time grammar requires rather than letting it be rejected.
+    recent = index.report(
+        fdu.Query(
+            views=(fdu.View.FILES,),
+            selection=fdu.Selection(modified_since=datetime.now() - timedelta(hours=1)),
+        )
+    )
+    recent_files = recent.sections[0]
+    assert isinstance(recent_files, fdu.FilesSection)
+    assert {row.path.name for row in recent_files.files} >= {"new.txt"}, recent_files
 
     cache_root = Path(tempfile.mkdtemp(prefix="fdu-public-cache-"))
     (cache_root / "cached.txt").write_text("cached", encoding="utf-8")

@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
 import json
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 import fdu
@@ -41,7 +41,11 @@ def summarize(index: fdu.Index, path: Path = Path()) -> DirectorySummary | None:
 def main() -> None:
     """Scan once, then serve multiple application-owned summaries."""
     index = fdu.scan(Path())
-    rows = [summary for path in (Path(), Path("src"), Path("docs")) if (summary := summarize(index, path))]
+    rows = [
+        summary
+        for path in (Path(), Path("src"), Path("docs"))
+        if (summary := summarize(index, path))
+    ]
     print(json.dumps([asdict(row) for row in rows], indent=2))
 
 

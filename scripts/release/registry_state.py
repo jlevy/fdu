@@ -4,14 +4,13 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import asdict, dataclass
 import hashlib
 import json
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
-
 
 USER_AGENT = "fdu-release-audit/0.1 (+https://github.com/jlevy/fdu)"
 
@@ -77,7 +76,7 @@ def get(url: str) -> bytes | None:
     """Fetch a public registry resource, mapping an authoritative 404 to absence."""
     request = Request(url, headers={"Accept": "application/json", "User-Agent": USER_AGENT})
     try:
-        with urlopen(request, timeout=30) as response:  # noqa: S310 - fixed HTTPS registries only
+        with urlopen(request, timeout=30) as response:
             return response.read()
     except HTTPError as error:
         if error.code == 404:

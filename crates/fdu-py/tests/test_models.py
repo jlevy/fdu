@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import FrozenInstanceError
+from datetime import UTC, datetime
 
 import pytest
 from fdu import (
@@ -15,7 +16,8 @@ from fdu import (
     SizeMetric,
     View,
 )
-from fdu._api import FduError, FilesystemError, InvalidArgumentError, _call
+from fdu._api import FduError, FilesystemError, InvalidArgumentError, _call, _query_kwargs
+from fdu._models import report_from_dict
 
 
 def test_public_options_are_typed_immutable_values() -> None:
@@ -47,6 +49,33 @@ def test_invalid_option_values_fail_before_crossing_native_boundary() -> None:
         AnalysisOptions(workers=-1)
     with pytest.raises(ValueError, match="words_per_page"):
         Query(words_per_page=0)
+
+
+def test_bare_strings_are_rejected_for_sequence_fields() -> None:
+    # A str is iterable, so without the guard include="*.rs" would silently run as the
+    # per-character patterns "*", ".", "r", "s" and match nearly everything.
+    with pytest.raises(TypeError, match="include"):
+        Selection(include="*.rs")  # type: ignore[arg-type]
+    with pytest.raises(TypeError, match="kinds"):
+        Selection(kinds="file")  # type: ignore[arg-type]
+    with pytest.raises(TypeError, match="views"):
+        Query(views=View.TREE)  # type: ignore[arg-type]
+
+
+def test_naive_datetimes_gain_an_explicit_local_offset() -> None:
+    naive = datetime(2026, 8, 1, 12, 30)
+    aware = datetime(2026, 8, 1, 12, 30, tzinfo=UTC)
+    kwargs = _query_kwargs(Query(selection=Selection(modified_since=naive, modified_before=aware)))
+    since = datetime.fromisoformat(str(kwargs["modified_since"]))
+    assert since.tzinfo is not None
+    assert since == naive.astimezone()
+    assert kwargs["modified_before"] == "2026-08-01T12:30:00+00:00"
+
+
+def test_malformed_wire_reports_fail_loudly() -> None:
+    # Wire validation must be real raises, not asserts, so it survives python -O.
+    with pytest.raises(TypeError, match="sections"):
+        report_from_dict({"reports": "nope"})
 
 
 @pytest.mark.parametrize(

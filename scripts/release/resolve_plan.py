@@ -4,11 +4,11 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import asdict, dataclass
 import json
-from pathlib import Path
 import subprocess
 import tomllib
+from dataclasses import asdict, dataclass
+from pathlib import Path
 
 
 @dataclass(frozen=True, slots=True)

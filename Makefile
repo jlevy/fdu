@@ -120,7 +120,7 @@ uv-version:
 
 # Standalone entry points must fail before any recipe asks uv to parse repository
 # configuration. Keep this list aligned with the recipe-coverage test.
-UV_BACKED_TARGETS := test-performance python-check python-concurrency python-smoke python-sdist-smoke release-rehearse docs-format docs-format-check \
+UV_BACKED_TARGETS := test-performance python-check python-concurrency python-smoke python-sdist-smoke release-test release-rehearse docs-format docs-format-check \
 	perf-baseline perf-profile perf-content-profile perf-compare perf-content-compare \
 	perf-compare-tools perf-record perf-test perf-ledger perf-schema perf-schema-check
 
@@ -205,11 +205,17 @@ python-concurrency:
 	$(UV) run --directory crates/fdu-py --frozen --only-group dev \
 		python tests/run_concurrency.py
 
+# The explicit --config keeps one lint standard for the package, its examples, and the
+# repository-level release scripts and tests, which have no pyproject of their own.
+PYTHON_LINT_PATHS := python tests examples ../../scripts/release ../../tests/release
+
 python-check:
-	$(UV) run --directory crates/fdu-py --frozen --only-group dev ruff format --check python tests
-	$(UV) run --directory crates/fdu-py --frozen --only-group dev ruff check python tests
+	$(UV) run --directory crates/fdu-py --frozen --only-group dev \
+		ruff format --check --config pyproject.toml $(PYTHON_LINT_PATHS)
+	$(UV) run --directory crates/fdu-py --frozen --only-group dev \
+		ruff check --config pyproject.toml $(PYTHON_LINT_PATHS)
 	$(UV) run --directory crates/fdu-py --frozen --only-group dev basedpyright
-	$(UV) run --directory crates/fdu-py --frozen --group dev pytest tests/test_models.py
+	$(UV) run --directory crates/fdu-py --frozen --group dev pytest
 
 python-smoke:
 	cd crates/fdu-py && wheel_dir="$$(mktemp -d "$${TMPDIR:-/tmp}/fdu-wheel.XXXXXX")" && \
@@ -234,21 +240,23 @@ python-sdist-smoke:
 		$(UV) pip install --python .venv-sdist "$$sdist_dir/fdu-"*.tar.gz && \
 		$(UV) run --no-project --python .venv-sdist python tests/public_smoke.py
 
+# uv provides the interpreter so the release gates never depend on the host's system
+# python3, whose version nothing else checks (the scripts need tomllib, so 3.11+).
 release-test:
-	python3 -m unittest discover -s tests/release -p 'test_*.py'
+	$(UV) run --no-project --python 3.12 python -m unittest discover -s tests/release -p 'test_*.py'
 
 # Build and inspect the host artifacts without contacting either registry. The explicit
 # release tag exercises exact-version behavior even though a rehearsal runs on a branch.
 release-rehearse: release-test
 	artifact_dir="$$(mktemp -d "$${TMPDIR:-/tmp}/fdu-release.XXXXXX")" && \
 		trap 'rm -r -- "$$artifact_dir"' EXIT && \
-		version="$$(python3 -c 'import pathlib,tomllib; print(tomllib.loads(pathlib.Path("crates/fdu/Cargo.toml").read_text())["package"]["version"])')" && \
+		version="$$($(UV) run --no-project --python 3.12 python -c 'import pathlib,tomllib; print(tomllib.loads(pathlib.Path("crates/fdu/Cargo.toml").read_text())["package"]["version"])')" && \
 		export FDU_RELEASE_TAG="v$$version" && \
 		$(CARGO) package --locked -p fdu --allow-dirty && \
 		cp "target/package/fdu-$$version.crate" "$$artifact_dir/" && \
 		$(UV) build --directory crates/fdu-py --no-sources --sdist --out-dir "$$artifact_dir" && \
 		$(UV) run --directory crates/fdu-py --frozen --only-group dev maturin build --locked --release --out "$$artifact_dir" && \
-		python3 scripts/release/inspect_artifacts.py "$$artifact_dir" --version "$$version" \
+		$(UV) run --no-project --python 3.12 python scripts/release/inspect_artifacts.py "$$artifact_dir" --version "$$version" \
 			--manifest "$$artifact_dir/manifest.json" --checksums "$$artifact_dir/SHA256SUMS"
 
 cli:

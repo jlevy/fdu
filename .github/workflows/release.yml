@@ -129,16 +129,21 @@ jobs:
             manylinux: "2014"
             docker_options: -e FDU_RELEASE_TAG
             native: false
-          - os: macos-15
+          # GitHub's macos-15 label is Apple silicon; macos-15-intel is the x86-64
+          # image. The deployment target pins the macOS 11.0 floor the release
+          # process documents, rather than inheriting a toolchain default.
+          - os: macos-15-intel
             target: x86_64-apple-darwin
             manylinux: "off"
             docker_options: ""
             native: true
-          - os: macos-15-arm64
+            macos_deployment_target: "11.0"
+          - os: macos-15
             target: aarch64-apple-darwin
             manylinux: "off"
             docker_options: ""
             native: true
+            macos_deployment_target: "11.0"
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             manylinux: "off"
@@ -157,6 +162,7 @@ jobs:
         uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1
         env:
           FDU_RELEASE_TAG: ${{ needs.plan.outputs.release_tag }}
+          MACOSX_DEPLOYMENT_TARGET: ${{ matrix.macos_deployment_target }}
         with:
           working-directory: crates/fdu-py
           target: ${{ matrix.target }}
