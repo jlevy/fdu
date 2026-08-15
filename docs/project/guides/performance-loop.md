@@ -335,6 +335,43 @@ says exactly that.
 A 4% win that adds a lock, a thread pool, and two new failure modes is
 not automatically worth taking, and the ledger records the reasoning when we decline it.
 
+### Qualifying a scheduling policy takes one extra step
+
+A change to *how much work runs concurrently* — worker counts, scaling triggers, opener
+pools — has a failure mode the accept rule above cannot see.
+Its behavior can depend on the order work completes in, and completion order is not a
+property of the tree.
+When it does, two runs over the same corpus are not repeated samples of one thing; they
+are samples of whichever policy path each run happened to take.
+A paired interval computed across them describes the mixture, and it will look like
+ordinary noise.
+
+So a scheduling policy is qualified in two stages, in this order:
+
+1. **Characterize the policy deterministically.** Replay explicit completion orders
+   through the real decision code and assert what it concludes.
+   This needs no host and no quiet machine, it runs on every platform in CI, and it is
+   what distinguishes a policy defect from ambient variance.
+   `scan::tests::completion_order` is the worked example; it holds a tree constant,
+   varies only completion order, and shows the shipped calibration reaching opposite
+   decisions.
+2. **Then measure the candidate.** Once the policy reaches one decision for a given
+   tree, the paired comparison is measuring the thing it claims to measure, and the
+   accept rule applies unchanged.
+
+Running these in the other order wastes the measurement.
+A sweep over a trigger constant whose decision window still closes on an
+unrepresentative prefix is partly measuring the prefix, and a heterogeneous corpus will
+not reproduce its own result.
+
+The first stage is not a substitute for the second.
+Determinism establishes that a policy asks a well-posed question; it says nothing about
+what the answer is worth, and a candidate that is only order-robust is screening output
+rather than a confirmed winner.
+[The adaptive-worker gap-closure report](../reports/report-2026-08-15-adaptive-worker-gap-closure.md)
+is the worked example of stopping between the two stages, and of why a workstream that
+produced no timing measurement adds no ledger entry.
+
 ## The record is a soft-schema artifact
 
 Every turn of the loop leaves one Markdown file in
