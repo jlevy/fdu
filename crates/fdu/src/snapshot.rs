@@ -53,7 +53,7 @@ const CHECKSUM_BYTES: usize = std::mem::size_of::<u32>();
 const CRC32C_POLYNOMIAL: u32 = 0x82f6_3b78;
 
 /// One table lookup per byte keeps integrity validation from dominating snapshot load.
-const CRC32C_TABLE: [u32; 256] = make_crc32c_table();
+const CRC32C_TABLES: [[u32; 256]; 8] = make_crc32c_tables();
 
 /// On-disk format version. Bump on any layout change; old snapshots are then discarded
 /// rather than misread.
@@ -349,30 +349,64 @@ pub(crate) fn crc32c(bytes: &[u8]) -> u32 {
     !crc32c_update(u32::MAX, bytes)
 }
 
+/// Slicing-by-8: fold eight input bytes per step through eight derived tables
+/// instead of one byte through one. Table 0 is the classic byte table, so the
+/// remainder loop and the 8-byte path share one source of truth; the digest is
+/// bit-identical to the byte-at-a-time form, which a test asserts over uneven
+/// lengths alongside the standard check value.
 fn crc32c_update(mut state: u32, bytes: &[u8]) -> u32 {
-    for byte in bytes {
+    let mut chunks = bytes.chunks_exact(8);
+    for chunk in &mut chunks {
+        let low =
+            (state ^ u32::from_le_bytes(chunk[..4].try_into().expect("chunk holds 8 bytes")))
+                .to_le_bytes();
+        let high =
+            u32::from_le_bytes(chunk[4..].try_into().expect("chunk holds 8 bytes")).to_le_bytes();
+        state = CRC32C_TABLES[7][usize::from(low[0])]
+            ^ CRC32C_TABLES[6][usize::from(low[1])]
+            ^ CRC32C_TABLES[5][usize::from(low[2])]
+            ^ CRC32C_TABLES[4][usize::from(low[3])]
+            ^ CRC32C_TABLES[3][usize::from(high[0])]
+            ^ CRC32C_TABLES[2][usize::from(high[1])]
+            ^ CRC32C_TABLES[1][usize::from(high[2])]
+            ^ CRC32C_TABLES[0][usize::from(high[3])];
+    }
+    for byte in chunks.remainder() {
         let index = usize::from(state.to_le_bytes()[0] ^ *byte);
-        state = CRC32C_TABLE[index] ^ (state >> 8);
+        state = CRC32C_TABLES[0][index] ^ (state >> 8);
     }
     state
 }
 
-const fn make_crc32c_table() -> [u32; 256] {
-    let mut table = [0u32; 256];
+const fn make_crc32c_tables() -> [[u32; 256]; 8] {
+    let mut tables = [[0u32; 256]; 8];
     let mut index = 0usize;
     let mut value = 0u32;
-    while index < table.len() {
+    while index < 256 {
         let mut crc = value;
         let mut bit = 0;
         while bit < u8::BITS {
             crc = (crc >> 1) ^ (CRC32C_POLYNOMIAL & 0u32.wrapping_sub(crc & 1));
             bit += 1;
         }
-        table[index] = crc;
+        tables[0][index] = crc;
         index += 1;
         value += 1;
     }
-    table
+    // tables[k] advances a byte's contribution k further positions: one more
+    // byte-table step applied to the previous table's value.
+    let mut table = 1usize;
+    while table < tables.len() {
+        let mut index = 0usize;
+        while index < 256 {
+            let previous = tables[table - 1][index];
+            tables[table][index] =
+                tables[0][(previous & 0xFF) as usize] ^ (previous >> 8);
+            index += 1;
+        }
+        table += 1;
+    }
+    tables
 }
 
 /// Read only a snapshot's header, without materializing its index.
@@ -886,6 +920,31 @@ mod tests {
     #[test]
     fn crc32c_matches_the_standard_check_value() {
         assert_eq!(crc32c(b"123456789"), 0xe306_9283);
+    }
+
+    #[test]
+    fn crc32c_slicing_matches_the_byte_reference_on_uneven_lengths() {
+        // The 8-byte path and the remainder loop must agree with the classic
+        // byte-at-a-time recurrence at every alignment, or an old snapshot's digest
+        // stops verifying. The reference below IS that recurrence, against table 0.
+        fn reference(bytes: &[u8]) -> u32 {
+            let mut state = u32::MAX;
+            for byte in bytes {
+                let index = usize::from(state.to_le_bytes()[0] ^ *byte);
+                state = CRC32C_TABLES[0][index] ^ (state >> 8);
+            }
+            !state
+        }
+        let mut data = Vec::new();
+        let mut seed = 0x9e37_79b9u32;
+        for length in [0usize, 1, 7, 8, 9, 15, 16, 63, 64, 65, 1000] {
+            data.clear();
+            for _ in 0..length {
+                seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                data.push(seed.to_le_bytes()[0]);
+            }
+            assert_eq!(crc32c(&data), reference(&data), "length {length}");
+        }
     }
 
     #[test]
