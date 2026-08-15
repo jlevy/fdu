@@ -3,9 +3,9 @@ type: is
 id: is-01m01edfz3bd7x2w91bh4qft2m
 title: Integrate adaptive-policy qualification into the performance loop
 kind: task
-status: open
+status: closed
 priority: 1
-version: 3
+version: 4
 spec_path: docs/project/specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md
 labels:
   - performance
@@ -16,7 +16,9 @@ dependencies:
     target: is-01m01edt62s6s8mfeyqgykasxq
 parent_id: is-01m01ea0psdcnb2sdwdj6vh171
 created_at: 2026-08-15T00:51:11.969Z
-updated_at: 2026-08-15T01:16:23.164Z
+updated_at: 2026-08-15T11:06:44.542Z
+closed_at: 2026-08-15T11:06:44.541Z
+close_reason: Integrated bounded traces, phase verification, stages, host regimes, resource/noninferiority gates, provenance, installation attestations, and competitor contracts into the harness, schema/ledger, Make commands, performance loop, instrumentation playbook, platform guide, and active plan.
 ---
 Make this campaign’s repaired research loop durable. Update source-of-truth performance protocol, active plan, instrumentation playbook, platform-tuning guide, corpus/scenario contracts, experiment schema, ledger generation, and contributor commands so future adaptive-policy changes inherit bounded traces, topology verification, held-out selection/confirmation, backend and host regimes, resource gates, installed-command provenance, and competitor noninferiority requirements.
 

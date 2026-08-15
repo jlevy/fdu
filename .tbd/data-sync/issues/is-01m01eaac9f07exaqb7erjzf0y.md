@@ -3,9 +3,9 @@ type: is
 id: is-01m01eaac9f07exaqb7erjzf0y
 title: Expose adaptive-worker and macOS backend decisions in performance artifacts
 kind: bug
-status: in_progress
+status: closed
 priority: 1
-version: 16
+version: 17
 spec_path: docs/project/specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md
 labels:
   - performance
@@ -16,7 +16,9 @@ dependencies:
     target: is-01m01egyp43zd6yj43cjf1ge1d
 parent_id: is-01m01ea0psdcnb2sdwdj6vh171
 created_at: 2026-08-15T00:49:27.944Z
-updated_at: 2026-08-15T02:17:24.896Z
+updated_at: 2026-08-15T11:06:41.854Z
+closed_at: 2026-08-15T11:06:41.853Z
+close_reason: Delivered bounded fdu-scan-diagnostics-v1 policy/backend traces, counter cross-checks, CLI/probe transport, bounds and unavailable-field tests; exp-056 bounds enabled overhead at -0.55% [-1.09%, +0.17%].
 ---
 Add runtime-gated, low-overhead observability that can prove how automatic scheduling and the macOS backend behaved. Define a bounded, versioned policy trace containing available, initial, and maximum workers; calibration window boundaries and signals; every decision and entry ordinal; active and peak workers; ready and in-flight directory work; handoff-channel backlog/high-water observations where measurable; and macOS bulk versus portable-fallback directory counts. Carry it into perf-probe raw artifacts without changing stable human output. Decide and document whether the trace belongs in the public ScanReport API or a versioned internal probe contract; do not silently add a benchmark-only public API.
 

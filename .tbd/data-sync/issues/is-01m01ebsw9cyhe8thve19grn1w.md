@@ -3,9 +3,9 @@ type: is
 id: is-01m01ebsw9cyhe8thve19grn1w
 title: "H86: Compare continuous-window adaptive controller designs"
 kind: task
-status: open
+status: closed
 priority: 1
-version: 4
+version: 5
 spec_path: docs/project/specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md
 labels:
   - performance
@@ -18,7 +18,9 @@ dependencies:
     target: is-01m01eg0efe53jc3smgaza7wk7
 parent_id: is-01m01ea0psdcnb2sdwdj6vh171
 created_at: 2026-08-15T00:50:16.584Z
-updated_at: 2026-08-15T01:17:11.770Z
+updated_at: 2026-08-15T11:06:43.309Z
+closed_at: 2026-08-15T11:06:43.308Z
+close_reason: No controller qualified. Repeated windows regressed wall 58.49% [+49.94%, +66.38%]; staged gating regressed 60.73% [+49.80%, +67.33%]; fixed eight and above also lost. Gradient/parking cannot recover the already harmful persistent-suffix expansion. Experimental controllers remain probe-only.
 ---
 Research the smallest controller that corrects the confirmed one-shot failure without overfitting the Application Support shape. Against the shipped first-16K control, screen repeated independent windows, staged scale-up, ready-work/backlog gating, useful-throughput gradients, and reversible parking with hysteresis; fixed 6, available parallelism, and 16 remain diagnostic controls rather than presumed solutions. Pre-register signals, constants, overhead budget, sample count, stopping rules, harmful policy histories, resource/Pareto thresholds, and rejection rules before running each screen.
 

@@ -3,9 +3,9 @@ type: is
 id: is-01m01ed61j7yty2bqp0zw8v0xc
 title: Run the Apple Silicon/APFS release-CLI noninferiority matrix against dust
 kind: task
-status: open
+status: closed
 priority: 1
-version: 5
+version: 6
 spec_path: docs/project/specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md
 labels:
   - performance
@@ -16,7 +16,9 @@ dependencies:
     target: is-01m01edfz3bd7x2w91bh4qft2m
 parent_id: is-01m01ea0psdcnb2sdwdj6vh171
 created_at: 2026-08-15T00:51:01.809Z
-updated_at: 2026-08-15T01:17:13.773Z
+updated_at: 2026-08-15T11:06:44.339Z
+closed_at: 2026-08-15T11:06:44.338Z
+close_reason: Ran exact native and wheel-installed fdu versus pinned dust matrices on the frozen APFS subject. Uncontrolled 12-pair diagnostics were exact and favored fdu by 43.10% and 41.70%; the held-out quiet native cell had two host-pressure invalidations, so the positive release conclusion is explicitly inconclusive.
 ---
 Qualify each supported installed fdu command from fdu-o3s4 against the validated, pinned dust adapter from fdu-b722 on a predeclared Apple Silicon/local-APFS workload matrix. Use semantically equivalent complete tree work, immutable exact-oracle subjects, adjacent paired/interleaved release processes, quiet-host warm-steady cells, separately labeled interactive-load cells, and diagnostic-only partial/error cells. In this bead, fdu --cache off means the reusable fdu snapshot cache is disabled; it does not imply an OS cold-cache state.
 

@@ -3,9 +3,9 @@ type: is
 id: is-01m01fpdn3qbdv0y2458brk4mw
 title: Pin and validate the dust adapter for claim-grade comparisons
 kind: task
-status: open
+status: closed
 priority: 1
-version: 2
+version: 3
 spec_path: docs/project/specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md
 labels:
   - performance
@@ -16,7 +16,9 @@ dependencies:
     target: is-01m01ed61j7yty2bqp0zw8v0xc
 parent_id: is-01m01ea0psdcnb2sdwdj6vh171
 created_at: 2026-08-15T01:13:33.090Z
-updated_at: 2026-08-15T01:17:13.283Z
+updated_at: 2026-08-15T11:06:43.721Z
+closed_at: 2026-08-15T11:06:43.721Z
+close_reason: Pinned and validated Homebrew dust 1.2.4 by source/formula/bottle/executable hashes, license, target, version, exact argv, allocated-byte and hard-link semantics, plus fail-closed warning/error/timeout/parser/oracle tests.
 ---
 Make dust a claim-grade comparator rather than an identity-only timing command. Pin its source, revision, license, build recipe, version, executable hash, exact argv, minimal environment, and supported semantic contract; define and test parsing or postconditions for root totals, stderr, warnings, nonzero exits, timeouts, permission failures, and incomplete output. Document and either normalize or explicitly exclude semantic differences involving apparent versus allocated size, hard links, symlinks, mounts, and partial traversal.
 

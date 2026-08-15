@@ -3,9 +3,9 @@ type: is
 id: is-01m01cm1sb8xyw9ag3pabb5s3h
 title: Stabilize adaptive scan scaling on heterogeneous macOS trees
 kind: bug
-status: open
+status: closed
 priority: 1
-version: 14
+version: 15
 spec_path: docs/project/specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md
 labels:
   - macos
@@ -18,7 +18,9 @@ dependencies:
     target: is-01kzy1w2vbam0mr1z5we4y6fy0
 parent_id: is-01m01ea0psdcnb2sdwdj6vh171
 created_at: 2026-08-15T00:19:49.615Z
-updated_at: 2026-08-15T01:17:12.271Z
+updated_at: 2026-08-15T11:06:43.515Z
+closed_at: 2026-08-15T11:06:43.514Z
+close_reason: Resolved with the acceptance-allowed no-production-change outcome. Profiling and discovery falsified the assumption that late slow service should unlock more workers; no confirmed winner exists. Explicit thread semantics and shipped automatic behavior are unchanged.
 ---
 Resolve the production defect conditionally from fdu-9x4o. If an independently confirmed controller exists, implement only that design; do not retune the 30-microsecond constant or replace automatic mode with a fixed CPU count without its evidence. If no candidate qualifies or profiling falsifies the diagnosis, make no production behavior change and close this bead with the no-change evidence and any narrowly scoped follow-up.
 

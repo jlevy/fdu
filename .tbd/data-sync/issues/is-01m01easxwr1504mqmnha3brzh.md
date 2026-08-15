@@ -3,9 +3,9 @@ type: is
 id: is-01m01easxwr1504mqmnha3brzh
 title: Fail closed on unstable or unobservable automatic-worker policy
 kind: bug
-status: open
+status: closed
 priority: 1
-version: 16
+version: 17
 spec_path: docs/project/specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md
 labels:
   - performance
@@ -18,7 +18,9 @@ dependencies:
     target: is-01m01ecbhsetn1rmvfn8m26w7e
 parent_id: is-01m01ea0psdcnb2sdwdj6vh171
 created_at: 2026-08-15T00:49:43.867Z
-updated_at: 2026-08-15T01:17:13.528Z
+updated_at: 2026-08-15T11:06:42.690Z
+closed_at: 2026-08-15T11:06:42.689Z
+close_reason: Added discovery versus held-out stages, fixed-N stopping, +3% noninferiority/inferiority, independent resource gates, policy sensitivity versus structural-harm rules, and missing-field invalidation across run and experiment contracts.
 ---
 Extend run, result, experiment, and report contracts with explicit adaptive-policy observability and statistical verdicts. Raw samples remain authoritative; policy claims require a complete versioned trace. Encode superiority separately from a +3% noninferiority/non-regression decision: for paired percent difference Delta where positive is slower, pass only when the confidence-interval upper bound is at most +3%, establish inferiority when the lower bound exceeds +3%, and otherwise report inconclusive. Never reuse the existing superiority boolean for this result.
 
