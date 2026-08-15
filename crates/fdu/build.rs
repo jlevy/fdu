@@ -50,6 +50,13 @@ fn git(args: &[&str]) -> Option<String> {
 
 fn emit_version() {
     let semver = std::env::var("CARGO_PKG_VERSION").expect("cargo sets CARGO_PKG_VERSION");
+    println!("cargo:rerun-if-env-changed=FDU_RELEASE_TAG");
+    if let Ok(tag) = std::env::var("FDU_RELEASE_TAG") {
+        let expected = format!("v{semver}");
+        assert_eq!(tag, expected, "FDU_RELEASE_TAG must exactly match the Cargo package version");
+        println!("cargo:rustc-env=FDU_BUILD_VERSION={semver}");
+        return;
+    }
     let version = match git(&["rev-parse", "--short=9", "HEAD"]) {
         Some(revision) => {
             // This preserves Cargo's default whole-package dirty tracking after adding
@@ -65,7 +72,15 @@ fn emit_version() {
             }
             let dirty = git(&["status", "--porcelain", "--untracked-files=no"])
                 .is_some_and(|status| !status.is_empty());
-            format!("{semver}-dev+g{revision}{}", if dirty { ".dirty" } else { "" })
+            let expected_tag = format!("v{semver}");
+            let exact_release = !dirty
+                && git(&["tag", "--points-at", "HEAD"])
+                    .is_some_and(|tags| tags.lines().any(|tag| tag == expected_tag));
+            if exact_release {
+                semver
+            } else {
+                format!("{semver}-dev+g{revision}{}", if dirty { ".dirty" } else { "" })
+            }
         }
         None => semver,
     };

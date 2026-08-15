@@ -258,7 +258,7 @@ If no local command exists and this release is published on PyPI, use the exact 
 version. Never use an unversioned `uvx` runner or `latest` in agent instructions:
 
 ```bash
-uvx --from fdu==0.0.1 fdu --format json --view tree PATH
+uvx --from fdu==0.1.0 fdu --format json --view tree PATH
 ```
 
 ## Compose the Request From Five Axes
@@ -413,7 +413,7 @@ and is matched by pattern.
 
 ```console
 $ fdu --version
-fdu 0.0.1[DEV_REVISION]
+fdu 0.1.0[DEV_REVISION]
 ? 0
 ```
 

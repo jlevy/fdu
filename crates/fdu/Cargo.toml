@@ -1,6 +1,6 @@
 [package]
 name = "fdu"
-version = "0.0.1"
+version = "0.1.0"
 description = "A fast, incremental file roll-up engine: hierarchical tallies over large directory trees"
 readme = "README.md"
 documentation = "https://docs.rs/fdu"
@@ -11,13 +11,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-exclude = [
-    ".github/",
-    "docs/",
-    "attic/",
-    "benchmarks/",
-    "examples/perf_probe.rs",
-]
+include = ["src/**", "tests/**", "rules/**", "build.rs", "Cargo.toml", "README.md", "LICENSE"]
 
 [lib]
 name = "fdu"

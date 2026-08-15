@@ -96,17 +96,24 @@ test("the bootstrap policy enforces one reviewed uv version in Make and CI", () 
     (release) => release.repository === "astral-sh/uv",
   );
   assert(uvRelease);
-  assert.deepEqual(new Set(uvRelease.files), new Set([".github/workflows/ci.yml", "Makefile"]));
+  assert.deepEqual(
+    new Set(uvRelease.files),
+    new Set([".github/workflows/ci.yml", ".github/workflows/release.yml", "Makefile"]),
+  );
 
   const makefile = readFileSync(join(ROOT, "Makefile"), "utf8");
   const makeVersion = makefile.match(/^UV_MIN_VERSION := (\S+)$/m)?.[1];
   assert.equal(makeVersion, uvRelease.version);
   assert.equal(uvRelease.tag, uvRelease.version);
 
-  const workflow = readFileSync(join(ROOT, ".github/workflows/ci.yml"), "utf8");
-  const ciVersions = [...workflow.matchAll(
-    /uses: astral-sh\/setup-uv@[^\n]+\n\s+with:\n\s+version: "([^"]+)"/g,
-  )].map((match) => match[1]);
-  assert.equal(ciVersions.length, 2);
-  assert.deepEqual(new Set(ciVersions), new Set([uvRelease.version]));
+  const workflowFiles = uvRelease.files.filter((file) => file.endsWith(".yml"));
+  const workflowVersions = workflowFiles.flatMap((file) => {
+    const workflow = readFileSync(join(ROOT, file), "utf8");
+    const versions = [...workflow.matchAll(
+      /uses: astral-sh\/setup-uv@[^\n]+\n\s+with:\n\s+version: "([^"]+)"/g,
+    )].map((match) => match[1]);
+    assert(versions.length > 0, `${file} inventories uv but has no setup-uv pin`);
+    return versions;
+  });
+  assert.deepEqual(new Set(workflowVersions), new Set([uvRelease.version]));
 });

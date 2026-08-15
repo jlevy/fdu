@@ -10,7 +10,7 @@ repository = "https://github.com/jlevy/fdu"
 authors = ["fdu contributors"]
 
 [workspace.dependencies]
-fdu = { version = "0.0.1", path = "crates/fdu", default-features = false }
+fdu = { version = "0.1.0", path = "crates/fdu", default-features = false }
 
 [workspace.lints.clippy]
 pedantic = { level = "deny", priority = -1 }

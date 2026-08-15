@@ -1,4 +1,4 @@
-"""Smoke test for the fdu Python extension module.
+"""Internal-boundary smoke test for the private fdu native extension.
 
 Runs against an installed wheel, so it checks what a user actually gets rather than what
 the build tree contains. Deliberately dependency-free: it is executed by CI in a bare
@@ -23,7 +23,7 @@ import subprocess
 import sys
 import tempfile
 
-import fdu_py
+from fdu import _native as fdu_py
 
 
 def main() -> None:
@@ -90,9 +90,7 @@ def main() -> None:
     # A wheel built from a checkout carries the git revision as semver build metadata;
     # one built without git metadata reports the bare semver. Either way the semver
     # itself must match the module's exactly.
-    version_pattern = (
-        rf"fdu {re.escape(fdu_py.__version__)}(-dev\+g[0-9a-f]{{7,12}}(\.dirty)?)?\n"
-    )
+    version_pattern = rf"fdu {re.escape(fdu_py.__version__)}(-dev\+g[0-9a-f]{{7,12}}(\.dirty)?)?\n"
     assert re.fullmatch(version_pattern, version.stdout), version.stdout
     assert version.stderr == "", version.stderr
 
@@ -268,9 +266,7 @@ def main() -> None:
     rust_only = index.report(views=["files"], include=["*.rs"], kind=["file"])
     # Reported paths carry native separators, so compare in a separator-agnostic way
     # rather than narrowing what the engine reports to satisfy a string.
-    paths = sorted(
-        row["path"].replace(os.sep, "/") for row in rust_only["reports"][0]["files"]
-    )
+    paths = sorted(row["path"].replace(os.sep, "/") for row in rust_only["reports"][0]["files"])
     assert paths == ["src/lib.rs", "src/main.rs"], paths
 
     extension_rows = index.report(views=["extensions"])["reports"][0]["extensions"]
@@ -289,9 +285,7 @@ def main() -> None:
     assert languages_report["analysis"] is None, languages_report
     languages = languages_report["reports"][0]["metrics"]
     assert languages["share_metric"] == "allocated_bytes", languages
-    assert [(row["id"], row["files"]) for row in languages["rows"]] == [
-        ("rust", 2)
-    ], languages
+    assert [(row["id"], row["files"]) for row in languages["rows"]] == [("rust", 2)], languages
 
     analyzed = fdu_py.scan(str(query_root), analyze="basic")
     documents = analyzed.report(views=["documents"], words_per_page=250)
@@ -336,7 +330,10 @@ def main() -> None:
     status = fdu_py.cache_status(str(cache_root))
     assert status is not None and status["recognized"], status
     cached_index = fdu_py.open(str(cache_root), cache="only")
-    assert cached_index.complete is False, cached_index.freshness
+    # Coverage and currency are independent: the cache represents the full scope even
+    # though this cache-only open deliberately did not revalidate it.
+    assert cached_index.complete is True, cached_index.freshness
+    assert cached_index.freshness == "stale", cached_index.freshness
     assert cached_index.report(views=["summary"])["complete"] is True
     # Rust keeps Windows verbatim paths (\\?\); compare filesystem identity rather than
     # weakening native long-path behavior to satisfy a string.
@@ -352,7 +349,8 @@ def main() -> None:
     assert partial.errors == [], partial.errors
 
     cached_partial = fdu_py.open(str(partial_root), cache="only", analyze="basic")
-    assert cached_partial.complete is False, cached_partial.errors
+    assert cached_partial.complete is True, cached_partial.errors
+    assert cached_partial.freshness == "stale", cached_partial.freshness
     assert cached_partial.errors == [], cached_partial.errors
     partial_report = cached_partial.report(views=["types"], size="apparent")
     assert partial_report["complete"] is True, partial_report
@@ -403,7 +401,7 @@ def main() -> None:
     with watch_index.watch(interval=0.1) as scoped:
         assert next(scoped) is not None
 
-    print(f"fdu_py {fdu_py.__version__} ok")
+    print(f"fdu._native {fdu_py.__version__} ok")
 
 
 if __name__ == "__main__":
