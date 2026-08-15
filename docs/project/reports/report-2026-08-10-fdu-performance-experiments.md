@@ -60,7 +60,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | platform | host | cache state | experiments |
 | --- | --- | --- | ---: |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 53 |
-| Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 3 |
+| Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 5 |
 
 ## Every experiment, including the failures
 
@@ -125,6 +125,8 @@ dead end.
 | 053 | [Move instrumentation to a runtime toggle and measure all three of its costs](#exp053--move-instrumentation-to-a-runtime-toggle-and-measure-all-three-of-its-costs) | — | `cold-scan-index` | -1.3% | ✅ accepted |
 | 054 | [Validate the Linux campaign’s cumulative effect on macOS](#exp054--validate-the-linux-campaigns-cumulative-effect-on-macos) | — | `warm-revalidate` | -15.7% | ✅ accepted |
 | 055 | [Validate review fixes on macOS](#exp055--validate-review-fixes-on-macos) | — | `cold-scan-index` | -0.9% | ✅ accepted |
+| 056 | [One-slot extension memo in front of derive-and-intern](#exp056--oneslot-extension-memo-in-front-of-deriveandintern) | H89 | `cold-scan-index` | +1.6% | ❌ rejected |
+| 057 | [CRC-32C slicing-by-8 on the snapshot digest](#exp057--crc32c-slicingby8-on-the-snapshot-digest) | H88 | `cold-snapshot-save` | -12.2% | ✅ accepted |
 
 ## The experiments
 
@@ -2046,6 +2048,68 @@ from the correctness and safety fixes.
 
 Full record:
 [`exp-055-validate-review-fixes-on-macos.md`](../experiments/exp-055-validate-review-fixes-on-macos.md)
+
+### exp-056 — One-slot extension memo in front of derive-and-intern
+
+❌ rejected · 2026-08-15 · H89 · commit `3bda5c8`
+
+Control: branch head 3bda5c8: derive_ext + BTreeMap intern per file
+
+Candidate: raw-suffix one-slot memo answering repeat extensions without derive,
+validate, or search
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 1767.5 | 1788.4 | +1.59% (n.s.) | [-1.62%, +6.08%] |
+| component (ms) | 700.3 | 726.2 | +4.73% (n.s.) | [-3.45%, +15.33%] |
+| cpu (ms) | 2687.4 | 2734.6 | +1.12% (n.s.) | [-0.58%, +5.66%] |
+| user (ms) | 1849.0 | 1863.0 | +1.42% (regression) | [+0.39%, +3.98%] |
+| system (ms) | 866.7 | 879.2 | -0.16% (n.s.) | [-2.68%, +11.22%] |
+| peak rss (MiB) | 265.7 | 262.6 | +1.43% (n.s.) | [-3.81%, +3.36%] |
+
+Other jobs, wall time: `warm-revalidate` -0.3% (n.s.).
+
+Cost to carry: 130 lines; no new dependencies.
+
+**Rejected:** Wall +1.59% [-1.62%, +6.08%] and user CPU regressed +1.42%
+[+0.39%, +3.98%]: the per-file suffix extraction and byte compare cost as much as the
+small-Vec derive and intern they replaced, the H51/H62 pattern on a new site.
+
+Full record:
+[`exp-056-one-slot-extension-memo-in-front-of-derive-and-intern.md`](../experiments/exp-056-one-slot-extension-memo-in-front-of-derive-and-intern.md)
+
+### exp-057 — CRC-32C slicing-by-8 on the snapshot digest
+
+✅ accepted · 2026-08-15 · H88 · commit `3bda5c8`
+
+Control: branch head 3bda5c8: byte-at-a-time table CRC
+
+Candidate: slicing-by-8 through eight const-derived tables, bit-identical digest
+
+**`cold-snapshot-save`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 2007.5 | 1925.3 | -2.95% | [-6.77%, -1.19%] |
+| component (ms) | 271.0 | 208.1 | -12.20% | [-36.02%, -0.10%] |
+| cpu (ms) | 2937.6 | 2832.9 | -2.18% | [-5.50%, -1.19%] |
+| user (ms) | 1978.0 | 1930.7 | -3.63% | [-4.81%, -0.98%] |
+| system (ms) | 945.0 | 947.8 | -2.06% (n.s.) | [-10.19%, +3.67%] |
+| peak rss (MiB) | 271.1 | 273.6 | -0.93% (n.s.) | [-3.14%, +3.88%] |
+
+Other jobs, wall time: `warm-snapshot-load` -2.0%.
+
+Cost to carry: 55 lines; no new dependencies.
+
+**Accepted:** Accepted on the pre-registered component signal: save component -12.20%
+[-36.02%, -0.10%] clears the bar decisively, load component -2.02% and both walls
+improved with all intervals below zero, for ~55 dependency-free lines with a
+bit-identity test.
+
+Full record:
+[`exp-057-crc-32c-slicing-by-8-on-the-snapshot-digest.md`](../experiments/exp-057-crc-32c-slicing-by-8-on-the-snapshot-digest.md)
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.
