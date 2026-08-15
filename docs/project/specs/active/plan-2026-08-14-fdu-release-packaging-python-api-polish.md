@@ -112,10 +112,18 @@ Local and artifact-level checks found:
 | Release automation | Blocked | There is no build-once publication workflow, artifact attestation gate, release rehearsal, or documented recovery path. |
 | Registry names | Available when checked | Re-verify immediately before first publication because neither registry reserves an unpublished name. |
 
-The release verdict is therefore **not ready**, despite a strong implementation and test
-baseline. The blockers are bounded and do not call for a rewrite.
+The release verdict at that baseline was therefore **not ready**, despite a strong
+implementation and test baseline.
+The blockers were bounded and did not call for a rewrite.
 
 ## Blocking Findings
+
+This section is the audit record for `043e5a7fd2eb556b25c02d046a0e7d8a80c639ad` and is
+written against that revision.
+R1 through R9 are resolved on `main`; the implementation-plan phases below track their
+current disposition.
+Leave the findings as observed so the release evidence stays reconstructable, and record
+progress in the phase checklists rather than by editing them.
 
 ### R1: One Wheel Can Contain Two Product Versions
 
@@ -577,13 +585,19 @@ scripts/release/
   resolve_plan.py
   inspect_artifacts.py
   registry_state.py
-  package_archives.py
 tests/release/
   test_resolve_plan.py
   test_inspect_artifacts.py
   test_registry_state.py
-  test_package_archives.py
+  test_metadata.py
 ```
+
+Artifact-manifest and checksum assembly lives in `inspect_artifacts.py` rather than a
+separate `package_archives.py`. One pass already opens every archive to check version,
+license, metadata, typing, and SBOM contents, so emitting the manifest and `SHA256SUMS`
+from that same pass avoids a second reader that could disagree with it.
+`test_metadata.py` covers the repository-level identity invariants that no single
+artifact owns.
 
 Decision logic belongs in these checked-in, fixture-tested scripts rather than inline
 shell or YAML expressions.
