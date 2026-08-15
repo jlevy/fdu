@@ -758,6 +758,9 @@ fn scan_concurrent(
                 WalkMessage::Observation(observation) => sink(observation),
                 WalkMessage::ScaleUp(sender) if !scaled_up => {
                     scaled_up = true;
+                    crate::counters::bump(|counts| {
+                        counts.adaptive_scale_ups = counts.adaptive_scale_ups.saturating_add(1);
+                    });
                     for _ in pool.initial..pool.maximum {
                         let sender = sender.clone();
                         let queue = &queue;
@@ -769,6 +772,17 @@ fn scan_concurrent(
                 }
                 WalkMessage::ScaleUp(_) => {}
             }
+        }
+
+        // A walk that ends before its calibration window fills never observed enough to
+        // decide anything. That is an *unobservable* policy, not a decision to hold the
+        // initial pool, and an artifact that conflated the two would report a held pool
+        // as if the walk had measured one and chosen it.
+        if pool.calibration.is_some() && queue.lock().calibration.is_some() {
+            crate::counters::bump(|counts| {
+                counts.adaptive_policy_undecided =
+                    counts.adaptive_policy_undecided.saturating_add(1);
+            });
         }
 
         let mut report = ScanReport::default();
@@ -1264,6 +1278,9 @@ impl DirectoryQueue {
         timing: &mut WalkAttribution,
     ) -> bool {
         let mut state = self.lock_timed(timing);
+        // Whether this chunk reached the calibration at all. Only chunks released while
+        // it is still live are policy history; later ones are ordinary walk work.
+        let calibrating = state.calibration.is_some();
         let decision = state
             .calibration
             .as_mut()
@@ -1272,9 +1289,26 @@ impl DirectoryQueue {
             state.calibration = None;
         }
         state.outstanding -= 1;
-        if state.outstanding == 0 && state.is_empty(self.order) {
+        let finished = state.outstanding == 0 && state.is_empty(self.order);
+        if finished {
             state.finished = true;
-            drop(state);
+        }
+        drop(state);
+
+        // Recorded outside the lock: the sampling is off by default, and a disabled
+        // counter must not lengthen the critical section it observes.
+        if calibrating {
+            crate::counters::bump(|counts| {
+                counts.adaptive_calibration_chunks =
+                    counts.adaptive_calibration_chunks.saturating_add(1);
+                counts.adaptive_calibration_entries =
+                    counts.adaptive_calibration_entries.saturating_add(observed_entries);
+                counts.adaptive_calibration_work_us =
+                    counts.adaptive_calibration_work_us.saturating_add(observed_work_ns / 1_000);
+            });
+        }
+
+        if finished {
             self.ready.notify_all();
             false
         } else {
@@ -2472,6 +2506,40 @@ mod tests {
         crate::counters::enable(false);
     }
 
+    /// An automatic walk too short to fill its calibration window must say so.
+    ///
+    /// The failure this guards is quiet: such a walk runs on its initial pool, which is
+    /// indistinguishable in the artifacts from a walk that measured the filesystem and
+    /// chose to hold — unless the undecided case is recorded separately. Reading the
+    /// first as the second is how a policy with no evidence behind it comes to look
+    /// like a policy with evidence behind it.
+    #[test]
+    fn a_short_automatic_walk_records_an_undecided_policy() {
+        let _serial = crate::counters::test_serial();
+        let available = std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get);
+        if automatic_worker_pool(available).calibration.is_none() {
+            // A host reporting one processor has no reserve to unlock, so there is no
+            // policy here to leave undecided.
+            return;
+        }
+
+        crate::counters::enable(true);
+        let dir = sample_tree();
+        let config = ScanConfig { threads: None, ..ScanConfig::default() };
+        let before = crate::counters::snapshot();
+        scan(dir.path(), &config, &mut |_| {}).expect("scan");
+        crate::counters::flush_thread();
+        let after = crate::counters::snapshot();
+        crate::counters::enable(false);
+
+        // A strict increase, so a counter inflated by a test running beside this one
+        // cannot turn the assertion into a false pass.
+        assert!(
+            after.adaptive_policy_undecided > before.adaptive_policy_undecided,
+            "a three-file tree cannot fill a {ADAPTIVE_SCAN_CALIBRATION_ENTRIES}-entry window"
+        );
+    }
+
     #[test]
     fn fingerprint_metadata_observes_mutation_after_directory_enumeration() {
         let dir = tempfile::tempdir().expect("tempdir");
@@ -3065,6 +3133,260 @@ mod tests {
         let claim = queue.claim(&mut claimed, &mut timing).expect("root is claimable");
         assert!(!claim.release(3, 30, &mut timing));
         assert!(queue.lock().calibration.is_none(), "calibration decides only once");
+    }
+
+    /// A deterministic model of the automatic worker policy under *completion* order.
+    ///
+    /// The scaling decision is driven by chunk releases, and chunks complete in whatever
+    /// order the filesystem and the workers produce them — not in traversal order. On a
+    /// homogeneous tree that distinction is invisible, because every prefix looks like
+    /// every other. On a heterogeneous one it decides the answer.
+    ///
+    /// These tests exist because the alternative is a stopwatch on a real tree, which
+    /// measures one host on one day and cannot separate a policy defect from ambient
+    /// noise. Replaying an explicit completion order through the shipped calibration
+    /// isolates the policy exactly, and does so identically on every platform.
+    ///
+    /// They characterize behavior; they do not endorse a replacement. Which controller
+    /// is *faster* is a question only the held-out Apple Silicon/APFS matrix can answer.
+    mod completion_order {
+        use super::{ADAPTIVE_SCAN_SLOW_WORK_NS_PER_ENTRY, WorkerCalibration};
+
+        /// One chunk release: entries observed and worker time spent observing them.
+        #[derive(Clone, Copy, Debug)]
+        struct Chunk {
+            entries: u64,
+            work_ns: u64,
+        }
+
+        impl Chunk {
+            /// A run of `entries` entries costing `per_entry_ns` each.
+            const fn at(entries: u64, per_entry_ns: u64) -> Self {
+                Self { entries, work_ns: entries.saturating_mul(per_entry_ns) }
+            }
+        }
+
+        /// What a policy concluded over one completion order.
+        #[derive(Debug, PartialEq, Eq)]
+        enum Outcome {
+            /// The policy found the filesystem slow and expanded the reserve.
+            ScaledUp { after_chunks: usize },
+            /// The policy found the filesystem fast and held the initial pool.
+            Held { after_chunks: usize },
+            /// The walk ended before the policy observed enough to conclude anything.
+            ///
+            /// Distinct from [`Outcome::Held`] on purpose: nothing was measured, so a
+            /// held pool here is an absence of evidence rather than a decision.
+            Undecided,
+        }
+
+        /// Mean cost per entry over a whole trace, which is what the threshold *means*.
+        fn whole_trace_ns_per_entry(trace: &[Chunk]) -> u64 {
+            let entries: u64 = trace.iter().map(|chunk| chunk.entries).sum();
+            let work_ns: u64 = trace.iter().map(|chunk| chunk.work_ns).sum();
+            assert!(entries > 0, "a trace must observe entries");
+            work_ns / entries
+        }
+
+        /// Replay a completion order through the *shipped* calibration.
+        ///
+        /// This drives [`WorkerCalibration::observe`] itself rather than restating its
+        /// arithmetic, so the model cannot quietly drift from the policy it is evidence
+        /// about. The loop mirrors `DirectoryQueue::release`: fold each chunk in, and
+        /// stop at the first one that produces a verdict.
+        fn shipped(window: u64, threshold_ns: u64, trace: &[Chunk]) -> Outcome {
+            let mut calibration = WorkerCalibration::new(window, threshold_ns);
+            for (index, chunk) in trace.iter().enumerate() {
+                if let Some(slow) = calibration.observe(chunk.entries, chunk.work_ns) {
+                    let after_chunks = index + 1;
+                    return if slow {
+                        Outcome::ScaledUp { after_chunks }
+                    } else {
+                        Outcome::Held { after_chunks }
+                    };
+                }
+            }
+            Outcome::Undecided
+        }
+
+        /// Entries per chunk in the traces below. Four fill the 16,384-entry window.
+        const CHUNK: u64 = 4_096;
+        /// A shallow, cache-warm phase: metadata already resident.
+        const FAST: Chunk = Chunk::at(CHUNK, 2_000);
+        /// A deep, cold phase: the latency-bound regime the reserve exists to hide.
+        const SLOW: Chunk = Chunk::at(CHUNK, 90_000);
+
+        #[test]
+        fn completion_order_alone_flips_the_shipped_decision() {
+            // The defect, stated as an experiment: hold the *tree* constant and vary
+            // only the order its chunks complete in. Both traces contain the same four
+            // fast and four slow chunks, so they describe the same filesystem work.
+            let fast_phase_first = [FAST, FAST, FAST, FAST, SLOW, SLOW, SLOW, SLOW];
+            let interleaved = [SLOW, FAST, SLOW, FAST, SLOW, FAST, SLOW, FAST];
+
+            let window = 4 * CHUNK;
+            let threshold = ADAPTIVE_SCAN_SLOW_WORK_NS_PER_ENTRY;
+
+            // Whole-walk truth is identical, and by the policy's own threshold both
+            // walks are latency-bound: 46 µs per entry against a 30 µs trigger.
+            let truth = whole_trace_ns_per_entry(&fast_phase_first);
+            assert_eq!(truth, whole_trace_ns_per_entry(&interleaved));
+            assert!(
+                truth >= threshold,
+                "both traces are slow walks by the shipped threshold: {truth} < {threshold}"
+            );
+
+            // Yet the decision depends entirely on which chunks happened to finish
+            // first. One walk hides latency; the other runs the whole slow phase on the
+            // starting pool, having concluded from an unrepresentative prefix.
+            assert_eq!(
+                shipped(window, threshold, &fast_phase_first),
+                Outcome::Held { after_chunks: 4 },
+                "a fast prefix holds the pool for a walk that is slow overall"
+            );
+            assert_eq!(
+                shipped(window, threshold, &interleaved),
+                Outcome::ScaledUp { after_chunks: 4 },
+                "the same tree scales up when its slow chunks land in the window"
+            );
+        }
+
+        #[test]
+        fn a_slow_phase_after_the_window_is_never_reconsidered() {
+            // The heterogeneous-tree case from the field report. A small fast region
+            // fills the window, and everything after it is slow — but the calibration
+            // is already gone, so no amount of later evidence can reopen the decision.
+            let mut trace = vec![FAST; 4];
+            trace.extend(std::iter::repeat_n(SLOW, 400));
+
+            let observed = whole_trace_ns_per_entry(&trace);
+            assert!(
+                observed >= 2 * ADAPTIVE_SCAN_SLOW_WORK_NS_PER_ENTRY,
+                "the walk is overwhelmingly latency-bound: {observed} ns per entry"
+            );
+
+            assert_eq!(
+                shipped(4 * CHUNK, ADAPTIVE_SCAN_SLOW_WORK_NS_PER_ENTRY, &trace),
+                Outcome::Held { after_chunks: 4 },
+                "1% of the walk decided the worker policy for the other 99%"
+            );
+        }
+
+        #[test]
+        fn a_walk_shorter_than_the_window_decides_nothing() {
+            // Fails closed rather than reporting a held pool: a walk this short never
+            // observed enough to have an opinion, and an artifact that recorded `Held`
+            // would claim a measurement that was never taken.
+            let trace = [FAST, SLOW];
+            assert_eq!(
+                shipped(4 * CHUNK, ADAPTIVE_SCAN_SLOW_WORK_NS_PER_ENTRY, &trace),
+                Outcome::Undecided
+            );
+        }
+
+        /// A screening-only candidate: a window that slides instead of closing once.
+        ///
+        /// Present as *evidence about a design*, not as a proposed change. It keeps the
+        /// shipped trigger and pool bounds and alters only when the question is asked,
+        /// which is the narrowest edit that could address the order sensitivity above.
+        /// Whether it is faster on a real tree is unmeasured here and unmeasurable in a
+        /// virtualized non-APFS environment; selecting it would need the held-out Apple
+        /// Silicon matrix that this workstream has not yet been able to run.
+        struct SlidingWindow {
+            window_entries: u64,
+            threshold_ns: u64,
+            recent: std::collections::VecDeque<Chunk>,
+            entries: u64,
+            work_ns: u64,
+        }
+
+        impl SlidingWindow {
+            fn new(window_entries: u64, threshold_ns: u64) -> Self {
+                Self {
+                    window_entries,
+                    threshold_ns,
+                    recent: std::collections::VecDeque::new(),
+                    entries: 0,
+                    work_ns: 0,
+                }
+            }
+
+            /// Fold in a chunk and re-ask the question over the trailing window.
+            fn observe(&mut self, chunk: Chunk) -> Option<bool> {
+                self.recent.push_back(chunk);
+                self.entries = self.entries.saturating_add(chunk.entries);
+                self.work_ns = self.work_ns.saturating_add(chunk.work_ns);
+
+                // Drop from the front while the window stays full without the oldest
+                // chunk, so the answer describes recent work rather than the whole walk.
+                while let Some(oldest) = self.recent.front().copied() {
+                    if self.entries - oldest.entries < self.window_entries {
+                        break;
+                    }
+                    self.recent.pop_front();
+                    self.entries -= oldest.entries;
+                    self.work_ns -= oldest.work_ns;
+                }
+
+                (self.entries >= self.window_entries)
+                    .then(|| self.work_ns / self.entries >= self.threshold_ns)
+            }
+        }
+
+        /// Replay a completion order through the candidate, stopping at its first
+        /// scale-up. The shipped pool only grows, so a later verdict cannot undo one.
+        fn sliding(window: u64, threshold_ns: u64, trace: &[Chunk]) -> Outcome {
+            let mut policy = SlidingWindow::new(window, threshold_ns);
+            let mut decided = None;
+            for (index, chunk) in trace.iter().enumerate() {
+                if let Some(slow) = policy.observe(*chunk) {
+                    let after_chunks = index + 1;
+                    if slow {
+                        return Outcome::ScaledUp { after_chunks };
+                    }
+                    decided.get_or_insert(Outcome::Held { after_chunks });
+                }
+            }
+            decided.unwrap_or(Outcome::Undecided)
+        }
+
+        #[test]
+        fn screening_a_sliding_window_against_the_order_sensitivity() {
+            let window = 4 * CHUNK;
+            let threshold = ADAPTIVE_SCAN_SLOW_WORK_NS_PER_ENTRY;
+
+            // The pair that splits the shipped policy reaches one answer here, and it
+            // is the answer the whole-trace mean supports in both orders.
+            let fast_phase_first = [FAST, FAST, FAST, FAST, SLOW, SLOW, SLOW, SLOW];
+            let interleaved = [SLOW, FAST, SLOW, FAST, SLOW, FAST, SLOW, FAST];
+            // Both reach the same verdict; they differ only in how long the fast prefix
+            // delays it, which is the behavior a trailing window is supposed to have.
+            assert_eq!(
+                sliding(window, threshold, &fast_phase_first),
+                Outcome::ScaledUp { after_chunks: 6 }
+            );
+            assert_eq!(
+                sliding(window, threshold, &interleaved),
+                Outcome::ScaledUp { after_chunks: 4 }
+            );
+
+            // And the late slow phase is reached rather than missed: two slow chunks
+            // after the window closes are enough to pull the trailing mean over.
+            let mut late = vec![FAST; 4];
+            late.extend(std::iter::repeat_n(SLOW, 400));
+            assert_eq!(sliding(window, threshold, &late), Outcome::ScaledUp { after_chunks: 6 });
+
+            // A genuinely fast tree must still hold the pool: the candidate has to keep
+            // the property the shipped policy gets right, or it is not a candidate.
+            let uniformly_fast = vec![FAST; 40];
+            assert_eq!(
+                sliding(window, threshold, &uniformly_fast),
+                Outcome::Held { after_chunks: 4 }
+            );
+
+            // A short walk still decides nothing, for the same reason as above.
+            assert_eq!(sliding(window, threshold, &[FAST, SLOW]), Outcome::Undecided);
+        }
     }
 
     #[test]

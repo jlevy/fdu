@@ -121,6 +121,25 @@ It is stated here because the constant’s own documentation makes the platform 
 legible, and because a sweep is the cheap way to settle it: `perf_probe --threads N`
 takes the worker count directly.
 
+### The threshold is not the only thing in question; so is when it is asked
+
+A separate defect sits in the decision *procedure* rather than the constant.
+The calibration accumulates until the first 16,384 entries have completed, decides once,
+and is then discarded, so the answer is a function of which chunks finished first rather
+than of the tree. `scan::tests::completion_order` demonstrates this deterministically:
+one tree, two completion orders, opposite decisions, with both walks latency-bound by
+the 30 µs threshold itself.
+
+This matters for tuning because it changes what a threshold sweep can conclude.
+Sweeping the constant while the window still closes after one unrepresentative prefix
+measures the prefix as much as the value, and a heterogeneous tree will not reproduce
+its own result run to run.
+Settle the procedure before reading a sweep as evidence about the number.
+
+The characterization, the screened alternative, and the reasons no controller was
+selected are in
+[the adaptive-worker gap-closure report](../reports/report-2026-08-15-adaptive-worker-gap-closure.md).
+
 ## How a divergence is expressed in code
 
 Two kinds of platform difference live in this engine, and only one of them is a tuning

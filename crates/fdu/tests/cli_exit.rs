@@ -88,6 +88,9 @@ fn runtime_instrumentation_is_available_on_the_shipped_binary() {
     let enabled_stderr = String::from_utf8(enabled.stderr).expect("counter report is UTF-8");
     assert!(enabled_stderr.contains("[filesystem operations]"), "{enabled_stderr}");
     assert!(enabled_stderr.contains("[memory]"), "{enabled_stderr}");
+    // The worker-scaling policy is only auditable if its history reaches the artifacts
+    // the performance loop actually reads.
+    assert!(enabled_stderr.contains("[adaptive scan policy]"), "{enabled_stderr}");
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     assert!(enabled_stderr.contains("[process ("), "{enabled_stderr}");
     #[cfg(not(any(target_os = "linux", target_os = "macos")))]
