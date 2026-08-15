@@ -203,6 +203,34 @@ moves, so the bar is a measured reversal on a decision that matters, not a diffe
 within noise. Prefer one adaptive mechanism that measures the machine over two constants
 that name it.
 
+### Snapshot participation is a cost decision, and its threshold is unmeasured here
+
+The cache is not a tuning constant today, but it is about to acquire one, and the reason
+belongs beside the others.
+
+Measured on Linux/ext4 over 84,539 entries, warm operating-system cache, nine
+interleaved paired trials: an unfiltered metadata summary answered transiently in 71 ms,
+while the same request under a warm revalidating `auto` policy took 161 ms, and a
+no-scan `only` read took 81 ms.
+The mechanism is that revalidation stats every entry regardless of what the snapshot
+holds, so for a metadata query the snapshot avoids no filesystem work; deserialisation
+then costs about what a warm walk costs, roughly 0.96 against 0.84 microseconds per
+entry.
+
+The snapshot does pay where it avoids expensive work: content analysis went from 639 ms
+to 325 ms warm, and with a cold operating-system cache a snapshot-only read beat a cold
+scan 118 ms against 277 ms.
+
+That gives the rule — persist when the retained state costs more to recompute than to
+load and revalidate — but not the number.
+The entry-count threshold above which an ordinary metadata run should persist a snapshot
+is exactly the kind of constant this guide exists to flag: the only value the data
+supports is roughly 250,000 entries, and it was measured on ext4 on a virtualised host.
+It is inherited, not proven, on Apple Silicon and APFS, and `fdu-hvs5` holds the
+measurement that would settle it.
+[The cache-layers plan](../specs/active/plan-2026-08-15-fdu-cache-layers-and-defaults.md)
+carries the full cost model.
+
 ## The rule for a platform-specific constant
 
 1. **A shared default must have evidence in every regime it claims.** One measurement

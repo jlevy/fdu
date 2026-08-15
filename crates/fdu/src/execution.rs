@@ -99,22 +99,45 @@ impl PerformanceSummary {
 
 /// Derive the least-retention plan that can answer `query` under `config`.
 ///
-/// A summary reducer is legal only when no snapshot can participate, no content analysis
-/// is requested, the sole requested view is an unfiltered summary, and the caller asks for
-/// a one-shot report through this API.  [`crate::open`] and live sessions still promise an
-/// index and therefore never use this planner.  Any future requirement the compact tier
-/// cannot prove falls closed to [`RetainedState::FullIndex`].
+/// A summary reducer is legal when no content analysis is requested, the sole requested
+/// view is an unfiltered summary, and the policy does not require the snapshot to
+/// participate.  [`crate::open`] and live sessions still promise an index and therefore
+/// never use this planner.  Any future requirement the compact tier cannot prove falls
+/// closed to [`RetainedState::FullIndex`].
+///
+/// The compact tier is not gated on the cache being unavailable, because for an
+/// unfiltered metadata summary the snapshot cannot save the work the scan is doing.
+/// Revalidating a loaded snapshot stats every entry anyway, so the reusable index and its
+/// write are additive cost with nothing to amortise them: measured on Linux/ext4 over
+/// 84,539 entries, the compact tier answered in 71 ms against 161 ms for a warm
+/// revalidating `Auto` run, and even a no-scan `Only` read cost 81 ms because
+/// deserialisation is about as expensive per record as a warm walk.  A snapshot earns its
+/// keep when it avoids expensive work — re-reading file bodies for content analysis, or a
+/// cold filesystem walk — not when it merely mirrors a walk that still has to happen.
+///
+/// Two policies still require the index, for reasons that are about intent rather than
+/// cost.  [`CachePolicy::Only`] must answer from the snapshot without touching the tree,
+/// so it has no scan to reduce.  [`CachePolicy::Refresh`] is an explicit request to
+/// rewrite the snapshot, and honouring it means materialising the index that gets
+/// written — though with no cache path configured there is nothing to rewrite, and the
+/// compact tier answers it like any other summary.
 pub(crate) fn plan_report(config: &OpenConfig, query: &Query) -> ReportPlan {
-    let cache_cannot_participate = config.policy == CachePolicy::Off
-        || (config.cache_path.is_none() && config.policy != CachePolicy::Only);
     // Analysis reads file contents keyed by retained entries and writes its own sidecar,
     // so the aggregate-only tier cannot answer it.
     let analysis_requested = config.analysis.profile.is_enabled();
     let summary_is_sufficient =
         query.views.as_slice() == [ViewSpec::Summary] && query.selection.is_unfiltered();
+    let policy_requires_index = match config.policy {
+        // Must answer from the snapshot without touching the tree, so there is no scan
+        // to reduce in the first place.
+        CachePolicy::Only => true,
+        // An explicit instruction to rewrite the snapshot, which requires materialising
+        // the index that gets written — but only when there is somewhere to write it.
+        CachePolicy::Refresh => config.cache_path.is_some(),
+        CachePolicy::Off | CachePolicy::Auto | CachePolicy::ReadOnly => false,
+    };
     ReportPlan {
-        retained_state: if cache_cannot_participate && !analysis_requested && summary_is_sufficient
-        {
+        retained_state: if !policy_requires_index && !analysis_requested && summary_is_sufficient {
             RetainedState::Summary
         } else {
             RetainedState::FullIndex
@@ -262,15 +285,6 @@ mod tests {
             );
         }
 
-        let cached = config(CachePolicy::Auto, Some(PathBuf::from("cache.fdu")));
-        assert_eq!(plan_report(&cached, &summary_query()).retained_state, RetainedState::FullIndex);
-
-        let cache_only = config(CachePolicy::Only, None);
-        assert_eq!(
-            plan_report(&cache_only, &summary_query()).retained_state,
-            RetainedState::FullIndex
-        );
-
         let mut several_views = summary_query();
         several_views.views.push(ViewSpec::Types);
         assert_eq!(plan_report(&off, &several_views).retained_state, RetainedState::FullIndex);
@@ -278,6 +292,38 @@ mod tests {
         let mut filtered = summary_query();
         filtered.selection.include.push(Pattern::parse("*.rs").expect("pattern"));
         assert_eq!(plan_report(&off, &filtered).retained_state, RetainedState::FullIndex);
+    }
+
+    #[test]
+    fn an_available_snapshot_does_not_force_the_index_for_a_metadata_summary() {
+        // A loaded snapshot cannot save the work an unfiltered metadata summary is
+        // already doing: revalidation stats every entry regardless, so retaining the
+        // index and writing it back is additive cost with nothing to amortise it. The
+        // compact tier stays selected so the common one-shot totals request pays for a
+        // walk and nothing else.
+        for policy in [CachePolicy::Auto, CachePolicy::ReadOnly] {
+            let cached = config(policy, Some(PathBuf::from("cache.fdu")));
+            assert_eq!(
+                plan_report(&cached, &summary_query()).retained_state,
+                RetainedState::Summary,
+                "{policy:?} must not be forced onto the index by a present snapshot"
+            );
+        }
+    }
+
+    #[test]
+    fn policies_whose_intent_is_the_snapshot_itself_still_retain_the_index() {
+        // These two are not cost decisions. `Only` must answer without touching the tree,
+        // so it has no scan to reduce; `Refresh` is an explicit request to rewrite the
+        // snapshot, which means materialising the index that gets written.
+        for policy in [CachePolicy::Only, CachePolicy::Refresh] {
+            let cached = config(policy, Some(PathBuf::from("cache.fdu")));
+            assert_eq!(
+                plan_report(&cached, &summary_query()).retained_state,
+                RetainedState::FullIndex,
+                "{policy:?} needs the index to honour its contract"
+            );
+        }
     }
 
     #[test]

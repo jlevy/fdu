@@ -33,7 +33,7 @@ These commands cover the common cost and reporting choices:
 | Languages and lines of code | `fdu --analyze code --view languages PATH` | Reads eligible files | The same language rows with standard code lines, comment lines, blank lines, code-line shares, and explicit unsupported coverage |
 | All file types | `fdu --view types PATH` | Never read | Stable rows for code, prose, markup, data, binary, and unknown types classified from exact filenames and extensions |
 | Folder sizes | `fdu PATH` | Never read | The default directory tree with rolled-up sizes and file counts; builds or refreshes the reusable metadata index |
-| Fast totals only | `fdu --cache off --view summary PATH` | Never read | One aggregate row with total size, file count, and directory count; retains no index or cache |
+| Fast totals only | `fdu --view summary PATH` | Never read | One aggregate row with total size, file count, and directory count; retains no index and writes no cache |
 
 `--view languages` selects the detected code-type roll-up.
 By itself it classifies from exact filenames and extensions, reports byte shares, and
@@ -50,9 +50,10 @@ rules. The language roll-up uses those detected types and may refine unresolved 
 ambiguous paths with bounded probes once analysis is enabled.
 Use `--view extensions` when the raw filename extension is the desired grouping.
 For folder sizes, `tree` is the default view, so `fdu PATH` is the complete command.
-For the no-index totals path, both `--cache off` and the single unfiltered `summary`
-view are required. Sizes use allocated bytes by default; add `--size apparent` for
-logical file lengths.
+The no-index totals path needs only the single unfiltered `summary` view; it is taken
+whatever the cache policy, because a snapshot cannot save the walk that request is
+already doing. Sizes use allocated bytes by default; add `--size apparent` for logical
+file lengths.
 
 ## Why
 
@@ -187,13 +188,15 @@ A view never enables an analyzer implicitly.
 
 | Layer | Representative command | Filesystem work | State retained |
 | --- | --- | --- | --- |
-| Exact summary | `fdu --cache off --view summary PATH` | Enumerate and stat every entry; never read file contents | Five aggregate tallies; no index or cache |
+| Exact summary | `fdu --view summary PATH` | Enumerate and stat every entry; never read file contents | Five aggregate tallies; no index or cache |
 | Metadata index | `fdu PATH` | Enumerate and stat every entry; classify recognized paths without reading contents | Reusable parent-pointer index and, unless disabled, metadata snapshot v2 |
 | Content index | `fdu --analyze PROFILE PATH` | Metadata work plus streaming reads through every eligible file missing from a compatible content sidecar | Metadata index plus sparse content roll-ups and a separate `.content` sidecar |
 
-The summary-only plan applies only to one unfiltered `summary` view with `--cache off`.
-Filters, multiple views, cache participation, watch mode, or content analysis fall
-closed to the full index because they need paths, hierarchy, or reusable state.
+The summary-only plan applies to one unfiltered `summary` view under any cache policy
+except `only` and `refresh`, whose contracts are about the snapshot itself rather than
+the cheapest exact answer.
+Filters, multiple views, watch mode, or content analysis fall closed to the full index
+because they need paths, hierarchy, or reusable state.
 The planner derives this internally; there is no separate “fast” flag whose semantics
 can drift from the ordinary query.
 
