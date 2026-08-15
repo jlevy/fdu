@@ -59,7 +59,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 
 | platform | host | cache state | experiments |
 | --- | --- | --- | ---: |
-| Darwin 25.5.0, apfs | unrecorded | warm-steady | 53 |
+| Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 3 |
 
 ## Every experiment, including the failures
@@ -125,6 +125,10 @@ dead end.
 | 053 | [Move instrumentation to a runtime toggle and measure all three of its costs](#exp053--move-instrumentation-to-a-runtime-toggle-and-measure-all-three-of-its-costs) | — | `cold-scan-index` | -1.3% | ✅ accepted |
 | 054 | [Validate the Linux campaign’s cumulative effect on macOS](#exp054--validate-the-linux-campaigns-cumulative-effect-on-macos) | — | `warm-revalidate` | -15.7% | ✅ accepted |
 | 055 | [Validate review fixes on macOS](#exp055--validate-review-fixes-on-macos) | — | `cold-scan-index` | -0.9% | ✅ accepted |
+| 056 | [Bound adaptive scan diagnostics overhead](#exp056--bound-adaptive-scan-diagnostics-overhead) | H86-observability | `cold-scan-index` | -0.5% | ✅ accepted |
+| 057 | [Reject repeated adaptive worker windows on APFS](#exp057--reject-repeated-adaptive-worker-windows-on-apfs) | H86-repeated-windows | `adaptive-scan-index` | +58.5% | ❌ rejected |
+| 058 | [Reject staged adaptive worker expansion on APFS](#exp058--reject-staged-adaptive-worker-expansion-on-apfs) | H86-staged-gated | `adaptive-scan-index` | +60.7% | ❌ rejected |
+| 059 | [Reject higher fixed worker counts on mixed-phase APFS](#exp059--reject-higher-fixed-worker-counts-on-mixedphase-apfs) | H87-fixed-worker-knee | `adaptive-scan-index` | +35.6% | ❌ rejected |
 
 ## The experiments
 
@@ -2046,6 +2050,126 @@ from the correctness and safety fixes.
 
 Full record:
 [`exp-055-validate-review-fixes-on-macos.md`](../experiments/exp-055-validate-review-fixes-on-macos.md)
+
+### exp-056 — Bound adaptive scan diagnostics overhead
+
+✅ accepted · 2026-08-15 · H86-observability · commit
+`1f7251149f9ec8147a7ebc037a31555ae1351bde`
+
+Control: scan without diagnostics
+
+Candidate: bounded scan diagnostics enabled
+
+**`cold-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 1856.4 | 1850.2 | -0.55% (n.s.) | [-1.09%, +0.17%] |
+| component (ms) | 1493.9 | 1486.4 | -0.46% (n.s.) | [-1.43%, +0.12%] |
+| cpu (ms) | 9389.3 | 9330.7 | -0.41% (n.s.) | [-1.69%, +0.15%] |
+| user (ms) | 633.1 | 638.7 | +0.12% (n.s.) | [-0.65%, +1.26%] |
+| system (ms) | 8760.8 | 8695.0 | -0.52% (n.s.) | [-1.82%, +0.07%] |
+| peak rss (MiB) | 89.0 | 89.2 | +0.28% (regression) | [+0.04%, +0.62%] |
+
+Cost to carry: 0 lines; no new dependencies.
+
+Opt-in internal evidence contract; disabled production scans retain their existing path.
+
+**Accepted:** Diagnostics changed wall time by -0.55% with a 95% interval of
+[-1.09%, +0.17%], bounding overhead below the +3% non-regression margin.
+
+Full record:
+[`exp-056-bound-adaptive-scan-diagnostics-overhead.md`](../experiments/exp-056-bound-adaptive-scan-diagnostics-overhead.md)
+
+### exp-057 — Reject repeated adaptive worker windows on APFS
+
+❌ rejected · 2026-08-15 · H86-repeated-windows · commit
+`1d70c628cc4ed262ed2e4d04d992eb977b73c8b1`
+
+Control: shipped one-shot controller
+
+Candidate: repeated independent windows
+
+**`adaptive-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 1871.8 | 2963.2 | +58.49% (regression) | [+49.94%, +66.38%] |
+| component (ms) | 1508.6 | 2599.6 | +72.35% (regression) | [+61.41%, +82.13%] |
+| cpu (ms) | 9469.9 | 23799.0 | +151.57% (regression) | [+124.19%, +170.69%] |
+| user (ms) | 636.7 | 761.7 | +19.67% (regression) | [+16.26%, +23.06%] |
+| system (ms) | 8832.7 | 23050.9 | +161.05% (regression) | [+131.78%, +181.64%] |
+| peak rss (MiB) | 89.5 | 95.0 | +6.40% (regression) | [+5.63%, +6.77%] |
+
+Cost to carry: 0 lines; no new dependencies.
+
+Experiment-only controller; no production behavior retained.
+
+**Rejected:** Repeated windows were 58.49% slower with a 95% interval of
+[+49.94%, +66.38%] and exceeded CPU, system-CPU, RSS, and scheduler-pressure gates.
+
+Full record:
+[`exp-057-reject-repeated-adaptive-worker-windows-on-apfs.md`](../experiments/exp-057-reject-repeated-adaptive-worker-windows-on-apfs.md)
+
+### exp-058 — Reject staged adaptive worker expansion on APFS
+
+❌ rejected · 2026-08-15 · H86-staged-gated · commit
+`1d70c628cc4ed262ed2e4d04d992eb977b73c8b1`
+
+Control: shipped one-shot controller
+
+Candidate: staged ready-work-gated expansion
+
+**`adaptive-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 1871.8 | 2987.5 | +60.73% (regression) | [+49.80%, +67.33%] |
+| component (ms) | 1508.6 | 2626.8 | +74.88% (regression) | [+61.77%, +83.36%] |
+| cpu (ms) | 9469.9 | 24247.0 | +157.89% (regression) | [+125.00%, +176.83%] |
+| user (ms) | 636.7 | 771.6 | +21.35% (regression) | [+19.22%, +23.75%] |
+| system (ms) | 8832.7 | 23465.5 | +167.72% (regression) | [+132.47%, +188.09%] |
+| peak rss (MiB) | 89.5 | 94.7 | +6.01% (regression) | [+5.42%, +6.97%] |
+
+Cost to carry: 0 lines; no new dependencies.
+
+Experiment-only controller; no production behavior retained.
+
+**Rejected:** Staged expansion was 60.73% slower with a 95% interval of
+[+49.80%, +67.33%] and exceeded CPU, system-CPU, and scheduler-pressure gates.
+
+Full record:
+[`exp-058-reject-staged-adaptive-worker-expansion-on-apfs.md`](../experiments/exp-058-reject-staged-adaptive-worker-expansion-on-apfs.md)
+
+### exp-059 — Reject higher fixed worker counts on mixed-phase APFS
+
+❌ rejected · 2026-08-15 · H87-fixed-worker-knee · commit
+`1d70c628cc4ed262ed2e4d04d992eb977b73c8b1`
+
+Control: fixed six workers
+
+Candidate: fixed eight workers
+
+**`adaptive-scan-index`** (cold start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 1878.3 | 2532.1 | +35.55% (regression) | [+33.34%, +37.98%] |
+| component (ms) | 1515.0 | 2170.2 | +43.86% (regression) | [+41.45%, +47.31%] |
+| cpu (ms) | 9502.3 | 17636.3 | +86.44% (regression) | [+82.89%, +92.44%] |
+| user (ms) | 635.0 | 819.8 | +28.30% (regression) | [+23.56%, +31.20%] |
+| system (ms) | 8860.6 | 16806.0 | +90.69% (regression) | [+87.04%, +96.98%] |
+| peak rss (MiB) | 89.4 | 91.1 | +1.86% (regression) | [+1.46%, +2.16%] |
+
+Cost to carry: 0 lines; no new dependencies.
+
+Fixed counts were diagnostic controls; the shipped automatic policy is unchanged.
+
+**Rejected:** Eight workers were 35.55% slower than six with a 95% interval of
+[+33.34%, +37.98%]; ten and sixteen regressed further.
+
+Full record:
+[`exp-059-reject-higher-fixed-worker-counts-on-mixed-phase-apfs.md`](../experiments/exp-059-reject-higher-fixed-worker-counts-on-mixed-phase-apfs.md)
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

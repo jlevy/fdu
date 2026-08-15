@@ -1,194 +1,294 @@
-# Adaptive Worker Scaling: What the Model Proves and What Hardware Must Still Decide
+# Adaptive Worker Gap Closure on Apple Silicon and APFS
 
 **Date:** 2026-08-15
 
-**Author:** fdu project, with Claude Code assistance
+**Author:** fdu project
 
-**Status:** Current
+**Status:** Complete; no production controller change
 
 ## Summary
 
-fdu’s automatic scan mode decides once whether to unlock its reserve workers, using the
-first 16,384 entries that *finish*. This report shows, deterministically and on any
-platform, that the decision is a function of completion order rather than of the tree:
-the same directory tree, with the same total work, reaches opposite decisions depending
-on which chunks happen to complete first.
+The reported behavior is real but was initially described too strongly.
+Automatic scan mode makes a one-time worker decision from the first 16,384 entries to
+*finish*, so a heterogeneous tree can expose different policy histories when completion
+order changes. That is order sensitivity.
+It is not, by itself, evidence that holding six workers is a performance defect.
 
-That is the defect [`fdu-8evu`](#beads) was filed against.
-It is now characterized rather than argued about, and the characterization is a test
-that runs in CI on every platform instead of a stopwatch reading on one host.
+On the measured Apple M1 Pro and local APFS corpus, unlocking more workers was the
+harmful outcome. Repeated-window and staged controllers detected the late slow phase,
+expanded toward sixteen workers, and made wall time 58.49% and 60.73% worse.
+Fixed eight, ten, and sixteen workers also lost decisively to six.
+Profiling attributes the result to more kernel work, lock wait, and scheduler pressure
+rather than to an unexploited latency-bound frontier.
 
-**No production behavior changed.** Selecting a replacement controller requires the
-held-out Apple Silicon and local-APFS confirmation the epic pre-registered, and that
-measurement has not been run.
-Under the epic’s own decision rules a documented no-change outcome is a valid result,
-and this is one. What did change is observability: the policy now records its own
-history, and a walk that never measured anything says so instead of looking like a walk
-that measured and chose to hold.
+The production controller therefore remains unchanged.
+The branch adds the evidence system that was missing: bounded policy/backend traces,
+deterministic completion-order models, phase-checked corpora, fail-closed statistics,
+installed-command provenance, a validated dust adapter, and exact release-surface
+checks. No experimental controller is selected by the shipped CLI or standard library
+scan APIs.
 
-## Who this is for
+The release comparison is exact but not claim-confirming on this session’s host.
+A quiet held-out native cell had two host-pressure invalidations.
+Clean uncontrolled diagnostic cells found native fdu 43.10% faster than dust and
+wheel-installed fdu 41.70% faster, but those results are not substituted for the
+predeclared quiet-host gate.
 
-Anyone picking up the adaptive-worker workstream, and anyone tempted to retune
-`ADAPTIVE_SCAN_SLOW_WORK_NS_PER_ENTRY` or replace automatic mode with a fixed thread
-count. Read [the design principles](../architecture/fdu-design-principles.md) first; the
-rule that governs everything below is that a measurement is evidence about its own
-regime.
+## Scope and decision table
 
-## 1. The defect
+All timing in this report is scoped to one bare-metal Apple M1 Pro with 8 performance
+cores, 2 efficiency cores, 32 GiB memory, AC power, normal thermal pressure, local APFS,
+and a warm-steady operating-system cache.
+Positive change means the candidate is slower.
 
-`DirectoryQueue::release` in [`scan.rs`](../../../crates/fdu/src/scan.rs) folds each
-completed chunk’s entry count and worker time into one shared calibration.
-When the accumulated entries first reach 16,384, it compares mean per-entry service time
-against a 30 µs threshold, expands the worker pool if the filesystem looks slow, and
-then sets the calibration to `None` — permanently.
+| Question | Evidence | Decision |
+| --- | --- | --- |
+| Does completion order affect the one-shot answer? | Pure injected-order model and complete runtime traces | Yes; record it as sensitivity, not presumed harm |
+| Did the observed late slow phase need more workers? | 12-pair discovery screen plus fixed controls | No; every count above six regressed |
+| Should repeated windows ship? | +58.49% wall, 95% CI [+49.94%, +66.38%] | Reject |
+| Should staged, ready-work-gated expansion ship? | +60.73% wall, 95% CI [+49.80%, +67.33%] | Reject |
+| Should the 30 µs threshold or worker caps change? | No higher-count arm survived discovery | No |
+| Did diagnostics perturb the measured scan? | -0.55% wall, 95% CI [-1.09%, +0.17%] | Accept the opt-in trace |
+| Is the quiet installed-CLI release matrix confirmed? | Exact semantics, but 2 of 24 native timed processes invalidated by host pressure | Inconclusive; no positive release claim |
 
-Two properties follow, and neither is a tuning question:
+## What prompted the investigation
 
-1. **The decision is order-sensitive.** Chunks complete in whatever order the filesystem
-   and the workers produce them, which on a heterogeneous tree has nothing to do with
-   traversal order. A prefix drawn from a shallow, cache-warm region and a prefix drawn
-   from a deep, cold one describe the same tree and disagree about it.
+A live, partial scan of a heterogeneous application-data tree completed 398,926 entries
+and 39,936 directory reads with twelve explicit errors.
+The shipped policy held at six workers after an early 28.5 µs/entry window; later
+windows measured approximately 43.5, 50.5, and 30.5 µs/entry.
+All readable directories used the macOS bulk backend.
 
-2. **The decision is never revisited.** A tree whose slow phase begins after the window
-   closes runs its entire slow phase on the starting pool.
-   The evidence that would change the answer arrives, and there is nothing left to
-   receive it.
+That observation established a plausible mechanism but could not support a timing claim.
+The subject was mutable, permission-bearing, and machine-specific.
+It did, however, identify the missing evidence: the old aggregate counters could not
+show the decision ordinal, later service windows, ready work, active workers, or backend
+fallbacks.
 
-The field report that opened this workstream — a partial, heterogeneous
-`Application Support` scan producing materially different effective concurrency between
-runs — is what both properties predict.
+## Why the earlier evidence missed it
 
-## 2. What the model proves
+Experiments exp-015 through exp-036 established useful worker bounds and the macOS bulk
+reader, but they did not answer this question:
 
-The characterization lives in `scan::tests::completion_order` and drives the shipped
-`WorkerCalibration` directly, so it cannot drift from the policy it describes.
-Each test replays an explicit completion order — a list of chunks, each with an entry
-count and a worker-time cost — through the real decision code.
+- They measured aggregate outcomes on mostly uniform or natural trees without retaining
+  the policy’s bounded history.
+  A held walk and an unmeasured walk could look alike.
+- The policy discarded its calibration after one decision, so later service changes were
+  invisible even when counters were enabled.
+- Filesystem generation order was sometimes treated informally as a phase shape, but
+  concurrent completion order is not a property of a generated tree.
+- The bulk backend changed the worker knee.
+  A pre-bulk large-tree result favoring deeper concurrency was not evidence that the
+  same count remained useful after directory metadata became batched.
+- Earlier fdu-versus-dust comparisons proved exact output and process timing for their
+  work classes, not which automatic policy path fdu took.
 
-The load-bearing case holds the tree constant and varies only completion order:
+The repair is methodological rather than a retune: observe the actual policy path,
+verify real phases after the run, separate discovery from confirmation, and refuse a
+claim when the host or trace contract is incomplete.
 
-| Completion order | Whole-walk cost | Shipped decision |
-| --- | ---: | --- |
-| Fast phase completes first | 46 µs/entry | **hold** the initial pool |
-| Fast and slow interleaved | 46 µs/entry | **scale up** |
+## Evidence added
 
-Both traces contain the same four fast chunks and four slow chunks.
-Both are latency-bound walks by the policy’s own 30 µs threshold.
-The policy answers one of them wrongly by its own criterion, and which one depends on
-scheduling.
+### Bounded runtime trace
 
-A second test extends the slow phase to 400 chunks: 1% of the walk decides the worker
-policy for the other 99%, and the walk-wide cost of 89 µs/entry — three times the
-trigger — never reaches the decision.
+`fdu-scan-diagnostics-v1` records available, initial, maximum, live, and peak workers;
+window entry ordinals and service signals; decisions and requested workers; ready and
+in-flight directories; handoff backlog and high-water mark; and macOS bulk, fallback,
+and portable directory counts.
+It is capped at 256 policy events.
+Missing platform data is `null` with a reason, and truncation invalidates claims that
+need the omitted history.
 
-These are deterministic facts about the algorithm.
-They need no host, no APFS, and no quiet machine, which is exactly why they belong in
-the test suite rather than in a benchmark run.
+The trace is an opt-in internal scan contract.
+The performance probe exposes it with `--diagnostics`; the installed CLI emits it only
+when `FDU_SCAN_DIAGNOSTICS=1`, on a tagged stderr transport that leaves normal human and
+machine output unchanged.
 
-## 3. What the model cannot decide
+Twelve paired scans bounded the enabled trace’s wall effect at -0.55% [-1.09%, +0.17%].
+See [exp-056](../experiments/exp-056-bound-adaptive-scan-diagnostics-overhead.md).
 
-The model says the current policy answers an ill-posed question.
-It does not say what the right answer is worth.
+### Deterministic policy model
 
-A trailing-window candidate is screened alongside the shipped policy in the same test
-module.
-It reaches one verdict for both completion orders above and detects the late slow
-phase two chunks after it begins.
-That is evidence about *order-robustness* only.
-It is not evidence that the candidate is faster, and the following are all unmeasured:
+The controller tests inject completion histories directly.
+They cover fast/slow order reversal, completion censorship from slow in-flight work,
+alternating phases, late activation, narrow frontiers, delayed handoff consumption,
+exactness, bounded workers, disconnect, and shutdown.
+The legacy fixture demonstrates the one-shot sensitivity without leaving a failing test.
 
-- wall-clock effect on any real tree;
-- the cost of re-evaluating the window per chunk release against the current single
-  comparison;
-- interaction with the macOS `getattrlistbulk` path and its fallback;
-- whether 30 µs remains the right threshold under a window that slides;
-- behavior on Intel Macs, on non-APFS volumes, and on Linux, where the warm floor is
-  about 1.5 µs per entry and the trigger may never fire at all.
+The statistical contract now distinguishes:
 
-The candidate is therefore screening output, kept in test code and absent from the
-shipped walker. Promoting it requires the pre-registered held-out matrix: screening and
-confirmation on disjoint samples, a +3% paired noninferiority bound whose interval upper
-bound stays at or below +3%, and pre-registered resource thresholds.
+- an **outcome** such as held or scaled;
+- an **order-sensitivity signature**, such as held before a later slow window; and
+- **structural harm**, which requires an impossible or explicitly harmful history.
 
-## 4. The evidence boundary
+This distinction corrected an important error found during the campaign: “held before a
+later slow window” is evidence that completion order matters, not proof that holding was
+slower.
 
-Every claim in this report is either deterministic or explicitly absent.
-No timing claim is made, because no timing measurement was taken.
+### Phase-checked corpora
 
-The work was carried out on virtualized Linux x86_64 with 4 vCPUs on ext4. That regime
-cannot produce claim-grade evidence for this epic for three independent reasons, any one
-of which is sufficient:
+The generated families now include fast-prefix/slow-suffix, slow-prefix/fast-suffix,
+alternating, many-small-directory, few-wide-directory, wide, and deep shapes.
+Every corpus has a versioned manifest and independent semantic oracle.
 
-- **Wrong filesystem.** The 30 µs threshold and the 16,384-entry window were measured on
-  APFS. ext4’s warm service time is roughly twenty times below the trigger.
-- **Wrong hardware.** The epic’s claims are scoped to Apple Silicon.
-  Heterogeneous performance and efficiency cores are part of what the reserve interacts
-  with, and an x86_64 Xeon does not model them.
-- **Wrong host class.** A shared virtualized runner cannot support a paired comparison
-  at 3% resolution. This is the same reason no timing gate runs in `make check`.
+Several nominal phase recipes did not complete in their generated order on APFS. The
+harness invalidated those phase claims rather than relabeling the traces.
+This is a useful negative result: topology is reproducible; filesystem enumeration and
+concurrent completion order are not.
 
-GitHub’s `macos-latest` runners do not close this gap.
-They are shared, virtualized, and unquiet; a timing gate there measures the runner.
+The controller screen used a frozen 100,001-entry corpus with 60,314 directories, 39,687
+files, two explicit topology regions, no mutation, no baseline drift, exact engine
+digest, and trace-verified fast-then-slow completion windows.
 
-So the ledger gains no entry from this work.
-Every entry in [the experiment ledger](report-2026-08-10-fdu-performance-experiments.md)
-carries a control, a candidate, and a paired confidence interval, and an entry without
-those would be the shape of evidence without the substance.
-The correct record for a workstream that produced no measurement is a report saying so.
+## Profile before controller work
 
-## 5. What shipped
+The shipped profile held six workers.
+Its first window was fast and five later complete windows were slow.
+All 60,314 directory reads succeeded through `getattrlistbulk`; none fell back to the
+portable backend. Kernel/syscall frames accounted for 73.71% of 31,430 stack samples,
+while fdu scan code accounted for 1.22%.
 
-Three changes, none of which alters a scan’s behavior:
+The repeated-window profile expanded to sixteen workers at the second window.
+Kernel and syscall frames rose to 80.72% of 60,911 samples, handoff high-water
+increased, and aggregate lock wait moved from negligible to hundreds of milliseconds.
+The profile therefore falsified the proposed diagnosis that the late region primarily
+lacked parallelism. It showed more open/bulk work and contention after expansion.
 
-- **Policy history in the artifacts.** A new `adaptive scan policy` counter group
-  records the chunks, entries, and worker microseconds the calibration actually
-  consumed, plus the reserve expansions performed.
-  Recording is off by default and gated behind the existing `FDU_COUNTERS` toggle; the
-  counter update happens outside the queue lock so a disabled counter cannot lengthen
-  the critical section it observes.
+These profiles are attribution evidence, not stopwatch claims.
+Their source revision, binary hash, counters, trace, stacks, and command are retained
+together.
 
-- **Failing closed on an unobservable policy.** A walk that ends before its window fills
-  now increments `walks left undecided`. Previously such a walk was indistinguishable in
-  the artifacts from one that measured the filesystem and chose to hold the pool — an
-  absence of evidence reading as a decision.
+## Controller and hardware screen
 
-- **The characterization tests** described above, which pin the current behavior and
-  will fail loudly if a future change alters it silently.
+The final discovery run used twelve interleaved pairs after three warmups and a fixed-N
+stopping rule. It had no invalid samples, semantic mismatches, trace gaps, corpus
+mutation, or baseline drift.
+The host was recorded as uncontrolled, so the run may eliminate large regressions but
+cannot confirm a winner.
 
-## 6. What remains
+| Variant | Median wall | Versus shipped | 95% interval | Result |
+| --- | ---: | ---: | ---: | --- |
+| Shipped one-shot | 1.872 s | baseline | — | Retain |
+| Fixed 6 | 1.878 s | +0.76% | [-0.06%, +1.18%] | Practically level |
+| Fixed 8 | 2.532 s | +36.29% | [+33.95%, +38.39%] | Inferior |
+| Fixed 10 | 2.918 s | +57.49% | [+49.91%, +66.62%] | Inferior |
+| Fixed 16 | 3.022 s | +61.48% | [+58.76%, +78.95%] | Inferior |
+| Repeated windows | 2.963 s | +58.49% | [+49.94%, +66.38%] | Inferior |
+| Staged and gated | 2.988 s | +60.73% | [+49.80%, +67.33%] | Inferior |
 
-The following are open and cannot be closed from a non-Apple-Silicon host.
-They are stated as prerequisites rather than as work items so the next person does not
-mistake a rerun of the model for progress on them:
+Repeated windows increased aggregate CPU 151.57%, system CPU 161.05%, peak RSS 6.40%,
+minor faults 6.57%, and involuntary context switches 616.76%. Staged expansion showed
+the same mechanism: +157.89% CPU, +167.72% system CPU, +6.01% RSS, and +657.55%
+involuntary context switches.
+Both failed the pre-registered wall and resource gates.
 
-| Prerequisite | Why it needs hardware |
-| --- | --- |
-| Profile the frozen reproduction | The diagnosis in §1 is analytical; a profile on the failing regime is what confirms or falsifies it |
-| Backend and topology signals | `getattrlistbulk`, its fallback, and APFS directory topology exist only on macOS |
-| Apple Silicon hardware bounds | Performance and efficiency core behavior under interactive-host pressure |
-| Controller screening confirmation | Screening is done; confirmation needs disjoint held-out samples on the target regime |
-| Release CLI matrix against dust | A claim-grade comparison needs a clean installed binary on a quiet Mac |
+A controlled-interactive replication with two synthetic load workers preserved the
+direction—repeated +49.49% and staged +39.85%—but 20 samples crossed the host-pressure
+envelope. It is retained as an invalidated diagnostic, not confirmation.
 
-Until those run, the shipped policy stands as-is: characterized, instrumented, and
-unchanged.
+No controller survived discovery, so selecting a winner and then running a held-out
+confirmation matrix would be both unnecessary and statistically misleading.
+Throughput gradient and reversible-parking variants were also screened out analytically:
+on the observed persistent slow suffix, any design must first incur the expansion whose
+fixed controls already establish as harmful; later parking cannot outperform never
+expanding.
 
-## Beads
+See
+[exp-057](../experiments/exp-057-reject-repeated-adaptive-worker-windows-on-apfs.md),
+[exp-058](../experiments/exp-058-reject-staged-adaptive-worker-expansion-on-apfs.md),
+and
+[exp-059](../experiments/exp-059-reject-higher-fixed-worker-counts-on-mixed-phase-apfs.md).
 
-This report closes the documentation and observability portion of epic `fdu-5rpt` —
-Close the adaptive-worker evidence gap on Apple Silicon/APFS. The conditional
-implementation bead `fdu-8evu` is resolved with **no production behavior change**, which
-its acceptance criteria admit as a valid outcome when no candidate is independently
-confirmed.
+## Installed CLI and dust qualification
+
+The release harness pins Homebrew dust 1.2.4 by version, executable hash, bottle and
+source hashes, formula revision, target, license, and exact command.
+Its adapter parses one allocated-byte total, normalizes hard-link semantics, rejects
+symlink/error-bearing or incomplete work, and checks an independent tree oracle before
+accepting timing.
+
+Both supported fdu surfaces were built from clean commit `1d70c62`:
+
+- a Cargo-installed native CLI; and
+- an isolated wheel-installed console script plus its hashed ABI3 native extension.
+
+Each attestation proves the version and hashes, a real cache-off summary scan, and clean
+bash and zsh resolution without changing user shell configuration.
+
+The 12-pair uncontrolled diagnostics were exact and stable:
+
+| Installed surface | fdu median | dust median | fdu wall change | 95% interval | fdu peak RSS change |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Native Cargo CLI | 1.525 s | 2.681 s | -43.10% | [-44.00%, -42.46%] | -90.59% |
+| Python wheel CLI | 1.559 s | 2.670 s | -41.70% | [-42.54%, -40.24%] | -78.36% |
+
+Both cells had zero invalid samples, semantic mismatches, oracle mismatches, mutations,
+or baseline drift. The native cell cleared every diagnostic resource gate.
+The Python cell’s major-fault and voluntary-context-switch intervals were inconclusive
+around zero, which is recorded rather than coerced into a pass.
+
+The quiet held-out native cell also had exact output and a -43.21% diagnostic wall
+effect, but two fdu processes crossed the 25% host-pressure ceiling.
+Its fixed-N matrix was therefore incomplete and the release qualification is
+inconclusive. No uncontrolled number in this section is a replacement for that missing
+quiet confirmation.
+
+## Correctness, errors, and platform behavior
+
+The ordinary suite checks exact results and termination under every controller model,
+explicit thread counts, consumer disconnect, and queue shutdown.
+macOS traces cross-check 60,314 bulk attempts and successes with zero fallbacks on the
+frozen subject; portable platforms report their own counts or an unavailable reason.
+
+Permission behavior was not weakened for benchmarking.
+A deterministic fixture proves that a partial scan exits 2 by default, machine output
+retains every error, human output warns, and `--allow-partial` is the only path to
+success.
+Error-bearing and live TCC-specific samples remain diagnostic and cannot support
+speed claims. The dust adapter similarly invalidates warnings, nonzero exits, timeouts,
+unparsable totals, and semantic mismatches.
+
+## What shipped and what did not
+
+Shipped:
+
+- a bounded, versioned, opt-in diagnostic contract;
+- aggregate counter and trace cross-checks;
+- deterministic controller and liveness tests;
+- phase-stress corpus recipes and post-run phase verification;
+- fixed-N, paired, fail-closed policy and resource decisions;
+- instantaneous macOS CPU-pressure boundaries rather than lagging load-average gates;
+- stale-binary rejection, build/host provenance, installed-command attestation, and the
+  pinned dust adapter.
+
+Not shipped:
+
+- repeated-window, staged, gradient, or parking controllers;
+- new worker counts, thresholds, platform branches, dependencies, or unsafe code;
+- any change to automatic scan behavior or explicit `--threads` semantics;
+- a positive quiet-host release-performance claim from this session.
+
+## Residual limits and follow-up
+
+This result does not establish performance on Intel Macs, non-APFS filesystems, remote
+or removable storage, Windows, Linux, or controlled-cold macOS state.
+The ordinary cross-platform suite protects exactness; it does not turn one M1 Pro
+measurement into a portable speed claim.
+
+The P2 shared-opener experiment remains separate because opener threads and scanner
+workers must share one total concurrency budget.
+Cold-cache qualification remains deferred until the dedicated APFS-volume protocol
+exists. Neither changes this epic’s no-controller-change decision.
 
 ## References
 
-| Document | What it covers |
+| Document | Role |
 | --- | --- |
-| [Design principles](../architecture/fdu-design-principles.md) | Why a measurement is evidence only about its own regime |
-| [Performance loop](../guides/performance-loop.md) | The protocol a controller change would have to pass |
-| [Platform tuning](../guides/platform-tuning.md) | Which constant rests on which measurement |
-| [Experiment ledger](report-2026-08-10-fdu-performance-experiments.md) | Every timing verdict, including the rejections |
-| [Instrumentation playbook](../guides/performance-instrumentation-playbook.md) | How to instrument without distorting the measurement |
+| [Design principles](../architecture/fdu-design-principles.md) | Product invariants and evidence scope |
+| [Performance loop](../guides/performance-loop.md) | Measurement and decision protocol |
+| [Instrumentation playbook](../guides/performance-instrumentation-playbook.md) | Bounded trace design |
+| [Platform tuning](../guides/platform-tuning.md) | Constant-to-evidence mapping |
+| [Experiment ledger](report-2026-08-10-fdu-performance-experiments.md) | Generated experiment history |
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.
