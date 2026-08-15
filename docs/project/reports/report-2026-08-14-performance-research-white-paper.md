@@ -1,8 +1,8 @@
-# Evidence-Driven Performance Research with Soft Schemas
+# Deleting Work: Performance Research with Soft Schemas
 
 **Date:** 2026-08-14
 
-**Author:** fdu project, with Codex synthesis assistance
+**Author:** fdu project
 
 **Status:** Current
 
@@ -11,68 +11,52 @@
 
 ## Abstract
 
-This paper explains how fdu turned performance optimization from a sequence of code
-guesses into a reproducible research loop.
-The method combines low-overhead instrumentation, caller-tree profiling, falsifiable
-hypotheses, paired and interleaved measurements, exact correctness oracles, a strict
-acceptance rule, and one soft-schema artifact for every experiment.
+Deleting unnecessary work produced most of fdu’s durable speedups.
+The successful changes reused identity already present in snapshots and traversals,
+collapsed metadata calls, rejected unchanged entries before serialized mutation, and
+avoided retained state that a one-shot query could never consume.
+Plausible alternatives such as more threads, larger buffers, relative directory opens,
+inode ordering, inline content analysis, and `io_uring` batching were neutral or slower.
 
-The record contains 56 experiments: 27 accepted, 24 rejected, two baselines, two
-superseded, and one still in progress.
-Those counts do not mean 27 independent speedups.
-Accepted records also include behavior choices, instrumentation validations, cumulative
-controls, and cross-platform checks.
-The distinction matters because cumulative percentages cannot be obtained by adding
-individual experiments, and a statistically neutral result can still validate that a
-correctness change is safe.
-
-The campaign produced substantial real gains.
-On the current Linux comparison, cold indexed scanning is 9.1% faster, warm revalidation
-is 25.3% faster, and snapshot loading is 31.4% faster.
-On macOS, the Linux campaign transfers as a 15.7% warm-revalidation improvement while
+The current cumulative Linux comparison measures 9.1% lower latency for cold indexed
+scanning, 25.3% for warm revalidation, and 31.4% for snapshot loading.
+On macOS, the cumulative transfer test measures 15.7% lower warm-revalidation latency;
 cold indexed scanning remains statistically neutral.
-A transparent equal-weight decision index over the comparable Linux/macOS cold and warm
-cells reports 12.7% lower latency, equivalent to 14.6% more throughput if work were
-perfectly serial. That index is derived, not benchmarked, and the interactive companion
-exposes its weights rather than presenting it as a universal score.
+An equal-weight index over the comparable Linux and macOS cold and warm cells gives
+12.7% lower latency, equivalent to 14.6% more throughput for perfectly serial work.
+The index combines separate measurements for scenario analysis; it is not a benchmark
+result.
 
-The deeper result is methodological.
-Several intuitive changes failed, including more threads, larger buffers, relative
-directory opens, smaller transient summaries, inline content analysis, inode ordering,
-and `io_uring` batching.
-Recording those failures with the same fidelity as the wins made each later iteration
-cheaper and prevented plausible dead ends from becoming folklore.
+The evidence comes from 56 experiment artifacts: 27 accepted, 24 rejected, two
+baselines, two superseded, and one still in progress.
+An accepted artifact is not necessarily an independent speedup: the set includes
+behavior choices, instrumentation checks, cumulative controls, and cross-platform
+validations. Each artifact pairs machine-readable measurements with rationale,
+interpretation, and provenance.
 
-## 1. How to read this paper
+Low-overhead counters, caller-tree profiles, falsifiable hypotheses, interleaved trial
+pairs, exact correctness oracles, and a predeclared acceptance rule turned each attempt
+into durable evidence.
+Recording failed experiments with the same care as wins narrowed the next search and
+kept attractive dead ends from becoming folklore.
 
-No prior repository context is assumed.
-The paper has three jobs:
+The [interactive experiment map](performance-research/index.html) plots the same
+evidence by platform and mechanism.
+Hover and keyboard details expose each setup, and the aggregate controls expose every
+weight. Negative percentages mean lower latency.
+A *clear* result has its entire 95% paired bootstrap interval on one side of zero; an
+ordinary production speedup must also clear the 3% acceptance threshold, preserve
+correctness, and justify its complexity.
 
-1. explain the performance model and research protocol;
-2. map the complete experiment sequence, including failed and neutral work; and
-3. provide a report and artifact structure that another performance campaign can reuse.
+## 1. One Scan, Three Different Workloads
 
-The [interactive companion](performance-research/index.html) is the graphical view of
-the same evidence. It includes hover and keyboard details, a platform-aware experiment
-plot, the adjustable aggregate, mechanism roll-ups, and a generic table generated from
-the experiment directory’s soft-schema contract.
-The Markdown is the durable narrative; the HTML is a generated projection.
+fdu walks a directory tree, collects size and metadata, and renders a tree, file list,
+extension tally, or summary.
+The words *directory scan* hide three workloads with different costs and useful outputs.
 
-In every table, a negative percentage means less latency and therefore better
-performance. A result is called *clear* when its whole 95% paired bootstrap interval is
-on one side of zero.
-The ordinary production acceptance bar is stricter: at least 3% faster, the whole
-interval below zero, no invalid correctness samples, and complexity worth carrying.
+### Retained State Determines the Job
 
-## 2. System and workload model
-
-fdu walks a directory tree, collects size and metadata, and renders views such as a
-tree, file list, extension tally, or summary.
-One label such as “directory scan” hides several materially different workloads.
-
-### 2.1 Three retained-state tiers
-
-| Tier | What it retains | Dominant costs | Typical question |
+| Tier | What it retains | Main costs | Typical question |
 | --- | --- | --- | --- |
 | Aggregate | running totals, not individual paths | directory enumeration and metadata | How large is this tree? |
 | Index | one durable entry per filesystem object | scan plus identity, insertion, roll-up, and snapshot work | Which files and directories account for the space? |
@@ -84,7 +68,7 @@ index that a one-shot request cannot consume.
 That is a decisive aggregate-tier win and says nothing about queries that need the
 index.
 
-### 2.2 Cold and warm are different programs
+### Cold and Warm Paths Pay for Different Work
 
 A *cold* run enumerates the filesystem and constructs current state.
 A *warm* run loads a previous snapshot and revalidates it against the filesystem.
@@ -96,17 +80,15 @@ The paths share types and correctness rules but not cost shape:
   insertion; and
 - warm revalidation adds filesystem checks and reconciliation against retained state.
 
-The distinction is not cosmetic.
-The Linux campaign improved cold indexed scanning 9.1%, warm revalidation 25.3%, and
-snapshot load 31.4%. A single “fdu got faster” number would erase the information needed
-to make the next decision.
+The cumulative results differ enough across these jobs that one “fdu got faster” number
+would obscure both mechanism and product value.
 
-### 2.3 Parallel observation, serialized mutation
+### Parallel Observation Ends at One Mutation Authority
 
 Workers enumerate directories and produce observations concurrently.
 A single mutation authority applies those observations under the delta contract so
 snapshots, queries, and change feeds cannot disagree.
-This boundary explains several results:
+The boundary explains several results:
 
 - bounded scan concurrency pays when workers overlap metadata latency;
 - adding workers stops paying once the bulk macOS path removes much of that latency;
@@ -118,9 +100,9 @@ Correctness is part of performance, not a later gate.
 Every candidate must preserve exact output and the stable engine digest.
 A faster wrong answer is an invalid sample, not an optimization.
 
-## 3. Current measured outcome
+## 2. Measured Results by Platform
 
-### 3.1 Linux
+### Linux: All Three Measured Jobs Improved
 
 The current cumulative Linux comparison uses a 450,463-entry tree and 18 interleaved
 trial pairs per variant.
@@ -128,14 +110,14 @@ The control is the campaign branch point and the candidate is its tip.
 
 | Job | Control | Candidate | Change | 95% interval | Interpretation |
 | --- | ---: | ---: | ---: | ---: | --- |
-| Warm snapshot load | 1897.2 ms | 1303.8 ms | **−31.4%** | [−32.0%, −30.8%] | Large, clear gain |
-| Warm revalidation | 2317.6 ms | 1726.6 ms | **−25.3%** | [−26.4%, −23.8%] | Large, clear gain |
+| Warm snapshot load | 1897.2 ms | 1303.8 ms | **−31.4%** | [−32.0%, −30.8%] | Clear gain |
+| Warm revalidation | 2317.6 ms | 1726.6 ms | **−25.3%** | [−26.4%, −23.8%] | Clear gain |
 | Cold indexed scan | 2107.8 ms | 1909.2 ms | **−9.1%** | [−13.2%, −7.6%] | Clear gain |
 | Cold producer probe | 2381.3 ms | 2200.2 ms | −7.3% | [−8.9%, −6.1%] | Wall moved, component did not |
 
-The producer result is deliberately not claimed as a producer optimization.
-Its isolated component is unchanged at 345.3 ms versus 346.8 ms, and the campaign did
-not target that component.
+The producer row does not establish a producer optimization.
+Its isolated component measured 345.3 ms versus 346.8 ms, and no campaign change
+targeted that component.
 The wall movement is therefore most plausibly environmental or outside the measured
 component.
 
@@ -144,27 +126,26 @@ Component measurements localize the real work:
 - snapshot loading fell from 939.7 ms to 390.0 ms, a 58.5% component reduction; and
 - index building fell from 979.3 ms to 797.3 ms, an 18.6% component reduction.
 
-The campaign also closed a product-level inversion.
-Warm opening is now 22.6% faster than cold scanning on Linux; at the start, warm was 69%
-slower.
+The cumulative changes reversed the startup tradeoff: warm opening is now 22.6% faster
+than cold scanning on Linux; at the start, warm was 69% slower.
 
-### 3.2 macOS transfer
+### macOS: Warm Gains Transferred
 
-Exp-054 measured the Linux campaign cumulatively on macOS rather than assuming that a
-portable source change produces a portable effect.
+Exp-054 measured the Linux campaign cumulatively on macOS to test whether portable
+source changes produced portable effects.
 
 | Job | Control | Candidate | Change | 95% interval | Interpretation |
 | --- | ---: | ---: | ---: | ---: | --- |
 | Cold indexed scan | 298.127 ms | 306.243 ms | +1.393% | [−0.186%, +3.895%] | Neutral; interval crosses zero |
 | Warm revalidation | 392.991 ms | 335.747 ms | **−15.682%** | [−16.286%, −13.993%] | Clear gain |
 
-The correct conclusion is asymmetric: retain the campaign because the warm gain
-transfers, but do not generalize Linux’s cold-scan improvement to macOS.
+The warm result supports retaining the campaign, but Linux’s cold-scan gain remains
+unproven on macOS.
 
-### 3.3 A weighted aggregate, with the caveat in its name
+### Aggregate Scenarios Without False Precision
 
-The companion computes a *derived decision index* over four comparable cells: Linux
-cold, Linux warm, macOS cold, and macOS warm.
+A *derived decision index* combines four comparable cells: Linux cold, Linux warm, macOS
+cold, and macOS warm.
 It uses the weighted geometric mean of latency ratios:
 
 \[ R = 1 - \exp\left(\sum_i w_i \log(1 + c_i / 100)\right) \]
@@ -173,20 +154,20 @@ where `c_i` is a measured percentage change and the non-negative weights sum to 
 With equal platform weight and equal cold/warm weight, `R` is **12.7% lower latency**.
 The reciprocal latency ratio corresponds to **14.6% throughput-equivalent speedup**.
 
-This is useful for scenario comparison and unsuitable as a benchmark claim:
+The index supports scenario comparison but not a benchmark claim:
 
 - its cells were measured on different hosts and trees;
 - it combines unlike work according to chosen weights;
 - it is not the elapsed time of a real mixed workload; and
 - a different product mix should use different weights.
 
-The interactive controls make those assumptions inspectable.
-The report never averages raw milliseconds across machines.
+The interactive controls expose those assumptions.
+Raw milliseconds are never averaged across machines.
 
-## 4. The research loop
+## 3. The Experimental Loop
 
-The campaign uses a closed loop in which each pass improves both the product and the
-instrument used to study it.
+Each candidate passes through the same loop, producing either a shipped change or a
+recorded constraint on future work.
 
 1. **Instrument the boundaries.** Count work by layer and sample process truth without
    leaving the instrument permanently active.
@@ -204,7 +185,7 @@ instrument used to study it.
 9. **Re-screen the queue.** A landed change may remove the headroom behind the next
    hypothesis.
 
-### 4.1 Why paired and interleaved trials
+### Paired, Interleaved Trials Control Host Drift
 
 Running all control samples and then all candidate samples confounds the candidate with
 temperature, page cache, background work, and host load.
@@ -212,12 +193,11 @@ An alternating schedule pairs nearby samples so slow periods affect both variant
 The harness uses at least 12 pairs for claim-grade work and more when variance or the
 decision boundary requires it.
 
-Surprises are run in both orderings.
+Surprising results require both orderings.
 If A:B and B:A disagree on the sign, the result is position bias or noise rather than a
-product claim. Timing is intentionally absent from shared-runner CI because that would
-benchmark the runner.
+product claim. Shared-runner CI omits timing because it would benchmark the runner.
 
-### 4.2 The acceptance rule separates evidence from desire
+### The Acceptance Rule Separates Evidence from Desire
 
 For a normal speed change, all of the following must be true:
 
@@ -240,29 +220,29 @@ measurement overhead.
 Exp-055 accepted correctness and safety fixes because neither macOS interval detected a
 wall regression.
 
-### 4.3 Three instrumentation tiers
+### Three Instrumentation Tiers Answer Different Questions
 
 | Tier | Source | Approximate cost | What it answers |
 | --- | --- | --- | --- |
 | Application | counters at semantic call sites | about 1 ns per event | Which layer requested the work? |
-| Process | kernel process counters sampled by phase | one small system read | What did the process actually do? |
+| Process | kernel process counters sampled by phase | one small system read | What did the process do? |
 | External | `strace -c`, `perf`, callgrind, or platform profiler | roughly 2×–50× | Which system calls and caller paths dominate? |
 
-Application counters are compiled in, off by default, and enabled with `FDU_COUNTERS=1`.
-Exp-053 measured the idle and recording paths separately: idle −1.26% [−2.96%, +1.40%],
-recording +0.64% [−0.68%, +2.13%]. Both span zero, so the claim is bounded overhead
-rather than zero overhead.
+Application counters ship in the binary but stay off unless `FDU_COUNTERS=1` enables
+them. Exp-053 measured the idle and recording paths separately: idle −1.26%
+[−2.96%, +1.40%], recording +0.64% [−0.68%, +2.13%]. Both span zero, so the claim is
+bounded overhead rather than zero overhead.
 
 No tier is sufficient alone.
 Application counters saw one directory-read operation per directory while `strace`
 showed two `getdents64` calls: one carrying entries and one returning zero at EOF.
 Conversely, the kernel can count calls but cannot say which engine layer requested them.
 
-## 5. Soft schemas as the research memory
+## 4. Soft Schemas Preserve the Research
 
-A performance note must serve two incompatible readers: humans need explanation and
-tools need reliable fields.
-A soft schema keeps both without turning the whole document into a database record.
+An experiment artifact needs narrative context and stable machine-readable fields.
+A soft schema supplies both without forcing rationale, anomalies, and judgment into
+rigid database columns.
 
 Each experiment is Markdown with a small authoritative YAML frontmatter envelope:
 
@@ -291,7 +271,7 @@ Any value consumed by code lives in frontmatter and is validated against the com
 schema and semantic model.
 Tools never scrape a prose sentence or Markdown table for a number.
 
-### 5.1 What belongs in the contract
+### What Belongs in the Contract
 
 Promote a value into the envelope only when a later step consumes it.
 The current contract captures:
@@ -308,9 +288,9 @@ Exploration, judgment, profiler interpretation, and future ideas stay prose unti
 needs them. This avoids a hard schema for thought while preserving a hard boundary for
 evidence.
 
-### 5.2 Why the directory is the unit of evidence
+### Why One Artifact per Experiment Matters
 
-One artifact per experiment gives the repository several useful properties:
+One artifact per experiment makes the research durable:
 
 - a failed idea is searchable by mechanism and hypothesis;
 - each decision travels with its exact regime and correctness evidence;
@@ -318,14 +298,13 @@ One artifact per experiment gives the repository several useful properties:
 - generated ledgers and graphics can be rebuilt from source; and
 - Git history shows when a conclusion changed.
 
-The generated ledger and the interactive companion are views, not new sources of truth.
+The generated ledger and interactive companion are projections.
 The experiment directory remains authoritative.
 
-### 5.3 A generalized soft-schema table projection
+### Projecting Any Soft-Schema Directory into a Table
 
-The report now uses a schema-directed directory projector rather than an
-experiment-specific HTML table parser.
-Its reusable contract is:
+A schema-directed directory projector turns any one-contract artifact directory into
+stable table rows:
 
 1. discover Markdown artifacts matching a caller-supplied pattern;
 2. require one shared soft-schema contract, envelope, and compiled schema;
@@ -342,28 +321,28 @@ unreadable columns and confuse absence with summary.
 The schema describes what a field means; a view profile decides which fields answer the
 current reader’s question.
 
-This projection is a clean future seam for a Metabrowser plugin.
-Such a plugin could discover any one-contract artifact directory and mount the same
-generic table and record inspector through Metabrowser’s public plugin SDK. That future
-integration is not required by, and is not coupled to, this static report.
+The same projector could support a Metabrowser plugin that discovers any one-contract
+artifact directory and mounts the generic table and record inspector through
+Metabrowser’s public plugin SDK. Because the projector consumes only the contract, the
+plugin would need neither experiment-specific parsing nor changes to the static report.
 
-## 6. Complete experiment map
+## 5. All 56 Experiments
 
-The following tables include every recorded experiment.
-The primary percentage is the artifact’s decision metric; it is not always wall time and
-is not always the reason an experiment was accepted.
+The ledger divides 56 experiments into seven chronological phases.
+The primary percentage is the artifact’s decision metric; it may measure a component or
+resource rather than wall time, and it may not be the reason an experiment was accepted.
 The [generated ledger](report-2026-08-10-fdu-performance-experiments.md) contains every
 metric and verdict sentence, while the
 [interactive explorer](performance-research/index.html#experiments) exposes each setup
 and structured payload.
 
-### Phase 0: establish the baseline and oracle
+### Phase 0: Establish the Baseline and Oracle
 
 | ID | Decision | Primary result | What it established |
 | --- | --- | ---: | --- |
 | exp-000 | Baseline | 0.0% | Real 60k-entry reference, paired schedule, stable digest, and output oracle |
 
-### Phase 1: parallel scan and index constants
+### Phase 1: Parallel Scan and Index Constants
 
 | ID | Decision | Primary result | Resolution |
 | --- | --- | ---: | --- |
@@ -379,7 +358,7 @@ and structured payload.
 | exp-010 | Rejected | −0.03% wall | Deferred joins had no remaining headroom after direct entry-ID reads |
 | exp-011 | Rejected | −2.5% wall | Fewer ancestor merges amortized work already made cheap by interning |
 
-### Phase 2: traversal order and adaptive concurrency
+### Phase 2: Traversal Order and Adaptive Concurrency
 
 | ID | Decision | Primary result | Resolution |
 | --- | --- | ---: | --- |
@@ -394,7 +373,7 @@ and structured payload.
 | exp-020 | Rejected | −1.7% wall | A safer capacity trigger was under the bar and unclear |
 | exp-021 | Accepted | −5.3% wall | Initial filesystem service time selected concurrency without the boundary cost |
 
-### Phase 3: macOS bulk metadata and warm reconciliation
+### Phase 3: macOS Bulk Metadata and Warm Reconciliation
 
 | ID | Decision | Primary result | Resolution |
 | --- | --- | ---: | --- |
@@ -410,7 +389,7 @@ and structured payload.
 | exp-031 | Rejected | +1.6% wall | Larger waves did not amortize startup and worsened the component point estimate |
 | exp-032 | Accepted control | −54.5% wall | Final early-campaign cumulative anchor with exact oracle parity |
 
-### Phase 4: integration and million-entry validation
+### Phase 4: Integration and Million-Entry Validation
 
 | ID | Decision | Primary result | Resolution |
 | --- | --- | ---: | --- |
@@ -422,7 +401,7 @@ and structured payload.
 | exp-038 | Rejected | −0.7% wall, unclear | Parent-relative `openat` did not justify descriptor-lifetime machinery |
 | exp-039 | Rejected | +2.2% wall, unclear | The larger macOS buffer again failed on the live million-entry tree |
 
-### Phase 5: retained-state tiers and content work
+### Phase 5: Retained-State Tiers and Content Work
 
 | ID | Decision | Primary result | Resolution |
 | --- | --- | ---: | --- |
@@ -438,20 +417,20 @@ and structured payload.
 | exp-049 | Rejected | −3.5% wall, unclear | Markdown reserve had an interval from −14.5% to +7.4% and was reverted |
 | exp-050 | Accepted | −12.0% wall | Complete UTF-8 chunks decoded in place; CPU and RSS also fell |
 
-### Phase 6: Linux structure, instrumentation, and platform transfer
+### Phase 6: Linux Structure, Instrumentation, and Platform Transfer
 
 | ID | Decision | Primary result | Resolution |
 | --- | --- | ---: | --- |
 | exp-051 | Accepted | −7.35% cold wall | Previous-parent memo removed 89% of `normalize` instructions |
 | exp-052 | Accepted instrument | +0.03% cold wall, neutral | Per-layer counters were below the measurement’s visible cost |
 | exp-053 | Accepted instrument | −1.26% idle wall, neutral | Runtime toggle separated compiled, idle, and recording costs |
-| exp-054 | Accepted validation | −15.68% warm wall | Linux warm gains transferred to macOS; cold gain did not |
+| exp-054 | Accepted validation | −15.68% warm wall | Linux warm gains transferred to macOS; the cold effect remained neutral |
 | exp-055 | Accepted validation | −0.95% cold wall, neutral | Correctness and safety review fixes showed no detected macOS regression |
 
-## 7. What worked, by mechanism
+## 6. Wins by Mechanism
 
-Individual percentages below come from different controls and regimes and must not be
-summed. Cumulative experiments exist precisely because composition must be measured.
+Individual percentages use different controls and regimes, so they cannot be summed.
+Cumulative experiments measure composition directly.
 
 | Mechanism | Representative evidence | Why it worked | Cost or boundary |
 | --- | --- | --- | --- |
@@ -467,8 +446,8 @@ summed. Cumulative experiments exist precisely because composition must be measu
 | Remove a decode copy | exp-050: −12.0% Markdown wall | Complete UTF-8 chunks decoded in the input buffer | Specific to content work; other content jobs stayed neutral |
 | Reuse the previous parent | exp-051: −7.35% Linux cold wall, −16.6% component | Directory children arrive consecutively, so parent identity has strong locality | Warm revalidation was unchanged |
 
-Three important supporting studies currently live outside the 56-row ledger and are
-shown separately in the companion:
+Three supporting studies fall outside the 56-row ledger and appear separately in the
+interactive companion:
 
 - skipping a byte-identical snapshot rewrite improved Linux warm-tree wall 20.6% and
   reduced peak RSS from 411.2 MiB to 194.7 MiB;
@@ -479,14 +458,14 @@ shown separately in the companion:
 
 Future campaigns should either record such studies in the main experiment contract or
 give supporting studies a sibling contract with the same regime and verdict fields.
-Their current prose evidence is useful but harder to aggregate automatically.
+Their prose evidence remains useful but is harder to aggregate automatically.
 
-## 8. What did not work, and why
+## 7. Rejected Ideas and Their Limits
 
-Failures cluster into mechanism families.
-That is more reusable than a flat list of red percentages.
+The 24 rejected artifacts cluster into mechanism families that constrain future work
+more usefully than a flat list of red percentages.
 
-### 8.1 More concurrency after latency was removed
+### More Concurrency Failed After Latency Fell
 
 Exp-015 showed that extra scan workers helped a large pressure tree before macOS bulk
 metadata. After exp-022 removed much of the metadata latency, exp-025’s sixteen workers
@@ -494,11 +473,10 @@ regressed wall 19.2%, roughly doubled CPU, and added about one-third peak RSS. A
 million entries, exp-036 found only 1.3% wall improvement from eight workers for 33.5%
 more CPU; 12 and 16 workers became slower.
 
-The lesson is not “parallelism fails.”
-The useful concurrency level belongs to the current service-time regime and must be
-recalibrated after a structural I/O win.
+Useful concurrency depends on the current service-time regime.
+A structural I/O win can invalidate the worker count that preceded it.
 
-### 8.2 Moving descriptors and paths without deleting system calls
+### Rearranging Descriptors Did Not Delete System Calls
 
 Root-relative opens (exp-024) and a parent-relative `openat` frontier (exp-038) changed
 descriptor arrangement but not the number of expensive directory/metadata operations.
@@ -506,70 +484,68 @@ Both were neutral and added descriptor-lifetime or unsafe-boundary complexity.
 Linux raw `readdir`, direct `statx`, and inode-ordering screens reached the same
 conclusion: the standard library was already close to the useful kernel shape.
 
-`io_uring` made the lesson vivid.
-Batching `statx` through it regressed warm wall 327% and a virtualized cold screen 77.6%
-because queue setup, submission, completion, and `io-wq` overhead rearranged the same
-cached work rather than removing it.
+Batching `statx` through `io_uring` regressed warm wall 327% and a virtualized cold
+screen 77.6% because queue setup, submission, completion, and `io-wq` overhead
+rearranged the same cached work rather than removing it.
 
-### 8.3 Micro-allocation changes below the filesystem floor
+### Local Allocation Tweaks Stayed Below the Filesystem Floor
 
 Skipping journaling (exp-003), moving rather than cloning producer paths (exp-016),
 reusing bulk staging (exp-028), and increasing the bulk buffer (exp-029 and exp-039)
 were all plausible local improvements.
 None produced a claim-grade wall gain, and several worsened memory or faults.
 
-This does not prove allocation is globally irrelevant.
-The known-parent and byte-identical-rewrite studies won by deleting large allocation
-families, while allocator substitution exposed a cross-thread-free pattern.
-It shows that small local allocation counts cannot be assumed to dominate an I/O path.
+Allocation still mattered when a change deleted an entire allocation family: the
+known-parent and byte-identical-rewrite studies both won, while allocator substitution
+exposed a cross-thread-free pattern.
+Small local allocation counts, however, did not predict wall time on the I/O path.
 
-### 8.4 Reducing CPU or memory without moving wall time
+### Lower CPU and Memory Did Not Guarantee Lower Latency
 
 Exp-041 cut user CPU 36% and RSS 35% but improved wall only 1.4%. Exp-042 likewise
 reduced resource signals without improving elapsed time.
 Exp-044’s specialized selected-size path gained only 1.1%, did not beat the reference
 tool, and required a second unsafe parser plus a public view.
 
-These are valuable negative results.
-They reveal a remaining filesystem/directory-open floor and enforce the product rule
-that lower internal work does not automatically justify a second implementation.
+Together, these results expose a remaining filesystem and directory-open floor.
+Lower internal work did not justify a second implementation when user-visible latency
+stayed flat.
 
-### 8.5 Content changes at the wrong boundary
+### Content Optimizations Missed Until the Byte Boundary Moved
 
 Inline analysis in exp-047 regressed wall 66.3% because the existing worker pool was
 performing useful parallel reads.
 Collector gating and source reserve in exp-048 and exp-049 were neutral or too
 uncertain.
-The win came at a more fundamental byte boundary in exp-050: remove a complete
-UTF-8 decode copy while preserving the parallel I/O architecture.
+Exp-050 moved the byte boundary by removing a complete UTF-8 decode copy while
+preserving the parallel I/O architecture.
 
-### 8.6 A benchmark win can still lose the product decision
+### An Isolated Benchmark Win Can Still Lose the Product Decision
 
 The Linux mimalloc screen improved aggregate wall 23.0%, but index and snapshot-load
 intervals crossed zero, aggregate peak RSS rose 139%, the dependency builds C, and macOS
 was unmeasured. It was not adopted.
 
-The result was still useful.
-Because changing allocator policy helped while reducing allocation counts had not, it
-pointed toward cross-thread allocation/free behavior as a mechanism to investigate
-without a global allocator dependency.
+Changing allocator policy helped where local allocation-count reductions had not.
+That contrast points toward cross-thread allocation and free behavior as a mechanism to
+investigate without adopting a global allocator dependency.
 
-## 9. Why the research method worked
+## 8. Why the Loop Converged
 
-### Profiles changed the question
+### Caller Trees Exposed Redundant Work
 
-The strongest wins did not make a hot helper slightly faster.
-Caller trees revealed why the helper was hot: a parent already in a local variable was
-being reconstructed from a path, or the same bytes were traversed in two passes.
-Removing the caller’s demand produced the large effect.
+The strongest wins removed callers’ demand for hot helpers.
+Caller trees showed a parent already in a local variable being reconstructed from a
+path, or the same bytes being traversed twice.
+Removing that demand produced the large effects.
 
-Flat profiles repeatedly misled.
+Flat profiles repeatedly overvalued hot callees.
 A content-cache map looked large until the caller tree showed it was only 0.9% of
 instructions.
 The eventual hash-map change still cleared 3%, but by an order of magnitude
 less than a flat view suggested.
 
-### Cumulative anchors prevented arithmetic fiction
+### Cumulative Anchors Prevented Arithmetic Fiction
 
 Exp-006, exp-023, exp-027, exp-032, and the integration/scale validations compared a
 current candidate with an earlier real binary.
@@ -577,38 +553,37 @@ They answered whether individually accepted changes still composed after code an
 changes. Without those controls, adding headline percentages would overstate the result
 and hide interactions.
 
-### Separate jobs localized the mechanism
+### Separate Jobs Localized Each Mechanism
 
 The harness names whole-wall and component jobs separately.
 That prevented the Linux producer wall movement from being misreported as producer work,
 and it let exp-009 pass on its preregistered loader-component signal despite a wall
 interval diluted by harness and oracle work.
 
-### Exact oracles made aggressive changes routine
+### Exact Oracles Expanded the Safe Search Space
 
 Every trial records stable tree identity and compares exact results.
 This made unsafe platform parsing, traversal-order changes, parallel reconciliation, and
 specialized summary paths experimentally tractable.
-The oracle is not just a safety net; it expands the hypothesis space.
 
-### Negative evidence accumulated value
+### Rejections Narrowed the Next Search
 
-Twenty-four rejected artifacts keep future work from rediscovering the same attractive
-dead ends. Exp-011 is particularly instructive: fewer ancestor merges should help in
+The 24 rejected artifacts preserve the conditions under which each idea failed.
+Exp-011 records a dependency between experiments: fewer ancestor merges should help in
 isolation, but extension interning had already made each merge cheap.
 The rejection records that dependency, so the hypothesis can be reconsidered only if the
 cost shape changes again.
 
-### The instrument was itself measured
+### The Instrument Was Measured Too
 
 Counters became a runtime capability only after idle and recording costs were separated
 and bounded. External syscall counts were used to audit application counters.
 Tests assert counters against system totals across serial, parallel, and platform bulk
 paths, because a plausible zero is more dangerous than a missing field.
 
-## 10. Where the method and evidence are still weak
+## 9. Evidence Gaps and Open Questions
 
-### Platform coverage is asymmetric
+### Platform Coverage Is Asymmetric
 
 Fifty-three experiment artifacts are macOS and three are Linux.
 macOS tuning spans several real APFS regimes; all current Linux measurements are
@@ -620,47 +595,46 @@ Dropping a guest page cache does not drop the hypervisor or host cache, so
 inode-ordering and physical-I/O claims remain unresolved until bare-metal Linux
 measurement.
 
-### Not all strong evidence uses the same contract
+### Supporting Studies Use a Different Contract
 
 The Linux byte-identical-rewrite, known-parent loader, content-cache, allocator, and
 `io_uring` studies are well documented but are supporting studies rather than rows in
 the 56-artifact experiment ledger.
-The companion labels them separately and does not inflate the experiment count.
-A future contract should normalize these studies without pretending their regimes are
-equivalent.
+They remain labeled as supporting studies and are excluded from the 56-experiment count.
+A sibling contract could normalize them while preserving their different regimes and
+evidence grades.
 
-### The harness can enter the profile
+### The Harness Can Enter the Profile
 
 A probe’s own verification digest accounted for 38.8% of one profile.
 That does not invalidate paired end-to-end timing, but it can hide the engine function a
 profile is meant to explain.
 Profiles must identify and subtract or separate oracle work before attributing shares.
 
-### A neutral interval is not proof of zero
+### A Neutral Interval Is Not Proof of Zero
 
 The instrumentation experiments bound overhead below what the current sample can see.
 Exp-054’s macOS cold interval permits a small improvement or regression.
-The report uses *neutral* or *not detected* instead of *free*, *unchanged*, or *zero*.
+The terms *neutral* and *not detected* preserve that uncertainty; *free*, *unchanged*,
+and *zero* would overstate the evidence.
 
-### The aggregate is a decision aid, not a result
+### The Aggregate Is a Decision Aid, Not a Result
 
 The 12.7% composite is derived from heterogeneous cells.
-It is useful only when its weights and source measurements remain visible.
+Its usefulness depends on visible weights and source measurements.
 No graph should connect it to experiment points as though all were observations on one
 machine.
 
-### One experiment remains open
+### One Experiment Remains Open
 
 Exp-046’s two-opener macOS pool cleared a short screen at −4.0%, but context switches
 doubled and later runs encountered extreme host outliers.
 It needs a quiet 12-pair run and an independent topology before a verdict.
-The report preserves that uncertainty rather than coloring the point green.
+Until then, its point remains gray.
 
-## 11. Reusable campaign and report template
+## 10. A Reusable Performance-Research Template
 
-The following structure is intended to be copied for a future performance effort.
-
-### 11.1 Campaign setup
+### Campaign Setup
 
 1. Define the user-visible operation and its state tiers.
 2. Enumerate platform, host, filesystem, cache, scale, and virtualization regimes.
@@ -669,7 +643,7 @@ The following structure is intended to be copied for a future performance effort
 5. Measure the harness and instrument before optimizing product code.
 6. Publish the acceptance rule before the first candidate.
 
-### 11.2 Hypothesis card
+### Hypothesis Card
 
 Every hypothesis should answer:
 
@@ -683,7 +657,7 @@ Every hypothesis should answer:
 | Secondary risks | CPU, memory, faults, dependencies, unsafe code, and semantics |
 | Component probe | Smaller job that should move if the mechanism is real |
 
-### 11.3 Experiment artifact
+### Experiment Artifact
 
 Use one soft-schema Markdown artifact per attempt.
 The authoritative envelope should contain, at minimum:
@@ -700,7 +674,7 @@ The authoritative envelope should contain, at minimum:
 Use the Markdown body for rationale, profiler interpretation, anomalies, and follow-up
 questions. Never ask a generated report to recover structured values from prose.
 
-### 11.4 Decision sequence
+### Decision Sequence
 
 1. Run the correctness matrix before timing.
 2. Run paired, interleaved claim-grade trials.
@@ -712,9 +686,9 @@ questions. Never ask a generated report to recover structured values from prose.
 8. Run a cumulative anchor after a coherent group of changes.
 9. Re-profile the new baseline before selecting the next hypothesis.
 
-### 11.5 White-paper sections
+### White-Paper Structure
 
-A zero-context campaign report should contain these sections in this order:
+A reusable campaign report should contain these sections in this order:
 
 1. abstract and current measured outcome;
 2. system and workload model;
@@ -729,7 +703,7 @@ A zero-context campaign report should contain these sections in this order:
 11. next hypotheses; and
 12. source documents and reproducibility commands.
 
-The graphical companion should be generated from the same artifacts and include:
+Generate the graphical companion from the same artifacts, with:
 
 - a clearly labeled current-outcome panel;
 - one platform lane per measured regime;
@@ -739,7 +713,7 @@ The graphical companion should be generated from the same artifacts and include:
 - mechanism-level win/failure roll-ups; and
 - a searchable schema-directed artifact table.
 
-### 11.6 Definition of done
+### Definition of Done
 
 A campaign is ready to hand off when:
 
@@ -751,14 +725,15 @@ A campaign is ready to hand off when:
 - Markdown and interactive views remain usable without network access; and
 - formatting, schema validation, tests, and generated-data drift checks pass.
 
-## 12. Next research priorities
+## 11. Next Experiments
 
-The evidence points toward structural work, not another round of buffer constants.
+The next useful experiments target structural work instead of another round of buffer
+constants.
 
 1. **Finish exp-046 under quiet macOS conditions.** Resolve the shared opener pool
    before building new work on it.
 2. **Add bare-metal Linux evidence.** Revisit physical-I/O hypotheses only where cache
-   state can be controlled honestly.
+   state can be controlled without host-cache ambiguity.
 3. **Preserve parent identity across the cold producer boundary.** Exp-051 and the 51.9%
    loader study show the same re-derivation pattern in two paths.
 4. **Investigate producer ownership for cross-thread frees.** Treat mimalloc as a
@@ -773,9 +748,9 @@ The evidence points toward structural work, not another round of buffer constant
    projection stabilizes.** Keep domain schemas in the plugin and consume the public
    host SDK and design tokens.
 
-## 13. Sources and reproducibility
+## 12. Sources and Reproduction
 
-The authoritative sources are:
+Source documents:
 
 - [performance campaign status](report-2026-08-14-performance-campaign-status.md) for
   the current branch outcome and evidence gaps;
@@ -793,10 +768,10 @@ The authoritative sources are:
 - [Linux three-tier baseline](../research/research-2026-08-13-linux-three-tier-baseline.md)
   for aggregate, index, and content comparisons.
 
-The committed HTML data is regenerated from experiment frontmatter and checked for drift
-by repository Make targets.
-The report deliberately has no network dependency, so a checkout preserves the visual
-evidence alongside the source artifacts.
+Repository Make targets regenerate the committed HTML data from experiment frontmatter
+and check it for drift.
+The HTML has no network dependency, so a checkout preserves the visual evidence beside
+its source artifacts.
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.
