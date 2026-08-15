@@ -5,7 +5,7 @@ title: "H86: Compare continuous-window adaptive controller designs"
 kind: task
 status: open
 priority: 1
-version: 2
+version: 4
 spec_path: docs/project/specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md
 labels:
   - performance
@@ -14,10 +14,12 @@ labels:
 dependencies:
   - type: blocks
     target: is-01m01cm1sb8xyw9ag3pabb5s3h
+  - type: blocks
+    target: is-01m01eg0efe53jc3smgaza7wk7
 parent_id: is-01m01ea0psdcnb2sdwdj6vh171
 created_at: 2026-08-15T00:50:16.584Z
-updated_at: 2026-08-15T00:50:46.264Z
+updated_at: 2026-08-15T01:17:11.770Z
 ---
-Research the smallest controller that corrects the known one-shot failure without overfitting Application Support. Compare the shipped first-16K binary threshold against: repeated independent windows that keep observing after a fast decision; staged scale-up from six to available parallelism and only then to the bounded I/O reserve; queue/backlog-gated activation; throughput-gradient or latency-gradient feedback; and reversible parking with hysteresis where a trial increase does not improve useful throughput. Fixed 6, available CPUs, and 16 are diagnostic controls, not assumed solutions.
+Research the smallest controller that corrects the confirmed one-shot failure without overfitting the Application Support shape. Against the shipped first-16K control, screen repeated independent windows, staged scale-up, ready-work/backlog gating, useful-throughput gradients, and reversible parking with hysteresis; fixed 6, available parallelism, and 16 remain diagnostic controls rather than presumed solutions. Pre-register signals, constants, overhead budget, sample count, stopping rules, harmful policy histories, resource/Pareto thresholds, and rejection rules before running each screen.
 
-Pre-register signals, thresholds, overhead, and rejection rules before measurement. Acceptance for recommending a controller: exact output; no completion-order failure in the model; no unexplained bimodal outcome on quiet immutable fixtures; automatic wall within 3% of the best fixed arm across the required topology matrix; no existing regime regresses by 3%; additional CPU/RSS/context-switch cost must buy a qualifying wall improvement. Record and revert every rejected prototype. This bead selects a design but does not ship it.
+Acceptance: exploratory samples may eliminate candidates but may not confirm the winner; any surviving controller is evaluated on independent paired/interleaved confirmation samples across the required topology and quiet/interactive Apple Silicon/APFS matrix. A recommendation requires exact output, completion-order-model invariants, stable trace histories, a passed +3% noninferiority/non-regression decision against the discovery-selected fixed control, and accepted CPU/RSS/context-switch tradeoffs. “No acceptable winner; retain the current policy” is a valid outcome and must be recorded without tuning until something passes. This bead selects or rejects a design and ships no production code.
