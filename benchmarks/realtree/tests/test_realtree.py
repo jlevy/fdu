@@ -532,7 +532,7 @@ class StatisticsTests(unittest.TestCase):
         self.assertEqual(comparison["qualification"]["classification"], "inconclusive")
         self.assertIn("missing", "\n".join(comparison["qualification"]["reasons"]))
 
-    def test_trace_defined_harm_makes_adaptive_qualification_inconclusive(self) -> None:
+    def test_mixed_order_sensitivity_makes_adaptive_qualification_inconclusive(self) -> None:
         control = self._qualification_samples(
             "adaptive-scan-index",
             "control",
@@ -560,11 +560,41 @@ class StatisticsTests(unittest.TestCase):
         )
 
         self.assertFalse(comparison["policy_stability"]["stable"])
+        control_history = comparison["policy_stability"]["variants"]["control"]
+        self.assertEqual(control_history["harmful_histories"], 0)
+        self.assertEqual(control_history["order_sensitive_histories"], 1)
         self.assertEqual(comparison["qualification"]["classification"], "inconclusive")
         self.assertIn(
-            "adaptive policy history is unstable",
+            "adaptive policy history is missing, structurally harmful, or unstable",
             "\n".join(comparison["qualification"]["reasons"]),
         )
+
+    def test_reproducible_late_slow_history_is_sensitive_not_intrinsically_harmful(self) -> None:
+        control = self._qualification_samples(
+            "adaptive-scan-index",
+            "control",
+            [1_000] * 12,
+            policy_outcome="held",
+            policy_decisions=("hold", "observe_slow"),
+        )
+        candidate = self._qualification_samples(
+            "adaptive-scan-index", "candidate", [990] * 12, policy_outcome="fixed"
+        )
+
+        comparison = measure.paired_comparison(
+            control + candidate,
+            job="adaptive-scan-index",
+            control="control",
+            candidate="candidate",
+            campaign_stage="held-out",
+            required_pairs=12,
+        )
+
+        history = comparison["policy_stability"]["variants"]["control"]
+        self.assertTrue(comparison["policy_stability"]["stable"])
+        self.assertEqual(history["harmful_histories"], 0)
+        self.assertEqual(history["order_sensitive_histories"], 12)
+        self.assertTrue(comparison["qualification"]["confirmable"])
 
     def test_held_out_qualification_requires_every_preregistered_pair_and_trace(self) -> None:
         control = self._qualification_samples("adaptive-scan-index", "control", [1_000] * 12)

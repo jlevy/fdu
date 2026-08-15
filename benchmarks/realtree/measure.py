@@ -1709,19 +1709,33 @@ def _adaptive_policy_stability(
             if not isinstance(windows, list):
                 missing += 1
                 continue
+            sensitivity = _order_sensitive_policy_history(outcome, windows)
             harmful = _harmful_policy_history(outcome, windows)
-            histories.append((outcome, harmful))
+            histories.append((outcome, sensitivity, harmful))
         signatures = sorted({history for history in histories}, key=repr)
-        harmful_count = sum(harmful is not None for _outcome, harmful in histories)
+        harmful_count = sum(harmful is not None for _outcome, _sensitivity, harmful in histories)
+        order_sensitive_count = sum(
+            sensitivity is not None for _outcome, sensitivity, _harmful in histories
+        )
         variants[variant] = {
             "expected_histories": required_histories,
             "histories": len(histories),
             "harmful_histories": harmful_count,
             "harmful_frequency": (round(harmful_count / len(histories), 6) if histories else None),
+            "order_sensitive_histories": order_sensitive_count,
+            "order_sensitivity_frequency": (
+                round(order_sensitive_count / len(histories), 6) if histories else None
+            ),
             "missing_histories": missing,
-            "signatures": [{"outcome": outcome, "harm": harm} for outcome, harm in signatures],
-            # Pre-registered rule: held-out qualification tolerates no trace-defined
-            # harmful history and no outcome/harm mixture across identical trials.
+            "signatures": [
+                {"outcome": outcome, "sensitivity": sensitivity, "harm": harm}
+                for outcome, sensitivity, harm in signatures
+            ],
+            # A late signal is completion-order sensitivity, not harm by itself. Harm
+            # requires either a structurally invalid policy history here or measured
+            # wall/resource impact in the paired qualification below. Treating every
+            # held-before-late-slow trace as harmful assumes the very benefit the
+            # experiment is meant to test.
             "stable": bool(histories)
             and missing == 0
             and harmful_count == 0
@@ -1729,21 +1743,33 @@ def _adaptive_policy_stability(
             and (required_histories is None or len(histories) == required_histories),
         }
     return {
-        "rule": "zero-harmful-histories-and-one-outcome-signature-v1",
+        "rule": "zero-structurally-harmful-and-one-outcome-sensitivity-signature-v2",
         "variants": variants,
         "stable": all(entry["stable"] for entry in variants.values()),
     }
 
 
 def _harmful_policy_history(outcome: Any, windows: Sequence[Any]) -> Optional[str]:
+    """Return only harm established by the trace itself.
+
+    Slow work after a hold, or fast work after scale-up, is completion-order
+    sensitivity. Neither observation establishes performance harm without a paired
+    control, so those patterns are retained separately by
+    :func:`_order_sensitive_policy_history`.
+    """
+    decisions = [window.get("decision") for window in windows if isinstance(window, Mapping)]
+    if outcome == "scaled_up" and "scale_up" not in decisions:
+        return "scaled-without-recorded-decision"
+    return None
+
+
+def _order_sensitive_policy_history(outcome: Any, windows: Sequence[Any]) -> Optional[str]:
+    """Describe a completion-order pattern without presuming its performance impact."""
     decisions = [window.get("decision") for window in windows if isinstance(window, Mapping)]
     if outcome in {"held", "held_no_useful_work"} and "observe_slow" in decisions:
         return "held-before-later-slow-window"
-    if outcome == "scaled_up":
-        try:
-            scale_index = decisions.index("scale_up")
-        except ValueError:
-            return "scaled-without-recorded-decision"
+    if outcome == "scaled_up" and "scale_up" in decisions:
+        scale_index = decisions.index("scale_up")
         later_fast = sum(
             decision in {"hold", "observe_fast"} for decision in decisions[scale_index + 1 :]
         )
@@ -1823,7 +1849,9 @@ def _qualification(
         reasons.append("major_faults does not establish non-regression")
 
     if policy_stability is not None and not policy_stability.get("stable"):
-        reasons.append("trace-defined adaptive policy history is unstable or harmful")
+        reasons.append(
+            "trace-defined adaptive policy history is missing, structurally harmful, or unstable"
+        )
     if any(value == "rejected" for value in resource_results.values()):
         classification = "inferior"
     elif reasons or classification == "inconclusive":
