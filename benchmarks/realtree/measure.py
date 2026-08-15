@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import os
 import platform
+import re
 import shutil
 import signal
 import statistics
@@ -75,6 +76,8 @@ RESOURCE_REGRESSION_LIMITS_PCT = {
 MAJOR_FAULT_DELTA_LIMIT = 0.0
 QUIET_MAX_LOAD_PER_CPU = 0.25
 CONTROLLED_MAX_EXCESS_LOAD_PER_CPU = 0.25
+QUIET_MAX_CPU_BUSY_PCT = 25.0
+CONTROLLED_MAX_EXCESS_CPU_BUSY_PCT = 25.0
 HOST_REGIMES = {"controlled-interactive", "quiet", "uncontrolled"}
 
 
@@ -409,14 +412,26 @@ REFERENCE_ARGV: Dict[str, Sequence[str]] = {
 def _host_regime(name: str, load_workers: int):
     initial = _host_pressure_snapshot(None)
     if name in {"quiet", "controlled-interactive"}:
-        load_per_cpu = initial.get("load_1m_per_cpu")
-        if load_per_cpu is None:
-            raise MeasureError("host load is unavailable for a controlled evidence regime")
-        if load_per_cpu > QUIET_MAX_LOAD_PER_CPU:
-            raise MeasureError(
-                "host is not quiet enough to begin a controlled cell: "
-                f"load/core {load_per_cpu:.3f} > {QUIET_MAX_LOAD_PER_CPU:.3f}"
-            )
+        if initial.get("system") == "Darwin":
+            cpu_busy = initial.get("cpu_busy_pct")
+            if not isinstance(cpu_busy, (int, float)):
+                raise MeasureError(
+                    "instantaneous CPU pressure is unavailable for a controlled macOS regime"
+                )
+            if cpu_busy > QUIET_MAX_CPU_BUSY_PCT:
+                raise MeasureError(
+                    "host is not quiet enough to begin a controlled cell: "
+                    f"CPU busy {cpu_busy:.1f}% > {QUIET_MAX_CPU_BUSY_PCT:.1f}%"
+                )
+        else:
+            load_per_cpu = initial.get("load_1m_per_cpu")
+            if not isinstance(load_per_cpu, (int, float)):
+                raise MeasureError("host load is unavailable for a controlled evidence regime")
+            if load_per_cpu > QUIET_MAX_LOAD_PER_CPU:
+                raise MeasureError(
+                    "host is not quiet enough to begin a controlled cell: "
+                    f"load/core {load_per_cpu:.3f} > {QUIET_MAX_LOAD_PER_CPU:.3f}"
+                )
 
     regime = HostRegime(name=name, initial=initial)
     if name != "controlled-interactive":
@@ -477,12 +492,20 @@ def _host_pressure_snapshot(regime: Optional[HostRegime]) -> Dict[str, Any]:
     cpu_count = os.cpu_count() or 1
     try:
         load_1m, load_5m, load_15m = os.getloadavg()
-        unavailable_reason = None
+        load_unavailable_reason = None
     except (AttributeError, OSError):
         load_1m = load_5m = load_15m = None
-        unavailable_reason = "load average is unavailable on this platform"
+        load_unavailable_reason = "load average is unavailable on this platform"
+    cpu_busy_pct, cpu_busy_unavailable_reason = _darwin_cpu_busy_pct()
+    unavailable = [
+        reason
+        for reason in (load_unavailable_reason, cpu_busy_unavailable_reason)
+        if reason is not None
+    ]
     return {
         "controlled_load_alive": regime.load_alive() if regime is not None else None,
+        "cpu_busy_pct": cpu_busy_pct,
+        "cpu_busy_unavailable_reason": cpu_busy_unavailable_reason,
         "logical_cpu_count": cpu_count,
         "load_1m": round(load_1m, 3) if load_1m is not None else None,
         "load_1m_per_cpu": round(load_1m / cpu_count, 4) if load_1m is not None else None,
@@ -491,8 +514,40 @@ def _host_pressure_snapshot(regime: Optional[HostRegime]) -> Dict[str, Any]:
         "power_source": _darwin_power_source(),
         "system": platform.system(),
         "thermal_pressure": _darwin_thermal_pressure(),
-        "unavailable_reason": unavailable_reason,
+        "unavailable_reason": "; ".join(unavailable) if unavailable else None,
     }
+
+
+def _darwin_cpu_busy_pct() -> tuple[Optional[float], Optional[str]]:
+    """Measure current CPU occupancy, avoiding load average's minute-long memory.
+
+    A fixed-N benchmark creates runnable workers by design. Darwin's load average keeps
+    counting that work after the child exits, so it cannot distinguish later background
+    pressure from the benchmark's own previous samples. ``top -l 1`` observes a short
+    boundary interval after the child is gone; the lagging load averages remain in the
+    artifact as context but do not accept or reject macOS samples.
+    """
+    if sys.platform != "darwin":
+        return None, "instantaneous CPU occupancy is currently collected only on macOS"
+    top = Path("/usr/bin/top")
+    if not top.is_file():
+        return None, "/usr/bin/top is unavailable"
+    completed = subprocess.run(
+        [str(top), "-l", "1", "-n", "0"],
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        env=BASE_ENVIRONMENT,
+        timeout=10,
+    )
+    if completed.returncode != 0:
+        return None, "top could not collect instantaneous CPU occupancy"
+    matches = re.findall(rb"CPU usage:.*?([0-9]+(?:\.[0-9]+)?)% idle", completed.stdout)
+    if not matches:
+        return None, "top output did not contain CPU idle percentage"
+    idle = float(matches[-1])
+    if not 0.0 <= idle <= 100.0:
+        return None, "top reported CPU idle percentage outside 0..100"
+    return round(100.0 - idle, 2), None
 
 
 def _host_pressure_reasons(
@@ -518,27 +573,52 @@ def _host_pressure_reasons(
         ):
             reasons.append("controlled background load was not alive for the whole sample")
         for boundary, snapshot in (("before", before), ("after", after)):
-            value = snapshot.get("load_1m_per_cpu")
             cpu_count = snapshot.get("logical_cpu_count")
-            if not isinstance(value, (int, float)) or not isinstance(cpu_count, int):
-                reasons.append(f"controlled-host load was unavailable {boundary} the sample")
-                continue
-            maximum = regime.load_workers / cpu_count + CONTROLLED_MAX_EXCESS_LOAD_PER_CPU
-            if value > maximum:
-                reasons.append(
-                    "controlled-host load/core exceeded the synthetic-load envelope "
-                    f"{maximum:.3f} {boundary} the sample"
-                )
+            if snapshot.get("system") == "Darwin":
+                value = snapshot.get("cpu_busy_pct")
+                if not isinstance(value, (int, float)) or not isinstance(cpu_count, int):
+                    reasons.append(
+                        f"controlled-host CPU occupancy was unavailable {boundary} the sample"
+                    )
+                    continue
+                maximum = regime.load_workers / cpu_count * 100 + CONTROLLED_MAX_EXCESS_CPU_BUSY_PCT
+                if value > maximum:
+                    reasons.append(
+                        "controlled-host CPU busy exceeded the synthetic-load envelope "
+                        f"{maximum:.1f}% {boundary} the sample"
+                    )
+            else:
+                value = snapshot.get("load_1m_per_cpu")
+                if not isinstance(value, (int, float)) or not isinstance(cpu_count, int):
+                    reasons.append(f"controlled-host load was unavailable {boundary} the sample")
+                    continue
+                maximum = regime.load_workers / cpu_count + CONTROLLED_MAX_EXCESS_LOAD_PER_CPU
+                if value > maximum:
+                    reasons.append(
+                        "controlled-host load/core exceeded the synthetic-load envelope "
+                        f"{maximum:.3f} {boundary} the sample"
+                    )
         return reasons
     reasons = list(environmental_reasons)
     for boundary, snapshot in (("before", before), ("after", after)):
-        value = snapshot.get("load_1m_per_cpu")
-        if not isinstance(value, (int, float)):
-            reasons.append(f"quiet-host load was unavailable {boundary} the sample")
-        elif value > QUIET_MAX_LOAD_PER_CPU:
-            reasons.append(
-                f"quiet-host load/core exceeded {QUIET_MAX_LOAD_PER_CPU:.3f} {boundary} the sample"
-            )
+        if snapshot.get("system") == "Darwin":
+            value = snapshot.get("cpu_busy_pct")
+            if not isinstance(value, (int, float)):
+                reasons.append(f"quiet-host CPU occupancy was unavailable {boundary} the sample")
+            elif value > QUIET_MAX_CPU_BUSY_PCT:
+                reasons.append(
+                    f"quiet-host CPU busy exceeded {QUIET_MAX_CPU_BUSY_PCT:.1f}% "
+                    f"{boundary} the sample"
+                )
+        else:
+            value = snapshot.get("load_1m_per_cpu")
+            if not isinstance(value, (int, float)):
+                reasons.append(f"quiet-host load was unavailable {boundary} the sample")
+            elif value > QUIET_MAX_LOAD_PER_CPU:
+                reasons.append(
+                    f"quiet-host load/core exceeded {QUIET_MAX_LOAD_PER_CPU:.3f} "
+                    f"{boundary} the sample"
+                )
     return reasons
 
 
@@ -664,6 +744,8 @@ def run(
                 "final": final_host_pressure,
                 "quiet_max_load_per_cpu": QUIET_MAX_LOAD_PER_CPU,
                 "controlled_max_excess_load_per_cpu": (CONTROLLED_MAX_EXCESS_LOAD_PER_CPU),
+                "quiet_max_cpu_busy_pct": QUIET_MAX_CPU_BUSY_PCT,
+                "controlled_max_excess_cpu_busy_pct": (CONTROLLED_MAX_EXCESS_CPU_BUSY_PCT),
             },
             "schedule": "round-robin-by-ordinal-v1",
         },
