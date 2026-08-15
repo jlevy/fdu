@@ -223,7 +223,13 @@ class ToolComparisonTests(unittest.TestCase):
         self.assertEqual(missing_pair["classification"], "inconclusive")
 
     def test_installed_policy_stability_fails_on_harm_or_missing_history(self) -> None:
-        def sample(ordinal: int, decisions: list[str], *, valid: bool = True):
+        def sample(
+            ordinal: int,
+            decisions: list[str],
+            *,
+            valid: bool = True,
+            outcome: str = "held",
+        ):
             return {
                 "pair": "dust",
                 "tool": "fdu",
@@ -232,7 +238,7 @@ class ToolComparisonTests(unittest.TestCase):
                 "valid": valid,
                 "scan_diagnostics": {
                     "worker_policy": {
-                        "outcome": "held",
+                        "outcome": outcome,
                         "windows": [{"decision": decision} for decision in decisions],
                     }
                 },
@@ -247,7 +253,7 @@ class ToolComparisonTests(unittest.TestCase):
         harmful = compare_tools._installed_policy_stability(
             [
                 sample(0, ["hold", "observe_fast"]),
-                sample(1, ["hold", "observe_slow"]),
+                sample(1, ["hold", "observe_slow"], outcome="scaled_up"),
                 sample(2, ["hold", "observe_fast"], valid=False),
             ],
             pair="dust",

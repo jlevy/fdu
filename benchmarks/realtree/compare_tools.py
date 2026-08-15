@@ -1027,7 +1027,9 @@ def _release_qualification(
     if campaign_stage == "held-out" and (
         not isinstance(policy_stability, Mapping) or policy_stability.get("stable") is not True
     ):
-        reasons.append("installed fdu policy histories are missing, harmful, or unstable")
+        reasons.append(
+            "installed fdu policy histories are missing, structurally harmful, or unstable"
+        )
 
     resources: Dict[str, str] = {}
     for metric, limit in measure.RESOURCE_REGRESSION_LIMITS_PCT.items():
@@ -1118,8 +1120,8 @@ def _installed_policy_stability(
     anchor: str,
     required_samples: int,
 ) -> Dict[str, Any]:
-    """Apply the zero-harm/one-signature rule to an installed fdu release cell."""
-    histories: List[Tuple[Any, Optional[str]]] = []
+    """Require one reproducible trace signature and no structurally harmful history."""
+    histories: List[Tuple[Any, Optional[str], Optional[str]]] = []
     missing = 0
     selected = [
         sample
@@ -1134,16 +1136,30 @@ def _installed_policy_stability(
             missing += 1
             continue
         outcome = policy.get("outcome")
-        histories.append((outcome, measure._harmful_policy_history(outcome, windows)))
+        histories.append(
+            (
+                outcome,
+                measure._order_sensitive_policy_history(outcome, windows),
+                measure._harmful_policy_history(outcome, windows),
+            )
+        )
     signatures = sorted(set(histories), key=repr)
-    harmful = sum(harm is not None for _outcome, harm in histories)
+    harmful = sum(harm is not None for _outcome, _sensitivity, harm in histories)
+    order_sensitive = sum(sensitivity is not None for _outcome, sensitivity, _harm in histories)
     return {
         "expected_histories": required_samples,
         "harmful_histories": harmful,
+        "order_sensitive_histories": order_sensitive,
+        "order_sensitivity_frequency": (
+            round(order_sensitive / len(histories), 6) if histories else None
+        ),
         "histories": len(histories),
         "missing_histories": missing,
-        "rule": "zero-harmful-histories-and-one-outcome-signature-v1",
-        "signatures": [{"harm": harm, "outcome": outcome} for outcome, harm in signatures],
+        "rule": "zero-structurally-harmful-and-one-outcome-sensitivity-signature-v2",
+        "signatures": [
+            {"harm": harm, "outcome": outcome, "sensitivity": sensitivity}
+            for outcome, sensitivity, harm in signatures
+        ],
         "stable": (
             len(selected) == required_samples
             and len(histories) == required_samples
