@@ -143,17 +143,6 @@
     });
   };
 
-  const renderSummary = () => {
-    const accepted = report.summary.decision_counts.accepted || 0;
-    const rejected = report.summary.decision_counts.rejected || 0;
-    const mac = report.summary.platform_counts.macOS || 0;
-    const linux = report.summary.platform_counts.Linux || 0;
-    byId("stat-experiments").textContent = formatInteger(report.summary.experiment_count);
-    byId("stat-accepted").textContent = formatInteger(accepted);
-    byId("stat-rejected").textContent = formatInteger(rejected);
-    byId("stat-platforms").textContent = `${mac} / ${linux}`;
-  };
-
   const comparisonBar = (label, value, maximum, effect, candidate = false) => {
     const row = element(
       "div",
@@ -787,7 +776,6 @@
   };
 
   initializeTheme();
-  renderSummary();
   renderOutcomes();
   setupComposite();
   setupExperimentPlot();
