@@ -203,10 +203,11 @@ moves, so the bar is a measured reversal on a decision that matters, not a diffe
 within noise. Prefer one adaptive mechanism that measures the machine over two constants
 that name it.
 
-### Snapshot participation is a cost decision, and its threshold is unmeasured here
+### Snapshot participation is a cost decision, and APFS reverses its conclusion
 
-The cache is not a tuning constant today, but it is about to acquire one, and the reason
-belongs beside the others.
+The cache is not a tuning constant today, and the measurement that was going to give it
+one instead argued against it.
+The reason belongs beside the others.
 
 Measured on Linux/ext4 over 84,539 entries, warm operating-system cache, nine
 interleaved paired trials: an unfiltered metadata summary answered transiently in 71 ms,
@@ -224,10 +225,29 @@ scan 118 ms against 277 ms.
 That gives the rule — persist when the retained state costs more to recompute than to
 load and revalidate — but not the number.
 The entry-count threshold above which an ordinary metadata run should persist a snapshot
-is exactly the kind of constant this guide exists to flag: the only value the data
-supports is roughly 250,000 entries, and it was measured on ext4 on a virtualised host.
-It is inherited, not proven, on Apple Silicon and APFS, and `fdu-hvs5` holds the
-measurement that would settle it.
+is exactly the kind of constant this guide exists to flag: the only value the ext4 data
+supports is roughly 250,000 entries, measured on a virtualised host.
+
+Measuring it on Apple Silicon and APFS did not confirm that number.
+It removed the premise underneath it.
+Over 175,128 entries, warm, nine interleaved paired trials on an uncontrolled host, a
+transient summary took 521 ms (2.97 microseconds per entry) while a no-scan `only` read
+took 146 ms (0.83). Deserialisation costs about the same on both filesystems, but an
+APFS metadata walk costs roughly three and a half times what an ext4 one does, so the
+comparison that came out at +18% against the snapshot on ext4 comes out at more than
+three times *for* it here.
+The snapshot write measured 90 ms (0.51 per entry) against a 375 ms saving on each later
+`only` read: it repays itself about four times over on the first reuse, at any tree
+size.
+
+So the proposed gate — persist only above a size, because metadata only pays back under
+a cold cache — is an ext4 artifact.
+On APFS a *warm* read already pays, and suppressing the write would give up that value
+on every tree small enough to be gated.
+`SNAPSHOT_MIN_ENTRIES` therefore stays `None`, which is a measured decision rather than
+a deferred one; `fdu-hvs5` carries the evidence.
+This is the clearest case in this guide of a constant that was reasonable in the regime
+that produced it and wrong in the one it would have shipped to.
 [The cache-layers plan](../specs/active/plan-2026-08-15-fdu-cache-layers-and-defaults.md)
 carries the full cost model.
 
