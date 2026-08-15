@@ -205,7 +205,28 @@ jobs:
         run: |
           uv venv --clear .venv-smoke
           uv pip install --python .venv-smoke --no-index --find-links dist fdu
+          uv run --no-project --python .venv-smoke python tests/public_smoke.py
           uv run --no-project --python .venv-smoke python tests/smoke.py
       - name: Prove the wheel is directly runnable through uvx
         working-directory: crates/fdu-py
         run: uvx --isolated --no-index --find-links dist --from fdu fdu --version
+
+  python-quality:
+    name: Python lint, types, and source distribution
+    needs: supply-chain
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # 1.97.1
+        with:
+          toolchain: 1.97.1
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          version: "0.11.28"
+          enable-cache: false
+          python-version: "3.12"
+      - run: make python-check
+      - run: make python-sdist-smoke
+      - run: make release-test

@@ -65,9 +65,9 @@ explicit `Fresh`, `Reconciling`, `Stale`, and `Partial` state, but an applicatio
 opt into that serving model.
 
 The watcher is an adapter and driver.
-`open()` and the Python API do not start it, and the Python wheel does not compile the
-watch dependency.
-Its applying driver re-verifies queued samples at a clock-stable commit
+`open()` and the Python API never start one implicitly; the wheel compiles the watch
+layer so an explicit `Index.watch()` is available, and the core crate still builds
+without it. Its applying driver re-verifies queued samples at a clock-stable commit
 boundary and accepts only an unbounded, cross-filesystem scope; bounded-depth and
 one-filesystem event filtering fail explicitly rather than indexing excluded paths.
 

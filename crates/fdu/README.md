@@ -20,8 +20,8 @@ fdu = { path = "crates/fdu", default-features = false }
 The crate is not published yet; the version-based dependency form is a Phase 1 release
 step.
 
-Features: `cli` (default, gates the binary and clap), `watch` (gates the notify
-dependency).
+Features: `cli` and `watch` are enabled by default for the installed binary.
+Library consumers can disable defaults; either feature remains independently additive.
 
 Content inspection is optional and disabled by default.
 `OpenConfig::analysis` enables bounded streaming line, prose, and common-language SLOC

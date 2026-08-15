@@ -1,6 +1,6 @@
 {
   "schema": "fdu.tree/2",
-  "generator": "fdu 0.0.1",
+  "generator": "fdu 0.1.0",
   "root": "/fixture",
   "source": "cold_scan",
   "complete": false,
