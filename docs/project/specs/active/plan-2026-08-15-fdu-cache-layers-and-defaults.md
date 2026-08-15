@@ -132,27 +132,34 @@ the work done to produce it changes.
 Measured effect: `fdu --view summary PATH` went from 161 ms to 71 ms on the subject
 above, and no longer leaves a snapshot behind.
 
-### Phase 2: Persistence, and the workflow Phase 1 breaks
+### Phase 2: Stop persisting where the snapshot will not be read
 
-Phase 1 has a consequence that must be resolved before it ships as a default: because a
-summary run no longer writes a snapshot, a subsequent `--cache only` on the same tree
-has nothing to read and fails.
-The `summary` then `only` sequence is a real workflow, and the golden CLI contracts
-encode it.
+Phase 1 changed which requests retain an index.
+It did not change persistence: every index-retaining cold scan still writes a snapshot,
+so the default `fdu PATH` continues to leave one behind and `--cache only` continues to
+answer from it without touching the tree.
+The compact tier is the only request that retains nothing, which is what that tier
+means; asking `--cache only` after nothing but compact runs fails with an explicit
+message rather than quietly scanning, and the golden contracts cover both halves.
 
-- [ ] Decide and implement how an ordinary run populates a snapshot for later `only`
-  reads. The candidate is a persistence gate on the cold-scan path: persist when analysis
-  was requested, when the policy is `refresh`, or when the index is large enough that a
-  future cold read saves meaningful time.
+What remains is an optimisation, not a correctness gap.
+On the measured host the write cost +82 ms on a tree whose whole walk cost 132 ms, and a
+warm round-trip through the snapshot (162 ms) still lost to simply rebuilding the index
+(132 ms). For a small tree the snapshot is written and then never profitably read.
+
+- [ ] Gate persistence on the cold-scan path so a snapshot is written when it will be
+  read profitably: when analysis was requested, when the policy is `refresh`, or when
+  the index is large enough that a future cold read saves meaningful time.
   Gate on **entry count**, not wall time — entry count is a deterministic property of
   the tree, so behaviour stays reproducible and paired benchmarking is not made
   ambiguous.
 - [ ] Choose the threshold from Apple Silicon/APFS measurement.
   The only value this review’s data supports is roughly 250,000 entries, a cold walk of
-  about a second on the measured host, and it is Linux/ext4 evidence.
-- [ ] Update the affected golden contracts deliberately: `cli-lifecycle` uses a summary
-  run as its “a report leaves a snapshot behind” vehicle, and `cli-axes` sequences
-  `--cache only` after one.
+  about a second on the measured host, and it is Linux/ext4 evidence on a virtualised
+  host.
+- [ ] Revisit the golden cache-lifecycle contracts, which use tiny fixture trees and
+  would stop producing snapshots under any threshold worth setting.
+  They need a way to exercise persistence that does not depend on the tree being large.
 
 ## Testing Strategy
 
@@ -173,10 +180,11 @@ are scoped to the regime that produced them.
 
 ## Rollout Plan
 
-Phase 1 is a behaviour change with no schema change, so it rolls out with the next
-release once Phase 2 resolves the `only` workflow.
-Phase 1 must not ship alone: it makes the fast path fast while removing the ordinary way
-a snapshot comes to exist.
+Phase 1 is a behaviour change with no schema change and ships on its own.
+It is self-consistent: the compact tier retains nothing and says so, while every
+index-retaining request — including the default `fdu PATH` — still persists, so the
+ordinary way a snapshot comes to exist is unchanged.
+Phase 2 is an independent optimisation and does not gate it.
 
 ## Open Questions
 
