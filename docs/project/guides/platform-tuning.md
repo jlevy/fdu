@@ -121,6 +121,16 @@ It is stated here because the constant’s own documentation makes the platform 
 legible, and because a sweep is the cheap way to settle it: `perf_probe --threads N`
 takes the worker count directly.
 
+macOS measurement later found the opposite failure on the same constant: not inert but
+**marginal**. On a 494k-entry, directory-heavy APFS tree, the calibration window
+measured 20.6–41.0 µs per entry across runs of one binary, moving with host load and
+straddling the 30 µs threshold — the same command was observed staying at six workers in
+one run and unlocking sixteen in the next, a coin flip worth roughly 45% of aggregate
+kernel time. A thread sweep on that tree found ≤4% wall spread between the two outcomes,
+which is the sharper indictment: a decision that does not change wall time should not be
+nondeterministic. `fdu-9tul` holds the evidence and the options (hysteresis, a wider or
+second window, a percentile decision).
+
 ### The one-shot timing is sensitive, but no replacement qualified
 
 The calibration accumulates the first 16,384 entries to complete, decides once, and is
