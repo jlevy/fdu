@@ -64,14 +64,30 @@ numbers stay machine-read from artifacts.
 
 ## Implementation Plan
 
-### Phase A: Surface what is already recorded
+### Phase A: Surface what is already recorded (landed)
 
-- [ ] Extend the ledger generator to emit an absolute-timings appendix: per experiment,
+- [x] Extend the ledger generator to emit an absolute-timings appendix: per experiment,
   the control and candidate wall medians, the job, the subject label with entry count,
   and the regime triple.
   No re-runs; this is presentation of existing data.
-- [ ] Add the duplicate-id check to `perf-ledger` so a colliding experiment id or a bare
-  hypothesis number registered twice with different titles fails the build (`fdu-f8ni`).
+  Grouped by subject and regime rather than listed flat, because an absolute time is
+  comparable only within one tree on one machine — and the record turns out to span 24
+  such groups, so a flat list would have invited exactly the cross-subject reading the
+  loop forbids.
+- [x] Add the collision check to `perf-ledger` (`fdu-f8ni`). A duplicate experiment id
+  is fatal. Hypothesis reuse is a warning rather than an error, because the obvious
+  stricter rule is wrong: a hypothesis is *supposed* to span experiments under different
+  titles, which is how a claim is carried through a cumulative run or confirmed on a
+  second platform — `H31` spans twelve experiments here, all correct, and a title-keyed
+  rule would have rejected the committed record.
+  What the check flags instead is one base number wearing several label spellings, the
+  signature the real collision left.
+
+The check earned its place on first run by finding a record-quality bug nobody had
+noticed: `exp-013` carried an entire prose sentence in its `hypotheses` field, which the
+ledger index rendered as a paragraph in a column meant for identifiers.
+The reasoning was already in the artifact body, so the field was normalised to `H49` and
+no measurement changed.
 
 ### Phase B: Complete the harness, promote session findings
 
