@@ -296,6 +296,24 @@ PERF_SCRATCH ?= /tmp/fdu-realtree/scratch
 PERF_BASELINE ?= $(PERF_RESULTS)/tree-$(PERF_LABEL).json
 PERF_RELEASE := target/release/examples/perf_probe
 PERF_PROFILING := target/profiling/examples/perf_probe
+# Evidence qualifiers default to exploration. A held-out run must opt into a controlled
+# host regime and provide the manifests that make its source, corpus, and installation
+# independently verifiable.
+PERF_STAGE ?= exploratory
+PERF_HOST_REGIME ?= uncontrolled
+PERF_BACKGROUND_LOAD_WORKERS ?=
+PERF_PROVENANCE ?=
+PERF_CORPUS_MANIFEST ?=
+PERF_INSTALLATION_ATTESTATION ?=
+PERF_TOOL_SUPPORTING_ARGS ?=
+PERF_EVIDENCE_ARGS = --stage $(PERF_STAGE) --host-regime $(PERF_HOST_REGIME) \
+	$(if $(strip $(PERF_BACKGROUND_LOAD_WORKERS)),--background-load-workers $(PERF_BACKGROUND_LOAD_WORKERS)) \
+	$(if $(strip $(PERF_PROVENANCE)),--provenance-manifest "$(PERF_PROVENANCE)")
+PERF_MEASURE_EVIDENCE_ARGS = $(PERF_EVIDENCE_ARGS) \
+	$(if $(strip $(PERF_CORPUS_MANIFEST)),--corpus-manifest "$(PERF_CORPUS_MANIFEST)")
+PERF_TOOL_EVIDENCE_ARGS = $(PERF_EVIDENCE_ARGS) \
+	$(if $(strip $(PERF_INSTALLATION_ATTESTATION)),--installation-attestation "$(PERF_INSTALLATION_ATTESTATION)") \
+	$(PERF_TOOL_SUPPORTING_ARGS)
 # The harness runs from the repo root against a committed, frozen environment, so a
 # benchmark run resolves nothing at invocation time. `--project` (not `--directory`)
 # keeps the working directory here, which is what makes `-m benchmarks.realtree` work.
@@ -340,7 +358,7 @@ perf-compare: perf-probe-release
 		--trials $(or $(TRIALS),12) \
 		--scratch $(PERF_SCRATCH) --output-dir $(PERF_RESULTS) \
 		--baseline-fingerprint $(PERF_BASELINE) \
-		--name $(or $(NAME),adhoc)
+		--name $(or $(NAME),adhoc) $(PERF_MEASURE_EVIDENCE_ARGS)
 
 perf-content-compare: perf-probe-release
 	$(PERF_RUN) measure --root $(PERF_TREE) --label $(PERF_LABEL) \
@@ -351,7 +369,7 @@ perf-content-compare: perf-probe-release
 		--job document-cache-hit --job content-query \
 		--trials $(or $(TRIALS),12) \
 		--baseline-fingerprint $(PERF_BASELINE) \
-		--name $(or $(NAME),content-adhoc)
+		--name $(or $(NAME),content-adhoc) $(PERF_MEASURE_EVIDENCE_ARGS)
 
 # Compare one immutable fdu release binary with external tools on the same live tree.
 # TOOL_ARGS supplies repeated `--tool name=/path/to/binary` arguments. Results must
@@ -359,15 +377,17 @@ perf-content-compare: perf-probe-release
 PERF_TOOL_RESULTS ?= /tmp/fdu-tool-comparison/results
 PERF_TOOL_BASELINE ?= $(PERF_TOOL_RESULTS)/tree-$(PERF_LABEL).json
 PERF_TOOL_CONTROL ?=
+PERF_TOOL_LABEL ?= fdu
+PERF_TOOL_CONTRACT ?= fdu-transient-summary
 perf-compare-tools:
 	@test -n "$(PERF_TOOL_CONTROL)" || \
 		{ echo "PERF_TOOL_CONTROL must name an immutable fdu CLI binary outside PERF_TREE" >&2; exit 2; }
 	$(PERF_RUN).compare_tools --root $(PERF_TREE) --label $(PERF_LABEL) \
-		--anchor "fdu=$(PERF_TOOL_CONTROL)" $(TOOL_ARGS) \
+		--anchor "$(PERF_TOOL_LABEL):$(PERF_TOOL_CONTRACT)=$(PERF_TOOL_CONTROL)" $(TOOL_ARGS) \
 		--trials $(or $(TRIALS),12) --warmups $(or $(WARMUPS),3) \
 		--baseline-output $(PERF_TOOL_BASELINE) \
 		--output-dir $(PERF_TOOL_RESULTS) --name $(or $(NAME),tool-comparison) \
-		--storage "$(or $(STORAGE),local storage)"
+		--storage "$(or $(STORAGE),local storage)" $(PERF_TOOL_EVIDENCE_ARGS)
 
 # Record an experiment artifact from a completed measurement run.
 perf-record:

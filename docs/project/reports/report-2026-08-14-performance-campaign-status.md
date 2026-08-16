@@ -68,7 +68,7 @@ Its value is not any single step but that each pass leaves the next one cheaper.
 
 ### Why the accept rule is strict
 
-Of 56 recorded experiments, **24 were rejected** — close to the 27 accepted.
+Of 60 recorded experiments, **27 were rejected** — close to the 28 accepted.
 Several were rejected despite a real, working mechanism, because the measured effect did
 not clear 3%. That is the rule doing its job: a real mechanism is exactly what makes a
 small number feel worth keeping, and a codebase that accumulates 1% wins for 50 lines
@@ -248,13 +248,19 @@ wide shallow trees.
 - **An ecosystem survey** establishing that hot-path counters in an optimization loop
   are a use case no mainstream Rust crate targets, and that on Linux there is no
   unprivileged, in-process, per-type syscall count at all.
+- **A fail-closed adaptive-worker campaign** that separated completion-order sensitivity
+  from performance harm.
+  Repeated and staged controllers corrected a late-window sensitivity but regressed
+  mixed-phase APFS wall time by about 59–61%, so the shipped controller stayed
+  unchanged. The bounded trace, phase-checked corpora, provenance, installed-command
+  attestation, and pinned dust adapter remain as reusable evidence infrastructure.
 
 ## 5. Platform status: Linux and macOS
 
 This is the most important section for anyone reading a number and deciding what it
 means.
 
-**The evidence is overwhelmingly macOS.** Of 56 recorded experiments, **53 were measured
+**The evidence is overwhelmingly macOS.** Of 60 recorded experiments, **57 were measured
 on Darwin and 3 on Linux.** The macOS work is mature — a bulk-attribute reader using
 `getattrlistbulk`, tuning constants measured across three APFS regimes, a scheduler
 tuned against a real device.
@@ -268,7 +274,7 @@ test sweeps every platform’s table on every CI platform.
 
 |  | macOS | Linux | Windows |
 | --- | --- | --- | --- |
-| Experiments recorded | 51 | 3 | 0 |
+| Experiments recorded | 57 | 3 | 0 |
 | Profiler available | bespoke script | callgrind | none |
 | Bulk directory read | `getattrlistbulk` | `read_dir` (2 syscalls/dir) | `read_dir` |
 | Process counter tier | total syscalls, faults | read/write syscalls, faults | none yet |
@@ -308,7 +314,7 @@ the loop’s first step).
 
 Stated plainly, because these are the places a confident number could mislead.
 
-**Platform asymmetry.** 53 experiments on macOS, 3 on Linux.
+**Platform asymmetry.** 57 experiments on macOS, 3 on Linux.
 Every Linux constant not explicitly measured is inherited.
 
 **No bare metal.** All Linux measurement here is virtualized.

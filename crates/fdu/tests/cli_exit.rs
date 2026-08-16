@@ -46,6 +46,13 @@ fn partial_results_use_exit_two_unless_explicitly_allowed() {
     let partial = run(false);
     let allowed = run(true);
 
+    let traced = Command::new(env!("CARGO_BIN_EXE_fdu"))
+        .args(["--cache", "off", "--view", "summary", "--format", "json"])
+        .env("FDU_SCAN_DIAGNOSTICS", "1")
+        .arg(root.path())
+        .output()
+        .expect("run traced partial fdu");
+
     let human = Command::new(env!("CARGO_BIN_EXE_fdu"))
         .args(["--cache", "off", "--color", "never"])
         .arg(root.path())
@@ -63,6 +70,17 @@ fn partial_results_use_exit_two_unless_explicitly_allowed() {
     assert!(stdout.contains("\"complete\": false"), "{stdout}");
     assert!(stdout.contains("/denied"), "error details missing: {stdout}");
     assert!(allowed.status.success(), "stderr: {}", String::from_utf8_lossy(&allowed.stderr));
+
+    assert_eq!(traced.status.code(), Some(2));
+    let traced_stdout = String::from_utf8(traced.stdout).expect("traced JSON is UTF-8");
+    let traced_stderr = String::from_utf8(traced.stderr).expect("trace is UTF-8");
+    assert!(traced_stdout.contains("\"complete\": false"), "{traced_stdout}");
+    assert!(traced_stdout.contains("/denied"), "{traced_stdout}");
+    assert!(
+        traced_stderr.contains("__FDU_SCAN_DIAGNOSTICS__={\"backend\":{\"macos_bulk_attempts\":"),
+        "{traced_stderr}"
+    );
+    assert!(traced_stderr.contains("\"schema\":\"fdu-scan-diagnostics-v1\""), "{traced_stderr}");
 
     assert_eq!(human.status.code(), Some(2));
     let human_stdout = String::from_utf8(human.stdout).expect("human stdout is UTF-8");
@@ -88,6 +106,9 @@ fn runtime_instrumentation_is_available_on_the_shipped_binary() {
     let enabled_stderr = String::from_utf8(enabled.stderr).expect("counter report is UTF-8");
     assert!(enabled_stderr.contains("[filesystem operations]"), "{enabled_stderr}");
     assert!(enabled_stderr.contains("[memory]"), "{enabled_stderr}");
+    // The worker-scaling policy is only auditable if its history reaches the artifacts
+    // the performance loop actually reads.
+    assert!(enabled_stderr.contains("[adaptive scan policy]"), "{enabled_stderr}");
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     assert!(enabled_stderr.contains("[process ("), "{enabled_stderr}");
     #[cfg(not(any(target_os = "linux", target_os = "macos")))]
@@ -95,4 +116,42 @@ fn runtime_instrumentation_is_available_on_the_shipped_binary() {
 
     assert!(disabled.status.success());
     assert!(disabled.stderr.is_empty(), "falsey toggle emitted a report");
+}
+
+#[test]
+fn installed_summary_measurements_can_emit_the_versioned_scan_trace() {
+    let root = tempfile::tempdir().expect("tempdir");
+    fs::create_dir(root.path().join("nested")).expect("create nested directory");
+    fs::write(root.path().join("nested/file.txt"), b"trace me").expect("write file");
+
+    let run = |value: Option<&str>| {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_fdu"));
+        command
+            .args(["--cache", "off", "--view", "summary", "--format", "json", "--color", "never"]);
+        command.arg(root.path());
+        match value {
+            Some(value) => {
+                command.env("FDU_SCAN_DIAGNOSTICS", value);
+            }
+            None => {
+                command.env_remove("FDU_SCAN_DIAGNOSTICS");
+            }
+        }
+        command.output().expect("run summary")
+    };
+
+    let enabled = run(Some("1"));
+    assert!(enabled.status.success());
+    let stderr = String::from_utf8(enabled.stderr).expect("diagnostic trace is UTF-8");
+    let trace = stderr
+        .strip_prefix("__FDU_SCAN_DIAGNOSTICS__=")
+        .expect("measurement trace prefix")
+        .trim_end();
+    assert!(trace.starts_with('{') && trace.ends_with('}'), "{trace}");
+    assert!(trace.contains("\"schema\":\"fdu-scan-diagnostics-v1\""), "{trace}");
+    assert!(trace.contains("\"worker_policy\":"), "{trace}");
+    assert!(trace.contains("\"backend\":"), "{trace}");
+
+    assert!(run(None).stderr.is_empty(), "ordinary summary emitted a trace");
+    assert!(run(Some("0")).stderr.is_empty(), "falsey toggle emitted a trace");
 }

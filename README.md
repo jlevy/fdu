@@ -126,10 +126,10 @@ fdu runs a disciplined optimization loop rather than a list of tweaks: instrumen
 profile, write the hypothesis down, change one thing, measure paired and interleaved
 against a control with an independent oracle checking that faster output is still
 *identical* output, keep it only if it clears a fixed bar, and record the verdict —
-**including the failures**. Of 56 recorded experiments, 24 were rejected, several
+**including the failures**. Of 60 recorded experiments, 27 were rejected, several
 despite a real working mechanism that simply did not clear the bar.
 
-One caveat worth carrying into any number above: **53 of those 56 experiments were
+One caveat worth carrying into any number above: **57 of those 60 experiments were
 measured on macOS and 3 on Linux.** A constant measured on one platform is inherited,
 not proven, on the other.
 
@@ -147,7 +147,10 @@ holds the cost model and architectural conclusions;
 [the performance loop](docs/project/guides/performance-loop.md) is the protocol;
 [the instrumentation playbook](docs/project/guides/performance-instrumentation-playbook.md)
 is the reusable method, written to apply to any systems program rather than this one;
-and
+the
+[adaptive-worker gap-closure report](docs/project/reports/report-2026-08-15-adaptive-worker-gap-closure.md)
+records why completion-order sensitivity did not justify changing the production
+controller; and
 [the full tool comparison](docs/project/reports/report-2026-08-13-fdu-live-tool-comparison.md)
 has the peer measurements with a
 [reproduction manifest](docs/project/reports/fdu-live-tool-comparison-manifest-v2.json).

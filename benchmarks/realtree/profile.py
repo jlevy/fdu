@@ -17,6 +17,9 @@ System Integrity Protection. On Linux the same role is played by ``perf record``
 
 from __future__ import annotations
 
+import hashlib
+import json
+import os
 import re
 import shutil
 import subprocess
@@ -50,6 +53,7 @@ def capture(
     seconds: int = DEFAULT_SAMPLE_SECONDS,
     repeat: int = 20,
     label: str = "",
+    require_diagnostics: bool = False,
 ) -> Dict[str, Any]:
     """Sample ``argv`` and return a ranked self-time attribution.
 
@@ -65,50 +69,163 @@ def capture(
     sampler = shutil.which("sample") or "/usr/bin/sample"
     if not Path(sampler).exists():
         raise ProfileError("/usr/bin/sample is not available")
+    resolved_binary = binary.resolve(strict=True)
+    if not argv or Path(argv[0]).resolve(strict=False) != resolved_binary:
+        raise ProfileError("profile argv does not execute the declared binary")
+    if seconds < 1 or repeat < 1:
+        raise ProfileError("profile seconds and repeat must be positive")
 
     command = list(argv) + ["--repeat", str(repeat)]
     with tempfile.TemporaryDirectory(prefix="fdu-profile-") as scratch:
         report = Path(scratch) / "sample.txt"
-        process = subprocess.Popen(
-            command,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
-        )
-        # Give the process a moment to get past startup and into steady state, so the
-        # profile describes the walk rather than dyld.
-        time.sleep(0.3)
-        if process.poll() is not None:
-            stderr = (process.stderr.read() if process.stderr else b"").decode(
-                "utf-8", errors="replace"
+        stdout_path = Path(scratch) / "stdout"
+        stderr_path = Path(scratch) / "stderr"
+        environment = {
+            "FDU_COUNTERS": "1",
+            "LANG": "C",
+            "LC_ALL": "C",
+            "TZ": "UTC",
+        }
+        with stdout_path.open("xb") as stdout_file, stderr_path.open("xb") as stderr_file:
+            process = subprocess.Popen(
+                command,
+                stdin=subprocess.DEVNULL,
+                stdout=stdout_file,
+                stderr=stderr_file,
+                env=environment,
             )
-            raise ProfileError(
-                f"probe exited before it could be sampled: {stderr[:400]}"
+            # Give the process a moment to get past startup and into steady state, so the
+            # profile describes the walk rather than dyld.
+            time.sleep(0.3)
+            if process.poll() is not None:
+                raise ProfileError("probe exited before it could be sampled")
+            sampled = subprocess.run(
+                [sampler, str(process.pid), str(seconds), "-mayDie", "-f", str(report)],
+                capture_output=True,
+                env={**environment, "PATH": os.environ.get("PATH", "")},
             )
-        sampled = subprocess.run(
-            [sampler, str(process.pid), str(seconds), "-mayDie", "-f", str(report)],
-            capture_output=True,
-        )
-        process.wait(timeout=max(60, seconds * 4))
+            try:
+                exit_code = process.wait(timeout=max(60, seconds * 4))
+            except subprocess.TimeoutExpired as error:
+                process.kill()
+                process.wait(timeout=10)
+                raise ProfileError("profiled probe did not finish after sampling") from error
         if sampled.returncode != 0 or not report.is_file():
             raise ProfileError(
-                "sample failed: "
-                + sampled.stderr.decode("utf-8", errors="replace")[:400]
+                "sample failed: " + sampled.stderr.decode("utf-8", errors="replace")[:400]
             )
         text = report.read_text(encoding="utf-8", errors="replace")
+        stdout = stdout_path.read_bytes()
+        stderr = stderr_path.read_bytes()
+
+    if exit_code != 0:
+        raise ProfileError(f"profiled probe exited with {exit_code}")
 
     frames = parse(text)
+    probe = _probe_evidence(stdout)
+    if require_diagnostics:
+        from benchmarks.realtree import measure
+
+        summary = probe.get("summary")
+        reasons = measure._validate_scan_diagnostics(
+            probe.get("scan_diagnostics"),
+            require_macos_backend=True,
+            expected_dirs_read=summary.get("dirs_read") if isinstance(summary, dict) else None,
+        )
+        if reasons:
+            raise ProfileError("profiled probe diagnostics are invalid: " + "; ".join(reasons))
     return {
         "schema": PROFILE_SCHEMA,
         "label": label,
-        "binary": str(binary.name),
-        "command": command,
+        "binary": str(resolved_binary.name),
+        "binary_sha256": _sha256_file(resolved_binary),
+        "binary_size_bytes": resolved_binary.stat().st_size,
+        "command": _redacted_command(command, binary),
+        "counters": parse_counter_report(stderr.decode("utf-8", errors="replace")),
+        "counter_report_bytes": len(stderr),
+        "counter_report_sha256": hashlib.sha256(stderr).hexdigest(),
         "seconds": seconds,
         "repeat": repeat,
+        "probe": probe,
         "total_samples": frames["total_samples"],
         "self_time": frames["self_time"],
         "by_layer": frames["by_layer"],
         "threads": frames["threads"],
+    }
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _redacted_command(command: Sequence[str], binary: Path) -> List[str]:
+    """Retain operational flags while removing every filesystem path."""
+    result: List[str] = []
+    previous = ""
+    resolved_binary = binary.resolve(strict=False)
+    for index, argument in enumerate(command):
+        if index == 0 or Path(argument).resolve(strict=False) == resolved_binary:
+            shown = "{binary}"
+        elif previous == "--root":
+            shown = "{root}"
+        elif previous == "--snapshot":
+            shown = "{snapshot}"
+        elif Path(argument).is_absolute():
+            shown = "{absolute-path}"
+        else:
+            shown = argument
+        result.append(shown)
+        previous = argument
+    return result
+
+
+def _probe_evidence(stdout: bytes) -> Dict[str, Any]:
+    """Retain only path-free probe fields needed to interpret a stack sample."""
+    text = stdout.decode("utf-8", errors="replace").strip()
+    if not text:
+        return {"unavailable_reason": "profiled process emitted no probe output"}
+    try:
+        document = json.loads(text.splitlines()[-1])
+    except json.JSONDecodeError as error:
+        return {"unavailable_reason": f"profiled probe output was not JSON: {error}"}
+    if not isinstance(document, dict):
+        return {"unavailable_reason": "profiled probe output was not an object"}
+    return {
+        key: document.get(key)
+        for key in (
+            "attribution",
+            "component_ns",
+            "mode",
+            "scan_diagnostics",
+            "schema",
+            "source",
+            "summary",
+        )
+    }
+
+
+def parse_counter_report(text: str) -> Dict[str, Any]:
+    """Parse the stable grouped integer rows emitted by ``FDU_COUNTERS``."""
+    groups: Dict[str, Dict[str, int]] = {}
+    current: Optional[Dict[str, int]] = None
+    for raw in text.splitlines():
+        line = raw.strip()
+        if line.startswith("[") and line.endswith("]"):
+            current = groups.setdefault(line[1:-1], {})
+            continue
+        if current is None or not line:
+            continue
+        label, separator, raw_value = line.rpartition("  ")
+        if separator and raw_value.strip().isdigit():
+            current[label.strip()] = int(raw_value.strip())
+    return {
+        "groups": groups,
+        "schema": "fdu-counter-report-v1",
+        "unavailable_reason": None if groups else "counter report contained no grouped rows",
     }
 
 

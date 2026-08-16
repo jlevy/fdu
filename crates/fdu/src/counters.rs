@@ -54,6 +54,25 @@ pub struct Counts {
     pub rollup_merges: u64,
     /// Index entries allocated.
     pub entries_allocated: u64,
+    /// Chunk releases folded into an automatic scan's worker-scaling calibration.
+    pub adaptive_calibration_chunks: u64,
+    /// Entries folded into that calibration before it reached a decision.
+    pub adaptive_calibration_entries: u64,
+    /// Worker time, in microseconds, folded into that calibration.
+    ///
+    /// Microseconds rather than nanoseconds because the decision threshold is expressed
+    /// per entry in microseconds, and a nanosecond total over a multi-million-entry walk
+    /// is large enough to make the row hard to read.
+    pub adaptive_calibration_work_us: u64,
+    /// Reserve-pool expansions an automatic scan actually performed.
+    pub adaptive_scale_ups: u64,
+    /// Walks that ended while their scaling calibration was still undecided.
+    ///
+    /// A walk shorter than the calibration window never observes enough entries to
+    /// decide, so its worker policy is unobservable rather than merely unchanged. That
+    /// is the distinction [`crate::scan`] fails closed on, and it must not read as a
+    /// decision to hold.
+    pub adaptive_policy_undecided: u64,
 }
 
 impl Counts {
@@ -73,6 +92,11 @@ impl Counts {
         parent_memo_hits: 0,
         rollup_merges: 0,
         entries_allocated: 0,
+        adaptive_calibration_chunks: 0,
+        adaptive_calibration_entries: 0,
+        adaptive_calibration_work_us: 0,
+        adaptive_scale_ups: 0,
+        adaptive_policy_undecided: 0,
     };
 
     /// Every counter as `(group, label, value)`, in report order.
@@ -94,6 +118,15 @@ impl Counts {
             ("index", "parent memo hits", self.parent_memo_hits),
             ("index", "roll-up merges", self.rollup_merges),
             ("index", "index entries allocated", self.entries_allocated),
+            ("adaptive scan policy", "calibration chunks", self.adaptive_calibration_chunks),
+            ("adaptive scan policy", "calibration entries", self.adaptive_calibration_entries),
+            (
+                "adaptive scan policy",
+                "calibration worker microseconds",
+                self.adaptive_calibration_work_us,
+            ),
+            ("adaptive scan policy", "reserve expansions", self.adaptive_scale_ups),
+            ("adaptive scan policy", "walks left undecided", self.adaptive_policy_undecided),
         ]
     }
 
@@ -120,6 +153,15 @@ impl Counts {
         self.parent_memo_hits = self.parent_memo_hits.saturating_add(other.parent_memo_hits);
         self.rollup_merges = self.rollup_merges.saturating_add(other.rollup_merges);
         self.entries_allocated = self.entries_allocated.saturating_add(other.entries_allocated);
+        self.adaptive_calibration_chunks =
+            self.adaptive_calibration_chunks.saturating_add(other.adaptive_calibration_chunks);
+        self.adaptive_calibration_entries =
+            self.adaptive_calibration_entries.saturating_add(other.adaptive_calibration_entries);
+        self.adaptive_calibration_work_us =
+            self.adaptive_calibration_work_us.saturating_add(other.adaptive_calibration_work_us);
+        self.adaptive_scale_ups = self.adaptive_scale_ups.saturating_add(other.adaptive_scale_ups);
+        self.adaptive_policy_undecided =
+            self.adaptive_policy_undecided.saturating_add(other.adaptive_policy_undecided);
     }
 
     /// Per-event ratios against a denominator, in report order.
@@ -148,6 +190,11 @@ struct GlobalCounts {
     parent_memo_hits: AtomicU64,
     rollup_merges: AtomicU64,
     entries_allocated: AtomicU64,
+    adaptive_calibration_chunks: AtomicU64,
+    adaptive_calibration_entries: AtomicU64,
+    adaptive_calibration_work_us: AtomicU64,
+    adaptive_scale_ups: AtomicU64,
+    adaptive_policy_undecided: AtomicU64,
 }
 
 impl GlobalCounts {
@@ -168,6 +215,11 @@ impl GlobalCounts {
             parent_memo_hits: AtomicU64::new(0),
             rollup_merges: AtomicU64::new(0),
             entries_allocated: AtomicU64::new(0),
+            adaptive_calibration_chunks: AtomicU64::new(0),
+            adaptive_calibration_entries: AtomicU64::new(0),
+            adaptive_calibration_work_us: AtomicU64::new(0),
+            adaptive_scale_ups: AtomicU64::new(0),
+            adaptive_policy_undecided: AtomicU64::new(0),
         }
     }
 
@@ -187,6 +239,20 @@ impl GlobalCounts {
         atomic_saturating_add(&self.parent_memo_hits, counts.parent_memo_hits);
         atomic_saturating_add(&self.rollup_merges, counts.rollup_merges);
         atomic_saturating_add(&self.entries_allocated, counts.entries_allocated);
+        atomic_saturating_add(
+            &self.adaptive_calibration_chunks,
+            counts.adaptive_calibration_chunks,
+        );
+        atomic_saturating_add(
+            &self.adaptive_calibration_entries,
+            counts.adaptive_calibration_entries,
+        );
+        atomic_saturating_add(
+            &self.adaptive_calibration_work_us,
+            counts.adaptive_calibration_work_us,
+        );
+        atomic_saturating_add(&self.adaptive_scale_ups, counts.adaptive_scale_ups);
+        atomic_saturating_add(&self.adaptive_policy_undecided, counts.adaptive_policy_undecided);
     }
 
     fn snapshot(&self) -> Counts {
@@ -206,6 +272,11 @@ impl GlobalCounts {
             parent_memo_hits: self.parent_memo_hits.load(Ordering::Relaxed),
             rollup_merges: self.rollup_merges.load(Ordering::Relaxed),
             entries_allocated: self.entries_allocated.load(Ordering::Relaxed),
+            adaptive_calibration_chunks: self.adaptive_calibration_chunks.load(Ordering::Relaxed),
+            adaptive_calibration_entries: self.adaptive_calibration_entries.load(Ordering::Relaxed),
+            adaptive_calibration_work_us: self.adaptive_calibration_work_us.load(Ordering::Relaxed),
+            adaptive_scale_ups: self.adaptive_scale_ups.load(Ordering::Relaxed),
+            adaptive_policy_undecided: self.adaptive_policy_undecided.load(Ordering::Relaxed),
         }
     }
 
@@ -225,6 +296,11 @@ impl GlobalCounts {
         self.parent_memo_hits.store(0, Ordering::Relaxed);
         self.rollup_merges.store(0, Ordering::Relaxed);
         self.entries_allocated.store(0, Ordering::Relaxed);
+        self.adaptive_calibration_chunks.store(0, Ordering::Relaxed);
+        self.adaptive_calibration_entries.store(0, Ordering::Relaxed);
+        self.adaptive_calibration_work_us.store(0, Ordering::Relaxed);
+        self.adaptive_scale_ups.store(0, Ordering::Relaxed);
+        self.adaptive_policy_undecided.store(0, Ordering::Relaxed);
     }
 }
 

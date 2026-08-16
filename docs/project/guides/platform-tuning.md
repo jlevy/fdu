@@ -121,6 +121,28 @@ It is stated here because the constant’s own documentation makes the platform 
 legible, and because a sweep is the cheap way to settle it: `perf_probe --threads N`
 takes the worker count directly.
 
+### The one-shot timing is sensitive, but no replacement qualified
+
+The calibration accumulates the first 16,384 entries to complete, decides once, and is
+then discarded. `scan::tests::completion_order` demonstrates the consequence
+deterministically: one tree can produce opposite decisions under different valid
+completion orders.
+
+The Apple Silicon/APFS campaign corrected the interpretation of that fact.
+Completion-order sensitivity is not automatically performance harm.
+On a trace-verified fast-then-slow corpus, the shipped controller held at six workers
+while repeated and staged alternatives expanded.
+The alternatives were 58.49% and 60.73% slower; fixed eight, ten, and sixteen workers
+also regressed. The profile showed more kernel work, lock wait, and scheduler pressure
+after expansion, with no macOS bulk fallbacks.
+
+No candidate survived discovery, so the one-shot procedure, the 30 µs threshold, and all
+worker caps remain unchanged.
+Future sweeps must still record the bounded policy history: otherwise a threshold result
+describes an unknown mixture of decisions.
+The characterization, experiments, and no-change decision are in
+[the adaptive-worker gap-closure report](../reports/report-2026-08-15-adaptive-worker-gap-closure.md).
+
 ## How a divergence is expressed in code
 
 Two kinds of platform difference live in this engine, and only one of them is a tuning
