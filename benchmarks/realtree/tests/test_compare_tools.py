@@ -597,5 +597,60 @@ class ToolComparisonTests(unittest.TestCase):
         self.assertTrue(all(sample["valid"] for sample in samples))
 
 
+class DefaultTreeContractTests(unittest.TestCase):
+    """The contract for what users actually type, and its one dangerous requirement.
+
+    Every other fdu contract passes `--cache off`, so the harness never had to care
+    where a tool keeps state. This one measures the default invocation, which writes a
+    snapshot, and measuring that against the operator's real cache directory would let
+    an unrelated earlier run decide this run's starting state.
+    """
+
+    def test_the_contract_is_the_bare_default_invocation(self) -> None:
+        contract = compare_tools.CONTRACTS["fdu-default-tree"]
+
+        self.assertEqual(contract.work_class, "default-tree")
+        # No --cache, no --view, no --depth: the point is that a user typed none of them.
+        self.assertNotIn("--cache", contract.argv)
+        self.assertNotIn("--view", contract.argv)
+        self.assertNotIn("--depth", contract.argv)
+        self.assertEqual(contract.argv, ("{binary}", "--color", "never", "{root}"))
+        self.assertIn("persisted snapshot written on every run", contract.description)
+
+    def test_it_is_the_only_contract_declaring_a_cache_write(self) -> None:
+        writers = {
+            name for name, contract in compare_tools.CONTRACTS.items() if contract.writes_cache
+        }
+        self.assertEqual(writers, {"fdu-default-tree"})
+
+    def test_a_cache_writing_run_without_an_isolated_directory_fails_closed(self) -> None:
+        # The failure that matters: silently falling back to $HOME/Library/Caches would
+        # measure against whatever the operator happened to have there, and leave a
+        # snapshot of the subject tree behind. Refuse instead.
+        tool = compare_tools.Tool(
+            name="fdu",
+            contract=compare_tools.CONTRACTS["fdu-default-tree"],
+            binary=Path("/usr/bin/true"),
+        )
+        with self.assertRaises(compare_tools.ComparisonError) as raised:
+            compare_tools._run_one(
+                tool,
+                pair="dust",
+                ordinal=0,
+                warmup=False,
+                root=Path("/tmp"),
+                summary_oracle={},
+                host_regime=None,
+                timeout_seconds=1.0,
+                cache_home=None,
+            )
+        self.assertIn("no isolated cache directory", str(raised.exception))
+
+    def test_the_default_contract_may_anchor_a_comparison(self) -> None:
+        # It measures fdu, so it is a legal anchor; it is not a summary contract, so the
+        # held-out release gate still refuses it. Both halves matter.
+        self.assertNotIn("fdu-default-tree", compare_tools.FDU_SUMMARY_CONTRACTS)
+
+
 if __name__ == "__main__":
     unittest.main()

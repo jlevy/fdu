@@ -91,12 +91,27 @@ no measurement changed.
 
 ### Phase B: Complete the harness, promote session findings
 
-- [ ] Land the default-CLI-plan job (`fdu-ao6p`), so the configuration users actually
-  run is measurable through the harness.
+- [x] Land the default-CLI measurement path (`fdu-ao6p`), so the configuration users
+  actually run is measurable through the harness.
+  Implemented as an installed-command contract, `fdu-default-tree`, rather than a
+  `perf_probe` job: the gap is about the *installed command*, and `perf_probe` builds
+  `--no-default-features` and drives the library `open`, which deliberately keeps the
+  warm path the CLI no longer takes.
+  A `perf_probe` job would therefore have measured a different execution plan than the
+  one users get. The contract writes a snapshot, which is new for this harness — every
+  other contract passes `--cache off` — so cache-writing contracts now get an isolated
+  cache directory and fail closed without one, rather than measuring against, and
+  depositing into, the operator’s real cache.
 - [ ] Re-run this session’s findings through it on the measured host with the evidence
   qualifiers set, and record them as artifacts: the snapshot-read gate on the 494k APFS
   subject, the H87/H88 macOS validation, and the peer head-to-heads.
   The bead notes then point at artifacts instead of carrying the numbers.
+  **Blocked on a quiet host, not on the harness.** The capability above is what was
+  missing; what remains is measurement conditions.
+  The peer head-to-heads in particular are the cell `fdu-ow8y` has always held, and
+  recording them from a host running at load average 12–28 would file exploratory noise
+  under an artifact id, which is worse than leaving them in beads that say plainly what
+  they are.
 
 ### Phase C: Fill the cross-platform matrix
 

@@ -601,6 +601,23 @@ mtime. Partial, stale, cached, or error-bearing reports are invalid.
 A semantic or oracle mismatch invalidates the sample; a timing for a changed answer is
 not performance evidence.
 
+Which anchor contract to use is a real choice, because the contracts measure different
+questions. `fdu-transient-summary` and `fdu-index-summary` isolate engine work with
+`--cache off`, which is what a change to the walker or the index should be judged on.
+`fdu-default-tree` is the bare `fdu PATH` invocation — cache `auto`, tree view, snapshot
+written on every run — and is the only contract that measures what a user gets by typing
+nothing else.
+
+Prefer the summary contracts for engine work and the default contract for user-visible
+claims; a change can move one and not the other, and for three campaigns nothing
+measured the second, which is how a default-path regression stayed invisible while every
+`--cache off` cell looked healthy.
+The default contract writes a snapshot, so the harness gives it an isolated cache
+directory for the run: measuring against the operator’s own cache would let an unrelated
+earlier run set this one’s starting state, and would leave a snapshot of the subject
+tree behind. It is a legal anchor but not a summary contract, so it cannot carry a
+held-out release claim.
+
 The default comparison should include rendered-tree peers (`dust`, `gdu`, `pdu`) and
 fast total-only lower bounds (`dua`, `diskus`, and macOS `dumac`). `ncdu` is a useful
 indexed-tree peer; BSD/GNU `du` are serial floors.

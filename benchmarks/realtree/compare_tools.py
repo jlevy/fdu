@@ -44,6 +44,15 @@ class ToolContract:
     description: str
     argv: Tuple[str, ...]
     version_argv: Tuple[str, ...]
+    #: The command writes a persistent cache outside the subject tree.
+    #:
+    #: Every other contract here passes `--cache off`, so the harness never had to think
+    #: about where a tool keeps state. A contract that measures the *default* invocation
+    #: does, and it must not be measured against the operator's real cache directory:
+    #: that would let an unrelated earlier run decide this run's starting state, and
+    #: would leave a snapshot of the subject tree behind afterwards. Runs carrying this
+    #: flag get an isolated cache directory for the duration.
+    writes_cache: bool = False
 
 
 @dataclass(frozen=True)
@@ -122,6 +131,28 @@ CONTRACTS: Dict[str, ToolContract] = {
             "{root}",
         ),
         version_argv=("{binary}", "--version"),
+    ),
+    # The configuration a user gets by typing `fdu PATH` and nothing else. Every other
+    # fdu contract above passes `--cache off` and an explicit view, which is right for
+    # isolating engine work but means no contract measured what people actually run —
+    # the gap that let a default-path regression go unmeasured through three campaigns.
+    #
+    # Under the cost model this plan neither reads nor revalidates a snapshot, so each
+    # trial is the same work as the last: a cold scan, an index, a rendered tree, and a
+    # snapshot write. That is what makes it a stable job rather than a first-run-only
+    # measurement, and it is why the write belongs inside the timed region — a default
+    # run pays it every time.
+    "fdu-default-tree": ToolContract(
+        name="fdu-default-tree",
+        work_class="default-tree",
+        description=(
+            "the bare default invocation: complete scan, reusable exact metadata "
+            "index, rendered depth-2 tree, and a persisted snapshot written on every "
+            "run"
+        ),
+        argv=("{binary}", "--color", "never", "{root}"),
+        version_argv=("{binary}", "--version"),
+        writes_cache=True,
     ),
     "dust": ToolContract(
         name="dust",
@@ -404,6 +435,7 @@ def run(
         "fdu",
         "fdu-index-summary",
         "fdu-transient-summary",
+        "fdu-default-tree",
     }:
         raise ComparisonError("the comparison anchor must use an fdu contract")
     if not competitors:
@@ -450,23 +482,31 @@ def run(
     samples: List[Dict[str, Any]] = []
     total = len(schedule) * 2
     position = 0
+    # One isolated cache directory for the whole comparison, discarded afterwards. Per
+    # run rather than per trial because the default plan does not read what it wrote:
+    # every trial scans cold and rewrites, so trials stay identical to each other while
+    # the operator's real cache is neither consulted nor disturbed.
+    needs_cache_home = any(tool.contract.writes_cache for tool in tools)
     with measure._host_regime(host_regime, background_load_workers) as regime:
-        for competitor, ordinal, warmup, anchor_first in schedule:
-            ordered = (anchor, competitor) if anchor_first else (competitor, anchor)
-            for tool in ordered:
-                position += 1
-                sample = _run_one(
-                    tool,
-                    pair=competitor.name,
-                    ordinal=ordinal,
-                    warmup=warmup,
-                    root=root,
-                    summary_oracle=before,
-                    host_regime=regime,
-                    timeout_seconds=timeout_seconds,
-                )
-                samples.append(sample)
-                _progress(position, total, sample)
+        with tempfile.TemporaryDirectory(prefix="fdu-tool-cache-") as cache_directory:
+            cache_home = Path(cache_directory) if needs_cache_home else None
+            for competitor, ordinal, warmup, anchor_first in schedule:
+                ordered = (anchor, competitor) if anchor_first else (competitor, anchor)
+                for tool in ordered:
+                    position += 1
+                    sample = _run_one(
+                        tool,
+                        pair=competitor.name,
+                        ordinal=ordinal,
+                        warmup=warmup,
+                        root=root,
+                        summary_oracle=before,
+                        host_regime=regime,
+                        timeout_seconds=timeout_seconds,
+                        cache_home=cache_home,
+                    )
+                    samples.append(sample)
+                    _progress(position, total, sample)
         final_host_pressure = measure._host_pressure_snapshot(regime)
 
     after = tree.fingerprint(root, label=label)
@@ -630,14 +670,25 @@ def _run_one(
     summary_oracle: Mapping[str, Any],
     host_regime: measure.HostRegime,
     timeout_seconds: float,
+    cache_home: Optional[Path] = None,
 ) -> Dict[str, Any]:
     argv = _expand(tool.contract.argv, tool.binary, root)
     requires_scan_diagnostics = tool.contract.name in FDU_SUMMARY_CONTRACTS
+    overrides: Dict[str, str] = {}
+    if requires_scan_diagnostics:
+        overrides["FDU_SCAN_DIAGNOSTICS"] = "1"
+    if tool.contract.writes_cache:
+        if cache_home is None:
+            raise ComparisonError(
+                f"contract {tool.contract.name} writes a cache but no isolated cache "
+                "directory was provisioned"
+            )
+        overrides["XDG_CACHE_HOME"] = str(cache_home)
     pressure_before = measure._host_pressure_snapshot(host_regime)
     result = measure._spawn(
         argv,
         timeout_seconds=timeout_seconds,
-        environment_overrides={"FDU_SCAN_DIAGNOSTICS": "1"} if requires_scan_diagnostics else None,
+        environment_overrides=overrides or None,
     )
     pressure_after = measure._host_pressure_snapshot(host_regime)
     resources = dict(result["resources"])
