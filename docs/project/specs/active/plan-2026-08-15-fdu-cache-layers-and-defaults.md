@@ -47,8 +47,9 @@ which requests should touch the snapshot at all.
   [its own plan](plan-2026-08-10-fdu-fsevents-scoped-revalidation.md)
 - Changing what any policy *means* once selected; `--cache off`, `refresh`, `read-only`,
   and `only` keep their documented contracts
-- Any claim about macOS or APFS timing; every number below is Linux/ext4 and is
-  inherited, not proven, elsewhere
+- Cross-regime claims: the Background numbers are Linux/ext4, Phases 2 and 3 carry their
+  own macOS/APFS measurements, and each number is evidence only about the regime that
+  produced it
 
 ## Background
 
@@ -188,6 +189,17 @@ report reproduced.
 - [x] Golden lifecycle contracts updated deliberately: a second one-shot run reports
   `cold_scan`, and a new block pins that the rewrite keeps the snapshot current for
   `--cache only`.
+
+Measured after the change on the same tree, interleaved against the installed tools:
+repeat `fdu .` fell from 4.8 s to 3.83 s, within noise of its own cold run and level
+with `dust` (3.88 s) rather than behind it; `--view summary` at 3.15 s led `dumac` (3.25
+s) and `diskus` (3.62 s) in the scalar class.
+The 1–3% margins over the nearest peers are ties on an uncontrolled host, not claims;
+the structural loss — a warm default slower than a cold scan — is what this phase
+removed. The library `open` path keeps warm revalidation, which the perf harness’s
+`warm-revalidate` job measures; the harness has no job for the default one-shot CLI
+plan, so this change is evidenced by the interleaved runs recorded in `fdu-wpku` rather
+than a ledger artifact.
 
 ## Testing Strategy
 
