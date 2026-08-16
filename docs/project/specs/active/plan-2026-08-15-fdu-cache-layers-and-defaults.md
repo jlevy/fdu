@@ -4,7 +4,8 @@
 
 **Author:** fdu project
 
-**Status:** Draft
+**Status:** Phases 1 and 3 landed; Phase 2 closed by measurement rather than
+implemented. Only `fdu-wu6w` remains, gated on progressive results.
 
 ## Overview
 
