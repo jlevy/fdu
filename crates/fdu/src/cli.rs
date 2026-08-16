@@ -574,6 +574,10 @@ impl Cli {
         let streams_changes = query.views.contains(&ViewSpec::Files);
         let has_aggregates = query.views.iter().any(|view| *view != ViewSpec::Files);
 
+        // The save above was joined, so the writer has dropped its reference and this
+        // is the only one left; the watch session needs the index by value.
+        let index = std::sync::Arc::into_inner(index)
+            .expect("the joined writer released the only other reference");
         let handle = crate::IndexHandle::new(index);
         let mut session = Session::new(handle, config.scan.clone(), query, WatchConfig::default())?;
 
