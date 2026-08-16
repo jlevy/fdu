@@ -7,6 +7,10 @@
 //   filesonly - raw getdents64 + statx only for DT_REG (summary tier shape; dirs by d_type)
 //   inosort   - statx variant, entries statted in ascending d_ino order per directory
 //   uring     - raw getdents64 + io_uring-batched statx (QD 128), hand-rolled ring
+//   elide     - statx variant that skips the terminating empty getdents64 when the
+//               previous call left >= one max-size dirent of slack (fdu-jnuo probe;
+//               production use would need a statfs f_type allowlist, since a FUSE or
+//               network filesystem may legally return a short buffer mid-stream)
 // Output: dirs, files, other, apparent bytes, allocated bytes, elapsed ns.
 // Every variant must report identical dirs/files/bytes on the same immutable tree
 // (filesonly reports identical files/bytes; its dir count comes from d_type).
@@ -40,7 +44,13 @@ static void qpush(const char *p) {
   queue[qtail++] = strdup(p);
 }
 
-static uint64_t files, dirs, other, bytes, allocated, stat_calls, enter_calls;
+static uint64_t files, dirs, other, bytes, allocated, stat_calls, enter_calls, getdents_calls;
+// elide: skip the terminating empty getdents64 when the previous call left at
+// least one maximum-size dirent of slack, which on in-tree filesystems means the
+// iterator hit EOF rather than a full buffer. 512 > 19-byte header + NAME_MAX+1,
+// rounded up with margin for alignment.
+static int elide_final;
+#define ELIDE_SLACK 512
 
 static int64_t now_ns(void) {
   struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts);
@@ -79,7 +89,9 @@ static int collect(int fd, size_t *count) {
   size_t n = 0, nboff = 0;
   for (;;) {
     ssize_t len = syscall(SYS_getdents64, fd, scratch, SCRATCH);
+    getdents_calls++;
     if (len <= 0) break;
+    int last_chunk = elide_final && (size_t)len <= SCRATCH - ELIDE_SLACK;
     for (ssize_t pos = 0; pos < len;) {
       struct ldirent *de = (struct ldirent *)(scratch + pos);
       pos += de->d_reclen;
@@ -93,6 +105,7 @@ static int collect(int fd, size_t *count) {
       pents[n].off = (unsigned short)nboff;
       nboff += l; n++;
     }
+    if (last_chunk) break;
   }
   *count = n;
   return 0;
@@ -234,6 +247,7 @@ int main(int argc, char **argv) {
   else if (!strcmp(variant, "narrow")) { use_statx = 1; statx_mask = STATX_TYPE | STATX_SIZE | STATX_BLOCKS | STATX_MTIME | STATX_CTIME | STATX_INO; }
   else if (!strcmp(variant, "filesonly")) { files_only = 1; statx_mask = STATX_TYPE | STATX_SIZE | STATX_BLOCKS | STATX_MTIME; }
   else if (!strcmp(variant, "inosort")) { use_statx = 1; sort_ino = 1; }
+  else if (!strcmp(variant, "elide")) { use_statx = 1; elide_final = 1; }
   else if (!strcmp(variant, "uring")) { uring = 1; if (uring_init() != 0) { fprintf(stderr, "io_uring unavailable: %s\n", strerror(errno)); return 3; } }
   else { fprintf(stderr, "unknown variant\n"); return 2; }
 
@@ -248,7 +262,7 @@ int main(int argc, char **argv) {
   }
   int64_t t1 = now_ns();
   printf("{\"variant\":\"%s\",\"dirs\":%lu,\"files\":%lu,\"other\":%lu,\"bytes\":%lu,\"allocated\":%lu,"
-         "\"stat_calls\":%lu,\"enter_calls\":%lu,\"wall_ns\":%ld}\n",
-         variant, dirs, files, other, bytes, allocated, stat_calls, enter_calls, t1 - t0);
+         "\"stat_calls\":%lu,\"enter_calls\":%lu,\"getdents_calls\":%lu,\"wall_ns\":%ld}\n",
+         variant, dirs, files, other, bytes, allocated, stat_calls, enter_calls, getdents_calls, t1 - t0);
   return 0;
 }

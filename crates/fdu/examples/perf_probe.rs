@@ -87,6 +87,7 @@ enum Mode {
     DeltaApply,
     MarkdownProse,
     Query,
+    ColdOpenSave,
     Revalidate,
     ScanIndex,
     ScanProducer,
@@ -117,6 +118,7 @@ impl Mode {
             "markdown-prose" => Ok(Self::MarkdownProse),
             "query" => Ok(Self::Query),
             "revalidate" => Ok(Self::Revalidate),
+            "cold-open-save" => Ok(Self::ColdOpenSave),
             "scan-index" => Ok(Self::ScanIndex),
             "scan-producer" => Ok(Self::ScanProducer),
             "snapshot-load" => Ok(Self::SnapshotLoad),
@@ -147,6 +149,7 @@ impl Mode {
             Self::MarkdownProse => "markdown-prose",
             Self::Query => "query",
             Self::Revalidate => "revalidate",
+            Self::ColdOpenSave => "cold-open-save",
             Self::ScanIndex => "scan-index",
             Self::ScanProducer => "scan-producer",
             Self::SnapshotLoad => "snapshot-load",
@@ -328,6 +331,7 @@ fn execute(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
         Mode::ScanProducer => scan_producer(arguments),
         Mode::ScanIndex | Mode::ValidateIndex => scan_index(arguments),
         Mode::SnapshotSave => snapshot_save(arguments),
+        Mode::ColdOpenSave => cold_open_save(arguments),
         Mode::SnapshotLoad => snapshot_load(arguments),
         Mode::Revalidate => revalidate(arguments),
         Mode::DeltaApply => delta_apply(arguments),
@@ -552,6 +556,38 @@ fn scan_index(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     summary.attribution = Some(report.attribution);
     summary.errors = u64::try_from(report.errors.len()).unwrap_or(u64::MAX);
     summary.complete = report.is_complete();
+    Ok(ProbeOutput::new(arguments.mode, "scan", component, summary))
+}
+
+/// A cold scan that also writes its cache, through the real `open` path.
+///
+/// `snapshot-save` calls `snapshot::save` directly, so it never exercises what a
+/// cache-writing run actually costs: `spawn_save`'s hand-off to the writer thread and
+/// the join that a one-shot caller performs before exiting. That is the shape of
+/// `fdu --cache refresh`, the default first run against a tree, and it was
+/// unmeasurable under the accept rule until this job existed.
+fn cold_open_save(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
+    let snapshot = arguments.snapshot()?.to_path_buf();
+    let config = OpenConfig {
+        scan: arguments.scan.clone(),
+        cache_path: Some(snapshot.clone()),
+        // Refresh rather than Auto: the job must always walk and always write, or a
+        // stray snapshot would silently turn one trial into a warm open.
+        policy: CachePolicy::Refresh,
+        analysis: AnalysisRequest::default(),
+    };
+    let started = Instant::now();
+    let (index, report, pending) = fdu::open_with_pending_save(&arguments.root, &config)?;
+    pending.join()?;
+    let component = started.elapsed();
+    if !report.is_complete() {
+        return Err(ProbeError("cold-open-save scan was partial".into()));
+    }
+    let mut summary = summarize_index(&index)?;
+    summary.complete = report.is_complete();
+    summary.errors = u64::try_from(report.scan.errors.len()).unwrap_or(u64::MAX);
+    summary.dirs_read = report.scan.dirs_read;
+    summary.snapshot_bytes = snapshot.metadata().ok().map(|metadata| metadata.len());
     Ok(ProbeOutput::new(arguments.mode, "scan", component, summary))
 }
 

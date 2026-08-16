@@ -679,6 +679,21 @@ impl Index {
     /// Conditional operations are accepted only while their baseline still matches.
     /// No-ops and stale operations do not advance the clock or enter the journal.
     pub fn apply(&mut self, observation: &Observation) -> crate::Result<ApplyOutcome> {
+        self.apply_with(observation, true)
+    }
+
+    /// [`Self::apply`] with the change-history capture optional.
+    ///
+    /// `journal: false` exists for the bootstrap path, whose history
+    /// [`Self::establish_baseline`] clears after every batch: capturing it first
+    /// cost one op clone per changed entry plus one delta clone per batch, all
+    /// freed unread. Arbitration, validation, guards, and stats are identical in
+    /// both modes; only what is retained afterwards differs.
+    fn apply_with(
+        &mut self,
+        observation: &Observation,
+        journal: bool,
+    ) -> crate::Result<ApplyOutcome> {
         validate_observation(observation)?;
         if observation.is_empty() {
             return Ok(ApplyOutcome::default());
@@ -698,13 +713,23 @@ impl Index {
             };
         };
 
-        Ok(self.apply_validated(observation, next_clock))
+        Ok(self.apply_validated_with(observation, next_clock, journal))
     }
 
     /// Apply an already validated observation with a clock known to be available.
     fn apply_validated(&mut self, observation: &Observation, next_clock: Clock) -> ApplyOutcome {
+        self.apply_validated_with(observation, next_clock, true)
+    }
+
+    fn apply_validated_with(
+        &mut self,
+        observation: &Observation,
+        next_clock: Clock,
+        journal: bool,
+    ) -> ApplyOutcome {
         let mut stats = ApplyStats::default();
         let mut effective = Vec::new();
+        let mut changed_ops = 0usize;
         let mut parent_memo = ParentMemo::default();
         let mut accepted = Vec::with_capacity(observation.len());
         for observed in &observation.ops {
@@ -746,15 +771,23 @@ impl Index {
                 }
             };
             if changed {
-                effective.push(op.clone());
+                changed_ops += 1;
+                if journal {
+                    effective.push(op.clone());
+                }
             }
         }
 
-        if effective.is_empty() {
+        if changed_ops == 0 {
             return ApplyOutcome { stats, applied: None };
         }
 
         self.clock = next_clock;
+        if !journal {
+            // The caller declared this history unread: no delta is minted and the
+            // journal keeps whatever it held, which `establish_baseline` clears.
+            return ApplyOutcome { stats, applied: None };
+        }
         let applied = AppliedDelta { clock: self.clock, ops: effective };
         if applied.len() > self.journal_op_capacity {
             self.journal.clear();
@@ -779,7 +812,7 @@ impl Index {
         &mut self,
         observation: &Observation,
     ) -> crate::Result<ApplyStats> {
-        let outcome = self.apply(observation)?;
+        let outcome = self.apply_with(observation, false)?;
         self.establish_baseline();
         Ok(outcome.stats)
     }

@@ -365,6 +365,25 @@ PROBE_JOBS: Dict[str, Job] = {
         description="Deserialize a snapshot into a usable index. No filesystem walk.",
         needs_snapshot=True,
     ),
+    "cold-open-save": Job(
+        id="cold-open-save",
+        argv=(
+            "{binary}",
+            "cold-open-save",
+            "--root",
+            "{root}",
+            "--snapshot",
+            "{snapshot}",
+        ),
+        start_state="cold",
+        description=(
+            "A cold scan that also writes its cache, through the real open path: "
+            "index build, the writer hand-off, and the join a one-shot caller makes "
+            "before exiting. The shape of `fdu --cache refresh`."
+        ),
+        writes_snapshot=True,
+        parallel_cpu=True,
+    ),
     "cold-snapshot-save": Job(
         id="cold-snapshot-save",
         argv=(
