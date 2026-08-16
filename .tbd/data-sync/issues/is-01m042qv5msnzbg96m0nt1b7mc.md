@@ -5,13 +5,13 @@ title: Narrow the getattrlistbulk attribute set to what the plan consumes
 kind: task
 status: open
 priority: 2
-version: 1
+version: 2
 labels:
   - performance
   - macos
 dependencies: []
 created_at: 2026-08-16T01:24:51.506Z
-updated_at: 2026-08-16T01:24:51.506Z
+updated_at: 2026-08-16T01:31:46.906Z
 ---
 Candidate hypothesis (H94 when the ledger takes it; H86-H93 are all consumer-side or
 I/O-path -- none touch the kernel-side attr request).
@@ -41,3 +41,13 @@ criterion: if narrowing moves sys <5%, the dumac gap is elsewhere (buffer size,
 open/close pattern, allocation) and this closes.
 
 Needs a quiet host to clear the keep bar (fdu-ow8y); the loop's paired protocol applies.
+
+## Notes
+
+Paired head-to-head confirming the gap this bead predicts (same tree, 10
+counterbalanced pairs, bootstrap CI): fdu --cache off --view summary vs dumac came out
+fdu +226 ms median (+7.0%), 95% CI [+39, +387] -- entirely above zero, so dumac leads
+the scalar class decisively on this host, not within noise. Combined with the -17%
+aggregate sys-time gap at identical enumeration counts, the kernel-side attr cost is
+the live mechanism. (Work-class caveat unchanged: fdu returns five tallies including
+counts and newest-mtime; dumac returns the allocated total only.)
