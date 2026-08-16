@@ -36,9 +36,65 @@ No cached snapshots.
 ## A Report Leaves a Snapshot Behind
 
 ```console
+$ fdu --size apparent project
+     263 B  ██████████   100%  . (6 files)
+     128 B  █████░░░░░    49%    dist (1 file)
+      36 B  █░░░░░░░░░    14%    src (2 files)
+      23 B  █░░░░░░░░░     9%    docs (1 file)
+Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+? 0
+```
+
+## The Compact Summary Retains Nothing, and Cache-Only Says So
+
+An unfiltered `summary` is answered by the transient tier, which retains no index and so
+has no snapshot to write: the cache cannot save the walk that request is already doing.
+A tier that retained nothing has nothing for `--cache only` to read, and it says so
+rather than quietly scanning.
+
+```console
+$ fdu --cache-clear project
+Cache file: [CACHE_FILE]
+Cache cleared.
+? 0
+```
+
+```console
 $ fdu --view summary --size apparent project
      263 B  6 files, 3 directories
 Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+? 0
+```
+
+```console
+$ fdu --cache-status project
+No cached snapshots.
+? 0
+```
+
+```console
+$ fdu --cache only --view summary project
+fdu: snapshot is not usable: no usable snapshot for this root and scan scope
+? 1
+```
+
+An ordinary report retains the index, so it does leave a snapshot that `--cache only`
+can then answer from without touching the tree.
+
+```console
+$ fdu --size apparent project
+     263 B  ██████████   100%  . (6 files)
+     128 B  █████░░░░░    49%    dist (1 file)
+      36 B  █░░░░░░░░░    14%    src (2 files)
+      23 B  █░░░░░░░░░     9%    docs (1 file)
+Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+? 0
+```
+
+```console
+$ fdu --cache only --view summary --size apparent project
+     263 B  6 files, 3 directories
+Performance: walked 0 files / 0 B; content read 0 B; analysis 0 fresh, 0 cached; cache only; total [PERF_TIME]
 ? 0
 ```
 
@@ -89,8 +145,11 @@ Cache already empty.
 ## Clear and Status Compose, With Clear First
 
 ```console
-$ fdu --view summary --size apparent project
-     263 B  6 files, 3 directories
+$ fdu --size apparent project
+     263 B  ██████████   100%  . (6 files)
+     128 B  █████░░░░░    49%    dist (1 file)
+      36 B  █░░░░░░░░░    14%    src (2 files)
+      23 B  █░░░░░░░░░     9%    docs (1 file)
 Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```

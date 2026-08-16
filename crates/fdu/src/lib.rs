@@ -266,14 +266,40 @@ pub fn open(root: &Path, config: &OpenConfig) -> Result<(Index, OpenReport)> {
 ///
 /// The blocking [`open`] is the right default; a caller that renders its own output can
 /// use this to overlap the write with rendering and join before exiting.
+///
+/// This path always loads a usable snapshot, because its callers — live sessions and
+/// library consumers holding the index — amortise the load across everything they do
+/// with it. A one-shot report cannot; the internal report planner decides per request
+/// whether the read pays and routes through the gated variant below.
 pub fn open_with_pending_save(
     root: &Path,
     config: &OpenConfig,
 ) -> Result<(Index, OpenReport, PendingSave)> {
+    open_for_report(root, config, true)
+}
+
+/// [`open_with_pending_save`] with the snapshot read under the caller's control.
+///
+/// `read_snapshot: false` skips loading an existing snapshot and takes the cold-scan
+/// path: for a one-shot metadata query, revalidation stats every entry regardless, so
+/// the load and the reconciliation against it are additive cost with nothing to
+/// amortise them — measured on macOS/APFS over 494,031 entries, warm revalidation cost
+/// 4.8 s against 3.6 s for the cold path, whose write-behind the read could at best
+/// have saved ~50 ms of. Persistence is unaffected: the cold path still writes per
+/// [`cold_scan_save_targets`], so the snapshot stays fresh for [`CachePolicy::Only`]
+/// and for content-analysis reuse.
+///
+/// A policy that cannot scan reads regardless of the flag — for [`CachePolicy::Only`]
+/// the snapshot is the contract, not a cost choice.
+pub(crate) fn open_for_report(
+    root: &Path,
+    config: &OpenConfig,
+    read_snapshot: bool,
+) -> Result<(Index, OpenReport, PendingSave)> {
     let root = root.canonicalize().map_err(|e| Error::io(root, e))?;
     let policy = config.policy;
 
-    let loaded = match (policy.reads(), &config.cache_path) {
+    let loaded = match ((read_snapshot || !policy.scans()) && policy.reads(), &config.cache_path) {
         (true, Some(cache_path)) => snapshot::load(cache_path)?
             // A snapshot describing another root or a different scan scope is not this
             // tree's answer; treat it as absent rather than as data.
@@ -356,7 +382,12 @@ pub fn open_with_pending_save(
         .profile
         .is_enabled()
         .then(|| content::analyze_index(&mut index, config.analysis));
-    let pending = spawn_save(&index, config, scan_report.is_complete(), SaveTargets::all());
+    let pending = spawn_save(
+        &index,
+        config,
+        scan_report.is_complete(),
+        cold_scan_save_targets(&index, config),
+    );
     Ok((
         index,
         OpenReport { path_taken: OpenPath::ColdScan, scan: scan_report, analysis, content_cache },
@@ -379,8 +410,76 @@ impl SaveTargets {
         Self { metadata: true, content: true }
     }
 
+    const fn nothing() -> Self {
+        Self { metadata: false, content: false }
+    }
+
     const fn none(self) -> bool {
         !self.metadata && !self.content
+    }
+}
+
+/// Entry count at or above which a first scan's metadata snapshot is worth writing.
+///
+/// `None` persists unconditionally, which is what every release has shipped and what
+/// this build still does. It stays unset because APFS measurement argued against a
+/// threshold, not because the measurement is outstanding.
+///
+/// A snapshot repays its write only if a later run reads it *and* that read beats
+/// rescanning. For metadata neither half is free. Revalidating a loaded snapshot stats
+/// every entry regardless, so a warm `Auto` run saves nothing; measured on Linux/ext4
+/// over 84,539 entries, a warm round-trip cost 162 ms against 132 ms to rebuild the index
+/// outright. Only the no-scan `Only` tier avoids the walk, and warm it still loses, 81 ms
+/// against 71 ms, because deserialisation costs about what a warm walk costs.
+///
+/// It wins decisively in exactly one metadata regime: a cold operating-system cache,
+/// where the same read took 118 ms against 277 ms to scan. So the question a threshold
+/// really answers is whether the next run will find this tree's metadata evicted, and
+/// tree size is the honest proxy for that — a tree that fits comfortably in the page
+/// cache will be warm again and the snapshot will never pay, while one that does not
+/// will be cold and it always will.
+///
+/// That reasoning is ext4's, and it did not survive the crossing. Measured on APFS over
+/// 175,128 entries, warm, the `Only` read took 146 ms against 521 ms to scan — a win
+/// rather than ext4's loss, because deserialisation costs about the same on both while an
+/// APFS metadata walk costs roughly three and a half times as much per entry. The 90 ms
+/// write repays about fourfold on the first later `Only` read, at any size, so the
+/// premise that metadata pays back only under a cold cache is false here.
+///
+/// A threshold would therefore give up real value on exactly the trees it gated, and it
+/// would also introduce a visible cliff: below it, `fdu PATH` would stop leaving a
+/// snapshot for a later `--cache only`. `fdu-hvs5` carries the evidence, and
+/// `docs/project/guides/platform-tuning.md` carries why this one is a constant worth
+/// not having.
+const SNAPSHOT_MIN_ENTRIES: Option<u64> = None;
+
+/// Which artifacts a first, cold scan should persist.
+///
+/// Separate from the warm-revalidation decision above, which asks whether a *loaded*
+/// snapshot changed. This one asks whether a snapshot is worth creating at all.
+fn cold_scan_save_targets(index: &Index, config: &OpenConfig) -> SaveTargets {
+    cold_scan_save_targets_with(index.len(), config, SNAPSHOT_MIN_ENTRIES)
+}
+
+/// The decision itself, with the threshold injected so both sides stay provable while
+/// [`SNAPSHOT_MIN_ENTRIES`] is unset.
+fn cold_scan_save_targets_with(
+    entries: u64,
+    config: &OpenConfig,
+    minimum: Option<u64>,
+) -> SaveTargets {
+    // Content sidecars are the clearest case for persisting: re-reading file bodies is
+    // the expensive half of analysis, and reusing them measured 639 ms down to 325 ms.
+    if config.analysis.profile.is_enabled() {
+        return SaveTargets::all();
+    }
+    // An explicit instruction to rewrite the snapshot outranks any cost estimate.
+    if config.policy == CachePolicy::Refresh {
+        return SaveTargets::all();
+    }
+    match minimum {
+        Some(minimum) if entries < minimum => SaveTargets::nothing(),
+        _ => SaveTargets::all(),
     }
 }
 
@@ -1088,5 +1187,63 @@ mod save_tests {
             pending.join().expect("nothing to join");
             assert!(!snapshot_path.exists(), "{policy:?} wrote a snapshot");
         }
+    }
+}
+
+#[cfg(test)]
+mod cold_scan_persistence_tests {
+    use super::*;
+
+    fn config(policy: CachePolicy, profile: content::AnalysisProfile) -> OpenConfig {
+        OpenConfig {
+            policy,
+            analysis: content::AnalysisRequest { profile, ..Default::default() },
+            ..OpenConfig::default()
+        }
+    }
+
+    #[test]
+    fn analysis_always_persists_because_rereading_bodies_is_the_expensive_half() {
+        // The measured case for the cache: 639 ms to 325 ms warm. Size is irrelevant
+        // here, so even a tiny tree under a large threshold still writes.
+        let analyzed = config(CachePolicy::Auto, content::AnalysisProfile::Code);
+        let targets = cold_scan_save_targets_with(1, &analyzed, Some(250_000));
+        assert!(targets.metadata && targets.content, "analysis must persist its sidecar");
+    }
+
+    #[test]
+    fn refresh_persists_because_the_caller_asked_for_it_outright() {
+        let refresh = config(CachePolicy::Refresh, content::AnalysisProfile::Disabled);
+        let targets = cold_scan_save_targets_with(1, &refresh, Some(250_000));
+        assert!(targets.metadata, "refresh is an explicit instruction, not a cost estimate");
+    }
+
+    #[test]
+    fn a_metadata_scan_persists_on_either_side_of_an_enabled_threshold() {
+        // Both branches are asserted here rather than through the shipped constant, so
+        // the gate stays proven while SNAPSHOT_MIN_ENTRIES is still unset.
+        let plain = config(CachePolicy::Auto, content::AnalysisProfile::Disabled);
+        let below = cold_scan_save_targets_with(9, &plain, Some(10));
+        assert!(below.none(), "a tree below the threshold should not create a snapshot");
+
+        let at = cold_scan_save_targets_with(10, &plain, Some(10));
+        assert!(at.metadata, "the threshold is inclusive");
+    }
+
+    #[test]
+    fn an_unset_threshold_preserves_the_behaviour_every_release_has_shipped() {
+        // SNAPSHOT_MIN_ENTRIES stays None because APFS measurement argued against a
+        // threshold rather than supplying one (fdu-hvs5): there the snapshot repays its
+        // write on the first later `Only` read at any size. A cold metadata scan must
+        // persist exactly as before, so `fdu PATH` keeps leaving a snapshot behind.
+        let plain = config(CachePolicy::Auto, content::AnalysisProfile::Disabled);
+        assert!(
+            cold_scan_save_targets_with(1, &plain, None).metadata,
+            "an unset threshold must not change persistence"
+        );
+        assert_eq!(
+            SNAPSHOT_MIN_ENTRIES, None,
+            "enabling this is a product decision, not a default"
+        );
     }
 }
