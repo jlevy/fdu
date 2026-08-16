@@ -10,7 +10,7 @@ experiment:
   title: Region-scheduled breadth-first traversal
   date: "2026-08-11"
   hypotheses:
-    - "H49: exp-012's RSS cost and its missing ordering benefit both came from the global FIFO, not from preferring shallow work; per-region buckets with round-robin hand-off recover memory while making the shallow preference survive parallelism"
+    - H49
   subject:
     tree_label: metabrowser
     tree_root_id: dbd79ed9c898f7a2f66530cd95bb61cab88e798375134b86c77ece761de580a9

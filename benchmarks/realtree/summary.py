@@ -17,10 +17,11 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Sequence
+from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 EXPERIMENTS_DIR = Path("docs/project/experiments")
 DEFAULT_OUT = Path("docs/project/reports/report-2026-08-10-fdu-performance-experiments.md")
@@ -56,7 +57,70 @@ def load_experiments(directory: Path) -> List[Dict[str, Any]]:
         payload = _read(path)
         payload["_path"] = str(path)
         experiments.append(payload)
+    for warning in check_identifiers(experiments):
+        print(f"warning: {warning}", file=sys.stderr)
     return experiments
+
+
+def check_identifiers(experiments: Sequence[Mapping[str, Any]]) -> List[str]:
+    """Refuse to build a ledger whose experiment ids collide; warn on hypothesis reuse.
+
+    Two campaigns running in parallel each numbered their experiments from the same
+    next-free id, and nothing noticed until their branches met: until then each side's
+    artifacts were internally consistent and individually valid. The ledger's
+    "regenerated from artifacts, cannot drift" property is real but does not extend to
+    identity, because two artifacts claiming one id are both validly formed. Only a
+    check that reads the whole set can catch it, which is what this is.
+
+    A duplicate id is fatal. Hypothesis reuse is only a warning, because the obvious
+    stricter rule is wrong: a hypothesis is *supposed* to span experiments under
+    different titles, which is how a claim gets carried through a cumulative run or
+    confirmed on a second platform. `H31` spans twelve experiments in this record and
+    every one of them is correct. What is worth flagging is the softer signal that the
+    real collision left — one base number wearing several label spellings, as `H87` and
+    `H87-fixed-worker-knee` did — since that is two campaigns talking past each other.
+    It is a warning rather than an error because the committed record already contains
+    a benign instance: three deliberate `H86-*` sub-hypotheses from one campaign.
+    """
+    errors: List[str] = []
+
+    by_id: Dict[str, List[str]] = {}
+    for experiment in experiments:
+        by_id.setdefault(str(experiment["id"]), []).append(Path(experiment["_path"]).name)
+    for identifier, names in sorted(by_id.items()):
+        if len(names) > 1:
+            errors.append(
+                f"experiment id {identifier} claimed by {len(names)} artifacts: "
+                + ", ".join(sorted(names))
+            )
+    if errors:
+        raise SummaryError(
+            "identifier collision, so the ledger would misattribute evidence:\n  - "
+            + "\n  - ".join(errors)
+            + "\n Renumber the newer campaign's artifacts (id field, filename, and any "
+            "cross-references) and regenerate."
+        )
+
+    spellings: Dict[str, Dict[str, List[str]]] = {}
+    for experiment in experiments:
+        for hypothesis in experiment.get("hypotheses") or []:
+            label = str(hypothesis)
+            base = re.match(r"(H\d+)", label)
+            if not base:
+                continue
+            spellings.setdefault(base.group(1), {}).setdefault(label, []).append(
+                str(experiment["id"])
+            )
+    warnings: List[str] = []
+    for base, labels in sorted(spellings.items()):
+        if len(labels) > 1:
+            warnings.append(
+                f"hypothesis {base} appears under {len(labels)} spellings: "
+                + "; ".join(
+                    f"`{label}` ({', '.join(sorted(ids))})" for label, ids in sorted(labels.items())
+                )
+            )
+    return warnings
 
 
 def _validator() -> List[str]:
@@ -142,6 +206,8 @@ def render(experiments: Sequence[Mapping[str, Any]]) -> str:
     lines.append("")
     for experiment in experiments:
         lines.extend(_section(experiment))
+
+    lines.extend(_absolute_timings(experiments))
 
     lines.append("")
     lines.append("<!-- This document follows common-doc-guidelines.md.")
@@ -466,6 +532,89 @@ def _section(experiment: Mapping[str, Any]) -> List[str]:
     name = Path(experiment["_path"]).name
     lines.append(f"Full record: [`{name}`](../experiments/{name})")
     lines.append("")
+    return lines
+
+
+def _absolute_timings(experiments: Sequence[Mapping[str, Any]]) -> List[str]:
+    """Every experiment's primary job in milliseconds, grouped by subject and regime.
+
+    The tables above answer "did it help", which is a ratio and needs no units. This one
+    answers "how long did it take", which the record has always held — every artifact
+    carries control and candidate wall medians in nanoseconds — but which nothing
+    surfaced, so reading a wall time meant opening artifacts one at a time.
+
+    Grouped by subject and regime rather than listed flat, because an absolute time is
+    only comparable within one tree on one machine: the same accepted change reads as
+    850 ms or 4.2 s depending on which corpus it ran against, and a single ordered list
+    invites exactly the cross-subject comparison the loop forbids.
+    """
+    rows: Dict[tuple, List[tuple]] = {}
+    for experiment in experiments:
+        subject = experiment["subject"]
+        primary = next(
+            (
+                result
+                for result in experiment.get("results", [])
+                if result["job"] == experiment["verdict"]["primary_job"]
+            ),
+            None,
+        )
+        entry = ((primary or {}).get("metrics") or {}).get("wall_ns")
+        if not entry:
+            continue
+        platform = ", ".join(
+            part for part in (subject.get("host_system"), subject.get("filesystem")) if part
+        )
+        group = (
+            f"{subject['tree_label']} ({subject['tree_entries']:,} entries)",
+            platform or "unrecorded",
+            subject.get("host_virtualization") or "unrecorded",
+            subject.get("os_cache") or "unrecorded",
+        )
+        rows.setdefault(group, []).append(
+            (
+                str(experiment["id"]),
+                str(experiment["title"]),
+                str(primary["job"]),
+                entry.get("control_median"),
+                entry.get("candidate_median"),
+                entry.get("change_pct"),
+                str(experiment["verdict"]["decision"]),
+            )
+        )
+
+    if not rows:
+        return []
+
+    lines = ["## Absolute timings", ""]
+    lines.append(
+        "What each experiment's primary job actually cost, in milliseconds, for the "
+        "runs above. Read within a block and never across one: an absolute time "
+        "describes one tree on one machine in one cache state, so the same change "
+        "reads differently against a different corpus."
+    )
+    lines.append("")
+    lines.append(
+        "Baselines show one value because they measure a state rather than a change."
+    )
+    lines.append("")
+    for group in sorted(rows, key=lambda item: (-len(rows[item]), item[0])):
+        subject_label, platform, host, cache = group
+        lines.append(f"### {subject_label} — {platform}, {host}, {cache}")
+        lines.append("")
+        lines.append("| # | experiment | job | before | after | change | verdict |")
+        lines.append("| --- | --- | --- | ---: | ---: | ---: | --- |")
+        for identifier, title, job, control, candidate, change, decision in rows[group]:
+            baseline = decision == "baseline"
+            before = f"{control / 1e6:,.1f}" if control is not None else "—"
+            after = "—" if baseline or candidate is None else f"{candidate / 1e6:,.1f}"
+            delta = "—" if baseline or change is None else f"{change:+.1f}%"
+            lines.append(
+                f"| {identifier.removeprefix('exp-')} | {title} | `{job}` "
+                f"| {before} | {after} | {delta} "
+                f"| {_DECISION_MARK.get(decision, decision)} |"
+            )
+        lines.append("")
     return lines
 
 

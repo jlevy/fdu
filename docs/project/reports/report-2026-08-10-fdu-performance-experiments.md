@@ -82,7 +82,7 @@ dead end.
 | 010 | [Claim-list join and deferred path joins in reconcile](#exp010--claimlist-join-and-deferred-path-joins-in-reconcile) | H17 | `warm-revalidate` | -0.0% | ❌ rejected |
 | 011 | [One ancestor merge per same-parent insert run](#exp011--one-ancestor-merge-per-sameparent-insert-run) | H13 | `cold-scan-index` | -2.5% | ❌ rejected |
 | 012 | [Breadth-first traversal order](#exp012--breadthfirst-traversal-order) | H48 | `cold-scan-index` | -0.6% | ✅ accepted |
-| 013 | [Region-scheduled breadth-first traversal](#exp013--regionscheduled-breadthfirst-traversal) | H49: exp-012’s RSS cost and its missing ordering benefit both came from the global FIFO, not from preferring shallow work; per-region buckets with round-robin hand-off recover memory while making the shallow preference survive parallelism | `cold-scan-index` | -3.8% | ✅ accepted |
+| 013 | [Region-scheduled breadth-first traversal](#exp013--regionscheduled-breadthfirst-traversal) | H49 | `cold-scan-index` | -3.8% | ✅ accepted |
 | 014 | [What the breadth-first default costs, on the shipped scheduler](#exp014--what-the-breadthfirst-default-costs-on-the-shipped-scheduler) | H50: exp-012 measured a scheduler that no longer exists and exp-013 compared two breadth-first schedulers, so what the shipped default costs against depth-first is unmeasured | `cold-scan-producer` | -3.0% | 📏 baseline |
 | 015 | [Post-BFS worker depth under metadata-cache pressure](#exp015--postbfs-worker-depth-under-metadatacache-pressure) | H31 | `cold-scan-index` | -11.7% | ✅ accepted |
 | 016 | [Move cold-scan producer paths instead of cloning](#exp016--move-coldscan-producer-paths-instead-of-cloning) | H51 | `cold-scan-index` | -0.4% | ❌ rejected |
@@ -610,10 +610,7 @@ Full record:
 
 ### exp-013 — Region-scheduled breadth-first traversal
 
-✅ accepted · 2026-08-11 · H49: exp-012’s RSS cost and its missing ordering benefit both
-came from the global FIFO, not from preferring shallow work; per-region buckets with
-round-robin hand-off recover memory while making the shallow preference survive
-parallelism
+✅ accepted · 2026-08-11 · H49
 
 Control: global FIFO breadth-first (bbc9cca)
 
@@ -2299,6 +2296,199 @@ unmoved as the placebo at +1.69% [-0.86%, +3.07%].
 
 Full record:
 [`exp-063-share-the-index-with-the-snapshot-writer-instead-of-deep-clo.md`](../experiments/exp-063-share-the-index-with-the-snapshot-writer-instead-of-deep-clo.md)
+
+## Absolute timings
+
+What each experiment’s primary job actually cost, in milliseconds, for the runs above.
+Read within a block and never across one: an absolute time describes one tree on one
+machine in one cache state, so the same change reads differently against a different
+corpus.
+
+Baselines show one value because they measure a state rather than a change.
+
+### metabrowser-clone (59,654 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 000 | Baseline on a real 60k-entry tree | `cold-scan-index` | 627.5 | — | — | 📏 baseline |
+| 001 | Bounded parallel directory producer | `cold-scan-index` | 621.8 | 310.8 | -50.0% | ✅ accepted |
+| 002 | Parallel revalidation sweep | `warm-revalidate` | 810.0 | 786.4 | -2.6% | ❌ rejected |
+| 003 | Skip journalling on the bootstrap apply path | `cold-scan-index` | 309.7 | 308.7 | +1.0% | ❌ rejected |
+| 004 | Borrowed path components | `warm-revalidate` | 817.7 | 764.7 | -9.4% | ✅ accepted |
+| 005 | Snapshot load resolves through the parent | `warm-snapshot-load` | 386.3 | 323.6 | -18.6% | ✅ accepted |
+| 006 | Cumulative effect of every accepted change | `cold-scan-index` | 630.7 | 320.9 | -48.9% | ✅ accepted |
+| 007 | Direct reconcile reads expectations off entry ids | `warm-revalidate` | 712.9 | 662.0 | -7.1% | ✅ accepted |
+| 008 | Extensions interned to integer ids | `cold-scan-index` | 511.3 | 462.6 | -15.7% | ✅ accepted |
+| 009 | Single-pass checksum and parse on snapshot load | `warm-snapshot-load` | 351.6 | 318.3 | -8.0% | ✅ accepted |
+| 010 | Claim-list join and deferred path joins in reconcile | `warm-revalidate` | 698.5 | 695.6 | -0.0% | ❌ rejected |
+| 011 | One ancestor merge per same-parent insert run | `cold-scan-index` | 483.1 | 447.7 | -2.5% | ❌ rejected |
+
+### cache-pressure-12x (720,805 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 015 | Post-BFS worker depth under metadata-cache pressure | `cold-scan-index` | 7,238.6 | 6,231.9 | -11.7% | ✅ accepted |
+| 018 | Spawn reserve workers only after observed scan scale | `cold-scan-index` | 6,517.9 | 6,238.3 | -4.0% | ↩︎ superseded |
+| 020 | Delay adaptive workers until metadata-cache capacity | `cold-scan-index` | 6,185.8 | 6,036.8 | -1.7% | ❌ rejected |
+| 021 | Calibrate adaptive workers from initial filesystem service time | `cold-scan-index` | 6,300.4 | 6,056.1 | -5.3% | ✅ accepted |
+| 022 | Batch macOS scan metadata with getattrlistbulk | `cold-scan-index` | 6,478.7 | 4,537.0 | -30.1% | ✅ accepted |
+| 024 | Open macOS directories relative to one retained root fd | `cold-scan-index` | 3,685.7 | 3,625.6 | -0.1% | ❌ rejected |
+| 025 | Revisit worker depth after macOS bulk metadata | `cold-scan-index` | 3,700.5 | 4,374.3 | +19.2% | ❌ rejected |
+| 026 | Reuse macOS bulk metadata during full reconciliation | `warm-revalidate` | 21,161.5 | 14,014.3 | -34.4% | ✅ accepted |
+| 030 | Elide unchanged entries in bounded parallel reconciliation waves | `warm-revalidate` | 14,463.4 | 5,708.1 | -59.5% | ✅ accepted |
+
+### metabrowser-20260812 (60,067 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 027 | Cumulative effect through bulk reconciliation | `cold-scan-index` | 586.9 | 275.4 | -52.8% | ✅ accepted |
+| 028 | Reuse macOS bulk directory staging allocations | `cold-scan-index` | 382.2 | 307.8 | +0.2% | ❌ rejected |
+| 029 | Increase macOS bulk metadata buffer to 256 KiB | `cold-scan-index` | 311.0 | 321.5 | -1.8% | ❌ rejected |
+| 031 | Increase immutable-baseline reconciliation waves to 4096 directories | `warm-revalidate` | 477.6 | 482.5 | +1.6% | ❌ rejected |
+| 032 | Cumulative effect through bounded parallel reconciliation | `cold-scan-index` | 635.4 | 289.6 | -54.5% | ✅ accepted |
+| 033 | Post-composable-CLI integration validation | `warm-revalidate` | 844.7 | 481.9 | -42.3% | ✅ accepted |
+
+### metabrowser (60,067 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 013 | Region-scheduled breadth-first traversal | `cold-scan-index` | 308.7 | 297.0 | -4.8% | ✅ accepted |
+| 014 | What the breadth-first default costs, on the shipped scheduler | `cold-scan-producer` | 489.4 | — | — | 📏 baseline |
+| 016 | Move cold-scan producer paths instead of cloning | `cold-scan-index` | 336.0 | 339.9 | -0.4% | ❌ rejected |
+| 017 | Pre-create dormant workers for adaptive scan depth | `cold-scan-producer` | 494.2 | 500.7 | +2.0% | ❌ rejected |
+| 023 | Cumulative effect through adaptive scanning and macOS bulk metadata | `cold-scan-index` | 625.2 | 295.5 | -53.5% | ✅ accepted |
+
+### vm450k (450,463 entries) — Linux 6.18.5-fc-v20, unrecorded, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 060 | One-slot extension memo in front of derive-and-intern | `cold-scan-index` | 1,767.5 | 1,788.4 | +1.6% | ❌ rejected |
+| 061 | CRC-32C slicing-by-8 on the snapshot digest | `cold-snapshot-save` | 2,007.5 | 1,925.3 | -2.9% | ✅ accepted |
+| 062 | Skip unread journal capture on the bootstrap apply path | `cold-scan-index` | 1,725.2 | 1,655.3 | -5.1% | ✅ accepted |
+| 063 | Share the index with the snapshot writer instead of deep-cloning it | `cold-open-save` | 2,080.1 | 1,821.4 | -10.5% | ✅ accepted |
+
+### adaptive-fast-slow-100k (100,001 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 057 | Reject repeated adaptive worker windows on APFS | `adaptive-scan-index` | 1,871.8 | 2,963.2 | +58.5% | ❌ rejected |
+| 058 | Reject staged adaptive worker expansion on APFS | `adaptive-scan-index` | 1,871.8 | 2,987.5 | +60.7% | ❌ rejected |
+| 059 | Reject higher fixed worker counts on mixed-phase APFS | `adaptive-scan-index` | 1,878.3 | 2,532.1 | +35.6% | ❌ rejected |
+
+### live-workspace-20260812 (1,007,659 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 035 | Post-composable-CLI validation on the live 1M workspace | `cold-scan-index` | 9,849.7 | 7,332.3 | -31.3% | ✅ accepted |
+| 036 | Revisit worker depth on the live 1M workspace | `cold-scan-index` | 6,188.9 | 6,113.6 | -1.3% | ❌ rejected |
+| 037 | Revisit breadth-first versus depth-first on the live 1M workspace | `cold-scan-index` | 6,187.5 | 6,444.6 | +3.6% | ❌ rejected |
+
+### meta450k (450,463 entries) — Linux 6.18.5-fc-v20, unrecorded, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 051 | Memoize the parent resolved for the previous upsert | `cold-scan-index` | 2,022.1 | 1,852.9 | -7.3% | ✅ accepted |
+| 052 | Per-layer counters cost less than the measurement can see | `cold-scan-index` | 1,891.3 | 1,870.1 | +0.0% | ✅ accepted |
+| 053 | Move instrumentation to a runtime toggle and measure all three of its costs | `cold-scan-index` | 1,858.8 | 1,847.0 | -1.3% | ✅ accepted |
+
+### generated-markdown-2000 (2,001 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 049 | Reject bounded Markdown source reserve | `markdown-prose` | 382.0 | 365.6 | -3.5% | ❌ rejected |
+| 050 | Decode complete UTF-8 chunks in place | `markdown-prose` | 251.5 | 218.9 | -12.0% | ✅ accepted |
+
+### h69-self-contained-901k (901,963 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 045 | Pipeline macOS directory opens | `rich-summary-open-pipeline` | 3,468.3 | 3,325.4 | -4.5% | ↩︎ superseded |
+| 046 | Tune a shared macOS directory-opener pool | `rich-summary-shared-openers` | 3,337.9 | 3,220.9 | -4.0% | ⏳ in progress |
+
+### pr22-macos-benchmarks (60,993 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 054 | Validate the Linux campaign’s cumulative effect on macOS | `warm-revalidate` | 393.0 | 335.7 | -15.7% | ✅ accepted |
+| 055 | Validate review fixes on macOS | `cold-scan-index` | 304.9 | 297.5 | -0.9% | ✅ accepted |
+
+### diagnostics-overhead (100,001 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 056 | Bound adaptive scan diagnostics overhead | `cold-scan-index` | 1,856.4 | 1,850.2 | -0.5% | ✅ accepted |
+
+### fdu-content-selfhost-20260813 (307 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 048 | Reject prose collector gating for SLOC | `code-sloc` | 20.2 | 19.9 | +1.5% | ❌ rejected |
+
+### h62-self-contained-901k (901,963 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 041 | Reduce transient summaries inside scan workers | `rich-summary-report` | 3,031.8 | 2,966.0 | -1.4% | ❌ rejected |
+
+### h63-self-contained-901k (901,963 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 042 | Derive macOS summary bulk records | `rich-summary-report` | 3,199.5 | 3,251.2 | +1.9% | ❌ rejected |
+
+### h64-self-contained-901k (901,963 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 044 | Specialize a selected size total | `selected-allocated-total` | 2,980.1 | 2,954.7 | -1.1% | ❌ rejected |
+
+### h65-cache-pressure-720k-confirm (720,805 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 043 | Retune workers for transient summary | `rich-summary-report` | 2,210.5 | 2,258.4 | +0.7% | ❌ rejected |
+
+### live-workspace-exp038 (1,008,723 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 038 | Parent-relative openat frontier on the live 1M workspace | `cold-scan-index` | 6,315.8 | 6,272.9 | -0.7% | ❌ rejected |
+
+### live-workspace-exp039 (1,009,679 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 039 | Revisit the macOS bulk buffer on the live 1M workspace | `cold-scan-index` | 7,822.0 | 8,112.6 | +2.2% | ❌ rejected |
+
+### live-workspace-exp040 (978,339 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 040 | Derive an exact rich summary without building an index | `rich-summary-report` | 4,852.0 | 4,183.2 | -14.6% | ✅ accepted |
+
+### metabrowser-clone (60,067 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 012 | Breadth-first traversal order | `cold-scan-index` | 337.9 | 337.0 | -0.6% | ✅ accepted |
+
+### post-cli-cache-pressure-12x (720,805 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 034 | Post-composable-CLI validation under cache pressure | `cold-scan-index` | 6,699.9 | 5,154.0 | -30.5% | ✅ accepted |
+
+### selfhost-content (307 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 047 | Reject inline basic content analysis | `content-basic` | 16.7 | 27.8 | +66.3% | ❌ rejected |
+
+### threshold-boundary-2x (120,135 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 019 | Adaptive worker threshold at the first crossing scale | `cold-scan-index` | 634.2 | 637.5 | +1.2% | ❌ rejected |
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

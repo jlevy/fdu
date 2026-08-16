@@ -458,5 +458,120 @@ class SummaryRenderTests(unittest.TestCase):
         self.assertNotIn("999 entries", conditions)
 
 
+class IdentifierCollisionTests(unittest.TestCase):
+    """The failure mode that let two campaigns claim one experiment id.
+
+    Each side's artifacts validated individually, so nothing caught it until the
+    branches met and one campaign's rows silently stood in for the other's.
+    """
+
+    def _experiment(self, identifier: str, title: str, hypotheses):
+        payload = experiment_model.from_run(
+            _run_document(),
+            experiment_id=identifier,
+            title=title,
+            hypotheses=list(hypotheses),
+            control="before",
+            candidate="after",
+            complexity={"lines_changed": 10, "new_dependencies": [], "notes": ""},
+            verdict={
+                "decision": "accepted",
+                "primary_job": "cold-scan-index",
+                "primary_metric": "wall_ns",
+                "change_pct": -30.0,
+                "reason": "faster",
+            },
+        )
+        payload["_path"] = f"docs/project/experiments/{identifier}-{title}.md"
+        return payload
+
+    def test_two_artifacts_claiming_one_id_fail_the_build(self) -> None:
+        experiments = [
+            self._experiment("exp-056", "adaptive diagnostics", ["H86-observability"]),
+            self._experiment("exp-056", "extension memo", ["H89"]),
+        ]
+        with self.assertRaises(summary.SummaryError) as raised:
+            summary.check_identifiers(experiments)
+        message = str(raised.exception)
+        self.assertIn("exp-056", message)
+        self.assertIn("claimed by 2 artifacts", message)
+
+    def test_one_hypothesis_across_many_experiments_is_not_a_collision(self) -> None:
+        # The record's normal shape: H31 spans twelve experiments under twelve titles,
+        # because cumulative and validation runs re-test the same claim. A rule keyed on
+        # differing titles would reject the entire committed ledger.
+        experiments = [
+            self._experiment("exp-015", "post-BFS worker depth", ["H31"]),
+            self._experiment("exp-023", "cumulative through adaptive scanning", ["H31"]),
+            self._experiment("exp-032", "cumulative through bounded parallel", ["H31"]),
+        ]
+        self.assertEqual(summary.check_identifiers(experiments), [])
+
+    def test_one_number_under_two_spellings_warns(self) -> None:
+        experiments = [
+            self._experiment("exp-059", "fixed worker knee", ["H87-fixed-worker-knee"]),
+            self._experiment("exp-063", "share the index with the writer", ["H87"]),
+        ]
+        warnings = summary.check_identifiers(experiments)
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("H87", warnings[0])
+        self.assertIn("2 spellings", warnings[0])
+
+
+class AbsoluteTimingTests(unittest.TestCase):
+    """Absolute walls are recorded per artifact; the ledger has to show them."""
+
+    def _experiment(self, identifier: str, *, decision: str = "accepted", **subject):
+        payload = experiment_model.from_run(
+            _run_document(),
+            experiment_id=identifier,
+            title=f"Experiment {identifier}",
+            hypotheses=["H1"],
+            control="before",
+            candidate="after",
+            complexity={"lines_changed": 10, "new_dependencies": [], "notes": ""},
+            verdict={
+                "decision": decision,
+                "primary_job": "cold-scan-index",
+                "primary_metric": "wall_ns",
+                "change_pct": -30.0,
+                "reason": "faster",
+            },
+        )
+        payload["_path"] = f"docs/project/experiments/{identifier}-test.md"
+        payload["subject"].update(subject)
+        return payload
+
+    def test_absolute_milliseconds_reach_the_report(self) -> None:
+        text = summary.render([self._experiment("exp-042")])
+        appendix = text.split("## Absolute timings", 1)[1]
+        entry = _run_document()["statistics"]["cold-scan-index"]["variants"]
+        control_ms = entry["control"]["metrics"]["wall_ns"]["median"] / 1e6
+        self.assertIn(f"{control_ms:,.1f}", appendix)
+
+    def test_subjects_are_grouped_so_absolutes_are_never_compared_across_trees(self) -> None:
+        text = summary.render(
+            [
+                self._experiment("exp-042", tree_label="alpha", tree_entries=100),
+                self._experiment("exp-043", tree_label="beta", tree_entries=999),
+            ]
+        )
+        appendix = text.split("## Absolute timings", 1)[1]
+        self.assertIn("alpha (100 entries)", appendix)
+        self.assertIn("beta (999 entries)", appendix)
+
+    def test_a_baseline_shows_one_value_because_it_measures_a_state(self) -> None:
+        text = summary.render([self._experiment("exp-042", decision="baseline")])
+        row = [
+            line
+            for line in text.split("## Absolute timings", 1)[1].splitlines()
+            if line.startswith("| 042 ")
+        ]
+        self.assertEqual(len(row), 1)
+        # Candidate and change columns are empty: there was no comparison to report.
+        self.assertEqual(row[0].count("| — |"), 1)
+        self.assertIn("— | —", row[0])
+
+
 if __name__ == "__main__":
     unittest.main()
