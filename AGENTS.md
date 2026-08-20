@@ -165,9 +165,11 @@ Read [SUPPLY-CHAIN-SECURITY.md](SUPPLY-CHAIN-SECURITY.md) and
 `tbd guidelines supply-chain-hardening` before any dependency change.
 
 Preserve the 14-day cool-off.
-First-party tools (tbd, flowmark, softschema) are the documented exceptions, recorded as
+First-party tools are the documented exceptions, listed once by identity under
+`firstParty` in [supply-chain-policy.json](supply-chain-policy.json) and as
 `exclude-newer-package` entries in [uv.toml](crates/fdu-py/uv.toml) and
 [the benchmark environment](benchmarks/uv.toml).
+They carry no version, so upgrading one never means editing a waiver.
 The cool-off exists so a compromised upstream release is noticed by somebody else before
 we take it, and that argument does not apply to a package this project’s own authors
 publish.
