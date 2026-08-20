@@ -1,65 +1,57 @@
 {
   "schema": 1,
   "minimumAgeDays": 14,
-  "exceptions": [
+  "exceptions": [],
+  "firstParty": [
     {
-      "id": "first-party-get-tbd-0.6.2",
       "ecosystem": "npm",
       "name": "get-tbd",
-      "version": "0.6.2",
-      "reason": "The repository's AGENTS.md explicitly permits first-party tbd tooling. This exact stable patch fixes get-tbd 0.6.0's dirty-development version provenance and matches the regenerated managed integration.",
-      "approvedBy": "Repository maintainers in AGENTS.md",
-      "approvedAt": "2026-08-14T19:30:00Z",
-      "expiresAt": "2026-08-29T00:00:00Z",
-      "followUp": "Remove this record after get-tbd 0.6.2 clears the normal 14-day window on 2026-08-28 and re-run the online provenance gate."
+      "reason": "Verified first-party: published from github.com/jlevy, the same authorship as this repository. AGENTS.md exempts first-party tooling from the cool-off, which exists so a compromised upstream release is noticed by somebody else first \u2014 not an argument that applies here. Waives release age only; integrity, tarball or artifact hashes, and publication-time provenance are still verified every run. Source: github.com/jlevy/tbd.",
+      "approvedBy": "Repository maintainers in AGENTS.md"
     },
     {
-      "id": "first-party-tryscript-0.2.0",
       "ecosystem": "npm",
       "name": "tryscript",
-      "version": "0.2.0",
-      "reason": "The repository maintainer requested the audited first-party release so fdu can adopt its golden-test correctness fixes immediately.",
-      "approvedBy": "Repository maintainer in the 2026-08-09 performance-testing task",
-      "approvedAt": "2026-08-10T03:01:48Z",
-      "expiresAt": "2026-08-25T00:00:00Z",
-      "followUp": "Remove this record after tryscript 0.2.0 clears the normal 14-day window and re-run the online provenance gate."
+      "reason": "Verified first-party: published from github.com/jlevy, the same authorship as this repository. AGENTS.md exempts first-party tooling from the cool-off, which exists so a compromised upstream release is noticed by somebody else first \u2014 not an argument that applies here. Waives release age only; integrity, tarball or artifact hashes, and publication-time provenance are still verified every run. Source: github.com/jlevy/tryscript.",
+      "approvedBy": "Repository maintainers in AGENTS.md"
     },
     {
-      "id": "first-party-softschema-0.6.0",
       "ecosystem": "pypi",
       "name": "softschema",
-      "version": "0.6.0",
-      "reason": "Surfaced the first time the audit read benchmarks/uv.lock, which it had never opened. First-party tooling named in AGENTS.md and exempt at resolution time through the exclude-newer-package entry in benchmarks/uv.toml. Published 2026-08-04, so it clears the normal window on 2026-08-18.",
-      "approvedBy": "Repository maintainers in AGENTS.md and SUPPLY-CHAIN-SECURITY.md",
-      "approvedAt": "2026-08-14T00:00:00Z",
-      "expiresAt": "2026-08-19T00:00:00Z",
-      "followUp": "Remove this record once softschema 0.6.0 clears the normal 14-day window on 2026-08-18. If first-party PyPI releases keep needing hand-written records, resolve fdu-3vum instead."
+      "reason": "Verified first-party: published from github.com/jlevy, the same authorship as this repository. AGENTS.md exempts first-party tooling from the cool-off, which exists so a compromised upstream release is noticed by somebody else first \u2014 not an argument that applies here. Waives release age only; integrity, tarball or artifact hashes, and publication-time provenance are still verified every run. Source: github.com/jlevy/softschema.",
+      "approvedBy": "Repository maintainers in AGENTS.md"
     },
     {
-      "id": "first-party-frontmatter-format-0.4.0",
       "ecosystem": "pypi",
       "name": "frontmatter-format",
-      "version": "0.4.0",
-      "reason": "Surfaced with softschema 0.6.0, which depends on it. Also first-party, and exempt at resolution time through the exclude-newer-package entries both uv.lock files record. Published 2026-08-01, so it clears the normal window on 2026-08-15.",
-      "approvedBy": "Repository maintainers in AGENTS.md and SUPPLY-CHAIN-SECURITY.md",
-      "approvedAt": "2026-08-14T00:00:00Z",
-      "expiresAt": "2026-08-16T00:00:00Z",
-      "followUp": "Remove this record once frontmatter-format 0.4.0 clears the normal 14-day window on 2026-08-15."
+      "reason": "Verified first-party: published from github.com/jlevy, the same authorship as this repository. AGENTS.md exempts first-party tooling from the cool-off, which exists so a compromised upstream release is noticed by somebody else first \u2014 not an argument that applies here. Waives release age only; integrity, tarball or artifact hashes, and publication-time provenance are still verified every run. Source: github.com/jlevy/frontmatter-format.",
+      "approvedBy": "Repository maintainers in AGENTS.md"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "flowmark",
+      "reason": "Verified first-party: published from github.com/jlevy, the same authorship as this repository. AGENTS.md exempts first-party tooling from the cool-off, which exists so a compromised upstream release is noticed by somebody else first \u2014 not an argument that applies here. Waives release age only; integrity, tarball or artifact hashes, and publication-time provenance are still verified every run. Source: github.com/jlevy/flowmark.",
+      "approvedBy": "Repository maintainers in AGENTS.md"
     }
   ],
   "bootstrap": {
     "npm": [
       {
         "name": "get-tbd",
-        "version": "0.6.2",
-        "integrity": "sha512-YLIO+APxlBQICUqY+sHTtp5LUrqLNXMCylsSq0qtNb3yKQYyzTFC8vnHOUzIsg9mXGh1ebhfn/0OYQkuKA58hA==",
-        "tarball": "https://registry.npmjs.org/get-tbd/-/get-tbd-0.6.2.tgz",
+        "version": "0.7.1",
+        "integrity": "sha512-ToFlkFXLlmndxnYG+PBiDx+z8NuCRPK6K0G9w843ZEnSnPaA5yzmUwUwVGx5oLuHok62njVjQVut/shgewxfHA==",
+        "tarball": "https://registry.npmjs.org/get-tbd/-/get-tbd-0.7.1.tgz",
         "files": [
           ".claude/hooks/tbd-closing-reminder.sh",
           ".claude/scripts/tbd-session.sh",
           ".codex/tbd-closing-reminder.sh",
           ".codex/tbd-session.sh"
-        ]
+        ],
+        "versionSource": {
+          "file": ".tbd/config.yml",
+          "key": "tbd_fallback_version",
+          "variable": "configured_fallback_version"
+        }
       }
     ],
     "githubReleases": [
