@@ -344,6 +344,16 @@ cached inventory was filesystem work.
 Watch has no final answer and therefore has no footer.
 Terminal text renders the footer in gray; uncolored text contains no escape sequences.
 
+Text carries one more presentation-only element the machine formats do not need: when a
+run returns more than one view, each block is introduced by an all-caps header naming
+it, blocks separated by a blank line.
+Machine formats already tag every report with a `view` field, so only text had lost the
+labelling — `types` and `families` render as tables of the same shape, and concatenating
+them left the reader to recover which was which from the order they had been requested
+in. The header is conditional rather than unconditional for one reason: a single-view
+report has nothing to disambiguate, and leaving it bare is what keeps `fdu --view files`
+a listing of paths and nothing else.
+
 ### Watch Is the Same Query, Repeated
 
 A watch run evaluates the same selection and views as a one-shot run, re-applied as

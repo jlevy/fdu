@@ -101,10 +101,17 @@ Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cache
 
 ### Several Views Come Back in Request Order, From One Scan
 
+More than one view in a text report means more than one block of similar-looking rows,
+so each is introduced by an all-caps header naming the view that produced it.
+The header is what makes request order legible instead of something the reader has to
+remember; a single-view report has nothing to disambiguate and stays bare.
+
 ```console
 $ fdu --cache off --view summary,types --size apparent --limit 1 project
+SUMMARY
      263 B  6 files, 3 directories
 
+TYPES
      128 B   48.7%  archive            1 file
 Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0

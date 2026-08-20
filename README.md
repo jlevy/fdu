@@ -310,6 +310,10 @@ Human output uses restrained semantic color when its destination is a terminal;
 `--color auto|always|never`, `NO_COLOR`, and `FORCE_COLOR` make the policy explicit.
 Primary results go to stdout, while warnings and errors go to stderr.
 Machine and skill output never contain ANSI styling.
+A text report covering more than one view labels each block with an all-caps header
+naming the view, separated by a blank line, and colorizes that header on the same terms
+as the rest of human output; a single-view report is left bare, so `fdu --view files`
+stays a listing of paths and nothing else.
 Metadata-only machine reports retain the versioned `fdu.report/1` schema unless a
 metric-summary view is requested.
 Every explicit content request and the `types`, `families`, `languages`, and `documents`
