@@ -3,14 +3,16 @@ type: is
 id: is-01m0etp7wf33svtvj1y4y8mxte
 title: Summary and tree directory counts ignore the selection filters
 kind: bug
-status: in_progress
+status: closed
 priority: 1
-version: 2
+version: 3
 labels: []
 dependencies: []
 parent_id: is-01m0erhq35tpxzjecxn3p9jzx2
 created_at: 2026-08-20T05:35:49.134Z
-updated_at: 2026-08-20T05:55:29.614Z
+updated_at: 2026-08-20T06:21:09.542Z
+closed_at: 2026-08-20T06:21:09.540Z
+close_reason: "Fixed in 5647d4b: the dirs tally moved into the pre-order pass beside the file tally, gated by the same selection.admits call, and the post-order fold now only adds what each child subtree found. Summary, tree, and files views agree under every selection; unfiltered reports are untouched because they read the pre-computed roll-up and never call walk. Four tests, two of which fail against the old fold, plus two goldens."
 ---
 Found during the end-to-end round on macOS. Reproducible on the committed fixture tests/golden/fixtures/project (6 files, 3 directories).
 
