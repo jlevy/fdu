@@ -3,17 +3,6 @@
   "minimumAgeDays": 14,
   "exceptions": [
     {
-      "id": "first-party-get-tbd-0.6.2",
-      "ecosystem": "npm",
-      "name": "get-tbd",
-      "version": "0.6.2",
-      "reason": "The repository's AGENTS.md explicitly permits first-party tbd tooling. This exact stable patch fixes get-tbd 0.6.0's dirty-development version provenance and matches the regenerated managed integration.",
-      "approvedBy": "Repository maintainers in AGENTS.md",
-      "approvedAt": "2026-08-14T19:30:00Z",
-      "expiresAt": "2026-08-29T00:00:00Z",
-      "followUp": "Remove this record after get-tbd 0.6.2 clears the normal 14-day window on 2026-08-28 and re-run the online provenance gate."
-    },
-    {
       "id": "first-party-tryscript-0.2.0",
       "ecosystem": "npm",
       "name": "tryscript",
@@ -47,19 +36,32 @@
       "followUp": "Remove this record once frontmatter-format 0.4.0 clears the normal 14-day window on 2026-08-15."
     }
   ],
+  "firstParty": [
+    {
+      "ecosystem": "npm",
+      "name": "get-tbd",
+      "reason": "AGENTS.md names tbd a first-party tool and states the cool-off does not apply to a package this project's own authors publish. Waives release age only; integrity, tarball, and publication-time provenance are still verified on every run.",
+      "approvedBy": "Repository maintainers in AGENTS.md"
+    }
+  ],
   "bootstrap": {
     "npm": [
       {
         "name": "get-tbd",
-        "version": "0.6.2",
-        "integrity": "sha512-YLIO+APxlBQICUqY+sHTtp5LUrqLNXMCylsSq0qtNb3yKQYyzTFC8vnHOUzIsg9mXGh1ebhfn/0OYQkuKA58hA==",
-        "tarball": "https://registry.npmjs.org/get-tbd/-/get-tbd-0.6.2.tgz",
+        "version": "0.7.1",
+        "integrity": "sha512-ToFlkFXLlmndxnYG+PBiDx+z8NuCRPK6K0G9w843ZEnSnPaA5yzmUwUwVGx5oLuHok62njVjQVut/shgewxfHA==",
+        "tarball": "https://registry.npmjs.org/get-tbd/-/get-tbd-0.7.1.tgz",
         "files": [
           ".claude/hooks/tbd-closing-reminder.sh",
           ".claude/scripts/tbd-session.sh",
           ".codex/tbd-closing-reminder.sh",
           ".codex/tbd-session.sh"
-        ]
+        ],
+        "versionSource": {
+          "file": ".tbd/config.yml",
+          "key": "tbd_fallback_version",
+          "variable": "configured_fallback_version"
+        }
       }
     ],
     "githubReleases": [

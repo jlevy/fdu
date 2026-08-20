@@ -9,8 +9,10 @@ import {
   parseCargoLock,
   parseUvLock,
   selectGithubToken,
+  validateBootstrapPin,
   validateDownloadScripts,
   validateExceptions,
+  validateFirstParty,
   validateWorkflowSecurity,
 } from "./check-supply-chain.mjs";
 
@@ -240,4 +242,129 @@ wheels = [
 ]
 `;
   assert.throws(() => parseUvLock(lock), /example@1.0.0 artifact is missing an upload time/);
+});
+
+const PIN = {
+  name: "get-tbd",
+  version: "0.7.1",
+  versionSource: {
+    file: ".tbd/config.yml",
+    key: "tbd_fallback_version",
+    variable: "configured_fallback_version",
+  },
+};
+const CONFIG = "tbd_format: f08\ntbd_fallback_version: 0.7.1\n";
+
+test("an inline pin is accepted", () => {
+  validateBootstrapPin("hook.sh", 'npx --yes get-tbd@0.7.1 closing\n', { name: "get-tbd", version: "0.7.1" }, null);
+});
+
+test("indirection is accepted only when its source declares the pinned version", () => {
+  const hook = 'npx --yes "get-tbd@$configured_fallback_version" closing\n';
+  validateBootstrapPin("hook.sh", hook, PIN, CONFIG);
+});
+
+test("indirection whose source pins a different version fails closed", () => {
+  // The whole risk of reading the version at run time: the file the hook trusts could
+  // drift away from the reviewed pin without the hook itself changing at all.
+  const hook = 'npx --yes "get-tbd@$configured_fallback_version" closing\n';
+  assert.throws(
+    () => validateBootstrapPin("hook.sh", hook, PIN, "tbd_fallback_version: 0.9.9\n"),
+    /declares tbd_fallback_version 0\.9\.9, but the bootstrap pin is get-tbd@0\.7\.1/,
+  );
+});
+
+test("indirection whose source omits the key fails closed", () => {
+  const hook = 'npx --yes "get-tbd@$configured_fallback_version" closing\n';
+  assert.throws(
+    () => validateBootstrapPin("hook.sh", hook, PIN, "tbd_format: f08\n"),
+    /does not declare tbd_fallback_version/,
+  );
+});
+
+test("an npx line resolving through some other variable is unreviewed", () => {
+  const hook = 'npx --yes "get-tbd@$SOMETHING_ELSE" closing\n';
+  assert.throws(
+    () => validateBootstrapPin("hook.sh", hook, PIN, CONFIG),
+    /must use only the exact bootstrap get-tbd@0\.7\.1/,
+  );
+});
+
+test("@latest is rejected even beside a correct pin", () => {
+  const hook = 'npx --yes get-tbd@0.7.1 closing\nnpx --yes get-tbd@latest other\n';
+  assert.throws(
+    () => validateBootstrapPin("hook.sh", hook, PIN, CONFIG),
+    /must not resolve get-tbd through @latest/,
+  );
+});
+
+test("a second npx line escaping the pin is caught", () => {
+  const hook = 'npx --yes "get-tbd@$configured_fallback_version" closing\nnpx --yes some-other-tool run\n';
+  assert.throws(
+    () => validateBootstrapPin("hook.sh", hook, PIN, CONFIG),
+    /unreviewed npx execution/,
+  );
+});
+
+const FIRST_PARTY = [
+  { ecosystem: "npm", name: "get-tbd", reason: "first-party", approvedBy: "maintainers" },
+];
+
+test("a first-party package is exempt from the cool-off by identity, not version", () => {
+  // The point of the list: a tbd patch released yesterday passes without anyone
+  // authoring a dated exception for that exact version.
+  assertAged(
+    { ecosystem: "npm", name: "get-tbd", version: "9.9.9", publishedAt: "2026-08-09T00:00:00Z" },
+    NOW,
+    14,
+    [],
+    FIRST_PARTY,
+  );
+});
+
+test("first-party status does not leak to other packages or ecosystems", () => {
+  assert.throws(
+    () =>
+      assertAged(
+        { ecosystem: "npm", name: "some-other-tool", version: "1.0.0", publishedAt: "2026-08-09T00:00:00Z" },
+        NOW,
+        14,
+        [],
+        FIRST_PARTY,
+      ),
+    /has not cleared the 14-day cool-off/,
+  );
+  assert.throws(
+    () =>
+      assertAged(
+        { ecosystem: "cargo", name: "get-tbd", version: "1.0.0", publishedAt: "2026-08-09T00:00:00Z" },
+        NOW,
+        14,
+        [],
+        FIRST_PARTY,
+      ),
+    /has not cleared the 14-day cool-off/,
+  );
+});
+
+test("first-party never waives a missing publication time", () => {
+  // Age is the only thing this list may waive; absent provenance still fails closed.
+  assert.throws(
+    () => assertAged({ ecosystem: "npm", name: "get-tbd", version: "1.0.0" }, NOW, 14, [], FIRST_PARTY),
+    /missing a valid publication time/,
+  );
+});
+
+test("a first-party entry pinning a version is rejected", () => {
+  assert.throws(
+    () => validateFirstParty([{ ecosystem: "npm", name: "x", reason: "r", approvedBy: "m", version: "1.0.0" }]),
+    /must not pin a version/,
+  );
+});
+
+test("a first-party entry missing approval is rejected", () => {
+  assert.throws(
+    () => validateFirstParty([{ ecosystem: "npm", name: "x", reason: "r" }]),
+    /firstParty x\.approvedBy must be a non-empty string/,
+  );
 });

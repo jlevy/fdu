@@ -2,70 +2,48 @@
 # Remind about close protocol after git push
 # Installed by: tbd setup --auto
 
+tbd_configured_fallback_version() {
+  local config_path=$1
+  local line configured_fallback_version
+  local version_pattern='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
+
+  while IFS= read -r line; do
+    if [[ $line =~ ^tbd_fallback_version:[[:space:]]*([^[:space:]]+)[[:space:]]*$ ]]; then
+      configured_fallback_version=${BASH_REMATCH[1]}
+      if [[ $configured_fallback_version =~ $version_pattern ]]; then
+        printf '%s\n' "$configured_fallback_version"
+        return 0
+      fi
+      return 1
+    fi
+  done < "$config_path"
+  return 1
+}
+
+tbd_local_can_read_repository() {
+  command -v tbd &> /dev/null && tbd config get tbd_format >/dev/null 2>&1
+}
+
 input=$(cat)
 command=$(echo "$input" | jq -r '.tool_input.command // empty')
 
 # Check if this is a git push command and .tbd exists
 if [[ "$command" == git\ push* ]] || [[ "$command" == *"&& git push"* ]] || [[ "$command" == *"; git push"* ]]; then
   # The hook may start in a subdirectory; check .tbd at the repo root.
-  repo_root=$(git rev-parse --show-toplevel 2>/dev/null) && cd "$repo_root"
+  if ! repo_root=$(git rev-parse --show-toplevel 2>/dev/null); then
+    exit 0
+  fi
+  cd "$repo_root" || exit 0
   if [ -d ".tbd" ]; then
-    # Same local-first, version-pinned fallback as tbd-session.sh, so the
-    # reminder still fires when tbd is missing or too old for this repository.
+    # Same format-compatible local selection and config-pinned fallback as
+    # tbd-session.sh, so compatible patch releases do not rewrite this hook.
     export PATH="$HOME/.local/bin:$HOME/bin:/usr/local/bin:$PATH"
-    tbd_version_at_least() {
-  local version_pattern='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'
-  local installed_major installed_minor installed_patch
-  local required_major required_minor required_patch
-  local installed_prerelease required_prerelease
-
-  if [[ $1 =~ $version_pattern ]]; then
-    installed_major=${BASH_REMATCH[1]}
-    installed_minor=${BASH_REMATCH[2]}
-    installed_patch=${BASH_REMATCH[3]}
-    installed_prerelease=${BASH_REMATCH[4]}
-  else
-    return 1
-  fi
-  if [[ $2 =~ $version_pattern ]]; then
-    required_major=${BASH_REMATCH[1]}
-    required_minor=${BASH_REMATCH[2]}
-    required_patch=${BASH_REMATCH[3]}
-    required_prerelease=${BASH_REMATCH[4]}
-  else
-    return 1
-  fi
-
-  if (( installed_major != required_major )); then
-    (( installed_major > required_major ))
-    return
-  fi
-  if (( installed_minor != required_minor )); then
-    (( installed_minor > required_minor ))
-    return
-  fi
-  if (( installed_patch != required_patch )); then
-    (( installed_patch > required_patch ))
-    return
-  fi
-  # A dirty or development build with the same core version is older than the stable
-  # repository pin and must take the exact-package fallback.
-  if [ -z "$required_prerelease" ]; then
-    [ -z "$installed_prerelease" ]
-  else
-    [ -z "$installed_prerelease" ] || [ "$installed_prerelease" = "$required_prerelease" ]
-  fi
-}
-    installed_tbd_version=""
-    if command -v tbd &> /dev/null; then
-      installed_tbd_version=$(tbd --version 2>/dev/null || true)
-    fi
-    if [ -n "$installed_tbd_version" ] && tbd_version_at_least "$installed_tbd_version" "0.6.2"; then
+    if tbd_local_can_read_repository; then
       tbd closing
-    elif command -v npx &> /dev/null; then
-      # The exact first-party pin is approved in supply-chain-policy.json. npm's
-      # `before` setting has no per-package exception, so clear it for this bootstrap.
-      env -u NPM_CONFIG_BEFORE npx --yes get-tbd@0.6.2 closing
+    elif configured_fallback_version=$(tbd_configured_fallback_version ".tbd/config.yml"); then
+      if command -v npx &> /dev/null; then
+        npx --yes "get-tbd@$configured_fallback_version" closing
+      fi
     fi
   fi
 fi

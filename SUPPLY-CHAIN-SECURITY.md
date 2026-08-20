@@ -30,6 +30,17 @@ and follow-up in `supply-chain-policy.json`. An exception can waive release age 
 can never waive missing or mismatched checksums, integrity, timestamps, or source
 provenance. Agents do not approve new exceptions.
 
+First-party tools are exempt from release age by identity rather than by version, listed
+under `firstParty` in the same file.
+The cool-off exists so that a compromised upstream release is noticed by somebody else
+before this repository takes it, which is not an argument that applies to a package this
+project’s own authors publish.
+Pinning each release separately bought no safety there and guaranteed the record would
+rot: every patch needed a fresh dated exception, so the realistic outcome was an expired
+one. A `firstParty` entry carries no version and waives nothing but age — integrity,
+tarball, and publication-time provenance are verified on every run, for these packages
+exactly as for any other.
+
 The GitHub CLI bootstrap is never run by session startup.
 In a disposable environment, invoke it explicitly with
 `FDU_BOOTSTRAP_GH_CLI=1 scripts/bootstrap-gh-cli.sh`; the script refuses unsupported
