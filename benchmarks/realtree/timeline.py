@@ -419,6 +419,11 @@ def main(argv: Sequence[str]) -> int:
     parser = argparse.ArgumentParser(prog="benchmarks.realtree.timeline", description=__doc__)
     parser.add_argument("--experiments", type=Path, default=EXPERIMENTS_DIR)
     parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="fail if the committed projection is not what the artifacts produce",
+    )
     arguments = parser.parse_args(list(argv))
 
     experiments = load_experiments(arguments.experiments)
@@ -426,13 +431,35 @@ def main(argv: Sequence[str]) -> int:
         print("no experiment artifacts found", file=sys.stderr)
         return 1
     dataset = project(experiments)
+    rendered = json.dumps(dataset, indent=1, sort_keys=True)
+    # A committed generated file is a claim about the artifacts, and nothing stops a
+    # person editing an experiment and forgetting to regenerate. Then the page keeps
+    # asserting the old numbers with the record's authority behind it, which is worse
+    # than having no page. The gate re-derives and compares.
+    if arguments.check:
+        return _check(arguments.out, rendered)
     arguments.out.parent.mkdir(parents=True, exist_ok=True)
-    arguments.out.write_text(json.dumps(dataset, indent=1, sort_keys=True), encoding="utf-8")
+    arguments.out.write_text(rendered, encoding="utf-8")
     print(
         f"wrote {arguments.out} from {len(experiments)} experiments "
         f"across {len(dataset['subjects'])} subjects",
         file=sys.stderr,
     )
+    return 0
+
+
+def _check(path: Path, expected: str) -> int:
+    """Compare a committed generated file with what the sources produce now."""
+    if not path.exists():
+        print(f"{path} is missing; run `make perf-report`", file=sys.stderr)
+        return 1
+    if path.read_text(encoding="utf-8") != expected:
+        print(
+            f"{path} is stale: the artifacts no longer produce it. Run `make perf-report` "
+            "and commit the result.",
+            file=sys.stderr,
+        )
+        return 1
     return 0
 
 

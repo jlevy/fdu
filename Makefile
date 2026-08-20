@@ -39,6 +39,7 @@ help:
 	@echo "make perf-test      Test the real-tree harness itself"
 	@echo "make perf-ledger    Regenerate the experiment ledger from its artifacts"
 	@echo "make perf-report    Regenerate the charted performance report from the same artifacts"
+	@echo "make perf-report-check  Fail if the committed report has drifted from the artifacts"
 
 build:
 	$(CARGO) build --locked -p fdu --all-features
@@ -74,7 +75,7 @@ $(NODE_INSTALL_STAMP): package.json package-lock.json .npmrc
 	$(NPM) ci
 
 # Everything CI enforces, in the order that fails fastest.
-check: uv-version supply-chain rust-module-names fmt-check clippy test docs docs-format-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke release-test
+check: uv-version supply-chain rust-module-names fmt-check clippy test docs docs-format-check perf-report-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke release-test
 
 # The uv.toml files express the supply-chain cool-off as a relative `exclude-newer`
 # ("14 days"). uv releases older than this cannot parse that form: they abort with
@@ -126,7 +127,7 @@ uv-version:
 # configuration. Keep this list aligned with the recipe-coverage test.
 UV_BACKED_TARGETS := test-performance python-check python-concurrency python-smoke python-sdist-smoke release-test release-rehearse docs-format docs-format-check \
 	perf-baseline perf-profile perf-content-profile perf-compare perf-content-compare \
-	perf-compare-tools perf-record perf-test perf-ledger perf-report perf-schema perf-schema-check
+	perf-compare-tools perf-record perf-test perf-ledger perf-report perf-report-check perf-schema perf-schema-check
 
 $(UV_BACKED_TARGETS): uv-version
 
@@ -321,7 +322,7 @@ PERF_TOOL_EVIDENCE_ARGS = $(PERF_EVIDENCE_ARGS) \
 PERF_UV := PYTHONDONTWRITEBYTECODE=1 $(UV) run --project benchmarks --frozen
 PERF_RUN := $(PERF_UV) python -m benchmarks.realtree
 
-.PHONY: perf-probe-release perf-probe-profiling perf-baseline perf-profile perf-compare perf-content-profile perf-content-compare perf-compare-tools perf-record perf-test perf-ledger perf-report perf-schema perf-schema-check
+.PHONY: perf-probe-release perf-probe-profiling perf-baseline perf-profile perf-compare perf-content-profile perf-content-compare perf-compare-tools perf-record perf-test perf-ledger perf-report perf-report-check perf-schema perf-schema-check
 
 perf-probe-release:
 	$(CARGO) build --locked --release -p fdu --example perf_probe --no-default-features
@@ -416,6 +417,15 @@ perf-report:
 		--out $(PERF_REPORT_DIR)/timeline.json
 	$(PERF_UV) --group dev python -m benchmarks.realtree.report_html \
 		--data $(PERF_REPORT_DIR)/timeline.json --out $(PERF_REPORT_DIR)/index.html
+
+# Both committed files are claims about the artifacts, and nothing stops a person editing
+# an experiment and forgetting to regenerate. The page would then keep asserting the old
+# numbers with the record's authority behind it, which is worse than having no page.
+perf-report-check:
+	$(PERF_UV) --group dev python -m benchmarks.realtree.timeline \
+		--out $(PERF_REPORT_DIR)/timeline.json --check
+	$(PERF_UV) --group dev python -m benchmarks.realtree.report_html \
+		--data $(PERF_REPORT_DIR)/timeline.json --out $(PERF_REPORT_DIR)/index.html --check
 
 # The experiment contract is compiled from the Pydantic model; --check fails on drift.
 # Pinned in benchmarks/pyproject.toml, not `@latest`: this validator is the

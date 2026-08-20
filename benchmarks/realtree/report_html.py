@@ -1099,10 +1099,20 @@ def main(argv: Sequence[str]) -> int:
     parser = argparse.ArgumentParser(prog="benchmarks.realtree.report_html", description=__doc__)
     parser.add_argument("--data", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="fail if the committed page is not what the projection produces",
+    )
     arguments = parser.parse_args(list(argv))
     dataset = json.loads(arguments.data.read_text(encoding="utf-8"))
+    page = render(dataset)
+    if arguments.check:
+        from benchmarks.realtree.timeline import _check
+
+        return _check(arguments.out, page)
     arguments.out.parent.mkdir(parents=True, exist_ok=True)
-    arguments.out.write_text(render(dataset), encoding="utf-8")
+    arguments.out.write_text(page, encoding="utf-8")
     print(f"wrote {arguments.out}", file=sys.stderr)
     return 0
 
