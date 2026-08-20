@@ -49,9 +49,11 @@ For metadata classification, `--view types` applies stable exact-name and extens
 rules. The language roll-up uses those detected types and may refine unresolved or
 ambiguous paths with bounded probes once analysis is enabled.
 Use `--view extensions` when the raw filename extension is the desired grouping.
-For folder sizes, `tree` is the default view, so `fdu PATH` is the complete command.
-The no-index totals path needs only the single unfiltered `summary` view; it is taken
-whatever the cache policy, because a snapshot cannot save the walk that request is
+Its rows partition the tree rather than sampling it, so they sum to the reported total;
+names carrying no extension, such as `Makefile` and `.gitignore`, are tallied under
+`(none)`. For folder sizes, `tree` is the default view, so `fdu PATH` is the complete
+command. The no-index totals path needs only the single unfiltered `summary` view; it is
+taken whatever the cache policy, because a snapshot cannot save the walk that request is
 already doing. Sizes use allocated bytes by default; add `--size apparent` for logical
 file lengths.
 
@@ -267,6 +269,13 @@ is disabled or redirected.
 JSON, JSONL, YAML, skill output, lifecycle commands, and watch streams omit it.
 The timing line is human telemetry rather than part of the versioned machine schema.
 
+Because a watch run never reaches a final answer, it has no such line, and a text watch
+run instead draws a gray rule carrying the render instant above each repaint so one
+repaint is never read as a continuation of the last.
+The rule appears between repaints and never above the first, so the opening answer
+matches the same query run without `--watch`. Machine formats need no rule: every
+repaint is a fresh envelope with its own `generated_at`.
+
 ## Compose Other Queries
 
 ```shell
@@ -310,8 +319,17 @@ Human output uses restrained semantic color when its destination is a terminal;
 `--color auto|always|never`, `NO_COLOR`, and `FORCE_COLOR` make the policy explicit.
 Primary results go to stdout, while warnings and errors go to stderr.
 Machine and skill output never contain ANSI styling.
+A text report covering more than one view labels each block with an all-caps header
+naming the view, separated by a blank line, and colorizes that header on the same terms
+as the rest of human output; a single-view report is left bare, so `fdu --view files`
+stays a listing of paths and nothing else.
 Metadata-only machine reports retain the versioned `fdu.report/1` schema unless a
 metric-summary view is requested.
+An `extension` value is either a derived extension, which always carries a leading dot,
+or the literal `(none)` for names that have none; a consumer matching on the dot should
+expect that one label without it.
+The schema is unchanged by this, because the field’s name and type are: `(none)` is a
+member of its value domain, not a new shape.
 Every explicit content request and the `types`, `families`, `languages`, and `documents`
 metric summaries use `fdu.report/2`, adding exact share numerators and denominators,
 analyzer coverage, and versioned rule, option, and analyzer identities.

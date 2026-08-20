@@ -59,6 +59,17 @@ const CRC32C_TABLES: [[u32; 256]; 8] = make_crc32c_tables();
 /// rather than misread.
 const FORMAT_VERSION: u32 = 2;
 
+/// Version of the rules that decide which bucket an entry's bytes are tallied under.
+///
+/// Separate from [`FORMAT_VERSION`] because the two answer different questions: the
+/// layout can be unchanged while the meaning of what was written moves. A snapshot stores
+/// the bucket an entry was assigned, not the name it was assigned from, so a rule change
+/// cannot be re-derived on load — the entries have to be discarded and re-walked.
+///
+/// 1: initial rules. 2: files with no extension are tallied under `(none)` instead of
+/// being left out of the extension roll-up entirely.
+const CLASSIFICATION_VERSION: u32 = 2;
+
 /// Snapshot path encoding used by Unix targets.
 #[cfg(unix)]
 const PATH_ENCODING_UNIX_BYTES: u8 = 1;
@@ -154,8 +165,9 @@ const MAX_SNAPSHOT_ENTRIES: u64 = 100_000_000;
 /// wholesale answer to "the rules changed, so every derived verdict in the cache might
 /// be wrong" — far simpler than trying to work out which entries a rule change affected.
 ///
-/// Currently derived from the crate version and the format version. When compiled
-/// type-recognition rules and reducer registrations arrive, their hashes belong here too.
+/// Currently derived from the crate version, the format version, and the version of the
+/// classification rules. When compiled type-recognition rules and reducer registrations
+/// arrive, their hashes belong here too.
 pub fn engine_fingerprint() -> u64 {
     let mut hash = 0xcbf2_9ce4_8422_2325_u64;
     let mut mix = |bytes: &[u8]| {
@@ -166,6 +178,7 @@ pub fn engine_fingerprint() -> u64 {
     };
     mix(env!("CARGO_PKG_VERSION").as_bytes());
     mix(&FORMAT_VERSION.to_le_bytes());
+    mix(&CLASSIFICATION_VERSION.to_le_bytes());
     hash
 }
 

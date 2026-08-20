@@ -57,6 +57,86 @@ fn explicit_color_controls_human_output_but_never_json() {
     assert!(skill.stderr.is_empty());
 }
 
+/// A multi-view text report labels each block, and the label follows the colour axis.
+///
+/// Asserted at the process boundary rather than only over `render`, because the header
+/// is the one part of the report whose presence depends on how many views were asked
+/// for — a flag-parsing decision — and this is where flag parsing actually happens.
+#[test]
+fn view_headers_appear_only_for_several_views_and_follow_the_color_axis() {
+    let root = tempfile::tempdir().expect("tempdir");
+    std::fs::write(root.path().join("main.rs"), b"fn main() {}\n").expect("write");
+    let root = root.path().to_str().expect("temporary path is Unicode");
+
+    let several = run(&[
+        "--cache",
+        "off",
+        "--color",
+        "never",
+        "--view",
+        "types,summary",
+        "--depth",
+        "0",
+        root,
+    ]);
+    assert!(several.status.success());
+    let text = String::from_utf8(several.stdout).expect("utf-8");
+    assert!(text.contains("TYPES\n"), "{text}");
+    assert!(text.contains("SUMMARY\n"), "{text}");
+
+    // One view is unambiguous on its own, so the layout is left exactly as it was.
+    for view in ["types", "summary", "files", "tree"] {
+        let lone =
+            run(&["--cache", "off", "--color", "never", "--view", view, "--depth", "0", root]);
+        assert!(lone.status.success());
+        let text = String::from_utf8(lone.stdout).expect("utf-8");
+        assert!(
+            !text.contains(&view.to_uppercase()),
+            "a lone {view} view must not be labelled: {text}"
+        );
+    }
+
+    // Colour applies to the label like any other human decoration: the word is still
+    // there uncoloured, so the layout never depends on a terminal supporting escapes.
+    let colored = run(&[
+        "--cache",
+        "off",
+        "--color",
+        "always",
+        "--view",
+        "types,summary",
+        "--depth",
+        "0",
+        root,
+    ]);
+    assert!(colored.status.success());
+    let colored = String::from_utf8(colored.stdout).expect("utf-8");
+    assert!(colored.contains("TYPES"), "{colored:?}");
+    let header_line = colored.lines().find(|line| line.contains("TYPES")).expect("a header line");
+    assert!(has_ansi(header_line.as_bytes()), "header carries no escapes: {header_line:?}");
+
+    // Machine formats name their view in a field and must not gain the text header.
+    for format in ["json", "jsonl", "yaml"] {
+        let machine = run(&[
+            "--cache",
+            "off",
+            "--color",
+            "always",
+            "--format",
+            format,
+            "--view",
+            "types,summary",
+            "--depth",
+            "0",
+            root,
+        ]);
+        assert!(machine.status.success(), "{format} run failed");
+        let text = String::from_utf8(machine.stdout).expect("utf-8");
+        assert!(!text.contains("TYPES"), "{format} leaked a text header:\n{text}");
+        assert!(!text.contains("SUMMARY"), "{format} leaked a text header:\n{text}");
+    }
+}
+
 #[test]
 fn explicit_color_also_controls_self_documenting_help() {
     let always = run(&["--color", "always", "--help"]);

@@ -25,6 +25,12 @@ use crate::query::{
     SummaryRow, TreeNode, TypeRow, ViewSpec, document_words, format_rfc3339,
 };
 
+/// The all-caps label naming which view a block of text output belongs to.
+///
+/// Bold cyan is what `cli.rs` already gives a section heading in `--help`, so a report
+/// and the help that describes it use one visual language for the same idea.
+const STYLE_VIEW_HEADER: AnsiStyle = AnsiColor::Cyan.on_default().bold();
+
 /// Directory names in a tree, so structure reads at a glance.
 const STYLE_DIRECTORY: AnsiStyle = AnsiColor::Cyan.on_default();
 
@@ -96,11 +102,27 @@ fn paint(text: &str, style: AnsiStyle, color: bool) -> String {
 // ---- text ----
 
 /// Render the human-facing form.
+///
+/// A multi-view report introduces each section with an all-caps header naming its view,
+/// blocks separated by a blank line. Machine formats already carry a `view` field on
+/// every report, so text was the only format that lost the labelling: several tables of
+/// similar-looking rows arrived concatenated, and the reader had to work out which view
+/// each block came from by remembering the order they were requested in.
+///
+/// A single-view report is left bare, which is what keeps `fdu --view files` a listing
+/// of paths and nothing else — the property behind `fdu --view files | xargs` — and
+/// keeps the default one-view report exactly as it was. One block needs no label to be
+/// unambiguous, so the header appears precisely when it disambiguates something.
 fn render_text(report: &Report, color: bool) -> String {
     let mut out = String::new();
+    let headed = report.sections.len() > 1;
     for (index, section) in report.sections.iter().enumerate() {
         if index > 0 {
             out.push('\n');
+        }
+        if headed {
+            let _ =
+                writeln!(out, "{}", paint(view_header(section.view()), STYLE_VIEW_HEADER, color));
         }
         match section {
             Section::Tree(root) => render_text_tree(&mut out, root, report.size, color),
@@ -917,6 +939,26 @@ fn generator() -> String {
     format!("fdu {}", env!("CARGO_PKG_VERSION"))
 }
 
+/// All-caps header naming a view in multi-view text output.
+///
+/// Deliberately not `view_label(..).to_uppercase()`: the wire label is a schema promise
+/// machine consumers match on, and deriving the human header from it would let a
+/// presentation change reach into the schema, or freeze the schema for a presentation
+/// reason. They spell the same word today because the same word is right in both places,
+/// and a test holds them in step rather than a shared expression.
+fn view_header(view: ViewSpec) -> &'static str {
+    match view {
+        ViewSpec::Tree => "TREE",
+        ViewSpec::Types => "TYPES",
+        ViewSpec::Extensions => "EXTENSIONS",
+        ViewSpec::Families => "FAMILIES",
+        ViewSpec::Languages => "LANGUAGES",
+        ViewSpec::Documents => "DOCUMENTS",
+        ViewSpec::Files => "FILES",
+        ViewSpec::Summary => "SUMMARY",
+    }
+}
+
 /// Stable wire label for a view.
 fn view_label(view: ViewSpec) -> &'static str {
     match view {
@@ -1277,6 +1319,14 @@ mod tests {
         )
     }
 
+    /// Whether a rendered line is a view header rather than a data row.
+    ///
+    /// Blank lines are excluded explicitly: `all` is vacuously true on an empty line, so
+    /// the separator between blocks would otherwise count as a header.
+    fn is_view_header_line(line: &str) -> bool {
+        !line.is_empty() && line.chars().all(|c| c.is_ascii_uppercase())
+    }
+
     /// A structural check that output is well-formed JSON.
     ///
     /// Hand-written serializers earn their keep only if something proves they balance, so
@@ -1606,7 +1656,9 @@ mod tests {
 
     #[test]
     fn a_files_view_prints_one_path_per_line_and_nothing_else() {
-        // The property that makes `fdu --view files | xargs` work.
+        // The property that makes `fdu --view files | xargs` work. It is why the view
+        // header is conditional: a lone files view is a path listing, not a table that
+        // needs labelling, so nothing is prepended to it.
         let text = render(&fixture(&[ViewSpec::Files]), Format::Text, false);
         for line in text.lines() {
             assert!(!line.contains(' '), "text files output must be bare paths, got {line:?}");
@@ -1614,6 +1666,95 @@ mod tests {
         let expected: PathBuf = ["src", "main.rs"].iter().collect();
         let expected = expected.display().to_string();
         assert!(text.lines().any(|line| line == expected), "{text}");
+    }
+
+    #[test]
+    fn several_views_are_labelled_and_a_lone_view_is_left_bare() {
+        // Concatenated blocks of similar-looking rows were the problem: a reader had to
+        // recover which view produced which table from the order they were requested in.
+        let text = render(
+            &fixture(&[ViewSpec::Tree, ViewSpec::Types, ViewSpec::Summary]),
+            Format::Text,
+            false,
+        );
+        let headers: Vec<&str> = text.lines().filter(|line| is_view_header_line(line)).collect();
+        assert_eq!(headers, ["TREE", "TYPES", "SUMMARY"], "{text}");
+
+        // Each header sits directly above the rows it labels, and one blank line
+        // separates the blocks.
+        let lines: Vec<&str> = text.lines().collect();
+        for (index, line) in lines.iter().enumerate() {
+            if headers.contains(line) {
+                assert!(
+                    lines.get(index + 1).is_some_and(|next| !next.is_empty()),
+                    "header {line} must sit directly above its rows:\n{text}"
+                );
+                if index > 0 {
+                    assert!(
+                        lines[index - 1].is_empty(),
+                        "a blank line must precede header {line}:\n{text}"
+                    );
+                }
+            }
+        }
+
+        // The same views alone keep the pre-header layout exactly.
+        for view in [ViewSpec::Tree, ViewSpec::Types, ViewSpec::Summary] {
+            let lone = render(&fixture(&[view]), Format::Text, false);
+            assert!(
+                !lone.lines().any(is_view_header_line),
+                "{view:?} alone must not be labelled:\n{lone}"
+            );
+        }
+    }
+
+    #[test]
+    fn view_headers_are_colorized_only_when_color_is_on() {
+        let views = [ViewSpec::Tree, ViewSpec::Summary];
+        let plain = render(&fixture(&views), Format::Text, false);
+        assert!(plain.starts_with("TREE\n"), "{plain}");
+        assert!(!plain.contains('\u{1b}'), "uncolored text carries no escapes: {plain:?}");
+
+        let colored = render(&fixture(&views), Format::Text, true);
+        assert!(colored.contains(&paint("TREE", STYLE_VIEW_HEADER, true)), "{colored:?}");
+        assert!(colored.contains(&paint("SUMMARY", STYLE_VIEW_HEADER, true)), "{colored:?}");
+    }
+
+    #[test]
+    fn no_machine_format_gains_a_text_header() {
+        // Machine formats already name their view in a field. Text is a presentation
+        // layer over the same report and must not leak into the versioned schemas.
+        let views = [ViewSpec::Tree, ViewSpec::Types, ViewSpec::Files, ViewSpec::Summary];
+        for format in [Format::Json, Format::Jsonl, Format::Yaml] {
+            let rendered = render(&fixture(&views), format, false);
+            for header in ["TREE", "TYPES", "FILES", "SUMMARY"] {
+                assert!(!rendered.contains(header), "{format:?} leaked {header}:\n{rendered}");
+            }
+        }
+    }
+
+    #[test]
+    fn every_view_has_a_header_that_matches_its_wire_label() {
+        // The two spellings are written out separately so a schema change and a
+        // presentation change stay independent; this is what keeps them from drifting
+        // apart by accident while they are meant to agree.
+        for view in [
+            ViewSpec::Tree,
+            ViewSpec::Extensions,
+            ViewSpec::Types,
+            ViewSpec::Families,
+            ViewSpec::Languages,
+            ViewSpec::Documents,
+            ViewSpec::Files,
+            ViewSpec::Summary,
+        ] {
+            let header = view_header(view);
+            assert_eq!(header, view_label(view).to_uppercase(), "{view:?}");
+            assert!(
+                !header.is_empty() && header.chars().all(|c| c.is_ascii_uppercase()),
+                "{view:?}"
+            );
+        }
     }
 
     #[test]
