@@ -38,6 +38,7 @@ help:
 	@echo "make perf-content-compare  Compare content jobs in 12 paired trials"
 	@echo "make perf-test      Test the real-tree harness itself"
 	@echo "make perf-ledger    Regenerate the experiment ledger from its artifacts"
+	@echo "make perf-report    Regenerate the charted performance report from the same artifacts"
 
 build:
 	$(CARGO) build --locked -p fdu --all-features
@@ -125,7 +126,7 @@ uv-version:
 # configuration. Keep this list aligned with the recipe-coverage test.
 UV_BACKED_TARGETS := test-performance python-check python-concurrency python-smoke python-sdist-smoke release-test release-rehearse docs-format docs-format-check \
 	perf-baseline perf-profile perf-content-profile perf-compare perf-content-compare \
-	perf-compare-tools perf-record perf-test perf-ledger perf-schema perf-schema-check
+	perf-compare-tools perf-record perf-test perf-ledger perf-report perf-schema perf-schema-check
 
 $(UV_BACKED_TARGETS): uv-version
 
@@ -320,7 +321,7 @@ PERF_TOOL_EVIDENCE_ARGS = $(PERF_EVIDENCE_ARGS) \
 PERF_UV := PYTHONDONTWRITEBYTECODE=1 $(UV) run --project benchmarks --frozen
 PERF_RUN := $(PERF_UV) python -m benchmarks.realtree
 
-.PHONY: perf-probe-release perf-probe-profiling perf-baseline perf-profile perf-compare perf-content-profile perf-content-compare perf-compare-tools perf-record perf-test perf-ledger perf-schema perf-schema-check
+.PHONY: perf-probe-release perf-probe-profiling perf-baseline perf-profile perf-compare perf-content-profile perf-content-compare perf-compare-tools perf-record perf-test perf-ledger perf-report perf-schema perf-schema-check
 
 perf-probe-release:
 	$(CARGO) build --locked --release -p fdu --example perf_probe --no-default-features
@@ -403,6 +404,18 @@ perf-test:
 perf-ledger:
 	$(PERF_UV) --group dev python -m benchmarks.realtree.summary
 	$(MAKE) docs-format
+
+# The charted view of the same artifacts the ledger renders. Two steps because they are
+# two jobs: the projection reads and validates every artifact, and the renderer draws a
+# page from the projection without touching the record. Committing the projection means a
+# reviewer can diff what the page is claiming, not only how it looks.
+PERF_REPORT_DIR := docs/project/reports/performance-evidence
+
+perf-report:
+	$(PERF_UV) --group dev python -m benchmarks.realtree.timeline \
+		--out $(PERF_REPORT_DIR)/timeline.json
+	$(PERF_UV) --group dev python -m benchmarks.realtree.report_html \
+		--data $(PERF_REPORT_DIR)/timeline.json --out $(PERF_REPORT_DIR)/index.html
 
 # The experiment contract is compiled from the Pydantic model; --check fails on drift.
 # Pinned in benchmarks/pyproject.toml, not `@latest`: this validator is the

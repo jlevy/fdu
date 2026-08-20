@@ -115,6 +115,9 @@ The rules that decide whether a speed change is kept are in
 protocol is [the performance loop](docs/project/guides/performance-loop.md), every
 verdict is in
 [the experiment ledger](docs/project/reports/report-2026-08-10-fdu-performance-experiments.md),
+the charted view across all of them — absolute milliseconds as well as paired effects —
+is
+[the performance evidence report](docs/project/reports/report-2026-08-20-fdu-performance-evidence.md),
 and which regime each shipped tuning constant was measured in is in
 [the platform tuning guide](docs/project/guides/platform-tuning.md).
 

@@ -11,6 +11,10 @@ For an experiment’s full per-job, per-metric detail, follow its link.
 How the numbers were produced, what each metric means, and the rule that decides whether
 a change is kept: [the performance loop guide](../guides/performance-loop.md).
 
+Absolute timings, every experiment’s paired effect with its interval, and why the two
+must not be divided into each other:
+[the performance evidence report](report-2026-08-20-fdu-performance-evidence.md).
+
 ## Where it stands
 
 Every accepted change together, measured against the pre-work baseline in one
