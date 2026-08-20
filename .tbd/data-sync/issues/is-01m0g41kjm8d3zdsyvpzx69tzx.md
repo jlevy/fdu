@@ -1,15 +1,15 @@
 ---
 type: is
 id: is-01m0g41kjm8d3zdsyvpzx69tzx
-title: "Salvage the still-useful parts of PR #27 before closing it"
+title: "Port the revision-replay runner from the retired PR #27 branch"
 kind: task
-status: in_progress
+status: open
 priority: 2
-version: 3
+version: 5
 labels: []
 dependencies: []
 created_at: 2026-08-20T17:38:33.170Z
-updated_at: 2026-08-20T21:08:54.770Z
+updated_at: 2026-08-20T21:09:16.231Z
 ---
 PR #27 (codex/performance-research-white-paper) is superseded as a *report* by PR #36, but it is not fully subsumed. Reviewed 2026-08-20; these carry real value and are not in main:
 
