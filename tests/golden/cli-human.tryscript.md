@@ -137,7 +137,7 @@ src[SEP]alpha.rs
 src[SEP]omega.rs
 
 SUMMARY
-      36 B  2 files, 3 directories
+      36 B  2 files, 0 directories
 Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```

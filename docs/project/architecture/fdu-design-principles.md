@@ -369,6 +369,26 @@ Two deliberate asymmetries in filtering: a removal is filtered only by path, sin
 filtering a deletion on a size bound would hide the disappearance of something the
 caller was watching; and an escalation is never filtered at all.
 
+### One Query, One Answer, Whichever View Reports It
+
+Views are projections over the same selected set, so two views answering the same
+question must return the same number.
+A directory is an entry like any other: a selection that rejects it leaves it out of the
+`dirs` tally exactly as it leaves it out of a listing.
+
+This was got wrong once and is worth stating because the failure was quiet.
+The tally was folded from the traversal, which visits every directory it descends into,
+while the files view filtered entry by entry — two routes to the same number, and only
+one of them consulted the selection.
+`--kind file` reported directories, and `--min-size 1G` reported directories over a tree
+with nothing in it that large.
+The count reached machine output too, so a scripted consumer got a number that did not
+correspond to the filter it had asked for.
+
+Descending and admitting stay separate decisions.
+Rejecting a directory removes it from the tally, never the entries beneath it, which is
+what makes `--kind file` mean “report files” rather than “look only at the top level”.
+
 ### Utilities Are Explicit Flags, Never Side Effects
 
 `--cache-status` and `--cache-clear` run before scan validation, need no readable tree,

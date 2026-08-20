@@ -489,18 +489,16 @@ fn walk(index: &Index, selection: &Selection) -> Walked {
     while let Some((id, path, expanded)) = stack.pop() {
         if expanded {
             // Post-order: every child has finished, so fold their totals into this one.
+            // `total` already carries this directory's own admitted files and admitted
+            // directory children, both tallied in the pre-order pass below; what is left
+            // is to add what each child subtree found deeper down.
             let mut total = walked.per_directory.remove(&id).unwrap_or_default();
             if let Some(children) = index.children_of(id) {
-                for (name, child) in children {
-                    let child_path = path.join(name);
+                for (_, child) in children {
                     if let Some(sub) = walked.per_directory.get(&child) {
                         let sub = *sub;
                         merge_summary(&mut total, &sub);
-                        if index.kind_of(child) == Some(EntryKind::Dir) {
-                            total.dirs += 1;
-                        }
                     }
-                    let _ = child_path;
                 }
             }
             walked.per_directory.insert(id, total);
@@ -555,6 +553,13 @@ fn walk(index: &Index, selection: &Selection) -> Walked {
                         tally.bytes += attrs.size;
                         tally.allocated += attrs.allocated;
                     }
+                } else if kind == EntryKind::Dir {
+                    // Tallied here, beside the file case, rather than in the post-order
+                    // fold: the fold sees every directory the walk descended into, and
+                    // counting there reported directories the selection had rejected.
+                    // `--kind file` answered "6 files, 3 directories", and a summary
+                    // disagreed with the files view over the very same query.
+                    walked.per_directory.entry(id).or_default().dirs += 1;
                 }
             }
 
@@ -1252,10 +1257,64 @@ mod tests {
         assert!(!admits_everything.is_unfiltered());
         let slow = summary_of(&run(&index, &query(&[ViewSpec::Summary], admits_everything)));
 
+        // `dirs` belongs in this comparison like every other tally. It used to be left
+        // out because the two tiers genuinely disagreed: the traversal tier counted every
+        // directory it descended into, so a filter admitting everything was the only
+        // filter the two tiers could agree under.
         assert_eq!(
-            (fast.files, fast.bytes, fast.allocated, fast.newest_mtime_ns),
-            (slow.files, slow.bytes, slow.allocated, slow.newest_mtime_ns)
+            (fast.files, fast.dirs, fast.bytes, fast.allocated, fast.newest_mtime_ns),
+            (slow.files, slow.dirs, slow.bytes, slow.allocated, slow.newest_mtime_ns)
         );
+    }
+
+    #[test]
+    fn a_summary_and_a_files_view_agree_on_how_many_directories_a_filter_admits() {
+        // One query must not give two answers. The directory tally is folded from the
+        // walk while the files view is filtered entry by entry, so they are two paths to
+        // the same number and drifted apart: `--kind file` answered "5 files, 3
+        // directories" while the files view under the same selection listed no directory
+        // at all.
+        let index = sample();
+        for selection in [
+            Selection { kinds: vec![EntryKind::File], ..Selection::default() },
+            Selection { kinds: vec![EntryKind::Dir], ..Selection::default() },
+            Selection { include: vec![pattern("*.rs")], ..Selection::default() },
+            Selection { exclude: vec![pattern("docs")], ..Selection::default() },
+            Selection { min_size: Some(1_000_000), ..Selection::default() },
+            Selection { min_size: Some(0), ..Selection::default() },
+        ] {
+            let summary = summary_of(&run(&index, &query(&[ViewSpec::Summary], selection.clone())));
+            let listed = files_of(&run(&index, &query(&[ViewSpec::Files], selection.clone())));
+            let dirs = listed.iter().filter(|row| row.kind == EntryKind::Dir).count() as u64;
+            let files = listed.iter().filter(|row| row.kind == EntryKind::File).count() as u64;
+            assert_eq!(summary.dirs, dirs, "directory counts disagree under {selection:?}");
+            assert_eq!(summary.files, files, "file counts disagree under {selection:?}");
+        }
+    }
+
+    #[test]
+    fn a_rejected_directory_is_still_descended_into() {
+        // Filtering a directory out of the tally must not filter out what is under it:
+        // `--kind file` reports no directories and every file, at every depth.
+        let index = sample();
+        let selection = Selection { kinds: vec![EntryKind::File], ..Selection::default() };
+        let row = summary_of(&run(&index, &query(&[ViewSpec::Summary], selection)));
+        assert_eq!(row.dirs, 0, "no directory was admitted");
+        assert_eq!(row.files, 5, "including src/deep/nested.rs, two levels down");
+        assert_eq!(row.bytes, 657, "and its bytes");
+    }
+
+    #[test]
+    fn nested_directory_counts_roll_up_through_every_level() {
+        // The tally is taken in the pre-order pass and folded in the post-order one, so a
+        // directory admitted three levels down has to reach the root through both.
+        let index = sample();
+        let selection = Selection { kinds: vec![EntryKind::Dir], ..Selection::default() };
+        let root = tree_of(&run(&index, &query(&[ViewSpec::Tree], selection)));
+        assert_eq!(root.dirs, 3, "src, src/deep, and docs");
+        assert_eq!(root.files, 0, "no file was admitted");
+        let src = root.children.iter().find(|node| node.name == "src").expect("src");
+        assert_eq!(src.dirs, 1, "src/deep, counted for src as well as for the root");
     }
 
     #[test]

@@ -162,6 +162,30 @@ Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cache
 ? 0
 ```
 
+### Every Tally Counts Only What the Selection Admits
+
+A directory is an entry like any other, so a selection that rejects it must leave it out
+of the count as well as out of the listing.
+`--kind file` used to answer “6 files, 3 directories”, which disagreed with the files
+view over the very same query — the walk counted every directory it descended into
+rather than every directory the selection kept.
+Descending is still unconditional: rejecting a directory hides it from the tally, never
+what is underneath it.
+
+```console
+$ fdu --cache off --view summary --kind file --size apparent project
+     263 B  6 files, 0 directories
+Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+? 0
+```
+
+```console
+$ fdu --cache off --view summary --kind dir --size apparent project
+       0 B  0 files, 3 directories
+Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+? 0
+```
+
 ### Min-Size Follows the Selected Metric
 
 ```console
