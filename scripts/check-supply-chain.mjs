@@ -70,13 +70,45 @@ export function validateExceptions(exceptions) {
   }
 }
 
-export function assertAged(item, now, minimumAgeDays, exceptions) {
+export function validateFirstParty(firstParty) {
+  if (!Array.isArray(firstParty)) {
+    fail("firstParty must be an array");
+  }
+  for (const entry of firstParty) {
+    for (const field of ["ecosystem", "name", "reason", "approvedBy"]) {
+      requiredString(entry?.[field], `firstParty ${entry?.name ?? "<unknown>"}.${field}`);
+    }
+    // Deliberately no version field: pinning one here would recreate the per-release
+    // churn this list exists to remove.
+    if ("version" in entry) {
+      fail(`firstParty ${entry.name} must not pin a version`);
+    }
+  }
+}
+
+export function assertAged(item, now, minimumAgeDays, exceptions, firstParty = []) {
   const publishedAt = new Date(item.publishedAt ?? "");
   if (Number.isNaN(publishedAt.getTime())) {
     fail(`${item.ecosystem} ${item.name}@${item.version} is missing a valid publication time`);
   }
   const cutoff = now.getTime() - minimumAgeDays * DAY_MS;
   if (publishedAt.getTime() <= cutoff) {
+    return;
+  }
+
+  // A first-party package is exempt by identity rather than by version. The cool-off
+  // exists so that a compromised upstream release is noticed by somebody else before
+  // this repository takes it, and that argument does not apply to a package this
+  // project's own authors publish — so requiring a fresh dated exception for every
+  // patch release bought no safety and guaranteed the record would rot. This waives
+  // release age only; integrity, tarball, and publication-time checks still run, which
+  // is what SUPPLY-CHAIN-SECURITY.md means by never waiving provenance.
+  validateFirstParty(firstParty);
+  if (
+    firstParty.some(
+      (candidate) => candidate.ecosystem === item.ecosystem && candidate.name === item.name,
+    )
+  ) {
     return;
   }
 
@@ -429,6 +461,7 @@ async function verifyCargo(packages, context) {
       context.now,
       context.minimumAgeDays,
       context.exceptions,
+      context.firstParty,
     );
   });
 }
@@ -447,6 +480,7 @@ async function verifyNpm(packages, context) {
       context.now,
       context.minimumAgeDays,
       context.exceptions,
+      context.firstParty,
     );
   });
 }
@@ -481,6 +515,7 @@ async function verifyPython(packages, context) {
         context.now,
         context.minimumAgeDays,
         context.exceptions,
+        context.firstParty,
       );
     }
   });
@@ -524,6 +559,67 @@ export function validateDownloadScripts(files, inventoriedFiles) {
   }
 }
 
+/**
+ * Verify one file pins `item` to its reviewed bootstrap version.
+ *
+ * The rule is that the exact version is declared in the repository and matches the
+ * policy — not that it is spelled inside this particular file. tbd 0.7.x reads its
+ * fallback from `.tbd/config.yml` at run time, so a literal-only rule would reject a
+ * pin that is in fact tighter than before: the version now lives in one checked place
+ * instead of being copied into four shell scripts that could drift apart.
+ *
+ * Indirection is therefore allowed only in the single shape the policy names, and only
+ * after this function has confirmed the named source declares the pinned version. An
+ * `npx` line that resolves through anything else, and `@latest` anywhere in the file,
+ * still fail closed.
+ */
+export function validateBootstrapPin(filePath, text, item, versionSourceText = null) {
+  const pinned = `${item.name}@${item.version}`;
+  if (/@latest\b/.test(text)) {
+    fail(`${filePath} must not resolve ${item.name} through @latest`);
+  }
+
+  // The version may be written inline, or read at run time from a committed file the
+  // policy names. Indirection is only acceptable because that file is itself pinned and
+  // checked here: what must stay true is that the exact version is declared in the
+  // repository and matches the policy, not that it appears in this particular file.
+  const source = item.versionSource;
+  let indirect = null;
+  if (source) {
+    if (versionSourceText === null) {
+      fail(`${filePath} declares a version source ${source.file} that could not be read`);
+    }
+    const declared = new RegExp(`^\\s*${source.key}\\s*:\\s*(\\S+)\\s*$`, "m").exec(versionSourceText);
+    if (!declared) {
+      fail(`${source.file} does not declare ${source.key} for bootstrap ${item.name}`);
+    }
+    if (declared[1] !== item.version) {
+      fail(
+        `${source.file} declares ${source.key} ${declared[1]}, but the bootstrap pin is ${pinned}`,
+      );
+    }
+    indirect = new RegExp(`${escapeRegExp(item.name)}@\\$\\{?${escapeRegExp(source.variable)}\\}?`);
+  }
+
+  const hasLiteral = text.includes(pinned);
+  const hasIndirect = indirect !== null && indirect.test(text);
+  if (!hasLiteral && !hasIndirect) {
+    fail(`${filePath} must use only the exact bootstrap ${pinned}`);
+  }
+
+  for (const line of text.split("\n").filter((candidate) => /^\s*npx\s/.test(candidate))) {
+    const literalLine = line.includes(pinned);
+    const indirectLine = indirect !== null && indirect.test(line);
+    if (!literalLine && !indirectLine) {
+      fail(`${filePath} contains an unreviewed npx execution: ${line.trim()}`);
+    }
+  }
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 async function verifyActions(actions, context) {
   const unique = [
     ...new Map(actions.map((item) => [`${item.repository}@${item.revision}`, item])).values(),
@@ -546,6 +642,7 @@ async function verifyActions(actions, context) {
       context.now,
       context.minimumAgeDays,
       context.exceptions,
+      context.firstParty,
     );
   });
 }
@@ -572,17 +669,14 @@ async function verifyBootstrap(policy, root, context) {
       context.now,
       context.minimumAgeDays,
       context.exceptions,
+      context.firstParty,
     );
+    const versionSourceText = item.versionSource
+      ? await readFile(path.join(root, item.versionSource.file), "utf8").catch(() => null)
+      : null;
     for (const file of item.files) {
       const text = await readFile(path.join(root, file), "utf8");
-      if (!text.includes(`${item.name}@${item.version}`) || /@latest\b/.test(text)) {
-        fail(`${file} must use only the exact bootstrap ${item.name}@${item.version}`);
-      }
-      for (const line of text.split("\n").filter((candidate) => /^\s*npx\s/.test(candidate))) {
-        if (!line.includes(`${item.name}@${item.version}`)) {
-          fail(`${file} contains an unreviewed npx execution: ${line.trim()}`);
-        }
-      }
+      validateBootstrapPin(file, text, item, versionSourceText);
     }
   }
 
@@ -603,6 +697,7 @@ async function verifyBootstrap(policy, root, context) {
       context.now,
       context.minimumAgeDays,
       context.exceptions,
+      context.firstParty,
     );
     const fileTexts = await Promise.all(
       item.files.map(async (file) => [file, await readFile(path.join(root, file), "utf8")]),
@@ -646,6 +741,7 @@ async function verifyBootstrap(policy, root, context) {
       context.now,
       context.minimumAgeDays,
       context.exceptions,
+      context.firstParty,
     );
     for (const file of item.files) {
       const text = await readFile(path.join(root, file), "utf8");
@@ -671,6 +767,7 @@ async function verifyBootstrap(policy, root, context) {
       context.now,
       context.minimumAgeDays,
       context.exceptions,
+      context.firstParty,
     );
     const shasums = await fetchBuffer(item.shasums);
     assertEqualProvenance(
@@ -717,6 +814,7 @@ async function main() {
     now: new Date(),
     minimumAgeDays: policy.minimumAgeDays,
     exceptions: policy.exceptions,
+    firstParty: policy.firstParty ?? [],
   };
   const [cargoText, npmText, uvTexts, workflows] = await Promise.all([
     readFile(path.join(ROOT, "Cargo.lock"), "utf8"),
