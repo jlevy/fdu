@@ -5,11 +5,11 @@ title: "Salvage the still-useful parts of PR #27 before closing it"
 kind: task
 status: in_progress
 priority: 2
-version: 2
+version: 3
 labels: []
 dependencies: []
 created_at: 2026-08-20T17:38:33.170Z
-updated_at: 2026-08-20T20:51:33.655Z
+updated_at: 2026-08-20T21:08:54.770Z
 ---
 PR #27 (codex/performance-research-white-paper) is superseded as a *report* by PR #36, but it is not fully subsumed. Reviewed 2026-08-20; these carry real value and are not in main:
 
@@ -26,3 +26,30 @@ PR #27 (codex/performance-research-white-paper) is superseded as a *report* by P
 6. README rename of report-2026-08-12 from 'the white paper' to 'the performance architecture', which is what it actually is.
 
 Item 3 already applied in PR #36's follow-up? No - track separately. Close PR #27 only after these are landed or explicitly dropped.
+
+## Notes
+
+2026-08-20: partially resolved, and PR #27 is now closed.
+
+Ported into PR #36 (commit 8303f28): `--limit all` in content-selfcheck; perf-compare
+measuring five jobs; exp-014's hypothesis label; the README architecture rename; the
+campaign-status index entry. PR #36 separately gained #27's drift-check idea as
+`make perf-report-check`, wired into `make check`.
+
+The branch `codex/performance-research-white-paper` is NOT deleted and still holds the
+unported work. Closing the PR does not remove it.
+
+Still outstanding, in value order:
+
+1. `revision_series.py` and `make perf-replay-revisions` (354 lines). Archives each
+   commit, builds the same release probe with one toolchain, measures every revision in
+   one interleaved run. This is how the absolute history should be built: PR #36's
+   absolute figure exists only because four cumulative checkpoints happened to be run by
+   hand, and cannot be re-derived or extended.
+2. The Checkpoint contract (kept_variant, profile, source_revision) plus source_revision
+   on Variant in measure.py. PR #36 derives kept-variant from the verdict, which is right
+   for a report; the recorded revision is what would make item 1 auditable.
+3. `softschema_table.py` (221 lines), a generic soft-schema directory-to-table projection.
+
+Superseded and deliberately dropped: the white paper, its 41,000-line data file, its
+1,936-line stylesheet, and its browser report.
