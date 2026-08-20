@@ -516,10 +516,11 @@ fn walk(index: &Index, selection: &Selection) -> Walked {
             let (Some(kind), Some(attrs)) = (index.kind_of(child), index.attrs_of(child)) else {
                 continue;
             };
-            let name = child_path
-                .file_name()
-                .map(|name| name.to_string_lossy().into_owned())
-                .unwrap_or_default();
+            // Bound once, and as an `OsStr`: the bucket has to be derived from the same
+            // bytes the index interned from, or a name that is not valid UTF-8 would be
+            // filed under one label by the fast tier and another by this one.
+            let file_name = child_path.file_name().unwrap_or_default();
+            let name = file_name.to_string_lossy().into_owned();
             let candidate = Candidate {
                 relative: &child_path,
                 name: &name,
@@ -547,10 +548,7 @@ fn walk(index: &Index, selection: &Selection) -> Walked {
                         own.newest_mtime_ns.map_or(attrs.mtime_ns, |seen| seen.max(attrs.mtime_ns)),
                     );
 
-                    let bucket = child_path
-                        .file_name()
-                        .map_or_else(|| crate::classify::NO_EXTENSION.to_string(), ext_bucket);
-                    let tally = walked.by_ext.entry(bucket).or_default();
+                    let tally = walked.by_ext.entry(ext_bucket(file_name)).or_default();
                     tally.files += 1;
                     tally.bytes += attrs.size;
                     tally.allocated += attrs.allocated;
