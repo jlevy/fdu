@@ -35,7 +35,7 @@ use std::ffi::{OsStr, OsString};
 use std::path::{Component, Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
-use crate::classify::derive_ext;
+use crate::classify::ext_bucket;
 use crate::content::{
     AnalysisApplyOutcome, AnalysisCandidate, AnalysisObservation, AnalysisProfile, ContentIndex,
     ContentRollUp,
@@ -1709,9 +1709,7 @@ impl Index {
             self.remove_entry(id, stats);
         }
 
-        let ext_id = (kind == EntryKind::File)
-            .then(|| derive_ext(name).map(|ext| self.intern_ext(&ext)))
-            .flatten();
+        let ext_id = (kind == EntryKind::File).then(|| self.intern_ext(&ext_bucket(name)));
         let id = self.alloc(Entry {
             parent: Some(parent),
             name: name.to_os_string(),
@@ -1762,9 +1760,7 @@ impl Index {
             return None;
         }
         let source = self.applying_source;
-        let ext_id = (kind == EntryKind::File)
-            .then(|| derive_ext(&name).map(|ext| self.intern_ext(&ext)))
-            .flatten();
+        let ext_id = (kind == EntryKind::File).then(|| self.intern_ext(&ext_bucket(&name)));
         let id = self.alloc(Entry {
             parent: Some(parent),
             name: name.clone(),

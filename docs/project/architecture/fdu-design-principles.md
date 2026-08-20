@@ -389,6 +389,28 @@ Descending and admitting stay separate decisions.
 Rejecting a directory removes it from the tally, never the entries beneath it, which is
 what makes `--kind file` mean “report files” rather than “look only at the top level”.
 
+### A Roll-Up Partitions What It Reports On
+
+Every grouped view divides the selected set into buckets, so its rows sum to the total
+the same selection reports.
+A file that fits no bucket needs one made for it; it never falls out of the tally.
+
+The extension view got this wrong by inheriting the answer to a different question.
+“What is this name’s extension” is correctly `None` for `Makefile`, and the roll-up used
+that verdict directly, so extension-less names — `Makefile`, `README`, `.gitignore` —
+were tallied nowhere.
+The rows reported 235 bytes of a 263-byte tree and said nothing about the remainder,
+which is the silent-lie failure the provenance rules exist to prevent, arrived at
+through arithmetic instead of caching.
+They are now bucketed under `(none)`; a derived extension always carries a leading dot,
+so the label cannot collide with a real one.
+
+A bucketing rule is part of how the engine interprets a tree, so it is versioned into
+the snapshot fingerprint rather than left to the on-disk layout version.
+A snapshot records the bucket an entry was assigned, not the name it was assigned from,
+so a rule change cannot be re-derived on load: the cached entries have to be discarded
+and re-walked, which is what the fingerprint mismatch causes.
+
 ### Utilities Are Explicit Flags, Never Side Effects
 
 `--cache-status` and `--cache-clear` run before scan validation, need no readable tree,

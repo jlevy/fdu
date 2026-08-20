@@ -61,11 +61,25 @@ Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cache
 Compound extensions fold to their full tail, so `archive.tar.gz` is `.tar.gz` rather
 than `.gz`.
 
+The rows are a partition of the tree rather than a selection from it, so they sum to
+what the summary reports.
+A name with no extension — `Makefile` here, and `.gitignore` or `README` elsewhere —
+goes under `(none)` rather than dropping out of the roll-up, which is what the view used
+to do: three rows totalling 235 bytes reported on a tree of 263, with nothing in the
+output to say which 28 bytes were unaccounted for.
+The label is parenthesised and dot-free, and a derived extension always carries its dot,
+so the two can never collide.
+
 ```console
-$ fdu --cache off --view extensions --size apparent project
+$ fdu --cache off --view extensions,summary --size apparent project
+EXTENSIONS
      128 B  .tar.gz      1 file
       71 B  .md          2 files
       36 B  .rs          2 files
+      28 B  (none)       1 file
+
+SUMMARY
+     263 B  6 files, 3 directories
 Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```

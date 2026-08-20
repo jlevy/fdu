@@ -393,6 +393,36 @@ pub fn derive_ext(name: &OsStr) -> Option<String> {
     derive_ext_native(name)
 }
 
+/// Label of the extension bucket a file belongs to, including the one for no extension.
+///
+/// [`derive_ext`] answers "what is this name's extension", and `None` is the right answer
+/// for `Makefile`. A roll-up asks a different question — "which pile does this file's
+/// bytes go on" — and every file belongs on some pile. Dropping the `None` case meant the
+/// extension view's rows did not sum to the tree it was reporting on: a 263-byte fixture
+/// came back as three rows totalling 235, the missing 28 being a `Makefile`, and nothing
+/// in the output said so.
+///
+/// [`derive_ext`] always yields a leading dot, so this label cannot collide with a real
+/// extension however the tree is named.
+///
+/// ```
+/// use std::ffi::OsStr;
+/// use fdu::classify::{NO_EXTENSION, ext_bucket};
+///
+/// assert_eq!(ext_bucket(OsStr::new("archive.tar.gz")), ".tar.gz");
+/// assert_eq!(ext_bucket(OsStr::new("Makefile")), NO_EXTENSION);
+/// assert_eq!(ext_bucket(OsStr::new(".gitignore")), NO_EXTENSION);
+/// ```
+pub fn ext_bucket(name: &OsStr) -> String {
+    derive_ext(name).unwrap_or_else(|| NO_EXTENSION.to_string())
+}
+
+/// Extension-view label for files whose name carries no extension.
+///
+/// Parenthesised so it reads as a category rather than as a filename, and dot-free so it
+/// cannot be mistaken for — or collide with — an extension [`derive_ext`] produced.
+pub const NO_EXTENSION: &str = "(none)";
+
 #[cfg(unix)]
 fn derive_ext_native(name: &OsStr) -> Option<String> {
     use std::os::unix::ffi::OsStrExt;

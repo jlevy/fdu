@@ -20,7 +20,7 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use crate::classify::{
-    ContentFamily, DetectionConfidence, DetectionSource, classify_path, derive_ext,
+    ContentFamily, DetectionConfidence, DetectionSource, classify_path, ext_bucket,
 };
 use crate::content::{
     AnalysisProfile, ContentIndex, ContentProvenance, CoverageReason, LogicalWordStats,
@@ -547,12 +547,13 @@ fn walk(index: &Index, selection: &Selection) -> Walked {
                         own.newest_mtime_ns.map_or(attrs.mtime_ns, |seen| seen.max(attrs.mtime_ns)),
                     );
 
-                    if let Some(ext) = child_path.file_name().and_then(derive_ext) {
-                        let tally = walked.by_ext.entry(ext).or_default();
-                        tally.files += 1;
-                        tally.bytes += attrs.size;
-                        tally.allocated += attrs.allocated;
-                    }
+                    let bucket = child_path
+                        .file_name()
+                        .map_or_else(|| crate::classify::NO_EXTENSION.to_string(), ext_bucket);
+                    let tally = walked.by_ext.entry(bucket).or_default();
+                    tally.files += 1;
+                    tally.bytes += attrs.size;
+                    tally.allocated += attrs.allocated;
                 } else if kind == EntryKind::Dir {
                     // Tallied here, beside the file case, rather than in the post-order
                     // fold: the fold sees every directory the walk descended into, and
@@ -1265,6 +1266,66 @@ mod tests {
             (fast.files, fast.dirs, fast.bytes, fast.allocated, fast.newest_mtime_ns),
             (slow.files, slow.dirs, slow.bytes, slow.allocated, slow.newest_mtime_ns)
         );
+    }
+
+    #[test]
+    fn extension_rows_account_for_every_file_in_both_tiers() {
+        // The rows are a partition of the tree, not a selection from it, so they have to
+        // sum to what the summary reports. They did not: a name with no extension was
+        // dropped from the roll-up rather than bucketed, so a 657-byte tree came back as
+        // rows totalling less and nothing in the output said which files were missing.
+        let mut index = sample();
+        index
+            .apply(&Observation::new(vec![
+                upsert("Makefile", EntryKind::File, attrs(28, 50)),
+                upsert(".gitignore", EntryKind::File, attrs(11, 51)),
+            ]))
+            .expect("apply");
+
+        // Both tiers: unfiltered reads the pre-computed roll-up, and any filter at all
+        // forces the traversal to re-aggregate. They are separate code paths.
+        for selection in [
+            Selection::default(),
+            Selection { min_size: Some(0), ..Selection::default() },
+            Selection { kinds: vec![EntryKind::File], ..Selection::default() },
+        ] {
+            let rows = types_of(&run(&index, &query(&[ViewSpec::Extensions], selection.clone())));
+            let summary = summary_of(&run(&index, &query(&[ViewSpec::Summary], selection.clone())));
+            assert_eq!(
+                rows.iter().map(|row| row.bytes).sum::<u64>(),
+                summary.bytes,
+                "bytes unaccounted for under {selection:?}: {rows:?}"
+            );
+            assert_eq!(
+                rows.iter().map(|row| row.files).sum::<u64>(),
+                summary.files,
+                "files unaccounted for under {selection:?}: {rows:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn names_without_an_extension_share_one_bucket() {
+        // `Makefile` and `.gitignore` have nothing in common as names, and inventing a
+        // row per such name would turn the view into a file listing. One bucket keeps it
+        // a roll-up while still accounting for the bytes.
+        let mut index = sample();
+        index
+            .apply(&Observation::new(vec![
+                upsert("Makefile", EntryKind::File, attrs(28, 50)),
+                upsert(".gitignore", EntryKind::File, attrs(11, 51)),
+            ]))
+            .expect("apply");
+
+        let rows = types_of(&run(&index, &query(&[ViewSpec::Extensions], Selection::default())));
+        let bucket = rows
+            .iter()
+            .find(|row| row.extension == crate::classify::NO_EXTENSION)
+            .expect("a bucket for the extension-less names");
+        assert_eq!(bucket.files, 2);
+        assert_eq!(bucket.bytes, 39);
+        // And it never swallows a name that does have one.
+        assert!(rows.iter().any(|row| row.extension == ".rs"), "{rows:?}");
     }
 
     #[test]

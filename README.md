@@ -49,9 +49,11 @@ For metadata classification, `--view types` applies stable exact-name and extens
 rules. The language roll-up uses those detected types and may refine unresolved or
 ambiguous paths with bounded probes once analysis is enabled.
 Use `--view extensions` when the raw filename extension is the desired grouping.
-For folder sizes, `tree` is the default view, so `fdu PATH` is the complete command.
-The no-index totals path needs only the single unfiltered `summary` view; it is taken
-whatever the cache policy, because a snapshot cannot save the walk that request is
+Its rows partition the tree rather than sampling it, so they sum to the reported total;
+names carrying no extension, such as `Makefile` and `.gitignore`, are tallied under
+`(none)`. For folder sizes, `tree` is the default view, so `fdu PATH` is the complete
+command. The no-index totals path needs only the single unfiltered `summary` view; it is
+taken whatever the cache policy, because a snapshot cannot save the walk that request is
 already doing. Sizes use allocated bytes by default; add `--size apparent` for logical
 file lengths.
 
