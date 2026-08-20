@@ -269,6 +269,13 @@ is disabled or redirected.
 JSON, JSONL, YAML, skill output, lifecycle commands, and watch streams omit it.
 The timing line is human telemetry rather than part of the versioned machine schema.
 
+Because a watch run never reaches a final answer, it has no such line, and a text watch
+run instead draws a gray rule carrying the render instant above each repaint so one
+repaint is never read as a continuation of the last.
+The rule appears between repaints and never above the first, so the opening answer
+matches the same query run without `--watch`. Machine formats need no rule: every
+repaint is a fresh envelope with its own `generated_at`.
+
 ## Compose Other Queries
 
 ```shell

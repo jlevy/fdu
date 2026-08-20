@@ -341,8 +341,15 @@ returned by fresh content reads, content-analysis file and byte throughput,
 content-sidecar hits and the apparent bytes they represent, the metadata cache tier, and
 total report time. A cache-only answer reports zero walked files rather than pretending
 cached inventory was filesystem work.
-Watch has no final answer and therefore has no footer.
-Terminal text renders the footer in gray; uncolored text contains no escape sequences.
+Watch has no final answer and therefore has no footer, which is why a text watch run
+draws a gray rule carrying the render instant above each repaint instead: with no footer
+and no framing, the last row of one repaint and the first row of the next were adjacent
+lines, and a blank line could not say which — that is already what separates two views
+inside one report. The rule appears between repaints and never above the first, so a
+watch run’s opening answer stays byte-identical to the same query run without `--watch`.
+Machine formats need none of this: every repaint is a fresh envelope carrying its own
+`generated_at`. Terminal text renders the footer in gray; uncolored text contains no
+escape sequences.
 
 Text carries one more presentation-only element the machine formats do not need: when a
 run returns more than one view, each block is introduced by an all-caps header naming
