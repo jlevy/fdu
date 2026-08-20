@@ -111,9 +111,11 @@ Performance: walked 1 file / 15 B; content read 15 B at [BYTE_RATE]; analysis 1 
 
 ```console
 $ fdu --cache off --analyze code --view languages,documents --size apparent content-project
+LANGUAGES
       38 B   75.0%  Rust    1 file, 4 lines (3 code, 0 comment, 1 blank)
       39 B   25.0%  Python  1 file, 3 lines (1 code, 1 comment, 1 blank)
 
+DOCUMENTS
       42 B   63.6%  markdown           1 file, 5 lines (3 nonblank, 2 blank), 7 words (0.0 pages), 1 documentation
       35 B   36.4%  text               2 files, 3 lines (2 nonblank, 1 blank), 4 words (0.0 pages), 1 documentation, 1 binary
 Performance: walked 7 files / 256 B; content read 176 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; cold scan; total [PERF_TIME]

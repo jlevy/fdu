@@ -20,7 +20,7 @@ use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 use crate::classify::{
-    ContentFamily, DetectionConfidence, DetectionSource, classify_path, derive_ext,
+    ContentFamily, DetectionConfidence, DetectionSource, classify_path, ext_bucket,
 };
 use crate::content::{
     AnalysisProfile, ContentIndex, ContentProvenance, CoverageReason, LogicalWordStats,
@@ -489,18 +489,16 @@ fn walk(index: &Index, selection: &Selection) -> Walked {
     while let Some((id, path, expanded)) = stack.pop() {
         if expanded {
             // Post-order: every child has finished, so fold their totals into this one.
+            // `total` already carries this directory's own admitted files and admitted
+            // directory children, both tallied in the pre-order pass below; what is left
+            // is to add what each child subtree found deeper down.
             let mut total = walked.per_directory.remove(&id).unwrap_or_default();
             if let Some(children) = index.children_of(id) {
-                for (name, child) in children {
-                    let child_path = path.join(name);
+                for (_, child) in children {
                     if let Some(sub) = walked.per_directory.get(&child) {
                         let sub = *sub;
                         merge_summary(&mut total, &sub);
-                        if index.kind_of(child) == Some(EntryKind::Dir) {
-                            total.dirs += 1;
-                        }
                     }
-                    let _ = child_path;
                 }
             }
             walked.per_directory.insert(id, total);
@@ -518,10 +516,11 @@ fn walk(index: &Index, selection: &Selection) -> Walked {
             let (Some(kind), Some(attrs)) = (index.kind_of(child), index.attrs_of(child)) else {
                 continue;
             };
-            let name = child_path
-                .file_name()
-                .map(|name| name.to_string_lossy().into_owned())
-                .unwrap_or_default();
+            // Bound once, and as an `OsStr`: the bucket has to be derived from the same
+            // bytes the index interned from, or a name that is not valid UTF-8 would be
+            // filed under one label by the fast tier and another by this one.
+            let file_name = child_path.file_name().unwrap_or_default();
+            let name = file_name.to_string_lossy().into_owned();
             let candidate = Candidate {
                 relative: &child_path,
                 name: &name,
@@ -549,12 +548,17 @@ fn walk(index: &Index, selection: &Selection) -> Walked {
                         own.newest_mtime_ns.map_or(attrs.mtime_ns, |seen| seen.max(attrs.mtime_ns)),
                     );
 
-                    if let Some(ext) = child_path.file_name().and_then(derive_ext) {
-                        let tally = walked.by_ext.entry(ext).or_default();
-                        tally.files += 1;
-                        tally.bytes += attrs.size;
-                        tally.allocated += attrs.allocated;
-                    }
+                    let tally = walked.by_ext.entry(ext_bucket(file_name)).or_default();
+                    tally.files += 1;
+                    tally.bytes += attrs.size;
+                    tally.allocated += attrs.allocated;
+                } else if kind == EntryKind::Dir {
+                    // Tallied here, beside the file case, rather than in the post-order
+                    // fold: the fold sees every directory the walk descended into, and
+                    // counting there reported directories the selection had rejected.
+                    // `--kind file` answered "6 files, 3 directories", and a summary
+                    // disagreed with the files view over the very same query.
+                    walked.per_directory.entry(id).or_default().dirs += 1;
                 }
             }
 
@@ -1252,10 +1256,124 @@ mod tests {
         assert!(!admits_everything.is_unfiltered());
         let slow = summary_of(&run(&index, &query(&[ViewSpec::Summary], admits_everything)));
 
+        // `dirs` belongs in this comparison like every other tally. It used to be left
+        // out because the two tiers genuinely disagreed: the traversal tier counted every
+        // directory it descended into, so a filter admitting everything was the only
+        // filter the two tiers could agree under.
         assert_eq!(
-            (fast.files, fast.bytes, fast.allocated, fast.newest_mtime_ns),
-            (slow.files, slow.bytes, slow.allocated, slow.newest_mtime_ns)
+            (fast.files, fast.dirs, fast.bytes, fast.allocated, fast.newest_mtime_ns),
+            (slow.files, slow.dirs, slow.bytes, slow.allocated, slow.newest_mtime_ns)
         );
+    }
+
+    #[test]
+    fn extension_rows_account_for_every_file_in_both_tiers() {
+        // The rows are a partition of the tree, not a selection from it, so they have to
+        // sum to what the summary reports. They did not: a name with no extension was
+        // dropped from the roll-up rather than bucketed, so a 657-byte tree came back as
+        // rows totalling less and nothing in the output said which files were missing.
+        let mut index = sample();
+        index
+            .apply(&Observation::new(vec![
+                upsert("Makefile", EntryKind::File, attrs(28, 50)),
+                upsert(".gitignore", EntryKind::File, attrs(11, 51)),
+            ]))
+            .expect("apply");
+
+        // Both tiers: unfiltered reads the pre-computed roll-up, and any filter at all
+        // forces the traversal to re-aggregate. They are separate code paths.
+        for selection in [
+            Selection::default(),
+            Selection { min_size: Some(0), ..Selection::default() },
+            Selection { kinds: vec![EntryKind::File], ..Selection::default() },
+        ] {
+            let rows = types_of(&run(&index, &query(&[ViewSpec::Extensions], selection.clone())));
+            let summary = summary_of(&run(&index, &query(&[ViewSpec::Summary], selection.clone())));
+            assert_eq!(
+                rows.iter().map(|row| row.bytes).sum::<u64>(),
+                summary.bytes,
+                "bytes unaccounted for under {selection:?}: {rows:?}"
+            );
+            assert_eq!(
+                rows.iter().map(|row| row.files).sum::<u64>(),
+                summary.files,
+                "files unaccounted for under {selection:?}: {rows:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn names_without_an_extension_share_one_bucket() {
+        // `Makefile` and `.gitignore` have nothing in common as names, and inventing a
+        // row per such name would turn the view into a file listing. One bucket keeps it
+        // a roll-up while still accounting for the bytes.
+        let mut index = sample();
+        index
+            .apply(&Observation::new(vec![
+                upsert("Makefile", EntryKind::File, attrs(28, 50)),
+                upsert(".gitignore", EntryKind::File, attrs(11, 51)),
+            ]))
+            .expect("apply");
+
+        let rows = types_of(&run(&index, &query(&[ViewSpec::Extensions], Selection::default())));
+        let bucket = rows
+            .iter()
+            .find(|row| row.extension == crate::classify::NO_EXTENSION)
+            .expect("a bucket for the extension-less names");
+        assert_eq!(bucket.files, 2);
+        assert_eq!(bucket.bytes, 39);
+        // And it never swallows a name that does have one.
+        assert!(rows.iter().any(|row| row.extension == ".rs"), "{rows:?}");
+    }
+
+    #[test]
+    fn a_summary_and_a_files_view_agree_on_how_many_directories_a_filter_admits() {
+        // One query must not give two answers. The directory tally is folded from the
+        // walk while the files view is filtered entry by entry, so they are two paths to
+        // the same number and drifted apart: `--kind file` answered "5 files, 3
+        // directories" while the files view under the same selection listed no directory
+        // at all.
+        let index = sample();
+        for selection in [
+            Selection { kinds: vec![EntryKind::File], ..Selection::default() },
+            Selection { kinds: vec![EntryKind::Dir], ..Selection::default() },
+            Selection { include: vec![pattern("*.rs")], ..Selection::default() },
+            Selection { exclude: vec![pattern("docs")], ..Selection::default() },
+            Selection { min_size: Some(1_000_000), ..Selection::default() },
+            Selection { min_size: Some(0), ..Selection::default() },
+        ] {
+            let summary = summary_of(&run(&index, &query(&[ViewSpec::Summary], selection.clone())));
+            let listed = files_of(&run(&index, &query(&[ViewSpec::Files], selection.clone())));
+            let dirs = listed.iter().filter(|row| row.kind == EntryKind::Dir).count() as u64;
+            let files = listed.iter().filter(|row| row.kind == EntryKind::File).count() as u64;
+            assert_eq!(summary.dirs, dirs, "directory counts disagree under {selection:?}");
+            assert_eq!(summary.files, files, "file counts disagree under {selection:?}");
+        }
+    }
+
+    #[test]
+    fn a_rejected_directory_is_still_descended_into() {
+        // Filtering a directory out of the tally must not filter out what is under it:
+        // `--kind file` reports no directories and every file, at every depth.
+        let index = sample();
+        let selection = Selection { kinds: vec![EntryKind::File], ..Selection::default() };
+        let row = summary_of(&run(&index, &query(&[ViewSpec::Summary], selection)));
+        assert_eq!(row.dirs, 0, "no directory was admitted");
+        assert_eq!(row.files, 5, "including src/deep/nested.rs, two levels down");
+        assert_eq!(row.bytes, 657, "and its bytes");
+    }
+
+    #[test]
+    fn nested_directory_counts_roll_up_through_every_level() {
+        // The tally is taken in the pre-order pass and folded in the post-order one, so a
+        // directory admitted three levels down has to reach the root through both.
+        let index = sample();
+        let selection = Selection { kinds: vec![EntryKind::Dir], ..Selection::default() };
+        let root = tree_of(&run(&index, &query(&[ViewSpec::Tree], selection)));
+        assert_eq!(root.dirs, 3, "src, src/deep, and docs");
+        assert_eq!(root.files, 0, "no file was admitted");
+        let src = root.children.iter().find(|node| node.name == "src").expect("src");
+        assert_eq!(src.dirs, 1, "src/deep, counted for src as well as for the root");
     }
 
     #[test]

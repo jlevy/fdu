@@ -20,7 +20,7 @@ use crate::content::{AnalysisProfile, AnalysisRequest};
 use crate::execution::{PerformanceSummary, prepare_report, prepare_report_with_scan_diagnostics};
 use crate::query::{
     Bound, Pattern, Provenance, Query, ReportSource, Selection, SizeMetric, SortKey, ViewSpec,
-    parse_size, parse_when, system_time_to_nanos,
+    format_rfc3339, parse_size, parse_when, system_time_to_nanos,
 };
 use crate::report_format;
 use crate::{
@@ -41,6 +41,12 @@ const STYLE_WARNING: AnsiStyle = AnsiColor::Yellow.on_default().bold();
 const STYLE_ERROR: AnsiStyle = AnsiColor::Red.on_default().bold();
 const STYLE_CAUSE: AnsiStyle = AnsiStyle::new().dimmed();
 const STYLE_PERFORMANCE: AnsiStyle = AnsiColor::BrightBlack.on_default();
+
+/// The rule that separates one watch repaint from the one before it.
+///
+/// Gray for the same reason the performance footer is: it is a frame around the report,
+/// not part of the answer, and should not compete with the rows for attention.
+const STYLE_WATCH_RULE: AnsiStyle = AnsiColor::BrightBlack.on_default();
 const CLI_STYLES: Styles = Styles::styled()
     .header(STYLE_HEADING)
     .usage(STYLE_HEADING)
@@ -733,6 +739,10 @@ impl Cli {
 
     /// Re-render the aggregate views of a live session.
     #[cfg(feature = "watch")]
+    /// Repaint the aggregate views after a change.
+    ///
+    /// Only ever called for a repaint — the first answer is written by the caller before
+    /// the loop — so the rule below can be unconditional.
     fn render_live(
         out: &mut dyn Write,
         session: &crate::watch_session::Session,
@@ -741,6 +751,17 @@ impl Cli {
     ) -> anyhow::Result<()> {
         let provenance = session.live_provenance(SystemTime::now());
         let report = session.report(&provenance)?;
+        // A watch run has no final answer and so no performance footer, which left text
+        // repaints with nothing between them: the last row of one and the first row of
+        // the next were adjacent lines. A blank line alone would not do, because that is
+        // already what separates two views inside a single report.
+        if format == report_format::Format::Text {
+            writeln!(
+                out,
+                "\n{}",
+                paint(&watch_rule(provenance.generated_at), STYLE_WATCH_RULE, color)
+            )?;
+        }
         write!(out, "{}", report_format::render(&report, format, color))?;
         out.flush()?;
         Ok(())
@@ -1373,6 +1394,16 @@ impl ColorContext {
     }
 }
 
+/// The rule drawn above a watch repaint, carrying the instant it was rendered.
+///
+/// The time is what makes the rule worth a line rather than a bare separator: a watch
+/// reader wants to know when the tree last moved, and it is the one fact that
+/// distinguishes one repaint from another whose numbers happen to match. RFC 3339 in UTC
+/// is the spelling every other timestamp this tool prints uses.
+fn watch_rule(at: SystemTime) -> String {
+    format!("──── {} ────", format_rfc3339(at))
+}
+
 fn paint(text: &str, style: AnsiStyle, color: bool) -> String {
     if color { format!("{style}{text}{style:#}") } else { text.to_string() }
 }
@@ -1393,6 +1424,7 @@ fn compose_skill_from(template: &str) -> String {
 mod tests {
     use super::*;
     use std::process::Command;
+    use std::time::UNIX_EPOCH;
 
     /// Every `--watch` run parses an interval before anything else, so this must work on
     /// every platform the binary ships to.
@@ -1405,6 +1437,20 @@ mod tests {
     /// scope-validation goldens exit before the watch path is reached. A CLI golden
     /// driving a real watch session on Windows CI is what finally surfaced it.
     #[cfg(feature = "watch")]
+    #[test]
+    fn a_watch_rule_carries_the_instant_and_cannot_be_read_as_a_data_row() {
+        // The separator has to be recognisable as a boundary at a glance and never
+        // mistakable for a row: every report row this tool prints starts with a
+        // right-aligned size, so a rule starting with a box-drawing run cannot collide.
+        let rule = watch_rule(UNIX_EPOCH + Duration::from_secs(1_786_386_151));
+        assert_eq!(rule, "──── 2026-08-10T18:22:31.000000000Z ────");
+        assert!(rule.starts_with('─'), "{rule}");
+
+        // Colour is a decoration over it, never a requirement for reading it.
+        assert_eq!(paint(&rule, STYLE_WATCH_RULE, false), rule);
+        assert!(paint(&rule, STYLE_WATCH_RULE, true).contains(&rule));
+    }
+
     #[test]
     fn an_interval_parses_without_overflowing_any_platforms_clock() {
         assert_eq!(parse_duration("2s").expect("seconds"), Duration::from_secs(2));

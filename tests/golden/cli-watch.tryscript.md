@@ -16,6 +16,7 @@ patterns:
   DIR_BYTES: '\d+'
   ALLOCATED: '\d+'
   MTIME_NS: '\d+'
+  STAMP: '[^ ]+'
 ---
 # The Watch Change Stream
 
@@ -54,5 +55,45 @@ $ node bin/watch-capture.mjs tree
 {"schema": "fdu.stream/1", "record": "change", "op": "remove", "path": "added.txt", "clock": [CLOCK]}
 # create a directory
 {"schema": "fdu.stream/1", "record": "change", "op": "upsert", "path": "sub", "clock": [CLOCK], "kind": "dir", "bytes": [DIR_BYTES], "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS]}
+? 0
+```
+
+## Text Repaints Are Separated From One Another
+
+JSONL frames every repaint for free: each is a fresh envelope carrying its own
+`generated_at`. Text has no such framing, and a watch run has no final answer and
+therefore no performance footer, so nothing at all sat between one repaint and the next
+— the last row of one and the first row of the following were adjacent lines.
+A blank line alone would not do either, since that is already what separates two views
+inside a single report.
+
+The separator carries the instant it was rendered, which is what a watch reader wants to
+know and the one thing that tells two repaints apart when their numbers happen to match.
+It appears between repaints and never above the first, so the opening answer stays
+byte-identical to the same query run without `--watch`.
+
+The capture needs a tree of its own: the change stream above leaves its own behind with
+a directory in it, and this section’s expectations are written against a tree holding
+nothing but the seed file.
+
+```console
+$ node -e "require('node:fs').mkdirSync('repaint'); require('node:fs').writeFileSync('repaint/seed.txt', 'seed')"
+? 0
+```
+
+```console
+$ node bin/watch-repaint-capture.mjs repaint
+TREE
+       4 B  ██████████   100%  . (1 file)
+
+SUMMARY
+       4 B  1 file, 0 directories
+
+──── [STAMP] ────
+TREE
+      16 B  ██████████   100%  . (2 files)
+
+SUMMARY
+      16 B  2 files, 0 directories
 ? 0
 ```

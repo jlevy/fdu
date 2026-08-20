@@ -76,6 +76,8 @@ metadata visible but does not retain a separate lower-level metric record for th
 
 - `--view tree` (default) for per-directory roll-ups.
 - `--view extensions` for the original raw-extension breakdown.
+  Rows partition the tree and so sum to its total; a derived extension always carries a
+  leading dot, and names having none are tallied under the literal `(none)`.
 - `--view types` for stable detected file types and exact byte shares.
 - `--view families` for code, prose, markup, data, binary, and unknown roll-ups.
 - `--view languages` for code-family rows and byte shares from path-only detection.
@@ -84,7 +86,9 @@ metadata visible but does not retain a separate lower-level metric record for th
   One-shot text adds the performance footer described below; use a machine format when
   output is consumed programmatically.
 - `--view summary` for one aggregate row.
-- Several views in one run share one scan: `--view summary,types,families`.
+- Several views in one run share one scan: `--view summary,types,families`. Text then
+  labels each block with an all-caps header naming its view; a single-view text report
+  has no header. Machine formats tag every report with `view` either way.
 
 Add `--analyze basic` to stream physical, blank, and nonblank lines and raw prose words.
 Add `--analyze code` to the language view for standard LOC, comment, and code-blank
