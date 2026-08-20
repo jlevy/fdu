@@ -356,7 +356,9 @@ perf-compare: perf-probe-release
 		--variant "control=$(CONTROL)" \
 		--variant "candidate=$(PERF_RELEASE)" \
 		--reference dust=$(shell command -v dust 2>/dev/null || echo /usr/bin/du) \
-		--job cold-scan-index --job warm-revalidate \
+		--job cold-scan-index --job cold-scan-producer \
+		--job cold-snapshot-save --job warm-revalidate \
+		--job warm-snapshot-load \
 		--trials $(or $(TRIALS),12) \
 		--scratch $(PERF_SCRATCH) --output-dir $(PERF_RESULTS) \
 		--baseline-fingerprint $(PERF_BASELINE) \

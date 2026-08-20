@@ -6159,7 +6159,7 @@
    "entries": 60067,
    "family": "macOS:dbd79ed9c898",
    "hypotheses": [
-    "H50: exp-012 measured a scheduler that no longer exists and exp-013 compared two breadth-first schedulers, so what the shipped default costs against depth-first is unmeasured"
+    "H50"
    ],
    "id": "exp-014",
    "interleaved": true,

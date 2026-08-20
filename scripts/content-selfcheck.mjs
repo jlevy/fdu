@@ -49,6 +49,12 @@ try {
     "json",
     "--size",
     "apparent",
+    // Every row, not the default first ten. This asserts that seven tracked type ids are
+    // present, and the tree currently yields thirty-two: `toml` sat tenth, so one new
+    // file type larger than the TOML would have failed the gate with a misleading
+    // "missing tracked file type" rather than anything being wrong.
+    "--limit",
+    "all",
     tree,
   ]);
   const report = JSON.parse(output);

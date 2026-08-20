@@ -87,7 +87,7 @@ dead end.
 | 011 | [One ancestor merge per same-parent insert run](#exp011--one-ancestor-merge-per-sameparent-insert-run) | H13 | `cold-scan-index` | -2.5% | ❌ rejected |
 | 012 | [Breadth-first traversal order](#exp012--breadthfirst-traversal-order) | H48 | `cold-scan-index` | -0.6% | ✅ accepted |
 | 013 | [Region-scheduled breadth-first traversal](#exp013--regionscheduled-breadthfirst-traversal) | H49 | `cold-scan-index` | -3.8% | ✅ accepted |
-| 014 | [What the breadth-first default costs, on the shipped scheduler](#exp014--what-the-breadthfirst-default-costs-on-the-shipped-scheduler) | H50: exp-012 measured a scheduler that no longer exists and exp-013 compared two breadth-first schedulers, so what the shipped default costs against depth-first is unmeasured | `cold-scan-producer` | -3.0% | 📏 baseline |
+| 014 | [What the breadth-first default costs, on the shipped scheduler](#exp014--what-the-breadthfirst-default-costs-on-the-shipped-scheduler) | H50 | `cold-scan-producer` | -3.0% | 📏 baseline |
 | 015 | [Post-BFS worker depth under metadata-cache pressure](#exp015--postbfs-worker-depth-under-metadatacache-pressure) | H31 | `cold-scan-index` | -11.7% | ✅ accepted |
 | 016 | [Move cold-scan producer paths instead of cloning](#exp016--move-coldscan-producer-paths-instead-of-cloning) | H51 | `cold-scan-index` | -0.4% | ❌ rejected |
 | 017 | [Pre-create dormant workers for adaptive scan depth](#exp017--precreate-dormant-workers-for-adaptive-scan-depth) | H31 | `cold-scan-producer` | +2.0% | ❌ rejected |
@@ -651,9 +651,7 @@ Full record:
 
 ### exp-014 — What the breadth-first default costs, on the shipped scheduler
 
-📏 baseline · 2026-08-11 · H50: exp-012 measured a scheduler that no longer exists and
-exp-013 compared two breadth-first schedulers, so what the shipped default costs against
-depth-first is unmeasured
+📏 baseline · 2026-08-11 · H50
 
 **`cold-scan-producer`** (cold start) — measured
 
