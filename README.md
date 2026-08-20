@@ -325,6 +325,11 @@ as the rest of human output; a single-view report is left bare, so `fdu --view f
 stays a listing of paths and nothing else.
 Metadata-only machine reports retain the versioned `fdu.report/1` schema unless a
 metric-summary view is requested.
+An `extension` value is either a derived extension, which always carries a leading dot,
+or the literal `(none)` for names that have none; a consumer matching on the dot should
+expect that one label without it.
+The schema is unchanged by this, because the field’s name and type are: `(none)` is a
+member of its value domain, not a new shape.
 Every explicit content request and the `types`, `families`, `languages`, and `documents`
 metric summaries use `fdu.report/2`, adding exact share numerators and denominators,
 analyzer coverage, and versioned rule, option, and analyzer identities.

@@ -76,6 +76,8 @@ metadata visible but does not retain a separate lower-level metric record for th
 
 - `--view tree` (default) for per-directory roll-ups.
 - `--view extensions` for the original raw-extension breakdown.
+  Rows partition the tree and so sum to its total; a derived extension always carries a
+  leading dot, and names having none are tallied under the literal `(none)`.
 - `--view types` for stable detected file types and exact byte shares.
 - `--view families` for code, prose, markup, data, binary, and unknown roll-ups.
 - `--view languages` for code-family rows and byte shares from path-only detection.
