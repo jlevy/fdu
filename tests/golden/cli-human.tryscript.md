@@ -107,6 +107,23 @@ Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cache
 ? 0
 ```
 
+### A View That Matched Nothing Still Says So
+
+Before the header existed, a view whose selection admitted nothing rendered as no output
+at all, so a run asking for three views and getting one table gave no sign the other two
+had even been asked for.
+The header is what makes an empty result distinguishable from a view that was never
+requested.
+
+```console
+$ fdu --cache off --color never --view files,types --include "*.nomatch" project
+FILES
+
+TYPES
+Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+? 0
+```
+
 ### Asking for a Second View Labels the Paths Too
 
 Once a run returns more than one block, the listing is one block among several and is
