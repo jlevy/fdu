@@ -3,14 +3,14 @@ type: is
 id: is-01m0ethvrzj0kgm3wzyvevnq4p
 title: Extensions view silently omits files with no extension
 kind: bug
-status: open
+status: closed
 priority: 2
-version: 1
+version: 3
 labels: []
 dependencies: []
 parent_id: is-01m0erhq35tpxzjecxn3p9jzx2
 created_at: 2026-08-20T05:33:25.662Z
-updated_at: 2026-08-20T05:33:25.662Z
+updated_at: 2026-08-20T06:08:37.731Z
 ---
 Found during the end-to-end round on macOS.
 

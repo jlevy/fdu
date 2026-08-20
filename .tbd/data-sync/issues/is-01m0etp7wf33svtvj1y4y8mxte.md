@@ -3,14 +3,14 @@ type: is
 id: is-01m0etp7wf33svtvj1y4y8mxte
 title: Summary and tree directory counts ignore the selection filters
 kind: bug
-status: open
+status: in_progress
 priority: 1
-version: 1
+version: 2
 labels: []
 dependencies: []
 parent_id: is-01m0erhq35tpxzjecxn3p9jzx2
 created_at: 2026-08-20T05:35:49.134Z
-updated_at: 2026-08-20T05:35:49.134Z
+updated_at: 2026-08-20T05:55:29.614Z
 ---
 Found during the end-to-end round on macOS. Reproducible on the committed fixture tests/golden/fixtures/project (6 files, 3 directories).
 
