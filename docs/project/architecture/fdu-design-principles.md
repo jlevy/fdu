@@ -240,14 +240,31 @@ An additional golden and semantic-hash gate pins that a derived summary serializ
 identically to the indexed summary.
 
 Content analysis adds a third, explicit I/O tier without changing either metadata tier.
-No analysis profile means no regular-file content opens, analyzer workers, sparse
+An empty analyzer set means no regular-file content opens, analyzer workers, sparse
 content index, or content-sidecar load.
-Any enabled `--analyze` profile retains the full metadata index, then streams every
-eligible file absent from the matching sidecar through EOF. Worker count bounds
-concurrency, never per-file coverage.
+Any enabled `--analyze` set retains the full metadata index, then streams every eligible
+file absent from a satisfying sidecar through EOF. Worker count bounds concurrency,
+never per-file coverage.
 `languages` is a metadata-only byte and count view by default; the code analyzer adds
-standard LOC. `documents` requires at least the basic analyzer.
-A view never enables an analyzer implicitly or presents an unmeasured value as zero.
+standard LOC. `documents` requires at least one enabled analyzer.
+
+`--analyze` is a set over the analyzer registry, never an ordered level.
+The analyzers are independent, the registry and the sidecar provenance already record
+which ones ran, and an enum of the combinations can only name the ones somebody thought
+to enumerate. Sidecar reuse is containment, not equality: a record produced by a wider
+set already holds every metric a narrower request would recompute, and only the
+type-rule fingerprint has to match exactly, because a classification change can move a
+file between families and invalidate the metrics themselves.
+
+**Cost flows one way; display follows cost.** A view never enables an analyzer
+implicitly or presents an unmeasured value as zero: choosing how to display a result
+must never authorize reading file bodies.
+The reverse direction carries no such hazard, because it re-projects state already paid
+for, so the requested analyzer set selects the *default* view and an explicit `--view`
+always wins. What this protects is that a run displays what it paid for.
+A request that reads content and renders none of it is a defect -- it is the shape the
+CLI shipped in when `--analyze` had no axis of its own -- and a view omitted for lack of
+analysis is named in the report rather than silently dropped.
 
 Expected content coverage is distinct from operational completeness.
 Binary data, invalid UTF-8, and file types without a requested analyzer remain explicit

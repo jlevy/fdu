@@ -7,6 +7,7 @@
 **Status:** Implemented and revised.
 PR #5 shipped the five-axis surface; this revision adds the content axis that arrived
 after it and fixes the display gap that omission created.
+Phase 5 is implemented on `claude/fdu-content-axis`.
 
 ## Overview
 
@@ -836,32 +837,32 @@ shared process boundary, as today.
 This revision. Ordered so each step is independently reviewable and the behavior change
 lands last.
 
-- [ ] Replace `AnalysisProfile` with an `AnalysisSet` over the existing analyzer
+- [x] Replace `AnalysisProfile` with an `AnalysisSet` over the existing analyzer
   registry: `includes_code()`/`includes_documents()` become real membership tests,
   `--analyze` parses a comma-delimited list through the same `parse_list` helper as
   `--view` and `--kind`, and `none`/`all` are the two totals.
   Rename `basic` → `lines` and `documents` → `words` in the same change; the interface
   is pre-release and no aliases are retained, per the precedent set by `--by-type` →
   `--view types`
-- [ ] Encode the set as a bitmask in the content sidecar and change record reuse from
+- [x] Encode the set as a bitmask in the content sidecar and change record reuse from
   profile equality to `stored ⊇ requested`, projecting the stored record down to the
   requested set. Add a unit test that an `all` sidecar satisfies a `code` request with
   zero fresh reads — the regression this replaces is a silent full re-read
-- [ ] Retain word metrics wherever they were measured rather than zeroing them outside
+- [x] Retain word metrics wherever they were measured rather than zeroing them outside
   `prose`/`markup`, so `words` reports normalized volume for the `code` family too
-- [ ] Derive the default view from the analyzer set; an explicit `--view` always wins.
+- [x] Derive the default view from the analyzer set; an explicit `--view` always wins.
   This changes output for every existing `--analyze` invocation, so the goldens are
   re-recorded and the diff reviewed as the record of the change
-- [ ] Add `--view all` with profile-aware expansion and the omission note; confirm the
+- [x] Add `--view all` with profile-aware expansion and the omission note; confirm the
   machine formats need no schema change because `reports` already enumerates what was
   produced
-- [ ] Add the paid-for-nothing note when no selected view consumes the requested
+- [x] Add the paid-for-nothing note when no selected view consumes the requested
   analysis, and a test that it is a note and never an error, because sidecar warming is
   a supported use
-- [ ] Update SKILL.md, `AFTER_HELP`, README (the Five Common Reports table), the
+- [x] Update SKILL.md, `AFTER_HELP`, README (the Five Common Reports table), the
   `--analyze` help text — which must state plainly that it opens and reads eligible
   files — and the benchmark job manifests together, per Principle 12
-- [ ] Fold Principle 13 and the six-axis model into
+- [x] Fold Principle 13 and the six-axis model into
   [the design doc](../../architecture/fdu-design-principles.md)
 
 ## Testing Strategy

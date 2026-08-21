@@ -42,7 +42,7 @@ try {
     "--cache",
     "off",
     "--analyze",
-    "documents",
+    "words",
     "--view",
     "types,families,documents",
     "--format",
@@ -52,9 +52,9 @@ try {
     tree,
   ]);
   const report = JSON.parse(output);
-  assert.equal(report.schema, "fdu.report/2");
+  assert.equal(report.schema, "fdu.report/3");
   assert.equal(report.complete, true);
-  assert.equal(report.analysis.profile, "documents");
+  assert.deepEqual(report.analysis.analyze, ["lines", "words"]);
   assert.deepEqual(report.analysis.analyzers, [
     { id: "content-basic-v1", version: 1 },
     { id: "text-logical-v1", version: 1 },
@@ -136,8 +136,8 @@ try {
     tree,
   ]);
   const codeReport = JSON.parse(codeOutput);
-  assert.equal(codeReport.schema, "fdu.report/2");
-  assert.equal(codeReport.analysis.profile, "code");
+  assert.equal(codeReport.schema, "fdu.report/3");
+  assert.deepEqual(codeReport.analysis.analyze, ["lines", "code"]);
   assert.deepEqual(codeReport.analysis.analyzers, [
     { id: "content-basic-v1", version: 1 },
     { id: "code-sloc-v1", version: 1 },
