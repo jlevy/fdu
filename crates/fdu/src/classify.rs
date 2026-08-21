@@ -538,14 +538,13 @@ fn derive_ext_str(name: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        ContentFamily, DetectionConfidence, DetectionSource, RULES_BY_EXTENSION,
-        RULES_BY_FILENAME, classify_path, classify_path_with_prefix, derive_ext,
-        type_rule_fingerprint,
-    };
     use super::GENERATED_RULES;
     #[cfg(feature = "cli")]
     use super::human_language_name;
+    use super::{
+        ContentFamily, DetectionConfidence, DetectionSource, RULES_BY_EXTENSION, RULES_BY_FILENAME,
+        classify_path, classify_path_with_prefix, derive_ext, type_rule_fingerprint,
+    };
     use std::ffi::OsStr;
     use std::path::Path;
 
