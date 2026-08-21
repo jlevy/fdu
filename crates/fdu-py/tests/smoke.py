@@ -287,9 +287,9 @@ def main() -> None:
     assert languages["share_metric"] == "allocated_bytes", languages
     assert [(row["id"], row["files"]) for row in languages["rows"]] == [("rust", 2)], languages
 
-    analyzed = fdu_py.scan(str(query_root), analyze="basic")
+    analyzed = fdu_py.scan(str(query_root), analyze="lines")
     documents = analyzed.report(views=["documents"], words_per_page=250)
-    assert documents["analysis"]["profile"] == "basic", documents
+    assert documents["analysis"]["analyze"] == ["lines"], documents
     document_metrics = documents["reports"][0]["metrics"]
     markdown = document_metrics["rows"][0]
     assert markdown["physical_lines"] == 1, markdown
@@ -344,11 +344,11 @@ def main() -> None:
     # Expected coverage exclusions remain queryable without becoming operational errors.
     partial_root = pathlib.Path(tempfile.mkdtemp())
     (partial_root / "invalid.txt").write_bytes(b"valid prefix\xff")
-    partial = fdu_py.open(str(partial_root), cache="auto", analyze="basic")
+    partial = fdu_py.open(str(partial_root), cache="auto", analyze="lines")
     assert partial.complete is True, partial.errors
     assert partial.errors == [], partial.errors
 
-    cached_partial = fdu_py.open(str(partial_root), cache="only", analyze="basic")
+    cached_partial = fdu_py.open(str(partial_root), cache="only", analyze="lines")
     assert cached_partial.complete is True, cached_partial.errors
     assert cached_partial.freshness == "stale", cached_partial.freshness
     assert cached_partial.errors == [], cached_partial.errors

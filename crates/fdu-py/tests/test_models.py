@@ -7,8 +7,8 @@ from datetime import UTC, datetime
 
 import pytest
 from fdu import (
+    Analysis,
     AnalysisOptions,
-    AnalysisProfile,
     CachePolicy,
     Query,
     ScanOptions,
@@ -38,7 +38,7 @@ def test_public_options_are_typed_immutable_values() -> None:
 def test_public_defaults_match_cli_semantics() -> None:
     assert CachePolicy.AUTO.value == "auto"
     assert ScanOptions() == ScanOptions(max_depth=None, one_filesystem=False)
-    assert AnalysisOptions().profile is AnalysisProfile.NONE
+    assert AnalysisOptions().analyze == Analysis.NONE
     assert Query().views == (View.TREE,)
 
 

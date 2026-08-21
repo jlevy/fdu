@@ -90,7 +90,7 @@ def main() -> None:
     assert importlib.util.find_spec("fdu_py") is None
     contract = _native.contract()
     assert contract["cache_policies"] == [value.value for value in fdu.CachePolicy]
-    assert contract["analysis_profiles"] == [value.value for value in fdu.AnalysisProfile]
+    assert contract["analysis"] == [value.value for value in fdu.Analysis]
     assert contract["views"] == [value.value for value in fdu.View]
     assert contract["entry_kinds"] == [value.value for value in fdu.EntryKind]
     assert contract["size_metrics"] == [value.value for value in fdu.SizeMetric]

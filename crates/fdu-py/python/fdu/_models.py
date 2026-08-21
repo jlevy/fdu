@@ -74,6 +74,7 @@ class View(StrEnum):
     DOCUMENTS = "documents"
     FILES = "files"
     SUMMARY = "summary"
+    ALL = "all"
 
 
 class EntryKind(StrEnum):
@@ -101,14 +102,20 @@ class SortKey(StrEnum):
     NAME = "name"
 
 
-class AnalysisProfile(StrEnum):
-    """Optional content-analysis depth."""
+class Analysis(StrEnum):
+    """A value the content axis accepts: one analyzer, or a total naming the whole axis.
+
+    Analyzers compose, so a request is a comma-separated set -- ``"code,words"`` runs
+    both. ``NONE`` and ``ALL`` name the whole axis and cannot be combined with anything
+    else. ``LINES`` comes free with any analyzer, because a file being read for one
+    metric is already being counted for the other.
+    """
 
     NONE = "none"
-    BASIC = "basic"
+    LINES = "lines"
     CODE = "code"
-    DOCUMENTS = "documents"
-    FULL = "full"
+    WORDS = "words"
+    ALL = "all"
 
 
 class ChangeKind(StrEnum):
@@ -142,7 +149,8 @@ class ScanOptions:
 class AnalysisOptions:
     """Content analysis requested while opening or scanning."""
 
-    profile: AnalysisProfile = AnalysisProfile.NONE
+    #: Analyzers to run, as one :class:`Analysis` value or a comma-separated set.
+    analyze: str = Analysis.NONE
     workers: int = 0
 
     def __post_init__(self) -> None:
@@ -368,7 +376,8 @@ class Analyzer:
 
 @dataclass(frozen=True, slots=True)
 class AnalysisMetadata:
-    profile: AnalysisProfile
+    #: The analyzers this report requested, in canonical order.
+    analyze: tuple[Analysis, ...]
     type_rules_fingerprint: int
     options_fingerprint: int
     analyzers: tuple[Analyzer, ...]
@@ -668,7 +677,7 @@ def report_from_dict(wire: dict[str, Any]) -> Report:
         if not isinstance(raw_analyzers, list):
             raise TypeError("analysis analyzers must be a list")
         analysis = AnalysisMetadata(
-            profile=AnalysisProfile(str(raw_analysis["profile"])),
+            analyze=tuple(Analysis(str(name)) for name in raw_analysis["analyze"]),
             type_rules_fingerprint=int(raw_analysis["type_rules_fingerprint"]),
             options_fingerprint=int(raw_analysis["options_fingerprint"]),
             analyzers=tuple(

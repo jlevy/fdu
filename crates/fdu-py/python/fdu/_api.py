@@ -265,7 +265,7 @@ def open(
         cache=cache.value,
         max_depth=scan_options.max_depth,
         one_filesystem=scan_options.one_filesystem,
-        analyze=analysis_options.profile.value,
+        analyze=str(analysis_options.analyze),
         analysis_workers=analysis_options.workers,
     )
     return Index(native)
@@ -286,7 +286,7 @@ def scan(
         root,
         max_depth=scan_options.max_depth,
         one_filesystem=scan_options.one_filesystem,
-        analyze=analysis_options.profile.value,
+        analyze=str(analysis_options.analyze),
         analysis_workers=analysis_options.workers,
     )
     return Index(native)

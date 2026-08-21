@@ -1258,10 +1258,20 @@ fn main(py: Python<'_>) -> PyResult<u8> {
 fn contract(py: Python<'_>) -> PyResult<Bound<'_, PyDict>> {
     let contract = PyDict::new(py);
     contract.set_item("cache_policies", ["auto", "refresh", "read-only", "only", "off"])?;
-    contract.set_item("analysis_profiles", ["none", "basic", "code", "documents", "full"])?;
+    contract.set_item("analysis", ["none", "lines", "code", "words", "all"])?;
     contract.set_item(
         "views",
-        ["tree", "extensions", "types", "families", "languages", "documents", "files", "summary"],
+        [
+            "tree",
+            "extensions",
+            "types",
+            "families",
+            "languages",
+            "documents",
+            "files",
+            "summary",
+            "all",
+        ],
     )?;
     contract.set_item("entry_kinds", ["file", "dir", "symlink", "other"])?;
     contract.set_item("size_metrics", ["allocated", "apparent"])?;
