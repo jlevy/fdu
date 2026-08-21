@@ -35,18 +35,14 @@ Usage: fdu [OPTIONS] <PATH>
        fdu --docs
        fdu --skill
 
-Arguments:
+ARGUMENTS
   [PATH]  Report root; optional only for the discovery and cache-lifecycle flags
 
-Options:
-  -h, --help     Print help
-  -V, --version  Print version
-
-SCOPE:
+SCOPE
       --scan-depth <N>  Limit scanning and retention to N entry levels
       --one-filesystem  Stay on the filesystem the root lives on
 
-SELECTION:
+SELECTION
       --include <GLOB>          Report only entries matching this glob; repeatable
       --exclude <GLOB>          Exclude entries matching this glob; repeatable, and wins over
                                 --include
@@ -63,22 +59,22 @@ SELECTION:
       --size <METRIC>           Which size metric to report: allocated or apparent [default:
                                 allocated]
 
-VIEWS:
+VIEWS
       --view <LIST>         Views: tree, extensions, types, families, languages, documents, files,
                             summary, or all. Defaults to the view that displays whatever --analyze
                             requested
       --words-per-page <N>  Logical words per derived document page [default: 250]
 
-CONTENT ANALYSIS:
+CONTENT ANALYSIS
       --analyze <LIST>        Analyzers to run: none, lines, code, words, or all [default: none]
       --analysis-workers <N>  Content reader workers; zero selects available parallelism [default:
                               0]
 
-OUTPUT:
+OUTPUT
       --format <FORMAT>  Output format: text, json, jsonl, or yaml [default: text]
       --color <WHEN>     Colorize human output: auto, always, or never [default: auto]
 
-EXECUTION:
+EXECUTION
       --cache <POLICY>  Cache policy: auto, refresh, read-only, only, or off [default: auto]
       --allow-partial   Accept operationally partial results, including filesystem or analysis
                         failures
@@ -86,13 +82,15 @@ EXECUTION:
       --interval <DUR>  How often aggregate views re-render while watching, as a duration [default:
                         2s]
 
-CACHE MANAGEMENT:
+CACHE MANAGEMENT
       --cache-status[=<SCOPE>]  Report cache contents instead of scanning: root (default) or all
       --cache-clear[=<SCOPE>]   Remove cached snapshots instead of scanning: root (default) or all
 
-OTHER:
-      --docs   Print the usage guide: the report ladder, both axes, and the output contracts
-      --skill  Print a portable agent skill to stdout
+OTHER
+  -h, --help     Print help
+  -V, --version  Print version
+      --docs     Print the usage guide: the report ladder, both axes, and the output contracts
+      --skill    Print a portable agent skill to stdout
 
 Run `fdu --docs` for more help and important usage examples.
 ? 0

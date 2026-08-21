@@ -13,6 +13,8 @@ use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime};
 
+use std::borrow::Cow;
+
 use clap::builder::styling::{AnsiColor, Style as AnsiStyle, Styles};
 use clap::{ArgAction, ColorChoice, CommandFactory, FromArgMatches, Parser, ValueEnum};
 
@@ -35,6 +37,21 @@ const SKILL_TEMPLATE: &str = include_str!("skills/SKILL.md");
 /// both ends of the versioned contract and requires the exact value `1`.
 const SCAN_DIAGNOSTICS_ENV: &str = "FDU_SCAN_DIAGNOSTICS";
 const SCAN_DIAGNOSTICS_PREFIX: &str = "__FDU_SCAN_DIAGNOSTICS__=";
+
+// ---- the terminal styling system --------------------------------------------------
+//
+// Five roles, one colour each, and one case convention.  Every human surface — the report,
+// the `--docs` guide, and clap's help — draws from this table rather than choosing its own
+// colours, which is what makes them read as one tool.
+//
+//   heading      cyan bold      ALL CAPS, no trailing colon
+//   warning      yellow bold
+//   error        red bold
+//   cause        dimmed         the chain under an error
+//   telemetry    bright black   the performance footer, notes, watch rules
+//
+// Colour applies only when the destination is a live terminal, and never to a machine
+// format or under NO_COLOR; `ColorContext` owns that decision and `paint` applies it.
 
 /// The one header style every human surface uses.
 ///
@@ -276,14 +293,15 @@ pub enum RunOutcome {
     styles = CLI_STYLES,
     after_help = DOCS_POINTER,
     // Wrap at the terminal's width, never wider than this. clap takes the smaller of the
-    // two, so a narrow terminal still narrows and an ultrawide one stops at a readable
-    // measure instead of running a description across the whole screen.
-    max_term_width = 160,
+    // two, so a narrow terminal still narrows and a wide one stops at a readable measure
+    // rather than running a description across the whole screen.
+    max_term_width = 120,
     // `--help` renders the same compact block `-h` does. clap's long help puts every
     // description on its own line with a blank line between flags, which roughly doubles
     // the height and breaks a section into a list of islands; the prose that justified
     // that layout now lives in `--docs`.
     disable_help_flag = true,
+    disable_version_flag = true,
     arg_required_else_help = true,
     override_usage = "fdu [OPTIONS] <PATH>\n       fdu [PATH] --cache-status[=<SCOPE>] [--cache-clear[=<SCOPE>]]\n       fdu [PATH] --cache-clear[=<SCOPE>]\n       fdu --docs\n       fdu --skill"
 )]
@@ -294,7 +312,10 @@ pub enum RunOutcome {
 pub struct Cli {
     // ---- scope: what the engine observes and retains ----
     /// Report root; optional only for the discovery and cache-lifecycle flags.
-    #[arg(required_unless_present_any = ["docs", "skill", "cache_status", "cache_clear"])]
+    #[arg(
+        required_unless_present_any = ["docs", "skill", "cache_status", "cache_clear"],
+        help_heading = "ARGUMENTS"
+    )]
     pub path: Option<PathBuf>,
 
     /// Limit scanning and retention to N entry levels.
@@ -416,8 +437,12 @@ pub struct Cli {
     pub interval: String,
 
     /// Print help.
-    #[arg(short = 'h', long = "help", action = ArgAction::HelpShort)]
+    #[arg(short = 'h', long = "help", action = ArgAction::HelpShort, help_heading = "OTHER")]
     pub help: Option<bool>,
+
+    /// Print version.
+    #[arg(short = 'V', long = "version", action = ArgAction::Version, help_heading = "OTHER")]
+    pub version: Option<bool>,
 
     /// Print the usage guide: the report ladder, both axes, and the output contracts.
     #[arg(long, action = ArgAction::SetTrue, help_heading = "OTHER")]
@@ -1482,10 +1507,58 @@ fn write_styled(
     for line in rendered.split_inclusive('\n') {
         let (content, newline) =
             line.strip_suffix('\n').map_or((line, ""), |content| (content, "\n"));
-        out.write_all(content.trim_end_matches([' ', '\t']).as_bytes())?;
+        let content = content.trim_end_matches([' ', '\t']);
+        let content = strip_heading_colon(content);
+        out.write_all(content.as_bytes())?;
         out.write_all(newline.as_bytes())?;
     }
     Ok(())
+}
+
+/// Drop the colon clap appends to a section heading.
+///
+/// clap renders `help_heading` as `HEADING:` with no way to opt out, which would leave
+/// help reading `SCOPE:` while the report reads `SUMMARY`. Rather than fight the
+/// formatter, the one rendering path we already own removes it.
+///
+/// Only a standalone all-caps heading line qualifies. `Usage: fdu ...` keeps its colon
+/// because it carries content after it, and an error line keeps its colon for the same
+/// reason — the test is that the whole line is the heading.
+fn strip_heading_colon(line: &str) -> Cow<'_, str> {
+    let Some(without_colon) = line.strip_suffix(':').or_else(|| {
+        // With colour the reset sequence trails the text, so the colon sits inside it.
+        line.strip_suffix("\u{1b}[0m").and_then(|inner| inner.strip_suffix(':'))
+    }) else {
+        return Cow::Borrowed(line);
+    };
+    let visible = strip_ansi(without_colon);
+    let is_heading = !visible.is_empty()
+        && visible.chars().any(char::is_alphabetic)
+        && visible.chars().all(|c| c.is_uppercase() || c == ' ' || !c.is_alphabetic());
+    if !is_heading {
+        return Cow::Borrowed(line);
+    }
+    // Remove just that colon, keeping any trailing reset sequence intact.
+    let colon = line.rfind(':').expect("the suffix match found one");
+    Cow::Owned(format!("{}{}", &line[..colon], &line[colon + 1..]))
+}
+
+/// The visible characters of a line, with any ANSI escape sequences removed.
+fn strip_ansi(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut chars = line.chars();
+    while let Some(c) = chars.next() {
+        if c == '\u{1b}' {
+            for escape in chars.by_ref() {
+                if escape.is_ascii_alphabetic() {
+                    break;
+                }
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
 }
 
 fn finish(
@@ -1793,6 +1866,7 @@ mod tests {
             interval: "2s".to_string(),
             allow_partial: false,
             help: None,
+            version: None,
             docs: false,
             skill: false,
         }
@@ -2271,6 +2345,53 @@ mod tests {
             ..cli()
         });
         assert!(message.contains("expected one of"), "{message}");
+    }
+
+    /// clap appends a colon to every section heading with no way to opt out, so the one
+    /// rendering path we own removes it. The test is that the whole line is the heading —
+    /// anything carrying content after the colon keeps it.
+    #[test]
+    fn only_a_standalone_heading_loses_its_colon() {
+        // Plain and coloured headings, where the colour puts the colon inside the reset.
+        assert_eq!(strip_heading_colon("SCOPE:"), "SCOPE");
+        assert_eq!(strip_heading_colon("CACHE MANAGEMENT:"), "CACHE MANAGEMENT");
+        assert_eq!(
+            strip_heading_colon("\u{1b}[1m\u{1b}[36mSCOPE:\u{1b}[0m"),
+            "\u{1b}[1m\u{1b}[36mSCOPE\u{1b}[0m"
+        );
+
+        // Lines that merely contain a colon are untouched.
+        for line in [
+            "Usage: fdu [OPTIONS] <PATH>",
+            "fdu: invalid --view \"bogus\": expected one of tree",
+            "  Scope      PATH, --scan-depth",
+            "note: omitted documents — requires content analysis",
+            "",
+            "  --scan-depth <N>  Limit scanning and retention to N entry levels",
+        ] {
+            assert_eq!(strip_heading_colon(line), line, "{line:?} must keep its shape");
+        }
+    }
+
+    #[test]
+    fn every_help_heading_is_upper_case_and_bare() {
+        let mut rendered = Vec::new();
+        write_styled(&mut rendered, &Cli::command().render_help(), false).expect("render");
+        let rendered = String::from_utf8(rendered).expect("utf-8 help");
+        let headings: Vec<&str> = rendered
+            .lines()
+            .filter(|line| {
+                !line.is_empty()
+                    && !line.starts_with(char::is_whitespace)
+                    && line.chars().all(|c| c.is_uppercase() || c == ' ' || c == ':')
+                    && line.chars().any(char::is_alphabetic)
+            })
+            .collect();
+        assert!(headings.len() >= 8, "expected the section headings, got {headings:?}");
+        for heading in headings {
+            assert!(!heading.ends_with(':'), "{heading:?} still carries clap's colon");
+            assert_eq!(heading, heading.to_uppercase(), "{heading:?} is not upper case");
+        }
     }
 
     #[test]
