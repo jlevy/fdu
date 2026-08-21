@@ -9,7 +9,7 @@ from __future__ import annotations
 import unittest
 from typing import Any, Dict, List
 
-from benchmarks.realtree.report_html import axis_ticks, figure_absolute, render
+from benchmarks.realtree.report_html import STYLE, axis_ticks, figure_absolute, render
 from benchmarks.realtree.timeline import (
     BASELINE_COMMIT,
     kept_variant,
@@ -209,10 +209,7 @@ class ProjectionTests(unittest.TestCase):
 
 
 class RenderTests(unittest.TestCase):
-    def test_the_page_is_emitted_as_pure_ascii(self) -> None:
-        # It is embedded by hosts that supply their own `<head>`, so it cannot declare a
-        # charset. Served without one it was decoded as latin-1 and every "µ" arrived as
-        # "Âµ"; numeric references survive either decoding.
+    def _page(self) -> str:
         control = f"main @ {BASELINE_COMMIT}"
         dataset = project(
             [
@@ -220,9 +217,36 @@ class RenderTests(unittest.TestCase):
                 experiment("exp-006", control=control, wall=metric(120e6, 60e6, -50.0)),
             ]
         )
-        page = render(dataset)
-        page.encode("ascii")
-        self.assertIn("<style>", page)
+        return render(dataset)
+
+    def test_the_page_is_a_complete_standalone_document(self) -> None:
+        # It is opened from a file:// URL, not embedded in a host that supplies a head.
+        page = self._page()
+        self.assertTrue(page.startswith("<!doctype html>"), page[:40])
+        for required in ('<meta charset="utf-8">', "<title>", "<style>", "<body>", "</html>"):
+            self.assertIn(required, page)
+
+    def test_the_page_fetches_nothing(self) -> None:
+        # A committed document in a repository that pins every other dependency should
+        # not acquire an unpinned one, and the page has to render on a machine that has
+        # never opened it before, offline.
+        page = self._page()
+        for scheme in ("http://", "https://", "//fonts.", "src=", "@import"):
+            self.assertNotIn(scheme, page, f"page reaches for {scheme}")
+
+    def test_the_stylesheet_is_ascii_so_the_entity_pass_cannot_touch_it(self) -> None:
+        # Character references are not interpreted inside a `<style>` element, so any
+        # non-ASCII in the stylesheet gets rewritten by the output pass into something
+        # CSS then renders literally. That shipped once: a CSS escape for the minus sign
+        # was written in a non-raw Python string, Python read its digits as octal, and the
+        # disclosure marker became "&#145;2" on the page.
+        offenders = [repr(ch) for ch in STYLE if ord(ch) > 127]
+        self.assertEqual(offenders, [], "non-ASCII in the stylesheet")
+
+    def test_the_page_is_also_emitted_as_pure_ascii(self) -> None:
+        # The charset above is the primary defence; this is the second one, so the page
+        # survives a host that guesses. Without it every literal "µ" arrived as "Âµ".
+        self._page().encode("ascii")
 
     def test_a_baseline_checkpoint_is_not_drawn_as_a_comparison(self) -> None:
         # Its two arms are the same measurement. Drawing it as a before-and-after would

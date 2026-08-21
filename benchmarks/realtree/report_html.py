@@ -122,6 +122,29 @@ def legend(*items: Sequence[str]) -> str:
     return f'<p class="legend">{cells}</p>'
 
 
+def tip(text: str) -> str:
+    """A `data-tip` attribute for the delegated tooltip.
+
+    Real newlines, not an escape sequence. An attribute value may contain them and the
+    parser preserves them, so the script can split on `\n` directly. The first attempt
+    stored a literal backslash-n and had to agree with the script about which of the two
+    it meant, which it did not, and the tooltip rendered as one long line with `\n` in it.
+    """
+    return 'data-tip="' + esc(text) + '"'
+
+
+def hover_row(x: float, y: float, width: float, height: float, text: str) -> str:
+    """An invisible full-width band that makes a whole chart row hoverable.
+
+    Without it the only hover target is the marker itself, which on the effects figure is
+    a three-pixel dot in a nine-hundred-pixel row.
+    """
+    return (
+        f'<rect class="hit" x="{x:.1f}" y="{y - height / 2:.1f}" width="{width:.1f}" '
+        f'height="{height:.1f}" {tip(text)}/>'
+    )
+
+
 # ---------------------------------------------------------------- figure: absolute
 
 
@@ -198,6 +221,27 @@ def figure_absolute(dataset: Mapping[str, Any]) -> str:
             f'<text class="row-label" x="{left - 14}" y="{y + 4}" text-anchor="end">{esc(label)}</text>'
         )
 
+        controls_all = [point["control_ns"] for point in job["points"] if point["control_ns"]]
+        finals = [point["candidate_ns"] for point in job["points"] if point["candidate_ns"]]
+        if controls_all and finals:
+            out.append(
+                hover_row(
+                    left,
+                    y,
+                    plot,
+                    row_height - 12,
+                    f"{label}\n"
+                    f"Grey: the pre-work binary, measured {len(controls_all)} times at "
+                    f"{fmt_ms(min(controls_all))} to {fmt_ms(max(controls_all))} - the same "
+                    f"code, so that range is the host's noise, not progress.\n"
+                    f"Band: that range drawn to scale.\n"
+                    f"Blue: the code of the day at each checkpoint, ending at "
+                    f"{fmt_ms(finals[-1])}.\n"
+                    f"Each checkpoint measured both binaries in one interleaved run, so "
+                    f"every pair is a within-run comparison.",
+                )
+            )
+
         low, high = job.get("baseline_low_ns"), job.get("baseline_high_ns")
         if low and high and high > low:
             x1, x2 = scale(low), scale(high)
@@ -236,7 +280,7 @@ def figure_absolute(dataset: Mapping[str, Any]) -> str:
                 out.append(
                     f'<circle class="{"dot-final" if final else "dot-step"}" cx="{x:.1f}" '
                     f'cy="{y}" r="{5.5 if final else 3.5}"><title>'
-                    f'{esc(point["id"])} ({esc(point["date"])}): {fmt_ms(point["candidate_ns"])}'
+                    f'{esc(point["id"])}: {fmt_ms(point["candidate_ns"])}'
                     f"</title></circle>"
                 )
             before_text = fmt_ms(median_before) if controls else "—"
@@ -254,8 +298,7 @@ def figure_absolute(dataset: Mapping[str, Any]) -> str:
         ("key-drift", "range those five re-measurements covered"),
     )
     checkpoints = "".join(
-        f'<li><span class="mono">{esc(point["id"])}</span> '
-        f'<span class="muted">{esc(point["date"])}</span> {esc(point["title"])}</li>'
+        f'<li><span class="mono">{esc(point["id"])}</span> {esc(point["title"])}</li>'
         for point in points
     )
     return (
@@ -366,6 +409,26 @@ def figure_effects(dataset: Mapping[str, Any]) -> str:
             f'{esc(record["id"].removeprefix("exp-"))}</text>'
         )
         change = paired["change_pct"] or 0.0
+        low_text, high_text = paired["ci95_low_pct"], paired["ci95_high_pct"]
+        detail = [
+            f'{record["id"]} - {record["title"]}',
+            f'{DECISION_LABEL.get(record["decision"], record["decision"]).upper()}'
+            f'  |  {record["primary_job"]}  |  {fmt_pct(change)}'
+            + (
+                f" [{low_text:+.1f}%, {high_text:+.1f}%]"
+                if low_text is not None and high_text is not None
+                else ""
+            ),
+        ]
+        if record["decision"] != "baseline" and record["candidate"]:
+            detail.append(f'Tried: {record["candidate"]}')
+        if record["reason"]:
+            detail.append(f'Why: {record["reason"]}')
+        detail.append(
+            f'{record["entries"]:,} entries, {record["platform"]}'
+            f'  |  {record["trials"]} paired trials'
+        )
+        out.append(hover_row(left, y, plot, row, "\n".join(detail)))
         low, high = paired["ci95_low_pct"], paired["ci95_high_pct"]
         evidence = paired["evidence"]
         tone = "good" if evidence == "improved" else "bad" if evidence == "regressed" else "flat"
@@ -528,6 +591,21 @@ def figure_per_entry(dataset: Mapping[str, Any]) -> str:
             f'{esc(subject["labels"][0])}</text>' 
         )
         first, last = row["first"], row["last"]
+        out.append(
+            hover_row(
+                left,
+                y,
+                plot,
+                row_height - 8,
+                f'{subject["labels"][0]} - {subject["platform"]}, {entries:,} entries\n'
+                + ("A synthetic subject, built to stress a policy rather than to "
+                   "represent ordinary work.\n" if subject["synthetic"] else "")
+                + f'First measured at {first["control"]:.2f} us per entry, latest '
+                f'{last["kept"]:.2f}, across {row["count"]} experiments.\n'
+                "Only the arm that stayed in the product is plotted, so a rejected "
+                "candidate never appears as the tree's current cost.",
+            )
+        )
         opacity = ' opacity="0.45"' if subject["synthetic"] else ""
         if first["control"]:
             x1, x2 = scale(first["control"]), scale(last["kept"])
@@ -606,12 +684,15 @@ STYLE = """
   --before: hsl(215 12% 62%);
   --after: hsl(211 72% 42%);
   --drift: hsl(215 15% 91%);
-  /* IBM Plex was drawn for technical documentation and its sans and mono are one
-     family, which is what this page needs: a spine of measured values in mono running
-     through prose that has to stay readable for several thousand words. Both carry full
-     fallback stacks, so the page holds its layout if the font host is unreachable. */
-  --sans: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif;
-  --mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  /* The system stack, and nothing else. A webfont would be a network dependency inside a
+     committed document, in a repository that pins everything else it depends on, and this
+     file has to render from a file:// URL on a machine that has never opened it before.
+     Naming a preferred face ahead of the stack would also make the page look different
+     from one reader to the next depending on what they happen to have installed.
+     Monospace is reserved for measured values, which is the one distinction the type
+     needs to carry. */
+  --sans: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --measure: 74ch;
 }
 @media (prefers-color-scheme: dark) {
@@ -653,6 +734,7 @@ STYLE = """
 
 * { box-sizing: border-box; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+html { -webkit-text-size-adjust: 100%; }
 body {
   margin: 0; padding: 0 24px 96px;
   background: var(--bg); color: var(--text);
@@ -681,10 +763,12 @@ a:hover { text-decoration: underline; }
 .tnum { font-variant-numeric: tabular-nums; }
 
 /* Headline figures. Unboxed: the number is the point, a card around it is not. */
-.headline { display: flex; flex-wrap: wrap; gap: 40px; margin: 28px 0 8px; }
-.headline div { min-width: 120px; }
+/* Five figures, sized so they hold one row at the widths this page is read at and wrap
+   gracefully rather than stranding a single stat below the others. */
+.headline { display: flex; flex-wrap: wrap; gap: 14px 30px; margin: 28px 0 8px; }
+.headline div { min-width: 92px; }
 .headline .n {
-  display: block; font-size: 30px; font-weight: 650;
+  display: block; font-size: 27px; font-weight: 650;
   font-variant-numeric: tabular-nums; letter-spacing: -0.02em;
 }
 .headline .k {
@@ -746,6 +830,20 @@ figcaption { font-size: 13px; color: var(--muted); margin-top: 10px; max-width: 
 .series-line { fill: none; stroke-width: 1.5; }
 .point-label { font: 10px var(--mono); fill: var(--muted); }
 .gutter { font: 9.5px var(--mono); fill: var(--muted); opacity: 0.75; }
+/* Invisible, but it is the hover target for the whole row. `pointer-events: all` is
+   required: a fill of `none` would otherwise make it untouchable. */
+.hit { fill: transparent; pointer-events: all; }
+.hit:hover { fill: var(--panel); fill-opacity: 0.55; }
+
+#tip {
+  position: fixed; z-index: 50; max-width: 46ch; padding: 8px 10px;
+  background: var(--panel); color: var(--text);
+  border: 1px solid var(--border); border-radius: 3px;
+  font: 12px/1.5 var(--sans); white-space: pre-line;
+  pointer-events: none; visibility: hidden;
+}
+#tip.on { visibility: visible; }
+#tip b { font-weight: 600; }
 
 table { border-collapse: collapse; width: 100%; font-size: 13.5px; margin: 16px 0; }
 th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--rule); vertical-align: top; }
@@ -765,8 +863,93 @@ tbody tr:hover { background: var(--panel); }
   margin: 20px 0; color: var(--muted); font-size: 14px; max-width: var(--measure);
 }
 .note strong { color: var(--text); }
-.why { font-size: 12px; line-height: 1.45; margin-top: 3px; max-width: 62ch; }
+/* Disclosure rows. A marker and a hover tint are the whole affordance; the table has
+   sixty-four rows and anything heavier turns it into a wall of boxes. */
+details > summary {
+  cursor: pointer; list-style: none; font-weight: 500;
+  padding: 1px 0; border-radius: 2px;
+}
+details > summary::-webkit-details-marker { display: none; }
+details > summary::before {
+  content: "+"; display: inline-block; width: 12px;
+  color: var(--muted); font-family: var(--mono); font-weight: 400;
+}
+details[open] > summary::before { content: "-"; }
+details > summary:hover { color: var(--accent); }
+dl.detail {
+  margin: 8px 0 4px 12px; padding-left: 12px; border-left: 1px solid var(--rule);
+  display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px;
+  font-size: 12.5px; line-height: 1.5; max-width: 78ch;
+}
+dl.detail dt {
+  color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em;
+  font-size: 10.5px; padding-top: 2px; white-space: nowrap;
+}
+dl.detail dd { margin: 0; }
+.arrow { color: var(--border); }
+.source { margin: 6px 0 4px 24px; font-size: 11.5px; color: var(--muted); }
 footer { margin-top: 72px; padding-top: 16px; border-top: 1px solid var(--border); font-size: 12.5px; color: var(--muted); }
+"""
+
+
+#: The whole of the page's behaviour.
+#:
+#: One delegated listener and one reused node, which is how the tbd design system handles
+#: tooltips and why this needs no framework. Native `title` bubbles were the alternative:
+#: they take about a second to appear, cannot render more than one line well, and on the
+#: effects figure would have had a three-pixel dot as their only target.
+#:
+#: ASCII only, for the same reason the stylesheet is: script content is raw text, so a
+#: character reference here would be shown literally rather than decoded.
+SCRIPT = """
+(function () {
+  var tip = document.getElementById('tip');
+  var shown = null;
+  function place(event) {
+    var pad = 12;
+    var box = tip.getBoundingClientRect();
+    var x = event.clientX + pad;
+    var y = event.clientY + pad;
+    if (x + box.width > window.innerWidth - 8) x = event.clientX - box.width - pad;
+    if (y + box.height > window.innerHeight - 8) y = event.clientY - box.height - pad;
+    tip.style.left = Math.max(8, x) + 'px';
+    tip.style.top = Math.max(8, y) + 'px';
+  }
+  function hide() {
+    shown = null;
+    tip.classList.remove('on');
+  }
+  document.addEventListener('mouseover', function (event) {
+    var host = event.target.closest ? event.target.closest('[data-tip]') : null;
+    if (!host) { if (shown) hide(); return; }
+    if (host === shown) return;
+    shown = host;
+    var text = host.getAttribute('data-tip').split('\\n');
+    tip.textContent = '';
+    text.forEach(function (line, index) {
+      if (index === 0) {
+        var strong = document.createElement('b');
+        strong.textContent = line;
+        tip.appendChild(strong);
+      } else {
+        tip.appendChild(document.createTextNode(line));
+      }
+      if (index < text.length - 1) tip.appendChild(document.createTextNode('\\n'));
+    });
+    tip.classList.add('on');
+    place(event);
+  });
+  document.addEventListener('mousemove', function (event) {
+    if (shown) place(event);
+  });
+  document.addEventListener('mouseout', function (event) {
+    if (shown && !event.relatedTarget) hide();
+  });
+  document.addEventListener('keydown', function (event) {
+    if (event.key === 'Escape') hide();
+  });
+  window.addEventListener('scroll', hide, { passive: true });
+})();
 """
 
 
@@ -784,21 +967,27 @@ def render(dataset: Mapping[str, Any]) -> str:
             _footer(dataset),
         ]
     )
-    page = (
-        "<title>fdu Performance Evidence</title>\n"
-        '<link rel="preconnect" href="https://fonts.googleapis.com">\n'
-        '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>\n'
-        '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?'
-        "family=IBM+Plex+Mono:wght@400;500&"
-        'family=IBM+Plex+Sans:wght@400;500;600&display=swap">\n'
-        f"<style>{STYLE}</style>\n"
-        f'<div class="wrap">{body}</div>'
-    )
-    # Emitted as pure ASCII with numeric references for everything else. The page is
-    # embedded by hosts that supply their own `<head>`, so it cannot declare its own
-    # charset; served without one it was decoded as latin-1 and every literal "µ" arrived
-    # as "Âµ". References survive either decoding, which entities in some places and
-    # literals in others did not.
+    page = f"""<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>fdu Performance Evidence</title>
+<meta name="description" content="Absolute milliseconds and paired effects across every fdu performance experiment, including the ones that were rejected.">
+<style>{STYLE}</style>
+</head>
+<body>
+<div class="wrap">{body}</div>
+<div id="tip" role="tooltip"></div>
+<script>{SCRIPT}</script>
+</body>
+</html>
+"""
+    # Belt and braces on encoding. The document declares UTF-8, and the bytes are also
+    # written as pure ASCII with numeric references for everything else, so it renders
+    # the same whether it is opened from disk, served by something that guesses a
+    # charset, or pasted into a host that supplies its own head. An earlier draft relied
+    # on the host's charset and every literal "µ" arrived as "Âµ".
     return page.encode("ascii", "xmlcharrefreplace").decode("ascii")
 
 
@@ -970,6 +1159,66 @@ anything else.</p>
 """
 
 
+def _experiment_detail(record: Mapping[str, Any]) -> str:
+    """Everything the artifacts say about one experiment, short of its body prose.
+
+    The first draft of this table showed a title and the verdict's one-line reason, which
+    left rows like "Borrowed path components" saying almost nothing about what was
+    actually done. Every field below is validated frontmatter the ledger already renders;
+    it was simply not reaching this page.
+
+    Body prose stays out. The frontmatter is the data path by design, and a report that
+    started scraping Markdown sections would be reading something no contract validates.
+    """
+    complexity = record["complexity"] or {}
+    rows = []
+
+    if record["decision"] != "baseline" and (record["control"] or record["candidate"]):
+        rows.append(
+            (
+                "Compared",
+                f'<span class="muted">{esc(record["control"] or "—")}</span>'
+                f'<span class="arrow"> &rarr; </span>{esc(record["candidate"] or "—")}',
+            )
+        )
+    if complexity.get("notes"):
+        rows.append(("How", esc(complexity["notes"])))
+
+    cost = []
+    lines_changed = complexity.get("lines_changed")
+    if lines_changed:
+        cost.append(f"{lines_changed:,} lines changed")
+    for dependency in complexity.get("new_dependencies") or []:
+        cost.append(f"new dependency: {esc(dependency)}")
+    if complexity.get("new_unsafe_blocks"):
+        cost.append(f"{complexity['new_unsafe_blocks']} new unsafe block(s)")
+    for mode in complexity.get("new_failure_modes") or []:
+        cost.append(f"new failure mode: {esc(mode)}")
+    if cost:
+        rows.append(("Cost to carry", "<br>".join(cost)))
+
+    if record["reason"]:
+        rows.append(("Verdict", esc(record["reason"])))
+
+    facts = [f'{record["trials"]} paired trials']
+    if record["interleaved"]:
+        facts.append("interleaved")
+    facts.append(f'{record["entries"]:,} entries, {esc(record["platform"])}')
+    if record["hypotheses"]:
+        facts.append("hypothesis " + ", ".join(esc(h) for h in record["hypotheses"]))
+    if record["commit"]:
+        facts.append(f'commit {esc(record["commit"])}')
+    rows.append(("Run", " &middot; ".join(facts)))
+
+    body = "".join(f"<dt>{label}</dt><dd>{value}</dd>" for label, value in rows)
+    return (
+        f"<details><summary>{esc(record['title'])}</summary>"
+        f"<dl class='detail'>{body}</dl>"
+        f'<p class="source">Full record: <span class="mono">{esc(record["path"])}</span></p>'
+        "</details>"
+    )
+
+
 def _section_table(dataset: Mapping[str, Any]) -> str:
     rows = []
     for record in dataset["experiments"]:
@@ -982,9 +1231,7 @@ def _section_table(dataset: Mapping[str, Any]) -> str:
             else "—"
         )
         change = (
-            fmt_pct(paired["change_pct"])
-            if paired and record["decision"] != "baseline"
-            else "—"
+            fmt_pct(paired["change_pct"]) if paired and record["decision"] != "baseline" else "—"
         )
         before = fmt_ms(absolute["control"]) if absolute else "—"
         after = (
@@ -996,8 +1243,7 @@ def _section_table(dataset: Mapping[str, Any]) -> str:
         rows.append(
             f"<tr>"
             f'<td class="n">{esc(record["id"].removeprefix("exp-"))}</td>'
-            f'<td>{esc(record["title"])}'
-            f'<div class="muted why">{esc(record["reason"] or "")}</div></td>'
+            f"<td>{_experiment_detail(record)}</td>"
             f'<td class="mono muted">{esc(record["primary_job"] or "")}</td>'
             f'<td class="n">{esc(before)}</td>'
             f'<td class="n">{esc(after)}</td>'
@@ -1008,10 +1254,12 @@ def _section_table(dataset: Mapping[str, Any]) -> str:
         )
     return f"""
 <h2 id="every">Every experiment</h2>
-<p>Absolute values are that experiment's own two arms on its own subject, so they are
-comparable across a row and not down a column. The change and interval are paired.</p>
+<p>Open any row for what was compared, how it was built, what it cost to carry, and why it
+went that way. Absolute values are that experiment's own two arms on its own subject, so
+they are comparable across a row and not down a column. The change and interval are
+paired.</p>
 <div class="scroll"><table>
-<thead><tr><th class="n">#</th><th>experiment and why it went that way</th><th>primary job</th>
+<thead><tr><th class="n">#</th><th>experiment</th><th>primary job</th>
 <th class="n">before</th><th class="n">after</th><th class="n">change</th>
 <th class="n">95% interval</th><th>verdict</th></tr></thead>
 <tbody>{"".join(rows)}</tbody>
@@ -1021,13 +1269,20 @@ comparable across a row and not down a column. The change and interval are paire
 
 def _footer(dataset: Mapping[str, Any]) -> str:
     totals = dataset["totals"]
+    # The one date worth printing. Passed in through the dataset rather than read from the
+    # clock here, so regenerating the page without changing an artifact does not change
+    # the page.
+    prepared = dataset.get("prepared") or "an unrecorded date"
     return f"""
 <footer>
-<p>Generated from {totals['experiments']} validated soft-schema artifacts in
+<p>Prepared {esc(prepared)} from {totals['experiments']} validated soft-schema artifacts in
 <span class="mono">docs/project/experiments/</span> by
 <span class="mono">make perf-report</span>. Every number is read back out of those
 artifacts, never retyped, so this page cannot drift from the record. Regenerate it rather
 than editing it.</p>
+<p>The individual experiment dates are deliberately absent: they say when someone happened
+to be at a keyboard, not anything about the evidence. What each result depends on is its
+subject, its machine, and its cache state, and those are recorded per experiment.</p>
 </footer>
 """
 
@@ -1070,18 +1325,42 @@ def _header(dataset: Mapping[str, Any]) -> str:
         )
     )
     return f"""
-<h1>What sixty-four experiments bought</h1>
-<p class="lede">Every performance change made to fdu between {esc(totals['first_date'])} and
-{esc(totals['last_date'])}: what it cost in milliseconds, what each experiment measured,
-and why {totals['decisions'].get('rejected', 0)} of the {totals['experiments']} were
-thrown away.</p>
+<h1>Making fdu faster, one measured experiment at a time</h1>
+<p class="lede">fdu's performance work was done as an iterative research loop rather than
+as a sequence of hunches. Every experiment &mdash; including the
+{totals['decisions'].get('rejected', 0)} that failed &mdash; was recorded as a validated
+soft-schema artifact, and this page is generated from those {totals['experiments']}
+artifacts rather than written alongside them.</p>
+<p>It is here to show two things: <strong>how the loop works</strong>, which is a method
+that transfers to any system worth optimising, and <strong>what it found</strong> in this
+particular one &mdash; which ideas paid, which did not, and how confidently either can be
+said.</p>
 <div class="headline">
   {headlines}
   <div><span class="n tnum">{totals['decisions'].get('accepted', 0)}</span>
     <span class="k">changes kept</span></div>
+  <div><span class="n tnum">{totals['decisions'].get('rejected', 0)}</span>
+    <span class="k">rejected</span></div>
   <div><span class="n tnum">{totals['accepted_lines_changed']:,}</span>
-    <span class="k">lines they cost</span></div>
+    <span class="k">lines the keepers cost</span></div>
 </div>
+<h2 id="loop">The loop</h2>
+<p>One experiment is one question with one answer. It names a hypothesis, builds exactly
+one change, and measures that change against the code it came from &mdash; both binaries
+interleaved in the same run, twelve paired trials, on a tree pinned by content digest. A
+bootstrap interval decides whether the result is distinguishable from the host having a
+bad afternoon, and a written rule decides whether it is worth carrying: better than 3%,
+with the interval clear of zero.</p>
+<p>What makes the record usable afterwards is that the answer is stored rather than
+summarised. Each artifact is Markdown with validated YAML frontmatter: the frontmatter
+holds the measured numbers, the subject, the machine, the cost in lines and dependencies,
+and the verdict; the body holds the reasoning a schema cannot check. A contract validates
+every one of them, so the ledger and this page can be regenerated from the evidence and
+neither can quietly drift from it.</p>
+<p class="note">The soft schema is what makes the difference between a campaign and a
+folder of notes. Because the numbers are typed and validated, a rejected experiment costs
+nothing to keep &mdash; and the rejections turned out to be the most reusable part of the
+record.</p>
 """
 
 

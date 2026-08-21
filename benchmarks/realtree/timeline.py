@@ -420,6 +420,11 @@ def main(argv: Sequence[str]) -> int:
     parser.add_argument("--experiments", type=Path, default=EXPERIMENTS_DIR)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument(
+        "--prepared",
+        default="",
+        help="date this projection was assembled; the only date the report prints",
+    )
+    parser.add_argument(
         "--check",
         action="store_true",
         help="fail if the committed projection is not what the artifacts produce",
@@ -431,6 +436,9 @@ def main(argv: Sequence[str]) -> int:
         print("no experiment artifacts found", file=sys.stderr)
         return 1
     dataset = project(experiments)
+    # Carried in the dataset rather than stamped at render time, so the drift check
+    # compares evidence against evidence and does not fail every midnight.
+    dataset["prepared"] = arguments.prepared or _preserved_prepared(arguments.out)
     rendered = json.dumps(dataset, indent=1, sort_keys=True)
     # A committed generated file is a claim about the artifacts, and nothing stops a
     # person editing an experiment and forgetting to regenerate. Then the page keeps
@@ -446,6 +454,21 @@ def main(argv: Sequence[str]) -> int:
         file=sys.stderr,
     )
     return 0
+
+
+def _preserved_prepared(out: Path) -> str:
+    """Keep the existing preparation date unless one is given.
+
+    Regenerating because an artifact changed should change the numbers, not the date; and
+    a date read from the clock would make the drift check fail every midnight for reasons
+    that have nothing to do with the record.
+    """
+    if not out.exists():
+        return ""
+    try:
+        return str(json.loads(out.read_text(encoding="utf-8")).get("prepared") or "")
+    except (json.JSONDecodeError, OSError):
+        return ""
 
 
 def _check(path: Path, expected: str) -> int:
