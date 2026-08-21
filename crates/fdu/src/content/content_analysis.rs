@@ -12,7 +12,7 @@ use crate::classify::{ContentFamily, classify_path_with_prefix};
 use super::{
     AnalysisApplyOutcome, AnalysisCandidate, AnalysisObservation, AnalysisRequest,
     BasicAccumulator, CodeAccumulator, ContentProvenance, CoverageReason, FileAnalysis,
-    LogicalWordStats, MetricValues, TextAdmission, content_markdown_metrics::analyze_markdown,
+    MetricValues, TextAdmission, content_markdown_metrics::analyze_markdown,
 };
 
 const READ_CHUNK_BYTES: usize = 64 * 1024;
@@ -267,10 +267,17 @@ fn analyze_open_file(
     }
     let analysis = match accumulator.finish() {
         TextAdmission::Accepted(mut metrics) => {
+            // Word volume is meaningful for any text, and the accumulator has already
+            // counted it during the streaming read — zeroing it outside prose and markup
+            // discarded finished work and, with it, the answer to "how much text is in
+            // this tree", which is the cheap proxy for context-window sizing that agent
+            // consumers ask for.
+            //
+            // Paragraphs stay a prose concept. A blank-line-separated block of code is
+            // not a paragraph, and counting it as one would make the prose rows lie
+            // rather than merely say less.
             if !matches!(classification.family, ContentFamily::Prose | ContentFamily::Markup) {
-                metrics.raw_words = 0;
                 metrics.paragraphs = 0;
-                metrics.logical_word_stats = LogicalWordStats::default();
             }
             if request.profile.includes_code() && classification.family == ContentFamily::Code {
                 if code_accumulator.is_none() {
@@ -423,6 +430,32 @@ mod tests {
                 "content analysis had operational failures (I/O errors: 1; changed during read: 2; stale results: 3). File and byte totals remain complete; content metrics omit affected files"
             )
         );
+    }
+
+    /// Word volume is counted during the streaming read for every admitted text file, so
+    /// it is reported wherever it was measured. Paragraphs are not: a blank-line-separated
+    /// block of code is not a paragraph, and counting it as one would make prose rows lie.
+    #[test]
+    fn code_carries_word_volume_but_never_paragraphs() {
+        let root = tempfile::tempdir().expect("tempdir");
+        std::fs::write(root.path().join("main.rs"), b"fn main() {\n\n    let x = 1;\n}\n")
+            .expect("write");
+        std::fs::write(root.path().join("notes.md"), b"one two\n\nthree four\n").expect("write");
+        let (mut index, _) =
+            crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
+        analyze_index(
+            &mut index,
+            AnalysisRequest { profile: super::super::AnalysisSet::ALL, workers: 2 },
+        );
+
+        let content = index.content().expect("content");
+        let code = content.file(std::path::Path::new("main.rs")).expect("code record");
+        assert!(code.metrics.raw_words > 0, "code keeps the words already counted for it");
+        assert_eq!(code.metrics.paragraphs, 0, "code has no paragraphs");
+
+        let prose = content.file(std::path::Path::new("notes.md")).expect("prose record");
+        assert!(prose.metrics.raw_words > 0);
+        assert!(prose.metrics.paragraphs > 0, "prose still counts paragraphs");
     }
 
     #[test]
