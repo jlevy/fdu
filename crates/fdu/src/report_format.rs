@@ -43,6 +43,8 @@ const STYLE_TYPE: AnsiStyle = AnsiColor::Green.on_default();
 
 /// Established label width for non-language metric summaries.
 const TEXT_METRIC_LABEL_WIDTH: usize = 18;
+/// Floor for the extensions view's label column.
+const TEXT_TYPE_LABEL_WIDTH: usize = 12;
 
 /// Machine-output schema identity.
 ///
@@ -144,6 +146,39 @@ fn render_text(report: &Report, color: bool) -> String {
     out
 }
 
+// ---- the layout rules -----------------------------------------------------------------
+//
+// One contract every grouped row follows, so the four grouped views line up as one table
+// rather than four:
+//
+//   size    right-aligned, width 10
+//   share   right-aligned, width 6
+//   label   left-aligned, padded to the section's widest label
+//   detail  free-form, after a single space
+//
+// The rule that is easy to get wrong: **a column's width is measured on visible text**.
+// `paint` wraps its argument in escape sequences, and a width specifier counts those
+// toward the field, so `{:<12}` on a painted label is already full before a single visible
+// character lands and the padding silently collapses. `label_cell` is the only sanctioned
+// way to lay out a styled label: it measures the plain text and appends the padding
+// outside the paint. Never hand a painted string to `{:<N}` or `{:>N}`.
+
+/// The size column: right-aligned in a fixed width, never styled.
+const TEXT_SIZE_WIDTH: usize = 10;
+/// The share column: right-aligned in a fixed width, never styled.
+const TEXT_SHARE_WIDTH: usize = 6;
+
+/// A styled label padded to `width`, measured on the visible text.
+fn label_cell(label: &str, width: usize, style: AnsiStyle, color: bool) -> String {
+    let padding = " ".repeat(width.saturating_sub(label.chars().count()));
+    format!("{}{padding}", paint(label, style, color))
+}
+
+/// The widest visible label in a set of rows, floored at `minimum`.
+fn label_width<'a>(labels: impl Iterator<Item = &'a str>, minimum: usize) -> usize {
+    minimum.max(labels.map(|label| label.chars().count()).max().unwrap_or_default())
+}
+
 fn render_text_metrics(
     out: &mut String,
     view: ViewSpec,
@@ -151,16 +186,16 @@ fn render_text_metrics(
     size: SizeMetric,
     color: bool,
 ) {
-    let longest_label = summary
-        .rows
-        .iter()
-        .map(|row| human_metric_label(view, &row.id).chars().count())
-        .max()
-        .unwrap_or_default();
-    let label_width = if view == ViewSpec::Languages {
-        longest_label.saturating_add(1)
+    // Languages pad one past the longest name; the other groupings share a floor so
+    // separate sections still line up with one another.
+    let width = if view == ViewSpec::Languages {
+        label_width(summary.rows.iter().map(|row| human_metric_label(view, &row.id)), 0)
+            .saturating_add(1)
     } else {
-        TEXT_METRIC_LABEL_WIDTH.max(longest_label)
+        label_width(
+            summary.rows.iter().map(|row| human_metric_label(view, &row.id)),
+            TEXT_METRIC_LABEL_WIDTH,
+        )
     };
     for row in &summary.rows {
         let selected = pick(size, row.bytes, row.allocated);
@@ -213,15 +248,12 @@ fn render_text_metrics(
                 let _ = write!(suffix, ", {count} {}", human_coverage_label(*reason));
             }
         }
-        let label = human_metric_label(view, &row.id);
-        let padding = " ".repeat(label_width.saturating_sub(label.chars().count()));
         let _ = writeln!(
             out,
-            "{:>10}  {:>6}  {}{} {suffix}",
+            "{:>TEXT_SIZE_WIDTH$}  {:>TEXT_SHARE_WIDTH$}  {} {suffix}",
             human_bytes(selected),
             percentage,
-            paint(label, STYLE_TYPE, color),
-            padding,
+            label_cell(human_metric_label(view, &row.id), width, STYLE_TYPE, color),
         );
     }
 }
@@ -291,12 +323,13 @@ fn render_text_tree(out: &mut String, root: &TreeNode, size: SizeMetric, color: 
 
 /// Render a types section as aligned rows.
 fn render_text_types(out: &mut String, rows: &[TypeRow], size: SizeMetric, color: bool) {
+    let width = label_width(rows.iter().map(|row| row.extension.as_str()), TEXT_TYPE_LABEL_WIDTH);
     for row in rows {
         let _ = writeln!(
             out,
-            "{:>10}  {:<12} {} {}",
+            "{:>TEXT_SIZE_WIDTH$}  {} {} {}",
             human_bytes(pick(size, row.bytes, row.allocated)),
-            paint(&row.extension, STYLE_TYPE, color),
+            label_cell(&row.extension, width, STYLE_TYPE, color),
             row.files,
             plural(row.files, "file", "files"),
         );
@@ -1293,6 +1326,72 @@ mod tests {
             inode: 7,
             dev: 1,
         }
+    }
+
+    /// Colour must not move anything.
+    ///
+    /// The golden suite structurally cannot check this: it runs under `NO_COLOR=1` and
+    /// only ever sees the uncoloured form, which is exactly how the extensions view
+    /// shipped misaligned — `{:<12}` counted the escape sequences toward the field width,
+    /// so the padding collapsed the moment colour was on and every golden still passed.
+    #[test]
+    fn colour_never_changes_the_layout_of_any_view() {
+        fn strip_ansi(text: &str) -> String {
+            let mut out = String::with_capacity(text.len());
+            let mut chars = text.chars();
+            while let Some(c) = chars.next() {
+                if c == '\u{1b}' {
+                    for escape in chars.by_ref() {
+                        if escape.is_ascii_alphabetic() {
+                            break;
+                        }
+                    }
+                } else {
+                    out.push(c);
+                }
+            }
+            out
+        }
+
+        for view in [
+            ViewSpec::Tree,
+            ViewSpec::Extensions,
+            ViewSpec::Types,
+            ViewSpec::Families,
+            ViewSpec::Languages,
+            ViewSpec::Files,
+            ViewSpec::Summary,
+        ] {
+            let report = fixture(&[view]);
+            let plain = render(&report, Format::Text, false);
+            let coloured = render(&report, Format::Text, true);
+            // Two views carry no label to style: `files` is a bare listing of paths meant
+            // for piping, and `summary` is one aggregate line. Everything that draws a
+            // label draws it styled, and this catches a view that quietly stops.
+            let styles_a_label = !matches!(view, ViewSpec::Files | ViewSpec::Summary);
+            assert_eq!(
+                plain != coloured,
+                styles_a_label,
+                "{view:?} disagrees with whether it styles a label"
+            );
+            assert_eq!(
+                strip_ansi(&coloured),
+                plain,
+                "{view:?} lays out differently once colour is on"
+            );
+        }
+    }
+
+    /// The rule the helper exists to enforce, stated directly.
+    #[test]
+    fn a_label_cell_is_measured_on_visible_text() {
+        let plain = label_cell("md", 6, STYLE_TYPE, false);
+        let coloured = label_cell("md", 6, STYLE_TYPE, true);
+        assert_eq!(plain, "md    ", "four spaces of padding");
+        assert!(coloured.starts_with('\u{1b}'), "the label is styled");
+        assert!(coloured.ends_with("    "), "and padded by the same four: {coloured:?}");
+        // A label at or past the width gets no padding rather than a negative one.
+        assert_eq!(label_cell("verylonglabel", 4, STYLE_TYPE, false), "verylonglabel");
     }
 
     fn fixture(views: &[ViewSpec]) -> Report {

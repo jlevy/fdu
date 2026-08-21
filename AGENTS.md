@@ -4,7 +4,9 @@ Instructions and context for AI coding agents working on this project.
 
 The design of fdu, and the principles any change must respect, are in
 [fdu-design-principles.md](docs/project/architecture/fdu-design-principles.md).
-Read it before changing engine behavior.
+Read it before changing engine behavior, and read its **First Principles** section
+before choosing a default, an ordering, an output shape, or a bound — those rules exist
+because each was broken once by a choice that looked entirely normal.
 This file covers how to operate on the repository; that one covers what the code must be
 true to.
 

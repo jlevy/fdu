@@ -17,10 +17,78 @@ Each rule exists because breaking it produces a specific failure: a cache that l
 benchmark that measures the wrong job, or a number a consumer cannot calibrate.
 The reasoning matters more than the rule, so each one states what goes wrong without it.
 
+Start with [First Principles](#first-principles).
+Those three govern the rest, and they are the ones most easily broken by a choice that
+looks ordinary — every example in them is a real defect that passed review because it
+resembled what other tools do.
+
 For what is built and what comes next, see
 [the phase-1 plan](../specs/active/plan-2026-08-08-fdu-phase-1.md).
 For where the design comes from and which prior art each piece draws on, see
 [the file roll-up engine research](../research/research-2026-08-06-file-rollup-engine.md).
+
+## First Principles
+
+These govern everything below.
+Where a later section conflicts with one of them, the principle wins and the section is
+wrong.
+
+### Derive the Choice; Do Not Inherit It
+
+Common practice is evidence about what people expect, not evidence about what is
+correct. A convention arrives carrying the assumptions of the tool it came from, and
+those assumptions may not hold here.
+
+`--view files` shipped defaulting to name-ascending order — what `ls`, `find`, and `fd`
+all do — and to ten rows, which keeps a report readable.
+Both are ordinary choices and each is defensible alone.
+Together they produced *the ten alphabetically-first entries of a 192,871-entry tree*,
+which answers no question anyone asks: not what is large, not what changed, not what is
+present.
+
+Name order is right in `ls` and `find` **because those tools list everything**. A
+complete listing in name order is stable and diffable, and that stability is the entire
+reason for the convention.
+Truncate it and the property that justified the order is gone, leaving an arbitrary
+prefix. The convention was imported without the condition that made it right.
+
+So state what a choice is *for* before adopting it, and if the reason it works elsewhere
+does not hold here, do not take it.
+When correctness and common practice disagree, write the disagreement down rather than
+following quietly.
+
+### A Default Must Answer a Question You Can State
+
+Every default claims that most callers want this answer.
+If you cannot name the question it answers in one sentence, it is not a default; it is
+an accident that shipped.
+
+`fdu PATH` answers “which directories are big”: depth two, ten per directory, size
+descending, and every part of that follows from the question.
+The `files` default could not finish the sentence, which is the test it should have
+failed at review.
+
+Defaults also compose, so check them together rather than one at a time.
+Both `files` defaults passed review individually.
+Nothing examined the pair.
+
+### Truncate Freely; Never Truncate Silently
+
+Bounding output is legitimate and usually necessary — an unbounded listing of a million
+entries is unreadable and rarely what was wanted.
+Truncation is not a compromise.
+
+A reader who cannot tell it happened is.
+Every bound states itself: the tree view marks where it dropped children, and once the
+numbers are large it says how much it dropped, because `…` after ten rows of 192,871
+understates the situation by four orders of magnitude.
+
+Every bound is liftable by a flag named where the bound is stated — `--limit all`,
+`--depth all`. A truncation the caller cannot remove is a limitation wearing a default’s
+clothes.
+
+This is the cache’s honesty contract one level up: brevity, like speed, may be traded
+for completeness in the open and never in secret.
 
 ## Architecture
 
@@ -190,7 +258,7 @@ cannot be expressed as a composition of what exists.
 `largest` and `recent` were removed from the design by exactly that test; they are
 `--view files --sort size --limit N` and `--view files --modified-since 2h`.
 
-### Five Axes, No One-Off Flags
+### Six Axes, No One-Off Flags
 
 Every option belongs to exactly one axis:
 
