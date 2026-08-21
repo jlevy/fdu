@@ -24,6 +24,7 @@ patterns:
   PERF_TIME: '[\d.]+ (ns|µs|ms|s)'
   FILE_RATE: '[\d.]+[kMG]? files/s'
   BYTE_RATE: '[\d.]+ (B|KiB|MiB|GiB)/s'
+  SEP: '[/\\]'
 ---
 # Content Metrics CLI Contract
 
@@ -555,7 +556,7 @@ LANGUAGES
 
 FILES
 assets
-assets/late.bin.txt
+assets[SEP]late.bin.txt
 Performance: walked 7 files / 256 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 note: omitted documents — requires content analysis: add --analyze lines, code, words, or all
 ? 0
@@ -596,7 +597,7 @@ DOCUMENTS
 
 FILES
 assets
-assets/late.bin.txt
+assets[SEP]late.bin.txt
 Performance: walked 7 files / 256 B; content read 176 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
