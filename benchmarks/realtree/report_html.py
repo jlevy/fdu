@@ -1353,10 +1353,9 @@ It is written in Rust, with no C in its build.</p>
 3.32-second median: the fastest of every tree and index tool measured &mdash; pdu, dust,
 gdu, ncdu &mdash; while returning more than any of them. Its cheaper summary path ties
 statistically with <span class="mono">dumac</span>, the fastest scalar tool measured,
-which reports only a total. Those comparisons are
-<a href="report-2026-08-13-fdu-live-tool-comparison.md">recorded separately</a> and are
-calibration, not evidence: a third-party tool answers a different question with different
-guarantees, so it never enters an accept decision.</p>
+which reports only a total. Peer tools are
+<a href="report-2026-08-13-fdu-live-tool-comparison.md">recorded separately</a>, for
+comparison.</p>
 <p class="lede">This page is about how it got there. That work was done as an iterative
 research loop rather than
 a sequence of hunches. Every experiment &mdash; including the
