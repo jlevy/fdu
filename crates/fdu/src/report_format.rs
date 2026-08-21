@@ -49,7 +49,7 @@ const TEXT_METRIC_LABEL_WIDTH: usize = 18;
 /// the schema moves without it — the versioning is the promise, not the intention.
 pub const REPORT_SCHEMA: &str = "fdu.report/1";
 /// Machine schema used when a generic metric-summary section is present.
-pub const CONTENT_REPORT_SCHEMA: &str = "fdu.report/2";
+pub const CONTENT_REPORT_SCHEMA: &str = "fdu.report/3";
 
 /// How a report is serialized.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
@@ -395,11 +395,14 @@ fn analysis_json(analysis: Option<&crate::query::ContentReportMetadata>) -> Stri
         );
     }
     analyzers.push(']');
+    let mut requested = String::from("[");
+    for (index, label) in analysis_set_labels(analysis.profile).into_iter().enumerate() {
+        let _ = write!(requested, "{}{}", if index > 0 { ", " } else { "" }, quote(label));
+    }
+    requested.push(']');
     format!(
-        "{{\"profile\": {}, \"type_rules_fingerprint\": {}, \"options_fingerprint\": {}, \"analyzers\": {analyzers}}}",
-        quote(analysis_profile_label(analysis.profile)),
-        analysis.provenance.type_rules_fingerprint,
-        analysis.provenance.options_fingerprint.0,
+        "{{\"analyze\": {requested}, \"type_rules_fingerprint\": {}, \"options_fingerprint\": {}, \"analyzers\": {analyzers}}}",
+        analysis.provenance.type_rules_fingerprint, analysis.provenance.options_fingerprint.0,
     )
 }
 
@@ -668,7 +671,15 @@ fn render_yaml(report: &Report) -> String {
             None => out.push_str("analysis: null\n"),
             Some(analysis) => {
                 out.push_str("analysis:\n");
-                let _ = writeln!(out, "  profile: {}", analysis_profile_label(analysis.profile));
+                let requested = analysis_set_labels(analysis.profile);
+                if requested.is_empty() {
+                    out.push_str("  analyze: []\n");
+                } else {
+                    out.push_str("  analyze:\n");
+                    for label in requested {
+                        let _ = writeln!(out, "    - {label}");
+                    }
+                }
                 let _ = writeln!(
                     out,
                     "  type_rules_fingerprint: {}",
@@ -1001,14 +1012,12 @@ fn coverage_label(reason: CoverageReason) -> &'static str {
     }
 }
 
-fn analysis_profile_label(profile: crate::content::AnalysisProfile) -> &'static str {
-    match profile {
-        crate::content::AnalysisProfile::Disabled => "none",
-        crate::content::AnalysisProfile::Basic => "basic",
-        crate::content::AnalysisProfile::Code => "code",
-        crate::content::AnalysisProfile::Documents => "documents",
-        crate::content::AnalysisProfile::Full => "full",
-    }
+/// The requested analyzer set, in the vocabulary `--analyze` accepts.
+///
+/// A list rather than one label because the set is what was requested; the neighbouring
+/// `analyzers` array reports what actually ran, with each dialect's version.
+fn analysis_set_labels(profile: crate::content::AnalysisSet) -> Vec<&'static str> {
+    profile.labels()
 }
 
 /// Stable wire label for a cache tier.
@@ -1566,7 +1575,9 @@ mod tests {
         // Fails loudly when the schema string moves, so a field rename cannot ship
         // without a deliberate version bump and a golden update.
         assert_eq!(REPORT_SCHEMA, "fdu.report/1");
-        assert_eq!(CONTENT_REPORT_SCHEMA, "fdu.report/2");
+        // Bumped to /3 when the analysis block's `profile` scalar became the `analyze`
+        // list: the requested analyzer set stopped being expressible as one label.
+        assert_eq!(CONTENT_REPORT_SCHEMA, "fdu.report/3");
     }
 
     #[test]
@@ -1576,7 +1587,7 @@ mod tests {
         assert!(!metadata.contains("\"analysis\""));
 
         let metrics = render(&fixture(&[ViewSpec::Types]), Format::Json, false);
-        assert!(metrics.contains("\"schema\": \"fdu.report/2\""));
+        assert!(metrics.contains("\"schema\": \"fdu.report/3\""));
         assert!(metrics.contains("\"analysis\": null"));
         assert!(metrics.contains("\"share\": {\"numerator\":"));
     }

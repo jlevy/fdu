@@ -16,7 +16,7 @@ use std::path::{Component, Path, PathBuf};
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
-use fdu::content::{AnalysisProfile, AnalysisRequest, CoverageReason};
+use fdu::content::{AnalysisRequest, AnalysisSet, CoverageReason};
 use fdu::query::{Provenance, Query, ReportSource, ViewSpec};
 use fdu::{
     Attrs, CachePolicy, EntryId, EntryKind, Index, Observation, Op, OpenConfig, ScanConfig,
@@ -385,15 +385,15 @@ fn classification_probe(arguments: &Arguments, ambiguous: bool) -> ProbeResult<P
 }
 
 fn basic_request() -> AnalysisRequest {
-    AnalysisRequest { profile: AnalysisProfile::Basic, ..AnalysisRequest::default() }
+    AnalysisRequest { profile: AnalysisSet::NONE.with_lines(), ..AnalysisRequest::default() }
 }
 
 fn code_request() -> AnalysisRequest {
-    AnalysisRequest { profile: AnalysisProfile::Code, ..AnalysisRequest::default() }
+    AnalysisRequest { profile: AnalysisSet::NONE.with_code(), ..AnalysisRequest::default() }
 }
 
 fn document_request() -> AnalysisRequest {
-    AnalysisRequest { profile: AnalysisProfile::Documents, ..AnalysisRequest::default() }
+    AnalysisRequest { profile: AnalysisSet::NONE.with_words(), ..AnalysisRequest::default() }
 }
 
 fn content_analysis(arguments: &Arguments, request: AnalysisRequest) -> ProbeResult<ProbeOutput> {

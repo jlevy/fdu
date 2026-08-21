@@ -16,7 +16,7 @@ use std::time::{Duration, Instant, SystemTime};
 use clap::builder::styling::{AnsiColor, Style as AnsiStyle, Styles};
 use clap::{ArgAction, ColorChoice, CommandFactory, FromArgMatches, Parser, ValueEnum};
 
-use crate::content::{AnalysisProfile, AnalysisRequest};
+use crate::content::{AnalysisRequest, AnalysisSet};
 use crate::execution::{PerformanceSummary, prepare_report, prepare_report_with_scan_diagnostics};
 use crate::query::{
     Bound, Pattern, Provenance, Query, ReportSource, Selection, SizeMetric, SortKey, ViewSpec,
@@ -947,11 +947,11 @@ impl Cli {
 
     fn parse_analysis(&self) -> anyhow::Result<AnalysisRequest> {
         let profile = match self.analyze.trim().to_ascii_lowercase().as_str() {
-            "none" | "off" | "disabled" => AnalysisProfile::Disabled,
-            "basic" => AnalysisProfile::Basic,
-            "code" => AnalysisProfile::Code,
-            "documents" | "docs" => AnalysisProfile::Documents,
-            "full" => AnalysisProfile::Full,
+            "none" | "off" | "disabled" => AnalysisSet::NONE,
+            "basic" => AnalysisSet::NONE.with_lines(),
+            "code" => AnalysisSet::NONE.with_code(),
+            "documents" | "docs" => AnalysisSet::NONE.with_words(),
+            "full" => AnalysisSet::ALL,
             other => anyhow::bail!(
                 "invalid --analyze {other:?}: expected one of none, basic, code, documents, full"
             ),
@@ -1723,7 +1723,7 @@ mod tests {
             Cli { analyze: "basic".to_string(), analysis_workers: 3, words_per_page: 250, ..cli() };
         assert_eq!(
             parsed.parse_analysis().expect("analysis"),
-            AnalysisRequest { profile: AnalysisProfile::Basic, workers: 3 }
+            AnalysisRequest { profile: AnalysisSet::NONE.with_lines(), workers: 3 }
         );
         assert_eq!(parsed.parse_query().expect("query").words_per_page, 250);
 
@@ -1752,7 +1752,7 @@ mod tests {
             command.run(&mut output, &mut Vec::new(), false, false).expect("run content report");
         assert_eq!(outcome, RunOutcome::Complete);
         let output = String::from_utf8(output).expect("UTF-8 JSON");
-        assert!(output.contains("\"schema\": \"fdu.report/2\""), "{output}");
+        assert!(output.contains("\"schema\": \"fdu.report/3\""), "{output}");
         assert!(output.contains("\"physical_lines\": 3"), "{output}");
         assert!(output.contains("\"raw_words\": 3"), "{output}");
         assert!(output.contains("\"words_per_page\": 250"), "{output}");

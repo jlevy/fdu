@@ -22,7 +22,7 @@ use pyo3::exceptions::{PyOSError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 
-use fdu::content::{AnalysisProfile, AnalysisRequest, CoverageReason};
+use fdu::content::{AnalysisSet, AnalysisRequest, CoverageReason};
 use fdu::query::{
     Bound as Bound_, MetricRow, MetricSummary, Pattern, Provenance, Query, Report, ReportSource,
     Section, Selection, SizeMetric, SortKey, SummaryRow, TreeNode, ViewSpec, document_words,
@@ -613,11 +613,11 @@ fn parse_cache_policy(value: &str) -> PyResult<CachePolicy> {
 
 fn parse_analysis_request(profile: &str, workers: usize) -> PyResult<AnalysisRequest> {
     let profile = match profile.trim().to_ascii_lowercase().as_str() {
-        "none" | "off" | "disabled" => AnalysisProfile::Disabled,
-        "basic" => AnalysisProfile::Basic,
-        "code" => AnalysisProfile::Code,
-        "documents" | "docs" => AnalysisProfile::Documents,
-        "full" => AnalysisProfile::Full,
+        "none" | "off" | "disabled" => AnalysisSet::NONE,
+        "basic" => AnalysisSet::NONE.with_lines(),
+        "code" => AnalysisSet::NONE.with_code(),
+        "documents" | "docs" => AnalysisSet::NONE.with_words(),
+        "full" => AnalysisSet::ALL,
         other => {
             return Err(PyValueError::new_err(format!(
                 "invalid analysis profile {other:?}: expected one of none, basic, code, documents, full"
@@ -881,13 +881,13 @@ fn coverage_label(reason: CoverageReason) -> &'static str {
     }
 }
 
-fn analysis_profile_label(profile: AnalysisProfile) -> &'static str {
+fn analysis_profile_label(profile: AnalysisSet) -> &'static str {
     match profile {
-        AnalysisProfile::Disabled => "none",
-        AnalysisProfile::Basic => "basic",
-        AnalysisProfile::Code => "code",
-        AnalysisProfile::Documents => "documents",
-        AnalysisProfile::Full => "full",
+        AnalysisSet::NONE => "none",
+        AnalysisSet::NONE.with_lines() => "basic",
+        AnalysisSet::NONE.with_code() => "code",
+        AnalysisSet::NONE.with_words() => "documents",
+        AnalysisSet::ALL => "full",
     }
 }
 

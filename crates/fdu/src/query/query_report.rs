@@ -23,8 +23,7 @@ use crate::classify::{
     ContentFamily, DetectionConfidence, DetectionSource, classify_path, ext_bucket,
 };
 use crate::content::{
-    AnalysisProfile, ContentIndex, ContentProvenance, CoverageReason, LogicalWordStats,
-    MetricValues,
+    AnalysisSet, ContentIndex, ContentProvenance, CoverageReason, LogicalWordStats, MetricValues,
 };
 use crate::engine_contract::{EntryKind, Freshness, ScanScope};
 use crate::index::{EntryId, ExtTally, Index, RollUpScalars};
@@ -88,7 +87,7 @@ impl Default for Query {
 
 impl Query {
     /// Reject views that have no metadata-only projection and lack required analysis.
-    pub fn validate_analysis(&self, profile: AnalysisProfile) -> Result<(), &'static str> {
+    pub fn validate_analysis(&self, profile: AnalysisSet) -> Result<(), &'static str> {
         for view in &self.views {
             match view {
                 ViewSpec::Documents if !profile.is_enabled() => {
@@ -301,7 +300,7 @@ pub struct MetricSummary {
 #[derive(Clone, Debug)]
 pub struct ContentReportMetadata {
     /// Requested analysis profile.
-    pub profile: AnalysisProfile,
+    pub profile: AnalysisSet,
     /// Type-rule, option, and analyzer dialect identity.
     pub provenance: ContentProvenance,
 }
@@ -706,7 +705,7 @@ fn metric_summary(
             if record.coverage == CoverageReason::Analyzed {
                 row.analyzed_files = row.analyzed_files.saturating_add(1);
                 row.metrics.add_assign(&record.metrics);
-                if record.profile.includes_documents() {
+                if record.profile.includes_words() {
                     row.document_metric_files = row.document_metric_files.saturating_add(1);
                     if classification.file_type.as_str() == "markdown" {
                         row.document_raw_words =
@@ -778,7 +777,7 @@ fn metric_summary(
             if index
                 .content()
                 .and_then(ContentIndex::profile)
-                .is_some_and(AnalysisProfile::includes_code) =>
+                .is_some_and(AnalysisSet::includes_code) =>
         {
             ShareMetric::CodeLines
         }
@@ -1173,11 +1172,11 @@ mod tests {
     fn language_grouping_is_metadata_only_while_documents_require_analysis() {
         let languages = query(&[ViewSpec::Languages], Selection::default());
         for profile in [
-            AnalysisProfile::Disabled,
-            AnalysisProfile::Basic,
-            AnalysisProfile::Code,
-            AnalysisProfile::Documents,
-            AnalysisProfile::Full,
+            AnalysisSet::NONE,
+            AnalysisSet::NONE.with_lines(),
+            AnalysisSet::NONE.with_code(),
+            AnalysisSet::NONE.with_words(),
+            AnalysisSet::ALL,
         ] {
             languages
                 .validate_analysis(profile)
@@ -1185,12 +1184,12 @@ mod tests {
         }
 
         let documents = query(&[ViewSpec::Documents], Selection::default());
-        assert!(documents.validate_analysis(AnalysisProfile::Disabled).is_err());
+        assert!(documents.validate_analysis(AnalysisSet::NONE).is_err());
         for profile in [
-            AnalysisProfile::Basic,
-            AnalysisProfile::Code,
-            AnalysisProfile::Documents,
-            AnalysisProfile::Full,
+            AnalysisSet::NONE.with_lines(),
+            AnalysisSet::NONE.with_code(),
+            AnalysisSet::NONE.with_words(),
+            AnalysisSet::ALL,
         ] {
             documents
                 .validate_analysis(profile)
@@ -1198,7 +1197,7 @@ mod tests {
         }
 
         query(&[ViewSpec::Types, ViewSpec::Families], Selection::default())
-            .validate_analysis(AnalysisProfile::Disabled)
+            .validate_analysis(AnalysisSet::NONE)
             .expect("metadata grouping never requires content I/O");
     }
 

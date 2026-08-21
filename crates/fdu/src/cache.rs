@@ -168,7 +168,7 @@ mod tests {
             cache_path: Some(path.clone()),
             policy: CachePolicy::Auto,
             analysis: crate::content::AnalysisRequest {
-                profile: crate::content::AnalysisProfile::Basic,
+                profile: crate::content::AnalysisSet::NONE.with_lines(),
                 ..crate::content::AnalysisRequest::default()
             },
             ..OpenConfig::default()

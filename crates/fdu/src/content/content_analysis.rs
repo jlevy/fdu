@@ -178,8 +178,7 @@ fn analyze_open_file(
         );
     }
 
-    let mut accumulator =
-        BasicAccumulator::with_logical_metrics(request.profile.includes_documents());
+    let mut accumulator = BasicAccumulator::with_logical_metrics(request.profile.includes_words());
     let mut code_accumulator = request
         .profile
         .includes_code()
@@ -188,7 +187,7 @@ fn analyze_open_file(
     let mut deferred_code = (request.profile.includes_code()
         && candidate.classification.family == ContentFamily::Unknown)
         .then(Vec::new);
-    let mut markdown_source = (request.profile.includes_documents()
+    let mut markdown_source = (request.profile.includes_words()
         && (candidate.classification.file_type.as_str() == "markdown"
             || candidate.classification.family == ContentFamily::Unknown))
         .then(Vec::new);
@@ -302,9 +301,7 @@ fn analyze_open_file(
                 metrics.comment_lines = code_metrics.comment_lines;
                 metrics.code_blank_lines = code_metrics.code_blank_lines;
             }
-            if request.profile.includes_documents()
-                && classification.file_type.as_str() == "markdown"
-            {
+            if request.profile.includes_words() && classification.file_type.as_str() == "markdown" {
                 if let Some(source) = markdown_source {
                     let source = std::str::from_utf8(&source)
                         .expect("basic admission already established valid UTF-8");
@@ -439,7 +436,7 @@ mod tests {
 
         let report = analyze_index(
             &mut index,
-            AnalysisRequest { profile: super::super::AnalysisProfile::Basic, workers: 2 },
+            AnalysisRequest { profile: super::super::AnalysisSet::NONE.with_lines(), workers: 2 },
         );
 
         assert_eq!(report.candidates, 2);
@@ -466,7 +463,7 @@ mod tests {
         crate::counters::reset();
         let report = analyze_index(
             &mut index,
-            AnalysisRequest { profile: super::super::AnalysisProfile::Basic, workers: 2 },
+            AnalysisRequest { profile: super::super::AnalysisSet::NONE.with_lines(), workers: 2 },
         );
         crate::counters::flush_thread();
         let counts = crate::counters::snapshot();
@@ -491,7 +488,7 @@ mod tests {
 
         let report = analyze_index(
             &mut index,
-            AnalysisRequest { profile: super::super::AnalysisProfile::Code, workers: 1 },
+            AnalysisRequest { profile: super::super::AnalysisSet::NONE.with_code(), workers: 1 },
         );
 
         assert_eq!(report.analyzed, 1);
@@ -516,7 +513,7 @@ mod tests {
         let report = analyze_index(
             &mut index,
             AnalysisRequest {
-                profile: super::super::AnalysisProfile::Basic,
+                profile: super::super::AnalysisSet::NONE.with_lines(),
                 ..AnalysisRequest::default()
             },
         );
@@ -550,7 +547,7 @@ mod tests {
         let report = analyze_index(
             &mut index,
             AnalysisRequest {
-                profile: super::super::AnalysisProfile::Code,
+                profile: super::super::AnalysisSet::NONE.with_code(),
                 ..AnalysisRequest::default()
             },
         );
@@ -617,7 +614,7 @@ mod tests {
         let report = analyze_index(
             &mut index,
             AnalysisRequest {
-                profile: super::super::AnalysisProfile::Code,
+                profile: super::super::AnalysisSet::NONE.with_code(),
                 ..AnalysisRequest::default()
             },
         );
@@ -676,7 +673,7 @@ mod tests {
         let report = analyze_index(
             &mut index,
             AnalysisRequest {
-                profile: super::super::AnalysisProfile::Documents,
+                profile: super::super::AnalysisSet::NONE.with_words(),
                 ..AnalysisRequest::default()
             },
         );
@@ -718,7 +715,7 @@ mod tests {
         let (mut index, _) =
             crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
         let request = AnalysisRequest {
-            profile: super::super::AnalysisProfile::Basic,
+            profile: super::super::AnalysisSet::NONE.with_lines(),
             ..AnalysisRequest::default()
         };
 
@@ -739,7 +736,7 @@ mod tests {
         analyze_index(
             &mut empty_index,
             AnalysisRequest {
-                profile: super::super::AnalysisProfile::Basic,
+                profile: super::super::AnalysisSet::NONE.with_lines(),
                 ..AnalysisRequest::default()
             },
         );
@@ -759,8 +756,8 @@ mod tests {
         );
         let json =
             crate::report_format::render(&summary, crate::report_format::Format::Json, false);
-        assert!(json.contains("\"schema\": \"fdu.report/2\""), "{json}");
-        assert!(json.contains("\"profile\": \"basic\""), "{json}");
+        assert!(json.contains("\"schema\": \"fdu.report/3\""), "{json}");
+        assert!(json.contains("\"analyze\": [\"lines\"]"), "{json}");
 
         let unsupported = tempfile::tempdir().expect("unsupported tempdir");
         fs::write(unsupported.path().join("Main.hs"), "main = pure ()\n").expect("write");
@@ -769,7 +766,7 @@ mod tests {
         analyze_index(
             &mut unsupported_index,
             AnalysisRequest {
-                profile: super::super::AnalysisProfile::Code,
+                profile: super::super::AnalysisSet::NONE.with_code(),
                 ..AnalysisRequest::default()
             },
         );
