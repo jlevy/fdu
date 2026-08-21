@@ -41,6 +41,12 @@ const STYLE_BAR: AnsiStyle = AnsiColor::Green.on_default();
 /// Extensions in a type breakdown.
 const STYLE_TYPE: AnsiStyle = AnsiColor::Green.on_default();
 
+/// Telemetry: what the tool did, as against what it found.
+///
+/// The same role the CLI's performance footer and display notes use, so a bound stated in
+/// a header reads as reporting rather than as data — see the styling system in `cli.rs`.
+const STYLE_TELEMETRY: AnsiStyle = AnsiColor::BrightBlack.on_default();
+
 /// Established label width for non-language metric summaries.
 const TEXT_METRIC_LABEL_WIDTH: usize = 18;
 /// Floor for the extensions view's label column.
@@ -50,9 +56,9 @@ const TEXT_TYPE_LABEL_WIDTH: usize = 12;
 ///
 /// Any change to a field's name, type, or meaning bumps this, and a golden test fails if
 /// the schema moves without it — the versioning is the promise, not the intention.
-pub const REPORT_SCHEMA: &str = "fdu.report/1";
+pub const REPORT_SCHEMA: &str = "fdu.report/4";
 /// Machine schema used when a generic metric-summary section is present.
-pub const CONTENT_REPORT_SCHEMA: &str = "fdu.report/3";
+pub const CONTENT_REPORT_SCHEMA: &str = "fdu.report/5";
 
 /// How a report is serialized.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
@@ -123,13 +129,25 @@ fn render_text(report: &Report, color: bool) -> String {
         if index > 0 {
             out.push('\n');
         }
+        let bound = bound_note(section);
         if headed {
-            let _ =
-                writeln!(out, "{}", paint(view_header(section.view()), STYLE_VIEW_HEADER, color));
+            let _ = writeln!(
+                out,
+                "{}{}",
+                paint(view_header(section.view()), STYLE_VIEW_HEADER, color),
+                paint(&bound, STYLE_TELEMETRY, color),
+            );
+        } else if !bound.is_empty() {
+            // A single-view report has no header, and that is precisely the shape
+            // `fdu --view largest` produces — so the bound gets its own line rather than
+            // riding on a header that is not there.
+            let _ = writeln!(out, "{}", paint(bound.trim_start(), STYLE_TELEMETRY, color));
         }
         match section {
             Section::Tree(root) => render_text_tree(&mut out, root, report.size, color),
-            Section::Extensions(rows) => render_text_types(&mut out, rows, report.size, color),
+            Section::Extensions { rows, .. } => {
+                render_text_types(&mut out, rows, report.size, color);
+            }
             Section::Metrics { view, summary } => {
                 render_text_metrics(&mut out, *view, summary, report.size, color);
             }
@@ -138,7 +156,7 @@ fn render_text(report: &Report, color: bool) -> String {
             // that ranks by something must show that something — "the twenty largest"
             // with no sizes does not answer the question it is named for, and leaves the
             // ranking unverifiable.
-            Section::Files { view, rows } => match view {
+            Section::Files { view, rows, .. } => match view {
                 ViewSpec::Largest => render_text_ranked_files(&mut out, rows, report.size, |row| {
                     human_bytes(pick(report.size, row.bytes, row.allocated))
                 }),
@@ -348,6 +366,61 @@ fn render_text_types(out: &mut String, rows: &[TypeRow], size: SizeMetric, color
 }
 
 /// Render a summary section as one line.
+/// The YAML form of the bound, matching the JSON field.
+///
+/// Emitted at section level so a consumer reads it the same way in either format; the
+/// truncation contract does not vary by serialization.
+fn yaml_bound(out: &mut String, shown: usize, total: usize) {
+    if shown >= total {
+        out.push_str("    bound: null\n");
+    } else {
+        out.push_str("    bound:\n");
+        let _ = writeln!(out, "      shown: {shown}");
+        let _ = writeln!(out, "      total: {total}");
+    }
+}
+
+/// The bound a section applied, as a machine field.
+///
+/// `null` when nothing was dropped, so a consumer can branch on presence rather than
+/// comparing counts it would have to know to compare. The truncation contract is not a
+/// human-format courtesy: a script that reads twenty rows and believes it has the tree is
+/// the worse failure, because nothing in its output looks wrong.
+fn bound_json(shown: usize, total: usize) -> String {
+    if shown >= total {
+        return "null".to_string();
+    }
+    format!("{{\"shown\": {shown}, \"total\": {total}}}")
+}
+
+/// What a section dropped, or nothing when it dropped nothing.
+///
+/// Lives in the header rather than after the rows because a footer is lost to `head`,
+/// which is exactly where a reader most needs telling — `fdu --view largest | head -5`
+/// would otherwise cut off the only notice that 192,851 rows are missing. In a `full`
+/// report a header also keeps each bound attached to the section it describes.
+///
+/// The flag that lifts the bound is named here too: a truncation the caller cannot remove
+/// is a limitation wearing a default's clothes.
+fn bound_note(section: &Section) -> String {
+    let (shown, total) = match section {
+        Section::Files { rows, total, .. } => (rows.len(), *total),
+        Section::Extensions { rows, total } => (rows.len(), *total),
+        Section::Metrics { summary, .. } => (summary.rows.len(), summary.total_rows),
+        // A tree marks its dropped children in place, at the depth they were dropped; a
+        // summary is one row and cannot be bounded.
+        Section::Tree(_) | Section::Summary(_) => (0, 0),
+    };
+    if shown >= total {
+        return String::new();
+    }
+    format!(
+        "  ({} of {}; --limit all for every one)",
+        crate::cli::human_count(shown as u64),
+        crate::cli::human_count(total as u64)
+    )
+}
+
 /// A nanosecond stamp as a `SystemTime`, saturating rather than panicking.
 ///
 /// Timestamps before the epoch are legal on disk — an archive can restore one — and a
@@ -491,8 +564,8 @@ fn section_json(section: &Section, _indent: usize) -> String {
         Section::Tree(root) => {
             let _ = write!(out, "\"tree\": {}", indent(&tree_json(root), 2).trim_start());
         }
-        Section::Extensions(rows) => {
-            let _ = write!(out, "\"extensions\": [");
+        Section::Extensions { rows, total } => {
+            let _ = write!(out, "\"bound\": {}, \"extensions\": [", bound_json(rows.len(), *total));
             for (index, row) in rows.iter().enumerate() {
                 let _ = write!(
                     out,
@@ -509,8 +582,8 @@ fn section_json(section: &Section, _indent: usize) -> String {
         Section::Metrics { summary, .. } => {
             let _ = write!(out, "\"metrics\": {}", metric_summary_json(summary));
         }
-        Section::Files { rows, .. } => {
-            let _ = write!(out, "\"files\": [");
+        Section::Files { rows, total, .. } => {
+            let _ = write!(out, "\"bound\": {}, \"files\": [", bound_json(rows.len(), *total));
             for (index, row) in rows.iter().enumerate() {
                 let _ = write!(out, "{}\n    {}", if index > 0 { "," } else { "" }, file_json(row));
             }
@@ -528,10 +601,11 @@ fn metric_summary_json(summary: &MetricSummary) -> String {
     let mut out = String::new();
     let _ = write!(
         out,
-        "{{\"group\": {}, \"share_metric\": {}, \"words_per_page\": {}, \"total\": {}, \"rows\": [",
+        "{{\"group\": {}, \"share_metric\": {}, \"words_per_page\": {}, \"bound\": {}, \"total\": {}, \"rows\": [",
         quote(metric_group_label(summary.group)),
         quote(summary.share_metric.as_str()),
         summary.words_per_page,
+        bound_json(summary.rows.len(), summary.total_rows),
         metric_row_json(&summary.total, summary.words_per_page)
     );
     for (index, row) in summary.rows.iter().enumerate() {
@@ -788,7 +862,8 @@ fn render_yaml(report: &Report) -> String {
                 out.push_str("    tree:\n");
                 yaml_tree(&mut out, root, 6);
             }
-            Section::Extensions(rows) => {
+            Section::Extensions { rows, total } => {
+                yaml_bound(&mut out, rows.len(), *total);
                 if rows.is_empty() {
                     out.push_str("    extensions: []\n");
                 } else {
@@ -802,7 +877,8 @@ fn render_yaml(report: &Report) -> String {
                 }
             }
             Section::Metrics { summary, .. } => yaml_metrics(&mut out, summary),
-            Section::Files { rows, .. } => {
+            Section::Files { rows, total, .. } => {
+                yaml_bound(&mut out, rows.len(), *total);
                 if rows.is_empty() {
                     out.push_str("    files: []\n");
                 } else {
@@ -840,6 +916,13 @@ fn yaml_metrics(out: &mut String, summary: &MetricSummary) {
     let _ = writeln!(out, "      group: {}", metric_group_label(summary.group));
     let _ = writeln!(out, "      share_metric: {}", summary.share_metric.as_str());
     let _ = writeln!(out, "      words_per_page: {}", summary.words_per_page);
+    if summary.rows.len() < summary.total_rows {
+        out.push_str("      bound:\n");
+        let _ = writeln!(out, "        shown: {}", summary.rows.len());
+        let _ = writeln!(out, "        total: {}", summary.total_rows);
+    } else {
+        out.push_str("      bound: null\n");
+    }
     out.push_str("      total:\n");
     yaml_metric_row(out, &summary.total, summary.words_per_page, 8, false);
     if summary.rows.is_empty() {
@@ -1375,6 +1458,41 @@ mod tests {
         }
     }
 
+    /// A bound states itself, and the count it states is the count it dropped.
+    ///
+    /// The second half is why this is a unit test: a golden fixture is too small for a
+    /// wrong total to look wrong, and the defect being guarded against — twenty rows of
+    /// 192,871 presented as everything — only shows at a scale goldens do not reach.
+    #[test]
+    fn a_bound_states_itself_and_states_it_accurately() {
+        let report = fixture(&[ViewSpec::Files]);
+        let Section::Files { rows, total, .. } = &report.sections[0] else {
+            panic!("expected a files section");
+        };
+        let full = rows.len();
+        assert_eq!(*total, full, "an unbounded view drops nothing");
+        assert!(!render(&report, Format::Text, false).contains("--limit all"), "and says nothing");
+        assert!(render(&report, Format::Json, false).contains("\"bound\": null"));
+
+        // Now bound it to one row and check the report agrees with reality.
+        let mut query = Query { views: vec![ViewSpec::Files], ..Query::default() };
+        query.selection.limit = Some(Bound::Limit(1));
+        let bounded = fixture_for(&query);
+        let Section::Files { rows, total, .. } = &bounded.sections[0] else {
+            panic!("expected a files section");
+        };
+        assert_eq!(rows.len(), 1);
+        assert_eq!(*total, full, "the total is what there was, not what was kept");
+
+        let text = render(&bounded, Format::Text, false);
+        assert!(text.contains(&format!("(1 of {full}")), "the header states the bound: {text}");
+        assert!(text.contains("--limit all"), "and names the flag that lifts it: {text}");
+        let json = render(&bounded, Format::Json, false);
+        assert!(json.contains(&format!("\"shown\": 1, \"total\": {full}")), "{json:.200}");
+        let yaml = render(&bounded, Format::Yaml, false);
+        assert!(yaml.contains("shown: 1"), "{yaml:.200}");
+    }
+
     /// Colour must not move anything.
     ///
     /// The golden suite structurally cannot check this: it runs under `NO_COLOR=1` and
@@ -1441,7 +1559,25 @@ mod tests {
         assert_eq!(label_cell("verylonglabel", 4, STYLE_TYPE, false), "verylonglabel");
     }
 
+    /// Every view, so a matrix test cannot silently skip one that was added later.
+    const ALL_TEST_VIEWS: [ViewSpec; 10] = [
+        ViewSpec::Tree,
+        ViewSpec::Types,
+        ViewSpec::Extensions,
+        ViewSpec::Families,
+        ViewSpec::Languages,
+        ViewSpec::Documents,
+        ViewSpec::Files,
+        ViewSpec::Largest,
+        ViewSpec::Recent,
+        ViewSpec::Summary,
+    ];
+
     fn fixture(views: &[ViewSpec]) -> Report {
+        fixture_for(&Query { views: views.to_vec(), ..Query::default() })
+    }
+
+    fn fixture_for(query: &Query) -> Report {
         let mut index = Index::new_with_scope("/root", ScanScope::default());
         index
             .apply(&Observation::new(vec![
@@ -1464,7 +1600,7 @@ mod tests {
             .expect("apply");
         report(
             &index,
-            &Query { selection: Selection::default(), views: views.to_vec(), ..Query::default() },
+            query,
             &Provenance {
                 scan_started_at: Some(UNIX_EPOCH + Duration::from_secs(1_786_386_151)),
                 generated_at: UNIX_EPOCH + Duration::from_secs(1_786_386_152),
@@ -1514,23 +1650,23 @@ mod tests {
         depth == 0 && !in_string
     }
 
+    /// Formats are serializations, not features: no view may lack one.
+    ///
+    /// Driven from `ALL_TEST_VIEWS` rather than a hand-written list, because a list is
+    /// exactly what goes stale — `largest` and `recent` would not have been in it.
     #[test]
     fn every_view_renders_in_every_format() {
-        // Formats are serializations, not features: no view may lack one.
-        for view in [
-            ViewSpec::Tree,
-            ViewSpec::Extensions,
-            ViewSpec::Types,
-            ViewSpec::Families,
-            ViewSpec::Languages,
-            ViewSpec::Documents,
-            ViewSpec::Files,
-            ViewSpec::Summary,
-        ] {
+        for view in ALL_TEST_VIEWS {
             let report = fixture(&[view]);
             for format in [Format::Text, Format::Json, Format::Jsonl, Format::Yaml] {
                 let rendered = render(&report, format, false);
                 assert!(!rendered.trim().is_empty(), "{view:?} in {format:?} rendered nothing");
+                if format != Format::Text {
+                    assert!(
+                        rendered.contains("\"schema\"") || rendered.contains("schema:"),
+                        "{view:?} as {format:?} carries no schema: {rendered:.120}"
+                    );
+                }
             }
         }
     }
@@ -1709,7 +1845,7 @@ mod tests {
     #[test]
     fn machine_output_carries_the_schema_and_provenance() {
         let json = render(&fixture(&[ViewSpec::Summary]), Format::Json, false);
-        assert!(json.contains("\"schema\": \"fdu.report/1\""));
+        assert!(json.contains("\"schema\": \"fdu.report/4\""));
         assert!(json.contains("\"source\": \"cold_scan\""));
         assert!(json.contains("\"complete\": true"));
         // Timestamps render in the same grammar the CLI accepts back as a watermark.
@@ -1721,20 +1857,21 @@ mod tests {
     fn the_schema_constant_is_the_versioning_promise() {
         // Fails loudly when the schema string moves, so a field rename cannot ship
         // without a deliberate version bump and a golden update.
-        assert_eq!(REPORT_SCHEMA, "fdu.report/1");
-        // Bumped to /3 when the analysis block's `profile` scalar became the `analyze`
-        // list: the requested analyzer set stopped being expressible as one label.
-        assert_eq!(CONTENT_REPORT_SCHEMA, "fdu.report/3");
+        assert_eq!(REPORT_SCHEMA, "fdu.report/4");
+        // /4 and /5 add the section-level `bound`, which reports what a view dropped.
+        // Both lines move because a metadata-only section can be bounded too, so the
+        // field is not confined to content reports.
+        assert_eq!(CONTENT_REPORT_SCHEMA, "fdu.report/5");
     }
 
     #[test]
     fn metric_sections_upgrade_schema_while_metadata_sections_stay_on_v1() {
         let metadata = render(&fixture(&[ViewSpec::Tree]), Format::Json, false);
-        assert!(metadata.contains("\"schema\": \"fdu.report/1\""));
+        assert!(metadata.contains("\"schema\": \"fdu.report/4\""));
         assert!(!metadata.contains("\"analysis\""));
 
         let metrics = render(&fixture(&[ViewSpec::Types]), Format::Json, false);
-        assert!(metrics.contains("\"schema\": \"fdu.report/3\""));
+        assert!(metrics.contains("\"schema\": \"fdu.report/5\""));
         assert!(metrics.contains("\"analysis\": null"));
         assert!(metrics.contains("\"share\": {\"numerator\":"));
     }

@@ -164,8 +164,8 @@ before the modification, so only the start bound is conservative.
 
 Check the process exit status and these fields:
 
-- `schema` before parsing anything else: a metadata-only report carries `fdu.report/1`,
-  a report that ran content analysis carries `fdu.report/3`, and a `--watch` stream
+- `schema` before parsing anything else: a metadata-only report carries `fdu.report/4`,
+  a report that ran content analysis carries `fdu.report/5`, and a `--watch` stream
   carries `fdu.stream/1`. Treat an unrecognized value as a version you cannot parse
   rather than guessing at the fields.
 - `complete` and `errors` before trusting totals

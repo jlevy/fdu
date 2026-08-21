@@ -323,7 +323,7 @@ impl PyIndex {
             selection.depth = parse_bound(value, "depth")?;
         }
         if let Some(value) = limit {
-            selection.limit = parse_bound(value, "limit")?;
+            selection.limit = Some(parse_bound(value, "limit")?);
         }
         for pattern in include.unwrap_or_default() {
             selection.include.push(Pattern::parse(&pattern).map_err(to_py_err)?);
@@ -547,7 +547,7 @@ impl PyIndex {
             selection.depth = parse_bound(value, "depth")?;
         }
         if let Some(value) = limit {
-            selection.limit = parse_bound(value, "limit")?;
+            selection.limit = Some(parse_bound(value, "limit")?);
         }
         for pattern in include.unwrap_or_default() {
             selection.include.push(Pattern::parse(&pattern).map_err(to_py_err)?);
@@ -573,10 +573,11 @@ impl PyIndex {
             selection.sort = Some(parse_sort(value)?);
         }
         let views = match views {
-            Some(values) => {
-                values.iter().map(|value| parse_view(value)).collect::<PyResult<Vec<_>>>()?
-            }
-            None => vec![ViewSpec::Tree],
+            Some(values) => resolve_views(&values, self.analysis.profile)?,
+            // Derived, not fixed: a request that paid to read files must display
+            // what it read, which is what the CLI has done since the content axis
+            // landed. A fixed `tree` here reproduced the defect that axis removed.
+            None => vec![ViewSpec::default_for(self.analysis.profile)],
         };
         if words_per_page == 0 {
             return Err(PyValueError::new_err("words_per_page must be positive"));
@@ -728,8 +729,9 @@ fn report_dict<'py>(py: Python<'py>, report: &Report) -> PyResult<Bound<'py, PyD
                 entry.set_item("view", "summary")?;
                 entry.set_item("summary", summary_dict(py, row)?)?;
             }
-            Section::Extensions(rows) => {
+            Section::Extensions { rows, total } => {
                 entry.set_item("view", "extensions")?;
+                entry.set_item("bound", bound_dict(py, rows.len(), *total)?)?;
                 let list = PyList::empty(py);
                 for row in rows {
                     let item = PyDict::new(py);
@@ -745,8 +747,9 @@ fn report_dict<'py>(py: Python<'py>, report: &Report) -> PyResult<Bound<'py, PyD
                 entry.set_item("view", view_label(*view))?;
                 entry.set_item("metrics", metric_summary_dict(py, summary)?)?;
             }
-            Section::Files(rows) => {
-                entry.set_item("view", "files")?;
+            Section::Files { view, rows, total } => {
+                entry.set_item("view", view_label(*view))?;
+                entry.set_item("bound", bound_dict(py, rows.len(), *total)?)?;
                 let list = PyList::empty(py);
                 for row in rows {
                     let item = PyDict::new(py);
@@ -846,6 +849,20 @@ fn metric_row_dict<'py>(
     Ok(dict)
 }
 
+/// What a section dropped, or `None` when it dropped nothing.
+///
+/// `None` rather than an absent key, so a consumer branches on the value instead of on
+/// presence — the same shape the JSON and YAML forms use.
+fn bound_dict(py: Python<'_>, shown: usize, total: usize) -> PyResult<Option<Bound<'_, PyDict>>> {
+    if shown >= total {
+        return Ok(None);
+    }
+    let bound = PyDict::new(py);
+    bound.set_item("shown", shown)?;
+    bound.set_item("total", total)?;
+    Ok(Some(bound))
+}
+
 fn view_label(view: ViewSpec) -> &'static str {
     match view {
         ViewSpec::Tree => "tree",
@@ -855,6 +872,8 @@ fn view_label(view: ViewSpec) -> &'static str {
         ViewSpec::Languages => "languages",
         ViewSpec::Documents => "documents",
         ViewSpec::Files => "files",
+        ViewSpec::Largest => "largest",
+        ViewSpec::Recent => "recent",
         ViewSpec::Summary => "summary",
     }
 }
@@ -919,21 +938,31 @@ fn tree_dict<'py>(py: Python<'py>, root: &TreeNode) -> PyResult<Bound<'py, PyDic
     Ok(built)
 }
 
-/// Parse a view name.
-fn parse_view(value: &str) -> PyResult<ViewSpec> {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "tree" => Ok(ViewSpec::Tree),
-        "types" => Ok(ViewSpec::Types),
-        "extensions" => Ok(ViewSpec::Extensions),
-        "families" => Ok(ViewSpec::Families),
-        "languages" => Ok(ViewSpec::Languages),
-        "documents" | "docs" => Ok(ViewSpec::Documents),
-        "files" => Ok(ViewSpec::Files),
-        "summary" => Ok(ViewSpec::Summary),
-        other => Err(PyValueError::new_err(format!(
-            "invalid view {other:?}: expected one of tree, extensions, types, families, languages, documents, files, summary"
-        ))),
+/// Resolve a caller's view list, expanding the `full` total.
+///
+/// `full` names the whole report rather than one projection, so it cannot be combined.
+/// The Python `View` enum offers it, so the binding must honour it — it previously listed
+/// `full` as valid in its error message while rejecting it.
+fn resolve_views(values: &[String], analysis: AnalysisSet) -> PyResult<Vec<ViewSpec>> {
+    if values.iter().any(|value| value.trim().eq_ignore_ascii_case("full")) {
+        if values.len() > 1 {
+            return Err(PyValueError::new_err(
+                "invalid view \"full\": it names the whole report and cannot be combined",
+            ));
+        }
+        return Ok(ViewSpec::full_report(analysis).0);
     }
+    values.iter().map(|value| parse_view(value)).collect()
+}
+
+/// Parse a view name, through the library's own grammar.
+///
+/// This used to be a second copy of the vocabulary, and it drifted: `largest` and
+/// `recent` reached the CLI and the Python binding rejected them, with `make check` green
+/// throughout because nothing in the Python tests named a new view.
+fn parse_view(value: &str) -> PyResult<ViewSpec> {
+    ViewSpec::parse(value)
+        .map_err(|expected| PyValueError::new_err(format!("invalid view {value:?}: {expected}")))
 }
 
 /// Parse an entry-kind name.
@@ -1268,9 +1297,11 @@ fn contract(py: Python<'_>) -> PyResult<Bound<'_, PyDict>> {
             "families",
             "languages",
             "documents",
+            "largest",
+            "recent",
             "files",
             "summary",
-            "all",
+            "full",
         ],
     )?;
     contract.set_item("entry_kinds", ["file", "dir", "symlink", "other"])?;

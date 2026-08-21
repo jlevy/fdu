@@ -39,7 +39,9 @@ def test_public_defaults_match_cli_semantics() -> None:
     assert CachePolicy.AUTO.value == "auto"
     assert ScanOptions() == ScanOptions(max_depth=None, one_filesystem=False)
     assert AnalysisOptions().analyze == Analysis.NONE
-    assert Query().views == (View.TREE,)
+    # Empty means "let the analyzers choose", which is the CLI semantics this test is
+    # named for: `--analyze code` with no `--view` reports languages, not tree.
+    assert Query().views == ()
 
 
 def test_invalid_option_values_fail_before_crossing_native_boundary() -> None:

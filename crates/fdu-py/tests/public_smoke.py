@@ -21,11 +21,67 @@ import fdu
 from fdu import _native
 
 
+def check_every_view(root: Path) -> None:
+    """Every view must reach the typed surface, and say what it bounded.
+
+    This exists because the CLI and the binding held separate view vocabularies: `largest`
+    and `recent` shipped, the CLI accepted them, the binding rejected them, and
+    `make check` stayed green throughout because nothing in the Python tests named a new
+    view. The loop is over `fdu.View` rather than a written list, so a view added later
+    cannot be left out of it.
+    """
+
+    index = fdu.scan(str(root))
+    analyzed = fdu.scan(str(root), analysis=fdu.AnalysisOptions(analyze=fdu.Analysis.ALL))
+    for view in fdu.View:
+        if view is fdu.View.FULL:
+            continue
+        # `documents` has no metadata-only projection, so it needs the analysed index.
+        source = analyzed if view is fdu.View.DOCUMENTS else index
+        report = source.report(fdu.Query(views=(view,)))
+        assert len(report.sections) == 1, (view, report.sections)
+        assert report.sections[0].view is view, (view, report.sections[0].view)
+
+    # A bounded section reports what it dropped; an unbounded one reports nothing.
+    bounded = index.report(fdu.Query(views=(fdu.View.FILES,), selection=fdu.Selection(limit=1)))
+    section = bounded.sections[0]
+    assert section.bound is not None, "a bounded section must say so"
+    assert section.bound.shown == 1, section.bound
+    assert section.bound.total > 1, section.bound
+
+    complete = index.report(fdu.Query(views=(fdu.View.FILES,)))
+    assert complete.sections[0].bound is None, "an unbounded section reports no bound"
+
+    # Naming no view derives one from the analyzers, exactly as the command line does.
+    # Python defaulted to `tree` regardless, so a caller who asked to read every file got
+    # a directory tree containing none of the results -- the defect the content axis
+    # removed from the CLI, still live here because nothing tested the two together.
+    for analyze, expected in (
+        (fdu.Analysis.NONE, fdu.View.TREE),
+        (fdu.Analysis.LINES, fdu.View.FAMILIES),
+        (fdu.Analysis.CODE, fdu.View.LANGUAGES),
+        (fdu.Analysis.WORDS, fdu.View.DOCUMENTS),
+        (fdu.Analysis.ALL, fdu.View.FAMILIES),
+    ):
+        derived = fdu.scan(str(root), analysis=fdu.AnalysisOptions(analyze=analyze))
+        section = derived.report(fdu.Query()).sections[0]
+        assert section.view is expected, (analyze, section.view, expected)
+
+    # `full` is a total the enum offers, so the binding must honour it: it once listed
+    # `full` as valid in its own error message while rejecting it.
+    full = index.report(fdu.Query(views=(fdu.View.FULL,)))
+    produced = {section.view for section in full.sections}
+    assert fdu.View.LARGEST in produced and fdu.View.RECENT in produced, produced
+    assert fdu.View.FILES not in produced, "an unbounded enumeration is not a summary"
+
+
 def main() -> None:
     root = Path(tempfile.mkdtemp(prefix="fdu-public-api-"))
     (root / "src").mkdir()
     (root / "src" / "main.rs").write_text("fn main() {}", encoding="utf-8")
     (root / "notes.md").write_text("release notes", encoding="utf-8")
+
+    check_every_view(root)
 
     index = fdu.scan(root, scan=fdu.ScanOptions(max_depth=3))
     assert os.path.samefile(index.root, root)
@@ -67,7 +123,7 @@ def main() -> None:
         fdu.View.FILES,
     ]
     wire = report.as_dict()
-    assert wire["schema"] == "fdu.report/1"
+    assert wire["schema"] == "fdu.report/4"
     assert wire["generator"] == f"fdu {fdu.__version__}"
     assert json.loads(json.dumps(wire)) == wire
 

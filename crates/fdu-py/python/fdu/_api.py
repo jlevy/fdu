@@ -79,7 +79,10 @@ def _call(function: Any, /, *args: object, **kwargs: object) -> Any:
 def _query_kwargs(query: Query) -> dict[str, object]:
     selection = query.selection
     return {
-        "views": [view.value for view in query.views],
+        # `None` rather than an empty list: the binding distinguishes "the caller named
+        # no view" -- derive one from the analyzers -- from "the caller named none", which
+        # would be a report with no sections.
+        "views": [view.value for view in query.views] or None,
         "include": list(selection.include),
         "exclude": list(selection.exclude),
         "min_size": str(selection.min_size) if selection.min_size is not None else None,

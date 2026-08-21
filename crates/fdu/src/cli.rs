@@ -158,7 +158,7 @@ CONTENT ANALYSIS
   cache=only never opens source files and fails if requested content is absent.
 
 OUTPUT AND AUTOMATION
-  Metadata-only machine output remains fdu.report/1; metric summaries use fdu.report/3.
+  Metadata-only machine output remains fdu.report/4; metric summaries use fdu.report/5.
   Text language rows use canonical names; machine formats retain lowercase IDs.
   Metric rows include detection source, confidence, origin flags, and coverage.
   One-shot text reports end with a gray performance line; machine formats omit it.
@@ -1141,7 +1141,7 @@ fn human_rate(units: u64, elapsed_ns: u64) -> String {
     }
 }
 
-fn human_count(value: u64) -> String {
+pub(crate) fn human_count(value: u64) -> String {
     let digits = value.to_string();
     let mut grouped = String::with_capacity(digits.len() + digits.len() / 3);
     for (index, byte) in digits.bytes().enumerate() {
@@ -1278,16 +1278,7 @@ const fn view_is_satisfiable(view: ViewSpec, profile: AnalysisSet) -> bool {
 /// state the request already paid for.  Without this, `--analyze all` reads every
 /// eligible file and prints a tree containing none of the results.
 const fn default_view_for(profile: AnalysisSet) -> ViewSpec {
-    match (profile.includes_code(), profile.includes_words()) {
-        // The one view whose rows carry both metric groups at once.
-        (true, true) => ViewSpec::Families,
-        (true, false) => ViewSpec::Languages,
-        (false, true) => ViewSpec::Documents,
-        // Line counts alone still need a grouping that shows them.
-        (false, false) if profile.is_enabled() => ViewSpec::Families,
-        // The unchanged du-replacement answer.
-        (false, false) => ViewSpec::Tree,
-    }
+    ViewSpec::default_for(profile)
 }
 
 /// Views to render, plus any `--view all` could not satisfy.
@@ -1353,26 +1344,15 @@ fn display_notes(views: &ResolvedViews, profile: AnalysisSet, bytes_read: u64) -
     notes
 }
 
-/// Parse one `--view` token.
+/// Parse one `--view` token, through the library's own grammar.
 fn parse_view(token: &str, flag: &str) -> anyhow::Result<ViewSpec> {
-    match token.to_ascii_lowercase().as_str() {
-        "tree" => Ok(ViewSpec::Tree),
-        "types" => Ok(ViewSpec::Types),
-        "extensions" => Ok(ViewSpec::Extensions),
-        "families" => Ok(ViewSpec::Families),
-        "languages" => Ok(ViewSpec::Languages),
-        "documents" | "docs" => Ok(ViewSpec::Documents),
-        "files" => Ok(ViewSpec::Files),
-        "summary" => Ok(ViewSpec::Summary),
-        "largest" => Ok(ViewSpec::Largest),
-        "recent" => Ok(ViewSpec::Recent),
-        "full" => anyhow::bail!(
+    if token.trim().eq_ignore_ascii_case("full") {
+        anyhow::bail!(
             "invalid {flag} \"full\": it names the whole report and cannot be combined with another view"
-        ),
-        _ => anyhow::bail!(
-            "invalid {flag} {token:?}: expected one of tree, extensions, types, families, languages, documents, largest, recent, files, summary, full"
-        ),
+        );
     }
+    ViewSpec::parse(token)
+        .map_err(|expected| anyhow::anyhow!("invalid {flag} {token:?}: {expected}"))
 }
 
 /// Parse one `--kind` token.
@@ -2241,7 +2221,7 @@ mod tests {
             command.run(&mut output, &mut Vec::new(), false, false).expect("run content report");
         assert_eq!(outcome, RunOutcome::Complete);
         let output = String::from_utf8(output).expect("UTF-8 JSON");
-        assert!(output.contains("\"schema\": \"fdu.report/3\""), "{output}");
+        assert!(output.contains("\"schema\": \"fdu.report/5\""), "{output}");
         assert!(output.contains("\"physical_lines\": 3"), "{output}");
         assert!(output.contains("\"raw_words\": 3"), "{output}");
         assert!(output.contains("\"words_per_page\": 250"), "{output}");

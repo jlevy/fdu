@@ -58,7 +58,7 @@ try {
     tree,
   ]);
   const report = JSON.parse(output);
-  assert.equal(report.schema, "fdu.report/3");
+  assert.equal(report.schema, "fdu.report/5");
   assert.equal(report.complete, true);
   assert.deepEqual(report.analysis.analyze, ["lines", "words"]);
   assert.deepEqual(report.analysis.analyzers, [
@@ -142,7 +142,7 @@ try {
     tree,
   ]);
   const codeReport = JSON.parse(codeOutput);
-  assert.equal(codeReport.schema, "fdu.report/3");
+  assert.equal(codeReport.schema, "fdu.report/5");
   assert.deepEqual(codeReport.analysis.analyze, ["lines", "code"]);
   assert.deepEqual(codeReport.analysis.analyzers, [
     { id: "content-basic-v1", version: 1 },

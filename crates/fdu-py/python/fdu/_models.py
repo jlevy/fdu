@@ -72,9 +72,11 @@ class View(StrEnum):
     FAMILIES = "families"
     LANGUAGES = "languages"
     DOCUMENTS = "documents"
+    LARGEST = "largest"
+    RECENT = "recent"
     FILES = "files"
     SUMMARY = "summary"
-    ALL = "all"
+    FULL = "full"
 
 
 class EntryKind(StrEnum):
@@ -196,7 +198,10 @@ class Selection:
 class Query:
     """One or more report views generated without rescanning."""
 
-    views: tuple[View, ...] = (View.TREE,)
+    #: Views to report. Empty means "let the requested analyzers choose", which is what
+    #: the command line does: asking to read files and then printing a directory tree
+    #: containing none of the results is the defect the content axis removed.
+    views: tuple[View, ...] = ()
     selection: Selection = field(default_factory=Selection)
     words_per_page: int = 250
 
@@ -205,8 +210,6 @@ class Query:
         # here gives a clear error instead of a later per-character failure.
         if isinstance(self.views, str):
             raise TypeError("views takes a tuple of View values; wrap the single view in a tuple")
-        if not self.views:
-            raise ValueError("views must not be empty")
         if self.words_per_page <= 0:
             raise ValueError("words_per_page must be positive")
 
@@ -390,15 +393,38 @@ class SummarySection:
 
 
 @dataclass(frozen=True, slots=True)
+class SectionBound:
+    """What a section dropped when a limit applied.
+
+    Named against the existing `Bound`, which is the *requested* limit on the selection
+    axis. Rust keeps the two in separate modules; Python's namespace is flat, so the
+    distinction has to be in the name.
+
+    ``None`` on a section rather than an absent attribute, so a consumer branches on the
+    value: twenty rows of 192,871 look complete unless the report says otherwise.
+    """
+
+    shown: int
+    total: int
+
+
+@dataclass(frozen=True, slots=True)
 class ExtensionsSection:
     view: View
     extensions: tuple[ExtensionRow, ...]
+    bound: SectionBound | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class FilesSection:
+    """A flat listing: ``files``, or one of its bounded presets.
+
+    ``view`` distinguishes them, because ``largest`` and ``recent`` produce this shape too.
+    """
+
     view: View
     files: tuple[FileRow, ...]
+    bound: SectionBound | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -415,6 +441,7 @@ class MetricsSection:
     words_per_page: int
     total: MetricRow
     rows: tuple[MetricRow, ...]
+    bound: SectionBound | None = None
 
 
 type ReportSection = (
@@ -600,6 +627,14 @@ def report_from_dict(wire: dict[str, Any]) -> Report:
     must not mutate it afterwards. `Report.as_dict()` hands out independent copies.
     """
 
+    def _bound(raw: dict[str, Any]) -> SectionBound | None:
+        value = raw.get("bound")
+        if value is None:
+            return None
+        if not isinstance(value, dict):
+            raise TypeError("section bound must be an object or null")
+        return SectionBound(shown=int(value["shown"]), total=int(value["total"]))
+
     sections: list[ReportSection] = []
     raw_sections = wire["reports"]
     if not isinstance(raw_sections, list):
@@ -617,8 +652,10 @@ def report_from_dict(wire: dict[str, Any]) -> Report:
             rows = raw["extensions"]
             if not isinstance(rows, list):
                 raise TypeError("extensions section must be a list")
-            sections.append(ExtensionsSection(view, tuple(ExtensionRow(**row) for row in rows)))
-        elif view is View.FILES:
+            sections.append(
+                ExtensionsSection(view, tuple(ExtensionRow(**row) for row in rows), _bound(raw))
+            )
+        elif view in (View.FILES, View.LARGEST, View.RECENT):
             rows = raw["files"]
             if not isinstance(rows, list):
                 raise TypeError("files section must be a list")
@@ -635,6 +672,7 @@ def report_from_dict(wire: dict[str, Any]) -> Report:
                         )
                         for row in rows
                     ),
+                    _bound(raw),
                 )
             )
         elif view is View.TREE:
@@ -658,6 +696,7 @@ def report_from_dict(wire: dict[str, Any]) -> Report:
                     words_per_page=int(metrics["words_per_page"]),
                     total=_metric_row(total),
                     rows=tuple(_metric_row(row) for row in rows),
+                    bound=_bound(metrics),
                 )
             )
 
