@@ -1,6 +1,6 @@
 //! Sparse per-file content records and precomputed directory/group rollups.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
 use crate::classify::ContentFamily;
@@ -97,7 +97,7 @@ pub struct ContentIndex {
     profile: Option<AnalysisProfile>,
     provenance: Option<ContentProvenance>,
     files: BTreeMap<PathBuf, FileAnalysis>,
-    rollups: BTreeMap<PathBuf, ContentRollUp>,
+    rollups: HashMap<PathBuf, ContentRollUp>,
 }
 
 impl ContentIndex {
@@ -171,7 +171,14 @@ impl ContentIndex {
         let mut directory = file.parent();
         while let Some(path) = directory {
             if add {
-                self.rollups.entry(path.to_path_buf()).or_default().add(analysis);
+                // `get_mut` before `insert`, not `entry`: `entry` needs an owned key, so
+                // it allocates a `PathBuf` for every ancestor of every file even when
+                // the roll-up is already there, which is the overwhelmingly common case.
+                if let Some(rollup) = self.rollups.get_mut(path) {
+                    rollup.add(analysis);
+                } else {
+                    self.rollups.entry(path.to_path_buf()).or_default().add(analysis);
+                }
             } else if let Some(rollup) = self.rollups.get_mut(path) {
                 rollup.subtract(analysis);
                 if rollup.total.files == 0 {
