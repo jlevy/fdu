@@ -564,7 +564,12 @@ The golden sessions are executable Markdown under `tests/golden/`, run by
 [tryscript](https://github.com/jlevy/tryscript).
 After an intentional CLI output change, run `make golden-update`; it regenerates
 affected blocks and immediately reruns comparison.
-Review the Markdown diff before committing.
+Review the Markdown diff before committing, and check the named patterns first:
+regeneration records the *literal* output of one run, so a block that previously carried
+`[SCAN_PATH]`, `[RFC3339]`, `[ALLOCATED]`, or `[MTIME_NS]` comes back with that run’s
+temporary directory, timestamp, or allocation frozen into it.
+Such a block passes once and fails for everyone afterwards, so restore the patterns by
+hand before committing.
 The scenario design and the small set of permitted dynamic patterns are documented in
 [the completed CLI golden-test plan](docs/project/specs/done/plan-2026-08-09-fdu-cli-golden-tests.md).
 
