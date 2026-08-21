@@ -141,6 +141,11 @@ In practice:
 - Record every experiment, including the ones that failed, with `make perf-record`. The
   negative results are the most reusable part of the ledger: they stop the next person
   re-running a dead end.
+- Republish after recording: `make perf-ledger` then `make perf-report`, committed with
+  the artifact. `make check` fails if either generated file has drifted from the
+  evidence, so an unpublished experiment is caught before merge.
+  The rules a new figure has to respect are in
+  [the performance loop’s publishing section](docs/project/guides/performance-loop.md#publishing-the-evidence).
 - Record the regime, not just the number.
   Platform, host (bare metal or virtualized), and cache state decide what a result is
   evidence about; a constant tuned in one regime is inherited, not proven, in the

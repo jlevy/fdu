@@ -109,6 +109,22 @@ speed. exp-052 and exp-053 are the clearest: instrumentation accepted on interva
 [-3.3%, +3.8%] and [-3.0%, +1.4%], which is a claim that the cost is undetectable, not
 that anything got faster.
 
+## Keeping it current
+
+Adding an experiment is three commands: `make perf-record` writes the artifact,
+`make perf-ledger` regenerates the ledger, `make perf-report` regenerates this page.
+Commit all of it together — `make check` re-derives both generated files and fails if
+the committed copies no longer match the artifacts, so an experiment that was recorded
+but not published is caught before merge.
+
+Stamp a new preparation date only when republishing for readers:
+`make perf-report PREPARED=2026-09-01`. The date lives in the projection rather than
+being read from the clock, so regenerating after an artifact change does not silently
+redate the report.
+
+The rules a new figure has to respect — and the three that were got wrong once each —
+are in [the performance loop](../guides/performance-loop.md#publishing-the-evidence).
+
 ## How it is built
 
 `benchmarks/realtree/timeline.py` reads every artifact through the softschema validator

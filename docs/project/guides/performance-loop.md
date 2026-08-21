@@ -451,6 +451,60 @@ ledger tables. Any loop that proposes something, measures it, and decides can ke
 record the same way; [softschema](https://github.com/jlevy/softschema) documents the
 format, the CLI, and this pattern as a playbook.
 
+## Publishing the evidence
+
+Two documents are generated from the artifacts, and neither is ever edited by hand.
+`make perf-ledger` builds the per-experiment ledger; `make perf-report` builds
+[the charted evidence report](../reports/report-2026-08-20-fdu-performance-evidence.md),
+which is what a reader outside the project is given.
+
+Adding an experiment is therefore three commands and one judgement.
+
+1. `make perf-record ARGS="..."` writes the artifact from the run JSON.
+2. `make perf-ledger` regenerates the ledger.
+3. `make perf-report` regenerates the projection and the page.
+4. Commit all of it together.
+   `make check` runs `perf-report-check`, which re-derives both generated files and
+   fails if the committed copies no longer match the artifacts, so a new experiment that
+   is not published is caught before it is merged rather than after.
+
+The judgement is the preparation date.
+It lives in the projection rather than being read from the clock, so regenerating
+without changing an artifact changes nothing and the drift check does not fail at
+midnight for reasons unrelated to the evidence.
+Stamp a new one when the page is republished for people to read:
+
+```
+make perf-report PREPARED=2026-09-01
+```
+
+Three properties of the page are worth preserving deliberately, because each was got
+wrong once and each fails silently.
+
+- **The paired change and the two medians are different numbers.** `change_pct` is the
+  median of the paired differences; `control_median` and `candidate_median` are marginal
+  medians of each arm.
+  Under host drift they disagree, and in this record they differ by more than two
+  percentage points on 21% of measurements.
+  Anything new that reports a change must take it from the paired figure, and must not
+  invite a reader to divide the absolute values into it.
+- **Absolute values only mean something against their own subject.** A new figure that
+  puts two subjects on one axis has to normalise, and has to keep synthetic subjects
+  visibly apart. `SYNTHETIC_SUBJECTS` in
+  [`timeline.py`](../../../benchmarks/realtree/timeline.py) is a hand-maintained set; a
+  new adversarial tree must be added to it or it will be averaged in with ordinary work.
+- **A rejected candidate is not the product’s state.** Anything plotting “where we are
+  now” must read the kept arm, which is the candidate only for an accepted experiment.
+
+A new figure belongs in `report_html.py` beside the others, drawn as inline SVG from the
+projection.
+It must not fetch anything: the page is a single file that has to render from
+a `file://` URL, offline, on a machine that has never opened it.
+Its stylesheet and script must be ASCII, because the output is emitted with character
+references and neither `<style>` nor `<script>` decodes them; the tests in
+[`test_timeline.py`](../../../benchmarks/realtree/tests/test_timeline.py) enforce this
+along with the standalone document shape.
+
 ## Hypotheses
 
 Kept as a live list.

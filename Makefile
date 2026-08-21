@@ -414,9 +414,12 @@ perf-ledger:
 # reviewer can diff what the page is claiming, not only how it looks.
 PERF_REPORT_DIR := docs/project/reports/performance-evidence
 
+# PREPARED stamps the one date the page prints. Omit it and the existing date is kept,
+# so regenerating after an artifact change does not silently redate the report.
 perf-report:
 	$(PERF_UV) --group dev python -m benchmarks.realtree.timeline \
-		--out $(PERF_REPORT_DIR)/timeline.json
+		--out $(PERF_REPORT_DIR)/timeline.json \
+		$(if $(PREPARED),--prepared $(PREPARED),)
 	$(PERF_UV) --group dev python -m benchmarks.realtree.report_html \
 		--data $(PERF_REPORT_DIR)/timeline.json --out $(PERF_REPORT_DIR)/index.html
 

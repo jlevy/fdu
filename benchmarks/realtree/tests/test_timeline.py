@@ -227,12 +227,31 @@ class RenderTests(unittest.TestCase):
             self.assertIn(required, page)
 
     def test_the_page_fetches_nothing(self) -> None:
-        # A committed document in a repository that pins every other dependency should
-        # not acquire an unpinned one, and the page has to render on a machine that has
-        # never opened it before, offline.
+        # A committed document in a repository that pins every other dependency should not
+        # acquire an unpinned one, and the page has to render offline on a machine that
+        # has never opened it before.
+        #
+        # What is forbidden is a *fetch*, not a URL. An earlier version of this test
+        # rejected every "https://" and so rejected the hyperlink to the project itself,
+        # which loads nothing and is the one thing a reader most wants. So the check names
+        # the constructs that actually retrieve something.
         page = self._page()
-        for scheme in ("http://", "https://", "//fonts.", "src=", "@import"):
-            self.assertNotIn(scheme, page, f"page reaches for {scheme}")
+        fetching = (
+            "<link ",
+            "<script src",
+            "<img",
+            "<iframe",
+            "@import",
+            "url(http",
+            "src=",
+        )
+        for construct in fetching:
+            self.assertNotIn(construct, page, f"page retrieves something via {construct}")
+
+    def test_links_are_allowed_and_the_project_is_one_of_them(self) -> None:
+        # The counterpart to the check above: a reader arriving at this page cold should
+        # be one click from what the thing being measured actually is.
+        self.assertIn('href="https://github.com/jlevy/fdu"', self._page())
 
     def test_the_stylesheet_is_ascii_so_the_entity_pass_cannot_touch_it(self) -> None:
         # Character references are not interpreted inside a `<style>` element, so any

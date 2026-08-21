@@ -830,13 +830,29 @@ figcaption { font-size: 13px; color: var(--muted); margin-top: 10px; max-width: 
 .series-line { fill: none; stroke-width: 1.5; }
 .point-label { font: 10px var(--mono); fill: var(--muted); }
 .gutter { font: 9.5px var(--mono); fill: var(--muted); opacity: 0.75; }
+/* Every mark is inert to the pointer, so the only hover target inside a chart is the row
+   band underneath it. Two bugs came from not doing this: the marks are drawn above the
+   band, so moving the pointer across a dot left the band and re-entered it, which made
+   the tooltip flicker; and a mark that can be hovered also fires its own native `title`
+   bubble, so the reader got two tooltips at once saying different things. */
+.chart circle, .chart polyline, .chart line, .chart text,
+.chart rect:not(.hit) { pointer-events: none; }
+
 /* Invisible, but it is the hover target for the whole row. `pointer-events: all` is
    required: a fill of `none` would otherwise make it untouchable. */
 .hit { fill: transparent; pointer-events: all; }
 .hit:hover { fill: var(--panel); fill-opacity: 0.55; }
 
 #tip {
-  position: fixed; z-index: 50; max-width: 46ch; padding: 8px 10px;
+  /* `max-content` with a cap, rather than leaving it to shrink-to-fit. A fixed-position
+     box with no width is sized against the space left of the viewport edge, so it was
+     measured while still sitting at its previous position and wrapped into a 92px column
+     six hundred pixels tall. Sizing it from its own content makes the measurement the
+     placement code takes independent of where the box happens to be. The cap is in `ch`
+     rather than `vw`: viewport units are zero inside some embedded frames, which
+     collapsed the cap to nothing and wrapped the text to a two-character column. */
+  position: fixed; z-index: 50; padding: 8px 10px;
+  width: max-content; max-width: 52ch;
   background: var(--panel); color: var(--text);
   border: 1px solid var(--border); border-radius: 3px;
   font: 12px/1.5 var(--sans); white-space: pre-line;
@@ -905,13 +921,21 @@ SCRIPT = """
 (function () {
   var tip = document.getElementById('tip');
   var shown = null;
-  function place(event) {
-    var pad = 12;
+  // Anchored to the row, not to the pointer. A tooltip that tracks the mouse is
+  // unreadable while the eye is trying to read it, so it is placed once when a row is
+  // entered and stays there until another row is entered or it is dismissed.
+  function place(host) {
+    var pad = 10;
+    var row = host.getBoundingClientRect();
     var box = tip.getBoundingClientRect();
-    var x = event.clientX + pad;
-    var y = event.clientY + pad;
-    if (x + box.width > window.innerWidth - 8) x = event.clientX - box.width - pad;
-    if (y + box.height > window.innerHeight - 8) y = event.clientY - box.height - pad;
+    // Some embeddings report a zero viewport. Clamping against that put every tooltip in
+    // the top-left corner, so a bound that is not believable is not applied.
+    var vw = window.innerWidth || document.documentElement.clientWidth || 0;
+    var vh = window.innerHeight || document.documentElement.clientHeight || 0;
+    var x = row.left + pad;
+    var y = row.bottom + pad;
+    if (vw > 0 && x + box.width > vw - 8) x = vw - box.width - 8;
+    if (vh > 0 && y + box.height > vh - 8) y = row.top - box.height - pad;
     tip.style.left = Math.max(8, x) + 'px';
     tip.style.top = Math.max(8, y) + 'px';
   }
@@ -937,14 +961,9 @@ SCRIPT = """
       if (index < text.length - 1) tip.appendChild(document.createTextNode('\\n'));
     });
     tip.classList.add('on');
-    place(event);
+    place(host);
   });
-  document.addEventListener('mousemove', function (event) {
-    if (shown) place(event);
-  });
-  document.addEventListener('mouseout', function (event) {
-    if (shown && !event.relatedTarget) hide();
-  });
+  document.addEventListener('mouseleave', hide, true);
   document.addEventListener('keydown', function (event) {
     if (event.key === 'Escape') hide();
   });
@@ -1326,8 +1345,21 @@ def _header(dataset: Mapping[str, Any]) -> str:
     )
     return f"""
 <h1>Making fdu faster, one measured experiment at a time</h1>
-<p class="lede">fdu's performance work was done as an iterative research loop rather than
-as a sequence of hunches. Every experiment &mdash; including the
+<p class="lede"><a href="https://github.com/jlevy/fdu">fdu</a> is a file and directory
+roll-up engine. It walks a tree once and answers questions about it &mdash; folder sizes,
+file types, languages, prose metrics &mdash; from one reusable index, in text or JSON.
+It is written in Rust, with no C in its build.</p>
+<p>On a 901,963-entry tree it builds that reusable index and renders a ten-row tree in a
+3.32-second median: the fastest of every tree and index tool measured &mdash; pdu, dust,
+gdu, ncdu &mdash; while returning more than any of them. Its cheaper summary path ties
+statistically with <span class="mono">dumac</span>, the fastest scalar tool measured,
+which reports only a total. Those comparisons are
+<a href="report-2026-08-13-fdu-live-tool-comparison.md">recorded separately</a> and are
+calibration, not evidence: a third-party tool answers a different question with different
+guarantees, so it never enters an accept decision.</p>
+<p class="lede">This page is about how it got there. That work was done as an iterative
+research loop rather than
+a sequence of hunches. Every experiment &mdash; including the
 {totals['decisions'].get('rejected', 0)} that failed &mdash; was recorded as a validated
 soft-schema artifact, and this page is generated from those {totals['experiments']}
 artifacts rather than written alongside them.</p>
