@@ -37,7 +37,7 @@ use std::sync::{Arc, RwLock};
 
 use crate::classify::ext_bucket;
 use crate::content::{
-    AnalysisApplyOutcome, AnalysisCandidate, AnalysisObservation, AnalysisProfile, ContentIndex,
+    AnalysisApplyOutcome, AnalysisCandidate, AnalysisObservation, AnalysisSet, ContentIndex,
     ContentRollUp,
 };
 use crate::engine_contract::{
@@ -1069,7 +1069,7 @@ impl Index {
 
     /// Capture every regular-file analysis candidate without retaining a lock or entry
     /// borrow across filesystem I/O.
-    pub fn analysis_candidates(&self, profile: AnalysisProfile) -> Vec<AnalysisCandidate> {
+    pub fn analysis_candidates(&self, profile: AnalysisSet) -> Vec<AnalysisCandidate> {
         if !profile.is_enabled() {
             return Vec::new();
         }
@@ -1105,7 +1105,6 @@ impl Index {
         &self,
         request: crate::content::AnalysisRequest,
     ) -> Vec<AnalysisCandidate> {
-        let provenance = crate::content::ContentProvenance::for_request(request);
         self.analysis_candidates(request.profile)
             .into_iter()
             .filter(|candidate| {
@@ -1113,8 +1112,7 @@ impl Index {
                     .and_then(|content| content.file(&candidate.relative_path))
                     .is_none_or(|record| {
                         record.fingerprint != candidate.attrs.fingerprint()
-                            || record.profile != request.profile
-                            || record.provenance != provenance
+                            || !record.provenance.satisfies(record.profile, request.profile)
                     })
             })
             .collect()
@@ -3146,8 +3144,8 @@ mod tests {
     #[test]
     fn content_results_commit_conditionally_and_metadata_changes_invalidate_them() {
         use crate::content::{
-            AnalysisApplyOutcome, AnalysisProfile, AnalysisRequest, ContentProvenance,
-            CoverageReason, FileAnalysis, MetricValues,
+            AnalysisApplyOutcome, AnalysisRequest, AnalysisSet, ContentProvenance, CoverageReason,
+            FileAnalysis, MetricValues,
         };
 
         let mut index = Index::new("/root");
@@ -3157,7 +3155,7 @@ mod tests {
             file_attrs(10, 1),
         )]));
         let candidate = index
-            .analysis_candidates(AnalysisProfile::Basic)
+            .analysis_candidates(AnalysisSet::NONE.with_lines())
             .into_iter()
             .next()
             .expect("file candidate");

@@ -381,7 +381,7 @@ mod tests {
         // the one measured case where a warm read wins (639 ms to 325 ms).
         let analyzed = OpenConfig {
             analysis: crate::content::AnalysisRequest {
-                profile: crate::content::AnalysisProfile::Code,
+                profile: crate::content::AnalysisSet::NONE.with_code(),
                 ..Default::default()
             },
             ..config(CachePolicy::Auto, Some(PathBuf::from("cache.fdu")))
@@ -404,10 +404,10 @@ mod tests {
         assert_eq!(plan_report(&off, &summary_query()).retained_state, RetainedState::Summary);
 
         for profile in [
-            crate::content::AnalysisProfile::Basic,
-            crate::content::AnalysisProfile::Code,
-            crate::content::AnalysisProfile::Documents,
-            crate::content::AnalysisProfile::Full,
+            crate::content::AnalysisSet::NONE.with_lines(),
+            crate::content::AnalysisSet::NONE.with_code(),
+            crate::content::AnalysisSet::NONE.with_words(),
+            crate::content::AnalysisSet::ALL,
         ] {
             let analyzed = OpenConfig {
                 analysis: crate::content::AnalysisRequest { profile, ..Default::default() },

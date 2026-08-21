@@ -324,6 +324,25 @@ id = "executable"
 family = "binary"
 extensions = ["exe", "dll", "dylib", "so", "a", "o", "class", "jar", "wasm"]
 
+# Compiled bytecode and package payloads. These carried real volume into `unknown` on
+# ordinary trees -- 90 MiB of .pyc across 4,752 files on one checkout -- and they are
+# binary, so a text analyzer must not open them either.
+[[kind]]
+id = "bytecode"
+family = "binary"
+extensions = ["pyc", "pyo", "pyd", "beam", "elc"]
+
+[[kind]]
+id = "package-archive"
+family = "binary"
+extensions = ["pack", "idx", "whl", "egg", "nupkg", "crate"]
+
+# A source map is generated JSON: data, not prose, and never hand-written.
+[[kind]]
+id = "source-map"
+family = "data"
+extensions = ["map"]
+
 [[kind]]
 id = "font"
 family = "binary"

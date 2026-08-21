@@ -98,10 +98,23 @@ def main() -> None:
         [entrypoint, "--help"], check=False, capture_output=True, text=True
     )
     assert help_result.returncode == 0, help_result
-    assert "Output and automation:" in help_result.stdout, help_result.stdout
+    # Help is the flag reference. The prose it used to carry now lives behind --docs, so
+    # help states where to find it rather than opening with a page of it.
     assert "--color <WHEN>" in help_result.stdout, help_result.stdout
     assert "--skill" in help_result.stdout, help_result.stdout
+    assert "--docs" in help_result.stdout, help_result.stdout
+    assert "Run `fdu --docs`" in help_result.stdout, help_result.stdout
     assert help_result.stderr == "", help_result.stderr
+
+    # The guide answers without a PATH and without scanning, from the installed wheel's
+    # own entry point.
+    docs_result = subprocess.run(
+        [entrypoint, "--docs"], check=False, capture_output=True, text=True
+    )
+    assert docs_result.returncode == 0, docs_result
+    for section in ("THE LADDER", "SIX AXES", "CONTENT ANALYSIS", "OUTPUT AND AUTOMATION"):
+        assert section in docs_result.stdout, (section, docs_result.stdout[:400])
+    assert docs_result.stderr == "", docs_result.stderr
 
     cli_scan = subprocess.run(
         [
@@ -287,9 +300,9 @@ def main() -> None:
     assert languages["share_metric"] == "allocated_bytes", languages
     assert [(row["id"], row["files"]) for row in languages["rows"]] == [("rust", 2)], languages
 
-    analyzed = fdu_py.scan(str(query_root), analyze="basic")
+    analyzed = fdu_py.scan(str(query_root), analyze="lines")
     documents = analyzed.report(views=["documents"], words_per_page=250)
-    assert documents["analysis"]["profile"] == "basic", documents
+    assert documents["analysis"]["analyze"] == ["lines"], documents
     document_metrics = documents["reports"][0]["metrics"]
     markdown = document_metrics["rows"][0]
     assert markdown["physical_lines"] == 1, markdown
@@ -344,11 +357,11 @@ def main() -> None:
     # Expected coverage exclusions remain queryable without becoming operational errors.
     partial_root = pathlib.Path(tempfile.mkdtemp())
     (partial_root / "invalid.txt").write_bytes(b"valid prefix\xff")
-    partial = fdu_py.open(str(partial_root), cache="auto", analyze="basic")
+    partial = fdu_py.open(str(partial_root), cache="auto", analyze="lines")
     assert partial.complete is True, partial.errors
     assert partial.errors == [], partial.errors
 
-    cached_partial = fdu_py.open(str(partial_root), cache="only", analyze="basic")
+    cached_partial = fdu_py.open(str(partial_root), cache="only", analyze="lines")
     assert cached_partial.complete is True, cached_partial.errors
     assert cached_partial.freshness == "stale", cached_partial.freshness
     assert cached_partial.errors == [], cached_partial.errors

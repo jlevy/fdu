@@ -12,7 +12,7 @@ use crate::classify::{ContentFamily, classify_path_with_prefix};
 use super::{
     AnalysisApplyOutcome, AnalysisCandidate, AnalysisObservation, AnalysisRequest,
     BasicAccumulator, CodeAccumulator, ContentProvenance, CoverageReason, FileAnalysis,
-    LogicalWordStats, MetricValues, TextAdmission, content_markdown_metrics::analyze_markdown,
+    MetricValues, TextAdmission, content_markdown_metrics::analyze_markdown,
 };
 
 const READ_CHUNK_BYTES: usize = 64 * 1024;
@@ -178,8 +178,7 @@ fn analyze_open_file(
         );
     }
 
-    let mut accumulator =
-        BasicAccumulator::with_logical_metrics(request.profile.includes_documents());
+    let mut accumulator = BasicAccumulator::with_logical_metrics(request.profile.includes_words());
     let mut code_accumulator = request
         .profile
         .includes_code()
@@ -188,7 +187,7 @@ fn analyze_open_file(
     let mut deferred_code = (request.profile.includes_code()
         && candidate.classification.family == ContentFamily::Unknown)
         .then(Vec::new);
-    let mut markdown_source = (request.profile.includes_documents()
+    let mut markdown_source = (request.profile.includes_words()
         && (candidate.classification.file_type.as_str() == "markdown"
             || candidate.classification.family == ContentFamily::Unknown))
         .then(Vec::new);
@@ -268,10 +267,17 @@ fn analyze_open_file(
     }
     let analysis = match accumulator.finish() {
         TextAdmission::Accepted(mut metrics) => {
+            // Word volume is meaningful for any text, and the accumulator has already
+            // counted it during the streaming read — zeroing it outside prose and markup
+            // discarded finished work and, with it, the answer to "how much text is in
+            // this tree", which is the cheap proxy for context-window sizing that agent
+            // consumers ask for.
+            //
+            // Paragraphs stay a prose concept. A blank-line-separated block of code is
+            // not a paragraph, and counting it as one would make the prose rows lie
+            // rather than merely say less.
             if !matches!(classification.family, ContentFamily::Prose | ContentFamily::Markup) {
-                metrics.raw_words = 0;
                 metrics.paragraphs = 0;
-                metrics.logical_word_stats = LogicalWordStats::default();
             }
             if request.profile.includes_code() && classification.family == ContentFamily::Code {
                 if code_accumulator.is_none() {
@@ -302,9 +308,7 @@ fn analyze_open_file(
                 metrics.comment_lines = code_metrics.comment_lines;
                 metrics.code_blank_lines = code_metrics.code_blank_lines;
             }
-            if request.profile.includes_documents()
-                && classification.file_type.as_str() == "markdown"
-            {
+            if request.profile.includes_words() && classification.file_type.as_str() == "markdown" {
                 if let Some(source) = markdown_source {
                     let source = std::str::from_utf8(&source)
                         .expect("basic admission already established valid UTF-8");
@@ -428,6 +432,32 @@ mod tests {
         );
     }
 
+    /// Word volume is counted during the streaming read for every admitted text file, so
+    /// it is reported wherever it was measured. Paragraphs are not: a blank-line-separated
+    /// block of code is not a paragraph, and counting it as one would make prose rows lie.
+    #[test]
+    fn code_carries_word_volume_but_never_paragraphs() {
+        let root = tempfile::tempdir().expect("tempdir");
+        std::fs::write(root.path().join("main.rs"), b"fn main() {\n\n    let x = 1;\n}\n")
+            .expect("write");
+        std::fs::write(root.path().join("notes.md"), b"one two\n\nthree four\n").expect("write");
+        let (mut index, _) =
+            crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
+        analyze_index(
+            &mut index,
+            AnalysisRequest { profile: super::super::AnalysisSet::ALL, workers: 2 },
+        );
+
+        let content = index.content().expect("content");
+        let code = content.file(std::path::Path::new("main.rs")).expect("code record");
+        assert!(code.metrics.raw_words > 0, "code keeps the words already counted for it");
+        assert_eq!(code.metrics.paragraphs, 0, "code has no paragraphs");
+
+        let prose = content.file(std::path::Path::new("notes.md")).expect("prose record");
+        assert!(prose.metrics.raw_words > 0);
+        assert!(prose.metrics.paragraphs > 0, "prose still counts paragraphs");
+    }
+
     #[test]
     fn pool_analyzes_text_and_skips_known_binary_files() {
         let root = tempfile::tempdir().expect("tempdir");
@@ -439,7 +469,7 @@ mod tests {
 
         let report = analyze_index(
             &mut index,
-            AnalysisRequest { profile: super::super::AnalysisProfile::Basic, workers: 2 },
+            AnalysisRequest { profile: super::super::AnalysisSet::NONE.with_lines(), workers: 2 },
         );
 
         assert_eq!(report.candidates, 2);
@@ -466,7 +496,7 @@ mod tests {
         crate::counters::reset();
         let report = analyze_index(
             &mut index,
-            AnalysisRequest { profile: super::super::AnalysisProfile::Basic, workers: 2 },
+            AnalysisRequest { profile: super::super::AnalysisSet::NONE.with_lines(), workers: 2 },
         );
         crate::counters::flush_thread();
         let counts = crate::counters::snapshot();
@@ -491,7 +521,7 @@ mod tests {
 
         let report = analyze_index(
             &mut index,
-            AnalysisRequest { profile: super::super::AnalysisProfile::Code, workers: 1 },
+            AnalysisRequest { profile: super::super::AnalysisSet::NONE.with_code(), workers: 1 },
         );
 
         assert_eq!(report.analyzed, 1);
@@ -516,7 +546,7 @@ mod tests {
         let report = analyze_index(
             &mut index,
             AnalysisRequest {
-                profile: super::super::AnalysisProfile::Basic,
+                profile: super::super::AnalysisSet::NONE.with_lines(),
                 ..AnalysisRequest::default()
             },
         );
@@ -550,7 +580,7 @@ mod tests {
         let report = analyze_index(
             &mut index,
             AnalysisRequest {
-                profile: super::super::AnalysisProfile::Code,
+                profile: super::super::AnalysisSet::NONE.with_code(),
                 ..AnalysisRequest::default()
             },
         );
@@ -617,7 +647,7 @@ mod tests {
         let report = analyze_index(
             &mut index,
             AnalysisRequest {
-                profile: super::super::AnalysisProfile::Code,
+                profile: super::super::AnalysisSet::NONE.with_code(),
                 ..AnalysisRequest::default()
             },
         );
@@ -676,7 +706,7 @@ mod tests {
         let report = analyze_index(
             &mut index,
             AnalysisRequest {
-                profile: super::super::AnalysisProfile::Documents,
+                profile: super::super::AnalysisSet::NONE.with_words(),
                 ..AnalysisRequest::default()
             },
         );
@@ -718,7 +748,7 @@ mod tests {
         let (mut index, _) =
             crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
         let request = AnalysisRequest {
-            profile: super::super::AnalysisProfile::Basic,
+            profile: super::super::AnalysisSet::NONE.with_lines(),
             ..AnalysisRequest::default()
         };
 
@@ -739,7 +769,7 @@ mod tests {
         analyze_index(
             &mut empty_index,
             AnalysisRequest {
-                profile: super::super::AnalysisProfile::Basic,
+                profile: super::super::AnalysisSet::NONE.with_lines(),
                 ..AnalysisRequest::default()
             },
         );
@@ -759,8 +789,8 @@ mod tests {
         );
         let json =
             crate::report_format::render(&summary, crate::report_format::Format::Json, false);
-        assert!(json.contains("\"schema\": \"fdu.report/2\""), "{json}");
-        assert!(json.contains("\"profile\": \"basic\""), "{json}");
+        assert!(json.contains("\"schema\": \"fdu.report/3\""), "{json}");
+        assert!(json.contains("\"analyze\": [\"lines\"]"), "{json}");
 
         let unsupported = tempfile::tempdir().expect("unsupported tempdir");
         fs::write(unsupported.path().join("Main.hs"), "main = pure ()\n").expect("write");
@@ -769,7 +799,7 @@ mod tests {
         analyze_index(
             &mut unsupported_index,
             AnalysisRequest {
-                profile: super::super::AnalysisProfile::Code,
+                profile: super::super::AnalysisSet::NONE.with_code(),
                 ..AnalysisRequest::default()
             },
         );

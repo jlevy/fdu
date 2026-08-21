@@ -20,9 +20,9 @@ from ._api import (
     _main as _main,
 )
 from ._models import (
+    Analysis,
     AnalysisMetadata,
     AnalysisOptions,
-    AnalysisProfile,
     Analyzer,
     Bound,
     CachePolicy,
@@ -68,9 +68,9 @@ from ._models import (
 from ._native import __version__
 
 __all__ = [
+    "Analysis",
     "AnalysisMetadata",
     "AnalysisOptions",
-    "AnalysisProfile",
     "Analyzer",
     "Bound",
     "CachePolicy",

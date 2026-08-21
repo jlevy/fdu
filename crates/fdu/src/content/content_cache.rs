@@ -12,7 +12,7 @@ use crate::classify::{
 use crate::{Error, Fingerprint, Index, Result};
 
 use super::{
-    AnalysisApplyOutcome, AnalysisObservation, AnalysisProfile, AnalysisRequest, AnalyzerId,
+    AnalysisApplyOutcome, AnalysisObservation, AnalysisRequest, AnalysisSet, AnalyzerId,
     AnalyzerVersion, ContentProvenance, CoverageReason, FileAnalysis, LogicalWordStats,
     MetricValues,
 };
@@ -56,14 +56,22 @@ pub fn save_content_cache(index: &Index, request: AnalysisRequest, path: &Path) 
     if !request.profile.is_enabled() {
         return Ok(());
     }
-    let provenance = ContentProvenance::for_request(request);
-    let records = index
-        .content()
-        .into_iter()
-        .flat_map(super::ContentIndex::records)
+    // Persist what the derived tier actually holds, not what this request asked for.
+    // A narrow request served from a wider cached set leaves the wider records in place,
+    // and relabelling them on the way out would throw away analyzers the records still
+    // carry — turning one narrow query into a permanent downgrade of the sidecar.
+    let Some(content) = index.content() else {
+        return Ok(());
+    };
+    let (Some(stored), Some(provenance)) = (content.profile(), content.provenance().cloned())
+    else {
+        return Ok(());
+    };
+    let records = content
+        .records()
         .filter(|(_, record)| {
             record.provenance == provenance
-                && record.profile == request.profile
+                && record.profile == stored
                 && !matches!(
                     record.coverage,
                     CoverageReason::IoError | CoverageReason::ChangedDuringRead
@@ -80,7 +88,7 @@ pub fn save_content_cache(index: &Index, request: AnalysisRequest, path: &Path) 
     buffer.extend_from_slice(MAGIC);
     buffer.extend_from_slice(&FORMAT_VERSION.to_le_bytes());
     buffer.push(crate::snapshot::path_encoding());
-    put_profile(&mut buffer, request.profile);
+    put_profile(&mut buffer, stored);
     buffer.extend_from_slice(&provenance.type_rules_fingerprint.to_le_bytes());
     buffer.extend_from_slice(&provenance.options_fingerprint.0.to_le_bytes());
     put_analyzers(&mut buffer, &provenance.analyzers)?;
@@ -207,7 +215,7 @@ fn parse(
         options_fingerprint: super::OptionsFingerprint(reader.u64()?),
         analyzers: read_analyzers(&mut reader)?,
     };
-    if profile != request.profile || provenance != ContentProvenance::for_request(request) {
+    if !provenance.satisfies(profile, request.profile) {
         return None;
     }
     if reader.os_string()?.as_os_str() != expected_root.as_os_str() {
@@ -377,25 +385,12 @@ fn put_bounded_bytes(buffer: &mut Vec<u8>, bytes: &[u8], max: usize) -> Result<(
     Ok(())
 }
 
-fn put_profile(buffer: &mut Vec<u8>, profile: AnalysisProfile) {
-    buffer.push(match profile {
-        AnalysisProfile::Disabled => 0,
-        AnalysisProfile::Basic => 1,
-        AnalysisProfile::Code => 2,
-        AnalysisProfile::Documents => 3,
-        AnalysisProfile::Full => 4,
-    });
+fn put_profile(buffer: &mut Vec<u8>, profile: AnalysisSet) {
+    buffer.push(profile.bits());
 }
 
-fn read_profile(code: u8) -> Option<AnalysisProfile> {
-    match code {
-        0 => Some(AnalysisProfile::Disabled),
-        1 => Some(AnalysisProfile::Basic),
-        2 => Some(AnalysisProfile::Code),
-        3 => Some(AnalysisProfile::Documents),
-        4 => Some(AnalysisProfile::Full),
-        _ => None,
-    }
+fn read_profile(code: u8) -> Option<AnalysisSet> {
+    AnalysisSet::from_bits(code)
 }
 
 fn family_code(value: ContentFamily) -> u8 {
@@ -600,33 +595,95 @@ mod tests {
         fs::write(root.path().join("notes.md"), "<!-- @generated -->\none two\n").expect("write");
         let (mut index, _) =
             crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
-        let request =
-            AnalysisRequest { profile: AnalysisProfile::Basic, ..AnalysisRequest::default() };
+        let request = AnalysisRequest {
+            profile: AnalysisSet::NONE.with_lines(),
+            ..AnalysisRequest::default()
+        };
         super::super::analyze_index(&mut index, request);
         (root, index, request)
     }
 
+    /// A prose file and a code file, so a `code`-only request is genuinely narrower than
+    /// `all` rather than accidentally equivalent on this fixture.
+    ///
+    /// The sidecar lives outside the scanned tree: writing it inside would make the cache
+    /// file itself an unanalyzed candidate and quietly defeat any "opened no file" claim.
+    fn containment_fixture(profile: AnalysisSet) -> (tempfile::TempDir, tempfile::TempDir, Index) {
+        let root = tempfile::tempdir().expect("root");
+        let cache_dir = tempfile::tempdir().expect("cache dir");
+        fs::write(root.path().join("notes.md"), "<!-- @generated -->\none two\n").expect("write");
+        fs::write(root.path().join("main.rs"), "fn main() {\n    // hi\n}\n").expect("write");
+        let (mut index, _) =
+            crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
+        super::super::analyze_index(&mut index, request_for(profile));
+        (root, cache_dir, index)
+    }
+
+    fn request_for(profile: AnalysisSet) -> AnalysisRequest {
+        AnalysisRequest { profile, ..AnalysisRequest::default() }
+    }
+
+    /// The regression this replaces: reuse tested `record.profile == request.profile`, so
+    /// a sidecar holding every analyzer forced a complete re-read for a narrower request
+    /// whose every metric it already carried.
     #[test]
-    fn round_trip_restores_matching_records() {
-        let (root, index, request) = analyzed_index();
-        let cache = root.path().join("content.cache");
-        let expected_words =
-            index.content_rollup(Path::new("")).expect("rollup").total.metrics.raw_words;
-        save_content_cache(&index, request, &cache).expect("save");
+    fn a_wider_sidecar_answers_a_narrower_request_without_reading_anything() {
+        let (root, cache_dir, index) = containment_fixture(AnalysisSet::ALL);
+        let cache = cache_dir.path().join("content.cache");
+        save_content_cache(&index, request_for(AnalysisSet::ALL), &cache).expect("save");
+
+        let narrower = request_for(AnalysisSet::NONE.with_code());
         let (mut restored, _) =
             crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
+        let loaded = load_content_cache(&mut restored, narrower, &cache).expect("load");
 
-        let loaded = load_content_cache(&mut restored, request, &cache).expect("load");
-        assert_eq!(
-            loaded,
-            ContentCacheLoad { usable: true, hits: 1, bytes: 28, coverage_exclusions: 0, stale: 0 }
+        assert!(loaded.usable, "a superset sidecar must be usable: {loaded:?}");
+        assert_eq!(loaded.hits, 2, "both records restore: {loaded:?}");
+        assert!(
+            restored.pending_analysis_candidates(narrower).is_empty(),
+            "a satisfied request must open no file"
         );
+    }
+
+    /// Containment has a direction. A narrower sidecar is missing metrics the wider
+    /// request needs, so it must miss rather than under-report them as absent.
+    #[test]
+    fn a_narrower_sidecar_does_not_answer_a_wider_request() {
+        let (root, cache_dir, index) = containment_fixture(AnalysisSet::NONE.with_code());
+        let cache = cache_dir.path().join("content.cache");
+        save_content_cache(&index, request_for(AnalysisSet::NONE.with_code()), &cache)
+            .expect("save");
+
+        let (mut restored, _) =
+            crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
         assert_eq!(
-            restored.content_rollup(Path::new("")).expect("rollup").total.metrics.raw_words,
-            expected_words
+            load_content_cache(&mut restored, request_for(AnalysisSet::ALL), &cache).expect("load"),
+            ContentCacheLoad::default(),
+            "a subset sidecar must be a clean miss"
         );
-        let record = restored.content().expect("content").file(Path::new("notes.md"));
-        assert!(record.expect("restored record").classification.flags.generated);
+    }
+
+    /// Serving a narrow request from a wide tier must not relabel the tier on the way
+    /// out: one `--analyze code` run would otherwise permanently downgrade a sidecar that
+    /// still holds every analyzer.
+    #[test]
+    fn serving_a_narrow_request_preserves_the_wider_stored_set() {
+        let (root, cache_dir, index) = containment_fixture(AnalysisSet::ALL);
+        let cache = cache_dir.path().join("content.cache");
+        save_content_cache(&index, request_for(AnalysisSet::ALL), &cache).expect("save");
+
+        let narrower = request_for(AnalysisSet::NONE.with_code());
+        let (mut restored, _) =
+            crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
+        load_content_cache(&mut restored, narrower, &cache).expect("load");
+        save_content_cache(&restored, narrower, &cache).expect("resave");
+
+        let (mut reloaded, _) =
+            crate::scan::scan_into_index(root.path(), &ScanConfig::default()).expect("scan");
+        let wide =
+            load_content_cache(&mut reloaded, request_for(AnalysisSet::ALL), &cache).expect("load");
+        assert!(wide.usable, "the wider set survived a narrow round trip: {wide:?}");
+        assert_eq!(wide.hits, 2, "and still carries every record: {wide:?}");
     }
 
     #[test]

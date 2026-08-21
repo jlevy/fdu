@@ -4,16 +4,19 @@
 
 **Author:** fdu project
 
-**Status:** Implementation complete; PR #5 merged, follow-ups tracked
+**Status:** Implemented and revised.
+PR #5 shipped the five-axis surface; this revision adds the content axis that arrived
+after it and fixes the display gap that omission created.
+Phase 5 is implemented on `claude/fdu-content-axis`.
 
 ## Overview
 
 Reshape the fdu command line and the library query layer around a small set of
 orthogonal, reusable concepts instead of accumulating per-feature flags.
-One invocation composes five axes — scan scope, selection, views, format, and mode —
-over the same engine, so one command grammar covers what du, dust, dut, diskus, fd, and
-find each do separately, plus a `tail -f`-style change feed and timestamp-watermark
-queries reliable enough to drive backup and sync tooling.
+One invocation composes six axes — scan scope, content, selection, views, format, and
+mode — over the same engine, so one command grammar covers what du, dust, dut, diskus,
+fd, find, and tokei each do separately, plus a `tail -f`-style change feed and
+timestamp-watermark queries reliable enough to drive backup and sync tooling.
 The same concepts appear as typed values in the Rust API and the Python API, so the CLI
 is a thin composition of the library rather than a second implementation.
 
@@ -36,10 +39,16 @@ The concrete test for “no more complexity”: before adding a view or flag, sh
 be expressed as a composition of the existing axes — `largest` and `recent` views were
 removed from this design by exactly that test.
 
-1. **Five axes, no one-off flags.** Every option belongs to exactly one axis: scan
-   scope, selection, view, format, or mode.
+1. **Six axes, no one-off flags.** Every option belongs to exactly one axis: scan scope,
+   content, selection, view, format, or mode.
    A proposed flag that does not fit an axis is a design smell; either it generalizes
    into an axis value or it does not ship.
+   The content axis was added by this revision: `--analyze` shipped after the original
+   five and was never given a slot, which is the direct cause of the display gap fixed
+   below. An axis whose values are a closed vocabulary is a comma-delimited list, never a
+   hand-enumerated enum of the combinations — enumerating a power set is the same smell
+   as a one-off flag, one level down.
+
 2. **Intuitive by default, everything by composition.** `fdu <path>` with no flags gives
    a useful, fast report with sensible, obvious defaults.
    The path is mandatory for reports; bare `fdu` prints help and performs no scan.
@@ -47,12 +56,15 @@ removed from this design by exactly that test.
    composable flags, so a path argument can never be shadowed.
    Help documents each axis, its options, and its defaults plainly enough that the
    design is legible from `--help` alone.
+
 3. **One scan, many views.** Views are projections over the in-memory index.
    Requesting more views in one invocation never adds filesystem work, and two reports
    over the same tree come from the same consistent index state.
+
 4. **Views are readers.** The Delta contract stands: `scan` and `watch` produce
    observations, the index consumes them, and views only read the index.
    No view or format may add a mutation path or reach into producer state.
+
 5. **Speed may be traded for certainty, never for honesty.** Every value carries its
    provenance — where it came from, when it was observed, whether it is final — so a
    consumer rendering a thousand rows knows which ones to trust, not merely that the run
@@ -64,6 +76,7 @@ removed from this design by exactly that test.
    is how it is implemented.
    The explicit policies (`refresh`, `read-only`, `only`, `off`) remain for callers who
    want a particular path rather than the cheapest one.
+
 6. **Benefit from the OS; never depend on it.** Three tiers, each fast in its own right:
    a portable walk, a cache for the cases a cache can help, and platform APIs (bulk
    stat, `statx`, `io_uring`, fanotify, the FSEvents journal) probed at runtime as
@@ -74,6 +87,7 @@ removed from this design by exactly that test.
    changed, so verification goes only there.
    That is what makes near-real-time views of huge trees possible, and why such an API
    may narrow what is checked but never substitute for checking it.
+
 7. **Same concepts at every level; the CLI invents nothing.** `Query`, `View`, `Report`,
    and `CachePolicy` are typed values in the Rust library; the CLI parses flags into
    them and renders `Report`s; Python exposes the same types.
@@ -81,26 +95,40 @@ removed from this design by exactly that test.
    library, where Rust and Python callers get it too.
    A capability that exists in one surface and not the others is unfinished, and
    complexity that exists only at the CLI layer is misplaced.
+
 8. **Subsume the neighbors.** The compositions below must each be expressible in one
    invocation; the mapping table in the Design section is a living checklist.
    Where a neighbor’s behavior is out of scope (e.g. ncdu’s TUI), that is recorded as a
    non-goal, not left ambiguous.
+
 9. **Formats are serializations, not features.** Every view renders in every format
    (`text`, `json`, `jsonl`, `yaml`). Machine formats are schema-versioned; a schema
    change without a version bump fails a golden test.
+
 10. **Watch is the same query, repeated.** A watch run evaluates the same selection and
     views as a one-shot run, re-applied as deltas arrive.
     There is no separate watch grammar to learn, and overflow or invalidation is
     reported explicitly in the stream, never dropped.
+
 11. **Utilities are explicit flags, never side effects.** Cache inspection and clearing
     are lifecycle flags on the same grammar (`--cache-status`, `--cache-clear`) that run
     without scanning and without a report; a report run never deletes anything, and
     utility output composes with the format axis like any other.
+
 12. **No unbenchmarked performance claims.** Each new output surface becomes a named
     benchmark job per the
     [performance evidence research](../../research/research-2026-08-09-end-to-end-performance-evidence.md),
     and flags are part of benchmark identity: renaming one means updating the job
     manifests in the same change.
+
+13. **Cost flows one way; display follows cost.** `--analyze` authorizes filesystem
+    reads, so a view may never enable an analyzer: choosing how to display a result must
+    never silently turn a metadata walk into one that opens every eligible file.
+    The reverse direction carries no such hazard — it re-projects state already paid for
+    — so `--analyze` selects the *default* view, and an explicit `--view` always wins.
+    The invariant this protects is that **a run displays what it paid for**: any request
+    that reads content and renders none of it is a defect, and any view omitted for lack
+    of analysis is named in the report rather than silently dropped.
 
 These principles graduate into
 [the standalone design doc](../../architecture/fdu-design-principles.md) once
@@ -111,11 +139,13 @@ implementation has validated them (Phase 4), so they outlive this spec.
 - An interactive TUI (ncdu/gdu style).
   The composable one-shot and streaming surfaces come first; a TUI would be a consumer
   of the same `Query`/`Report` layer later.
-- Content-tier metrics (word counts, code metrics) and the type-rule dialect; those
-  remain owned by `fdu-v4lc` and the post-Phase 1 roadmap.
-  The `types` view here rolls up by derived extension exactly as the index already does.
-  This plan does fix the *shape* of the derived-data cache layer (see Cache Policy) so
-  content metrics can arrive without a format break, but ships no analyzer.
+- ~~Content-tier metrics (word counts, code metrics) and the type-rule dialect.~~
+  **Superseded by this revision.** The original plan deferred these to `fdu-v4lc` and
+  shipped no analyzer, and the derived-data cache layer was shaped so they could arrive
+  without a format break — which worked.
+  They then arrived as `--analyze` without an axis to belong to, so nothing connected
+  them to the view axis and no default view displayed them.
+  The content axis above adopts them; the Views section below closes the gap.
 - Regex name matching.
   Selection uses globs; fd-style regex can layer on later without changing the axis.
 - Multiple root paths in one invocation.
@@ -157,15 +187,22 @@ flowmark’s *surface* patterns, not its storage.
 
 ## Design
 
-### Concept Model: Five Axes
+### Concept Model: Six Axes
 
 | Axis | Question it answers | Options | Engine binding |
 | --- | --- | --- | --- |
 | **Scope** | What does the engine observe and retain? | `PATH`, `--scan-depth <N>`, `--one-filesystem` | `ScanConfig` → `ScanScope`, the cache identity |
 | **Selection** | Which retained entries does this query consider, and how are results shaped? | `--include <GLOB>`, `--exclude <GLOB>`, `--min-size <SIZE>`, `--modified-since <WHEN>`, `--modified-before <WHEN>`, `--kind <LIST>` of `file\|dir\|symlink`, `--depth <N>`, `-n/--limit <N>`, `--sort <size\|count\|mtime\|name>`, `--reverse`, `--size <allocated\|apparent>` | View-time filter over the index; never part of the cache key |
-| **View** | Which roll-ups or listings are reported? | `--view <LIST>` — comma-delimited from `tree`, `types`, `files`, `summary`; default `tree` | Pure projections over `Index` |
+| **Content** | Which file bodies may be read, and which analyzers run over them? | `--analyze <LIST>` — comma-delimited from `lines`, `code`, `words`, plus the totals `none` and `all`; default `none` | `AnalysisSet` → the analyzer registry; part of the content sidecar identity |
+| **View** | Which roll-ups or listings are reported? | `--view <LIST>` — comma-delimited from `tree`, `types`, `extensions`, `families`, `languages`, `documents`, `files`, `summary`, plus the total `all`; default derived from `--analyze` | Pure projections over `Index` |
 | **Format** | How is the report serialized? | `--format <text\|json\|jsonl\|yaml>`, `--color <auto\|always\|never>` | Serializers over `Report`; schema-versioned |
 | **Mode** | One answer or a live feed, and how is the cache used? | one-shot (default) vs `--watch [--interval <DUR>]`; `--cache <auto\|refresh\|read-only\|only\|off>`; `--allow-partial` | `open()` path selection; `watch::Watcher` driving the same query |
+
+Content versus view is the second load-bearing distinction, and it is the one this
+revision adds: content decides what is *read* (the only axis that can make a run
+expensive in I/O), while view decides what is *printed* from whatever was retained.
+Every view is available at every content setting; a view that has no metadata-only
+projection says so rather than reading on its own behalf (Principle 13).
 
 Scope versus selection is the load-bearing distinction, and it is why filters are cheap:
 scope determines what is scanned and cached (one cache serves every query), while
@@ -181,7 +218,7 @@ updated in the same change (Principle 12).
 fdu [OPTIONS] <PATH>                                      # reports name their root
 fdu [PATH] --cache-status[=<SCOPE>] [--cache-clear[=<SCOPE>]] # lifecycle; never scan
 fdu [PATH] --cache-clear[=<SCOPE>]                        # lifecycle; never scan
-fdu --skill / --help / --version                          # discovery surfaces
+fdu --docs / --skill / --help / --version                 # discovery surfaces
 ```
 
 Representative compositions, which double as the subsumption checklist (Principle 8):
@@ -195,6 +232,9 @@ Representative compositions, which double as the subsumption checklist (Principl
 | biggest files (`dust -f`, `find -size +10M`) | `fdu --view files --min-size 10M --sort size -n 100 PATH` | not a special view — files + sort + limit |
 | recently modified (`find -mmin -60`) | `fdu --view files --modified-since 1h --sort mtime PATH` | humane durations, not day counts |
 | `du` by type | `fdu --view types PATH` | current `--by-type` |
+| `tokei` / `scc` | `fdu --analyze code --view languages PATH` | SLOC per language, one walk |
+| `wc -w` over a doc tree | `fdu --analyze words --view documents PATH` | normalized and reader-visible words |
+| everything fdu can measure | `fdu --analyze all --view all PATH` | one walk, every analyzer, every projection |
 | two reports, one scan | `fdu --view types,tree PATH` | one index, both roll-ups |
 | `tail -f` for a tree | `fdu --watch --view files --format jsonl PATH` | one record per applied change |
 | live dashboard poll | `fdu --watch --view tree,types --interval 2s PATH` | aggregate views re-render when dirty |
@@ -206,6 +246,16 @@ Grammar conventions, applied uniformly so every flag behaves the way its neighbo
 
 - **Reports require an explicit root.** Bare `fdu` is identical to `fdu --help` and
   returns without filesystem work; `fdu .` is the deliberate current-directory form.
+- **Discovery surfaces answer without a root and never scan.** `--help` is the flag
+  reference; `--docs` is the prose guide — the report ladder, both axes, and the output
+  contracts; `--skill` is the same surface written for an agent.
+  Prose that names a flag, view, analyzer, or schema string is tested against the
+  binary, because a guide advertising something that does not exist spends the reader’s
+  trust before they find out: the stale `fdu.report/2` in help survived a vocabulary
+  sweep and a full gate, and only a test comparing prose to the constants caught it.
+  This is the reason help carries one pointer line rather than the guide itself — the
+  guide used to live in `before_help`, which printed a page of prose above the command’s
+  own description.
 - **Closed identifier vocabularies are comma-delimited lists** (`--view`, `--kind`):
   split on commas, trim, reject empty tokens, and name the valid values in the error for
   an unknown token (flowmark’s list pattern).
@@ -239,15 +289,24 @@ Further notes:
 ### Views
 
 Each view is a pure function of the index and a `Selection`, returning one section of
-the `Report`. There are exactly four, one per shape of answer, and each is a different
-grouping of the same underlying entries:
+the `Report`. Each is a different grouping of the same underlying entries, and the
+grouping is the only thing that distinguishes them:
 
-| View | Grouping | Content | Default sort | Subsumes |
+| View | Grouping | Uses `--analyze` | Default sort | Subsumes |
 | --- | --- | --- | --- | --- |
-| `tree` | by directory hierarchy | roll-ups per directory (files, dirs, bytes, allocated, newest mtime), bounded by `--depth`/`--limit` | size desc | du, dust, dut |
-| `types` | by derived extension | flat roll-up per type | size desc | current `--by-type` |
-| `files` | none (individual entries) | flat listing of matching entries | name asc | fd, find |
-| `summary` | everything in one group | one aggregate row: files, dirs, bytes, allocated, newest mtime | — | du -s, diskus |
+| `tree` | by directory hierarchy | no | size desc | du, dust, dut |
+| `summary` | everything in one group | no | — | du -s, diskus |
+| `files` | none (individual entries) | no | name asc | fd, find |
+| `extensions` | by raw filename extension | no | size desc | du by extension |
+| `types` | by detected file type | yes | size desc | current `--by-type` |
+| `families` | by content family (`code`, `prose`, `markup`, `data`, `binary`, `unknown`) | yes | size desc | — |
+| `languages` | by detected language | yes | size desc | tokei, scc |
+| `documents` | prose and markup rows | **requires** | size desc | wc |
+
+The `Uses --analyze` column is a contract, not a description: it is what makes Principle
+13 checkable. Four views ignore content analysis entirely, so requesting analysis while
+selecting only those views is a request that pays for I/O it cannot display, and the run
+says so (see *Displaying what was paid for* below).
 
 “Largest files” and “recently modified” are deliberately not views: they are
 `files --sort size` and `files --sort mtime --modified-since …`, because every selection
@@ -272,12 +331,115 @@ instead of silently switching metrics.
 *Performance-only implementation amendment.* A one-shot cache-off request whose complete
 view set is exactly one unfiltered `summary` may derive an internal exact-summary plan
 instead of retaining an index.
-This changes neither the five axes nor the `fdu.report/1` bytes: there is no fast-mode
+This changes neither the axis model nor the `fdu.report/1` bytes: there is no fast-mode
 flag, output depth does not prune scanning, and cache participation, filters, multiple
 views, watch mode, and every unproved composition fall closed to the full index.
 The natural text and all three machine-format summary goldens exercise the same command;
 the performance harness additionally compares stable semantic hashes against the
 pre-plan indexed binary.
+
+### The Content Axis
+
+`--analyze` is a **set of analyzers**, not a ladder of levels.
+The shipped registry already models it that way — `content-basic-v1`, `code-sloc-v1`,
+`text-logical-v1`, `markdown-prose-v1`, each versioned independently, with the exact set
+recorded in the content sidecar’s provenance.
+The original flag flattened that set into five ordered values, which could express only
+four of the eight meaningful combinations and made `text-logical-v1` without
+`markdown-prose-v1` — normalized word counts without the expensive Markdown projection —
+unreachable.
+
+| Value | Analyzers | Adds |
+| --- | --- | --- |
+| `none` | — | nothing; no file body is opened. The default |
+| `lines` | `content-basic-v1` | physical, blank, and nonblank line counts |
+| `code` | `code-sloc-v1` | standard SLOC — code, comment, blank — for the `code` family |
+| `words` | `text-logical-v1`, `markdown-prose-v1` | raw, normalized, and reader-visible word volume |
+| `all` | every registered analyzer | everything above |
+
+`lines` is the base: any analyzer that runs has already streamed the file, so line
+counts are free and implicit whenever the set is non-empty.
+Naming it alone is still meaningful — it is the cheapest tier that opens files at all.
+`all` is defined as *every registered analyzer*, so adding an analyzer extends it
+without a grammar change, exactly as `--view all` extends with a new view.
+
+Two consequences follow from modelling the set honestly rather than by rank:
+
+- **Sidecar reuse becomes containment.** The current comparison is
+  `record.profile == request.profile`, so a sidecar written by `all` forces a complete
+  re-read for a later `code` query even though every metric it needs is already stored.
+  The test becomes `stored ⊇ requested`, projecting the stored record down to the
+  requested set. This is strictly faster and strictly more correct.
+- **Word metrics stop being silently discarded.** `LogicalWordStats` is computed for
+  every admitted text file and then zeroed for anything outside `prose`/`markup`. Under
+  `words` the metric is retained wherever it was measured, including the `code` family,
+  because the work is already done and normalized word volume is the cheap proxy for
+  context-window sizing that agent consumers actually ask for.
+  Aggregates stay meaningful because `families` and `types` keep the rows separate.
+
+*Extension point, deliberately not shipped now.* Splitting `words` into its two
+analyzers — normalized counts without the Markdown projection — is additive under this
+grammar and needs no new axis, so it waits for a demonstrated need (Principle 1).
+
+### The Default View Follows the Content Axis
+
+A view may never enable an analyzer, because that would let a display choice authorize
+filesystem reads. The reverse carries no such hazard, so the **default** view — and only
+the default — is derived from the requested analyzer set:
+
+| `--analyze` contains | Default `--view` | Why |
+| --- | --- | --- |
+| nothing | `tree` | unchanged; the du-replacement answer |
+| `lines` only | `families` | the broadest grouping that shows line counts |
+| `code` | `languages` | the view whose rows carry SLOC |
+| `words` | `documents` | the view whose rows carry text volume |
+| both `code` and `words` | `families` | the one view that shows both metric groups at once |
+
+An explicit `--view` always wins; this table only supplies the default.
+Without it, `fdu --analyze all PATH` reads every eligible file in the tree and prints a
+directory tree containing none of the results — a report byte-identical to the one the
+same command produces with no analysis at all, differing only in the performance footer.
+That is the concrete defect this revision exists to fix.
+
+### `--view all`
+
+`all` expands to every view the requested analyzer set can answer, in the table order
+above. It is not a synonym for `--analyze all`: content and view are different axes, and
+`all` on each means “every value this axis offers”, which is why both spell it the same
+way.
+
+Because `documents` requires analysis, `--view all` without it would otherwise fail the
+whole run over one unsatisfiable view.
+Instead the run renders what it can and **names what it skipped**, which keeps Principle
+5’s honesty rule (never present an unmeasured value, never hide that something was
+omitted) without making the obvious command an error:
+
+```console
+$ fdu --view all PATH
+... seven view sections ...
+note: omitted documents — requires --analyze words or all
+```
+
+Machine formats need no new field: the `reports` array already enumerates exactly which
+views were produced, so a consumer reads the omission directly from what is absent.
+The note is a human-format affordance only, and carries no schema change.
+
+### Displaying What Was Paid For
+
+The complement of the rule above.
+When an explicit `--view` selects only views that ignore content analysis, the run has
+bought I/O it cannot show:
+
+```console
+$ fdu --analyze all --view tree PATH
+... tree ...
+note: --analyze all read 1.2 GiB; no selected view displays content metrics
+      — try --view families, languages, or all
+```
+
+This is a note, not an error, for one reason: warming the content sidecar so a later run
+is warm is a legitimate use, and `--cache`-aware callers depend on it.
+An error would break that; silence would hide a potentially enormous cost.
 
 ### Timestamps and Sync Watermarks
 
@@ -544,12 +706,16 @@ query API. It decides only what state the existing one-shot composition retains;
 public Rust `report(index, query, provenance)` and Python `Index.report(...)` contracts
 remain unchanged and pure.
 
-The parity test for Principle 7 is mechanical: the CLI’s five axes map one-to-one onto
+The parity test for Principle 7 is mechanical: the CLI’s six axes map one-to-one onto
 these library types, so any capability reachable by flags is reachable as one typed
 call, with the same defaults.
-If implementing a flag ever requires logic that does not fit `Query`, `CachePolicy`, or
-a `Report` serializer, the library types are wrong and get fixed first; each phase ends
-with an explicit review of what, if anything, lives only in `cli.rs`.
+If implementing a flag ever requires logic that does not fit `Query`, `AnalysisSet`,
+`CachePolicy`, or a `Report` serializer, the library types are wrong and get fixed
+first; each phase ends with an explicit review of what, if anything, lives only in
+`cli.rs`. The content axis is the cautionary case: `--analyze` shipped without a
+corresponding library-level set type, and the default-view derivation it needed had
+nowhere to live, so neither surface got it — the parity review is what should have
+caught that.
 
 Supply-chain outcome: the serializers are small first-party writers over the closed
 `Report` shape. This avoided adding `serde`, a JSON crate, or the unmaintained
@@ -676,6 +842,39 @@ shared process boundary, as today.
 - [x] Merge PR #5, reconcile the implemented surface, and leave remaining product
   decisions on the explicit follow-up beads below
 
+### Phase 5: The Content Axis and the Display Contract
+
+This revision. Ordered so each step is independently reviewable and the behavior change
+lands last.
+
+- [x] Replace `AnalysisProfile` with an `AnalysisSet` over the existing analyzer
+  registry: `includes_code()`/`includes_documents()` become real membership tests,
+  `--analyze` parses a comma-delimited list through the same `parse_list` helper as
+  `--view` and `--kind`, and `none`/`all` are the two totals.
+  Rename `basic` → `lines` and `documents` → `words` in the same change; the interface
+  is pre-release and no aliases are retained, per the precedent set by `--by-type` →
+  `--view types`
+- [x] Encode the set as a bitmask in the content sidecar and change record reuse from
+  profile equality to `stored ⊇ requested`, projecting the stored record down to the
+  requested set. Add a unit test that an `all` sidecar satisfies a `code` request with
+  zero fresh reads — the regression this replaces is a silent full re-read
+- [x] Retain word metrics wherever they were measured rather than zeroing them outside
+  `prose`/`markup`, so `words` reports normalized volume for the `code` family too
+- [x] Derive the default view from the analyzer set; an explicit `--view` always wins.
+  This changes output for every existing `--analyze` invocation, so the goldens are
+  re-recorded and the diff reviewed as the record of the change
+- [x] Add `--view all` with profile-aware expansion and the omission note; confirm the
+  machine formats need no schema change because `reports` already enumerates what was
+  produced
+- [x] Add the paid-for-nothing note when no selected view consumes the requested
+  analysis, and a test that it is a note and never an error, because sidecar warming is
+  a supported use
+- [x] Update SKILL.md, `AFTER_HELP`, README (the Five Common Reports table), the
+  `--analyze` help text — which must state plainly that it opens and reads eligible
+  files — and the benchmark job manifests together, per Principle 12
+- [x] Fold Principle 13 and the six-axis model into
+  [the design doc](../../architecture/fdu-design-principles.md)
+
 ## Testing Strategy
 
 - Unit tests per view over a fixed synthetic index, crossed with selection filters, both
@@ -694,7 +893,17 @@ shared process boundary, as today.
   Focused sessions retain the actual limit-marker boundary and other combinatorial edges
   instead of inflating this product example.
 - Schema tests: `fdu.report/1` and `fdu.stream/1` fixtures that fail on unversioned
-  change.
+  change. `--view all` and the analyzer-set rename must *not* bump either schema; a test
+  pins that the `reports` array alone communicates which views were produced.
+- Content-axis tests: every analyzer set round-trips through the sidecar bitmask; an
+  `all` sidecar satisfies a `code` request with zero fresh reads (containment, not
+  equality); the default view derived from each set matches the table, and an explicit
+  `--view` overrides every one of them.
+- Display-contract tests, one per direction of Principle 13: a run whose selected views
+  all ignore analysis emits the paid-for-nothing note and still exits 0; `--view all`
+  without analysis renders the satisfiable views, names the omitted one, and exits 0;
+  and no view, under any content setting, causes a file body to be opened that
+  `--analyze` did not authorize.
 - Time-window tests: table-driven `parse_when`/`parse_size` grammar units with injected
   `now`, covering every accepted form (`now`, compound ages, RFC 3339, `@epoch` with
   fraction) and every rejection with its suggestion (months/years → days, fractional
@@ -764,10 +973,24 @@ no automated test asserts well: that an idle tree costs 0% CPU.
 4. Whether a general `--group-by` ever surfaces once the reducer registry lands
    (generalizing `types`), or named views remain the entire vocabulary and new groupings
    arrive only as new views.
+   Examined again during this revision and still not adopted: `--by language`,
+   `--by type`, `--by family` reads well and would collapse four views into one axis
+   value, but `files`, `summary`, and `documents` are not groupings, so the axis would
+   fracture rather than generalize.
+   Revisit only if the non-grouping views find another home.
 5. Cache retention: nothing yet prunes snapshots for roots that are never queried again
    or bounds the derived-data layer’s total size.
    Age-based GC, size caps, or manual-only (`--cache-clear`) needs a decision before the
    derived layer ships.
+   Measured on a development machine 2026-08-20: 63 MB across 52 entries, of which 26
+   were unreadable by the current binary — pre-release format churn, handled correctly
+   as absent, but reclaimed by nothing.
+   `--cache-clear` is all-or-nothing, so pruning dead entries also discards live ones; a
+   `--cache-clear=unreadable` scope is the cheapest partial answer.
+6. Whether `--analyze` should expose `text-logical-v1` and `markdown-prose-v1`
+   separately rather than jointly as `words`. The registry and the sidecar already
+   support it and the grammar makes it additive; deferred under Principle 1 until
+   someone needs normalized counts without the Markdown projection.
 
 Resolved by composition rather than by new surface, recorded so they stay resolved:
 suppressing watch’s initial report is `--modified-since now --watch`, and top-N

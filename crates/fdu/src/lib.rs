@@ -798,7 +798,7 @@ mod tests {
         let snapshot_path = cache.path().join("snap.fdu");
         write_file(&dir.path().join("notes.md"), b"one two\n");
         let analysis = content::AnalysisRequest {
-            profile: content::AnalysisProfile::Basic,
+            profile: content::AnalysisSet::NONE.with_lines(),
             ..content::AnalysisRequest::default()
         };
         let auto = OpenConfig {
@@ -842,7 +842,7 @@ mod tests {
             cache_path: Some(snapshot_path),
             policy: CachePolicy::Auto,
             analysis: content::AnalysisRequest {
-                profile: content::AnalysisProfile::Basic,
+                profile: content::AnalysisSet::NONE.with_lines(),
                 ..content::AnalysisRequest::default()
             },
             ..OpenConfig::default()
@@ -883,7 +883,7 @@ mod tests {
         let only = OpenConfig {
             policy: CachePolicy::Only,
             analysis: content::AnalysisRequest {
-                profile: content::AnalysisProfile::Basic,
+                profile: content::AnalysisSet::NONE.with_lines(),
                 ..content::AnalysisRequest::default()
             },
             ..metadata_only
@@ -896,7 +896,7 @@ mod tests {
         assert!(report.content_cache.usable);
         assert_eq!(
             cached.content().and_then(content::ContentIndex::profile),
-            Some(content::AnalysisProfile::Basic)
+            Some(content::AnalysisSet::NONE.with_lines())
         );
     }
 
@@ -915,7 +915,7 @@ mod tests {
         let only = OpenConfig {
             policy: CachePolicy::Only,
             analysis: content::AnalysisRequest {
-                profile: content::AnalysisProfile::Basic,
+                profile: content::AnalysisSet::NONE.with_lines(),
                 ..content::AnalysisRequest::default()
             },
             ..metadata_only
@@ -1206,7 +1206,7 @@ mod save_tests {
 mod cold_scan_persistence_tests {
     use super::*;
 
-    fn config(policy: CachePolicy, profile: content::AnalysisProfile) -> OpenConfig {
+    fn config(policy: CachePolicy, profile: content::AnalysisSet) -> OpenConfig {
         OpenConfig {
             policy,
             analysis: content::AnalysisRequest { profile, ..Default::default() },
@@ -1218,14 +1218,14 @@ mod cold_scan_persistence_tests {
     fn analysis_always_persists_because_rereading_bodies_is_the_expensive_half() {
         // The measured case for the cache: 639 ms to 325 ms warm. Size is irrelevant
         // here, so even a tiny tree under a large threshold still writes.
-        let analyzed = config(CachePolicy::Auto, content::AnalysisProfile::Code);
+        let analyzed = config(CachePolicy::Auto, content::AnalysisSet::NONE.with_code());
         let targets = cold_scan_save_targets_with(1, &analyzed, Some(250_000));
         assert!(targets.metadata && targets.content, "analysis must persist its sidecar");
     }
 
     #[test]
     fn refresh_persists_because_the_caller_asked_for_it_outright() {
-        let refresh = config(CachePolicy::Refresh, content::AnalysisProfile::Disabled);
+        let refresh = config(CachePolicy::Refresh, content::AnalysisSet::NONE);
         let targets = cold_scan_save_targets_with(1, &refresh, Some(250_000));
         assert!(targets.metadata, "refresh is an explicit instruction, not a cost estimate");
     }
@@ -1234,7 +1234,7 @@ mod cold_scan_persistence_tests {
     fn a_metadata_scan_persists_on_either_side_of_an_enabled_threshold() {
         // Both branches are asserted here rather than through the shipped constant, so
         // the gate stays proven while SNAPSHOT_MIN_ENTRIES is still unset.
-        let plain = config(CachePolicy::Auto, content::AnalysisProfile::Disabled);
+        let plain = config(CachePolicy::Auto, content::AnalysisSet::NONE);
         let below = cold_scan_save_targets_with(9, &plain, Some(10));
         assert!(below.none(), "a tree below the threshold should not create a snapshot");
 
@@ -1248,7 +1248,7 @@ mod cold_scan_persistence_tests {
         // threshold rather than supplying one (fdu-hvs5): there the snapshot repays its
         // write on the first later `Only` read at any size. A cold metadata scan must
         // persist exactly as before, so `fdu PATH` keeps leaving a snapshot behind.
-        let plain = config(CachePolicy::Auto, content::AnalysisProfile::Disabled);
+        let plain = config(CachePolicy::Auto, content::AnalysisSet::NONE);
         assert!(
             cold_scan_save_targets_with(1, &plain, None).metadata,
             "an unset threshold must not change persistence"

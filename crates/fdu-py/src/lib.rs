@@ -22,7 +22,7 @@ use pyo3::exceptions::{PyOSError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 
-use fdu::content::{AnalysisProfile, AnalysisRequest, CoverageReason};
+use fdu::content::{AnalysisRequest, AnalysisSet, CoverageReason};
 use fdu::query::{
     Bound as Bound_, MetricRow, MetricSummary, Pattern, Provenance, Query, Report, ReportSource,
     Section, Selection, SizeMetric, SortKey, SummaryRow, TreeNode, ViewSpec, document_words,
@@ -612,18 +612,7 @@ fn parse_cache_policy(value: &str) -> PyResult<CachePolicy> {
 }
 
 fn parse_analysis_request(profile: &str, workers: usize) -> PyResult<AnalysisRequest> {
-    let profile = match profile.trim().to_ascii_lowercase().as_str() {
-        "none" | "off" | "disabled" => AnalysisProfile::Disabled,
-        "basic" => AnalysisProfile::Basic,
-        "code" => AnalysisProfile::Code,
-        "documents" | "docs" => AnalysisProfile::Documents,
-        "full" => AnalysisProfile::Full,
-        other => {
-            return Err(PyValueError::new_err(format!(
-                "invalid analysis profile {other:?}: expected one of none, basic, code, documents, full"
-            )));
-        }
-    };
+    let profile = AnalysisSet::parse(profile).map_err(PyValueError::new_err)?;
     Ok(AnalysisRequest { profile, workers })
 }
 
@@ -715,7 +704,7 @@ fn report_dict<'py>(py: Python<'py>, report: &Report) -> PyResult<Bound<'py, PyD
         None => dict.set_item("analysis", py.None())?,
         Some(analysis) => {
             let metadata = PyDict::new(py);
-            metadata.set_item("profile", analysis_profile_label(analysis.profile))?;
+            metadata.set_item("analyze", analysis_set_labels(analysis.profile))?;
             metadata
                 .set_item("type_rules_fingerprint", analysis.provenance.type_rules_fingerprint)?;
             metadata.set_item("options_fingerprint", analysis.provenance.options_fingerprint.0)?;
@@ -881,14 +870,8 @@ fn coverage_label(reason: CoverageReason) -> &'static str {
     }
 }
 
-fn analysis_profile_label(profile: AnalysisProfile) -> &'static str {
-    match profile {
-        AnalysisProfile::Disabled => "none",
-        AnalysisProfile::Basic => "basic",
-        AnalysisProfile::Code => "code",
-        AnalysisProfile::Documents => "documents",
-        AnalysisProfile::Full => "full",
-    }
+fn analysis_set_labels(profile: AnalysisSet) -> Vec<&'static str> {
+    profile.labels()
 }
 
 /// One summary row as a dict.
@@ -1275,10 +1258,20 @@ fn main(py: Python<'_>) -> PyResult<u8> {
 fn contract(py: Python<'_>) -> PyResult<Bound<'_, PyDict>> {
     let contract = PyDict::new(py);
     contract.set_item("cache_policies", ["auto", "refresh", "read-only", "only", "off"])?;
-    contract.set_item("analysis_profiles", ["none", "basic", "code", "documents", "full"])?;
+    contract.set_item("analysis", ["none", "lines", "code", "words", "all"])?;
     contract.set_item(
         "views",
-        ["tree", "extensions", "types", "families", "languages", "documents", "files", "summary"],
+        [
+            "tree",
+            "extensions",
+            "types",
+            "families",
+            "languages",
+            "documents",
+            "files",
+            "summary",
+            "all",
+        ],
     )?;
     contract.set_item("entry_kinds", ["file", "dir", "symlink", "other"])?;
     contract.set_item("size_metrics", ["allocated", "apparent"])?;

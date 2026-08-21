@@ -30,36 +30,151 @@ pub const TEXT_LOGICAL: AnalyzerId = AnalyzerId("text-logical-v1");
 /// Reader-visible Markdown prose analyzer.
 pub const MARKDOWN_PROSE: AnalyzerId = AnalyzerId("markdown-prose-v1");
 
-/// Requested depth of content analysis.
+/// The set of content analyzers a request enables.
+///
+/// A set rather than a ladder, because the analyzers are independent: `code` and `words`
+/// measure different things over different families and either is useful without the
+/// other.  An ordered enum could name only the combinations somebody thought to
+/// enumerate — four of the eight this registry already permits — and it made
+/// `text-logical-v1` without `markdown-prose-v1` unreachable.
+///
+/// `lines` is the base every analyzer shares: any analyzer that runs has already
+/// streamed the file, so line counts cost nothing extra.  It is therefore implicit in
+/// every non-empty set rather than something a caller must remember to request, which is
+/// why each `with_*` constructor sets it.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug, Default)]
-pub enum AnalysisProfile {
-    /// Preserve the metadata-only behavior and perform no content I/O.
-    #[default]
-    Disabled,
-    /// Physical, blank, and nonblank lines plus raw prose words.
-    Basic,
-    /// Basic metrics plus common-language standard SLOC.
-    Code,
-    /// Basic metrics plus raw/logical/visible prose volume.
-    Documents,
-    /// Every shipped analyzer.
-    Full,
-}
+pub struct AnalysisSet(u8);
 
-impl AnalysisProfile {
+impl AnalysisSet {
+    const LINES: u8 = 1 << 0;
+    const CODE: u8 = 1 << 1;
+    const WORDS: u8 = 1 << 2;
+    const KNOWN: u8 = Self::LINES | Self::CODE | Self::WORDS;
+
+    /// Open no file; preserve the metadata-only behavior.
+    pub const NONE: Self = Self(0);
+    /// Every registered analyzer.
+    pub const ALL: Self = Self(Self::KNOWN);
+
+    /// Add physical, blank, and nonblank line counts.
+    #[must_use]
+    pub const fn with_lines(self) -> Self {
+        Self(self.0 | Self::LINES)
+    }
+
+    /// Add common-language standard SLOC over the `code` family.
+    #[must_use]
+    pub const fn with_code(self) -> Self {
+        Self(self.0 | Self::LINES | Self::CODE)
+    }
+
+    /// Add raw, normalized, and reader-visible word volume.
+    #[must_use]
+    pub const fn with_words(self) -> Self {
+        Self(self.0 | Self::LINES | Self::WORDS)
+    }
+
     /// Whether any source file may be opened.
     pub const fn is_enabled(self) -> bool {
-        !matches!(self, Self::Disabled)
+        self.0 != 0
     }
 
     /// Whether standard SLOC is requested.
     pub const fn includes_code(self) -> bool {
-        matches!(self, Self::Code | Self::Full)
+        self.0 & Self::CODE != 0
     }
 
-    /// Whether logical and visible prose metrics are requested.
-    pub const fn includes_documents(self) -> bool {
-        matches!(self, Self::Documents | Self::Full)
+    /// Whether logical and visible word metrics are requested.
+    pub const fn includes_words(self) -> bool {
+        self.0 & Self::WORDS != 0
+    }
+
+    /// Whether every analyzer in `other` is also in `self`.
+    ///
+    /// This is what lets a stored record answer a narrower request: a sidecar written by
+    /// a superset already holds every metric the narrower one would recompute, so reuse
+    /// is containment rather than equality.
+    pub const fn contains(self, other: Self) -> bool {
+        self.0 & other.0 == other.0
+    }
+
+    /// Stable on-disk and fingerprint encoding.
+    pub const fn bits(self) -> u8 {
+        self.0
+    }
+
+    /// Decode [`Self::bits`], rejecting any analyzer this build does not know.
+    ///
+    /// Unknown bits mean a record written by a newer build whose extra analyzers cannot
+    /// be honored, so it is refused rather than silently under-reported.
+    pub const fn from_bits(bits: u8) -> Option<Self> {
+        if bits & !Self::KNOWN == 0 { Some(Self(bits)) } else { None }
+    }
+
+    /// Parse the comma-delimited vocabulary both front ends accept.
+    ///
+    /// Lives here rather than in either front end because it is the axis's grammar, not
+    /// one surface's flag parsing: the CLI and the Python binding must accept exactly the
+    /// same words or the two surfaces disagree about what a request means.
+    ///
+    /// `none` and `all` are totals and cannot be combined with anything, including each
+    /// other — `none,code` has no coherent reading, and silently letting one win is how a
+    /// caller ends up with analysis they did not ask for or did not get.
+    pub fn parse(value: &str) -> Result<Self, String> {
+        let mut set = Self::NONE;
+        let mut seen: Vec<String> = Vec::new();
+        let mut total: Option<&'static str> = None;
+        for raw in value.split(',') {
+            let token = raw.trim().to_ascii_lowercase();
+            if token.is_empty() {
+                return Err(format!("invalid analyze {value:?}: empty entry in the list"));
+            }
+            if seen.contains(&token) {
+                return Err(format!("invalid analyze {value:?}: {token:?} appears more than once"));
+            }
+            seen.push(token.clone());
+            match token.as_str() {
+                "none" => total = Some("none"),
+                "all" => {
+                    total = Some("all");
+                    set = Self::ALL;
+                }
+                "lines" => set = set.with_lines(),
+                "code" => set = set.with_code(),
+                "words" => set = set.with_words(),
+                other => {
+                    return Err(format!(
+                        "invalid analyze {other:?}: expected one of none, lines, code, words, all"
+                    ));
+                }
+            }
+        }
+        if let Some(total) = total {
+            if seen.len() > 1 {
+                return Err(format!(
+                    "invalid analyze {value:?}: {total:?} names the whole axis and cannot be combined"
+                ));
+            }
+            if total == "none" {
+                return Ok(Self::NONE);
+            }
+        }
+        Ok(set)
+    }
+
+    /// Requested analyzers in canonical order, as the CLI and reports spell them.
+    pub fn labels(self) -> Vec<&'static str> {
+        let mut labels = Vec::new();
+        if self.0 & Self::LINES != 0 {
+            labels.push("lines");
+        }
+        if self.includes_code() {
+            labels.push("code");
+        }
+        if self.includes_words() {
+            labels.push("words");
+        }
+        labels
     }
 }
 
@@ -67,14 +182,14 @@ impl AnalysisProfile {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct AnalysisRequest {
     /// Analyzer bundle to run.
-    pub profile: AnalysisProfile,
+    pub profile: AnalysisSet,
     /// Maximum worker count; zero selects the available parallelism.
     pub workers: usize,
 }
 
 impl Default for AnalysisRequest {
     fn default() -> Self {
-        Self { profile: AnalysisProfile::Disabled, workers: 0 }
+        Self { profile: AnalysisSet::NONE, workers: 0 }
     }
 }
 
@@ -83,14 +198,7 @@ impl AnalysisRequest {
     pub fn options_fingerprint(self) -> OptionsFingerprint {
         const OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
         const PRIME: u64 = 0x0000_0100_0000_01b3;
-        let profile = match self.profile {
-            AnalysisProfile::Disabled => 0_u8,
-            AnalysisProfile::Basic => 1,
-            AnalysisProfile::Code => 2,
-            AnalysisProfile::Documents => 3,
-            AnalysisProfile::Full => 4,
-        };
-        let hash = [profile]
+        let hash = [self.profile.bits()]
             .into_iter()
             .fold(OFFSET, |hash, byte| (hash ^ u64::from(byte)).wrapping_mul(PRIME));
         OptionsFingerprint(hash)
@@ -119,7 +227,7 @@ impl ContentProvenance {
         if request.profile.includes_code() {
             analyzers.push((CODE_SLOC, VERSION_ONE));
         }
-        if request.profile.includes_documents() {
+        if request.profile.includes_words() {
             analyzers.push((TEXT_LOGICAL, VERSION_ONE));
             analyzers.push((MARKDOWN_PROSE, VERSION_ONE));
         }
@@ -128,6 +236,22 @@ impl ContentProvenance {
             options_fingerprint: request.options_fingerprint(),
             analyzers,
         }
+    }
+
+    /// Whether content produced under `self` with `stored` analyzers answers `wanted`.
+    ///
+    /// Containment rather than equality.  Every field here except the type-rule
+    /// fingerprint is derived from the analyzer set — `options_fingerprint` hashes the
+    /// set's bits and `analyzers` lists what those bits select — so comparing them by
+    /// equality is the same test as set equality, spelled three times, and it is what
+    /// forced a complete re-read whenever a wider cached set met a narrower request.
+    ///
+    /// The type-rule fingerprint still has to match exactly: a classification change can
+    /// move a file between families, which invalidates the metrics themselves rather
+    /// than merely how they are labelled.
+    pub fn satisfies(&self, stored: AnalysisSet, wanted: AnalysisSet) -> bool {
+        self.type_rules_fingerprint == crate::classify::type_rule_fingerprint()
+            && stored.contains(wanted)
     }
 }
 
@@ -295,7 +419,7 @@ pub struct FileAnalysis {
     /// Apparent bytes represented by the record.
     pub bytes: u64,
     /// Requested profile that produced the record.
-    pub profile: AnalysisProfile,
+    pub profile: AnalysisSet,
     /// Analyzer, rule, and semantic-option identity.
     pub provenance: ContentProvenance,
     /// Additive metrics; zero when coverage is not `Analyzed`.
@@ -322,7 +446,7 @@ pub struct AnalysisCandidate {
     /// Metadata-only classification.
     pub classification: Classification,
     /// Requested analyzer profile.
-    pub profile: AnalysisProfile,
+    pub profile: AnalysisSet,
 }
 
 /// Worker result submitted to the index's derived-data mutation boundary.
@@ -345,7 +469,7 @@ pub enum AnalysisApplyOutcome {
 
 #[cfg(test)]
 mod tests {
-    use super::LogicalWordStats;
+    use super::{AnalysisSet, LogicalWordStats};
 
     #[test]
     fn logical_words_derive_only_after_additive_stats_are_combined() {
@@ -370,5 +494,89 @@ mod tests {
         assert_eq!(logical(0, 4, 4), 1, "short tokens use the three-character ceiling");
         assert_eq!(logical(3, 0, 0), 2, "wide halves round up once");
         assert_eq!(logical(1, 1, 1), 1, "mixed fractions combine before rounding");
+    }
+
+    #[test]
+    fn the_analyzer_vocabulary_parses_every_accepted_spelling() {
+        let cases = [
+            ("none", AnalysisSet::NONE),
+            ("lines", AnalysisSet::NONE.with_lines()),
+            ("code", AnalysisSet::NONE.with_code()),
+            ("words", AnalysisSet::NONE.with_words()),
+            ("all", AnalysisSet::ALL),
+            // Order is irrelevant: a set has no order, so neither spelling is preferred.
+            ("code,words", AnalysisSet::ALL),
+            ("words,code", AnalysisSet::ALL),
+            // `lines` is already implied by any analyzer, so naming it adds nothing.
+            ("lines,code", AnalysisSet::NONE.with_code()),
+            // Whitespace and case are incidental, as in every other list flag.
+            (" CODE , Words ", AnalysisSet::ALL),
+        ];
+        for (input, expected) in cases {
+            assert_eq!(AnalysisSet::parse(input), Ok(expected), "parsing {input:?}");
+        }
+    }
+
+    #[test]
+    fn the_analyzer_vocabulary_rejects_every_incoherent_request() {
+        // Each rejection names what was wrong; a set flag that silently drops a token is
+        // how a caller ends up believing it measured something it did not.
+        let cases = [
+            ("", "empty entry"),
+            ("code,,words", "empty entry"),
+            ("code,code", "more than once"),
+            ("basic", "expected one of"),
+            ("documents", "expected one of"),
+            ("full", "expected one of"),
+            ("none,code", "cannot be combined"),
+            ("all,code", "cannot be combined"),
+            ("none,all", "cannot be combined"),
+        ];
+        for (input, needle) in cases {
+            let error = AnalysisSet::parse(input).expect_err(&format!("{input:?} must fail"));
+            assert!(error.contains(needle), "parsing {input:?} said {error:?}, wanted {needle:?}");
+        }
+    }
+
+    #[test]
+    fn containment_is_reflexive_and_ordered_by_membership() {
+        let code = AnalysisSet::NONE.with_code();
+        let words = AnalysisSet::NONE.with_words();
+        assert!(AnalysisSet::ALL.contains(code) && AnalysisSet::ALL.contains(words));
+        assert!(!code.contains(words) && !words.contains(code));
+        assert!(code.contains(code), "a set answers its own request");
+        assert!(code.contains(AnalysisSet::NONE), "every set answers an empty request");
+        assert!(!AnalysisSet::NONE.is_enabled(), "an empty set opens no file");
+        assert!(code.contains(AnalysisSet::NONE.with_lines()), "lines ride along with code");
+    }
+
+    #[test]
+    fn the_on_disk_encoding_round_trips_and_refuses_unknown_analyzers() {
+        for set in [
+            AnalysisSet::NONE,
+            AnalysisSet::NONE.with_lines(),
+            AnalysisSet::NONE.with_code(),
+            AnalysisSet::NONE.with_words(),
+            AnalysisSet::ALL,
+        ] {
+            assert_eq!(AnalysisSet::from_bits(set.bits()), Some(set));
+        }
+        // A record written by a build with an analyzer this one lacks cannot be honored,
+        // so it is refused rather than silently under-reported as absent metrics.
+        assert_eq!(AnalysisSet::from_bits(0b1000_0000), None);
+    }
+
+    #[test]
+    fn labels_are_the_vocabulary_parse_accepts() {
+        for set in [
+            AnalysisSet::NONE.with_lines(),
+            AnalysisSet::NONE.with_code(),
+            AnalysisSet::NONE.with_words(),
+            AnalysisSet::ALL,
+        ] {
+            let spelled = set.labels().join(",");
+            assert_eq!(AnalysisSet::parse(&spelled), Ok(set), "round trip through {spelled:?}");
+        }
+        assert!(AnalysisSet::NONE.labels().is_empty());
     }
 }

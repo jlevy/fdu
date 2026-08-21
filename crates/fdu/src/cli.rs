@@ -13,10 +13,12 @@ use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime};
 
+use std::borrow::Cow;
+
 use clap::builder::styling::{AnsiColor, Style as AnsiStyle, Styles};
 use clap::{ArgAction, ColorChoice, CommandFactory, FromArgMatches, Parser, ValueEnum};
 
-use crate::content::{AnalysisProfile, AnalysisRequest};
+use crate::content::{AnalysisRequest, AnalysisSet};
 use crate::execution::{PerformanceSummary, prepare_report, prepare_report_with_scan_diagnostics};
 use crate::query::{
     Bound, Pattern, Provenance, Query, ReportSource, Selection, SizeMetric, SortKey, ViewSpec,
@@ -36,6 +38,27 @@ const SKILL_TEMPLATE: &str = include_str!("skills/SKILL.md");
 const SCAN_DIAGNOSTICS_ENV: &str = "FDU_SCAN_DIAGNOSTICS";
 const SCAN_DIAGNOSTICS_PREFIX: &str = "__FDU_SCAN_DIAGNOSTICS__=";
 
+// ---- the terminal styling system --------------------------------------------------
+//
+// Five roles, one colour each, and one case convention.  Every human surface — the report,
+// the `--docs` guide, and clap's help — draws from this table rather than choosing its own
+// colours, which is what makes them read as one tool.
+//
+//   heading      cyan bold      ALL CAPS, no trailing colon
+//   warning      yellow bold
+//   error        red bold
+//   cause        dimmed         the chain under an error
+//   telemetry    bright black   the performance footer, notes, watch rules
+//
+// Colour applies only when the destination is a live terminal, and never to a machine
+// format or under NO_COLOR; `ColorContext` owns that decision and `paint` applies it.
+
+/// The one header style every human surface uses.
+///
+/// Report view headers, the `--docs` section headers, and clap's help section headings
+/// are the same kind of thing — a name introducing a block — so they share a style and a
+/// case convention rather than each inventing one. `report_format` re-exports this as the
+/// view-header style so there is a single definition to change.
 const STYLE_HEADING: AnsiStyle = AnsiColor::Cyan.on_default().bold();
 const STYLE_WARNING: AnsiStyle = AnsiColor::Yellow.on_default().bold();
 const STYLE_ERROR: AnsiStyle = AnsiColor::Red.on_default().bold();
@@ -56,61 +79,99 @@ const CLI_STYLES: Styles = Styles::styled()
     .valid(AnsiColor::Green.on_default())
     .invalid(AnsiColor::Yellow.on_default());
 
-const COMMON_REPORTS_HELP: &str = r"Five common reports:
-  Language sizes      fdu --view languages PATH
-                      Uses exact names and extensions; never reads file contents.
-  Languages and LOC   fdu --analyze code --view languages PATH
-                      Reads eligible files for code, comment, and blank lines.
-  All file types      fdu --view types PATH
-                      Includes every family from names and extensions; never reads content.
-  Folder sizes        fdu PATH
-                      Uses the metadata-only tree view and reusable index.
-  Fast totals only    fdu --view summary PATH
-                      Returns bytes plus file and directory counts;
-                      retains no index and writes no cache.
+/// The one line `--help` spends on everything `--docs` covers.
+///
+/// Help stays the flag reference it is supposed to be.  The guide it points at used to
+/// be split across `before_help` and `after_help`, which put a page of prose *above* the
+/// tool's own description — the reader met the examples before learning what the command
+/// was.
+const DOCS_POINTER: &str = "Run `fdu --docs` for more help and important usage examples.";
 
---analyze chooses what may be read; --view chooses what is printed.";
+/// The guide `--docs` prints: the ladder, the two axes, and the contracts worth knowing
+/// before automating against the output.
+const DOCS: &str = r"fdu — a fast, incremental file roll-up engine.
 
-const CONTENT_AFTER_HELP: &str = r"More compositions:
+THE LADDER
+  Every report is one command, and they form a ladder. Each rung costs more than
+  the one above it and tells you more, so stop at the cheapest answer that
+  settles your question.
+
+    fdu --view summary PATH             how big is this tree?        no reads
+    fdu PATH                            which folders are big?       no reads
+    fdu --view types PATH               what kinds of files?         no reads
+    fdu --view languages PATH           which languages?             no reads
+    fdu --analyze code PATH             how much code?               READS FILES
+    fdu --analyze words PATH            how much writing?            READS FILES
+    fdu --analyze all --view all PATH   everything there is          READS FILES
+
+TWO FLAGS DO ALL OF IT
+  --analyze decides what gets read. Anything but `none` opens and reads every
+    eligible file, which is the only setting that makes a run cost more than a
+    single metadata walk.
+  --view decides what gets printed. It is free: every view is a projection over
+    one walk, so asking for more views never touches the filesystem again.
+
+  You rarely need both. Naming analyzers selects a view that displays them, so
+  `fdu --analyze code PATH` already prints language rows with lines of code.
+  Name --view yourself for a different projection; it always wins.
+
+  A view never turns on an analyzer, because choosing how to look at a result
+  should not quietly authorize reading every file in the tree. So a --view that
+  displays none of what you asked to read says how much was read for nothing,
+  and --view all names any view it had to skip.
+
+MORE COMPOSITIONS
   fdu --view extensions ~/Downloads
   fdu --view types,families --format json .
-  fdu --analyze documents --view documents .
+  fdu --analyze words --view documents .
+  fdu --view files --min-size 10M --sort size -n 100 PATH   largest files
+  fdu --view files --modified-since 1h --sort mtime PATH    recent changes
+  fdu --watch --view files --format jsonl PATH              a tail -f for a tree
 
-Five axes, and every option belongs to exactly one:
+  --interval throttles rendering only; change detection is event-driven and
+  unaffected by it, so an idle tree costs nothing between changes.
+
+SIX AXES, AND EVERY OPTION BELONGS TO EXACTLY ONE
   Scope      PATH, --scan-depth                         what is scanned and cached
-  Selection  --include, --exclude, --depth, --limit    which entries are considered
-  View       tree,extensions,types,families,languages,documents,files,summary
+  Content    --analyze none|lines|code|words|all        which file bodies are read
+  Selection  --include, --exclude, --depth, --limit     which entries are considered
+  View       tree,extensions,types,families,languages,documents,files,summary,all
   Format     --format text|json|jsonl|yaml, --color
-  Mode       --cache, --analyze, --analysis-workers
+  Mode       --cache, --watch, --analysis-workers
 
-Content analysis:
+CONTENT ANALYSIS
   none       metadata only; source files are never opened (default)
-  basic      physical, blank, and nonblank lines plus raw prose words
-  code       basic metrics plus the versioned common-language SLOC analyzer
-  documents  basic metrics plus logical and reader-visible prose metrics
-  full       every shipped analyzer
+  lines      physical, blank, and nonblank lines plus raw word counts
+  code       standard SLOC from the versioned common-language analyzer
+  words      normalized and reader-visible word volume
+  all        every shipped analyzer
 
-  languages is metadata-only by default; code or full adds standard LOC.
-  documents requires any enabled profile.
-  Views never enable content analysis implicitly.
+  A comma-separated set: code,words runs both. none and all name the whole
+  axis and cannot be combined. lines comes with any analyzer, free.
+  languages is metadata-only by default; code adds standard LOC.
+  documents requires any enabled analyzer.
   Analysis streams every eligible file through EOF; files are never size-truncated.
   --analysis-workers bounds concurrency.
   --words-per-page changes only report-time page derivation.
-  Unchanged results for the same profile are restored from a separate sidecar.
+  Unchanged results are restored from a separate sidecar; a stored set answers
+  any narrower request without re-reading.
   cache=only never opens source files and fails if requested content is absent.
 
-Output and automation:
-  Metadata-only machine output remains fdu.report/1; metric summaries use fdu.report/2.
+OUTPUT AND AUTOMATION
+  Metadata-only machine output remains fdu.report/1; metric summaries use fdu.report/3.
   Text language rows use canonical names; machine formats retain lowercase IDs.
   Metric rows include detection source, confidence, origin flags, and coverage.
   One-shot text reports end with a gray performance line; machine formats omit it.
   Results go to stdout; warnings and errors go to stderr.
   The command never prompts, pages, or animates progress.
+  Reports require an explicit PATH; bare `fdu` prints help and scans nothing.
+  `fdu --skill` prints a portable agent skill describing this same surface.
 
-Exit status:
+EXIT STATUS
   0  Complete result, or a partial result accepted with --allow-partial
   1  Fatal filesystem or cache error
-  2  Partial result, or command-line usage error";
+  2  Partial result, or command-line usage error
+";
 
 /// When terminal styling should be enabled.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum)]
@@ -230,10 +291,19 @@ pub enum RunOutcome {
     about,
     long_about = None,
     styles = CLI_STYLES,
-    before_help = COMMON_REPORTS_HELP,
-    after_help = CONTENT_AFTER_HELP,
+    after_help = DOCS_POINTER,
+    // Wrap at the terminal's width, never wider than this. clap takes the smaller of the
+    // two, so a narrow terminal still narrows and a wide one stops at a readable measure
+    // rather than running a description across the whole screen.
+    max_term_width = 120,
+    // `--help` renders the same compact block `-h` does. clap's long help puts every
+    // description on its own line with a blank line between flags, which roughly doubles
+    // the height and breaks a section into a list of islands; the prose that justified
+    // that layout now lives in `--docs`.
+    disable_help_flag = true,
+    disable_version_flag = true,
     arg_required_else_help = true,
-    override_usage = "fdu [OPTIONS] <PATH>\n       fdu [PATH] --cache-status[=<SCOPE>] [--cache-clear[=<SCOPE>]]\n       fdu [PATH] --cache-clear[=<SCOPE>]\n       fdu --skill"
+    override_usage = "fdu [OPTIONS] <PATH>\n       fdu [PATH] --cache-status[=<SCOPE>] [--cache-clear[=<SCOPE>]]\n       fdu [PATH] --cache-clear[=<SCOPE>]\n       fdu --docs\n       fdu --skill"
 )]
 // A command line is a flat bag of independent switches. Folding these into enums to
 // satisfy the lint would obscure the one thing this struct exists to mirror: the flags a
@@ -241,83 +311,90 @@ pub enum RunOutcome {
 #[allow(clippy::struct_excessive_bools)]
 pub struct Cli {
     // ---- scope: what the engine observes and retains ----
-    /// Report root; optional only for cache lifecycle operations.
-    #[arg(required_unless_present_any = ["skill", "cache_status", "cache_clear"])]
+    /// Report root; optional only for the discovery and cache-lifecycle flags.
+    #[arg(
+        required_unless_present_any = ["docs", "skill", "cache_status", "cache_clear"],
+        help_heading = "ARGUMENTS"
+    )]
     pub path: Option<PathBuf>,
 
     /// Limit scanning and retention to N entry levels.
-    #[arg(long, value_name = "N", help_heading = "Scope")]
+    #[arg(long, value_name = "N", help_heading = "SCOPE")]
     pub scan_depth: Option<usize>,
 
     /// Stay on the filesystem the root lives on.
-    #[arg(long, action = ArgAction::SetTrue, help_heading = "Scope")]
+    #[arg(long, action = ArgAction::SetTrue, help_heading = "SCOPE")]
     pub one_filesystem: bool,
 
     // ---- selection: which retained entries this query considers ----
     /// Report only entries matching this glob; repeatable.
-    #[arg(long, value_name = "GLOB", help_heading = "Selection")]
+    #[arg(long, value_name = "GLOB", help_heading = "SELECTION")]
     pub include: Vec<String>,
 
     /// Exclude entries matching this glob; repeatable, and wins over --include.
-    #[arg(long, value_name = "GLOB", help_heading = "Selection")]
+    #[arg(long, value_name = "GLOB", help_heading = "SELECTION")]
     pub exclude: Vec<String>,
 
     /// Report only entries at least this large, as 512, 10M, or 1.5GiB.
-    #[arg(long, value_name = "SIZE", help_heading = "Selection")]
+    #[arg(long, value_name = "SIZE", help_heading = "SELECTION")]
     pub min_size: Option<String>,
 
     /// Report only entries modified at or after this time, as 2h or an RFC 3339 stamp.
-    #[arg(long, value_name = "WHEN", help_heading = "Selection")]
+    #[arg(long, value_name = "WHEN", help_heading = "SELECTION")]
     pub modified_since: Option<String>,
 
     /// Report only entries modified before this time.
-    #[arg(long, value_name = "WHEN", help_heading = "Selection")]
+    #[arg(long, value_name = "WHEN", help_heading = "SELECTION")]
     pub modified_before: Option<String>,
 
     /// Entry kinds to report: file, dir, symlink, other.
-    #[arg(long, value_name = "LIST", help_heading = "Selection")]
+    #[arg(long, value_name = "LIST", help_heading = "SELECTION")]
     pub kind: Option<String>,
 
     /// Directory levels to show; does not limit scanning. Accepts `all`.
-    #[arg(short, long, default_value = "2", value_name = "N", help_heading = "Selection")]
+    #[arg(short, long, default_value = "2", value_name = "N", help_heading = "SELECTION")]
     pub depth: String,
 
     /// Entries to show per directory. Accepts `all`.
-    #[arg(short = 'n', long, default_value = "10", value_name = "N", help_heading = "Selection")]
+    #[arg(short = 'n', long, default_value = "10", value_name = "N", help_heading = "SELECTION")]
     pub limit: String,
 
     /// Order results: size, count, mtime, or name.
-    #[arg(long, value_name = "KEY", help_heading = "Selection")]
+    #[arg(long, value_name = "KEY", help_heading = "SELECTION")]
     pub sort: Option<String>,
 
     /// Reverse the ordering.
-    #[arg(long, action = ArgAction::SetTrue, help_heading = "Selection")]
+    #[arg(long, action = ArgAction::SetTrue, help_heading = "SELECTION")]
     pub reverse: bool,
 
     /// Which size metric to report: allocated or apparent.
-    #[arg(long, value_name = "METRIC", default_value = "allocated", help_heading = "Selection")]
+    #[arg(long, value_name = "METRIC", default_value = "allocated", help_heading = "SELECTION")]
     pub size: String,
 
     // ---- view: which roll-ups are reported ----
-    /// Views: tree, extensions, types, families, languages, documents, files, summary.
-    #[arg(long, value_name = "LIST", default_value = "tree", help_heading = "Views")]
-    pub view: String,
+    /// Views: tree, extensions, types, families, languages, documents, files, summary,
+    /// or all. Defaults to the view that displays whatever --analyze requested.
+    #[arg(long, value_name = "LIST", help_heading = "VIEWS")]
+    pub view: Option<String>,
 
-    /// Content depth: none, basic, code, documents, or full.
-    #[arg(long, value_name = "PROFILE", default_value = "none", help_heading = "Content analysis")]
+    /// Analyzers to run: none, lines, code, words, or all.
+    ///
+    /// Anything but none opens and reads every eligible file, which is the only setting
+    /// that makes a run cost more than one metadata walk.
+    #[arg(long, value_name = "LIST", default_value = "none", help_heading = "CONTENT ANALYSIS")]
     pub analyze: String,
 
     /// Content reader workers; zero selects available parallelism.
-    #[arg(long, value_name = "N", default_value_t = 0, help_heading = "Content analysis")]
+    #[arg(long, value_name = "N", default_value_t = 0, help_heading = "CONTENT ANALYSIS")]
     pub analysis_workers: usize,
 
     /// Logical words per derived document page.
-    #[arg(long, value_name = "N", default_value_t = 250, help_heading = "Views")]
+    #[arg(long, value_name = "N", default_value_t = 250, help_heading = "VIEWS")]
     pub words_per_page: u64,
 
     // ---- format: how the report is serialized ----
     /// Output format: text, json, jsonl, or yaml.
-    #[arg(long, value_name = "FORMAT", default_value = "text", help_heading = "Output")]
+    #[arg(long, value_name = "FORMAT", default_value = "text", help_heading = "OUTPUT")]
     pub format: String,
 
     /// Colorize human output: auto, always, or never.
@@ -326,41 +403,53 @@ pub struct Cli {
         value_name = "WHEN",
         default_value = "auto",
         hide_possible_values = true,
-        help_heading = "Output"
+        help_heading = "OUTPUT"
     )]
     pub color: ColorWhen,
 
     // ---- mode: how the cache is used ----
     /// Cache policy: auto, refresh, read-only, only, or off.
-    #[arg(long, value_name = "POLICY", default_value = "auto", help_heading = "Execution")]
+    #[arg(long, value_name = "POLICY", default_value = "auto", help_heading = "EXECUTION")]
     pub cache: String,
 
     /// Accept operationally partial results, including filesystem or analysis failures.
-    #[arg(long, action = ArgAction::SetTrue, help_heading = "Execution")]
+    #[arg(long, action = ArgAction::SetTrue, help_heading = "EXECUTION")]
     pub allow_partial: bool,
 
     /// Report cache contents instead of scanning: root (default) or all.
-    #[arg(long, value_name = "SCOPE", num_args = 0..=1, require_equals = true, default_missing_value = "root", help_heading = "Cache management")]
+    #[arg(long, value_name = "SCOPE", num_args = 0..=1, require_equals = true, default_missing_value = "root", help_heading = "CACHE MANAGEMENT")]
     pub cache_status: Option<String>,
 
     /// Remove cached snapshots instead of scanning: root (default) or all.
-    #[arg(long, value_name = "SCOPE", num_args = 0..=1, require_equals = true, default_missing_value = "root", help_heading = "Cache management")]
+    #[arg(long, value_name = "SCOPE", num_args = 0..=1, require_equals = true, default_missing_value = "root", help_heading = "CACHE MANAGEMENT")]
     pub cache_clear: Option<String>,
 
     /// Stream changes continuously instead of returning one report.
     #[cfg(feature = "watch")]
-    #[arg(long, action = ArgAction::SetTrue, help_heading = "Execution")]
+    #[arg(long, action = ArgAction::SetTrue, help_heading = "EXECUTION")]
     pub watch: bool,
 
     /// How often aggregate views re-render while watching, as a duration.
     ///
     /// Throttles rendering only; change detection is event-driven and unaffected.
     #[cfg(feature = "watch")]
-    #[arg(long, value_name = "DUR", default_value = "2s", help_heading = "Execution")]
+    #[arg(long, value_name = "DUR", default_value = "2s", help_heading = "EXECUTION")]
     pub interval: String,
 
+    /// Print help.
+    #[arg(short = 'h', long = "help", action = ArgAction::HelpShort, help_heading = "OTHER")]
+    pub help: Option<bool>,
+
+    /// Print version.
+    #[arg(short = 'V', long = "version", action = ArgAction::Version, help_heading = "OTHER")]
+    pub version: Option<bool>,
+
+    /// Print the usage guide: the report ladder, both axes, and the output contracts.
+    #[arg(long, action = ArgAction::SetTrue, help_heading = "OTHER")]
+    pub docs: bool,
+
     /// Print a portable agent skill to stdout.
-    #[arg(long, action = ArgAction::SetTrue, help_heading = "Other")]
+    #[arg(long, action = ArgAction::SetTrue, help_heading = "OTHER")]
     pub skill: bool,
 }
 
@@ -392,6 +481,14 @@ impl Cli {
         stdout_is_terminal: bool,
         stderr_is_terminal: bool,
     ) -> anyhow::Result<RunOutcome> {
+        if self.docs {
+            let color =
+                ColorContext::from_environment(self.color, false, false, stdout_is_terminal)
+                    .enabled();
+            write!(out, "{}", style_guide(DOCS, color))?;
+            return Ok(RunOutcome::Complete);
+        }
+
         if self.skill {
             write!(out, "{}", compose_skill())?;
             return Ok(RunOutcome::Complete);
@@ -409,7 +506,12 @@ impl Cli {
         // time costs nothing and reports its own spelling rather than a scan's worth of
         // waiting followed by an error.
         let format = self.parse_format().map_err(|error| usage(&error))?;
-        let query = self.parse_query().map_err(|error| usage(&error))?;
+        // The content axis is parsed first because the view axis defaults from it: a
+        // request that pays to read files should display what it read.
+        let analysis = self.parse_analysis().map_err(|error| usage(&error))?;
+        let views =
+            resolve_views(self.view.as_deref(), analysis.profile).map_err(|error| usage(&error))?;
+        let query = self.parse_query(&views.selected).map_err(|error| usage(&error))?;
         let path = self.path.as_deref().ok_or_else(|| {
             usage(&anyhow::anyhow!(
                 "missing PATH: specify the directory to summarize, for example `fdu .`"
@@ -417,7 +519,6 @@ impl Cli {
         })?;
 
         let policy = self.parse_cache_policy().map_err(|error| usage(&error))?;
-        let analysis = self.parse_analysis().map_err(|error| usage(&error))?;
         query
             .validate_analysis(analysis.profile)
             .map_err(|message| usage(&anyhow::anyhow!(message)))?;
@@ -515,6 +616,9 @@ impl Cli {
                     color,
                 )
             )?;
+            for note in display_notes(&views, analysis.profile, performance.bytes_read) {
+                writeln!(out, "{}", paint(&note, STYLE_PERFORMANCE, color))?;
+            }
         }
 
         if format == report_format::Format::Text && !report.complete {
@@ -903,7 +1007,19 @@ impl Cli {
     /// This is all the CLI does: parse flags into `Query`, hand it to the library, and
     /// serialize what comes back. Any logic beyond that belongs in the library, where
     /// Rust and Python callers get it too.
-    fn parse_query(&self) -> anyhow::Result<Query> {
+    /// Resolve the content and view axes exactly as [`Cli::run`] does.
+    ///
+    /// Tests go through this rather than calling `parse_query` with a hand-written view
+    /// list, so a change to the resolution order cannot pass the suite while breaking the
+    /// command.
+    #[cfg(test)]
+    fn resolved_query(&self) -> anyhow::Result<Query> {
+        let analysis = self.parse_analysis()?;
+        let views = resolve_views(self.view.as_deref(), analysis.profile)?;
+        self.parse_query(&views.selected)
+    }
+
+    fn parse_query(&self, views: &[ViewSpec]) -> anyhow::Result<Query> {
         let now = SystemTime::now();
 
         let mut selection = Selection {
@@ -938,7 +1054,7 @@ impl Cli {
             selection.sort = Some(parse_sort(sort)?);
         }
 
-        let views = parse_list(&self.view, "--view", parse_view)?;
+        let views = views.to_vec();
         if self.words_per_page == 0 {
             anyhow::bail!("invalid --words-per-page 0: expected a positive integer");
         }
@@ -946,16 +1062,8 @@ impl Cli {
     }
 
     fn parse_analysis(&self) -> anyhow::Result<AnalysisRequest> {
-        let profile = match self.analyze.trim().to_ascii_lowercase().as_str() {
-            "none" | "off" | "disabled" => AnalysisProfile::Disabled,
-            "basic" => AnalysisProfile::Basic,
-            "code" => AnalysisProfile::Code,
-            "documents" | "docs" => AnalysisProfile::Documents,
-            "full" => AnalysisProfile::Full,
-            other => anyhow::bail!(
-                "invalid --analyze {other:?}: expected one of none, basic, code, documents, full"
-            ),
-        };
+        let profile = AnalysisSet::parse(&self.analyze)
+            .map_err(|message| anyhow::anyhow!(message.replace("analyze", "--analyze")))?;
         Ok(AnalysisRequest { profile, workers: self.analysis_workers })
     }
 }
@@ -1122,6 +1230,117 @@ fn parse_list<T: PartialEq>(
     Ok(parsed)
 }
 
+/// Every view, in the order `--view all` renders them.
+///
+/// Totals first, then structure, then progressively finer groupings, with the flat
+/// listing last because it is the only one whose length is bounded by `--limit` rather
+/// than by the tree's shape.  The order is a golden contract: it is what `--view all`
+/// prints, so changing it changes committed output.
+const ALL_VIEWS: [ViewSpec; 8] = [
+    ViewSpec::Summary,
+    ViewSpec::Tree,
+    ViewSpec::Families,
+    ViewSpec::Types,
+    ViewSpec::Extensions,
+    ViewSpec::Languages,
+    ViewSpec::Documents,
+    ViewSpec::Files,
+];
+
+/// Whether a view renders anything the content analyzers produce.
+///
+/// This is the check behind the "paid for nothing" note.  It is deliberately a match
+/// rather than a property of `ViewSpec`, so adding a view forces a decision here about
+/// whether it displays content metrics.
+const fn view_displays_analysis(view: ViewSpec) -> bool {
+    matches!(view, ViewSpec::Types | ViewSpec::Families | ViewSpec::Languages | ViewSpec::Documents)
+}
+
+/// Whether a view can render at all under `profile`.
+///
+/// Only `documents` has no metadata-only projection; every other view answers with or
+/// without analysis, showing fewer columns when it has less to show.
+const fn view_is_satisfiable(view: ViewSpec, profile: AnalysisSet) -> bool {
+    !matches!(view, ViewSpec::Documents) || profile.is_enabled()
+}
+
+/// The view a request displays its analysis in when the caller named none.
+///
+/// A view may never enable an analyzer — that would let a display choice authorize
+/// filesystem reads — but the reverse direction is free, because it only re-projects
+/// state the request already paid for.  Without this, `--analyze all` reads every
+/// eligible file and prints a tree containing none of the results.
+const fn default_view_for(profile: AnalysisSet) -> ViewSpec {
+    match (profile.includes_code(), profile.includes_words()) {
+        // The one view whose rows carry both metric groups at once.
+        (true, true) => ViewSpec::Families,
+        (true, false) => ViewSpec::Languages,
+        (false, true) => ViewSpec::Documents,
+        // Line counts alone still need a grouping that shows them.
+        (false, false) if profile.is_enabled() => ViewSpec::Families,
+        // The unchanged du-replacement answer.
+        (false, false) => ViewSpec::Tree,
+    }
+}
+
+/// Views to render, plus any `--view all` could not satisfy.
+#[derive(Debug)]
+struct ResolvedViews {
+    selected: Vec<ViewSpec>,
+    omitted: Vec<ViewSpec>,
+}
+
+/// Resolve the view axis against the content axis.
+///
+/// `all` expands to what the requested analyzers can answer rather than failing the
+/// whole run over one unsatisfiable view, and reports what it dropped so the omission is
+/// stated rather than hidden.
+fn resolve_views(spec: Option<&str>, profile: AnalysisSet) -> anyhow::Result<ResolvedViews> {
+    let Some(spec) = spec else {
+        return Ok(ResolvedViews {
+            selected: vec![default_view_for(profile)],
+            omitted: Vec::new(),
+        });
+    };
+    if spec.trim().eq_ignore_ascii_case("all") {
+        let (selected, omitted) =
+            ALL_VIEWS.into_iter().partition(|view| view_is_satisfiable(*view, profile));
+        return Ok(ResolvedViews { selected, omitted });
+    }
+    Ok(ResolvedViews { selected: parse_list(spec, "--view", parse_view)?, omitted: Vec::new() })
+}
+
+/// Notes that keep the display contract legible in human output.
+///
+/// Both are the same rule read in opposite directions: a run displays what it paid for,
+/// and a view it could not render is named rather than quietly dropped.  Machine formats
+/// carry neither, because the `reports` array already enumerates exactly which views were
+/// produced — a consumer reads the omission from what is absent.
+fn display_notes(views: &ResolvedViews, profile: AnalysisSet, bytes_read: u64) -> Vec<String> {
+    let mut notes = Vec::new();
+    if !views.omitted.is_empty() {
+        let names = views
+            .omitted
+            .iter()
+            .map(|view| report_format::view_label(*view))
+            .collect::<Vec<_>>()
+            .join(", ");
+        notes.push(format!(
+            "note: omitted {names} — requires content analysis: add --analyze lines, code, words, or all"
+        ));
+    }
+    // Never an error: warming the content sidecar so a later run is warm is a supported
+    // use, and `--cache`-aware callers depend on it.  Silence would hide the cost instead.
+    if profile.is_enabled() && !views.selected.iter().any(|view| view_displays_analysis(*view)) {
+        notes.push(format!(
+            "note: --analyze {} read {}; no selected view displays content metrics — try --view families, languages, or all",
+            profile.labels().join(","),
+            report_format::human_bytes(bytes_read),
+        ));
+    }
+    notes
+}
+
 /// Parse one `--view` token.
 fn parse_view(token: &str, flag: &str) -> anyhow::Result<ViewSpec> {
     match token.to_ascii_lowercase().as_str() {
@@ -1133,8 +1352,11 @@ fn parse_view(token: &str, flag: &str) -> anyhow::Result<ViewSpec> {
         "documents" | "docs" => Ok(ViewSpec::Documents),
         "files" => Ok(ViewSpec::Files),
         "summary" => Ok(ViewSpec::Summary),
+        "all" => anyhow::bail!(
+            "invalid {flag} \"all\": it names the whole axis and cannot be combined with another view"
+        ),
         _ => anyhow::bail!(
-            "invalid {flag} {token:?}: expected one of tree, extensions, types, families, languages, documents, files, summary"
+            "invalid {flag} {token:?}: expected one of tree, extensions, types, families, languages, documents, files, summary, all"
         ),
     }
 }
@@ -1285,10 +1507,58 @@ fn write_styled(
     for line in rendered.split_inclusive('\n') {
         let (content, newline) =
             line.strip_suffix('\n').map_or((line, ""), |content| (content, "\n"));
-        out.write_all(content.trim_end_matches([' ', '\t']).as_bytes())?;
+        let content = content.trim_end_matches([' ', '\t']);
+        let content = strip_heading_colon(content);
+        out.write_all(content.as_bytes())?;
         out.write_all(newline.as_bytes())?;
     }
     Ok(())
+}
+
+/// Drop the colon clap appends to a section heading.
+///
+/// clap renders `help_heading` as `HEADING:` with no way to opt out, which would leave
+/// help reading `SCOPE:` while the report reads `SUMMARY`. Rather than fight the
+/// formatter, the one rendering path we already own removes it.
+///
+/// Only a standalone all-caps heading line qualifies. `Usage: fdu ...` keeps its colon
+/// because it carries content after it, and an error line keeps its colon for the same
+/// reason — the test is that the whole line is the heading.
+fn strip_heading_colon(line: &str) -> Cow<'_, str> {
+    let Some(without_colon) = line.strip_suffix(':').or_else(|| {
+        // With colour the reset sequence trails the text, so the colon sits inside it.
+        line.strip_suffix("\u{1b}[0m").and_then(|inner| inner.strip_suffix(':'))
+    }) else {
+        return Cow::Borrowed(line);
+    };
+    let visible = strip_ansi(without_colon);
+    let is_heading = !visible.is_empty()
+        && visible.chars().any(char::is_alphabetic)
+        && visible.chars().all(|c| c.is_uppercase() || c == ' ' || !c.is_alphabetic());
+    if !is_heading {
+        return Cow::Borrowed(line);
+    }
+    // Remove just that colon, keeping any trailing reset sequence intact.
+    let colon = line.rfind(':').expect("the suffix match found one");
+    Cow::Owned(format!("{}{}", &line[..colon], &line[colon + 1..]))
+}
+
+/// The visible characters of a line, with any ANSI escape sequences removed.
+fn strip_ansi(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut chars = line.chars();
+    while let Some(c) = chars.next() {
+        if c == '\u{1b}' {
+            for escape in chars.by_ref() {
+                if escape.is_ascii_alphabetic() {
+                    break;
+                }
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
 }
 
 fn finish(
@@ -1402,6 +1672,32 @@ impl ColorContext {
 /// is the spelling every other timestamp this tool prints uses.
 fn watch_rule(at: SystemTime) -> String {
     format!("──── {} ────", format_rfc3339(at))
+}
+
+/// Paint the guide's section headers with the shared header style.
+///
+/// A header is a line that starts at column zero and is upper case — the same shape the
+/// report's view headers take, which is what makes the two surfaces look like one tool.
+/// Everything else passes through untouched, so redirecting to a file or setting `NO_COLOR`
+/// yields exactly the bytes the golden pins.
+fn style_guide(guide: &str, color: bool) -> String {
+    if !color {
+        return guide.to_string();
+    }
+    let mut out = String::with_capacity(guide.len());
+    for line in guide.lines() {
+        let is_header = !line.is_empty()
+            && !line.starts_with(char::is_whitespace)
+            && line.chars().any(char::is_alphabetic)
+            && line.chars().filter(|c| c.is_alphabetic()).all(char::is_uppercase);
+        if is_header {
+            out.push_str(&paint(line, STYLE_HEADING, true));
+        } else {
+            out.push_str(line);
+        }
+        out.push('\n');
+    }
+    out
 }
 
 fn paint(text: &str, style: AnsiStyle, color: bool) -> String {
@@ -1555,7 +1851,7 @@ mod tests {
             sort: None,
             reverse: false,
             size: "allocated".to_string(),
-            view: "tree".to_string(),
+            view: Some("tree".to_string()),
             analyze: "none".to_string(),
             analysis_workers: 0,
             words_per_page: 250,
@@ -1569,12 +1865,15 @@ mod tests {
             #[cfg(feature = "watch")]
             interval: "2s".to_string(),
             allow_partial: false,
+            help: None,
+            version: None,
+            docs: false,
             skill: false,
         }
     }
 
     fn query_error(cli: &Cli) -> String {
-        cli.parse_query().expect_err("expected a rejection").to_string()
+        cli.resolved_query().expect_err("expected a rejection").to_string()
     }
 
     #[test]
@@ -1619,15 +1918,15 @@ mod tests {
 
     #[test]
     fn views_parse_as_an_ordered_comma_list() {
-        let parsed = Cli { view: "types,tree,summary".to_string(), ..cli() }
-            .parse_query()
+        let parsed = Cli { view: Some("types,tree,summary".to_string()), ..cli() }
+            .resolved_query()
             .expect("views parse");
         assert_eq!(parsed.views, vec![ViewSpec::Types, ViewSpec::Tree, ViewSpec::Summary]);
     }
 
     #[test]
     fn an_unknown_view_names_every_valid_value() {
-        let message = query_error(&Cli { view: "bogus".to_string(), ..cli() });
+        let message = query_error(&Cli { view: Some("bogus".to_string()), ..cli() });
         assert!(
             message.contains(
                 "tree, extensions, types, families, languages, documents, files, summary"
@@ -1638,25 +1937,25 @@ mod tests {
 
     #[test]
     fn a_repeated_view_is_a_typo_not_a_no_op() {
-        let message = query_error(&Cli { view: "tree,tree".to_string(), ..cli() });
+        let message = query_error(&Cli { view: Some("tree,tree".to_string()), ..cli() });
         assert!(message.contains("appears more than once"), "{message}");
     }
 
     #[test]
     fn an_empty_list_entry_is_rejected() {
-        let message = query_error(&Cli { view: "tree,,types".to_string(), ..cli() });
+        let message = query_error(&Cli { view: Some("tree,,types".to_string()), ..cli() });
         assert!(message.contains("empty entry"), "{message}");
     }
 
     #[test]
     fn bounds_accept_all_as_well_as_a_number() {
         let parsed = Cli { depth: "all".to_string(), limit: "3".to_string(), ..cli() }
-            .parse_query()
+            .resolved_query()
             .expect("bounds parse");
         assert_eq!(parsed.selection.depth, Bound::All);
         assert_eq!(parsed.selection.limit, Bound::Limit(3));
         // du's meaning of depth 0 survives the rename from --max-depth.
-        let zero = Cli { depth: "0".to_string(), ..cli() }.parse_query().expect("parses");
+        let zero = Cli { depth: "0".to_string(), ..cli() }.resolved_query().expect("parses");
         assert_eq!(zero.selection.depth, Bound::Limit(0));
     }
 
@@ -1669,7 +1968,7 @@ mod tests {
             exclude: vec!["**/target/**".to_string()],
             ..cli()
         }
-        .parse_query()
+        .resolved_query()
         .expect("patterns parse");
         assert_eq!(parsed.selection.include.len(), 2);
         assert_eq!(parsed.selection.exclude.len(), 1);
@@ -1694,7 +1993,7 @@ mod tests {
             modified_before: Some("@2000".to_string()),
             ..cli()
         }
-        .parse_query()
+        .resolved_query()
         .expect("window parses");
         assert_eq!(parsed.selection.modified.since, Some(1_000_000_000_000));
         assert_eq!(parsed.selection.modified.before, Some(2_000_000_000_000));
@@ -1709,7 +2008,7 @@ mod tests {
             reverse: true,
             ..cli()
         }
-        .parse_query()
+        .resolved_query()
         .expect("parses");
         assert_eq!(parsed.selection.kinds, vec![EntryKind::File, EntryKind::Dir]);
         assert_eq!(parsed.selection.sort, Some(SortKey::Mtime));
@@ -1717,21 +2016,189 @@ mod tests {
         assert!(parsed.selection.reverse);
     }
 
+    /// Every flag the guide names must exist.
+    ///
+    /// tbd states this rule for its own docs surface as "the menu must only name
+    /// selectors that exist", and it is worth a test rather than an intention: prose that
+    /// advertises a flag the binary does not have is worse than prose that says nothing,
+    /// because the reader spends their trust before finding out.
+    #[test]
+    fn the_guide_only_names_flags_that_exist() {
+        let command = Cli::command();
+        let known: Vec<String> = command
+            .get_arguments()
+            .filter_map(|arg| arg.get_long().map(|long| format!("--{long}")))
+            .collect();
+        let mut named = Vec::new();
+        for token in DOCS.split(|c: char| !(c.is_alphanumeric() || c == '-' || c == '_')) {
+            if token.starts_with("--") && token.len() > 2 {
+                named.push(token.trim_end_matches('-').to_string());
+            }
+        }
+        assert!(!named.is_empty(), "the guide should name some flags");
+        for flag in &named {
+            assert!(known.contains(flag), "--docs names {flag}, which is not a flag");
+        }
+        // And the pointer must name the flag that prints the guide.
+        assert!(DOCS_POINTER.contains("--docs"), "{DOCS_POINTER}");
+    }
+
+    /// The vocabularies the guide lists must be the ones the parsers accept.
+    #[test]
+    fn the_guide_only_names_views_and_analyzers_that_parse() {
+        for view in [
+            "tree",
+            "extensions",
+            "types",
+            "families",
+            "languages",
+            "documents",
+            "files",
+            "summary",
+        ] {
+            assert!(DOCS.contains(view), "the guide should list the {view} view");
+            parse_view(view, "--view").unwrap_or_else(|_| panic!("{view} must parse"));
+        }
+        for set in ["none", "lines", "code", "words", "all"] {
+            assert!(DOCS.contains(set), "the guide should list the {set} analyzer value");
+            AnalysisSet::parse(set).unwrap_or_else(|_| panic!("{set} must parse"));
+        }
+    }
+
+    /// The stale-schema bug, made unrepeatable.
+    ///
+    /// The bump to `fdu.report/3` left "metric summaries use fdu.report/2" in the help
+    /// text, contradicting what the binary emits. It survived a vocabulary sweep and a
+    /// full `make check`, because no test compared prose against the constants.
+    #[test]
+    fn no_surface_names_a_schema_the_binary_does_not_emit() {
+        const PREFIX: &str = "fdu.report/";
+        let live = [report_format::REPORT_SCHEMA, report_format::CONTENT_REPORT_SCHEMA];
+        for (surface, text) in [("--docs", DOCS.to_string()), ("--skill", compose_skill())] {
+            let mut rest = text.as_str();
+            let mut found = 0;
+            while let Some(at) = rest.find(PREFIX) {
+                rest = &rest[at..];
+                // The version is the digit run after the prefix; whatever punctuation
+                // follows belongs to the sentence, not to the schema string.
+                let digits = rest[PREFIX.len()..].chars().take_while(char::is_ascii_digit).count();
+                let named = &rest[..PREFIX.len() + digits];
+                assert!(
+                    live.contains(&named),
+                    "{surface} names {named}, but the binary emits {live:?}"
+                );
+                found += 1;
+                rest = &rest[PREFIX.len() + digits..];
+            }
+            assert!(found > 0, "{surface} should state which schema it emits");
+        }
+    }
+
+    /// The defect this axis exists to fix: a request that reads every eligible file must
+    /// not print a report identical to one that read nothing.
+    #[test]
+    fn requesting_analysis_selects_a_view_that_displays_it() {
+        let cases = [
+            (AnalysisSet::NONE, ViewSpec::Tree),
+            (AnalysisSet::NONE.with_lines(), ViewSpec::Families),
+            (AnalysisSet::NONE.with_code(), ViewSpec::Languages),
+            (AnalysisSet::NONE.with_words(), ViewSpec::Documents),
+            (AnalysisSet::ALL, ViewSpec::Families),
+        ];
+        for (profile, expected) in cases {
+            assert_eq!(default_view_for(profile), expected, "default view for {profile:?}");
+            if profile.is_enabled() {
+                assert!(
+                    view_displays_analysis(default_view_for(profile)),
+                    "a paid-for run must default to a view that shows what it bought"
+                );
+            }
+        }
+    }
+
+    /// An explicit view always wins; the derivation only supplies the default.
+    #[test]
+    fn an_explicit_view_overrides_the_derived_default() {
+        let resolved = resolve_views(Some("tree"), AnalysisSet::ALL).expect("resolve");
+        assert_eq!(resolved.selected, vec![ViewSpec::Tree]);
+        assert!(resolved.omitted.is_empty());
+    }
+
+    #[test]
+    fn view_all_expands_to_what_the_analyzer_set_can_answer() {
+        let bare = resolve_views(Some("all"), AnalysisSet::NONE).expect("resolve");
+        assert_eq!(bare.omitted, vec![ViewSpec::Documents], "documents needs content");
+        assert_eq!(bare.selected.len(), ALL_VIEWS.len() - 1);
+        assert!(!bare.selected.contains(&ViewSpec::Documents));
+
+        let analyzed = resolve_views(Some("all"), AnalysisSet::ALL).expect("resolve");
+        assert_eq!(analyzed.selected, ALL_VIEWS.to_vec(), "every view, in table order");
+        assert!(analyzed.omitted.is_empty());
+
+        // `all` names the axis, so combining it with a view is a usage error rather than
+        // a silently-widened request.
+        let combined = resolve_views(Some("all,tree"), AnalysisSet::NONE)
+            .expect_err("all cannot be combined")
+            .to_string();
+        assert!(combined.contains("cannot be combined"), "{combined}");
+    }
+
+    /// Both directions of the display contract, stated as notes rather than errors.
+    #[test]
+    fn the_display_contract_reports_omissions_and_unspent_reads() {
+        let omitted = resolve_views(Some("all"), AnalysisSet::NONE).expect("resolve");
+        let notes = display_notes(&omitted, AnalysisSet::NONE, 0);
+        assert_eq!(notes.len(), 1, "{notes:?}");
+        assert!(notes[0].contains("omitted documents"), "{notes:?}");
+        assert!(notes[0].contains("--analyze lines, code, words, or all"), "{notes:?}");
+
+        let unspent = resolve_views(Some("tree"), AnalysisSet::ALL).expect("resolve");
+        let notes = display_notes(&unspent, AnalysisSet::ALL, 1_200);
+        assert_eq!(notes.len(), 1, "{notes:?}");
+        assert!(notes[0].contains("no selected view displays content metrics"), "{notes:?}");
+        assert!(notes[0].contains("1.1 KiB"), "the note quantifies what was read: {notes:?}");
+
+        // A view that does display the metrics earns no note at all.
+        let spent = resolve_views(Some("families"), AnalysisSet::ALL).expect("resolve");
+        assert!(display_notes(&spent, AnalysisSet::ALL, 1_200).is_empty());
+
+        // Neither does a metadata-only run, which bought nothing to display.
+        let plain = resolve_views(None, AnalysisSet::NONE).expect("resolve");
+        assert!(display_notes(&plain, AnalysisSet::NONE, 0).is_empty());
+    }
+
+    /// Principle 13, the direction that protects the user: no view, at any content
+    /// setting, may cause a file body to be opened that `--analyze` did not authorize.
+    #[test]
+    fn no_view_enables_an_analyzer() {
+        for view in ALL_VIEWS {
+            let spec = report_format::view_label(view);
+            let cli = Cli { view: Some(spec.to_string()), ..cli() };
+            let profile = cli.parse_analysis().expect("analysis").profile;
+            assert_eq!(
+                profile,
+                AnalysisSet::NONE,
+                "--view {spec} must leave the content axis empty"
+            );
+        }
+    }
+
     #[test]
     fn analysis_profile_workers_and_page_denominator_parse_before_io() {
         let parsed =
-            Cli { analyze: "basic".to_string(), analysis_workers: 3, words_per_page: 250, ..cli() };
+            Cli { analyze: "lines".to_string(), analysis_workers: 3, words_per_page: 250, ..cli() };
         assert_eq!(
             parsed.parse_analysis().expect("analysis"),
-            AnalysisRequest { profile: AnalysisProfile::Basic, workers: 3 }
+            AnalysisRequest { profile: AnalysisSet::NONE.with_lines(), workers: 3 }
         );
-        assert_eq!(parsed.parse_query().expect("query").words_per_page, 250);
+        assert_eq!(parsed.resolved_query().expect("query").words_per_page, 250);
 
         let invalid = Cli { analyze: "deep".to_string(), ..cli() }
             .parse_analysis()
             .expect_err("invalid profile")
             .to_string();
-        assert!(invalid.contains("none, basic, code, documents, full"));
+        assert!(invalid.contains("none, lines, code, words, all"), "{invalid}");
+        assert!(invalid.contains("--analyze"), "the message names the flag: {invalid}");
         assert!(query_error(&Cli { words_per_page: 0, ..cli() }).contains("positive"));
     }
 
@@ -1741,8 +2208,8 @@ mod tests {
         std::fs::write(root.path().join("notes.md"), b"one two\n\nthree\n").expect("write");
         let command = Cli {
             path: Some(root.path().to_path_buf()),
-            analyze: "basic".to_string(),
-            view: "documents".to_string(),
+            analyze: "lines".to_string(),
+            view: Some("documents".to_string()),
             format: "json".to_string(),
             size: "apparent".to_string(),
             ..cli()
@@ -1752,7 +2219,7 @@ mod tests {
             command.run(&mut output, &mut Vec::new(), false, false).expect("run content report");
         assert_eq!(outcome, RunOutcome::Complete);
         let output = String::from_utf8(output).expect("UTF-8 JSON");
-        assert!(output.contains("\"schema\": \"fdu.report/2\""), "{output}");
+        assert!(output.contains("\"schema\": \"fdu.report/3\""), "{output}");
         assert!(output.contains("\"physical_lines\": 3"), "{output}");
         assert!(output.contains("\"raw_words\": 3"), "{output}");
         assert!(output.contains("\"words_per_page\": 250"), "{output}");
@@ -1766,8 +2233,8 @@ mod tests {
         std::fs::write(root.path().join("two.txt"), b"two\n").expect("write");
         let command = Cli {
             path: Some(root.path().to_path_buf()),
-            analyze: "basic".to_string(),
-            view: "summary".to_string(),
+            analyze: "lines".to_string(),
+            view: Some("summary".to_string()),
             size: "apparent".to_string(),
             ..cli()
         };
@@ -1775,7 +2242,10 @@ mod tests {
         let mut plain = Vec::new();
         command.run(&mut plain, &mut Vec::new(), false, false).expect("plain report");
         let plain = String::from_utf8(plain).expect("plain UTF-8");
-        let footer = plain.lines().last().expect("performance footer");
+        // `summary` displays no content metric, so this run also earns the paid-for-
+        // nothing note; the footer is the line before it rather than the last line.
+        let footer =
+            plain.lines().find(|line| line.contains("Performance:")).expect("performance footer");
         assert!(
             footer.starts_with("Performance: walked 2 files / 8 B; content read 8 B at "),
             "{plain}"
@@ -1790,11 +2260,19 @@ mod tests {
             .run(&mut colored, &mut Vec::new(), false, false)
             .expect("colored report");
         let colored = String::from_utf8(colored).expect("colored UTF-8");
-        let footer = colored.lines().last().expect("colored performance footer");
+        let footer = colored
+            .lines()
+            .find(|line| line.contains("Performance:"))
+            .expect("colored performance footer");
         assert!(
             footer.starts_with("\u{1b}[90mPerformance:"),
             "the footer must use terminal gray when color is active: {colored:?}"
         );
+        // The notes are footer-adjacent telemetry and share its dimming, so a terminal
+        // reading the report sees one quiet block rather than a bright interruption.
+        let note =
+            colored.lines().find(|line| line.contains("note: --analyze")).expect("colored note");
+        assert!(note.starts_with("\u{1b}[90mnote:"), "notes share the footer style: {colored:?}");
     }
 
     #[test]
@@ -1826,7 +2304,7 @@ mod tests {
         for format in ["json", "jsonl", "yaml"] {
             let command = Cli {
                 path: Some(root.path().to_path_buf()),
-                view: "summary".to_string(),
+                view: Some("summary".to_string()),
                 size: "apparent".to_string(),
                 format: format.to_string(),
                 ..cli()
@@ -1863,10 +2341,57 @@ mod tests {
         // scan of a large tree.
         let message = query_error(&Cli {
             path: Some(PathBuf::from("/nonexistent-root-that-should-not-be-scanned")),
-            view: "bogus".to_string(),
+            view: Some("bogus".to_string()),
             ..cli()
         });
         assert!(message.contains("expected one of"), "{message}");
+    }
+
+    /// clap appends a colon to every section heading with no way to opt out, so the one
+    /// rendering path we own removes it. The test is that the whole line is the heading —
+    /// anything carrying content after the colon keeps it.
+    #[test]
+    fn only_a_standalone_heading_loses_its_colon() {
+        // Plain and coloured headings, where the colour puts the colon inside the reset.
+        assert_eq!(strip_heading_colon("SCOPE:"), "SCOPE");
+        assert_eq!(strip_heading_colon("CACHE MANAGEMENT:"), "CACHE MANAGEMENT");
+        assert_eq!(
+            strip_heading_colon("\u{1b}[1m\u{1b}[36mSCOPE:\u{1b}[0m"),
+            "\u{1b}[1m\u{1b}[36mSCOPE\u{1b}[0m"
+        );
+
+        // Lines that merely contain a colon are untouched.
+        for line in [
+            "Usage: fdu [OPTIONS] <PATH>",
+            "fdu: invalid --view \"bogus\": expected one of tree",
+            "  Scope      PATH, --scan-depth",
+            "note: omitted documents — requires content analysis",
+            "",
+            "  --scan-depth <N>  Limit scanning and retention to N entry levels",
+        ] {
+            assert_eq!(strip_heading_colon(line), line, "{line:?} must keep its shape");
+        }
+    }
+
+    #[test]
+    fn every_help_heading_is_upper_case_and_bare() {
+        let mut rendered = Vec::new();
+        write_styled(&mut rendered, &Cli::command().render_help(), false).expect("render");
+        let rendered = String::from_utf8(rendered).expect("utf-8 help");
+        let headings: Vec<&str> = rendered
+            .lines()
+            .filter(|line| {
+                !line.is_empty()
+                    && !line.starts_with(char::is_whitespace)
+                    && line.chars().all(|c| c.is_uppercase() || c == ' ' || c == ':')
+                    && line.chars().any(char::is_alphabetic)
+            })
+            .collect();
+        assert!(headings.len() >= 8, "expected the section headings, got {headings:?}");
+        for heading in headings {
+            assert!(!heading.ends_with(':'), "{heading:?} still carries clap's colon");
+            assert_eq!(heading, heading.to_uppercase(), "{heading:?} is not upper case");
+        }
     }
 
     #[test]
@@ -2056,8 +2581,8 @@ mod tests {
         ]));
         index.set_initial_freshness(false);
 
-        let query = Cli { view: "files".to_string(), depth: "all".to_string(), ..cli() }
-            .parse_query()
+        let query = Cli { view: Some("files".to_string()), depth: "all".to_string(), ..cli() }
+            .resolved_query()
             .expect("query parses");
         let provenance = Provenance {
             scan_started_at: None,
@@ -2124,8 +2649,8 @@ mod tests {
             },
         ]));
         dirs.set_initial_freshness(false);
-        let tree_query = Cli { view: "tree".to_string(), depth: "all".to_string(), ..cli() }
-            .parse_query()
+        let tree_query = Cli { view: Some("tree".to_string()), depth: "all".to_string(), ..cli() }
+            .resolved_query()
             .expect("query parses");
         let tree = crate::query::report(&dirs, &tree_query, &provenance);
         let tree_rendered = report_format::render(&tree, report_format::Format::Json, false);

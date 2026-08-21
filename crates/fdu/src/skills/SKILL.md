@@ -9,6 +9,8 @@ description: >-
 # fdu Directory Roll-Ups
 
 Use `fdu` to summarize a directory tree without modifying files in that tree.
+`fdu --docs` prints the full usage guide -- the report ladder, both axes, and the output
+contracts -- without a PATH and without scanning.
 Every report requires an explicit `PATH`; bare `fdu` prints help instead of scanning the
 current directory.
 
@@ -90,15 +92,26 @@ metadata visible but does not retain a separate lower-level metric record for th
   labels each block with an all-caps header naming its view; a single-view text report
   has no header. Machine formats tag every report with `view` either way.
 
-Add `--analyze basic` to stream physical, blank, and nonblank lines and raw prose words.
-Add `--analyze code` to the language view for standard LOC, comment, and code-blank
-partitions across supported common languages; the percentage column then uses code lines
-instead of bytes. Use `--analyze documents --view documents` for normalized prose words,
-paragraphs, aggregate-derived pages, and reader-visible Markdown that excludes
-destinations and code.
-`--analyze full` computes both families in one streaming pass.
-Use `--analysis-workers` to bound concurrent reads and `--words-per-page` to control
-page derivation. Analysis never truncates a file or excludes it because of size.
+`--analyze` names a set of analyzers, comma-separated, from `lines`, `code`, and
+`words`; `none` and `all` are totals and cannot be combined with anything else.
+Anything but `none` opens and reads every eligible file, which is the only setting that
+makes a run cost more than one metadata walk.
+
+Add `--analyze lines` to stream physical, blank, and nonblank lines and raw word counts.
+Add `--analyze code` for standard LOC, comment, and code-blank partitions across
+supported common languages; the percentage column then uses code lines instead of bytes.
+Use `--analyze words` for normalized word volume, paragraphs, aggregate-derived pages,
+and reader-visible Markdown that excludes destinations and code.
+`--analyze code,words` — or `all` — computes both in one streaming pass.
+
+Requesting analysis without naming a view selects one that displays it: `code` reports
+`languages`, `words` reports `documents`, and either both or `lines` alone reports
+`families`. Naming `--view` overrides that; a view never enables an analyzer, so a
+`--view` that displays no content metric prints a note saying what was read for nothing.
+`--view all` reports every view the requested analyzers can answer and names any it
+skipped. Use `--analysis-workers` to bound concurrent reads and `--words-per-page` to
+control page derivation.
+Analysis never truncates a file or excludes it because of size.
 Invalid UTF-8, binary data, and unsupported SLOC languages remain visible as normal
 coverage outcomes. Only I/O failures, files changed during a read, or stale commits make
 analysis operationally partial.
@@ -151,7 +164,10 @@ before the modification, so only the start bound is conservative.
 
 Check the process exit status and these fields:
 
-- `schema` before parsing anything else
+- `schema` before parsing anything else: a metadata-only report carries `fdu.report/1`,
+  a report that ran content analysis carries `fdu.report/3`, and a `--watch` stream
+  carries `fdu.stream/1`. Treat an unrecognized value as a version you cannot parse
+  rather than guessing at the fields.
 - `complete` and `errors` before trusting totals
 - `freshness` and `source` before presenting data as current
 - `truncated` on a tree node before treating it as exhaustive

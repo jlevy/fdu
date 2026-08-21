@@ -27,189 +27,72 @@ A unit test separately proves that `--help` produces these exact bytes.
 
 ```console
 $ fdu
-Five common reports:
-  Language sizes      fdu --view languages PATH
-                      Uses exact names and extensions; never reads file contents.
-  Languages and LOC   fdu --analyze code --view languages PATH
-                      Reads eligible files for code, comment, and blank lines.
-  All file types      fdu --view types PATH
-                      Includes every family from names and extensions; never reads content.
-  Folder sizes        fdu PATH
-                      Uses the metadata-only tree view and reusable index.
-  Fast totals only    fdu --view summary PATH
-                      Returns bytes plus file and directory counts;
-                      retains no index and writes no cache.
-
---analyze chooses what may be read; --view chooses what is printed.
-
 A fast, incremental file roll-up engine: hierarchical tallies over large directory trees
 
 Usage: fdu [OPTIONS] <PATH>
        fdu [PATH] --cache-status[=<SCOPE>] [--cache-clear[=<SCOPE>]]
        fdu [PATH] --cache-clear[=<SCOPE>]
+       fdu --docs
        fdu --skill
 
-Arguments:
-  [PATH]
-          Report root; optional only for cache lifecycle operations
+ARGUMENTS
+  [PATH]  Report root; optional only for the discovery and cache-lifecycle flags
 
-Options:
-  -h, --help
-          Print help (see a summary with '-h')
+SCOPE
+      --scan-depth <N>  Limit scanning and retention to N entry levels
+      --one-filesystem  Stay on the filesystem the root lives on
 
-  -V, --version
-          Print version
+SELECTION
+      --include <GLOB>          Report only entries matching this glob; repeatable
+      --exclude <GLOB>          Exclude entries matching this glob; repeatable, and wins over
+                                --include
+      --min-size <SIZE>         Report only entries at least this large, as 512, 10M, or 1.5GiB
+      --modified-since <WHEN>   Report only entries modified at or after this time, as 2h or an RFC
+                                3339 stamp
+      --modified-before <WHEN>  Report only entries modified before this time
+      --kind <LIST>             Entry kinds to report: file, dir, symlink, other
+  -d, --depth <N>               Directory levels to show; does not limit scanning. Accepts `all`
+                                [default: 2]
+  -n, --limit <N>               Entries to show per directory. Accepts `all` [default: 10]
+      --sort <KEY>              Order results: size, count, mtime, or name
+      --reverse                 Reverse the ordering
+      --size <METRIC>           Which size metric to report: allocated or apparent [default:
+                                allocated]
 
-Scope:
-      --scan-depth <N>
-          Limit scanning and retention to N entry levels
+VIEWS
+      --view <LIST>         Views: tree, extensions, types, families, languages, documents, files,
+                            summary, or all. Defaults to the view that displays whatever --analyze
+                            requested
+      --words-per-page <N>  Logical words per derived document page [default: 250]
 
-      --one-filesystem
-          Stay on the filesystem the root lives on
+CONTENT ANALYSIS
+      --analyze <LIST>        Analyzers to run: none, lines, code, words, or all [default: none]
+      --analysis-workers <N>  Content reader workers; zero selects available parallelism [default:
+                              0]
 
-Selection:
-      --include <GLOB>
-          Report only entries matching this glob; repeatable
+OUTPUT
+      --format <FORMAT>  Output format: text, json, jsonl, or yaml [default: text]
+      --color <WHEN>     Colorize human output: auto, always, or never [default: auto]
 
-      --exclude <GLOB>
-          Exclude entries matching this glob; repeatable, and wins over --include
+EXECUTION
+      --cache <POLICY>  Cache policy: auto, refresh, read-only, only, or off [default: auto]
+      --allow-partial   Accept operationally partial results, including filesystem or analysis
+                        failures
+      --watch           Stream changes continuously instead of returning one report
+      --interval <DUR>  How often aggregate views re-render while watching, as a duration [default:
+                        2s]
 
-      --min-size <SIZE>
-          Report only entries at least this large, as 512, 10M, or 1.5GiB
+CACHE MANAGEMENT
+      --cache-status[=<SCOPE>]  Report cache contents instead of scanning: root (default) or all
+      --cache-clear[=<SCOPE>]   Remove cached snapshots instead of scanning: root (default) or all
 
-      --modified-since <WHEN>
-          Report only entries modified at or after this time, as 2h or an RFC 3339 stamp
+OTHER
+  -h, --help     Print help
+  -V, --version  Print version
+      --docs     Print the usage guide: the report ladder, both axes, and the output contracts
+      --skill    Print a portable agent skill to stdout
 
-      --modified-before <WHEN>
-          Report only entries modified before this time
-
-      --kind <LIST>
-          Entry kinds to report: file, dir, symlink, other
-
-  -d, --depth <N>
-          Directory levels to show; does not limit scanning. Accepts `all`
-
-          [default: 2]
-
-  -n, --limit <N>
-          Entries to show per directory. Accepts `all`
-
-          [default: 10]
-
-      --sort <KEY>
-          Order results: size, count, mtime, or name
-
-      --reverse
-          Reverse the ordering
-
-      --size <METRIC>
-          Which size metric to report: allocated or apparent
-
-          [default: allocated]
-
-Views:
-      --view <LIST>
-          Views: tree, extensions, types, families, languages, documents, files, summary
-
-          [default: tree]
-
-      --words-per-page <N>
-          Logical words per derived document page
-
-          [default: 250]
-
-Content analysis:
-      --analyze <PROFILE>
-          Content depth: none, basic, code, documents, or full
-
-          [default: none]
-
-      --analysis-workers <N>
-          Content reader workers; zero selects available parallelism
-
-          [default: 0]
-
-Output:
-      --format <FORMAT>
-          Output format: text, json, jsonl, or yaml
-
-          [default: text]
-
-      --color <WHEN>
-          Colorize human output: auto, always, or never
-
-          [default: auto]
-
-Execution:
-      --cache <POLICY>
-          Cache policy: auto, refresh, read-only, only, or off
-
-          [default: auto]
-
-      --allow-partial
-          Accept operationally partial results, including filesystem or analysis failures
-
-      --watch
-          Stream changes continuously instead of returning one report
-
-      --interval <DUR>
-          How often aggregate views re-render while watching, as a duration.
-
-          Throttles rendering only; change detection is event-driven and unaffected.
-
-          [default: 2s]
-
-Cache management:
-      --cache-status[=<SCOPE>]
-          Report cache contents instead of scanning: root (default) or all
-
-      --cache-clear[=<SCOPE>]
-          Remove cached snapshots instead of scanning: root (default) or all
-
-Other:
-      --skill
-          Print a portable agent skill to stdout
-
-More compositions:
-  fdu --view extensions ~/Downloads
-  fdu --view types,families --format json .
-  fdu --analyze documents --view documents .
-
-Five axes, and every option belongs to exactly one:
-  Scope      PATH, --scan-depth                         what is scanned and cached
-  Selection  --include, --exclude, --depth, --limit    which entries are considered
-  View       tree,extensions,types,families,languages,documents,files,summary
-  Format     --format text|json|jsonl|yaml, --color
-  Mode       --cache, --analyze, --analysis-workers
-
-Content analysis:
-  none       metadata only; source files are never opened (default)
-  basic      physical, blank, and nonblank lines plus raw prose words
-  code       basic metrics plus the versioned common-language SLOC analyzer
-  documents  basic metrics plus logical and reader-visible prose metrics
-  full       every shipped analyzer
-
-  languages is metadata-only by default; code or full adds standard LOC.
-  documents requires any enabled profile.
-  Views never enable content analysis implicitly.
-  Analysis streams every eligible file through EOF; files are never size-truncated.
-  --analysis-workers bounds concurrency.
-  --words-per-page changes only report-time page derivation.
-  Unchanged results for the same profile are restored from a separate sidecar.
-  cache=only never opens source files and fails if requested content is absent.
-
-Output and automation:
-  Metadata-only machine output remains fdu.report/1; metric summaries use fdu.report/2.
-  Text language rows use canonical names; machine formats retain lowercase IDs.
-  Metric rows include detection source, confidence, origin flags, and coverage.
-  One-shot text reports end with a gray performance line; machine formats omit it.
-  Results go to stdout; warnings and errors go to stderr.
-  The command never prompts, pages, or animates progress.
-
-Exit status:
-  0  Complete result, or a partial result accepted with --allow-partial
-  1  Fatal filesystem or cache error
-  2  Partial result, or command-line usage error
+Run `fdu --docs` for more help and important usage examples.
 ? 0
 ```
 
@@ -228,6 +111,8 @@ description: >-
 # fdu Directory Roll-Ups
 
 Use `fdu` to summarize a directory tree without modifying files in that tree.
+`fdu --docs` prints the full usage guide -- the report ladder, both axes, and the output
+contracts -- without a PATH and without scanning.
 Every report requires an explicit `PATH`; bare `fdu` prints help instead of scanning the
 current directory.
 
@@ -309,15 +194,26 @@ metadata visible but does not retain a separate lower-level metric record for th
   labels each block with an all-caps header naming its view; a single-view text report
   has no header. Machine formats tag every report with `view` either way.
 
-Add `--analyze basic` to stream physical, blank, and nonblank lines and raw prose words.
-Add `--analyze code` to the language view for standard LOC, comment, and code-blank
-partitions across supported common languages; the percentage column then uses code lines
-instead of bytes. Use `--analyze documents --view documents` for normalized prose words,
-paragraphs, aggregate-derived pages, and reader-visible Markdown that excludes
-destinations and code.
-`--analyze full` computes both families in one streaming pass.
-Use `--analysis-workers` to bound concurrent reads and `--words-per-page` to control
-page derivation. Analysis never truncates a file or excludes it because of size.
+`--analyze` names a set of analyzers, comma-separated, from `lines`, `code`, and
+`words`; `none` and `all` are totals and cannot be combined with anything else.
+Anything but `none` opens and reads every eligible file, which is the only setting that
+makes a run cost more than one metadata walk.
+
+Add `--analyze lines` to stream physical, blank, and nonblank lines and raw word counts.
+Add `--analyze code` for standard LOC, comment, and code-blank partitions across
+supported common languages; the percentage column then uses code lines instead of bytes.
+Use `--analyze words` for normalized word volume, paragraphs, aggregate-derived pages,
+and reader-visible Markdown that excludes destinations and code.
+`--analyze code,words` — or `all` — computes both in one streaming pass.
+
+Requesting analysis without naming a view selects one that displays it: `code` reports
+`languages`, `words` reports `documents`, and either both or `lines` alone reports
+`families`. Naming `--view` overrides that; a view never enables an analyzer, so a
+`--view` that displays no content metric prints a note saying what was read for nothing.
+`--view all` reports every view the requested analyzers can answer and names any it
+skipped. Use `--analysis-workers` to bound concurrent reads and `--words-per-page` to
+control page derivation.
+Analysis never truncates a file or excludes it because of size.
 Invalid UTF-8, binary data, and unsupported SLOC languages remain visible as normal
 coverage outcomes. Only I/O failures, files changed during a read, or stale commits make
 analysis operationally partial.
@@ -370,7 +266,10 @@ before the modification, so only the start bound is conservative.
 
 Check the process exit status and these fields:
 
-- `schema` before parsing anything else
+- `schema` before parsing anything else: a metadata-only report carries `fdu.report/1`,
+  a report that ran content analysis carries `fdu.report/3`, and a `--watch` stream
+  carries `fdu.stream/1`. Treat an unrecognized value as a version you cannot parse
+  rather than guessing at the fields.
 - `complete` and `errors` before trusting totals
 - `freshness` and `source` before presenting data as current
 - `truncated` on a tree node before treating it as exhaustive
@@ -413,6 +312,99 @@ See github.com/jlevy/practical-prose and review guidelines before editing.
 ? 0
 ````
 
+## The Guide Is Reachable Without a Root
+
+`--docs` is a discovery surface like `--skill` and bare `fdu`: it answers without a
+PATH, scans nothing, and exits 0. The body is pinned in full below so a flag rename or a
+dropped section fails here rather than in somebody’s terminal.
+
+```console
+$ fdu --docs
+fdu — a fast, incremental file roll-up engine.
+
+THE LADDER
+  Every report is one command, and they form a ladder. Each rung costs more than
+  the one above it and tells you more, so stop at the cheapest answer that
+  settles your question.
+
+    fdu --view summary PATH             how big is this tree?        no reads
+    fdu PATH                            which folders are big?       no reads
+    fdu --view types PATH               what kinds of files?         no reads
+    fdu --view languages PATH           which languages?             no reads
+    fdu --analyze code PATH             how much code?               READS FILES
+    fdu --analyze words PATH            how much writing?            READS FILES
+    fdu --analyze all --view all PATH   everything there is          READS FILES
+
+TWO FLAGS DO ALL OF IT
+  --analyze decides what gets read. Anything but `none` opens and reads every
+    eligible file, which is the only setting that makes a run cost more than a
+    single metadata walk.
+  --view decides what gets printed. It is free: every view is a projection over
+    one walk, so asking for more views never touches the filesystem again.
+
+  You rarely need both. Naming analyzers selects a view that displays them, so
+  `fdu --analyze code PATH` already prints language rows with lines of code.
+  Name --view yourself for a different projection; it always wins.
+
+  A view never turns on an analyzer, because choosing how to look at a result
+  should not quietly authorize reading every file in the tree. So a --view that
+  displays none of what you asked to read says how much was read for nothing,
+  and --view all names any view it had to skip.
+
+MORE COMPOSITIONS
+  fdu --view extensions ~/Downloads
+  fdu --view types,families --format json .
+  fdu --analyze words --view documents .
+  fdu --view files --min-size 10M --sort size -n 100 PATH   largest files
+  fdu --view files --modified-since 1h --sort mtime PATH    recent changes
+  fdu --watch --view files --format jsonl PATH              a tail -f for a tree
+
+  --interval throttles rendering only; change detection is event-driven and
+  unaffected by it, so an idle tree costs nothing between changes.
+
+SIX AXES, AND EVERY OPTION BELONGS TO EXACTLY ONE
+  Scope      PATH, --scan-depth                         what is scanned and cached
+  Content    --analyze none|lines|code|words|all        which file bodies are read
+  Selection  --include, --exclude, --depth, --limit     which entries are considered
+  View       tree,extensions,types,families,languages,documents,files,summary,all
+  Format     --format text|json|jsonl|yaml, --color
+  Mode       --cache, --watch, --analysis-workers
+
+CONTENT ANALYSIS
+  none       metadata only; source files are never opened (default)
+  lines      physical, blank, and nonblank lines plus raw word counts
+  code       standard SLOC from the versioned common-language analyzer
+  words      normalized and reader-visible word volume
+  all        every shipped analyzer
+
+  A comma-separated set: code,words runs both. none and all name the whole
+  axis and cannot be combined. lines comes with any analyzer, free.
+  languages is metadata-only by default; code adds standard LOC.
+  documents requires any enabled analyzer.
+  Analysis streams every eligible file through EOF; files are never size-truncated.
+  --analysis-workers bounds concurrency.
+  --words-per-page changes only report-time page derivation.
+  Unchanged results are restored from a separate sidecar; a stored set answers
+  any narrower request without re-reading.
+  cache=only never opens source files and fails if requested content is absent.
+
+OUTPUT AND AUTOMATION
+  Metadata-only machine output remains fdu.report/1; metric summaries use fdu.report/3.
+  Text language rows use canonical names; machine formats retain lowercase IDs.
+  Metric rows include detection source, confidence, origin flags, and coverage.
+  One-shot text reports end with a gray performance line; machine formats omit it.
+  Results go to stdout; warnings and errors go to stderr.
+  The command never prompts, pages, or animates progress.
+  Reports require an explicit PATH; bare `fdu` prints help and scans nothing.
+  `fdu --skill` prints a portable agent skill describing this same surface.
+
+EXIT STATUS
+  0  Complete result, or a partial result accepted with --allow-partial
+  1  Fatal filesystem or cache error
+  2  Partial result, or command-line usage error
+? 0
+```
+
 ## Version Is Exact
 
 The semver is asserted exactly; the dev-build revision after it varies with the checkout
@@ -444,6 +436,7 @@ $ fdu --definitely-not-an-option
 ! Usage: fdu [OPTIONS] <PATH>
 !        fdu [PATH] --cache-status[=<SCOPE>] [--cache-clear[=<SCOPE>]]
 !        fdu [PATH] --cache-clear[=<SCOPE>]
+!        fdu --docs
 !        fdu --skill
 !
 ! For more information, try '--help'.

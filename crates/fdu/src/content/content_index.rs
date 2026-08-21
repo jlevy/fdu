@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use crate::classify::ContentFamily;
 
 use super::content_model::{
-    AnalysisProfile, ContentProvenance, CoverageReason, FileAnalysis, MetricValues,
+    AnalysisSet, ContentProvenance, CoverageReason, FileAnalysis, MetricValues,
 };
 
 /// Additive tally for one type or family group.
@@ -94,7 +94,7 @@ impl ContentRollUp {
 /// Optional derived-data tier owned by an index only after analysis is enabled.
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 pub struct ContentIndex {
-    profile: Option<AnalysisProfile>,
+    profile: Option<AnalysisSet>,
     provenance: Option<ContentProvenance>,
     files: BTreeMap<PathBuf, FileAnalysis>,
     rollups: BTreeMap<PathBuf, ContentRollUp>,
@@ -112,7 +112,7 @@ impl ContentIndex {
     }
 
     /// Requested profile represented by this derived tier, even when the tree is empty.
-    pub fn profile(&self) -> Option<AnalysisProfile> {
+    pub fn profile(&self) -> Option<AnalysisSet> {
         self.profile
     }
 
@@ -157,8 +157,14 @@ impl ContentIndex {
         }
     }
 
-    pub(crate) fn prepare(&mut self, profile: AnalysisProfile, provenance: ContentProvenance) {
-        if self.profile == Some(profile) && self.provenance.as_ref() == Some(&provenance) {
+    pub(crate) fn prepare(&mut self, profile: AnalysisSet, provenance: ContentProvenance) {
+        // Keep a wider tier intact when a narrower request arrives: its records already
+        // answer the narrower question, and overwriting the stored set with the request's
+        // would discard analyzers the records still carry.
+        let retained = self.profile.is_some_and(|stored| {
+            self.provenance.as_ref().is_some_and(|held| held.satisfies(stored, profile))
+        });
+        if retained {
             return;
         }
         self.files.clear();
@@ -188,16 +194,16 @@ mod tests {
     use super::*;
     use crate::Fingerprint;
     use crate::classify::classify_path;
-    use crate::content::{AnalysisProfile, AnalysisRequest, ContentProvenance, FileAnalysis};
+    use crate::content::{AnalysisRequest, AnalysisSet, ContentProvenance, FileAnalysis};
 
     fn analysis(path: &str, lines: u64) -> FileAnalysis {
         FileAnalysis {
             classification: classify_path(Path::new(path)),
             fingerprint: Fingerprint::default(),
             bytes: 10,
-            profile: AnalysisProfile::Basic,
+            profile: AnalysisSet::NONE.with_lines(),
             provenance: ContentProvenance::for_request(AnalysisRequest {
-                profile: AnalysisProfile::Basic,
+                profile: AnalysisSet::NONE.with_lines(),
                 ..AnalysisRequest::default()
             }),
             metrics: MetricValues {

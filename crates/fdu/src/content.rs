@@ -19,7 +19,7 @@ pub use content_cache::{
 pub use content_code_metrics::CodeAccumulator;
 pub use content_index::{ContentIndex, ContentRollUp, MetricTally};
 pub use content_model::{
-    AnalysisApplyOutcome, AnalysisCandidate, AnalysisObservation, AnalysisProfile, AnalysisRequest,
+    AnalysisApplyOutcome, AnalysisCandidate, AnalysisObservation, AnalysisRequest, AnalysisSet,
     AnalyzerId, AnalyzerVersion, CODE_SLOC, CONTENT_BASIC, ContentProvenance, CoverageReason,
     FileAnalysis, LogicalWordStats, MARKDOWN_PROSE, MetricSlotId, MetricValues, OptionsFingerprint,
     TEXT_LOGICAL,
