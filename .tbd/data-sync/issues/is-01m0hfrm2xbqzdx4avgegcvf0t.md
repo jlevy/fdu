@@ -3,14 +3,26 @@ type: is
 id: is-01m0hfrm2xbqzdx4avgegcvf0t
 title: "Content axis: composable --analyze set and the display contract"
 kind: epic
-status: open
+status: closed
 priority: 1
-version: 1
+version: 11
 spec_path: docs/project/specs/active/plan-2026-08-10-fdu-composable-cli-surface.md
 labels: []
 dependencies: []
+child_order_hints:
+  - is-01m0hg8gavsqypx9sdrk636y8k
+  - is-01m0hg8gp6tp30ezekmbdpf53b
+  - is-01m0hg8h0t611hf16gbtnzacat
+  - is-01m0hg8hb2dn9d9wjntnpd4xzk
+  - is-01m0hg9ed5z364cssftdx592jw
+  - is-01m0hg9eqv3kghgjvk05dngs2k
+  - is-01m0hg9f26pmh0c9vbfswb624n
+  - is-01m0hg9fca6p7hs5xw2qp04315
+  - is-01m0hg9fppyeggat22bf4m99me
 created_at: 2026-08-21T06:22:36.118Z
-updated_at: 2026-08-21T06:22:36.118Z
+updated_at: 2026-08-21T07:16:00.042Z
+closed_at: 2026-08-21T07:16:00.041Z
+close_reason: "Phase 5 complete: content axis, display contract, containment reuse, docs and goldens. make check green."
 ---
 Phase 5 of the composable CLI spec. `--analyze` shipped after the original five axes and
 was never given an axis slot, so nothing connected it to the view axis.
