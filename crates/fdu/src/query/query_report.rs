@@ -92,7 +92,7 @@ impl Query {
             match view {
                 ViewSpec::Documents if !profile.is_enabled() => {
                     return Err(
-                        "--view documents requires --analyze basic, code, documents, or full; views never enable content analysis implicitly",
+                        "--view documents requires content analysis: add --analyze lines, code, words, or all; views never enable content analysis implicitly",
                     );
                 }
                 ViewSpec::Tree

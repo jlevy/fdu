@@ -41,6 +41,7 @@ Five common reports:
                       retains no index and writes no cache.
 
 --analyze chooses what may be read; --view chooses what is printed.
+Requesting analysis picks a view that displays it, unless --view names one.
 
 A fast, incremental file roll-up engine: hierarchical tallies over large directory trees
 
@@ -109,9 +110,7 @@ Selection:
 
 Views:
       --view <LIST>
-          Views: tree, extensions, types, families, languages, documents, files, summary
-
-          [default: tree]
+          Views: tree, extensions, types, families, languages, documents, files, summary, or all. Defaults to the view that displays whatever --analyze requested
 
       --words-per-page <N>
           Logical words per derived document page
@@ -119,8 +118,10 @@ Views:
           [default: 250]
 
 Content analysis:
-      --analyze <PROFILE>
-          Content depth: none, basic, code, documents, or full
+      --analyze <LIST>
+          Analyzers to run: none, lines, code, words, or all.
+
+          Anything but none opens and reads every eligible file, which is the only setting that makes a run cost more than one metadata walk.
 
           [default: none]
 
@@ -173,29 +174,35 @@ Other:
 More compositions:
   fdu --view extensions ~/Downloads
   fdu --view types,families --format json .
-  fdu --analyze documents --view documents .
+  fdu --analyze words --view documents .
 
-Five axes, and every option belongs to exactly one:
+Six axes, and every option belongs to exactly one:
   Scope      PATH, --scan-depth                         what is scanned and cached
+  Content    --analyze none|lines|code|words|all        which file bodies are read
   Selection  --include, --exclude, --depth, --limit    which entries are considered
-  View       tree,extensions,types,families,languages,documents,files,summary
+  View       tree,extensions,types,families,languages,documents,files,summary,all
   Format     --format text|json|jsonl|yaml, --color
-  Mode       --cache, --analyze, --analysis-workers
+  Mode       --cache, --watch, --analysis-workers
 
 Content analysis:
   none       metadata only; source files are never opened (default)
-  basic      physical, blank, and nonblank lines plus raw prose words
-  code       basic metrics plus the versioned common-language SLOC analyzer
-  documents  basic metrics plus logical and reader-visible prose metrics
-  full       every shipped analyzer
+  lines      physical, blank, and nonblank lines plus raw word counts
+  code       standard SLOC from the versioned common-language analyzer
+  words      normalized and reader-visible word volume
+  all        every shipped analyzer
 
-  languages is metadata-only by default; code or full adds standard LOC.
-  documents requires any enabled profile.
-  Views never enable content analysis implicitly.
+  A comma-separated set: code,words runs both. none and all name the whole
+  axis and cannot be combined. lines comes with any analyzer, free.
+  Requesting analysis selects a view that displays it unless --view names one.
+  Views never enable content analysis implicitly; a --view that displays no
+  content metric reports how much was read for nothing.
+  languages is metadata-only by default; code adds standard LOC.
+  documents requires any enabled analyzer.
   Analysis streams every eligible file through EOF; files are never size-truncated.
   --analysis-workers bounds concurrency.
   --words-per-page changes only report-time page derivation.
-  Unchanged results for the same profile are restored from a separate sidecar.
+  Unchanged results are restored from a separate sidecar; a stored set answers
+  any narrower request without re-reading.
   cache=only never opens source files and fails if requested content is absent.
 
 Output and automation:
@@ -309,15 +316,26 @@ metadata visible but does not retain a separate lower-level metric record for th
   labels each block with an all-caps header naming its view; a single-view text report
   has no header. Machine formats tag every report with `view` either way.
 
-Add `--analyze basic` to stream physical, blank, and nonblank lines and raw prose words.
-Add `--analyze code` to the language view for standard LOC, comment, and code-blank
-partitions across supported common languages; the percentage column then uses code lines
-instead of bytes. Use `--analyze documents --view documents` for normalized prose words,
-paragraphs, aggregate-derived pages, and reader-visible Markdown that excludes
-destinations and code.
-`--analyze full` computes both families in one streaming pass.
-Use `--analysis-workers` to bound concurrent reads and `--words-per-page` to control
-page derivation. Analysis never truncates a file or excludes it because of size.
+`--analyze` names a set of analyzers, comma-separated, from `lines`, `code`, and
+`words`; `none` and `all` are totals and cannot be combined with anything else.
+Anything but `none` opens and reads every eligible file, which is the only setting that
+makes a run cost more than one metadata walk.
+
+Add `--analyze lines` to stream physical, blank, and nonblank lines and raw word counts.
+Add `--analyze code` for standard LOC, comment, and code-blank partitions across
+supported common languages; the percentage column then uses code lines instead of bytes.
+Use `--analyze words` for normalized word volume, paragraphs, aggregate-derived pages,
+and reader-visible Markdown that excludes destinations and code.
+`--analyze code,words` — or `all` — computes both in one streaming pass.
+
+Requesting analysis without naming a view selects one that displays it: `code` reports
+`languages`, `words` reports `documents`, and either both or `lines` alone reports
+`families`. Naming `--view` overrides that; a view never enables an analyzer, so a
+`--view` that displays no content metric prints a note saying what was read for nothing.
+`--view all` reports every view the requested analyzers can answer and names any it
+skipped. Use `--analysis-workers` to bound concurrent reads and `--words-per-page` to
+control page derivation.
+Analysis never truncates a file or excludes it because of size.
 Invalid UTF-8, binary data, and unsupported SLOC languages remain visible as normal
 coverage outcomes. Only I/O failures, files changed during a read, or stale commits make
 analysis operationally partial.

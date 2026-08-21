@@ -69,34 +69,41 @@ const COMMON_REPORTS_HELP: &str = r"Five common reports:
                       Returns bytes plus file and directory counts;
                       retains no index and writes no cache.
 
---analyze chooses what may be read; --view chooses what is printed.";
+--analyze chooses what may be read; --view chooses what is printed.
+Requesting analysis picks a view that displays it, unless --view names one.";
 
 const CONTENT_AFTER_HELP: &str = r"More compositions:
   fdu --view extensions ~/Downloads
   fdu --view types,families --format json .
-  fdu --analyze documents --view documents .
+  fdu --analyze words --view documents .
 
-Five axes, and every option belongs to exactly one:
+Six axes, and every option belongs to exactly one:
   Scope      PATH, --scan-depth                         what is scanned and cached
+  Content    --analyze none|lines|code|words|all        which file bodies are read
   Selection  --include, --exclude, --depth, --limit    which entries are considered
-  View       tree,extensions,types,families,languages,documents,files,summary
+  View       tree,extensions,types,families,languages,documents,files,summary,all
   Format     --format text|json|jsonl|yaml, --color
-  Mode       --cache, --analyze, --analysis-workers
+  Mode       --cache, --watch, --analysis-workers
 
 Content analysis:
   none       metadata only; source files are never opened (default)
-  basic      physical, blank, and nonblank lines plus raw prose words
-  code       basic metrics plus the versioned common-language SLOC analyzer
-  documents  basic metrics plus logical and reader-visible prose metrics
-  full       every shipped analyzer
+  lines      physical, blank, and nonblank lines plus raw word counts
+  code       standard SLOC from the versioned common-language analyzer
+  words      normalized and reader-visible word volume
+  all        every shipped analyzer
 
-  languages is metadata-only by default; code or full adds standard LOC.
-  documents requires any enabled profile.
-  Views never enable content analysis implicitly.
+  A comma-separated set: code,words runs both. none and all name the whole
+  axis and cannot be combined. lines comes with any analyzer, free.
+  Requesting analysis selects a view that displays it unless --view names one.
+  Views never enable content analysis implicitly; a --view that displays no
+  content metric reports how much was read for nothing.
+  languages is metadata-only by default; code adds standard LOC.
+  documents requires any enabled analyzer.
   Analysis streams every eligible file through EOF; files are never size-truncated.
   --analysis-workers bounds concurrency.
   --words-per-page changes only report-time page derivation.
-  Unchanged results for the same profile are restored from a separate sidecar.
+  Unchanged results are restored from a separate sidecar; a stored set answers
+  any narrower request without re-reading.
   cache=only never opens source files and fails if requested content is absent.
 
 Output and automation:
@@ -1232,7 +1239,9 @@ fn display_notes(views: &ResolvedViews, profile: AnalysisSet, bytes_read: u64) -
             .map(|view| report_format::view_label(*view))
             .collect::<Vec<_>>()
             .join(", ");
-        notes.push(format!("note: omitted {names} — requires --analyze words or all"));
+        notes.push(format!(
+            "note: omitted {names} — requires content analysis: add --analyze lines, code, words, or all"
+        ));
     }
     // Never an error: warming the content sidecar so a later run is warm is a supported
     // use, and `--cache`-aware callers depend on it.  Silence would hide the cost instead.
@@ -1900,6 +1909,7 @@ mod tests {
         let notes = display_notes(&omitted, AnalysisSet::NONE, 0);
         assert_eq!(notes.len(), 1, "{notes:?}");
         assert!(notes[0].contains("omitted documents"), "{notes:?}");
+        assert!(notes[0].contains("--analyze lines, code, words, or all"), "{notes:?}");
 
         let unspent = resolve_views(Some("tree"), AnalysisSet::ALL).expect("resolve");
         let notes = display_notes(&unspent, AnalysisSet::ALL, 1_200);

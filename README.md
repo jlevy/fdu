@@ -197,7 +197,11 @@ package should be presented as available from crates.io or PyPI yet.
 
 fdu separates **what it reads** from **how it reports the result**. `--analyze` is the
 content-I/O switch; `--view` is a projection over the state that was requested.
-A view never enables an analyzer implicitly.
+A view never enables an analyzer implicitly — choosing a display must never authorize
+reading file bodies.
+The reverse direction is free, so requesting analysis selects a view that displays it
+unless `--view` names one, and a `--view` that displays no content metric says how much
+was read for nothing.
 
 | Layer | Representative command | Filesystem work | State retained |
 | --- | --- | --- | --- |
@@ -292,8 +296,8 @@ repaint is a fresh envelope with its own `generated_at`.
 ```shell
 fdu --depth 3 ~/src                        # render three levels deep
 fdu --view extensions ~/Downloads          # break down by raw file extension
-fdu --analyze basic --view families .      # lines, blanks, words, and exact byte shares
-fdu --analyze basic --view documents .     # text lines, words, paragraphs, and pages
+fdu --analyze lines --view families .      # lines, blanks, words, and exact byte shares
+fdu --analyze words                        # picks the view that displays the words
 fdu --format json .                        # stable, versioned machine output
 fdu --view files --sort size -n 20 ~/src   # compose a largest-files query
 fdu --skill                                # print the self-contained agent skill
@@ -308,13 +312,13 @@ fdu --cache refresh --view tree,extensions,types,families PATH
 fdu --cache only --view tree,types PATH
 
 # Opt into successively richer content bundles.
-fdu --cache off --analyze basic --view types,families,documents PATH
+fdu --cache off --analyze lines --view types,families,documents PATH
 fdu --cache off --analyze code --view languages PATH
-fdu --cache off --analyze documents --view documents PATH
-fdu --cache refresh --analyze full --view languages,documents PATH
+fdu --cache off --analyze words --view documents PATH
+fdu --cache refresh --analyze all --view languages,documents PATH
 
-# Reuse the exact same profile without touching source-file contents.
-fdu --cache only --analyze full --view languages,documents PATH
+# Reuse the exact same analyzer set without touching source-file contents.
+fdu --cache only --analyze all --view languages,documents PATH
 ```
 
 ```text

@@ -100,7 +100,7 @@ not just legal but required to work — formats are serializations, not features
 ```console
 $ fdu --cache off --view types --format json --size apparent project
 {
-  "schema": "fdu.report/2",
+  "schema": "fdu.report/3",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "scan_started_at": "[RFC3339]",
