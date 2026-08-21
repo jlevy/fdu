@@ -161,11 +161,16 @@ node ships no YAML support — so a pinned `yaml` devDependency goes through
 - [ ] `--view all` becomes `--view full`, membership defined as the summary views
   including `largest` and `recent` (`fdu-j1dc`)
 - [ ] Flat sections carry their source total; every bounded view states what it dropped
-  and the flag that lifts it, in text and machine formats; schema bump (`fdu-c1qh`)
-- [ ] Cross every view with every format in the test matrix, closing the `extensions`,
-  `files`, and `yaml` gaps
+  in its header, and names the flag that lifts it, in text and machine formats
+  (`fdu-c1qh`)
+- [ ] Cross every view with every format so the render matrix is tested rather than
+  claimed, closing the `extensions`, `files`, and `yaml` gaps (`fdu-5akc`)
+- [ ] Consume each machine format with a parser rather than only comparing bytes; the
+  `yaml` dependency goes through the supply-chain policy first (`fdu-c2ml`)
 - [ ] Carry the vocabulary through `--docs`, README, SKILL.md, help, the `--view` error
   message, the composable CLI spec, and the goldens (`fdu-k4ad`)
+
+The schema bumps once, for `fdu-c1qh` and `fdu-c2ml` together, rather than twice.
 
 ## Testing Strategy
 
@@ -193,15 +198,28 @@ No migration is owed.
 The vocabulary change is announced by the `--view` error message, which lists the
 accepted values, and by `--docs`.
 
+## Decisions Taken
+
+**The bound is stated in the section header.** A footer is lost to `head`, which is the
+one place the notice matters most: `fdu --view largest | head -5` cuts a footer off and
+loses the very warning it exists to give, while a header survives.
+In a `full` report a header also keeps each bound attached to its own section, where a
+footer would float free of the rows it describes.
+The name stays ALL CAPS in the heading colour and the qualifier follows in the telemetry
+colour — the role the performance footer already uses for “what the tool did” as against
+“what it found”.
+
+**`recent` bounds by count alone.** It answers “what changed most recently”, and twenty
+rows answer it. A time window answers a different question — “what changed in the last
+hour” — and that one is already `--modified-since 1h`, which composes with `recent` for
+a caller who wants both.
+A second default would mean defending a specific window, and no window is defensible for
+every tree.
+
 ## Open Questions
 
-- Does the bound statement belong in the section header or after the rows?
-  A header reads before the data and survives truncation by a pager; a footer matches
-  where the performance line already sits.
-- Should `recent` bound by time as well as count — the twenty most recent, or the twenty
-  most recent within a window?
-  Count alone is simpler and composes with `--modified-since`, which argues for leaving
-  it.
+- None blocking. The `yaml` parser dependency is a supply-chain decision rather than a
+  design one, and is tracked on `fdu-c2ml`.
 
 ## References
 
