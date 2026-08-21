@@ -381,7 +381,7 @@ expect that one label without it.
 The schema is unchanged by this, because the field’s name and type are: `(none)` is a
 member of its value domain, not a new shape.
 Every explicit content request and the `types`, `families`, `languages`, and `documents`
-metric summaries use `fdu.report/2`, adding exact share numerators and denominators,
+metric summaries use `fdu.report/3`, adding exact share numerators and denominators,
 analyzer coverage, and versioned rule, option, and analyzer identities.
 An unavailable metric share is represented as `0/0` in machine output and `—` in human
 output, never as a measured zero percent.
@@ -423,7 +423,7 @@ shebangs, modelines, C++ literals, XML and manpage markers, binary signatures, a
 generated-file markers.
 For unresolved paths, NUL and named binary signatures take precedence over shebang and
 modeline hints. A NUL found anywhere in any eligible read discards provisional text
-metrics, and every deeper decision is explainable in `fdu.report/2` rather than silently
+metrics, and every deeper decision is explainable in `fdu.report/3` rather than silently
 guessed.
 
 This surface — composable views, selection filters, time-window and watermark queries,

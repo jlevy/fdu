@@ -107,7 +107,7 @@ Content analysis:
   cache=only never opens source files and fails if requested content is absent.
 
 Output and automation:
-  Metadata-only machine output remains fdu.report/1; metric summaries use fdu.report/2.
+  Metadata-only machine output remains fdu.report/1; metric summaries use fdu.report/3.
   Text language rows use canonical names; machine formats retain lowercase IDs.
   Metric rows include detection source, confidence, origin flags, and coverage.
   One-shot text reports end with a gray performance line; machine formats omit it.
