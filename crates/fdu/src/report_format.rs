@@ -133,13 +133,24 @@ fn render_text(report: &Report, color: bool) -> String {
             Section::Metrics { view, summary } => {
                 render_text_metrics(&mut out, *view, summary, report.size, color);
             }
-            // The section itself remains one path per line. The CLI may append transient
-            // human telemetry after the serialized report; machine formats never do.
-            Section::Files(rows) => {
-                for row in rows {
-                    let _ = writeln!(out, "{}", row.path.display());
+            // `files` stays one path per line: it is the enumeration, and a bare list is
+            // what pipes into xargs. The bounded presets are summaries, and a summary
+            // that ranks by something must show that something — "the twenty largest"
+            // with no sizes does not answer the question it is named for, and leaves the
+            // ranking unverifiable.
+            Section::Files { view, rows } => match view {
+                ViewSpec::Largest => render_text_ranked_files(&mut out, rows, report.size, |row| {
+                    human_bytes(pick(report.size, row.bytes, row.allocated))
+                }),
+                ViewSpec::Recent => render_text_ranked_files(&mut out, rows, report.size, |row| {
+                    format_rfc3339(system_time_from_nanos(row.mtime_ns))
+                }),
+                _ => {
+                    for row in rows {
+                        let _ = writeln!(out, "{}", row.path.display());
+                    }
                 }
-            }
+            },
             Section::Summary(row) => render_text_summary(&mut out, row, report.size),
         }
     }
@@ -337,6 +348,38 @@ fn render_text_types(out: &mut String, rows: &[TypeRow], size: SizeMetric, color
 }
 
 /// Render a summary section as one line.
+/// A nanosecond stamp as a `SystemTime`, saturating rather than panicking.
+///
+/// Timestamps before the epoch are legal on disk — an archive can restore one — and a
+/// listing must render them rather than abort, so the conversion is total.
+fn system_time_from_nanos(nanos: i64) -> std::time::SystemTime {
+    const NANOS_PER_SEC: i64 = 1_000_000_000;
+    let (secs, subsec) = (nanos.div_euclid(NANOS_PER_SEC), nanos.rem_euclid(NANOS_PER_SEC));
+    let duration =
+        std::time::Duration::new(secs.unsigned_abs(), u32::try_from(subsec).unwrap_or(0));
+    if secs < 0 {
+        std::time::UNIX_EPOCH.checked_sub(duration).unwrap_or(std::time::UNIX_EPOCH)
+    } else {
+        std::time::UNIX_EPOCH.checked_add(duration).unwrap_or(std::time::UNIX_EPOCH)
+    }
+}
+
+/// A bounded flat listing, showing the measure it was ranked by.
+///
+/// The measure comes first at a fixed width so the paths line up under it, matching the
+/// grouped views' size-then-label shape rather than inventing a third layout.
+fn render_text_ranked_files(
+    out: &mut String,
+    rows: &[FileRow],
+    _size: SizeMetric,
+    measure: impl Fn(&FileRow) -> String,
+) {
+    let width = rows.iter().map(|row| measure(row).chars().count()).max().unwrap_or_default();
+    for row in rows {
+        let _ = writeln!(out, "{:>width$}  {}", measure(row), row.path.display());
+    }
+}
+
 fn render_text_summary(out: &mut String, row: &SummaryRow, size: SizeMetric) {
     let _ = writeln!(
         out,
@@ -466,7 +509,7 @@ fn section_json(section: &Section, _indent: usize) -> String {
         Section::Metrics { summary, .. } => {
             let _ = write!(out, "\"metrics\": {}", metric_summary_json(summary));
         }
-        Section::Files(rows) => {
+        Section::Files { rows, .. } => {
             let _ = write!(out, "\"files\": [");
             for (index, row) in rows.iter().enumerate() {
                 let _ = write!(out, "{}\n    {}", if index > 0 { "," } else { "" }, file_json(row));
@@ -759,7 +802,7 @@ fn render_yaml(report: &Report) -> String {
                 }
             }
             Section::Metrics { summary, .. } => yaml_metrics(&mut out, summary),
-            Section::Files(rows) => {
+            Section::Files { rows, .. } => {
                 if rows.is_empty() {
                     out.push_str("    files: []\n");
                 } else {
@@ -1000,6 +1043,8 @@ fn view_header(view: ViewSpec) -> &'static str {
         ViewSpec::Languages => "LANGUAGES",
         ViewSpec::Documents => "DOCUMENTS",
         ViewSpec::Files => "FILES",
+        ViewSpec::Largest => "LARGEST",
+        ViewSpec::Recent => "RECENT",
         ViewSpec::Summary => "SUMMARY",
     }
 }
@@ -1014,6 +1059,8 @@ pub(crate) fn view_label(view: ViewSpec) -> &'static str {
         ViewSpec::Languages => "languages",
         ViewSpec::Documents => "documents",
         ViewSpec::Files => "files",
+        ViewSpec::Largest => "largest",
+        ViewSpec::Recent => "recent",
         ViewSpec::Summary => "summary",
     }
 }
