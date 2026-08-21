@@ -5,13 +5,13 @@ title: Machine formats are byte-compared but never parsed; yaml has never been v
 kind: bug
 status: open
 priority: 1
-version: 1
+version: 2
 spec_path: docs/project/specs/active/plan-2026-08-21-fdu-view-vocabulary-and-output-contract.md
 labels: []
 dependencies: []
 parent_id: is-01m0k4qrz1rb300efa1s5z86w6
 created_at: 2026-08-21T21:53:27.657Z
-updated_at: 2026-08-21T21:53:27.657Z
+updated_at: 2026-08-21T22:34:57.861Z
 ---
 A byte-stable golden proves the output has not *changed*. It does not prove the output is
 *valid*: a consistently malformed document passes forever, and the serializers here are
@@ -37,3 +37,7 @@ than merely holding still, and the demonstration is the artifact a reader learns
          CI installs neither jq nor yq and node ships no YAML support
 
 The dependency question belongs to SUPPLY-CHAIN-SECURITY.md and the 14-day cool-off.
+
+## Notes
+
+CORRECTION: jsonl IS checked line by line (report_format tests, 'line is not a JSON document'). Two of three claims stand, one did not. Accurate picture: json is really parsed (JSON.parse in content-selfcheck.mjs); jsonl is only brace-balance checked by the hand-written is_valid_json, which would accept {"a": } -- structurally balanced, not valid; yaml has no check of any kind. The yaml gap is the real one and is unchanged.

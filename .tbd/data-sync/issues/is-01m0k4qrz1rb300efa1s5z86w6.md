@@ -5,7 +5,7 @@ title: Split the files view into files, largest, and recent; --view all becomes 
 kind: epic
 status: open
 priority: 1
-version: 8
+version: 9
 spec_path: docs/project/specs/active/plan-2026-08-21-fdu-view-vocabulary-and-output-contract.md
 labels: []
 dependencies: []
@@ -16,8 +16,9 @@ child_order_hints:
   - is-01m0k4rq0vhsvsk51jjb2qtk0e
   - is-01m0k4rqb831356m7sn0p66cdc
   - is-01m0k512k9a6dq2k51fbfe5xn4
+  - is-01m0k5dv7ssrm0z1saak7ghcaq
 created_at: 2026-08-21T21:48:22.881Z
-updated_at: 2026-08-21T21:53:27.657Z
+updated_at: 2026-08-21T22:00:26.104Z
 ---
 `files` was three views wearing one name, which is why it could not have a coherent
 default: name-ascending order (right for an enumeration) plus a ten-row cap (right for a

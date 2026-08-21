@@ -5,13 +5,13 @@ title: Add largest and recent as documented aliases over files
 kind: task
 status: open
 priority: 1
-version: 3
+version: 4
 spec_path: docs/project/specs/active/plan-2026-08-21-fdu-view-vocabulary-and-output-contract.md
 labels: []
 dependencies: []
 parent_id: is-01m0k4qrz1rb300efa1s5z86w6
 created_at: 2026-08-21T21:48:52.975Z
-updated_at: 2026-08-21T21:50:33.496Z
+updated_at: 2026-08-21T22:00:50.219Z
 ---
 Add `largest` and `recent` as named presets over the files machinery:
 
@@ -27,3 +27,7 @@ project through the same code path and any explicit `--sort`, `--limit`, or `--k
 overrides them. They are aliases, and the documentation should say exactly that -- one
 line each, with the equivalence spelled out, so a reader learns the composition rather
 than memorising two more views.
+
+## Notes
+
+recent bounds by count alone; a time window is --modified-since, a different question that composes.
