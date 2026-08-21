@@ -29,6 +29,7 @@ use crate::query::{
 ///
 /// Bold cyan is what `cli.rs` already gives a section heading in `--help`, so a report
 /// and the help that describes it use one visual language for the same idea.
+/// View headers share the CLI's one header style; see `cli::STYLE_HEADING`.
 const STYLE_VIEW_HEADER: AnsiStyle = AnsiColor::Cyan.on_default().bold();
 
 /// Directory names in a tree, so structure reads at a glance.

@@ -36,6 +36,12 @@ const SKILL_TEMPLATE: &str = include_str!("skills/SKILL.md");
 const SCAN_DIAGNOSTICS_ENV: &str = "FDU_SCAN_DIAGNOSTICS";
 const SCAN_DIAGNOSTICS_PREFIX: &str = "__FDU_SCAN_DIAGNOSTICS__=";
 
+/// The one header style every human surface uses.
+///
+/// Report view headers, the `--docs` section headers, and clap's help section headings
+/// are the same kind of thing — a name introducing a block — so they share a style and a
+/// case convention rather than each inventing one. `report_format` re-exports this as the
+/// view-header style so there is a single definition to change.
 const STYLE_HEADING: AnsiStyle = AnsiColor::Cyan.on_default().bold();
 const STYLE_WARNING: AnsiStyle = AnsiColor::Yellow.on_default().bold();
 const STYLE_ERROR: AnsiStyle = AnsiColor::Red.on_default().bold();
@@ -82,8 +88,9 @@ THE LADDER
     fdu --analyze all --view all PATH   everything there is          READS FILES
 
 TWO FLAGS DO ALL OF IT
-  --analyze decides what gets read. It is the only thing that can make a run
-    cost more than a single metadata walk.
+  --analyze decides what gets read. Anything but `none` opens and reads every
+    eligible file, which is the only setting that makes a run cost more than a
+    single metadata walk.
   --view decides what gets printed. It is free: every view is a projection over
     one walk, so asking for more views never touches the filesystem again.
 
@@ -103,6 +110,9 @@ MORE COMPOSITIONS
   fdu --view files --min-size 10M --sort size -n 100 PATH   largest files
   fdu --view files --modified-since 1h --sort mtime PATH    recent changes
   fdu --watch --view files --format jsonl PATH              a tail -f for a tree
+
+  --interval throttles rendering only; change detection is event-driven and
+  unaffected by it, so an idle tree costs nothing between changes.
 
 SIX AXES, AND EVERY OPTION BELONGS TO EXACTLY ONE
   Scope      PATH, --scan-depth                         what is scanned and cached
@@ -265,6 +275,15 @@ pub enum RunOutcome {
     long_about = None,
     styles = CLI_STYLES,
     after_help = DOCS_POINTER,
+    // Wrap at the terminal's width, never wider than this. clap takes the smaller of the
+    // two, so a narrow terminal still narrows and an ultrawide one stops at a readable
+    // measure instead of running a description across the whole screen.
+    max_term_width = 160,
+    // `--help` renders the same compact block `-h` does. clap's long help puts every
+    // description on its own line with a blank line between flags, which roughly doubles
+    // the height and breaks a section into a list of islands; the prose that justified
+    // that layout now lives in `--docs`.
+    disable_help_flag = true,
     arg_required_else_help = true,
     override_usage = "fdu [OPTIONS] <PATH>\n       fdu [PATH] --cache-status[=<SCOPE>] [--cache-clear[=<SCOPE>]]\n       fdu [PATH] --cache-clear[=<SCOPE>]\n       fdu --docs\n       fdu --skill"
 )]
@@ -279,82 +298,82 @@ pub struct Cli {
     pub path: Option<PathBuf>,
 
     /// Limit scanning and retention to N entry levels.
-    #[arg(long, value_name = "N", help_heading = "Scope")]
+    #[arg(long, value_name = "N", help_heading = "SCOPE")]
     pub scan_depth: Option<usize>,
 
     /// Stay on the filesystem the root lives on.
-    #[arg(long, action = ArgAction::SetTrue, help_heading = "Scope")]
+    #[arg(long, action = ArgAction::SetTrue, help_heading = "SCOPE")]
     pub one_filesystem: bool,
 
     // ---- selection: which retained entries this query considers ----
     /// Report only entries matching this glob; repeatable.
-    #[arg(long, value_name = "GLOB", help_heading = "Selection")]
+    #[arg(long, value_name = "GLOB", help_heading = "SELECTION")]
     pub include: Vec<String>,
 
     /// Exclude entries matching this glob; repeatable, and wins over --include.
-    #[arg(long, value_name = "GLOB", help_heading = "Selection")]
+    #[arg(long, value_name = "GLOB", help_heading = "SELECTION")]
     pub exclude: Vec<String>,
 
     /// Report only entries at least this large, as 512, 10M, or 1.5GiB.
-    #[arg(long, value_name = "SIZE", help_heading = "Selection")]
+    #[arg(long, value_name = "SIZE", help_heading = "SELECTION")]
     pub min_size: Option<String>,
 
     /// Report only entries modified at or after this time, as 2h or an RFC 3339 stamp.
-    #[arg(long, value_name = "WHEN", help_heading = "Selection")]
+    #[arg(long, value_name = "WHEN", help_heading = "SELECTION")]
     pub modified_since: Option<String>,
 
     /// Report only entries modified before this time.
-    #[arg(long, value_name = "WHEN", help_heading = "Selection")]
+    #[arg(long, value_name = "WHEN", help_heading = "SELECTION")]
     pub modified_before: Option<String>,
 
     /// Entry kinds to report: file, dir, symlink, other.
-    #[arg(long, value_name = "LIST", help_heading = "Selection")]
+    #[arg(long, value_name = "LIST", help_heading = "SELECTION")]
     pub kind: Option<String>,
 
     /// Directory levels to show; does not limit scanning. Accepts `all`.
-    #[arg(short, long, default_value = "2", value_name = "N", help_heading = "Selection")]
+    #[arg(short, long, default_value = "2", value_name = "N", help_heading = "SELECTION")]
     pub depth: String,
 
     /// Entries to show per directory. Accepts `all`.
-    #[arg(short = 'n', long, default_value = "10", value_name = "N", help_heading = "Selection")]
+    #[arg(short = 'n', long, default_value = "10", value_name = "N", help_heading = "SELECTION")]
     pub limit: String,
 
     /// Order results: size, count, mtime, or name.
-    #[arg(long, value_name = "KEY", help_heading = "Selection")]
+    #[arg(long, value_name = "KEY", help_heading = "SELECTION")]
     pub sort: Option<String>,
 
     /// Reverse the ordering.
-    #[arg(long, action = ArgAction::SetTrue, help_heading = "Selection")]
+    #[arg(long, action = ArgAction::SetTrue, help_heading = "SELECTION")]
     pub reverse: bool,
 
     /// Which size metric to report: allocated or apparent.
-    #[arg(long, value_name = "METRIC", default_value = "allocated", help_heading = "Selection")]
+    #[arg(long, value_name = "METRIC", default_value = "allocated", help_heading = "SELECTION")]
     pub size: String,
 
     // ---- view: which roll-ups are reported ----
     /// Views: tree, extensions, types, families, languages, documents, files, summary,
     /// or all. Defaults to the view that displays whatever --analyze requested.
-    #[arg(long, value_name = "LIST", help_heading = "Views")]
+    #[arg(long, value_name = "LIST", help_heading = "VIEWS")]
     pub view: Option<String>,
 
     /// Analyzers to run: none, lines, code, words, or all.
     ///
     /// Anything but none opens and reads every eligible file, which is the only setting
     /// that makes a run cost more than one metadata walk.
-    #[arg(long, value_name = "LIST", default_value = "none", help_heading = "Content analysis")]
+    #[arg(long, value_name = "LIST", default_value = "none", help_heading = "CONTENT ANALYSIS")]
     pub analyze: String,
 
     /// Content reader workers; zero selects available parallelism.
-    #[arg(long, value_name = "N", default_value_t = 0, help_heading = "Content analysis")]
+    #[arg(long, value_name = "N", default_value_t = 0, help_heading = "CONTENT ANALYSIS")]
     pub analysis_workers: usize,
 
     /// Logical words per derived document page.
-    #[arg(long, value_name = "N", default_value_t = 250, help_heading = "Views")]
+    #[arg(long, value_name = "N", default_value_t = 250, help_heading = "VIEWS")]
     pub words_per_page: u64,
 
     // ---- format: how the report is serialized ----
     /// Output format: text, json, jsonl, or yaml.
-    #[arg(long, value_name = "FORMAT", default_value = "text", help_heading = "Output")]
+    #[arg(long, value_name = "FORMAT", default_value = "text", help_heading = "OUTPUT")]
     pub format: String,
 
     /// Colorize human output: auto, always, or never.
@@ -363,45 +382,49 @@ pub struct Cli {
         value_name = "WHEN",
         default_value = "auto",
         hide_possible_values = true,
-        help_heading = "Output"
+        help_heading = "OUTPUT"
     )]
     pub color: ColorWhen,
 
     // ---- mode: how the cache is used ----
     /// Cache policy: auto, refresh, read-only, only, or off.
-    #[arg(long, value_name = "POLICY", default_value = "auto", help_heading = "Execution")]
+    #[arg(long, value_name = "POLICY", default_value = "auto", help_heading = "EXECUTION")]
     pub cache: String,
 
     /// Accept operationally partial results, including filesystem or analysis failures.
-    #[arg(long, action = ArgAction::SetTrue, help_heading = "Execution")]
+    #[arg(long, action = ArgAction::SetTrue, help_heading = "EXECUTION")]
     pub allow_partial: bool,
 
     /// Report cache contents instead of scanning: root (default) or all.
-    #[arg(long, value_name = "SCOPE", num_args = 0..=1, require_equals = true, default_missing_value = "root", help_heading = "Cache management")]
+    #[arg(long, value_name = "SCOPE", num_args = 0..=1, require_equals = true, default_missing_value = "root", help_heading = "CACHE MANAGEMENT")]
     pub cache_status: Option<String>,
 
     /// Remove cached snapshots instead of scanning: root (default) or all.
-    #[arg(long, value_name = "SCOPE", num_args = 0..=1, require_equals = true, default_missing_value = "root", help_heading = "Cache management")]
+    #[arg(long, value_name = "SCOPE", num_args = 0..=1, require_equals = true, default_missing_value = "root", help_heading = "CACHE MANAGEMENT")]
     pub cache_clear: Option<String>,
 
     /// Stream changes continuously instead of returning one report.
     #[cfg(feature = "watch")]
-    #[arg(long, action = ArgAction::SetTrue, help_heading = "Execution")]
+    #[arg(long, action = ArgAction::SetTrue, help_heading = "EXECUTION")]
     pub watch: bool,
 
     /// How often aggregate views re-render while watching, as a duration.
     ///
     /// Throttles rendering only; change detection is event-driven and unaffected.
     #[cfg(feature = "watch")]
-    #[arg(long, value_name = "DUR", default_value = "2s", help_heading = "Execution")]
+    #[arg(long, value_name = "DUR", default_value = "2s", help_heading = "EXECUTION")]
     pub interval: String,
 
+    /// Print help.
+    #[arg(short = 'h', long = "help", action = ArgAction::HelpShort)]
+    pub help: Option<bool>,
+
     /// Print the usage guide: the report ladder, both axes, and the output contracts.
-    #[arg(long, action = ArgAction::SetTrue, help_heading = "Other")]
+    #[arg(long, action = ArgAction::SetTrue, help_heading = "OTHER")]
     pub docs: bool,
 
     /// Print a portable agent skill to stdout.
-    #[arg(long, action = ArgAction::SetTrue, help_heading = "Other")]
+    #[arg(long, action = ArgAction::SetTrue, help_heading = "OTHER")]
     pub skill: bool,
 }
 
@@ -434,7 +457,10 @@ impl Cli {
         stderr_is_terminal: bool,
     ) -> anyhow::Result<RunOutcome> {
         if self.docs {
-            write!(out, "{DOCS}")?;
+            let color =
+                ColorContext::from_environment(self.color, false, false, stdout_is_terminal)
+                    .enabled();
+            write!(out, "{}", style_guide(DOCS, color))?;
             return Ok(RunOutcome::Complete);
         }
 
@@ -1575,6 +1601,32 @@ fn watch_rule(at: SystemTime) -> String {
     format!("──── {} ────", format_rfc3339(at))
 }
 
+/// Paint the guide's section headers with the shared header style.
+///
+/// A header is a line that starts at column zero and is upper case — the same shape the
+/// report's view headers take, which is what makes the two surfaces look like one tool.
+/// Everything else passes through untouched, so redirecting to a file or setting `NO_COLOR`
+/// yields exactly the bytes the golden pins.
+fn style_guide(guide: &str, color: bool) -> String {
+    if !color {
+        return guide.to_string();
+    }
+    let mut out = String::with_capacity(guide.len());
+    for line in guide.lines() {
+        let is_header = !line.is_empty()
+            && !line.starts_with(char::is_whitespace)
+            && line.chars().any(char::is_alphabetic)
+            && line.chars().filter(|c| c.is_alphabetic()).all(char::is_uppercase);
+        if is_header {
+            out.push_str(&paint(line, STYLE_HEADING, true));
+        } else {
+            out.push_str(line);
+        }
+        out.push('\n');
+    }
+    out
+}
+
 fn paint(text: &str, style: AnsiStyle, color: bool) -> String {
     if color { format!("{style}{text}{style:#}") } else { text.to_string() }
 }
@@ -1740,6 +1792,7 @@ mod tests {
             #[cfg(feature = "watch")]
             interval: "2s".to_string(),
             allow_partial: false,
+            help: None,
             docs: false,
             skill: false,
         }

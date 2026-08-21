@@ -36,128 +36,63 @@ Usage: fdu [OPTIONS] <PATH>
        fdu --skill
 
 Arguments:
-  [PATH]
-          Report root; optional only for the discovery and cache-lifecycle flags
+  [PATH]  Report root; optional only for the discovery and cache-lifecycle flags
 
 Options:
-  -h, --help
-          Print help (see a summary with '-h')
+  -h, --help     Print help
+  -V, --version  Print version
 
-  -V, --version
-          Print version
+SCOPE:
+      --scan-depth <N>  Limit scanning and retention to N entry levels
+      --one-filesystem  Stay on the filesystem the root lives on
 
-Scope:
-      --scan-depth <N>
-          Limit scanning and retention to N entry levels
+SELECTION:
+      --include <GLOB>          Report only entries matching this glob; repeatable
+      --exclude <GLOB>          Exclude entries matching this glob; repeatable, and wins over
+                                --include
+      --min-size <SIZE>         Report only entries at least this large, as 512, 10M, or 1.5GiB
+      --modified-since <WHEN>   Report only entries modified at or after this time, as 2h or an RFC
+                                3339 stamp
+      --modified-before <WHEN>  Report only entries modified before this time
+      --kind <LIST>             Entry kinds to report: file, dir, symlink, other
+  -d, --depth <N>               Directory levels to show; does not limit scanning. Accepts `all`
+                                [default: 2]
+  -n, --limit <N>               Entries to show per directory. Accepts `all` [default: 10]
+      --sort <KEY>              Order results: size, count, mtime, or name
+      --reverse                 Reverse the ordering
+      --size <METRIC>           Which size metric to report: allocated or apparent [default:
+                                allocated]
 
-      --one-filesystem
-          Stay on the filesystem the root lives on
+VIEWS:
+      --view <LIST>         Views: tree, extensions, types, families, languages, documents, files,
+                            summary, or all. Defaults to the view that displays whatever --analyze
+                            requested
+      --words-per-page <N>  Logical words per derived document page [default: 250]
 
-Selection:
-      --include <GLOB>
-          Report only entries matching this glob; repeatable
+CONTENT ANALYSIS:
+      --analyze <LIST>        Analyzers to run: none, lines, code, words, or all [default: none]
+      --analysis-workers <N>  Content reader workers; zero selects available parallelism [default:
+                              0]
 
-      --exclude <GLOB>
-          Exclude entries matching this glob; repeatable, and wins over --include
+OUTPUT:
+      --format <FORMAT>  Output format: text, json, jsonl, or yaml [default: text]
+      --color <WHEN>     Colorize human output: auto, always, or never [default: auto]
 
-      --min-size <SIZE>
-          Report only entries at least this large, as 512, 10M, or 1.5GiB
+EXECUTION:
+      --cache <POLICY>  Cache policy: auto, refresh, read-only, only, or off [default: auto]
+      --allow-partial   Accept operationally partial results, including filesystem or analysis
+                        failures
+      --watch           Stream changes continuously instead of returning one report
+      --interval <DUR>  How often aggregate views re-render while watching, as a duration [default:
+                        2s]
 
-      --modified-since <WHEN>
-          Report only entries modified at or after this time, as 2h or an RFC 3339 stamp
+CACHE MANAGEMENT:
+      --cache-status[=<SCOPE>]  Report cache contents instead of scanning: root (default) or all
+      --cache-clear[=<SCOPE>]   Remove cached snapshots instead of scanning: root (default) or all
 
-      --modified-before <WHEN>
-          Report only entries modified before this time
-
-      --kind <LIST>
-          Entry kinds to report: file, dir, symlink, other
-
-  -d, --depth <N>
-          Directory levels to show; does not limit scanning. Accepts `all`
-
-          [default: 2]
-
-  -n, --limit <N>
-          Entries to show per directory. Accepts `all`
-
-          [default: 10]
-
-      --sort <KEY>
-          Order results: size, count, mtime, or name
-
-      --reverse
-          Reverse the ordering
-
-      --size <METRIC>
-          Which size metric to report: allocated or apparent
-
-          [default: allocated]
-
-Views:
-      --view <LIST>
-          Views: tree, extensions, types, families, languages, documents, files, summary, or all. Defaults to the view that displays whatever --analyze requested
-
-      --words-per-page <N>
-          Logical words per derived document page
-
-          [default: 250]
-
-Content analysis:
-      --analyze <LIST>
-          Analyzers to run: none, lines, code, words, or all.
-
-          Anything but none opens and reads every eligible file, which is the only setting that makes a run cost more than one metadata walk.
-
-          [default: none]
-
-      --analysis-workers <N>
-          Content reader workers; zero selects available parallelism
-
-          [default: 0]
-
-Output:
-      --format <FORMAT>
-          Output format: text, json, jsonl, or yaml
-
-          [default: text]
-
-      --color <WHEN>
-          Colorize human output: auto, always, or never
-
-          [default: auto]
-
-Execution:
-      --cache <POLICY>
-          Cache policy: auto, refresh, read-only, only, or off
-
-          [default: auto]
-
-      --allow-partial
-          Accept operationally partial results, including filesystem or analysis failures
-
-      --watch
-          Stream changes continuously instead of returning one report
-
-      --interval <DUR>
-          How often aggregate views re-render while watching, as a duration.
-
-          Throttles rendering only; change detection is event-driven and unaffected.
-
-          [default: 2s]
-
-Cache management:
-      --cache-status[=<SCOPE>]
-          Report cache contents instead of scanning: root (default) or all
-
-      --cache-clear[=<SCOPE>]
-          Remove cached snapshots instead of scanning: root (default) or all
-
-Other:
-      --docs
-          Print the usage guide: the report ladder, both axes, and the output contracts
-
-      --skill
-          Print a portable agent skill to stdout
+OTHER:
+      --docs   Print the usage guide: the report ladder, both axes, and the output contracts
+      --skill  Print a portable agent skill to stdout
 
 Run `fdu --docs` for more help and important usage examples.
 ? 0
@@ -403,8 +338,9 @@ THE LADDER
     fdu --analyze all --view all PATH   everything there is          READS FILES
 
 TWO FLAGS DO ALL OF IT
-  --analyze decides what gets read. It is the only thing that can make a run
-    cost more than a single metadata walk.
+  --analyze decides what gets read. Anything but `none` opens and reads every
+    eligible file, which is the only setting that makes a run cost more than a
+    single metadata walk.
   --view decides what gets printed. It is free: every view is a projection over
     one walk, so asking for more views never touches the filesystem again.
 
@@ -424,6 +360,9 @@ MORE COMPOSITIONS
   fdu --view files --min-size 10M --sort size -n 100 PATH   largest files
   fdu --view files --modified-since 1h --sort mtime PATH    recent changes
   fdu --watch --view files --format jsonl PATH              a tail -f for a tree
+
+  --interval throttles rendering only; change detection is event-driven and
+  unaffected by it, so an idle tree costs nothing between changes.
 
 SIX AXES, AND EVERY OPTION BELONGS TO EXACTLY ONE
   Scope      PATH, --scan-depth                         what is scanned and cached

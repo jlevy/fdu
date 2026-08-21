@@ -450,6 +450,201 @@ Performance: walked 15 files / 1.4 KiB; content read 1.4 KiB at [BYTE_RATE]; ana
 ? 0
 ```
 
+## The Analyzer Set Chooses the View
+
+The defect this axis exists to fix: without this, every command below printed the same
+directory tree, and `--analyze` changed nothing but the performance footer.
+Each run names no view, so what appears is the view the requested analyzers selected.
+
+```console
+$ fdu --cache off --color never --size apparent content-project
+     256 B  ██████████   100%  . (7 files)
+      98 B  ████░░░░░░    38%    assets (2 files)
+      77 B  ███░░░░░░░    30%    src (2 files)
+      59 B  ██░░░░░░░░    23%    docs (2 files)
+      22 B  █░░░░░░░░░     9%    data (1 file)
+Performance: walked 7 files / 256 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+? 0
+```
+
+```console
+$ fdu --cache off --color never --size apparent --analyze lines content-project
+      80 B   31.2%  binary             1 file, 1 binary
+      77 B   30.1%  code               2 files, 7 lines (5 nonblank, 2 blank), 8 words (0.0 pages)
+      77 B   30.1%  prose              3 files, 8 lines (5 nonblank, 3 blank), 11 words (0.0 pages), 2 documentation, 1 binary
+      22 B    8.6%  data               1 file, 3 lines (3 nonblank, 0 blank), 4 words (0.0 pages)
+Performance: walked 7 files / 256 B; content read 176 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; cold scan; total [PERF_TIME]
+? 0
+```
+
+```console
+$ fdu --cache off --color never --size apparent --analyze code content-project
+      38 B   75.0%  Rust    1 file, 4 lines (3 code, 0 comment, 1 blank), 5 words (0.0 pages)
+      39 B   25.0%  Python  1 file, 3 lines (1 code, 1 comment, 1 blank), 3 words (0.0 pages)
+Performance: walked 7 files / 256 B; content read 176 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; cold scan; total [PERF_TIME]
+? 0
+```
+
+```console
+$ fdu --cache off --color never --size apparent --analyze words content-project
+      42 B   66.7%  markdown           1 file, 5 lines (3 nonblank, 2 blank), 6 words (0.0 pages), 1 documentation
+      35 B   33.3%  text               2 files, 3 lines (2 nonblank, 1 blank), 3 words (0.0 pages), 1 documentation, 1 binary
+Performance: walked 7 files / 256 B; content read 176 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; cold scan; total [PERF_TIME]
+? 0
+```
+
+```console
+$ fdu --cache off --color never --size apparent --analyze code,words content-project
+      80 B   31.2%  binary             1 file, 1 binary
+      77 B   30.1%  code               2 files, 7 lines (4 code, 1 comment, 2 blank), 10 words (0.0 pages)
+      77 B   30.1%  prose              3 files, 8 lines (5 nonblank, 3 blank), 9 words (0.0 pages), 2 documentation, 1 binary
+      22 B    8.6%  data               1 file, 3 lines (3 nonblank, 0 blank), 4 words (0.0 pages)
+Performance: walked 7 files / 256 B; content read 176 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; cold scan; total [PERF_TIME]
+? 0
+```
+
+An explicit view wins, and a view that displays none of what was read says so rather
+than reading for nothing.
+This is a note, not an error: warming the content sidecar for a later run is a supported
+use, so the run still succeeds.
+
+```console
+$ fdu --cache off --color never --size apparent --analyze all --view tree content-project
+     256 B  ██████████   100%  . (7 files)
+      98 B  ████░░░░░░    38%    assets (2 files)
+      77 B  ███░░░░░░░    30%    src (2 files)
+      59 B  ██░░░░░░░░    23%    docs (2 files)
+      22 B  █░░░░░░░░░     9%    data (1 file)
+Performance: walked 7 files / 256 B; content read 176 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; cold scan; total [PERF_TIME]
+note: --analyze lines,code,words read 176 B; no selected view displays content metrics — try --view families, languages, or all
+? 0
+```
+
+## Every View One Walk Can Answer
+
+`--view all` renders what the requested analyzers support and names what it had to skip.
+`documents` is the only view with no metadata-only projection, so it is the only one
+that can be skipped.
+
+```console
+$ fdu --cache off --color never --size apparent --view all --limit 2 content-project
+SUMMARY
+     256 B  7 files, 4 directories
+
+TREE
+     256 B  ██████████   100%  . (7 files)
+      98 B  ████░░░░░░    38%    assets (2 files)
+      77 B  ███░░░░░░░    30%    src (2 files)
+                                 …
+
+FAMILIES
+      80 B   31.2%  binary             1 file
+      77 B   30.1%  code               2 files
+
+TYPES
+      80 B   31.2%  image              1 file
+      42 B   16.4%  markdown           1 file, 1 documentation
+
+EXTENSIONS
+      80 B  .png         1 file
+      42 B  .md          1 file
+
+LANGUAGES
+      39 B   50.6%  Python  1 file
+      38 B   49.4%  Rust    1 file
+
+FILES
+assets
+assets/late.bin.txt
+Performance: walked 7 files / 256 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+note: omitted documents — requires content analysis: add --analyze lines, code, words, or all
+? 0
+```
+
+With analysis enabled nothing is omitted, and no note appears.
+
+```console
+$ fdu --cache off --color never --size apparent --analyze all --view all --limit 2 content-project
+SUMMARY
+     256 B  7 files, 4 directories
+
+TREE
+     256 B  ██████████   100%  . (7 files)
+      98 B  ████░░░░░░    38%    assets (2 files)
+      77 B  ███░░░░░░░    30%    src (2 files)
+                                 …
+
+FAMILIES
+      80 B   31.2%  binary             1 file, 1 binary
+      77 B   30.1%  code               2 files, 7 lines (4 code, 1 comment, 2 blank), 10 words (0.0 pages)
+
+TYPES
+      80 B   31.2%  image              1 file, 1 binary
+      42 B   16.4%  markdown           1 file, 5 lines (3 nonblank, 2 blank), 6 words (0.0 pages), 1 documentation
+
+EXTENSIONS
+      80 B  .png         1 file
+      42 B  .md          1 file
+
+LANGUAGES
+      38 B   75.0%  Rust    1 file, 4 lines (3 code, 0 comment, 1 blank), 5 words (0.0 pages)
+      39 B   25.0%  Python  1 file, 3 lines (1 code, 1 comment, 1 blank), 5 words (0.0 pages)
+
+DOCUMENTS
+      42 B   66.7%  markdown           1 file, 5 lines (3 nonblank, 2 blank), 6 words (0.0 pages), 1 documentation
+      35 B   33.3%  text               2 files, 3 lines (2 nonblank, 1 blank), 3 words (0.0 pages), 1 documentation, 1 binary
+
+FILES
+assets
+assets/late.bin.txt
+Performance: walked 7 files / 256 B; content read 176 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; cold scan; total [PERF_TIME]
+? 0
+```
+
+## Totals Name The Whole Axis
+
+`none` and `all` mean “the entire axis”, so combining either with a specific value has
+no coherent reading and is rejected rather than silently resolved one way.
+
+```console
+$ fdu --cache off --analyze none,code content-project
+fdu: invalid --analyze "none,code": "none" names the whole axis and cannot be combined
+? 2
+```
+
+```console
+$ fdu --cache off --analyze all,code content-project
+fdu: invalid --analyze "all,code": "all" names the whole axis and cannot be combined
+? 2
+```
+
+```console
+$ fdu --cache off --view all,tree content-project
+fdu: invalid --view "all": it names the whole axis and cannot be combined with another view
+? 2
+```
+
+The retired spellings are refused with the vocabulary that replaced them, rather than
+being quietly accepted as an alias.
+
+```console
+$ fdu --cache off --analyze basic content-project
+fdu: invalid --analyze "basic": expected one of none, lines, code, words, all
+? 2
+```
+
+```console
+$ fdu --cache off --analyze documents content-project
+fdu: invalid --analyze "documents": expected one of none, lines, code, words, all
+? 2
+```
+
+```console
+$ fdu --cache off --analyze full content-project
+fdu: invalid --analyze "full": expected one of none, lines, code, words, all
+? 2
+```
+
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.
 -->
