@@ -23,39 +23,68 @@ One walk, many metrics, cached between runs.
 > performance evidence claimed at all.
 > See [the Phase 1 plan](docs/project/specs/active/plan-2026-08-08-fdu-phase-1.md).
 
-## Five Common Reports
+## Start Here
 
-These commands cover the common cost and reporting choices:
+Every report is one command, and they form a ladder.
+Each rung costs more than the one above it and tells you more, so you can stop at the
+cheapest answer that settles your question:
 
-| Report | Command | Regular-file content | Result |
-| --- | --- | --- | --- |
-| Language sizes | `fdu --view languages PATH` | Never read | One row per code type detected from exact filenames and extensions, with file counts, sizes, and exact byte shares |
-| Languages and lines of code | `fdu --analyze code --view languages PATH` | Reads eligible files | The same language rows with standard code lines, comment lines, blank lines, code-line shares, and explicit unsupported coverage |
-| All file types | `fdu --view types PATH` | Never read | Stable rows for code, prose, markup, data, binary, and unknown types classified from exact filenames and extensions |
-| Folder sizes | `fdu PATH` | Never read | The default directory tree with rolled-up sizes and file counts; builds or refreshes the reusable metadata index |
-| Fast totals only | `fdu --view summary PATH` | Never read | One aggregate row with total size, file count, and directory count; retains no index and writes no cache |
+| Question | Command | Reads file contents |
+| --- | --- | --- |
+| How big is this tree? | `fdu --view summary PATH` | no |
+| Which folders are big? | `fdu PATH` | no |
+| What kinds of files are in it? | `fdu --view types PATH` | no |
+| Which languages? | `fdu --view languages PATH` | no |
+| How much code? | `fdu --analyze code PATH` | **yes** |
+| How much writing? | `fdu --analyze words PATH` | **yes** |
+| Everything you have | `fdu --analyze all --view all PATH` | **yes** |
 
-`--view languages` selects the detected code-type roll-up.
-By itself it classifies from exact filenames and extensions, reports byte shares, and
-never reads file content.
-Adding `--analyze code` authorizes streaming reads through the end of every eligible
-file, adds standard lines of code, and uses code lines for the shares.
-The view never turns on content analysis by itself.
-Human text uses language names such as `CSS`, `C++`, `JavaScript`, and
-`Protocol Buffers`; JSON, JSONL, and YAML retain stable lowercase IDs such as `css`,
-`cpp`, `javascript`, and `protobuf` for scripts.
+Two flags do all of it.
+**`--analyze` decides what gets read**, and it is the only thing that can make a run
+cost more than a single metadata walk.
+**`--view` decides what gets printed**, and it is free — every view is a projection of
+one walk, so asking for more views never touches the filesystem again.
 
-For metadata classification, `--view types` applies stable exact-name and extension
-rules. The language roll-up uses those detected types and may refine unresolved or
-ambiguous paths with bounded probes once analysis is enabled.
-Use `--view extensions` when the raw filename extension is the desired grouping.
-Its rows partition the tree rather than sampling it, so they sum to the reported total;
-names carrying no extension, such as `Makefile` and `.gitignore`, are tallied under
-`(none)`. For folder sizes, `tree` is the default view, so `fdu PATH` is the complete
-command. The no-index totals path needs only the single unfiltered `summary` view; it is
-taken whatever the cache policy, because a snapshot cannot save the walk that request is
-already doing. Sizes use allocated bytes by default; add `--size apparent` for logical
-file lengths.
+You rarely need both.
+Naming analyzers selects a view that displays them, so `fdu --analyze code PATH` prints
+the language rows with lines of code already:
+
+```console
+$ fdu --analyze code .
+   1.4 MiB   52.9%  Rust        60 files, 34007 lines (26494 code, 4636 comment, 2877 blank), 126662 words (506.6 pages)
+   1.0 MiB   42.1%  Python      71 files, 24198 lines (21067 code, 449 comment, 2682 blank), 75522 words (302.0 pages)
+    96 KiB    3.7%  JavaScript  9 files, 2182 lines (1876 code, 138 comment, 168 blank), 8080 words (32.3 pages)
+```
+
+That is this repository, and the word counts come along because a file that is being
+read for its lines is already being counted — useful when the question is really “will
+this fit in a context window”.
+
+Name `--view` yourself when you want a different projection of the same numbers, and it
+always wins over the default.
+A view never turns on an analyzer, because choosing how to look at a result should not
+quietly authorize reading every file in the tree — so if you ask for analysis that none
+of your chosen views can display, fdu says so rather than reading for nothing.
+
+### The two axes in full
+
+`--analyze` takes a comma-separated set: `lines`, `code`, `words`, plus `none` and `all`
+as totals. `code,words` runs both; `lines` comes free with any analyzer, since a file
+that is being read is already being counted.
+
+`--view` takes a comma-separated list: `summary`, `tree`, `families`, `types`,
+`extensions`, `languages`, `documents`, `files`, plus `all`. Several views in one run
+share one scan — `fdu --view tree,types PATH` walks once and prints both.
+
+`--view all` prints every view your analyzers can answer and names any it had to skip.
+`documents` is the only view that needs content, so it is the only one that can be
+skipped.
+
+Two details worth knowing early.
+`--view extensions` groups by the raw filename extension rather than a detected type,
+and its rows partition the tree rather than sampling it, so they sum to the total; names
+with no extension, such as `Makefile` and `.gitignore`, land under `(none)`. And sizes
+are allocated bytes by default — add `--size apparent` for logical file lengths.
 
 ## Why
 
@@ -207,7 +236,7 @@ was read for nothing.
 | --- | --- | --- | --- |
 | Exact summary | `fdu --view summary PATH` | Enumerate and stat every entry; never read file contents | Five aggregate tallies; no index or cache |
 | Metadata index | `fdu PATH` | Enumerate and stat every entry; classify recognized paths without reading contents | Reusable parent-pointer index and, unless disabled, metadata snapshot v2 |
-| Content index | `fdu --analyze PROFILE PATH` | Metadata work plus streaming reads through every eligible file missing from a compatible content sidecar | Metadata index plus sparse content roll-ups and a separate `.content` sidecar |
+| Content index | `fdu --analyze SET PATH` | Metadata work plus streaming reads through every eligible file missing from a compatible content sidecar | Metadata index plus sparse content roll-ups and a separate `.content` sidecar |
 
 The summary-only plan applies to one unfiltered `summary` view under any cache policy
 except `only` and `refresh`, whose contracts are about the snapshot itself rather than
@@ -227,24 +256,30 @@ With no `--analyze`, the default is strictly metadata-only:
 - the content sidecar is not loaded, and analyzer settings do not alter metadata
   snapshot v2
 
-Analysis profiles request nested bundles; each deeper bundle includes the basic pass.
-Views select a report from the requested bundle:
+`--analyze` names a **set** of analyzers, not a level of one.
+`code` and `words` measure different things over different families, and either is
+useful without the other, so they compose instead of nesting:
 
-| `--analyze` | Adds | Views that expose those metrics |
-| --- | --- | --- |
-| `none` | Nothing; the default metadata-only path | `languages` remains a byte and count view |
-| `basic` | Physical, blank, and nonblank lines; raw prose words | `types`, `families`, `documents` |
-| `code` | `basic` plus standard code, comment, and code-blank lines | `languages`; also the basic document report |
-| `documents` | `basic` plus logical words, paragraphs, and reader-visible Markdown | `documents` |
-| `full` | Every shipped analyzer | `languages,documents` together |
+| `--analyze` | Adds | Views that show it | Default view |
+| --- | --- | --- | --- |
+| `none` | Nothing; the metadata-only path | — | `tree` |
+| `lines` | Physical, blank, and nonblank lines; raw word counts | `types`, `families`, `documents` | `families` |
+| `code` | Standard code, comment, and code-blank lines | `languages` | `languages` |
+| `words` | Logical words, paragraphs, and reader-visible Markdown | `documents` | `documents` |
+| `code,words` (or `all`) | Every shipped analyzer | all of the above | `families` |
 
-`languages` therefore works without analysis and uses byte shares; `code` or `full` adds
-standard LOC and switches its shares to code lines.
-`documents` requires any enabled profile.
-The metadata views remain legal with every profile, so one command can compose byte,
-type, code, and prose summaries over the same observed tree.
+`lines` rides along with any analyzer, because a file being read for one metric is
+already being counted for the other, so `code` means `lines,code` and there is nothing
+to remember. `none` and `all` name the whole axis and cannot be combined with anything
+else.
+
+`languages` therefore works without analysis and uses byte shares; adding `code` gives
+it standard LOC and switches its shares to code lines.
+`documents` is the one view that requires content, and any analyzer will do.
+The metadata views remain legal with every analyzer set, so one command can compose
+byte, type, code, and prose summaries over the same observed tree.
 Content analysis is currently one-shot; `--watch` remains metadata-only and rejects an
-enabled analysis profile.
+enabled analyzer set.
 Content analysis reads every eligible file through EOF; `--analysis-workers` bounds
 concurrency, not coverage.
 Known binary types are rejected before opening.
@@ -254,11 +289,11 @@ the run partial.
 I/O failures, files that change during their read, and stale conditional
 commits are operational failures; those make the result partial and produce a warning.
 Selection flags such as `--include` shape the report, not the retained analysis scope.
-An enabled profile analyzes eligible files in the chosen `PATH` and `--scan-depth` so
-the resulting sidecar can serve later selections without rereading them.
-Coverage records are profile-scoped today.
+An enabled analyzer set analyzes eligible files in the chosen `PATH` and `--scan-depth`
+so the resulting sidecar can serve later selections without rereading them.
+Coverage records are scoped to the analyzer set today.
 If a deeper analyzer such as standard LOC does not support a file, its byte metadata
-remains visible but that profile does not retain a separate lower-level line result for
+remains visible but that analyzer does not retain a separate lower-level line result for
 the same file.
 
 ## Reading the Performance Footer
@@ -275,7 +310,7 @@ apparent lengths, independent of the report’s selected `--size` metric.
 file can be walked without being opened and an observed binary probe can read less than
 the file’s full length.
 Fresh file and byte rates use the content-analysis phase’s wall time.
-Cached files and bytes are unchanged content records restored from the profile-scoped
+Cached files and bytes are unchanged content records restored from the set-scoped
 sidecar. The final label distinguishes a cold metadata scan, warm revalidation, and a
 cache-only answer; cache-only therefore reports zero files walked.
 
@@ -297,7 +332,7 @@ repaint is a fresh envelope with its own `generated_at`.
 fdu --depth 3 ~/src                        # render three levels deep
 fdu --view extensions ~/Downloads          # break down by raw file extension
 fdu --analyze lines --view families .      # lines, blanks, words, and exact byte shares
-fdu --analyze words                        # picks the view that displays the words
+fdu --analyze words .                      # picks the view that displays the words
 fdu --format json .                        # stable, versioned machine output
 fdu --view files --sort size -n 20 ~/src   # compose a largest-files query
 fdu --skill                                # print the self-contained agent skill
@@ -358,20 +393,21 @@ raw identity.
 Exit status 2 means partial results; pass `--allow-partial` to accept those
 as success. Exit status 1 means the command failed.
 
-Content analysis is opt-in through `--analyze none|basic|code|documents|full`. The basic
-profile streams each eligible file once, recognizes LF, CRLF, lone CR, and mixed line
+Content analysis is opt-in through `--analyze none|lines|code|words|all`. The `lines`
+analyzer streams each eligible file once, recognizes LF, CRLF, lone CR, and mixed line
 endings, separates blank and nonblank lines, rejects NUL-containing and invalid UTF-8
-files explicitly, and counts raw words only for prose and markup types.
+files explicitly, and counts raw words for every text family it admits.
 Every eligible file is streamed through EOF. `--analysis-workers` bounds concurrent
 readers, and `--words-per-page` controls only the report-time page denominator.
-Content results use a separately versioned, profile-scoped sidecar, so an unchanged warm
-run with the same profile and semantic settings does not reopen files.
-Changing profiles can require content reanalysis, but it never invalidates the separate
-metadata snapshot v2. The `code` profile adds the dependency-free `code-sloc-v1` state
-machine for Rust, Python, JavaScript, TypeScript, Go, Java, C, C++, C#, Ruby, PHP,
-Swift, Kotlin, shell, and SQL. It reports code, comment, and code-blank lines
-separately, counts mixed lines as code, treats multiline strings and docstrings as code,
-and uses code lines as the default language-percentage denominator.
+Content results use a separately versioned sidecar keyed by the analyzer set, so an
+unchanged warm run does not reopen files -- and a sidecar written by a wider set answers
+any narrower request without rereading, because it already holds those metrics.
+Widening the set can require reanalysis, but it never invalidates the separate metadata
+snapshot v2. The `code` analyzer adds the dependency-free `code-sloc-v1` state machine
+for Rust, Python, JavaScript, TypeScript, Go, Java, C, C++, C#, Ruby, PHP, Swift,
+Kotlin, shell, and SQL. It reports code, comment, and code-blank lines separately,
+counts mixed lines as code, treats multiline strings and docstrings as code, and uses
+code lines as the default language-percentage denominator.
 Other code types remain visible as unsupported coverage rather than being mislabeled
 from nonblank lines.
 The `documents` profile adds FlexDoc-style normalized word counts, paragraph runs, and
@@ -488,7 +524,7 @@ The metadata core and opt-in content layer retain separate state:
 | **Metadata index** | In-memory parent-pointer tree; every directory carries pre-computed size, count, recency, and extension roll-ups |
 | **Metadata snapshot** | A complete metadata baseline, keyed by canonical root, semantic scan scope, format, and engine version |
 | **Content index** | Optional sparse per-file analysis records and derived roll-ups, allocated only after `--analyze` opts in |
-| **Content sidecar** | Separately versioned, profile-scoped persistence for unchanged content records; never loaded by metadata-only requests |
+| **Content sidecar** | Separately versioned, analyzer-set-scoped persistence for unchanged content records; never loaded by metadata-only requests |
 | **Observation** | Verified producer input, optionally conditional on the indexed path state |
 | **AppliedDelta** | A clocked batch of effective committed changes for the bounded change feed |
 | **Derived report** | Exact minimum state for a proven one-shot composition; otherwise the planner falls back to the index |
