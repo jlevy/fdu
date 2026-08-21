@@ -218,7 +218,7 @@ updated in the same change (Principle 12).
 fdu [OPTIONS] <PATH>                                      # reports name their root
 fdu [PATH] --cache-status[=<SCOPE>] [--cache-clear[=<SCOPE>]] # lifecycle; never scan
 fdu [PATH] --cache-clear[=<SCOPE>]                        # lifecycle; never scan
-fdu --skill / --help / --version                          # discovery surfaces
+fdu --docs / --skill / --help / --version                 # discovery surfaces
 ```
 
 Representative compositions, which double as the subsumption checklist (Principle 8):
@@ -246,6 +246,16 @@ Grammar conventions, applied uniformly so every flag behaves the way its neighbo
 
 - **Reports require an explicit root.** Bare `fdu` is identical to `fdu --help` and
   returns without filesystem work; `fdu .` is the deliberate current-directory form.
+- **Discovery surfaces answer without a root and never scan.** `--help` is the flag
+  reference; `--docs` is the prose guide — the report ladder, both axes, and the output
+  contracts; `--skill` is the same surface written for an agent.
+  Prose that names a flag, view, analyzer, or schema string is tested against the
+  binary, because a guide advertising something that does not exist spends the reader’s
+  trust before they find out: the stale `fdu.report/2` in help survived a vocabulary
+  sweep and a full gate, and only a test comparing prose to the constants caught it.
+  This is the reason help carries one pointer line rather than the guide itself — the
+  guide used to live in `before_help`, which printed a page of prose above the command’s
+  own description.
 - **Closed identifier vocabularies are comma-delimited lists** (`--view`, `--kind`):
   split on commas, trim, reject empty tokens, and name the valid values in the error for
   an unknown token (flowmark’s list pattern).

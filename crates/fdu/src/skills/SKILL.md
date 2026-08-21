@@ -9,6 +9,8 @@ description: >-
 # fdu Directory Roll-Ups
 
 Use `fdu` to summarize a directory tree without modifying files in that tree.
+`fdu --docs` prints the full usage guide -- the report ladder, both axes, and the output
+contracts -- without a PATH and without scanning.
 Every report requires an explicit `PATH`; bare `fdu` prints help instead of scanning the
 current directory.
 
@@ -162,7 +164,10 @@ before the modification, so only the start bound is conservative.
 
 Check the process exit status and these fields:
 
-- `schema` before parsing anything else
+- `schema` before parsing anything else: a metadata-only report carries `fdu.report/1`,
+  a report that ran content analysis carries `fdu.report/3`, and a `--watch` stream
+  carries `fdu.stream/1`. Treat an unrecognized value as a version you cannot parse
+  rather than guessing at the fields.
 - `complete` and `errors` before trusting totals
 - `freshness` and `source` before presenting data as current
 - `truncated` on a tree node before treating it as exhaustive

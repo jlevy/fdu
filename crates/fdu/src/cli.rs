@@ -56,36 +56,63 @@ const CLI_STYLES: Styles = Styles::styled()
     .valid(AnsiColor::Green.on_default())
     .invalid(AnsiColor::Yellow.on_default());
 
-const COMMON_REPORTS_HELP: &str = r"Five common reports:
-  Language sizes      fdu --view languages PATH
-                      Uses exact names and extensions; never reads file contents.
-  Languages and LOC   fdu --analyze code --view languages PATH
-                      Reads eligible files for code, comment, and blank lines.
-  All file types      fdu --view types PATH
-                      Includes every family from names and extensions; never reads content.
-  Folder sizes        fdu PATH
-                      Uses the metadata-only tree view and reusable index.
-  Fast totals only    fdu --view summary PATH
-                      Returns bytes plus file and directory counts;
-                      retains no index and writes no cache.
+/// The one line `--help` spends on everything `--docs` covers.
+///
+/// Help stays the flag reference it is supposed to be.  The guide it points at used to
+/// be split across `before_help` and `after_help`, which put a page of prose *above* the
+/// tool's own description — the reader met the examples before learning what the command
+/// was.
+const DOCS_POINTER: &str = "Run `fdu --docs` for more help and important usage examples.";
 
---analyze chooses what may be read; --view chooses what is printed.
-Requesting analysis picks a view that displays it, unless --view names one.";
+/// The guide `--docs` prints: the ladder, the two axes, and the contracts worth knowing
+/// before automating against the output.
+const DOCS: &str = r"fdu — a fast, incremental file roll-up engine.
 
-const CONTENT_AFTER_HELP: &str = r"More compositions:
+THE LADDER
+  Every report is one command, and they form a ladder. Each rung costs more than
+  the one above it and tells you more, so stop at the cheapest answer that
+  settles your question.
+
+    fdu --view summary PATH             how big is this tree?        no reads
+    fdu PATH                            which folders are big?       no reads
+    fdu --view types PATH               what kinds of files?         no reads
+    fdu --view languages PATH           which languages?             no reads
+    fdu --analyze code PATH             how much code?               READS FILES
+    fdu --analyze words PATH            how much writing?            READS FILES
+    fdu --analyze all --view all PATH   everything there is          READS FILES
+
+TWO FLAGS DO ALL OF IT
+  --analyze decides what gets read. It is the only thing that can make a run
+    cost more than a single metadata walk.
+  --view decides what gets printed. It is free: every view is a projection over
+    one walk, so asking for more views never touches the filesystem again.
+
+  You rarely need both. Naming analyzers selects a view that displays them, so
+  `fdu --analyze code PATH` already prints language rows with lines of code.
+  Name --view yourself for a different projection; it always wins.
+
+  A view never turns on an analyzer, because choosing how to look at a result
+  should not quietly authorize reading every file in the tree. So a --view that
+  displays none of what you asked to read says how much was read for nothing,
+  and --view all names any view it had to skip.
+
+MORE COMPOSITIONS
   fdu --view extensions ~/Downloads
   fdu --view types,families --format json .
   fdu --analyze words --view documents .
+  fdu --view files --min-size 10M --sort size -n 100 PATH   largest files
+  fdu --view files --modified-since 1h --sort mtime PATH    recent changes
+  fdu --watch --view files --format jsonl PATH              a tail -f for a tree
 
-Six axes, and every option belongs to exactly one:
+SIX AXES, AND EVERY OPTION BELONGS TO EXACTLY ONE
   Scope      PATH, --scan-depth                         what is scanned and cached
   Content    --analyze none|lines|code|words|all        which file bodies are read
-  Selection  --include, --exclude, --depth, --limit    which entries are considered
+  Selection  --include, --exclude, --depth, --limit     which entries are considered
   View       tree,extensions,types,families,languages,documents,files,summary,all
   Format     --format text|json|jsonl|yaml, --color
   Mode       --cache, --watch, --analysis-workers
 
-Content analysis:
+CONTENT ANALYSIS
   none       metadata only; source files are never opened (default)
   lines      physical, blank, and nonblank lines plus raw word counts
   code       standard SLOC from the versioned common-language analyzer
@@ -94,9 +121,6 @@ Content analysis:
 
   A comma-separated set: code,words runs both. none and all name the whole
   axis and cannot be combined. lines comes with any analyzer, free.
-  Requesting analysis selects a view that displays it unless --view names one.
-  Views never enable content analysis implicitly; a --view that displays no
-  content metric reports how much was read for nothing.
   languages is metadata-only by default; code adds standard LOC.
   documents requires any enabled analyzer.
   Analysis streams every eligible file through EOF; files are never size-truncated.
@@ -106,18 +130,21 @@ Content analysis:
   any narrower request without re-reading.
   cache=only never opens source files and fails if requested content is absent.
 
-Output and automation:
+OUTPUT AND AUTOMATION
   Metadata-only machine output remains fdu.report/1; metric summaries use fdu.report/3.
   Text language rows use canonical names; machine formats retain lowercase IDs.
   Metric rows include detection source, confidence, origin flags, and coverage.
   One-shot text reports end with a gray performance line; machine formats omit it.
   Results go to stdout; warnings and errors go to stderr.
   The command never prompts, pages, or animates progress.
+  Reports require an explicit PATH; bare `fdu` prints help and scans nothing.
+  `fdu --skill` prints a portable agent skill describing this same surface.
 
-Exit status:
+EXIT STATUS
   0  Complete result, or a partial result accepted with --allow-partial
   1  Fatal filesystem or cache error
-  2  Partial result, or command-line usage error";
+  2  Partial result, or command-line usage error
+";
 
 /// When terminal styling should be enabled.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum)]
@@ -237,10 +264,9 @@ pub enum RunOutcome {
     about,
     long_about = None,
     styles = CLI_STYLES,
-    before_help = COMMON_REPORTS_HELP,
-    after_help = CONTENT_AFTER_HELP,
+    after_help = DOCS_POINTER,
     arg_required_else_help = true,
-    override_usage = "fdu [OPTIONS] <PATH>\n       fdu [PATH] --cache-status[=<SCOPE>] [--cache-clear[=<SCOPE>]]\n       fdu [PATH] --cache-clear[=<SCOPE>]\n       fdu --skill"
+    override_usage = "fdu [OPTIONS] <PATH>\n       fdu [PATH] --cache-status[=<SCOPE>] [--cache-clear[=<SCOPE>]]\n       fdu [PATH] --cache-clear[=<SCOPE>]\n       fdu --docs\n       fdu --skill"
 )]
 // A command line is a flat bag of independent switches. Folding these into enums to
 // satisfy the lint would obscure the one thing this struct exists to mirror: the flags a
@@ -248,8 +274,8 @@ pub enum RunOutcome {
 #[allow(clippy::struct_excessive_bools)]
 pub struct Cli {
     // ---- scope: what the engine observes and retains ----
-    /// Report root; optional only for cache lifecycle operations.
-    #[arg(required_unless_present_any = ["skill", "cache_status", "cache_clear"])]
+    /// Report root; optional only for the discovery and cache-lifecycle flags.
+    #[arg(required_unless_present_any = ["docs", "skill", "cache_status", "cache_clear"])]
     pub path: Option<PathBuf>,
 
     /// Limit scanning and retention to N entry levels.
@@ -370,6 +396,10 @@ pub struct Cli {
     #[arg(long, value_name = "DUR", default_value = "2s", help_heading = "Execution")]
     pub interval: String,
 
+    /// Print the usage guide: the report ladder, both axes, and the output contracts.
+    #[arg(long, action = ArgAction::SetTrue, help_heading = "Other")]
+    pub docs: bool,
+
     /// Print a portable agent skill to stdout.
     #[arg(long, action = ArgAction::SetTrue, help_heading = "Other")]
     pub skill: bool,
@@ -403,6 +433,11 @@ impl Cli {
         stdout_is_terminal: bool,
         stderr_is_terminal: bool,
     ) -> anyhow::Result<RunOutcome> {
+        if self.docs {
+            write!(out, "{DOCS}")?;
+            return Ok(RunOutcome::Complete);
+        }
+
         if self.skill {
             write!(out, "{}", compose_skill())?;
             return Ok(RunOutcome::Complete);
@@ -1705,6 +1740,7 @@ mod tests {
             #[cfg(feature = "watch")]
             interval: "2s".to_string(),
             allow_partial: false,
+            docs: false,
             skill: false,
         }
     }
@@ -1851,6 +1887,84 @@ mod tests {
         assert_eq!(parsed.selection.sort, Some(SortKey::Mtime));
         assert_eq!(parsed.selection.size, SizeMetric::Apparent);
         assert!(parsed.selection.reverse);
+    }
+
+    /// Every flag the guide names must exist.
+    ///
+    /// tbd states this rule for its own docs surface as "the menu must only name
+    /// selectors that exist", and it is worth a test rather than an intention: prose that
+    /// advertises a flag the binary does not have is worse than prose that says nothing,
+    /// because the reader spends their trust before finding out.
+    #[test]
+    fn the_guide_only_names_flags_that_exist() {
+        let command = Cli::command();
+        let known: Vec<String> = command
+            .get_arguments()
+            .filter_map(|arg| arg.get_long().map(|long| format!("--{long}")))
+            .collect();
+        let mut named = Vec::new();
+        for token in DOCS.split(|c: char| !(c.is_alphanumeric() || c == '-' || c == '_')) {
+            if token.starts_with("--") && token.len() > 2 {
+                named.push(token.trim_end_matches('-').to_string());
+            }
+        }
+        assert!(!named.is_empty(), "the guide should name some flags");
+        for flag in &named {
+            assert!(known.contains(flag), "--docs names {flag}, which is not a flag");
+        }
+        // And the pointer must name the flag that prints the guide.
+        assert!(DOCS_POINTER.contains("--docs"), "{DOCS_POINTER}");
+    }
+
+    /// The vocabularies the guide lists must be the ones the parsers accept.
+    #[test]
+    fn the_guide_only_names_views_and_analyzers_that_parse() {
+        for view in [
+            "tree",
+            "extensions",
+            "types",
+            "families",
+            "languages",
+            "documents",
+            "files",
+            "summary",
+        ] {
+            assert!(DOCS.contains(view), "the guide should list the {view} view");
+            parse_view(view, "--view").unwrap_or_else(|_| panic!("{view} must parse"));
+        }
+        for set in ["none", "lines", "code", "words", "all"] {
+            assert!(DOCS.contains(set), "the guide should list the {set} analyzer value");
+            AnalysisSet::parse(set).unwrap_or_else(|_| panic!("{set} must parse"));
+        }
+    }
+
+    /// The stale-schema bug, made unrepeatable.
+    ///
+    /// The bump to `fdu.report/3` left "metric summaries use fdu.report/2" in the help
+    /// text, contradicting what the binary emits. It survived a vocabulary sweep and a
+    /// full `make check`, because no test compared prose against the constants.
+    #[test]
+    fn no_surface_names_a_schema_the_binary_does_not_emit() {
+        const PREFIX: &str = "fdu.report/";
+        let live = [report_format::REPORT_SCHEMA, report_format::CONTENT_REPORT_SCHEMA];
+        for (surface, text) in [("--docs", DOCS.to_string()), ("--skill", compose_skill())] {
+            let mut rest = text.as_str();
+            let mut found = 0;
+            while let Some(at) = rest.find(PREFIX) {
+                rest = &rest[at..];
+                // The version is the digit run after the prefix; whatever punctuation
+                // follows belongs to the sentence, not to the schema string.
+                let digits = rest[PREFIX.len()..].chars().take_while(char::is_ascii_digit).count();
+                let named = &rest[..PREFIX.len() + digits];
+                assert!(
+                    live.contains(&named),
+                    "{surface} names {named}, but the binary emits {live:?}"
+                );
+                found += 1;
+                rest = &rest[PREFIX.len() + digits..];
+            }
+            assert!(found > 0, "{surface} should state which schema it emits");
+        }
     }
 
     /// The defect this axis exists to fix: a request that reads every eligible file must

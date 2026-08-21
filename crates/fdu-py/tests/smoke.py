@@ -98,10 +98,23 @@ def main() -> None:
         [entrypoint, "--help"], check=False, capture_output=True, text=True
     )
     assert help_result.returncode == 0, help_result
-    assert "Output and automation:" in help_result.stdout, help_result.stdout
+    # Help is the flag reference. The prose it used to carry now lives behind --docs, so
+    # help states where to find it rather than opening with a page of it.
     assert "--color <WHEN>" in help_result.stdout, help_result.stdout
     assert "--skill" in help_result.stdout, help_result.stdout
+    assert "--docs" in help_result.stdout, help_result.stdout
+    assert "Run `fdu --docs`" in help_result.stdout, help_result.stdout
     assert help_result.stderr == "", help_result.stderr
+
+    # The guide answers without a PATH and without scanning, from the installed wheel's
+    # own entry point.
+    docs_result = subprocess.run(
+        [entrypoint, "--docs"], check=False, capture_output=True, text=True
+    )
+    assert docs_result.returncode == 0, docs_result
+    for section in ("THE LADDER", "SIX AXES", "CONTENT ANALYSIS", "OUTPUT AND AUTOMATION"):
+        assert section in docs_result.stdout, (section, docs_result.stdout[:400])
+    assert docs_result.stderr == "", docs_result.stderr
 
     cli_scan = subprocess.run(
         [

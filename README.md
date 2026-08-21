@@ -80,6 +80,9 @@ share one scan — `fdu --view tree,types PATH` walks once and prints both.
 `documents` is the only view that needs content, so it is the only one that can be
 skipped.
 
+`fdu --docs` prints all of this as a guide, without a PATH and without scanning;
+`--help` stays the flag reference.
+
 Two details worth knowing early.
 `--view extensions` groups by the raw filename extension rather than a detected type,
 and its rows partition the tree rather than sampling it, so they sum to the total; names
@@ -335,6 +338,7 @@ fdu --analyze lines --view families .      # lines, blanks, words, and exact byt
 fdu --analyze words .                      # picks the view that displays the words
 fdu --format json .                        # stable, versioned machine output
 fdu --view files --sort size -n 20 ~/src   # compose a largest-files query
+fdu --docs                                 # the usage guide: ladder, axes, contracts
 fdu --skill                                # print the self-contained agent skill
 ```
 
