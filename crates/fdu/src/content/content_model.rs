@@ -111,6 +111,57 @@ impl AnalysisSet {
         if bits & !Self::KNOWN == 0 { Some(Self(bits)) } else { None }
     }
 
+    /// Parse the comma-delimited vocabulary both front ends accept.
+    ///
+    /// Lives here rather than in either front end because it is the axis's grammar, not
+    /// one surface's flag parsing: the CLI and the Python binding must accept exactly the
+    /// same words or the two surfaces disagree about what a request means.
+    ///
+    /// `none` and `all` are totals and cannot be combined with anything, including each
+    /// other — `none,code` has no coherent reading, and silently letting one win is how a
+    /// caller ends up with analysis they did not ask for or did not get.
+    pub fn parse(value: &str) -> Result<Self, String> {
+        let mut set = Self::NONE;
+        let mut seen: Vec<String> = Vec::new();
+        let mut total: Option<&'static str> = None;
+        for raw in value.split(',') {
+            let token = raw.trim().to_ascii_lowercase();
+            if token.is_empty() {
+                return Err(format!("invalid analyze {value:?}: empty entry in the list"));
+            }
+            if seen.contains(&token) {
+                return Err(format!("invalid analyze {value:?}: {token:?} appears more than once"));
+            }
+            seen.push(token.clone());
+            match token.as_str() {
+                "none" => total = Some("none"),
+                "all" => {
+                    total = Some("all");
+                    set = Self::ALL;
+                }
+                "lines" => set = set.with_lines(),
+                "code" => set = set.with_code(),
+                "words" => set = set.with_words(),
+                other => {
+                    return Err(format!(
+                        "invalid analyze {other:?}: expected one of none, lines, code, words, all"
+                    ));
+                }
+            }
+        }
+        if let Some(total) = total {
+            if seen.len() > 1 {
+                return Err(format!(
+                    "invalid analyze {value:?}: {total:?} names the whole axis and cannot be combined"
+                ));
+            }
+            if total == "none" {
+                return Ok(Self::NONE);
+            }
+        }
+        Ok(set)
+    }
+
     /// Requested analyzers in canonical order, as the CLI and reports spell them.
     pub fn labels(self) -> Vec<&'static str> {
         let mut labels = Vec::new();
@@ -418,7 +469,7 @@ pub enum AnalysisApplyOutcome {
 
 #[cfg(test)]
 mod tests {
-    use super::LogicalWordStats;
+    use super::{AnalysisSet, LogicalWordStats};
 
     #[test]
     fn logical_words_derive_only_after_additive_stats_are_combined() {
@@ -443,5 +494,89 @@ mod tests {
         assert_eq!(logical(0, 4, 4), 1, "short tokens use the three-character ceiling");
         assert_eq!(logical(3, 0, 0), 2, "wide halves round up once");
         assert_eq!(logical(1, 1, 1), 1, "mixed fractions combine before rounding");
+    }
+
+    #[test]
+    fn the_analyzer_vocabulary_parses_every_accepted_spelling() {
+        let cases = [
+            ("none", AnalysisSet::NONE),
+            ("lines", AnalysisSet::NONE.with_lines()),
+            ("code", AnalysisSet::NONE.with_code()),
+            ("words", AnalysisSet::NONE.with_words()),
+            ("all", AnalysisSet::ALL),
+            // Order is irrelevant: a set has no order, so neither spelling is preferred.
+            ("code,words", AnalysisSet::ALL),
+            ("words,code", AnalysisSet::ALL),
+            // `lines` is already implied by any analyzer, so naming it adds nothing.
+            ("lines,code", AnalysisSet::NONE.with_code()),
+            // Whitespace and case are incidental, as in every other list flag.
+            (" CODE , Words ", AnalysisSet::ALL),
+        ];
+        for (input, expected) in cases {
+            assert_eq!(AnalysisSet::parse(input), Ok(expected), "parsing {input:?}");
+        }
+    }
+
+    #[test]
+    fn the_analyzer_vocabulary_rejects_every_incoherent_request() {
+        // Each rejection names what was wrong; a set flag that silently drops a token is
+        // how a caller ends up believing it measured something it did not.
+        let cases = [
+            ("", "empty entry"),
+            ("code,,words", "empty entry"),
+            ("code,code", "more than once"),
+            ("basic", "expected one of"),
+            ("documents", "expected one of"),
+            ("full", "expected one of"),
+            ("none,code", "cannot be combined"),
+            ("all,code", "cannot be combined"),
+            ("none,all", "cannot be combined"),
+        ];
+        for (input, needle) in cases {
+            let error = AnalysisSet::parse(input).expect_err(&format!("{input:?} must fail"));
+            assert!(error.contains(needle), "parsing {input:?} said {error:?}, wanted {needle:?}");
+        }
+    }
+
+    #[test]
+    fn containment_is_reflexive_and_ordered_by_membership() {
+        let code = AnalysisSet::NONE.with_code();
+        let words = AnalysisSet::NONE.with_words();
+        assert!(AnalysisSet::ALL.contains(code) && AnalysisSet::ALL.contains(words));
+        assert!(!code.contains(words) && !words.contains(code));
+        assert!(code.contains(code), "a set answers its own request");
+        assert!(code.contains(AnalysisSet::NONE), "every set answers an empty request");
+        assert!(!AnalysisSet::NONE.is_enabled(), "an empty set opens no file");
+        assert!(code.contains(AnalysisSet::NONE.with_lines()), "lines ride along with code");
+    }
+
+    #[test]
+    fn the_on_disk_encoding_round_trips_and_refuses_unknown_analyzers() {
+        for set in [
+            AnalysisSet::NONE,
+            AnalysisSet::NONE.with_lines(),
+            AnalysisSet::NONE.with_code(),
+            AnalysisSet::NONE.with_words(),
+            AnalysisSet::ALL,
+        ] {
+            assert_eq!(AnalysisSet::from_bits(set.bits()), Some(set));
+        }
+        // A record written by a build with an analyzer this one lacks cannot be honored,
+        // so it is refused rather than silently under-reported as absent metrics.
+        assert_eq!(AnalysisSet::from_bits(0b1000_0000), None);
+    }
+
+    #[test]
+    fn labels_are_the_vocabulary_parse_accepts() {
+        for set in [
+            AnalysisSet::NONE.with_lines(),
+            AnalysisSet::NONE.with_code(),
+            AnalysisSet::NONE.with_words(),
+            AnalysisSet::ALL,
+        ] {
+            let spelled = set.labels().join(",");
+            assert_eq!(AnalysisSet::parse(&spelled), Ok(set), "round trip through {spelled:?}");
+        }
+        assert!(AnalysisSet::NONE.labels().is_empty());
     }
 }

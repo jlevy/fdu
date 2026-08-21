@@ -971,7 +971,7 @@ fn view_header(view: ViewSpec) -> &'static str {
 }
 
 /// Stable wire label for a view.
-fn view_label(view: ViewSpec) -> &'static str {
+pub(crate) fn view_label(view: ViewSpec) -> &'static str {
     match view {
         ViewSpec::Tree => "tree",
         ViewSpec::Types => "types",

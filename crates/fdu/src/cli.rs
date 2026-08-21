@@ -299,12 +299,16 @@ pub struct Cli {
     pub size: String,
 
     // ---- view: which roll-ups are reported ----
-    /// Views: tree, extensions, types, families, languages, documents, files, summary.
-    #[arg(long, value_name = "LIST", default_value = "tree", help_heading = "Views")]
-    pub view: String,
+    /// Views: tree, extensions, types, families, languages, documents, files, summary,
+    /// or all. Defaults to the view that displays whatever --analyze requested.
+    #[arg(long, value_name = "LIST", help_heading = "Views")]
+    pub view: Option<String>,
 
-    /// Content depth: none, basic, code, documents, or full.
-    #[arg(long, value_name = "PROFILE", default_value = "none", help_heading = "Content analysis")]
+    /// Analyzers to run: none, lines, code, words, or all.
+    ///
+    /// Anything but none opens and reads every eligible file, which is the only setting
+    /// that makes a run cost more than one metadata walk.
+    #[arg(long, value_name = "LIST", default_value = "none", help_heading = "Content analysis")]
     pub analyze: String,
 
     /// Content reader workers; zero selects available parallelism.
@@ -409,7 +413,12 @@ impl Cli {
         // time costs nothing and reports its own spelling rather than a scan's worth of
         // waiting followed by an error.
         let format = self.parse_format().map_err(|error| usage(&error))?;
-        let query = self.parse_query().map_err(|error| usage(&error))?;
+        // The content axis is parsed first because the view axis defaults from it: a
+        // request that pays to read files should display what it read.
+        let analysis = self.parse_analysis().map_err(|error| usage(&error))?;
+        let views =
+            resolve_views(self.view.as_deref(), analysis.profile).map_err(|error| usage(&error))?;
+        let query = self.parse_query(&views.selected).map_err(|error| usage(&error))?;
         let path = self.path.as_deref().ok_or_else(|| {
             usage(&anyhow::anyhow!(
                 "missing PATH: specify the directory to summarize, for example `fdu .`"
@@ -417,7 +426,6 @@ impl Cli {
         })?;
 
         let policy = self.parse_cache_policy().map_err(|error| usage(&error))?;
-        let analysis = self.parse_analysis().map_err(|error| usage(&error))?;
         query
             .validate_analysis(analysis.profile)
             .map_err(|message| usage(&anyhow::anyhow!(message)))?;
@@ -515,6 +523,9 @@ impl Cli {
                     color,
                 )
             )?;
+            for note in display_notes(&views, analysis.profile, performance.bytes_read) {
+                writeln!(out, "{}", paint(&note, STYLE_PERFORMANCE, color))?;
+            }
         }
 
         if format == report_format::Format::Text && !report.complete {
@@ -903,7 +914,19 @@ impl Cli {
     /// This is all the CLI does: parse flags into `Query`, hand it to the library, and
     /// serialize what comes back. Any logic beyond that belongs in the library, where
     /// Rust and Python callers get it too.
-    fn parse_query(&self) -> anyhow::Result<Query> {
+    /// Resolve the content and view axes exactly as [`Cli::run`] does.
+    ///
+    /// Tests go through this rather than calling `parse_query` with a hand-written view
+    /// list, so a change to the resolution order cannot pass the suite while breaking the
+    /// command.
+    #[cfg(test)]
+    fn resolved_query(&self) -> anyhow::Result<Query> {
+        let analysis = self.parse_analysis()?;
+        let views = resolve_views(self.view.as_deref(), analysis.profile)?;
+        self.parse_query(&views.selected)
+    }
+
+    fn parse_query(&self, views: &[ViewSpec]) -> anyhow::Result<Query> {
         let now = SystemTime::now();
 
         let mut selection = Selection {
@@ -938,7 +961,7 @@ impl Cli {
             selection.sort = Some(parse_sort(sort)?);
         }
 
-        let views = parse_list(&self.view, "--view", parse_view)?;
+        let views = views.to_vec();
         if self.words_per_page == 0 {
             anyhow::bail!("invalid --words-per-page 0: expected a positive integer");
         }
@@ -946,16 +969,8 @@ impl Cli {
     }
 
     fn parse_analysis(&self) -> anyhow::Result<AnalysisRequest> {
-        let profile = match self.analyze.trim().to_ascii_lowercase().as_str() {
-            "none" | "off" | "disabled" => AnalysisSet::NONE,
-            "basic" => AnalysisSet::NONE.with_lines(),
-            "code" => AnalysisSet::NONE.with_code(),
-            "documents" | "docs" => AnalysisSet::NONE.with_words(),
-            "full" => AnalysisSet::ALL,
-            other => anyhow::bail!(
-                "invalid --analyze {other:?}: expected one of none, basic, code, documents, full"
-            ),
-        };
+        let profile = AnalysisSet::parse(&self.analyze)
+            .map_err(|message| anyhow::anyhow!(message.replace("analyze", "--analyze")))?;
         Ok(AnalysisRequest { profile, workers: self.analysis_workers })
     }
 }
@@ -1122,6 +1137,115 @@ fn parse_list<T: PartialEq>(
     Ok(parsed)
 }
 
+/// Every view, in the order `--view all` renders them.
+///
+/// Totals first, then structure, then progressively finer groupings, with the flat
+/// listing last because it is the only one whose length is bounded by `--limit` rather
+/// than by the tree's shape.  The order is a golden contract: it is what `--view all`
+/// prints, so changing it changes committed output.
+const ALL_VIEWS: [ViewSpec; 8] = [
+    ViewSpec::Summary,
+    ViewSpec::Tree,
+    ViewSpec::Families,
+    ViewSpec::Types,
+    ViewSpec::Extensions,
+    ViewSpec::Languages,
+    ViewSpec::Documents,
+    ViewSpec::Files,
+];
+
+/// Whether a view renders anything the content analyzers produce.
+///
+/// This is the check behind the "paid for nothing" note.  It is deliberately a match
+/// rather than a property of `ViewSpec`, so adding a view forces a decision here about
+/// whether it displays content metrics.
+const fn view_displays_analysis(view: ViewSpec) -> bool {
+    matches!(view, ViewSpec::Types | ViewSpec::Families | ViewSpec::Languages | ViewSpec::Documents)
+}
+
+/// Whether a view can render at all under `profile`.
+///
+/// Only `documents` has no metadata-only projection; every other view answers with or
+/// without analysis, showing fewer columns when it has less to show.
+const fn view_is_satisfiable(view: ViewSpec, profile: AnalysisSet) -> bool {
+    !matches!(view, ViewSpec::Documents) || profile.is_enabled()
+}
+
+/// The view a request displays its analysis in when the caller named none.
+///
+/// A view may never enable an analyzer — that would let a display choice authorize
+/// filesystem reads — but the reverse direction is free, because it only re-projects
+/// state the request already paid for.  Without this, `--analyze all` reads every
+/// eligible file and prints a tree containing none of the results.
+const fn default_view_for(profile: AnalysisSet) -> ViewSpec {
+    match (profile.includes_code(), profile.includes_words()) {
+        // The one view whose rows carry both metric groups at once.
+        (true, true) => ViewSpec::Families,
+        (true, false) => ViewSpec::Languages,
+        (false, true) => ViewSpec::Documents,
+        // Line counts alone still need a grouping that shows them.
+        (false, false) if profile.is_enabled() => ViewSpec::Families,
+        // The unchanged du-replacement answer.
+        (false, false) => ViewSpec::Tree,
+    }
+}
+
+/// Views to render, plus any `--view all` could not satisfy.
+#[derive(Debug)]
+struct ResolvedViews {
+    selected: Vec<ViewSpec>,
+    omitted: Vec<ViewSpec>,
+}
+
+/// Resolve the view axis against the content axis.
+///
+/// `all` expands to what the requested analyzers can answer rather than failing the
+/// whole run over one unsatisfiable view, and reports what it dropped so the omission is
+/// stated rather than hidden.
+fn resolve_views(spec: Option<&str>, profile: AnalysisSet) -> anyhow::Result<ResolvedViews> {
+    let Some(spec) = spec else {
+        return Ok(ResolvedViews {
+            selected: vec![default_view_for(profile)],
+            omitted: Vec::new(),
+        });
+    };
+    if spec.trim().eq_ignore_ascii_case("all") {
+        let (selected, omitted) =
+            ALL_VIEWS.into_iter().partition(|view| view_is_satisfiable(*view, profile));
+        return Ok(ResolvedViews { selected, omitted });
+    }
+    Ok(ResolvedViews { selected: parse_list(spec, "--view", parse_view)?, omitted: Vec::new() })
+}
+
+/// Notes that keep the display contract legible in human output.
+///
+/// Both are the same rule read in opposite directions: a run displays what it paid for,
+/// and a view it could not render is named rather than quietly dropped.  Machine formats
+/// carry neither, because the `reports` array already enumerates exactly which views were
+/// produced — a consumer reads the omission from what is absent.
+fn display_notes(views: &ResolvedViews, profile: AnalysisSet, bytes_read: u64) -> Vec<String> {
+    let mut notes = Vec::new();
+    if !views.omitted.is_empty() {
+        let names = views
+            .omitted
+            .iter()
+            .map(|view| report_format::view_label(*view))
+            .collect::<Vec<_>>()
+            .join(", ");
+        notes.push(format!("note: omitted {names} — requires --analyze words or all"));
+    }
+    // Never an error: warming the content sidecar so a later run is warm is a supported
+    // use, and `--cache`-aware callers depend on it.  Silence would hide the cost instead.
+    if profile.is_enabled() && !views.selected.iter().any(|view| view_displays_analysis(*view)) {
+        notes.push(format!(
+            "note: --analyze {} read {}; no selected view displays content metrics — try --view families, languages, or all",
+            profile.labels().join(","),
+            report_format::human_bytes(bytes_read),
+        ));
+    }
+    notes
+}
+
 /// Parse one `--view` token.
 fn parse_view(token: &str, flag: &str) -> anyhow::Result<ViewSpec> {
     match token.to_ascii_lowercase().as_str() {
@@ -1133,8 +1257,11 @@ fn parse_view(token: &str, flag: &str) -> anyhow::Result<ViewSpec> {
         "documents" | "docs" => Ok(ViewSpec::Documents),
         "files" => Ok(ViewSpec::Files),
         "summary" => Ok(ViewSpec::Summary),
+        "all" => anyhow::bail!(
+            "invalid {flag} \"all\": it names the whole axis and cannot be combined with another view"
+        ),
         _ => anyhow::bail!(
-            "invalid {flag} {token:?}: expected one of tree, extensions, types, families, languages, documents, files, summary"
+            "invalid {flag} {token:?}: expected one of tree, extensions, types, families, languages, documents, files, summary, all"
         ),
     }
 }
@@ -1555,7 +1682,7 @@ mod tests {
             sort: None,
             reverse: false,
             size: "allocated".to_string(),
-            view: "tree".to_string(),
+            view: Some("tree".to_string()),
             analyze: "none".to_string(),
             analysis_workers: 0,
             words_per_page: 250,
@@ -1574,7 +1701,7 @@ mod tests {
     }
 
     fn query_error(cli: &Cli) -> String {
-        cli.parse_query().expect_err("expected a rejection").to_string()
+        cli.resolved_query().expect_err("expected a rejection").to_string()
     }
 
     #[test]
@@ -1619,15 +1746,15 @@ mod tests {
 
     #[test]
     fn views_parse_as_an_ordered_comma_list() {
-        let parsed = Cli { view: "types,tree,summary".to_string(), ..cli() }
-            .parse_query()
+        let parsed = Cli { view: Some("types,tree,summary".to_string()), ..cli() }
+            .resolved_query()
             .expect("views parse");
         assert_eq!(parsed.views, vec![ViewSpec::Types, ViewSpec::Tree, ViewSpec::Summary]);
     }
 
     #[test]
     fn an_unknown_view_names_every_valid_value() {
-        let message = query_error(&Cli { view: "bogus".to_string(), ..cli() });
+        let message = query_error(&Cli { view: Some("bogus".to_string()), ..cli() });
         assert!(
             message.contains(
                 "tree, extensions, types, families, languages, documents, files, summary"
@@ -1638,25 +1765,25 @@ mod tests {
 
     #[test]
     fn a_repeated_view_is_a_typo_not_a_no_op() {
-        let message = query_error(&Cli { view: "tree,tree".to_string(), ..cli() });
+        let message = query_error(&Cli { view: Some("tree,tree".to_string()), ..cli() });
         assert!(message.contains("appears more than once"), "{message}");
     }
 
     #[test]
     fn an_empty_list_entry_is_rejected() {
-        let message = query_error(&Cli { view: "tree,,types".to_string(), ..cli() });
+        let message = query_error(&Cli { view: Some("tree,,types".to_string()), ..cli() });
         assert!(message.contains("empty entry"), "{message}");
     }
 
     #[test]
     fn bounds_accept_all_as_well_as_a_number() {
         let parsed = Cli { depth: "all".to_string(), limit: "3".to_string(), ..cli() }
-            .parse_query()
+            .resolved_query()
             .expect("bounds parse");
         assert_eq!(parsed.selection.depth, Bound::All);
         assert_eq!(parsed.selection.limit, Bound::Limit(3));
         // du's meaning of depth 0 survives the rename from --max-depth.
-        let zero = Cli { depth: "0".to_string(), ..cli() }.parse_query().expect("parses");
+        let zero = Cli { depth: "0".to_string(), ..cli() }.resolved_query().expect("parses");
         assert_eq!(zero.selection.depth, Bound::Limit(0));
     }
 
@@ -1669,7 +1796,7 @@ mod tests {
             exclude: vec!["**/target/**".to_string()],
             ..cli()
         }
-        .parse_query()
+        .resolved_query()
         .expect("patterns parse");
         assert_eq!(parsed.selection.include.len(), 2);
         assert_eq!(parsed.selection.exclude.len(), 1);
@@ -1694,7 +1821,7 @@ mod tests {
             modified_before: Some("@2000".to_string()),
             ..cli()
         }
-        .parse_query()
+        .resolved_query()
         .expect("window parses");
         assert_eq!(parsed.selection.modified.since, Some(1_000_000_000_000));
         assert_eq!(parsed.selection.modified.before, Some(2_000_000_000_000));
@@ -1709,7 +1836,7 @@ mod tests {
             reverse: true,
             ..cli()
         }
-        .parse_query()
+        .resolved_query()
         .expect("parses");
         assert_eq!(parsed.selection.kinds, vec![EntryKind::File, EntryKind::Dir]);
         assert_eq!(parsed.selection.sort, Some(SortKey::Mtime));
@@ -1717,21 +1844,110 @@ mod tests {
         assert!(parsed.selection.reverse);
     }
 
+    /// The defect this axis exists to fix: a request that reads every eligible file must
+    /// not print a report identical to one that read nothing.
+    #[test]
+    fn requesting_analysis_selects_a_view_that_displays_it() {
+        let cases = [
+            (AnalysisSet::NONE, ViewSpec::Tree),
+            (AnalysisSet::NONE.with_lines(), ViewSpec::Families),
+            (AnalysisSet::NONE.with_code(), ViewSpec::Languages),
+            (AnalysisSet::NONE.with_words(), ViewSpec::Documents),
+            (AnalysisSet::ALL, ViewSpec::Families),
+        ];
+        for (profile, expected) in cases {
+            assert_eq!(default_view_for(profile), expected, "default view for {profile:?}");
+            if profile.is_enabled() {
+                assert!(
+                    view_displays_analysis(default_view_for(profile)),
+                    "a paid-for run must default to a view that shows what it bought"
+                );
+            }
+        }
+    }
+
+    /// An explicit view always wins; the derivation only supplies the default.
+    #[test]
+    fn an_explicit_view_overrides_the_derived_default() {
+        let resolved = resolve_views(Some("tree"), AnalysisSet::ALL).expect("resolve");
+        assert_eq!(resolved.selected, vec![ViewSpec::Tree]);
+        assert!(resolved.omitted.is_empty());
+    }
+
+    #[test]
+    fn view_all_expands_to_what_the_analyzer_set_can_answer() {
+        let bare = resolve_views(Some("all"), AnalysisSet::NONE).expect("resolve");
+        assert_eq!(bare.omitted, vec![ViewSpec::Documents], "documents needs content");
+        assert_eq!(bare.selected.len(), ALL_VIEWS.len() - 1);
+        assert!(!bare.selected.contains(&ViewSpec::Documents));
+
+        let analyzed = resolve_views(Some("all"), AnalysisSet::ALL).expect("resolve");
+        assert_eq!(analyzed.selected, ALL_VIEWS.to_vec(), "every view, in table order");
+        assert!(analyzed.omitted.is_empty());
+
+        // `all` names the axis, so combining it with a view is a usage error rather than
+        // a silently-widened request.
+        let combined = resolve_views(Some("all,tree"), AnalysisSet::NONE)
+            .expect_err("all cannot be combined")
+            .to_string();
+        assert!(combined.contains("cannot be combined"), "{combined}");
+    }
+
+    /// Both directions of the display contract, stated as notes rather than errors.
+    #[test]
+    fn the_display_contract_reports_omissions_and_unspent_reads() {
+        let omitted = resolve_views(Some("all"), AnalysisSet::NONE).expect("resolve");
+        let notes = display_notes(&omitted, AnalysisSet::NONE, 0);
+        assert_eq!(notes.len(), 1, "{notes:?}");
+        assert!(notes[0].contains("omitted documents"), "{notes:?}");
+
+        let unspent = resolve_views(Some("tree"), AnalysisSet::ALL).expect("resolve");
+        let notes = display_notes(&unspent, AnalysisSet::ALL, 1_200);
+        assert_eq!(notes.len(), 1, "{notes:?}");
+        assert!(notes[0].contains("no selected view displays content metrics"), "{notes:?}");
+        assert!(notes[0].contains("1.1 KiB"), "the note quantifies what was read: {notes:?}");
+
+        // A view that does display the metrics earns no note at all.
+        let spent = resolve_views(Some("families"), AnalysisSet::ALL).expect("resolve");
+        assert!(display_notes(&spent, AnalysisSet::ALL, 1_200).is_empty());
+
+        // Neither does a metadata-only run, which bought nothing to display.
+        let plain = resolve_views(None, AnalysisSet::NONE).expect("resolve");
+        assert!(display_notes(&plain, AnalysisSet::NONE, 0).is_empty());
+    }
+
+    /// Principle 13, the direction that protects the user: no view, at any content
+    /// setting, may cause a file body to be opened that `--analyze` did not authorize.
+    #[test]
+    fn no_view_enables_an_analyzer() {
+        for view in ALL_VIEWS {
+            let spec = report_format::view_label(view);
+            let cli = Cli { view: Some(spec.to_string()), ..cli() };
+            let profile = cli.parse_analysis().expect("analysis").profile;
+            assert_eq!(
+                profile,
+                AnalysisSet::NONE,
+                "--view {spec} must leave the content axis empty"
+            );
+        }
+    }
+
     #[test]
     fn analysis_profile_workers_and_page_denominator_parse_before_io() {
         let parsed =
-            Cli { analyze: "basic".to_string(), analysis_workers: 3, words_per_page: 250, ..cli() };
+            Cli { analyze: "lines".to_string(), analysis_workers: 3, words_per_page: 250, ..cli() };
         assert_eq!(
             parsed.parse_analysis().expect("analysis"),
             AnalysisRequest { profile: AnalysisSet::NONE.with_lines(), workers: 3 }
         );
-        assert_eq!(parsed.parse_query().expect("query").words_per_page, 250);
+        assert_eq!(parsed.resolved_query().expect("query").words_per_page, 250);
 
         let invalid = Cli { analyze: "deep".to_string(), ..cli() }
             .parse_analysis()
             .expect_err("invalid profile")
             .to_string();
-        assert!(invalid.contains("none, basic, code, documents, full"));
+        assert!(invalid.contains("none, lines, code, words, all"), "{invalid}");
+        assert!(invalid.contains("--analyze"), "the message names the flag: {invalid}");
         assert!(query_error(&Cli { words_per_page: 0, ..cli() }).contains("positive"));
     }
 
@@ -1741,8 +1957,8 @@ mod tests {
         std::fs::write(root.path().join("notes.md"), b"one two\n\nthree\n").expect("write");
         let command = Cli {
             path: Some(root.path().to_path_buf()),
-            analyze: "basic".to_string(),
-            view: "documents".to_string(),
+            analyze: "lines".to_string(),
+            view: Some("documents".to_string()),
             format: "json".to_string(),
             size: "apparent".to_string(),
             ..cli()
@@ -1766,8 +1982,8 @@ mod tests {
         std::fs::write(root.path().join("two.txt"), b"two\n").expect("write");
         let command = Cli {
             path: Some(root.path().to_path_buf()),
-            analyze: "basic".to_string(),
-            view: "summary".to_string(),
+            analyze: "lines".to_string(),
+            view: Some("summary".to_string()),
             size: "apparent".to_string(),
             ..cli()
         };
@@ -1775,7 +1991,10 @@ mod tests {
         let mut plain = Vec::new();
         command.run(&mut plain, &mut Vec::new(), false, false).expect("plain report");
         let plain = String::from_utf8(plain).expect("plain UTF-8");
-        let footer = plain.lines().last().expect("performance footer");
+        // `summary` displays no content metric, so this run also earns the paid-for-
+        // nothing note; the footer is the line before it rather than the last line.
+        let footer =
+            plain.lines().find(|line| line.contains("Performance:")).expect("performance footer");
         assert!(
             footer.starts_with("Performance: walked 2 files / 8 B; content read 8 B at "),
             "{plain}"
@@ -1790,11 +2009,19 @@ mod tests {
             .run(&mut colored, &mut Vec::new(), false, false)
             .expect("colored report");
         let colored = String::from_utf8(colored).expect("colored UTF-8");
-        let footer = colored.lines().last().expect("colored performance footer");
+        let footer = colored
+            .lines()
+            .find(|line| line.contains("Performance:"))
+            .expect("colored performance footer");
         assert!(
             footer.starts_with("\u{1b}[90mPerformance:"),
             "the footer must use terminal gray when color is active: {colored:?}"
         );
+        // The notes are footer-adjacent telemetry and share its dimming, so a terminal
+        // reading the report sees one quiet block rather than a bright interruption.
+        let note =
+            colored.lines().find(|line| line.contains("note: --analyze")).expect("colored note");
+        assert!(note.starts_with("\u{1b}[90mnote:"), "notes share the footer style: {colored:?}");
     }
 
     #[test]
@@ -1826,7 +2053,7 @@ mod tests {
         for format in ["json", "jsonl", "yaml"] {
             let command = Cli {
                 path: Some(root.path().to_path_buf()),
-                view: "summary".to_string(),
+                view: Some("summary".to_string()),
                 size: "apparent".to_string(),
                 format: format.to_string(),
                 ..cli()
@@ -1863,7 +2090,7 @@ mod tests {
         // scan of a large tree.
         let message = query_error(&Cli {
             path: Some(PathBuf::from("/nonexistent-root-that-should-not-be-scanned")),
-            view: "bogus".to_string(),
+            view: Some("bogus".to_string()),
             ..cli()
         });
         assert!(message.contains("expected one of"), "{message}");
@@ -2056,8 +2283,8 @@ mod tests {
         ]));
         index.set_initial_freshness(false);
 
-        let query = Cli { view: "files".to_string(), depth: "all".to_string(), ..cli() }
-            .parse_query()
+        let query = Cli { view: Some("files".to_string()), depth: "all".to_string(), ..cli() }
+            .resolved_query()
             .expect("query parses");
         let provenance = Provenance {
             scan_started_at: None,
@@ -2124,8 +2351,8 @@ mod tests {
             },
         ]));
         dirs.set_initial_freshness(false);
-        let tree_query = Cli { view: "tree".to_string(), depth: "all".to_string(), ..cli() }
-            .parse_query()
+        let tree_query = Cli { view: Some("tree".to_string()), depth: "all".to_string(), ..cli() }
+            .resolved_query()
             .expect("query parses");
         let tree = crate::query::report(&dirs, &tree_query, &provenance);
         let tree_rendered = report_format::render(&tree, report_format::Format::Json, false);

@@ -22,7 +22,7 @@ use pyo3::exceptions::{PyOSError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 
-use fdu::content::{AnalysisSet, AnalysisRequest, CoverageReason};
+use fdu::content::{AnalysisRequest, AnalysisSet, CoverageReason};
 use fdu::query::{
     Bound as Bound_, MetricRow, MetricSummary, Pattern, Provenance, Query, Report, ReportSource,
     Section, Selection, SizeMetric, SortKey, SummaryRow, TreeNode, ViewSpec, document_words,
@@ -612,18 +612,7 @@ fn parse_cache_policy(value: &str) -> PyResult<CachePolicy> {
 }
 
 fn parse_analysis_request(profile: &str, workers: usize) -> PyResult<AnalysisRequest> {
-    let profile = match profile.trim().to_ascii_lowercase().as_str() {
-        "none" | "off" | "disabled" => AnalysisSet::NONE,
-        "basic" => AnalysisSet::NONE.with_lines(),
-        "code" => AnalysisSet::NONE.with_code(),
-        "documents" | "docs" => AnalysisSet::NONE.with_words(),
-        "full" => AnalysisSet::ALL,
-        other => {
-            return Err(PyValueError::new_err(format!(
-                "invalid analysis profile {other:?}: expected one of none, basic, code, documents, full"
-            )));
-        }
-    };
+    let profile = AnalysisSet::parse(profile).map_err(PyValueError::new_err)?;
     Ok(AnalysisRequest { profile, workers })
 }
 
@@ -715,7 +704,7 @@ fn report_dict<'py>(py: Python<'py>, report: &Report) -> PyResult<Bound<'py, PyD
         None => dict.set_item("analysis", py.None())?,
         Some(analysis) => {
             let metadata = PyDict::new(py);
-            metadata.set_item("profile", analysis_profile_label(analysis.profile))?;
+            metadata.set_item("analyze", analysis_set_labels(analysis.profile))?;
             metadata
                 .set_item("type_rules_fingerprint", analysis.provenance.type_rules_fingerprint)?;
             metadata.set_item("options_fingerprint", analysis.provenance.options_fingerprint.0)?;
@@ -881,14 +870,8 @@ fn coverage_label(reason: CoverageReason) -> &'static str {
     }
 }
 
-fn analysis_profile_label(profile: AnalysisSet) -> &'static str {
-    match profile {
-        AnalysisSet::NONE => "none",
-        AnalysisSet::NONE.with_lines() => "basic",
-        AnalysisSet::NONE.with_code() => "code",
-        AnalysisSet::NONE.with_words() => "documents",
-        AnalysisSet::ALL => "full",
-    }
+fn analysis_set_labels(profile: AnalysisSet) -> Vec<&'static str> {
+    profile.labels()
 }
 
 /// One summary row as a dict.
