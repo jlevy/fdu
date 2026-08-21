@@ -82,20 +82,20 @@ body {
 .wrap { max-width: 960px; margin: 0 auto; }
 h1, h2, h3 { line-height: 1.25; font-weight: 650; }
 h1 {
-  font-size: 32px; margin: 56px 0 10px; letter-spacing: -0.02em;
+  font-size: 28px; margin: 56px 0 12px; letter-spacing: -0.015em;
   text-wrap: balance; font-weight: 600;
 }
 h2 {
-  font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em;
+  font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em;
   color: var(--muted); font-weight: 650;
   margin: 64px 0 16px; padding-bottom: 8px; border-bottom: 1px solid var(--border);
 }
-h3 { font-size: 17px; margin: 34px 0 8px; text-wrap: balance; font-weight: 600; }
+h3 { font-size: 16px; margin: 34px 0 8px; text-wrap: balance; font-weight: 600; }
 p, li { max-width: var(--measure); }
 p { margin: 0 0 14px; }
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
-.lede { font-size: 18px; color: var(--muted); max-width: var(--measure); margin-bottom: 8px; }
+.lede { max-width: var(--measure); }
 .muted { color: var(--muted); }
 .mono { font-family: var(--mono); font-size: 0.92em; }
 .tnum { font-variant-numeric: tabular-nums; }
@@ -106,7 +106,7 @@ a:hover { text-decoration: underline; }
 .headline { display: flex; flex-wrap: wrap; gap: 14px 30px; margin: 28px 0 8px; }
 .headline div { min-width: 92px; }
 .headline .n {
-  display: block; font-size: 27px; font-weight: 650;
+  display: block; font-size: 22px; font-weight: 650;
   font-variant-numeric: tabular-nums; letter-spacing: -0.02em;
 }
 .headline .k {
@@ -117,11 +117,11 @@ a:hover { text-decoration: underline; }
 
 figure.fig { margin: 24px 0 8px; }
 .chart { width: 100%; height: auto; display: block; overflow: visible; }
-figcaption { font-size: 13px; color: var(--muted); margin-top: 10px; max-width: var(--measure); }
-.checkpoints { margin: 8px 0 0; padding-left: 18px; font-size: 12.5px; }
+figcaption { font-size: 12px; color: var(--muted); margin-top: 10px; max-width: var(--measure); }
+.checkpoints { margin: 8px 0 0; padding-left: 18px; }
 .checkpoints li { margin: 1px 0; }
 
-.legend { font-size: 12.5px; color: var(--muted); margin: 12px 0 0; display: flex; flex-wrap: wrap; gap: 4px 20px; max-width: none; }
+.legend { font-size: 12px; color: var(--muted); margin: 12px 0 0; display: flex; flex-wrap: wrap; gap: 4px 20px; max-width: none; }
 .legend-item { display: inline-flex; align-items: center; }
 .key { width: 10px; height: 10px; display: inline-block; margin-right: 6px; vertical-align: -1px; }
 .key-before { background: var(--before); }
@@ -199,14 +199,14 @@ figcaption { font-size: 13px; color: var(--muted); margin-top: 10px; max-width: 
 #tip.on { visibility: visible; }
 #tip b { font-weight: 600; }
 
-table { border-collapse: collapse; width: 100%; font-size: 13.5px; margin: 16px 0; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; margin: 16px 0; }
 th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--rule); vertical-align: top; }
 th {
-  font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
+  font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em;
   color: var(--muted); font-weight: 650; border-bottom: 1px solid var(--border);
   position: sticky; top: 0; background: var(--bg);
 }
-td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--mono); font-size: 12.5px; }
+td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--mono); font-size: 12px; }
 tbody tr:hover { background: var(--panel); }
 .scroll { overflow-x: auto; margin: 16px -4px; padding: 0 4px; }
 .v-accepted { color: var(--good); }
@@ -214,7 +214,7 @@ tbody tr:hover { background: var(--panel); }
 .v-superseded, .v-in-progress, .v-baseline { color: var(--muted); }
 .note {
   border-left: 2px solid var(--border); padding: 2px 0 2px 16px;
-  margin: 20px 0; color: var(--muted); font-size: 14px; max-width: var(--measure);
+  margin: 20px 0; color: var(--muted); max-width: var(--measure);
 }
 .note strong { color: var(--text); }
 /* Disclosure rows. A marker and a hover tint are the whole affordance; the table has
@@ -233,16 +233,16 @@ details > summary:hover { color: var(--accent); }
 dl.detail {
   margin: 8px 0 4px 12px; padding-left: 12px; border-left: 1px solid var(--rule);
   display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px;
-  font-size: 12.5px; line-height: 1.5; max-width: 78ch;
+  font-size: 13px; line-height: 1.55; max-width: 78ch;
 }
 dl.detail dt {
   color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em;
-  font-size: 10.5px; padding-top: 2px; white-space: nowrap;
+  font-size: 12px; padding-top: 1px; white-space: nowrap;
 }
 dl.detail dd { margin: 0; }
 .arrow { color: var(--border); }
-.source { margin: 6px 0 4px 24px; font-size: 11.5px; color: var(--muted); }
-footer { margin-top: 72px; padding-top: 16px; border-top: 1px solid var(--border); font-size: 12.5px; color: var(--muted); }
+.source { margin: 6px 0 4px 24px; font-size: 12px; color: var(--muted); }
+footer { margin-top: 72px; padding-top: 16px; border-top: 1px solid var(--border); font-size: 12px; color: var(--muted); }
 </style>
 </head>
 <body>
