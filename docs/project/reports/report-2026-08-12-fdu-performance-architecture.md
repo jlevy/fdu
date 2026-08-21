@@ -602,21 +602,41 @@ H64’s complete selected-total specialization then changed wall by only −1.15
 The Linux campaign added three more, and the first is the largest single target now
 identified on any platform:
 
-8. **Stop classifying every file on every open (`fdu-926e`).**
-   `Index::analysis_candidates` runs `classify_path` over every file each time it
-   enumerates candidates, including on a `--cache only` run whose sidecar already stores
-   the classification that then replaces it.
-   A caller-tree profile of a warm 14,542-file content open attributes about 34% of
-   instructions to path comparison reached through `classify_path_with_prefix`, at
-   roughly 96 comparisons per file — the signature of a linear scan over the type-rules
-   table. Two independent fixes: index the rules by extension so classification is a hash
-   lookup, reusing the extension id the index already interns, or keep classification
-   out of candidate enumeration so a cache hit never computes a result it discards.
+8. **Largely addressed, and its size was wrong (`fdu-926e`, exp-064).** This entry read:
+   `Index::analysis_candidates` runs `classify_path` over every file on every open, and
+   a caller-tree profile attributes about 34% of a warm content open to path comparison
+   reached through `classify_path_with_prefix`.
+
+   The 34% was real; the attribution was not.
+   It came from a flat profile, and the caller tree puts `ContentIndex::merge_ancestors`
+   at 36.30% of that edge against classification’s 1.48%. Classification was 11.11%
+   inclusive, and the “~96 comparisons per file” was roughly 8 ancestors × log2(1,045
+   directories), not a scan of the 65-rule table.
+
+   exp-064 took both: H94 made the roll-up map a `HashMap` and stopped allocating per
+   ancestor, and H95 indexed the name and extension tiers.
+   Cumulative `content-cache-hit` −30.31% [−30.69%, −29.61%] and `content-basic` −13.40%
+   [−14.74%, −10.92%], RSS neutral.
+   What remains here is smaller than what was taken: `with_flags` at 4.42% of the
+   pre-change profile, and `files: BTreeMap<PathBuf, FileAnalysis>` whose `remove` was
+   11.09%.
+
+   The larger successor is the structural form of H94 — key roll-ups by `EntryId` and
+   defer to one bottom-up pass, the shape that won −51.9% on snapshot load in
+   `fdu-91ts`. That is now the biggest remaining item on the content tier.
+
+   The transferable lesson is method, not this function: **a flat profile has now sent
+   this campaign at the wrong function twice on the same code path**, once at the
+   `BTreeMap` in `load_content_cache` (0.9% of instructions, worth −3.0%) and once here.
+   Both times the flat view named a std library function and only the caller tree named
+   an owner. Read `callgrind_annotate --tree=caller` before believing a flat percentage.
+
 9. **Free producer allocations in the producing thread (H85, `fdu-h7sw`).** The
    dependency-free form of the allocator win: return drained batch buffers to their
    producing worker so each arena is allocated and freed on one thread.
    Screen against mimalloc’s own −23.0%, not against the 3% bar, because anything much
    below that is not capturing the same cost.
+
 10. **A probe job for the aggregate tier (`fdu-tyjx`).** The tier with the clearest
     remaining headroom is the one that cannot be measured under the accept rule: it has
     no probe mode and therefore no `component_ns`, which is why exp-043 and exp-044 both

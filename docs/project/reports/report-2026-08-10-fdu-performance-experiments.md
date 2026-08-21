@@ -65,6 +65,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | --- | --- | --- | ---: |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
+| Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 1 |
 
 ## Every experiment, including the failures
 
@@ -137,6 +138,7 @@ dead end.
 | 061 | [CRC-32C slicing-by-8 on the snapshot digest](#exp061--crc32c-slicingby8-on-the-snapshot-digest) | H88 | `cold-snapshot-save` | -12.2% | ✅ accepted |
 | 062 | [Skip unread journal capture on the bootstrap apply path](#exp062--skip-unread-journal-capture-on-the-bootstrap-apply-path) | H90 | `cold-scan-index` | -5.1% | ✅ accepted |
 | 063 | [Share the index with the snapshot writer instead of deep-cloning it](#exp063--share-the-index-with-the-snapshot-writer-instead-of-deepcloning-it) | H87 | `cold-open-save` | -10.5% | ✅ accepted |
+| 064 | [Content roll-up lookup and indexed type-rule tiers](#exp064--content-rollup-lookup-and-indexed-typerule-tiers) | H94, H95 | `content-cache-hit` | -30.3% | ✅ accepted |
 
 ## The experiments
 
@@ -2299,6 +2301,43 @@ unmoved as the placebo at +1.69% [-0.86%, +3.07%].
 Full record:
 [`exp-063-share-the-index-with-the-snapshot-writer-instead-of-deep-clo.md`](../experiments/exp-063-share-the-index-with-the-snapshot-writer-instead-of-deep-clo.md)
 
+### exp-064 — Content roll-up lookup and indexed type-rule tiers
+
+✅ accepted · 2026-08-21 · H94, H95 · commit `9fb6a33`
+
+Control: origin/main at 703ceac
+
+Candidate: HashMap rollups plus LazyLock-indexed name and extension tiers
+
+**`content-cache-hit`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 450.4 | 314.7 | -30.31% | [-30.69%, -29.61%] |
+| component (ms) | 404.1 | 267.6 | -33.73% | [-34.28%, -33.09%] |
+| cpu (ms) | 449.6 | 314.1 | -30.18% | [-30.75%, -29.55%] |
+| user (ms) | 419.6 | 283.6 | -32.51% | [-34.11%, -31.11%] |
+| system (ms) | 36.1 | 32.1 | +0.23% (n.s.) | [-15.80%, +21.23%] |
+| blocked (ms) | 0.5 | 0.5 | +2.17% (n.s.) | [-14.14%, +8.66%] |
+| peak rss (MiB) | 42.1 | 42.3 | +0.37% (regression) | [+0.24%, +0.48%] |
+
+Other jobs, wall time: `content-basic` -13.4%.
+
+Cost to carry: 78 lines; no new dependencies.
+
+Two LazyLock hash tables and one map key-type change; no new dependency, no unsafe, no
+threading, no new failure mode.
+The max_by_key last-wins tie-break is the one subtlety and is pinned by a test.
+
+**Accepted:** Cumulative -30.31% [-30.69%, -29.61%] on content-cache-hit and -13.40% on
+content-basic, both intervals well below zero, RSS neutral, mechanism confirmed by
+caller-tree profile rather than inferred from a flat one.
+H95 cold-path transfer prediction dropped: -2.34% [-5.05%, -0.64%] at 40 pairs, below
+the bar.
+
+Full record:
+[`exp-064-content-roll-up-lookup-and-indexed-type-rule-tiers.md`](../experiments/exp-064-content-roll-up-lookup-and-indexed-type-rule-tiers.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -2485,6 +2524,12 @@ Baselines show one value because they measure a state rather than a change.
 | # | experiment | job | before | after | change | verdict |
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 047 | Reject inline basic content analysis | `content-basic` | 16.7 | 27.8 | +66.3% | ❌ rejected |
+
+### spike-15977 (17,041 entries) — Linux 6.18.44-fc-v21, unrecorded, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 064 | Content roll-up lookup and indexed type-rule tiers | `content-cache-hit` | 450.4 | 314.7 | -30.3% | ✅ accepted |
 
 ### threshold-boundary-2x (120,135 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 
