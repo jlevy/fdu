@@ -214,7 +214,7 @@ Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cache
 ```console
 $ fdu --cache off --view files --kind file --sort size --limit 2 --size apparent project
 (2 of 6; --limit all for every one)
-dist/acorn-0.1.0.tar.gz
+dist[SEP]acorn-0.1.0.tar.gz
 README.md
 Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
@@ -225,8 +225,8 @@ Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cache
 ```console
 $ fdu --cache off --view files --kind file --sort size --reverse --limit 2 --size apparent project
 (2 of 6; --limit all for every one)
-src/omega.rs
-src/alpha.rs
+src[SEP]omega.rs
+src[SEP]alpha.rs
 Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
