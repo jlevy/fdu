@@ -145,7 +145,7 @@ measured, what remains, and where the evidence is weak.
 Further detail:
 [the experiment ledger](docs/project/reports/report-2026-08-10-fdu-performance-experiments.md)
 records every experiment and verdict;
-[the white paper](docs/project/reports/report-2026-08-12-fdu-performance-architecture.md)
+[the performance architecture](docs/project/reports/report-2026-08-12-fdu-performance-architecture.md)
 holds the cost model and architectural conclusions;
 [the performance loop](docs/project/guides/performance-loop.md) is the protocol;
 [the instrumentation playbook](docs/project/guides/performance-instrumentation-playbook.md)

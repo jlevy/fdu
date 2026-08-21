@@ -115,6 +115,9 @@ The rules that decide whether a speed change is kept are in
 protocol is [the performance loop](docs/project/guides/performance-loop.md), every
 verdict is in
 [the experiment ledger](docs/project/reports/report-2026-08-10-fdu-performance-experiments.md),
+the charted view across all of them — absolute milliseconds as well as paired effects —
+is
+[the performance evidence report](docs/project/reports/report-2026-08-20-fdu-performance-evidence.md),
 and which regime each shipped tuning constant was measured in is in
 [the platform tuning guide](docs/project/guides/platform-tuning.md).
 
@@ -138,6 +141,11 @@ In practice:
 - Record every experiment, including the ones that failed, with `make perf-record`. The
   negative results are the most reusable part of the ledger: they stop the next person
   re-running a dead end.
+- Republish after recording: `make perf-ledger` then `make perf-report`, committed with
+  the artifact. `make check` fails if either generated file has drifted from the
+  evidence, so an unpublished experiment is caught before merge.
+  The rules a new figure has to respect are in
+  [the performance loop’s publishing section](docs/project/guides/performance-loop.md#publishing-the-evidence).
 - Record the regime, not just the number.
   Platform, host (bare metal or virtualized), and cache state decide what a result is
   evidence about; a constant tuned in one regime is inherited, not proven, in the

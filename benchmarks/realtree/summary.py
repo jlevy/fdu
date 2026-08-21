@@ -196,6 +196,13 @@ def render(experiments: Sequence[Mapping[str, Any]]) -> str:
         "[the performance loop guide](../guides/performance-loop.md)."
     )
     lines.append("")
+    lines.append(
+        "Absolute timings, every experiment's paired effect with its interval, and why "
+        "the two must not be divided into each other: "
+        "[the performance evidence report]"
+        "(report-2026-08-20-fdu-performance-evidence.md)."
+    )
+    lines.append("")
 
     lines.extend(_headline(experiments))
     lines.extend(_conditions(experiments))

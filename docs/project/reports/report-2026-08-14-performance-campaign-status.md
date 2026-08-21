@@ -392,6 +392,7 @@ The full protocol, including the accept rule and the hypothesis registry, is in
 | Document | What it is |
 | --- | --- |
 | This report | Orientation: status, method, history, what remains |
+| [Performance evidence](report-2026-08-20-fdu-performance-evidence.md) | Absolute timings and paired effects across every experiment, charted |
 | [Instrumentation playbook](../guides/performance-instrumentation-playbook.md) | The reusable method, domain-neutral |
 | [Performance loop](../guides/performance-loop.md) | Protocol and live hypothesis registry |
 | [Platform tuning](../guides/platform-tuning.md) | Which constants were measured where |
