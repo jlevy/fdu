@@ -165,12 +165,23 @@ The ranked backlog and the source review behind it — bfs, dut,
 bulk-attribute design — are in
 [the performance frontier research](docs/project/research/research-2026-08-10-performance-frontier.md).
 
-## Build Locally
+## Install
+
+Until the crate is published, install from source with Rust 1.85 or newer:
 
 ```shell
-cargo install --path crates/fdu
+git clone https://github.com/jlevy/fdu.git
+cd fdu
+cargo install --locked --path crates/fdu
 fdu --help
 ```
+
+`--locked` builds against the committed `Cargo.lock`. Without it Cargo re-resolves every
+dependency to the newest compatible release, which bypasses the review and release
+cool-off this project applies to its dependency set — see
+[SUPPLY-CHAIN-SECURITY.md](SUPPLY-CHAIN-SECURITY.md).
+
+The Python package builds and tests from the same workspace:
 
 ```shell
 make python-check        # lint, strict types, and unit tests
