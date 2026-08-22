@@ -1,5 +1,7 @@
 ---
 sandbox: true
+path:
+  - $FDU_BIN
 env:
   FORCE_COLOR: "0"
   LANG: C
@@ -24,7 +26,7 @@ must never infer the current directory.
 A unit test separately proves that `--help` produces these exact bytes.
 
 ```console
-$ $FDU
+$ fdu
 A fast, incremental file roll-up engine: hierarchical tallies over large directory trees
 
 Usage: fdu [OPTIONS] <PATH>
@@ -97,7 +99,7 @@ Run `fdu --docs` for more help and important usage examples.
 ## The Portable Skill Is Complete and Version-Pinned
 
 ````console
-$ $FDU --skill
+$ fdu --skill
 ---
 name: fdu
 description: >-
@@ -317,7 +319,7 @@ PATH, scans nothing, and exits 0. The body is pinned in full below so a flag ren
 dropped section fails here rather than in somebody’s terminal.
 
 ```console
-$ $FDU --docs
+$ fdu --docs
 fdu — a fast, incremental file roll-up engine.
 
 THE LADDER
@@ -409,7 +411,7 @@ The semver is asserted exactly; the dev-build revision after it varies with the 
 and is matched by pattern.
 
 ```console
-$ $FDU --version
+$ fdu --version
 fdu 0.1.0[DEV_REVISION]
 ? 0
 ```
@@ -417,7 +419,7 @@ fdu 0.1.0[DEV_REVISION]
 ## An Explicit Current Root Works for an Empty Sandbox
 
 ```console
-$ $FDU --cache off --color never --size apparent --depth 0 .
+$ fdu --cache off --color never --size apparent --depth 0 .
        0 B  ░░░░░░░░░░     0%  . (0 files)
 Performance: walked 0 files / 0 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
@@ -426,7 +428,7 @@ Performance: walked 0 files / 0 B; content read 0 B; analysis 0 fresh, 0 cached;
 ## Unknown Options Are Usage Errors on Stderr
 
 ```console
-$ $FDU --definitely-not-an-option
+$ fdu --definitely-not-an-option
 ! error: unexpected argument '--definitely-not-an-option' found
 !
 !   tip: to pass '--definitely-not-an-option' as a value, use '-- --definitely-not-an-option'
@@ -447,7 +449,7 @@ Silently dropping the bound would run the query with no time filter at all while
 user believed one was active, which is worse than refusing the flag.
 
 ```console
-$ $FDU --modified-since 2300-01-01T00:00:00Z .
+$ fdu --modified-since 2300-01-01T00:00:00Z .
 ! fdu: invalid --modified-since "2300-01-01T00:00:00Z": that time is outside the range fdu can represent (about 1677 to 2262)
 ? 2
 ```
@@ -459,13 +461,13 @@ scan and the index would silently diverge from the tree.
 Selection flags are not refused: they filter what a full index reports.
 
 ```console
-$ $FDU --watch --scan-depth 2 .
+$ fdu --watch --scan-depth 2 .
 ! fdu: --watch cannot be combined with --scan-depth or --one-filesystem: watching requires full scope. Selection flags such as --depth, --include, and --modified-since do work with --watch, because they filter the index rather than narrowing the scan
 ? 2
 ```
 
 ```console
-$ $FDU --watch --one-filesystem .
+$ fdu --watch --one-filesystem .
 ! fdu: --watch cannot be combined with --scan-depth or --one-filesystem: watching requires full scope. Selection flags such as --depth, --include, and --modified-since do work with --watch, because they filter the index rather than narrowing the scan
 ? 2
 ```
@@ -473,7 +475,7 @@ $ $FDU --watch --one-filesystem .
 ## A Missing Root Is a Fatal Filesystem Error
 
 ```console
-$ $FDU --cache off missing
+$ fdu --cache off missing
 ! fdu: I/O error at missing: [OS_ERROR]
 !   caused by: [OS_ERROR]
 ? 1
@@ -491,7 +493,7 @@ $ node -e "require('node:fs').writeFileSync('plain-file', 'x')"
 ### Reject It as the Root
 
 ```console
-$ $FDU --cache off plain-file
+$ fdu --cache off plain-file
 ! fdu: I/O error at [SCAN_PATH]: scan root is not a directory
 !   caused by: scan root is not a directory
 ? 1

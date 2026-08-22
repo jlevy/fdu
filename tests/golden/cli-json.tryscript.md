@@ -1,5 +1,7 @@
 ---
 sandbox: true
+path:
+  - $FDU_BIN
 fixtures:
   - fixtures/project
 env:
@@ -19,7 +21,7 @@ patterns:
 ## Full Output Exposes Scan and Projection Completeness Separately
 
 ```console
-$ $FDU --cache off --format json --size apparent --depth 2 --limit 10 project
+$ fdu --cache off --format json --size apparent --depth 2 --limit 10 project
 {
   "schema": "fdu.report/4",
   "generator": "fdu 0.1.0",
@@ -43,7 +45,7 @@ $ $FDU --cache off --format json --size apparent --depth 2 --limit 10 project
 ## Render Limits Mark the Projection as Truncated
 
 ```console
-$ $FDU --cache off --format json --size apparent --depth 1 --limit 2 project
+$ fdu --cache off --format json --size apparent --depth 1 --limit 2 project
 {
   "schema": "fdu.report/4",
   "generator": "fdu 0.1.0",
@@ -67,7 +69,7 @@ $ $FDU --cache off --format json --size apparent --depth 1 --limit 2 project
 ## Scan Depth Is an Explicit Complete Scope
 
 ```console
-$ $FDU --cache off --format json --size apparent --scan-depth 1 --depth 2 --limit 10 project
+$ fdu --cache off --format json --size apparent --scan-depth 1 --depth 2 --limit 10 project
 {
   "schema": "fdu.report/4",
   "generator": "fdu 0.1.0",
@@ -96,7 +98,7 @@ Under the axis design a view and a format are independent choices, so the combin
 not just legal but required to work — formats are serializations, not features.
 
 ```console
-$ $FDU --cache off --view types --format json --size apparent project
+$ fdu --cache off --view types --format json --size apparent project
 {
   "schema": "fdu.report/5",
   "generator": "fdu 0.1.0",

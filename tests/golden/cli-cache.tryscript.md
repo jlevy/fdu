@@ -1,5 +1,7 @@
 ---
 sandbox: true
+path:
+  - $FDU_BIN
 fixtures:
   - fixtures/project
 env:
@@ -22,7 +24,7 @@ patterns:
 ### Scan Without a Cache
 
 ```console
-$ $FDU --cache off --format json --size apparent --depth 0 --limit 0 project
+$ fdu --cache off --format json --size apparent --depth 0 --limit 0 project
 {
   "schema": "fdu.report/4",
   "generator": "fdu 0.1.0",
@@ -56,7 +58,7 @@ cache absent
 ### Create the Snapshot
 
 ```console
-$ $FDU --format json --size apparent --depth 0 --limit 0 project
+$ fdu --format json --size apparent --depth 0 --limit 0 project
 {
   "schema": "fdu.report/4",
   "generator": "fdu 0.1.0",
@@ -93,7 +95,7 @@ The report scans fresh and rewrites the snapshot, and the tier below shows what 
 rewrite is for.
 
 ```console
-$ $FDU --format json --size apparent --depth 0 --limit 0 project
+$ fdu --format json --size apparent --depth 0 --limit 0 project
 {
   "schema": "fdu.report/4",
   "generator": "fdu 0.1.0",
@@ -127,7 +129,7 @@ fixture expanded
 ### Report the Changed Tree
 
 ```console
-$ $FDU --format json --size apparent --depth 0 --limit 0 project
+$ fdu --format json --size apparent --depth 0 --limit 0 project
 {
   "schema": "fdu.report/4",
   "generator": "fdu 0.1.0",
@@ -154,7 +156,7 @@ Every one-shot report rewrites the snapshot it skipped reading, so the no-scan t
 answers with the changed total rather than the one the first run recorded.
 
 ```console
-$ $FDU --cache only --format json --size apparent --depth 0 --limit 0 project
+$ fdu --cache only --format json --size apparent --depth 0 --limit 0 project
 {
   "schema": "fdu.report/4",
   "generator": "fdu 0.1.0",
@@ -178,7 +180,7 @@ $ $FDU --cache only --format json --size apparent --depth 0 --limit 0 project
 ## A Different Semantic Scan Scope Misses the Snapshot
 
 ```console
-$ $FDU --format json --size apparent --scan-depth 1 --depth 0 --limit 0 project
+$ fdu --format json --size apparent --scan-depth 1 --depth 0 --limit 0 project
 {
   "schema": "fdu.report/4",
   "generator": "fdu 0.1.0",
@@ -212,7 +214,7 @@ snapshot corrupted
 ### Recover with a Cold Scan
 
 ```console
-$ $FDU --format json --size apparent --scan-depth 1 --depth 0 --limit 0 project
+$ fdu --format json --size apparent --scan-depth 1 --depth 0 --limit 0 project
 {
   "schema": "fdu.report/4",
   "generator": "fdu 0.1.0",

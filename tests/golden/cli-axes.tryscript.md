@@ -1,5 +1,7 @@
 ---
 sandbox: true
+path:
+  - $FDU_BIN
 fixtures:
   - fixtures/project
 env:
@@ -32,7 +34,7 @@ rather than elided — the field stays visible in a diff, which is the point of 
 ### Summary Is One Aggregate Row
 
 ```console
-$ $FDU --cache off --view summary --size apparent project
+$ fdu --cache off --view summary --size apparent project
      263 B  6 files, 3 directories
 Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
@@ -45,7 +47,7 @@ compiled type rules.
 The extensionless `Makefile` therefore remains visible as `make`.
 
 ```console
-$ $FDU --cache off --view types --size apparent project
+$ fdu --cache off --view types --size apparent project
      128 B   48.7%  archive            1 file
       71 B   27.0%  markdown           2 files, 2 documentation
       36 B   13.7%  rust               2 files
@@ -69,7 +71,7 @@ The label is parenthesised and dot-free, and a derived extension always carries 
 so the two can never collide.
 
 ```console
-$ $FDU --cache off --view extensions,summary --size apparent project
+$ fdu --cache off --view extensions,summary --size apparent project
 EXTENSIONS
      128 B  .tar.gz      1 file
       71 B  .md          2 files
@@ -88,7 +90,7 @@ The report section keeps one path per row; the one-shot text footer follows it.
 Programmatic consumers use a machine format, which omits transient performance data.
 
 ```console
-$ $FDU --cache off --view files --kind file --size apparent project
+$ fdu --cache off --view files --kind file --size apparent project
 Makefile
 README.md
 dist[SEP]acorn-0.1.0.tar.gz
@@ -102,7 +104,7 @@ Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cache
 ### Tree Reports Every Directory’s Roll-Up
 
 ```console
-$ $FDU --cache off --view tree --size apparent --depth all project
+$ fdu --cache off --view tree --size apparent --depth all project
      263 B  ██████████   100%  . (6 files)
      128 B  █████░░░░░    49%    dist (1 file)
       36 B  █░░░░░░░░░    14%    src (2 files)
@@ -119,7 +121,7 @@ The header is what makes request order legible instead of something the reader h
 remember; a single-view report has nothing to disambiguate and stays bare.
 
 ```console
-$ $FDU --cache off --view summary,types --size apparent --limit 1 project
+$ fdu --cache off --view summary,types --size apparent --limit 1 project
 SUMMARY
      263 B  6 files, 3 directories
 
@@ -134,7 +136,7 @@ Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cache
 ### Include Narrows by Glob
 
 ```console
-$ $FDU --cache off --view files --include "*.rs" project
+$ fdu --cache off --view files --include "*.rs" project
 src[SEP]alpha.rs
 src[SEP]omega.rs
 Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
@@ -146,7 +148,7 @@ Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cache
 A comma-split would shred `*.{md,rs}`, which is why only closed vocabularies are lists.
 
 ```console
-$ $FDU --cache off --view files --include "*.{md,rs}" project
+$ fdu --cache off --view files --include "*.{md,rs}" project
 README.md
 src[SEP]alpha.rs
 src[SEP]omega.rs
@@ -157,7 +159,7 @@ Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cache
 ### Exclude Beats Include
 
 ```console
-$ $FDU --cache off --view files --include "*.{md,rs}" --exclude "src/**" project
+$ fdu --cache off --view files --include "*.{md,rs}" --exclude "src/**" project
 README.md
 Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
@@ -166,7 +168,7 @@ Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cache
 ### Kind Selects What an Entry Is
 
 ```console
-$ $FDU --cache off --view files --kind dir project
+$ fdu --cache off --view files --kind dir project
 dist
 docs
 src
@@ -185,14 +187,14 @@ Descending is still unconditional: rejecting a directory hides it from the tally
 what is underneath it.
 
 ```console
-$ $FDU --cache off --view summary --kind file --size apparent project
+$ fdu --cache off --view summary --kind file --size apparent project
      263 B  6 files, 0 directories
 Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
 ```console
-$ $FDU --cache off --view summary --kind dir --size apparent project
+$ fdu --cache off --view summary --kind dir --size apparent project
        0 B  0 files, 3 directories
 Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
@@ -201,7 +203,7 @@ Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cache
 ### Min-Size Follows the Selected Metric
 
 ```console
-$ $FDU --cache off --view files --kind file --min-size 100 --size apparent project
+$ fdu --cache off --view files --kind file --min-size 100 --size apparent project
 dist[SEP]acorn-0.1.0.tar.gz
 Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
@@ -210,7 +212,7 @@ Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cache
 ### Sort and Limit Compose Into a Top-N, With No Dedicated View
 
 ```console
-$ $FDU --cache off --view files --kind file --sort size --limit 2 --size apparent project
+$ fdu --cache off --view files --kind file --sort size --limit 2 --size apparent project
 (2 of 6; --limit all for every one)
 dist[SEP]acorn-0.1.0.tar.gz
 README.md
@@ -221,7 +223,7 @@ Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cache
 ### Reverse Flips Whatever Order Is in Effect
 
 ```console
-$ $FDU --cache off --view files --kind file --sort size --reverse --limit 2 --size apparent project
+$ fdu --cache off --view files --kind file --sort size --reverse --limit 2 --size apparent project
 (2 of 6; --limit all for every one)
 src[SEP]omega.rs
 src[SEP]alpha.rs
@@ -234,7 +236,7 @@ Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cache
 `--depth 0` keeps du’s meaning: totals for the root and nothing beneath it.
 
 ```console
-$ $FDU --cache off --view tree --depth 0 --size apparent project
+$ fdu --cache off --view tree --depth 0 --size apparent project
      263 B  ██████████   100%  . (6 files)
 Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
@@ -245,7 +247,7 @@ Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cache
 ### JSON Carries the Versioned Envelope
 
 ```console
-$ $FDU --cache off --view summary --format json --size apparent project
+$ fdu --cache off --view summary --format json --size apparent project
 {
   "schema": "fdu.report/4",
   "generator": "fdu 0.1.0",
@@ -269,7 +271,7 @@ $ $FDU --cache off --view summary --format json --size apparent project
 ### JSONL Is One Document per Line
 
 ```console
-$ $FDU --cache off --view types --format jsonl --size apparent --limit 1 project
+$ fdu --cache off --view types --format jsonl --size apparent --limit 1 project
 {"schema": "fdu.report/5", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "source": "cold_scan", "freshness": "fresh", "complete": true, "errors": [], "analysis": null}
 {"view": "types", "metrics": {"group": "type", "share_metric": "apparent_bytes", "words_per_page": 250, "bound": {"shown": 1, "total": 4}, "total": {"id": "total", "family": "unknown", "files": 6, "bytes": 263, "allocated": [ALLOCATED], "analyzed_files": 0, "share": {"numerator": 263, "denominator": 263}, "metrics": {"physical_lines": 0, "blank_lines": 0, "nonblank_lines": 0, "code_lines": 0, "comment_lines": 0, "code_blank_lines": 0, "raw_words": 0, "logical_words": 0, "paragraphs": 0, "visible_words": 0, "visible_logical_words": 0, "document_words": 0}, "coverage": {}, "detection": {"sources": {"exact_filename": 1, "compound_extension": 1, "extension": 4}, "confidence": {"certain": 6}, "flags": {"generated": 0, "vendored": 0, "documentation": 2}}, "pages": {"words": 0, "words_per_page": 250}}, "rows": [{"id": "archive", "family": "binary", "files": 1, "bytes": 128, "allocated": [ALLOCATED], "analyzed_files": 0, "share": {"numerator": 128, "denominator": 263}, "metrics": {"physical_lines": 0, "blank_lines": 0, "nonblank_lines": 0, "code_lines": 0, "comment_lines": 0, "code_blank_lines": 0, "raw_words": 0, "logical_words": 0, "paragraphs": 0, "visible_words": 0, "visible_logical_words": 0, "document_words": 0}, "coverage": {}, "detection": {"sources": {"compound_extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 0}}, "pages": {"words": 0, "words_per_page": 250}}]}}
 ? 0
@@ -278,7 +280,7 @@ $ $FDU --cache off --view types --format jsonl --size apparent --limit 1 project
 ### YAML Quotes Only What Would Be Ambiguous
 
 ```console
-$ $FDU --cache off --view summary --format yaml --size apparent project
+$ fdu --cache off --view summary --format yaml --size apparent project
 schema: fdu.report/4
 generator: "fdu 0.1.0"
 root: [SCAN_PATH]
@@ -306,7 +308,7 @@ An agent should be able to correct a command from its rejection alone.
 ### An Unknown View Lists Every Valid One
 
 ```console
-$ $FDU --cache off --view bogus project
+$ fdu --cache off --view bogus project
 fdu: invalid --view "bogus": expected one of summary, tree, families, types, extensions, languages, documents, largest, recent, files, full
 ? 2
 ```
@@ -314,7 +316,7 @@ fdu: invalid --view "bogus": expected one of summary, tree, families, types, ext
 ### A Repeated View Is a Typo, Not a No-Op
 
 ```console
-$ $FDU --cache off --view tree,tree project
+$ fdu --cache off --view tree,tree project
 fdu: invalid --view "tree,tree": "tree" appears more than once
 ? 2
 ```
@@ -322,7 +324,7 @@ fdu: invalid --view "tree,tree": "tree" appears more than once
 ### An Empty List Entry Is Rejected
 
 ```console
-$ $FDU --cache off --view tree,,types project
+$ fdu --cache off --view tree,,types project
 fdu: invalid --view "tree,,types": empty entry in the list
 ? 2
 ```
@@ -330,7 +332,7 @@ fdu: invalid --view "tree,,types": empty entry in the list
 ### An Unknown Format Lists Every Valid One
 
 ```console
-$ $FDU --cache off --format xml project
+$ fdu --cache off --format xml project
 fdu: invalid --format "xml": expected one of text, json, jsonl, yaml
 ? 2
 ```
@@ -338,7 +340,7 @@ fdu: invalid --format "xml": expected one of text, json, jsonl, yaml
 ### Fractional Ages Point at the Compound Spelling
 
 ```console
-$ $FDU --cache off --modified-since 1.5h project
+$ fdu --cache off --modified-since 1.5h project
 fdu: invalid time "1.5h": fractional ages are not supported; write them as compounds, as in `1h30m` rather than `1.5h`
 ? 2
 ```
@@ -346,7 +348,7 @@ fdu: invalid time "1.5h": fractional ages are not supported; write them as compo
 ### Calendar Units Point at Days
 
 ```console
-$ $FDU --cache off --modified-before 3months project
+$ fdu --cache off --modified-before 3months project
 fdu: invalid time "3months": calendar units are not supported because they are not a fixed length; use days, as in `30d` or `365d`
 ? 2
 ```
@@ -356,7 +358,7 @@ fdu: invalid time "3months": calendar units are not supported because they are n
 Guessing UTC would answer a prompt in another timezone hours off, in silence.
 
 ```console
-$ $FDU --cache off --modified-since 2026-08-10 project
+$ fdu --cache off --modified-since 2026-08-10 project
 fdu: invalid time "2026-08-10": local date and time are not supported yet because resolving one needs a time-zone database; write an RFC 3339 timestamp with an offset, as in `2026-08-10T12:30:00Z` or `2026-08-10T12:30:00-08:00`, or use `@` epoch seconds
 ? 2
 ```
@@ -364,7 +366,7 @@ fdu: invalid time "2026-08-10": local date and time are not supported yet becaus
 ### An Unknown Size Unit Lists the Accepted Ones
 
 ```console
-$ $FDU --cache off --min-size 10X project
+$ fdu --cache off --min-size 10X project
 fdu: invalid size "10X": unknown size unit "X"; use B, K/KB, M/MB, G/GB, T/TB, P/PB, or the binary forms KiB, MiB, GiB, TiB, PiB
 ? 2
 ```
@@ -372,7 +374,7 @@ fdu: invalid size "10X": unknown size unit "X"; use B, K/KB, M/MB, G/GB, T/TB, P
 ### A Malformed Glob Says Which Delimiter Is Unmatched
 
 ```console
-$ $FDU --cache off --include "{a,b" project
+$ fdu --cache off --include "{a,b" project
 fdu: invalid pattern "{a,b": unmatched `{` in pattern
 ? 2
 ```
@@ -380,7 +382,7 @@ fdu: invalid pattern "{a,b": unmatched `{` in pattern
 ### A Bad Bound Names Both Accepted Forms
 
 ```console
-$ $FDU --cache off --depth two project
+$ fdu --cache off --depth two project
 fdu: invalid --depth "two": expected a whole number or `all`
 ? 2
 ```
@@ -392,7 +394,7 @@ Every report says which tier answered it, so no policy can quietly serve old dat
 ### A First Run Scans Cold and Leaves a Snapshot
 
 ```console
-$ $FDU --view tree --format jsonl --size apparent project
+$ fdu --view tree --format jsonl --size apparent project
 {"schema": "fdu.report/4", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "source": "cold_scan", "freshness": "fresh", "complete": true, "errors": []}
 {"view": "tree", "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 263, "allocated": [ALLOCATED], "files": 6, "dirs": 3, "newest_mtime_ns": [MTIME_NS], "truncated": false, "children": [{"name": "dist", "path": "dist", "kind": "dir", "bytes": 128, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "children": []},{"name": "src", "path": "src", "kind": "dir", "bytes": 36, "allocated": [ALLOCATED], "files": 2, "dirs": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "children": []},{"name": "docs", "path": "docs", "kind": "dir", "bytes": 23, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "children": []}]}}
 ? 0
@@ -407,7 +409,7 @@ current. Sessions opened through the library hold their index and do amortise th
 this is the one-shot contract only.
 
 ```console
-$ $FDU --view tree --format jsonl --size apparent project
+$ fdu --view tree --format jsonl --size apparent project
 {"schema": "fdu.report/4", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "source": "cold_scan", "freshness": "fresh", "complete": true, "errors": []}
 {"view": "tree", "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 263, "allocated": [ALLOCATED], "files": 6, "dirs": 3, "newest_mtime_ns": [MTIME_NS], "truncated": false, "children": [{"name": "dist", "path": "dist", "kind": "dir", "bytes": 128, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "children": []},{"name": "src", "path": "src", "kind": "dir", "bytes": 36, "allocated": [ALLOCATED], "files": 2, "dirs": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "children": []},{"name": "docs", "path": "docs", "kind": "dir", "bytes": 23, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "children": []}]}}
 ? 0
@@ -416,7 +418,7 @@ $ $FDU --view tree --format jsonl --size apparent project
 ### Cache-Only Answers Without Touching the Tree, and Says It Is Stale
 
 ```console
-$ $FDU --cache only --view tree --format jsonl --size apparent project
+$ fdu --cache only --view tree --format jsonl --size apparent project
 {"schema": "fdu.report/4", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "source": "cache_only", "freshness": "stale", "complete": true, "errors": []}
 {"view": "tree", "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 263, "allocated": [ALLOCATED], "files": 6, "dirs": 3, "newest_mtime_ns": [MTIME_NS], "truncated": false, "children": [{"name": "dist", "path": "dist", "kind": "dir", "bytes": 128, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "children": []},{"name": "src", "path": "src", "kind": "dir", "bytes": 36, "allocated": [ALLOCATED], "files": 2, "dirs": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "children": []},{"name": "docs", "path": "docs", "kind": "dir", "bytes": 23, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "children": []}]}}
 ? 0
@@ -425,7 +427,7 @@ $ $FDU --cache only --view tree --format jsonl --size apparent project
 ### Refresh Ignores the Snapshot and Scans Cold Again
 
 ```console
-$ $FDU --cache refresh --view tree --format jsonl --size apparent project
+$ fdu --cache refresh --view tree --format jsonl --size apparent project
 {"schema": "fdu.report/4", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "source": "cold_scan", "freshness": "fresh", "complete": true, "errors": []}
 {"view": "tree", "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 263, "allocated": [ALLOCATED], "files": 6, "dirs": 3, "newest_mtime_ns": [MTIME_NS], "truncated": false, "children": [{"name": "dist", "path": "dist", "kind": "dir", "bytes": 128, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "children": []},{"name": "src", "path": "src", "kind": "dir", "bytes": 36, "allocated": [ALLOCATED], "files": 2, "dirs": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "children": []},{"name": "docs", "path": "docs", "kind": "dir", "bytes": 23, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "children": []}]}}
 ? 0
@@ -434,7 +436,7 @@ $ $FDU --cache refresh --view tree --format jsonl --size apparent project
 ### An Unknown Policy Lists Every Valid One
 
 ```console
-$ $FDU --cache sometimes project
+$ fdu --cache sometimes project
 fdu: invalid --cache "sometimes": expected one of auto, refresh, read-only, only, off
 ? 2
 ```

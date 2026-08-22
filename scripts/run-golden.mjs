@@ -71,7 +71,17 @@ const result = spawnSync(tryscript, args, {
   cwd: root,
   stdio: 'inherit',
   shell: process.platform === 'win32',
-  env: { ...process.env, FDU: binary, FDU_SURFACE: surface },
+  env: {
+    ...process.env,
+    // The directory, for `path:` front matter. Session command lines invoke a bare
+    // `fdu`, because that is the only form /bin/sh and cmd.exe read the same way:
+    // Windows does not expand `$FDU`, it wants `%FDU%`.
+    FDU_BIN: dirname(binary),
+    // The exact file, for the node helpers, which spawn it directly and so are subject
+    // to no PATH lookup at all.
+    FDU: binary,
+    FDU_SURFACE: surface,
+  },
 });
 
 process.exit(result.status ?? 1);

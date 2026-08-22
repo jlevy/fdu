@@ -1,5 +1,7 @@
 ---
 sandbox: true
+path:
+  - $FDU_BIN
 fixtures:
   - fixtures/realistic-project
 env:
@@ -24,7 +26,7 @@ up into `index`, while the report correctly avoids a misleading `…` row becaus
 ranked sibling was omitted.
 
 ```console
-$ $FDU --cache off --color never --size apparent realistic-project
+$ fdu --cache off --color never --size apparent realistic-project
    7.6 KiB  ██████████   100%  . (16 files)
    4.1 KiB  █████░░░░░    55%    src (7 files)
    2.6 KiB  ███░░░░░░░    34%      index (4 files)

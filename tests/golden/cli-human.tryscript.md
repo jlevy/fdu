@@ -1,5 +1,7 @@
 ---
 sandbox: true
+path:
+  - $FDU_BIN
 fixtures:
   - fixtures/project
 env:
@@ -18,7 +20,7 @@ patterns:
 ## A Full Tree Has Stable Sizes, Ordering, Bars, and Indentation
 
 ```console
-$ $FDU --cache off --color never --size apparent --depth 2 --limit 10 project
+$ fdu --cache off --color never --size apparent --depth 2 --limit 10 project
      263 B  ██████████   100%  . (6 files)
      128 B  █████░░░░░    49%    dist (1 file)
       36 B  █░░░░░░░░░    14%    src (2 files)
@@ -30,7 +32,7 @@ Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cache
 ## Depth and Number Limit Only the Rendered View
 
 ```console
-$ $FDU --cache off --color never --size apparent --depth 1 --limit 2 project
+$ fdu --cache off --color never --size apparent --depth 1 --limit 2 project
      263 B  ██████████   100%  . (6 files)
      128 B  █████░░░░░    49%    dist (1 file)
       36 B  █░░░░░░░░░    14%    src (2 files)
@@ -48,7 +50,7 @@ whichever metric was asked for — and apparent bytes are filesystem-independent
 what makes this block stable across platforms.
 
 ```console
-$ $FDU --cache off --color never --view types --limit 10 --size apparent project
+$ fdu --cache off --color never --view types --limit 10 --size apparent project
      128 B   48.7%  archive            1 file
       71 B   27.0%  markdown           2 files, 2 documentation
       36 B   13.7%  rust               2 files
@@ -66,7 +68,7 @@ so which one was which came down to remembering the order they had been requeste
 An all-caps header above each block, one blank line between blocks, is enough to fix it.
 
 ```console
-$ $FDU --cache off --color never --view tree,types,families,summary --size apparent --depth 1 --limit 10 project
+$ fdu --cache off --color never --view tree,types,families,summary --size apparent --depth 1 --limit 10 project
 TREE
      263 B  ██████████   100%  . (6 files)
      128 B  █████░░░░░    49%    dist (1 file)
@@ -98,7 +100,7 @@ That is also what keeps `fdu --view files` a listing of paths and nothing else, 
 the property behind piping it into `xargs`.
 
 ```console
-$ $FDU --cache off --color never --view files --include "*.rs" project
+$ fdu --cache off --color never --view files --include "*.rs" project
 src[SEP]alpha.rs
 src[SEP]omega.rs
 Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
@@ -114,7 +116,7 @@ The header is what makes an empty result distinguishable from a view that was ne
 requested.
 
 ```console
-$ $FDU --cache off --color never --view files,types --include "*.nomatch" project
+$ fdu --cache off --color never --view files,types --include "*.nomatch" project
 FILES
 
 TYPES
@@ -129,7 +131,7 @@ labelled like the rest.
 A caller that wants the bare listing back asks for the single view it actually wanted.
 
 ```console
-$ $FDU --cache off --color never --view files,summary --include "*.rs" --size apparent project
+$ fdu --cache off --color never --view files,summary --include "*.rs" --size apparent project
 FILES
 src[SEP]alpha.rs
 src[SEP]omega.rs

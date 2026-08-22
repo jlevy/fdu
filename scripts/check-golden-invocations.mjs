@@ -1,15 +1,16 @@
 #!/usr/bin/env node
-// Forbid bare `fdu` in the golden corpus.
+// Keep the golden corpus from resolving fdu anywhere but the build under test.
 //
-// tryscript's `path:` front matter prepends to the inherited PATH rather than replacing
-// it, so a bare `fdu` is resolvable from outside the repository -- typically
-// ~/.cargo/bin/fdu on a developer machine. Any golden that invokes the bare name can
-// therefore pass while exercising a build nobody selected (fdu-9h2w), and the whole
-// premise of parity testing is that the surfaces are different binaries.
+// tryscript's `path:` front matter PREPENDS to the inherited PATH rather than replacing
+// it. Every session invokes a bare `fdu`, because a bare command name is the only form
+// /bin/sh and cmd.exe both read the same way -- Windows does not expand `$FDU`, it wants
+// `%FDU%`. So the directory that supplies the command is the whole of the safety story:
+// if it fails to resolve, lookup continues into the inherited PATH and finds whatever
+// fdu is installed on the machine, and the suite passes while testing a different
+// binary, silently (fdu-9h2w).
 //
-// The corpus names the executable through $FDU instead. This check keeps it that way:
-// the rule is worth nothing if the next session can reintroduce the bare name and still
-// go green.
+// Two rules follow, and this check exists because both are worth nothing if the next
+// session can quietly drop them and still go green.
 
 import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -18,56 +19,52 @@ import { fileURLToPath } from 'node:url';
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const goldenDir = join(root, 'tests', 'golden');
 
-// A shell command line opening with the bare name, and the node child-process helpers
-// spelling it as a literal argument. Both resolve through PATH.
-const OFFENCES = [
-  { pattern: /^\$\s+fdu(\.exe)?\b/, why: 'session invokes bare `fdu`; use `$FDU`' },
-  {
-    pattern: /(spawnSync|execFileSync|spawn|execFile)\(\s*['"]fdu(\.exe)?['"]/,
-    why: 'node helper names `fdu` literally; use `process.env.FDU`',
-  },
-  {
-    pattern: /^path:/,
-    why: 'a `path:` entry reintroduces PATH lookup; name the binary through $FDU',
-  },
-  // The literal need not sit inside the spawn call to be a PATH lookup: the original
-  // defect was `const binary = platform === "win32" ? "fdu.exe" : "fdu"` several lines
-  // above a `spawn(binary, ...)`. Matching only the call site missed it entirely, so
-  // this matches the name wherever it is written as a bare command string.
-  {
-    pattern: /(?<![\w/\\.$-])['"]fdu(\.exe)?['"]/,
-    why: 'names `fdu` as a bare command string; use `process.env.FDU`',
-  },
-];
-
-// Sessions and the helper scripts they delegate to. Checking only the sessions is how
-// watch-repaint-capture.mjs kept a bare `fdu` after the corpus had stopped using one:
-// it passed locally by silently resolving the installed build, and failed in CI, which
-// is precisely the failure this rule exists to prevent.
-const targets = [
-  ...readdirSync(goldenDir)
-    .filter((f) => f.endsWith('.tryscript.md'))
-    .map((f) => [join('tests', 'golden', f), join(goldenDir, f)]),
-  ...readdirSync(join(goldenDir, 'bin'))
-    .filter((f) => f.endsWith('.mjs'))
-    .map((f) => [join('tests', 'golden', 'bin', f), join(goldenDir, 'bin', f)]),
-];
-
 const findings = [];
-for (const [name, file] of targets) {
-  readFileSync(file, 'utf8')
+
+// Rule 1: every session file declares exactly one path entry, and it is the variable
+// run-golden.mjs sets after preflighting the binary. A literal like
+// `$TRYSCRIPT_GIT_ROOT/target/debug` is what the corpus used to say, and it silently
+// pinned the corpus to one surface while looking equally correct.
+for (const name of readdirSync(goldenDir).filter((f) => f.endsWith('.tryscript.md'))) {
+  const file = join('tests', 'golden', name);
+  const lines = readFileSync(join(goldenDir, name), 'utf8').split('\n');
+  const start = lines.indexOf('path:');
+  if (start === -1) {
+    findings.push(`${file}: no \`path:\` entry, so fdu resolves from the inherited PATH`);
+    continue;
+  }
+  const entries = [];
+  for (let i = start + 1; i < lines.length && lines[i].startsWith('  - '); i += 1) {
+    entries.push(lines[i].slice(4).trim());
+  }
+  if (entries.length !== 1 || entries[0] !== '$FDU_BIN') {
+    findings.push(
+      `${file}:${start + 1}: path must be exactly [$FDU_BIN], found [${entries.join(', ')}]`,
+    );
+  }
+}
+
+// Rule 2: the helper scripts sessions delegate to spawn the binary themselves, so they
+// are subject to no PATH lookup and must name the exact file. Checking only the session
+// files is how watch-repaint-capture.mjs kept a bare `fdu` after the corpus had stopped
+// relying on one: it passed locally by resolving the installed build, and failed in CI.
+const binDir = join(goldenDir, 'bin');
+for (const name of readdirSync(binDir).filter((f) => f.endsWith('.mjs'))) {
+  const file = join('tests', 'golden', 'bin', name);
+  readFileSync(join(binDir, name), 'utf8')
     .split('\n')
     .forEach((line, index) => {
-      for (const { pattern, why } of OFFENCES) {
-        if (pattern.test(line)) {
-          findings.push(`${name}:${index + 1}: ${why}`);
-        }
+      // The literal need not sit inside the spawn call to be a PATH lookup: the defect
+      // wrote `const binary = platform === 'win32' ? 'fdu.exe' : 'fdu'` several lines
+      // above `spawn(binary, ...)`, so matching only the call site missed it entirely.
+      if (/(?<![\w/\\.$-])['"]fdu(\.exe)?['"]/.test(line)) {
+        findings.push(`${file}:${index + 1}: names \`fdu\` literally; use \`process.env.FDU\``);
       }
     });
 }
 
 if (findings.length > 0) {
-  console.error('golden corpus must never resolve fdu through PATH:\n');
+  console.error('golden corpus must resolve fdu only from the build under test:\n');
   for (const finding of findings) {
     console.error(`  ${finding}`);
   }
@@ -75,4 +72,4 @@ if (findings.length > 0) {
   process.exit(1);
 }
 
-console.log(`golden invocations ok: no PATH-resolved fdu in ${targets.length} files`);
+console.log('golden invocations ok: every session pins $FDU_BIN, no helper names fdu');
