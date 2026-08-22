@@ -13,7 +13,7 @@
     "check:yaml": "node scripts/check-yaml.mjs"
   },
   "devDependencies": {
-    "tryscript": "0.2.0",
+    "tryscript": "0.2.1",
     "yaml": "2.9.0"
   },
   "overrides": {

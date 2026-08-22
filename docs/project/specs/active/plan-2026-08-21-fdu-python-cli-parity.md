@@ -4,7 +4,13 @@
 
 **Author:** fdu project
 
-**Status:** Draft
+**Status:** Phase 1 landed; Phase 2 not started
+
+108 of 126 golden sessions reach parity through the Python API alone.
+The 18 that differ each carry a named cause, and an unexplained difference fails the run
+rather than joining the list.
+Two Phase 1 items were deferred to tryscript (`fdu-nluf`, `fdu-ds2x`) and are recorded
+as deferred rather than done.
 
 ## Overview
 
@@ -371,26 +377,59 @@ file.
 
 ### Phase 1
 
-- [ ] Add `Report.render(format, color)` to the Python API over the existing renderer,
+Landed. 108 of 126 golden sessions reach parity through the Python API alone.
+
+- [x] Add `Report.render(format, color)` to the Python API over the existing renderer,
   so the package can produce fdu’s own output rather than only structured values
   (`fdu-z84z`)
-- [ ] tryscript: drop empty `path:` entries, with a test that a bare `$VAR` does not put
-  the working directory on `PATH` (`fdu-nluf`)
-- [ ] tryscript: add `requires:`, so named commands must resolve before the first
-  session and the run reports where each resolved (`fdu-ds2x`)
-- [ ] Write `tests/parity/py/parity_cli.py` against the table above, with `fdu:`
-  diagnostics and exit 77 for `--help`, `--docs`, and `--skill` (`fdu-0len`)
-- [ ] Add the runner: replay the corpus, diff against the Rust recording, compare with
+- [x] Write `tests/parity/py/parity_cli.py` against the table above, with `fdu:`
+  diagnostics (`fdu-0len`)
+- [x] Add the runner: replay the corpus, diff against the Rust recording, compare with
   `tests/parity/deviations-python.diff` (`fdu-5clp`)
-- [ ] Commit the first deviation file and review every hunk against the rule that only a
-  version string or help layout is legitimate (`fdu-5clp`)
-- [ ] Add `make test-parity` with its anti-vacuity guards (`fdu-szti`)
+- [x] Commit the first deviation file and review every hunk (`fdu-5clp`)
+- [x] Add `make test-parity` with its anti-vacuity guards (`fdu-szti`)
+
+Two Phase 1 entries were **deferred rather than done**, and both are tryscript-side:
+
+- [ ] tryscript: drop empty `path:` entries, with a test that a bare `$VAR` does not put
+  the working directory on `PATH` (`fdu-nluf`) — still a real robustness issue, but no
+  longer on this critical path: the corpus carries no `path:` entry that can be empty.
+- [ ] tryscript: add `requires:`, so named commands must resolve before the first
+  session and the run reports where each resolved (`fdu-ds2x`) — superseded in practice.
+  `scripts/run-golden.mjs` preflights the binary and states which surface it resolved,
+  so the guarantee exists; having tryscript enforce it would move the check off fdu,
+  which is still worth doing and is why the bead stays open.
+
+Neither was dropped silently, and neither blocks the harness.
+
+**Two things this plan specified that the implementation did not do**, recorded here
+rather than quietly diverged from:
+
+1. The spec said the shim would exit **77** for `--help`, `--docs`, and `--skill`. It
+   exits **2** with a one-line declination on stderr, because 77 is not a code fdu uses
+   anywhere and a reader comparing the two surfaces would have had to learn a private
+   convention to interpret it.
+   The runner excludes those sessions by name instead, which is visible in
+   `scripts/parity-classes.mjs` rather than encoded in an exit status.
+2. The spec said only a version string or help layout could be a legitimate deviation.
+   That rule survived contact with reality as **four** named classes, not two — each
+   mechanically matched, and an unexplained difference fails the run.
+   The additions are surfaces naming their own parameters, and notes carrying walk
+   telemetry the report schema excludes.
+   Both are correct on each side; neither was foreseen here.
 
 ### Phase 2
+
+Not started. Tracked under `fdu-luwc`, which stays open for it.
 
 - [ ] The same shim over the public Rust library API, with its own deviation file.
   Sharper than the Python one: if it cannot be written without reaching into `cli.rs`,
   then “the CLI invents nothing” is false and the library is missing something.
+
+This is worth more now than when it was written.
+Phase 1 found seven definitions the CLI had copied from the library and five
+capabilities only the CLI could reach; a Rust-side shim is the instrument that would
+have caught them without a second language in the way.
 
 ## Testing Strategy
 
