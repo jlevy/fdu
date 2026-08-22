@@ -146,6 +146,45 @@ It also shrinks the shim to what it should be: argv in, API calls, bytes out.
 the run silently measures the binary against itself — the same failure the deviation
 file catches after the fact and the naming rule prevents outright.
 
+### The shape of `Report.render`
+
+```python
+report.render(Format.TEXT, color=False) -> str
+```
+
+A **method**, beside `as_dict()`, because both are serializations of the same value and
+splitting them across a method and a module function would make the pair harder to find
+than either alone.
+
+`Format` joins the twelve `StrEnum`s the package already exports, so `render("json")`
+and `render(Format.JSON)` are the same call — the pattern `View` and `Analysis` already
+set — and the native `contract()` gains a `formats` key that `public_smoke` checks for
+parity.
+
+`color` is a plain `bool`, not the CLI’s `auto | always | never`. Resolving `auto` means
+asking whether stdout is a terminal, and a library does not own stdout; the caller does.
+The shim resolves `--color` the way the CLI does and passes the answer in, which is the
+correct division rather than a shortcut.
+
+**The body only.** `render` returns the report, not the performance footer.
+The footer is transient telemetry the schema deliberately excludes, and the walk counts
+behind it are not on `Report`, so a Python caller cannot produce it.
+Every text session therefore deviates by exactly that line.
+
+That is recorded once, as a class, rather than as a hundred identical hunks:
+
+```text
+tests/parity/deviations-python.diff
+  class: performance-footer-absent  (94 text sessions)
+    -Performance: walked … total [PERF_TIME]
+```
+
+Collapsing it keeps the deviation file readable, which is the property the whole design
+rests on — a file nobody reads is a file nobody reviews.
+The count is the interesting part anyway: it says how much of the corpus is text, and it
+is the standing argument for exposing the telemetry later if that trade ever looks worth
+making.
+
 ### What the shim may decline
 
 With the renderer exposed and cache and watch already public, the skip list is short,

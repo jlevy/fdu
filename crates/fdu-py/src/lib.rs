@@ -240,7 +240,9 @@ impl PyIndex {
         sort = None,
         reverse = false,
         size = "allocated",
-        words_per_page = 250
+        words_per_page = 250,
+        format = "json",
+        color = false
     ))]
     #[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
     fn report_json(
@@ -258,6 +260,8 @@ impl PyIndex {
         reverse: bool,
         size: &str,
         words_per_page: u64,
+        format: &str,
+        color: bool,
     ) -> PyResult<String> {
         let report = self.build_report(
             views,
@@ -274,7 +278,7 @@ impl PyIndex {
             size,
             words_per_page,
         )?;
-        Ok(fdu::report_format::render(&report, fdu::report_format::Format::Json, false))
+        Ok(fdu::report_format::render(&report, parse_format(format)?, color))
     }
 
     /// Watch this tree, yielding batches of changes as they arrive.
@@ -938,6 +942,22 @@ fn tree_dict<'py>(py: Python<'py>, root: &TreeNode) -> PyResult<Bound<'py, PyDic
     Ok(built)
 }
 
+/// Parse a serialization name.
+///
+/// The package can render fdu's own output, not only structured values: a caller who wants
+/// what the command line prints should not have to shell out to the binary to get it.
+fn parse_format(value: &str) -> PyResult<fdu::report_format::Format> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "text" => Ok(fdu::report_format::Format::Text),
+        "json" => Ok(fdu::report_format::Format::Json),
+        "jsonl" => Ok(fdu::report_format::Format::Jsonl),
+        "yaml" => Ok(fdu::report_format::Format::Yaml),
+        other => Err(PyValueError::new_err(format!(
+            "invalid format {other:?}: expected one of text, json, jsonl, yaml"
+        ))),
+    }
+}
+
 /// Resolve a caller's view list, expanding the `full` total.
 ///
 /// `full` names the whole report rather than one projection, so it cannot be combined.
@@ -1304,6 +1324,7 @@ fn contract(py: Python<'_>) -> PyResult<Bound<'_, PyDict>> {
             "full",
         ],
     )?;
+    contract.set_item("formats", ["text", "json", "jsonl", "yaml"])?;
     contract.set_item("entry_kinds", ["file", "dir", "symlink", "other"])?;
     contract.set_item("size_metrics", ["allocated", "apparent"])?;
     contract.set_item("sort_keys", ["size", "count", "mtime", "name"])?;

@@ -8,6 +8,7 @@ typed values; callers never need to know the private extension's wire shape.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -118,6 +119,20 @@ class Analysis(StrEnum):
     CODE = "code"
     WORDS = "words"
     ALL = "all"
+
+
+class Format(StrEnum):
+    """How a report is serialized.
+
+    `TEXT` is the human rendering the command line prints, minus its performance footer:
+    that footer is transient telemetry the report schema deliberately excludes, and the
+    walk counts behind it are not part of a `Report`.
+    """
+
+    TEXT = "text"
+    JSON = "json"
+    JSONL = "jsonl"
+    YAML = "yaml"
 
 
 class ChangeKind(StrEnum):
@@ -462,11 +477,32 @@ class Report:
     analysis: AnalysisMetadata | None
     sections: tuple[ReportSection, ...]
     _wire: dict[str, JsonValue] = field(repr=False, compare=False)
+    #: Bound renderer, supplied by `Index.report`. Absent on a report built by hand.
+    _renderer: Callable[[str, bool], str] | None = field(default=None, repr=False, compare=False)
 
     def as_dict(self) -> dict[str, JsonValue]:
         """Return an independent copy of the exact CLI JSON schema."""
 
         return deepcopy(self._wire)
+
+    def render(self, format: Format = Format.TEXT, *, color: bool = False) -> str:
+        """Serialize this report the way the command line does.
+
+        Beside `as_dict` because both are serializations of the same value, and splitting
+        them across a method and a module function would make the pair harder to find than
+        either alone.
+
+        `color` is a plain bool rather than the CLI's `auto | always | never`: resolving
+        `auto` means asking whether stdout is a terminal, and a library does not own
+        stdout. The caller decides and passes the answer in.
+
+        The report only. The command line appends a performance footer, which is transient
+        telemetry the schema excludes and whose counts are not on a `Report`.
+        """
+
+        if self._renderer is None:
+            raise ValueError("this report was not produced by Index.report and cannot be rendered")
+        return self._renderer(str(format), color)
 
 
 @dataclass(frozen=True, slots=True)

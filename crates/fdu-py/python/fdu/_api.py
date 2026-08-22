@@ -168,11 +168,23 @@ class Index:
 
     def report(self, query: Query | None = None) -> Report:
         selected = query if query is not None else Query()
-        raw = _call(self._native.report_json, **_query_kwargs(selected))
+        kwargs = _query_kwargs(selected)
+        raw = _call(self._native.report_json, **kwargs)
         wire: dict[str, Any] = json.loads(raw)
         report = report_from_dict(wire)
         errors = self.status.errors
-        return replace(report, status=replace(report.status, errors=errors))
+
+        # `render` re-projects the retained index rather than rescanning, so binding the
+        # same query here costs a projection and keeps `Report.render` on the report where
+        # `as_dict` already lives.
+        def renderer(format: str, color: bool) -> str:
+            return _call(self._native.report_json, **kwargs, format=format, color=color)
+
+        return replace(
+            report,
+            status=replace(report.status, errors=errors),
+            _renderer=renderer,
+        )
 
     def total(self) -> RollUp:
         return rollup_from_dict(_call(self._native.total), self.provenance())

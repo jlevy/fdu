@@ -11,6 +11,7 @@ import ast
 import importlib.util
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -19,6 +20,71 @@ from pathlib import Path
 
 import fdu
 from fdu import _native
+
+
+def _stable(text: str) -> str:
+    """Blank the fields that differ between any two runs, and only those."""
+
+    return re.sub(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{9}Z", "[TIME]", text)
+
+
+def check_render_matches_the_cli(root: Path, binary: str) -> None:
+    """The package renders what the command line prints.
+
+    Until this existed a Python caller wanting fdu's own output had to shell out to the
+    binary -- the same admission the console script makes, since `fdu:_main` calls
+    `_native.main()` and the `fdu` the wheel installs has never exercised a line of the
+    Python API.
+
+    The comparison is against the real CLI rather than a recorded string, because a
+    recording drifts and the point is that the two agree today.
+    """
+
+    index = fdu.scan(str(root))
+    for view in (fdu.View.TREE, fdu.View.LARGEST, fdu.View.SUMMARY):
+        report = index.report(fdu.Query(views=(view,)))
+        for fmt in fdu.Format:
+            rendered = report.render(fmt)
+            cli = subprocess.run(
+                [
+                    binary,
+                    "--cache",
+                    "off",
+                    "--color",
+                    "never",
+                    "--format",
+                    str(fmt),
+                    "--view",
+                    str(view),
+                    str(root),
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout
+            # The CLI appends a performance footer; the schema excludes that telemetry and
+            # a Report does not carry the counts behind it, so it is the one difference.
+            body = "\n".join(
+                line for line in cli.splitlines() if not line.startswith("Performance:")
+            ).rstrip()
+            # Two separate runs, so the walk timestamps differ. Normalised the same way
+            # the golden corpus masks them: the values are unstable, the shape is not.
+            assert _stable(rendered.rstrip()) == _stable(body), (
+                view,
+                fmt,
+                rendered[:200],
+                body[:200],
+            )
+
+    # A report built by hand has no index to render through, and says so.
+    from dataclasses import replace as _replace
+
+    detached = _replace(index.report(fdu.Query()), _renderer=None)
+    try:
+        detached.render()
+        raise SystemExit("a report with no index behind it must refuse to render")
+    except ValueError as error:
+        assert "Index.report" in str(error), error
 
 
 def check_every_view(root: Path) -> None:
@@ -82,6 +148,9 @@ def main() -> None:
     (root / "notes.md").write_text("release notes", encoding="utf-8")
 
     check_every_view(root)
+    check_render_matches_the_cli(
+        root, str(Path(sys.executable).with_name("fdu.exe" if os.name == "nt" else "fdu"))
+    )
 
     index = fdu.scan(root, scan=fdu.ScanOptions(max_depth=3))
     assert os.path.samefile(index.root, root)
