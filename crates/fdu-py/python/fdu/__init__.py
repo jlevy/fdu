@@ -15,6 +15,7 @@ from ._api import (
     list_caches,
     open,
     render_cache_status,
+    report,
     scan,
 )
 from ._api import (
@@ -132,6 +133,7 @@ __all__ = [
     "list_caches",
     "open",
     "render_cache_status",
+    "report",
     "scan",
 ]
 

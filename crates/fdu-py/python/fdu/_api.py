@@ -339,6 +339,52 @@ def scan(
     return Index(native)
 
 
+def report(
+    root: str | Path,
+    query: Query | None = None,
+    *,
+    cache: CachePolicy = CachePolicy.AUTO,
+    scan: ScanOptions | None = None,
+    analysis: AnalysisOptions | None = None,
+) -> Report:
+    """One report, retaining the least state the request needs.
+
+    The contract the command line runs under, and until now the only way to get it was to
+    be the command line. :func:`open` takes the session path: it retains an index and
+    writes a snapshot, which is right for a caller asking many questions and wrong for one
+    asking a single question. An unfiltered summary is answered by a transient tier that
+    retains nothing, so writing a snapshot for it caches state the walk never saved --
+    which meant a Python caller left cache state on a tree that the same command would
+    not have, visible to a later cache-only read.
+
+    Use :func:`open` when you will ask more than one question; the index is the point.
+    """
+
+    scan_options = scan if scan is not None else ScanOptions()
+    analysis_options = analysis if analysis is not None else AnalysisOptions()
+    selected = query if query is not None else Query()
+    handle = _call(
+        _native.report_once,
+        str(root),
+        cache=str(cache),
+        max_depth=scan_options.max_depth,
+        one_filesystem=scan_options.one_filesystem,
+        analyze=str(analysis_options.analyze),
+        analysis_workers=analysis_options.workers,
+        **_query_kwargs(selected),
+    )
+    wire: dict[str, Any] = json.loads(_call(handle.render, "json", False))
+    parsed = report_from_dict(wire)
+
+    def renderer(format: str, color: bool) -> str:
+        # The handle owns the finished report, so a second format costs no second walk.
+        # Rebuilding it from the query would mean rescanning, which is the cost a one-shot
+        # exists to avoid.
+        return cast(str, _call(handle.render, format, color))
+
+    return replace(parsed, _renderer=renderer)
+
+
 def render_cache_status(statuses: Sequence[CacheStatus], format: Format = Format.TEXT) -> str:
     """Render cache statuses exactly as ``fdu --cache-status`` prints them.
 

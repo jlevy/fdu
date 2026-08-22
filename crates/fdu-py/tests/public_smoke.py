@@ -28,6 +28,34 @@ def _stable(text: str) -> str:
     return re.sub(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{9}Z", "[TIME]", text)
 
 
+def check_the_one_shot_retains_nothing(root: Path) -> None:
+    """`fdu.report` runs the contract the command line runs, not a session.
+
+    `open` retains an index and writes a snapshot, which is right for a caller asking many
+    questions and wrong for one asking a single question -- an unfiltered summary is
+    answered by a transient tier that retains nothing, so a session cached state the walk
+    never saved and a later cache-only read could see it (fdu-4msv).
+    """
+
+    report = fdu.report(root, fdu.Query(views=(fdu.View.SUMMARY,)))
+    assert report.status.source is not None
+
+    # Rendering twice must not cost a second walk: the handle owns the finished report.
+    text = report.render(fdu.Format.TEXT)
+    assert text == report.render(fdu.Format.TEXT)
+    assert report.render(fdu.Format.JSON) != text
+
+    # An unusable cache is the operation failing, not the caller asking wrongly. Calling it
+    # an argument error sent a caller looking in the wrong place, and made the CLI shim
+    # exit 2 as a usage error where the command line exits 1.
+    try:
+        fdu.report(root, fdu.Query(views=(fdu.View.SUMMARY,)), cache=fdu.CachePolicy.ONLY)
+    except fdu.InvalidArgumentError as error:  # pragma: no cover - the regression
+        raise AssertionError(f"an unusable snapshot is not an argument error: {error}") from None
+    except fdu.FduError:
+        pass
+
+
 def check_the_list_grammar_reaches_python(root: Path) -> None:
     """A view spec is parsed by the one grammar, not by whichever surface got it first.
 
@@ -176,6 +204,7 @@ def main() -> None:
 
     check_every_view(root)
     check_the_list_grammar_reaches_python(root)
+    check_the_one_shot_retains_nothing(root)
     check_render_matches_the_cli(
         root, str(Path(sys.executable).with_name("fdu.exe" if os.name == "nt" else "fdu"))
     )

@@ -37,6 +37,10 @@ const withoutKind = (line) => {
   return line;
 };
 
+// A class that no longer explains anything is removed, not kept "just in case". Its
+// matcher would still match, so it would quietly absorb a real regression: `execution-tier`
+// covered eight sessions until fdu.report exposed the one-shot contract, and its matcher
+// keyed on "source" and cache-emptiness -- exactly what a cache regression would look like.
 export const CLASSES = [
   {
     id: 'surface-label',
@@ -79,29 +83,6 @@ export const CLASSES = [
       removed.length === added.length &&
       removed.every((line, i) => withoutKnobs(line) === withoutKnobs(added[i])) &&
       removed.some((line, i) => line !== added[i]),
-  },
-  {
-    id: 'execution-tier',
-    title: 'The CLI chose an execution tier the Python API cannot request',
-    why: [
-      'crates/fdu/src/execution.rs plans one-shot reports "with the least retained state',
-      'they require". An unfiltered summary is answered by a transient tier that retains',
-      'no index and so writes no snapshot; a one-shot metadata report does not load one,',
-      'because revalidating stats every entry anyway. fdu.open() always takes the session',
-      'path, so it retains and writes where the CLI would not.',
-      '',
-      'The reports agree. Which tier answered, and whether a snapshot was left behind,',
-      'does not -- so cache-only afterwards finds one where the CLI finds none. Tracked as',
-      'fdu-4msv: the gap is that Python cannot ASK for the one-shot contract.',
-    ],
-    matches: ({ removed, added }) => {
-      const text = [...removed, ...added].join('\n');
-      return (
-        /"source":\s*"/.test(text) ||
-        /"scan_started_at":/.test(text) ||
-        /No cached snapshots\.|snapshot is not usable/.test(text)
-      );
-    },
   },
   {
     id: 'run-telemetry',

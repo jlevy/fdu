@@ -382,8 +382,16 @@ def main(argv: list[str] | None = None) -> int:
     if args.watch:
         return run_watch(args)
 
-    index = _open(args)
-    report = index.report(build_query(args))
+    # fdu.report, not fdu.open().report(): the command line runs one-shot, retaining the
+    # least state the request needs, and a session would retain an index and write a
+    # snapshot the command would not have left behind (fdu-4msv).
+    report = fdu.report(
+        args.root or ".",
+        build_query(args),
+        cache=args.cache,
+        scan=fdu.ScanOptions(max_depth=args.scan_depth, one_filesystem=args.one_filesystem),
+        analysis=fdu.AnalysisOptions(analyze=args.analyze, workers=args.analysis_workers),
+    )
     sys.stdout.write(render(args, report))
     return exit_code(args, report.status)
 

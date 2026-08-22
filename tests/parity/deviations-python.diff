@@ -41,7 +41,7 @@
 # This file shrinks as the API closes. Extra hunks mean drift; missing hunks mean a gap
 # was fixed and the file should be re-recorded so the change is visible in review.
 
-# 28 sessions differ, and every one of them has a named cause.
+# 20 sessions differ, and every one of them has a named cause.
 #
 #  11  Each surface names its own parameter  [surface-label]
 #      There is no --view or --analyze in Python, so its diagnostics name the parameter.
@@ -64,17 +64,6 @@
 #      library said "requires event-scope filtering", so a library caller got jargon and a
 #      CLI user got help. A unit test pins the substitution, because doing it sequentially
 #      produced `--scan---depth` the first time (the fdu-7j6z bug, again).
-#
-#   8  The CLI chose an execution tier the Python API cannot request  [execution-tier]
-#      crates/fdu/src/execution.rs plans one-shot reports "with the least retained state
-#      they require". An unfiltered summary is answered by a transient tier that retains
-#      no index and so writes no snapshot; a one-shot metadata report does not load one,
-#      because revalidating stats every entry anyway. fdu.open() always takes the session
-#      path, so it retains and writes where the CLI would not.
-#
-#      The reports agree. Which tier answered, and whether a snapshot was left behind,
-#      does not -- so cache-only afterwards finds one where the CLI finds none. Tracked as
-#      fdu-4msv: the gap is that Python cannot ASK for the one-shot contract.
 #
 #   3  Output carrying walk telemetry the report schema excludes  [run-telemetry]
 #      A note quoting how many bytes analysis read, or the performance footer itself.
@@ -141,97 +130,19 @@ FAIL [ROOT]/tests/parity/.corpus/cli-axes.tryscript.md
 -fdu: invalid --depth "two": expected a whole number or `all`
 +fdu: invalid depth "two": expected a whole number or `all`
   ✓ A First Run Scans Cold and Leaves a Snapshot
-  ✗ The Next Run Scans Cold Again, Because Reading Cannot Pay
-@@ -1,2 +1,2 @@
--{"schema": "fdu.report/4", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "source": "cold_scan", "freshness": "fresh", "complete": true, "errors": []}
--{"view": "tree", "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 263, "allocated": [ALLOCATED], "files": 6, "dirs": 3, "newest_mtime_ns": [MTIME_NS], "truncated": false, "children": [{"name": "dist", "path": "dist", "kind": "dir", "bytes": 128, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "children": []},{"name": "src", "path": "src", "kind": "dir", "bytes": 36, "allocated": [ALLOCATED], "files": 2, "dirs": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "children": []},{"name": "docs", "path": "docs", "kind": "dir", "bytes": 23, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "children": []}]}}
-+{"schema": "fdu.report/4", "generator": "fdu 0.1.0", "root": "[SANDBOX]/project", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "source": "warm_revalidate", "freshness": "fresh", "complete": true, "errors": []}
-+{"view": "tree", "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 263, "allocated": 24576, "files": 6, "dirs": 3, "newest_mtime_ns": [MTIME_NS], "truncated": false, "children": [{"name": "dist", "path": "dist", "kind": "dir", "bytes": 128, "allocated": 4096, "files": 1, "dirs": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "children": []},{"name": "src", "path": "src", "kind": "dir", "bytes": 36, "allocated": 8192, "files": 2, "dirs": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "children": []},{"name": "docs", "path": "docs", "kind": "dir", "bytes": 23, "allocated": 4096, "files": 1, "dirs": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "children": []}]}}
-  ✗ Cache-Only Answers Without Touching the Tree, and Says It Is Stale
-@@ -1,2 +1,2 @@
--{"schema": "fdu.report/4", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "source": "cache_only", "freshness": "stale", "complete": true, "errors": []}
--{"view": "tree", "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 263, "allocated": [ALLOCATED], "files": 6, "dirs": 3, "newest_mtime_ns": [MTIME_NS], "truncated": false, "children": [{"name": "dist", "path": "dist", "kind": "dir", "bytes": 128, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "children": []},{"name": "src", "path": "src", "kind": "dir", "bytes": 36, "allocated": [ALLOCATED], "files": 2, "dirs": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "children": []},{"name": "docs", "path": "docs", "kind": "dir", "bytes": 23, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "children": []}]}}
-+{"schema": "fdu.report/4", "generator": "fdu 0.1.0", "root": "[SANDBOX]/project", "scan_started_at": null, "generated_at": "[RFC3339]", "source": "cache_only", "freshness": "stale", "complete": true, "errors": []}
-+{"view": "tree", "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 263, "allocated": 24576, "files": 6, "dirs": 3, "newest_mtime_ns": [MTIME_NS], "truncated": false, "children": [{"name": "dist", "path": "dist", "kind": "dir", "bytes": 128, "allocated": 4096, "files": 1, "dirs": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "children": []},{"name": "src", "path": "src", "kind": "dir", "bytes": 36, "allocated": 8192, "files": 2, "dirs": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "children": []},{"name": "docs", "path": "docs", "kind": "dir", "bytes": 23, "allocated": 4096, "files": 1, "dirs": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "children": []}]}}
+  ✓ The Next Run Scans Cold Again, Because Reading Cannot Pay
+  ✓ Cache-Only Answers Without Touching the Tree, and Says It Is Stale
   ✓ Refresh Ignores the Snapshot and Scans Cold Again
   ✓ An Unknown Policy Lists Every Valid One
-FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
+PASS [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
   ✓ Scan Without a Cache
   ✓ Verify No Cache Was Created
   ✓ Create the Snapshot
   ✓ Verify Exactly One Snapshot Exists
-  ✗ A Second One-Shot Report Scans Cold Again
-@@ -1,17 +1,17 @@
- {
-   "schema": "fdu.report/4",
-   "generator": "fdu 0.1.0",
--  "root": "[SCAN_PATH]",
--  "scan_started_at": "[RFC3339]",
--  "generated_at": "[RFC3339]",
--  "source": "cold_scan",
-+  "root": "[SANDBOX]/project",
-+  "scan_started_at": "[RFC3339]",
-+  "generated_at": "[RFC3339]",
-+  "source": "warm_revalidate",
-   "freshness": "fresh",
-   "complete": true,
-   "errors": [],
-   "reports": [
-     {
-       "view": "tree",
--      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 263, "allocated": [ALLOCATED], "files": 6, "dirs": 3, "newest_mtime_ns": [MTIME_NS], "truncated": true, "children": []}
-+      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 263, "allocated": 24576, "files": 6, "dirs": 3, "newest_mtime_ns": [MTIME_NS], "truncated": true, "children": []}
-     }
-   ]
- }
+  ✓ A Second One-Shot Report Scans Cold Again
   ✓ Expand the Fixture
-  ✗ Report the Changed Tree
-@@ -1,17 +1,17 @@
- {
-   "schema": "fdu.report/4",
-   "generator": "fdu 0.1.0",
--  "root": "[SCAN_PATH]",
--  "scan_started_at": "[RFC3339]",
--  "generated_at": "[RFC3339]",
--  "source": "cold_scan",
-+  "root": "[SANDBOX]/project",
-+  "scan_started_at": "[RFC3339]",
-+  "generated_at": "[RFC3339]",
-+  "source": "warm_revalidate",
-   "freshness": "fresh",
-   "complete": true,
-   "errors": [],
-   "reports": [
-     {
-       "view": "tree",
--      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 288, "allocated": [ALLOCATED], "files": 6, "dirs": 3, "newest_mtime_ns": [MTIME_NS], "truncated": true, "children": []}
-+      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 288, "allocated": 24576, "files": 6, "dirs": 3, "newest_mtime_ns": [MTIME_NS], "truncated": true, "children": []}
-     }
-   ]
- }
-  ✗ The Rewrite Kept the Snapshot Current for Cache-Only
-@@ -1,17 +1,17 @@
- {
-   "schema": "fdu.report/4",
-   "generator": "fdu 0.1.0",
--  "root": "[SCAN_PATH]",
--  "scan_started_at": "[RFC3339]",
--  "generated_at": "[RFC3339]",
-+  "root": "[SANDBOX]/project",
-+  "scan_started_at": null,
-+  "generated_at": "[RFC3339]",
-   "source": "cache_only",
-   "freshness": "stale",
-   "complete": true,
-   "errors": [],
-   "reports": [
-     {
-       "view": "tree",
--      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 288, "allocated": [ALLOCATED], "files": 6, "dirs": 3, "newest_mtime_ns": [MTIME_NS], "truncated": true, "children": []}
-+      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 288, "allocated": 24576, "files": 6, "dirs": 3, "newest_mtime_ns": [MTIME_NS], "truncated": true, "children": []}
-     }
-   ]
- }
+  ✓ Report the Changed Tree
+  ✓ The Rewrite Kept the Snapshot Current for Cache-Only
   ✓ A Different Semantic Scan Scope Misses the Snapshot
   ✓ Corrupt the Snapshot
   ✓ Recover with a Cold Scan
@@ -259,12 +170,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
 @@ -1,2 +1,1 @@
       256 B  7 files, 4 directories
 -note: --analyze lines read 0 B; no selected view displays content metrics — try --view families, languages, or all
-  ✗ Content Cache Hits Preserve the Same Tallies
-@@ -1,2 +1,2 @@
--{"schema": "fdu.report/5", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "source": "cache_only", "freshness": "stale", "complete": true, "errors": [], "analysis": {"analyze": ["lines"], "type_rules_fingerprint": 10477590033123394727, "options_fingerprint": 12638152016183539244, "analyzers": [{"id": "content-basic-v1", "version": 1}]}}
--{"view": "documents", "metrics": {"group": "type", "share_metric": "document_words", "words_per_page": 250, "bound": null, "total": {"id": "total", "family": "unknown", "files": 3, "bytes": 77, "allocated": [ALLOCATED], "analyzed_files": 2, "share": {"numerator": 11, "denominator": 11}, "metrics": {"physical_lines": 8, "blank_lines": 3, "nonblank_lines": 5, "code_lines": 0, "comment_lines": 0, "code_blank_lines": 0, "raw_words": 11, "logical_words": 0, "paragraphs": 0, "visible_words": 0, "visible_logical_words": 0, "document_words": 11}, "coverage": {"analyzed": 2, "binary": 1}, "detection": {"sources": {"extension": 3}, "confidence": {"certain": 3}, "flags": {"generated": 0, "vendored": 0, "documentation": 2}}, "pages": {"words": 11, "words_per_page": 250}}, "rows": [{"id": "markdown", "family": "prose", "files": 1, "bytes": 42, "allocated": [ALLOCATED], "analyzed_files": 1, "share": {"numerator": 7, "denominator": 11}, "metrics": {"physical_lines": 5, "blank_lines": 2, "nonblank_lines": 3, "code_lines": 0, "comment_lines": 0, "code_blank_lines": 0, "raw_words": 7, "logical_words": 0, "paragraphs": 0, "visible_words": 0, "visible_logical_words": 0, "document_words": 7}, "coverage": {"analyzed": 1}, "detection": {"sources": {"extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 1}}, "pages": {"words": 7, "words_per_page": 250}}, {"id": "text", "family": "prose", "files": 2, "bytes": 35, "allocated": [ALLOCATED], "analyzed_files": 1, "share": {"numerator": 4, "denominator": 11}, "metrics": {"physical_lines": 3, "blank_lines": 1, "nonblank_lines": 2, "code_lines": 0, "comment_lines": 0, "code_blank_lines": 0, "raw_words": 4, "logical_words": 0, "paragraphs": 0, "visible_words": 0, "visible_logical_words": 0, "document_words": 4}, "coverage": {"analyzed": 1, "binary": 1}, "detection": {"sources": {"extension": 2}, "confidence": {"certain": 2}, "flags": {"generated": 0, "vendored": 0, "documentation": 1}}, "pages": {"words": 4, "words_per_page": 250}}]}}
-+{"schema": "fdu.report/5", "generator": "fdu 0.1.0", "root": "[SANDBOX]/content-project", "scan_started_at": null, "generated_at": "[RFC3339]", "source": "cache_only", "freshness": "stale", "complete": true, "errors": [], "analysis": {"analyze": ["lines"], "type_rules_fingerprint": 10477590033123394727, "options_fingerprint": 12638152016183539244, "analyzers": [{"id": "content-basic-v1", "version": 1}]}}
-+{"view": "documents", "metrics": {"group": "type", "share_metric": "document_words", "words_per_page": 250, "bound": null, "total": {"id": "total", "family": "unknown", "files": 3, "bytes": 77, "allocated": 12288, "analyzed_files": 2, "share": {"numerator": 11, "denominator": 11}, "metrics": {"physical_lines": 8, "blank_lines": 3, "nonblank_lines": 5, "code_lines": 0, "comment_lines": 0, "code_blank_lines": 0, "raw_words": 11, "logical_words": 0, "paragraphs": 0, "visible_words": 0, "visible_logical_words": 0, "document_words": 11}, "coverage": {"analyzed": 2, "binary": 1}, "detection": {"sources": {"extension": 3}, "confidence": {"certain": 3}, "flags": {"generated": 0, "vendored": 0, "documentation": 2}}, "pages": {"words": 11, "words_per_page": 250}}, "rows": [{"id": "markdown", "family": "prose", "files": 1, "bytes": 42, "allocated": 4096, "analyzed_files": 1, "share": {"numerator": 7, "denominator": 11}, "metrics": {"physical_lines": 5, "blank_lines": 2, "nonblank_lines": 3, "code_lines": 0, "comment_lines": 0, "code_blank_lines": 0, "raw_words": 7, "logical_words": 0, "paragraphs": 0, "visible_words": 0, "visible_logical_words": 0, "document_words": 7}, "coverage": {"analyzed": 1}, "detection": {"sources": {"extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 1}}, "pages": {"words": 7, "words_per_page": 250}}, {"id": "text", "family": "prose", "files": 2, "bytes": 35, "allocated": 8192, "analyzed_files": 1, "share": {"numerator": 4, "denominator": 11}, "metrics": {"physical_lines": 3, "blank_lines": 1, "nonblank_lines": 2, "code_lines": 0, "comment_lines": 0, "code_blank_lines": 0, "raw_words": 4, "logical_words": 0, "paragraphs": 0, "visible_words": 0, "visible_logical_words": 0, "document_words": 4}, "coverage": {"analyzed": 1, "binary": 1}, "detection": {"sources": {"extension": 2}, "confidence": {"certain": 2}, "flags": {"generated": 0, "vendored": 0, "documentation": 1}}, "pages": {"words": 4, "words_per_page": 250}}]}}
+  ✓ Content Cache Hits Preserve the Same Tallies
   ✗ Content Cache Hits Preserve the Same Tallies
 @@ -1,2 +1,1 @@
       256 B  7 files, 4 directories
@@ -325,20 +231,13 @@ PASS [ROOT]/tests/parity/.corpus/cli-json.tryscript.md
   ✓ Render Limits Mark the Projection as Truncated
   ✓ Scan Depth Is an Explicit Complete Scope
   ✓ Every View Serializes in Every Format
-FAIL [ROOT]/tests/parity/.corpus/cli-lifecycle.tryscript.md
+PASS [ROOT]/tests/parity/.corpus/cli-lifecycle.tryscript.md
   ✓ Status Before Anything Is Cached
   ✓ A Report Leaves a Snapshot Behind
   ✓ The Compact Summary Retains Nothing, and Cache-Only Says So
   ✓ The Compact Summary Retains Nothing, and Cache-Only Says So
-  ✗ The Compact Summary Retains Nothing, and Cache-Only Says So
-@@ -1,1 +1,1 @@
--No cached snapshots.
-+.cache/fdu/[HASH].fdu  10 entries, [N] metadata bytes, 0 content bytes  [SANDBOX]/project
-  ✗ The Compact Summary Retains Nothing, and Cache-Only Says So
-    Expected exit code 1, got 0
-@@ -1,1 +1,1 @@
--fdu: snapshot is not usable: no usable snapshot for this root and scan scope
-+    24 KiB  6 files, 3 directories
+  ✓ The Compact Summary Retains Nothing, and Cache-Only Says So
+  ✓ The Compact Summary Retains Nothing, and Cache-Only Says So
   ✓ The Compact Summary Retains Nothing, and Cache-Only Says So
   ✓ The Compact Summary Retains Nothing, and Cache-Only Says So
   ✓ Status Maps a Hash-Named File Back to Its Tree
@@ -467,7 +366,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-watch.tryscript.md
   ✓ Text Repaints Are Separated From One Another
   ✗ Text Repaints Are Separated From One Another
     Expected exit code 0, got 1
-@@ -1,12 +1,2 @@
+@@ -1,12 +1,1 @@
 -TREE
 -       4 B  ██████████   100%  . (1 file)
 -
@@ -480,5 +379,4 @@ FAIL [ROOT]/tests/parity/.corpus/cli-watch.tryscript.md
 -
 -SUMMARY
 -      16 B  2 files, 0 directories
-+[ROOT]/tests/parity/py/fdu exited early with status 2 (signal null)
-+fdu: invalid view "tree,summary": expected one of summary, tree, families, types, extensions, languages, documents, largest, recent, files, full
++timed out waiting for the initial report

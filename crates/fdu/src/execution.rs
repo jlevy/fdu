@@ -56,7 +56,7 @@ pub(crate) struct ReportPlan {
 /// This is deliberately separate from [`Report`]: it is transient CLI telemetry, not
 /// part of the stable machine-report schema or the pure query result.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(crate) struct PerformanceSummary {
+pub struct PerformanceSummary {
     /// Regular files whose metadata was observed during this run.
     pub walked_files: u64,
     /// Apparent bytes represented by those walked files.
@@ -174,7 +174,19 @@ pub(crate) fn plan_report(config: &OpenConfig, query: &Query) -> ReportPlan {
 ///
 /// The returned report is complete as a value even while the optional save runs.  The
 /// caller must join the handle before exit; dropping it also joins defensively.
-pub(crate) fn prepare_report(
+/// One report, retaining the least state the request needs.
+///
+/// This is the contract the command line has always run under, and until now the only way
+/// to get it was to be the command line. `open` takes the session path: it retains an
+/// index and writes a snapshot, which is right for a caller asking many questions and
+/// wrong for one asking a single question -- an unfiltered summary is answered by a
+/// transient tier that retains nothing, and writing a snapshot for it caches state the
+/// walk did not save. A Python caller therefore left cache state on a tree that the same
+/// command would not have, which a later cache-only read could see (fdu-4msv).
+///
+/// The caller owns the returned [`PendingSave`] and decides when to join it, exactly as
+/// the command line does, so a renderer can run while the snapshot is still being written.
+pub fn prepare_report(
     root: &Path,
     config: &OpenConfig,
     query: &Query,
