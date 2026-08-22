@@ -3,14 +3,16 @@ type: is
 id: is-01m0n9sbn9ek4bgz8m8fcw767t
 title: Python API cannot express the CLI's one-shot cache contract
 kind: feature
-status: open
+status: closed
 priority: 2
-version: 1
+version: 2
 labels: []
 dependencies: []
 parent_id: is-01m0n9pjsahc4wk6ek37syjct4
 created_at: 2026-08-22T17:55:06.528Z
-updated_at: 2026-08-22T17:55:06.528Z
+updated_at: 2026-08-22T21:21:47.724Z
+closed_at: 2026-08-22T21:21:47.723Z
+close_reason: "fdu.report exposes the one-shot contract: no retained index, no snapshot the command would not have written. Eight parity sessions close. Also fixed the error classification it exposed -- every non-IO engine error was a ValueError, so an unusable snapshot read as an invalid argument and exited 2 instead of 1."
 ---
 Six parity sessions differ only in which tier answered: the CLI reports cold_scan where the Python surface reports warm_revalidate.
 

@@ -3,14 +3,16 @@ type: is
 id: is-01m0n9q31gpp0p4sqge8t64hqb
 title: Report.render omits the CLI's display notes
 kind: bug
-status: open
+status: closed
 priority: 1
-version: 2
+version: 3
 labels: []
 dependencies: []
 parent_id: is-01m0n9pjsahc4wk6ek37syjct4
 created_at: 2026-08-22T17:53:52.175Z
-updated_at: 2026-08-22T18:55:23.456Z
+updated_at: 2026-08-22T21:00:08.577Z
+closed_at: 2026-08-22T21:00:08.567Z
+close_reason: "The omission note travels on the report and renders from the library, so every surface states it. The telemetry note stays with the footer, because the envelope carries no walk telemetry by design. Ordering fixed on the way: notes now precede the performance footer instead of following it. Tests pin each half in its new home."
 ---
 Three parity sessions differ only by a missing note line, e.g.
 
