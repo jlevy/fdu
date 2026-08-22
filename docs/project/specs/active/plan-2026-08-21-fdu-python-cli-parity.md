@@ -420,16 +420,24 @@ rather than quietly diverged from:
 
 ### Phase 2
 
-Not started. Tracked under `fdu-luwc`, which stays open for it.
+**Replaced.** See
+[the command line on the public API](plan-2026-08-22-fdu-cli-on-the-public-api.md)
+(`fdu-s74c`).
 
-- [ ] The same shim over the public Rust library API, with its own deviation file.
-  Sharper than the Python one: if it cannot be written without reaching into `cli.rs`,
-  then “the CLI invents nothing” is false and the library is missing something.
+This plan proposed a test-only shim over the public Rust library API, run against the
+corpus with its own deviation file.
+That does not survive scrutiny.
+The command line already *is* the Rust library’s consumer, in the same language, against
+the same API, calling the same renderer — so a second one produces an **empty**
+deviation file, which this very harness reads as “the shim never ran”, because an empty
+diff is what a fallthrough produces.
+The design did not fit the thing it was pointed at, and it would have been permanent
+dead weight besides.
 
-This is worth more now than when it was written.
-Phase 1 found seven definitions the CLI had copied from the library and five
-capabilities only the CLI could reach; a Rust-side shim is the instrument that would
-have caught them without a second language in the way.
+The question was right: can everything the command line does be done through the public
+API? A crate boundary decides it where a test could only sample it.
+Moving the CLI into its own crate makes the compiler answer on every build, and makes
+any future private need a visible act of making something public.
 
 ## Testing Strategy
 

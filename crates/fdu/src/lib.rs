@@ -55,7 +55,6 @@ pub mod classify;
 pub mod content;
 pub mod counters;
 mod engine_contract;
-#[cfg(feature = "cli")]
 mod execution;
 mod index;
 mod platform_tuning;
@@ -68,7 +67,10 @@ mod test_support;
 #[cfg(feature = "cli")]
 pub mod cli;
 
-#[cfg(feature = "cli")]
+// Ungated: rendering is not a command-line concern. It was behind `cli` only because it
+// took its ANSI colour types from clap, so the library could produce a report and not
+// print it -- and a display note added elsewhere on this branch called into here and
+// broke the no-default-features build, which is that gap showing itself.
 pub mod report_format;
 
 #[cfg(feature = "watch")]
@@ -91,11 +93,12 @@ pub use crate::engine_contract::{
 pub use crate::index::{
     ApplyOutcome, ApplyStats, ChildSnapshot, EntryId, ExtTally, Index, IndexHandle, RollUp, Since,
 };
-// Gated with the module it comes from. One-shot planning is an execution strategy rather
-// than a command-line concern, so this arguably belongs in the core build; moving it is a
-// feature-graph change and is left as its own decision.
-#[cfg(feature = "cli")]
-pub use crate::execution::{PerformanceSummary, prepare_report};
+// Ungated with report_format, for the same reason: one-shot planning is an execution
+// strategy, not a front end. A caller wanting one report without retaining an index was
+// previously required to compile the command line to get it (fdu-z7sp).
+pub use crate::execution::{
+    PerformanceSummary, prepare_report, prepare_report_with_scan_diagnostics,
+};
 pub use crate::scan::{ReconcileReport, ScanConfig, ScanOrder, ScanReport};
 #[cfg(feature = "watch")]
 pub use crate::watch_session::{Batch, Change, ChangeKind, Session};

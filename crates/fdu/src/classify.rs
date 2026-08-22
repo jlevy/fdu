@@ -173,7 +173,6 @@ pub const fn type_rule_fingerprint() -> u64 {
 ///
 /// Reports and caches retain the identifier; only terminal language views use this
 /// presentation layer. Unknown identifiers are returned unchanged.
-#[cfg(feature = "cli")]
 pub(crate) fn human_language_name(id: &str) -> &str {
     match id {
         "rust" => "Rust",

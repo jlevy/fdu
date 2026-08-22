@@ -195,12 +195,13 @@ pub fn prepare_report(
         .map(|(report, pending, performance, _diagnostics)| (report, pending, performance))
 }
 
-/// Execute a one-shot report and retain scan diagnostics when the compact plan permits it.
+/// Execute a one-shot report and retain scan diagnostics.
 ///
-/// This path exists for repository-controlled installed-command measurements. It is
-/// deliberately separate from [`prepare_report`] so ordinary CLI and library callers
-/// incur neither trace collection nor serialization work.
-pub(crate) fn prepare_report_with_scan_diagnostics(
+/// Public because the command line needs it and the command line is an ordinary consumer:
+/// it drives repository-controlled measurement of the installed binary. Kept separate
+/// from [`prepare_report`] so callers who do not want traces pay for neither collection
+/// nor serialization.
+pub fn prepare_report_with_scan_diagnostics(
     root: &Path,
     config: &OpenConfig,
     query: &Query,

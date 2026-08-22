@@ -15,7 +15,7 @@
 use std::fmt::Write as _;
 use std::path::Path;
 
-use clap::builder::styling::{AnsiColor, Style as AnsiStyle};
+use anstyle::{AnsiColor, Style as AnsiStyle};
 
 use crate::classify::{DetectionConfidence, DetectionSource, human_language_name};
 use crate::content::{CoverageReason, MetricValues};
@@ -423,8 +423,8 @@ fn bound_note(section: &Section) -> String {
     }
     format!(
         "  ({} of {}; --limit all for every one)",
-        crate::cli::human_count(shown as u64),
-        crate::cli::human_count(total as u64)
+        human_count(shown as u64),
+        human_count(total as u64)
     )
 }
 
@@ -1245,8 +1245,29 @@ fn bar(share: f64, color: bool) -> String {
     paint(&rendered, STYLE_BAR, color)
 }
 
-/// Render a byte count at human scale.
-pub(crate) fn human_bytes(bytes: u64) -> String {
+/// Render a count with thousands separators, the way every fdu report does.
+///
+/// Lived in the command line, and `report_format` called *into* it -- so the library
+/// depended on its own front end, which is the inverse of the rule that the CLI invents
+/// nothing. A crate boundary rejects that outright, which is how it was found.
+pub fn human_count(value: u64) -> String {
+    let digits = value.to_string();
+    let mut grouped = String::with_capacity(digits.len() + digits.len() / 3);
+    for (index, byte) in digits.bytes().enumerate() {
+        if index > 0 && (digits.len() - index) % 3 == 0 {
+            grouped.push(',');
+        }
+        grouped.push(char::from(byte));
+    }
+    grouped
+}
+
+/// Render a byte count at human scale, the way every fdu report does.
+///
+/// Public because a caller formatting fdu's numbers should not reimplement its unit
+/// rules: two spellings of one quantity inside a single tool is how a report and the
+/// line summarising it come to disagree.
+pub fn human_bytes(bytes: u64) -> String {
     const UNITS: [&str; 6] = ["B", "KiB", "MiB", "GiB", "TiB", "PiB"];
     // Integer arithmetic to the unit, then one bounded division for the tenths digit:
     // a byte count can exceed f64's exact-integer range, and a size that renders wrong

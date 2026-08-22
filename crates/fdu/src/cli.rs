@@ -25,6 +25,7 @@ use crate::query::{
     parse_size, parse_when, system_time_to_nanos,
 };
 use crate::report_format;
+use crate::report_format::human_count;
 use crate::{
     CachePolicy, EntryKind, OpenConfig, ScanConfig, default_cache_path, open_with_pending_save,
 };
@@ -1152,18 +1153,6 @@ fn human_rate(units: u64, elapsed_ns: u64) -> String {
         }
         _ => format!("{}G", scaled_decimal(u128::from(rate), 1_000_000_000, 1)),
     }
-}
-
-pub(crate) fn human_count(value: u64) -> String {
-    let digits = value.to_string();
-    let mut grouped = String::with_capacity(digits.len() + digits.len() / 3);
-    for (index, byte) in digits.bytes().enumerate() {
-        if index > 0 && (digits.len() - index) % 3 == 0 {
-            grouped.push(',');
-        }
-        grouped.push(char::from(byte));
-    }
-    grouped
 }
 
 fn human_duration(duration: Duration) -> String {
