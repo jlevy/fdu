@@ -3,15 +3,17 @@ type: is
 id: is-01m0nkj59jhwg19680g3b4zb6s
 title: "Write experiment-loop reference files: contract+schemas, statistics+verdicts, traps, worked examples"
 kind: task
-status: open
+status: closed
 priority: 1
-version: 2
+version: 3
 spec_path: docs/project/specs/active/plan-2026-08-22-experiment-loop-framework-extraction.md
 labels: []
 dependencies: []
 parent_id: is-01m0ncz1cxrczgbs2hdn1t5gab
 created_at: 2026-08-22T20:45:56.401Z
-updated_at: 2026-08-22T20:47:11.332Z
+updated_at: 2026-08-22T20:51:50.704Z
+closed_at: 2026-08-22T20:51:50.703Z
+close_reason: "Four reference files written: contract.md (349), statistics.md (148), traps.md (156), worked-examples.md"
 ---
 Four files under ~/.claude/skills/experiment-loop/references/.
 

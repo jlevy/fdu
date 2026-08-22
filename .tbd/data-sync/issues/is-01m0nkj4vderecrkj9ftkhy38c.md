@@ -3,15 +3,17 @@ type: is
 id: is-01m0nkj4vderecrkj9ftkhy38c
 title: "Draft experiment-loop SKILL.md: method core, campaign setup, round loop, record/resume/merge guidance"
 kind: task
-status: open
+status: closed
 priority: 1
-version: 2
+version: 3
 spec_path: docs/project/specs/active/plan-2026-08-22-experiment-loop-framework-extraction.md
 labels: []
 dependencies: []
 parent_id: is-01m0ncz1cxrczgbs2hdn1t5gab
 created_at: 2026-08-22T20:45:55.948Z
-updated_at: 2026-08-22T20:46:42.559Z
+updated_at: 2026-08-22T20:48:31.328Z
+closed_at: 2026-08-22T20:48:31.314Z
+close_reason: "SKILL.md drafted: method core, setup, round loop, both-halves recording, parallel merge, knobs, pointers"
 ---
 File: ~/.claude/skills/experiment-loop/SKILL.md (target <=300 lines).
 
