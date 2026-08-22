@@ -5,7 +5,7 @@ title: Close the Python/CLI parity gaps the harness found
 kind: epic
 status: open
 priority: 1
-version: 9
+version: 10
 labels: []
 dependencies: []
 child_order_hints:
@@ -17,8 +17,9 @@ child_order_hints:
   - is-01m0n9sccqby31wvdb6d9559qr
   - is-01m0nbkjftj3mzm51f91t2nwdb
   - is-01m0nbv330xhagsyc2ehtm7hha
+  - is-01m0ne12cwet7nwvwhrfgt31nr
 created_at: 2026-08-22T17:53:35.529Z
-updated_at: 2026-08-22T18:31:00.447Z
+updated_at: 2026-08-22T19:09:13.499Z
 ---
 The parity harness records 39 deviations across 126 sessions. Triage sorts them into seven causes, all but two fixable. Package is unreleased, so no backward compatibility constrains the fixes.
 
