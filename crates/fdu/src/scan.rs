@@ -250,9 +250,16 @@ impl ScanConfig {
     pub(crate) fn validate_for_watch_scope(&self, indexed: ScanScope) -> Result<()> {
         self.validate_for_scope(indexed)?;
         if self.max_depth.is_some() || self.one_filesystem {
-            return Err(Error::UnsupportedScanConfig(
-                "watch application for max_depth or one_filesystem requires event-scope filtering",
-            ));
+            // Says what to do instead, not only what is refused. The CLI carried this
+            // guidance and the library carried "requires event-scope filtering", which
+            // names the implementation rather than the user's next move -- so a library
+            // caller hitting the same wall got the jargon and the CLI user got the help.
+            return Err(Error::UnsupportedScanConfig(concat!(
+                "watching requires full scope: max_depth and one_filesystem narrow what is ",
+                "observed, and a watcher cannot filter backend events against that boundary. ",
+                "Selection such as depth, include, and modified_since does work while ",
+                "watching, because it filters the retained index rather than narrowing the scan"
+            )));
         }
         Ok(())
     }

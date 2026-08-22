@@ -1425,9 +1425,38 @@ pub fn render_cache_status(statuses: &[crate::CacheStatus], format: Format) -> S
             }
             out
         }
-        // Text is rendered by the CLI, which owns the human layout; JSON is the default
-        // machine shape here.
-        Format::Json | Format::Text => {
+        // The human layout lives here beside every other human layout. It used to live in
+        // the CLI, which meant the only way to print cache status the way fdu prints it
+        // was to be the CLI: the Python API returned CacheStatus values nothing could
+        // render, so the parity shim printed repr() and nine sessions differed (fdu-1kw3).
+        Format::Text => {
+            // Root scope synthesises a status for the path a snapshot *would* occupy, so
+            // a tree that has never been cached still yields one unrecognized entry. A
+            // request whose every candidate is unrecognized reports no snapshots rather
+            // than describing absent files, or the human and machine answers would
+            // disagree about whether a cache exists.
+            let statuses: &[crate::CacheStatus] =
+                if statuses.iter().all(|status| !status.is_recognized()) { &[] } else { statuses };
+            if statuses.is_empty() {
+                return "No cached snapshots.".to_string();
+            }
+            statuses
+                .iter()
+                .map(|status| match &status.snapshot {
+                    Some(info) => format!(
+                        "{}  {} entries, {} metadata bytes, {} content bytes  {}",
+                        status.path.display(),
+                        info.entries,
+                        status.bytes,
+                        status.content_bytes.unwrap_or(0),
+                        info.root.display()
+                    ),
+                    None => format!("{}  unrecognized", status.path.display()),
+                })
+                .collect::<Vec<_>>()
+                .join("\n")
+        }
+        Format::Json => {
             let rows = statuses.iter().map(row).collect::<Vec<_>>().join(",\n    ");
             if statuses.is_empty() {
                 "{\n  \"caches\": []\n}".to_string()

@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from types import TracebackType
-from typing import Any
+from typing import Any, cast
 
 from . import _native
 from ._models import (
@@ -21,6 +21,7 @@ from ._models import (
     ChangeSet,
     Child,
     EntryKind,
+    Format,
     Provenance,
     Query,
     RefreshResult,
@@ -72,7 +73,7 @@ class FilesystemError(OSError, FduError):
         return reason
 
 
-def _bound(value: int | Bound | None) -> str | None:
+def _bound(value: int | Bound | str | None) -> str | None:
     if value is None:
         return None
     return value.value if isinstance(value, Bound) else str(value)
@@ -329,6 +330,20 @@ def scan(
         analysis_workers=analysis_options.workers,
     )
     return Index(native)
+
+
+def render_cache_status(statuses: Sequence[CacheStatus], format: Format = Format.TEXT) -> str:
+    """Render cache statuses exactly as ``fdu --cache-status`` prints them.
+
+    The same renderer the CLI uses, in every format, so a caller holding
+    :class:`CacheStatus` values can print what fdu prints instead of inventing a layout
+    that will drift from it.
+    """
+
+    return cast(
+        str,
+        _call(_native.render_cache_status, [str(status.path) for status in statuses], str(format)),
+    )
 
 
 def cache_path(root: str | Path) -> Path | None:

@@ -127,6 +127,19 @@ class Analysis(StrEnum):
     ALL = "all"
 
 
+class CacheScope(StrEnum):
+    """Which snapshots a cache-lifecycle request covers.
+
+    The Python API distinguishes these by function -- `cache_status` and `clear_cache`
+    for one root, `list_caches` and `clear_all_caches` for the directory -- but the
+    vocabulary is shared with the CLI's `--cache-status` and `--cache-clear`, so it is
+    named here and asserted against `contract()` like every other shared vocabulary.
+    """
+
+    ROOT = "root"
+    ALL = "all"
+
+
 class Format(StrEnum):
     """How a report is serialized.
 
@@ -191,8 +204,11 @@ class Selection:
     modified_since: datetime | str | None = None
     modified_before: datetime | str | None = None
     kinds: tuple[EntryKind, ...] = ()
-    depth: int | Bound | None = None
-    limit: int | Bound | None = None
+    #: Accepts a raw token as well as an int or `Bound`, so a caller passing user input
+    #: straight through gets the library's own grammar and wording rather than having to
+    #: pre-validate and invent a second opinion about what is acceptable.
+    depth: int | Bound | str | None = None
+    limit: int | Bound | str | None = None
     sort: SortKey | None = None
     reverse: bool = False
     size: SizeMetric = SizeMetric.ALLOCATED

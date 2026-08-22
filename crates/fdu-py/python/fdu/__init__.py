@@ -14,6 +14,7 @@ from ._api import (
     clear_cache,
     list_caches,
     open,
+    render_cache_status,
     scan,
 )
 from ._api import (
@@ -26,6 +27,7 @@ from ._models import (
     Analyzer,
     Bound,
     CachePolicy,
+    CacheScope,
     CacheStatus,
     Change,
     ChangeKind,
@@ -76,6 +78,7 @@ __all__ = [
     "Analyzer",
     "Bound",
     "CachePolicy",
+    "CacheScope",
     "CacheStatus",
     "Change",
     "ChangeKind",
@@ -128,6 +131,7 @@ __all__ = [
     "clear_cache",
     "list_caches",
     "open",
+    "render_cache_status",
     "scan",
 ]
 

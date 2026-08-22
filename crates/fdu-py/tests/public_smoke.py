@@ -220,6 +220,8 @@ def main() -> None:
     assert contract["entry_kinds"] == [value.value for value in fdu.EntryKind]
     assert contract["size_metrics"] == [value.value for value in fdu.SizeMetric]
     assert contract["sort_keys"] == [value.value for value in fdu.SortKey]
+    assert contract["cache_scopes"] == [value.value for value in fdu.CacheScope]
+    assert contract["formats"] == [value.value for value in fdu.Format]
 
     provenance = index.provenance("src")
     assert provenance is not None

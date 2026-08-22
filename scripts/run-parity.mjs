@@ -102,13 +102,23 @@ const HEADER = `# Deviations: the Python surface against the Rust CLI's recorded
 #     -line               what the Rust CLI produced
 #     +line               what the Python surface produced
 #
-# One difference is deliberate: --version names the surface, so the shim can never be
-# mistaken for the binary. Every other ✗ is a tracked gap in the Python API, not an
-# accepted difference, and each has a bead:
+# Three classes of ✗ are legitimate. Everything else is a tracked gap with a bead.
 #
-#   fdu-1kw3  cache status and watch records have no renderer
-#   fdu-gw5b  the binding's copy of the 'full' diagnostic drifted
-#   fdu-jozr  list grammar (duplicates, empty entries) is not exposed
+# 1. --version names the surface. Deliberate, and load-bearing: it is what keeps this
+#    file non-empty, so an empty diff means the shim never ran.
+# 2. Diagnostics name the surface's own parameter -- "invalid depth" against the CLI's
+#    "invalid --depth". There is no --depth in Python. Everything after the label is
+#    identical, which is the part that encodes behaviour, and the harness proves it
+#    matches word for word. Tracked as fdu-a823 for the record, not as a defect.
+# 3. --docs and --skill are static documents the package does not carry, and --help is
+#    clap's own rendering. The whole skip list, and it is three (fdu-2b53).
+#
+# Remaining tracked gaps:
+#
+#   fdu-4msv  the one-shot cache contract is not expressible from Python (7 sessions)
+#   fdu-1kw3  watch records have no renderer (2 sessions)
+#   fdu-x8u6  display notes carry run telemetry the schema excludes (1 session)
+#   fdu-jozr  list grammar (duplicates, empty entries) is not exposed (2 sessions)
 #
 # The performance footer is excluded from comparison rather than recorded: it reports
 # walk telemetry the report schema deliberately excludes, so the Python surface cannot

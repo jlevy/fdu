@@ -953,36 +953,8 @@ impl Cli {
         statuses: &[crate::CacheStatus],
     ) -> anyhow::Result<()> {
         let format = self.parse_format().map_err(|e| usage(&e))?;
-        // Root scope synthesises a status for the path a snapshot *would* occupy, so a
-        // tree that has never been cached still yields one unrecognized entry. Both
-        // renderings resolve that the same way, or the human and machine answers would
-        // disagree about whether a cache exists: a request whose every candidate is
-        // unrecognized reports no snapshots rather than describing absent files.
-        let statuses: &[crate::CacheStatus] =
-            if statuses.iter().all(|status| !status.is_recognized()) { &[] } else { statuses };
-        if format == report_format::Format::Text {
-            if statuses.is_empty() {
-                writeln!(out, "No cached snapshots.")?;
-                return Ok(());
-            }
-            for status in statuses {
-                match &status.snapshot {
-                    Some(info) => writeln!(
-                        out,
-                        "{}  {} entries, {} metadata bytes, {} content bytes  {}",
-                        status.path.display(),
-                        info.entries,
-                        status.bytes,
-                        status.content_bytes.unwrap_or(0),
-                        info.root.display()
-                    )?,
-                    None => writeln!(out, "{}  unrecognized", status.path.display())?,
-                }
-            }
-            return Ok(());
-        }
-
-        // Machine output gets the same facts under the schema envelope's conventions.
+        // Every format, human included, comes from the one renderer. While the CLI kept
+        // the text layout to itself, no other caller could print what fdu prints.
         writeln!(out, "{}", report_format::render_cache_status(statuses, format))?;
         Ok(())
     }

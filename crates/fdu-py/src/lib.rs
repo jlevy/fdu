@@ -1107,6 +1107,28 @@ impl PyWatch {
     }
 }
 
+/// Render cache statuses the way the CLI does, in any format.
+///
+/// The human layout lives in `report_format` beside every other human layout, so this is
+/// the same renderer `--cache-status` uses rather than a second copy. Without it a caller
+/// holding `CacheStatus` values had no way to print them as fdu prints them, and the
+/// parity shim fell back to `repr()`.
+///
+/// Takes the statuses as paths rather than as reconstructed values: re-reading the files
+/// is cheap, keeps one definition of what a status *is*, and means a caller cannot hand
+/// the renderer a status the engine never produced.
+#[pyfunction]
+#[pyo3(signature = (paths, format = "text"))]
+#[allow(clippy::needless_pass_by_value)]
+fn render_cache_status(paths: Vec<PathBuf>, format: &str) -> PyResult<String> {
+    let format = parse_format(format)?;
+    let statuses = paths
+        .iter()
+        .map(|path| fdu::cache_status(path).map_err(to_py_err))
+        .collect::<PyResult<Vec<_>>>()?;
+    Ok(fdu::report_format::render_cache_status(&statuses, format))
+}
+
 /// One cache file's status as a dict.
 fn cache_status_dict<'py>(
     py: Python<'py>,
@@ -1321,6 +1343,7 @@ fn contract(py: Python<'_>) -> PyResult<Bound<'_, PyDict>> {
     contract.set_item("entry_kinds", ["file", "dir", "symlink", "other"])?;
     contract.set_item("size_metrics", ["allocated", "apparent"])?;
     contract.set_item("sort_keys", ["size", "count", "mtime", "name"])?;
+    contract.set_item("cache_scopes", ["root", "all"])?;
     Ok(contract)
 }
 
@@ -1332,6 +1355,7 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(open, m)?)?;
     m.add_function(wrap_pyfunction!(cache_path, m)?)?;
     m.add_function(wrap_pyfunction!(cache_status, m)?)?;
+    m.add_function(wrap_pyfunction!(render_cache_status, m)?)?;
     m.add_function(wrap_pyfunction!(list_caches, m)?)?;
     m.add_function(wrap_pyfunction!(clear_cache, m)?)?;
     m.add_function(wrap_pyfunction!(clear_all_caches, m)?)?;

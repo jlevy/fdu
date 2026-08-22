@@ -82,6 +82,14 @@ def parse_views(value: str) -> tuple[fdu.View, ...]:
     return tuple(views)
 
 
+def parse_scope(value: str, flag: str) -> str:
+    try:
+        return str(fdu.CacheScope(value))
+    except ValueError:
+        known = " or ".join(scope.value for scope in fdu.CacheScope)
+        raise UsageError(f'invalid {flag} "{value}": expected {known}') from None
+
+
 def parse_size(value: str) -> fdu.SizeMetric:
     try:
         return fdu.SizeMetric(value)
@@ -98,13 +106,17 @@ def parse_sort(value: str) -> fdu.SortKey:
         raise UsageError(f'invalid --sort "{value}": expected one of {known}') from None
 
 
-def parse_bound(value: str) -> fdu.Bound | int:
+def parse_bound(value: str) -> fdu.Bound | int | str:
+    """Pass the token through; the library owns the grammar and the wording.
+
+    This used to validate here and say "expected a number or all", which is neither what
+    the library says nor what the CLI says -- a third opinion invented by the shim. The
+    only correct move is to hand the token over and let the one grammar reject it.
+    """
+
     if value == "all":
         return fdu.Bound.ALL
-    try:
-        return int(value)
-    except ValueError:
-        raise UsageError(f'invalid bound "{value}": expected a number or all') from None
+    return value
 
 
 class Args:
@@ -218,9 +230,9 @@ def parse_args(argv: list[str]) -> Args:
         elif flag == "--interval":
             args.interval = _duration(take())
         elif flag == "--cache-status":
-            args.cache_status = inline if separator else "root"
+            args.cache_status = parse_scope(inline if separator else "root", flag)
         elif flag == "--cache-clear":
-            args.cache_clear = inline if separator else "root"
+            args.cache_clear = parse_scope(inline if separator else "root", flag)
         else:
             raise UsageError(f"unexpected argument '{token}' found")
 
@@ -273,20 +285,48 @@ def build_query(args: Args) -> fdu.Query:
 
 def run_cache_lifecycle(args: Args) -> int:
     root = Path(args.root) if args.root else Path(".")
-    if args.cache_status is not None:
-        entries = (
-            fdu.list_caches(root)
-            if args.cache_status == "all"
-            else tuple(s for s in (fdu.cache_status(root),) if s is not None)
-        )
-        for entry in entries:
-            print(entry)
+
     if args.cache_clear is not None:
         if args.cache_clear == "all":
-            print(fdu.clear_all_caches(root))
+            directory = _cache_directory(root)
+            if directory is None:
+                print("Cache already empty.")
+            else:
+                # Echoed before acting, so a destructive flag always says where it points.
+                print(f"Cache directory: {directory}")
+                removed = fdu.clear_all_caches(directory)
+                if removed == 0:
+                    print("Cache already empty.")
+                else:
+                    noun = "snapshot" if removed == 1 else "snapshots"
+                    print(f"Cache cleared: {removed} {noun}.")
         else:
-            print(fdu.clear_cache(root))
+            path = fdu.cache_path(root)
+            removed = fdu.clear_cache(root)
+            if path is not None:
+                print(f"Cache file: {path}")
+            print("Cache cleared." if removed else "Cache already empty.")
+
+    if args.cache_status is not None:
+        statuses = _statuses(root, args.cache_status)
+        # The one renderer, in every format. A shim formatting these itself would be
+        # testing its own layout rather than the API's.
+        print(fdu.render_cache_status(statuses, args.format))
+
     return 0
+
+
+def _cache_directory(root: Path) -> Path | None:
+    path = fdu.cache_path(root)
+    return path.parent if path is not None else None
+
+
+def _statuses(root: Path, scope: str) -> tuple[fdu.CacheStatus, ...]:
+    if scope == "all":
+        directory = _cache_directory(root)
+        return fdu.list_caches(directory) if directory is not None else ()
+    status = fdu.cache_status(root)
+    return (status,) if status is not None else ()
 
 
 def run_watch(args: Args) -> int:
