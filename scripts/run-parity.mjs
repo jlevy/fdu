@@ -187,6 +187,12 @@ function normalise(text) {
     .replace(new RegExp(root.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '[ROOT]')
     .replace(/[^\s'"]*\/(tryscript|fdu)-[A-Za-z0-9._-]+/g, '[SANDBOX]')
     .replace(/[0-9a-f]{16}\.fdu/g, '[HASH].fdu')
+    // A cache snapshot's encoded size depends on the platform that wrote it (797 bytes
+    // on macOS, 745 on Linux for the same tree), so it cannot be a recorded constant.
+    // Only the surfaces' agreement is under test here, not the snapshot's size. Matched
+    // per line because the repr embeds PosixPath(...), whose ')' defeats a character
+    // class trying to stay inside the outer call.
+    .replace(/^.*CacheStatus\(.*$/gm, (line) => line.replace(/(?<!content_)\bbytes=\d+/g, 'bytes=[N]'))
     .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z/g, '[RFC3339]')
     .replace(/("(?:newest_)?mtime_ns":\s*)\d+/g, '$1[MTIME_NS]')
     .replace(/\b\d+(\.\d+)?\s?(ns|µs|ms|s)\b/g, '[TIME]')

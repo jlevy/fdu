@@ -295,7 +295,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-lifecycle.tryscript.md
   ✗ Status Before Anything Is Cached
 @@ -1,1 +1,1 @@
 -No cached snapshots.
-+CacheStatus(path=PosixPath('.cache/fdu/[HASH].fdu'), bytes=0, content_bytes=None, recognized=False, root=None, entries=None, max_depth=None, one_filesystem=None)
++CacheStatus(path=PosixPath('.cache/fdu/[HASH].fdu'), bytes=[N], content_bytes=None, recognized=False, root=None, entries=None, max_depth=None, one_filesystem=None)
   ✓ A Report Leaves a Snapshot Behind
   ✗ The Compact Summary Retains Nothing, and Cache-Only Says So
 @@ -1,2 +1,1 @@
@@ -306,7 +306,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-lifecycle.tryscript.md
   ✗ The Compact Summary Retains Nothing, and Cache-Only Says So
 @@ -1,1 +1,1 @@
 -No cached snapshots.
-+CacheStatus(path=PosixPath('.cache/fdu/[HASH].fdu'), bytes=797, content_bytes=None, recognized=True, root=PosixPath('[SANDBOX]/project'), entries=10, max_depth=None, one_filesystem=False)
++CacheStatus(path=PosixPath('.cache/fdu/[HASH].fdu'), bytes=[N], content_bytes=None, recognized=True, root=PosixPath('[SANDBOX]/project'), entries=10, max_depth=None, one_filesystem=False)
   ✗ The Compact Summary Retains Nothing, and Cache-Only Says So
     Expected exit code 1, got 0
 @@ -1,1 +1,1 @@
@@ -317,7 +317,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-lifecycle.tryscript.md
   ✗ Status Maps a Hash-Named File Back to Its Tree
 @@ -1,1 +1,1 @@
 -[CACHE_FILE]  10 entries, [BYTES] metadata bytes, 0 content bytes  [SCAN_PATH]
-+CacheStatus(path=PosixPath('.cache/fdu/[HASH].fdu'), bytes=797, content_bytes=None, recognized=True, root=PosixPath('[SANDBOX]/project'), entries=10, max_depth=None, one_filesystem=False)
++CacheStatus(path=PosixPath('.cache/fdu/[HASH].fdu'), bytes=[N], content_bytes=None, recognized=True, root=PosixPath('[SANDBOX]/project'), entries=10, max_depth=None, one_filesystem=False)
   ✗ Status Renders Through the Format Axis
 @@ -1,5 +1,1 @@
 -{
@@ -325,7 +325,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-lifecycle.tryscript.md
 -    {"path": "[CACHE_FILE]", "bytes": [BYTES], "content_bytes": null, "recognized": true, "root": "[SCAN_PATH]", "entries": 10}
 -  ]
 -}
-+CacheStatus(path=PosixPath('.cache/fdu/[HASH].fdu'), bytes=797, content_bytes=None, recognized=True, root=PosixPath('[SANDBOX]/project'), entries=10, max_depth=None, one_filesystem=False)
++CacheStatus(path=PosixPath('.cache/fdu/[HASH].fdu'), bytes=[N], content_bytes=None, recognized=True, root=PosixPath('[SANDBOX]/project'), entries=10, max_depth=None, one_filesystem=False)
   ✗ Clearing Echoes the Target Before Acting
 @@ -1,2 +1,1 @@
 -Cache file: [CACHE_FILE]
@@ -342,13 +342,13 @@ FAIL [ROOT]/tests/parity/.corpus/cli-lifecycle.tryscript.md
 -Cache file: [CACHE_FILE]
 -Cache cleared.
 -No cached snapshots.
-+CacheStatus(path=PosixPath('.cache/fdu/[HASH].fdu'), bytes=797, content_bytes=None, recognized=True, root=PosixPath('[SANDBOX]/project'), entries=10, max_depth=None, one_filesystem=False)
++CacheStatus(path=PosixPath('.cache/fdu/[HASH].fdu'), bytes=[N], content_bytes=None, recognized=True, root=PosixPath('[SANDBOX]/project'), entries=10, max_depth=None, one_filesystem=False)
 +True
   ✗ An Unknown Scope Names Both Accepted Values
     Expected exit code 2, got 0
 @@ -1,1 +1,1 @@
 -fdu: invalid --cache-status "sometimes": expected root or all
-+CacheStatus(path=PosixPath('.cache/fdu/[HASH].fdu'), bytes=0, content_bytes=None, recognized=False, root=None, entries=None, max_depth=None, one_filesystem=None)
++CacheStatus(path=PosixPath('.cache/fdu/[HASH].fdu'), bytes=[N], content_bytes=None, recognized=False, root=None, entries=None, max_depth=None, one_filesystem=None)
 FAIL [ROOT]/tests/parity/.corpus/cli-overview.tryscript.md
   ✗ An Explicit Path Gives a Useful Project-Shaped Report
 @@ -1,7 +1,8 @@
