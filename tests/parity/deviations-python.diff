@@ -41,7 +41,7 @@
 # This file shrinks as the API closes. Extra hunks mean drift; missing hunks mean a gap
 # was fixed and the file should be re-recorded so the change is visible in review.
 
-# 29 sessions differ, and every one of them has a named cause.
+# 28 sessions differ, and every one of them has a named cause.
 #
 #  11  Each surface names its own parameter  [surface-label]
 #      There is no --view or --analyze in Python, so its diagnostics name the parameter.
@@ -76,7 +76,7 @@
 #      does not -- so cache-only afterwards finds one where the CLI finds none. Tracked as
 #      fdu-4msv: the gap is that Python cannot ASK for the one-shot contract.
 #
-#   4  Output carrying walk telemetry the report schema excludes  [run-telemetry]
+#   3  Output carrying walk telemetry the report schema excludes  [run-telemetry]
 #      A note quoting how many bytes analysis read, or the performance footer itself.
 #      Both are telemetry about the run rather than facts about the report, and the
 #      envelope deliberately carries none, so a Report cannot reproduce them (fdu-x8u6).
@@ -286,21 +286,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
        59 B  ██░░░░░░░░    23%    docs (2 files)
        22 B  █░░░░░░░░░     9%    data (1 file)
 -note: --analyze lines,code,words read 176 B; no selected view displays content metrics — try --view families, languages, or all
-  ✗ Every View One Walk Can Answer
-@@ -23,11 +23,10 @@
-       39 B   50.6%  Python  1 file
-       38 B   49.4%  Rust    1 file
- LARGEST  (2 of 7; --limit all for every one)
--80 B  assets[SEP]logo.png
--42 B  docs[SEP]guide.md
-+80 B  assets/logo.png
-+42 B  docs/guide.md
- RECENT  (2 of 7; --limit all for every one)
--[RFC3339]  assets[SEP]late.bin.txt
--[RFC3339]  docs[SEP]notes.txt
--note: omitted documents — requires content analysis: add --analyze lines, code, words, or all
-+[RFC3339]  assets/late.bin.txt
-+[RFC3339]  docs/notes.txt
+  ✓ Every View One Walk Can Answer
   ✓ Every View One Walk Can Answer
   ✗ Totals Name The Whole Axis
 @@ -1,1 +1,1 @@

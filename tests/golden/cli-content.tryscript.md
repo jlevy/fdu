@@ -562,8 +562,8 @@ LARGEST  (2 of 7; --limit all for every one)
 RECENT  (2 of 7; --limit all for every one)
 [RFC3339]  assets[SEP]late.bin.txt
 [RFC3339]  docs[SEP]notes.txt
-Performance: walked 7 files / 256 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 note: omitted documents — requires content analysis: add --analyze lines, code, words, or all
+Performance: walked 7 files / 256 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 

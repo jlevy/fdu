@@ -365,7 +365,7 @@ impl PyIndex {
         if words_per_page == 0 {
             return Err(PyValueError::new_err("words_per_page must be positive"));
         }
-        let query = Query { selection, views, words_per_page };
+        let query = Query { selection, views, omitted_views: Vec::new(), words_per_page };
         query.validate_analysis(self.analysis.profile).map_err(PyValueError::new_err)?;
 
         // The index is cloned into the session: a watcher owns its own handle, so closing
@@ -576,17 +576,17 @@ impl PyIndex {
         if let Some(value) = sort {
             selection.sort = Some(parse_sort(value)?);
         }
-        let views = match views {
+        let (views, omitted_views) = match views {
             Some(values) => resolve_views(&values, self.analysis.profile)?,
             // Derived, not fixed: a request that paid to read files must display
             // what it read, which is what the CLI has done since the content axis
             // landed. A fixed `tree` here reproduced the defect that axis removed.
-            None => vec![ViewSpec::default_for(self.analysis.profile)],
+            None => (vec![ViewSpec::default_for(self.analysis.profile)], Vec::new()),
         };
         if words_per_page == 0 {
             return Err(PyValueError::new_err("words_per_page must be positive"));
         }
-        let query = Query { selection, views, words_per_page };
+        let query = Query { selection, views, omitted_views, words_per_page };
         query.validate_analysis(self.analysis.profile).map_err(PyValueError::new_err)?;
         let provenance = Provenance {
             scan_started_at: self.scan_started_at,
@@ -963,16 +963,17 @@ fn parse_format(value: &str) -> PyResult<fdu::report_format::Format> {
 /// `full` names the whole report rather than one projection, so it cannot be combined.
 /// The Python `View` enum offers it, so the binding must honour it — it previously listed
 /// `full` as valid in its error message while rejecting it.
-fn resolve_views(values: &[String], analysis: AnalysisSet) -> PyResult<Vec<ViewSpec>> {
+fn resolve_views(
+    values: &[String],
+    analysis: AnalysisSet,
+) -> PyResult<(Vec<ViewSpec>, Vec<ViewSpec>)> {
     // The binding used to carry its own copy of this axis: the `full` expansion, the
     // exclusivity rule, and the default. Each drifted -- the exclusivity message lost a
     // clause (fdu-gw5b), the view order fell out of step (fdu-ggux), and the list grammar
     // was never here at all, so ["tree", "tree"] was a silent no-op where the CLI calls it
     // a typo (fdu-jozr). One resolver now, named as the Python API spells the axis.
     let spec = values.join(",");
-    let (selected, _omitted) =
-        ViewSpec::resolve(Some(&spec), analysis, "view").map_err(PyValueError::new_err)?;
-    Ok(selected)
+    ViewSpec::resolve(Some(&spec), analysis, "view").map_err(PyValueError::new_err)
 }
 
 /// Parse a view name, through the library's own grammar.

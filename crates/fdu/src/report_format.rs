@@ -172,6 +172,13 @@ fn render_text(report: &Report, color: bool) -> String {
             Section::Summary(row) => render_text_summary(&mut out, row, report.size),
         }
     }
+    // Remarks about the report, after the report and before the caller's own epilogue.
+    // These used to print after the CLI's performance footer, which read as though
+    // something followed the terminator; and living in the CLI meant only the CLI could
+    // tell anyone a view had been dropped (fdu-x8u6).
+    for note in &report.notes {
+        let _ = writeln!(out, "{}", paint(note, STYLE_TELEMETRY, color));
+    }
     out
 }
 
@@ -1134,18 +1141,9 @@ fn view_header(view: ViewSpec) -> &'static str {
 
 /// Stable wire label for a view.
 pub(crate) fn view_label(view: ViewSpec) -> &'static str {
-    match view {
-        ViewSpec::Tree => "tree",
-        ViewSpec::Types => "types",
-        ViewSpec::Extensions => "extensions",
-        ViewSpec::Families => "families",
-        ViewSpec::Languages => "languages",
-        ViewSpec::Documents => "documents",
-        ViewSpec::Files => "files",
-        ViewSpec::Largest => "largest",
-        ViewSpec::Recent => "recent",
-        ViewSpec::Summary => "summary",
-    }
+    // One spelling, in the type that owns it. This was a second copy of the same ten arms,
+    // which is how `full` and the view order drifted elsewhere on this branch.
+    view.label()
 }
 
 fn report_schema(report: &Report) -> &'static str {

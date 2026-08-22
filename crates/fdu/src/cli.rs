@@ -521,7 +521,7 @@ impl Cli {
         let analysis = self.parse_analysis().map_err(|error| usage(&error))?;
         let views =
             resolve_views(self.view.as_deref(), analysis.profile).map_err(|error| usage(&error))?;
-        let query = self.parse_query(&views.selected).map_err(|error| usage(&error))?;
+        let query = self.parse_query(&views).map_err(|error| usage(&error))?;
         let path = self.path.as_deref().ok_or_else(|| {
             usage(&anyhow::anyhow!(
                 "missing PATH: specify the directory to summarize, for example `fdu .`"
@@ -993,10 +993,10 @@ impl Cli {
     fn resolved_query(&self) -> anyhow::Result<Query> {
         let analysis = self.parse_analysis()?;
         let views = resolve_views(self.view.as_deref(), analysis.profile)?;
-        self.parse_query(&views.selected)
+        self.parse_query(&views)
     }
 
-    fn parse_query(&self, views: &[ViewSpec]) -> anyhow::Result<Query> {
+    fn parse_query(&self, views: &ResolvedViews) -> anyhow::Result<Query> {
         let now = SystemTime::now();
 
         let mut selection = Selection {
@@ -1031,11 +1031,12 @@ impl Cli {
             selection.sort = Some(parse_sort(sort)?);
         }
 
-        let views = views.to_vec();
+        let omitted_views = views.omitted.clone();
+        let views = views.selected.clone();
         if self.words_per_page == 0 {
             anyhow::bail!("invalid --words-per-page 0: expected a positive integer");
         }
-        Ok(Query { selection, views, words_per_page: self.words_per_page })
+        Ok(Query { selection, views, omitted_views, words_per_page: self.words_per_page })
     }
 
     fn parse_analysis(&self) -> anyhow::Result<AnalysisRequest> {
@@ -1283,28 +1284,19 @@ fn resolve_views(spec: Option<&str>, profile: AnalysisSet) -> anyhow::Result<Res
 /// carry neither, because the `reports` array already enumerates exactly which views were
 /// produced — a consumer reads the omission from what is absent.
 fn display_notes(views: &ResolvedViews, profile: AnalysisSet, bytes_read: u64) -> Vec<String> {
-    let mut notes = Vec::new();
-    if !views.omitted.is_empty() {
-        let names = views
-            .omitted
-            .iter()
-            .map(|view| report_format::view_label(*view))
-            .collect::<Vec<_>>()
-            .join(", ");
-        notes.push(format!(
-            "note: omitted {names} — requires content analysis: add --analyze lines, code, words, or all"
-        ));
-    }
+    // Only the note that needs telemetry. The omission note is a fact about the report and
+    // travels on it, so every surface states it rather than just this one (fdu-x8u6).
+    //
     // Never an error: warming the content sidecar so a later run is warm is a supported
     // use, and `--cache`-aware callers depend on it.  Silence would hide the cost instead.
     if profile.is_enabled() && !views.selected.iter().any(|view| view_displays_analysis(*view)) {
-        notes.push(format!(
+        return vec![format!(
             "note: --analyze {} read {}; no selected view displays content metrics — try --view families, languages, or all",
             profile.labels().join(","),
             report_format::human_bytes(bytes_read),
-        ));
+        )];
     }
-    notes
+    Vec::new()
 }
 
 /// Parse one `--kind` token.
@@ -2162,15 +2154,15 @@ mod tests {
         assert!(combined.contains("cannot be combined"), "{combined}");
     }
 
-    /// Both directions of the display contract, stated as notes rather than errors.
+    /// The display contract has two directions, and they now live in two places.
+    ///
+    /// What a request could not display is a fact about the report, so it travels on the
+    /// report and every surface states it. What a request paid to read is telemetry about
+    /// the run, which the report envelope deliberately excludes, so it stays here with the
+    /// performance footer. Splitting them is what let the Python surface say the first
+    /// (fdu-x8u6); this pins each to its own home.
     #[test]
-    fn the_display_contract_reports_omissions_and_unspent_reads() {
-        let omitted = resolve_views(Some("full"), AnalysisSet::NONE).expect("resolve");
-        let notes = display_notes(&omitted, AnalysisSet::NONE, 0);
-        assert_eq!(notes.len(), 1, "{notes:?}");
-        assert!(notes[0].contains("omitted documents"), "{notes:?}");
-        assert!(notes[0].contains("--analyze lines, code, words, or all"), "{notes:?}");
-
+    fn the_display_contract_reports_unspent_reads_from_the_cli() {
         let unspent = resolve_views(Some("tree"), AnalysisSet::ALL).expect("resolve");
         let notes = display_notes(&unspent, AnalysisSet::ALL, 1_200);
         assert_eq!(notes.len(), 1, "{notes:?}");
@@ -2184,6 +2176,14 @@ mod tests {
         // Neither does a metadata-only run, which bought nothing to display.
         let plain = resolve_views(None, AnalysisSet::NONE).expect("resolve");
         assert!(display_notes(&plain, AnalysisSet::NONE, 0).is_empty());
+
+        // And the omission note is no longer the CLI's to make, in either direction.
+        let omitted = resolve_views(Some("full"), AnalysisSet::NONE).expect("resolve");
+        assert!(!omitted.omitted.is_empty(), "full without analyzers must drop documents");
+        assert!(
+            display_notes(&omitted, AnalysisSet::NONE, 0).is_empty(),
+            "the omission travels on the report now"
+        );
     }
 
     /// Principle 13, the direction that protects the user: no view, at any content

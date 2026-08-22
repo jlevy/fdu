@@ -287,13 +287,24 @@ pub struct Query {
     pub selection: Selection,
     /// Which views to report, in the order they were requested.
     pub views: Vec<ViewSpec>,
+    /// Views `full` had to drop because the requested analyzers cannot answer them.
+    ///
+    /// Carried so the report can name the omission rather than leave a caller to notice a
+    /// section is missing. It lived in the CLI, which meant only the CLI could tell anyone
+    /// (fdu-x8u6); `ViewSpec::resolve` returns it and this is where it lands.
+    pub omitted_views: Vec<ViewSpec>,
     /// Fixed logical-word denominator used to derive page equivalents after aggregation.
     pub words_per_page: u64,
 }
 
 impl Default for Query {
     fn default() -> Self {
-        Self { selection: Selection::default(), views: Vec::new(), words_per_page: 250 }
+        Self {
+            selection: Selection::default(),
+            views: Vec::new(),
+            omitted_views: Vec::new(),
+            words_per_page: 250,
+        }
     }
 }
 
@@ -631,6 +642,13 @@ pub struct Report {
     pub scope: ScanScope,
     /// Absolute path of the indexed root.
     pub root: PathBuf,
+    /// Remarks about the report itself, in the order a renderer should print them.
+    ///
+    /// Facts about what was asked for and what could be answered -- not telemetry about
+    /// the run, which the schema deliberately excludes. Deliberately not serialised: a
+    /// machine consumer reads the omission from which sections are absent, and adding a
+    /// field to the envelope would be a schema change for something only humans read.
+    pub notes: Vec<String>,
     /// Which size metric this report answers in.
     ///
     /// Carried on the report so a renderer shows the same number the ordering used;
@@ -641,6 +659,23 @@ pub struct Report {
     pub analysis: Option<ContentReportMetadata>,
     /// One section per requested view, in request order.
     pub sections: Vec<Section>,
+}
+
+/// Remarks a report makes about itself.
+///
+/// Only what the request and the resolved views can establish. The CLI also prints a note
+/// quoting how many bytes analysis read, which is walk telemetry the report envelope does
+/// not carry, so that one stays with the performance footer where the rest of the run's
+/// telemetry lives.
+fn display_notes(query: &Query) -> Vec<String> {
+    if query.omitted_views.is_empty() {
+        return Vec::new();
+    }
+    let names: Vec<&str> = query.omitted_views.iter().map(|view| view.label()).collect();
+    vec![format!(
+        "note: omitted {} — requires content analysis: add --analyze lines, code, words, or all",
+        names.join(", ")
+    )]
 }
 
 /// Build a report from an index.
@@ -659,6 +694,7 @@ pub fn report(index: &Index, query: &Query, provenance: &Provenance) -> Report {
         .collect();
 
     Report {
+        notes: display_notes(query),
         scan_started_at: provenance.scan_started_at,
         generated_at: provenance.generated_at,
         source: provenance.source,
@@ -693,6 +729,8 @@ pub(crate) fn report_summary(
     provenance: &Provenance,
 ) -> Report {
     Report {
+        // A compact summary resolves one view and drops none.
+        notes: Vec::new(),
         scan_started_at: provenance.scan_started_at,
         generated_at: provenance.generated_at,
         source: provenance.source,
@@ -1757,6 +1795,29 @@ mod tests {
         assert_eq!(tree.bytes, 657, "totals still cover the whole tree");
         assert!(tree.children.is_empty(), "but nothing below the root is listed");
         assert!(tree.truncated, "and the report says so rather than implying emptiness");
+    }
+
+    /// A view `full` had to drop is named on the report, so every surface says so.
+    ///
+    /// This lived in the CLI, which meant a caller reaching the same wall through the
+    /// library got a report quietly missing a section and no way to learn why (fdu-x8u6).
+    #[test]
+    fn a_dropped_view_is_named_on_the_report_rather_than_by_one_surface() {
+        let (selected, omitted) = ViewSpec::resolve(Some("full"), AnalysisSet::NONE, "view")
+            .expect("full resolves without analyzers");
+        assert!(!omitted.is_empty(), "documents needs analysis and must be dropped");
+
+        let query = Query { views: selected, omitted_views: omitted, ..Query::default() };
+        let notes = display_notes(&query);
+        assert_eq!(notes.len(), 1, "{notes:?}");
+        assert!(notes[0].contains("omitted documents"), "{notes:?}");
+
+        // Nothing dropped, nothing said.
+        let (selected, omitted) = ViewSpec::resolve(Some("full"), AnalysisSet::ALL, "view")
+            .expect("full resolves with analyzers");
+        assert!(omitted.is_empty(), "every view is answerable with analysis enabled");
+        let query = Query { views: selected, omitted_views: omitted, ..Query::default() };
+        assert!(display_notes(&query).is_empty());
     }
 
     #[test]
