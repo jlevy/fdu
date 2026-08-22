@@ -20,8 +20,8 @@ use clap::{ArgAction, ColorChoice, CommandFactory, FromArgMatches, Parser, Value
 
 use fdu_core::content::{AnalysisRequest, AnalysisSet};
 use fdu_core::query::{
-    Bound, Pattern, Provenance, Query, ReportSource, Selection, SizeMetric, SortKey, ViewSpec,
-    parse_size, parse_when, system_time_to_nanos,
+    AxisNames, Bound, Pattern, Provenance, Query, ReportSource, Selection, SizeMetric, SortKey,
+    ViewSpec, parse_size, parse_when, system_time_to_nanos,
 };
 use fdu_core::report_format;
 use fdu_core::report_format::human_count;
@@ -1037,7 +1037,15 @@ impl Cli {
         if self.words_per_page == 0 {
             anyhow::bail!("invalid --words-per-page 0: expected a positive integer");
         }
-        Ok(Query { selection, views, omitted_views, words_per_page: self.words_per_page })
+        // The command line names these axes with flags; a library caller names them with
+        // fields, and the report's own diagnostics follow whichever asked.
+        Ok(Query {
+            selection,
+            views,
+            omitted_views,
+            axes: AxisNames::FLAGS,
+            words_per_page: self.words_per_page,
+        })
     }
 
     fn parse_analysis(&self) -> anyhow::Result<AnalysisRequest> {
@@ -1047,16 +1055,6 @@ impl Cli {
     }
 }
 
-/// The library's watch-scope rule, in the command line's vocabulary.
-///
-/// One rule, stated once, with only the knob names differing. It used to be two separate
-/// messages -- the CLI's naming flags and the library's naming implementation -- which
-/// drifted apart and which the parity harness could not tell were the same rule.
-///
-/// The substitution is an explicit whole-word map rather than a blind replace, which is
-/// the bug fdu-7j6z was: `message.replace("analyze", "--analyze")` rewrote the user's own
-/// token. Here every replacement is a field name that cannot appear inside a value,
-/// asserted below, and the parity run verifies the two surfaces stay equivalent.
 /// What each knob is called on the command line, given its name in the API.
 const WATCH_SCOPE_VOCABULARY: [(&str, &str); 5] = [
     ("max_depth", "--scan-depth"),
@@ -1066,8 +1064,18 @@ const WATCH_SCOPE_VOCABULARY: [(&str, &str); 5] = [
     ("include", "--include"),
 ];
 
+/// The library's watch-scope rule, in the command line's vocabulary.
+///
+/// One rule, stated once, with only the knob names differing. It used to be two separate
+/// messages -- the CLI's naming flags and the library's naming implementation -- which
+/// drifted apart and which the parity harness could not tell were the same rule.
+///
+/// The substitution is an explicit whole-word map rather than a blind replace, which is
+/// the bug fdu-7j6z was: `message.replace("analyze", "--analyze")` rewrote the user's own
+/// token. Here every replacement is a field name that cannot appear inside a value, which
+/// `the_watch_guidance_substitutes_whole_words_only` asserts, and the parity run verifies
+/// the two surfaces stay equivalent.
 fn watch_scope_guidance() -> String {
-    const VOCABULARY: [(&str, &str); 5] = WATCH_SCOPE_VOCABULARY;
     // One pass over whole words, never re-scanning what was already substituted. A
     // sequential replace does re-scan: max_depth becomes --scan-depth, and then `depth`
     // matches inside it, giving `--scan---depth`. That is fdu-7j6z again, and it appeared
@@ -1079,7 +1087,7 @@ fn watch_scope_guidance() -> String {
                 .find(|character: char| !character.is_ascii_alphanumeric() && character != '_')
                 .unwrap_or(piece.len());
             let (word, tail) = piece.split_at(end);
-            match VOCABULARY.iter().find(|(field, _)| *field == word) {
+            match WATCH_SCOPE_VOCABULARY.iter().find(|(field, _)| *field == word) {
                 Some((_, flag)) => format!("{flag}{tail}"),
                 None => piece.to_string(),
             }
@@ -1506,16 +1514,20 @@ fn finish(
         Err(error) => {
             let headline = error.to_string();
             let _ = writeln!(diagnostic, "{} {headline}", paint("fdu:", STYLE_ERROR, color));
-            for cause in error.chain().skip(1) {
-                // A cause the headline already contains says nothing twice. `I/O error at
-                // {path}: {source}` embeds its source, so the chain under it repeated the
-                // sentence verbatim -- two lines where one carried the information, on the
-                // most common failure there is.
-                let text = cause.to_string();
-                if headline.contains(&text) {
-                    continue;
-                }
-                let cause = format!("  caused by: {text}");
+            // `I/O error at {path}: {source}` embeds its own source, so the first link in
+            // the chain repeated the sentence verbatim -- two lines where one carried the
+            // information, on the most common failure there is. Only that one link is
+            // elided, and only when the headline really does end with it: a plain
+            // `contains` over the whole chain would silently swallow a deeper cause that
+            // happened to be a substring of the headline, which is a different bug wearing
+            // this fix's clothes (fdu-zppc).
+            let mut chain = error.chain().skip(1).peekable();
+            let embedded = chain.peek().is_some_and(|first| headline.ends_with(&first.to_string()));
+            if embedded {
+                chain.next();
+            }
+            for cause in chain {
+                let cause = format!("  caused by: {cause}");
                 let _ = writeln!(diagnostic, "{}", paint(&cause, STYLE_CAUSE, color));
             }
             1

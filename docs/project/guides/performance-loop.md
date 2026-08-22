@@ -450,6 +450,11 @@ Structure earns its place here only because something reads it: the accept rule 
 ledger tables. Any loop that proposes something, measures it, and decides can keep its
 record the same way; [softschema](https://github.com/jlevy/softschema) documents the
 format, the CLI, and this pattern as a playbook.
+Extracting this whole loop — the contract, the statistics, the generated views, and the
+protocol — into a framework other campaigns can adopt is planned in
+[the framework extraction spec](../specs/active/plan-2026-08-22-experiment-loop-framework-extraction.md),
+which also records what metabrowser’s independent re-implementation of the method
+confirmed about which parts are invariant.
 
 ## Publishing the evidence
 

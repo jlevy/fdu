@@ -170,11 +170,10 @@ pub(crate) fn plan_report(config: &OpenConfig, query: &Query) -> ReportPlan {
     }
 }
 
-/// Execute a one-shot report, returning a snapshot write that may overlap rendering.
+/// Execute a one-shot report, retaining the least state the request needs.
 ///
 /// The returned report is complete as a value even while the optional save runs.  The
 /// caller must join the handle before exit; dropping it also joins defensively.
-/// One report, retaining the least state the request needs.
 ///
 /// This is the contract the command line has always run under, and until now the only way
 /// to get it was to be the command line. `open` takes the session path: it retains an

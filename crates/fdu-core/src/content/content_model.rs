@@ -117,6 +117,8 @@ impl AnalysisSet {
     /// one surface's flag parsing: the CLI and the Python binding must accept exactly the
     /// same words or the two surfaces disagree about what a request means.
     ///
+    /// Parse an analyzer list, naming the axis as the library and Python API spell it.
+    ///
     /// `none` and `all` are totals and cannot be combined with anything, including each
     /// other — `none,code` has no coherent reading, and silently letting one win is how a
     /// caller ends up with analysis they did not ask for or did not get.

@@ -9,8 +9,16 @@
 // the difference IS, and a session only lands in a class if its hunks actually look like
 // that. Adding a class is a claim that needs the same scrutiny as changing behaviour.
 
+// A golden expectation writes the path separator as the named pattern [SEP], because the
+// corpus also runs on Windows. Both surfaces print the platform's own separator and
+// run-parity's normalise() has already folded \ into /, so for comparison the pattern and
+// the literal are the same text. Without this, any session whose block diff contains a
+// path cannot be matched line by line, and a real difference elsewhere in that block -- a
+// label, a note -- reads as unexplained for a reason that has nothing to do with it.
+const sameSeparator = (line) => line.replace(/\[SEP\]/g, '/');
+
 /** Flags and parameters name the same thing: --modified-since is modified_since. */
-const sameName = (line) => line.replace(/--(?=[a-z])/g, '').replace(/[-_]/g, '');
+const sameName = (line) => sameSeparator(line).replace(/--(?=[a-z])/g, '').replace(/[-_]/g, '');
 
 // The library reports a rule as a runtime error and names its kind; the CLI catches the
 // same rule up front and reports it as a usage error, which carries no kind and exits 2
@@ -25,7 +33,7 @@ const ERROR_KINDS = ['unsupported scan configuration: '];
 // Longest first, and one pass, so `depth` cannot match inside `--scan-depth`.
 const KNOBS =
   /--scan-depth|--one-filesystem|--modified-since|--include|--depth|max_depth|one_filesystem|modified_since|include|depth/g;
-const withoutKnobs = (line) => withoutKind(line).replace(KNOBS, '<knob>');
+const withoutKnobs = (line) => sameSeparator(withoutKind(line)).replace(KNOBS, '<knob>');
 const withoutKind = (line) => {
   // The kind sits after the program name, which both surfaces print: the shim says
   // `fdu: unsupported scan configuration: ...` where the CLI says `fdu: ...`.
@@ -90,7 +98,9 @@ export const CLASSES = [
     why: [
       'A note quoting how many bytes analysis read, or the performance footer itself.',
       'Both are telemetry about the run rather than facts about the report, and the',
-      'envelope deliberately carries none, so a Report cannot reproduce them (fdu-x8u6).',
+      'envelope deliberately carries none, so a Report cannot reproduce them. The omission',
+      'note is NOT this: that one is a fact about the report, travels on it, and every',
+      'surface states it in its own vocabulary.',
     ],
     matches: ({ removed, added }) =>
       removed.some((line) => /^note:|^Performance:/.test(line)) &&
@@ -100,15 +110,20 @@ export const CLASSES = [
     id: 'discovery-surface',
     title: 'A discovery surface the package does not carry',
     why: [
-      '--docs and --skill are static documents that live in the binary, and --help is',
-      "clap's own rendering. The whole skip list is these three (fdu-2b53).",
+      '--docs is a static document that lives in the binary, so the package does not carry',
+      'it and the session is recorded here rather than skipped. The skip list is a separate',
+      'set -- clap help and usage errors, and --skill -- and lives in DECLINED in',
+      'run-parity.mjs (fdu-2b53).',
       '',
       '--version is the deliberate one, and it is load-bearing: the shim names itself so',
       'it can never be mistaken for the binary, which is what keeps this artifact',
       'non-empty. An empty artifact would mean the shim never ran.',
     ],
+    // Not `The Portable Skill`: that session is in run-parity's DECLINED list, so it is
+    // filtered out before anything is compared and an alternative for it here could never
+    // match. One mechanism per session, and the two lists must not both claim one.
     matches: ({ name }) =>
-      /^(Version Is Exact|The Guide Is Reachable Without a Root|The Portable Skill)/.test(name),
+      /^(Version Is Exact|The Guide Is Reachable Without a Root)/.test(name),
   },
 ];
 

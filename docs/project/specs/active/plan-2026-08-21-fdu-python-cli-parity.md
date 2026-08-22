@@ -439,6 +439,11 @@ API? A crate boundary decides it where a test could only sample it.
 Moving the CLI into its own crate makes the compiler answer on every build, and makes
 any future private need a visible act of making something public.
 
+This is worth more now than when it was written.
+Phase 1 found seven definitions the CLI had copied from the library and five
+capabilities only the CLI could reach; a Rust-side shim is the instrument that would
+have caught them without a second language in the way.
+
 ## Testing Strategy
 
 The harness is the test, so its own correctness needs guards — a parity runner nobody

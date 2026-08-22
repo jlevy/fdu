@@ -34,10 +34,12 @@ const artifact = join(root, 'tests', 'parity', 'deviations-python.diff');
 const golden = join(root, 'tests', 'golden');
 const update = process.argv.includes('--update');
 
-// Discovery surfaces the Python package does not carry: clap's own help rendering, and
-// two static documents that live in the binary. Excluded by name rather than diffed,
-// because ~350 lines of help text would bury the parity content this artifact exists to
-// show. Each entry is a decision; growth in this list is a regression worth arguing over.
+// Discovery surfaces the Python package does not carry: clap's own help and usage-error
+// rendering, and one static document that lives in the binary. Excluded by name rather
+// than diffed, because ~350 lines of help text would bury the parity content this artifact
+// exists to show. Each entry is a decision; growth in this list is a regression worth
+// arguing over. --docs is deliberately NOT here: it is recorded as a deviation instead, and
+// parity-classes.mjs explains it under discovery-surface.
 const DECLINED = [
   'A Bare Invocation Is Safe and Shows the Complete Contract',
   'The Portable Skill Is Complete and Version-Pinned',
@@ -103,23 +105,23 @@ const HEADER = `# Deviations: the Python surface against the Rust CLI's recorded
 #     -line               what the Rust CLI produced
 #     +line               what the Python surface produced
 #
-# Three classes of ✗ are legitimate. Everything else is a tracked gap with a bead.
+# Why a ✗ is allowed to survive is stated per class in the summary below, which is
+# generated from the classes that actually matched this run. Nothing about the surviving
+# differences is described here by hand: a hand-maintained list of what is still missing is
+# re-emitted verbatim on every --update and compared against itself in CI, so it can go
+# stale without any check noticing -- which it did, listing four gaps that had already been
+# closed (fdu-7tli). The generated summary is the one that cannot.
+#
+# Two facts about this run are fixed rather than observed, so they are stated here:
 #
 # 1. --version names the surface. Deliberate, and load-bearing: it is what keeps this
 #    file non-empty, so an empty diff means the shim never ran.
-# 2. Diagnostics name the surface's own parameter -- "invalid depth" against the CLI's
-#    "invalid --depth". There is no --depth in Python. Everything after the label is
-#    identical, which is the part that encodes behaviour, and the harness proves it
-#    matches word for word. Tracked as fdu-a823 for the record, not as a defect.
-# 3. --docs and --skill are static documents the package does not carry, and --help is
-#    clap's own rendering. The whole skip list, and it is three (fdu-2b53).
-#
-# Remaining tracked gaps:
-#
-#   fdu-4msv  the one-shot cache contract is not expressible from Python (7 sessions)
-#   fdu-1kw3  watch records have no renderer (2 sessions)
-#   fdu-x8u6  display notes carry run telemetry the schema excludes (1 session)
-#   fdu-jozr  list grammar (duplicates, empty entries) is not exposed (2 sessions)
+# 2. Three sessions are skipped by name rather than diffed, because ~350 lines of clap
+#    help text would bury the parity content this artifact exists to show: the bare
+#    invocation and unknown-option sessions, which render clap's own help and usage
+#    errors, and --skill, a static document that lives in the binary (fdu-2b53). --docs is
+#    NOT skipped -- it is recorded below like any other deviation. The skip list lives in
+#    DECLINED in scripts/run-parity.mjs; growth in it is a regression worth arguing over.
 #
 # The performance footer is excluded from comparison rather than recorded: it reports
 # walk telemetry the report schema deliberately excludes, so the Python surface cannot

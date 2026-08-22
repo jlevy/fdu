@@ -24,8 +24,9 @@ use pyo3::types::{PyDict, PyList};
 
 use fdu_core::content::{AnalysisRequest, AnalysisSet, CoverageReason};
 use fdu_core::query::{
-    Bound as Bound_, MetricRow, MetricSummary, Pattern, Provenance, Query, Report, ReportSource,
-    Section, Selection, SizeMetric, SortKey, SummaryRow, TreeNode, ViewSpec, document_words,
+    AxisNames, Bound as Bound_, MetricRow, MetricSummary, Pattern, Provenance, Query, Report,
+    ReportSource, Section, Selection, SizeMetric, SortKey, SummaryRow, TreeNode, ViewSpec,
+    document_words,
 };
 use fdu_core::watch::WatchConfig;
 use fdu_core::watch_session::{ChangeKind, Session};
@@ -241,7 +242,14 @@ impl PyIndex {
         report_dict(py, &report)
     }
 
-    /// Build a report and return the exact CLI JSON schema in one bulk call.
+    /// Build one report and hand back the finished value.
+    ///
+    /// Returns a handle rather than rendered bytes so every renderer a caller reaches for
+    /// answers from the same report. Re-projecting the index per format instead would make
+    /// one `Report` disagree with itself the moment the index moved: `as_dict` would hold
+    /// the values the call was answered with and `render` would quietly return newer ones
+    /// (fdu-4gno). The one-shot and the watch already return their report this way; this is
+    /// the third and last producer to.
     #[pyo3(signature = (
         *,
         views = None,
@@ -256,12 +264,10 @@ impl PyIndex {
         sort = None,
         reverse = false,
         size = "allocated",
-        words_per_page = 250,
-        format = "json",
-        color = false
+        words_per_page = 250
     ))]
     #[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
-    fn report_json(
+    fn report_handle(
         &self,
         views: Option<Vec<String>>,
         include: Option<Vec<String>>,
@@ -276,9 +282,7 @@ impl PyIndex {
         reverse: bool,
         size: &str,
         words_per_page: u64,
-        format: &str,
-        color: bool,
-    ) -> PyResult<String> {
+    ) -> PyResult<PyOneShot> {
         let report = self.build_report(
             views,
             include,
@@ -294,7 +298,7 @@ impl PyIndex {
             size,
             words_per_page,
         )?;
-        Ok(fdu_core::report_format::render(&report, parse_format(format)?, color))
+        Ok(PyOneShot { report })
     }
 
     /// Watch this tree, yielding batches of changes as they arrive.
@@ -1150,7 +1154,9 @@ fn build_query(
     if words_per_page == 0 {
         return Err(PyValueError::new_err("words_per_page must be positive"));
     }
-    let query = Query { selection, views, omitted_views, words_per_page };
+    // The Python API names these axes with fields, so its diagnostics do too: there is no
+    // `--analyze` for a caller here to add (fdu-4apt).
+    let query = Query { selection, views, omitted_views, axes: AxisNames::FIELDS, words_per_page };
     query.validate_analysis(profile).map_err(PyValueError::new_err)?;
     Ok(query)
 }
@@ -1169,6 +1175,16 @@ struct PyOneShot {
 impl PyOneShot {
     fn render(&self, format: &str, color: bool) -> PyResult<String> {
         Ok(fdu_core::report_format::render(&self.report, parse_format(format)?, color))
+    }
+
+    /// What the report says about itself, as values rather than as rendered text.
+    ///
+    /// The wire envelope excludes these deliberately, so a caller reading the typed report
+    /// would otherwise have to scrape them out of the text rendering to learn that a view
+    /// was dropped -- which is the gap on the library side that carrying them on `Report`
+    /// closed in the first place (fdu-7wd1).
+    fn notes(&self) -> Vec<String> {
+        self.report.notes.clone()
     }
 }
 
