@@ -179,15 +179,15 @@ parity-venv: uv-version
 # Replay the golden corpus against the Python surface. The committed deviation file is
 # non-empty by construction, so an empty result means the shim never ran (fdu-9h2w).
 test-parity: build parity-venv $(NODE_INSTALL_STAMP)
-	$(NODE) scripts/run-parity.mjs
+	FDU_PARITY_PYTHON=crates/fdu-py/.venv-parity/bin/python $(NODE) scripts/run-parity.mjs
 
 # Used by the gate, where python-smoke has already installed the wheel into
 # .venv-smoke; standalone runs want test-parity, which builds its own.
 parity-check: build $(NODE_INSTALL_STAMP)
-	$(NODE) scripts/run-parity.mjs
+	FDU_PARITY_PYTHON=crates/fdu-py/.venv-smoke/bin/python $(NODE) scripts/run-parity.mjs
 
 parity-update: build parity-venv $(NODE_INSTALL_STAMP)
-	$(NODE) scripts/run-parity.mjs --update
+	FDU_PARITY_PYTHON=crates/fdu-py/.venv-parity/bin/python $(NODE) scripts/run-parity.mjs --update
 
 fmt:
 	$(CARGO) fmt --all

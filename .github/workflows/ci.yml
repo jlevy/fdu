@@ -210,7 +210,7 @@ jobs:
       # job re-records and fails on any difference, so Linux is the authority and the fix
       # is a download rather than a guess.
       - name: Replay the golden corpus against the Python surface
-        run: node scripts/run-parity.mjs --update
+        run: FDU_PARITY_PYTHON=crates/fdu-py/.venv-parity/bin/python node scripts/run-parity.mjs --update
       - name: The recorded deviations must match what this platform produces
         id: parity-diff
         run: git diff --exit-code -- tests/parity/deviations-python.diff

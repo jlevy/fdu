@@ -48,16 +48,25 @@ const DECLINED = [
 
 // The surface must be the built wheel, never python/fdu/ in the working tree: a shim
 // importing the source directly would pass while the built package was broken, which is
-// the failure public_smoke already exists to prevent. .venv-smoke is exactly such an
-// install and make check has just made one, so the gate does not pay for a third wheel
-// build; .venv-parity is the standalone path.
-const CANDIDATES = ['.venv-parity', '.venv-smoke'];
-const python = CANDIDATES.map((v) => join(root, 'crates', 'fdu-py', v, 'bin', 'python')).find(
-  (candidate) => existsSync(candidate),
-);
-if (!python) {
-  console.error('run-parity: no interpreter with the fdu wheel installed');
-  console.error(`run-parity: looked for ${CANDIDATES.join(', ')} under crates/fdu-py`);
+// the failure public_smoke already exists to prevent.
+//
+// Named explicitly by the caller rather than discovered by precedence. Preferring
+// .venv-parity and falling back to .venv-smoke meant a stale .venv-parity silently
+// shadowed a freshly built one, and the run measured old code while reporting on new --
+// which is exactly the class of failure this harness exists to catch, so it must not be
+// the harness's own behaviour.
+// Resolved against the repository root: the shim runs inside a sandbox with its own
+// working directory, so a relative interpreter path would not exist by the time it execs.
+const named = process.env.FDU_PARITY_PYTHON;
+const python = named && (named.startsWith('/') ? named : join(root, named));
+if (!named) {
+  console.error('run-parity: FDU_PARITY_PYTHON must name an interpreter with the fdu wheel');
+  console.error('run-parity: `make test-parity` builds one; `make parity-check` reuses the');
+  console.error('run-parity: one python-smoke just installed.');
+  process.exit(2);
+}
+if (!existsSync(python)) {
+  console.error(`run-parity: no interpreter at ${python}`);
   console.error('run-parity: build one with `make parity-venv`');
   process.exit(2);
 }
