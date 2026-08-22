@@ -3,13 +3,15 @@ type: is
 id: is-01m0m3f9q8b0ywwn6sgypp34zw
 title: Python binding hand-copies the 'full' view diagnostic and it has drifted
 kind: bug
-status: open
+status: closed
 priority: 2
-version: 1
+version: 2
 labels: []
 dependencies: []
 created_at: 2026-08-22T06:45:30.983Z
-updated_at: 2026-08-22T06:45:30.983Z
+updated_at: 2026-08-22T18:10:34.564Z
+closed_at: 2026-08-22T18:10:34.563Z
+close_reason: The rule lives once, as ViewSpec::FULL_IS_EXCLUSIVE, and the CLI and the binding both format their message from it. The binding's copy had lost the trailing 'with another view' clause, which is what a hand-copied string does.
 ---
 The parity run caught two copies of one message that no longer agree.
 
