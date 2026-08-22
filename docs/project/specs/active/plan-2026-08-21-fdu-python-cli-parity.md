@@ -86,6 +86,80 @@ The shim is the measurement as well as the instrument.
 If it needs private helpers, elaborate glue, or a capability the package does not
 expose, that is a finding about the API, not an inconvenience to work around.
 
+### What the shim has to be, file by file
+
+```text
+tests/parity/
+  py/fdu                    executable, named `fdu` so PATH resolves it as one
+  py/parity_cli.py          argv -> public Python API -> bytes
+  run.mjs                   replay the corpus, diff, compare the deviation file
+  deviations-python.diff    the committed artifact
+```
+
+`py/fdu` is a two-line launcher; `parity_cli.py` holds everything, and mirrors `cli.rs`
+function for function so a reader can check the mapping by name:
+
+| `cli.rs` | `parity_cli.py` | Public API it leans on |
+| --- | --- | --- |
+| `Cli::run` | `main(argv)` | dispatch and exit code |
+| `parse_format` | `parse_format` | `--format` value, passed through |
+| `parse_analysis` | `parse_analysis` | `AnalysisOptions(analyze=...)` |
+| `parse_cache_policy` | `parse_cache` | `CachePolicy` |
+| `parse_query` | `build_query` | `Query`, `Selection`, `ScanOptions` |
+| `run_cache_lifecycle` | `run_cache_lifecycle` | `cache_status`, `list_caches`, `clear_cache`, `clear_all_caches` |
+| the watch loop | `run_watch` | `Index.watch`, `WatchOptions` |
+| `report_format::render` | `render` | **missing — see below** |
+| `finish` | `exit_code` | `Status.complete`, `--allow-partial` |
+
+View resolution, default derivation, and `full` expansion are deliberately absent from
+that table: they live in the library now, and the binding calls them.
+If the shim had to reimplement any of the three, that would be the drift this harness
+exists to catch.
+
+### The gap this design turned up before it was built
+
+**The Python API cannot render text.** There is no `render` anywhere in the package or
+the native stub — the typed surface returns structured values and `as_dict()`, and stops
+there.
+
+That matters because most of the corpus is text sessions.
+A shim serving them would have to reimplement the human renderer in Python: the ten-cell
+bars, the label padding, the view headers, the bound notes, the performance footer, the
+colour rules. Hundreds of lines duplicating presentation, and the test would then be
+measuring the reimplementation rather than the API — a harness that fails when two
+renderers disagree about spacing, while staying silent about the report being wrong.
+
+So Phase 1 adds `Report.render(format, color)` to the Python API, a thin binding over
+the renderer the CLI already uses.
+
+This is not test scaffolding.
+It closes a real gap: today a Python caller who wants fdu’s own output has to shell out
+to the binary, which is the same admission the console script already makes —
+`fdu:_main` calls `_native.main()`, so the `fdu` command the wheel installs has never
+exercised a line of the Python API. Making the renderer reachable is what lets Python be
+the CLI’s equal rather than a data source beside it.
+
+It also shrinks the shim to what it should be: argv in, API calls, bytes out.
+
+**A collision worth naming.** That console script means installing the wheel puts an
+`fdu` on `PATH` that is the Rust CLI. During a parity run it must not be reachable, or
+the run silently measures the binary against itself — the same failure the deviation
+file catches after the fact and the naming rule prevents outright.
+
+### What the shim may decline
+
+With the renderer exposed and cache and watch already public, the skip list is short,
+and each entry is a decision rather than an oversight:
+
+| Flag | Why |
+| --- | --- |
+| `--help` | clap’s rendering; the Python package has no argument parser to render |
+| `--docs`, `--skill` | static documents the package does not carry |
+
+Everything else in the corpus is serveable.
+That is the measurement: a skip list of three discovery surfaces says the Python API is
+close to complete, and any growth in that list is a regression worth arguing about.
+
 ### One corpus, one expected output, and a checked-in deviation file
 
 The corpus is not duplicated and the expected bytes are not duplicated.
@@ -188,17 +262,20 @@ file.
 
 ### Phase 1
 
+- [ ] Add `Report.render(format, color)` to the Python API over the existing renderer,
+  so the package can produce fdu’s own output rather than only structured values
+  (`fdu-z84z`)
 - [ ] tryscript: drop empty `path:` entries, with a test that a bare `$VAR` does not put
   the working directory on `PATH` (`fdu-nluf`)
 - [ ] tryscript: add `requires:`, so named commands must resolve before the first
-  session and the run reports where each resolved
-- [ ] Write the Python parity CLI over the public package, covering the argv the corpus
-  uses, with `fdu:` diagnostics and exit 77 for what the surface cannot serve
-- [ ] Add the parity runner: replay the corpus against the shim, diff against the Rust
-  recording, compare with `tests/parity/deviations-python.diff`
-- [ ] Commit the first deviation file and review every hunk against the rule that only
-  version strings and help layout are legitimate
-- [ ] Add `make test-parity` with its anti-vacuity guards
+  session and the run reports where each resolved (`fdu-ds2x`)
+- [ ] Write `tests/parity/py/parity_cli.py` against the table above, with `fdu:`
+  diagnostics and exit 77 for `--help`, `--docs`, and `--skill` (`fdu-0len`)
+- [ ] Add the runner: replay the corpus, diff against the Rust recording, compare with
+  `tests/parity/deviations-python.diff` (`fdu-5clp`)
+- [ ] Commit the first deviation file and review every hunk against the rule that only a
+  version string or help layout is legitimate (`fdu-5clp`)
+- [ ] Add `make test-parity` with its anti-vacuity guards (`fdu-szti`)
 
 ### Phase 2
 
