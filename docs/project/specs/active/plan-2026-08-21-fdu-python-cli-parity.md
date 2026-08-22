@@ -278,25 +278,58 @@ found whatever `fdu` was installed there — `~/.cargo/bin/fdu` on a developer m
 and the suite passed while testing a different binary.
 Filed as `fdu-9h2w`.
 
-**The corpus names the executable.** Sessions invoke `$FDU`, which holds a full path.
-There is no PATH lookup left to fall through, and an unset variable is
-`command not found` on the first session rather than a wrong-binary pass.
+**The corpus names the directory, not the command.** Sessions invoke a bare `fdu` and
+declare `path: - $FDU_BIN`, which tryscript expands.
+
+The first attempt put the full path in a variable and had sessions invoke `$FDU`.
+Windows rejected every one of them:
+
+```text
+'$FDU' is not recognized as an internal or external command
+```
+
+tryscript runs sessions through `cmd.exe` there, which wants `%FDU%`. A shell variable
+in a session command line is not portable, so the corpus has to be readable by `/bin/sh`
+and `cmd.exe` alike, and a bare command name is the only form both read the same way.
+That is a design error worth recording rather than quietly fixing: the harness pins two
+implementations of one CLI across three platforms, so anything in the corpus that is not
+shell-agnostic will fail on one of them.
+
+The split therefore follows who does the resolving:
+
+| Who runs the binary | How it is named | Why |
+| --- | --- | --- |
+| a session command line | bare `fdu`, directory from `path: - $FDU_BIN` | must parse under `sh` and `cmd.exe` |
+| a node helper (`tests/golden/bin/*.mjs`) | `process.env.FDU`, full path with extension | spawns directly; no PATH lookup to control |
+
+This is not a return to the original defect.
+What made that a defect was the directory being a literal that could silently fail to
+resolve while looking correct.
+`run-golden.mjs` preflights the surface and refuses to start when it is missing;
+verified by hiding `target/debug/fdu` with an installed build still on `PATH`, where the
+run now stops with the path it wanted instead of testing the installed copy and passing.
+
 Both surfaces are still *named* `fdu`, so every program-name string the corpus pins —
-usage lines, diagnostics — matches without the corpus knowing which surface is running,
-and all 129 sessions kept passing byte-identical when the rewrite landed.
+usage lines, diagnostics — matches without the corpus knowing which surface is running.
 
-This replaces the `fdu-rs`/`fdu-py` naming this spec originally proposed, which would
-have changed every usage and diagnostic line in the recorded output.
-It also means tryscript needs no `requires:` feature and no empty-entry fix for this
-work to proceed: `fdu-ds2x` and `fdu-nluf` stay open as tryscript improvements, but
-neither blocks parity.
+**What remains tryscript’s to fix.** `path:` prepends to the inherited `PATH` rather
+than being authoritative for command resolution, so the preflight is fdu guarding
+against a tryscript behaviour.
+Either an authoritative path mode or a `requires:` declaration that asserts what
+resolved would close it (`fdu-ds2x`, `fdu-z7sp`).
 
-`scripts/run-golden.mjs` owns the choice, because CI runs `npm run test:golden` directly
-and would miss anything set only in the Makefile.
-It preflights the surface, states which one it resolved, and takes tryscript from the
-locked tree for the same reason it takes the binary by path.
-`scripts/check-golden-invocations.mjs` keeps the bare name from returning — the rule is
-worth nothing if the next session can reintroduce it and still go green.
+`jlevy/tryscript#51` fixes a real adjacent inconsistency — `path:` expanded `$VAR` while
+`env:` did not, so a test could name a directory by absolute path but never a file — and
+adds `TRYSCRIPT_EXE`. It does **not** remove this runner, contrary to what this spec
+claimed before Windows disproved it.
+
+`scripts/run-golden.mjs` owns the surface choice, because CI runs `npm run test:golden`
+directly and would miss anything set only in the Makefile.
+Its remaining job is irreducible while parity exists: two surfaces over one corpus means
+something has to choose, and it sets `$FDU_BIN`, preflights, and says which surface it
+resolved. `scripts/check-golden-invocations.mjs` polices the rule that replaced the old
+one — every session declares exactly one path entry and it is `$FDU_BIN`, and no helper
+names `fdu` literally.
 
 ### What the harness measured on its first run
 
