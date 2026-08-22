@@ -34,3 +34,4 @@ node_modules/
 
 # Real-tree benchmark scratch: clones of large external trees, kept out of git.
 benchmarks/corpus/realtree/
+tests/parity/.corpus/

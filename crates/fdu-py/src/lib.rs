@@ -1308,22 +1308,14 @@ fn contract(py: Python<'_>) -> PyResult<Bound<'_, PyDict>> {
     let contract = PyDict::new(py);
     contract.set_item("cache_policies", ["auto", "refresh", "read-only", "only", "off"])?;
     contract.set_item("analysis", ["none", "lines", "code", "words", "all"])?;
-    contract.set_item(
-        "views",
-        [
-            "tree",
-            "extensions",
-            "types",
-            "families",
-            "languages",
-            "documents",
-            "largest",
-            "recent",
-            "files",
-            "summary",
-            "full",
-        ],
-    )?;
+    // Derived, never copied. A hand-written list here is a second definition of a
+    // grammar the library owns, and a parity test comparing two copies of the same
+    // mistake passes: this list had drifted out of ViewSpec::ALL order and the
+    // assertion never noticed, because Python had been written from the same copy
+    // (fdu-ggux). Deriving it means the next view needs no edit in this file.
+    let mut views: Vec<&str> = ViewSpec::ALL.iter().map(|view| view.label()).collect();
+    views.push("full");
+    contract.set_item("views", views)?;
     contract.set_item("formats", ["text", "json", "jsonl", "yaml"])?;
     contract.set_item("entry_kinds", ["file", "dir", "symlink", "other"])?;
     contract.set_item("size_metrics", ["allocated", "apparent"])?;

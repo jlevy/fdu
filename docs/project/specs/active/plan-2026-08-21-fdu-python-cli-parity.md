@@ -263,33 +263,70 @@ review question is always “why is this allowed” rather than “does this loo
 
 The deviation file catches a fallthrough after the fact, which is enough to fail the run
 but tells the reader little.
-Two mechanisms make it structural and legible instead.
+Probing tryscript 0.2.0 rather than reasoning about it changed this section, and the
+answer removed work instead of adding it.
 
-**No bare `fdu` on `PATH` during a parity run.** Each surface installs under its own
-name, so a missing shim is `command not found` on the first session rather than a silent
-substitution.
+**What the probe found.** tryscript inherits the parent environment, and expands
+arbitrary environment variables in `path:`, not just `$TRYSCRIPT_GIT_ROOT`. It also
+*prepends* those entries to the inherited `PATH` rather than replacing them, and an
+`env: PATH:` override does not replace it either.
 
-**And tryscript reports what it resolved**, which is the feature worth adding:
+That last point is a defect in the corpus as it stood, not a limitation to design
+around. Every golden selected its build with one `path:` entry.
+If that entry ever failed to resolve, lookup continued into the inherited `PATH` and
+found whatever `fdu` was installed there — `~/.cargo/bin/fdu` on a developer machine —
+and the suite passed while testing a different binary.
+Filed as `fdu-9h2w`.
 
-```yaml
-path:
-  - $FDU_SURFACE_BIN     # the only directory supplying the command
-requires:
-  - fdu                  # must resolve before the first session; abort otherwise
-```
+**The corpus names the executable.** Sessions invoke `$FDU`, which holds a full path.
+There is no PATH lookup left to fall through, and an unset variable is
+`command not found` on the first session rather than a wrong-binary pass.
+Both surfaces are still *named* `fdu`, so every program-name string the corpus pins —
+usage lines, diagnostics — matches without the corpus knowing which surface is running,
+and all 129 sessions kept passing byte-identical when the rewrite landed.
 
-```text
-resolved fdu -> /…/tests/parity/py/fdu   (12 files, 129 sessions)
-```
+This replaces the `fdu-rs`/`fdu-py` naming this spec originally proposed, which would
+have changed every usage and diagnostic line in the recorded output.
+It also means tryscript needs no `requires:` feature and no empty-entry fix for this
+work to proceed: `fdu-ds2x` and `fdu-nluf` stay open as tryscript improvements, but
+neither blocks parity.
 
-The guard is then enforced once rather than repeated in two hundred session lines, the
-corpus stays readable, and the run *states which binary it exercised* — the difference
-between a harness that is correct and one that can be seen to be correct, which is the
-same reason every fdu report carries its own `source` and `freshness` rather than
-leaving a reader to infer them.
+`scripts/run-golden.mjs` owns the choice, because CI runs `npm run test:golden` directly
+and would miss anything set only in the Makefile.
+It preflights the surface, states which one it resolved, and takes tryscript from the
+locked tree for the same reason it takes the binary by path.
+`scripts/check-golden-invocations.mjs` keeps the bare name from returning — the rule is
+worth nothing if the next session can reintroduce it and still go green.
 
-We maintain tryscript, so this is a feature to add rather than a constraint to route
-around.
+### What the harness measured on its first run
+
+88 of 126 sessions reached parity immediately: report bodies byte-identical across every
+view, every format, every selection axis, through the Python API alone.
+
+The 38 that did not are the measurement, and each is a tracked gap rather than an
+accepted difference:
+
+| Sessions | Gap | Bead |
+| --- | --- | --- |
+| 16 | cache status and watch records have no renderer | `fdu-1kw3` |
+| 6 | the binding’s copy of the `full` diagnostic drifted | `fdu-gw5b` |
+| 2 | list grammar (duplicates, empty entries) is not exposed | `fdu-jozr` |
+| 1 | `--version` names the surface | deliberate |
+| rest | consequences of the above | — |
+
+Two findings came out of writing the shim rather than running it, and both are the same
+root cause the epic already had: **the binding keeps its own copies of things the
+library owns.** `contract()` hard-coded a view list that had drifted out of
+`ViewSpec::ALL` order, and the parity assertion never noticed because Python had been
+written from the same copy (`fdu-ggux`). The `full` diagnostic is hand-copied and has
+lost a clause (`fdu-gw5b`). `contract()` now derives from `ViewSpec::ALL`.
+
+**The performance footer** is excluded from comparison rather than recorded.
+It reports walk telemetry the report schema deliberately excludes, so a `Report` does
+not carry the counts behind it and the Python surface cannot print it.
+Left in, it failed 44 sessions and buried the artifact under whole re-printed blocks.
+The parity corpus is therefore the same sessions with that one line dropped, generated
+per run and never committed.
 
 ### API Changes
 

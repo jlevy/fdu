@@ -9,7 +9,7 @@ UV ?= uv
 MSRV ?= 1.85.0
 NODE_INSTALL_STAMP := node_modules/.package-lock.json
 
-.PHONY: help build release test rust-test test-golden golden-invocations content-selfcheck yaml-selfcheck performance-probe test-performance golden-update check uv-version supply-chain rust-module-names fix fmt fmt-check clippy docs docs-format docs-format-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke release-test release-rehearse clean cli perf-help verify-beads
+.PHONY: help build release test rust-test test-golden golden-invocations parity-venv test-parity parity-check parity-update content-selfcheck yaml-selfcheck performance-probe test-performance golden-update check uv-version supply-chain rust-module-names fix fmt fmt-check clippy docs docs-format docs-format-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke release-test release-rehearse clean cli perf-help verify-beads
 
 help:
 	@echo "make build      Debug build of the core library and CLI, all features"
@@ -17,6 +17,8 @@ help:
 	@echo "make test       Run Rust, CLI golden, and performance-harness tests"
 	@echo "make test-golden  Build and compare the CLI golden contract"
 	@echo "make golden-invocations  Check the corpus never resolves fdu through PATH"
+	@echo "make test-parity  Replay the corpus against the Python surface"
+	@echo "make parity-update  Re-record the Python surface deviations"
 	@echo "make content-selfcheck  Analyze an archive of tracked repository files"
 	@echo "make test-performance  Test the performance harness and every fdu probe job"
 	@echo "make golden-update  Regenerate intentional golden changes, then compare"
@@ -79,7 +81,7 @@ $(NODE_INSTALL_STAMP): package.json package-lock.json .npmrc
 	$(NPM) ci
 
 # Everything CI enforces, in the order that fails fastest.
-check: uv-version supply-chain rust-module-names golden-invocations fmt-check clippy test docs docs-format-check perf-report-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke release-test
+check: uv-version supply-chain rust-module-names golden-invocations fmt-check clippy test docs docs-format-check perf-report-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke parity-check release-test
 
 # The uv.toml files express the supply-chain cool-off as a relative `exclude-newer`
 # ("14 days"). uv releases older than this cannot parse that form: they abort with
@@ -156,6 +158,29 @@ rust-module-names:
 # would happily resolve to an installed build -- from creeping back in (fdu-9h2w).
 golden-invocations:
 	$(NODE) scripts/check-golden-invocations.mjs
+
+# The parity surface needs the wheel installed, not the working tree: a shim importing
+# python/fdu/ directly would pass while the built package was broken, which is the
+# failure public_smoke already exists to prevent.
+parity-venv: uv-version
+	cd crates/fdu-py && wheel_dir="$$(mktemp -d "$${TMPDIR:-/tmp}/fdu-parity.XXXXXX")" && \
+		trap 'rm -r -- "$$wheel_dir"' EXIT && \
+		$(UV) run --frozen --only-group dev maturin build --locked --release --out "$$wheel_dir" && \
+		$(UV) venv --clear .venv-parity && \
+		$(UV) pip install --python .venv-parity --no-index --find-links "$$wheel_dir" fdu
+
+# Replay the golden corpus against the Python surface. The committed deviation file is
+# non-empty by construction, so an empty result means the shim never ran (fdu-9h2w).
+test-parity: build parity-venv $(NODE_INSTALL_STAMP)
+	$(NODE) scripts/run-parity.mjs
+
+# Used by the gate, where python-smoke has already installed the wheel into
+# .venv-smoke; standalone runs want test-parity, which builds its own.
+parity-check: build $(NODE_INSTALL_STAMP)
+	$(NODE) scripts/run-parity.mjs
+
+parity-update: build parity-venv $(NODE_INSTALL_STAMP)
+	$(NODE) scripts/run-parity.mjs --update
 
 fmt:
 	$(CARGO) fmt --all

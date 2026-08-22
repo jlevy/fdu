@@ -61,7 +61,10 @@ console.log(`run-golden: ${surface} surface -> ${binary}`);
 // Resolved from the locked tree rather than from PATH, for the same reason the surface
 // is: the harness should not be able to run a tryscript nobody pinned.
 const tryscript = join(root, 'node_modules', '.bin', `tryscript${process.platform === 'win32' ? '.cmd' : ''}`);
-const args = ['run', ...process.argv.slice(2), join('tests', 'golden', '*.tryscript.md')];
+// FDU_CORPUS lets the parity run replay a filtered copy of the same sessions; it
+// defaults to the corpus itself, which is what every ordinary run wants.
+const corpus = process.env.FDU_CORPUS ?? join('tests', 'golden');
+const args = ['run', ...process.argv.slice(2), join(corpus, '*.tryscript.md')];
 const result = spawnSync(tryscript, args, {
   cwd: root,
   stdio: 'inherit',

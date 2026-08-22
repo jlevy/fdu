@@ -65,18 +65,24 @@ class Coverage(StrEnum):
 
 
 class View(StrEnum):
-    """A report projection over the retained index."""
+    """A report projection over the retained index.
 
+    Declared in `ViewSpec::ALL` order, which is the order the CLI lists views in and the
+    order `--view full` renders them: the summary first, then the roll-up ladder from
+    coarse to fine, then the per-file views. Iterating this enum and iterating the CLI's
+    own view list must give the same sequence, and a parity run compares them (fdu-ggux).
+    """
+
+    SUMMARY = "summary"
     TREE = "tree"
-    EXTENSIONS = "extensions"
-    TYPES = "types"
     FAMILIES = "families"
+    TYPES = "types"
+    EXTENSIONS = "extensions"
     LANGUAGES = "languages"
     DOCUMENTS = "documents"
     LARGEST = "largest"
     RECENT = "recent"
     FILES = "files"
-    SUMMARY = "summary"
     FULL = "full"
 
 
