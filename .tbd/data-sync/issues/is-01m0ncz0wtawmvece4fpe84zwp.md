@@ -5,12 +5,12 @@ title: Make the hypothesis registry an artifact set with checkable pre-registrat
 kind: task
 status: open
 priority: 1
-version: 1
+version: 2
 spec_path: docs/project/specs/active/plan-2026-08-22-experiment-loop-framework-extraction.md
 labels: []
 dependencies: []
 parent_id: is-01m0ncyyjd1r8yh51evp1v4vcn
 created_at: 2026-08-22T18:50:37.849Z
-updated_at: 2026-08-22T18:50:37.849Z
+updated_at: 2026-08-22T19:00:59.977Z
 ---
-The registry is the one place fdu does not apply its own discipline: a hand-maintained table, free-text hypothesis ids on artifacts, no check that a referenced id exists, status updated by hand. Make each hypothesis one soft-schema artifact carrying the claim, the predicted metric and direction, the regime, and the registration date. Generate status from the experiments that reference it. Fail the build on an unknown id. This is what turns the pre-registered-metric rule from honoured into enforced.
+One soft-schema artifact per hypothesis: stable never-reused id, claim stated falsifiably, predicted criterion (metric or determination + direction), the INSTRUMENT that would show it (metabrowser's addition — 'a hypothesis whose instrument does not exist yet is marked blocked rather than measured badly'), regime, registration date. Status generated from referencing experiments; unknown referenced id fails the build. This closes the one gap BOTH projects share: hand-maintained registry tables, free-text ids, no existence check. Converted historical rows carry registered: retroactive so enforcement is honest from the first real registration.
