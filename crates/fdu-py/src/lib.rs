@@ -964,16 +964,15 @@ fn parse_format(value: &str) -> PyResult<fdu::report_format::Format> {
 /// The Python `View` enum offers it, so the binding must honour it — it previously listed
 /// `full` as valid in its error message while rejecting it.
 fn resolve_views(values: &[String], analysis: AnalysisSet) -> PyResult<Vec<ViewSpec>> {
-    if values.iter().any(|value| value.trim().eq_ignore_ascii_case("full")) {
-        if values.len() > 1 {
-            return Err(PyValueError::new_err(format!(
-                "invalid view \"full\": {}",
-                ViewSpec::FULL_IS_EXCLUSIVE
-            )));
-        }
-        return Ok(ViewSpec::full_report(analysis).0);
-    }
-    values.iter().map(|value| parse_view(value)).collect()
+    // The binding used to carry its own copy of this axis: the `full` expansion, the
+    // exclusivity rule, and the default. Each drifted -- the exclusivity message lost a
+    // clause (fdu-gw5b), the view order fell out of step (fdu-ggux), and the list grammar
+    // was never here at all, so ["tree", "tree"] was a silent no-op where the CLI calls it
+    // a typo (fdu-jozr). One resolver now, named as the Python API spells the axis.
+    let spec = values.join(",");
+    let (selected, _omitted) =
+        ViewSpec::resolve(Some(&spec), analysis, "view").map_err(PyValueError::new_err)?;
+    Ok(selected)
 }
 
 /// Parse a view name, through the library's own grammar.

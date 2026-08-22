@@ -197,6 +197,60 @@ impl ViewSpec {
         }
     }
 
+    /// Resolve the view axis from a caller's spec against what the analyzers can answer.
+    ///
+    /// The whole job in one place: the list grammar, `full` expansion, and the default
+    /// when the caller named nothing. All three lived in the CLI, so `--view tree,tree`
+    /// was a typo there and a silent no-op through the Python API -- one request meaning
+    /// two things depending on which door it came through (fdu-jozr) -- and the binding
+    /// kept its own partial copy that had already drifted (fdu-ggux, fdu-gw5b).
+    ///
+    /// Returns the views to render and the ones `full` had to drop, so a caller can state
+    /// the omission rather than hide it.
+    ///
+    /// `label` names the axis as the calling surface spells it, for the reason
+    /// `AnalysisSet::parse_labeled` takes one: rewriting the message afterwards hits the
+    /// user's own token (fdu-7j6z).
+    pub fn resolve(
+        spec: Option<&str>,
+        analysis: AnalysisSet,
+        label: &str,
+    ) -> Result<(Vec<Self>, Vec<Self>), String> {
+        let Some(spec) = spec else {
+            return Ok((vec![Self::default_for(analysis)], Vec::new()));
+        };
+
+        let mut parsed: Vec<Self> = Vec::new();
+        let mut full_seen = false;
+        for raw in spec.split(',') {
+            let token = raw.trim();
+            if token.is_empty() {
+                return Err(format!("invalid {label} {spec:?}: empty entry in the list"));
+            }
+            if token.eq_ignore_ascii_case("full") {
+                if full_seen || !parsed.is_empty() {
+                    return Err(format!("invalid {label} \"full\": {}", Self::FULL_IS_EXCLUSIVE));
+                }
+                full_seen = true;
+                continue;
+            }
+            if full_seen {
+                return Err(format!("invalid {label} \"full\": {}", Self::FULL_IS_EXCLUSIVE));
+            }
+            let view = Self::parse(token)
+                .map_err(|expected| format!("invalid {label} {token:?}: {expected}"))?;
+            if parsed.contains(&view) {
+                return Err(format!("invalid {label} {spec:?}: {token:?} appears more than once"));
+            }
+            parsed.push(view);
+        }
+
+        if full_seen {
+            return Ok(Self::full_report(analysis));
+        }
+        Ok((parsed, Vec::new()))
+    }
+
     /// Why `full` cannot appear beside another view.
     ///
     /// Stated once, here, because it was stated twice: the CLI and the Python binding

@@ -28,6 +28,33 @@ def _stable(text: str) -> str:
     return re.sub(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{9}Z", "[TIME]", text)
 
 
+def check_the_list_grammar_reaches_python(root: Path) -> None:
+    """A view spec is parsed by the one grammar, not by whichever surface got it first.
+
+    Duplicate and empty-entry rejection lived in the CLI, so `views="tree,tree"` was a
+    typo there and a silent no-op here -- one request meaning two things depending on
+    which door it came through.
+    """
+
+    index = fdu.scan(root)
+    for spec, expected in [
+        ("tree,tree", "appears more than once"),
+        ("tree,,types", "empty entry in the list"),
+        ("full,tree", "cannot be combined"),
+        ("bogus", "expected one of"),
+    ]:
+        try:
+            index.report(fdu.Query(views=spec))
+        except fdu.InvalidArgumentError as error:
+            assert expected in str(error), (spec, str(error))
+        else:
+            raise AssertionError(f"{spec!r} must be rejected")
+
+    # And a spec the grammar accepts still works, including `full` expansion.
+    assert len(index.report(fdu.Query(views="full")).sections) > 1
+    assert len(index.report(fdu.Query(views="tree,types")).sections) == 2
+
+
 def check_render_matches_the_cli(root: Path, binary: str) -> None:
     """The package renders what the command line prints.
 
@@ -148,6 +175,7 @@ def main() -> None:
     (root / "notes.md").write_text("release notes", encoding="utf-8")
 
     check_every_view(root)
+    check_the_list_grammar_reaches_python(root)
     check_render_matches_the_cli(
         root, str(Path(sys.executable).with_name("fdu.exe" if os.name == "nt" else "fdu"))
     )

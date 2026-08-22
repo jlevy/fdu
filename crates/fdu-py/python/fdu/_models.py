@@ -238,14 +238,21 @@ class Query:
     #: Views to report. Empty means "let the requested analyzers choose", which is what
     #: the command line does: asking to read files and then printing a directory tree
     #: containing none of the results is the defect the content axis removed.
-    views: tuple[View, ...] = ()
+    #: A raw comma-separated spec is accepted as well as a tuple, so a caller passing
+    #: user input through gets the library's list grammar -- duplicate and empty-entry
+    #: rejection, and `full` expansion -- rather than having to reimplement it and get a
+    #: different answer than the CLI for the same string.
+    views: tuple[View, ...] | str = ()
     selection: Selection = field(default_factory=Selection)
     words_per_page: int = 250
 
     def __post_init__(self) -> None:
-        # A lone `View` is a `StrEnum` and therefore an iterable string; rejecting it
-        # here gives a clear error instead of a later per-character failure.
-        if isinstance(self.views, str):
+        # A lone `View` is a `StrEnum` and therefore an iterable string, so passing one
+        # unwrapped would iterate its characters; rejecting it here gives a clear error
+        # instead of a later per-character failure. A plain `str` is something else --
+        # a deliberate raw spec -- and goes to the library to be parsed by the one
+        # grammar, which is why the check names the enum rather than the type it inherits.
+        if isinstance(self.views, View):
             raise TypeError("views takes a tuple of View values; wrap the single view in a tuple")
         if self.words_per_page <= 0:
             raise ValueError("words_per_page must be positive")

@@ -68,21 +68,21 @@ def parse_cache(value: str) -> fdu.CachePolicy:
         raise UsageError(f'invalid --cache "{value}": expected one of {known}') from None
 
 
-def parse_views(value: str) -> tuple[fdu.View, ...]:
-    views: list[fdu.View] = []
-    for part in (p.strip() for p in value.split(",") if p.strip()):
-        try:
-            # `full` is a View member, not a shim-side expansion: the library owns view
-            # resolution and default derivation, and reimplementing either here is the
-            # drift this harness exists to catch.
-            views.append(fdu.View(part))
-        except ValueError:
-            known = ", ".join(v.value for v in fdu.View)
-            raise UsageError(f'invalid --view "{part}": expected one of {known}') from None
-    return tuple(views)
+def parse_views(value: str) -> str:
+    """Hand the spec over untouched.
+
+    This used to split and filter empty tokens here, which quietly accepted
+    ``--view tree,,types`` that the CLI rejects -- the shim disagreeing with the surface
+    it stands in for. The library owns the list grammar, `full` expansion, and the
+    default; the only correct move is to pass the string it was given.
+    """
+
+    return value
 
 
 def parse_scope(value: str, flag: str) -> str:
+    """Validate a cache scope against the vocabulary both surfaces share."""
+
     try:
         return str(fdu.CacheScope(value))
     except ValueError:
@@ -137,7 +137,7 @@ class Args:
         self.sort: fdu.SortKey | None = None
         self.reverse = False
         self.size = fdu.SizeMetric.ALLOCATED
-        self.views: tuple[fdu.View, ...] = ()
+        self.views: tuple[fdu.View, ...] | str = ()
         self.words_per_page = 250
         self.analyze = "none"
         self.analysis_workers = 0

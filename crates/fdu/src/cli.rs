@@ -1044,8 +1044,8 @@ impl Cli {
     }
 
     fn parse_analysis(&self) -> anyhow::Result<AnalysisRequest> {
-        let profile = AnalysisSet::parse(&self.analyze)
-            .map_err(|message| anyhow::anyhow!(message.replace("analyze", "--analyze")))?;
+        let profile = AnalysisSet::parse_labeled(&self.analyze, "--analyze")
+            .map_err(|message| anyhow::anyhow!(message))?;
         Ok(AnalysisRequest { profile, workers: self.analysis_workers })
     }
 }
@@ -1212,25 +1212,6 @@ fn parse_list<T: PartialEq>(
     Ok(parsed)
 }
 
-/// Every view, in the order `--view all` renders them.
-///
-/// Totals first, then structure, then progressively finer groupings, with the flat
-/// listing last because it is the only one whose length is bounded by `--limit` rather
-/// than by the tree's shape.  The order is a golden contract: it is what `--view all`
-/// prints, so changing it changes committed output.
-const ALL_VIEWS: [ViewSpec; 10] = [
-    ViewSpec::Summary,
-    ViewSpec::Tree,
-    ViewSpec::Families,
-    ViewSpec::Types,
-    ViewSpec::Extensions,
-    ViewSpec::Languages,
-    ViewSpec::Documents,
-    ViewSpec::Largest,
-    ViewSpec::Recent,
-    ViewSpec::Files,
-];
-
 /// Whether a view renders anything the content analyzers produce.
 ///
 /// This is the check behind the "paid for nothing" note.  It is deliberately a match
@@ -1238,24 +1219,6 @@ const ALL_VIEWS: [ViewSpec; 10] = [
 /// whether it displays content metrics.
 const fn view_displays_analysis(view: ViewSpec) -> bool {
     matches!(view, ViewSpec::Types | ViewSpec::Families | ViewSpec::Languages | ViewSpec::Documents)
-}
-
-/// Whether a view can render at all under `profile`.
-///
-/// Only `documents` has no metadata-only projection; every other view answers with or
-/// without analysis, showing fewer columns when it has less to show.
-const fn view_is_satisfiable(view: ViewSpec, profile: AnalysisSet) -> bool {
-    !matches!(view, ViewSpec::Documents) || profile.is_enabled()
-}
-
-/// The view a request displays its analysis in when the caller named none.
-///
-/// A view may never enable an analyzer — that would let a display choice authorize
-/// filesystem reads — but the reverse direction is free, because it only re-projects
-/// state the request already paid for.  Without this, `--analyze all` reads every
-/// eligible file and prints a tree containing none of the results.
-const fn default_view_for(profile: AnalysisSet) -> ViewSpec {
-    ViewSpec::default_for(profile)
 }
 
 /// Views to render, plus any `--view all` could not satisfy.
@@ -1271,23 +1234,11 @@ struct ResolvedViews {
 /// whole run over one unsatisfiable view, and reports what it dropped so the omission is
 /// stated rather than hidden.
 fn resolve_views(spec: Option<&str>, profile: AnalysisSet) -> anyhow::Result<ResolvedViews> {
-    let Some(spec) = spec else {
-        return Ok(ResolvedViews {
-            selected: vec![default_view_for(profile)],
-            omitted: Vec::new(),
-        });
-    };
-    if spec.trim().eq_ignore_ascii_case("full") {
-        // `full` is every *summary* view. `files` enumerates without bound, and putting
-        // an enumeration inside a digest destroys the digest; `largest` and `recent`
-        // carry the same information in a form a digest can hold.
-        let (selected, omitted) = ALL_VIEWS
-            .into_iter()
-            .filter(|view| view.is_summary_view())
-            .partition(|view| view_is_satisfiable(*view, profile));
-        return Ok(ResolvedViews { selected, omitted });
-    }
-    Ok(ResolvedViews { selected: parse_list(spec, "--view", parse_view)?, omitted: Vec::new() })
+    // The whole axis -- list grammar, `full` expansion, and the default -- lives in the
+    // library, so the CLI and the Python API cannot disagree about what a spec means.
+    let (selected, omitted) =
+        ViewSpec::resolve(spec, profile, "--view").map_err(|message| anyhow::anyhow!(message))?;
+    Ok(ResolvedViews { selected, omitted })
 }
 
 /// Notes that keep the display contract legible in human output.
@@ -1319,15 +1270,6 @@ fn display_notes(views: &ResolvedViews, profile: AnalysisSet, bytes_read: u64) -
         ));
     }
     notes
-}
-
-/// Parse one `--view` token, through the library's own grammar.
-fn parse_view(token: &str, flag: &str) -> anyhow::Result<ViewSpec> {
-    if token.trim().eq_ignore_ascii_case("full") {
-        anyhow::bail!("invalid {flag} \"full\": {}", ViewSpec::FULL_IS_EXCLUSIVE);
-    }
-    ViewSpec::parse(token)
-        .map_err(|expected| anyhow::anyhow!("invalid {flag} {token:?}: {expected}"))
 }
 
 /// Parse one `--kind` token.
@@ -1907,7 +1849,7 @@ mod tests {
     fn an_unknown_view_names_every_valid_value() {
         let message = query_error(&Cli { view: Some("bogus".to_string()), ..cli() });
         // The rejection is how the vocabulary is discovered, so every value must be in it.
-        for view in ALL_VIEWS {
+        for view in ViewSpec::ALL {
             let label = report_format::view_label(view);
             assert!(message.contains(label), "{label} missing from: {message}");
         }
@@ -2048,7 +1990,7 @@ mod tests {
             "summary",
         ] {
             assert!(DOCS.contains(view), "the guide should list the {view} view");
-            parse_view(view, "--view").unwrap_or_else(|_| panic!("{view} must parse"));
+            ViewSpec::parse(view).unwrap_or_else(|_| panic!("{view} must parse"));
         }
         for set in ["none", "lines", "code", "words", "all"] {
             assert!(DOCS.contains(set), "the guide should list the {set} analyzer value");
@@ -2097,10 +2039,10 @@ mod tests {
             (AnalysisSet::ALL, ViewSpec::Families),
         ];
         for (profile, expected) in cases {
-            assert_eq!(default_view_for(profile), expected, "default view for {profile:?}");
+            assert_eq!(ViewSpec::default_for(profile), expected, "default view for {profile:?}");
             if profile.is_enabled() {
                 assert!(
-                    view_displays_analysis(default_view_for(profile)),
+                    view_displays_analysis(ViewSpec::default_for(profile)),
                     "a paid-for run must default to a view that shows what it bought"
                 );
             }
@@ -2130,7 +2072,7 @@ mod tests {
         assert!(!analyzed.selected.contains(&ViewSpec::Files), "{:?}", analyzed.selected);
         assert_eq!(
             analyzed.selected,
-            ALL_VIEWS.into_iter().filter(|view| view.is_summary_view()).collect::<Vec<_>>(),
+            ViewSpec::ALL.into_iter().filter(|view| view.is_summary_view()).collect::<Vec<_>>(),
             "every summary view, in table order"
         );
 
@@ -2170,7 +2112,7 @@ mod tests {
     /// setting, may cause a file body to be opened that `--analyze` did not authorize.
     #[test]
     fn no_view_enables_an_analyzer() {
-        for view in ALL_VIEWS {
+        for view in ViewSpec::ALL {
             let spec = report_format::view_label(view);
             let cli = Cli { view: Some(spec.to_string()), ..cli() };
             let profile = cli.parse_analysis().expect("analysis").profile;

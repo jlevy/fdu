@@ -61,37 +61,18 @@ FAIL [ROOT]/tests/parity/.corpus/cli-axes.tryscript.md
   ✓ JSON Carries the Versioned Envelope
   ✓ JSONL Is One Document per Line
   ✓ YAML Quotes Only What Would Be Ambiguous
-  ✓ An Unknown View Lists Every Valid One
+  ✗ An Unknown View Lists Every Valid One
+@@ -1,1 +1,1 @@
+-fdu: invalid --view "bogus": expected one of summary, tree, families, types, extensions, languages, documents, largest, recent, files, full
++fdu: invalid view "bogus": expected one of summary, tree, families, types, extensions, languages, documents, largest, recent, files, full
   ✗ A Repeated View Is a Typo, Not a No-Op
-    Expected exit code 2, got 0
-@@ -1,1 +1,11 @@
+@@ -1,1 +1,1 @@
 -fdu: invalid --view "tree,tree": "tree" appears more than once
-+TREE
-+    24 KiB  ██████████   100%  . (6 files)
-+   8.0 KiB  ███░░░░░░░    33%    src (2 files)
-+   4.0 KiB  ██░░░░░░░░    17%    dist (1 file)
-+   4.0 KiB  ██░░░░░░░░    17%    docs (1 file)
-+
-+TREE
-+    24 KiB  ██████████   100%  . (6 files)
-+   8.0 KiB  ███░░░░░░░    33%    src (2 files)
-+   4.0 KiB  ██░░░░░░░░    17%    dist (1 file)
-+   4.0 KiB  ██░░░░░░░░    17%    docs (1 file)
++fdu: invalid view "tree,tree": "tree" appears more than once
   ✗ An Empty List Entry Is Rejected
-    Expected exit code 2, got 0
-@@ -1,1 +1,11 @@
+@@ -1,1 +1,1 @@
 -fdu: invalid --view "tree,,types": empty entry in the list
-+TREE
-+    24 KiB  ██████████   100%  . (6 files)
-+   8.0 KiB  ███░░░░░░░    33%    src (2 files)
-+   4.0 KiB  ██░░░░░░░░    17%    dist (1 file)
-+   4.0 KiB  ██░░░░░░░░    17%    docs (1 file)
-+
-+TYPES
-+   8.0 KiB   33.3%  markdown           2 files, 2 documentation
-+   8.0 KiB   33.3%  rust               2 files
-+   4.0 KiB   16.7%  archive            1 file
-+   4.0 KiB   16.7%  make               1 file
++fdu: invalid view "tree,,types": empty entry in the list
   ✓ An Unknown Format Lists Every Valid One
   ✓ Fractional Ages Point at the Compound Spelling
   ✓ Calendar Units Point at Days
@@ -443,7 +424,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-watch.tryscript.md
   ✓ Text Repaints Are Separated From One Another
   ✗ Text Repaints Are Separated From One Another
     Expected exit code 0, got 1
-@@ -1,12 +1,1 @@
+@@ -1,12 +1,2 @@
 -TREE
 -       4 B  ██████████   100%  . (1 file)
 -
@@ -456,4 +437,5 @@ FAIL [ROOT]/tests/parity/.corpus/cli-watch.tryscript.md
 -
 -SUMMARY
 -      16 B  2 files, 0 directories
-+timed out waiting for the initial report
++[ROOT]/tests/parity/py/fdu exited early with status 2 (signal null)
++fdu: invalid view "tree,summary": expected one of summary, tree, families, types, extensions, languages, documents, largest, recent, files, full
