@@ -18,14 +18,15 @@
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
-use pyo3::exceptions::{PyOSError, PyValueError};
+use pyo3::exceptions::{PyOSError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 
 use fdu::content::{AnalysisRequest, AnalysisSet, CoverageReason};
 use fdu::query::{
-    Bound as Bound_, MetricRow, MetricSummary, Pattern, Provenance, Query, Report, ReportSource,
-    Section, Selection, SizeMetric, SortKey, SummaryRow, TreeNode, ViewSpec, document_words,
+    AxisNames, Bound as Bound_, MetricRow, MetricSummary, Pattern, Provenance, Query, Report,
+    ReportSource, Section, Selection, SizeMetric, SortKey, SummaryRow, TreeNode, ViewSpec,
+    document_words,
 };
 use fdu::watch::WatchConfig;
 use fdu::watch_session::{ChangeKind, Session};
@@ -39,7 +40,23 @@ fn to_py_err(err: fdu::Error) -> PyErr {
             source.to_string(),
             path.as_os_str().to_os_string(),
         )),
-        other => PyValueError::new_err(other.to_string()),
+
+        // The caller asked for something the grammar or the scope does not allow. These
+        // are argument errors, and `except InvalidArgumentError` should catch exactly
+        // them.
+        error @ (fdu::Error::PathEscapesRoot(_)
+        | fdu::Error::UnsupportedScanConfig(_)
+        | fdu::Error::ScanScopeMismatch { .. }
+        | fdu::Error::SubtreeOutsideScanScope { .. }
+        | fdu::Error::InvalidValue { .. }
+        | fdu::Error::WatchRootMismatch { .. }) => PyValueError::new_err(error.to_string()),
+
+        // Everything else is the operation failing on its own terms: the cache had no
+        // usable snapshot, a lock was poisoned, a watch worker stopped. The arguments were
+        // fine, so calling these ValueError told a caller to look in the wrong place -- and
+        // it made `--cache only` exit 2 as a usage error where the command line exits 1
+        // (fdu-4msv).
+        operational => PyRuntimeError::new_err(operational.to_string()),
     }
 }
 
@@ -225,7 +242,14 @@ impl PyIndex {
         report_dict(py, &report)
     }
 
-    /// Build a report and return the exact CLI JSON schema in one bulk call.
+    /// Build one report and hand back the finished value.
+    ///
+    /// Returns a handle rather than rendered bytes so every renderer a caller reaches for
+    /// answers from the same report. Re-projecting the index per format instead would make
+    /// one `Report` disagree with itself the moment the index moved: `as_dict` would hold
+    /// the values the call was answered with and `render` would quietly return newer ones
+    /// (fdu-4gno). The one-shot and the watch already return their report this way; this is
+    /// the third and last producer to.
     #[pyo3(signature = (
         *,
         views = None,
@@ -243,7 +267,7 @@ impl PyIndex {
         words_per_page = 250
     ))]
     #[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
-    fn report_json(
+    fn report_handle(
         &self,
         views: Option<Vec<String>>,
         include: Option<Vec<String>>,
@@ -258,7 +282,7 @@ impl PyIndex {
         reverse: bool,
         size: &str,
         words_per_page: u64,
-    ) -> PyResult<String> {
+    ) -> PyResult<PyOneShot> {
         let report = self.build_report(
             views,
             include,
@@ -274,7 +298,7 @@ impl PyIndex {
             size,
             words_per_page,
         )?;
-        Ok(fdu::report_format::render(&report, fdu::report_format::Format::Json, false))
+        Ok(PyOneShot { report })
     }
 
     /// Watch this tree, yielding batches of changes as they arrive.
@@ -316,53 +340,23 @@ impl PyIndex {
         size: &str,
         words_per_page: u64,
     ) -> PyResult<PyWatch> {
-        let now = SystemTime::now();
-        let mut selection =
-            Selection { reverse, size: parse_size_metric(size)?, ..Selection::default() };
-        if let Some(value) = depth {
-            selection.depth = parse_bound(value, "depth")?;
-        }
-        if let Some(value) = limit {
-            selection.limit = Some(parse_bound(value, "limit")?);
-        }
-        for pattern in include.unwrap_or_default() {
-            selection.include.push(Pattern::parse(&pattern).map_err(to_py_err)?);
-        }
-        for pattern in exclude.unwrap_or_default() {
-            selection.exclude.push(Pattern::parse(&pattern).map_err(to_py_err)?);
-        }
-        for value in kind.unwrap_or_default() {
-            selection.kinds.push(parse_kind(&value)?);
-        }
-        if let Some(value) = min_size {
-            selection.min_size = Some(fdu::query::parse_size(value).map_err(to_py_err)?);
-        }
-        if let Some(value) = modified_since {
-            let at = fdu::query::parse_when(value, now).map_err(to_py_err)?;
-            selection.modified.since = Some(bound_nanos(value, at, "modified_since")?);
-        }
-        if let Some(value) = modified_before {
-            let at = fdu::query::parse_when(value, now).map_err(to_py_err)?;
-            selection.modified.before = Some(bound_nanos(value, at, "modified_before")?);
-        }
-        if let Some(value) = sort {
-            selection.sort = Some(parse_sort(value)?);
-        }
-        let views = match views {
-            Some(values) => {
-                values.iter().map(|value| parse_view(value)).collect::<PyResult<Vec<_>>>()?
-            }
-            None => vec![ViewSpec::Files],
-        };
-
-        if !interval.is_finite() || interval <= 0.0 {
-            return Err(PyValueError::new_err("interval must be a positive number of seconds"));
-        }
-        if words_per_page == 0 {
-            return Err(PyValueError::new_err("words_per_page must be positive"));
-        }
-        let query = Query { selection, views, words_per_page };
-        query.validate_analysis(self.analysis.profile).map_err(PyValueError::new_err)?;
+        let query = build_query(
+            self.analysis.profile,
+            Some(ViewSpec::Files),
+            views,
+            include,
+            exclude,
+            min_size,
+            modified_since,
+            modified_before,
+            kind,
+            depth,
+            limit,
+            sort,
+            reverse,
+            size,
+            words_per_page,
+        )?;
 
         // The index is cloned into the session: a watcher owns its own handle, so closing
         // the feed cannot disturb the caller's index.
@@ -540,50 +534,26 @@ impl PyIndex {
         size: &str,
         words_per_page: u64,
     ) -> PyResult<Report> {
+        // `now` is the report's own generated_at as well as the clock the time bounds are
+        // resolved against, so both come from one reading rather than two.
         let now = SystemTime::now();
-        let mut selection =
-            Selection { reverse, size: parse_size_metric(size)?, ..Selection::default() };
-        if let Some(value) = depth {
-            selection.depth = parse_bound(value, "depth")?;
-        }
-        if let Some(value) = limit {
-            selection.limit = Some(parse_bound(value, "limit")?);
-        }
-        for pattern in include.unwrap_or_default() {
-            selection.include.push(Pattern::parse(&pattern).map_err(to_py_err)?);
-        }
-        for pattern in exclude.unwrap_or_default() {
-            selection.exclude.push(Pattern::parse(&pattern).map_err(to_py_err)?);
-        }
-        if let Some(value) = min_size {
-            selection.min_size = Some(fdu::query::parse_size(value).map_err(to_py_err)?);
-        }
-        if let Some(value) = modified_since {
-            let at = fdu::query::parse_when(value, now).map_err(to_py_err)?;
-            selection.modified.since = Some(bound_nanos(value, at, "modified_since")?);
-        }
-        if let Some(value) = modified_before {
-            let at = fdu::query::parse_when(value, now).map_err(to_py_err)?;
-            selection.modified.before = Some(bound_nanos(value, at, "modified_before")?);
-        }
-        for value in kind.unwrap_or_default() {
-            selection.kinds.push(parse_kind(&value)?);
-        }
-        if let Some(value) = sort {
-            selection.sort = Some(parse_sort(value)?);
-        }
-        let views = match views {
-            Some(values) => resolve_views(&values, self.analysis.profile)?,
-            // Derived, not fixed: a request that paid to read files must display
-            // what it read, which is what the CLI has done since the content axis
-            // landed. A fixed `tree` here reproduced the defect that axis removed.
-            None => vec![ViewSpec::default_for(self.analysis.profile)],
-        };
-        if words_per_page == 0 {
-            return Err(PyValueError::new_err("words_per_page must be positive"));
-        }
-        let query = Query { selection, views, words_per_page };
-        query.validate_analysis(self.analysis.profile).map_err(PyValueError::new_err)?;
+        let query = build_query(
+            self.analysis.profile,
+            None,
+            views,
+            include,
+            exclude,
+            min_size,
+            modified_since,
+            modified_before,
+            kind,
+            depth,
+            limit,
+            sort,
+            reverse,
+            size,
+            words_per_page,
+        )?;
         let provenance = Provenance {
             scan_started_at: self.scan_started_at,
             generated_at: now,
@@ -938,31 +908,38 @@ fn tree_dict<'py>(py: Python<'py>, root: &TreeNode) -> PyResult<Bound<'py, PyDic
     Ok(built)
 }
 
+/// Parse a serialization name.
+///
+/// The package can render fdu's own output, not only structured values: a caller who wants
+/// what the command line prints should not have to shell out to the binary to get it.
+fn parse_format(value: &str) -> PyResult<fdu::report_format::Format> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "text" => Ok(fdu::report_format::Format::Text),
+        "json" => Ok(fdu::report_format::Format::Json),
+        "jsonl" => Ok(fdu::report_format::Format::Jsonl),
+        "yaml" => Ok(fdu::report_format::Format::Yaml),
+        other => Err(PyValueError::new_err(format!(
+            "invalid format {other:?}: expected one of text, json, jsonl, yaml"
+        ))),
+    }
+}
+
 /// Resolve a caller's view list, expanding the `full` total.
 ///
 /// `full` names the whole report rather than one projection, so it cannot be combined.
 /// The Python `View` enum offers it, so the binding must honour it — it previously listed
 /// `full` as valid in its error message while rejecting it.
-fn resolve_views(values: &[String], analysis: AnalysisSet) -> PyResult<Vec<ViewSpec>> {
-    if values.iter().any(|value| value.trim().eq_ignore_ascii_case("full")) {
-        if values.len() > 1 {
-            return Err(PyValueError::new_err(
-                "invalid view \"full\": it names the whole report and cannot be combined",
-            ));
-        }
-        return Ok(ViewSpec::full_report(analysis).0);
-    }
-    values.iter().map(|value| parse_view(value)).collect()
-}
-
-/// Parse a view name, through the library's own grammar.
-///
-/// This used to be a second copy of the vocabulary, and it drifted: `largest` and
-/// `recent` reached the CLI and the Python binding rejected them, with `make check` green
-/// throughout because nothing in the Python tests named a new view.
-fn parse_view(value: &str) -> PyResult<ViewSpec> {
-    ViewSpec::parse(value)
-        .map_err(|expected| PyValueError::new_err(format!("invalid view {value:?}: {expected}")))
+fn resolve_views(
+    values: &[String],
+    analysis: AnalysisSet,
+) -> PyResult<(Vec<ViewSpec>, Vec<ViewSpec>)> {
+    // The binding used to carry its own copy of this axis: the `full` expansion, the
+    // exclusivity rule, and the default. Each drifted -- the exclusivity message lost a
+    // clause (fdu-gw5b), the view order fell out of step (fdu-ggux), and the list grammar
+    // was never here at all, so ["tree", "tree"] was a silent no-op where the CLI calls it
+    // a typo (fdu-jozr). One resolver now, named as the Python API spells the axis.
+    let spec = values.join(",");
+    ViewSpec::resolve(Some(&spec), analysis, "view").map_err(PyValueError::new_err)
 }
 
 /// Parse an entry-kind name.
@@ -1030,6 +1007,23 @@ struct PyWatch {
 
 #[pymethods]
 impl PyWatch {
+    /// The live answer, as of now, from the index this session has been updating.
+    ///
+    /// A watch run has no final answer: the aggregates are only true until the next
+    /// change, so a caller redrawing them needs the session's own index rather than the
+    /// one it was opened from. Reporting the opened index instead repaints numbers that
+    /// stopped being true at the first event, which looks like a working display and is
+    /// not one (fdu-m66a).
+    ///
+    /// Returns a snapshot, so rendering it twice gives the same answer both times.
+    fn report(&self) -> PyResult<PyOneShot> {
+        let session =
+            self.session.as_ref().ok_or_else(|| PyRuntimeError::new_err("this watch is closed"))?;
+        let provenance = session.live_provenance(SystemTime::now());
+        let report = session.report(&provenance).map_err(to_py_err)?;
+        Ok(PyOneShot { report })
+    }
+
     fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
         slf
     }
@@ -1084,6 +1078,286 @@ impl PyWatch {
         self.close();
         false
     }
+}
+
+/// Build a query from the keyword arguments both report paths accept.
+///
+/// Extracted so the session path and the one-shot cannot disagree about what a request
+/// means. Every value grammar here belongs to the library and is called, not restated.
+#[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
+fn build_query(
+    profile: AnalysisSet,
+    default_view: Option<ViewSpec>,
+    views: Option<Vec<String>>,
+    include: Option<Vec<String>>,
+    exclude: Option<Vec<String>>,
+    min_size: Option<&str>,
+    modified_since: Option<&str>,
+    modified_before: Option<&str>,
+    kind: Option<Vec<String>>,
+    depth: Option<&str>,
+    limit: Option<&str>,
+    sort: Option<&str>,
+    reverse: bool,
+    size: &str,
+    words_per_page: u64,
+) -> PyResult<Query> {
+    let now = SystemTime::now();
+    let mut selection =
+        Selection { reverse, size: parse_size_metric(size)?, ..Selection::default() };
+    if let Some(value) = depth {
+        selection.depth = Some(parse_bound(value, "depth")?);
+    }
+    if let Some(value) = limit {
+        selection.limit = Some(parse_bound(value, "limit")?);
+    }
+    for pattern in include.unwrap_or_default() {
+        selection.include.push(Pattern::parse(&pattern).map_err(to_py_err)?);
+    }
+    for pattern in exclude.unwrap_or_default() {
+        selection.exclude.push(Pattern::parse(&pattern).map_err(to_py_err)?);
+    }
+    if let Some(value) = min_size {
+        selection.min_size = Some(fdu::query::parse_size(value).map_err(to_py_err)?);
+    }
+    if let Some(value) = modified_since {
+        let at = fdu::query::parse_when(value, now).map_err(to_py_err)?;
+        selection.modified.since = Some(bound_nanos(value, at, "modified_since")?);
+    }
+    if let Some(value) = modified_before {
+        let at = fdu::query::parse_when(value, now).map_err(to_py_err)?;
+        selection.modified.before = Some(bound_nanos(value, at, "modified_before")?);
+    }
+    for value in kind.unwrap_or_default() {
+        selection.kinds.push(parse_kind(&value)?);
+    }
+    if let Some(value) = sort {
+        selection.sort = Some(parse_sort(value)?);
+    }
+    let (views, omitted_views) = match views {
+        Some(values) => resolve_views(&values, profile)?,
+        // Derived, not fixed: a request that paid to read files must display what it read,
+        // which is what the CLI has done since the content axis landed. A fixed `tree` here
+        // reproduced the defect that axis removed.
+        //
+        // A watch stream is the one caller with a fixed answer: it emits per-entry records,
+        // so `files` is what it means regardless of analyzers. Passed in rather than
+        // derived, because sharing this builder silently turned that into a tree.
+        None => (vec![default_view.unwrap_or_else(|| ViewSpec::default_for(profile))], Vec::new()),
+    };
+    if words_per_page == 0 {
+        return Err(PyValueError::new_err("words_per_page must be positive"));
+    }
+    // The Python API names these axes with fields, so its diagnostics do too: there is no
+    // `--analyze` for a caller here to add (fdu-4apt).
+    let query = Query { selection, views, omitted_views, axes: AxisNames::FIELDS, words_per_page };
+    query.validate_analysis(profile).map_err(PyValueError::new_err)?;
+    Ok(query)
+}
+
+/// One report, holding only what the request needed.
+///
+/// Owns the finished report so a caller can render it in more than one format without
+/// paying for the walk again. A one-shot retains no index, so re-rendering from a query
+/// would mean rescanning -- which is the cost the one-shot exists to avoid.
+#[pyclass(name = "OneShot", module = "fdu._native", frozen)]
+struct PyOneShot {
+    report: fdu::query::Report,
+}
+
+#[pymethods]
+impl PyOneShot {
+    fn render(&self, format: &str, color: bool) -> PyResult<String> {
+        Ok(fdu::report_format::render(&self.report, parse_format(format)?, color))
+    }
+
+    /// What the report says about itself, as values rather than as rendered text.
+    ///
+    /// The wire envelope excludes these deliberately, so a caller reading the typed report
+    /// would otherwise have to scrape them out of the text rendering to learn that a view
+    /// was dropped -- which is the gap on the library side that carrying them on `Report`
+    /// closed in the first place (fdu-7wd1).
+    fn notes(&self) -> Vec<String> {
+        self.report.notes.clone()
+    }
+}
+
+/// Produce one report the way the command line does, retaining the least state it needs.
+///
+/// `open` takes the session path: it retains an index and writes a snapshot, which is
+/// right for a caller asking many questions and wrong for one asking a single question.
+/// An unfiltered summary is answered by a transient tier that retains nothing, so writing
+/// a snapshot for it caches state the walk never saved -- and a Python caller therefore
+/// left cache state on a tree that the same command would not have, which a later
+/// cache-only read could see (fdu-4msv).
+#[pyfunction]
+#[pyo3(signature = (
+    root,
+    *,
+    cache = "auto",
+    max_depth = None,
+    one_filesystem = false,
+    analyze = "none",
+    analysis_workers = 0,
+    views = None,
+    include = None,
+    exclude = None,
+    min_size = None,
+    modified_since = None,
+    modified_before = None,
+    kind = None,
+    depth = None,
+    limit = None,
+    sort = None,
+    reverse = false,
+    size = "allocated",
+    words_per_page = 250,
+))]
+#[allow(
+    clippy::too_many_arguments,
+    clippy::needless_pass_by_value,
+    clippy::fn_params_excessive_bools
+)]
+fn report_once(
+    py: Python<'_>,
+    root: PathBuf,
+    cache: &str,
+    max_depth: Option<usize>,
+    one_filesystem: bool,
+    analyze: &str,
+    analysis_workers: usize,
+    views: Option<Vec<String>>,
+    include: Option<Vec<String>>,
+    exclude: Option<Vec<String>>,
+    min_size: Option<&str>,
+    modified_since: Option<&str>,
+    modified_before: Option<&str>,
+    kind: Option<Vec<String>>,
+    depth: Option<&str>,
+    limit: Option<&str>,
+    sort: Option<&str>,
+    reverse: bool,
+    size: &str,
+    words_per_page: u64,
+) -> PyResult<PyOneShot> {
+    let analysis = parse_analysis_request(analyze, analysis_workers)?;
+    let config = OpenConfig {
+        scan: ScanConfig { max_depth, one_filesystem, ..ScanConfig::default() },
+        cache_path: fdu::default_cache_path(&root),
+        policy: parse_cache_policy(cache)?,
+        analysis,
+    };
+    let query = build_query(
+        analysis.profile,
+        None,
+        views,
+        include,
+        exclude,
+        min_size,
+        modified_since,
+        modified_before,
+        kind,
+        depth,
+        limit,
+        sort,
+        reverse,
+        size,
+        words_per_page,
+    )?;
+
+    let prepared = py.detach(|| fdu::prepare_report(&root, &config, &query));
+    let (report, pending_save, _performance) = prepared.map_err(to_py_err)?;
+    // Joined before returning: the command line overlaps the write with rendering, but a
+    // caller who gets a value back should not still owe the filesystem a write.
+    pending_save.join().map_err(to_py_err)?;
+    Ok(PyOneShot { report })
+}
+
+/// The rule that separates one watch repaint from the one before it.
+///
+/// A watch run has no final answer and so no performance footer, which leaves consecutive
+/// text repaints with nothing between them: the last row of one and the first row of the
+/// next are adjacent lines. A blank line will not do -- that is already what separates two
+/// views inside a single report -- so the rule carries the instant it was drawn, which is
+/// also the one fact distinguishing two repaints whose numbers happen to match.
+#[pyfunction]
+fn watch_rule(at_nanos: i64) -> PyResult<String> {
+    // Nanoseconds because that is what a Change already carries, so a caller repainting
+    // after a batch has the instant to hand without converting through anything.
+    let at = if at_nanos >= 0 {
+        std::time::UNIX_EPOCH.checked_add(std::time::Duration::from_nanos(at_nanos.unsigned_abs()))
+    } else {
+        std::time::UNIX_EPOCH.checked_sub(std::time::Duration::from_nanos(at_nanos.unsigned_abs()))
+    };
+    let at = at.ok_or_else(|| {
+        PyValueError::new_err("timestamp is outside the range this platform can represent")
+    })?;
+    Ok(fdu::report_format::watch_rule(at))
+}
+
+/// Render one watch record the way the CLI streams it, in any format.
+///
+/// `Index.watch` yields the facts of a change and nothing turned them into fdu's bytes, so
+/// a caller streaming changes had to invent a format that would drift from the one the
+/// command line emits (fdu-m66a). This is the renderer `--watch` uses.
+///
+/// Takes the record's fields rather than a reconstructed value, because the fields ARE the
+/// record: `Change` carries exactly these, and a parity session pins that the two surfaces
+/// emit the same line.
+#[pyfunction]
+#[pyo3(signature = (path, op, clock, kind = None, bytes = None, allocated = None, mtime_ns = None, format = "jsonl"))]
+#[allow(clippy::needless_pass_by_value, clippy::too_many_arguments)]
+fn render_change(
+    path: PathBuf,
+    op: &str,
+    clock: u64,
+    kind: Option<&str>,
+    bytes: Option<u64>,
+    allocated: Option<u64>,
+    mtime_ns: Option<i64>,
+    format: &str,
+) -> PyResult<String> {
+    let change = fdu::Change {
+        path,
+        kind: match op {
+            "upsert" => fdu::ChangeKind::Upsert,
+            "remove" => fdu::ChangeKind::Remove,
+            "invalidate" => fdu::ChangeKind::Invalidate,
+            other => {
+                return Err(PyValueError::new_err(format!(
+                    "invalid op {other:?}: expected upsert, remove, or invalidate"
+                )));
+            }
+        },
+        entry_kind: kind.map(parse_kind).transpose()?,
+        bytes,
+        allocated,
+        mtime_ns,
+        clock,
+    };
+    Ok(fdu::report_format::render_change(&change, parse_format(format)?))
+}
+
+/// Render cache statuses the way the CLI does, in any format.
+///
+/// The human layout lives in `report_format` beside every other human layout, so this is
+/// the same renderer `--cache-status` uses rather than a second copy. Without it a caller
+/// holding `CacheStatus` values had no way to print them as fdu prints them, and the
+/// parity shim fell back to `repr()`.
+///
+/// Takes the statuses as paths rather than as reconstructed values: re-reading the files
+/// is cheap, keeps one definition of what a status *is*, and means a caller cannot hand
+/// the renderer a status the engine never produced.
+#[pyfunction]
+#[pyo3(signature = (paths, format = "text"))]
+#[allow(clippy::needless_pass_by_value)]
+fn render_cache_status(paths: Vec<PathBuf>, format: &str) -> PyResult<String> {
+    let format = parse_format(format)?;
+    let statuses = paths
+        .iter()
+        .map(|path| fdu::cache_status(path).map_err(to_py_err))
+        .collect::<PyResult<Vec<_>>>()?;
+    Ok(fdu::report_format::render_cache_status(&statuses, format))
 }
 
 /// One cache file's status as a dict.
@@ -1288,25 +1562,19 @@ fn contract(py: Python<'_>) -> PyResult<Bound<'_, PyDict>> {
     let contract = PyDict::new(py);
     contract.set_item("cache_policies", ["auto", "refresh", "read-only", "only", "off"])?;
     contract.set_item("analysis", ["none", "lines", "code", "words", "all"])?;
-    contract.set_item(
-        "views",
-        [
-            "tree",
-            "extensions",
-            "types",
-            "families",
-            "languages",
-            "documents",
-            "largest",
-            "recent",
-            "files",
-            "summary",
-            "full",
-        ],
-    )?;
+    // Derived, never copied. A hand-written list here is a second definition of a
+    // grammar the library owns, and a parity test comparing two copies of the same
+    // mistake passes: this list had drifted out of ViewSpec::ALL order and the
+    // assertion never noticed, because Python had been written from the same copy
+    // (fdu-ggux). Deriving it means the next view needs no edit in this file.
+    let mut views: Vec<&str> = ViewSpec::ALL.iter().map(|view| view.label()).collect();
+    views.push("full");
+    contract.set_item("views", views)?;
+    contract.set_item("formats", ["text", "json", "jsonl", "yaml"])?;
     contract.set_item("entry_kinds", ["file", "dir", "symlink", "other"])?;
     contract.set_item("size_metrics", ["allocated", "apparent"])?;
     contract.set_item("sort_keys", ["size", "count", "mtime", "name"])?;
+    contract.set_item("cache_scopes", ["root", "all"])?;
     Ok(contract)
 }
 
@@ -1318,6 +1586,11 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(open, m)?)?;
     m.add_function(wrap_pyfunction!(cache_path, m)?)?;
     m.add_function(wrap_pyfunction!(cache_status, m)?)?;
+    m.add_function(wrap_pyfunction!(render_cache_status, m)?)?;
+    m.add_function(wrap_pyfunction!(report_once, m)?)?;
+    m.add_function(wrap_pyfunction!(render_change, m)?)?;
+    m.add_function(wrap_pyfunction!(watch_rule, m)?)?;
+    m.add_class::<PyOneShot>()?;
     m.add_function(wrap_pyfunction!(list_caches, m)?)?;
     m.add_function(wrap_pyfunction!(clear_cache, m)?)?;
     m.add_function(wrap_pyfunction!(clear_all_caches, m)?)?;

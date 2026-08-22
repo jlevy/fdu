@@ -174,6 +174,24 @@ impl Default for ScanConfig {
     }
 }
 
+/// Why watching cannot narrow its scan scope, said once for every surface.
+///
+/// The CLI used to carry this guidance and the library carried "requires event-scope
+/// filtering", which names the implementation rather than the caller's next move -- so a
+/// library caller hitting the same wall got jargon and the CLI user got help. Two
+/// messages for one rule also drift, and the parity harness could not tell they were the
+/// same rule.
+///
+/// The knobs are named by the calling surface: `--scan-depth` on the command line,
+/// `max_depth` through the API. Everything else is identical, so the harness can verify
+/// mechanically that both surfaces state the same rule.
+pub const WATCH_SCOPE_GUIDANCE: &str = concat!(
+    "watching requires full scope and cannot be combined with max_depth or one_filesystem: ",
+    "a watcher cannot filter backend events against a narrowed boundary. Selection such as ",
+    "depth, include, and modified_since does work while watching, because it filters the ",
+    "retained index rather than narrowing the scan"
+);
+
 impl ScanConfig {
     /// Semantic cache identity, excluding operational batching choices.
     pub const fn scope(&self) -> ScanScope {
@@ -250,9 +268,7 @@ impl ScanConfig {
     pub(crate) fn validate_for_watch_scope(&self, indexed: ScanScope) -> Result<()> {
         self.validate_for_scope(indexed)?;
         if self.max_depth.is_some() || self.one_filesystem {
-            return Err(Error::UnsupportedScanConfig(
-                "watch application for max_depth or one_filesystem requires event-scope filtering",
-            ));
+            return Err(Error::UnsupportedScanConfig(WATCH_SCOPE_GUIDANCE));
         }
         Ok(())
     }

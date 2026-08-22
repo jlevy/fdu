@@ -117,20 +117,31 @@ impl AnalysisSet {
     /// one surface's flag parsing: the CLI and the Python binding must accept exactly the
     /// same words or the two surfaces disagree about what a request means.
     ///
+    /// Parse an analyzer list, naming the axis as the library and Python API spell it.
+    ///
     /// `none` and `all` are totals and cannot be combined with anything, including each
     /// other — `none,code` has no coherent reading, and silently letting one win is how a
     /// caller ends up with analysis they did not ask for or did not get.
     pub fn parse(value: &str) -> Result<Self, String> {
+        Self::parse_labeled(value, "analyze")
+    }
+
+    /// `label` is how the calling surface names this axis in its diagnostics: `--analyze`
+    /// for the CLI, `analyze` for the Python API. Passed in rather than rewritten
+    /// afterwards, because the CLI used to relabel by substring replace and that hit the
+    /// user's own token: `--analyze analyzer` reported `invalid --analyze "--analyzer"`,
+    /// misquoting the very value it was rejecting (fdu-7j6z).
+    pub fn parse_labeled(value: &str, label: &str) -> Result<Self, String> {
         let mut set = Self::NONE;
         let mut seen: Vec<String> = Vec::new();
         let mut total: Option<&'static str> = None;
         for raw in value.split(',') {
             let token = raw.trim().to_ascii_lowercase();
             if token.is_empty() {
-                return Err(format!("invalid analyze {value:?}: empty entry in the list"));
+                return Err(format!("invalid {label} {value:?}: empty entry in the list"));
             }
             if seen.contains(&token) {
-                return Err(format!("invalid analyze {value:?}: {token:?} appears more than once"));
+                return Err(format!("invalid {label} {value:?}: {token:?} appears more than once"));
             }
             seen.push(token.clone());
             match token.as_str() {
@@ -144,7 +155,7 @@ impl AnalysisSet {
                 "words" => set = set.with_words(),
                 other => {
                     return Err(format!(
-                        "invalid analyze {other:?}: expected one of none, lines, code, words, all"
+                        "invalid {label} {other:?}: expected one of none, lines, code, words, all"
                     ));
                 }
             }
@@ -152,7 +163,7 @@ impl AnalysisSet {
         if let Some(total) = total {
             if seen.len() > 1 {
                 return Err(format!(
-                    "invalid analyze {value:?}: {total:?} names the whole axis and cannot be combined"
+                    "invalid {label} {value:?}: {total:?} names the whole axis and cannot be combined"
                 ));
             }
             if total == "none" {
@@ -535,6 +546,22 @@ mod tests {
         for (input, needle) in cases {
             let error = AnalysisSet::parse(input).expect_err(&format!("{input:?} must fail"));
             assert!(error.contains(needle), "parsing {input:?} said {error:?}, wanted {needle:?}");
+        }
+    }
+
+    /// The CLI used to relabel by substring replace, which rewrote the user's own token:
+    /// `--analyze analyzer` reported `invalid --analyze "--analyzer"`, misquoting the very
+    /// value it was rejecting. The label is a parameter now, so the value is untouched.
+    #[test]
+    fn a_label_never_rewrites_the_value_it_is_reporting() {
+        for value in ["analyzer", "reanalyze", "analyze-all"] {
+            let error = AnalysisSet::parse_labeled(value, "--analyze")
+                .expect_err("must reject an unknown analyzer");
+            assert!(
+                error.contains(&format!("{value:?}")),
+                "{error} must quote {value:?} exactly as typed"
+            );
+            assert!(error.starts_with("invalid --analyze "), "{error} must carry the label");
         }
     }
 

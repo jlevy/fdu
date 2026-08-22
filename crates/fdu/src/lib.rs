@@ -91,6 +91,12 @@ pub use crate::engine_contract::{
 pub use crate::index::{
     ApplyOutcome, ApplyStats, ChildSnapshot, EntryId, ExtTally, Index, IndexHandle, RollUp, Since,
 };
+// Gated with the module it comes from. One-shot planning is an execution strategy rather
+// than a command-line concern, and the Python API is now a non-CLI consumer of it, so this
+// arguably belongs in the core build; moving it is a feature-graph change with its own
+// lib-only and MSRV consequences, tracked as fdu-phdm rather than folded in here.
+#[cfg(feature = "cli")]
+pub use crate::execution::{PerformanceSummary, prepare_report};
 pub use crate::scan::{ReconcileReport, ScanConfig, ScanOrder, ScanReport};
 #[cfg(feature = "watch")]
 pub use crate::watch_session::{Batch, Change, ChangeKind, Session};

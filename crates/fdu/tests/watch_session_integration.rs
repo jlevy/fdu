@@ -144,7 +144,7 @@ fn a_live_report_is_the_same_query_re_evaluated() {
     fs::write(dir.path().join("a.txt"), b"12345").expect("seed");
     let mut session = session(
         dir.path(),
-        Selection { depth: Bound::All, ..Selection::default() },
+        Selection { depth: Some(Bound::All), ..Selection::default() },
         vec![ViewSpec::Summary],
     );
 

@@ -8,6 +8,7 @@ typed values; callers never need to know the private extension's wire shape.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -64,18 +65,24 @@ class Coverage(StrEnum):
 
 
 class View(StrEnum):
-    """A report projection over the retained index."""
+    """A report projection over the retained index.
 
+    Declared in `ViewSpec::ALL` order, which is the order the CLI lists views in and the
+    order `--view full` renders them: the summary first, then the roll-up ladder from
+    coarse to fine, then the per-file views. Iterating this enum and iterating the CLI's
+    own view list must give the same sequence, and a parity run compares them (fdu-ggux).
+    """
+
+    SUMMARY = "summary"
     TREE = "tree"
-    EXTENSIONS = "extensions"
-    TYPES = "types"
     FAMILIES = "families"
+    TYPES = "types"
+    EXTENSIONS = "extensions"
     LANGUAGES = "languages"
     DOCUMENTS = "documents"
     LARGEST = "largest"
     RECENT = "recent"
     FILES = "files"
-    SUMMARY = "summary"
     FULL = "full"
 
 
@@ -118,6 +125,33 @@ class Analysis(StrEnum):
     CODE = "code"
     WORDS = "words"
     ALL = "all"
+
+
+class CacheScope(StrEnum):
+    """Which snapshots a cache-lifecycle request covers.
+
+    The Python API distinguishes these by function -- `cache_status` and `clear_cache`
+    for one root, `list_caches` and `clear_all_caches` for the directory -- but the
+    vocabulary is shared with the CLI's `--cache-status` and `--cache-clear`, so it is
+    named here and asserted against `contract()` like every other shared vocabulary.
+    """
+
+    ROOT = "root"
+    ALL = "all"
+
+
+class Format(StrEnum):
+    """How a report is serialized.
+
+    `TEXT` is the human rendering the command line prints, minus its performance footer:
+    that footer is transient telemetry the report schema deliberately excludes, and the
+    walk counts behind it are not part of a `Report`.
+    """
+
+    TEXT = "text"
+    JSON = "json"
+    JSONL = "jsonl"
+    YAML = "yaml"
 
 
 class ChangeKind(StrEnum):
@@ -170,8 +204,11 @@ class Selection:
     modified_since: datetime | str | None = None
     modified_before: datetime | str | None = None
     kinds: tuple[EntryKind, ...] = ()
-    depth: int | Bound | None = None
-    limit: int | Bound | None = None
+    #: Accepts a raw token as well as an int or `Bound`, so a caller passing user input
+    #: straight through gets the library's own grammar and wording rather than having to
+    #: pre-validate and invent a second opinion about what is acceptable.
+    depth: int | Bound | str | None = None
+    limit: int | Bound | str | None = None
     sort: SortKey | None = None
     reverse: bool = False
     size: SizeMetric = SizeMetric.ALLOCATED
@@ -201,14 +238,21 @@ class Query:
     #: Views to report. Empty means "let the requested analyzers choose", which is what
     #: the command line does: asking to read files and then printing a directory tree
     #: containing none of the results is the defect the content axis removed.
-    views: tuple[View, ...] = ()
+    #: A raw comma-separated spec is accepted as well as a tuple, so a caller passing
+    #: user input through gets the library's list grammar -- duplicate and empty-entry
+    #: rejection, and `full` expansion -- rather than having to reimplement it and get a
+    #: different answer than the CLI for the same string.
+    views: tuple[View, ...] | str = ()
     selection: Selection = field(default_factory=Selection)
     words_per_page: int = 250
 
     def __post_init__(self) -> None:
-        # A lone `View` is a `StrEnum` and therefore an iterable string; rejecting it
-        # here gives a clear error instead of a later per-character failure.
-        if isinstance(self.views, str):
+        # A lone `View` is a `StrEnum` and therefore an iterable string, so passing one
+        # unwrapped would iterate its characters; rejecting it here gives a clear error
+        # instead of a later per-character failure. A plain `str` is something else --
+        # a deliberate raw spec -- and goes to the library to be parsed by the one
+        # grammar, which is why the check names the enum rather than the type it inherits.
+        if isinstance(self.views, View):
             raise TypeError("views takes a tuple of View values; wrap the single view in a tuple")
         if self.words_per_page <= 0:
             raise ValueError("words_per_page must be positive")
@@ -461,12 +505,48 @@ class Report:
     status: Status
     analysis: AnalysisMetadata | None
     sections: tuple[ReportSection, ...]
+    #: Remarks the report makes about itself, in the order a renderer prints them --
+    #: today, the views `full` had to drop for want of an analyzer. Carried as values
+    #: rather than left inside the text rendering, because a caller reading `sections`
+    #: would otherwise find one absent with no way to learn why (fdu-7wd1). Deliberately
+    #: not in `as_dict`: the wire envelope excludes them, and a machine consumer reads
+    #: the omission from which sections are present.
+    notes: tuple[str, ...]
     _wire: dict[str, JsonValue] = field(repr=False, compare=False)
+    #: Bound renderer, supplied by `Index.report`. Absent on a report built by hand.
+    _renderer: Callable[[str, bool], str] | None = field(default=None, repr=False, compare=False)
 
     def as_dict(self) -> dict[str, JsonValue]:
         """Return an independent copy of the exact CLI JSON schema."""
 
         return deepcopy(self._wire)
+
+    def render(self, format: Format = Format.TEXT, *, color: bool = False) -> str:
+        """Serialize this report the way the command line does.
+
+        Beside `as_dict` because both are serializations of the same value -- the one this
+        report was built from, not whatever the index holds now -- and splitting them
+        across a method and a module function would make the pair harder to find than
+        either alone.
+
+        `color` is a plain bool rather than the CLI's `auto | always | never`: resolving
+        `auto` means asking whether stdout is a terminal, and a library does not own
+        stdout. The caller decides and passes the answer in.
+
+        The report only. The command line appends a performance footer, which is transient
+        telemetry the schema excludes and whose counts are not on a `Report`.
+        """
+
+        if self._renderer is None:
+            # Deferred: `_api` imports this module, so its exception types cannot be
+            # imported at module scope.
+            from ._api import InvalidArgumentError
+
+            raise InvalidArgumentError(
+                "this report carries no renderer; only a report from Index.report, "
+                "fdu.report, or Watch.report can be rendered"
+            )
+        return self._renderer(str(format), color)
 
 
 @dataclass(frozen=True, slots=True)
@@ -490,6 +570,35 @@ class Change:
     allocated: int | None = None
     mtime_ns: int | None = None
     reason: str | None = None
+
+    def render(self, format: Format = Format.JSONL) -> str:
+        """Render this record as ``fdu --watch`` streams it.
+
+        The same renderer the command line uses, so a caller streaming changes emits the
+        bytes fdu emits rather than a format of its own that will drift from them.
+        """
+
+        # Through `_call` like every other native call, so a bad format raises the
+        # package's own `InvalidArgumentError` rather than the bare `ValueError` pyo3
+        # produces -- a caller writing `except FduError` should not miss this one
+        # (fdu-dygl). Deferred for the same reason as above.
+        from . import _native
+        from ._api import _call
+
+        return cast(
+            str,
+            _call(
+                _native.render_change,
+                path=str(self.path),
+                op=str(self.kind),
+                clock=self.clock,
+                kind=str(self.entry_kind) if self.entry_kind is not None else None,
+                bytes=self.bytes,
+                allocated=self.allocated,
+                mtime_ns=self.mtime_ns,
+                format=str(format),
+            ),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -619,12 +728,16 @@ def _tree(value: dict[str, Any]) -> TreeNode:
     )
 
 
-def report_from_dict(wire: dict[str, Any]) -> Report:
+def report_from_dict(wire: dict[str, Any], notes: tuple[str, ...] = ()) -> Report:
     """
     Parse the exact CLI JSON object into immutable public values.
 
     Takes ownership of `wire`: the report retains it as its wire form, so the caller
     must not mutate it afterwards. `Report.as_dict()` hands out independent copies.
+
+    `notes` comes from the report itself rather than from `wire`, because the wire
+    envelope deliberately excludes them; the producer reads them off the same handle it
+    rendered from and passes them in.
     """
 
     def _bound(raw: dict[str, Any]) -> SectionBound | None:
@@ -727,6 +840,7 @@ def report_from_dict(wire: dict[str, Any]) -> Report:
     if generated_at is None:
         raise TypeError("report generated_at must be present")
     return Report(
+        notes=notes,
         schema=str(wire["schema"]),
         generator=str(wire["generator"]),
         root=Path(str(wire["root"])),

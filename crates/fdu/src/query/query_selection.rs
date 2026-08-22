@@ -106,8 +106,14 @@ pub struct Selection {
     pub kinds: Vec<EntryKind>,
     /// Modification-time window.
     pub modified: ModifiedWindow,
-    /// How deep a rendered tree descends.
-    pub depth: Bound,
+    /// How deep a rendered tree descends, or `None` to let each view apply its own.
+    ///
+    /// Optional for the same reason `limit` and `sort` are. The depth that suits a tree
+    /// is not the depth that suits a flat enumeration, and while this was a plain
+    /// `Bound` the only default the library could offer was "unbounded" -- so the CLI
+    /// declared `default_value = "2"` itself and every other caller silently got a
+    /// different report for the same request.
+    pub depth: Option<Bound>,
     /// How many entries a view reports.
     /// Rows to keep, or `None` to let each view apply its own bound.
     ///

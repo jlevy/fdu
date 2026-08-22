@@ -98,6 +98,18 @@ impl ViewSpec {
         }
     }
 
+    /// How deep a rendered tree descends when the caller named no depth.
+    ///
+    /// Two levels is what makes `fdu` answer "what is big here" at a glance: the root's
+    /// children and theirs. Only the tree renders a hierarchy at all, so every other
+    /// view is unbounded and the question does not arise.
+    const fn default_depth(self) -> Bound {
+        match self {
+            Self::Tree => Bound::Limit(2),
+            _ => Bound::All,
+        }
+    }
+
     /// Whether this view reports regular files only.
     ///
     /// `tree` already reports directory sizes, so a `largest` that listed directories
@@ -185,6 +197,69 @@ impl ViewSpec {
         }
     }
 
+    /// Resolve the view axis from a caller's spec against what the analyzers can answer.
+    ///
+    /// The whole job in one place: the list grammar, `full` expansion, and the default
+    /// when the caller named nothing. All three lived in the CLI, so `--view tree,tree`
+    /// was a typo there and a silent no-op through the Python API -- one request meaning
+    /// two things depending on which door it came through (fdu-jozr) -- and the binding
+    /// kept its own partial copy that had already drifted (fdu-ggux, fdu-gw5b).
+    ///
+    /// Returns the views to render and the ones `full` had to drop, so a caller can state
+    /// the omission rather than hide it.
+    ///
+    /// `label` names the axis as the calling surface spells it, for the reason
+    /// `AnalysisSet::parse_labeled` takes one: rewriting the message afterwards hits the
+    /// user's own token (fdu-7j6z).
+    pub fn resolve(
+        spec: Option<&str>,
+        analysis: AnalysisSet,
+        label: &str,
+    ) -> Result<(Vec<Self>, Vec<Self>), String> {
+        let Some(spec) = spec else {
+            return Ok((vec![Self::default_for(analysis)], Vec::new()));
+        };
+
+        let mut parsed: Vec<Self> = Vec::new();
+        let mut full_seen = false;
+        for raw in spec.split(',') {
+            let token = raw.trim();
+            if token.is_empty() {
+                return Err(format!("invalid {label} {spec:?}: empty entry in the list"));
+            }
+            if token.eq_ignore_ascii_case("full") {
+                if full_seen || !parsed.is_empty() {
+                    return Err(format!("invalid {label} \"full\": {}", Self::FULL_IS_EXCLUSIVE));
+                }
+                full_seen = true;
+                continue;
+            }
+            if full_seen {
+                return Err(format!("invalid {label} \"full\": {}", Self::FULL_IS_EXCLUSIVE));
+            }
+            let view = Self::parse(token)
+                .map_err(|expected| format!("invalid {label} {token:?}: {expected}"))?;
+            if parsed.contains(&view) {
+                return Err(format!("invalid {label} {spec:?}: {token:?} appears more than once"));
+            }
+            parsed.push(view);
+        }
+
+        if full_seen {
+            return Ok(Self::full_report(analysis));
+        }
+        Ok((parsed, Vec::new()))
+    }
+
+    /// Why `full` cannot appear beside another view.
+    ///
+    /// Stated once, here, because it was stated twice: the CLI and the Python binding
+    /// each carried their own copy, and the binding's had lost the trailing clause. Two
+    /// copies of one rule drift silently, and a parity test comparing surface to surface
+    /// only catches it when the drift reaches the wording (fdu-gw5b).
+    pub const FULL_IS_EXCLUSIVE: &'static str =
+        "it names the whole report and cannot be combined with another view";
+
     /// The summary views `full` expands to, given what the analyzers can answer.
     ///
     /// Returns the satisfiable views and those it had to skip, so a caller can report the
@@ -205,6 +280,44 @@ impl ViewSpec {
     }
 }
 
+/// What the calling surface calls the two axes a report's diagnostics name.
+///
+/// The same reason `ViewSpec::resolve` and `AnalysisSet::parse_labeled` take a label: a
+/// rule belongs to the library, but the words a caller can act on belong to the surface
+/// they came through. Telling a Python caller to "add --analyze" names a flag that does
+/// not exist in their surface -- the defect that made these messages worth moving here in
+/// the first place, reappearing one door over (fdu-4apt).
+///
+/// Two axes rather than one because both diagnostics name both: the view that cannot be
+/// answered, and the analyzer that would answer it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AxisNames {
+    /// The view axis.
+    pub view: &'static str,
+    /// The analyzer axis.
+    pub analyze: &'static str,
+}
+
+impl AxisNames {
+    /// How the command line spells them.
+    pub const FLAGS: Self = Self { view: "--view", analyze: "--analyze" };
+
+    /// How the library and the Python API spell them, and the default: a `Query` built
+    /// without saying otherwise belongs to a library caller, not to the command line.
+    ///
+    /// `view` singular, matching the label the binding already passes to
+    /// `ViewSpec::resolve`, so every diagnostic about this axis names it one way. It also
+    /// keeps the difference from the command line to the flag dashes alone, which is what
+    /// the parity harness's `surface-label` class checks.
+    pub const FIELDS: Self = Self { view: "view", analyze: "analyze" };
+}
+
+impl Default for AxisNames {
+    fn default() -> Self {
+        Self::FIELDS
+    }
+}
+
 /// What a report was asked for.
 #[derive(Clone, Debug)]
 pub struct Query {
@@ -212,13 +325,30 @@ pub struct Query {
     pub selection: Selection,
     /// Which views to report, in the order they were requested.
     pub views: Vec<ViewSpec>,
+    /// Views `full` had to drop because the requested analyzers cannot answer them.
+    ///
+    /// Carried so the report can name the omission rather than leave a caller to notice a
+    /// section is missing. It lived in the CLI, which meant only the CLI could tell anyone
+    /// (fdu-x8u6); `ViewSpec::resolve` returns it and this is where it lands.
+    pub omitted_views: Vec<ViewSpec>,
+    /// What the requesting surface calls the axes its diagnostics name.
+    ///
+    /// Carried on the request because that is what knows which door the caller came
+    /// through; the rules themselves stay here and are each stated once.
+    pub axes: AxisNames,
     /// Fixed logical-word denominator used to derive page equivalents after aggregation.
     pub words_per_page: u64,
 }
 
 impl Default for Query {
     fn default() -> Self {
-        Self { selection: Selection::default(), views: Vec::new(), words_per_page: 250 }
+        Self {
+            selection: Selection::default(),
+            views: Vec::new(),
+            omitted_views: Vec::new(),
+            axes: AxisNames::default(),
+            words_per_page: 250,
+        }
     }
 }
 
@@ -228,14 +358,23 @@ impl Query {
         self.selection.limit.unwrap_or_else(|| view.default_limit())
     }
 
+    /// The tree depth to apply for `view`, on the same terms as `limit_for`.
+    pub fn depth_for(&self, view: ViewSpec) -> Bound {
+        self.selection.depth.unwrap_or_else(|| view.default_depth())
+    }
+
     /// Reject views that have no metadata-only projection and lack required analysis.
-    pub fn validate_analysis(&self, profile: AnalysisSet) -> Result<(), &'static str> {
+    ///
+    /// Names both axes as the requesting surface spells them, so the advice is something
+    /// the caller can actually act on: a Python caller has no `--analyze` to add.
+    pub fn validate_analysis(&self, profile: AnalysisSet) -> Result<(), String> {
         for view in &self.views {
             match view {
                 ViewSpec::Documents if !profile.is_enabled() => {
-                    return Err(
-                        "--view documents requires content analysis: add --analyze lines, code, words, or all; views never enable content analysis implicitly",
-                    );
+                    return Err(format!(
+                        "{} documents requires content analysis: add {} lines, code, words, or all; views never enable content analysis implicitly",
+                        self.axes.view, self.axes.analyze
+                    ));
                 }
                 ViewSpec::Tree
                 | ViewSpec::Types
@@ -551,6 +690,13 @@ pub struct Report {
     pub scope: ScanScope,
     /// Absolute path of the indexed root.
     pub root: PathBuf,
+    /// Remarks about the report itself, in the order a renderer should print them.
+    ///
+    /// Facts about what was asked for and what could be answered -- not telemetry about
+    /// the run, which the schema deliberately excludes. Deliberately not serialised: a
+    /// machine consumer reads the omission from which sections are absent, and adding a
+    /// field to the envelope would be a schema change for something only humans read.
+    pub notes: Vec<String>,
     /// Which size metric this report answers in.
     ///
     /// Carried on the report so a renderer shows the same number the ordering used;
@@ -561,6 +707,24 @@ pub struct Report {
     pub analysis: Option<ContentReportMetadata>,
     /// One section per requested view, in request order.
     pub sections: Vec<Section>,
+}
+
+/// Remarks a report makes about itself.
+///
+/// Only what the request and the resolved views can establish. The CLI also prints a note
+/// quoting how many bytes analysis read, which is walk telemetry the report envelope does
+/// not carry, so that one stays with the performance footer where the rest of the run's
+/// telemetry lives.
+fn display_notes(query: &Query) -> Vec<String> {
+    if query.omitted_views.is_empty() {
+        return Vec::new();
+    }
+    let names: Vec<&str> = query.omitted_views.iter().map(|view| view.label()).collect();
+    vec![format!(
+        "note: omitted {} — requires content analysis: add {} lines, code, words, or all",
+        names.join(", "),
+        query.axes.analyze
+    )]
 }
 
 /// Build a report from an index.
@@ -579,6 +743,7 @@ pub fn report(index: &Index, query: &Query, provenance: &Provenance) -> Report {
         .collect();
 
     Report {
+        notes: display_notes(query),
         scan_started_at: provenance.scan_started_at,
         generated_at: provenance.generated_at,
         source: provenance.source,
@@ -613,6 +778,8 @@ pub(crate) fn report_summary(
     provenance: &Provenance,
 ) -> Report {
     Report {
+        // A compact summary resolves one view and drops none.
+        notes: Vec::new(),
         scan_started_at: provenance.scan_started_at,
         generated_at: provenance.generated_at,
         source: provenance.source,
@@ -1148,7 +1315,7 @@ fn expand(
         let (id, depth) = (built[cursor].id, built[cursor].depth);
         let path = built[cursor].node.path.clone();
 
-        if !query.selection.depth.admits(depth) {
+        if !query.depth_for(ViewSpec::Tree).admits(depth) {
             // `--depth 0` keeps du's meaning: totals for this node, nothing beneath it.
             // Files are already represented in this directory's totals and never become
             // tree rows. Only a directory child hidden by the depth bound makes the
@@ -1672,17 +1839,91 @@ mod tests {
     #[test]
     fn depth_zero_keeps_dus_meaning_of_root_totals_only() {
         let index = sample();
-        let selection = Selection { depth: Bound::Limit(0), ..Selection::default() };
+        let selection = Selection { depth: Some(Bound::Limit(0)), ..Selection::default() };
         let tree = tree_of(&run(&index, &query(&[ViewSpec::Tree], selection)));
         assert_eq!(tree.bytes, 657, "totals still cover the whole tree");
         assert!(tree.children.is_empty(), "but nothing below the root is listed");
         assert!(tree.truncated, "and the report says so rather than implying emptiness");
     }
 
+    /// A view `full` had to drop is named on the report, so every surface says so.
+    ///
+    /// This lived in the CLI, which meant a caller reaching the same wall through the
+    /// library got a report quietly missing a section and no way to learn why (fdu-x8u6).
+    #[test]
+    fn a_dropped_view_is_named_on_the_report_rather_than_by_one_surface() {
+        let (selected, omitted) = ViewSpec::resolve(Some("full"), AnalysisSet::NONE, "view")
+            .expect("full resolves without analyzers");
+        assert!(!omitted.is_empty(), "documents needs analysis and must be dropped");
+
+        let query = Query { views: selected, omitted_views: omitted, ..Query::default() };
+        let notes = display_notes(&query);
+        assert_eq!(notes.len(), 1, "{notes:?}");
+        assert!(notes[0].contains("omitted documents"), "{notes:?}");
+
+        // Nothing dropped, nothing said.
+        let (selected, omitted) = ViewSpec::resolve(Some("full"), AnalysisSet::ALL, "view")
+            .expect("full resolves with analyzers");
+        assert!(omitted.is_empty(), "every view is answerable with analysis enabled");
+        let query = Query { views: selected, omitted_views: omitted, ..Query::default() };
+        assert!(display_notes(&query).is_empty());
+    }
+
+    /// A rule belongs to the library; the words a caller can act on belong to their
+    /// surface. Both diagnostics name two axes, and naming them with flags told a Python
+    /// caller to add an `--analyze` their surface does not have (fdu-4apt).
+    ///
+    /// Asserted as "names mine, never the other's" rather than by quoting either sentence,
+    /// so rewording the rule cannot break this and changing the vocabulary cannot pass it.
+    #[test]
+    fn a_diagnostic_names_the_axes_the_requesting_surface_uses() {
+        let (selected, omitted) = ViewSpec::resolve(Some("full"), AnalysisSet::NONE, "view")
+            .expect("full resolves without analyzers");
+
+        for (axes, mine, theirs) in [
+            (AxisNames::FLAGS, "--analyze", "analyze"),
+            (AxisNames::FIELDS, "analyze", "--analyze"),
+        ] {
+            let query = Query {
+                views: selected.clone(),
+                omitted_views: omitted.clone(),
+                axes,
+                ..Query::default()
+            };
+            // Anchored on the whole phrase, because `--analyze` contains `analyze`: a bare
+            // `contains` for the other surface's spelling matches its own. That is the same
+            // tokenisation trap the watch-scope substitution had to avoid.
+            let note = display_notes(&query).remove(0);
+            assert!(note.contains(&format!("add {mine} ")), "{note} must name {mine}");
+            assert!(!note.contains(&format!("add {theirs} ")), "{note} must not name {theirs}");
+        }
+
+        // The same for the hard error, which names the view axis as well.
+        for (axes, view, analyze) in
+            [(AxisNames::FLAGS, "--view", "--analyze"), (AxisNames::FIELDS, "view", "analyze")]
+        {
+            let query = Query { views: vec![ViewSpec::Documents], axes, ..Query::default() };
+            let error = query
+                .validate_analysis(AnalysisSet::NONE)
+                .expect_err("documents cannot be answered without analysis");
+            assert!(error.starts_with(&format!("{view} documents")), "{error}");
+            assert!(error.contains(&format!("add {analyze} ")), "{error}");
+            let theirs = if analyze == "--analyze" { "analyze" } else { "--analyze" };
+            assert!(!error.contains(&format!("add {theirs} ")), "{error}");
+        }
+    }
+
+    /// A library caller who never says otherwise is not the command line, so the default
+    /// vocabulary is the one their surface uses.
+    #[test]
+    fn the_default_vocabulary_is_the_librarys_own() {
+        assert_eq!(Query::default().axes, AxisNames::FIELDS);
+    }
+
     #[test]
     fn a_depth_bound_marks_only_hidden_directory_rows_as_truncated() {
         let index = sample();
-        let selection = Selection { depth: Bound::Limit(1), ..Selection::default() };
+        let selection = Selection { depth: Some(Bound::Limit(1)), ..Selection::default() };
         let tree = tree_of(&run(&index, &query(&[ViewSpec::Tree], selection)));
 
         let src = tree.children.iter().find(|child| child.name == "src").expect("src");

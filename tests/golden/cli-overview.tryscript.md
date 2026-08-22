@@ -1,9 +1,9 @@
 ---
 sandbox: true
+path:
+  - $FDU_BIN
 fixtures:
   - fixtures/realistic-project
-path:
-  - $TRYSCRIPT_GIT_ROOT/target/debug
 env:
   FORCE_COLOR: "0"
   LANG: C

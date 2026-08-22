@@ -1,7 +1,7 @@
 ---
 sandbox: true
 path:
-  - $TRYSCRIPT_GIT_ROOT/target/debug
+  - $FDU_BIN
 env:
   FORCE_COLOR: "0"
   LANG: C
@@ -52,7 +52,7 @@ SELECTION
       --modified-before <WHEN>  Report only entries modified before this time
       --kind <LIST>             Entry kinds to report: file, dir, symlink, other
   -d, --depth <N>               Directory levels to show; does not limit scanning. Accepts `all`
-                                [default: 2]
+                                [tree default: 2]
   -n, --limit <N>               Rows to show, per group. Accepts `all`
       --sort <KEY>              Order results: size, count, mtime, or name
       --reverse                 Reverse the ordering
@@ -462,13 +462,13 @@ Selection flags are not refused: they filter what a full index reports.
 
 ```console
 $ fdu --watch --scan-depth 2 .
-! fdu: --watch cannot be combined with --scan-depth or --one-filesystem: watching requires full scope. Selection flags such as --depth, --include, and --modified-since do work with --watch, because they filter the index rather than narrowing the scan
+! fdu: watching requires full scope and cannot be combined with --scan-depth or --one-filesystem: a watcher cannot filter backend events against a narrowed boundary. Selection such as --depth, --include, and --modified-since does work while watching, because it filters the retained index rather than narrowing the scan
 ? 2
 ```
 
 ```console
 $ fdu --watch --one-filesystem .
-! fdu: --watch cannot be combined with --scan-depth or --one-filesystem: watching requires full scope. Selection flags such as --depth, --include, and --modified-since do work with --watch, because they filter the index rather than narrowing the scan
+! fdu: watching requires full scope and cannot be combined with --scan-depth or --one-filesystem: a watcher cannot filter backend events against a narrowed boundary. Selection such as --depth, --include, and --modified-since does work while watching, because it filters the retained index rather than narrowing the scan
 ? 2
 ```
 
@@ -477,7 +477,6 @@ $ fdu --watch --one-filesystem .
 ```console
 $ fdu --cache off missing
 ! fdu: I/O error at missing: [OS_ERROR]
-!   caused by: [OS_ERROR]
 ? 1
 ```
 
@@ -495,7 +494,6 @@ $ node -e "require('node:fs').writeFileSync('plain-file', 'x')"
 ```console
 $ fdu --cache off plain-file
 ! fdu: I/O error at [SCAN_PATH]: scan root is not a directory
-!   caused by: scan root is not a directory
 ? 1
 ```
 

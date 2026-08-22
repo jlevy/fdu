@@ -4,7 +4,13 @@
 
 **Author:** fdu project
 
-**Status:** Draft
+**Status:** Phase 1 landed; Phase 2 not started
+
+108 of 126 golden sessions reach parity through the Python API alone.
+The 18 that differ each carry a named cause, and an unexplained difference fails the run
+rather than joining the list.
+Two Phase 1 items were deferred to tryscript (`fdu-nluf`, `fdu-ds2x`) and are recorded
+as deferred rather than done.
 
 ## Overview
 
@@ -146,6 +152,45 @@ It also shrinks the shim to what it should be: argv in, API calls, bytes out.
 the run silently measures the binary against itself — the same failure the deviation
 file catches after the fact and the naming rule prevents outright.
 
+### The shape of `Report.render`
+
+```python
+report.render(Format.TEXT, color=False) -> str
+```
+
+A **method**, beside `as_dict()`, because both are serializations of the same value and
+splitting them across a method and a module function would make the pair harder to find
+than either alone.
+
+`Format` joins the twelve `StrEnum`s the package already exports, so `render("json")`
+and `render(Format.JSON)` are the same call — the pattern `View` and `Analysis` already
+set — and the native `contract()` gains a `formats` key that `public_smoke` checks for
+parity.
+
+`color` is a plain `bool`, not the CLI’s `auto | always | never`. Resolving `auto` means
+asking whether stdout is a terminal, and a library does not own stdout; the caller does.
+The shim resolves `--color` the way the CLI does and passes the answer in, which is the
+correct division rather than a shortcut.
+
+**The body only.** `render` returns the report, not the performance footer.
+The footer is transient telemetry the schema deliberately excludes, and the walk counts
+behind it are not on `Report`, so a Python caller cannot produce it.
+Every text session therefore deviates by exactly that line.
+
+That is recorded once, as a class, rather than as a hundred identical hunks:
+
+```text
+tests/parity/deviations-python.diff
+  class: performance-footer-absent  (94 text sessions)
+    -Performance: walked … total [PERF_TIME]
+```
+
+Collapsing it keeps the deviation file readable, which is the property the whole design
+rests on — a file nobody reads is a file nobody reviews.
+The count is the interesting part anyway: it says how much of the corpus is text, and it
+is the standing argument for exposing the telemetry later if that trade ever looks worth
+making.
+
 ### What the shim may decline
 
 With the renderer exposed and cache and watch already public, the skip list is short,
@@ -224,33 +269,103 @@ review question is always “why is this allowed” rather than “does this loo
 
 The deviation file catches a fallthrough after the fact, which is enough to fail the run
 but tells the reader little.
-Two mechanisms make it structural and legible instead.
+Probing tryscript 0.2.0 rather than reasoning about it changed this section, and the
+answer removed work instead of adding it.
 
-**No bare `fdu` on `PATH` during a parity run.** Each surface installs under its own
-name, so a missing shim is `command not found` on the first session rather than a silent
-substitution.
+**What the probe found.** tryscript inherits the parent environment, and expands
+arbitrary environment variables in `path:`, not just `$TRYSCRIPT_GIT_ROOT`. It also
+*prepends* those entries to the inherited `PATH` rather than replacing them, and an
+`env: PATH:` override does not replace it either.
 
-**And tryscript reports what it resolved**, which is the feature worth adding:
+That last point is a defect in the corpus as it stood, not a limitation to design
+around. Every golden selected its build with one `path:` entry.
+If that entry ever failed to resolve, lookup continued into the inherited `PATH` and
+found whatever `fdu` was installed there — `~/.cargo/bin/fdu` on a developer machine —
+and the suite passed while testing a different binary.
+Filed as `fdu-9h2w`.
 
-```yaml
-path:
-  - $FDU_SURFACE_BIN     # the only directory supplying the command
-requires:
-  - fdu                  # must resolve before the first session; abort otherwise
-```
+**The corpus names the directory, not the command.** Sessions invoke a bare `fdu` and
+declare `path: - $FDU_BIN`, which tryscript expands.
+
+The first attempt put the full path in a variable and had sessions invoke `$FDU`.
+Windows rejected every one of them:
 
 ```text
-resolved fdu -> /…/tests/parity/py/fdu   (12 files, 129 sessions)
+'$FDU' is not recognized as an internal or external command
 ```
 
-The guard is then enforced once rather than repeated in two hundred session lines, the
-corpus stays readable, and the run *states which binary it exercised* — the difference
-between a harness that is correct and one that can be seen to be correct, which is the
-same reason every fdu report carries its own `source` and `freshness` rather than
-leaving a reader to infer them.
+tryscript runs sessions through `cmd.exe` there, which wants `%FDU%`. A shell variable
+in a session command line is not portable, so the corpus has to be readable by `/bin/sh`
+and `cmd.exe` alike, and a bare command name is the only form both read the same way.
+That is a design error worth recording rather than quietly fixing: the harness pins two
+implementations of one CLI across three platforms, so anything in the corpus that is not
+shell-agnostic will fail on one of them.
 
-We maintain tryscript, so this is a feature to add rather than a constraint to route
-around.
+The split therefore follows who does the resolving:
+
+| Who runs the binary | How it is named | Why |
+| --- | --- | --- |
+| a session command line | bare `fdu`, directory from `path: - $FDU_BIN` | must parse under `sh` and `cmd.exe` |
+| a node helper (`tests/golden/bin/*.mjs`) | `process.env.FDU`, full path with extension | spawns directly; no PATH lookup to control |
+
+This is not a return to the original defect.
+What made that a defect was the directory being a literal that could silently fail to
+resolve while looking correct.
+`run-golden.mjs` preflights the surface and refuses to start when it is missing;
+verified by hiding `target/debug/fdu` with an installed build still on `PATH`, where the
+run now stops with the path it wanted instead of testing the installed copy and passing.
+
+Both surfaces are still *named* `fdu`, so every program-name string the corpus pins —
+usage lines, diagnostics — matches without the corpus knowing which surface is running.
+
+**What remains tryscript’s to fix.** `path:` prepends to the inherited `PATH` rather
+than being authoritative for command resolution, so the preflight is fdu guarding
+against a tryscript behaviour.
+Either an authoritative path mode or a `requires:` declaration that asserts what
+resolved would close it (`fdu-ds2x`, `fdu-z7sp`).
+
+`jlevy/tryscript#51` fixes a real adjacent inconsistency — `path:` expanded `$VAR` while
+`env:` did not, so a test could name a directory by absolute path but never a file — and
+adds `TRYSCRIPT_EXE`. It does **not** remove this runner, contrary to what this spec
+claimed before Windows disproved it.
+
+`scripts/run-golden.mjs` owns the surface choice, because CI runs `npm run test:golden`
+directly and would miss anything set only in the Makefile.
+Its remaining job is irreducible while parity exists: two surfaces over one corpus means
+something has to choose, and it sets `$FDU_BIN`, preflights, and says which surface it
+resolved. `scripts/check-golden-invocations.mjs` polices the rule that replaced the old
+one — every session declares exactly one path entry and it is `$FDU_BIN`, and no helper
+names `fdu` literally.
+
+### What the harness measured on its first run
+
+88 of 126 sessions reached parity immediately: report bodies byte-identical across every
+view, every format, every selection axis, through the Python API alone.
+
+The 38 that did not are the measurement, and each is a tracked gap rather than an
+accepted difference:
+
+| Sessions | Gap | Bead |
+| --- | --- | --- |
+| 16 | cache status and watch records have no renderer | `fdu-1kw3` |
+| 6 | the binding’s copy of the `full` diagnostic drifted | `fdu-gw5b` |
+| 2 | list grammar (duplicates, empty entries) is not exposed | `fdu-jozr` |
+| 1 | `--version` names the surface | deliberate |
+| rest | consequences of the above | — |
+
+Two findings came out of writing the shim rather than running it, and both are the same
+root cause the epic already had: **the binding keeps its own copies of things the
+library owns.** `contract()` hard-coded a view list that had drifted out of
+`ViewSpec::ALL` order, and the parity assertion never noticed because Python had been
+written from the same copy (`fdu-ggux`). The `full` diagnostic is hand-copied and has
+lost a clause (`fdu-gw5b`). `contract()` now derives from `ViewSpec::ALL`.
+
+**The performance footer** is excluded from comparison rather than recorded.
+It reports walk telemetry the report schema deliberately excludes, so a `Report` does
+not carry the counts behind it and the Python surface cannot print it.
+Left in, it failed 44 sessions and buried the artifact under whole re-printed blocks.
+The parity corpus is therefore the same sessions with that one line dropped, generated
+per run and never committed.
 
 ### API Changes
 
@@ -262,26 +377,59 @@ file.
 
 ### Phase 1
 
-- [ ] Add `Report.render(format, color)` to the Python API over the existing renderer,
+Landed. 108 of 126 golden sessions reach parity through the Python API alone.
+
+- [x] Add `Report.render(format, color)` to the Python API over the existing renderer,
   so the package can produce fdu’s own output rather than only structured values
   (`fdu-z84z`)
-- [ ] tryscript: drop empty `path:` entries, with a test that a bare `$VAR` does not put
-  the working directory on `PATH` (`fdu-nluf`)
-- [ ] tryscript: add `requires:`, so named commands must resolve before the first
-  session and the run reports where each resolved (`fdu-ds2x`)
-- [ ] Write `tests/parity/py/parity_cli.py` against the table above, with `fdu:`
-  diagnostics and exit 77 for `--help`, `--docs`, and `--skill` (`fdu-0len`)
-- [ ] Add the runner: replay the corpus, diff against the Rust recording, compare with
+- [x] Write `tests/parity/py/parity_cli.py` against the table above, with `fdu:`
+  diagnostics (`fdu-0len`)
+- [x] Add the runner: replay the corpus, diff against the Rust recording, compare with
   `tests/parity/deviations-python.diff` (`fdu-5clp`)
-- [ ] Commit the first deviation file and review every hunk against the rule that only a
-  version string or help layout is legitimate (`fdu-5clp`)
-- [ ] Add `make test-parity` with its anti-vacuity guards (`fdu-szti`)
+- [x] Commit the first deviation file and review every hunk (`fdu-5clp`)
+- [x] Add `make test-parity` with its anti-vacuity guards (`fdu-szti`)
+
+Two Phase 1 entries were **deferred rather than done**, and both are tryscript-side:
+
+- [ ] tryscript: drop empty `path:` entries, with a test that a bare `$VAR` does not put
+  the working directory on `PATH` (`fdu-nluf`) — still a real robustness issue, but no
+  longer on this critical path: the corpus carries no `path:` entry that can be empty.
+- [ ] tryscript: add `requires:`, so named commands must resolve before the first
+  session and the run reports where each resolved (`fdu-ds2x`) — superseded in practice.
+  `scripts/run-golden.mjs` preflights the binary and states which surface it resolved,
+  so the guarantee exists; having tryscript enforce it would move the check off fdu,
+  which is still worth doing and is why the bead stays open.
+
+Neither was dropped silently, and neither blocks the harness.
+
+**Two things this plan specified that the implementation did not do**, recorded here
+rather than quietly diverged from:
+
+1. The spec said the shim would exit **77** for `--help`, `--docs`, and `--skill`. It
+   exits **2** with a one-line declination on stderr, because 77 is not a code fdu uses
+   anywhere and a reader comparing the two surfaces would have had to learn a private
+   convention to interpret it.
+   The runner excludes those sessions by name instead, which is visible in
+   `scripts/parity-classes.mjs` rather than encoded in an exit status.
+2. The spec said only a version string or help layout could be a legitimate deviation.
+   That rule survived contact with reality as **four** named classes, not two — each
+   mechanically matched, and an unexplained difference fails the run.
+   The additions are surfaces naming their own parameters, and notes carrying walk
+   telemetry the report schema excludes.
+   Both are correct on each side; neither was foreseen here.
 
 ### Phase 2
+
+Not started. Tracked under `fdu-luwc`, which stays open for it.
 
 - [ ] The same shim over the public Rust library API, with its own deviation file.
   Sharper than the Python one: if it cannot be written without reaching into `cli.rs`,
   then “the CLI invents nothing” is false and the library is missing something.
+
+This is worth more now than when it was written.
+Phase 1 found seven definitions the CLI had copied from the library and five
+capabilities only the CLI could reach; a Rust-side shim is the instrument that would
+have caught them without a second language in the way.
 
 ## Testing Strategy
 

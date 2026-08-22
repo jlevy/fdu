@@ -1,5 +1,7 @@
 ---
 sandbox: true
+path:
+  - $FDU_BIN
 fixtures:
   - fixtures/content-project
   - fixtures/code-project
@@ -7,8 +9,6 @@ fixtures:
   - fixtures/aggregate-project
   - fixtures/markdown-project
   - fixtures/detection-project
-path:
-  - $TRYSCRIPT_GIT_ROOT/target/debug
 env:
   FORCE_COLOR: "0"
   LANG: C
@@ -65,7 +65,7 @@ literals, or named signatures.
 Origin flags are independent of the detected type.
 
 ```console
-$ node -e "const {execFileSync}=require('node:child_process'); const r=JSON.parse(execFileSync('fdu',['--cache','off','--analyze','code','--view','types','--format','json','--sort','count','--limit','all','detection-project'],{encoding:'utf8'})); const m=r.reports[0].metrics; console.log(JSON.stringify({complete:r.complete,total:m.total.detection,rows:m.rows.map(x=>({id:x.id,coverage:x.coverage,detection:x.detection}))}));"
+$ node -e "const {execFileSync}=require('node:child_process'); const r=JSON.parse(execFileSync(process.env.FDU,['--cache','off','--analyze','code','--view','types','--format','json','--sort','count','--limit','all','detection-project'],{encoding:'utf8'})); const m=r.reports[0].metrics; console.log(JSON.stringify({complete:r.complete,total:m.total.detection,rows:m.rows.map(x=>({id:x.id,coverage:x.coverage,detection:x.detection}))}));"
 {"complete":true,"total":{"sources":{"extension":1,"modeline":1,"ambiguous_content":1,"format_signature":3},"confidence":{"certain":1,"high":5},"flags":{"generated":1,"vendored":1,"documentation":1}},"rows":[{"id":"rust","coverage":{"analyzed":2},"detection":{"sources":{"extension":1,"modeline":1},"confidence":{"certain":1,"high":1},"flags":{"generated":0,"vendored":0,"documentation":0}}},{"id":"cpp","coverage":{"analyzed":1},"detection":{"sources":{"ambiguous_content":1},"confidence":{"high":1},"flags":{"generated":1,"vendored":1,"documentation":1}}},{"id":"manpage","coverage":{"analyzed":1},"detection":{"sources":{"format_signature":1},"confidence":{"high":1},"flags":{"generated":0,"vendored":0,"documentation":0}}},{"id":"pdf","coverage":{"binary":1},"detection":{"sources":{"format_signature":1},"confidence":{"high":1},"flags":{"generated":0,"vendored":0,"documentation":0}}},{"id":"xml","coverage":{"analyzed":1},"detection":{"sources":{"format_signature":1},"confidence":{"high":1},"flags":{"generated":0,"vendored":0,"documentation":0}}}]}
 ? 0
 ```
@@ -95,7 +95,7 @@ $ fdu --cache off --view documents content-project
 An explicit analysis request remains visible even when there are no file records.
 
 ```console
-$ node -e "const {execFileSync}=require('node:child_process'); const r=JSON.parse(execFileSync('fdu',['--cache','off','--analyze','lines','--view','summary','--format','json','empty-project'],{encoding:'utf8'})); console.log(JSON.stringify({schema:r.schema,profile:r.analysis.profile,files:r.reports[0].summary.files}));"
+$ node -e "const {execFileSync}=require('node:child_process'); const r=JSON.parse(execFileSync(process.env.FDU,['--cache','off','--analyze','lines','--view','summary','--format','json','empty-project'],{encoding:'utf8'})); console.log(JSON.stringify({schema:r.schema,profile:r.analysis.profile,files:r.reports[0].summary.files}));"
 {"schema":"fdu.report/5","files":0}
 ? 0
 ```
@@ -341,13 +341,13 @@ Cold and cache-only runs both preserve that evidence without a warning, an error
 partial exit status.
 
 ```console
-$ node -e "const {spawnSync}=require('node:child_process'); const p=spawnSync('fdu',['--analyze','lines','--view','types','--format','json','--size','apparent','cached-partial-project'],{encoding:'utf8'}); const r=JSON.parse(p.stdout); console.log(JSON.stringify({status:p.status,source:r.source,complete:r.complete,errors:r.errors,coverage:r.reports[0].metrics.total.coverage}));"
+$ node -e "const {spawnSync}=require('node:child_process'); const p=spawnSync(process.env.FDU,['--analyze','lines','--view','types','--format','json','--size','apparent','cached-partial-project'],{encoding:'utf8'}); const r=JSON.parse(p.stdout); console.log(JSON.stringify({status:p.status,source:r.source,complete:r.complete,errors:r.errors,coverage:r.reports[0].metrics.total.coverage}));"
 {"status":0,"source":"cold_scan","complete":true,"errors":[],"coverage":{"invalid_utf8":1}}
 ? 0
 ```
 
 ```console
-$ node -e "const {spawnSync}=require('node:child_process'); const p=spawnSync('fdu',['--cache','only','--analyze','lines','--view','types','--format','json','--size','apparent','cached-partial-project'],{encoding:'utf8'}); const r=JSON.parse(p.stdout); console.log(JSON.stringify({status:p.status,source:r.source,complete:r.complete,errors:r.errors,coverage:r.reports[0].metrics.total.coverage}));"
+$ node -e "const {spawnSync}=require('node:child_process'); const p=spawnSync(process.env.FDU,['--cache','only','--analyze','lines','--view','types','--format','json','--size','apparent','cached-partial-project'],{encoding:'utf8'}); const r=JSON.parse(p.stdout); console.log(JSON.stringify({status:p.status,source:r.source,complete:r.complete,errors:r.errors,coverage:r.reports[0].metrics.total.coverage}));"
 {"status":0,"source":"cache_only","complete":true,"errors":[],"coverage":{"invalid_utf8":1}}
 ? 0
 ```
@@ -395,7 +395,7 @@ The compact projections below pin the semantic fields while leaving filesystem
 allocation out of the contract.
 
 ```console
-$ node -e "const {execFileSync}=require('node:child_process'); const r=JSON.parse(execFileSync('fdu',['--cache','off','--analyze','words','--view','documents','--format','json','--limit','all','text-project'],{encoding:'utf8'})); const m=r.reports[0].metrics; console.log(JSON.stringify({analyzers:r.analysis.analyzers,share_metric:m.share_metric,words_per_page:m.words_per_page,files:m.total.files,metrics:m.total.metrics,pages:m.total.pages}));"
+$ node -e "const {execFileSync}=require('node:child_process'); const r=JSON.parse(execFileSync(process.env.FDU,['--cache','off','--analyze','words','--view','documents','--format','json','--limit','all','text-project'],{encoding:'utf8'})); const m=r.reports[0].metrics; console.log(JSON.stringify({analyzers:r.analysis.analyzers,share_metric:m.share_metric,words_per_page:m.words_per_page,files:m.total.files,metrics:m.total.metrics,pages:m.total.pages}));"
 {"analyzers":[{"id":"content-basic-v1","version":1},{"id":"text-logical-v1","version":1},{"id":"markdown-prose-v1","version":1}],"share_metric":"document_words","words_per_page":250,"files":6,"metrics":{"physical_lines":8,"blank_lines":1,"nonblank_lines":7,"code_lines":0,"comment_lines":0,"code_blank_lines":0,"raw_words":26,"logical_words":40,"paragraphs":7,"visible_words":0,"visible_logical_words":0,"document_words":40},"pages":{"words":40,"words_per_page":250}}
 ? 0
 ```
@@ -403,7 +403,7 @@ $ node -e "const {execFileSync}=require('node:child_process'); const r=JSON.pars
 Two half-wide CJK files aggregate to one logical word before the single rounding step.
 
 ```console
-$ node -e "const {execFileSync}=require('node:child_process'); const r=JSON.parse(execFileSync('fdu',['--cache','off','--analyze','words','--view','documents','--format','json','--limit','all','aggregate-project'],{encoding:'utf8'})); const m=r.reports[0].metrics; console.log(JSON.stringify({files:m.total.files,raw_words:m.total.metrics.raw_words,logical_words:m.total.metrics.logical_words,document_words:m.total.metrics.document_words,pages:m.total.pages}));"
+$ node -e "const {execFileSync}=require('node:child_process'); const r=JSON.parse(execFileSync(process.env.FDU,['--cache','off','--analyze','words','--view','documents','--format','json','--limit','all','aggregate-project'],{encoding:'utf8'})); const m=r.reports[0].metrics; console.log(JSON.stringify({files:m.total.files,raw_words:m.total.metrics.raw_words,logical_words:m.total.metrics.logical_words,document_words:m.total.metrics.document_words,pages:m.total.pages}));"
 {"files":2,"raw_words":2,"logical_words":1,"document_words":1,"pages":{"words":1,"words_per_page":250}}
 ? 0
 ```
@@ -413,13 +413,13 @@ frontmatter, footnotes, and hidden script text.
 Malformed markup remains bounded and deterministic.
 
 ```console
-$ node -e "const {execFileSync}=require('node:child_process'); const r=JSON.parse(execFileSync('fdu',['--cache','off','--analyze','words','--view','documents','--format','json','--limit','all','markdown-project'],{encoding:'utf8'})); const m=r.reports[0].metrics; console.log(JSON.stringify({share_metric:m.share_metric,files:m.total.files,metrics:m.total.metrics,pages:m.total.pages}));"
+$ node -e "const {execFileSync}=require('node:child_process'); const r=JSON.parse(execFileSync(process.env.FDU,['--cache','off','--analyze','words','--view','documents','--format','json','--limit','all','markdown-project'],{encoding:'utf8'})); const m=r.reports[0].metrics; console.log(JSON.stringify({share_metric:m.share_metric,files:m.total.files,metrics:m.total.metrics,pages:m.total.pages}));"
 {"share_metric":"document_words","files":2,"metrics":{"physical_lines":27,"blank_lines":9,"nonblank_lines":18,"code_lines":0,"comment_lines":0,"code_blank_lines":0,"raw_words":56,"logical_words":70,"paragraphs":6,"visible_words":22,"visible_logical_words":25,"document_words":25},"pages":{"words":25,"words_per_page":250}}
 ? 0
 ```
 
 ```console
-$ node -e "const {execFileSync}=require('node:child_process'); const args=['--analyze','words','--view','documents','--format','json','--limit','all','markdown-project']; const cold=JSON.parse(execFileSync('fdu',args,{encoding:'utf8'})); const hit=JSON.parse(execFileSync('fdu',['--cache','only',...args.slice(0)],{encoding:'utf8'})); const cm=cold.reports[0].metrics.total; const hm=hit.reports[0].metrics.total; console.log(JSON.stringify({cold:cold.source,hit:hit.source,cold_metrics:cm.metrics,hit_metrics:hm.metrics,equal:JSON.stringify(cm.metrics)===JSON.stringify(hm.metrics)}));"
+$ node -e "const {execFileSync}=require('node:child_process'); const args=['--analyze','words','--view','documents','--format','json','--limit','all','markdown-project']; const cold=JSON.parse(execFileSync(process.env.FDU,args,{encoding:'utf8'})); const hit=JSON.parse(execFileSync(process.env.FDU,['--cache','only',...args.slice(0)],{encoding:'utf8'})); const cm=cold.reports[0].metrics.total; const hm=hit.reports[0].metrics.total; console.log(JSON.stringify({cold:cold.source,hit:hit.source,cold_metrics:cm.metrics,hit_metrics:hm.metrics,equal:JSON.stringify(cm.metrics)===JSON.stringify(hm.metrics)}));"
 {"cold":"cold_scan","hit":"cache_only","cold_metrics":{"physical_lines":27,"blank_lines":9,"nonblank_lines":18,"code_lines":0,"comment_lines":0,"code_blank_lines":0,"raw_words":56,"logical_words":70,"paragraphs":6,"visible_words":22,"visible_logical_words":25,"document_words":25},"hit_metrics":{"physical_lines":27,"blank_lines":9,"nonblank_lines":18,"code_lines":0,"comment_lines":0,"code_blank_lines":0,"raw_words":56,"logical_words":70,"paragraphs":6,"visible_words":22,"visible_logical_words":25,"document_words":25},"equal":true}
 ? 0
 ```
@@ -562,8 +562,8 @@ LARGEST  (2 of 7; --limit all for every one)
 RECENT  (2 of 7; --limit all for every one)
 [RFC3339]  assets[SEP]late.bin.txt
 [RFC3339]  docs[SEP]notes.txt
-Performance: walked 7 files / 256 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 note: omitted documents — requires content analysis: add --analyze lines, code, words, or all
+Performance: walked 7 files / 256 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
