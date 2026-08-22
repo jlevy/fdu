@@ -556,12 +556,12 @@ LANGUAGES
       38 B   49.4%  Rust    1 file
 
 LARGEST  (2 of 7; --limit all for every one)
-80 B  assets/logo.png
-42 B  docs/guide.md
+80 B  assets[SEP]logo.png
+42 B  docs[SEP]guide.md
 
 RECENT  (2 of 7; --limit all for every one)
-[RFC3339]  assets/late.bin.txt
-[RFC3339]  docs/notes.txt
+[RFC3339]  assets[SEP]late.bin.txt
+[RFC3339]  docs[SEP]notes.txt
 Performance: walked 7 files / 256 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 note: omitted documents — requires content analysis: add --analyze lines, code, words, or all
 ? 0
@@ -601,12 +601,12 @@ DOCUMENTS
       35 B   33.3%  text               2 files, 3 lines (2 nonblank, 1 blank), 3 words (0.0 pages), 1 documentation, 1 binary
 
 LARGEST  (2 of 7; --limit all for every one)
-80 B  assets/logo.png
-42 B  docs/guide.md
+80 B  assets[SEP]logo.png
+42 B  docs[SEP]guide.md
 
 RECENT  (2 of 7; --limit all for every one)
-[RFC3339]  assets/late.bin.txt
-[RFC3339]  docs/notes.txt
+[RFC3339]  assets[SEP]late.bin.txt
+[RFC3339]  docs[SEP]notes.txt
 Performance: walked 7 files / 256 B; content read 176 B at [BYTE_RATE]; analysis 7 fresh at [FILE_RATE], 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
