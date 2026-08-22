@@ -8,8 +8,8 @@
   "scripts": {
     "check:supply-chain": "node scripts/check-supply-chain.mjs",
     "test:supply-chain": "node --test scripts/check-supply-chain.test.mjs scripts/check-uv-version.test.mjs",
-    "test:golden": "tryscript run \"tests/golden/*.tryscript.md\"",
-    "test:golden:update": "tryscript run --update \"tests/golden/*.tryscript.md\"",
+    "test:golden": "node scripts/run-golden.mjs",
+    "test:golden:update": "node scripts/run-golden.mjs --update",
     "check:yaml": "node scripts/check-yaml.mjs"
   },
   "devDependencies": {

@@ -2,8 +2,6 @@
 sandbox: true
 fixtures:
   - fixtures/realistic-project
-path:
-  - $TRYSCRIPT_GIT_ROOT/target/debug
 env:
   FORCE_COLOR: "0"
   LANG: C
@@ -26,7 +24,7 @@ up into `index`, while the report correctly avoids a misleading `…` row becaus
 ranked sibling was omitted.
 
 ```console
-$ fdu --cache off --color never --size apparent realistic-project
+$ $FDU --cache off --color never --size apparent realistic-project
    7.6 KiB  ██████████   100%  . (16 files)
    4.1 KiB  █████░░░░░    55%    src (7 files)
    2.6 KiB  ███░░░░░░░    34%      index (4 files)

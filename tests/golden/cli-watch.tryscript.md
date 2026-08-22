@@ -2,8 +2,6 @@
 sandbox: true
 fixtures:
   - bin
-path:
-  - $TRYSCRIPT_GIT_ROOT/target/debug
 env:
   FORCE_COLOR: "0"
   LANG: C

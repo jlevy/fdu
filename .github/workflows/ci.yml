@@ -81,6 +81,8 @@ jobs:
         run: node --test scripts/check-rust-module-names.test.mjs
       - name: Check Rust module filenames
         run: node scripts/check-rust-module-names.mjs
+      - name: Check the golden corpus never resolves fdu through PATH
+        run: node scripts/check-golden-invocations.mjs
       # The watch tests exercise a different notify backend on each of these runners —
       # inotify, FSEvents, and ReadDirectoryChangesW — which is the only way to catch
       # per-platform event semantics before a user does.

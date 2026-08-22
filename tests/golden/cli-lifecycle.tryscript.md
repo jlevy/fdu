@@ -2,8 +2,6 @@
 sandbox: true
 fixtures:
   - fixtures/project
-path:
-  - $TRYSCRIPT_GIT_ROOT/target/debug
 env:
   FORCE_COLOR: "0"
   LANG: C
@@ -28,7 +26,7 @@ report entirely.
 ## Status Before Anything Is Cached
 
 ```console
-$ fdu --cache-status project
+$ $FDU --cache-status project
 No cached snapshots.
 ? 0
 ```
@@ -36,7 +34,7 @@ No cached snapshots.
 ## A Report Leaves a Snapshot Behind
 
 ```console
-$ fdu --size apparent project
+$ $FDU --size apparent project
      263 B  ██████████   100%  . (6 files)
      128 B  █████░░░░░    49%    dist (1 file)
       36 B  █░░░░░░░░░    14%    src (2 files)
@@ -53,27 +51,27 @@ A tier that retained nothing has nothing for `--cache only` to read, and it says
 rather than quietly scanning.
 
 ```console
-$ fdu --cache-clear project
+$ $FDU --cache-clear project
 Cache file: [CACHE_FILE]
 Cache cleared.
 ? 0
 ```
 
 ```console
-$ fdu --view summary --size apparent project
+$ $FDU --view summary --size apparent project
      263 B  6 files, 3 directories
 Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```
 
 ```console
-$ fdu --cache-status project
+$ $FDU --cache-status project
 No cached snapshots.
 ? 0
 ```
 
 ```console
-$ fdu --cache only --view summary project
+$ $FDU --cache only --view summary project
 fdu: snapshot is not usable: no usable snapshot for this root and scan scope
 ? 1
 ```
@@ -82,7 +80,7 @@ An ordinary report retains the index, so it does leave a snapshot that `--cache 
 can then answer from without touching the tree.
 
 ```console
-$ fdu --size apparent project
+$ $FDU --size apparent project
      263 B  ██████████   100%  . (6 files)
      128 B  █████░░░░░    49%    dist (1 file)
       36 B  █░░░░░░░░░    14%    src (2 files)
@@ -92,7 +90,7 @@ Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cache
 ```
 
 ```console
-$ fdu --cache only --view summary --size apparent project
+$ $FDU --cache only --view summary --size apparent project
      263 B  6 files, 3 directories
 Performance: walked 0 files / 0 B; content read 0 B; analysis 0 fresh, 0 cached; cache only; total [PERF_TIME]
 ? 0
@@ -105,7 +103,7 @@ leaves a directory of opaque names.
 The header carries the answer.
 
 ```console
-$ fdu --cache-status project
+$ $FDU --cache-status project
 [CACHE_FILE]  10 entries, [BYTES] metadata bytes, 0 content bytes  [SCAN_PATH]
 ? 0
 ```
@@ -115,7 +113,7 @@ $ fdu --cache-status project
 Agents get cache observability without a second schema style.
 
 ```console
-$ fdu --cache-status --format json project
+$ $FDU --cache-status --format json project
 {
   "caches": [
     {"path": "[CACHE_FILE]", "bytes": [BYTES], "content_bytes": null, "recognized": true, "root": "[SCAN_PATH]", "entries": 10}
@@ -127,7 +125,7 @@ $ fdu --cache-status --format json project
 ## Clearing Echoes the Target Before Acting
 
 ```console
-$ fdu --cache-clear project
+$ $FDU --cache-clear project
 Cache file: [CACHE_FILE]
 Cache cleared.
 ? 0
@@ -136,7 +134,7 @@ Cache cleared.
 ## Clearing Is Idempotent
 
 ```console
-$ fdu --cache-clear project
+$ $FDU --cache-clear project
 Cache file: [CACHE_FILE]
 Cache already empty.
 ? 0
@@ -145,7 +143,7 @@ Cache already empty.
 ## Clear and Status Compose, With Clear First
 
 ```console
-$ fdu --size apparent project
+$ $FDU --size apparent project
      263 B  ██████████   100%  . (6 files)
      128 B  █████░░░░░    49%    dist (1 file)
       36 B  █░░░░░░░░░    14%    src (2 files)
@@ -155,7 +153,7 @@ Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cache
 ```
 
 ```console
-$ fdu --cache-clear --cache-status project
+$ $FDU --cache-clear --cache-status project
 Cache file: [CACHE_FILE]
 Cache cleared.
 No cached snapshots.
@@ -165,7 +163,7 @@ No cached snapshots.
 ## An Unknown Scope Names Both Accepted Values
 
 ```console
-$ fdu --cache-status=sometimes project
+$ $FDU --cache-status=sometimes project
 fdu: invalid --cache-status "sometimes": expected root or all
 ? 2
 ```
