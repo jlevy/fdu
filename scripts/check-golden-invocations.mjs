@@ -30,17 +30,37 @@ const OFFENCES = [
     pattern: /^path:/,
     why: 'a `path:` entry reintroduces PATH lookup; name the binary through $FDU',
   },
+  // The literal need not sit inside the spawn call to be a PATH lookup: the original
+  // defect was `const binary = platform === "win32" ? "fdu.exe" : "fdu"` several lines
+  // above a `spawn(binary, ...)`. Matching only the call site missed it entirely, so
+  // this matches the name wherever it is written as a bare command string.
+  {
+    pattern: /(?<![\w/\\.$-])['"]fdu(\.exe)?['"]/,
+    why: 'names `fdu` as a bare command string; use `process.env.FDU`',
+  },
+];
+
+// Sessions and the helper scripts they delegate to. Checking only the sessions is how
+// watch-repaint-capture.mjs kept a bare `fdu` after the corpus had stopped using one:
+// it passed locally by silently resolving the installed build, and failed in CI, which
+// is precisely the failure this rule exists to prevent.
+const targets = [
+  ...readdirSync(goldenDir)
+    .filter((f) => f.endsWith('.tryscript.md'))
+    .map((f) => [join('tests', 'golden', f), join(goldenDir, f)]),
+  ...readdirSync(join(goldenDir, 'bin'))
+    .filter((f) => f.endsWith('.mjs'))
+    .map((f) => [join('tests', 'golden', 'bin', f), join(goldenDir, 'bin', f)]),
 ];
 
 const findings = [];
-for (const name of readdirSync(goldenDir).filter((f) => f.endsWith('.tryscript.md'))) {
-  const file = join(goldenDir, name);
+for (const [name, file] of targets) {
   readFileSync(file, 'utf8')
     .split('\n')
     .forEach((line, index) => {
       for (const { pattern, why } of OFFENCES) {
         if (pattern.test(line)) {
-          findings.push(`${join('tests', 'golden', name)}:${index + 1}: ${why}`);
+          findings.push(`${name}:${index + 1}: ${why}`);
         }
       }
     });
@@ -55,4 +75,4 @@ if (findings.length > 0) {
   process.exit(1);
 }
 
-console.log(`golden invocations ok: no PATH-resolved fdu in ${goldenDir}`);
+console.log(`golden invocations ok: no PATH-resolved fdu in ${targets.length} files`);

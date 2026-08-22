@@ -63,8 +63,10 @@ console.log(`run-golden: ${surface} surface -> ${binary}`);
 const tryscript = join(root, 'node_modules', '.bin', `tryscript${process.platform === 'win32' ? '.cmd' : ''}`);
 // FDU_CORPUS lets the parity run replay a filtered copy of the same sessions; it
 // defaults to the corpus itself, which is what every ordinary run wants.
-const corpus = process.env.FDU_CORPUS ?? join('tests', 'golden');
-const args = ['run', ...process.argv.slice(2), join(corpus, '*.tryscript.md')];
+const corpus = process.env.FDU_CORPUS ?? 'tests/golden';
+// Forward slashes even on Windows: this is a glob for tryscript to match, not a path
+// for the OS to resolve, and join() would hand it backslashes it does not understand.
+const args = ['run', ...process.argv.slice(2), `${corpus.replace(/\\/g, '/')}/*.tryscript.md`];
 const result = spawnSync(tryscript, args, {
   cwd: root,
   stdio: 'inherit',

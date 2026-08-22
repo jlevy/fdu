@@ -156,11 +156,13 @@ def parse_args(argv: list[str]) -> Args:
         if token in DECLINED:
             raise SystemExit(_decline(token))
         # `--flag=value` and `--flag value` are both accepted, as clap accepts both.
-        flag, _, inline = token.partition("=")
-        has_inline = bool(_) 
+        flag, separator, inline = token.partition("=")
 
-        def take(name: str = flag) -> str:
-            return inline if has_inline else value_for(name)
+        # Bound as defaults rather than captured: a closure over the loop variables
+        # would read whatever the last iteration left behind, which happens to work
+        # only because every call site runs inside the same iteration.
+        def take(name: str = flag, value: str = inline, inlined: str = separator) -> str:
+            return value if inlined else value_for(name)
 
         if token == "--":
             positional.extend(rest)
@@ -216,9 +218,9 @@ def parse_args(argv: list[str]) -> Args:
         elif flag == "--interval":
             args.interval = _duration(take())
         elif flag == "--cache-status":
-            args.cache_status = inline if has_inline else "root"
+            args.cache_status = inline if separator else "root"
         elif flag == "--cache-clear":
-            args.cache_clear = inline if has_inline else "root"
+            args.cache_clear = inline if separator else "root"
         else:
             raise UsageError(f"unexpected argument '{token}' found")
 

@@ -20,18 +20,18 @@
 # mistaken for the binary. Every other ✗ is a tracked gap in the Python API, not an
 # accepted difference, and each has a bead:
 #
-#   fdu-1kw3  cache status and watch records have no renderer  (16 sessions)
+#   fdu-1kw3  cache status and watch records have no renderer
 #   fdu-gw5b  the binding's copy of the 'full' diagnostic drifted
 #   fdu-jozr  list grammar (duplicates, empty entries) is not exposed
 #
-# The performance footer is excluded from comparison rather than recorded here: it
-# reports walk telemetry the report schema deliberately excludes, so the Python surface
-# cannot print it, and left in it failed 44 sessions and buried everything else.
+# The performance footer is excluded from comparison rather than recorded: it reports
+# walk telemetry the report schema deliberately excludes, so the Python surface cannot
+# print it, and left in it failed 44 sessions and buried everything else.
 #
 # This file shrinks as the API closes. Extra hunks mean drift; missing hunks mean a gap
 # was fixed and the file should be re-recorded so the change is visible in review.
 
-FAIL /Users/levy/wrk/github/fdu/.claude/worktrees/brave-pare-9f8860/tests/parity/.corpus/cli-axes.tryscript.md
+FAIL [ROOT]/tests/parity/.corpus/cli-axes.tryscript.md
   ✓ Summary Is One Aggregate Row
   ✓ Types Use Stable Classification IDs
   ✓ Extensions Preserve the Original Raw Grouping
@@ -107,7 +107,7 @@ FAIL /Users/levy/wrk/github/fdu/.claude/worktrees/brave-pare-9f8860/tests/parity
 +{"view": "tree", "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 263, "allocated": 24576, "files": 6, "dirs": 3, "newest_mtime_ns": [MTIME_NS], "truncated": false, "children": [{"name": "dist", "path": "dist", "kind": "dir", "bytes": 128, "allocated": 4096, "files": 1, "dirs": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "children": []},{"name": "src", "path": "src", "kind": "dir", "bytes": 36, "allocated": 8192, "files": 2, "dirs": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "children": []},{"name": "docs", "path": "docs", "kind": "dir", "bytes": 23, "allocated": 4096, "files": 1, "dirs": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "children": []}]}}
   ✓ Refresh Ignores the Snapshot and Scans Cold Again
   ✓ An Unknown Policy Lists Every Valid One
-FAIL /Users/levy/wrk/github/fdu/.claude/worktrees/brave-pare-9f8860/tests/parity/.corpus/cli-cache.tryscript.md
+FAIL [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
   ✓ Scan Without a Cache
   ✓ Verify No Cache Was Created
   ✓ Create the Snapshot
@@ -188,7 +188,7 @@ FAIL /Users/levy/wrk/github/fdu/.claude/worktrees/brave-pare-9f8860/tests/parity
   ✓ Corrupt the Snapshot
   ✓ Recover with a Cold Scan
   ✓ Verify the Corrupt File Was Replaced
-FAIL /Users/levy/wrk/github/fdu/.claude/worktrees/brave-pare-9f8860/tests/parity/.corpus/cli-content.tryscript.md
+FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
   ✓ Prepare Mixed Line Endings and Observed Binary Data
   ✓ Prepare Empty and Unsupported-Language Trees
   ✓ Prepare a Signature-Only Binary
@@ -278,7 +278,7 @@ FAIL /Users/levy/wrk/github/fdu/.claude/worktrees/brave-pare-9f8860/tests/parity
 @@ -1,1 +1,1 @@
 -fdu: invalid --analyze "full": expected one of none, lines, code, words, all
 +fdu: invalid analyze "full": expected one of none, lines, code, words, all
-PASS /Users/levy/wrk/github/fdu/.claude/worktrees/brave-pare-9f8860/tests/parity/.corpus/cli-human.tryscript.md
+PASS [ROOT]/tests/parity/.corpus/cli-human.tryscript.md
   ✓ A Full Tree Has Stable Sizes, Ordering, Bars, and Indentation
   ✓ Depth and Number Limit Only the Rendered View
   ✓ Type View Honors the Selected Size Metric
@@ -286,12 +286,12 @@ PASS /Users/levy/wrk/github/fdu/.claude/worktrees/brave-pare-9f8860/tests/parity
   ✓ A Lone View Keeps the Bare Layout
   ✓ A View That Matched Nothing Still Says So
   ✓ Asking for a Second View Labels the Paths Too
-PASS /Users/levy/wrk/github/fdu/.claude/worktrees/brave-pare-9f8860/tests/parity/.corpus/cli-json.tryscript.md
+PASS [ROOT]/tests/parity/.corpus/cli-json.tryscript.md
   ✓ Full Output Exposes Scan and Projection Completeness Separately
   ✓ Render Limits Mark the Projection as Truncated
   ✓ Scan Depth Is an Explicit Complete Scope
   ✓ Every View Serializes in Every Format
-FAIL /Users/levy/wrk/github/fdu/.claude/worktrees/brave-pare-9f8860/tests/parity/.corpus/cli-lifecycle.tryscript.md
+FAIL [ROOT]/tests/parity/.corpus/cli-lifecycle.tryscript.md
   ✗ Status Before Anything Is Cached
 @@ -1,1 +1,1 @@
 -No cached snapshots.
@@ -349,7 +349,7 @@ FAIL /Users/levy/wrk/github/fdu/.claude/worktrees/brave-pare-9f8860/tests/parity
 @@ -1,1 +1,1 @@
 -fdu: invalid --cache-status "sometimes": expected root or all
 +CacheStatus(path=PosixPath('.cache/fdu/[HASH].fdu'), bytes=0, content_bytes=None, recognized=False, root=None, entries=None, max_depth=None, one_filesystem=None)
-FAIL /Users/levy/wrk/github/fdu/.claude/worktrees/brave-pare-9f8860/tests/parity/.corpus/cli-overview.tryscript.md
+FAIL [ROOT]/tests/parity/.corpus/cli-overview.tryscript.md
   ✗ An Explicit Path Gives a Useful Project-Shaped Report
 @@ -1,7 +1,8 @@
     7.6 KiB  ██████████   100%  . (16 files)
@@ -360,7 +360,7 @@ FAIL /Users/levy/wrk/github/fdu/.claude/worktrees/brave-pare-9f8860/tests/parity
     1.4 KiB  ██░░░░░░░░    19%    docs (3 files)
     1.1 KiB  █░░░░░░░░░    14%      guides (2 files)
       343 B  ░░░░░░░░░░     4%      reference (1 file)
-FAIL /Users/levy/wrk/github/fdu/.claude/worktrees/brave-pare-9f8860/tests/parity/.corpus/cli-surface.tryscript.md
+FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
   ✗ The Guide Is Reachable Without a Root
     Expected exit code 0, got 2
 @@ -1,82 +1,1 @@
@@ -480,9 +480,24 @@ FAIL /Users/levy/wrk/github/fdu/.claude/worktrees/brave-pare-9f8860/tests/parity
 -fdu: I/O error at [SCAN_PATH]: scan root is not a directory
 -  caused by: scan root is not a directory
 +fdu: [Errno None] scan root is not a directory: '[SANDBOX]/plain-file'
-FAIL /Users/levy/wrk/github/fdu/.claude/worktrees/brave-pare-9f8860/tests/parity/.corpus/cli-watch.tryscript.md
+FAIL [ROOT]/tests/parity/.corpus/cli-watch.tryscript.md
   ✓ Build a Tree and Capture a Watch Session
   ✗ Build a Tree and Capture a Watch Session
     Command timed out after [TIME]
   ✓ Text Repaints Are Separated From One Another
-  ✓ Text Repaints Are Separated From One Another
+  ✗ Text Repaints Are Separated From One Another
+    Expected exit code 0, got 1
+@@ -1,12 +1,1 @@
+-TREE
+-       4 B  ██████████   100%  . (1 file)
+-
+-SUMMARY
+-       4 B  1 file, 0 directories
+-
+-──── [STAMP] ────
+-TREE
+-      16 B  ██████████   100%  . (2 files)
+-
+-SUMMARY
+-      16 B  2 files, 0 directories
++timed out waiting for the initial report
