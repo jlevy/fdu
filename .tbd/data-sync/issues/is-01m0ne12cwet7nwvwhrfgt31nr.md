@@ -3,14 +3,19 @@ type: is
 id: is-01m0ne12cwet7nwvwhrfgt31nr
 title: Record the parity artifact in CI, not on a developer machine
 kind: task
-status: open
+status: closed
 priority: 2
-version: 1
+version: 2
 labels: []
 dependencies: []
 parent_id: is-01m0n9pjsahc4wk6ek37syjct4
 created_at: 2026-08-22T19:09:13.499Z
-updated_at: 2026-08-22T19:09:13.499Z
+updated_at: 2026-08-22T21:48:00.613Z
+closed_at: 2026-08-22T21:48:00.612Z
+close_reason: |-
+  Done. The parity CI job runs --update and fails on any difference, uploading what Linux produced so the fix is a download rather than a guess -- so recording and verification happen on the same platform. check-portability.mjs adds the second half: committed test data naming a home directory, a sandbox directory, or a Windows checkout path is refused, which catches the class rather than the instance.
+
+  Verified on this run: 'Replay the golden corpus against the Python surface' and 'The recorded deviations must match what this platform produces' both succeeded, and the upload step skipped because there was nothing to report. The macOS recording now matches Linux byte for byte.
 ---
 make check cannot falsify the artifact's portability, and has now failed to twice.
 

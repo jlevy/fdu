@@ -3,9 +3,9 @@ type: is
 id: is-01m0n9pjsahc4wk6ek37syjct4
 title: Close the Python/CLI parity gaps the harness found
 kind: epic
-status: open
+status: closed
 priority: 1
-version: 10
+version: 11
 labels: []
 dependencies: []
 child_order_hints:
@@ -19,7 +19,9 @@ child_order_hints:
   - is-01m0nbv330xhagsyc2ehtm7hha
   - is-01m0ne12cwet7nwvwhrfgt31nr
 created_at: 2026-08-22T17:53:35.529Z
-updated_at: 2026-08-22T19:09:13.499Z
+updated_at: 2026-08-22T21:48:01.188Z
+closed_at: 2026-08-22T21:48:01.187Z
+close_reason: "Every gap the harness found is closed. 108 of 126 sessions reach parity, and the 18 that differ are four named classes, none of them defects: each surface naming its own parameter (11), notes carrying walk telemetry the schema excludes (3), one rule in each surface's own knob names (2), and two discovery surfaces (2). An unexplained difference fails the run, so that list is what is known rather than what was tolerated."
 ---
 The parity harness records 39 deviations across 126 sessions. Triage sorts them into seven causes, all but two fixable. Package is unreleased, so no backward compatibility constrains the fixes.
 
