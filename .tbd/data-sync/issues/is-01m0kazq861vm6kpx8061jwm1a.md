@@ -3,15 +3,17 @@ type: is
 id: is-01m0kazq861vm6kpx8061jwm1a
 title: Parity by committed deviation file, non-empty by construction
 kind: task
-status: open
+status: closed
 priority: 1
-version: 1
+version: 2
 spec_path: docs/project/specs/active/plan-2026-08-21-fdu-python-cli-parity.md
 labels: []
 dependencies: []
 parent_id: is-01m0k965p7hx4dy6t0cj29rsae
 created_at: 2026-08-21T23:37:34.725Z
-updated_at: 2026-08-21T23:37:34.725Z
+updated_at: 2026-08-22T06:53:20.280Z
+closed_at: 2026-08-22T06:53:20.279Z
+close_reason: "tests/parity/deviations-python.diff is committed, headed with how to read it, and non-empty by construction. Verified reproducible across runs after normalising sandbox paths, cache hashes, RFC3339 stamps and mtime_ns. Verified to catch the dangerous case: a shim secretly exec'ing the Rust binary fails the run."
 ---
 The corpus is not duplicated and neither are the expected bytes. tests/golden stays as the
 Rust recording. The parity run replays the same sessions against the shim and diffs the

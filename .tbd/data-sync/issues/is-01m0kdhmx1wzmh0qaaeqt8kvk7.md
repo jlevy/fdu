@@ -3,15 +3,17 @@ type: is
 id: is-01m0kdhmx1wzmh0qaaeqt8kvk7
 title: Python API cannot render text; expose Report.render over the existing renderer
 kind: task
-status: open
+status: closed
 priority: 1
-version: 1
+version: 3
 spec_path: docs/project/specs/active/plan-2026-08-21-fdu-python-cli-parity.md
 labels: []
 dependencies: []
 parent_id: is-01m0k965p7hx4dy6t0cj29rsae
 created_at: 2026-08-22T00:22:19.296Z
-updated_at: 2026-08-22T00:22:19.296Z
+updated_at: 2026-08-22T06:13:23.588Z
+closed_at: 2026-08-22T06:13:23.587Z
+close_reason: "Report.render landed in PR #40. Index.report binds a renderer onto the frozen Report; a detached Report refuses to render rather than diverging from the CLI. Format added to contract() so the StrEnum parity assertion covers it. Verified across 3 views x 4 formats against the built wheel and the sdist."
 ---
 The Python API cannot render text. There is no `render` in the package or the native stub:
 the typed surface returns structured values and `as_dict()`, and stops.
@@ -29,3 +31,7 @@ would then measure the reimplementation rather than the API.
 
 Not test scaffolding. It is what lets Python be the CLI's equal rather than a data source
 beside it.
+
+## Notes
+
+Decided: report.render(Format, color: bool) -> str, a method beside as_dict(). Format joins the exported StrEnums; color is a plain bool because resolving auto means asking about stdout, which the caller owns. Body only -- the performance footer stays CLI-transient, so every text session deviates by that one line, recorded as a single class with a count rather than ~94 identical hunks.
