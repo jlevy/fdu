@@ -5,7 +5,7 @@ title: Extract the experiment loop as a reusable framework
 kind: epic
 status: open
 priority: 2
-version: 9
+version: 10
 spec_path: docs/project/specs/active/plan-2026-08-22-experiment-loop-framework-extraction.md
 labels: []
 dependencies: []
@@ -18,7 +18,8 @@ child_order_hints:
   - is-01m0ncz1cxrczgbs2hdn1t5gab
   - is-01m0ncz1xe04mp79skh3r9vvzx
   - is-01m0ncz2dp7gdw4k95jrt10ggh
+  - is-01m0ndgzq8gchfwzdkg4dtpn1z
 created_at: 2026-08-22T18:50:35.468Z
-updated_at: 2026-08-22T18:50:39.413Z
+updated_at: 2026-08-22T19:00:26.470Z
 ---
 Extract the domain-neutral half of fdu's soft-schema performance research loop into a reusable skill plus package, and prove it by re-hosting fdu's own loop with a byte-identical ledger and evidence report. See the spec for the analysis of what worked and where the seam falls.
