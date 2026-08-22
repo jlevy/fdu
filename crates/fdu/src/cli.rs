@@ -18,17 +18,17 @@ use std::borrow::Cow;
 use clap::builder::styling::{AnsiColor, Style as AnsiStyle, Styles};
 use clap::{ArgAction, ColorChoice, CommandFactory, FromArgMatches, Parser, ValueEnum};
 
-use fdu::content::{AnalysisRequest, AnalysisSet};
-use fdu::query::{
+use fdu_core::content::{AnalysisRequest, AnalysisSet};
+use fdu_core::query::{
     Bound, Pattern, Provenance, Query, ReportSource, Selection, SizeMetric, SortKey, ViewSpec,
     parse_size, parse_when, system_time_to_nanos,
 };
-use fdu::report_format;
-use fdu::report_format::human_count;
-use fdu::{
+use fdu_core::report_format;
+use fdu_core::report_format::human_count;
+use fdu_core::{
     CachePolicy, EntryKind, OpenConfig, ScanConfig, default_cache_path, open_with_pending_save,
 };
-use fdu::{PerformanceSummary, prepare_report, prepare_report_with_scan_diagnostics};
+use fdu_core::{PerformanceSummary, prepare_report, prepare_report_with_scan_diagnostics};
 
 const SKILL_TEMPLATE: &str = include_str!("skills/SKILL.md");
 
@@ -667,9 +667,9 @@ impl Cli {
         config: &OpenConfig,
         color: bool,
     ) -> anyhow::Result<RunOutcome> {
-        use fdu::query::ViewSpec;
-        use fdu::watch::WatchConfig;
-        use fdu::watch_session::{ChangeKind, Session};
+        use fdu_core::query::ViewSpec;
+        use fdu_core::watch::WatchConfig;
+        use fdu_core::watch_session::{ChangeKind, Session};
 
         let path = self.path.as_deref().expect("run() validates the report path first");
         let interval = parse_duration(&self.interval).map_err(|error| usage(&error))?;
@@ -694,7 +694,7 @@ impl Cli {
         // is the only one left; the watch session needs the index by value.
         let index = std::sync::Arc::into_inner(index)
             .expect("the joined writer released the only other reference");
-        let handle = fdu::IndexHandle::new(index);
+        let handle = fdu_core::IndexHandle::new(index);
         let mut session = Session::new(handle, config.scan.clone(), query, WatchConfig::default())?;
 
         // The initial answer, identical to a one-shot run's.
@@ -702,9 +702,9 @@ impl Cli {
             scan_started_at: Some(scan_started_at),
             generated_at: SystemTime::now(),
             source: match open_report.path_taken {
-                fdu::OpenPath::ColdScan => ReportSource::ColdScan,
-                fdu::OpenPath::WarmRevalidate => ReportSource::WarmRevalidate,
-                fdu::OpenPath::CacheOnly => ReportSource::CacheOnly,
+                fdu_core::OpenPath::ColdScan => ReportSource::ColdScan,
+                fdu_core::OpenPath::WarmRevalidate => ReportSource::WarmRevalidate,
+                fdu_core::OpenPath::CacheOnly => ReportSource::CacheOnly,
             },
             complete: open_report.is_complete(),
             errors: open_report.error_messages(),
@@ -787,7 +787,7 @@ impl Cli {
     #[cfg(feature = "watch")]
     #[allow(clippy::too_many_arguments)]
     fn save_if_pending(
-        session: &fdu::watch_session::Session,
+        session: &fdu_core::watch_session::Session,
         config: &OpenConfig,
         pending: &mut bool,
         last_save: &mut SystemTime,
@@ -829,7 +829,7 @@ impl Cli {
     /// run's warmth is lost.
     #[cfg(feature = "watch")]
     fn save_live(
-        session: &fdu::watch_session::Session,
+        session: &fdu_core::watch_session::Session,
         config: &OpenConfig,
     ) -> anyhow::Result<bool> {
         let (Some(cache_path), true) = (config.cache_path.as_deref(), config.policy.writes())
@@ -837,13 +837,13 @@ impl Cli {
             return Ok(false);
         };
         let index = session.index_snapshot()?;
-        if index.freshness() != fdu::Freshness::Fresh {
+        if index.freshness() != fdu_core::Freshness::Fresh {
             // Only a trustworthy index is worth persisting; a partial one would be
             // served as fact on the next run. Reported as "not written" so the caller
             // keeps the change pending and tries again once the index settles.
             return Ok(false);
         }
-        fdu::snapshot::save(&index, cache_path)?;
+        fdu_core::snapshot::save(&index, cache_path)?;
         Ok(true)
     }
 
@@ -855,7 +855,7 @@ impl Cli {
     /// the loop — so the rule below can be unconditional.
     fn render_live(
         out: &mut dyn Write,
-        session: &fdu::watch_session::Session,
+        session: &fdu_core::watch_session::Session,
         format: report_format::Format,
         color: bool,
     ) -> anyhow::Result<()> {
@@ -883,8 +883,8 @@ impl Cli {
         // current-root meaning so `--cache-status=all` and `--cache-clear=all` remain
         // useful discovery/maintenance actions without weakening report safety.
         let root = self.path.as_deref().unwrap_or_else(|| Path::new("."));
-        let cache_dir =
-            fdu::default_cache_path(root).and_then(|path| path.parent().map(Path::to_path_buf));
+        let cache_dir = fdu_core::default_cache_path(root)
+            .and_then(|path| path.parent().map(Path::to_path_buf));
 
         if let Some(scope) = &self.cache_clear {
             let scope = CacheScope::parse(scope, "--cache-clear").map_err(|e| usage(&e))?;
@@ -893,7 +893,7 @@ impl Cli {
                     // Echo the directory before acting, so a destructive flag always says
                     // where it is pointed.
                     writeln!(out, "Cache directory: {}", dir.display())?;
-                    let removed = fdu::clear_all_caches(dir)?;
+                    let removed = fdu_core::clear_all_caches(dir)?;
                     writeln!(
                         out,
                         "{}",
@@ -908,9 +908,9 @@ impl Cli {
                     )?;
                 }
                 (CacheScope::Root, _) => {
-                    let path = fdu::default_cache_path(root);
+                    let path = fdu_core::default_cache_path(root);
                     let removed = match &path {
-                        Some(path) => fdu::clear_cache(path)?,
+                        Some(path) => fdu_core::clear_cache(path)?,
                         None => false,
                     };
                     if let Some(path) = &path {
@@ -929,10 +929,10 @@ impl Cli {
         if let Some(scope) = &self.cache_status {
             let scope = CacheScope::parse(scope, "--cache-status").map_err(|e| usage(&e))?;
             let statuses = match (scope, &cache_dir) {
-                (CacheScope::All, Some(dir)) => fdu::list_caches(dir)?,
+                (CacheScope::All, Some(dir)) => fdu_core::list_caches(dir)?,
                 (CacheScope::All, None) => Vec::new(),
-                (CacheScope::Root, _) => match fdu::default_cache_path(root) {
-                    Some(path) => vec![fdu::cache_status(&path)?],
+                (CacheScope::Root, _) => match fdu_core::default_cache_path(root) {
+                    Some(path) => vec![fdu_core::cache_status(&path)?],
                     None => Vec::new(),
                 },
             };
@@ -946,7 +946,7 @@ impl Cli {
     fn write_cache_status(
         &self,
         out: &mut dyn Write,
-        statuses: &[fdu::CacheStatus],
+        statuses: &[fdu_core::CacheStatus],
     ) -> anyhow::Result<()> {
         let format = self.parse_format().map_err(|e| usage(&e))?;
         // Every format, human included, comes from the one renderer. While the CLI kept
@@ -1072,7 +1072,7 @@ fn watch_scope_guidance() -> String {
     // sequential replace does re-scan: max_depth becomes --scan-depth, and then `depth`
     // matches inside it, giving `--scan---depth`. That is fdu-7j6z again, and it appeared
     // again here the moment the same shortcut was taken.
-    fdu::scan::WATCH_SCOPE_GUIDANCE
+    fdu_core::scan::WATCH_SCOPE_GUIDANCE
         .split_inclusive(|character: char| !character.is_ascii_alphanumeric() && character != '_')
         .map(|piece| {
             let end = piece
@@ -1892,7 +1892,7 @@ mod tests {
     /// was reworded, which is a test measuring its own copy of the thing under test.
     #[test]
     fn the_watch_guidance_substitutes_whole_words_only() {
-        let source = fdu::scan::WATCH_SCOPE_GUIDANCE;
+        let source = fdu_core::scan::WATCH_SCOPE_GUIDANCE;
         let text = watch_scope_guidance();
 
         // A sequential replace produced `--scan---depth`: max_depth became --scan-depth and

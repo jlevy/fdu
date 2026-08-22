@@ -137,6 +137,16 @@ checksum = "da7c62ceae207dd37ea5b845da6a0696c799f85e97da1ab5b7910be3c1c80223"
 name = "fdu"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "clap",
+ "fdu-core",
+ "tempfile",
+]
+
+[[package]]
+name = "fdu-core"
+version = "0.1.0"
+dependencies = [
  "anstyle",
  "libc",
  "notify",
@@ -146,21 +156,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "fdu-cli"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "fdu",
- "tempfile",
-]
-
-[[package]]
 name = "fdu-py"
 version = "0.1.0"
 dependencies = [
  "fdu",
- "fdu-cli",
+ "fdu-core",
  "pyo3",
 ]
 

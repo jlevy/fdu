@@ -46,7 +46,7 @@ help:
 	@echo "make perf-report-check  Fail if the committed report has drifted from the artifacts"
 
 build:
-	$(CARGO) build --locked -p fdu-cli --all-features
+	$(CARGO) build --locked -p fdu --all-features
 
 release:
 	$(CARGO) build --locked --release -p fdu --all-features
@@ -66,7 +66,7 @@ content-selfcheck: build
 	$(NODE) scripts/content-selfcheck.mjs
 
 performance-probe:
-	$(CARGO) build --locked -p fdu --example perf_probe --no-default-features
+	$(CARGO) build --locked -p fdu-core --example perf_probe --no-default-features
 
 test-performance: performance-probe
 	$(UV) run --no-project python -m unittest discover -s benchmarks/tests -p 'test_*.py'
@@ -233,14 +233,14 @@ docs:
 # the only way the library builds at all. The third line is the check that the move stuck:
 # a library that pulls in an argument parser has the dependency the split removed.
 lib-only:
-	$(CARGO) test --locked -p fdu --no-default-features
-	$(CARGO) test --locked -p fdu --no-default-features --features watch
-	@! $(CARGO) tree -p fdu --all-features --prefix none | grep -qE '^(clap|anyhow) ' \
-		|| { echo 'fdu must not depend on clap or anyhow; they belong to fdu-cli'; exit 1; }
+	$(CARGO) test --locked -p fdu-core --no-default-features
+	$(CARGO) test --locked -p fdu-core --no-default-features --features watch
+	@! $(CARGO) tree -p fdu-core --all-features --prefix none | grep -qE '^(clap|anyhow) ' \
+		|| { echo 'fdu-core must not depend on clap or anyhow; they belong to fdu'; exit 1; }
 
 msrv:
 	$(CARGO) +$(MSRV) check --locked --all-features
-	$(CARGO) +$(MSRV) test --locked -p fdu --no-default-features
+	$(CARGO) +$(MSRV) test --locked -p fdu-core --no-default-features
 
 fix:
 	$(CARGO) fmt --all
@@ -303,8 +303,9 @@ release-rehearse: release-test
 		trap 'rm -r -- "$$artifact_dir"' EXIT && \
 		version="$$($(UV) run --no-project --python 3.12 python -c 'import pathlib,tomllib; print(tomllib.loads(pathlib.Path("crates/fdu/Cargo.toml").read_text())["package"]["version"])')" && \
 		export FDU_RELEASE_TAG="v$$version" && \
+		$(CARGO) package --locked -p fdu-core --allow-dirty && \
 		$(CARGO) package --locked -p fdu --allow-dirty && \
-		cp "target/package/fdu-$$version.crate" "$$artifact_dir/" && \
+		cp "target/package/fdu-core-$$version.crate" "target/package/fdu-$$version.crate" "$$artifact_dir/" && \
 		$(UV) build --directory crates/fdu-py --no-sources --sdist --out-dir "$$artifact_dir" && \
 		$(UV) run --directory crates/fdu-py --frozen --only-group dev maturin build --locked --release --out "$$artifact_dir" && \
 		$(UV) run --no-project --python 3.12 python scripts/release/inspect_artifacts.py "$$artifact_dir" --version "$$version" \
@@ -371,10 +372,10 @@ PERF_RUN := $(PERF_UV) python -m benchmarks.realtree
 .PHONY: perf-probe-release perf-probe-profiling perf-baseline perf-profile perf-compare perf-content-profile perf-content-compare perf-compare-tools perf-record perf-test perf-ledger perf-report perf-report-check perf-schema perf-schema-check
 
 perf-probe-release:
-	$(CARGO) build --locked --release -p fdu --example perf_probe --no-default-features
+	$(CARGO) build --locked --release -p fdu-core --example perf_probe --no-default-features
 
 perf-probe-profiling:
-	$(CARGO) build --locked --profile profiling -p fdu --example perf_probe --no-default-features
+	$(CARGO) build --locked --profile profiling -p fdu-core --example perf_probe --no-default-features
 
 # Record what the tree looks like now, so later runs can prove they measured the same one.
 perf-baseline:

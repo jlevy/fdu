@@ -90,11 +90,11 @@ jobs:
       # per-platform event semantics before a user does.
       - run: cargo test --locked --all-features
       - name: Build the CLI for golden tests
-        run: cargo build --locked -p fdu-cli --all-features
+        run: cargo build --locked -p fdu --all-features
       - name: Compare the CLI golden contract
         run: npm run test:golden
       - name: Build the repository-only performance probe
-        run: cargo build --locked -p fdu --example perf_probe --no-default-features
+        run: cargo build --locked -p fdu-core --example perf_probe --no-default-features
       - name: Prove the performance harness and every fdu probe job
         run: python -m unittest discover -s benchmarks/tests -p 'test_*.py'
 
@@ -111,9 +111,9 @@ jobs:
           toolchain: 1.97.1
       # Library consumers take `default-features = false`. Without this job, that path
       # would only ever be compiled by them.
-      - run: cargo test --locked -p fdu --no-default-features
+      - run: cargo test --locked -p fdu-core --no-default-features
       # The watch layer is strictly additive and must not inherit CLI-only features.
-      - run: cargo test --locked -p fdu --no-default-features --features watch
+      - run: cargo test --locked -p fdu-core --no-default-features --features watch
 
   msrv:
     name: MSRV (1.85)
@@ -128,7 +128,7 @@ jobs:
           toolchain: 1.85.0
       - run: cargo check --locked --all-features
       # Compile success alone misses behavioral and test-only MSRV regressions.
-      - run: cargo test --locked -p fdu --no-default-features
+      - run: cargo test --locked -p fdu-core --no-default-features
 
   docs:
     name: Documentation

@@ -204,7 +204,7 @@ Until the crate is published, install from source with Rust 1.85 or newer:
 ```shell
 git clone https://github.com/jlevy/fdu.git
 cd fdu
-cargo install --locked --path crates/fdu-cli
+cargo install --locked --path crates/fdu
 fdu --help
 ```
 
@@ -221,13 +221,19 @@ make python-smoke        # installed wheel: public API, native boundary, CLI, an
 make python-sdist-smoke  # build, install, and test the source distribution
 ```
 
-The command line lives in `fdu-cli`, which depends on the `fdu` library the way any
-consumer does. That is what keeps the library honest — nothing in the command line can
-reach a private item, so anything it needs is public API — and it is why the install
-path names `fdu-cli` while the installed command is still `fdu`.
+Two crates, by role.
+`fdu-core` is the engine — every type and function the API offers.
+`fdu` is what you install: it carries the command line and re-exports the engine, so
+`cargo add fdu` gives a library caller the whole API and there is one name to know
+either way.
+
+The split is load-bearing rather than cosmetic.
+The command line depends on `fdu-core` the way any consumer does, so it cannot reach a
+private item: anything it needs is public API, and the compiler decides that on every
+build instead of a reviewer deciding it in review.
 
 Publishing is Phase 1 work.
-`cargo install fdu-cli` and `uvx --from fdu==<version> fdu` are future commands; neither
+`cargo install fdu` and `uvx --from fdu==<version> fdu` are future commands; neither
 package should be presented as available from crates.io or PyPI yet.
 
 ## Three Cost Layers

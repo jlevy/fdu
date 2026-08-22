@@ -33,6 +33,49 @@ These govern everything below.
 Where a later section conflicts with one of them, the principle wins and the section is
 wrong.
 
+### One Engine, and Surfaces That Cannot Disagree With It
+
+fdu answers one question through three surfaces: the `fdu-core` engine, the `fdu`
+command line, and the `fdu` Python package.
+Two rules hold them together, and both are enforced mechanically because both were
+broken while everyone believed they held.
+
+**The command line invents nothing.** Every capability it offers must exist in the
+engine, because a capability reachable only by flag is one a library caller cannot have
+and a script must shell out for.
+This is not checked by review: the command line lives in a separate crate and depends on
+the engine the way any consumer does, so `crate::` does not resolve, private items are
+unreachable, and the compiler decides on every build.
+Anything the command line needs becomes a visible act of making something public rather
+than a `pub(crate)` nobody sees.
+
+The rule had been quietly false in both directions.
+Five capabilities existed only in the command line — rendering cache status, rendering
+watch records, a watch’s live report, the one-shot execution contract, and the note
+naming a view that was dropped.
+And the engine had come to depend on its own front end, calling into the command line to
+format a number.
+
+**Every surface gives the same answer.** One golden corpus is replayed against each
+surface. Differences are recorded in a committed artifact, each one classified by a
+mechanical matcher, and a difference matching no known cause **fails the build** — so
+“we know why these differ” is checked rather than claimed.
+
+The corpus is not duplicated and no expected output is written twice, which matters more
+than it sounds: two copies of the expected bytes drift, and the drift is invisible
+because each copy passes its own test.
+The artifact is also non-empty by construction, because a naive parity run treats “no
+differences” as success — and that is exactly what a harness silently testing the wrong
+binary produces, so the most dangerous failure would otherwise look like the best
+outcome.
+
+The evidence that this needs enforcing: the Python binding drifted behind the command
+line five times, and `make check` was green through every one of them, because no Python
+test had ever named a new view.
+
+See [the surface architecture](fdu-surface-architecture.md) for what each surface is and
+how the harness works.
+
 ### Derive the Choice; Do Not Inherit It
 
 Common practice is evidence about what people expect, not evidence about what is

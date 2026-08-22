@@ -11,8 +11,8 @@ use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use fdu::scan::{reconcile, scan_into_index};
-use fdu::{EntryId, Index, ScanConfig, ScanOrder};
+use fdu_core::scan::{reconcile, scan_into_index};
+use fdu_core::{EntryId, Index, ScanConfig, ScanOrder};
 
 /// Worker counts every differential assertion is repeated at.
 ///

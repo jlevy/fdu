@@ -16,9 +16,9 @@ use std::path::{Component, Path, PathBuf};
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
-use fdu::content::{AnalysisRequest, AnalysisSet, CoverageReason};
-use fdu::query::{Provenance, Query, ReportSource, ViewSpec};
-use fdu::{
+use fdu_core::content::{AnalysisRequest, AnalysisSet, CoverageReason};
+use fdu_core::query::{Provenance, Query, ReportSource, ViewSpec};
+use fdu_core::{
     Attrs, CachePolicy, EntryId, EntryKind, Index, Observation, Op, OpenConfig, ScanConfig,
     ScanOrder,
 };
@@ -33,8 +33,8 @@ const DIGEST_ALGORITHM: &str = "fdu-index-record-v1/sha256-multiset-v1";
 /// allocation. One binary that can be asked for numbers beats two that differ in
 /// whether they have any. exp-052 measured the whole arrangement at no detectable cost.
 #[global_allocator]
-static ALLOCATOR: fdu::counters::alloc::CountingAlloc<std::alloc::System> =
-    fdu::counters::system_allocator();
+static ALLOCATOR: fdu_core::counters::alloc::CountingAlloc<std::alloc::System> =
+    fdu_core::counters::system_allocator();
 
 fn main() -> ExitCode {
     let arguments: Vec<_> = env::args_os().skip(1).collect();
@@ -45,7 +45,7 @@ fn main() -> ExitCode {
     // `FDU_COUNTERS=1` turns recording on. Off by default so a probe run measured
     // against a control is not measuring the instrument, and on by one environment
     // variable when a run is meant to explain itself.
-    let measurement = fdu::counters::Measurement::from_env();
+    let measurement = fdu_core::counters::Measurement::from_env();
     let exit = match Arguments::parse(arguments.into_iter())
         .and_then(|arguments| execute_repeated(&arguments))
     {
@@ -169,7 +169,7 @@ struct Arguments {
     queries: usize,
     repeat: usize,
     diagnostics: bool,
-    worker_policy: fdu::scan::WorkerPolicyExperiment,
+    worker_policy: fdu_core::scan::WorkerPolicyExperiment,
     scan: ScanConfig,
 }
 
@@ -187,7 +187,7 @@ impl Arguments {
         let mut queries = 1_000_usize;
         let mut repeat = 1_usize;
         let mut diagnostics = false;
-        let mut worker_policy = fdu::scan::WorkerPolicyExperiment::ShippedOneShot;
+        let mut worker_policy = fdu_core::scan::WorkerPolicyExperiment::ShippedOneShot;
         let mut scan = ScanConfig::default();
         while let Some(flag) = arguments.next() {
             match flag.to_str() {
@@ -210,10 +210,10 @@ impl Arguments {
                         .next()
                         .ok_or_else(|| ProbeError("--worker-policy requires a value".into()))?;
                     worker_policy = match value.to_str() {
-                        Some("shipped") => fdu::scan::WorkerPolicyExperiment::ShippedOneShot,
-                        Some("repeated") => fdu::scan::WorkerPolicyExperiment::RepeatedWindows,
+                        Some("shipped") => fdu_core::scan::WorkerPolicyExperiment::ShippedOneShot,
+                        Some("repeated") => fdu_core::scan::WorkerPolicyExperiment::RepeatedWindows,
                         Some("staged-gated") => {
-                            fdu::scan::WorkerPolicyExperiment::StagedGatedWindows
+                            fdu_core::scan::WorkerPolicyExperiment::StagedGatedWindows
                         }
                         _ => return Err(ProbeError(format!("unknown worker policy {value:?}"))),
                     };
@@ -341,7 +341,7 @@ fn execute(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
 }
 
 fn classification_probe(arguments: &Arguments, ambiguous: bool) -> ProbeResult<ProbeOutput> {
-    let (index, scan) = fdu::scan::scan_into_index(&arguments.root, &arguments.scan)?;
+    let (index, scan) = fdu_core::scan::scan_into_index(&arguments.root, &arguments.scan)?;
     if !scan.is_complete() {
         return Err(ProbeError("classification probe setup scan was partial".into()));
     }
@@ -368,9 +368,9 @@ fn classification_probe(arguments: &Arguments, ambiguous: bool) -> ProbeResult<P
     for iteration in 0..arguments.operations {
         let classification = if ambiguous {
             let (path, prefix) = ambiguous_cases[iteration % ambiguous_cases.len()];
-            fdu::classify::classify_path_with_prefix(Path::new(path), Some(prefix))
+            fdu_core::classify::classify_path_with_prefix(Path::new(path), Some(prefix))
         } else {
-            fdu::classify::classify_path(Path::new(resolved[iteration % resolved.len()]))
+            fdu_core::classify::classify_path(Path::new(resolved[iteration % resolved.len()]))
         };
         observed = observed.saturating_add(
             u64::try_from(classification.file_type.as_str().len()).unwrap_or(u64::MAX),
@@ -397,13 +397,13 @@ fn document_request() -> AnalysisRequest {
 }
 
 fn content_analysis(arguments: &Arguments, request: AnalysisRequest) -> ProbeResult<ProbeOutput> {
-    let (mut index, scan) = fdu::scan::scan_into_index(&arguments.root, &arguments.scan)?;
+    let (mut index, scan) = fdu_core::scan::scan_into_index(&arguments.root, &arguments.scan)?;
     if !scan.is_complete() {
         return Err(ProbeError("content-analysis setup scan was partial".into()));
     }
     let enabled = request.profile.is_enabled();
     let started = Instant::now();
-    let report = fdu::content::analyze_index(&mut index, request);
+    let report = fdu_core::content::analyze_index(&mut index, request);
     black_box(report);
     let component = started.elapsed();
     let mut summary = summarize_index(&index)?;
@@ -427,7 +427,7 @@ fn content_open(
         analysis,
     };
     let started = Instant::now();
-    let (index, report) = fdu::open(&arguments.root, &config)?;
+    let (index, report) = fdu_core::open(&arguments.root, &config)?;
     let component = started.elapsed();
     let mut summary = summarize_index(&index)?;
     attach_content_summary(&mut summary, &index);
@@ -440,19 +440,19 @@ fn content_open(
     summary.errors = u64::try_from(report.scan.errors.len()).unwrap_or(u64::MAX);
     summary.snapshot_bytes = snapshot.metadata().ok().map(|metadata| metadata.len());
     let source = match report.path_taken {
-        fdu::OpenPath::ColdScan => "cold-scan",
-        fdu::OpenPath::WarmRevalidate => "warm-revalidate",
-        fdu::OpenPath::CacheOnly => "content-cache",
+        fdu_core::OpenPath::ColdScan => "cold-scan",
+        fdu_core::OpenPath::WarmRevalidate => "warm-revalidate",
+        fdu_core::OpenPath::CacheOnly => "content-cache",
     };
     Ok(ProbeOutput::new(arguments.mode, source, component, summary))
 }
 
 fn content_query(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
-    let (mut index, scan) = fdu::scan::scan_into_index(&arguments.root, &arguments.scan)?;
+    let (mut index, scan) = fdu_core::scan::scan_into_index(&arguments.root, &arguments.scan)?;
     if !scan.is_complete() {
         return Err(ProbeError("content-query setup scan was partial".into()));
     }
-    let analysis = fdu::content::analyze_index(&mut index, basic_request());
+    let analysis = fdu_core::content::analyze_index(&mut index, basic_request());
     let query = Query {
         views: vec![ViewSpec::Types, ViewSpec::Families, ViewSpec::Languages, ViewSpec::Documents],
         ..Query::default()
@@ -466,7 +466,7 @@ fn content_query(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     };
     let started = Instant::now();
     for _ in 0..arguments.queries {
-        black_box(fdu::query::report(&index, &query, &provenance));
+        black_box(fdu_core::query::report(&index, &query, &provenance));
     }
     let component = started.elapsed();
     let mut summary = summarize_index(&index)?;
@@ -482,7 +482,7 @@ fn scan_producer(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     let mut summary = Summary::default();
     let started = Instant::now();
     let report = if arguments.diagnostics {
-        let (report, diagnostics) = fdu::scan::scan_with_policy_diagnostics(
+        let (report, diagnostics) = fdu_core::scan::scan_with_policy_diagnostics(
             &arguments.root,
             &arguments.scan,
             &mut |observation| summary.observe(&observation),
@@ -491,7 +491,7 @@ fn scan_producer(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
         summary.scan_diagnostics = Some(diagnostics);
         report
     } else {
-        fdu::scan::scan(&arguments.root, &arguments.scan, &mut |observation| {
+        fdu_core::scan::scan(&arguments.root, &arguments.scan, &mut |observation| {
             summary.observe(&observation);
         })?
     };
@@ -507,7 +507,7 @@ fn scan_producer(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
         // summary that is faster because it skipped, duplicated, or misclassified an
         // entry must never become an accepted performance sample.
         let (validation_index, validation_report) =
-            fdu::scan::scan_into_index(&arguments.root, &arguments.scan)?;
+            fdu_core::scan::scan_into_index(&arguments.root, &arguments.scan)?;
         if !validation_report.is_complete() {
             return Err(ProbeError("scan-producer validation scan was partial".into()));
         }
@@ -539,14 +539,14 @@ fn validate_producer_summary(producer: &Summary, validation: &Summary) -> ProbeR
 fn scan_index(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     let started = Instant::now();
     let (index, report, diagnostics) = if arguments.diagnostics {
-        let (index, report, diagnostics) = fdu::scan::scan_into_index_with_policy_diagnostics(
+        let (index, report, diagnostics) = fdu_core::scan::scan_into_index_with_policy_diagnostics(
             &arguments.root,
             &arguments.scan,
             arguments.worker_policy,
         )?;
         (index, report, Some(diagnostics))
     } else {
-        let (index, report) = fdu::scan::scan_into_index(&arguments.root, &arguments.scan)?;
+        let (index, report) = fdu_core::scan::scan_into_index(&arguments.root, &arguments.scan)?;
         (index, report, None)
     };
     let component = started.elapsed();
@@ -577,7 +577,7 @@ fn cold_open_save(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
         analysis: AnalysisRequest::default(),
     };
     let started = Instant::now();
-    let (index, report, pending) = fdu::open_with_pending_save(&arguments.root, &config)?;
+    let (index, report, pending) = fdu_core::open_with_pending_save(&arguments.root, &config)?;
     pending.join()?;
     let component = started.elapsed();
     if !report.is_complete() {
@@ -592,13 +592,13 @@ fn cold_open_save(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
 }
 
 fn snapshot_save(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
-    let (index, report) = fdu::scan::scan_into_index(&arguments.root, &arguments.scan)?;
+    let (index, report) = fdu_core::scan::scan_into_index(&arguments.root, &arguments.scan)?;
     if !report.is_complete() {
         return Err(ProbeError("snapshot setup scan was partial".into()));
     }
     let snapshot = arguments.snapshot()?;
     let started = Instant::now();
-    fdu::snapshot::save(&index, snapshot)?;
+    fdu_core::snapshot::save(&index, snapshot)?;
     let component = started.elapsed();
     let mut summary = summarize_index(&index)?;
     summary.snapshot_bytes = Some(snapshot.metadata()?.len());
@@ -619,7 +619,7 @@ fn revalidate(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     let snapshot = arguments.snapshot()?;
     let mut index = load_snapshot(snapshot)?;
     let started = Instant::now();
-    let report = fdu::scan::reconcile(&mut index, &arguments.scan, &mut |_| {})?;
+    let report = fdu_core::scan::reconcile(&mut index, &arguments.scan, &mut |_| {})?;
     let component = started.elapsed();
     let mut summary = summarize_index(&index)?;
     summary.dirs_read = report.scan.dirs_read;
@@ -675,7 +675,7 @@ fn query(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     let index = if let Some(snapshot) = arguments.snapshot.as_deref() {
         load_snapshot(snapshot)?
     } else {
-        let (index, report) = fdu::scan::scan_into_index(&arguments.root, &arguments.scan)?;
+        let (index, report) = fdu_core::scan::scan_into_index(&arguments.root, &arguments.scan)?;
         if !report.is_complete() {
             return Err(ProbeError("query setup scan was partial".into()));
         }
@@ -702,7 +702,7 @@ fn query(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
 }
 
 fn load_snapshot(path: &Path) -> ProbeResult<Index> {
-    fdu::snapshot::load(path)?.ok_or_else(|| ProbeError("snapshot was not usable".into()))
+    fdu_core::snapshot::load(path)?.ok_or_else(|| ProbeError("snapshot was not usable".into()))
 }
 
 #[derive(Debug, Default)]
@@ -718,7 +718,7 @@ struct ApplySummary {
 #[derive(Debug)]
 struct Summary {
     allocated_bytes: u128,
-    attribution: Option<fdu::scan::WalkAttribution>,
+    attribution: Option<fdu_core::scan::WalkAttribution>,
     apparent_bytes: u128,
     apply: ApplySummary,
     complete: bool,
@@ -741,7 +741,7 @@ struct Summary {
     other: u64,
     query_iterations: u64,
     query_observations: u64,
-    scan_diagnostics: Option<fdu::scan::ScanDiagnostics>,
+    scan_diagnostics: Option<fdu_core::scan::ScanDiagnostics>,
     snapshot_bytes: Option<u64>,
     symlinks: u64,
 }
@@ -996,11 +996,11 @@ impl ProbeOutput {
     }
 }
 
-fn json_scan_diagnostics(value: Option<&fdu::scan::ScanDiagnostics>) -> String {
-    value.map_or_else(|| "null".into(), fdu::scan::ScanDiagnostics::to_json)
+fn json_scan_diagnostics(value: Option<&fdu_core::scan::ScanDiagnostics>) -> String {
+    value.map_or_else(|| "null".into(), fdu_core::scan::ScanDiagnostics::to_json)
 }
 
-fn json_attribution(value: Option<&fdu::scan::WalkAttribution>) -> String {
+fn json_attribution(value: Option<&fdu_core::scan::WalkAttribution>) -> String {
     value.map_or_else(
         || "null".into(),
         |a| {
@@ -1284,8 +1284,8 @@ struct ProbeError(String);
 
 type ProbeResult<T> = Result<T, ProbeError>;
 
-impl From<fdu::Error> for ProbeError {
-    fn from(error: fdu::Error) -> Self {
+impl From<fdu_core::Error> for ProbeError {
+    fn from(error: fdu_core::Error) -> Self {
         Self(error.to_string())
     }
 }

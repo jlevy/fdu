@@ -381,7 +381,7 @@ fn with_flags(
 ///
 /// ```
 /// use std::ffi::OsStr;
-/// use fdu::classify::derive_ext;
+/// use fdu_core::classify::derive_ext;
 ///
 /// assert_eq!(derive_ext(OsStr::new("archive.tar.gz")).as_deref(), Some(".tar.gz"));
 /// assert_eq!(derive_ext(OsStr::new("notes.MD")).as_deref(), Some(".md"));
@@ -406,7 +406,7 @@ pub fn derive_ext(name: &OsStr) -> Option<String> {
 ///
 /// ```
 /// use std::ffi::OsStr;
-/// use fdu::classify::{NO_EXTENSION, ext_bucket};
+/// use fdu_core::classify::{NO_EXTENSION, ext_bucket};
 ///
 /// assert_eq!(ext_bucket(OsStr::new("archive.tar.gz")), ".tar.gz");
 /// assert_eq!(ext_bucket(OsStr::new("Makefile")), NO_EXTENSION);
