@@ -462,13 +462,13 @@ Selection flags are not refused: they filter what a full index reports.
 
 ```console
 $ fdu --watch --scan-depth 2 .
-! fdu: --watch cannot be combined with --scan-depth or --one-filesystem: watching requires full scope. Selection flags such as --depth, --include, and --modified-since do work with --watch, because they filter the index rather than narrowing the scan
+! fdu: watching requires full scope and cannot be combined with --scan-depth or --one-filesystem: a watcher cannot filter backend events against a narrowed boundary. Selection such as --depth, --include, and --modified-since does work while watching, because it filters the retained index rather than narrowing the scan
 ? 2
 ```
 
 ```console
 $ fdu --watch --one-filesystem .
-! fdu: --watch cannot be combined with --scan-depth or --one-filesystem: watching requires full scope. Selection flags such as --depth, --include, and --modified-since do work with --watch, because they filter the index rather than narrowing the scan
+! fdu: watching requires full scope and cannot be combined with --scan-depth or --one-filesystem: a watcher cannot filter backend events against a narrowed boundary. Selection such as --depth, --include, and --modified-since does work while watching, because it filters the retained index rather than narrowing the scan
 ? 2
 ```
 

@@ -26,6 +26,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { CLASSES, classify, parseSessions } from './parity-classes.mjs';
 import { fileURLToPath } from 'node:url';
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -149,7 +150,46 @@ const result = spawnSync(process.execPath, [runner, '--filter', filter], {
 // tryscript writes session results to stderr and its one-line summary to stdout.
 // Reading only stderr keeps the artifact free of any interleaving question: two streams
 // concatenated do not order themselves the same way on every machine.
-const observed = HEADER + normalise(result.stderr ?? '');
+const body = normalise(result.stderr ?? '');
+
+// Every surviving difference has to name its cause. A flat list says nothing about which
+// are understood, and a new difference could hide among the accepted ones; an unexplained
+// session fails the run instead.
+const sessions = parseSessions(body);
+const unexplained = sessions.filter((session) => classify(session) === null);
+if (unexplained.length > 0) {
+  console.error('run-parity: these differences match no known cause:\n');
+  for (const session of unexplained) {
+    console.error(`  ${session.name}  (${session.file.split('/').pop()})`);
+    console.error(`    CLI:    ${(session.removed[0] ?? '(nothing)').slice(0, 100)}`);
+    console.error(`    Python: ${(session.added[0] ?? '(nothing)').slice(0, 100)}`);
+  }
+  console.error('\nEither fix it, or add a class to scripts/parity-classes.mjs saying why');
+  console.error('the two surfaces are allowed to differ. A class is a claim about the API,');
+  console.error('so it needs the same scrutiny as changing behaviour.');
+  process.exit(1);
+}
+
+const tally = CLASSES.map((cls) => ({
+  cls,
+  count: sessions.filter((session) => classify(session)?.id === cls.id).length,
+})).filter((entry) => entry.count > 0);
+
+const summary = [
+  `# ${sessions.length} sessions differ, and every one of them has a named cause.`,
+  '#',
+  ...tally.flatMap(({ cls, count }) => [
+    `# ${String(count).padStart(3)}  ${cls.title}  [${cls.id}]`,
+    ...cls.why.map((line) => `#      ${line}`.trimEnd()),
+    '#',
+  ]),
+  '# An unexplained difference fails the run rather than landing here, so this list is',
+  '# what is known, not what was tolerated.',
+  '',
+  '',
+].join('\n');
+
+const observed = HEADER + summary + body;
 
 if (observed.slice(HEADER.length).trim().length === 0) {
   console.error('run-parity: the corpus produced no differences at all.');
