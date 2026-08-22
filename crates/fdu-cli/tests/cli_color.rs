@@ -1,5 +1,4 @@
 //! End-to-end color and machine-output contract at the real process boundary.
-#![cfg(feature = "cli")]
 
 use std::process::{Command, Output};
 

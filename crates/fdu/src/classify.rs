@@ -511,7 +511,6 @@ mod tests {
         ContentFamily, DetectionConfidence, DetectionSource, classify_path,
         classify_path_with_prefix, derive_ext, type_rule_fingerprint,
     };
-    #[cfg(feature = "cli")]
     use super::{GENERATED_RULES, human_language_name};
     use std::ffi::OsStr;
     use std::path::Path;
@@ -566,7 +565,6 @@ mod tests {
         assert_ne!(type_rule_fingerprint(), 0);
     }
 
-    #[cfg(feature = "cli")]
     #[test]
     fn every_code_rule_has_a_canonical_human_language_name() {
         for rule in GENERATED_RULES.iter().filter(|rule| rule.family == ContentFamily::Code) {

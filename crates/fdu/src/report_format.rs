@@ -2158,4 +2158,254 @@ mod tests {
         assert_eq!(bar(2.0, false), "██████████");
         assert!((ratio(5, 0) - 0.0).abs() < f64::EPSILON);
     }
+
+    const DEEP_RENDER_CHILD_ENV: &str = "FDU_DEEP_RENDER_CHILD";
+    const DEEP_RENDER_DEPTH: usize = 1_024;
+    const DEEP_RENDER_STACK_BYTES: usize = 64 * 1_024;
+
+    use std::ffi::OsStr;
+    use std::process::Command;
+    use std::time::SystemTime;
+
+    // ---- renderer tests that lived in the command line -------------------------------
+    //
+    // They test expansion and the three renderers, not argument handling, and they build
+    // an index by hand -- which is why moving the CLI into its own crate surfaced them:
+    // the fixture helpers they need are `pub(crate)` here and unreachable from there.
+
+    #[test]
+    fn deep_rendering_is_stack_safe() {
+        if std::env::var_os(DEEP_RENDER_CHILD_ENV).is_some() {
+            run_deep_render_child();
+            return;
+        }
+
+        let output = Command::new(std::env::current_exe().expect("current test executable"))
+            .args(["--exact", "cli::tests::deep_rendering_is_stack_safe", "--nocapture"])
+            .env(DEEP_RENDER_CHILD_ENV, "1")
+            .output()
+            .expect("run deep-render child");
+
+        assert!(
+            output.status.success(),
+            "deep renderer failed in child process\nstdout:\n{}\nstderr:\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    fn run_deep_render_child() {
+        // A deep tree must render, not abort: expansion and all three renderers use
+        // explicit stacks, and this proves it on a 64 KiB stack where recursion would die.
+        let mut index = crate::Index::new("/fixture");
+        let mut path = PathBuf::new();
+        for depth in 0..DEEP_RENDER_DEPTH {
+            path.push("d");
+            index.apply_ok(&crate::Observation::new(vec![crate::Op::Upsert {
+                path: path.clone(),
+                kind: EntryKind::Dir,
+                attrs: crate::Attrs {
+                    mtime_ns: i64::try_from(depth).expect("fixture depth fits i64"),
+                    ..Default::default()
+                },
+            }]));
+        }
+        index.set_initial_freshness(false);
+
+        std::thread::Builder::new()
+            .name("deep-render".to_string())
+            .stack_size(DEEP_RENDER_STACK_BYTES)
+            .spawn(move || {
+                let query = Query {
+                    selection: Selection { depth: Some(Bound::All), ..Selection::default() },
+                    views: vec![ViewSpec::Tree],
+                    ..Query::default()
+                };
+                let provenance = Provenance {
+                    scan_started_at: None,
+                    generated_at: SystemTime::UNIX_EPOCH,
+                    source: ReportSource::ColdScan,
+                    complete: true,
+                    errors: Vec::new(),
+                };
+                let report = crate::query::report(&index, &query, &provenance);
+                for format in [Format::Text, Format::Json, Format::Jsonl, Format::Yaml] {
+                    let rendered = render(&report, format, false);
+                    assert!(!rendered.is_empty(), "{format:?} rendered nothing for a deep tree");
+                }
+            })
+            .expect("spawn deep-render thread")
+            .join()
+            .expect("deep-render thread");
+    }
+
+    /// Two names that differ only in bytes `to_string_lossy` cannot represent must stay
+    /// distinguishable in machine output.
+    ///
+    /// This coverage was lost when the CLI moved to the five axes: `raw_identity_json`
+    /// survived the rewrite, its tests did not, and the merge from PR #6 is what surfaced
+    /// the gap. Retargeted here to the report path rather than restored to the old
+    /// `write_json`, because the guarantee belongs to the format, not to the flag that
+    /// used to select it.
+    fn assert_json_preserves_raw_identity(
+        root: PathBuf,
+        first: &OsStr,
+        second: &OsStr,
+        encoding: &str,
+        root_hex: &str,
+        first_hex: &str,
+        second_hex: &str,
+    ) {
+        // The premise: lossy rendering collapses these two into the same string, so a
+        // consumer with only `name` cannot tell them apart.
+        assert_eq!(first.to_string_lossy(), second.to_string_lossy());
+
+        let mut index = crate::Index::new(root);
+        index.apply_ok(&crate::Observation::new(vec![
+            crate::Op::Upsert {
+                path: PathBuf::from(first),
+                kind: EntryKind::File,
+                attrs: crate::Attrs { size: 1, allocated: 1, ..Default::default() },
+            },
+            crate::Op::Upsert {
+                path: PathBuf::from(second),
+                kind: EntryKind::File,
+                attrs: crate::Attrs { size: 1, allocated: 1, ..Default::default() },
+            },
+        ]));
+        index.set_initial_freshness(false);
+
+        // Built directly rather than through the command line's argument struct: what is
+        // under test is that the renderer preserves a non-UTF-8 name's raw identity, and
+        // routing that through argument parsing tied a renderer test to a front end.
+        let query = crate::query::Query {
+            views: vec![ViewSpec::Files],
+            selection: Selection {
+                depth: Some(crate::query::Bound::All),
+                limit: Some(crate::query::Bound::All),
+                ..Selection::default()
+            },
+            ..crate::query::Query::default()
+        };
+        let provenance = Provenance {
+            scan_started_at: None,
+            generated_at: std::time::UNIX_EPOCH,
+            source: ReportSource::ColdScan,
+            complete: true,
+            errors: Vec::new(),
+        };
+        let report = crate::query::report(&index, &query, &provenance);
+        let rendered = render(&report, Format::Json, false);
+
+        let lossy = first.to_string_lossy();
+        assert_eq!(
+            rendered.matches(&format!("\"{lossy}\"")).count(),
+            2,
+            "both names render the same lossy text: {rendered}"
+        );
+        assert!(
+            rendered.contains(&format!(
+                "\"root_raw\": {{\"encoding\": \"{encoding}\", \"hex\": \"{root_hex}\"}}"
+            )),
+            "{rendered}"
+        );
+
+        // Pinned as the whole row rather than as a substring of it. A loose `contains`
+        // check on the `path_raw` object alone passed while the row around it was
+        // malformed -- the field was emitted with a duplicated separator and a newline
+        // inside a one-line object, so the document did not parse at all. Asserting the
+        // exact row is what makes the surrounding punctuation part of the contract.
+        for hex in [first_hex, second_hex] {
+            let row = format!(
+                "{{\"path\": \"{lossy}\", \"path_raw\": {{\"encoding\": \"{encoding}\", \"hex\": \"{hex}\"}}, \
+                 \"kind\": \"file\", \"bytes\": 1, \"allocated\": 1, \"mtime_ns\": 0}}"
+            );
+            assert!(
+                rendered.contains(&row),
+                "a name that is not valid Unicode must carry its raw bytes in a well-formed \
+                 row.\nexpected: {row}\nrendered: {rendered}"
+            );
+        }
+
+        // Cheap structural guard against the same class of mistake anywhere else in the
+        // document: an empty element is the signature of a separator emitted twice.
+        assert!(
+            !rendered.contains(", ,") && !rendered.contains(",,"),
+            "duplicated separator in machine output: {rendered}"
+        );
+
+        // The tree writer names entries too, and carried the identical defect. Pinning
+        // only the files view would have left half the fix untested. A tree lists
+        // directories, so the case has to be a directory whose own name is not valid
+        // Unicode rather than the files above.
+        let mut dirs = crate::Index::new(PathBuf::from("/tree-fixture"));
+        dirs.apply_ok(&crate::Observation::new(vec![
+            crate::Op::Upsert {
+                path: PathBuf::from(first),
+                kind: EntryKind::Dir,
+                attrs: crate::Attrs { size: 0, allocated: 0, ..Default::default() },
+            },
+            crate::Op::Upsert {
+                path: PathBuf::from(first).join("inside.txt"),
+                kind: EntryKind::File,
+                attrs: crate::Attrs { size: 1, allocated: 1, ..Default::default() },
+            },
+        ]));
+        dirs.set_initial_freshness(false);
+        let tree_query = crate::query::Query {
+            views: vec![ViewSpec::Tree],
+            selection: Selection {
+                depth: Some(crate::query::Bound::All),
+                limit: Some(crate::query::Bound::All),
+                ..Selection::default()
+            },
+            ..crate::query::Query::default()
+        };
+        let tree = crate::query::report(&dirs, &tree_query, &provenance);
+        let tree_rendered = render(&tree, Format::Json, false);
+        assert!(
+            tree_rendered.contains(&format!(
+                ", \"path_raw\": {{\"encoding\": \"{encoding}\", \"hex\": \"{first_hex}\"}}, \"kind\":"
+            )),
+            "the tree view must carry raw identity in a well-formed node: {tree_rendered}"
+        );
+        assert!(
+            !tree_rendered.contains(", ,") && !tree_rendered.contains(",,"),
+            "duplicated separator in tree output: {tree_rendered}"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn json_preserves_distinct_non_unicode_unix_names() {
+        use std::ffi::OsString;
+        use std::os::unix::ffi::OsStringExt;
+
+        assert_json_preserves_raw_identity(
+            PathBuf::from(OsString::from_vec(vec![b'/', 0x80])),
+            &OsString::from_vec(vec![b'n', 0x80]),
+            &OsString::from_vec(vec![b'n', 0x81]),
+            "unix-bytes",
+            "2f80",
+            "6e80",
+            "6e81",
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn json_preserves_distinct_non_unicode_windows_names() {
+        use std::ffi::OsString;
+        use std::os::windows::ffi::OsStringExt;
+
+        assert_json_preserves_raw_identity(
+            PathBuf::from(OsString::from_wide(&[u16::from(b'R'), u16::from(b':'), 0xd800])),
+            &OsString::from_wide(&[u16::from(b'n'), 0xd800]),
+            &OsString::from_wide(&[u16::from(b'n'), 0xd801]),
+            "windows-wtf16le",
+            "52003a0000d8",
+            "6e0000d8",
+            "6e0001d8",
+        );
+    }
 }

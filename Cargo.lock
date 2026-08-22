@@ -138,8 +138,6 @@ name = "fdu"
 version = "0.1.0"
 dependencies = [
  "anstyle",
- "anyhow",
- "clap",
  "libc",
  "notify",
  "pulldown-cmark",
@@ -148,10 +146,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "fdu-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "fdu",
+ "tempfile",
+]
+
+[[package]]
 name = "fdu-py"
 version = "0.1.0"
 dependencies = [
  "fdu",
+ "fdu-cli",
  "pyo3",
 ]
 

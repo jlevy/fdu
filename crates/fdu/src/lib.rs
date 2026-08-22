@@ -64,9 +64,6 @@ pub mod snapshot;
 #[cfg(test)]
 mod test_support;
 
-#[cfg(feature = "cli")]
-pub mod cli;
-
 // Ungated: rendering is not a command-line concern. It was behind `cli` only because it
 // took its ANSI colour types from clap, so the library could produce a report and not
 // print it -- and a display note added elsewhere on this branch called into here and
@@ -152,7 +149,13 @@ impl CachePolicy {
     }
 
     /// Whether this policy may write a snapshot back.
-    fn writes(self) -> bool {
+    /// Whether this policy may write a snapshot.
+    ///
+    /// Public because a caller deciding whether to prepare a cache directory, or to warn
+    /// that a run will leave nothing behind, is asking about the policy it was handed --
+    /// and the alternative is matching on the variants, which is the same knowledge
+    /// copied into every caller.
+    pub fn writes(self) -> bool {
         matches!(self, Self::Auto | Self::Refresh)
     }
 

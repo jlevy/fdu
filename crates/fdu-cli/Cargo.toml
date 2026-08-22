@@ -1,0 +1,62 @@
+[package]
+name = "fdu-cli"
+version = "0.1.0"
+# clap takes `--help`'s summary from this, so it describes the tool a user runs rather
+# than this crate's role in the layout. The golden that pins the help text caught the
+# difference the moment the binary moved, which is the corpus doing its job.
+description = "A fast, incremental file roll-up engine: hierarchical tallies over large directory trees"
+readme = "../fdu/README.md"
+keywords = ["disk-usage", "filesystem", "du", "cli"]
+categories = ["command-line-utilities", "filesystem"]
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+include = ["src/**", "tests/**", "build.rs", "Cargo.toml"]
+
+# A library as well as a binary: the Python wheel's `fdu` console script runs this
+# command, so `run_process` has to be callable rather than only executable.
+[lib]
+name = "fdu_cli"
+path = "src/lib.rs"
+
+[[bin]]
+name = "fdu"
+path = "src/main.rs"
+
+[[test]]
+name = "cli_exit"
+path = "tests/cli_exit.rs"
+
+# Drives the real binary, so the binary has to exist.
+[[test]]
+name = "scan_watermark"
+path = "tests/scan_watermark_integration.rs"
+
+# Drives the real binary in watch mode.
+[[test]]
+name = "watch_persistence"
+path = "tests/watch_persistence.rs"
+required-features = ["watch"]
+
+[features]
+default = ["watch"]
+# Passed through to the library. Without it the command line still builds and works,
+# just without `--watch`, which is what keeps the watch layer deletable.
+watch = ["fdu/watch"]
+
+[dependencies]
+# An ordinary dependency, which is the whole point: `crate::` does not reach the library
+# from here, so anything the command line needs must be public API. The compiler decides
+# whether "the CLI invents nothing" is true, on every build.
+fdu = { workspace = true, default-features = false }
+
+clap = { version = "4.5", features = ["derive", "wrap_help"] }
+anyhow = "1.0"
+
+[dev-dependencies]
+tempfile = "3.26"
+
+[lints]
+workspace = true

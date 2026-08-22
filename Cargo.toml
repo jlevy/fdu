@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/fdu", "crates/fdu-py"]
+members = ["crates/fdu", "crates/fdu-cli", "crates/fdu-py"]
 
 [workspace.package]
 edition = "2024"

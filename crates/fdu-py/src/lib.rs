@@ -1537,7 +1537,7 @@ fn main(py: Python<'_>) -> PyResult<u8> {
     // native Windows wide strings. Narrowing here to String would make the wheel's
     // console script reject paths the native Rust binary accepts.
     let args: Vec<OsString> = py.import("sys")?.getattr("argv")?.extract()?;
-    Ok(py.detach(move || fdu::cli::run_process(args)))
+    Ok(py.detach(move || fdu_cli::run_process(args)))
 }
 
 /// Canonical cross-language vocabulary used by the public facade's parity test.

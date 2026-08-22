@@ -46,7 +46,7 @@ help:
 	@echo "make perf-report-check  Fail if the committed report has drifted from the artifacts"
 
 build:
-	$(CARGO) build --locked -p fdu --all-features
+	$(CARGO) build --locked -p fdu-cli --all-features
 
 release:
 	$(CARGO) build --locked --release -p fdu --all-features
@@ -229,9 +229,14 @@ docs:
 
 # Library consumers take `default-features = false`; prove both the minimal core and
 # the additive watch layer without accidentally relying on CLI defaults.
+# How library consumers build, and after the command line moved to its own crate this is
+# the only way the library builds at all. The third line is the check that the move stuck:
+# a library that pulls in an argument parser has the dependency the split removed.
 lib-only:
 	$(CARGO) test --locked -p fdu --no-default-features
 	$(CARGO) test --locked -p fdu --no-default-features --features watch
+	@! $(CARGO) tree -p fdu --all-features --prefix none | grep -qE '^(clap|anyhow) ' \
+		|| { echo 'fdu must not depend on clap or anyhow; they belong to fdu-cli'; exit 1; }
 
 msrv:
 	$(CARGO) +$(MSRV) check --locked --all-features

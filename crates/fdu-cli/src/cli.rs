@@ -18,17 +18,17 @@ use std::borrow::Cow;
 use clap::builder::styling::{AnsiColor, Style as AnsiStyle, Styles};
 use clap::{ArgAction, ColorChoice, CommandFactory, FromArgMatches, Parser, ValueEnum};
 
-use crate::content::{AnalysisRequest, AnalysisSet};
-use crate::execution::{PerformanceSummary, prepare_report, prepare_report_with_scan_diagnostics};
-use crate::query::{
+use fdu::content::{AnalysisRequest, AnalysisSet};
+use fdu::query::{
     Bound, Pattern, Provenance, Query, ReportSource, Selection, SizeMetric, SortKey, ViewSpec,
     parse_size, parse_when, system_time_to_nanos,
 };
-use crate::report_format;
-use crate::report_format::human_count;
-use crate::{
+use fdu::report_format;
+use fdu::report_format::human_count;
+use fdu::{
     CachePolicy, EntryKind, OpenConfig, ScanConfig, default_cache_path, open_with_pending_save,
 };
+use fdu::{PerformanceSummary, prepare_report, prepare_report_with_scan_diagnostics};
 
 const SKILL_TEMPLATE: &str = include_str!("skills/SKILL.md");
 
@@ -667,9 +667,9 @@ impl Cli {
         config: &OpenConfig,
         color: bool,
     ) -> anyhow::Result<RunOutcome> {
-        use crate::query::ViewSpec;
-        use crate::watch::WatchConfig;
-        use crate::watch_session::{ChangeKind, Session};
+        use fdu::query::ViewSpec;
+        use fdu::watch::WatchConfig;
+        use fdu::watch_session::{ChangeKind, Session};
 
         let path = self.path.as_deref().expect("run() validates the report path first");
         let interval = parse_duration(&self.interval).map_err(|error| usage(&error))?;
@@ -694,7 +694,7 @@ impl Cli {
         // is the only one left; the watch session needs the index by value.
         let index = std::sync::Arc::into_inner(index)
             .expect("the joined writer released the only other reference");
-        let handle = crate::IndexHandle::new(index);
+        let handle = fdu::IndexHandle::new(index);
         let mut session = Session::new(handle, config.scan.clone(), query, WatchConfig::default())?;
 
         // The initial answer, identical to a one-shot run's.
@@ -702,9 +702,9 @@ impl Cli {
             scan_started_at: Some(scan_started_at),
             generated_at: SystemTime::now(),
             source: match open_report.path_taken {
-                crate::OpenPath::ColdScan => ReportSource::ColdScan,
-                crate::OpenPath::WarmRevalidate => ReportSource::WarmRevalidate,
-                crate::OpenPath::CacheOnly => ReportSource::CacheOnly,
+                fdu::OpenPath::ColdScan => ReportSource::ColdScan,
+                fdu::OpenPath::WarmRevalidate => ReportSource::WarmRevalidate,
+                fdu::OpenPath::CacheOnly => ReportSource::CacheOnly,
             },
             complete: open_report.is_complete(),
             errors: open_report.error_messages(),
@@ -787,7 +787,7 @@ impl Cli {
     #[cfg(feature = "watch")]
     #[allow(clippy::too_many_arguments)]
     fn save_if_pending(
-        session: &crate::watch_session::Session,
+        session: &fdu::watch_session::Session,
         config: &OpenConfig,
         pending: &mut bool,
         last_save: &mut SystemTime,
@@ -829,7 +829,7 @@ impl Cli {
     /// run's warmth is lost.
     #[cfg(feature = "watch")]
     fn save_live(
-        session: &crate::watch_session::Session,
+        session: &fdu::watch_session::Session,
         config: &OpenConfig,
     ) -> anyhow::Result<bool> {
         let (Some(cache_path), true) = (config.cache_path.as_deref(), config.policy.writes())
@@ -837,13 +837,13 @@ impl Cli {
             return Ok(false);
         };
         let index = session.index_snapshot()?;
-        if index.freshness() != crate::Freshness::Fresh {
+        if index.freshness() != fdu::Freshness::Fresh {
             // Only a trustworthy index is worth persisting; a partial one would be
             // served as fact on the next run. Reported as "not written" so the caller
             // keeps the change pending and tries again once the index settles.
             return Ok(false);
         }
-        crate::snapshot::save(&index, cache_path)?;
+        fdu::snapshot::save(&index, cache_path)?;
         Ok(true)
     }
 
@@ -855,7 +855,7 @@ impl Cli {
     /// the loop — so the rule below can be unconditional.
     fn render_live(
         out: &mut dyn Write,
-        session: &crate::watch_session::Session,
+        session: &fdu::watch_session::Session,
         format: report_format::Format,
         color: bool,
     ) -> anyhow::Result<()> {
@@ -884,7 +884,7 @@ impl Cli {
         // useful discovery/maintenance actions without weakening report safety.
         let root = self.path.as_deref().unwrap_or_else(|| Path::new("."));
         let cache_dir =
-            crate::default_cache_path(root).and_then(|path| path.parent().map(Path::to_path_buf));
+            fdu::default_cache_path(root).and_then(|path| path.parent().map(Path::to_path_buf));
 
         if let Some(scope) = &self.cache_clear {
             let scope = CacheScope::parse(scope, "--cache-clear").map_err(|e| usage(&e))?;
@@ -893,7 +893,7 @@ impl Cli {
                     // Echo the directory before acting, so a destructive flag always says
                     // where it is pointed.
                     writeln!(out, "Cache directory: {}", dir.display())?;
-                    let removed = crate::clear_all_caches(dir)?;
+                    let removed = fdu::clear_all_caches(dir)?;
                     writeln!(
                         out,
                         "{}",
@@ -908,9 +908,9 @@ impl Cli {
                     )?;
                 }
                 (CacheScope::Root, _) => {
-                    let path = crate::default_cache_path(root);
+                    let path = fdu::default_cache_path(root);
                     let removed = match &path {
-                        Some(path) => crate::clear_cache(path)?,
+                        Some(path) => fdu::clear_cache(path)?,
                         None => false,
                     };
                     if let Some(path) = &path {
@@ -929,10 +929,10 @@ impl Cli {
         if let Some(scope) = &self.cache_status {
             let scope = CacheScope::parse(scope, "--cache-status").map_err(|e| usage(&e))?;
             let statuses = match (scope, &cache_dir) {
-                (CacheScope::All, Some(dir)) => crate::list_caches(dir)?,
+                (CacheScope::All, Some(dir)) => fdu::list_caches(dir)?,
                 (CacheScope::All, None) => Vec::new(),
-                (CacheScope::Root, _) => match crate::default_cache_path(root) {
-                    Some(path) => vec![crate::cache_status(&path)?],
+                (CacheScope::Root, _) => match fdu::default_cache_path(root) {
+                    Some(path) => vec![fdu::cache_status(&path)?],
                     None => Vec::new(),
                 },
             };
@@ -946,7 +946,7 @@ impl Cli {
     fn write_cache_status(
         &self,
         out: &mut dyn Write,
-        statuses: &[crate::CacheStatus],
+        statuses: &[fdu::CacheStatus],
     ) -> anyhow::Result<()> {
         let format = self.parse_format().map_err(|e| usage(&e))?;
         // Every format, human included, comes from the one renderer. While the CLI kept
@@ -1072,7 +1072,7 @@ fn watch_scope_guidance() -> String {
     // sequential replace does re-scan: max_depth becomes --scan-depth, and then `depth`
     // matches inside it, giving `--scan---depth`. That is fdu-7j6z again, and it appeared
     // again here the moment the same shortcut was taken.
-    crate::scan::WATCH_SCOPE_GUIDANCE
+    fdu::scan::WATCH_SCOPE_GUIDANCE
         .split_inclusive(|character: char| !character.is_ascii_alphanumeric() && character != '_')
         .map(|piece| {
             let end = piece
@@ -1645,7 +1645,6 @@ fn compose_skill_from(template: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::process::Command;
     use std::time::UNIX_EPOCH;
 
     /// Every `--watch` run parses an interval before anything else, so this must work on
@@ -1743,10 +1742,6 @@ mod tests {
         pending = pending_after(SaveOutcome::Written);
         assert!(!pending, "once written, the loop stops rewriting an unchanged index");
     }
-
-    const DEEP_RENDER_CHILD_ENV: &str = "FDU_DEEP_RENDER_CHILD";
-    const DEEP_RENDER_DEPTH: usize = 1_024;
-    const DEEP_RENDER_STACK_BYTES: usize = 64 * 1_024;
 
     struct FailingWriter;
 
@@ -1856,7 +1851,7 @@ mod tests {
         let message = query_error(&Cli { view: Some("bogus".to_string()), ..cli() });
         // The rejection is how the vocabulary is discovered, so every value must be in it.
         for view in ViewSpec::ALL {
-            let label = report_format::view_label(view);
+            let label = view.label();
             assert!(message.contains(label), "{label} missing from: {message}");
         }
         assert!(message.contains("full"), "the total must be listed too: {message}");
@@ -1897,7 +1892,7 @@ mod tests {
     /// was reworded, which is a test measuring its own copy of the thing under test.
     #[test]
     fn the_watch_guidance_substitutes_whole_words_only() {
-        let source = crate::scan::WATCH_SCOPE_GUIDANCE;
+        let source = fdu::scan::WATCH_SCOPE_GUIDANCE;
         let text = watch_scope_guidance();
 
         // A sequential replace produced `--scan---depth`: max_depth became --scan-depth and
@@ -2170,7 +2165,7 @@ mod tests {
     #[test]
     fn no_view_enables_an_analyzer() {
         for view in ViewSpec::ALL {
-            let spec = report_format::view_label(view);
+            let spec = view.label();
             let cli = Cli { view: Some(spec.to_string()), ..cli() };
             let profile = cli.parse_analysis().expect("analysis").profile;
             assert_eq!(
@@ -2469,234 +2464,6 @@ mod tests {
             run_with_io(&args, &mut FailingWriter, &mut diagnostic, false, false),
             1,
             "a non-pipe help-output failure is fatal"
-        );
-    }
-
-    #[test]
-    fn deep_rendering_is_stack_safe() {
-        if std::env::var_os(DEEP_RENDER_CHILD_ENV).is_some() {
-            run_deep_render_child();
-            return;
-        }
-
-        let output = Command::new(std::env::current_exe().expect("current test executable"))
-            .args(["--exact", "cli::tests::deep_rendering_is_stack_safe", "--nocapture"])
-            .env(DEEP_RENDER_CHILD_ENV, "1")
-            .output()
-            .expect("run deep-render child");
-
-        assert!(
-            output.status.success(),
-            "deep renderer failed in child process\nstdout:\n{}\nstderr:\n{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
-
-    fn run_deep_render_child() {
-        // A deep tree must render, not abort: expansion and all three renderers use
-        // explicit stacks, and this proves it on a 64 KiB stack where recursion would die.
-        let mut index = crate::Index::new("/fixture");
-        let mut path = PathBuf::new();
-        for depth in 0..DEEP_RENDER_DEPTH {
-            path.push("d");
-            index.apply_ok(&crate::Observation::new(vec![crate::Op::Upsert {
-                path: path.clone(),
-                kind: EntryKind::Dir,
-                attrs: crate::Attrs {
-                    mtime_ns: i64::try_from(depth).expect("fixture depth fits i64"),
-                    ..Default::default()
-                },
-            }]));
-        }
-        index.set_initial_freshness(false);
-
-        std::thread::Builder::new()
-            .name("deep-render".to_string())
-            .stack_size(DEEP_RENDER_STACK_BYTES)
-            .spawn(move || {
-                let query = Query {
-                    selection: Selection { depth: Some(Bound::All), ..Selection::default() },
-                    views: vec![ViewSpec::Tree],
-                    ..Query::default()
-                };
-                let provenance = Provenance {
-                    scan_started_at: None,
-                    generated_at: SystemTime::UNIX_EPOCH,
-                    source: ReportSource::ColdScan,
-                    complete: true,
-                    errors: Vec::new(),
-                };
-                let report = crate::query::report(&index, &query, &provenance);
-                for format in [
-                    report_format::Format::Text,
-                    report_format::Format::Json,
-                    report_format::Format::Jsonl,
-                    report_format::Format::Yaml,
-                ] {
-                    let rendered = report_format::render(&report, format, false);
-                    assert!(!rendered.is_empty(), "{format:?} rendered nothing for a deep tree");
-                }
-            })
-            .expect("spawn deep-render thread")
-            .join()
-            .expect("deep-render thread");
-    }
-
-    /// Two names that differ only in bytes `to_string_lossy` cannot represent must stay
-    /// distinguishable in machine output.
-    ///
-    /// This coverage was lost when the CLI moved to the five axes: `raw_identity_json`
-    /// survived the rewrite, its tests did not, and the merge from PR #6 is what surfaced
-    /// the gap. Retargeted here to the report path rather than restored to the old
-    /// `write_json`, because the guarantee belongs to the format, not to the flag that
-    /// used to select it.
-    fn assert_json_preserves_raw_identity(
-        root: PathBuf,
-        first: &OsStr,
-        second: &OsStr,
-        encoding: &str,
-        root_hex: &str,
-        first_hex: &str,
-        second_hex: &str,
-    ) {
-        // The premise: lossy rendering collapses these two into the same string, so a
-        // consumer with only `name` cannot tell them apart.
-        assert_eq!(first.to_string_lossy(), second.to_string_lossy());
-
-        let mut index = crate::Index::new(root);
-        index.apply_ok(&crate::Observation::new(vec![
-            crate::Op::Upsert {
-                path: PathBuf::from(first),
-                kind: EntryKind::File,
-                attrs: crate::Attrs { size: 1, allocated: 1, ..Default::default() },
-            },
-            crate::Op::Upsert {
-                path: PathBuf::from(second),
-                kind: EntryKind::File,
-                attrs: crate::Attrs { size: 1, allocated: 1, ..Default::default() },
-            },
-        ]));
-        index.set_initial_freshness(false);
-
-        let query =
-            Cli { view: Some("files".to_string()), depth: Some("all".to_string()), ..cli() }
-                .resolved_query()
-                .expect("query parses");
-        let provenance = Provenance {
-            scan_started_at: None,
-            generated_at: std::time::UNIX_EPOCH,
-            source: ReportSource::ColdScan,
-            complete: true,
-            errors: Vec::new(),
-        };
-        let report = crate::query::report(&index, &query, &provenance);
-        let rendered = report_format::render(&report, report_format::Format::Json, false);
-
-        let lossy = first.to_string_lossy();
-        assert_eq!(
-            rendered.matches(&format!("\"{lossy}\"")).count(),
-            2,
-            "both names render the same lossy text: {rendered}"
-        );
-        assert!(
-            rendered.contains(&format!(
-                "\"root_raw\": {{\"encoding\": \"{encoding}\", \"hex\": \"{root_hex}\"}}"
-            )),
-            "{rendered}"
-        );
-
-        // Pinned as the whole row rather than as a substring of it. A loose `contains`
-        // check on the `path_raw` object alone passed while the row around it was
-        // malformed -- the field was emitted with a duplicated separator and a newline
-        // inside a one-line object, so the document did not parse at all. Asserting the
-        // exact row is what makes the surrounding punctuation part of the contract.
-        for hex in [first_hex, second_hex] {
-            let row = format!(
-                "{{\"path\": \"{lossy}\", \"path_raw\": {{\"encoding\": \"{encoding}\", \"hex\": \"{hex}\"}}, \
-                 \"kind\": \"file\", \"bytes\": 1, \"allocated\": 1, \"mtime_ns\": 0}}"
-            );
-            assert!(
-                rendered.contains(&row),
-                "a name that is not valid Unicode must carry its raw bytes in a well-formed \
-                 row.\nexpected: {row}\nrendered: {rendered}"
-            );
-        }
-
-        // Cheap structural guard against the same class of mistake anywhere else in the
-        // document: an empty element is the signature of a separator emitted twice.
-        assert!(
-            !rendered.contains(", ,") && !rendered.contains(",,"),
-            "duplicated separator in machine output: {rendered}"
-        );
-
-        // The tree writer names entries too, and carried the identical defect. Pinning
-        // only the files view would have left half the fix untested. A tree lists
-        // directories, so the case has to be a directory whose own name is not valid
-        // Unicode rather than the files above.
-        let mut dirs = crate::Index::new(PathBuf::from("/tree-fixture"));
-        dirs.apply_ok(&crate::Observation::new(vec![
-            crate::Op::Upsert {
-                path: PathBuf::from(first),
-                kind: EntryKind::Dir,
-                attrs: crate::Attrs { size: 0, allocated: 0, ..Default::default() },
-            },
-            crate::Op::Upsert {
-                path: PathBuf::from(first).join("inside.txt"),
-                kind: EntryKind::File,
-                attrs: crate::Attrs { size: 1, allocated: 1, ..Default::default() },
-            },
-        ]));
-        dirs.set_initial_freshness(false);
-        let tree_query =
-            Cli { view: Some("tree".to_string()), depth: Some("all".to_string()), ..cli() }
-                .resolved_query()
-                .expect("query parses");
-        let tree = crate::query::report(&dirs, &tree_query, &provenance);
-        let tree_rendered = report_format::render(&tree, report_format::Format::Json, false);
-        assert!(
-            tree_rendered.contains(&format!(
-                ", \"path_raw\": {{\"encoding\": \"{encoding}\", \"hex\": \"{first_hex}\"}}, \"kind\":"
-            )),
-            "the tree view must carry raw identity in a well-formed node: {tree_rendered}"
-        );
-        assert!(
-            !tree_rendered.contains(", ,") && !tree_rendered.contains(",,"),
-            "duplicated separator in tree output: {tree_rendered}"
-        );
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn json_preserves_distinct_non_unicode_unix_names() {
-        use std::ffi::OsString;
-        use std::os::unix::ffi::OsStringExt;
-
-        assert_json_preserves_raw_identity(
-            PathBuf::from(OsString::from_vec(vec![b'/', 0x80])),
-            &OsString::from_vec(vec![b'n', 0x80]),
-            &OsString::from_vec(vec![b'n', 0x81]),
-            "unix-bytes",
-            "2f80",
-            "6e80",
-            "6e81",
-        );
-    }
-
-    #[cfg(windows)]
-    #[test]
-    fn json_preserves_distinct_non_unicode_windows_names() {
-        use std::ffi::OsString;
-        use std::os::windows::ffi::OsStringExt;
-
-        assert_json_preserves_raw_identity(
-            PathBuf::from(OsString::from_wide(&[u16::from(b'R'), u16::from(b':'), 0xd800])),
-            &OsString::from_wide(&[u16::from(b'n'), 0xd800]),
-            &OsString::from_wide(&[u16::from(b'n'), 0xd801]),
-            "windows-wtf16le",
-            "52003a0000d8",
-            "6e0000d8",
-            "6e0001d8",
         );
     }
 }

@@ -15,7 +15,7 @@
 //! (review finding R11). Setting mtimes to exact values derived from the report's own
 //! watermark pins the boundary at nanosecond precision with no dependence on timing,
 //! which is both stronger and faster.
-#![cfg(all(feature = "cli", not(target_os = "windows")))]
+#![cfg(not(target_os = "windows"))]
 
 use std::fs;
 use std::path::Path;

@@ -90,7 +90,7 @@ jobs:
       # per-platform event semantics before a user does.
       - run: cargo test --locked --all-features
       - name: Build the CLI for golden tests
-        run: cargo build --locked -p fdu --all-features
+        run: cargo build --locked -p fdu-cli --all-features
       - name: Compare the CLI golden contract
         run: npm run test:golden
       - name: Build the repository-only performance probe
