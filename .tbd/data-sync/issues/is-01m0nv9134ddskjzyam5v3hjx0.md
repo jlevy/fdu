@@ -1,43 +1,58 @@
 ---
 type: is
 id: is-01m0nv9134ddskjzyam5v3hjx0
-title: Decide the published crate names before fdu ships to crates.io
+title: "Rename: fdu is the installed package, fdu-core is the engine"
 kind: task
-status: open
+status: closed
 priority: 1
-version: 2
+version: 6
 spec_path: docs/project/specs/active/plan-2026-08-21-fdu-python-cli-parity.md
 labels: []
-dependencies: []
+dependencies:
+  - type: blocks
+    target: is-01m0nvz7j00dm6w1snefmvw713
 parent_id: is-01m0k965p7hx4dy6t0cj29rsae
 created_at: 2026-08-22T23:00:45.795Z
-updated_at: 2026-08-22T23:01:23.177Z
+updated_at: 2026-08-22T23:52:58.481Z
+closed_at: 2026-08-22T23:52:58.481Z
+close_reason: "fdu is the package a user installs (bin plus a lib re-exporting the engine); fdu-core is the engine. Follows the dominant Rust convention -- the name a user types belongs to what they install, as with ripgrep, gitoxide, and ruff. Enforcement is unchanged: the command line depends on the engine as an external crate, so the compiler still decides whether the CLI invents anything. 129 goldens byte-identical."
 ---
-Moving the command line into crates/fdu-cli changed what a user types to install it, and
-that decision should be made deliberately rather than inherited from a refactor.
+DECIDED: the package a user installs is named fdu; the engine becomes fdu-core.
 
-Today: fdu is the library and publishes no binary; fdu-cli carries the binary, which is
-still named fdu. So the install command becomes "cargo install fdu-cli" while the program
-is fdu.
+What other Rust tools do, and why this follows them:
 
-That is a common Rust layout and it is defensible, but it is surprising: a user who knows
-the tool is called fdu will type "cargo install fdu" and get a library with no binary --
-which is exactly the error the README produced until this was fixed.
+The dominant pattern for a tool that is mostly a CLI is ONE package that is both a
+library and a binary, with the CLI's dependencies feature-gated -- bat, tokei, mdbook,
+just, cbindgen all do this. That is what fdu was, and it is why "cargo install fdu"
+worked.
 
-Two ends, both coherent:
+Where a project has a substantial engine AND a CLI, the split is usually by role rather
+than by suffix, and the name a user types belongs to the thing they install: ripgrep is
+the binary while the engine is grep-searcher and friends; gitoxide is the binary while
+the library is gix; ruff is the binary while the engine is ruff_* crates.
 
-1. Keep it. fdu is the library, fdu-cli installs the command. Document it once, in the
-   README and the release notes, and accept that "cargo install fdu" fails with cargo's
-   own "has no binaries" message, which is at least a clear error rather than a wrong
-   result.
+What is rare is publishing the library as the headline name and making users install
+something else. "cargo install fdu" returning "there is nothing to install ... it has no
+binaries" is a bad first contact with the tool, and that is exactly what the previous
+layout produced.
 
-2. Swap the names. The binary crate takes fdu and the library becomes fdu-core or
-   similar, so "cargo install fdu" works as a user expects. Costs a library rename before
-   anything is published, which is the cheapest moment it will ever be.
+The shape:
 
-Nothing is published yet, so this is free to decide now and expensive later: crates.io
-names are permanent, and a published fdu library cannot become a binary crate.
+  fdu-core   the engine. Every type and function the API offers.
+  fdu        bin + lib. The binary is the command. The lib re-exports fdu-core and
+             run_process, so "cargo add fdu" still gives a library user the whole API and
+             docs.rs/fdu is a useful page rather than a stub.
+  fdu-py     the Python binding, unchanged in role.
 
-Also update scripts/release/registry_state.py, which checks crates.io for fdu alone and
-would not notice fdu-cli missing, and the release packaging spec, whose goal line says
-"make cargo install fdu ... expose the same native command-line contract".
+Two packages, not more. The user's suggestion of fdu-rs was tempting for symmetry with
+fdu-py, but on crates.io everything is Rust, so the suffix carries no information there;
+fdu-core says what the crate is rather than what language it is in.
+
+Why not one package with the CLI in the binary target: verified that a bin target sees
+its own package's lib as an external crate, so private items are unreachable and the
+boundary would hold. But fdu-py compiles run_process INTO the Python extension module, so
+the command line has to be reachable as a library, and a bin-target-only CLI is not.
+
+This keeps every property the split was for: the command line depends on the engine the
+way any consumer does, so the compiler still decides whether "the CLI invents nothing" is
+true on every build.
