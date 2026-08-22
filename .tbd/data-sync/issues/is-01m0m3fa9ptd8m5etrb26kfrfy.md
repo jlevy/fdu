@@ -3,13 +3,15 @@ type: is
 id: is-01m0m3fa9ptd8m5etrb26kfrfy
 title: Python API cannot parse the CLI's list grammar (duplicates, empty entries)
 kind: feature
-status: open
+status: closed
 priority: 3
-version: 1
+version: 2
 labels: []
 dependencies: []
 created_at: 2026-08-22T06:45:31.573Z
-updated_at: 2026-08-22T06:45:31.573Z
+updated_at: 2026-08-22T18:53:16.567Z
+closed_at: 2026-08-22T18:53:16.566Z
+close_reason: ViewSpec::resolve owns the list grammar, full expansion, and the default. Four CLI-side copies and the binding's partial copy deleted. Query.views accepts a raw spec so a caller gets the one grammar. Verified all four cases agree word for word after the label.
 ---
 The parity shim has to accept --view tree,tree and --view tree,,types because the list-level grammar lives in cli.rs, not in the library or the binding.
 

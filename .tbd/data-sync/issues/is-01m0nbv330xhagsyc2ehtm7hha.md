@@ -3,14 +3,16 @@ type: is
 id: is-01m0nbv330xhagsyc2ehtm7hha
 title: Relabeling a diagnostic by string replace corrupts the user's own token
 kind: bug
-status: open
+status: closed
 priority: 1
-version: 1
+version: 2
 labels: []
 dependencies: []
 parent_id: is-01m0n9pjsahc4wk6ek37syjct4
 created_at: 2026-08-22T18:31:00.447Z
-updated_at: 2026-08-22T18:31:00.447Z
+updated_at: 2026-08-22T18:53:16.267Z
+closed_at: 2026-08-22T18:53:16.266Z
+close_reason: Label is a parameter now; nothing rewrites the message afterwards. Regression test covers the tokens that used to be corrupted.
 ---
 The library's analyze grammar formats its message as 'invalid analyze ...', and the CLI turns that into its own flag spelling with a blind substring replace:
 
