@@ -203,6 +203,10 @@ function normalise(text) {
     // per line because the repr embeds PosixPath(...), whose ')' defeats a character
     // class trying to stay inside the outer call.
     .replace(/^.*CacheStatus\(.*$/gm, (line) => line.replace(/(?<!content_)\bbytes=\d+/g, 'bytes=[N]'))
+    // The rendered form of the same platform-dependent number. It reached the artifact
+    // as `bytes=797` while the shim printed repr(); once the shim used the real renderer
+    // it became `797 metadata bytes`, so the mask had to follow the text it masks.
+    .replace(/\b\d+ metadata bytes\b/g, '[N] metadata bytes')
     .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z/g, '[RFC3339]')
     .replace(/("(?:newest_)?mtime_ns":\s*)\d+/g, '$1[MTIME_NS]')
     .replace(/\b\d+(\.\d+)?\s?(ns|µs|ms|s)\b/g, '[TIME]')

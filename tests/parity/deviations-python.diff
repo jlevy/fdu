@@ -290,7 +290,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-lifecycle.tryscript.md
   ✗ The Compact Summary Retains Nothing, and Cache-Only Says So
 @@ -1,1 +1,1 @@
 -No cached snapshots.
-+.cache/fdu/[HASH].fdu  10 entries, 797 metadata bytes, 0 content bytes  [SANDBOX]/project
++.cache/fdu/[HASH].fdu  10 entries, [N] metadata bytes, 0 content bytes  [SANDBOX]/project
   ✗ The Compact Summary Retains Nothing, and Cache-Only Says So
     Expected exit code 1, got 0
 @@ -1,1 +1,1 @@
