@@ -98,6 +98,18 @@ impl ViewSpec {
         }
     }
 
+    /// How deep a rendered tree descends when the caller named no depth.
+    ///
+    /// Two levels is what makes `fdu` answer "what is big here" at a glance: the root's
+    /// children and theirs. Only the tree renders a hierarchy at all, so every other
+    /// view is unbounded and the question does not arise.
+    const fn default_depth(self) -> Bound {
+        match self {
+            Self::Tree => Bound::Limit(2),
+            _ => Bound::All,
+        }
+    }
+
     /// Whether this view reports regular files only.
     ///
     /// `tree` already reports directory sizes, so a `largest` that listed directories
@@ -185,6 +197,15 @@ impl ViewSpec {
         }
     }
 
+    /// Why `full` cannot appear beside another view.
+    ///
+    /// Stated once, here, because it was stated twice: the CLI and the Python binding
+    /// each carried their own copy, and the binding's had lost the trailing clause. Two
+    /// copies of one rule drift silently, and a parity test comparing surface to surface
+    /// only catches it when the drift reaches the wording (fdu-gw5b).
+    pub const FULL_IS_EXCLUSIVE: &'static str =
+        "it names the whole report and cannot be combined with another view";
+
     /// The summary views `full` expands to, given what the analyzers can answer.
     ///
     /// Returns the satisfiable views and those it had to skip, so a caller can report the
@@ -226,6 +247,11 @@ impl Query {
     /// The bound to apply for `view`: the caller's if they named one, else the view's own.
     pub fn limit_for(&self, view: ViewSpec) -> Bound {
         self.selection.limit.unwrap_or_else(|| view.default_limit())
+    }
+
+    /// The tree depth to apply for `view`, on the same terms as `limit_for`.
+    pub fn depth_for(&self, view: ViewSpec) -> Bound {
+        self.selection.depth.unwrap_or_else(|| view.default_depth())
     }
 
     /// Reject views that have no metadata-only projection and lack required analysis.
@@ -1148,7 +1174,7 @@ fn expand(
         let (id, depth) = (built[cursor].id, built[cursor].depth);
         let path = built[cursor].node.path.clone();
 
-        if !query.selection.depth.admits(depth) {
+        if !query.depth_for(ViewSpec::Tree).admits(depth) {
             // `--depth 0` keeps du's meaning: totals for this node, nothing beneath it.
             // Files are already represented in this directory's totals and never become
             // tree rows. Only a directory child hidden by the depth bound makes the
@@ -1672,7 +1698,7 @@ mod tests {
     #[test]
     fn depth_zero_keeps_dus_meaning_of_root_totals_only() {
         let index = sample();
-        let selection = Selection { depth: Bound::Limit(0), ..Selection::default() };
+        let selection = Selection { depth: Some(Bound::Limit(0)), ..Selection::default() };
         let tree = tree_of(&run(&index, &query(&[ViewSpec::Tree], selection)));
         assert_eq!(tree.bytes, 657, "totals still cover the whole tree");
         assert!(tree.children.is_empty(), "but nothing below the root is listed");
@@ -1682,7 +1708,7 @@ mod tests {
     #[test]
     fn a_depth_bound_marks_only_hidden_directory_rows_as_truncated() {
         let index = sample();
-        let selection = Selection { depth: Bound::Limit(1), ..Selection::default() };
+        let selection = Selection { depth: Some(Bound::Limit(1)), ..Selection::default() };
         let tree = tree_of(&run(&index, &query(&[ViewSpec::Tree], selection)));
 
         let src = tree.children.iter().find(|child| child.name == "src").expect("src");

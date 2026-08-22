@@ -1806,7 +1806,7 @@ mod tests {
         let report = report(
             &index,
             &Query {
-                selection: Selection { depth: Bound::All, ..Selection::default() },
+                selection: Selection { depth: Some(Bound::All), ..Selection::default() },
                 views: vec![ViewSpec::Tree],
                 ..Query::default()
             },

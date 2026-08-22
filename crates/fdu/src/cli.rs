@@ -351,9 +351,14 @@ pub struct Cli {
     #[arg(long, value_name = "LIST", help_heading = "SELECTION")]
     pub kind: Option<String>,
 
-    /// Directory levels to show; does not limit scanning. Accepts `all`.
-    #[arg(short, long, default_value = "2", value_name = "N", help_heading = "SELECTION")]
-    pub depth: String,
+    /// Directory levels to show; does not limit scanning. Accepts `all` [tree default: 2].
+    ///
+    /// Optional for the same reason `--limit` is: the tree brings its own default from
+    /// the library, so the CLI does not declare one and every surface agrees. Said in
+    /// the help text rather than by clap, because it is the view's default and not the
+    /// flag's -- only the tree renders a hierarchy for a depth to bound.
+    #[arg(short, long, value_name = "N", help_heading = "SELECTION")]
+    pub depth: Option<String>,
 
     /// Rows to show, per group. Accepts `all`.
     ///
@@ -1028,7 +1033,7 @@ impl Cli {
         let now = SystemTime::now();
 
         let mut selection = Selection {
-            depth: parse_bound(&self.depth, "--depth")?,
+            depth: self.depth.as_deref().map(|value| parse_bound(value, "--depth")).transpose()?,
             limit: self.limit.as_deref().map(|value| parse_bound(value, "--limit")).transpose()?,
             reverse: self.reverse,
             size: parse_size_metric(&self.size)?,
@@ -1347,9 +1352,7 @@ fn display_notes(views: &ResolvedViews, profile: AnalysisSet, bytes_read: u64) -
 /// Parse one `--view` token, through the library's own grammar.
 fn parse_view(token: &str, flag: &str) -> anyhow::Result<ViewSpec> {
     if token.trim().eq_ignore_ascii_case("full") {
-        anyhow::bail!(
-            "invalid {flag} \"full\": it names the whole report and cannot be combined with another view"
-        );
+        anyhow::bail!("invalid {flag} \"full\": {}", ViewSpec::FULL_IS_EXCLUSIVE);
     }
     ViewSpec::parse(token)
         .map_err(|expected| anyhow::anyhow!("invalid {flag} {token:?}: {expected}"))
@@ -1571,9 +1574,18 @@ fn finish(
             2
         }
         Err(error) => {
-            let _ = writeln!(diagnostic, "{} {error}", paint("fdu:", STYLE_ERROR, color));
+            let headline = error.to_string();
+            let _ = writeln!(diagnostic, "{} {headline}", paint("fdu:", STYLE_ERROR, color));
             for cause in error.chain().skip(1) {
-                let cause = format!("  caused by: {cause}");
+                // A cause the headline already contains says nothing twice. `I/O error at
+                // {path}: {source}` embeds its source, so the chain under it repeated the
+                // sentence verbatim -- two lines where one carried the information, on the
+                // most common failure there is.
+                let text = cause.to_string();
+                if headline.contains(&text) {
+                    continue;
+                }
+                let cause = format!("  caused by: {text}");
                 let _ = writeln!(diagnostic, "{}", paint(&cause, STYLE_CAUSE, color));
             }
             1
@@ -1840,7 +1852,8 @@ mod tests {
             modified_since: None,
             modified_before: None,
             kind: None,
-            depth: "2".to_string(),
+            // None, as clap now leaves it: the default belongs to the view.
+            depth: None,
             limit: None,
             sort: None,
             reverse: false,
@@ -1943,14 +1956,26 @@ mod tests {
 
     #[test]
     fn bounds_accept_all_as_well_as_a_number() {
-        let parsed = Cli { depth: "all".to_string(), limit: Some("3".to_string()), ..cli() }
+        let parsed = Cli { depth: Some("all".to_string()), limit: Some("3".to_string()), ..cli() }
             .resolved_query()
             .expect("bounds parse");
-        assert_eq!(parsed.selection.depth, Bound::All);
+        assert_eq!(parsed.selection.depth, Some(Bound::All));
         assert_eq!(parsed.selection.limit, Some(Bound::Limit(3)));
         // du's meaning of depth 0 survives the rename from --max-depth.
-        let zero = Cli { depth: "0".to_string(), ..cli() }.resolved_query().expect("parses");
-        assert_eq!(zero.selection.depth, Bound::Limit(0));
+        let zero = Cli { depth: Some("0".to_string()), ..cli() }.resolved_query().expect("parses");
+        assert_eq!(zero.selection.depth, Some(Bound::Limit(0)));
+    }
+
+    /// The default the CLI used to declare itself now comes from the library, so every
+    /// surface renders the same tree for the same request. While the CLI owned it, a
+    /// Python caller leaving depth unset got an unbounded tree and no warning.
+    #[test]
+    fn an_unnamed_depth_takes_the_view_default_rather_than_unbounded() {
+        let parsed = cli().resolved_query().expect("parses");
+        assert_eq!(parsed.selection.depth, None, "the CLI must not invent a default");
+        assert_eq!(parsed.depth_for(ViewSpec::Tree), Bound::Limit(2));
+        // Only the tree renders a hierarchy, so the question does not arise elsewhere.
+        assert_eq!(parsed.depth_for(ViewSpec::Files), Bound::All);
     }
 
     #[test]
@@ -2520,7 +2545,7 @@ mod tests {
             .stack_size(DEEP_RENDER_STACK_BYTES)
             .spawn(move || {
                 let query = Query {
-                    selection: Selection { depth: Bound::All, ..Selection::default() },
+                    selection: Selection { depth: Some(Bound::All), ..Selection::default() },
                     views: vec![ViewSpec::Tree],
                     ..Query::default()
                 };
@@ -2583,9 +2608,10 @@ mod tests {
         ]));
         index.set_initial_freshness(false);
 
-        let query = Cli { view: Some("files".to_string()), depth: "all".to_string(), ..cli() }
-            .resolved_query()
-            .expect("query parses");
+        let query =
+            Cli { view: Some("files".to_string()), depth: Some("all".to_string()), ..cli() }
+                .resolved_query()
+                .expect("query parses");
         let provenance = Provenance {
             scan_started_at: None,
             generated_at: std::time::UNIX_EPOCH,
@@ -2651,9 +2677,10 @@ mod tests {
             },
         ]));
         dirs.set_initial_freshness(false);
-        let tree_query = Cli { view: Some("tree".to_string()), depth: "all".to_string(), ..cli() }
-            .resolved_query()
-            .expect("query parses");
+        let tree_query =
+            Cli { view: Some("tree".to_string()), depth: Some("all".to_string()), ..cli() }
+                .resolved_query()
+                .expect("query parses");
         let tree = crate::query::report(&dirs, &tree_query, &provenance);
         let tree_rendered = report_format::render(&tree, report_format::Format::Json, false);
         assert!(

@@ -45,7 +45,31 @@ class InvalidArgumentError(FduError, ValueError):
 
 
 class FilesystemError(OSError, FduError):
-    """A filesystem failure that prevented an operation from producing a result."""
+    """A filesystem failure that prevented an operation from producing a result.
+
+    Reads the way the CLI reports the same failure, because it is the same failure::
+
+        fdu: I/O error at missing: No such file or directory (os error 2)
+
+    OSError's own rendering leads with ``[Errno None]`` for anything raised from the
+    engine, since a Rust ``io::Error`` kind does not always carry an errno. That is worse
+    than uninformative -- it states an error number that does not exist -- so the path and
+    the reason are put first and the errno is shown only when there is one.
+    """
+
+    @property
+    def path(self) -> Path | None:
+        """The path whose operation failed, when the failure named one."""
+
+        return Path(self.filename) if self.filename else None
+
+    def __str__(self) -> str:
+        # strerror already carries the operating system's own detail, so an errno
+        # suffix would repeat it -- "No such file or directory (os error 2) (errno 2)".
+        reason = self.strerror or "operation failed"
+        if self.filename:
+            return f"I/O error at {self.filename}: {reason}"
+        return reason
 
 
 def _bound(value: int | Bound | None) -> str | None:

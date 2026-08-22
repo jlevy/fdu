@@ -265,7 +265,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
   ✗ Totals Name The Whole Axis
 @@ -1,1 +1,1 @@
 -fdu: invalid --view "full": it names the whole report and cannot be combined with another view
-+fdu: invalid view "full": it names the whole report and cannot be combined
++fdu: invalid view "full": it names the whole report and cannot be combined with another view
   ✗ Totals Name The Whole Axis
 @@ -1,1 +1,1 @@
 -fdu: invalid --analyze "basic": expected one of none, lines, code, words, all
@@ -349,17 +349,8 @@ FAIL [ROOT]/tests/parity/.corpus/cli-lifecycle.tryscript.md
 @@ -1,1 +1,1 @@
 -fdu: invalid --cache-status "sometimes": expected root or all
 +CacheStatus(path=PosixPath('.cache/fdu/[HASH].fdu'), bytes=[N], content_bytes=None, recognized=False, root=None, entries=None, max_depth=None, one_filesystem=None)
-FAIL [ROOT]/tests/parity/.corpus/cli-overview.tryscript.md
-  ✗ An Explicit Path Gives a Useful Project-Shaped Report
-@@ -1,7 +1,8 @@
-    7.6 KiB  ██████████   100%  . (16 files)
-    4.1 KiB  █████░░░░░    55%    src (7 files)
-    2.6 KiB  ███░░░░░░░    34%      index (4 files)
-+     641 B  █░░░░░░░░░     8%        format (1 file)
-    1.4 KiB  ██░░░░░░░░    18%      commands (2 files)
-    1.4 KiB  ██░░░░░░░░    19%    docs (3 files)
-    1.1 KiB  █░░░░░░░░░    14%      guides (2 files)
-      343 B  ░░░░░░░░░░     4%      reference (1 file)
+PASS [ROOT]/tests/parity/.corpus/cli-overview.tryscript.md
+  ✓ An Explicit Path Gives a Useful Project-Shaped Report
 FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
   ✗ The Guide Is Reachable Without a Root
     Expected exit code 0, got 2
@@ -467,19 +458,9 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 @@ -1,1 +1,1 @@
 -fdu: --watch cannot be combined with --scan-depth or --one-filesystem: watching requires full scope. Selection flags such as --depth, --include, and --modified-since do work with --watch, because they filter the index rather than narrowing the scan
 +fdu: unsupported scan configuration: watch application for max_depth or one_filesystem requires event-scope filtering
-  ✗ A Missing Root Is a Fatal Filesystem Error
-    stderr:
-@@ -1,2 +1,1 @@
--fdu: I/O error at missing: [OS_ERROR]
--  caused by: [OS_ERROR]
-+fdu: [Errno 2] No such file or directory (os error 2): 'missing'
+  ✓ A Missing Root Is a Fatal Filesystem Error
   ✓ Create a Regular File
-  ✗ Reject It as the Root
-    stderr:
-@@ -1,2 +1,1 @@
--fdu: I/O error at [SCAN_PATH]: scan root is not a directory
--  caused by: scan root is not a directory
-+fdu: [Errno None] scan root is not a directory: '[SANDBOX]/plain-file'
+  ✓ Reject It as the Root
 FAIL [ROOT]/tests/parity/.corpus/cli-watch.tryscript.md
   ✓ Build a Tree and Capture a Watch Session
   ✗ Build a Tree and Capture a Watch Session

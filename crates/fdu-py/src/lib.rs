@@ -324,7 +324,7 @@ impl PyIndex {
         let mut selection =
             Selection { reverse, size: parse_size_metric(size)?, ..Selection::default() };
         if let Some(value) = depth {
-            selection.depth = parse_bound(value, "depth")?;
+            selection.depth = Some(parse_bound(value, "depth")?);
         }
         if let Some(value) = limit {
             selection.limit = Some(parse_bound(value, "limit")?);
@@ -548,7 +548,7 @@ impl PyIndex {
         let mut selection =
             Selection { reverse, size: parse_size_metric(size)?, ..Selection::default() };
         if let Some(value) = depth {
-            selection.depth = parse_bound(value, "depth")?;
+            selection.depth = Some(parse_bound(value, "depth")?);
         }
         if let Some(value) = limit {
             selection.limit = Some(parse_bound(value, "limit")?);
@@ -966,9 +966,10 @@ fn parse_format(value: &str) -> PyResult<fdu::report_format::Format> {
 fn resolve_views(values: &[String], analysis: AnalysisSet) -> PyResult<Vec<ViewSpec>> {
     if values.iter().any(|value| value.trim().eq_ignore_ascii_case("full")) {
         if values.len() > 1 {
-            return Err(PyValueError::new_err(
-                "invalid view \"full\": it names the whole report and cannot be combined",
-            ));
+            return Err(PyValueError::new_err(format!(
+                "invalid view \"full\": {}",
+                ViewSpec::FULL_IS_EXCLUSIVE
+            )));
         }
         return Ok(ViewSpec::full_report(analysis).0);
     }
