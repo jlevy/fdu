@@ -5,7 +5,7 @@ title: "Surface parity harness: run the golden corpus against the library and Py
 kind: epic
 status: open
 priority: 1
-version: 7
+version: 8
 spec_path: docs/project/specs/active/plan-2026-08-21-fdu-python-cli-parity.md
 labels: []
 dependencies: []
@@ -14,8 +14,9 @@ child_order_hints:
   - is-01m0kazpvjhxt3b3436wrw0et3
   - is-01m0kazq861vm6kpx8061jwm1a
   - is-01m0kazqkb46cjw4byw8x1ae7k
+  - is-01m0kdhmx1wzmh0qaaeqt8kvk7
 created_at: 2026-08-21T23:06:08.965Z
-updated_at: 2026-08-21T23:37:36.085Z
+updated_at: 2026-08-22T00:22:19.296Z
 ---
 Run the existing golden corpus against every surface, not just the CLI.
 
