@@ -280,6 +280,44 @@ impl ViewSpec {
     }
 }
 
+/// What the calling surface calls the two axes a report's diagnostics name.
+///
+/// The same reason `ViewSpec::resolve` and `AnalysisSet::parse_labeled` take a label: a
+/// rule belongs to the library, but the words a caller can act on belong to the surface
+/// they came through. Telling a Python caller to "add --analyze" names a flag that does
+/// not exist in their surface -- the defect that made these messages worth moving here in
+/// the first place, reappearing one door over (fdu-4apt).
+///
+/// Two axes rather than one because both diagnostics name both: the view that cannot be
+/// answered, and the analyzer that would answer it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AxisNames {
+    /// The view axis.
+    pub view: &'static str,
+    /// The analyzer axis.
+    pub analyze: &'static str,
+}
+
+impl AxisNames {
+    /// How the command line spells them.
+    pub const FLAGS: Self = Self { view: "--view", analyze: "--analyze" };
+
+    /// How the library and the Python API spell them, and the default: a `Query` built
+    /// without saying otherwise belongs to a library caller, not to the command line.
+    ///
+    /// `view` singular, matching the label the binding already passes to
+    /// `ViewSpec::resolve`, so every diagnostic about this axis names it one way. It also
+    /// keeps the difference from the command line to the flag dashes alone, which is what
+    /// the parity harness's `surface-label` class checks.
+    pub const FIELDS: Self = Self { view: "view", analyze: "analyze" };
+}
+
+impl Default for AxisNames {
+    fn default() -> Self {
+        Self::FIELDS
+    }
+}
+
 /// What a report was asked for.
 #[derive(Clone, Debug)]
 pub struct Query {
@@ -293,6 +331,11 @@ pub struct Query {
     /// section is missing. It lived in the CLI, which meant only the CLI could tell anyone
     /// (fdu-x8u6); `ViewSpec::resolve` returns it and this is where it lands.
     pub omitted_views: Vec<ViewSpec>,
+    /// What the requesting surface calls the axes its diagnostics name.
+    ///
+    /// Carried on the request because that is what knows which door the caller came
+    /// through; the rules themselves stay here and are each stated once.
+    pub axes: AxisNames,
     /// Fixed logical-word denominator used to derive page equivalents after aggregation.
     pub words_per_page: u64,
 }
@@ -303,6 +346,7 @@ impl Default for Query {
             selection: Selection::default(),
             views: Vec::new(),
             omitted_views: Vec::new(),
+            axes: AxisNames::default(),
             words_per_page: 250,
         }
     }
@@ -320,13 +364,17 @@ impl Query {
     }
 
     /// Reject views that have no metadata-only projection and lack required analysis.
-    pub fn validate_analysis(&self, profile: AnalysisSet) -> Result<(), &'static str> {
+    ///
+    /// Names both axes as the requesting surface spells them, so the advice is something
+    /// the caller can actually act on: a Python caller has no `--analyze` to add.
+    pub fn validate_analysis(&self, profile: AnalysisSet) -> Result<(), String> {
         for view in &self.views {
             match view {
                 ViewSpec::Documents if !profile.is_enabled() => {
-                    return Err(
-                        "--view documents requires content analysis: add --analyze lines, code, words, or all; views never enable content analysis implicitly",
-                    );
+                    return Err(format!(
+                        "{} documents requires content analysis: add {} lines, code, words, or all; views never enable content analysis implicitly",
+                        self.axes.view, self.axes.analyze
+                    ));
                 }
                 ViewSpec::Tree
                 | ViewSpec::Types
@@ -673,8 +721,9 @@ fn display_notes(query: &Query) -> Vec<String> {
     }
     let names: Vec<&str> = query.omitted_views.iter().map(|view| view.label()).collect();
     vec![format!(
-        "note: omitted {} — requires content analysis: add --analyze lines, code, words, or all",
-        names.join(", ")
+        "note: omitted {} — requires content analysis: add {} lines, code, words, or all",
+        names.join(", "),
+        query.axes.analyze
     )]
 }
 
@@ -1818,6 +1867,57 @@ mod tests {
         assert!(omitted.is_empty(), "every view is answerable with analysis enabled");
         let query = Query { views: selected, omitted_views: omitted, ..Query::default() };
         assert!(display_notes(&query).is_empty());
+    }
+
+    /// A rule belongs to the library; the words a caller can act on belong to their
+    /// surface. Both diagnostics name two axes, and naming them with flags told a Python
+    /// caller to add an `--analyze` their surface does not have (fdu-4apt).
+    ///
+    /// Asserted as "names mine, never the other's" rather than by quoting either sentence,
+    /// so rewording the rule cannot break this and changing the vocabulary cannot pass it.
+    #[test]
+    fn a_diagnostic_names_the_axes_the_requesting_surface_uses() {
+        let (selected, omitted) = ViewSpec::resolve(Some("full"), AnalysisSet::NONE, "view")
+            .expect("full resolves without analyzers");
+
+        for (axes, mine, theirs) in [
+            (AxisNames::FLAGS, "--analyze", "analyze"),
+            (AxisNames::FIELDS, "analyze", "--analyze"),
+        ] {
+            let query = Query {
+                views: selected.clone(),
+                omitted_views: omitted.clone(),
+                axes,
+                ..Query::default()
+            };
+            // Anchored on the whole phrase, because `--analyze` contains `analyze`: a bare
+            // `contains` for the other surface's spelling matches its own. That is the same
+            // tokenisation trap the watch-scope substitution had to avoid.
+            let note = display_notes(&query).remove(0);
+            assert!(note.contains(&format!("add {mine} ")), "{note} must name {mine}");
+            assert!(!note.contains(&format!("add {theirs} ")), "{note} must not name {theirs}");
+        }
+
+        // The same for the hard error, which names the view axis as well.
+        for (axes, view, analyze) in
+            [(AxisNames::FLAGS, "--view", "--analyze"), (AxisNames::FIELDS, "view", "analyze")]
+        {
+            let query = Query { views: vec![ViewSpec::Documents], axes, ..Query::default() };
+            let error = query
+                .validate_analysis(AnalysisSet::NONE)
+                .expect_err("documents cannot be answered without analysis");
+            assert!(error.starts_with(&format!("{view} documents")), "{error}");
+            assert!(error.contains(&format!("add {analyze} ")), "{error}");
+            let theirs = if analyze == "--analyze" { "analyze" } else { "--analyze" };
+            assert!(!error.contains(&format!("add {theirs} ")), "{error}");
+        }
+    }
+
+    /// A library caller who never says otherwise is not the command line, so the default
+    /// vocabulary is the one their surface uses.
+    #[test]
+    fn the_default_vocabulary_is_the_librarys_own() {
+        assert_eq!(Query::default().axes, AxisNames::FIELDS);
     }
 
     #[test]

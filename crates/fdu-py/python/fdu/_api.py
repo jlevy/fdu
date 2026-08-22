@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Iterator, Sequence
 from dataclasses import replace
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from types import TracebackType
 from typing import Any, cast
@@ -35,6 +35,12 @@ from ._models import (
     rollup_from_dict,
     status_from_dict,
 )
+
+#: Named so the arithmetic in `_epoch_nanos` reads as units rather than as digits.
+_SECONDS_PER_DAY = 86_400
+_NANOS_PER_SECOND = 1_000_000_000
+_NANOS_PER_MICROSECOND = 1_000
+_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 
 
 class FduError(RuntimeError):
@@ -170,13 +176,14 @@ class Watch(Iterator[tuple[Change, ...]]):
 
         handle = _call(self._native.report)
         wire: dict[str, Any] = json.loads(_call(handle.render, "json", False))
+        notes = tuple(_call(handle.notes))
 
         def renderer(format: str, color: bool) -> str:
             # A snapshot: rendering twice gives the same answer, where re-reporting the
             # session would quietly give a newer one.
             return cast(str, _call(handle.render, format, color))
 
-        return replace(report_from_dict(wire), _renderer=renderer)
+        return replace(report_from_dict(wire, notes), _renderer=renderer)
 
     def close(self) -> None:
         self._native.close()
@@ -218,18 +225,24 @@ class Index:
         return len(self._native)
 
     def report(self, query: Query | None = None) -> Report:
+        """A report answering `query` from the retained index, as of now.
+
+        A snapshot. The index goes on changing underneath it -- that is what an index is
+        for -- but the value returned does not, so `as_dict` and `render` are two
+        serializations of one answer rather than two answers taken at different times.
+        """
+
         selected = query if query is not None else Query()
-        kwargs = _query_kwargs(selected)
-        raw = _call(self._native.report_json, **kwargs)
-        wire: dict[str, Any] = json.loads(raw)
-        report = report_from_dict(wire)
+        handle = _call(self._native.report_handle, **_query_kwargs(selected))
+        wire: dict[str, Any] = json.loads(_call(handle.render, "json", False))
+        report = report_from_dict(wire, tuple(_call(handle.notes)))
         errors = self.status.errors
 
-        # `render` re-projects the retained index rather than rescanning, so binding the
-        # same query here costs a projection and keeps `Report.render` on the report where
-        # `as_dict` already lives.
+        # Bound to the finished report, not to the query: re-projecting the index per
+        # format would let one `Report` answer differently each time it was rendered
+        # (fdu-4gno).
         def renderer(format: str, color: bool) -> str:
-            return _call(self._native.report_json, **kwargs, format=format, color=color)
+            return cast(str, _call(handle.render, format, color))
 
         return replace(
             report,
@@ -393,7 +406,7 @@ def report(
         **_query_kwargs(selected),
     )
     wire: dict[str, Any] = json.loads(_call(handle.render, "json", False))
-    parsed = report_from_dict(wire)
+    parsed = report_from_dict(wire, tuple(_call(handle.notes)))
 
     def renderer(format: str, color: bool) -> str:
         # The handle owns the finished report, so a second format costs no second walk.
@@ -404,29 +417,66 @@ def report(
     return replace(parsed, _renderer=renderer)
 
 
-def watch_rule(at: datetime) -> str:
+def watch_rule(at: datetime | int) -> str:
     """The rule that separates one watch repaint from the one before it.
 
     A watch run has no final answer and so no performance footer, which leaves consecutive
     text repaints with nothing between them. A blank line will not do -- that already
     separates two views inside one report -- so the rule carries the instant it was drawn.
+
+    Takes nanoseconds since the epoch, which is what `Change.mtime_ns` already carries, so
+    a caller repainting after a batch has the instant to hand without converting through
+    anything. A `datetime` is accepted too and is exact to its own microsecond resolution.
+
+    An aware `datetime` only: a naive one has no instant to render, and reading it as local
+    time would silently move the rule by the machine's UTC offset while still printing `Z`.
     """
 
-    return _call(_native.watch_rule, int(at.timestamp() * 1_000_000_000))
+    return _call(_native.watch_rule, _epoch_nanos(at))
 
 
-def render_cache_status(statuses: Sequence[CacheStatus], format: Format = Format.TEXT) -> str:
-    """Render cache statuses exactly as ``fdu --cache-status`` prints them.
+def _epoch_nanos(at: datetime | int) -> int:
+    """Nanoseconds since the epoch, without a float in the path.
 
-    The same renderer the CLI uses, in every format, so a caller holding
-    :class:`CacheStatus` values can print what fdu prints instead of inventing a layout
-    that will drift from it.
+    `datetime.timestamp()` returns a float, and at present-day magnitudes a float64 cannot
+    resolve nanoseconds -- it quantizes to a few hundred of them, so `mtime_ns` round-tripped
+    through one comes back a different instant. Integer arithmetic on the timedelta is exact
+    to the microsecond a `datetime` actually holds.
     """
 
-    return cast(
-        str,
-        _call(_native.render_cache_status, [str(status.path) for status in statuses], str(format)),
-    )
+    if isinstance(at, int):
+        return at
+    if at.tzinfo is None or at.tzinfo.utcoffset(at) is None:
+        raise InvalidArgumentError(
+            "watch_rule needs an aware datetime or nanoseconds since the epoch; a naive "
+            "datetime names no instant, and reading it as local time would move the rule "
+            "while still printing UTC"
+        )
+    since_epoch = at - _EPOCH
+    return (
+        since_epoch.days * _SECONDS_PER_DAY + since_epoch.seconds
+    ) * _NANOS_PER_SECOND + since_epoch.microseconds * _NANOS_PER_MICROSECOND
+
+
+def render_cache_status(
+    caches: Sequence[CacheStatus | Path | str], format: Format = Format.TEXT
+) -> str:
+    """Render cache files exactly as ``fdu --cache-status`` prints them.
+
+    The same renderer the CLI uses, in every format, so a caller can print what fdu prints
+    instead of inventing a layout that will drift from it.
+
+    Named for the files rather than for the values: each entry is only a way of naming a
+    cache file, and the file is **re-read at render time**. Passing a :class:`CacheStatus`
+    obtained earlier therefore renders what that file says now, not the fields the value
+    carries -- a status held across a `clear_cache` renders as no snapshots at all. That
+    keeps one definition of what a status is, and means a caller cannot hand the renderer a
+    status the engine never produced, but it is I/O rather than formatting and the name says
+    so (fdu-bogi).
+    """
+
+    paths = [str(cache.path) if isinstance(cache, CacheStatus) else str(cache) for cache in caches]
+    return cast(str, _call(_native.render_cache_status, paths, str(format)))
 
 
 def cache_path(root: str | Path) -> Path | None:

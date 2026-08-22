@@ -505,6 +505,13 @@ class Report:
     status: Status
     analysis: AnalysisMetadata | None
     sections: tuple[ReportSection, ...]
+    #: Remarks the report makes about itself, in the order a renderer prints them --
+    #: today, the views `full` had to drop for want of an analyzer. Carried as values
+    #: rather than left inside the text rendering, because a caller reading `sections`
+    #: would otherwise find one absent with no way to learn why (fdu-7wd1). Deliberately
+    #: not in `as_dict`: the wire envelope excludes them, and a machine consumer reads
+    #: the omission from which sections are present.
+    notes: tuple[str, ...]
     _wire: dict[str, JsonValue] = field(repr=False, compare=False)
     #: Bound renderer, supplied by `Index.report`. Absent on a report built by hand.
     _renderer: Callable[[str, bool], str] | None = field(default=None, repr=False, compare=False)
@@ -517,8 +524,9 @@ class Report:
     def render(self, format: Format = Format.TEXT, *, color: bool = False) -> str:
         """Serialize this report the way the command line does.
 
-        Beside `as_dict` because both are serializations of the same value, and splitting
-        them across a method and a module function would make the pair harder to find than
+        Beside `as_dict` because both are serializations of the same value -- the one this
+        report was built from, not whatever the index holds now -- and splitting them
+        across a method and a module function would make the pair harder to find than
         either alone.
 
         `color` is a plain bool rather than the CLI's `auto | always | never`: resolving
@@ -530,7 +538,14 @@ class Report:
         """
 
         if self._renderer is None:
-            raise ValueError("this report was not produced by Index.report and cannot be rendered")
+            # Deferred: `_api` imports this module, so its exception types cannot be
+            # imported at module scope.
+            from ._api import InvalidArgumentError
+
+            raise InvalidArgumentError(
+                "this report carries no renderer; only a report from Index.report, "
+                "fdu.report, or Watch.report can be rendered"
+            )
         return self._renderer(str(format), color)
 
 
@@ -563,17 +578,26 @@ class Change:
         bytes fdu emits rather than a format of its own that will drift from them.
         """
 
+        # Through `_call` like every other native call, so a bad format raises the
+        # package's own `InvalidArgumentError` rather than the bare `ValueError` pyo3
+        # produces -- a caller writing `except FduError` should not miss this one
+        # (fdu-dygl). Deferred for the same reason as above.
         from . import _native
+        from ._api import _call
 
-        return _native.render_change(
-            path=str(self.path),
-            op=str(self.kind),
-            clock=self.clock,
-            kind=str(self.entry_kind) if self.entry_kind is not None else None,
-            bytes=self.bytes,
-            allocated=self.allocated,
-            mtime_ns=self.mtime_ns,
-            format=str(format),
+        return cast(
+            str,
+            _call(
+                _native.render_change,
+                path=str(self.path),
+                op=str(self.kind),
+                clock=self.clock,
+                kind=str(self.entry_kind) if self.entry_kind is not None else None,
+                bytes=self.bytes,
+                allocated=self.allocated,
+                mtime_ns=self.mtime_ns,
+                format=str(format),
+            ),
         )
 
 
@@ -704,12 +728,16 @@ def _tree(value: dict[str, Any]) -> TreeNode:
     )
 
 
-def report_from_dict(wire: dict[str, Any]) -> Report:
+def report_from_dict(wire: dict[str, Any], notes: tuple[str, ...] = ()) -> Report:
     """
     Parse the exact CLI JSON object into immutable public values.
 
     Takes ownership of `wire`: the report retains it as its wire form, so the caller
     must not mutate it afterwards. `Report.as_dict()` hands out independent copies.
+
+    `notes` comes from the report itself rather than from `wire`, because the wire
+    envelope deliberately excludes them; the producer reads them off the same handle it
+    rendered from and passes them in.
     """
 
     def _bound(raw: dict[str, Any]) -> SectionBound | None:
@@ -812,6 +840,7 @@ def report_from_dict(wire: dict[str, Any]) -> Report:
     if generated_at is None:
         raise TypeError("report generated_at must be present")
     return Report(
+        notes=notes,
         schema=str(wire["schema"]),
         generator=str(wire["generator"]),
         root=Path(str(wire["root"])),

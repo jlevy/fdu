@@ -15,7 +15,7 @@ import re
 import subprocess
 import sys
 import tempfile
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import fdu
@@ -161,8 +161,109 @@ def check_render_matches_the_cli(root: Path, binary: str) -> None:
     try:
         detached.render()
         raise SystemExit("a report with no index behind it must refuse to render")
-    except ValueError as error:
-        assert "Index.report" in str(error), error
+    except fdu.InvalidArgumentError as error:
+        # Every producer that does bind one, so the message does not send a caller who
+        # used fdu.report or Watch.report looking at the wrong call.
+        for producer in ("Index.report", "fdu.report", "Watch.report"):
+            assert producer in str(error), (producer, str(error))
+
+
+def check_a_report_is_a_snapshot(root: Path) -> None:
+    """One report must not answer differently each time it is asked.
+
+    `Index.report` used to bind a renderer to the *query* and re-project the retained index
+    per format, so `as_dict` held the values the call was answered with while `render`
+    quietly returned newer ones once the index moved (fdu-4gno). All three producers now
+    bind to the finished report.
+    """
+
+    index = fdu.open(root)
+    report = index.report(fdu.Query(views=(fdu.View.SUMMARY,)))
+    before = report.render(fdu.Format.JSON)
+
+    (root / "snapshot-probe.bin").write_bytes(b"x" * 100_000)
+    index.refresh()
+
+    assert report.render(fdu.Format.JSON) == before, "render must not follow the live index"
+    assert json.loads(before)["reports"][0] == report.as_dict()["reports"][0], (
+        "as_dict and render must serialize one value, not two"
+    )
+
+    # And the index really did move, or this proves nothing.
+    assert index.report(fdu.Query(views=(fdu.View.SUMMARY,))).render(fdu.Format.JSON) != before
+    (root / "snapshot-probe.bin").unlink()
+    index.refresh()
+
+
+def check_a_report_states_its_own_omissions(root: Path) -> None:
+    """A dropped view must be readable as a value, not only inside rendered text.
+
+    `full` without analyzers cannot answer `documents`. The report says so, and a caller
+    reading `sections` needs that as a note rather than having to scrape the text rendering
+    to find out why a section is absent (fdu-7wd1).
+    """
+
+    report = fdu.report(root, fdu.Query(views=(fdu.View.FULL,)))
+    assert report.notes, "a dropped view must be stated on the report"
+    assert any("documents" in note for note in report.notes), report.notes
+
+    # Named in this surface's vocabulary: there is no --analyze in Python (fdu-4apt).
+    for note in report.notes:
+        assert "--analyze" not in note, note
+        assert "--view" not in note, note
+    assert any("add analyze " in note for note in report.notes), report.notes
+
+    # The same rule as a hard error, in the same vocabulary.
+    try:
+        fdu.report(root, fdu.Query(views=(fdu.View.DOCUMENTS,)))
+        raise SystemExit("documents without analyzers must be rejected")
+    except fdu.InvalidArgumentError as error:
+        assert str(error).startswith("view documents"), error
+        assert "add analyze " in str(error), error
+        assert "--analyze" not in str(error), error
+
+    # Nothing dropped, nothing said.
+    assert not fdu.report(root, fdu.Query(views=(fdu.View.SUMMARY,))).notes
+
+
+def check_every_failure_is_an_fdu_error(root: Path) -> None:
+    """`except FduError` must be enough to catch what this package raises.
+
+    `Change.render` reached the extension directly and so raised pyo3's bare `ValueError`,
+    which that clause does not catch (fdu-dygl).
+    """
+
+    change = fdu.Change(path=root / "x", kind=fdu.ChangeKind.UPSERT, clock=1)
+    assert json.loads(change.render(fdu.Format.JSONL))["op"] == "upsert"
+    try:
+        change.render("xml")  # pyright: ignore[reportArgumentType]
+        raise SystemExit("an unknown format must be rejected")
+    except fdu.FduError as error:
+        assert isinstance(error, fdu.InvalidArgumentError), type(error)
+
+
+def check_the_watch_rule_names_an_instant(root: Path) -> None:
+    """A repaint separator must render the instant it was given, exactly.
+
+    A naive datetime names no instant; reading it as local time moved the rule by the
+    machine's UTC offset while still printing `Z`. And nanoseconds cannot survive a float,
+    so `Change.mtime_ns` -- which is what a caller repainting after a batch actually holds
+    -- goes in as an int (fdu-uwv0).
+    """
+
+    del root
+    aware = datetime(2026, 8, 10, 18, 22, 31, tzinfo=UTC)
+    assert fdu.watch_rule(aware) == "──── 2026-08-10T18:22:31.000000000Z ────"
+
+    # An int carries the full nanosecond; a float cannot, and quantized this to ...457024.
+    exact_ns = 1_786_386_151_123_456_789
+    assert fdu.watch_rule(exact_ns) == "──── 2026-08-10T18:22:31.123456789Z ────"
+
+    try:
+        fdu.watch_rule(datetime(2026, 8, 10, 18, 22, 31))
+        raise SystemExit("a naive datetime must be refused, not read as local time")
+    except fdu.InvalidArgumentError as error:
+        assert "aware" in str(error), error
 
 
 def check_every_view(root: Path) -> None:
@@ -226,6 +327,10 @@ def main() -> None:
     (root / "notes.md").write_text("release notes", encoding="utf-8")
 
     check_every_view(root)
+    check_a_report_is_a_snapshot(root)
+    check_a_report_states_its_own_omissions(root)
+    check_every_failure_is_an_fdu_error(root)
+    check_the_watch_rule_names_an_instant(root)
     check_the_list_grammar_reaches_python(root)
     check_the_one_shot_retains_nothing(root)
     check_watch_reports_its_own_index(root)

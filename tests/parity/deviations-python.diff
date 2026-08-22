@@ -16,23 +16,23 @@
 #     -line               what the Rust CLI produced
 #     +line               what the Python surface produced
 #
-# Three classes of ✗ are legitimate. Everything else is a tracked gap with a bead.
+# Why a ✗ is allowed to survive is stated per class in the summary below, which is
+# generated from the classes that actually matched this run. Nothing about the surviving
+# differences is described here by hand: a hand-maintained list of what is still missing is
+# re-emitted verbatim on every --update and compared against itself in CI, so it can go
+# stale without any check noticing -- which it did, listing four gaps that had already been
+# closed (fdu-7tli). The generated summary is the one that cannot.
+#
+# Two facts about this run are fixed rather than observed, so they are stated here:
 #
 # 1. --version names the surface. Deliberate, and load-bearing: it is what keeps this
 #    file non-empty, so an empty diff means the shim never ran.
-# 2. Diagnostics name the surface's own parameter -- "invalid depth" against the CLI's
-#    "invalid --depth". There is no --depth in Python. Everything after the label is
-#    identical, which is the part that encodes behaviour, and the harness proves it
-#    matches word for word. Tracked as fdu-a823 for the record, not as a defect.
-# 3. --docs and --skill are static documents the package does not carry, and --help is
-#    clap's own rendering. The whole skip list, and it is three (fdu-2b53).
-#
-# Remaining tracked gaps:
-#
-#   fdu-4msv  the one-shot cache contract is not expressible from Python (7 sessions)
-#   fdu-1kw3  watch records have no renderer (2 sessions)
-#   fdu-x8u6  display notes carry run telemetry the schema excludes (1 session)
-#   fdu-jozr  list grammar (duplicates, empty entries) is not exposed (2 sessions)
+# 2. Three sessions are skipped by name rather than diffed, because ~350 lines of clap
+#    help text would bury the parity content this artifact exists to show: the bare
+#    invocation and unknown-option sessions, which render clap's own help and usage
+#    errors, and --skill, a static document that lives in the binary (fdu-2b53). --docs is
+#    NOT skipped -- it is recorded below like any other deviation. The skip list lives in
+#    DECLINED in scripts/run-parity.mjs; growth in it is a regression worth arguing over.
 #
 # The performance footer is excluded from comparison rather than recorded: it reports
 # walk telemetry the report schema deliberately excludes, so the Python surface cannot
@@ -41,9 +41,9 @@
 # This file shrinks as the API closes. Extra hunks mean drift; missing hunks mean a gap
 # was fixed and the file should be re-recorded so the change is visible in review.
 
-# 18 sessions differ, and every one of them has a named cause.
+# 20 sessions differ, and every one of them has a named cause.
 #
-#  11  Each surface names its own parameter  [surface-label]
+#  13  Each surface names its own parameter  [surface-label]
 #      There is no --view or --analyze in Python, so its diagnostics name the parameter.
 #      Everything after the label is identical, and that is the part encoding behaviour:
 #      the rule the caller hits is the same rule, proven line by line rather than assumed.
@@ -68,11 +68,15 @@
 #   3  Output carrying walk telemetry the report schema excludes  [run-telemetry]
 #      A note quoting how many bytes analysis read, or the performance footer itself.
 #      Both are telemetry about the run rather than facts about the report, and the
-#      envelope deliberately carries none, so a Report cannot reproduce them (fdu-x8u6).
+#      envelope deliberately carries none, so a Report cannot reproduce them. The omission
+#      note is NOT this: that one is a fact about the report, travels on it, and every
+#      surface states it in its own vocabulary.
 #
 #   2  A discovery surface the package does not carry  [discovery-surface]
-#      --docs and --skill are static documents that live in the binary, and --help is
-#      clap's own rendering. The whole skip list is these three (fdu-2b53).
+#      --docs is a static document that lives in the binary, so the package does not carry
+#      it and the session is recorded here rather than skipped. The skip list is a separate
+#      set -- clap help and usage errors, and --skill -- and lives in DECLINED in
+#      run-parity.mjs (fdu-2b53).
 #
 #      --version is the deliberate one, and it is load-bearing: the shim names itself so
 #      it can never be mistaken for the binary, which is what keeps this artifact
@@ -147,7 +151,11 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
   ✓ Prepare a Signature-Only Binary
   ✓ Bounded Deep Detection Reports Its Evidence
   ✓ Human Summaries Separate Code and Documents
-  ✓ Human Summaries Separate Code and Documents
+  ✗ Human Summaries Separate Code and Documents
+    stderr:
+@@ -1,1 +1,1 @@
+-fdu: --view documents requires content analysis: add --analyze lines, code, words, or all; views never enable content analysis implicitly
++fdu: view documents requires content analysis: add analyze lines, code, words, or all; views never enable content analysis implicitly
   ✓ Human Summaries Separate Code and Documents
   ✓ Human Summaries Separate Code and Documents
   ✓ Human Summaries Separate Code and Documents
@@ -186,7 +194,22 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
        59 B  ██░░░░░░░░    23%    docs (2 files)
        22 B  █░░░░░░░░░     9%    data (1 file)
 -note: --analyze lines,code,words read 176 B; no selected view displays content metrics — try --view families, languages, or all
-  ✓ Every View One Walk Can Answer
+  ✗ Every View One Walk Can Answer
+@@ -23,11 +23,11 @@
+       39 B   50.6%  Python  1 file
+       38 B   49.4%  Rust    1 file
+ LARGEST  (2 of 7; --limit all for every one)
+-80 B  assets[SEP]logo.png
+-42 B  docs[SEP]guide.md
++80 B  assets/logo.png
++42 B  docs/guide.md
+ RECENT  (2 of 7; --limit all for every one)
+-[RFC3339]  assets[SEP]late.bin.txt
+-[RFC3339]  docs[SEP]notes.txt
+-note: omitted documents — requires content analysis: add --analyze lines, code, words, or all
++[RFC3339]  assets/late.bin.txt
++[RFC3339]  docs/notes.txt
++note: omitted documents — requires content analysis: add analyze lines, code, words, or all
   ✓ Every View One Walk Can Answer
   ✗ Totals Name The Whole Axis
 @@ -1,1 +1,1 @@
