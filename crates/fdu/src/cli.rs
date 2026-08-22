@@ -158,7 +158,7 @@ CONTENT ANALYSIS
   cache=only never opens source files and fails if requested content is absent.
 
 OUTPUT AND AUTOMATION
-  Metadata-only machine output remains fdu.report/1; metric summaries use fdu.report/3.
+  Metadata-only machine output remains fdu.report/4; metric summaries use fdu.report/5.
   Text language rows use canonical names; machine formats retain lowercase IDs.
   Metric rows include detection source, confidence, origin flags, and coverage.
   One-shot text reports end with a gray performance line; machine formats omit it.
@@ -355,9 +355,13 @@ pub struct Cli {
     #[arg(short, long, default_value = "2", value_name = "N", help_heading = "SELECTION")]
     pub depth: String,
 
-    /// Entries to show per directory. Accepts `all`.
-    #[arg(short = 'n', long, default_value = "10", value_name = "N", help_heading = "SELECTION")]
-    pub limit: String,
+    /// Rows to show, per group. Accepts `all`.
+    ///
+    /// Each view brings its own default, because one number does not suit them all: a
+    /// tree shows ten per directory, `largest` and `recent` show twenty, and `files`
+    /// enumerates everything.
+    #[arg(short = 'n', long, value_name = "N", help_heading = "SELECTION")]
+    pub limit: Option<String>,
 
     /// Order results: size, count, mtime, or name.
     #[arg(long, value_name = "KEY", help_heading = "SELECTION")]
@@ -372,8 +376,9 @@ pub struct Cli {
     pub size: String,
 
     // ---- view: which roll-ups are reported ----
-    /// Views: tree, extensions, types, families, languages, documents, files, summary,
-    /// or all. Defaults to the view that displays whatever --analyze requested.
+    /// Views: tree, extensions, types, families, languages, documents, largest, recent,
+    /// files, summary, or full. Defaults to the view that displays what --analyze asked
+    /// for.
     #[arg(long, value_name = "LIST", help_heading = "VIEWS")]
     pub view: Option<String>,
 
@@ -1024,7 +1029,7 @@ impl Cli {
 
         let mut selection = Selection {
             depth: parse_bound(&self.depth, "--depth")?,
-            limit: parse_bound(&self.limit, "--limit")?,
+            limit: self.limit.as_deref().map(|value| parse_bound(value, "--limit")).transpose()?,
             reverse: self.reverse,
             size: parse_size_metric(&self.size)?,
             ..Selection::default()
@@ -1136,7 +1141,7 @@ fn human_rate(units: u64, elapsed_ns: u64) -> String {
     }
 }
 
-fn human_count(value: u64) -> String {
+pub(crate) fn human_count(value: u64) -> String {
     let digits = value.to_string();
     let mut grouped = String::with_capacity(digits.len() + digits.len() / 3);
     for (index, byte) in digits.bytes().enumerate() {
@@ -1236,7 +1241,7 @@ fn parse_list<T: PartialEq>(
 /// listing last because it is the only one whose length is bounded by `--limit` rather
 /// than by the tree's shape.  The order is a golden contract: it is what `--view all`
 /// prints, so changing it changes committed output.
-const ALL_VIEWS: [ViewSpec; 8] = [
+const ALL_VIEWS: [ViewSpec; 10] = [
     ViewSpec::Summary,
     ViewSpec::Tree,
     ViewSpec::Families,
@@ -1244,6 +1249,8 @@ const ALL_VIEWS: [ViewSpec; 8] = [
     ViewSpec::Extensions,
     ViewSpec::Languages,
     ViewSpec::Documents,
+    ViewSpec::Largest,
+    ViewSpec::Recent,
     ViewSpec::Files,
 ];
 
@@ -1271,16 +1278,7 @@ const fn view_is_satisfiable(view: ViewSpec, profile: AnalysisSet) -> bool {
 /// state the request already paid for.  Without this, `--analyze all` reads every
 /// eligible file and prints a tree containing none of the results.
 const fn default_view_for(profile: AnalysisSet) -> ViewSpec {
-    match (profile.includes_code(), profile.includes_words()) {
-        // The one view whose rows carry both metric groups at once.
-        (true, true) => ViewSpec::Families,
-        (true, false) => ViewSpec::Languages,
-        (false, true) => ViewSpec::Documents,
-        // Line counts alone still need a grouping that shows them.
-        (false, false) if profile.is_enabled() => ViewSpec::Families,
-        // The unchanged du-replacement answer.
-        (false, false) => ViewSpec::Tree,
-    }
+    ViewSpec::default_for(profile)
 }
 
 /// Views to render, plus any `--view all` could not satisfy.
@@ -1302,9 +1300,14 @@ fn resolve_views(spec: Option<&str>, profile: AnalysisSet) -> anyhow::Result<Res
             omitted: Vec::new(),
         });
     };
-    if spec.trim().eq_ignore_ascii_case("all") {
-        let (selected, omitted) =
-            ALL_VIEWS.into_iter().partition(|view| view_is_satisfiable(*view, profile));
+    if spec.trim().eq_ignore_ascii_case("full") {
+        // `full` is every *summary* view. `files` enumerates without bound, and putting
+        // an enumeration inside a digest destroys the digest; `largest` and `recent`
+        // carry the same information in a form a digest can hold.
+        let (selected, omitted) = ALL_VIEWS
+            .into_iter()
+            .filter(|view| view.is_summary_view())
+            .partition(|view| view_is_satisfiable(*view, profile));
         return Ok(ResolvedViews { selected, omitted });
     }
     Ok(ResolvedViews { selected: parse_list(spec, "--view", parse_view)?, omitted: Vec::new() })
@@ -1341,24 +1344,15 @@ fn display_notes(views: &ResolvedViews, profile: AnalysisSet, bytes_read: u64) -
     notes
 }
 
-/// Parse one `--view` token.
+/// Parse one `--view` token, through the library's own grammar.
 fn parse_view(token: &str, flag: &str) -> anyhow::Result<ViewSpec> {
-    match token.to_ascii_lowercase().as_str() {
-        "tree" => Ok(ViewSpec::Tree),
-        "types" => Ok(ViewSpec::Types),
-        "extensions" => Ok(ViewSpec::Extensions),
-        "families" => Ok(ViewSpec::Families),
-        "languages" => Ok(ViewSpec::Languages),
-        "documents" | "docs" => Ok(ViewSpec::Documents),
-        "files" => Ok(ViewSpec::Files),
-        "summary" => Ok(ViewSpec::Summary),
-        "all" => anyhow::bail!(
-            "invalid {flag} \"all\": it names the whole axis and cannot be combined with another view"
-        ),
-        _ => anyhow::bail!(
-            "invalid {flag} {token:?}: expected one of tree, extensions, types, families, languages, documents, files, summary, all"
-        ),
+    if token.trim().eq_ignore_ascii_case("full") {
+        anyhow::bail!(
+            "invalid {flag} \"full\": it names the whole report and cannot be combined with another view"
+        );
     }
+    ViewSpec::parse(token)
+        .map_err(|expected| anyhow::anyhow!("invalid {flag} {token:?}: {expected}"))
 }
 
 /// Parse one `--kind` token.
@@ -1847,7 +1841,7 @@ mod tests {
             modified_before: None,
             kind: None,
             depth: "2".to_string(),
-            limit: "10".to_string(),
+            limit: None,
             sort: None,
             reverse: false,
             size: "allocated".to_string(),
@@ -1927,12 +1921,12 @@ mod tests {
     #[test]
     fn an_unknown_view_names_every_valid_value() {
         let message = query_error(&Cli { view: Some("bogus".to_string()), ..cli() });
-        assert!(
-            message.contains(
-                "tree, extensions, types, families, languages, documents, files, summary"
-            ),
-            "{message}"
-        );
+        // The rejection is how the vocabulary is discovered, so every value must be in it.
+        for view in ALL_VIEWS {
+            let label = report_format::view_label(view);
+            assert!(message.contains(label), "{label} missing from: {message}");
+        }
+        assert!(message.contains("full"), "the total must be listed too: {message}");
     }
 
     #[test]
@@ -1949,11 +1943,11 @@ mod tests {
 
     #[test]
     fn bounds_accept_all_as_well_as_a_number() {
-        let parsed = Cli { depth: "all".to_string(), limit: "3".to_string(), ..cli() }
+        let parsed = Cli { depth: "all".to_string(), limit: Some("3".to_string()), ..cli() }
             .resolved_query()
             .expect("bounds parse");
         assert_eq!(parsed.selection.depth, Bound::All);
-        assert_eq!(parsed.selection.limit, Bound::Limit(3));
+        assert_eq!(parsed.selection.limit, Some(Bound::Limit(3)));
         // du's meaning of depth 0 survives the rename from --max-depth.
         let zero = Cli { depth: "0".to_string(), ..cli() }.resolved_query().expect("parses");
         assert_eq!(zero.selection.depth, Bound::Limit(0));
@@ -2125,20 +2119,28 @@ mod tests {
     }
 
     #[test]
-    fn view_all_expands_to_what_the_analyzer_set_can_answer() {
-        let bare = resolve_views(Some("all"), AnalysisSet::NONE).expect("resolve");
+    fn view_full_expands_to_the_summary_views_the_analyzer_set_can_answer() {
+        let bare = resolve_views(Some("full"), AnalysisSet::NONE).expect("resolve");
         assert_eq!(bare.omitted, vec![ViewSpec::Documents], "documents needs content");
-        assert_eq!(bare.selected.len(), ALL_VIEWS.len() - 1);
         assert!(!bare.selected.contains(&ViewSpec::Documents));
 
-        let analyzed = resolve_views(Some("all"), AnalysisSet::ALL).expect("resolve");
-        assert_eq!(analyzed.selected, ALL_VIEWS.to_vec(), "every view, in table order");
+        let analyzed = resolve_views(Some("full"), AnalysisSet::ALL).expect("resolve");
         assert!(analyzed.omitted.is_empty());
+        // `full` is the summary views: both bounded presets are in, and the unbounded
+        // enumeration is out, because an enumeration inside a digest destroys the digest.
+        assert!(analyzed.selected.contains(&ViewSpec::Largest));
+        assert!(analyzed.selected.contains(&ViewSpec::Recent));
+        assert!(!analyzed.selected.contains(&ViewSpec::Files), "{:?}", analyzed.selected);
+        assert_eq!(
+            analyzed.selected,
+            ALL_VIEWS.into_iter().filter(|view| view.is_summary_view()).collect::<Vec<_>>(),
+            "every summary view, in table order"
+        );
 
         // `all` names the axis, so combining it with a view is a usage error rather than
         // a silently-widened request.
-        let combined = resolve_views(Some("all,tree"), AnalysisSet::NONE)
-            .expect_err("all cannot be combined")
+        let combined = resolve_views(Some("full,tree"), AnalysisSet::NONE)
+            .expect_err("full cannot be combined")
             .to_string();
         assert!(combined.contains("cannot be combined"), "{combined}");
     }
@@ -2146,7 +2148,7 @@ mod tests {
     /// Both directions of the display contract, stated as notes rather than errors.
     #[test]
     fn the_display_contract_reports_omissions_and_unspent_reads() {
-        let omitted = resolve_views(Some("all"), AnalysisSet::NONE).expect("resolve");
+        let omitted = resolve_views(Some("full"), AnalysisSet::NONE).expect("resolve");
         let notes = display_notes(&omitted, AnalysisSet::NONE, 0);
         assert_eq!(notes.len(), 1, "{notes:?}");
         assert!(notes[0].contains("omitted documents"), "{notes:?}");
@@ -2219,7 +2221,7 @@ mod tests {
             command.run(&mut output, &mut Vec::new(), false, false).expect("run content report");
         assert_eq!(outcome, RunOutcome::Complete);
         let output = String::from_utf8(output).expect("UTF-8 JSON");
-        assert!(output.contains("\"schema\": \"fdu.report/3\""), "{output}");
+        assert!(output.contains("\"schema\": \"fdu.report/5\""), "{output}");
         assert!(output.contains("\"physical_lines\": 3"), "{output}");
         assert!(output.contains("\"raw_words\": 3"), "{output}");
         assert!(output.contains("\"words_per_page\": 250"), "{output}");

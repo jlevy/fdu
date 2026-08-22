@@ -26,7 +26,7 @@ patterns:
 ```console
 $ fdu --cache off --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/1",
+  "schema": "fdu.report/4",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "scan_started_at": "[RFC3339]",
@@ -60,7 +60,7 @@ cache absent
 ```console
 $ fdu --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/1",
+  "schema": "fdu.report/4",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "scan_started_at": "[RFC3339]",
@@ -97,7 +97,7 @@ rewrite is for.
 ```console
 $ fdu --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/1",
+  "schema": "fdu.report/4",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "scan_started_at": "[RFC3339]",
@@ -131,7 +131,7 @@ fixture expanded
 ```console
 $ fdu --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/1",
+  "schema": "fdu.report/4",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "scan_started_at": "[RFC3339]",
@@ -158,7 +158,7 @@ answers with the changed total rather than the one the first run recorded.
 ```console
 $ fdu --cache only --format json --size apparent --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/1",
+  "schema": "fdu.report/4",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "scan_started_at": "[RFC3339]",
@@ -182,7 +182,7 @@ $ fdu --cache only --format json --size apparent --depth 0 --limit 0 project
 ```console
 $ fdu --format json --size apparent --scan-depth 1 --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/1",
+  "schema": "fdu.report/4",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "scan_started_at": "[RFC3339]",
@@ -216,7 +216,7 @@ snapshot corrupted
 ```console
 $ fdu --format json --size apparent --scan-depth 1 --depth 0 --limit 0 project
 {
-  "schema": "fdu.report/1",
+  "schema": "fdu.report/4",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "scan_started_at": "[RFC3339]",

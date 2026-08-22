@@ -135,7 +135,7 @@ def main() -> None:
     )
     assert cli_scan.returncode == 0, cli_scan
     cli_data = json.loads(cli_scan.stdout)
-    assert cli_data["schema"] == "fdu.report/1", cli_data
+    assert cli_data["schema"] == "fdu.report/4", cli_data
     assert cli_data["complete"] is True, cli_data
     tree = cli_data["reports"][0]["tree"]
     assert tree["bytes"] == 17, cli_data

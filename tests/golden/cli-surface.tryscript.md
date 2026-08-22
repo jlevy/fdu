@@ -53,16 +53,16 @@ SELECTION
       --kind <LIST>             Entry kinds to report: file, dir, symlink, other
   -d, --depth <N>               Directory levels to show; does not limit scanning. Accepts `all`
                                 [default: 2]
-  -n, --limit <N>               Entries to show per directory. Accepts `all` [default: 10]
+  -n, --limit <N>               Rows to show, per group. Accepts `all`
       --sort <KEY>              Order results: size, count, mtime, or name
       --reverse                 Reverse the ordering
       --size <METRIC>           Which size metric to report: allocated or apparent [default:
                                 allocated]
 
 VIEWS
-      --view <LIST>         Views: tree, extensions, types, families, languages, documents, files,
-                            summary, or all. Defaults to the view that displays whatever --analyze
-                            requested
+      --view <LIST>         Views: tree, extensions, types, families, languages, documents, largest,
+                            recent, files, summary, or full. Defaults to the view that displays what
+                            --analyze asked for
       --words-per-page <N>  Logical words per derived document page [default: 250]
 
 CONTENT ANALYSIS
@@ -266,8 +266,8 @@ before the modification, so only the start bound is conservative.
 
 Check the process exit status and these fields:
 
-- `schema` before parsing anything else: a metadata-only report carries `fdu.report/1`,
-  a report that ran content analysis carries `fdu.report/3`, and a `--watch` stream
+- `schema` before parsing anything else: a metadata-only report carries `fdu.report/4`,
+  a report that ran content analysis carries `fdu.report/5`, and a `--watch` stream
   carries `fdu.stream/1`. Treat an unrecognized value as a version you cannot parse
   rather than guessing at the fields.
 - `complete` and `errors` before trusting totals
@@ -389,7 +389,7 @@ CONTENT ANALYSIS
   cache=only never opens source files and fails if requested content is absent.
 
 OUTPUT AND AUTOMATION
-  Metadata-only machine output remains fdu.report/1; metric summaries use fdu.report/3.
+  Metadata-only machine output remains fdu.report/4; metric summaries use fdu.report/5.
   Text language rows use canonical names; machine formats retain lowercase IDs.
   Metric rows include detection source, confidence, origin flags, and coverage.
   One-shot text reports end with a gray performance line; machine formats omit it.

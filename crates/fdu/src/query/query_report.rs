@@ -46,6 +46,15 @@ pub enum ViewSpec {
     Documents,
     /// A flat listing of matching entries.
     Files,
+    /// The largest files, by size.
+    ///
+    /// A named preset over [`Self::Files`], not separate machinery:
+    /// `largest ≡ files --sort size --limit 20`, restricted to regular files.
+    Largest,
+    /// The most recently modified files.
+    ///
+    /// `recent ≡ files --sort mtime --limit 20`, restricted to regular files.
+    Recent,
     /// One aggregate row for everything selected.
     Summary,
 }
@@ -61,10 +70,138 @@ impl ViewSpec {
             | Self::Families
             | Self::Languages
             | Self::Documents
-            | Self::Summary => SortKey::Size,
-            // A flat listing is a file list first, so it reads and diffs in name order.
+            | Self::Summary
+            // `largest` lands here for its own reason: it is named for the ranking,
+            // so the ranking is not a display default but the view's whole content.
+            | Self::Largest => SortKey::Size,
+            // A complete listing reads and diffs in name order, which is the only
+            // reason name order is right here: the stability that justifies it
+            // disappears the moment the list is truncated, which is why `files` is
+            // unbounded and the two bounded presets sort by what they are named for.
             Self::Files => SortKey::Name,
+            Self::Recent => SortKey::Mtime,
         }
+    }
+
+    /// The bound this view applies when the caller named none.
+    ///
+    /// `files` enumerates, so it is complete: it stands in for `fd` and `find`, and the
+    /// incremental-sync watermark query depends on it — a watermark that silently returns
+    /// twenty of 192,871 changed files loses data rather than merely under-reporting.
+    /// The presets are summaries and bound themselves; every other view keeps the
+    /// display default.
+    const fn default_limit(self) -> Bound {
+        match self {
+            Self::Files => Bound::All,
+            Self::Largest | Self::Recent => Bound::Limit(20),
+            _ => Bound::Limit(10),
+        }
+    }
+
+    /// Whether this view reports regular files only.
+    ///
+    /// `tree` already reports directory sizes, so a `largest` that listed directories
+    /// would duplicate it at a coarser grain and push the actual files out of the window.
+    const fn files_only(self) -> bool {
+        matches!(self, Self::Largest | Self::Recent)
+    }
+
+    /// Every view, in the order a full report renders them.
+    ///
+    /// One list, so a front end cannot hold a stale copy: the Python binding kept its own
+    /// view parser and silently rejected `largest` and `recent` for exactly that reason.
+    pub const ALL: [Self; 10] = [
+        Self::Summary,
+        Self::Tree,
+        Self::Families,
+        Self::Types,
+        Self::Extensions,
+        Self::Languages,
+        Self::Documents,
+        Self::Largest,
+        Self::Recent,
+        Self::Files,
+    ];
+
+    /// Parse one view name.
+    ///
+    /// Lives here rather than in a front end because it is the axis's grammar, not one
+    /// surface's flag parsing — the CLI and the Python binding must accept exactly the
+    /// same words or the two disagree about what a request means.
+    pub fn parse(value: &str) -> Result<Self, String> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "tree" => Ok(Self::Tree),
+            "types" => Ok(Self::Types),
+            "extensions" => Ok(Self::Extensions),
+            "families" => Ok(Self::Families),
+            "languages" => Ok(Self::Languages),
+            "documents" | "docs" => Ok(Self::Documents),
+            "largest" => Ok(Self::Largest),
+            "recent" => Ok(Self::Recent),
+            "files" => Ok(Self::Files),
+            "summary" => Ok(Self::Summary),
+            // The expectation only. Each front end names its own flag and quotes the
+            // offending token, so neither ends up saying "invalid --view invalid view".
+            _ => Err(format!("expected one of {}", Self::vocabulary())),
+        }
+    }
+
+    /// The accepted spellings, for an error message that teaches the vocabulary.
+    pub fn vocabulary() -> String {
+        let mut names: Vec<&str> = Self::ALL.iter().map(|view| view.label()).collect();
+        names.push("full");
+        names.join(", ")
+    }
+
+    /// Stable wire label.
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Tree => "tree",
+            Self::Types => "types",
+            Self::Extensions => "extensions",
+            Self::Families => "families",
+            Self::Languages => "languages",
+            Self::Documents => "documents",
+            Self::Largest => "largest",
+            Self::Recent => "recent",
+            Self::Files => "files",
+            Self::Summary => "summary",
+        }
+    }
+
+    /// The view a request displays its analysis in when the caller named none.
+    ///
+    /// A view may never enable an analyzer — that would let a display choice authorize
+    /// filesystem reads — but the reverse is free, because it re-projects state already
+    /// paid for. Without this, a request that reads every eligible file reports a
+    /// directory tree containing none of the results.
+    pub const fn default_for(analysis: AnalysisSet) -> Self {
+        match (analysis.includes_code(), analysis.includes_words()) {
+            (true, true) => Self::Families,
+            (true, false) => Self::Languages,
+            (false, true) => Self::Documents,
+            (false, false) if analysis.is_enabled() => Self::Families,
+            (false, false) => Self::Tree,
+        }
+    }
+
+    /// The summary views `full` expands to, given what the analyzers can answer.
+    ///
+    /// Returns the satisfiable views and those it had to skip, so a caller can report the
+    /// omission rather than drop it silently.
+    pub fn full_report(analysis: AnalysisSet) -> (Vec<Self>, Vec<Self>) {
+        Self::ALL
+            .into_iter()
+            .filter(|view| view.is_summary_view())
+            .partition(|view| !matches!(view, Self::Documents) || analysis.is_enabled())
+    }
+
+    /// Whether this view belongs in `--view full`.
+    ///
+    /// `full` is every *summary* view. `files` is an unbounded enumeration, and putting
+    /// one inside a digest destroys the digest.
+    pub const fn is_summary_view(self) -> bool {
+        !matches!(self, Self::Files)
     }
 }
 
@@ -86,6 +223,11 @@ impl Default for Query {
 }
 
 impl Query {
+    /// The bound to apply for `view`: the caller's if they named one, else the view's own.
+    pub fn limit_for(&self, view: ViewSpec) -> Bound {
+        self.selection.limit.unwrap_or_else(|| view.default_limit())
+    }
+
     /// Reject views that have no metadata-only projection and lack required analysis.
     pub fn validate_analysis(&self, profile: AnalysisSet) -> Result<(), &'static str> {
         for view in &self.views {
@@ -102,6 +244,8 @@ impl Query {
                 | ViewSpec::Languages
                 | ViewSpec::Documents
                 | ViewSpec::Files
+                | ViewSpec::Largest
+                | ViewSpec::Recent
                 | ViewSpec::Summary => {}
             }
         }
@@ -290,6 +434,8 @@ pub struct MetricSummary {
     pub total: MetricRow,
     /// Sorted, display-bounded rows.
     pub rows: Vec<MetricRow>,
+    /// Rows before the bound was applied.
+    pub total_rows: usize,
     /// Metric used for every row's exact share.
     pub share_metric: ShareMetric,
     /// Logical words per derived page.
@@ -341,7 +487,12 @@ pub enum Section {
     /// A tree view.
     Tree(TreeNode),
     /// A raw-extension view.
-    Extensions(Vec<TypeRow>),
+    Extensions {
+        /// The rows, already sorted and bounded.
+        rows: Vec<TypeRow>,
+        /// Rows before the bound was applied.
+        total: usize,
+    },
     /// A generic type/family content summary.
     Metrics {
         /// Requested preset that selected grouping and family filters.
@@ -349,8 +500,22 @@ pub enum Section {
         /// Generic grouped metrics.
         summary: Box<MetricSummary>,
     },
-    /// A files view.
-    Files(Vec<FileRow>),
+    /// A flat listing: `files`, or one of its bounded presets.
+    ///
+    /// Carries the view for the same reason `Metrics` does — three views share this shape
+    /// and a reader has to be told which one produced the rows.
+    Files {
+        /// Which of `files`, `largest`, or `recent` produced these rows.
+        view: ViewSpec,
+        /// The rows, already sorted and bounded for that view.
+        rows: Vec<FileRow>,
+        /// Rows before the bound was applied.
+        ///
+        /// Reported so a bound can never be silent: twenty rows of 192,871 look complete
+        /// unless the report says otherwise, and a consumer reading the machine format
+        /// has no other way to tell.
+        total: usize,
+    },
     /// A summary view.
     Summary(SummaryRow),
 }
@@ -360,9 +525,8 @@ impl Section {
     pub fn view(&self) -> ViewSpec {
         match self {
             Self::Tree(_) => ViewSpec::Tree,
-            Self::Extensions(_) => ViewSpec::Extensions,
-            Self::Metrics { view, .. } => *view,
-            Self::Files(_) => ViewSpec::Files,
+            Self::Extensions { .. } => ViewSpec::Extensions,
+            Self::Metrics { view, .. } | Self::Files { view, .. } => *view,
             Self::Summary(_) => ViewSpec::Summary,
         }
     }
@@ -589,11 +753,17 @@ fn build_section(view: ViewSpec, index: &Index, query: &Query, walked: Option<&W
             None => summary_from_scalars(index.total_scalars()),
             Some(walked) => walked.per_directory.get(&EntryId::ROOT).copied().unwrap_or_default(),
         }),
-        ViewSpec::Extensions => Section::Extensions(extension_rows(index, query, walked)),
+        ViewSpec::Extensions => {
+            let (rows, total) = extension_rows(index, query, walked);
+            Section::Extensions { rows, total }
+        }
         ViewSpec::Types | ViewSpec::Families | ViewSpec::Languages | ViewSpec::Documents => {
             Section::Metrics { view, summary: Box::new(metric_summary(view, index, query, walked)) }
         }
-        ViewSpec::Files => Section::Files(file_rows(index, query, walked)),
+        ViewSpec::Files | ViewSpec::Largest | ViewSpec::Recent => {
+            let (rows, total) = file_rows(view, index, query, walked);
+            Section::Files { view, rows, total }
+        }
         ViewSpec::Tree => Section::Tree(tree_node(index, query, walked)),
     }
 }
@@ -610,7 +780,7 @@ fn summary_from_scalars(rollup: RollUpScalars) -> SummaryRow {
 }
 
 /// Rows for the types view.
-fn extension_rows(index: &Index, query: &Query, walked: Option<&Walked>) -> Vec<TypeRow> {
+fn extension_rows(index: &Index, query: &Query, walked: Option<&Walked>) -> (Vec<TypeRow>, usize) {
     let tallies: BTreeMap<String, ExtTally> = match walked {
         None => index.total().by_ext,
         Some(walked) => walked.by_ext.clone(),
@@ -638,8 +808,8 @@ fn extension_rows(index: &Index, query: &Query, walked: Option<&Walked>) -> Vec<
         |_| None,
         |row| row.extension.clone(),
     );
-    truncate(&mut rows, query.selection.limit);
-    rows
+    let total = truncate(&mut rows, query.limit_for(ViewSpec::Extensions));
+    (rows, total)
 }
 
 fn metric_summary(
@@ -661,7 +831,12 @@ fn metric_summary(
                 matches!(classification.family, ContentFamily::Prose | ContentFamily::Markup)
             }
             ViewSpec::Types | ViewSpec::Families => true,
-            ViewSpec::Tree | ViewSpec::Extensions | ViewSpec::Files | ViewSpec::Summary => false,
+            ViewSpec::Tree
+            | ViewSpec::Extensions
+            | ViewSpec::Files
+            | ViewSpec::Largest
+            | ViewSpec::Recent
+            | ViewSpec::Summary => false,
         };
         if !included {
             continue;
@@ -783,7 +958,12 @@ fn metric_summary(
         }
         ViewSpec::Documents => ShareMetric::DocumentWords,
         ViewSpec::Languages | ViewSpec::Types | ViewSpec::Families => byte_share_metric,
-        ViewSpec::Tree | ViewSpec::Extensions | ViewSpec::Files | ViewSpec::Summary => {
+        ViewSpec::Tree
+        | ViewSpec::Extensions
+        | ViewSpec::Files
+        | ViewSpec::Largest
+        | ViewSpec::Recent
+        | ViewSpec::Summary => {
             unreachable!("only grouped views reach metric_summary")
         }
     };
@@ -808,8 +988,15 @@ fn metric_summary(
         |_| None,
         |row| row.id.clone(),
     );
-    truncate(&mut rows, query.selection.limit);
-    MetricSummary { group, total, rows, share_metric, words_per_page: query.words_per_page.max(1) }
+    let total_rows = truncate(&mut rows, query.limit_for(view));
+    MetricSummary {
+        group,
+        total,
+        rows,
+        total_rows,
+        share_metric,
+        words_per_page: query.words_per_page.max(1),
+    }
 }
 
 fn share_value(row: &MetricRow, metric: ShareMetric) -> u64 {
@@ -831,16 +1018,24 @@ pub fn document_words(row: &MetricRow) -> u64 {
 }
 
 /// Rows for the files view.
-fn file_rows(index: &Index, query: &Query, walked: Option<&Walked>) -> Vec<FileRow> {
+fn file_rows(
+    view: ViewSpec,
+    index: &Index,
+    query: &Query,
+    walked: Option<&Walked>,
+) -> (Vec<FileRow>, usize) {
     let mut rows = match walked {
         Some(walked) => walked.rows.clone(),
         None => every_entry(index),
     };
+    if view.files_only() {
+        rows.retain(|row| row.kind == EntryKind::File);
+    }
 
     sort_rows(
         &mut rows,
         query,
-        ViewSpec::Files,
+        view,
         |row, metric| match metric {
             SizeMetric::Apparent => row.bytes,
             SizeMetric::Allocated => row.allocated,
@@ -849,8 +1044,8 @@ fn file_rows(index: &Index, query: &Query, walked: Option<&Walked>) -> Vec<FileR
         |row| Some(row.mtime_ns),
         |row| row.path.to_string_lossy().into_owned(),
     );
-    truncate(&mut rows, query.selection.limit);
-    rows
+    let total = truncate(&mut rows, query.limit_for(view));
+    (rows, total)
 }
 
 /// Every entry in the index, for an unfiltered files view.
@@ -966,7 +1161,7 @@ fn expand(
         }
 
         let mut rows = child_rows(index, query, walked, id, &path);
-        let kept = query.selection.limit.limit().unwrap_or(rows.len()).min(rows.len());
+        let kept = query.limit_for(ViewSpec::Tree).limit().unwrap_or(rows.len()).min(rows.len());
         built[cursor].node.truncated = kept < rows.len();
         rows.truncate(kept);
 
@@ -1059,10 +1254,12 @@ fn child_rows(
 }
 
 /// Trim a row list to the configured limit.
-fn truncate<T>(rows: &mut Vec<T>, limit: Bound) {
+fn truncate<T>(rows: &mut Vec<T>, limit: Bound) -> usize {
+    let total = rows.len();
     if let Some(limit) = limit.limit() {
         rows.truncate(limit);
     }
+    total
 }
 
 /// Sort rows by the effective key for a view.
@@ -1214,14 +1411,14 @@ mod tests {
 
     fn files_of(report: &Report) -> Vec<FileRow> {
         match report.sections.first().expect("a section") {
-            Section::Files(rows) => rows.clone(),
+            Section::Files { rows, .. } => rows.clone(),
             other => panic!("expected files, got {other:?}"),
         }
     }
 
     fn types_of(report: &Report) -> Vec<TypeRow> {
         match report.sections.first().expect("a section") {
-            Section::Extensions(rows) => rows.clone(),
+            Section::Extensions { rows, .. } => rows.clone(),
             other => panic!("expected types, got {other:?}"),
         }
     }
@@ -1408,7 +1605,7 @@ mod tests {
         let selection = Selection {
             kinds: vec![EntryKind::File],
             sort: Some(SortKey::Size),
-            limit: Bound::Limit(2),
+            limit: Some(Bound::Limit(2)),
             ..Selection::default()
         };
         let rows = files_of(&run(&index, &query(&[ViewSpec::Files], selection)));
@@ -1502,7 +1699,7 @@ mod tests {
     #[test]
     fn a_tree_limit_bounds_entries_per_directory_and_marks_truncation() {
         let index = sample();
-        let selection = Selection { limit: Bound::Limit(1), ..Selection::default() };
+        let selection = Selection { limit: Some(Bound::Limit(1)), ..Selection::default() };
         let tree = tree_of(&run(&index, &query(&[ViewSpec::Tree], selection)));
         assert_eq!(tree.children.len(), 1);
         assert!(tree.truncated);
@@ -1521,7 +1718,7 @@ mod tests {
             ),
         );
         let with_others = match &together.sections[0] {
-            Section::Extensions(rows) => rows.clone(),
+            Section::Extensions { rows, .. } => rows.clone(),
             other => panic!("expected types first, got {other:?}"),
         };
 

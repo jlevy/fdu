@@ -109,7 +109,12 @@ pub struct Selection {
     /// How deep a rendered tree descends.
     pub depth: Bound,
     /// How many entries a view reports.
-    pub limit: Bound,
+    /// Rows to keep, or `None` to let each view apply its own bound.
+    ///
+    /// Optional for the same reason `sort` is: a bound that suits a per-directory tree
+    /// is not the bound that suits a complete enumeration, and a single shared default
+    /// produced "the ten alphabetically-first entries" of a 192,871-entry tree.
+    pub limit: Option<Bound>,
     /// Ordering key, or `None` to let each view apply its own default.
     ///
     /// Optional rather than defaulted here because the sensible default differs by view:

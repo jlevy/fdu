@@ -9,7 +9,7 @@ UV ?= uv
 MSRV ?= 1.85.0
 NODE_INSTALL_STAMP := node_modules/.package-lock.json
 
-.PHONY: help build release test rust-test test-golden content-selfcheck performance-probe test-performance golden-update check uv-version supply-chain rust-module-names fix fmt fmt-check clippy docs docs-format docs-format-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke release-test release-rehearse clean cli perf-help verify-beads
+.PHONY: help build release test rust-test test-golden content-selfcheck yaml-selfcheck performance-probe test-performance golden-update check uv-version supply-chain rust-module-names fix fmt fmt-check clippy docs docs-format docs-format-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke release-test release-rehearse clean cli perf-help verify-beads
 
 help:
 	@echo "make build      Debug build of the core library and CLI, all features"
@@ -47,13 +47,16 @@ build:
 release:
 	$(CARGO) build --locked --release -p fdu --all-features
 
-test: rust-test test-golden content-selfcheck test-performance
+test: rust-test test-golden content-selfcheck yaml-selfcheck test-performance
 
 rust-test:
 	$(CARGO) test --locked --all-features
 
 test-golden: build $(NODE_INSTALL_STAMP)
 	$(NPM) run test:golden
+
+yaml-selfcheck: build $(NODE_INSTALL_STAMP)
+	node scripts/check-yaml.mjs
 
 content-selfcheck: build
 	$(NODE) scripts/content-selfcheck.mjs
