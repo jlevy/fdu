@@ -5,13 +5,13 @@ title: "Prove parity: 129 goldens byte-identical, none regenerated"
 kind: task
 status: closed
 priority: 1
-version: 2
-spec_path: docs/project/specs/active/plan-2026-08-22-fdu-cli-on-the-public-api.md
+version: 3
+spec_path: docs/project/specs/done/plan-2026-08-22-fdu-cli-on-the-public-api.md
 labels: []
 dependencies: []
 parent_id: is-01m0nrykr3me8qck91cp0ydhnn
 created_at: 2026-08-22T22:21:10.152Z
-updated_at: 2026-08-22T22:55:20.565Z
+updated_at: 2026-08-22T22:55:50.251Z
 closed_at: 2026-08-22T22:55:20.565Z
 close_reason: "crates/fdu-cli depends on fdu as an ordinary crate, so the boundary is enforced by the compiler: cli.rs has zero crate:: paths, the library has no cli module or feature and no clap or anyhow, and make lib-only fails if either returns. All 129 goldens byte-identical, none regenerated."
 ---

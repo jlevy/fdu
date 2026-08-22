@@ -3,10 +3,10 @@ type: is
 id: is-01m0nrykr3me8qck91cp0ydhnn
 title: "Spec: the command line on the public API"
 kind: epic
-status: open
+status: closed
 priority: 1
-version: 10
-spec_path: docs/project/specs/active/plan-2026-08-22-fdu-cli-on-the-public-api.md
+version: 12
+spec_path: docs/project/specs/done/plan-2026-08-22-fdu-cli-on-the-public-api.md
 labels: []
 dependencies: []
 child_order_hints:
@@ -20,7 +20,7 @@ child_order_hints:
   - is-01m0ns0h494z78b7d42fhby8ge
   - is-01m0ns0heyrk7hf6qh7bxzng2p
 created_at: 2026-08-22T22:20:07.298Z
-updated_at: 2026-08-22T22:21:10.493Z
+updated_at: 2026-08-22T22:55:50.105Z
 ---
 Move the command line into its own crate, depending on fdu the way any other consumer does, so 'the CLI invents nothing' is enforced by the compiler rather than asserted by review.
 
@@ -31,3 +31,11 @@ The question it was reaching for is right and is answerable directly. A crate bo
 The audit says the answer is almost yes. Every path cli.rs reaches for was enumerated; all but three resolve to already-public items and are simply spelled crate:: because the CLI lives inside the crate. The three exceptions are human_bytes, human_count, and prepare_report_with_scan_diagnostics.
 
 The 129 goldens are the parity proof, unchanged. Byte-identical output is the pass condition.
+
+## Notes
+
+Landed. The command line lives in crates/fdu-cli and is built entirely on fdu's public API: cli.rs has zero crate:: paths, the library has no cli module or feature and no clap or anyhow, and make lib-only fails if either returns. All 129 goldens byte-identical, none regenerated.
+
+Spec moved to docs/project/specs/done/plan-2026-08-22-fdu-cli-on-the-public-api.md.
+
+Every child is closed and the spec has no unchecked items -- both checked before closing, because bead state alone does not prove an epic is done.

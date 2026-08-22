@@ -5,15 +5,15 @@ title: Ungate report_format and prepare_report from the cli feature
 kind: task
 status: closed
 priority: 1
-version: 3
-spec_path: docs/project/specs/active/plan-2026-08-22-fdu-cli-on-the-public-api.md
+version: 4
+spec_path: docs/project/specs/done/plan-2026-08-22-fdu-cli-on-the-public-api.md
 labels: []
 dependencies:
   - type: blocks
     target: is-01m0nrzvs7hkqmgn3wmxh303zx
 parent_id: is-01m0nrykr3me8qck91cp0ydhnn
 created_at: 2026-08-22T22:20:27.679Z
-updated_at: 2026-08-22T22:31:17.238Z
+updated_at: 2026-08-22T22:55:50.251Z
 closed_at: 2026-08-22T22:31:17.238Z
 close_reason: human_count moved into report_format (the library was calling into the CLI to format a number), human_bytes promoted, prepare_report_with_scan_diagnostics promoted as a real capability, and report_format ungated by depending on anstyle directly instead of taking its colour types from clap. clap is now absent from library builds and a library consumer can render. 129 goldens unchanged.
 ---

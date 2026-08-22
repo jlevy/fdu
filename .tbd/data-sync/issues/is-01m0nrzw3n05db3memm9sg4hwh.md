@@ -5,8 +5,8 @@ title: "Move cli.rs into the new crate, rewriting crate:: to fdu::"
 kind: task
 status: closed
 priority: 1
-version: 5
-spec_path: docs/project/specs/active/plan-2026-08-22-fdu-cli-on-the-public-api.md
+version: 6
+spec_path: docs/project/specs/done/plan-2026-08-22-fdu-cli-on-the-public-api.md
 labels: []
 dependencies:
   - type: blocks
@@ -17,7 +17,7 @@ dependencies:
     target: is-01m0ns0h494z78b7d42fhby8ge
 parent_id: is-01m0nrykr3me8qck91cp0ydhnn
 created_at: 2026-08-22T22:20:48.628Z
-updated_at: 2026-08-22T22:55:20.545Z
+updated_at: 2026-08-22T22:55:50.251Z
 closed_at: 2026-08-22T22:55:20.545Z
 close_reason: "crates/fdu-cli depends on fdu as an ordinary crate, so the boundary is enforced by the compiler: cli.rs has zero crate:: paths, the library has no cli module or feature and no clap or anyhow, and make lib-only fails if either returns. All 129 goldens byte-identical, none regenerated."
 ---
