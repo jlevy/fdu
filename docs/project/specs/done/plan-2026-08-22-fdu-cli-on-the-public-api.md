@@ -4,7 +4,10 @@
 
 **Author:** fdu project
 
-**Status:** Draft
+**Status:** Landed
+
+The command line lives in `crates/fdu-cli` and is built entirely on `fdu`’s public API.
+All 129 goldens pass byte-identical and none was regenerated.
 
 ## Overview
 
@@ -118,17 +121,18 @@ The Python parity harness continues to work unchanged and keeps its own artifact
 
 ## Implementation Plan
 
-- [ ] Promote `human_bytes` and `human_count`, with doc comments saying why a caller
+- [x] Promote `human_bytes` and `human_count`, with doc comments saying why a caller
   wants them (`fdu-????`)
-- [ ] Decide `prepare_report_with_scan_diagnostics`: promote, or move its one caller
-- [ ] Ungate `report_format` and `prepare_report` from the `cli` feature
-- [ ] Create `crates/fdu-cli` with the binary target, leaving `fdu` library-only
-- [ ] Move `cli.rs`, rewriting `crate::` to `fdu::`; the compiler enumerates anything
+- [x] Decide `prepare_report_with_scan_diagnostics`: promoted, as a real capability —
+  run a report and say what the scan did
+- [x] Ungate `report_format` and `prepare_report` from the `cli` feature
+- [x] Create `crates/fdu-cli` with the binary target, leaving `fdu` library-only
+- [x] Move `cli.rs`, rewriting `crate::` to `fdu::`; the compiler enumerates anything
   missed
-- [ ] Move the CLI’s tests with it
-- [ ] Delete `fdu::cli` and the `cli` feature
-- [ ] Prove parity: all 129 goldens byte-identical, no golden regenerated
-- [ ] Update `make check`, CI, and the release packaging for the new crate layout
+- [x] Move the CLI’s tests with it
+- [x] Delete `fdu::cli` and the `cli` feature
+- [x] Prove parity: all 129 goldens byte-identical, no golden regenerated
+- [x] Update `make check`, CI, and the release packaging for the new crate layout
 
 ## Testing Strategy
 
