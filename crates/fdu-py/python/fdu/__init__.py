@@ -17,6 +17,7 @@ from ._api import (
     render_cache_status,
     report,
     scan,
+    watch_rule,
 )
 from ._api import (
     _main as _main,
@@ -135,6 +136,7 @@ __all__ = [
     "render_cache_status",
     "report",
     "scan",
+    "watch_rule",
 ]
 
 # Python 3.14 exposes the ``__future__.annotations`` feature object as a module

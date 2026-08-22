@@ -22,7 +22,7 @@ use crate::content::{AnalysisRequest, AnalysisSet};
 use crate::execution::{PerformanceSummary, prepare_report, prepare_report_with_scan_diagnostics};
 use crate::query::{
     Bound, Pattern, Provenance, Query, ReportSource, Selection, SizeMetric, SortKey, ViewSpec,
-    format_rfc3339, parse_size, parse_when, system_time_to_nanos,
+    parse_size, parse_when, system_time_to_nanos,
 };
 use crate::report_format;
 use crate::{
@@ -868,7 +868,7 @@ impl Cli {
             writeln!(
                 out,
                 "\n{}",
-                paint(&watch_rule(provenance.generated_at), STYLE_WATCH_RULE, color)
+                paint(&report_format::watch_rule(provenance.generated_at), STYLE_WATCH_RULE, color)
             )?;
         }
         write!(out, "{}", report_format::render(&report, format, color))?;
@@ -1611,16 +1611,6 @@ impl ColorContext {
     }
 }
 
-/// The rule drawn above a watch repaint, carrying the instant it was rendered.
-///
-/// The time is what makes the rule worth a line rather than a bare separator: a watch
-/// reader wants to know when the tree last moved, and it is the one fact that
-/// distinguishes one repaint from another whose numbers happen to match. RFC 3339 in UTC
-/// is the spelling every other timestamp this tool prints uses.
-fn watch_rule(at: SystemTime) -> String {
-    format!("──── {} ────", format_rfc3339(at))
-}
-
 /// Paint the guide's section headers with the shared header style.
 ///
 /// A header is a line that starts at column zero and is upper case — the same shape the
@@ -1685,7 +1675,7 @@ mod tests {
         // The separator has to be recognisable as a boundary at a glance and never
         // mistakable for a row: every report row this tool prints starts with a
         // right-aligned size, so a rule starting with a box-drawing run cannot collide.
-        let rule = watch_rule(UNIX_EPOCH + Duration::from_secs(1_786_386_151));
+        let rule = report_format::watch_rule(UNIX_EPOCH + Duration::from_secs(1_786_386_151));
         assert_eq!(rule, "──── 2026-08-10T18:22:31.000000000Z ────");
         assert!(rule.starts_with('─'), "{rule}");
 

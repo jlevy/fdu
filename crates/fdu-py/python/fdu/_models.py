@@ -556,6 +556,26 @@ class Change:
     mtime_ns: int | None = None
     reason: str | None = None
 
+    def render(self, format: Format = Format.JSONL) -> str:
+        """Render this record as ``fdu --watch`` streams it.
+
+        The same renderer the command line uses, so a caller streaming changes emits the
+        bytes fdu emits rather than a format of its own that will drift from them.
+        """
+
+        from . import _native
+
+        return _native.render_change(
+            path=str(self.path),
+            op=str(self.kind),
+            clock=self.clock,
+            kind=str(self.entry_kind) if self.entry_kind is not None else None,
+            bytes=self.bytes,
+            allocated=self.allocated,
+            mtime_ns=self.mtime_ns,
+            format=str(format),
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class ChangeSet:

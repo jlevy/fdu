@@ -28,6 +28,29 @@ def _stable(text: str) -> str:
     return re.sub(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{9}Z", "[TIME]", text)
 
 
+def check_watch_reports_its_own_index(root: Path) -> None:
+    """A repaint must come from the session's index, not the one it was opened from.
+
+    The aggregates stop being true at the first event, so reporting the opened index
+    repaints numbers that never change while claiming to be live -- a display that looks
+    like it works and does not (fdu-m66a).
+    """
+
+    index = fdu.open(root)
+    with index.watch(fdu.WatchOptions(interval=0.2)) as watch:
+        live = watch.report()
+        # A snapshot: rendering twice gives the same answer both times.
+        assert live.render(fdu.Format.TEXT) == live.render(fdu.Format.TEXT)
+        assert live.status.source is not None
+
+    # And a change record renders as the CLI streams it, rather than as repr().
+    record = fdu.Change(clock=1, path=Path("a.txt"), kind=fdu.ChangeKind.UPSERT)
+    line = record.render(fdu.Format.JSONL)
+    assert '"schema": "fdu.stream/1"' in line, line
+    assert '"op": "upsert"' in line, line
+    assert "\t" in record.render(fdu.Format.TEXT)
+
+
 def check_the_one_shot_retains_nothing(root: Path) -> None:
     """`fdu.report` runs the contract the command line runs, not a session.
 
@@ -205,6 +228,7 @@ def main() -> None:
     check_every_view(root)
     check_the_list_grammar_reaches_python(root)
     check_the_one_shot_retains_nothing(root)
+    check_watch_reports_its_own_index(root)
     check_render_matches_the_cli(
         root, str(Path(sys.executable).with_name("fdu.exe" if os.name == "nt" else "fdu"))
     )

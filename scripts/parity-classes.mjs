@@ -97,17 +97,6 @@ export const CLASSES = [
       removed.filter((line) => !/^note:|^Performance:/.test(line)).length === added.length,
   },
   {
-    id: 'watch-render',
-    title: 'Watch records have no renderer',
-    why: [
-      'Index.watch yields Change values and nothing turns them into the CLI bytes, so the',
-      'shim prints repr(). The cache-status fix is the template, but the watch loop also',
-      'owns repaint timing and the stream envelope, so what is a renderer and what is loop',
-      'behaviour has to be decided before moving anything (fdu-m66a).',
-    ],
-    matches: ({ file }) => /cli-watch\.tryscript\.md$/.test(file),
-  },
-  {
     id: 'discovery-surface',
     title: 'A discovery surface the package does not carry',
     why: [

@@ -41,7 +41,7 @@
 # This file shrinks as the API closes. Extra hunks mean drift; missing hunks mean a gap
 # was fixed and the file should be re-recorded so the change is visible in review.
 
-# 20 sessions differ, and every one of them has a named cause.
+# 18 sessions differ, and every one of them has a named cause.
 #
 #  11  Each surface names its own parameter  [surface-label]
 #      There is no --view or --analyze in Python, so its diagnostics name the parameter.
@@ -69,12 +69,6 @@
 #      A note quoting how many bytes analysis read, or the performance footer itself.
 #      Both are telemetry about the run rather than facts about the report, and the
 #      envelope deliberately carries none, so a Report cannot reproduce them (fdu-x8u6).
-#
-#   2  Watch records have no renderer  [watch-render]
-#      Index.watch yields Change values and nothing turns them into the CLI bytes, so the
-#      shim prints repr(). The cache-status fix is the template, but the watch loop also
-#      owns repaint timing and the stream envelope, so what is a renderer and what is loop
-#      behaviour has to be decided before moving anything (fdu-m66a).
 #
 #   2  A discovery surface the package does not carry  [discovery-surface]
 #      --docs and --skill are static documents that live in the binary, and --help is
@@ -359,24 +353,8 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
   ✓ A Missing Root Is a Fatal Filesystem Error
   ✓ Create a Regular File
   ✓ Reject It as the Root
-FAIL [ROOT]/tests/parity/.corpus/cli-watch.tryscript.md
+PASS [ROOT]/tests/parity/.corpus/cli-watch.tryscript.md
   ✓ Build a Tree and Capture a Watch Session
-  ✗ Build a Tree and Capture a Watch Session
-    Command timed out after [TIME]
+  ✓ Build a Tree and Capture a Watch Session
   ✓ Text Repaints Are Separated From One Another
-  ✗ Text Repaints Are Separated From One Another
-    Expected exit code 0, got 1
-@@ -1,12 +1,1 @@
--TREE
--       4 B  ██████████   100%  . (1 file)
--
--SUMMARY
--       4 B  1 file, 0 directories
--
--──── [STAMP] ────
--TREE
--      16 B  ██████████   100%  . (2 files)
--
--SUMMARY
--      16 B  2 files, 0 directories
-+timed out waiting for the initial report
+  ✓ Text Repaints Are Separated From One Another

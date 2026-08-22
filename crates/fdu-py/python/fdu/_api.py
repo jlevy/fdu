@@ -159,6 +159,25 @@ class Watch(Iterator[tuple[Change, ...]]):
     def __next__(self) -> tuple[Change, ...]:
         return tuple(_change(item) for item in next(self._native))
 
+    def report(self) -> Report:
+        """The live answer, as of now, from the index this session has been updating.
+
+        A watch run has no final answer: the aggregates are true only until the next
+        change, so redrawing them needs the session's own index rather than the one it was
+        opened from. Reporting the opened index repaints numbers that stopped being true
+        at the first event -- a display that looks like it works and does not.
+        """
+
+        handle = _call(self._native.report)
+        wire: dict[str, Any] = json.loads(_call(handle.render, "json", False))
+
+        def renderer(format: str, color: bool) -> str:
+            # A snapshot: rendering twice gives the same answer, where re-reporting the
+            # session would quietly give a newer one.
+            return cast(str, _call(handle.render, format, color))
+
+        return replace(report_from_dict(wire), _renderer=renderer)
+
     def close(self) -> None:
         self._native.close()
 
@@ -383,6 +402,17 @@ def report(
         return cast(str, _call(handle.render, format, color))
 
     return replace(parsed, _renderer=renderer)
+
+
+def watch_rule(at: datetime) -> str:
+    """The rule that separates one watch repaint from the one before it.
+
+    A watch run has no final answer and so no performance footer, which leaves consecutive
+    text repaints with nothing between them. A blank line will not do -- that already
+    separates two views inside one report -- so the rule carries the instant it was drawn.
+    """
+
+    return _call(_native.watch_rule, int(at.timestamp() * 1_000_000_000))
 
 
 def render_cache_status(statuses: Sequence[CacheStatus], format: Format = Format.TEXT) -> str:

@@ -1284,6 +1284,20 @@ pub fn is_lossy(path: &Path) -> bool {
 /// it is holding.
 pub const STREAM_SCHEMA: &str = "fdu.stream/1";
 
+/// The rule drawn above a watch repaint, carrying the instant it was rendered.
+///
+/// The time is what makes the rule worth a line rather than a bare separator: a watch
+/// reader wants to know when the tree last moved, and it is the one fact that
+/// distinguishes one repaint from another whose numbers happen to match. RFC 3339 in UTC
+/// is the spelling every other timestamp this tool prints uses.
+///
+/// Lives here rather than in the command line because it is presentation, and a caller
+/// repainting fdu's views should draw fdu's separator rather than invent one that will
+/// drift from it.
+pub fn watch_rule(at: std::time::SystemTime) -> String {
+    format!("──── {} ────", format_rfc3339(at))
+}
+
 /// Render one streamed change as a tagged record.
 #[cfg(feature = "watch")]
 pub fn render_change(change: &crate::Change, format: Format) -> String {

@@ -23,6 +23,7 @@ mapping by name.
 from __future__ import annotations
 
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import NoReturn
 
@@ -331,11 +332,52 @@ def _statuses(root: Path, scope: str) -> tuple[fdu.CacheStatus, ...]:
 
 def run_watch(args: Args) -> int:
     index = _open(args)
-    options = fdu.WatchOptions(interval=args.interval, query=build_query(args))
+    query = build_query(args)
+
+    options = fdu.WatchOptions(interval=args.interval, query=query)
+    # The session opens first, so a scope it cannot watch is refused before anything is
+    # written. Printing the initial answer first meant a rejected request still emitted a
+    # report, which is the opposite of what refusing means.
     with index.watch(options) as watch:
-        for change in watch:
-            print(change)
+        # Then the initial answer, identical to a run without --watch. A stream that opens
+        # with its changes tells a reader nothing about what it is watching.
+        sys.stdout.write(render(args, index.report(query)))
+        sys.stdout.flush()
+        # Views that stream per entry are emitted as records; anything aggregate has to be
+        # repainted, because a total cannot be expressed as a change. Both come from the
+        # one query, so nothing here is a second grammar.
+        streams_changes = fdu.View.FILES in query.views
+        has_aggregates = any(view != fdu.View.FILES for view in query.views)
+        dirty = False
+
+        for batch in watch:
+            if not batch:
+                # The idle tick: repaint only if something moved since the last one.
+                if has_aggregates and dirty:
+                    _repaint(args, watch)
+                    dirty = False
+                continue
+            for change in batch:
+                if streams_changes:
+                    # The one renderer, so the stream is fdu's bytes and not the shim's
+                    # idea of them. This printed repr() until Change.render (fdu-m66a).
+                    print(change.render(args.format), flush=True)
+            dirty = True
     return 0
+
+
+def _repaint(args: Args, watch: fdu.Watch) -> None:
+    """Redraw the aggregate views, separated from the repaint before them.
+
+    From the watch's own index, not the one it was opened from: the aggregates stopped
+    being true at the first event, and repainting the opened index shows numbers that
+    never change while claiming to be live.
+    """
+
+    if args.format is fdu.Format.TEXT:
+        print(f"\n{fdu.watch_rule(datetime.now(tz=UTC))}", flush=True)
+    sys.stdout.write(render(args, watch.report()))
+    sys.stdout.flush()
 
 
 def _open(args: Args) -> fdu.Index:

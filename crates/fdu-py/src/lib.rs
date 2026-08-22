@@ -1003,6 +1003,23 @@ struct PyWatch {
 
 #[pymethods]
 impl PyWatch {
+    /// The live answer, as of now, from the index this session has been updating.
+    ///
+    /// A watch run has no final answer: the aggregates are only true until the next
+    /// change, so a caller redrawing them needs the session's own index rather than the
+    /// one it was opened from. Reporting the opened index instead repaints numbers that
+    /// stopped being true at the first event, which looks like a working display and is
+    /// not one (fdu-m66a).
+    ///
+    /// Returns a snapshot, so rendering it twice gives the same answer both times.
+    fn report(&self) -> PyResult<PyOneShot> {
+        let session =
+            self.session.as_ref().ok_or_else(|| PyRuntimeError::new_err("this watch is closed"))?;
+        let provenance = session.live_provenance(SystemTime::now());
+        let report = session.report(&provenance).map_err(to_py_err)?;
+        Ok(PyOneShot { report })
+    }
+
     fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
         slf
     }
@@ -1238,6 +1255,71 @@ fn report_once(
     // caller who gets a value back should not still owe the filesystem a write.
     pending_save.join().map_err(to_py_err)?;
     Ok(PyOneShot { report })
+}
+
+/// The rule that separates one watch repaint from the one before it.
+///
+/// A watch run has no final answer and so no performance footer, which leaves consecutive
+/// text repaints with nothing between them: the last row of one and the first row of the
+/// next are adjacent lines. A blank line will not do -- that is already what separates two
+/// views inside a single report -- so the rule carries the instant it was drawn, which is
+/// also the one fact distinguishing two repaints whose numbers happen to match.
+#[pyfunction]
+fn watch_rule(at_nanos: i64) -> PyResult<String> {
+    // Nanoseconds because that is what a Change already carries, so a caller repainting
+    // after a batch has the instant to hand without converting through anything.
+    let at = if at_nanos >= 0 {
+        std::time::UNIX_EPOCH.checked_add(std::time::Duration::from_nanos(at_nanos.unsigned_abs()))
+    } else {
+        std::time::UNIX_EPOCH.checked_sub(std::time::Duration::from_nanos(at_nanos.unsigned_abs()))
+    };
+    let at = at.ok_or_else(|| {
+        PyValueError::new_err("timestamp is outside the range this platform can represent")
+    })?;
+    Ok(fdu::report_format::watch_rule(at))
+}
+
+/// Render one watch record the way the CLI streams it, in any format.
+///
+/// `Index.watch` yields the facts of a change and nothing turned them into fdu's bytes, so
+/// a caller streaming changes had to invent a format that would drift from the one the
+/// command line emits (fdu-m66a). This is the renderer `--watch` uses.
+///
+/// Takes the record's fields rather than a reconstructed value, because the fields ARE the
+/// record: `Change` carries exactly these, and a parity session pins that the two surfaces
+/// emit the same line.
+#[pyfunction]
+#[pyo3(signature = (path, op, clock, kind = None, bytes = None, allocated = None, mtime_ns = None, format = "jsonl"))]
+#[allow(clippy::needless_pass_by_value, clippy::too_many_arguments)]
+fn render_change(
+    path: PathBuf,
+    op: &str,
+    clock: u64,
+    kind: Option<&str>,
+    bytes: Option<u64>,
+    allocated: Option<u64>,
+    mtime_ns: Option<i64>,
+    format: &str,
+) -> PyResult<String> {
+    let change = fdu::Change {
+        path,
+        kind: match op {
+            "upsert" => fdu::ChangeKind::Upsert,
+            "remove" => fdu::ChangeKind::Remove,
+            "invalidate" => fdu::ChangeKind::Invalidate,
+            other => {
+                return Err(PyValueError::new_err(format!(
+                    "invalid op {other:?}: expected upsert, remove, or invalidate"
+                )));
+            }
+        },
+        entry_kind: kind.map(parse_kind).transpose()?,
+        bytes,
+        allocated,
+        mtime_ns,
+        clock,
+    };
+    Ok(fdu::report_format::render_change(&change, parse_format(format)?))
 }
 
 /// Render cache statuses the way the CLI does, in any format.
@@ -1490,6 +1572,8 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(cache_status, m)?)?;
     m.add_function(wrap_pyfunction!(render_cache_status, m)?)?;
     m.add_function(wrap_pyfunction!(report_once, m)?)?;
+    m.add_function(wrap_pyfunction!(render_change, m)?)?;
+    m.add_function(wrap_pyfunction!(watch_rule, m)?)?;
     m.add_class::<PyOneShot>()?;
     m.add_function(wrap_pyfunction!(list_caches, m)?)?;
     m.add_function(wrap_pyfunction!(clear_cache, m)?)?;
