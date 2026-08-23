@@ -1,6 +1,6 @@
 //! Sparse per-file content records and precomputed directory/group rollups.
 
-use std::borrow::Borrow;
+use std::borrow::{Borrow, Cow};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
@@ -103,12 +103,37 @@ impl ContentRollUp {
 /// a separator as a prefix -- so the prefix range that invalidation relies on survives.
 /// The sidecar is written in this order and read back by key, so the order is unobservable
 /// outside this module.
+///
+/// `Path` equality ignores which separator a component boundary uses where the platform
+/// accepts more than one; bytes do not. Keys and lookups therefore pass through
+/// [`normalized`], which rebuilds a path from its components -- and so with the platform's
+/// own separator -- only on such a platform and only when the path carries the other one.
+/// Everywhere else it borrows, and a lookup allocates nothing.
 #[derive(Clone, PartialEq, Eq, Debug)]
 struct PathKey(PathBuf);
 
 impl PathKey {
+    fn new(path: PathBuf) -> Self {
+        match normalized(&path) {
+            Cow::Borrowed(_) => Self(path),
+            Cow::Owned(rebuilt) => Self(rebuilt),
+        }
+    }
+
     fn bytes(&self) -> &[u8] {
         self.0.as_os_str().as_encoded_bytes()
+    }
+}
+
+/// `path` spelled the way [`PathKey`] spells it.
+fn normalized(path: &Path) -> Cow<'_, Path> {
+    if std::path::MAIN_SEPARATOR != '/'
+        && std::path::is_separator('/')
+        && path.as_os_str().as_encoded_bytes().contains(&b'/')
+    {
+        Cow::Owned(path.components().collect())
+    } else {
+        Cow::Borrowed(path)
     }
 }
 
@@ -169,7 +194,7 @@ impl ContentIndex {
 
     /// Borrow one file's analysis.
     pub fn file(&self, path: &Path) -> Option<&FileAnalysis> {
-        self.files.get(path_bytes(path))
+        self.files.get(path_bytes(&normalized(path)))
     }
 
     /// Borrow a directory's precomputed subtree rollup.
@@ -183,50 +208,41 @@ impl ContentIndex {
 
     pub(crate) fn commit(&mut self, path: PathBuf, analysis: FileAnalysis) {
         self.prepare(analysis.profile, analysis.provenance.clone());
-        if let Some(previous) = self.files.remove(path_bytes(&path)) {
-            self.merge_ancestors(&path, &previous, false);
+        let key = PathKey::new(path);
+        if let Some(previous) = self.files.remove(key.bytes()) {
+            self.merge_ancestors(&key.0, &previous, false);
         }
-        self.merge_ancestors(&path, &analysis, true);
-        self.files.insert(PathKey(path), analysis);
+        self.merge_ancestors(&key.0, &analysis, true);
+        self.files.insert(key, analysis);
     }
 
     pub(crate) fn invalidate(&mut self, path: &Path) {
         // The record at `path` itself, if it is a file, plus everything beneath it if it
         // is a directory: in byte order those are `path` and then the contiguous run of
-        // keys that begin with `path` and a separator. Windows recognises two separators
-        // and a relative path may carry either, so each one the platform accepts gets its
-        // own run; they cannot overlap. The root (an empty path) has no separator form
-        // and owns every record.
+        // keys that begin with `path` and the separator keys are spelled with. The root
+        // (an empty path) has no separator form and owns every record.
+        let path = normalized(path);
         let mut removed: Vec<(PathBuf, FileAnalysis)> = Vec::new();
-        if let Some((key, analysis)) = self.files.get_key_value(path_bytes(path)) {
+        if let Some((key, analysis)) = self.files.get_key_value(path_bytes(&path)) {
             removed.push((key.0.clone(), analysis.clone()));
         }
-        let prefixes: Vec<Vec<u8>> = if path.as_os_str().is_empty() {
-            vec![Vec::new()]
+        let prefix: Vec<u8> = if path.as_os_str().is_empty() {
+            Vec::new()
         } else {
-            b"/\\"
-                .iter()
-                .copied()
-                .filter(|separator| std::path::is_separator(char::from(*separator)))
-                .map(|separator| {
-                    let mut prefix = path_bytes(path).to_vec();
-                    prefix.push(separator);
-                    prefix
-                })
-                .collect()
+            let mut prefix = path_bytes(&path).to_vec();
+            prefix.push(std::path::MAIN_SEPARATOR as u8);
+            prefix
         };
-        for prefix in prefixes {
-            removed.extend(
-                self.files
-                    .range::<[u8], _>((
-                        std::ops::Bound::Included(prefix.as_slice()),
-                        std::ops::Bound::Unbounded,
-                    ))
-                    .take_while(|(key, _)| key.bytes().starts_with(&prefix))
-                    .filter(|(key, _)| key.0 != path)
-                    .map(|(key, analysis)| (key.0.clone(), analysis.clone())),
-            );
-        }
+        removed.extend(
+            self.files
+                .range::<[u8], _>((
+                    std::ops::Bound::Included(prefix.as_slice()),
+                    std::ops::Bound::Unbounded,
+                ))
+                .take_while(|(key, _)| key.bytes().starts_with(&prefix))
+                .filter(|(key, _)| key.0 != *path)
+                .map(|(key, analysis)| (key.0.clone(), analysis.clone())),
+        );
         for (candidate, analysis) in removed {
             self.files.remove(path_bytes(&candidate));
             self.merge_ancestors(&candidate, &analysis, false);
@@ -327,12 +343,14 @@ mod tests {
         }
         assert_eq!(index.len(), 5);
 
-        // On Windows a relative path may carry either separator; `src\\c.rs` is beneath
-        // `src` there and is a file named `src\\c.rs` at the root everywhere else, which
-        // is exactly what `Path::starts_with` would have said too.
+        // A path spelled with the other separator is the same path wherever `Path` says
+        // so -- Windows -- and a different file named `src\\c.rs` at the root everywhere
+        // else. Either way the map agrees with `Path::starts_with` and `Path::eq`.
         let other = PathBuf::from("src\\c.rs");
         index.commit(other.clone(), analysis("src/c.rs", 1));
         let beneath = other.starts_with("src");
+        assert_eq!(index.file(Path::new("src/c.rs")).is_some(), beneath);
+        assert!(index.file(&other).is_some());
 
         index.invalidate(Path::new("src"));
         assert_eq!(index.len(), if beneath { 3 } else { 4 });
