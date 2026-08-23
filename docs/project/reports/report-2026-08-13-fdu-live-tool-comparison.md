@@ -229,9 +229,9 @@ Two of them bear on this document.
 fdu’s aggregate tier sits at 1.20–1.59× that floor depending on the tree, so the
 headroom this comparison’s lead rests on is smaller than the lead.
 And the peer ordering is not stable across subjects: fdu leads `ignore` by 12–26% on
-generated trees, ties once real filenames appear, and trails by 11.8% on `/usr`. That
-report is scouting evidence on one virtualized host and does not meet the bar this one
-does — no pinned binaries, no installation attestation, one real tree — so it orders
+generated trees, ties once real filenames appear, and trails by about 12% on `/usr`.
+That report is scouting evidence on one virtualized host and does not meet the bar this
+one does — no pinned binaries, no installation attestation, one real tree — so it orders
 work rather than supporting a claim.
 
 ## Limits and Next Work
