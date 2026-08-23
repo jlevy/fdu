@@ -12,7 +12,6 @@ mod query_selection;
 mod query_values;
 
 pub use query_glob::Pattern;
-#[cfg(feature = "cli")]
 pub(crate) use query_report::report_summary;
 pub use query_report::{
     AxisNames, ContentReportMetadata, FileRow, MetricGroup, MetricRow, MetricShare, MetricSummary,

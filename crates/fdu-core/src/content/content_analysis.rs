@@ -760,7 +760,6 @@ mod tests {
         assert_eq!(content.provenance(), Some(&ContentProvenance::for_request(request)));
     }
 
-    #[cfg(feature = "cli")]
     #[test]
     fn content_reports_preserve_empty_profiles_and_unavailable_shares() {
         let empty = tempfile::tempdir().expect("empty tempdir");

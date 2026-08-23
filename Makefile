@@ -66,7 +66,7 @@ content-selfcheck: build
 	$(NODE) scripts/content-selfcheck.mjs
 
 performance-probe:
-	$(CARGO) build --locked -p fdu --example perf_probe --no-default-features
+	$(CARGO) build --locked -p fdu-core --example perf_probe --no-default-features
 
 test-performance: performance-probe
 	$(UV) run --no-project python -m unittest discover -s benchmarks/tests -p 'test_*.py'
@@ -176,18 +176,24 @@ parity-venv: uv-version
 		$(UV) venv --clear .venv-parity && \
 		$(UV) pip install --python .venv-parity --no-index --find-links "$$wheel_dir" fdu
 
+# The two interpreters the parity harness can run against, named once. `parity-venv`
+# builds the first; `python-smoke` installs the wheel into the second, which is why the
+# gate reuses it rather than paying for a third build.
+PARITY_PYTHON := crates/fdu-py/.venv-parity/bin/python
+SMOKE_PYTHON := crates/fdu-py/.venv-smoke/bin/python
+
 # Replay the golden corpus against the Python surface. The committed deviation file is
 # non-empty by construction, so an empty result means the shim never ran (fdu-9h2w).
 test-parity: build parity-venv $(NODE_INSTALL_STAMP)
-	$(NODE) scripts/run-parity.mjs
+	FDU_PARITY_PYTHON=$(PARITY_PYTHON) $(NODE) scripts/run-parity.mjs
 
 # Used by the gate, where python-smoke has already installed the wheel into
 # .venv-smoke; standalone runs want test-parity, which builds its own.
 parity-check: build $(NODE_INSTALL_STAMP)
-	$(NODE) scripts/run-parity.mjs
+	FDU_PARITY_PYTHON=$(SMOKE_PYTHON) $(NODE) scripts/run-parity.mjs
 
 parity-update: build parity-venv $(NODE_INSTALL_STAMP)
-	$(NODE) scripts/run-parity.mjs --update
+	FDU_PARITY_PYTHON=$(PARITY_PYTHON) $(NODE) scripts/run-parity.mjs --update
 
 fmt:
 	$(CARGO) fmt --all
@@ -227,15 +233,26 @@ cross-lint:
 docs:
 	RUSTDOCFLAGS="-D warnings" $(CARGO) doc --locked --no-deps --all-features
 
-# Library consumers take `default-features = false`; prove both the minimal core and
-# the additive watch layer without accidentally relying on CLI defaults.
+# How library consumers build: `default-features = false` for the minimal core, then the
+# additive watch layer, neither relying on what the binary enables. The dependency guard
+# proves the crate split stuck -- a library that pulls in an argument parser has back the
+# dependency the split removed.
+#
+# The guard captures `cargo tree` before testing it, rather than piping straight into
+# grep. A pipeline's status is its last command's, so a failing `cargo tree` -- renamed
+# package, manifest error, resolver failure -- would hand grep empty input, grep would
+# return 1, `!` would invert it to 0, and the check that proves the split would report
+# success having checked nothing (fdu-cqtk).
 lib-only:
-	$(CARGO) test --locked -p fdu --no-default-features
-	$(CARGO) test --locked -p fdu --no-default-features --features watch
+	$(CARGO) test --locked -p fdu-core --no-default-features
+	$(CARGO) test --locked -p fdu-core --no-default-features --features watch
+	@tree="$$($(CARGO) tree -p fdu-core --all-features --prefix none)" || exit 1; \
+		! printf '%s\n' "$$tree" | grep -qE '^(clap|anyhow) ' \
+		|| { echo 'fdu-core must not depend on clap or anyhow; they belong to fdu'; exit 1; }
 
 msrv:
 	$(CARGO) +$(MSRV) check --locked --all-features
-	$(CARGO) +$(MSRV) test --locked -p fdu --no-default-features
+	$(CARGO) +$(MSRV) test --locked -p fdu-core --no-default-features
 
 fix:
 	$(CARGO) fmt --all
@@ -293,13 +310,19 @@ release-test:
 
 # Build and inspect the host artifacts without contacting either registry. The explicit
 # release tag exercises exact-version behavior even though a rehearsal runs on a branch.
+#
+# One `cargo package` naming both crates, not two invocations: `fdu` depends on `fdu-core`,
+# which is not on crates.io, so packaging `fdu` alone fails to resolve it. Packaging the
+# sibling first in a separate run does not help -- that puts a `.crate` in target/package,
+# not in the index. Naming both in one invocation makes cargo verify each against the
+# just-packaged sibling (fdu-pj9w).
 release-rehearse: release-test
 	artifact_dir="$$(mktemp -d "$${TMPDIR:-/tmp}/fdu-release.XXXXXX")" && \
 		trap 'rm -r -- "$$artifact_dir"' EXIT && \
 		version="$$($(UV) run --no-project --python 3.12 python -c 'import pathlib,tomllib; print(tomllib.loads(pathlib.Path("crates/fdu/Cargo.toml").read_text())["package"]["version"])')" && \
 		export FDU_RELEASE_TAG="v$$version" && \
-		$(CARGO) package --locked -p fdu --allow-dirty && \
-		cp "target/package/fdu-$$version.crate" "$$artifact_dir/" && \
+		$(CARGO) package --locked -p fdu-core -p fdu --allow-dirty && \
+		cp "target/package/fdu-core-$$version.crate" "target/package/fdu-$$version.crate" "$$artifact_dir/" && \
 		$(UV) build --directory crates/fdu-py --no-sources --sdist --out-dir "$$artifact_dir" && \
 		$(UV) run --directory crates/fdu-py --frozen --only-group dev maturin build --locked --release --out "$$artifact_dir" && \
 		$(UV) run --no-project --python 3.12 python scripts/release/inspect_artifacts.py "$$artifact_dir" --version "$$version" \
@@ -366,10 +389,10 @@ PERF_RUN := $(PERF_UV) python -m benchmarks.realtree
 .PHONY: perf-probe-release perf-probe-profiling perf-baseline perf-profile perf-compare perf-content-profile perf-content-compare perf-compare-tools perf-record perf-test perf-ledger perf-report perf-report-check perf-schema perf-schema-check
 
 perf-probe-release:
-	$(CARGO) build --locked --release -p fdu --example perf_probe --no-default-features
+	$(CARGO) build --locked --release -p fdu-core --example perf_probe --no-default-features
 
 perf-probe-profiling:
-	$(CARGO) build --locked --profile profiling -p fdu --example perf_probe --no-default-features
+	$(CARGO) build --locked --profile profiling -p fdu-core --example perf_probe --no-default-features
 
 # Record what the tree looks like now, so later runs can prove they measured the same one.
 perf-baseline:

@@ -173,7 +173,6 @@ pub const fn type_rule_fingerprint() -> u64 {
 ///
 /// Reports and caches retain the identifier; only terminal language views use this
 /// presentation layer. Unknown identifiers are returned unchanged.
-#[cfg(feature = "cli")]
 pub(crate) fn human_language_name(id: &str) -> &str {
     match id {
         "rust" => "Rust",
@@ -382,7 +381,7 @@ fn with_flags(
 ///
 /// ```
 /// use std::ffi::OsStr;
-/// use fdu::classify::derive_ext;
+/// use fdu_core::classify::derive_ext;
 ///
 /// assert_eq!(derive_ext(OsStr::new("archive.tar.gz")).as_deref(), Some(".tar.gz"));
 /// assert_eq!(derive_ext(OsStr::new("notes.MD")).as_deref(), Some(".md"));
@@ -407,7 +406,7 @@ pub fn derive_ext(name: &OsStr) -> Option<String> {
 ///
 /// ```
 /// use std::ffi::OsStr;
-/// use fdu::classify::{NO_EXTENSION, ext_bucket};
+/// use fdu_core::classify::{NO_EXTENSION, ext_bucket};
 ///
 /// assert_eq!(ext_bucket(OsStr::new("archive.tar.gz")), ".tar.gz");
 /// assert_eq!(ext_bucket(OsStr::new("Makefile")), NO_EXTENSION);
@@ -512,7 +511,6 @@ mod tests {
         ContentFamily, DetectionConfidence, DetectionSource, classify_path,
         classify_path_with_prefix, derive_ext, type_rule_fingerprint,
     };
-    #[cfg(feature = "cli")]
     use super::{GENERATED_RULES, human_language_name};
     use std::ffi::OsStr;
     use std::path::Path;
@@ -567,7 +565,6 @@ mod tests {
         assert_ne!(type_rule_fingerprint(), 0);
     }
 
-    #[cfg(feature = "cli")]
     #[test]
     fn every_code_rule_has_a_canonical_human_language_name() {
         for rule in GENERATED_RULES.iter().filter(|rule| rule.family == ContentFamily::Code) {
