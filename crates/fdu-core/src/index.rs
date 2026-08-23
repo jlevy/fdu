@@ -393,10 +393,12 @@ pub struct ChildSnapshot {
     /// a second language, against a rule set that has no way to stay in step with this
     /// one.
     pub classification: Option<crate::classify::Classification>,
-    /// The extension this child's name yields, compound forms folded (`.tar.gz`).
+    /// The *logical* extension of this child's name: its final two eligible components.
     ///
-    /// `None` for a name with no usable extension. The roll-up's `by_ext` key for the
-    /// same file, so a listing row and the directory's breakdown agree by construction.
+    /// The raw level of the shared format's two, which is the one a person reads off the
+    /// name: `release.v2.zip` is `.v2.zip` here while its roll-up bucket and its type are
+    /// both `.zip`/`archive`. A consumer filtering on a literal extension or labelling a
+    /// row wants this; one summing bytes per pile wants the breakdown's key.
     pub extension: Option<String>,
     /// The browsing group this child falls in, resolved to its registry id.
     ///
@@ -2043,7 +2045,8 @@ impl Index {
             self.remove_entry(id, stats);
         }
 
-        let ext_id = (kind == EntryKind::File).then(|| self.intern_ext(&ext_bucket(name)));
+        let ext_id = (kind == EntryKind::File)
+            .then(|| self.intern_ext(&ext_bucket(&self.types.clone(), name)));
         let group_id = (kind == EntryKind::File).then(|| self.types.group_of_name(name)).flatten();
         let id = self.alloc(Entry {
             parent: Some(parent),
@@ -2096,7 +2099,8 @@ impl Index {
             return None;
         }
         let source = self.applying_source;
-        let ext_id = (kind == EntryKind::File).then(|| self.intern_ext(&ext_bucket(&name)));
+        let ext_id = (kind == EntryKind::File)
+            .then(|| self.intern_ext(&ext_bucket(&self.types.clone(), &name)));
         let group_id = (kind == EntryKind::File).then(|| self.types.group_of_name(&name)).flatten();
         let id = self.alloc(Entry {
             parent: Some(parent),
@@ -2221,7 +2225,7 @@ fn child_snapshot(
         rollup: entry.kind.is_dir().then(|| index.named_rollup_bounded(&entry.rollup, extensions)),
         provenance: index.provenance_of(id),
         classification: classification.clone(),
-        extension: is_file.then(|| crate::classify::derive_ext(name)).flatten(),
+        extension: is_file.then(|| crate::classify::logical_ext(name)).flatten(),
         group: classification
             .and_then(|verdict| verdict.group)
             .and_then(|group| index.types().group(group))

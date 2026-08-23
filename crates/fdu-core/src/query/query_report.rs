@@ -686,7 +686,11 @@ pub struct FileRow {
     /// view's bound is applied, so a bounded preset classifies the rows it emits rather
     /// than every row it considered.
     pub classification: Option<crate::classify::Classification>,
-    /// The extension this row's name yields, compound forms folded (`.tar.gz`).
+    /// The *logical* extension of this row's name: its final two eligible components.
+    ///
+    /// The raw level, which may differ from the type and the roll-up bucket: nothing
+    /// claims `.v2.zip`, so that file is an `archive` on the `.zip` pile and still reads
+    /// as `.v2.zip` here.
     pub extension: Option<String>,
     /// The browsing group this row falls in, resolved to its registry id.
     ///
@@ -997,7 +1001,8 @@ fn walk(index: &Index, selection: &Selection) -> Walked {
                         tally.allocated += attrs.allocated;
                     }
 
-                    let tally = walked.by_ext.entry(ext_bucket(file_name)).or_default();
+                    let tally =
+                        walked.by_ext.entry(ext_bucket(index.types(), file_name)).or_default();
                     tally.files += 1;
                     tally.bytes += attrs.size;
                     tally.allocated += attrs.allocated;
@@ -1389,7 +1394,7 @@ fn file_rows(
             continue;
         }
         let name = row.path.file_name().unwrap_or_default();
-        row.extension = crate::classify::derive_ext(name);
+        row.extension = crate::classify::logical_ext(name);
         let classification = index.classify(&row.path);
         row.group = classification
             .group

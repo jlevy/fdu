@@ -394,6 +394,31 @@ impl TypeRegistry {
         self.groups.get(id as usize)
     }
 
+    /// The key a name is matched and bucketed under: its logical extension when a rule
+    /// claims that, otherwise its trailing component.
+    ///
+    /// The format's second level. `.tar.gz` is claimed by a rule and stays whole;
+    /// `.v2.zip` is claimed by none and falls back to `.zip`, which is why a release
+    /// archive is an archive rather than an `unknown:.v2.zip`. That fallback replaced a
+    /// hand-maintained fold of `.tar`, and it generalises: any two-component extension a
+    /// registry declares wins whole, and any it does not falls to its last component.
+    ///
+    /// Registry-dependent by construction, which is why it lives here rather than beside
+    /// [`logical_ext`]: what counts as canonical is exactly what some rule claims.
+    pub fn canonical_ext(&self, name: &OsStr) -> Option<String> {
+        let logical = logical_ext(name)?;
+        let key = logical.strip_prefix('.').expect("a logical extension starts with a dot");
+        if self.by_extension.contains_key(key) {
+            return Some(logical);
+        }
+        // On a component boundary, never mid-component: `.min.js` falls to `.js`, and a
+        // name with one component has nothing to fall back to and keeps what it has.
+        match key.rsplit_once('.') {
+            Some((_, last)) => Some(format!(".{last}")),
+            None => Some(logical),
+        }
+    }
+
     /// The browsing group a name falls in, from path metadata alone.
     ///
     /// The insert path's cut of the cascade: the two index lookups that decide a group,
@@ -412,8 +437,8 @@ impl TypeRegistry {
         if let Some(rule) = name.to_str().and_then(|name| self.by_filename(name)) {
             return rule.group;
         }
-        let extension = derive_ext(name)?;
-        let key = extension.strip_prefix('.').expect("derived extensions start with a dot");
+        let extension = self.canonical_ext(name)?;
+        let key = extension.strip_prefix('.').expect("a canonical extension starts with a dot");
         self.by_extension(key)?.group
     }
 
@@ -584,9 +609,13 @@ pub fn classify_with(
         );
     }
 
-    let extension = derive_ext(name);
+    // The canonical level, which is where a rule can match: `.tar.gz` is claimed whole,
+    // `.v2.zip` falls to `.zip`. The unknown arm below reports the *logical* level instead,
+    // because `unknown:.v2.zip` says more about a file nothing claimed than `unknown:.zip`
+    // would -- the second would name a bucket that other files legitimately occupy.
+    let extension = registry.canonical_ext(name);
     if let Some(extension) = extension.as_deref() {
-        let key = extension.strip_prefix('.').expect("derived extensions start with a dot");
+        let key = extension.strip_prefix('.').expect("a canonical extension starts with a dot");
         if let Some(rule) = registry.by_extension(key) {
             let source = if key.contains('.') {
                 DetectionSource::CompoundExtension
@@ -614,9 +643,13 @@ pub fn classify_with(
         }
     }
 
+    // The logical level here, not the canonical one: `unknown:.v2.zip` says what this file
+    // actually is, where `unknown:.zip` would name a bucket that recognised files occupy.
+    // This is the format's `remaining_types` key.
+    let unclaimed = logical_ext(name);
     let unknown = || Classification {
         file_type: FileTypeId(
-            extension
+            unclaimed
                 .as_deref()
                 .map_or_else(|| "unknown".to_string(), |ext| format!("unknown:{ext}")),
         ),
@@ -704,58 +737,77 @@ fn with_flags(
     classification
 }
 
-/// Extract the compound-tail extension from a file name, lowercased and including the
-/// leading dot.
+/// The *logical* extension of a file name: at most its final two dotted components,
+/// lowercased, with the leading dot.
 ///
-/// "Compound tail" means `archive.tar.gz` yields `.tar.gz` rather than `.gz`, because
-/// the pair is what a human means by the file's type. Only `.tar` is folded this way;
-/// generalizing to an arbitrary set of compound stems belongs in the rule dialect, not
-/// in a hand-maintained list here.
+/// This is the raw level of the shared File Rollup Format's two, and it is deliberately
+/// not the level rules match on. `release.v2.zip` is `.v2.zip` here and an `archive` by
+/// type; `bundle.umd.min.js` is `.min.js` here and `javascript` by type. A consumer
+/// showing a file's extension, filtering on a literal one, or bucketing the types no rule
+/// claims wants this level -- the one a person would read off the name.
 ///
-/// Returns `None` for names with no usable extension, including dotfiles like
-/// `.gitignore` — a leading dot marks a hidden file, it does not introduce an extension.
+/// The rule, from the format:
+///
+/// - only the final basename;
+/// - a leading dot belongs to the basename, so `.gitignore` has no extension while
+///   `.eslintrc.json` has `.json`;
+/// - at most the final two dotted components;
+/// - each retained component is nonempty, alphanumeric, and at most twelve characters;
+/// - no extension at all when the final component is ineligible.
+///
+/// The cap is what controls vocabulary size, and the format forbids widening it with
+/// filename-specific exceptions -- which is what this replaced: a hand-maintained fold of
+/// `.tar` alone, whose own comment asked for exactly this.
 ///
 /// ```
 /// use std::ffi::OsStr;
-/// use fdu_core::classify::derive_ext;
+/// use fdu_core::classify::logical_ext;
 ///
-/// assert_eq!(derive_ext(OsStr::new("archive.tar.gz")).as_deref(), Some(".tar.gz"));
-/// assert_eq!(derive_ext(OsStr::new("notes.MD")).as_deref(), Some(".md"));
-/// assert_eq!(derive_ext(OsStr::new(".gitignore")), None);
-/// assert_eq!(derive_ext(OsStr::new("README")), None);
+/// assert_eq!(logical_ext(OsStr::new("archive.tar.gz")).as_deref(), Some(".tar.gz"));
+/// assert_eq!(logical_ext(OsStr::new("bundle.umd.min.js")).as_deref(), Some(".min.js"));
+/// assert_eq!(logical_ext(OsStr::new("release.v2.zip")).as_deref(), Some(".v2.zip"));
+/// assert_eq!(logical_ext(OsStr::new("notes.MD")).as_deref(), Some(".md"));
+/// assert_eq!(logical_ext(OsStr::new(".gitignore")), None);
+/// assert_eq!(logical_ext(OsStr::new("README")), None);
 /// ```
-pub fn derive_ext(name: &OsStr) -> Option<String> {
+pub fn logical_ext(name: &OsStr) -> Option<String> {
     derive_ext_native(name)
 }
 
 /// Label of the extension bucket a file belongs to, including the one for no extension.
 ///
-/// [`derive_ext`] answers "what is this name's extension", and `None` is the right answer
+/// [`logical_ext`] answers "what is this name's extension", and `None` is the right answer
 /// for `Makefile`. A roll-up asks a different question — "which pile does this file's
 /// bytes go on" — and every file belongs on some pile. Dropping the `None` case meant the
 /// extension view's rows did not sum to the tree it was reporting on: a 263-byte fixture
 /// came back as three rows totalling 235, the missing 28 being a `Makefile`, and nothing
 /// in the output said so.
 ///
-/// [`derive_ext`] always yields a leading dot, so this label cannot collide with a real
-/// extension however the tree is named.
+/// The *canonical* level, not the logical one: a bucket is a pile files share, and
+/// `release.v2.zip` belongs on the `.zip` pile beside `plain.zip` rather than on one of
+/// its own. Registry-dependent for the same reason canonicalisation is.
+///
+/// A bucket always yields a leading dot, so [`NO_EXTENSION`] cannot collide with one
+/// however the tree is named.
 ///
 /// ```
 /// use std::ffi::OsStr;
-/// use fdu_core::classify::{NO_EXTENSION, ext_bucket};
+/// use fdu_core::classify::{NO_EXTENSION, TypeRegistry, ext_bucket};
 ///
-/// assert_eq!(ext_bucket(OsStr::new("archive.tar.gz")), ".tar.gz");
-/// assert_eq!(ext_bucket(OsStr::new("Makefile")), NO_EXTENSION);
-/// assert_eq!(ext_bucket(OsStr::new(".gitignore")), NO_EXTENSION);
+/// let rules = TypeRegistry::compiled();
+/// assert_eq!(ext_bucket(rules, OsStr::new("archive.tar.gz")), ".tar.gz");
+/// assert_eq!(ext_bucket(rules, OsStr::new("release.v2.zip")), ".zip");
+/// assert_eq!(ext_bucket(rules, OsStr::new("Makefile")), NO_EXTENSION);
+/// assert_eq!(ext_bucket(rules, OsStr::new(".gitignore")), NO_EXTENSION);
 /// ```
-pub fn ext_bucket(name: &OsStr) -> String {
-    derive_ext(name).unwrap_or_else(|| NO_EXTENSION.to_string())
+pub fn ext_bucket(registry: &TypeRegistry, name: &OsStr) -> String {
+    registry.canonical_ext(name).unwrap_or_else(|| NO_EXTENSION.to_string())
 }
 
 /// Extension-view label for files whose name carries no extension.
 ///
 /// Parenthesised so it reads as a category rather than as a filename, and dot-free so it
-/// cannot be mistaken for — or collide with — an extension [`derive_ext`] produced.
+/// cannot be mistaken for — or collide with — an extension [`logical_ext`] produced.
 pub const NO_EXTENSION: &str = "(none)";
 
 #[cfg(unix)]
@@ -785,7 +837,31 @@ fn derive_ext_native(name: &OsStr) -> Option<String> {
 
 #[cfg(not(any(unix, windows)))]
 fn derive_ext_native(name: &OsStr) -> Option<String> {
-    derive_ext_str(name.to_str()?)
+    // No byte or wide view to borrow, so decode and run the same rule over `char`s. The
+    // component cap counts units, and an eligible component is ASCII alphanumeric on every
+    // platform, so bytes, wide units, and chars agree on every name any of them accepts.
+    let units: Vec<char> = name.to_str()?.chars().collect();
+    derive_ext_units(&units, '.', |unit| unit.to_ascii_lowercase())
+        .map(|extension| extension.into_iter().collect())
+}
+
+/// Longest a retained component may be, from the format. The cap is what keeps the
+/// vocabulary bounded: without it `release.candidate-final.zip` invents a bucket nobody
+/// asked for.
+const MAX_EXTENSION_COMPONENT: usize = 12;
+
+/// A component is eligible when it is nonempty, alphanumeric, and within the cap.
+///
+/// Checked on the units rather than on a decoded string so the Windows and Unix paths
+/// share one rule: a name that is not valid Unicode still has to be judged, and judging it
+/// as ineligible is the answer either way.
+fn eligible_component<T: Copy + Eq + From<u8>>(component: &[T]) -> bool {
+    if component.is_empty() || component.len() > MAX_EXTENSION_COMPONENT {
+        return false;
+    }
+    component.iter().all(|unit| {
+        (b'0'..=b'9').chain(b'a'..=b'z').chain(b'A'..=b'Z').any(|byte| *unit == T::from(byte))
+    })
 }
 
 fn derive_ext_units<T: Copy + Eq + From<u8>>(
@@ -796,49 +872,25 @@ fn derive_ext_units<T: Copy + Eq + From<u8>>(
     let searchable = if name.first() == Some(&dot) { &name[1..] } else { name };
     let dot_index = searchable.iter().rposition(|unit| *unit == dot)?;
     let (stem, last) = searchable.split_at(dot_index);
-    if last.len() <= 1 {
+    let last = &last[1..];
+    if !eligible_component(last) {
+        // "Return no extension if the final component is ineligible" -- a trailing
+        // component that is not extension-shaped means the name has no extension at all,
+        // not that the one before it is promoted.
         return None;
     }
 
     let mut extension = Vec::new();
     if let Some(inner_dot) = stem.iter().rposition(|unit| *unit == dot) {
-        let inner = &stem[inner_dot..];
-        let tar = [
-            dot,
-            lowercase_ascii_unit(b't', &lowercase),
-            lowercase_ascii_unit(b'a', &lowercase),
-            lowercase_ascii_unit(b'r', &lowercase),
-        ];
-        if inner.len() == tar.len() && inner.iter().copied().map(&lowercase).eq(tar) {
+        let inner = &stem[inner_dot + 1..];
+        if eligible_component(inner) {
+            extension.push(dot);
             extension.extend(inner.iter().copied().map(&lowercase));
         }
     }
+    extension.push(dot);
     extension.extend(last.iter().copied().map(lowercase));
     Some(extension)
-}
-
-fn lowercase_ascii_unit<T: Copy + From<u8>>(byte: u8, lowercase: &impl Fn(T) -> T) -> T {
-    lowercase(T::from(byte))
-}
-
-#[cfg(not(any(unix, windows)))]
-fn derive_ext_str(name: &str) -> Option<String> {
-    // Skip a leading dot so dotfiles are not read as all-extension.
-    let searchable = name.strip_prefix('.').unwrap_or(name);
-    let dot = searchable.rfind('.')?;
-    let (stem, last) = searchable.split_at(dot);
-    if last.len() <= 1 {
-        // A trailing dot with nothing after it is not an extension.
-        return None;
-    }
-
-    if let Some(inner_dot) = stem.rfind('.') {
-        if stem[inner_dot..].eq_ignore_ascii_case(".tar") {
-            return Some(format!(".tar{}", last.to_ascii_lowercase()));
-        }
-    }
-
-    Some(last.to_ascii_lowercase())
 }
 
 #[cfg(test)]
@@ -846,7 +898,7 @@ mod tests {
     use super::type_rule_manifest::{ManifestRule, parse_manifest};
     use super::{
         ContentFamily, DetectionConfidence, DetectionSource, TypeRegistry, classify_path,
-        classify_path_with_prefix, classify_with, derive_ext, type_rule_fingerprint,
+        classify_path_with_prefix, classify_with, ext_bucket, logical_ext, type_rule_fingerprint,
     };
     use super::{GENERATED_RULES, human_language_name};
     use std::ffi::OsStr;
@@ -1035,31 +1087,109 @@ mod tests {
 
     #[test]
     fn plain_extensions_lowercase() {
-        assert_eq!(derive_ext(OsStr::new("main.RS")).as_deref(), Some(".rs"));
-        assert_eq!(derive_ext(OsStr::new("Photo.JPEG")).as_deref(), Some(".jpeg"));
+        assert_eq!(logical_ext(OsStr::new("main.RS")).as_deref(), Some(".rs"));
+        assert_eq!(logical_ext(OsStr::new("Photo.JPEG")).as_deref(), Some(".jpeg"));
     }
 
     #[test]
-    fn tar_pairs_fold_into_one_extension() {
-        assert_eq!(derive_ext(OsStr::new("archive.tar.gz")).as_deref(), Some(".tar.gz"));
-        assert_eq!(derive_ext(OsStr::new("archive.tar.zst")).as_deref(), Some(".tar.zst"));
-        assert_eq!(derive_ext(OsStr::new("archive.TAR.BZ2")).as_deref(), Some(".tar.bz2"));
-        // Only .tar folds; an unrelated inner segment is not part of the extension.
-        assert_eq!(derive_ext(OsStr::new("release.v2.zip")).as_deref(), Some(".zip"));
+    fn the_logical_level_is_the_formats_table() {
+        // Verbatim from the File Rollup Format's own derivation table, because this is a
+        // shared format and agreeing with it is the point.
+        for (name, expected) in [
+            ("bundle.js.map", Some(".js.map")),
+            ("bundle.umd.min.js.map", Some(".js.map")),
+            ("types.d.ts.map", Some(".ts.map")),
+            ("bundle.umd.min.js", Some(".min.js")),
+            ("archive.tar.gz", Some(".tar.gz")),
+            ("release.v2.zip", Some(".v2.zip")),
+            ("Photo.JPEG", Some(".jpeg")),
+            (".gitignore", None),
+            (".eslintrc.json", Some(".json")),
+        ] {
+            assert_eq!(logical_ext(OsStr::new(name)).as_deref(), expected, "{name}");
+        }
+
+        // Eligibility bounds the vocabulary. A component that is not extension-shaped is
+        // not retained, and one that is not extension-shaped in the *final* position means
+        // the name has no extension at all rather than promoting the one before it.
+        assert_eq!(logical_ext(OsStr::new("v1.2.3.tar.gz")).as_deref(), Some(".tar.gz"));
+        assert_eq!(logical_ext(OsStr::new("report.final-draft.pdf")).as_deref(), Some(".pdf"));
+        assert_eq!(logical_ext(OsStr::new("thirteencharsx.zip")).as_deref(), Some(".zip"));
+        assert_eq!(logical_ext(OsStr::new("archive.tar.gz-old")), None);
+    }
+
+    /// The two levels, and the property that adopting the raw one moved nothing.
+    ///
+    /// The trap this bead was written around: `derive_ext` returning the raw value alone
+    /// would send key `v2.zip` at a rule table with no suffix fallback, and
+    /// `release.v2.zip` would become `unknown:.v2.zip` while its `.zip` bucket split in
+    /// two. One edit, two regressions, in exactly the names the change is for.
+    #[test]
+    fn the_canonical_level_falls_back_on_a_component_boundary() {
+        let rules = TypeRegistry::compiled();
+        for (name, logical, canonical) in [
+            // Claimed whole, so both levels agree.
+            ("archive.tar.gz", ".tar.gz", ".tar.gz"),
+            // Claimed by nobody at two components, so the last one decides.
+            ("release.v2.zip", ".v2.zip", ".zip"),
+            ("bundle.umd.min.js", ".min.js", ".js"),
+            // One component has nothing to fall back to.
+            ("plain.zip", ".zip", ".zip"),
+            ("app.js", ".js", ".js"),
+        ] {
+            assert_eq!(logical_ext(OsStr::new(name)).as_deref(), Some(logical), "{name} logical");
+            assert_eq!(
+                rules.canonical_ext(OsStr::new(name)).as_deref(),
+                Some(canonical),
+                "{name} canonical"
+            );
+            assert_eq!(ext_bucket(rules, OsStr::new(name)), canonical, "{name} bucket");
+        }
+
+        // The regression the bead names, stated as classification rather than as strings.
+        for (name, file_type) in [
+            ("release.v2.zip", "archive"),
+            ("plain.zip", "archive"),
+            ("archive.tar.gz", "archive"),
+            ("bundle.umd.min.js", "javascript"),
+            ("app.js", "javascript"),
+        ] {
+            assert_eq!(
+                classify_path(Path::new(name)).file_type.as_str(),
+                file_type,
+                "{name} must still classify as {file_type}"
+            );
+        }
+    }
+
+    /// A type nothing claims is reported at the logical level, not the canonical one.
+    #[test]
+    fn an_unclaimed_type_keeps_the_extension_a_person_would_read() {
+        // `.zip` is claimed, so a two-component name falling back to it is an archive.
+        // `.frobnicate` is claimed by nobody at either level, and naming it `unknown:.zzz`
+        // would file it under a bucket recognised files occupy.
+        assert_eq!(
+            classify_path(Path::new("thing.v2.frobnicate")).file_type.as_str(),
+            "unknown:.v2.frobnicate"
+        );
+        assert_eq!(
+            classify_path(Path::new("thing.frobnicate")).file_type.as_str(),
+            "unknown:.frobnicate"
+        );
     }
 
     #[test]
     fn names_without_a_usable_extension() {
-        assert_eq!(derive_ext(OsStr::new("README")), None);
-        assert_eq!(derive_ext(OsStr::new(".gitignore")), None);
-        assert_eq!(derive_ext(OsStr::new(".bashrc")), None);
-        assert_eq!(derive_ext(OsStr::new("trailing.")), None);
-        assert_eq!(derive_ext(OsStr::new("")), None);
+        assert_eq!(logical_ext(OsStr::new("README")), None);
+        assert_eq!(logical_ext(OsStr::new(".gitignore")), None);
+        assert_eq!(logical_ext(OsStr::new(".bashrc")), None);
+        assert_eq!(logical_ext(OsStr::new("trailing.")), None);
+        assert_eq!(logical_ext(OsStr::new("")), None);
     }
 
     #[test]
     fn dotfiles_with_a_real_extension_keep_it() {
-        assert_eq!(derive_ext(OsStr::new(".eslintrc.json")).as_deref(), Some(".json"));
+        assert_eq!(logical_ext(OsStr::new(".eslintrc.json")).as_deref(), Some(".json"));
     }
 
     #[test]
@@ -1172,7 +1302,7 @@ mod tests {
         use std::os::unix::ffi::OsStringExt;
 
         let name = OsString::from_vec(vec![b'n', 0xff, b'.', b'R', b'S']);
-        assert_eq!(derive_ext(&name).as_deref(), Some(".rs"));
+        assert_eq!(logical_ext(&name).as_deref(), Some(".rs"));
     }
 
     #[cfg(windows)]
@@ -1188,6 +1318,6 @@ mod tests {
             u16::from(b'R'),
             u16::from(b'S'),
         ]);
-        assert_eq!(derive_ext(&name).as_deref(), Some(".rs"));
+        assert_eq!(logical_ext(&name).as_deref(), Some(".rs"));
     }
 }

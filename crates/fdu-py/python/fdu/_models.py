@@ -482,10 +482,12 @@ class Child:
     """
 
     extension: str | None = None
-    """The extension this name yields, compound forms folded (``.tar.gz``).
+    """The *logical* extension: this name's final two eligible components.
 
-    The same key the parent's ``by_extension`` files it under, so a row and the
-    directory's breakdown agree by construction.
+    The raw level of the shared format's two, which is the one a person reads off the
+    name. It may differ from both the type and the parent's ``by_extension`` key:
+    ``release.v2.zip`` is ``.v2.zip`` here, an ``archive`` by type, and on the ``.zip``
+    pile. Filter on this; sum bytes by the breakdown's key.
     """
 
 
@@ -536,7 +538,10 @@ class FileRow:
     """
 
     extension: str | None = None
-    """The extension this row's name yields, compound forms folded (``.tar.gz``)."""
+    """The *logical* extension: this row's final two eligible components.
+
+    The raw level, which may differ from the type and the roll-up bucket.
+    """
 
 
 @dataclass(frozen=True, slots=True)
