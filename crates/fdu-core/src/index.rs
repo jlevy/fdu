@@ -177,17 +177,28 @@ struct InternedRollUp {
     by_group: Vec<(crate::classify::GroupId, ExtTally)>,
 }
 
-/// Map-free roll-up fields for internal reports that do not need extension names.
+/// The scalar half of a roll-up: subtree totals with no per-extension breakdown.
 ///
-/// Keeping this view separate avoids cloning every extension string for summary and
-/// tree queries while the public [`RollUp`] remains safe to retain independently.
+/// [`RollUp`] answers two different questions in one value -- "how big is this subtree"
+/// and "what is it made of" -- and the second one costs a `BTreeMap` clone per copy. A
+/// listing asks only the first, once per row, so a directory of a thousand children was
+/// cloning a thousand extension maps to render a thousand size columns. This is the part
+/// a listing needs, `Copy`, with no allocation anywhere in it.
+///
+/// The breakdown is still available, as its own projection, for the one directory a
+/// consumer is actually inspecting: [`IndexHandle::rollup_bounded`].
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
-pub(crate) struct RollUpScalars {
-    pub(crate) files: u64,
-    pub(crate) dirs: u64,
-    pub(crate) bytes: u64,
-    pub(crate) allocated: u64,
-    pub(crate) newest_mtime_ns: i64,
+pub struct RollUpScalars {
+    /// Descendant files.
+    pub files: u64,
+    /// Descendant directories, not counting the directory that owns this roll-up.
+    pub dirs: u64,
+    /// Apparent bytes across descendant files.
+    pub bytes: u64,
+    /// Allocated bytes across descendant files.
+    pub allocated: u64,
+    /// Newest mtime among descendant files, or 0 when there are none.
+    pub newest_mtime_ns: i64,
 }
 
 impl From<&InternedRollUp> for RollUpScalars {
@@ -374,8 +385,13 @@ pub struct ChildSnapshot {
     pub kind: EntryKind,
     /// Last observed metadata.
     pub attrs: Attrs,
-    /// Pre-computed subtree totals for a directory.
-    pub rollup: Option<RollUp>,
+    /// Pre-computed subtree totals for a directory, without the extension breakdown.
+    ///
+    /// Scalars on purpose. A listing wants a size column per row; the breakdown belongs
+    /// to the one directory being inspected, and asking for it per row cloned a
+    /// `BTreeMap` per child to render a number. Ask [`IndexHandle::rollup_bounded`] for
+    /// the breakdown of the directory a consumer actually opened.
+    pub totals: Option<RollUpScalars>,
     /// Origin, observation time, and coverage for this child.
     ///
     /// Captured here rather than looked up per child by path, because a consumer
@@ -415,6 +431,96 @@ impl std::ops::Deref for ApplyOutcome {
     }
 }
 
+/// Which slice of a directory's children one listing call should return.
+///
+/// A directory is unbounded in a way a screen is not, and a listing that always returns
+/// every child makes the caller pay for the whole directory to draw the top of it. The
+/// bound is stated here rather than applied by the caller after the fact, because after
+/// the fact is one snapshot per child too late.
+#[derive(Clone, Debug, Default)]
+pub struct ChildPageRequest {
+    /// Resume strictly after this child name; `None` starts at the first child.
+    ///
+    /// A name rather than an offset. Children are ordered by name, and a directory that
+    /// gains or loses an entry between two pages shifts every offset after it: an offset
+    /// cursor silently repeats or skips rows, where a name resumes at the right place
+    /// whatever happened in between. Resuming is a range seek, not a scan.
+    pub after: Option<OsString>,
+    /// Most rows to return.
+    pub limit: Bound,
+}
+
+/// One page of a directory's children, with what the bound withheld stated on it.
+#[derive(Clone, Debug)]
+pub struct ChildPage {
+    /// The rows this page carries, in name order.
+    pub rows: Vec<ChildSnapshot>,
+    /// The children this page does not carry, or `None` when it carries the whole
+    /// directory.
+    ///
+    /// Presence is the signal, as everywhere else a bound applies: a consumer branches on
+    /// having been given a remainder rather than comparing counts it would have to
+    /// reconstruct.
+    pub remainder: Option<ChildRemainder>,
+    /// Cursor to pass as [`ChildPageRequest::after`] for the next page.
+    ///
+    /// `None` at the end of the directory. This, not `remainder`, is what says whether
+    /// paging continues: a later page's remainder counts earlier pages' rows too, so it
+    /// stays `Some` on the last page.
+    pub next: Option<OsString>,
+}
+
+/// The children a page does not carry, as their share of the directory's own totals.
+///
+/// This page's rows plus this remainder account for the directory exactly -- the
+/// partition property the index maintains, read backwards -- so a consumer showing fifty
+/// of eight hundred children can still say honestly what the other seven hundred and
+/// fifty come to. Derived by subtracting the emitted rows from the directory's roll-up,
+/// which is work proportional to what was shown rather than to what was hidden.
+///
+/// It is the complement of *this page*, not of everything delivered so far: on page two
+/// it counts page one's rows as well. Stating it against a fixed denominator is what
+/// keeps it exact on every page without a cursor that has to carry a running total, and
+/// "showing 50 of 812" is the sentence a listing wants anyway. [`ChildPage::next`], not
+/// this, says whether more pages remain.
+///
+/// `dirs` counts a withheld directory row itself, unlike a tree node's
+/// [`Remainder`](crate::query::Remainder), where every row is a directory and the row is
+/// counted separately. Here a row may be a file, so the useful number is what the rows
+/// account for.
+///
+/// No newest-mtime field: a maximum cannot be subtracted back out, and a figure that is
+/// sometimes wrong is worse than one that is absent.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub struct ChildRemainder {
+    /// Child rows this page does not carry.
+    pub rows: u64,
+    /// Files those rows account for.
+    pub files: u64,
+    /// Directories those rows account for.
+    pub dirs: u64,
+    /// Apparent bytes those rows account for.
+    pub bytes: u64,
+    /// Allocated bytes those rows account for.
+    pub allocated: u64,
+}
+
+impl ChildPage {
+    /// Whether this page carries fewer than the directory's children.
+    ///
+    /// Derived rather than stored, so it cannot disagree with the remainder.
+    pub fn truncated(&self) -> bool {
+        self.remainder.is_some()
+    }
+
+    /// Whether another page follows this one.
+    ///
+    /// Derived from the cursor, for the same reason.
+    pub fn has_next(&self) -> bool {
+        self.next.is_some()
+    }
+}
+
 /// What one bundled read should evaluate.
 ///
 /// Everything is optional because a caller composes the page it is drawing: a directory
@@ -424,6 +530,8 @@ impl std::ops::Deref for ApplyOutcome {
 pub struct ReadRequest {
     /// Directory whose children to list, when any.
     pub children_of: Option<PathBuf>,
+    /// Which page of that directory's children to return.
+    pub children_page: ChildPageRequest,
     /// Relative paths whose roll-ups to return, in the order given.
     pub rollups: Vec<PathBuf>,
     /// Whether to include the whole-tree totals.
@@ -456,8 +564,8 @@ pub struct ReadBundle {
     pub rollups: Vec<Option<RollUp>>,
     /// The requested directory's children, or `None` when it is absent or not a directory.
     ///
-    /// Distinct from an empty list, which means a directory with no children.
-    pub children: Option<Vec<ChildSnapshot>>,
+    /// Distinct from a page with no rows, which means a directory with no children.
+    pub children: Option<ChildPage>,
 }
 
 /// The in-memory hierarchical index.
@@ -648,14 +756,10 @@ impl IndexHandle {
     /// crossing and a lock acquisition; bundled, they are one of each.
     pub fn read(&self, request: &ReadRequest) -> crate::Result<ReadBundle> {
         let index = self.read_index()?;
-        let children = request.children_of.as_deref().and_then(|path| {
-            let children = index.children(path)?;
-            Some(
-                children
-                    .map(|(name, id)| child_snapshot(&index, name, id, request.extensions))
-                    .collect(),
-            )
-        });
+        let children = request
+            .children_of
+            .as_deref()
+            .and_then(|path| child_page(&index, path, &request.children_page));
         Ok(ReadBundle {
             clock: index.clock(),
             scope: index.scope(),
@@ -672,26 +776,32 @@ impl IndexHandle {
         })
     }
 
-    /// Direct children captured coherently at one read boundary.
+    /// Every direct child, captured coherently at one read boundary.
+    ///
+    /// Unbounded, so its cost is the directory's width. Prefer
+    /// [`children_page`](Self::children_page) anywhere the caller is drawing a screen.
     pub fn children(&self, path: &Path) -> crate::Result<Option<Vec<ChildSnapshot>>> {
-        self.children_bounded(path, Bound::All)
+        Ok(self.children_page(path, &ChildPageRequest::default())?.map(|page| page.rows))
     }
 
-    /// [`IndexHandle::children`] with each child's roll-up bounded to `extensions` rows.
+    /// One page of a directory's children, with the rest accounted for.
     ///
-    /// The bound that matters most for a listing: a wide directory multiplies its child
-    /// count by every child's distinct extensions, and a browser showing five rows per
-    /// child pays for all of them.
-    pub fn children_bounded(
+    /// The listing and the breakdown are separate questions and now cost separately. A
+    /// row carries scalar subtree totals, its classification, and its provenance; the
+    /// per-extension breakdown belongs to [`rollup_bounded`](Self::rollup_bounded) for
+    /// the single directory a consumer opened. Returning it per row meant a wide
+    /// directory cloned one `BTreeMap` per child to render one number per child.
+    ///
+    /// Work is proportional to the rows returned, not to the directory's width: the page
+    /// is a range seek from the cursor, and the remainder is the directory's own roll-up
+    /// minus what was emitted.
+    pub fn children_page(
         &self,
         path: &Path,
-        extensions: Bound,
-    ) -> crate::Result<Option<Vec<ChildSnapshot>>> {
+        request: &ChildPageRequest,
+    ) -> crate::Result<Option<ChildPage>> {
         let index = self.read_index()?;
-        let Some(children) = index.children(path) else {
-            return Ok(None);
-        };
-        Ok(Some(children.map(|(name, id)| child_snapshot(&index, name, id, extensions)).collect()))
+        Ok(child_page(&index, path, request))
     }
 
     /// Origin, observation time, and coverage for one retained path.
@@ -2203,16 +2313,109 @@ pub(crate) fn collect_child_expectations(
     })
 }
 
-/// One child's captured row, built the same way for a listing and for a bundled read.
+/// One page of a directory's children, built the same way for a listing and for a
+/// bundled read.
 ///
-/// Shared so the two cannot describe the same child differently: a bundle whose rows
+/// Shared so the two cannot describe the same directory differently: a bundle whose rows
 /// disagreed with the listing API's would be a second definition of what a child is.
-fn child_snapshot(
-    index: &Index,
-    name: &std::ffi::OsStr,
-    id: EntryId,
-    extensions: Bound,
-) -> ChildSnapshot {
+///
+/// Returns `None` for a path that is absent or is not a directory, which is distinct from
+/// a page with no rows.
+fn child_page(index: &Index, path: &Path, request: &ChildPageRequest) -> Option<ChildPage> {
+    let id = index.lookup(path)?;
+    let entry = index.entry(id);
+    if !entry.kind.is_dir() {
+        return None;
+    }
+
+    // Seek rather than scan. `after` is exclusive, and `OsString`'s ordering is the one
+    // the map is keyed by, so the excluded bound lands on exactly the cursor's own row.
+    let remaining: &mut dyn Iterator<Item = (&OsString, &EntryId)> =
+        &mut match &request.after {
+            Some(after) => Either::Right(entry.children.range::<OsString, _>((
+                std::ops::Bound::Excluded(after),
+                std::ops::Bound::Unbounded,
+            ))),
+            None => Either::Left(entry.children.iter()),
+        };
+
+    let mut emitted = ChildRemainder::default();
+    let mut rows = Vec::new();
+    let mut last = None;
+    let mut more = false;
+    for (name, child) in remaining {
+        if !request.limit.admits(rows.len()) {
+            // The loop stops on the first child past the bound, so reaching here is the
+            // O(1) proof that another page exists -- no second pass, no tail count.
+            more = true;
+            break;
+        }
+        emitted.absorb(index, *child);
+        last = Some(name.clone());
+        rows.push(child_snapshot(index, name.as_os_str(), *child));
+    }
+
+    // The remainder is this page's complement within the whole directory, so it is the
+    // directory's width less the rows returned and its roll-up less what they accounted
+    // for. Both read off state the index already maintains: no withheld child is touched,
+    // on any page.
+    let withheld = (entry.children.len() - rows.len()) as u64;
+    let remainder = (withheld > 0).then(|| ChildRemainder {
+        rows: withheld,
+        files: entry.rollup.files - emitted.files,
+        dirs: entry.rollup.dirs - emitted.dirs,
+        bytes: entry.rollup.bytes - emitted.bytes,
+        allocated: entry.rollup.allocated - emitted.allocated,
+    });
+
+    Some(ChildPage { rows, remainder, next: more.then_some(last).flatten() })
+}
+
+impl ChildRemainder {
+    /// Fold one emitted row's contribution to its parent's roll-up into the running sum.
+    ///
+    /// The same arithmetic [`Index::contribution`] performs when maintaining the parent,
+    /// which is what makes emitted-plus-withheld exact rather than approximately right.
+    fn absorb(&mut self, index: &Index, id: EntryId) {
+        let entry = index.entry(id);
+        match entry.kind {
+            EntryKind::Dir => {
+                self.files += entry.rollup.files;
+                self.dirs += entry.rollup.dirs + 1;
+                self.bytes += entry.rollup.bytes;
+                self.allocated += entry.rollup.allocated;
+            }
+            EntryKind::File => {
+                self.files += 1;
+                self.bytes += entry.attrs.size;
+                self.allocated += entry.attrs.allocated;
+            }
+            // A symlink or a device contributes nothing to its parent's totals, so it
+            // withholds nothing either.
+            EntryKind::Symlink | EntryKind::Other => {}
+        }
+    }
+}
+
+/// Two iterator shapes behind one name, so the cursor branch does not box its iterator.
+enum Either<L, R> {
+    Left(L),
+    Right(R),
+}
+
+impl<T, L: Iterator<Item = T>, R: Iterator<Item = T>> Iterator for Either<L, R> {
+    type Item = T;
+
+    fn next(&mut self) -> Option<T> {
+        match self {
+            Self::Left(left) => left.next(),
+            Self::Right(right) => right.next(),
+        }
+    }
+}
+
+/// One child's captured row.
+fn child_snapshot(index: &Index, name: &std::ffi::OsStr, id: EntryId) -> ChildSnapshot {
     let entry = index.entry(id);
     let is_file = entry.kind == EntryKind::File;
     let classification =
@@ -2222,7 +2425,7 @@ fn child_snapshot(
         name: name.to_os_string(),
         kind: entry.kind,
         attrs: entry.attrs,
-        rollup: entry.kind.is_dir().then(|| index.named_rollup_bounded(&entry.rollup, extensions)),
+        totals: entry.kind.is_dir().then(|| RollUpScalars::from(&entry.rollup)),
         provenance: index.provenance_of(id),
         classification: classification.clone(),
         extension: is_file.then(|| crate::classify::logical_ext(name)).flatten(),
@@ -3051,8 +3254,9 @@ mod tests {
             let total = bundle.total.as_ref().expect("totals were requested");
             let children = bundle.children.as_ref().expect("the root is a directory");
             let from_children: u64 = children
+                .rows
                 .iter()
-                .map(|child| child.rollup.as_ref().map_or(0, |roll| roll.files))
+                .map(|child| child.totals.map_or(0, |totals| totals.files))
                 .sum();
             assert_eq!(
                 from_children, total.files,
@@ -3062,6 +3266,201 @@ mod tests {
         }
         stop.store(true, Ordering::Relaxed);
         writer.join().expect("writer");
+    }
+
+    /// A directory of six children, three of them directories carrying subtrees, so a
+    /// page's rows and its remainder each have something to be wrong about.
+    fn paged_directory() -> IndexHandle {
+        let handle = IndexHandle::new(Index::new("/root"));
+        handle
+            .apply(&Observation::new(vec![
+                upsert("a", EntryKind::Dir, file_attrs(0, 1)),
+                upsert("a/deep", EntryKind::Dir, file_attrs(0, 1)),
+                upsert("a/deep/one.txt", EntryKind::File, file_attrs(100, 1)),
+                upsert("b.txt", EntryKind::File, file_attrs(200, 2)),
+                upsert("c", EntryKind::Dir, file_attrs(0, 1)),
+                upsert("c/two.txt", EntryKind::File, file_attrs(300, 3)),
+                upsert("d.txt", EntryKind::File, file_attrs(400, 4)),
+                upsert("e", EntryKind::Dir, file_attrs(0, 1)),
+                upsert("f.txt", EntryKind::File, file_attrs(500, 5)),
+            ]))
+            .expect("apply");
+        handle
+    }
+
+    /// The property that makes a partial listing safe to render totals from: whatever the
+    /// bound keeps, the rows and the remainder still add up to the directory itself.
+    ///
+    /// Checked at every bound rather than at one, because an off-by-one in the remainder
+    /// hides at exactly the width where the page happens to hold everything.
+    #[test]
+    fn a_page_and_its_remainder_partition_the_directory() {
+        let handle = paged_directory();
+        let whole = handle.rollup(Path::new("")).expect("read").expect("the root");
+
+        for limit in 0..=7 {
+            let page = handle
+                .children_page(
+                    Path::new(""),
+                    &ChildPageRequest { limit: Bound::Limit(limit), ..ChildPageRequest::default() },
+                )
+                .expect("read")
+                .expect("the root is a directory");
+
+            let mut shown = ChildRemainder::default();
+            for row in &page.rows {
+                shown.rows += 1;
+                match row.kind {
+                    EntryKind::Dir => {
+                        let totals = row.totals.expect("a directory row carries totals");
+                        shown.files += totals.files;
+                        shown.dirs += totals.dirs + 1;
+                        shown.bytes += totals.bytes;
+                        shown.allocated += totals.allocated;
+                    }
+                    EntryKind::File => {
+                        shown.files += 1;
+                        shown.bytes += row.attrs.size;
+                        shown.allocated += row.attrs.allocated;
+                    }
+                    EntryKind::Symlink | EntryKind::Other => {}
+                }
+            }
+            let rest = page.remainder.unwrap_or_default();
+            assert_eq!(shown.rows + rest.rows, 6, "limit {limit}: every child is on one side");
+            assert_eq!(shown.files + rest.files, whole.files, "limit {limit}: files");
+            assert_eq!(shown.dirs + rest.dirs, whole.dirs, "limit {limit}: dirs");
+            assert_eq!(shown.bytes + rest.bytes, whole.bytes, "limit {limit}: bytes");
+            assert_eq!(
+                shown.allocated + rest.allocated,
+                whole.allocated,
+                "limit {limit}: allocated"
+            );
+        }
+    }
+
+    /// Paging the whole directory two rows at a time visits every child exactly once, in
+    /// name order, and stops.
+    #[test]
+    fn the_cursor_walks_the_directory_once_and_ends() {
+        let handle = paged_directory();
+        let mut seen = Vec::new();
+        let mut after = None;
+        loop {
+            let page = handle
+                .children_page(
+                    Path::new(""),
+                    &ChildPageRequest { after: after.clone(), limit: Bound::Limit(2) },
+                )
+                .expect("read")
+                .expect("the root is a directory");
+            seen.extend(page.rows.iter().map(|row| row.name.clone()));
+            assert!(page.truncated(), "two rows never cover six children");
+            match page.next {
+                Some(cursor) => after = Some(cursor),
+                None => break,
+            }
+            assert!(seen.len() <= 6, "the cursor must make progress");
+        }
+        assert_eq!(
+            seen,
+            ["a", "b.txt", "c", "d.txt", "e", "f.txt"].map(OsString::from),
+            "every child once, in name order"
+        );
+    }
+
+    /// `next` and `remainder` answer different questions, and the last page is where a
+    /// consumer that conflated them would loop forever.
+    ///
+    /// The remainder is this page's complement in the whole directory, so on a later page
+    /// it counts the earlier pages' rows and stays present; `next` is absent. Pinning
+    /// this because the obvious implementation derives one from the other.
+    #[test]
+    fn the_last_page_still_reports_a_remainder_but_no_cursor() {
+        let handle = paged_directory();
+        let page = handle
+            .children_page(
+                Path::new(""),
+                &ChildPageRequest { after: Some(OsString::from("d.txt")), limit: Bound::Limit(4) },
+            )
+            .expect("read")
+            .expect("the root is a directory");
+
+        assert_eq!(
+            page.rows.iter().map(|row| row.name.clone()).collect::<Vec<_>>(),
+            ["e", "f.txt"].map(OsString::from),
+            "the cursor is exclusive"
+        );
+        assert!(!page.has_next(), "the directory ended");
+        let rest = page.remainder.expect("four earlier children are not on this page");
+        assert_eq!(rest.rows, 4, "a, b.txt, c and d.txt");
+    }
+
+    /// An unbounded page is the whole directory and says so by omission.
+    #[test]
+    fn an_unbounded_page_reports_neither_a_remainder_nor_a_cursor() {
+        let handle = paged_directory();
+        let page = handle
+            .children_page(Path::new(""), &ChildPageRequest::default())
+            .expect("read")
+            .expect("the root is a directory");
+
+        assert_eq!(page.rows.len(), 6);
+        assert!(!page.truncated(), "nothing was withheld");
+        assert!(!page.has_next(), "nothing follows");
+    }
+
+    /// A listing row carries the size column, not the breakdown behind it.
+    ///
+    /// The regression this exists for is silent: restoring a `RollUp` per row would keep
+    /// every test above passing and cost one `BTreeMap` clone per child. The type is the
+    /// assertion -- `RollUpScalars` is `Copy`, so a row physically cannot carry a map.
+    #[test]
+    fn a_child_row_carries_scalars_and_the_breakdown_stays_a_separate_projection() {
+        let handle = paged_directory();
+        let page = handle
+            .children_page(Path::new(""), &ChildPageRequest::default())
+            .expect("read")
+            .expect("the root is a directory");
+
+        let a = page.rows.iter().find(|row| row.name == "a").expect("a");
+        let totals = a.totals.expect("a directory row carries totals");
+        assert_eq!((totals.files, totals.dirs, totals.bytes), (1, 1, 100));
+
+        let breakdown = handle.rollup(Path::new("a")).expect("read").expect("a");
+        assert_eq!(breakdown.by_ext.len(), 1, "the breakdown is still available, on request");
+        assert_eq!(breakdown.files, totals.files, "and it agrees with the row");
+
+        assert!(
+            page.rows.iter().find(|row| row.name == "b.txt").expect("b.txt").totals.is_none(),
+            "a file has no subtree to total"
+        );
+    }
+
+    /// Paging is not defined for something that is not a directory, and that is distinct
+    /// from a directory with no children.
+    #[test]
+    fn a_page_distinguishes_absent_from_empty() {
+        let handle = paged_directory();
+        assert!(
+            handle
+                .children_page(Path::new("b.txt"), &ChildPageRequest::default())
+                .expect("read")
+                .is_none(),
+            "a file is not a directory"
+        );
+        assert!(
+            handle
+                .children_page(Path::new("nope"), &ChildPageRequest::default())
+                .expect("read")
+                .is_none(),
+            "an absent path has no children"
+        );
+        let empty = handle
+            .children_page(Path::new("e"), &ChildPageRequest::default())
+            .expect("read")
+            .expect("e is a directory");
+        assert!(empty.rows.is_empty() && empty.remainder.is_none(), "empty is a page, not None");
     }
 
     /// A bundle carries the identity a consumer's cache key derives from.

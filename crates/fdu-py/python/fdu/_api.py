@@ -21,6 +21,8 @@ from ._models import (
     ChangeKind,
     ChangeSet,
     Child,
+    ChildPage,
+    ChildRemainder,
     Classification,
     EntryKind,
     Format,
@@ -31,6 +33,7 @@ from ._models import (
     RollUp,
     ScanOptions,
     Status,
+    SummaryRow,
     WalkTelemetry,
     WatchOptions,
     classification_from_dict,
@@ -300,18 +303,27 @@ class Index:
         return None if raw is None else rollup_from_dict(raw, self.provenance(path))
 
     def children(
-        self, path: str | Path = Path(), extensions: int | None = None
-    ) -> tuple[Child, ...] | None:
-        """Every direct child of a directory, with its roll-up, in one call.
+        self, path: str | Path = Path(), *, after: str | None = None, limit: int | None = None
+    ) -> ChildPage | None:
+        """One page of a directory's children, in one call.
 
-        `None` when the path is absent or is not a directory, which is distinct from an
-        empty tuple. `extensions` bounds each child's per-extension breakdown -- the
-        bound that matters most for a listing, because a wide directory multiplies its
-        child count by every child's distinct extensions.
+        `None` when the path is absent or is not a directory, which is distinct from a
+        page with no rows.
+
+        `after` resumes strictly past a child's name and `limit` bounds the rows, so a
+        wide directory costs what is drawn rather than what it holds. Pass the returned
+        `next` back as `after` to continue; it is `None` at the end.
+
+        A name is the cursor rather than an offset because a directory that gains or
+        loses an entry between two pages shifts every offset after it, which silently
+        repeats or skips rows.
+
+        Rows carry scalar subtree totals. For the per-extension breakdown of the one
+        directory being inspected, call `rollup()`.
         """
 
-        raw = _call(self._native.children, path, extensions)
-        return None if raw is None else tuple(_child(item) for item in raw)
+        raw = _call(self._native.children, path, after, limit)
+        return None if raw is None else _child_page(raw)
 
     def read(
         self,
@@ -320,6 +332,8 @@ class Index:
         rollups: Sequence[str | Path] = (),
         total: bool = False,
         extensions: int | None = None,
+        after: str | None = None,
+        limit: int | None = None,
     ) -> Bundle:
         """Several projections read under one guard, at one instant.
 
@@ -341,6 +355,8 @@ class Index:
             [str(path) for path in rollups],
             total,
             extensions,
+            after,
+            limit,
         )
         children = value["children"]
         return Bundle(
@@ -353,7 +369,7 @@ class Index:
             rollups=tuple(
                 None if roll is None else rollup_from_dict(roll) for roll in value["rollups"]
             ),
-            children=None if children is None else tuple(_child(item) for item in children),
+            children=None if children is None else _child_page(children),
         )
 
     def provenance(self, path: str | Path = Path()) -> Provenance | None:
@@ -399,20 +415,55 @@ class Index:
         return Watch(native)
 
 
+def _child_page(value: dict[str, Any]) -> ChildPage:
+    """One page of children, parsed the same way wherever it came from."""
+
+    rows: list[dict[str, Any]] = value["rows"]
+    remainder: dict[str, Any] | None = value.get("remainder")
+    cursor = value.get("next")
+    return ChildPage(
+        rows=tuple(_child(item) for item in rows),
+        remainder=None if remainder is None else _child_remainder(remainder),
+        next=None if cursor is None else str(cursor),
+    )
+
+
+def _child_remainder(value: dict[str, Any]) -> ChildRemainder:
+    return ChildRemainder(
+        rows=int(value["rows"]),
+        files=int(value["files"]),
+        dirs=int(value["dirs"]),
+        bytes=int(value["bytes"]),
+        allocated=int(value["allocated"]),
+    )
+
+
 def _child(item: dict[str, Any]) -> Child:
     """One listing row, parsed the same way wherever it came from."""
 
     provenance = provenance_from_dict(item["provenance"])
     classification = item.get("classification")
     extension = item.get("extension")
-    rollup = item.get("rollup")
+    # A directory row carries subtree totals and a non-directory carries its own attrs;
+    # the two field sets are disjoint, so presence of `files` is what tells them apart.
+    totals = (
+        SummaryRow(
+            files=int(item["files"]),
+            dirs=int(item["dirs"]),
+            bytes=int(item["bytes"]),
+            allocated=int(item["allocated"]),
+            newest_mtime_ns=int(item["newest_mtime_ns"]) or None,
+        )
+        if item.get("files") is not None
+        else None
+    )
     return Child(
         name=str(item["name"]),
         kind=EntryKind(item["kind"]),
-        rollup=None if rollup is None else rollup_from_dict(rollup, provenance),
-        bytes=int(item["bytes"]) if item.get("bytes") is not None else None,
-        allocated=int(item["allocated"]) if item.get("allocated") is not None else None,
-        mtime_ns=int(item["mtime_ns"]) if item.get("mtime_ns") is not None else None,
+        totals=totals,
+        bytes=None if totals is not None else int(item["bytes"]),
+        allocated=None if totals is not None else int(item["allocated"]),
+        mtime_ns=None if totals is not None else int(item["mtime_ns"]),
         provenance=provenance,
         classification=(
             None if classification is None else classification_from_dict(classification)

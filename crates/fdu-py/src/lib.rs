@@ -146,6 +146,11 @@ fn ext_bound(extensions: Option<usize>) -> fdu_core::Bound {
     extensions.map_or(fdu_core::Bound::All, fdu_core::Bound::Limit)
 }
 
+/// Read a caller's row bound, where `None` means every row.
+fn row_bound(rows: Option<usize>) -> fdu_core::Bound {
+    rows.map_or(fdu_core::Bound::All, fdu_core::Bound::Limit)
+}
+
 fn entry_kind_label(kind: EntryKind) -> &'static str {
     match kind {
         EntryKind::File => "file",
@@ -281,8 +286,14 @@ fn child_list<'py>(
             "classification",
             row_classification_dict(py, child.classification.as_ref(), child.group.as_deref())?,
         )?;
-        if let Some(roll) = child.rollup.as_ref() {
-            entry.set_item("rollup", rollup_dict(py, roll)?)?;
+        if let Some(totals) = child.totals {
+            // Scalars, not a roll-up: the breakdown belongs to the directory being
+            // inspected, and one map per row is the cost this listing exists to avoid.
+            entry.set_item("files", totals.files)?;
+            entry.set_item("dirs", totals.dirs)?;
+            entry.set_item("bytes", totals.bytes)?;
+            entry.set_item("allocated", totals.allocated)?;
+            entry.set_item("newest_mtime_ns", totals.newest_mtime_ns)?;
         } else {
             entry.set_item("bytes", child.attrs.size)?;
             entry.set_item("allocated", child.attrs.allocated)?;
@@ -291,6 +302,35 @@ fn child_list<'py>(
         out.append(entry)?;
     }
     Ok(out)
+}
+
+/// One page of children, with the rest of the directory accounted for beside it.
+fn child_page_dict<'py>(
+    py: Python<'py>,
+    page: &fdu_core::ChildPage,
+) -> PyResult<Bound<'py, PyDict>> {
+    let out = PyDict::new(py);
+    out.set_item("rows", child_list(py, &page.rows)?)?;
+    out.set_item("remainder", child_remainder_dict(py, page.remainder)?)?;
+    out.set_item("next", page.next.as_deref())?;
+    Ok(out)
+}
+
+/// What a page does not carry, or `None` when it carries the whole directory.
+fn child_remainder_dict(
+    py: Python<'_>,
+    remainder: Option<fdu_core::ChildRemainder>,
+) -> PyResult<Option<Bound<'_, PyDict>>> {
+    let Some(rest) = remainder else {
+        return Ok(None);
+    };
+    let value = PyDict::new(py);
+    value.set_item("rows", rest.rows)?;
+    value.set_item("files", rest.files)?;
+    value.set_item("dirs", rest.dirs)?;
+    value.set_item("bytes", rest.bytes)?;
+    value.set_item("allocated", rest.allocated)?;
+    Ok(Some(value))
 }
 
 /// The scan scope a read happened under, including the fingerprints a cache key needs.
@@ -648,8 +688,15 @@ impl PyIndex {
     /// than from a version sampled before dispatch.
     ///
     /// It is also one crossing and one lock acquisition instead of one of each per call.
-    #[pyo3(signature = (children_of = None, rollups = None, total = false, extensions = None))]
-    #[allow(clippy::needless_pass_by_value)]
+    #[pyo3(signature = (
+        children_of = None,
+        rollups = None,
+        total = false,
+        extensions = None,
+        after = None,
+        limit = None,
+    ))]
+    #[allow(clippy::needless_pass_by_value, clippy::too_many_arguments)]
     fn read<'py>(
         &self,
         py: Python<'py>,
@@ -657,9 +704,12 @@ impl PyIndex {
         rollups: Option<Vec<PathBuf>>,
         total: bool,
         extensions: Option<usize>,
+        after: Option<std::ffi::OsString>,
+        limit: Option<usize>,
     ) -> PyResult<Bound<'py, PyDict>> {
         let request = fdu_core::ReadRequest {
             children_of,
+            children_page: fdu_core::ChildPageRequest { after, limit: row_bound(limit) },
             rollups: rollups.unwrap_or_default(),
             total,
             extensions: ext_bound(extensions),
@@ -693,33 +743,38 @@ impl PyIndex {
         out.set_item("rollups", rollups)?;
         out.set_item(
             "children",
-            bundle.children.as_ref().map(|children| child_list(py, children)).transpose()?,
+            bundle.children.as_ref().map(|page| child_page_dict(py, page)).transpose()?,
         )?;
         Ok(out)
     }
 
-    /// Every direct child of a directory, with its roll-up, in one call.
+    /// One page of a directory's children, in one call.
     ///
-    /// Returns `None` when the path is absent or is not a directory — distinct from an
-    /// empty list, which means a directory with no children.
-    #[pyo3(signature = (path = None, extensions = None))]
+    /// Returns `None` when the path is absent or is not a directory — distinct from a
+    /// page with no rows, which means a directory with no children.
+    ///
+    /// `after` resumes strictly past a name and `limit` bounds the rows, so a wide
+    /// directory costs what is drawn rather than what it holds. Rows carry scalar subtree
+    /// totals; ask `rollup()` for the extension breakdown of the one directory being
+    /// inspected.
+    #[pyo3(signature = (path = None, after = None, limit = None))]
     fn children<'py>(
         &self,
         py: Python<'py>,
         path: Option<PathBuf>,
-        extensions: Option<usize>,
-    ) -> PyResult<Option<Bound<'py, PyList>>> {
+        after: Option<std::ffi::OsString>,
+        limit: Option<usize>,
+    ) -> PyResult<Option<Bound<'py, PyDict>>> {
         let path = path.unwrap_or_default();
         // One capture under one read lock, rather than a lookup per child per field:
-        // `ChildSnapshot` already carries kind, attrs, roll-up and provenance together,
-        // so a listing cannot see two different instants down its own rows.
-        let Some(children) =
-            self.inner.children_bounded(&path, ext_bound(extensions)).map_err(to_py_err)?
-        else {
+        // `ChildSnapshot` already carries kind, attrs, totals and provenance together, so
+        // a listing cannot see two different instants down its own rows.
+        let request = fdu_core::ChildPageRequest { after, limit: row_bound(limit) };
+        let Some(page) = self.inner.children_page(&path, &request).map_err(to_py_err)? else {
             return Ok(None);
         };
 
-        Ok(Some(child_list(py, &children)?))
+        Ok(Some(child_page_dict(py, &page)?))
     }
 
     /// Provenance for one retained path, or `None` when it is absent.

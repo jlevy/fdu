@@ -468,7 +468,14 @@ class RollUp:
 class Child:
     name: str
     kind: EntryKind
-    rollup: RollUp | None
+    totals: SummaryRow | None
+    """Subtree totals for a directory child, or ``None`` for anything else.
+
+    Scalars, not a breakdown. A listing wants a size column per row; asking for the
+    per-extension tallies per row cloned one map per child to render one number per
+    child. Ask ``Index.rollup()`` for the breakdown of the one directory being inspected.
+    """
+
     bytes: int | None
     allocated: int | None
     mtime_ns: int | None
@@ -489,6 +496,66 @@ class Child:
     ``release.v2.zip`` is ``.v2.zip`` here, an ``archive`` by type, and on the ``.zip``
     pile. Filter on this; sum bytes by the breakdown's key.
     """
+
+
+@dataclass(frozen=True, slots=True)
+class ChildRemainder:
+    """The children a page does not carry, as their share of the directory's totals.
+
+    A page's rows plus this account for the directory exactly, so a consumer showing
+    fifty of eight hundred children can still say honestly what the other seven hundred
+    and fifty come to.
+
+    It is the complement of *this page*, not of everything delivered so far: on page two
+    it counts page one's rows as well, which is what keeps it exact on every page without
+    a cursor that has to carry a running total. ``ChildPage.next``, not this, says whether
+    more pages remain.
+
+    No newest-mtime field: a maximum cannot be subtracted back out, and a figure that is
+    sometimes wrong is worse than one that is absent.
+    """
+
+    rows: int
+    """Child rows this page does not carry."""
+
+    files: int
+    """Files those rows account for."""
+
+    dirs: int
+    """Directories those rows account for, counting a withheld directory row itself."""
+
+    bytes: int
+    allocated: int
+
+
+@dataclass(frozen=True, slots=True)
+class ChildPage:
+    """One page of a directory's children, with the rest accounted for beside it."""
+
+    rows: tuple[Child, ...]
+    """The rows this page carries, in name order."""
+
+    remainder: ChildRemainder | None = None
+    """What this page does not carry, or ``None`` when it carries the whole directory."""
+
+    next: str | None = None
+    """Cursor to pass as ``after`` for the next page; ``None`` at the end.
+
+    This, not ``remainder``, is what says whether paging continues: a later page's
+    remainder counts earlier pages' rows too, so it stays present on the last page.
+    """
+
+    @property
+    def truncated(self) -> bool:
+        """Whether this page carries fewer than the directory's children."""
+
+        return self.remainder is not None
+
+    @property
+    def has_next(self) -> bool:
+        """Whether another page follows this one."""
+
+        return self.next is not None
 
 
 @dataclass(frozen=True, slots=True)
@@ -835,9 +902,10 @@ class Bundle:
     rollups: tuple[RollUp | None, ...]
     """One entry per requested path; ``None`` where it is absent or not a directory."""
 
-    children: tuple[Child, ...] | None
+    children: ChildPage | None
     """The requested directory's children, or ``None`` when no directory was named or it
-    is absent -- distinct from an empty tuple, which means a directory with no children."""
+    is absent -- distinct from a page with no rows, which means a directory with no
+    children."""
 
 
 @dataclass(frozen=True, slots=True)

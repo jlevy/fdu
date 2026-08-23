@@ -137,6 +137,63 @@ def _tree_section(report: fdu.Report) -> fdu.TreeNode:
     raise AssertionError("the report has no tree section")
 
 
+def check_a_listing_pages_and_accounts_for_the_rest() -> None:
+    """A wide directory is drawn a page at a time, and the page says what it left out.
+
+    The two facts a partial listing has to carry are different, and conflating them is
+    the bug this pins: the remainder is this page's complement in the whole directory,
+    so it stays present on the last page, while `next` is what says paging continues.
+    A consumer looping on `truncated` would never stop.
+    """
+
+    root = Path(tempfile.mkdtemp(prefix="fdu-page-"))
+    for index_of in range(10):
+        (root / f"dir{index_of}").mkdir()
+        (root / f"dir{index_of}" / "f.txt").write_text("x" * (index_of + 1), encoding="utf-8")
+
+    index = fdu.open(root)
+    whole = index.total()
+
+    seen: list[str] = []
+    after: str | None = None
+    pages = 0
+    while True:
+        page = index.children(after=after, limit=3)
+        assert page is not None
+        pages += 1
+        seen.extend(child.name for child in page.rows)
+        assert page.truncated, "three rows never cover ten children"
+
+        # Rows plus remainder are the directory, on every page.
+        shown = sum(child.totals.bytes for child in page.rows if child.totals)
+        assert page.remainder is not None
+        assert shown + page.remainder.bytes == whole.bytes
+        assert len(page.rows) + page.remainder.rows == 10
+
+        if not page.has_next:
+            break
+        after = page.next
+        assert pages <= 10, "the cursor must make progress"
+
+    assert seen == sorted(seen), "children arrive in name order"
+    assert len(seen) == len(set(seen)) == 10, "every child once"
+    assert pages == 4, "ten children, three at a time"
+
+    # The whole directory in one call reports neither, by omission.
+    everything = index.children()
+    assert everything is not None
+    assert len(everything.rows) == 10
+    assert not everything.truncated and not everything.has_next
+
+    # A file is not a directory, which is distinct from a directory with no children.
+    assert index.children("dir0/f.txt") is None
+    assert index.children("nope") is None
+    empty = index.children("dir0")
+    assert empty is not None and len(empty.rows) == 1
+
+    fdu.clear_cache(root)
+
+
 def check_one_bundle_answers_a_whole_page() -> None:
     """A composed page comes from one read, at one instant, with its own cursor.
 
@@ -155,10 +212,12 @@ def check_one_bundle_answers_a_whole_page() -> None:
     page = index.read(children_of=".", rollups=("src", "missing"), total=True, extensions=1)
 
     assert page.children is not None
-    assert {child.name for child in page.children} == {"src", "docs"}
+    assert {child.name for child in page.children.rows} == {"src", "docs"}
     assert page.total is not None
     # The rows and the header describe one instant, so they add up by construction.
-    assert sum(child.rollup.files for child in page.children if child.rollup) == page.total.files
+    assert (
+        sum(child.totals.files for child in page.children.rows if child.totals) == page.total.files
+    )
 
     assert len(page.rollups) == 2
     assert page.rollups[0] is not None and page.rollups[0].files == 1
@@ -174,10 +233,17 @@ def check_one_bundle_answers_a_whole_page() -> None:
     assert page.scope.type_rules_fingerprint == fdu.TypeRegistry.compiled().fingerprint
     assert page.scope.max_depth is None
 
-    # The extension bound reaches every roll-up in the bundle, not just the top one.
-    for rollup in (page.total, *(child.rollup for child in page.children), page.rollups[0]):
+    # The extension bound reaches every roll-up in the bundle.
+    for rollup in (page.total, page.rollups[0]):
         if rollup is not None:
             assert len(rollup.by_extension) <= 1
+
+    # A listing row carries scalars, and its breakdown is a separate projection. The
+    # bundle asked for children and roll-ups in one call precisely so a consumer can
+    # have both without a second crossing.
+    src = next(child for child in page.children.rows if child.name == "src")
+    assert src.totals is not None and src.totals.files == 1
+    assert page.rollups[0].files == src.totals.files
 
     # And the cursor works: what happened after it is what changed since.
     (root / "docs" / "extra.md").write_text("more", encoding="utf-8")
@@ -327,7 +393,9 @@ def check_a_listing_carries_its_own_identity() -> None:
     (root / "Makefile").write_text("all:\n\ttrue\n", encoding="utf-8")
 
     index = fdu.open(root)
-    children = {child.name: child for child in index.children() or ()}
+    listing = index.children()
+    assert listing is not None
+    children = {child.name: child for child in listing.rows}
 
     notes = children["notes.md"]
     assert notes.classification is not None
@@ -503,11 +571,18 @@ def check_bounded_extension_rows_account_for_the_rest() -> None:
         (nested / f"file{suffix}").write_text("x" * size, encoding="utf-8")
     index.refresh()
 
-    child = next(item for item in index.children(extensions=1) or () if item.name == "sub")
-    assert child.rollup is not None
-    assert len(child.rollup.by_extension) == 1
-    assert child.rollup.extension_remainder is not None
-    assert child.rollup.extension_remainder.extensions == 3
+    listing = index.children()
+    assert listing is not None
+    child = next(item for item in listing.rows if item.name == "sub")
+    assert child.totals is not None and child.totals.files == len(sizes)
+
+    # The row does not carry the breakdown at all -- that is the point of the split -- so
+    # the bound belongs to the projection that does.
+    bounded_child = index.rollup("sub", extensions=1)
+    assert bounded_child is not None
+    assert len(bounded_child.by_extension) == 1
+    assert bounded_child.extension_remainder is not None
+    assert bounded_child.extension_remainder.extensions == 3
     fdu.clear_cache(root)
 
 
@@ -842,6 +917,7 @@ def main() -> None:
     check_a_listing_carries_its_own_identity()
     check_polling_is_selectable_for_filesystems_that_drop_events()
     check_one_bundle_answers_a_whole_page()
+    check_a_listing_pages_and_accounts_for_the_rest()
     check_the_event_loop_adapter_delivers_the_same_batches()
     check_the_sse_example_resumes_or_resyncs()
     check_a_bounded_tree_says_what_it_withheld()
@@ -871,7 +947,7 @@ def main() -> None:
 
     children = index.children()
     assert children is not None
-    assert {child.name for child in children} == {"notes.md", "src"}
+    assert {child.name for child in children.rows} == {"notes.md", "src"}
     assert index.rollup("src") is not None
     assert index.rollup("missing") is None
 

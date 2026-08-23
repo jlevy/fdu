@@ -28,14 +28,19 @@ class Index:
         self, path: str | PathLike[str], extensions: int | None = None
     ) -> dict[str, Any] | None: ...
     def children(
-        self, path: str | PathLike[str] | None = None, extensions: int | None = None
-    ) -> list[dict[str, Any]] | None: ...
+        self,
+        path: str | PathLike[str] | None = None,
+        after: str | None = None,
+        limit: int | None = None,
+    ) -> dict[str, Any] | None: ...
     def read(
         self,
         children_of: str | PathLike[str] | None = None,
         rollups: list[str] | None = None,
         total: bool = False,
         extensions: int | None = None,
+        after: str | None = None,
+        limit: int | None = None,
     ) -> dict[str, Any]: ...
     def provenance(self, path: str | PathLike[str] | None = None) -> dict[str, Any] | None: ...
     def refresh(self, path: str | PathLike[str] | None = None) -> dict[str, Any]: ...

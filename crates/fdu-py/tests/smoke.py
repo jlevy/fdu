@@ -72,14 +72,28 @@ def main() -> None:
     assert index.rollup("does-not-exist") is None
     assert index.rollup("a.txt") is None, "a file has no roll-up"
 
-    # Bulk child listing: one call returns every child with its roll-up.
-    children = index.children("")
-    assert children is not None
-    by_name = {c["name"]: c for c in children}
+    # Bulk child listing: one call returns a page of children with their subtree totals.
+    page = index.children("")
+    assert page is not None
+    by_name = {c["name"]: c for c in page["rows"]}
     assert set(by_name) == {"a.txt", "src"}, by_name
     assert by_name["src"]["kind"] == "dir"
+    assert by_name["src"]["files"] == 1, by_name
     assert by_name["a.txt"]["kind"] == "file"
     assert by_name["a.txt"]["bytes"] == 5
+    assert page["remainder"] is None and page["next"] is None, page
+
+    # And it pages: a bound on the rows, a cursor to resume from, and what was left out.
+    first = index.children("", None, 1)
+    assert first is not None and len(first["rows"]) == 1, first
+    assert first["next"] == first["rows"][0]["name"], first
+    assert first["remainder"]["rows"] == 1, first
+    rest = index.children("", first["next"], 1)
+    assert rest is not None and rest["next"] is None, rest
+    assert {c["name"] for c in first["rows"]} | {c["name"] for c in rest["rows"]} == {
+        "a.txt",
+        "src",
+    }
 
     # The installed wheel is also the zero-install CLI artifact used by uvx.
     entrypoint = pathlib.Path(sys.executable).with_name("fdu.exe" if os.name == "nt" else "fdu")
@@ -192,7 +206,8 @@ def main() -> None:
             assert os.fsencode(raw_index.root) == os.path.realpath(raw_root), raw_index.root
             raw_children = raw_index.children()
             assert raw_children is not None
-            assert raw_name in {os.fsencode(child["name"]) for child in raw_children}, raw_children
+            raw_names = {os.fsencode(child["name"]) for child in raw_children["rows"]}
+            assert raw_name in raw_names, raw_children
             assert raw_index.total()["by_extension"][".rs"]["files"] == 1
 
             raw_mark = raw_index.clock
@@ -260,7 +275,8 @@ def main() -> None:
         os.symlink("file", kind_root / "link")
         os.mkfifo(kind_root / "fifo")
         expected_kinds.update({"link": "symlink", "fifo": "other"})
-    kinds = {child["name"]: child["kind"] for child in fdu_py.scan(str(kind_root)).children("")}
+    kind_page = fdu_py.scan(str(kind_root)).children("")
+    kinds = {child["name"]: child["kind"] for child in kind_page["rows"]}
     assert kinds == expected_kinds, kinds
 
     # The query surface: the same five axes the CLI exposes, as one typed call.

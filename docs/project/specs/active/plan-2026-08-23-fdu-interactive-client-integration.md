@@ -217,7 +217,7 @@ the index’s clocked delta contract is the same guard, held in one place.
 | Per-directory recursive tallies, live | `Index.rollup()`, `merge_upward` | Ready |
 | Dual all/unignored values on every row | one plane only; selection re-aggregates at ~1 µs/entry | **Gap: partitioned tallies** |
 | Hidden-file policy with an allowlist | no visibility concept | **Gap: second tag rule** |
-| Children listing with per-child roll-ups | `Index.children()` | Ready |
+| Children listing with per-child totals | `Index.children()`, paged | Ready |
 | Bounded subtree tree with omission accounting | `TreeNode.truncated` is a bare bool | Polish: remainder aggregate |
 | Per-extension tallies per directory | `RollUp.by_extension` | Ready |
 | Recency queries (top-N by mtime) | `files` view, `sort=mtime` | Ready |
@@ -579,9 +579,11 @@ consumers rather than wrapped.
   aggregate of what was dropped (dirs, files, bytes per plane), machine-readable —
   “truncate freely, never silently” applied to the one place it is still a bare bool.
   A treemap’s “other” cell is this value.
-- Document that `children()` on a pathologically wide directory returns everything, and
-  that the bounded alternative is the tree view; whether `children()` needs its own
-  bound is an open question.
+- `children()` takes its own bound.
+  Answered in the affirmative: a listing is paged by a row limit and a name cursor, its
+  rows carry scalar subtree totals, and the page states what it does not carry.
+  The per-extension breakdown moves to `rollup()` for the one directory being inspected,
+  because per row it cost a map clone per child to render one number per child.
 - `WatchOptions.interval` default (2.0 s) is tuned for terminal repaints; embedder
   documentation states that live UIs set it near their frame budget (measured: 51 ms
   end-to-end at `interval=0.05`).
@@ -710,8 +712,6 @@ here records its regime.
 - Should the engine probe mount tables to choose the watch backend, or stay explicit and
   let clients own detection?
   Explicit ships first; probing is additive.
-- Does `children()` need its own bound, or is the tree view’s remainder enough for wide
-  directories?
 - Should the two projects converge on one registry file, or stay two registries over one
   dialect? Convergence is attractive and couples release cadences: metabrowser could not
   then add a file type without an fdu release.
