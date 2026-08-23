@@ -21,8 +21,8 @@ use crate::classify::{DetectionConfidence, DetectionSource, human_language_name}
 use crate::content::{CoverageReason, MetricValues};
 use crate::engine_contract::{EntryKind, Freshness};
 use crate::query::{
-    FileRow, MetricGroup, MetricRow, MetricSummary, Remainder, Report, ReportSource, Section,
-    SizeMetric, SummaryRow, TreeNode, TypeRow, ViewSpec, document_words, format_rfc3339,
+    FileRow, GroupRow, MetricGroup, MetricRow, MetricSummary, Remainder, Report, ReportSource,
+    Section, SizeMetric, SummaryRow, TreeNode, TypeRow, ViewSpec, document_words, format_rfc3339,
 };
 
 /// The all-caps label naming which view a block of text output belongs to.
@@ -147,6 +147,9 @@ fn render_text(report: &Report, color: bool) -> String {
             Section::Tree(root) => render_text_tree(&mut out, root, report.size, color),
             Section::Extensions { rows, .. } => {
                 render_text_types(&mut out, rows, report.size, color);
+            }
+            Section::Groups { rows, .. } => {
+                render_text_groups(&mut out, rows, report.size, color);
             }
             Section::Metrics { view, summary } => {
                 render_text_metrics(&mut out, *view, summary, report.size, color);
@@ -390,6 +393,25 @@ fn render_text_types(out: &mut String, rows: &[TypeRow], size: SizeMetric, color
     }
 }
 
+/// Render a browsing-group section as aligned rows.
+///
+/// Labelled rather than keyed, because this is the view a person reads: the stable id is
+/// in every machine format beside the label, and a terminal row showing `docs` where the
+/// registry says "Documentation" makes the reader translate.
+fn render_text_groups(out: &mut String, rows: &[GroupRow], size: SizeMetric, color: bool) {
+    let width = label_width(rows.iter().map(|row| row.label.as_str()), TEXT_TYPE_LABEL_WIDTH);
+    for row in rows {
+        let _ = writeln!(
+            out,
+            "{:>TEXT_SIZE_WIDTH$}  {} {} {}",
+            human_bytes(pick(size, row.bytes, row.allocated)),
+            label_cell(&row.label, width, STYLE_TYPE, color),
+            row.files,
+            plural(row.files, "file", "files"),
+        );
+    }
+}
+
 /// Render a summary section as one line.
 /// The YAML form of the bound, matching the JSON field.
 ///
@@ -459,6 +481,7 @@ fn bound_note(section: &Section) -> String {
     let (shown, total) = match section {
         Section::Files { rows, total, .. } => (rows.len(), *total),
         Section::Extensions { rows, total } => (rows.len(), *total),
+        Section::Groups { rows, total } => (rows.len(), *total),
         Section::Metrics { summary, .. } => (summary.rows.len(), summary.total_rows),
         // A tree marks its dropped children in place, at the depth they were dropped; a
         // summary is one row and cannot be bounded.
@@ -625,6 +648,22 @@ fn section_json(section: &Section, _indent: usize) -> String {
                     "{}\n    {{\"extension\": {}, \"files\": {}, \"bytes\": {}, \"allocated\": {}}}",
                     if index > 0 { "," } else { "" },
                     quote(&row.extension),
+                    row.files,
+                    row.bytes,
+                    row.allocated
+                );
+            }
+            out.push_str(if rows.is_empty() { "]" } else { "\n  ]" });
+        }
+        Section::Groups { rows, total } => {
+            let _ = write!(out, "\"bound\": {}, \"groups\": [", bound_json(rows.len(), *total));
+            for (index, row) in rows.iter().enumerate() {
+                let _ = write!(
+                    out,
+                    "{}\n    {{\"id\": {}, \"label\": {}, \"files\": {}, \"bytes\": {}, \"allocated\": {}}}",
+                    if index > 0 { "," } else { "" },
+                    quote(&row.id),
+                    quote(&row.label),
                     row.files,
                     row.bytes,
                     row.allocated
@@ -930,6 +969,21 @@ fn render_yaml(report: &Report) -> String {
                     }
                 }
             }
+            Section::Groups { rows, total } => {
+                yaml_bound(&mut out, rows.len(), *total);
+                if rows.is_empty() {
+                    out.push_str("    groups: []\n");
+                } else {
+                    out.push_str("    groups:\n");
+                    for row in rows {
+                        let _ = writeln!(out, "      - id: {}", yaml_scalar(&row.id));
+                        let _ = writeln!(out, "        label: {}", yaml_scalar(&row.label));
+                        let _ = writeln!(out, "        files: {}", row.files);
+                        let _ = writeln!(out, "        bytes: {}", row.bytes);
+                        let _ = writeln!(out, "        allocated: {}", row.allocated);
+                    }
+                }
+            }
             Section::Metrics { summary, .. } => yaml_metrics(&mut out, summary),
             Section::Files { rows, total, .. } => {
                 yaml_bound(&mut out, rows.len(), *total);
@@ -1178,6 +1232,7 @@ fn view_header(view: ViewSpec) -> &'static str {
         ViewSpec::Types => "TYPES",
         ViewSpec::Extensions => "EXTENSIONS",
         ViewSpec::Families => "FAMILIES",
+        ViewSpec::Groups => "GROUPS",
         ViewSpec::Languages => "LANGUAGES",
         ViewSpec::Documents => "DOCUMENTS",
         ViewSpec::Files => "FILES",

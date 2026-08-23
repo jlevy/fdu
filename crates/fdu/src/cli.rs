@@ -138,7 +138,7 @@ SIX AXES, AND EVERY OPTION BELONGS TO EXACTLY ONE
   Scope      PATH, --scan-depth, --order, --threads, --type-rules
   Content    --analyze none|lines|code|words|all        which file bodies are read
   Selection  --include, --exclude, --depth, --limit     which entries are considered
-  View       tree,extensions,types,families,languages,documents,files,summary,all
+  View       tree,groups,families,types,extensions,languages,documents,files,summary,all
   Format     --format text|json|jsonl|yaml, --color
   Mode       --cache, --watch, --analysis-workers
 
@@ -407,7 +407,7 @@ pub struct Cli {
     pub size: String,
 
     // ---- view: which roll-ups are reported ----
-    /// Views: tree, extensions, types, families, languages, documents, largest, recent,
+    /// Views: tree, groups, extensions, types, families, languages, documents, largest, recent,
     /// files, summary, or full. Defaults to the view that displays what --analyze asked
     /// for.
     #[arg(long, value_name = "LIST", help_heading = "VIEWS")]

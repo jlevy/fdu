@@ -1,77 +1,129 @@
 # fdu file-type rules. This deliberately uses metabrowser's [[kind]] manifest shape.
 # Fields are build-time only; runtime never parses TOML.
 
+# Browsing groups. A second axis, not a renaming of `family`: `family` answers an
+# analysis question -- which analyzer may open this file -- so every image, video, PDF,
+# and archive is `binary` under it. A person browsing a photo directory is not helped by
+# one row reading "binary 100%".
+#
+# These are metabrowser's six, because the [[kind]] dialect is shared and a consumer
+# supplying its own registry should find the same vocabulary waiting.
+
+[[group]]
+id = "code"
+label = "Code"
+order = 10
+
+[[group]]
+id = "docs"
+label = "Documentation"
+order = 20
+
+[[group]]
+id = "data"
+label = "Data"
+order = 30
+
+[[group]]
+id = "archives"
+label = "Archives"
+order = 40
+
+[[group]]
+id = "media"
+label = "Media"
+order = 50
+
+[[group]]
+id = "other"
+label = "Other"
+order = 60
+
 [[kind]]
 id = "rust"
 family = "code"
+group = "code"
 extensions = ["rs"]
 
 [[kind]]
 id = "python"
 family = "code"
+group = "code"
 extensions = ["py", "pyi", "pyw"]
 shebangs = ["python", "python3", "uv"]
 
 [[kind]]
 id = "javascript"
 family = "code"
+group = "code"
 extensions = ["js", "jsx", "mjs", "cjs"]
 shebangs = ["node", "deno", "bun"]
 
 [[kind]]
 id = "typescript"
 family = "code"
+group = "code"
 extensions = ["ts", "tsx", "mts", "cts"]
 
 [[kind]]
 id = "go"
 family = "code"
+group = "code"
 extensions = ["go"]
 
 [[kind]]
 id = "c"
 family = "code"
+group = "code"
 extensions = ["c", "h"]
 
 [[kind]]
 id = "cpp"
 family = "code"
+group = "code"
 extensions = ["cc", "cpp", "cxx", "hh", "hpp", "hxx"]
 
 [[kind]]
 id = "csharp"
 family = "code"
+group = "code"
 extensions = ["cs"]
 
 [[kind]]
 id = "java"
 family = "code"
+group = "code"
 extensions = ["java"]
 
 [[kind]]
 id = "kotlin"
 family = "code"
+group = "code"
 extensions = ["kt", "kts"]
 
 [[kind]]
 id = "swift"
 family = "code"
+group = "code"
 extensions = ["swift"]
 
 [[kind]]
 id = "ruby"
 family = "code"
+group = "code"
 extensions = ["rb"]
 shebangs = ["ruby"]
 
 [[kind]]
 id = "php"
 family = "code"
+group = "code"
 extensions = ["php"]
 
 [[kind]]
 id = "shell"
 family = "code"
+group = "code"
 extensions = ["sh", "bash", "zsh", "fish"]
 filenames = [".bashrc", ".zshrc", ".profile"]
 shebangs = ["sh", "bash", "zsh", "fish"]
@@ -79,249 +131,298 @@ shebangs = ["sh", "bash", "zsh", "fish"]
 [[kind]]
 id = "powershell"
 family = "code"
+group = "code"
 extensions = ["ps1", "psm1", "psd1"]
 
 [[kind]]
 id = "lua"
 family = "code"
+group = "code"
 extensions = ["lua"]
 shebangs = ["lua"]
 
 [[kind]]
 id = "perl"
 family = "code"
+group = "code"
 extensions = ["pl", "pm"]
 shebangs = ["perl"]
 
 [[kind]]
 id = "r"
 family = "code"
+group = "code"
 extensions = ["r"]
 
 [[kind]]
 id = "dart"
 family = "code"
+group = "code"
 extensions = ["dart"]
 
 [[kind]]
 id = "scala"
 family = "code"
+group = "code"
 extensions = ["scala", "sc"]
 
 [[kind]]
 id = "haskell"
 family = "code"
+group = "code"
 extensions = ["hs", "lhs"]
 
 [[kind]]
 id = "elixir"
 family = "code"
+group = "code"
 extensions = ["ex", "exs"]
 
 [[kind]]
 id = "erlang"
 family = "code"
+group = "code"
 extensions = ["erl", "hrl"]
 
 [[kind]]
 id = "clojure"
 family = "code"
+group = "code"
 extensions = ["clj", "cljs", "cljc"]
 
 [[kind]]
 id = "fsharp"
 family = "code"
+group = "code"
 extensions = ["fs", "fsx", "fsi"]
 
 [[kind]]
 id = "ocaml"
 family = "code"
+group = "code"
 extensions = ["ml", "mli"]
 
 [[kind]]
 id = "objective-c"
 family = "code"
+group = "code"
 extensions = ["m", "mm"]
 
 [[kind]]
 id = "julia"
 family = "code"
+group = "code"
 extensions = ["jl"]
 
 [[kind]]
 id = "zig"
 family = "code"
+group = "code"
 extensions = ["zig"]
 
 [[kind]]
 id = "nim"
 family = "code"
+group = "code"
 extensions = ["nim"]
 
 [[kind]]
 id = "solidity"
 family = "code"
+group = "code"
 extensions = ["sol"]
 
 [[kind]]
 id = "assembly"
 family = "code"
+group = "code"
 extensions = ["asm", "s"]
 
 [[kind]]
 id = "sql"
 family = "code"
+group = "code"
 extensions = ["sql"]
 
 [[kind]]
 id = "make"
 family = "code"
+group = "code"
 filenames = ["Makefile", "GNUmakefile"]
 
 [[kind]]
 id = "dockerfile"
 family = "code"
+group = "code"
 filenames = ["Dockerfile"]
 
 [[kind]]
 id = "cmake"
 family = "code"
+group = "code"
 extensions = ["cmake"]
 filenames = ["CMakeLists.txt"]
 
 [[kind]]
 id = "protobuf"
 family = "code"
+group = "code"
 extensions = ["proto"]
 
 [[kind]]
 id = "terraform"
 family = "code"
+group = "code"
 extensions = ["tf", "hcl"]
 
 [[kind]]
 id = "nix"
 family = "code"
+group = "code"
 extensions = ["nix"]
 
 [[kind]]
 id = "html"
 family = "markup"
+group = "code"
 extensions = ["html", "htm"]
 
 [[kind]]
 id = "css"
 family = "code"
+group = "code"
 extensions = ["css", "scss", "sass", "less"]
 
 [[kind]]
 id = "vue"
 family = "markup"
+group = "code"
 extensions = ["vue"]
 
 [[kind]]
 id = "svelte"
 family = "markup"
+group = "code"
 extensions = ["svelte"]
 
 [[kind]]
 id = "markdown"
 family = "prose"
+group = "docs"
 extensions = ["md", "markdown", "mdx"]
 filenames = ["README", "CHANGELOG", "CONTRIBUTING", "LICENSE"]
 
 [[kind]]
 id = "text"
 family = "prose"
+group = "docs"
 extensions = ["txt", "text"]
 
 [[kind]]
 id = "rst"
 family = "prose"
+group = "docs"
 extensions = ["rst"]
 
 [[kind]]
 id = "manpage"
 family = "markup"
+group = "docs"
 
 [[kind]]
 id = "asciidoc"
 family = "prose"
+group = "docs"
 extensions = ["adoc", "asciidoc"]
 
 [[kind]]
 id = "org"
 family = "prose"
+group = "docs"
 extensions = ["org"]
 
 [[kind]]
 id = "latex"
 family = "markup"
+group = "docs"
 extensions = ["tex", "sty", "cls"]
 
 [[kind]]
 id = "json"
 family = "data"
+group = "data"
 extensions = ["json", "jsonl", "ndjson"]
 
 [[kind]]
 id = "yaml"
 family = "data"
+group = "data"
 extensions = ["yaml", "yml"]
 
 [[kind]]
 id = "toml"
 family = "data"
+group = "data"
 extensions = ["toml"]
 
 [[kind]]
 id = "xml"
 family = "markup"
+group = "data"
 extensions = ["xml", "xsd", "xsl", "svg"]
 
 [[kind]]
 id = "csv"
 family = "data"
+group = "data"
 extensions = ["csv", "tsv"]
 
 [[kind]]
 id = "notebook"
 family = "data"
+group = "data"
 extensions = ["ipynb"]
 
 [[kind]]
 id = "pdf"
 family = "binary"
+group = "docs"
 extensions = ["pdf"]
 
 [[kind]]
 id = "office-document"
 family = "binary"
+group = "docs"
 extensions = ["doc", "docx", "odt", "rtf", "xls", "xlsx", "ods", "ppt", "pptx", "odp"]
 
 [[kind]]
 id = "image"
 family = "binary"
+group = "media"
 extensions = ["png", "jpg", "jpeg", "gif", "webp", "avif", "heic", "bmp", "ico", "tif", "tiff"]
 
 [[kind]]
 id = "audio"
 family = "binary"
+group = "media"
 extensions = ["mp3", "wav", "flac", "aac", "m4a", "ogg", "opus"]
 
 [[kind]]
 id = "video"
 family = "binary"
+group = "media"
 extensions = ["mp4", "mkv", "mov", "avi", "webm", "m4v"]
 
 [[kind]]
 id = "archive"
 family = "binary"
+group = "archives"
 extensions = ["zip", "gz", "bz2", "xz", "zst", "tar.gz", "tar.bz2", "tar.xz", "tar.zst", "7z", "rar"]
 
 [[kind]]
 id = "executable"
 family = "binary"
+group = "other"
 extensions = ["exe", "dll", "dylib", "so", "a", "o", "class", "jar", "wasm"]
 
 # Compiled bytecode and package payloads. These carried real volume into `unknown` on
@@ -330,25 +431,30 @@ extensions = ["exe", "dll", "dylib", "so", "a", "o", "class", "jar", "wasm"]
 [[kind]]
 id = "bytecode"
 family = "binary"
+group = "other"
 extensions = ["pyc", "pyo", "pyd", "beam", "elc"]
 
 [[kind]]
 id = "package-archive"
 family = "binary"
+group = "archives"
 extensions = ["pack", "idx", "whl", "egg", "nupkg", "crate"]
 
 # A source map is generated JSON: data, not prose, and never hand-written.
 [[kind]]
 id = "source-map"
 family = "data"
+group = "data"
 extensions = ["map"]
 
 [[kind]]
 id = "font"
 family = "binary"
+group = "media"
 extensions = ["ttf", "otf", "woff", "woff2"]
 
 [[kind]]
 id = "database"
 family = "binary"
+group = "data"
 extensions = ["db", "sqlite", "sqlite3", "parquet", "arrow"]

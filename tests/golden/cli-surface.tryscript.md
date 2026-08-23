@@ -63,9 +63,9 @@ SELECTION
                                 allocated]
 
 VIEWS
-      --view <LIST>         Views: tree, extensions, types, families, languages, documents, largest,
-                            recent, files, summary, or full. Defaults to the view that displays what
-                            --analyze asked for
+      --view <LIST>         Views: tree, groups, extensions, types, families, languages, documents,
+                            largest, recent, files, summary, or full. Defaults to the view that
+                            displays what --analyze asked for
       --words-per-page <N>  Logical words per derived document page [default: 250]
 
 CONTENT ANALYSIS
@@ -156,15 +156,21 @@ There are no subcommands: the grammar is always “report on a path”.
 
 | Axis | Question | Options |
 | --- | --- | --- |
-| Scope | What is scanned and cached? | `PATH`, `--scan-depth N` |
+| Scope | What is scanned and cached? | `PATH`, `--scan-depth N`, `--order`, `--threads`, `--type-rules FILE` |
 | Selection | Which entries does this query consider? | `--include`, `--exclude`, `--min-size`, `--modified-since`, `--modified-before`, `--kind`, `--depth`, `-n/--limit`, `--sort`, `--reverse`, `--size` |
-| View | Which roll-up is reported? | `--view tree,extensions,types,families,languages,documents,files,summary` |
+| View | Which roll-up is reported? | `--view tree,groups,families,types,extensions,languages,documents,files,summary` |
 | Format | How is it serialized? | `--format text\|json\|jsonl\|yaml`, `--color` |
 | Mode | How is work performed? | `--cache auto\|refresh\|read-only\|only\|off`, `--analyze none\|basic\|code\|documents\|full` |
 
 Scope versus selection is the distinction that matters: scope decides what is scanned
 and cached, so one cache serves every query, while selection filters the retained index
 at query time. Narrowing a selection never costs a rescan.
+
+`--type-rules FILE` is scope for the same reason: a `[[kind]]` manifest decides what
+every type and group row *means*, so a snapshot taken under one file is not answerable
+under another and the cache invalidates accordingly.
+Without it, fdu classifies against its compiled taxonomy, which is also the fast path —
+there is no file to find and no startup parse.
 
 Cost has three layers.
 A single unfiltered `--view summary PATH` is the one exact composition that retains only
@@ -187,6 +193,12 @@ metadata visible but does not retain a separate lower-level metric record for th
   leading dot, and names having none are tallied under the literal `(none)`.
 - `--view types` for stable detected file types and exact byte shares.
 - `--view families` for code, prose, markup, data, binary, and unknown roll-ups.
+  This is the analysis axis: it says which analyzer may open a file, so every image,
+  video, PDF, and archive is `binary`.
+- `--view groups` for the browsing axis the active rule registry declares — where a
+  reader would look for a file rather than which analyzer may open it.
+  Rows carry a stable `id` and a display `label`; a registry declaring no `[[group]]`
+  reports none.
 - `--view languages` for code-family rows and byte shares from path-only detection.
 - `--view documents` for prose metrics; it requires any enabled analysis profile.
 - `--view files` for a flat listing.
@@ -373,7 +385,7 @@ SIX AXES, AND EVERY OPTION BELONGS TO EXACTLY ONE
   Scope      PATH, --scan-depth, --order, --threads, --type-rules
   Content    --analyze none|lines|code|words|all        which file bodies are read
   Selection  --include, --exclude, --depth, --limit     which entries are considered
-  View       tree,extensions,types,families,languages,documents,files,summary,all
+  View       tree,groups,families,types,extensions,languages,documents,files,summary,all
   Format     --format text|json|jsonl|yaml, --color
   Mode       --cache, --watch, --analysis-workers
 

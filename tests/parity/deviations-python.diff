@@ -107,8 +107,8 @@ FAIL [ROOT]/tests/parity/.corpus/cli-axes.tryscript.md
   ✓ YAML Quotes Only What Would Be Ambiguous
   ✗ An Unknown View Lists Every Valid One
 @@ -1,1 +1,1 @@
--fdu: invalid --view "bogus": expected one of summary, tree, families, types, extensions, languages, documents, largest, recent, files, full
-+fdu: invalid view "bogus": expected one of summary, tree, families, types, extensions, languages, documents, largest, recent, files, full
+-fdu: invalid --view "bogus": expected one of summary, tree, groups, families, types, extensions, languages, documents, largest, recent, files, full
++fdu: invalid view "bogus": expected one of summary, tree, groups, families, types, extensions, languages, documents, largest, recent, files, full
   ✗ A Repeated View Is a Typo, Not a No-Op
 @@ -1,1 +1,1 @@
 -fdu: invalid --view "tree,tree": "tree" appears more than once
@@ -141,6 +141,10 @@ FAIL [ROOT]/tests/parity/.corpus/cli-axes.tryscript.md
   ✓ Supplied Rules Replace It Whole
   ✓ A Manifest That Would Classify Ambiguously Is Rejected
   ✓ A Manifest That Would Classify Ambiguously Is Rejected
+  ✓ The Same Tree, Answered Both Ways
+  ✓ The Same Tree, Answered Both Ways
+  ✓ Machine Rows Carry the Stable Id and the Label
+  ✓ Rules Without Groups Leave the Axis Empty
 PASS [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
   ✓ Scan Without a Cache
   ✓ Verify No Cache Was Created
@@ -204,7 +208,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
        22 B  █░░░░░░░░░     9%    data (1 file)
 -note: --analyze lines,code,words read 176 B; no selected view displays content metrics — try --view families, languages, or all
   ✗ Every View One Walk Can Answer
-@@ -23,11 +23,11 @@
+@@ -27,11 +27,11 @@
        39 B   50.6%  Python  1 file
        38 B   49.4%  Rust    1 file
  LARGEST  (2 of 7; --limit all for every one)
@@ -325,7 +329,7 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 -  Scope      PATH, --scan-depth, --order, --threads, --type-rules
 -  Content    --analyze none|lines|code|words|all        which file bodies are read
 -  Selection  --include, --exclude, --depth, --limit     which entries are considered
--  View       tree,extensions,types,families,languages,documents,files,summary,all
+-  View       tree,groups,families,types,extensions,languages,documents,files,summary,all
 -  Format     --format text|json|jsonl|yaml, --color
 -  Mode       --cache, --watch, --analysis-workers
 -

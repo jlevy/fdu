@@ -38,6 +38,12 @@ pub enum ViewSpec {
     Extensions,
     /// One row per broad content family.
     Families,
+    /// One row per browsing group declared by the active rule registry.
+    ///
+    /// A different question from [`Self::Families`], not a coarser answer to the same
+    /// one: a family says which analyzer may open a file, so every image, video, PDF, and
+    /// archive is `binary`. This says where a reader would look for it.
+    Groups,
     /// Code-family rows grouped by language/type.
     Languages,
     /// Prose and markup rows with text-volume metrics.
@@ -66,6 +72,7 @@ impl ViewSpec {
             | Self::Types
             | Self::Extensions
             | Self::Families
+            | Self::Groups
             | Self::Languages
             | Self::Documents
             | Self::Summary
@@ -120,9 +127,10 @@ impl ViewSpec {
     ///
     /// One list, so a front end cannot hold a stale copy: the Python binding kept its own
     /// view parser and silently rejected `largest` and `recent` for exactly that reason.
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 11] = [
         Self::Summary,
         Self::Tree,
+        Self::Groups,
         Self::Families,
         Self::Types,
         Self::Extensions,
@@ -144,6 +152,7 @@ impl ViewSpec {
             "types" => Ok(Self::Types),
             "extensions" => Ok(Self::Extensions),
             "families" => Ok(Self::Families),
+            "groups" => Ok(Self::Groups),
             "languages" => Ok(Self::Languages),
             "documents" | "docs" => Ok(Self::Documents),
             "largest" => Ok(Self::Largest),
@@ -170,6 +179,7 @@ impl ViewSpec {
             Self::Types => "types",
             Self::Extensions => "extensions",
             Self::Families => "families",
+            Self::Groups => "groups",
             Self::Languages => "languages",
             Self::Documents => "documents",
             Self::Largest => "largest",
@@ -378,6 +388,7 @@ impl Query {
                 | ViewSpec::Types
                 | ViewSpec::Extensions
                 | ViewSpec::Families
+                | ViewSpec::Groups
                 | ViewSpec::Languages
                 | ViewSpec::Documents
                 | ViewSpec::Files
@@ -523,6 +534,24 @@ pub struct TypeRow {
     /// The derived extension, including its leading dot.
     pub extension: String,
     /// Files with this extension.
+    pub files: u64,
+    /// Apparent bytes across those files.
+    pub bytes: u64,
+    /// Allocated bytes across those files.
+    pub allocated: u64,
+}
+
+/// One browsing group's row.
+///
+/// Carries the label as well as the id because a browsing view exists to be read: the id
+/// is the stable key a consumer groups by, and the label is what it puts on the row.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct GroupRow {
+    /// Stable group identifier from the active rule registry.
+    pub id: String,
+    /// Human-facing name for the same group.
+    pub label: String,
+    /// Files in this group.
     pub files: u64,
     /// Apparent bytes across those files.
     pub bytes: u64,
@@ -680,6 +709,13 @@ pub enum Section {
         /// Rows before the bound was applied.
         total: usize,
     },
+    /// A browsing-group view.
+    Groups {
+        /// The rows, already sorted and bounded.
+        rows: Vec<GroupRow>,
+        /// Rows before the bound was applied.
+        total: usize,
+    },
     /// A generic type/family content summary.
     Metrics {
         /// Requested preset that selected grouping and family filters.
@@ -713,6 +749,7 @@ impl Section {
         match self {
             Self::Tree(_) => ViewSpec::Tree,
             Self::Extensions { .. } => ViewSpec::Extensions,
+            Self::Groups { .. } => ViewSpec::Groups,
             Self::Metrics { view, .. } | Self::Files { view, .. } => *view,
             Self::Summary(_) => ViewSpec::Summary,
         }
@@ -849,6 +886,8 @@ struct Walked {
     per_directory: BTreeMap<EntryId, SummaryRow>,
     /// Filtered per-extension tallies.
     by_ext: BTreeMap<String, ExtTally>,
+    /// Filtered per-group tallies, keyed by group id.
+    by_group: BTreeMap<String, ExtTally>,
     /// Entries the selection admitted.
     rows: Vec<FileRow>,
 }
@@ -858,8 +897,12 @@ struct Walked {
 /// Iterative rather than recursive: this engine is built for trees deep enough that a
 /// recursive post-order would exhaust the stack.
 fn walk(index: &Index, selection: &Selection) -> Walked {
-    let mut walked =
-        Walked { per_directory: BTreeMap::new(), by_ext: BTreeMap::new(), rows: Vec::new() };
+    let mut walked = Walked {
+        per_directory: BTreeMap::new(),
+        by_ext: BTreeMap::new(),
+        by_group: BTreeMap::new(),
+        rows: Vec::new(),
+    };
 
     // (id, path, whether its children have already been pushed)
     let mut stack: Vec<(EntryId, PathBuf, bool)> = vec![(EntryId::ROOT, PathBuf::new(), false)];
@@ -925,6 +968,17 @@ fn walk(index: &Index, selection: &Selection) -> Walked {
                         own.newest_mtime_ns.map_or(attrs.mtime_ns, |seen| seen.max(attrs.mtime_ns)),
                     );
 
+                    if let Some(group) = index
+                        .types()
+                        .group_of_name(file_name)
+                        .and_then(|id| index.types().group(id))
+                    {
+                        let tally = walked.by_group.entry(group.id.to_string()).or_default();
+                        tally.files += 1;
+                        tally.bytes += attrs.size;
+                        tally.allocated += attrs.allocated;
+                    }
+
                     let tally = walked.by_ext.entry(ext_bucket(file_name)).or_default();
                     tally.files += 1;
                     tally.bytes += attrs.size;
@@ -970,6 +1024,10 @@ fn build_section(view: ViewSpec, index: &Index, query: &Query, walked: Option<&W
         ViewSpec::Extensions => {
             let (rows, total) = extension_rows(index, query, walked);
             Section::Extensions { rows, total }
+        }
+        ViewSpec::Groups => {
+            let (rows, total) = group_rows(index, query, walked);
+            Section::Groups { rows, total }
         }
         ViewSpec::Types | ViewSpec::Families | ViewSpec::Languages | ViewSpec::Documents => {
             Section::Metrics { view, summary: Box::new(metric_summary(view, index, query, walked)) }
@@ -1026,6 +1084,50 @@ fn extension_rows(index: &Index, query: &Query, walked: Option<&Walked>) -> (Vec
     (rows, total)
 }
 
+/// Rows for the browsing-group view.
+///
+/// Read from maintained state when the selection admits everything, exactly as the
+/// extensions view is: the index already carries per-group tallies up every ancestor, so
+/// an unfiltered groups view is a read rather than a walk. A filtered one comes from the
+/// same walk that answers every other filtered view, so the two tiers cannot disagree.
+fn group_rows(index: &Index, query: &Query, walked: Option<&Walked>) -> (Vec<GroupRow>, usize) {
+    let tallies: BTreeMap<String, ExtTally> = match walked {
+        None => index.total().by_group,
+        Some(walked) => walked.by_group.clone(),
+    };
+
+    let mut rows: Vec<GroupRow> = tallies
+        .into_iter()
+        .map(|(id, tally)| GroupRow {
+            label: index
+                .types()
+                .groups()
+                .iter()
+                .find(|group| group.id == id)
+                .map_or_else(|| id.clone(), |group| group.label.to_string()),
+            id,
+            files: tally.files,
+            bytes: tally.bytes,
+            allocated: tally.allocated,
+        })
+        .collect();
+
+    sort_rows(
+        &mut rows,
+        query,
+        ViewSpec::Groups,
+        |row, metric| match metric {
+            SizeMetric::Apparent => row.bytes,
+            SizeMetric::Allocated => row.allocated,
+        },
+        |row| row.files,
+        |_| None,
+        |row| row.id.clone(),
+    );
+    let total = truncate(&mut rows, query.limit_for(ViewSpec::Groups));
+    (rows, total)
+}
+
 fn metric_summary(
     view: ViewSpec,
     index: &Index,
@@ -1046,6 +1148,7 @@ fn metric_summary(
             }
             ViewSpec::Types | ViewSpec::Families => true,
             ViewSpec::Tree
+            | ViewSpec::Groups
             | ViewSpec::Extensions
             | ViewSpec::Files
             | ViewSpec::Largest
@@ -1171,7 +1274,9 @@ fn metric_summary(
             ShareMetric::CodeLines
         }
         ViewSpec::Documents => ShareMetric::DocumentWords,
-        ViewSpec::Languages | ViewSpec::Types | ViewSpec::Families => byte_share_metric,
+        ViewSpec::Languages | ViewSpec::Types | ViewSpec::Families | ViewSpec::Groups => {
+            byte_share_metric
+        }
         ViewSpec::Tree
         | ViewSpec::Extensions
         | ViewSpec::Files

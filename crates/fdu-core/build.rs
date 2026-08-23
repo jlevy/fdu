@@ -28,9 +28,9 @@ fn main() {
     println!("cargo:rerun-if-changed={RULES_PATH}");
     println!("cargo:rerun-if-changed={MANIFEST_PARSER_PATH}");
     let source = fs::read_to_string(RULES_PATH).expect("read file-type rules");
-    let rules = parse_manifest(&source).unwrap_or_else(|error| panic!("{RULES_PATH}: {error}"));
-    validate_manifest(&rules).unwrap_or_else(|error| panic!("{RULES_PATH}: {error}"));
-    let generated = render_rules(&rules, manifest_fingerprint(&source));
+    let manifest = parse_manifest(&source).unwrap_or_else(|error| panic!("{RULES_PATH}: {error}"));
+    validate_manifest(&manifest).unwrap_or_else(|error| panic!("{RULES_PATH}: {error}"));
+    let generated = render_rules(&manifest, manifest_fingerprint(&source));
     let output = PathBuf::from(std::env::var_os("OUT_DIR").expect("OUT_DIR"));
     fs::write(output.join(GENERATED_NAME), generated).expect("write compiled file-type rules");
 }
@@ -83,20 +83,31 @@ fn emit_version() {
     println!("cargo:rustc-env=FDU_BUILD_VERSION={version}");
 }
 
-fn render_rules(rules: &[ManifestRule], fingerprint: u64) -> String {
+fn render_rules(manifest: &Manifest, fingerprint: u64) -> String {
     let mut output = String::new();
     writeln!(
         output,
         "#[allow(clippy::unreadable_literal)]\nconst TYPE_RULE_FINGERPRINT: u64 = {fingerprint};"
     )
     .expect("write to string");
-    output.push_str("static GENERATED_RULES: &[GeneratedRule] = &[\n");
-    for rule in rules {
+    output.push_str("static GENERATED_GROUPS: &[GeneratedGroup] = &[\n");
+    for group in &manifest.groups {
         writeln!(
             output,
-            "    GeneratedRule {{ id: {:?}, family: ContentFamily::{}, extensions: &{:?}, filenames: &{:?}, shebangs: &{:?}, priority: {} }},",
+            "    GeneratedGroup {{ id: {:?}, label: {:?}, order: {} }},",
+            group.id, group.label, group.order,
+        )
+        .expect("write to string");
+    }
+    output.push_str("];\n");
+    output.push_str("static GENERATED_RULES: &[GeneratedRule] = &[\n");
+    for rule in &manifest.rules {
+        writeln!(
+            output,
+            "    GeneratedRule {{ id: {:?}, family: ContentFamily::{}, group: {:?}, extensions: &{:?}, filenames: &{:?}, shebangs: &{:?}, priority: {} }},",
             rule.id,
             family_variant(&rule.family),
+            rule.group,
             rule.extensions,
             rule.filenames,
             rule.shebangs,

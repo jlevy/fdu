@@ -111,6 +111,16 @@ fn rollup_dict<'py>(py: Python<'py>, roll: &RollUp) -> PyResult<Bound<'py, PyDic
         by_ext.set_item(ext, entry)?;
     }
     dict.set_item("by_extension", by_ext)?;
+
+    let by_group = PyDict::new(py);
+    for (group, tally) in &roll.by_group {
+        let entry = PyDict::new(py);
+        entry.set_item("files", tally.files)?;
+        entry.set_item("bytes", tally.bytes)?;
+        entry.set_item("allocated", tally.allocated)?;
+        by_group.set_item(group, entry)?;
+    }
+    dict.set_item("by_group", by_group)?;
     dict.set_item("extension_remainder", ext_remainder_dict(py, roll.ext_remainder)?)?;
     Ok(dict)
 }
@@ -979,6 +989,21 @@ fn report_dict<'py>(py: Python<'py>, report: &Report) -> PyResult<Bound<'py, PyD
                     list.append(item)?;
                 }
                 entry.set_item("extensions", list)?;
+            }
+            Section::Groups { rows, total } => {
+                entry.set_item("view", "groups")?;
+                entry.set_item("bound", bound_dict(py, rows.len(), *total)?)?;
+                let list = PyList::empty(py);
+                for row in rows {
+                    let item = PyDict::new(py);
+                    item.set_item("id", &row.id)?;
+                    item.set_item("label", &row.label)?;
+                    item.set_item("files", row.files)?;
+                    item.set_item("bytes", row.bytes)?;
+                    item.set_item("allocated", row.allocated)?;
+                    list.append(item)?;
+                }
+                entry.set_item("groups", list)?;
             }
             Section::Metrics { view, summary } => {
                 entry.set_item("view", view.label())?;

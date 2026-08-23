@@ -161,16 +161,55 @@ pub struct Classification {
     pub confidence: DetectionConfidence,
     /// Orthogonal origin and purpose attributes.
     pub flags: ClassificationFlags,
+    /// Browsing group, as an index into the registry that produced this classification.
+    ///
+    /// An index rather than a name because this is built per file on the analysis path;
+    /// resolving it costs a `String` per file for something most callers never read.
+    /// Like an interned extension id, it is meaningful only with the registry that issued
+    /// it -- [`TypeRegistry::group`] turns it back into a name.
+    pub group: Option<GroupId>,
 }
 
 #[derive(Clone, Copy)]
 struct GeneratedRule {
     id: &'static str,
     family: ContentFamily,
+    group: &'static str,
     extensions: &'static [&'static str],
     filenames: &'static [&'static str],
     shebangs: &'static [&'static str],
     priority: u16,
+}
+
+#[derive(Clone, Copy)]
+struct GeneratedGroup {
+    id: &'static str,
+    label: &'static str,
+    order: u32,
+}
+
+/// Index of a browsing group within its registry.
+///
+/// An index rather than a name because it is stored on every classified file: a `u16`
+/// beside the interned extension id costs what a second interner would have cost,
+/// without the interner.
+pub type GroupId = u16;
+
+/// One browsing bucket a reader chooses among.
+///
+/// A second axis, not a renaming of [`ContentFamily`]. `family` answers an analysis
+/// question -- which analyzer may open this file -- so every image, video, PDF, and
+/// archive is `Binary` under it, and a families view over a photo directory is one row
+/// reading "binary 100%". A group answers the browsing question instead, and the two are
+/// maintained side by side rather than one being derived from the other.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct TypeGroup {
+    /// Stable machine identifier.
+    pub id: Cow<'static, str>,
+    /// Human-facing name.
+    pub label: Cow<'static, str>,
+    /// Display rank; lower sorts first.
+    pub order: u32,
 }
 
 include!(concat!(env!("OUT_DIR"), "/file_type_rules.rs"));
@@ -201,6 +240,8 @@ fn family_from_name(name: &str) -> Option<ContentFamily> {
 struct TypeRule {
     id: Cow<'static, str>,
     family: ContentFamily,
+    /// Browsing group, or `None` when the registry declares none.
+    group: Option<GroupId>,
     shebangs: Vec<Cow<'static, str>>,
     priority: u16,
 }
@@ -220,6 +261,8 @@ struct TypeRule {
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct TypeRegistry {
     rules: Vec<TypeRule>,
+    /// Browsing groups, in declaration order; empty when the manifest declares none.
+    groups: Vec<TypeGroup>,
     /// Exact-basename tier, resolved once instead of scanned per file.
     ///
     /// The scan this replaces was `rules.iter().filter(..).max_by_key(..)`, and
@@ -231,6 +274,12 @@ pub struct TypeRegistry {
     by_filename: HashMap<Cow<'static, str>, u32>,
     /// Extension tier, indexed on the same terms.
     by_extension: HashMap<Cow<'static, str>, u32>,
+    /// Type id to rule, for the tiers that name a type rather than match a key.
+    ///
+    /// Indexed rather than scanned because two paths reach it per file: deep detection
+    /// resolves a probe's named rule, and restoring a content sidecar resolves every
+    /// cached record's stored type id.
+    by_type_id: HashMap<Cow<'static, str>, u32>,
     fingerprint: u64,
 }
 
@@ -253,37 +302,60 @@ impl TypeRegistry {
     /// time, so a manifest this accepts would have compiled and one it rejects would have
     /// failed the build with the same message.
     pub fn from_manifest(source: &str) -> crate::Result<Self> {
-        let parsed = type_rule_manifest::parse_manifest(source).map_err(crate::Error::TypeRules)?;
-        type_rule_manifest::validate_manifest(&parsed).map_err(crate::Error::TypeRules)?;
-        let rules = parsed
+        let manifest =
+            type_rule_manifest::parse_manifest(source).map_err(crate::Error::TypeRules)?;
+        type_rule_manifest::validate_manifest(&manifest).map_err(crate::Error::TypeRules)?;
+        let groups: Vec<TypeGroup> = manifest
+            .groups
+            .iter()
+            .map(|group| TypeGroup {
+                id: Cow::Owned(group.id.clone()),
+                label: Cow::Owned(group.label.clone()),
+                order: group.order,
+            })
+            .collect();
+        let rules = manifest
+            .rules
             .iter()
             .map(|rule| TypeRule {
                 id: Cow::Owned(rule.id.clone()),
                 family: family_from_name(&rule.family).expect("validated family"),
+                group: group_index(&groups, &rule.group),
                 shebangs: rule.shebangs.iter().cloned().map(Cow::Owned).collect(),
                 priority: rule.priority,
             })
             .collect();
         Ok(Self::indexed(
             rules,
-            parsed.iter().map(|rule| rule.filenames.iter().map(String::as_str)),
-            parsed.iter().map(|rule| rule.extensions.iter().map(String::as_str)),
+            groups,
+            manifest.rules.iter().map(|rule| rule.filenames.iter().map(String::as_str)),
+            manifest.rules.iter().map(|rule| rule.extensions.iter().map(String::as_str)),
             type_rule_manifest::manifest_fingerprint(source),
         ))
     }
 
     fn from_generated() -> Self {
+        let groups: Vec<TypeGroup> = GENERATED_GROUPS
+            .iter()
+            .map(|group| TypeGroup {
+                id: Cow::Borrowed(group.id),
+                label: Cow::Borrowed(group.label),
+                order: group.order,
+            })
+            .collect();
         let rules = GENERATED_RULES
             .iter()
             .map(|rule| TypeRule {
                 id: Cow::Borrowed(rule.id),
                 family: rule.family,
+                group: group_index(&groups, rule.group),
                 shebangs: rule.shebangs.iter().copied().map(Cow::Borrowed).collect(),
                 priority: rule.priority,
             })
             .collect();
         Self::indexed(
             rules,
+            groups,
             GENERATED_RULES.iter().map(|rule| rule.filenames.iter().copied()),
             GENERATED_RULES.iter().map(|rule| rule.extensions.iter().copied()),
             TYPE_RULE_FINGERPRINT,
@@ -297,13 +369,52 @@ impl TypeRegistry {
     /// reclassify the types that share a key.
     fn indexed<'a>(
         rules: Vec<TypeRule>,
+        groups: Vec<TypeGroup>,
         filenames: impl Iterator<Item = impl Iterator<Item = &'a str>>,
         extensions: impl Iterator<Item = impl Iterator<Item = &'a str>>,
         fingerprint: u64,
     ) -> Self {
         let by_filename = index_keys(&rules, filenames);
         let by_extension = index_keys(&rules, extensions);
-        Self { rules, by_filename, by_extension, fingerprint }
+        let by_type_id = rules
+            .iter()
+            .enumerate()
+            .map(|(position, rule)| (rule.id.clone(), u32::try_from(position).expect("few rules")))
+            .collect();
+        Self { rules, groups, by_filename, by_extension, by_type_id, fingerprint }
+    }
+
+    /// Browsing groups this registry declares, in declaration order.
+    pub fn groups(&self) -> &[TypeGroup] {
+        &self.groups
+    }
+
+    /// One group by index, or `None` when the index is not this registry's.
+    pub fn group(&self, id: GroupId) -> Option<&TypeGroup> {
+        self.groups.get(id as usize)
+    }
+
+    /// The browsing group a name falls in, from path metadata alone.
+    ///
+    /// The insert path's cut of the cascade: the two index lookups that decide a group,
+    /// without building a [`Classification`] or scanning for origin flags. A file's group
+    /// is resolved once when it enters the index, beside its interned extension, so the
+    /// reducer that maintains group totals never classifies.
+    ///
+    /// Metadata-only by design: the shebang and content-probe tiers need a file's bytes,
+    /// and a roll-up maintained over a metadata walk cannot wait for them. A file those
+    /// tiers would have named falls in no group here, exactly as it falls in no type row
+    /// without content analysis.
+    pub fn group_of_name(&self, name: &OsStr) -> Option<GroupId> {
+        if self.groups.is_empty() {
+            return None;
+        }
+        if let Some(rule) = name.to_str().and_then(|name| self.by_filename(name)) {
+            return rule.group;
+        }
+        let extension = derive_ext(name)?;
+        let key = extension.strip_prefix('.').expect("derived extensions start with a dot");
+        self.by_extension(key)?.group
     }
 
     /// Identity of the rules this registry holds.
@@ -340,8 +451,29 @@ impl TypeRegistry {
     }
 
     fn by_id(&self, id: &str) -> Option<&TypeRule> {
-        self.rules.iter().find(|rule| rule.id == id)
+        self.by_type_id.get(id).map(|index| &self.rules[*index as usize])
     }
+
+    /// The browsing group a stable type identifier belongs to.
+    ///
+    /// What a restored content record needs: the sidecar stores the type id it was
+    /// written with, and the group is this registry's answer for it. Safe because a
+    /// sidecar written under other rules is rejected on the fingerprint before any record
+    /// is read.
+    pub fn group_of_type(&self, id: &str) -> Option<GroupId> {
+        self.by_id(id)?.group
+    }
+}
+
+/// Resolve a group name to its index, or `None` when the manifest declares no groups.
+///
+/// Validation has already rejected a name no group declares, so a `None` here means the
+/// manifest declared none at all.
+fn group_index(groups: &[TypeGroup], name: &str) -> Option<GroupId> {
+    groups
+        .iter()
+        .position(|group| group.id == name)
+        .map(|index| GroupId::try_from(index).expect("a manifest declares few groups"))
 }
 
 /// Resolve one key tier into rule indexes, later-wins at equal priority.
@@ -492,6 +624,7 @@ pub fn classify_with(
         source: DetectionSource::Unknown,
         confidence: DetectionConfidence::Heuristic,
         flags: ClassificationFlags::default(),
+        group: None,
     };
     let Some(prefix) = prefix else {
         return with_flags(path, None, unknown());
@@ -558,6 +691,7 @@ fn classified(
         source,
         confidence,
         flags: ClassificationFlags::default(),
+        group: rule.group,
     }
 }
 
@@ -722,7 +856,7 @@ mod tests {
     const DEFAULT_MANIFEST: &str = include_str!("../rules/file-types.toml");
 
     fn default_manifest_rules() -> Vec<ManifestRule> {
-        parse_manifest(DEFAULT_MANIFEST).expect("the repository's own manifest parses")
+        parse_manifest(DEFAULT_MANIFEST).expect("the repository's own manifest parses").rules
     }
 
     /// The indexed tiers must answer exactly what the scan they replaced answered.
@@ -825,8 +959,30 @@ mod tests {
                 "[[kind]]\nid = \"a\"\nfamily = \"code\"\nextensions = [\".q\"]\n",
                 "invalid extension",
             ),
-            ("id = \"a\"\n", "field appears before [[kind]]"),
+            ("id = \"a\"\n", "field appears before [[group]] or [[kind]]"),
             ("[[kind]]\nid = a\n", "expected a quoted string"),
+            // Groups are all-or-nothing: a manifest that declares them and leaves one
+            // kind out would drop that kind from every group breakdown, silently.
+            (
+                "[[group]]\nid = \"g\"\nlabel = \"G\"\n[[kind]]\nid = \"a\"\nfamily = \"code\"\n",
+                "names no group",
+            ),
+            (
+                "[[group]]\nid = \"g\"\nlabel = \"G\"\n[[kind]]\nid = \"a\"\nfamily = \"code\"\ngroup = \"h\"\n",
+                "unknown group",
+            ),
+            (
+                "[[kind]]\nid = \"a\"\nfamily = \"code\"\ngroup = \"g\"\n",
+                "no [[group]] is declared",
+            ),
+            (
+                "[[group]]\nid = \"g\"\nlabel = \"G\"\n[[group]]\nid = \"g\"\nlabel = \"G\"\n[[kind]]\nid = \"a\"\nfamily = \"code\"\ngroup = \"g\"\n",
+                "duplicate group id",
+            ),
+            (
+                "[[group]]\nid = \"g\"\n[[kind]]\nid = \"a\"\nfamily = \"code\"\ngroup = \"g\"\n",
+                "has no label",
+            ),
         ] {
             let error =
                 TypeRegistry::from_manifest(manifest).expect_err("this manifest must be rejected");

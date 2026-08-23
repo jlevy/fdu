@@ -136,6 +136,50 @@ def _tree_section(report: fdu.Report) -> fdu.TreeNode:
     raise AssertionError("the report has no tree section")
 
 
+def check_groups_answer_the_browsing_question() -> None:
+    """A group axis a family axis cannot answer.
+
+    `family` says which analyzer may open a file, so a PDF, an image, and a zip are all
+    `binary` under it -- one row, over a directory whose whole point is that they differ.
+    Groups answer where a reader would look instead, and the two are maintained side by
+    side rather than one derived from the other.
+    """
+
+    root = Path(tempfile.mkdtemp(prefix="fdu-groups-"))
+    (root / "main.rs").write_text("fn main() {}", encoding="utf-8")
+    (root / "README.md").write_text("# hi", encoding="utf-8")
+    (root / "data.json").write_text("{}", encoding="utf-8")
+    (root / "photo.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"0" * 24)
+    # An exact-filename rule: no extension to derive a group from, which is why the
+    # engine maintains the tally rather than deriving it.
+    (root / "Makefile").write_text("all:\n\ttrue\n", encoding="utf-8")
+
+    index = fdu.open(root)
+    total = index.total()
+    assert {group: tally.files for group, tally in total.by_group.items()} == {
+        "code": 2,
+        "docs": 1,
+        "data": 1,
+        "media": 1,
+    }, dict(total.by_group)
+    assert sum(tally.files for tally in total.by_group.values()) == total.files
+
+    report = index.report(fdu.Query(views=(fdu.View.GROUPS,)))
+    section = next(s for s in report.sections if isinstance(s, fdu.GroupsSection))
+    assert {row.id for row in section.groups} == {"code", "docs", "data", "media"}
+    assert {row.label for row in section.groups} >= {"Code", "Documentation", "Media"}
+    assert sum(row.files for row in section.groups) == total.files
+
+    # A filtered groups view comes from the walk rather than the maintained state, and
+    # the two must agree about what they both cover.
+    filtered = index.report(
+        fdu.Query(views=(fdu.View.GROUPS,), selection=fdu.Selection(include=("*.rs", "*.md")))
+    )
+    rows = next(s for s in filtered.sections if isinstance(s, fdu.GroupsSection)).groups
+    assert {row.id: row.files for row in rows} == {"code": 1, "docs": 1}, rows
+    fdu.clear_cache(root)
+
+
 def check_supplied_type_rules_reach_the_answer() -> None:
     """A caller's own taxonomy classifies, and is a different cache identity.
 
@@ -563,6 +607,7 @@ def main() -> None:
     check_telemetry_measures_the_run_not_the_tree()
     check_bounded_extension_rows_account_for_the_rest()
     check_supplied_type_rules_reach_the_answer()
+    check_groups_answer_the_browsing_question()
     check_a_bounded_tree_says_what_it_withheld()
     check_render_matches_the_cli(
         root, str(Path(sys.executable).with_name("fdu.exe" if os.name == "nt" else "fdu"))

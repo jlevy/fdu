@@ -124,8 +124,7 @@ pub fn load_content_cache(
         return Ok(ContentCacheLoad::default());
     }
     let image = fs::read(path).map_err(|error| Error::io(path, error))?;
-    let Some(records) = parse(&image, index.root_path(), request, index.types().fingerprint())
-    else {
+    let Some(records) = parse(&image, index.root_path(), request, index.types()) else {
         return Ok(ContentCacheLoad::default());
     };
     index.prepare_content_analysis(request);
@@ -204,7 +203,7 @@ fn parse(
     image: &[u8],
     expected_root: &Path,
     request: AnalysisRequest,
-    type_rules_fingerprint: u64,
+    types: &crate::classify::TypeRegistry,
 ) -> Option<Vec<(PathBuf, FileAnalysis)>> {
     let payload = integrity_payload(image)?;
     let mut reader = Reader::new(payload.get(MAGIC.len()..)?);
@@ -217,7 +216,7 @@ fn parse(
         options_fingerprint: super::OptionsFingerprint(reader.u64()?),
         analyzers: read_analyzers(&mut reader)?,
     };
-    if !provenance.satisfies(profile, request.profile, type_rules_fingerprint) {
+    if !provenance.satisfies(profile, request.profile, types.fingerprint()) {
         return None;
     }
     if reader.os_string()?.as_os_str() != expected_root.as_os_str() {
@@ -239,12 +238,18 @@ fn parse(
         if file_type.is_empty() {
             return None;
         }
+        // The group is resolved from the registry rather than stored: it is an index
+        // into that registry, and a sidecar written under other rules has already been
+        // rejected on the fingerprint above. Storing it would add a format field whose
+        // only correct value is the one this lookup returns.
+        let group = types.group_of_type(&file_type);
         let classification = Classification {
             file_type: FileTypeId::from_cache(file_type),
             family: read_family(reader.u8()?)?,
             source: read_source(reader.u8()?)?,
             confidence: read_confidence(reader.u8()?)?,
             flags: read_flags(reader.u8()?)?,
+            group,
         };
         let metrics = read_metrics(&mut reader)?;
         let coverage = read_coverage(reader.u8()?)?;

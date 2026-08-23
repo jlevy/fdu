@@ -124,6 +124,15 @@ pub struct RollUp {
     ///
     /// Complete unless `ext_remainder` says otherwise.
     pub by_ext: BTreeMap<String, ExtTally>,
+    /// Per-group file and byte tallies across the subtree, by group id.
+    ///
+    /// A browsing axis maintained beside `by_ext` rather than derived from it. Deriving
+    /// would be wrong twice over: an exact-filename rule (`Makefile`, `Dockerfile`) has
+    /// no extension bucket to derive from, and a registry may map two extensions of one
+    /// group to different types.
+    ///
+    /// Empty when the active rule registry declares no groups.
+    pub by_group: BTreeMap<String, ExtTally>,
     /// Extension tallies a bound withheld from `by_ext`, or `None` when it holds them all.
     ///
     /// Same contract as a tree node's remainder: presence is the signal, and the listed
@@ -159,6 +168,13 @@ struct InternedRollUp {
     allocated: u64,
     newest_mtime_ns: i64,
     by_ext: BTreeMap<ExtId, ExtTally>,
+    /// Per-group tallies, as a sorted association list.
+    ///
+    /// A `Vec` rather than a map because a registry declares a handful of groups -- six
+    /// in the one fdu ships and the one metabrowser publishes -- and a linear scan over
+    /// six beats a tree node per key. Empty, and therefore unallocated, when the registry
+    /// declares no groups or the subtree holds nothing classified.
+    by_group: Vec<(crate::classify::GroupId, ExtTally)>,
 }
 
 /// Map-free roll-up fields for internal reports that do not need extension names.
@@ -208,6 +224,17 @@ impl InternedRollUp {
             slot.bytes += tally.bytes;
             slot.allocated += tally.allocated;
         }
+        for (group, tally) in &other.by_group {
+            match self.by_group.binary_search_by_key(group, |(id, _)| *id) {
+                Ok(position) => {
+                    let slot = &mut self.by_group[position].1;
+                    slot.files += tally.files;
+                    slot.bytes += tally.bytes;
+                    slot.allocated += tally.allocated;
+                }
+                Err(position) => self.by_group.insert(position, (*group, *tally)),
+            }
+        }
     }
 
     /// Remove another roll-up's contribution from this one.
@@ -230,6 +257,17 @@ impl InternedRollUp {
                 }
             }
         }
+        for (group, tally) in &other.by_group {
+            if let Ok(position) = self.by_group.binary_search_by_key(group, |(id, _)| *id) {
+                let slot = &mut self.by_group[position].1;
+                slot.files = slot.files.saturating_sub(tally.files);
+                slot.bytes = slot.bytes.saturating_sub(tally.bytes);
+                slot.allocated = slot.allocated.saturating_sub(tally.allocated);
+                if slot.files == 0 && slot.bytes == 0 && slot.allocated == 0 {
+                    self.by_group.remove(position);
+                }
+            }
+        }
     }
 }
 
@@ -241,6 +279,11 @@ struct Entry {
     /// for files without an extension. Precomputing it here is what lets
     /// `contribution` run without a string allocation or an interner borrow.
     ext_id: Option<ExtId>,
+    /// Browsing group, resolved once at insert from the index's rule registry. Files
+    /// only, and `None` for a file no rule names or when the registry declares no
+    /// groups. Precomputed here for the same reason `ext_id` is: the reducer that
+    /// maintains group totals must not classify.
+    group_id: Option<crate::classify::GroupId>,
     /// Where this entry's metadata came from.
     ///
     /// One byte, not a `Provenance` struct: the timestamps that complete the picture
@@ -682,6 +725,7 @@ impl Index {
             parent: None,
             name: OsString::new(),
             ext_id: None,
+            group_id: None,
             source: Source::Scanned,
             kind: EntryKind::Dir,
             attrs: Attrs::default(),
@@ -1630,6 +1674,17 @@ impl Index {
             ),
         };
 
+        // Group ids are indexes into this index's registry, so they are resolved to
+        // names here for the same reason extension ids are: a retained roll-up must not
+        // be relabelled by a later registry.
+        let by_group = rollup
+            .by_group
+            .iter()
+            .filter_map(|(id, tally)| {
+                self.types.group(*id).map(|group| (group.id.to_string(), *tally))
+            })
+            .collect();
+
         RollUp {
             files: rollup.files,
             dirs: rollup.dirs,
@@ -1637,6 +1692,7 @@ impl Index {
             allocated: rollup.allocated,
             newest_mtime_ns: rollup.newest_mtime_ns,
             by_ext,
+            by_group,
             ext_remainder,
         }
     }
@@ -1658,7 +1714,18 @@ impl Index {
                     allocated: entry.attrs.allocated,
                     newest_mtime_ns: entry.attrs.mtime_ns,
                     by_ext: BTreeMap::new(),
+                    by_group: Vec::new(),
                 };
+                if let Some(group_id) = entry.group_id {
+                    roll.by_group.push((
+                        group_id,
+                        ExtTally {
+                            files: 1,
+                            bytes: entry.attrs.size,
+                            allocated: entry.attrs.allocated,
+                        },
+                    ));
+                }
                 if let Some(ext_id) = entry.ext_id {
                     roll.by_ext.insert(
                         ext_id,
@@ -1749,6 +1816,7 @@ impl Index {
                 parent: Some(current),
                 name: (*part).to_os_string(),
                 ext_id: None,
+                group_id: None,
                 source: self.applying_source,
                 kind: EntryKind::Dir,
                 attrs: Attrs::default(),
@@ -1887,10 +1955,12 @@ impl Index {
         }
 
         let ext_id = (kind == EntryKind::File).then(|| self.intern_ext(&ext_bucket(name)));
+        let group_id = (kind == EntryKind::File).then(|| self.types.group_of_name(name)).flatten();
         let id = self.alloc(Entry {
             parent: Some(parent),
             name: name.to_os_string(),
             ext_id,
+            group_id,
             source,
             kind,
             attrs,
@@ -1938,10 +2008,12 @@ impl Index {
         }
         let source = self.applying_source;
         let ext_id = (kind == EntryKind::File).then(|| self.intern_ext(&ext_bucket(&name)));
+        let group_id = (kind == EntryKind::File).then(|| self.types.group_of_name(&name)).flatten();
         let id = self.alloc(Entry {
             parent: Some(parent),
             name: name.clone(),
             ext_id,
+            group_id,
             source,
             kind,
             attrs,
@@ -2800,6 +2872,72 @@ mod tests {
             matches!(error, crate::Error::PathEscapesRoot(path) if path == Path::new(r"C:\escape"))
         );
         assert_eq!(index.clock(), before_clock);
+    }
+
+    /// Group tallies are maintained by the reducer, and survive removal.
+    ///
+    /// The property that makes a groups view a read rather than a walk: every file's
+    /// group is folded into every ancestor as it arrives, and unfolded when it leaves.
+    /// The removal half is the one that fails silently -- a merge with no matching
+    /// unmerge leaves totals that only grow, and every individual number still looks
+    /// plausible.
+    #[test]
+    fn group_tallies_roll_up_and_back_down() {
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![
+            upsert("src", EntryKind::Dir, Attrs::default()),
+            upsert("src/main.rs", EntryKind::File, file_attrs(100, 1)),
+            upsert("src/lib.rs", EntryKind::File, file_attrs(200, 2)),
+            upsert("docs", EntryKind::Dir, Attrs::default()),
+            upsert("docs/guide.md", EntryKind::File, file_attrs(300, 3)),
+            // An exact-filename rule, which has no extension bucket to derive a group
+            // from: this is why the tally is maintained rather than derived from by_ext.
+            upsert("Makefile", EntryKind::File, file_attrs(50, 4)),
+        ]));
+
+        let total = index.total();
+        assert_eq!(total.by_group["code"].files, 3, "two sources and a Makefile");
+        assert_eq!(total.by_group["code"].bytes, 350);
+        assert_eq!(total.by_group["docs"].files, 1);
+        assert_eq!(total.by_group["docs"].bytes, 300);
+        assert_eq!(
+            total.by_group.values().map(|tally| tally.files).sum::<u64>(),
+            total.files,
+            "every file lands in exactly one group"
+        );
+
+        let src = index.rollup(Path::new("src")).expect("src is a directory");
+        assert_eq!(src.by_group["code"].files, 2, "a subtree carries its own tallies");
+        assert!(!src.by_group.contains_key("docs"));
+
+        // Removing the markdown file takes its group row with it rather than leaving a
+        // zero, so a consumer rendering the map sees the groups that exist.
+        index
+            .apply_ok(&Observation::new(vec![Op::Remove { path: PathBuf::from("docs/guide.md") }]));
+        let total = index.total();
+        assert!(!total.by_group.contains_key("docs"), "{:?}", total.by_group);
+        assert_eq!(total.by_group["code"].files, 3);
+        assert_eq!(total.by_group.values().map(|tally| tally.files).sum::<u64>(), total.files);
+    }
+
+    /// A registry with no groups leaves the axis empty rather than inventing one.
+    #[test]
+    fn a_registry_without_groups_reports_none() {
+        let registry = std::sync::Arc::new(
+            crate::classify::TypeRegistry::from_manifest(
+                "[[kind]]\nid = \"notes\"\nfamily = \"prose\"\nextensions = [\"rs\"]\n",
+            )
+            .expect("a minimal manifest"),
+        );
+        let mut index = Index::new("/root").with_types(registry);
+        index.apply_ok(&Observation::new(vec![upsert(
+            "main.rs",
+            EntryKind::File,
+            file_attrs(100, 1),
+        )]));
+        let total = index.total();
+        assert_eq!(total.files, 1);
+        assert!(total.by_group.is_empty(), "no groups declared, so no group rows");
     }
 
     /// The kept rows are the largest, and what is dropped is still accounted for.

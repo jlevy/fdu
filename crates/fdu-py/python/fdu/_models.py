@@ -81,6 +81,7 @@ class View(StrEnum):
 
     SUMMARY = "summary"
     TREE = "tree"
+    GROUPS = "groups"
     FAMILIES = "families"
     TYPES = "types"
     EXTENSIONS = "extensions"
@@ -430,6 +431,16 @@ class RollUp:
     allocated: int
     newest_mtime_ns: int
     by_extension: MappingProxyType[str, ExtensionTally]
+    by_group: MappingProxyType[str, ExtensionTally] = field(
+        default_factory=lambda: MappingProxyType({})
+    )
+    """Per-browsing-group tallies, keyed by group id.
+
+    Maintained by the engine's reducer rather than derived from `by_extension`: an
+    exact-filename rule (`Makefile`, `Dockerfile`) has no extension bucket to derive from.
+    Empty when the active rule registry declares no groups.
+    """
+
     extension_remainder: ExtensionRemainder | None = None
     """What an extension bound withheld from `by_extension`, or `None` when it holds all."""
 
@@ -459,6 +470,21 @@ class SummaryRow:
 @dataclass(frozen=True, slots=True)
 class ExtensionRow:
     extension: str
+    files: int
+    bytes: int
+    allocated: int
+
+
+@dataclass(frozen=True, slots=True)
+class GroupRow:
+    """One browsing group's row.
+
+    Carries the label as well as the id because a browsing view exists to be read: the id
+    is the stable key to group by, the label is what goes on the row.
+    """
+
+    id: str
+    label: str
     files: int
     bytes: int
     allocated: int
@@ -614,6 +640,21 @@ class ExtensionsSection:
 
 
 @dataclass(frozen=True, slots=True)
+class GroupsSection:
+    """One row per browsing group the active rule registry declares.
+
+    A different question from :class:`MetricsSection` under ``View.FAMILIES``, not a
+    coarser answer to the same one: a family says which analyzer may open a file, so every
+    image, video, PDF, and archive is ``binary``. A group says where a reader would look
+    for it.
+    """
+
+    view: View
+    groups: tuple[GroupRow, ...]
+    bound: SectionBound | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class FilesSection:
     """A flat listing: ``files``, or one of its bounded presets.
 
@@ -643,7 +684,7 @@ class MetricsSection:
 
 
 type ReportSection = (
-    SummarySection | ExtensionsSection | FilesSection | TreeSection | MetricsSection
+    SummarySection | ExtensionsSection | GroupsSection | FilesSection | TreeSection | MetricsSection
 )
 
 
@@ -907,6 +948,16 @@ def rollup_from_dict(value: dict[str, Any], provenance: Provenance | None = None
         allocated=int(value["allocated"]),
         newest_mtime_ns=int(value["newest_mtime_ns"]),
         by_extension=MappingProxyType(tallies),
+        by_group=MappingProxyType(
+            {
+                str(group): ExtensionTally(
+                    files=int(tally["files"]),
+                    bytes=int(tally["bytes"]),
+                    allocated=int(tally["allocated"]),
+                )
+                for group, tally in value.get("by_group", {}).items()
+            }
+        ),
         extension_remainder=_extension_remainder(value.get("extension_remainder")),
         provenance=provenance,
     )
@@ -1023,6 +1074,13 @@ def report_from_dict(wire: dict[str, Any], notes: tuple[str, ...] = ()) -> Repor
                 raise TypeError("extensions section must be a list")
             sections.append(
                 ExtensionsSection(view, tuple(ExtensionRow(**row) for row in rows), _bound(raw))
+            )
+        elif view is View.GROUPS:
+            rows = raw["groups"]
+            if not isinstance(rows, list):
+                raise TypeError("groups section must be a list")
+            sections.append(
+                GroupsSection(view, tuple(GroupRow(**row) for row in rows), _bound(raw))
             )
         elif view in (View.FILES, View.LARGEST, View.RECENT):
             rows = raw["files"]

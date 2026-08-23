@@ -309,7 +309,7 @@ An agent should be able to correct a command from its rejection alone.
 
 ```console
 $ fdu --cache off --view bogus project
-fdu: invalid --view "bogus": expected one of summary, tree, families, types, extensions, languages, documents, largest, recent, files, full
+fdu: invalid --view "bogus": expected one of summary, tree, groups, families, types, extensions, languages, documents, largest, recent, files, full
 ? 2
 ```
 
@@ -539,4 +539,56 @@ rules written
 $ fdu --type-rules dupe.toml project
 fdu: dupe.toml: invalid type rules: duplicate rule id "a"
 ? 2
+```
+
+## View: Browsing Groups Beside Analysis Families
+
+Two axes, not one at two resolutions.
+A family says which analyzer may open a file, so every image, video, PDF, and archive is
+`binary` under it — one row, over a directory whose whole point is that they differ.
+A group says where a reader would look for it.
+
+### The Same Tree, Answered Both Ways
+
+```console
+$ fdu --cache off --color never --view groups --format text --size apparent --sort count --limit all project
+      64 B  Code          3 files
+      71 B  Documentation 2 files
+     128 B  Archives      1 file
+Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+? 0
+```
+
+```console
+$ fdu --cache off --color never --view families --format text --size apparent --sort count --limit all project
+      64 B   24.3%  code               3 files
+      71 B   27.0%  prose              2 files, 2 documentation
+     128 B   48.7%  binary             1 file
+Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+? 0
+```
+
+### Machine Rows Carry the Stable Id and the Label
+
+The id is what a consumer groups by; the label is what it puts on the row.
+`Makefile` lands in `code` from an exact-filename rule, which is why these tallies are
+maintained by the engine rather than derived from extensions.
+
+```console
+$ fdu --cache off --color never --view groups --format jsonl --size apparent --sort count --limit all project
+{"schema": "fdu.report/4", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "source": "cold_scan", "freshness": "fresh", "complete": true, "errors": []}
+{"view": "groups", "bound": null, "groups": [{"id": "code", "label": "Code", "files": 3, "bytes": 64, "allocated": [ALLOCATED]}, {"id": "docs", "label": "Documentation", "files": 2, "bytes": 71, "allocated": [ALLOCATED]}, {"id": "archives", "label": "Archives", "files": 1, "bytes": 128, "allocated": [ALLOCATED]}]}
+? 0
+```
+
+### Rules Without Groups Leave the Axis Empty
+
+A registry that declares no `[[group]]` reports no group rows, rather than inventing a
+taxonomy the caller did not ask for.
+
+```console
+$ fdu --cache off --color never --type-rules mine.toml --view groups --format jsonl --size apparent project
+{"schema": "fdu.report/4", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "source": "cold_scan", "freshness": "fresh", "complete": true, "errors": []}
+{"view": "groups", "bound": null, "groups": []}
+? 0
 ```
