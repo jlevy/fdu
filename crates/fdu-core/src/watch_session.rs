@@ -14,6 +14,7 @@
 //! passes throttles only how often aggregate views are re-rendered — it plays no part in
 //! detection.
 
+use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -67,6 +68,49 @@ pub struct Batch {
     /// was filtered out. Aggregate views re-render on this rather than on `changes`,
     /// because a filtered-out change still moves the totals a tree view reports.
     pub dirty: bool,
+    /// Directories whose roll-up values this batch may have moved, root first.
+    ///
+    /// Every ancestor of every applied path, plus a changed directory itself: exactly
+    /// the chain `merge_upward` walks when it applies the batch. A consumer caching a
+    /// per-directory answer invalidates these and keeps the rest, instead of re-deriving
+    /// the set from change paths itself or dropping every cached row.
+    ///
+    /// Sorted and deduplicated, and never filtered by the selection: a change the
+    /// selection hides still moves the totals its ancestors report, which is the same
+    /// reason `dirty` is not computed from `changes`.
+    pub dirty_rollups: Vec<PathBuf>,
+}
+
+/// Directories whose roll-up values a set of applied deltas may have moved.
+///
+/// The ancestors of every touched path, plus a touched directory itself, which is the
+/// chain the index walks upward as it applies. Derived from the ops rather than reported
+/// out of the reducer because the two are the same set by construction, and deriving it
+/// keeps the index from having to learn what a consumer's cache wants.
+fn dirty_rollups(applied: &[AppliedDelta]) -> Vec<PathBuf> {
+    let mut dirty: BTreeSet<PathBuf> = BTreeSet::new();
+    for delta in applied {
+        for op in &delta.ops {
+            let (path, is_directory) = match op {
+                Op::Upsert { path, kind, .. } => (path, kind.is_dir()),
+                // A removed entry's own roll-up is gone, so only its ancestors move. An
+                // invalidated subtree is a directory whose own totals are in doubt.
+                Op::Remove { path } => (path, false),
+                Op::InvalidateSubtree { path, .. } => (path, true),
+            };
+            if is_directory {
+                dirty.insert(path.clone());
+            }
+            let mut ancestor = path.parent();
+            while let Some(current) = ancestor {
+                dirty.insert(current.to_path_buf());
+                ancestor = current.parent();
+            }
+            // The root is an ancestor of everything and its totals always move.
+            dirty.insert(PathBuf::new());
+        }
+    }
+    dirty.into_iter().collect()
 }
 
 /// An index paired with a watcher, answering one query continuously.
@@ -136,7 +180,11 @@ impl Session {
             return Ok(None);
         };
 
-        let mut batch = Batch { changes: Vec::new(), dirty: !applied.is_empty() };
+        let mut batch = Batch {
+            changes: Vec::new(),
+            dirty: !applied.is_empty(),
+            dirty_rollups: dirty_rollups(&applied),
+        };
         for delta in &applied {
             for op in &delta.ops {
                 if let Some(change) = self.change_for(op, delta.clock.0) {

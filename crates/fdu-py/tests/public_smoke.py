@@ -15,6 +15,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -49,6 +50,45 @@ def check_watch_reports_its_own_index(root: Path) -> None:
     assert '"schema": "fdu.stream/1"' in line, line
     assert '"op": "upsert"' in line, line
     assert "\t" in record.render(fdu.Format.TEXT)
+
+
+def check_the_dirty_set_names_every_moved_rollup() -> None:
+    """A batch says which directories' roll-ups it may have moved.
+
+    A consumer caching a per-directory answer invalidates exactly these and keeps the
+    rest, instead of re-deriving the set from change paths or dropping every cached row.
+    The oracle here is computed from the change paths rather than taken from the code
+    that produced the set, so the two have to agree independently.
+    """
+
+    # Its own tree: this check writes a file while watching, and the shared fixture's
+    # entry counts are asserted by other checks.
+    own = Path(tempfile.mkdtemp(prefix="fdu-dirty-set-"))
+    nested = own / "src" / "deep"
+    nested.mkdir(parents=True)
+    (own / "seed.txt").write_text("seed", encoding="utf-8")
+    index = fdu.open(own)
+    with index.watch(fdu.WatchOptions(interval=0.05)) as watch:
+        time.sleep(0.5)
+        (nested / "leaf.txt").write_text("leaf", encoding="utf-8")
+        for batch in watch:
+            if not batch:
+                continue
+            # Compared as paths throughout: the engine's root is the empty path, which
+            # Python normalizes to Path("."), so comparing strings would fail on a
+            # spelling rather than on the set.
+            dirty = set(watch.dirty_rollups)
+            expected: set[Path] = set()
+            for change in batch:
+                parent = change.path.parent
+                while True:
+                    expected.add(parent)
+                    if parent == Path("."):
+                        break
+                    parent = parent.parent
+            assert expected <= dirty, f"ancestors {expected - dirty} missing from {dirty}"
+            assert Path(".") in dirty, "the root's totals always move"
+            break
 
 
 def check_the_one_shot_retains_nothing(root: Path) -> None:
@@ -334,6 +374,7 @@ def main() -> None:
     check_the_list_grammar_reaches_python(root)
     check_the_one_shot_retains_nothing(root)
     check_watch_reports_its_own_index(root)
+    check_the_dirty_set_names_every_moved_rollup()
     check_render_matches_the_cli(
         root, str(Path(sys.executable).with_name("fdu.exe" if os.name == "nt" else "fdu"))
     )

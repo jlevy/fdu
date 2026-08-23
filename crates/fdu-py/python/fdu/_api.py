@@ -165,6 +165,19 @@ class Watch(Iterator[tuple[Change, ...]]):
     def __next__(self) -> tuple[Change, ...]:
         return tuple(_change(item) for item in next(self._native))
 
+    @property
+    def dirty_rollups(self) -> tuple[Path, ...]:
+        """Directories whose roll-ups the batch just yielded may have moved.
+
+        Root first, sorted, and never filtered by the selection: a change the selection
+        hides still moves the totals its ancestors report. Invalidate exactly these and
+        keep the rest, rather than dropping every cached per-directory answer.
+
+        Scoped to the most recent batch, so read it after each iteration step.
+        """
+
+        return tuple(Path(path) for path in self._native.dirty_rollups)
+
     def report(self) -> Report:
         """The live answer, as of now, from the index this session has been updating.
 

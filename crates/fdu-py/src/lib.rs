@@ -382,7 +382,11 @@ impl PyIndex {
         let session = Session::new(handle, self.config.clone(), query, WatchConfig::default())
             .map_err(to_py_err)?;
 
-        Ok(PyWatch { session: Some(session), timeout: Duration::from_secs_f64(interval) })
+        Ok(PyWatch {
+            session: Some(session),
+            timeout: Duration::from_secs_f64(interval),
+            dirty_rollups: Vec::new(),
+        })
     }
 
     /// Roll-up totals for the whole tree.
@@ -1076,6 +1080,11 @@ fn parse_bound(value: &str, name: &str) -> PyResult<Bound_> {
 struct PyWatch {
     session: Option<Session>,
     timeout: Duration,
+    /// Directories whose roll-ups the batch just yielded may have moved.
+    ///
+    /// Held beside the feed rather than yielded with it, so the iterator keeps yielding
+    /// changes and a consumer that does not cache per-directory answers pays nothing.
+    dirty_rollups: Vec<PathBuf>,
 }
 
 #[pymethods]
@@ -1114,7 +1123,9 @@ impl PyWatch {
         let batch = py.detach(|| session.next_batch(self.timeout)).map_err(to_py_err)?;
 
         let list = PyList::empty(py);
+        self.dirty_rollups.clear();
         if let Some(batch) = batch {
+            self.dirty_rollups.clone_from(&batch.dirty_rollups);
             for change in &batch.changes {
                 let dict = PyDict::new(py);
                 dict.set_item("path", change.path.as_os_str())?;
@@ -1135,6 +1146,19 @@ impl PyWatch {
             }
         }
         Ok(Some(list.unbind()))
+    }
+
+    /// Directories whose roll-up values the batch just yielded may have moved.
+    ///
+    /// Root first, sorted, deduplicated, and never filtered by the selection: a change
+    /// the selection hides still moves the totals its ancestors report. A consumer
+    /// caching a per-directory answer invalidates exactly these and keeps the rest,
+    /// rather than re-deriving the set from change paths or dropping every cached row.
+    ///
+    /// Scoped to the most recent batch, so read it after each iteration step.
+    #[getter]
+    fn dirty_rollups(&self) -> Vec<OsString> {
+        self.dirty_rollups.iter().map(|path| path.as_os_str().to_os_string()).collect()
     }
 
     /// Stop watching and release the backend registration.
