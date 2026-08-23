@@ -5,11 +5,11 @@ title: "H95: The type-rules cascade cannot exit early, and runs twice per file"
 kind: task
 status: closed
 priority: 1
-version: 2
+version: 3
 labels: []
 dependencies: []
 created_at: 2026-08-21T15:41:44.443Z
-updated_at: 2026-08-21T16:05:24.069Z
+updated_at: 2026-08-23T05:06:34.315Z
 ---
 **Tier: content** (index plus content records), with expected transfer to cold scans too,
 since the same cascade runs there.
@@ -56,37 +56,4 @@ hot path, so indexing it would add surface with no measured benefit.
 
 ## Notes
 
-**Confirmed on the warm path; its cold-transfer prediction refuted** (commit `9fb6a33`, PR #38).
-
-Measured against the **post-H94** base, since H94 shrank the denominator.
-40 adjacent interleaved pairs, `content-cache-hit`:
-
-| Metric | Post-H94 | H95 | Change | 95% CI |
-| --- | --- | --- | --- | --- |
-| wall | 345.6 ms | 326.8 ms | -5.08% | [-6.39%, -3.60%] |
-| component | 300.4 ms | 281.5 ms | -5.44% | [-7.27%, -4.11%] |
-| peak RSS | 42.5 MB | 42.5 MB | neutral | |
-
-Mechanism: instructions 2,266,646,925 -> 2,106,908,485 (-7.05%);
-`classify_path_with_prefix` inclusive 384,389,975 -> 225,056,747 Ir, -41.4% absolute,
-16.96% -> 10.68% of profile.
-
-**The cold-path transfer this hypothesis predicted did not hold, and that is the more
-reusable half of this result.** The cascade runs on the analysis path too, so `content-basic`
-was expected to move similarly. It measured **-4.20% [-6.10%, -0.06%] at 24 pairs** and then
-**-2.34% [-5.05%, -0.64%] at 40 pairs** -- direction right, interval below zero, median
-below the 3% bar once the estimate settled. Not claimed. Anyone tempted to quote the
-24-pair figure should note it moved 1.9 points on the same host with nothing changed but
-sample count; that is the drift the loop's 3% floor exists to absorb.
-
-Deliberately not done: `Index::apply_analysis` still re-runs `classify_path` on a path
-`analysis_candidates` just classified, so classification is computed twice per warm file.
-`AnalysisCandidate` is public and a caller can hand-build an inconsistent one, so that
-guard is a real contract check. Making classification cheap was the way to pay for it
-without weakening it. If a future change makes candidate construction internal, the
-second call becomes removable and is worth roughly the same again.
-
-Residue on this path: `with_flags`, which walks path components for the vendored and
-documentation flags on every file -- it was 4.42% of the pre-H94 profile and is untouched.
-Scope guard held: the shebang tier has the same non-short-circuiting shape but sits on the
-content-prefix path and was left alone.
+H95 confirmed on the warm path in exp-064; exp-065 adds that its denied cold-path transfer claim was doubly right to deny. The cold content-basic figure is subject-shaped: -13.56% on the generated subject (depth 16, 22.6x sparse) against -2.38% on dense real source, same binaries, same day.

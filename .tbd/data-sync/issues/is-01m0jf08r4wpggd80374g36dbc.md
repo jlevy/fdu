@@ -5,11 +5,11 @@ title: "H94: Content roll-up ancestor walk re-descends a path-ordered tree per f
 kind: task
 status: closed
 priority: 1
-version: 2
+version: 3
 labels: []
 dependencies: []
 created_at: 2026-08-21T15:28:32.516Z
-updated_at: 2026-08-21T16:05:00.632Z
+updated_at: 2026-08-23T05:06:24.362Z
 ---
 **Tier: content** (index plus content records). Not evidence about the aggregate or index tiers.
 
@@ -61,29 +61,4 @@ open if this clears but leaves headroom.
 
 ## Notes
 
-**Confirmed and landed** (commit `8fe6248`, PR #38). Content tier, Linux/virtualized, warm regime.
-
-24 adjacent interleaved pairs, `content-cache-hit`, 15,977-file / 1,045-directory tree:
-
-| Metric | Base | H94 | Change | 95% CI |
-| --- | --- | --- | --- | --- |
-| wall | 464.4 ms | 346.9 ms | -25.42% | [-26.51%, -24.46%] |
-| component | 416.8 ms | 304.9 ms | -27.13% | [-29.00%, -26.24%] |
-| total CPU | 0.46 s | 0.35 s | | |
-| peak RSS | 42.3 MB | 42.5 MB | +0.5% | neutral |
-
-Mechanism confirmed rather than assumed: instructions 3,462,200,305 -> 2,266,646,925
-(-34.53%), `merge_ancestors` inclusive 1,513,915,190 -> 319,007,101 Ir, i.e. 43.73% ->
-14.07% of profile and -78.9% absolute. That is the predicted mechanism and not a
-coincidental win elsewhere.
-
-Oracles: `engine_digest` and content digest unchanged; the multi-view `--depth 12` JSON
-render is byte-identical between arms at 227,198 bytes apart from the two timestamp
-fields, which verifies intermediate directory roll-ups rather than only the root total
-the probe digest covers.
-
-Headroom deliberately left: `files: BTreeMap<PathBuf, FileAnalysis>` is untouched and its
-`remove` was a further 11.09% through `apply_analysis`; and the per-ancestor walk itself
-remains. The structural version -- key roll-ups by `EntryId` and defer to one bottom-up
-pass, the shape that won -51.9% on snapshot load in `fdu-91ts` -- is still open and is now
-the larger of the two remaining items on this path.
+Confirmed in exp-064; re-validated in exp-065 against main 44 commits later. Warm content-cache-hit reproduces on the original subject (-32.61% vs -30.31% recorded) and transfers to a dense real tree at -25.78% [-26.74%, -24.52%]. The cold content-basic figure recorded alongside (-13.40%) does NOT transfer: -2.38% on dense real source, because exp-064's subject is depth 16 and 22.6x sparse. Structural successor -- key roll-ups by EntryId, one bottom-up pass -- is the content-tier instance of H86 and stays open under campaign-2 Phase C.
