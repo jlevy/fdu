@@ -3,15 +3,15 @@ type: is
 id: is-01m0kaz0bcxmp6162vxqhgtnrt
 title: "tryscript: requires: declares and reports which binary a run resolved"
 kind: feature
-status: open
+status: closed
 priority: 1
-version: 2
+version: 3
 spec_path: docs/project/specs/active/plan-2026-08-21-fdu-python-cli-parity.md
 labels: []
 dependencies: []
 parent_id: is-01m0k965p7hx4dy6t0cj29rsae
 created_at: 2026-08-21T23:37:11.272Z
-updated_at: 2026-08-22T07:50:09.844Z
+updated_at: 2026-08-23T00:04:54.761Z
 ---
 tryscript resolves a command through PATH and says nothing about where it landed. For a
 parity run that is the difference between a proven result and a green check.
@@ -30,10 +30,8 @@ every fdu report carries its own source and freshness.
 
 ## Notes
 
-Superseded in practice by jlevy/tryscript#51.
+Recorded upstream as jlevy/tryscript#54 rather than implemented here; it is a tryscript feature and fdu no longer needs it.
 
-Probing tryscript 0.2.0 showed it inherits the parent environment and expands env vars in path: entries. The deeper problem was that path: only PREPENDS to the inherited PATH, so a bare name can resolve to a build nobody selected (see fdu-9h2w for what that broke).
+fdu's corpus names its binary's directory through $FDU_BIN and scripts/run-golden.mjs preflights it, so the guarantee exists. What requires: would add is moving that check off fdu and letting tryscript report what it resolved, which no external wrapper can do.
 
-Rather than a requires: declaration reporting what resolved, #51 removes the resolution step: env: now expands variables the way path: already did, plus TRYSCRIPT_EXE for the Windows suffix, so front matter names the executable outright and there is no PATH lookup left to report on.
-
-A requires: feature would still help tests that genuinely want a PATH-resolved tool, so leaving this open -- but it is off the parity critical path. Follow-up to delete fdu's wrapper is fdu-z7sp.
+The issue carries the evidence: fdu's goldens silently fell through to ~/.cargo/bin/fdu whenever target/debug failed to resolve, and passed.
