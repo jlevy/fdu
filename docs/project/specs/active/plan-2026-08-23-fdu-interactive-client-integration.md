@@ -504,6 +504,53 @@ integration adds three requirements to land with it, not after it:
   then follow changes, with no window where a mutation is neither in the walk nor in the
   feed.
 
+#### How the stream crosses the boundary, and why it is not a callback
+
+This changes no structure, because both halves already exist and are already the right
+shape. It is worth writing down, since “add streaming” sounds like it implies callbacks
+and here it must not.
+
+**In Rust, the callback is already there and stays.** `scan` takes
+`sink: &mut dyn FnMut(Observation)` and `reconcile` takes
+`sink: &mut dyn FnMut(&AppliedDelta)`; the cold walk has always streamed to a sink.
+`scan_into_index` is the convenience wrapper that swallows it and hands back a finished
+index, and that wrapper is what the Python `scan()` calls — while the reconcile path
+passes a literal `&mut |_| {}`. So the walk is not silent; the binding is deaf.
+That is a much smaller thing to fix than adding a producer.
+
+**Across the FFI boundary there is no callback, and there must not be.** A
+Rust-to-Python callback has to hold the GIL for every invocation, on whichever worker
+thread the walk is running, at per-entry frequency.
+The walk is parallel and region-scheduled, so that serializes every worker on the GIL
+and destroys the property that makes fdu worth adopting.
+It also inverts control, which an event loop cannot accept, and it has no backpressure
+story: a slow Python callback blocks a walker thread.
+
+**The adapter is a bounded queue, and the watch layer is the working example.** The Rust
+sink pushes into a queue; Python pulls.
+`Watch.__next__` already does exactly this — `py.detach(|| session.next_batch(timeout))`
+— so the GIL is taken once per *batch* rather than once per entry, and native work runs
+with it released. The scan session is the same pattern pointed at the other producer,
+which is what the architecture already claims: `scan.rs` and `watch.rs` are both
+metadata-delta producers, and the index is the consumer.
+
+**Backpressure is already modelled.** The change feed is bounded and a consumer that
+falls behind is told so rather than blocking the producer — `Since::truncated`, the same
+signal a watch overflow raises, which a client answers with a resync.
+A slow reader degrades to “you missed some, re-read” and never to a stalled walk.
+
+**One consequence worth stating, because it simplifies the client.** Both producers mint
+the same delta type, so a consumer sees one stream shape for the boot fill and for live
+changes. Metabrowser already converged on this independently: its walker and its watcher
+both emit `FsChange(ops=(FsUpsert…))` over the same SSE channel.
+So the boot path and the live path collapse into one code path on both sides of the
+seam.
+
+Metabrowser’s two-phase yield maps onto this without needing a second mechanism: where
+it emits a placeholder and later a finalized row, fdu emits one delta whose roll-up
+grows through `merge_upward`, with per-path status moving `Partial` to `Complete`. Its
+two states are the approximation; provenance is the general form.
+
 ### Classification identity in listings
 
 `children()` and `files`-view rows gain the compiled registry’s verdict — type id,
@@ -539,16 +586,25 @@ consumers rather than wrapped.
 
 ## Implementation Plan
 
-Tracked under epic `fdu-u7vo`; each item names its bead.
+Tracked under epic `fdu-u7vo`; every item names its bead, and every bead under the epic
+appears here. Two beads linked to this spec are deliberately not phase items: `fdu-p02b`
+tracks the metabrowser-side adoption and is coordination rather than fdu work, and
+`fdu-eu8t` is the older “specify a progressive Python session” request that Phase 4 and
+Phase 5 between them answer.
+Both stay open until the work they describe lands.
 
-### Phase 0: Shared reads during a write
+### Phase 0: Two surface defects
 
-First because it is the only outright blocker, and it is small.
+Both are cases where the engine can already do the thing and no surface can reach it,
+and both are small. `fdu-gav9` leads because it is the only outright drop-in blocker.
 
 - [ ] Python `Index` reads take a shared borrow over the engine handle rather than an
   exclusive borrow of the whole object, so `refresh()` and watch commits no longer raise
   in reader threads; tests pin that a concurrent read never raises and never returns a
   torn value (`fdu-gav9`)
+- [ ] `--order` on the scope axis and `ScanOptions.order` in Python, with goldens and
+  parity rows, so the breadth-first default fdu already pays for is a stated contract
+  rather than an engine-only one (`fdu-4vkz`)
 
 ### Phase 1: Partitioned tallies
 
@@ -561,7 +617,7 @@ First because it is the only outright blocker, and it is small.
   `RollUp`/`Child` values in Python, tagged-fixture goldens in every format, parity
   rows, and plane-equals-all equivalence when no entry is tagged (`fdu-7rwf`)
 
-### Phase 1b: The customizable taxonomy
+### Phase 2: The customizable taxonomy
 
 Converts PR #38’s indexed tiers rather than competing with them; that work is merged.
 
@@ -576,31 +632,33 @@ Converts PR #38’s indexed tiers rather than competing with them; that work is 
   generalizes to a property over any registry (`fdu-ctp5`)
 - [ ] Bounded per-directory extension and filename rows with a stated remainder
   (`fdu-e2p7`)
+- [ ] Loop job: what planes and groups together cost on the ancestor-merge path,
+  measured against H86’s replacement shape on a dense real subject rather than against
+  today’s walk (`fdu-n4gn`, blocked by `fdu-mvt3` and `fdu-b2vy` — it cannot measure
+  what does not exist yet)
 
-### Phase 2: The embedder watch contract
+### Phase 3: The embedder watch contract
 
 - [ ] Per-batch dirty roll-up set, engine through Python (`fdu-mz1a`)
 - [ ] `Index.refresh(path=...)` scoped reconciliation in the Python surface (`fdu-fh0k`)
 - [ ] Polling backend selection in `WatchOptions`, with its interval stated (`fdu-rhu3`)
 - [ ] The asyncio adapter and the thread-affinity documentation, with a tested
-  SSE-resume example mapping `since`/`truncated` to `Last-Event-ID`/resync (`fdu-97pb`)
+  SSE-resume example mapping `since`/`truncated` to `Last-Event-ID`/resync (`fdu-97pb`,
+  blocked by `fdu-gav9`: an event-loop adapter over a surface that raises under
+  concurrent access would only relocate the defect)
 
-### Phase 2b: Traversal order as a public choice
+### Phase 4: Session integration shape
 
-- [ ] `--order` on the scope axis and `ScanOptions.order` in Python, with goldens and
-  parity rows, so the breadth-first default fdu already pays for is a stated contract
-  rather than an engine-only one (`fdu-4vkz`)
-
-### Phase 3: Session integration shape
-
-(after the progressive-results session beads land the core; `fdu-4o0m`, blocked by
-`fdu-e86o` and `fdu-a0j0`)
+One bead, `fdu-4o0m`, blocked by the progressive-results session beads `fdu-e86o` and
+`fdu-a0j0` which land the core.
+Its three requirements:
 
 - [ ] Mid-walk progress surface: entries applied, clock, completeness
-- [ ] Async session adapter, same policy as watch
+- [ ] Async session adapter, same policy as watch — pull over a bounded queue, never a
+  callback across the boundary
 - [ ] Session-to-watch clock handoff, tested for the no-gap property
 
-### Phase 4: Adoption proof
+### Phase 5: Adoption proof
 
 - [ ] Classification identity in `children()` and files rows; registry identity readable
   from Python (`fdu-16l7`)
@@ -621,9 +679,14 @@ group’s families and every family’s types sum to what the same selection rep
 custom registry cannot lose a file the way the extension view once did.
 Concurrency gets the pair named in its section — a read during a write never raises and
 never tears — driven by the existing thread test, which found the defect.
-Registry validation is tested for what it rejects as much as what it accepts: duplicate
-ids, an unknown group, a tie-break ambiguity, and a manifest whose fingerprint collides
-with the compiled default.
+The streaming boundary gets two of its own, because the reason for the pull shape is a
+property rather than a preference: a walk observed from Python holds the GIL a bounded
+number of times per batch rather than once per entry, and a consumer that stops reading
+degrades to a truncated feed rather than a stalled producer.
+Both are assertions about what must *not* regress if someone later reaches for a
+callback. Registry validation is tested for what it rejects as much as what it accepts:
+duplicate ids, an unknown group, a tie-break ambiguity, and a manifest whose fingerprint
+collides with the compiled default.
 Golden sessions add a tagged fixture exercising `--tags`/`--plane` in every format, and
 the parity harness replays them against Python as it does every axis.
 Watch additions get the same treatment the layer already has — dirty sets asserted
