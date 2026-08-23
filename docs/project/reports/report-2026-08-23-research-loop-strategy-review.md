@@ -124,13 +124,19 @@ harness moved under `explorations/`; the Make targets set `PYTHONPATH` and `--pr
 correctly. The runbook uses the targets, and the guide’s commands are corrected in this
 branch.
 
-**This host is quiet only at night.** Load average runs 12–28 by day; the quiet gate is
-at most 25% instantaneous CPU busy before and after every sample, which is achievable
-only when nothing else is running — including the agent’s own builds.
+**This host is quiet only at night, and the first night it was not quiet at all.** Load
+average runs 12–28 by day; the quiet gate is at most 25% instantaneous CPU busy before
+and after every sample, which is achievable only when nothing else is running —
+including the agent’s own builds.
 Every artifact so far is exploratory or discovery; an unattended night is the one time
 this host can produce a quiet-regime cell, provided measurement starts after the last
 build finishes and `PERF_HOST_REGIME=quiet` is declared so a noisy sample is invalidated
 rather than averaged in.
+On 2026-08-23 the gate refused (CPU busy 44.3%): an `ANECompilerService` process had
+held a core at ~99% for over a day and another session was running, so every artifact
+from that night is `uncontrolled` and says so.
+Restarting a system service is the owner’s decision, which is why the runbook tells an
+agent to record the condition and go on rather than to clear it.
 
 ## The macOS Agenda
 
@@ -140,13 +146,15 @@ reason is stated for each.
 
 ### Tier 1: run unattended, in this order
 
-1. **`fdu-mx1w` — a `default-tree` probe job, recorded as a baseline on the three
-   deciding subjects.** Everything user-visible is measured through it and nothing ever
-   has been. The job drives the real one-shot path (`prepare_report` with cache `auto`,
-   tree view, an isolated cache directory per trial) with the index oracle, and a `JOBS`
-   override lets a round name its jobs instead of running all six.
+1. **`fdu-mx1w` — a `default-tree` probe job, recorded as a baseline.** Everything
+   user-visible is measured through it and nothing ever had been.
+   The job drives the real one-shot path (`prepare_report` with cache `auto`, tree view
+   at its default depth, the text renderer, the save joined) with the tallies oracle,
+   and a `JOBS` override lets a round name its jobs instead of running all six.
    *Against:* it is harness work and produces no speedup.
    *Answer:* an hour, and both items below are unmeasurable without it.
+   **Landed** (exp-066): on the 175k rustup store the repeated run rewrote a 13.9 MB
+   snapshot on 24 of 24 trials, and render plus write was about 70 ms of a 375 ms run.
 2. **`fdu-2um8` — skip the identical snapshot rewrite on the cold-scan path.**
    Serialization is deterministic, so byte equality with the file on disk is exact and
    the cache cannot go stale.
@@ -156,24 +164,41 @@ reason is stated for each.
    cheaper than a byte compare on a tree that did change.
    *Answer:* a page-cache read of 14 MB costs a few milliseconds, and the rewrite it
    replaces measured 40–70 ms; if the saving falls short of the prediction, that read is
-   where to look.
+   where to look. **Landed** (exp-067, H100): `default-tree` −10.61% [−14.85%, −6.05%] at
+   16 trials, the other jobs unchanged, RSS flat, the tail narrowed from 1.15× to 1.05×.
+   The prediction was optimistic by a third: the write is about 40 ms of the 70, the
+   render and teardown the rest.
 3. **`fdu-n75m`, part 1 only — flush the rendered report before joining the snapshot
    writer.** Changes no bytes and no work, only when the user sees them; recorded on the
    default job even though it needs no accept verdict.
    Parts 2 and 3 (dropping the index off the exit path; whether a checksummed,
    atomically renamed cache file needs `F_FULLFSYNC`) are durability decisions and stay
-   in Tier 3.
+   in Tier 3. **Landed** (exp-068, H101): time to first byte −7.54% [−8.55%, −5.18%] on
+   a repeated run and −12.47% [−15.66%, −9.84%] on a first run, total wall unchanged;
+   the report reaches the terminal 41–49 ms before the process exits.
+   Measured with `spikes/ttfb.py`, because no probe job can see when bytes reach a
+   terminal.
 4. **`fdu-pdne` — the PGO screen (H93), measure only.** One afternoon by the plan’s
    estimate; on macOS it needs the `llvm-tools` rustup component for `llvm-profdata`.
    *Against:* adopting PGO changes the release pipeline.
    *Answer:* the screen records a number and changes no build configuration; adoption is
    a separate decision with the interval in hand.
+   **Skipped the first night:** `llvm-tools` is not installed, and under that night’s
+   host noise (guard intervals ±13–23 points) a user-space gain bounded by the
+   user-space share of a warm macOS wall, about 25%, could not resolve.
+   Needs a quiet host and `rustup component add llvm-tools`.
 5. **`fdu-78q6` — the content sidecar restore path (H83).** Same re-derivation shape the
    snapshot loader had, same class of fix expected; measured on the metabrowser clone
    (52,717 files, dense at 0.88) with `perf-content-compare`. *Against:* the warm
    content tier is a smaller share of what users run than the default path.
    *Answer:* it is the largest unexamined item on its tier and is platform-neutral, so a
    macOS verdict transfers.
+   **Re-profiled** on the metabrowser clone: path comparison is 33% of the warm content
+   open (`compare_components` 17%, `Components::next` 12%), the `BTreeMap<PathBuf, _>`
+   residue the bead’s re-screen named; exp-069 (H102) keys that map by path bytes.
+   See the ledger for its verdict.
+   The next increment is the 8% of `Path::hash` and SipHash on the roll-up map; the
+   structural form is `fdu-jxhk`.
 
 ### Tier 2: instruments, when Tier 1 is exhausted
 

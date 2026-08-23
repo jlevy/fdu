@@ -66,7 +66,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | --- | --- | --- | ---: |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
-| Darwin 25.5.0, apfs | bare-metal | warm-steady | 3 |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 4 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 
 ## Every experiment, including the failures
@@ -145,6 +145,7 @@ dead end.
 | 066 | [Baseline for the default command on a real package cache](#exp066--baseline-for-the-default-command-on-a-real-package-cache) | — | `default-tree` | -1.9% | 📏 baseline |
 | 067 | [Skip the identical snapshot rewrite on the cold-scan path](#exp067--skip-the-identical-snapshot-rewrite-on-the-coldscan-path) | H100 | `default-tree` | -10.6% | ✅ accepted |
 | 068 | [Flush the rendered report before joining the snapshot writer](#exp068--flush-the-rendered-report-before-joining-the-snapshot-writer) | H101 | `default-tree` | +1.2% | ✅ accepted |
+| 069 | [Order the content file map by path bytes instead of components](#exp069--order-the-content-file-map-by-path-bytes-instead-of-components) | H102 | `content-cache-hit` | -31.0% | ✅ accepted |
 
 ## The experiments
 
@@ -2469,6 +2470,41 @@ the frontmatter shows the expected nothing for a one-line latency change.
 Full record:
 [`exp-068-flush-the-rendered-report-before-joining-the-snapshot-writer.md`](../experiments/exp-068-flush-the-rendered-report-before-joining-the-snapshot-writer.md)
 
+### exp-069 — Order the content file map by path bytes instead of components
+
+✅ accepted · 2026-08-23 · H102 · commit `4d29d6d`
+
+Control: main at 4d29d6d (perf_probe.control)
+
+Candidate: ContentIndex::files keyed by a byte-ordered PathKey; prefix-range
+invalidation with an explicit separator
+
+**`content-cache-hit`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 577.9 | 408.9 | -31.00% | [-31.43%, -27.80%] |
+| component (ms) | 453.5 | 283.6 | -38.64% | [-39.31%, -36.43%] |
+| cpu (ms) | 573.8 | 404.6 | -31.12% | [-31.45%, -28.50%] |
+| user (ms) | 543.0 | 371.7 | -32.24% | [-33.02%, -30.41%] |
+| system (ms) | 29.6 | 29.6 | -7.48% (n.s.) | [-9.72%, +1.56%] |
+| blocked (ms) | 3.8 | 4.1 | -1.61% (n.s.) | [-19.71%, +88.55%] |
+| peak rss (MiB) | 181.0 | 178.9 | -0.39% (n.s.) | [-2.84%, +0.51%] |
+
+Other jobs, wall time: `code-sloc` +0.3% (n.s.), `code-sloc-cache-hit` -30.0%,
+`content-basic` +3.1% (n.s.), `content-query` -67.3%, `document-cache-hit` -30.2%,
+`markdown-prose` +6.4% (n.s.), `text-prose` -0.6% (n.s.).
+
+Cost to carry: 133 lines; no new dependencies.
+
+**Accepted:** content-cache-hit -31.00% [-31.43%, -27.80%] on a dense 52k-file real
+checkout with the content digest identical and RSS flat, for a key type that changes
+nothing observable; the cold jobs are unchanged and content-query fell 67% by the same
+mechanism.
+
+Full record:
+[`exp-069-order-the-content-file-map-by-path-bytes-instead-of-componen.md`](../experiments/exp-069-order-the-content-file-map-by-path-bytes-instead-of-componen.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -2657,6 +2693,12 @@ Baselines show one value because they measure a state rather than a change.
 | # | experiment | job | before | after | change | verdict |
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 012 | Breadth-first traversal order | `cold-scan-index` | 337.9 | 337.0 | -0.6% | ✅ accepted |
+
+### metabrowser-clone (60,089 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 069 | Order the content file map by path bytes instead of components | `content-cache-hit` | 577.9 | 408.9 | -31.0% | ✅ accepted |
 
 ### post-cli-cache-pressure-12x (720,805 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 

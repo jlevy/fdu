@@ -444,6 +444,7 @@ perf-content-compare: perf-probe-release
 		--job code-sloc-cache-hit --job text-prose --job markdown-prose \
 		--job document-cache-hit --job content-query \
 		--trials $(or $(TRIALS),12) \
+		--scratch $(PERF_SCRATCH) --output-dir $(PERF_RESULTS) \
 		--baseline-fingerprint $(PERF_BASELINE) \
 		--name $(or $(NAME),content-adhoc) $(PERF_MEASURE_EVIDENCE_ARGS)
 

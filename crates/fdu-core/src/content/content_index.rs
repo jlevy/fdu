@@ -1,5 +1,7 @@
 //! Sparse per-file content records and precomputed directory/group rollups.
 
+use std::borrow::Borrow;
+use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
@@ -91,12 +93,56 @@ impl ContentRollUp {
     }
 }
 
+/// A relative path ordered by its bytes rather than by its components.
+///
+/// `PathBuf`'s own ordering compares component by component, re-parsing both sides on
+/// every comparison, and a `BTreeMap` keyed by it pays that on every descent: on a warm
+/// content open over 52k files, `compare_components` and `Components::next` were a third
+/// of the profile. Byte order is one `memcmp`, it is just as deterministic, and every
+/// record beneath a directory is still contiguous -- they share the directory's bytes and
+/// a separator as a prefix -- so the prefix range that invalidation relies on survives.
+/// The sidecar is written in this order and read back by key, so the order is unobservable
+/// outside this module.
+#[derive(Clone, PartialEq, Eq, Debug)]
+struct PathKey(PathBuf);
+
+impl PathKey {
+    fn bytes(&self) -> &[u8] {
+        self.0.as_os_str().as_encoded_bytes()
+    }
+}
+
+impl Ord for PathKey {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.bytes().cmp(other.bytes())
+    }
+}
+
+impl PartialOrd for PathKey {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+// Lookups borrow the key as bytes, so `get` and `remove` take a `&Path` without
+// allocating. The contract `Borrow` demands -- that the borrowed form orders the same
+// way as the owned one -- holds by construction: `Ord` above *is* the byte order.
+impl Borrow<[u8]> for PathKey {
+    fn borrow(&self) -> &[u8] {
+        self.bytes()
+    }
+}
+
+fn path_bytes(path: &Path) -> &[u8] {
+    path.as_os_str().as_encoded_bytes()
+}
+
 /// Optional derived-data tier owned by an index only after analysis is enabled.
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 pub struct ContentIndex {
     profile: Option<AnalysisSet>,
     provenance: Option<ContentProvenance>,
-    files: BTreeMap<PathBuf, FileAnalysis>,
+    files: BTreeMap<PathKey, FileAnalysis>,
     rollups: HashMap<PathBuf, ContentRollUp>,
 }
 
@@ -123,7 +169,7 @@ impl ContentIndex {
 
     /// Borrow one file's analysis.
     pub fn file(&self, path: &Path) -> Option<&FileAnalysis> {
-        self.files.get(path)
+        self.files.get(path_bytes(path))
     }
 
     /// Borrow a directory's precomputed subtree rollup.
@@ -132,27 +178,46 @@ impl ContentIndex {
     }
 
     pub(crate) fn records(&self) -> impl Iterator<Item = (&Path, &FileAnalysis)> {
-        self.files.iter().map(|(path, analysis)| (path.as_path(), analysis))
+        self.files.iter().map(|(key, analysis)| (key.0.as_path(), analysis))
     }
 
     pub(crate) fn commit(&mut self, path: PathBuf, analysis: FileAnalysis) {
         self.prepare(analysis.profile, analysis.provenance.clone());
-        if let Some(previous) = self.files.remove(&path) {
+        if let Some(previous) = self.files.remove(path_bytes(&path)) {
             self.merge_ancestors(&path, &previous, false);
         }
         self.merge_ancestors(&path, &analysis, true);
-        self.files.insert(path, analysis);
+        self.files.insert(PathKey(path), analysis);
     }
 
     pub(crate) fn invalidate(&mut self, path: &Path) {
-        let removed: Vec<(PathBuf, FileAnalysis)> = self
-            .files
-            .range(path.to_path_buf()..)
-            .take_while(|(candidate, _)| candidate.starts_with(path))
-            .map(|(candidate, analysis)| (candidate.clone(), analysis.clone()))
-            .collect();
+        // The record at `path` itself, if it is a file, plus everything beneath it if it
+        // is a directory: in byte order those are `path` and then the contiguous run of
+        // keys that begin with `path` and a separator. The root (an empty path) has no
+        // separator form and owns every record.
+        let mut removed: Vec<(PathBuf, FileAnalysis)> = Vec::new();
+        if let Some((key, analysis)) = self.files.get_key_value(path_bytes(path)) {
+            removed.push((key.0.clone(), analysis.clone()));
+        }
+        let prefix: Vec<u8> = if path.as_os_str().is_empty() {
+            Vec::new()
+        } else {
+            let mut prefix = path_bytes(path).to_vec();
+            prefix.push(std::path::MAIN_SEPARATOR as u8);
+            prefix
+        };
+        removed.extend(
+            self.files
+                .range::<[u8], _>((
+                    std::ops::Bound::Included(prefix.as_slice()),
+                    std::ops::Bound::Unbounded,
+                ))
+                .take_while(|(key, _)| key.bytes().starts_with(&prefix))
+                .filter(|(key, _)| key.0 != path)
+                .map(|(key, analysis)| (key.0.clone(), analysis.clone())),
+        );
         for (candidate, analysis) in removed {
-            self.files.remove(&candidate);
+            self.files.remove(path_bytes(&candidate));
             self.merge_ancestors(&candidate, &analysis, false);
         }
     }
@@ -237,5 +302,54 @@ mod tests {
         index.invalidate(Path::new("src"));
         assert!(index.is_empty());
         assert!(index.rollup(Path::new("")).is_none());
+    }
+
+    #[test]
+    fn invalidation_by_byte_prefix_stops_at_the_separator() {
+        // In byte order `src-extra/a.rs` sorts before `src/a.rs` and `src2/b.rs` after
+        // it; neither is beneath `src`, and the separator in the prefix is what keeps
+        // them out. The root invalidates everything, and a file path invalidates only
+        // its own record.
+        let mut index = ContentIndex::default();
+        for path in ["src/a.rs", "src/deep/b.rs", "src-extra/a.rs", "src2/b.rs", "srcfile"] {
+            index.commit(PathBuf::from(path), analysis(path, 1));
+        }
+        assert_eq!(index.len(), 5);
+
+        index.invalidate(Path::new("src"));
+        assert_eq!(index.len(), 3);
+        assert!(index.file(Path::new("src/a.rs")).is_none());
+        assert!(index.file(Path::new("src/deep/b.rs")).is_none());
+        assert!(index.file(Path::new("src-extra/a.rs")).is_some());
+        assert!(index.file(Path::new("src2/b.rs")).is_some());
+        assert!(index.file(Path::new("srcfile")).is_some());
+        assert_eq!(index.rollup(Path::new("")).expect("root").total.files, 3);
+        assert!(index.rollup(Path::new("src")).is_none());
+
+        index.invalidate(Path::new("srcfile"));
+        assert_eq!(index.len(), 2);
+        assert!(index.file(Path::new("srcfile")).is_none());
+
+        index.invalidate(Path::new(""));
+        assert!(index.is_empty());
+        assert!(index.rollup(Path::new("")).is_none());
+    }
+
+    #[test]
+    fn records_are_ordered_deterministically_by_bytes() {
+        let mut index = ContentIndex::default();
+        for path in ["b/x.rs", "a/z.rs", "a/y.rs", "a-b/q.rs"] {
+            index.commit(PathBuf::from(path), analysis(path, 1));
+        }
+        let order: Vec<&Path> = index.records().map(|(path, _)| path).collect();
+        assert_eq!(
+            order,
+            vec![
+                Path::new("a-b/q.rs"),
+                Path::new("a/y.rs"),
+                Path::new("a/z.rs"),
+                Path::new("b/x.rs")
+            ]
+        );
     }
 }
