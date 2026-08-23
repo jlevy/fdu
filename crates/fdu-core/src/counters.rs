@@ -14,6 +14,7 @@
 
 use std::cell::Cell;
 use std::ffi::OsStr;
+use std::fmt::Write as _;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 pub mod alloc;
@@ -127,6 +128,57 @@ impl Counts {
             ),
             ("adaptive scan policy", "reserve expansions", self.adaptive_scale_ups),
             ("adaptive scan policy", "walks left undecided", self.adaptive_policy_undecided),
+        ]
+    }
+
+    /// Every counter as one JSON object, for a test that asserts about cost.
+    ///
+    /// A cost oracle needs a machine form, and it needs one that is stable to assert on.
+    /// Absolute counts are neither: they move with the filesystem, the platform, and the
+    /// allocator. *Relations between them* are stable -- `stats == dir_entries` on a cold
+    /// walk, `stats == 0` when the answer came from a snapshot, an idle watch doing no
+    /// filesystem work at all -- and those are what a caller computes from this. Emitting
+    /// the numbers and leaving the relations to the caller is what keeps this a
+    /// measurement rather than a list of assertions the engine makes about itself.
+    ///
+    /// Deliberately not wall-clock. A timing gate on a shared runner measures the runner.
+    ///
+    /// Field names are the struct's, not the report's labels: a machine consumer wants a
+    /// key it can index, and the human labels are a presentation that may be reworded.
+    #[must_use]
+    pub fn to_json(&self) -> String {
+        let mut out = String::from("{\"schema\":\"fdu.counters/1\"");
+        for (name, value) in self.fields() {
+            let _ = write!(out, ",\"{name}\":{value}");
+        }
+        out.push('}');
+        out
+    }
+
+    /// Every counter as `(field, value)`, keyed by the struct's own field names.
+    #[must_use]
+    pub fn fields(&self) -> Vec<(&'static str, u64)> {
+        vec![
+            ("dir_opens", self.dir_opens),
+            ("dir_entries", self.dir_entries),
+            ("stats", self.stats),
+            ("file_opens", self.file_opens),
+            ("file_reads", self.file_reads),
+            ("bytes_read", self.bytes_read),
+            ("allocs", self.allocs),
+            ("reallocs", self.reallocs),
+            ("frees", self.frees),
+            ("bytes_allocated", self.bytes_allocated),
+            ("upserts", self.upserts),
+            ("parent_resolutions", self.parent_resolutions),
+            ("parent_memo_hits", self.parent_memo_hits),
+            ("rollup_merges", self.rollup_merges),
+            ("entries_allocated", self.entries_allocated),
+            ("adaptive_calibration_chunks", self.adaptive_calibration_chunks),
+            ("adaptive_calibration_entries", self.adaptive_calibration_entries),
+            ("adaptive_calibration_work_us", self.adaptive_calibration_work_us),
+            ("adaptive_scale_ups", self.adaptive_scale_ups),
+            ("adaptive_policy_undecided", self.adaptive_policy_undecided),
         ]
     }
 
@@ -386,12 +438,21 @@ impl Measurement {
     /// Finish the interval and render application and supported process counters.
     #[must_use]
     pub fn finish(mut self) -> Option<String> {
+        Some(self.close()?.0)
+    }
+
+    /// Finish the interval, returning both the human render and the machine form.
+    ///
+    /// Two forms of one measurement rather than two measurements: a caller reading the
+    /// numbers and a test asserting a relation between them must not be able to disagree.
+    #[must_use]
+    pub fn close(&mut self) -> Option<(String, String)> {
         let before = self.process_before.take()?;
         flush_thread();
         let counts = snapshot();
         let process = process::Snapshot::now().since(&before);
         enable(false);
-        Some(render(&counts, &process))
+        Some((render(&counts, &process), counts.to_json()))
     }
 }
 

@@ -107,6 +107,26 @@ export const CLASSES = [
       removed.filter((line) => !/^note:|^Performance:/.test(line)).length === added.length,
   },
   {
+    id: 'process-instrumentation',
+    title: 'Counter relations only a binary invocation can report',
+    why: [
+      'The cost goldens assert relations between the counters FDU_COUNTERS=1 records --',
+      'stats against entries, a cache-only answer touching nothing. Those counters include',
+      'an allocator tier, and the allocator is global to a process: the `fdu` binary',
+      'installs a counting one in its own `main`, and an extension module loaded into a',
+      'host interpreter cannot install one for CPython. So the package reports no counters',
+      'at all rather than a subset that would read as a smaller number for the same work.',
+      'The scripts say so in one line instead of failing, which is what makes this',
+      'mechanical: the package emits exactly {"instrumented":false} where the binary emits',
+      'a relation object. A different Python answer would not match.',
+    ],
+    matches: ({ removed, added }) =>
+      added.length === 1 &&
+      added[0] === '{"instrumented":false}' &&
+      removed.length === 1 &&
+      removed[0].startsWith('{"'),
+  },
+  {
     id: 'discovery-surface',
     title: 'A discovery surface the package does not carry',
     why: [

@@ -41,7 +41,7 @@
 # This file shrinks as the API closes. Extra hunks mean drift; missing hunks mean a gap
 # was fixed and the file should be re-recorded so the change is visible in review.
 
-# 20 sessions differ, and every one of them has a named cause.
+# 23 sessions differ, and every one of them has a named cause.
 #
 #  13  Each surface names its own parameter  [surface-label]
 #      There is no --view or --analyze in Python, so its diagnostics name the parameter.
@@ -71,6 +71,17 @@
 #      envelope deliberately carries none, so a Report cannot reproduce them. The omission
 #      note is NOT this: that one is a fact about the report, travels on it, and every
 #      surface states it in its own vocabulary.
+#
+#   3  Counter relations only a binary invocation can report  [process-instrumentation]
+#      The cost goldens assert relations between the counters FDU_COUNTERS=1 records --
+#      stats against entries, a cache-only answer touching nothing. Those counters include
+#      an allocator tier, and the allocator is global to a process: the `fdu` binary
+#      installs a counting one in its own `main`, and an extension module loaded into a
+#      host interpreter cannot install one for CPython. So the package reports no counters
+#      at all rather than a subset that would read as a smaller number for the same work.
+#      The scripts say so in one line instead of failing, which is what makes this
+#      mechanical: the package emits exactly {"instrumented":false} where the binary emits
+#      a relation object. A different Python answer would not match.
 #
 #   2  A discovery surface the package does not carry  [discovery-surface]
 #      --docs is a static document that lives in the binary, so the package does not carry
@@ -250,6 +261,19 @@ FAIL [ROOT]/tests/parity/.corpus/cli-content.tryscript.md
 @@ -1,1 +1,1 @@
 -fdu: invalid --analyze "full": expected one of none, lines, code, words, all
 +fdu: invalid analyze "full": expected one of none, lines, code, words, all
+FAIL [ROOT]/tests/parity/.corpus/cli-cost.tryscript.md
+  ✗ A Cold Walk Stats Each Entry Once and Opens Each Directory Once
+@@ -1,1 +1,1 @@
+-{"schema":"fdu.counters/1","stats_cover_every_entry_and_the_root":true,"every_directory_opened_once":true,"metadata_only_reads_no_file_bodies":true}
++{"instrumented":false}
+  ✗ Cache-Only Touches Nothing
+@@ -1,1 +1,1 @@
+-{"source":"cache_only","touched_the_tree":false}
++{"instrumented":false}
+  ✗ Analysis Reads File Bodies, and Only Analysis Does
+@@ -1,1 +1,1 @@
+-{"metadata_only_opens_no_files":true,"analysis_opens_and_reads":true,"same_walk_either_way":true}
++{"instrumented":false}
 PASS [ROOT]/tests/parity/.corpus/cli-human.tryscript.md
   ✓ A Full Tree Has Stable Sizes, Ordering, Bars, and Indentation
   ✓ Depth and Number Limit Only the Rendered View
