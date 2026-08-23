@@ -5,13 +5,13 @@ title: Runtime-supplied type registry, parsed and indexed in Rust
 kind: feature
 status: closed
 priority: 1
-version: 4
+version: 5
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-implementation.md
 labels: []
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-23T08:02:48.388Z
-updated_at: 2026-08-23T20:34:48.817Z
+updated_at: 2026-08-23T21:33:30.291Z
 closed_at: 2026-08-23T20:16:26.671Z
 close_reason: "TypeRegistry is a typed engine value: parsed, validated, indexed and fingerprinted in Rust from the same [[kind]] dialect, accepted by OpenConfig/ScanConfig, the CLI's --type-rules on the Scope axis, and ScanOptions.type_rules in Python. build.rs include!s the crate's own parser so build time and run time read one implementation, proven by a migration test. type_rule_fingerprint reads the active registry; its three existing consumers already compare it, so a rule change invalidates snapshot and sidecar with no new plumbing (asserted end to end). PR #38's tie-break test is now a property over any registry; validation is tested for what it rejects. Compiled default stays the default and the fast path, holding Cow::Borrowed over the rendered statics."
 duplicate_of: null
@@ -21,4 +21,4 @@ Today build.rs compiles the rules into OUT_DIR and the module states runtime nev
 
 ## Notes
 
-SCOPE GROWS. The reconciliation adds two things: the File Rollup Format logical-extension algorithm (up to two eligible trailing components) becomes a dialect property selected by the active registry, because fdu's derive_ext folds only .tar.* and yields .zip where the format says .v2.zip — a divergence a registry alone cannot repair; and fdu runs metabrowser's conformance corpus, which stays authoritative there. Registry handoff is supplied-at-open with identity echoed back and disagreement failing the open. Consider sequencing this phase before or beside partitioned tallies: every cross-engine oracle depends on classification agreement. The parser half plus the corpus run is the proposed first cross-repo artifact.
+SCOPE GROWS, and one earlier framing was wrong. Verified by running fdu: release.v2.zip already classifies as archive and buckets as .zip, and bundle.umd.min.js as javascript under .js -- which is what File Rollup Format wants canonically. The format has TWO levels: a raw logical extension (up to two eligible trailing components) AND a canonical suffix match that drives rule lookup and roll-up bucketing. fdu has only the canonical one. Do NOT simply change derive_ext to return the raw value: classify_path_with_prefix looks rules up by exact key in RULES_BY_EXTENSION with no suffix fallback, so key v2.zip misses every rule and the archive becomes unknown:.v2.zip, while ext_bucket (same function) splits the .zip bucket at the same time. Build the pair instead -- raw level exposed on entries and in navigation/literal-filter/recent/catalog projections, plus canonical suffix matching -- with a test pinning that no existing bucket or type row moves. Also: registry arrives as an immutable packet at open with identity echoed back and disagreement failing the open; the conformance packet is vendored at a reviewed metabrowser revision with local hash verification, and needs direct basename-to-logical-extension cases added before it can serve as the oracle.
