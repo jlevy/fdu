@@ -41,6 +41,17 @@ class UsageError(Exception):
     """A value the CLI grammar rejects; exit 2, like the binary."""
 
 
+def _scan_options(args: Args) -> fdu.ScanOptions:
+    """The scope axis as one typed value, matching the flags the command line takes."""
+    order = parse_order(args.order) if args.order is not None else fdu.ScanOrder.BREADTH_FIRST
+    return fdu.ScanOptions(
+        max_depth=args.scan_depth,
+        one_filesystem=args.one_filesystem,
+        order=order,
+        threads=args.threads,
+    )
+
+
 def fail(message: str, code: int = 2) -> NoReturn:
     print(f"{PROGRAM}: {message}", file=sys.stderr)
     raise SystemExit(code)
@@ -67,6 +78,15 @@ def parse_cache(value: str) -> fdu.CachePolicy:
     except ValueError:
         known = ", ".join(p.value for p in fdu.CachePolicy)
         raise UsageError(f'invalid --cache "{value}": expected one of {known}') from None
+
+
+def parse_order(value: str) -> fdu.ScanOrder:
+    try:
+        return fdu.ScanOrder(value)
+    except ValueError:
+        raise UsageError(
+            f"unknown --order {value}; expected breadth-first or depth-first"
+        ) from None
 
 
 def parse_views(value: str) -> str:
@@ -127,6 +147,8 @@ class Args:
         self.root: str | None = None
         self.scan_depth: int | None = None
         self.one_filesystem = False
+        self.order: str | None = None
+        self.threads: int | None = None
         self.include: list[str] = []
         self.exclude: list[str] = []
         self.min_size: str | None = None
@@ -188,6 +210,10 @@ def parse_args(argv: list[str]) -> Args:
             args.scan_depth = int(take())
         elif flag == "--one-filesystem":
             args.one_filesystem = True
+        elif flag == "--order":
+            args.order = take()
+        elif flag == "--threads":
+            args.threads = int(take())
         elif flag == "--include":
             args.include.append(take())
         elif flag == "--exclude":
@@ -381,7 +407,7 @@ def _repaint(args: Args, watch: fdu.Watch) -> None:
 
 
 def _open(args: Args) -> fdu.Index:
-    scan = fdu.ScanOptions(max_depth=args.scan_depth, one_filesystem=args.one_filesystem)
+    scan = _scan_options(args)
     analysis = fdu.AnalysisOptions(analyze=args.analyze, workers=args.analysis_workers)
     return fdu.open(args.root or ".", cache=args.cache, scan=scan, analysis=analysis)
 
@@ -431,7 +457,7 @@ def main(argv: list[str] | None = None) -> int:
         args.root or ".",
         build_query(args),
         cache=args.cache,
-        scan=fdu.ScanOptions(max_depth=args.scan_depth, one_filesystem=args.one_filesystem),
+        scan=_scan_options(args),
         analysis=fdu.AnalysisOptions(analyze=args.analyze, workers=args.analysis_workers),
     )
     sys.stdout.write(render(args, report))

@@ -26,7 +26,8 @@ use fdu_core::query::{
 use fdu_core::report_format;
 use fdu_core::report_format::human_count;
 use fdu_core::{
-    CachePolicy, EntryKind, OpenConfig, ScanConfig, default_cache_path, open_with_pending_save,
+    CachePolicy, EntryKind, OpenConfig, ScanConfig, ScanOrder, default_cache_path,
+    open_with_pending_save,
 };
 use fdu_core::{PerformanceSummary, prepare_report, prepare_report_with_scan_diagnostics};
 
@@ -133,7 +134,7 @@ MORE COMPOSITIONS
   unaffected by it, so an idle tree costs nothing between changes.
 
 SIX AXES, AND EVERY OPTION BELONGS TO EXACTLY ONE
-  Scope      PATH, --scan-depth                         what is scanned and cached
+  Scope      PATH, --scan-depth, --order, --threads     what is scanned and cached
   Content    --analyze none|lines|code|words|all        which file bodies are read
   Selection  --include, --exclude, --depth, --limit     which entries are considered
   View       tree,extensions,types,families,languages,documents,files,summary,all
@@ -326,6 +327,21 @@ pub struct Cli {
     /// Stay on the filesystem the root lives on.
     #[arg(long, action = ArgAction::SetTrue, help_heading = "SCOPE")]
     pub one_filesystem: bool,
+
+    /// Directory visit order: breadth-first (default) or depth-first.
+    ///
+    /// Breadth-first is what makes a partial answer mean something, so it is the
+    /// default. Depth-first is for a caller with a specific locality or memory reason,
+    /// and for pinning a reproducible emission order in a test.
+    #[arg(long, value_name = "ORDER", help_heading = "SCOPE")]
+    pub order: Option<String>,
+
+    /// Walker threads, or unset to choose automatically.
+    ///
+    /// `1` makes emission order depend only on the queue, which is what a reproducible
+    /// recording needs; the automatic pool is faster and is what a real run wants.
+    #[arg(long, value_name = "N", help_heading = "SCOPE")]
+    pub threads: Option<usize>,
 
     // ---- selection: which retained entries this query considers ----
     /// Report only entries matching this glob; repeatable.
@@ -533,10 +549,13 @@ impl Cli {
         query
             .validate_analysis(analysis.profile)
             .map_err(|message| usage(&anyhow::anyhow!(message)))?;
+        let order = self.parse_order()?;
         let config = OpenConfig {
             scan: ScanConfig {
                 max_depth: self.scan_depth,
                 one_filesystem: self.one_filesystem,
+                order,
+                threads: self.threads,
                 ..ScanConfig::default()
             },
             cache_path: default_cache_path(path),
@@ -956,6 +975,11 @@ impl Cli {
     }
 
     /// Translate the cache-policy flag.
+    /// The requested traversal order, or the engine default when unset.
+    fn parse_order(&self) -> anyhow::Result<ScanOrder> {
+        self.order.as_deref().map_or_else(|| Ok(ScanOrder::default()), parse_order)
+    }
+
     fn parse_cache_policy(&self) -> anyhow::Result<CachePolicy> {
         match self.cache.trim().to_ascii_lowercase().as_str() {
             "auto" => Ok(CachePolicy::Auto),
@@ -1320,6 +1344,17 @@ fn parse_bound(value: &str, flag: &str) -> anyhow::Result<Bound> {
 }
 
 /// Parse the `--sort` key.
+/// Translate the `--order` grammar into its library value.
+fn parse_order(value: &str) -> anyhow::Result<ScanOrder> {
+    match value.trim().to_ascii_lowercase().replace('_', "-").as_str() {
+        "breadth-first" | "breadth" | "bfs" => Ok(ScanOrder::BreadthFirst),
+        "depth-first" | "depth" | "dfs" => Ok(ScanOrder::DepthFirst),
+        other => Err(usage(&anyhow::anyhow!(
+            "unknown --order {other}; expected breadth-first or depth-first"
+        ))),
+    }
+}
+
 fn parse_sort(value: &str) -> anyhow::Result<SortKey> {
     match value.trim().to_ascii_lowercase().as_str() {
         "size" => Ok(SortKey::Size),
@@ -1773,6 +1808,8 @@ mod tests {
             path: Some(PathBuf::from(".")),
             scan_depth: None,
             one_filesystem: false,
+            order: None,
+            threads: None,
             include: Vec::new(),
             exclude: Vec::new(),
             min_size: None,

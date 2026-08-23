@@ -41,6 +41,8 @@ ARGUMENTS
 SCOPE
       --scan-depth <N>  Limit scanning and retention to N entry levels
       --one-filesystem  Stay on the filesystem the root lives on
+      --order <ORDER>   Directory visit order: breadth-first (default) or depth-first
+      --threads <N>     Walker threads, or unset to choose automatically
 
 SELECTION
       --include <GLOB>          Report only entries matching this glob; repeatable
@@ -363,7 +365,7 @@ MORE COMPOSITIONS
   unaffected by it, so an idle tree costs nothing between changes.
 
 SIX AXES, AND EVERY OPTION BELONGS TO EXACTLY ONE
-  Scope      PATH, --scan-depth                         what is scanned and cached
+  Scope      PATH, --scan-depth, --order, --threads     what is scanned and cached
   Content    --analyze none|lines|code|words|all        which file bodies are read
   Selection  --include, --exclude, --depth, --limit     which entries are considered
   View       tree,extensions,types,families,languages,documents,files,summary,all

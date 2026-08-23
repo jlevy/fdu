@@ -311,6 +311,12 @@ pub struct ChildSnapshot {
     pub attrs: Attrs,
     /// Pre-computed subtree totals for a directory.
     pub rollup: Option<RollUp>,
+    /// Origin, observation time, and coverage for this child.
+    ///
+    /// Captured here rather than looked up per child by path, because a consumer
+    /// rendering a listing wants provenance for every row and resolving each one
+    /// separately would take the read lock once per child and re-walk the path.
+    pub provenance: Provenance,
 }
 
 impl std::ops::Deref for ApplyOutcome {
@@ -492,10 +498,46 @@ impl IndexHandle {
                         kind: entry.kind,
                         attrs: entry.attrs,
                         rollup: entry.kind.is_dir().then(|| index.named_rollup(&entry.rollup)),
+                        provenance: index.provenance_of(id),
                     }
                 })
                 .collect(),
         ))
+    }
+
+    /// Origin, observation time, and coverage for one retained path.
+    pub fn provenance(&self, path: &Path) -> crate::Result<Option<Provenance>> {
+        Ok(self.read_index()?.provenance(path))
+    }
+
+    /// Run content analysis against the held index.
+    ///
+    /// Unlike metadata reconciliation, this holds the write lock for its whole run: the
+    /// analyzers read file bodies and commit per-file records, so there is no wave
+    /// boundary to publish between. Readers are served throughout a metadata refresh and
+    /// are not served throughout an analysis pass, which is why the content tier stays
+    /// opt-in.
+    pub fn analyze(
+        &self,
+        request: crate::content::AnalysisRequest,
+    ) -> crate::Result<crate::content::AnalysisReport> {
+        let mut index = self.write_index()?;
+        Ok(crate::content::analyze_index(&mut index, request))
+    }
+
+    /// Read the held index in place, without copying it.
+    ///
+    /// For a pure reader such as `report`, which needs `&Index` but neither retains it
+    /// nor blocks inside it. [`snapshot`](Self::snapshot) would answer the same question
+    /// by cloning every entry, which is O(entries) per call and turned a millisecond
+    /// report into seconds on a large tree; this holds the read lock for the duration
+    /// instead, which other readers share and only a writer waits behind.
+    ///
+    /// Do not do filesystem or network work inside `read`: a writer is blocked until it
+    /// returns.
+    pub fn with_index<R>(&self, read: impl FnOnce(&Index) -> R) -> crate::Result<R> {
+        let index = self.read_index()?;
+        Ok(read(&index))
     }
 
     /// Capture one coherent owned index image, releasing the lock before callers do

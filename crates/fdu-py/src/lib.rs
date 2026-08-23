@@ -17,6 +17,7 @@
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 use pyo3::exceptions::{PyOSError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
@@ -126,12 +127,13 @@ fn freshness_label(freshness: Freshness) -> &'static str {
     }
 }
 
-/// A live index over one directory tree.
-#[pyclass(name = "Index", module = "fdu._native")]
-pub struct PyIndex {
-    inner: fdu_core::Index,
-    config: ScanConfig,
-    analysis: AnalysisRequest,
+/// Run state that a refresh replaces, held apart from the index itself.
+///
+/// Behind a lock so `refresh` can take `&self`: the fix for readers raising during a
+/// write is that no method takes an exclusive borrow of the whole object, and these
+/// fields are the only other thing a refresh mutates. The lock is taken for a field
+/// assignment and never across native work.
+struct RunState {
     errors: Vec<ErrorDetail>,
     operation_complete: bool,
     scan_started_at: Option<SystemTime>,
@@ -143,30 +145,46 @@ pub struct PyIndex {
     source: ReportSource,
 }
 
+/// A live index over one directory tree.
+///
+/// The index is held as an [`IndexHandle`] rather than owned outright, which is what
+/// lets a reader run while a refresh applies. Holding it owned forced `refresh` to take
+/// `&mut self`, and `PyO3` then kept an exclusive object borrow for the whole detached
+/// reconciliation, so a concurrent `rollup` on the same object was rejected by the
+/// runtime borrow check rather than served. A live consumer commits on every change, so
+/// that rejected every request landing in the window.
+#[pyclass(name = "Index", module = "fdu._native")]
+pub struct PyIndex {
+    inner: IndexHandle,
+    config: ScanConfig,
+    analysis: AnalysisRequest,
+    state: Mutex<RunState>,
+}
+
 #[pymethods]
 impl PyIndex {
     /// The absolute root this index covers.
     #[getter]
-    fn root(&self) -> OsString {
-        self.inner.root_path().as_os_str().to_os_string()
+    fn root(&self) -> PyResult<OsString> {
+        Ok(self.inner.root_path().map_err(to_py_err)?.as_os_str().to_os_string())
     }
 
     /// The current logical clock. Pass it to `since()` later to get what changed.
     #[getter]
-    fn clock(&self) -> u64 {
-        self.inner.clock().0
+    fn clock(&self) -> PyResult<u64> {
+        Ok(self.inner.clock().map_err(to_py_err)?.0)
     }
 
     /// Whether every path in this index's configured scope is currently trustworthy.
     #[getter]
     fn complete(&self) -> bool {
-        self.operation_complete
+        self.state().operation_complete
     }
 
     /// Current trust state: fresh, reconciling, stale, or partial.
     #[getter]
-    fn freshness(&self) -> &'static str {
-        freshness_label(self.inner.freshness())
+    fn freshness(&self) -> PyResult<&'static str> {
+        Ok(freshness_label(self.inner.freshness().map_err(to_py_err)?))
     }
 
     /// Error details from the most recent scan or refresh.
@@ -181,8 +199,8 @@ impl PyIndex {
     }
 
     /// Number of entries held, including the root.
-    fn __len__(&self) -> usize {
-        usize::try_from(self.inner.len()).unwrap_or(usize::MAX)
+    fn __len__(&self) -> PyResult<usize> {
+        Ok(usize::try_from(self.inner.len().map_err(to_py_err)?).unwrap_or(usize::MAX))
     }
 
     /// Build a report over this index.
@@ -360,7 +378,7 @@ impl PyIndex {
 
         // The index is cloned into the session: a watcher owns its own handle, so closing
         // the feed cannot disturb the caller's index.
-        let handle = IndexHandle::new(self.inner.clone());
+        let handle = IndexHandle::new(self.inner.snapshot().map_err(to_py_err)?);
         let session = Session::new(handle, self.config.clone(), query, WatchConfig::default())
             .map_err(to_py_err)?;
 
@@ -369,14 +387,14 @@ impl PyIndex {
 
     /// Roll-up totals for the whole tree.
     fn total<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
-        rollup_dict(py, &self.inner.total())
+        rollup_dict(py, &self.inner.total().map_err(to_py_err)?)
     }
 
     /// Roll-up totals for one directory, or `None` if it is absent or not a directory.
     #[pyo3(signature = (path))]
     #[allow(clippy::needless_pass_by_value)]
     fn rollup<'py>(&self, py: Python<'py>, path: PathBuf) -> PyResult<Option<Bound<'py, PyDict>>> {
-        match self.inner.rollup(&path) {
+        match self.inner.rollup(&path).map_err(to_py_err)? {
             Some(roll) => Ok(Some(rollup_dict(py, &roll)?)),
             None => Ok(None),
         }
@@ -393,26 +411,25 @@ impl PyIndex {
         path: Option<PathBuf>,
     ) -> PyResult<Option<Bound<'py, PyList>>> {
         let path = path.unwrap_or_default();
-        let Some(children) = self.inner.children(&path) else {
+        // One capture under one read lock, rather than a lookup per child per field:
+        // `ChildSnapshot` already carries kind, attrs, roll-up and provenance together,
+        // so a listing cannot see two different instants down its own rows.
+        let Some(children) = self.inner.children(&path).map_err(to_py_err)? else {
             return Ok(None);
         };
 
         let out = PyList::empty(py);
-        for (name, id) in children {
+        for child in children {
             let entry = PyDict::new(py);
-            entry.set_item("name", name)?;
-            let kind = self.inner.kind_of(id).expect("child handle is live");
-            entry.set_item("kind", entry_kind_label(kind))?;
-            let child_path = path.join(name);
-            let provenance = self.inner.provenance(&child_path).expect("child handle is live");
-            entry.set_item("provenance", provenance_dict(py, provenance)?)?;
-            if let Some(roll) = self.inner.rollup_of(id) {
+            entry.set_item("name", child.name)?;
+            entry.set_item("kind", entry_kind_label(child.kind))?;
+            entry.set_item("provenance", provenance_dict(py, child.provenance)?)?;
+            if let Some(roll) = child.rollup {
                 entry.set_item("rollup", rollup_dict(py, &roll)?)?;
             } else {
-                let attrs = self.inner.attrs_of(id).expect("child handle is live");
-                entry.set_item("bytes", attrs.size)?;
-                entry.set_item("allocated", attrs.allocated)?;
-                entry.set_item("mtime_ns", attrs.mtime_ns)?;
+                entry.set_item("bytes", child.attrs.size)?;
+                entry.set_item("allocated", child.attrs.allocated)?;
+                entry.set_item("mtime_ns", child.attrs.mtime_ns)?;
             }
             out.append(entry)?;
         }
@@ -427,7 +444,7 @@ impl PyIndex {
         path: Option<PathBuf>,
     ) -> PyResult<Option<Bound<'py, PyDict>>> {
         let path = path.unwrap_or_default();
-        let Some(provenance) = self.inner.provenance(&path) else {
+        let Some(provenance) = self.inner.provenance(&path).map_err(to_py_err)? else {
             return Ok(None);
         };
         Ok(Some(provenance_dict(py, provenance)?))
@@ -437,23 +454,30 @@ impl PyIndex {
     ///
     /// This is the revalidation tier: unchanged entries cost a stat and nothing more,
     /// because an upsert whose complete observed state already matches is a no-op.
-    fn refresh<'py>(&mut self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
-        self.scan_started_at = Some(SystemTime::now());
+    fn refresh<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        self.state().scan_started_at = Some(SystemTime::now());
         let config = self.config.clone();
+        // `reconcile_handle` takes the write lock per wave rather than for the whole
+        // sweep, so a reader is served between waves instead of rejected for the
+        // duration. This is the difference the bug was about.
         let report = py
-            .detach(|| fdu_core::scan::reconcile(&mut self.inner, &config, &mut |_| {}))
+            .detach(|| fdu_core::scan::reconcile_handle(&self.inner, &config, &mut |_| {}))
             .map_err(to_py_err)?;
         let mut complete = report.scan.is_complete();
-        self.errors = report.scan.errors.iter().map(ErrorDetail::from_engine).collect();
+        let mut errors: Vec<ErrorDetail> =
+            report.scan.errors.iter().map(ErrorDetail::from_engine).collect();
         if self.analysis.profile.is_enabled() {
-            let analysis =
-                py.detach(|| fdu_core::content::analyze_index(&mut self.inner, self.analysis));
+            let analysis = py.detach(|| self.inner.analyze(self.analysis)).map_err(to_py_err)?;
             let analysis_complete = analysis.is_complete();
-            append_analysis_error(&mut self.errors, analysis);
+            append_analysis_error(&mut errors, analysis);
             complete &= analysis_complete;
         }
-        self.operation_complete = complete;
-        self.source = ReportSource::WarmRevalidate;
+        {
+            let mut state = self.state();
+            state.errors = errors;
+            state.operation_complete = complete;
+            state.source = ReportSource::WarmRevalidate;
+        }
         let stats = report.apply;
 
         let out = PyDict::new(py);
@@ -462,12 +486,16 @@ impl PyIndex {
         out.set_item("removed", stats.removed)?;
         out.set_item("unchanged", stats.unchanged)?;
         out.set_item("stale", stats.stale)?;
-        out.set_item("error_count", self.errors.len())?;
-        out.set_item("errors", error_list(py, &self.errors)?)?;
-        out.set_item("source", source_label(self.source))?;
+        let (error_details, source) = {
+            let run = self.state();
+            (run.errors.clone(), run.source)
+        };
+        out.set_item("error_count", error_details.len())?;
+        out.set_item("errors", error_list(py, &error_details)?)?;
+        out.set_item("source", source_label(source))?;
         out.set_item("complete", self.complete())?;
-        out.set_item("freshness", self.freshness())?;
-        out.set_item("clock", self.inner.clock().0)?;
+        out.set_item("freshness", self.freshness()?)?;
+        out.set_item("clock", self.inner.clock().map_err(to_py_err)?.0)?;
         Ok(out)
     }
 
@@ -478,7 +506,7 @@ impl PyIndex {
     /// trusting the returned ops. Ignoring it is how an index silently diverges.
     #[pyo3(signature = (clock))]
     fn since<'py>(&self, py: Python<'py>, clock: u64) -> PyResult<Bound<'py, PyDict>> {
-        let since = self.inner.since(fdu_core::Clock(clock));
+        let since = self.inner.since(fdu_core::Clock(clock)).map_err(to_py_err)?;
         let ops = PyList::empty(py);
         for delta in &since.deltas {
             for op in &delta.ops {
@@ -506,15 +534,23 @@ impl PyIndex {
 
         let out = PyDict::new(py);
         out.set_item("truncated", since.truncated)?;
-        out.set_item("clock", self.inner.clock().0)?;
+        out.set_item("clock", self.inner.clock().map_err(to_py_err)?.0)?;
         out.set_item("ops", ops)?;
         Ok(out)
     }
 }
 
 impl PyIndex {
+    /// The run-state lock.
+    ///
+    /// Poisoning is not recoverable state here, so it is unwrapped rather than
+    /// surfaced: it would mean a panic inside a field assignment.
+    fn state(&self) -> std::sync::MutexGuard<'_, RunState> {
+        self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
     fn error_messages(&self) -> Vec<String> {
-        self.errors.iter().map(|error| error.message.clone()).collect()
+        self.state().errors.iter().map(|error| error.message.clone()).collect()
     }
 
     #[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
@@ -554,14 +590,39 @@ impl PyIndex {
             size,
             words_per_page,
         )?;
-        let provenance = Provenance {
-            scan_started_at: self.scan_started_at,
-            generated_at: now,
-            source: self.source,
-            complete: self.operation_complete,
-            errors: self.error_messages(),
+        let provenance = {
+            let state = self.state();
+            Provenance {
+                scan_started_at: state.scan_started_at,
+                generated_at: now,
+                source: state.source,
+                complete: state.operation_complete,
+                errors: state.errors.iter().map(|error| error.message.clone()).collect(),
+            }
         };
-        Ok(fdu_core::query::report(&self.inner, &query, &provenance))
+        // Read in place rather than cloning: `report` is a pure reader, so it runs under
+        // the shared lock. Snapshotting here instead would copy every entry per call,
+        // which is O(entries) on a path a consumer calls per navigation.
+        self.inner
+            .with_index(|index| fdu_core::query::report(index, &query, &provenance))
+            .map_err(to_py_err)
+    }
+}
+
+/// Translate the traversal-order grammar into its library value.
+///
+/// The same spellings the command line accepts, because a capability reachable by flag
+/// has to be reachable as one typed call in the same vocabulary.
+fn parse_scan_order(value: Option<&str>) -> PyResult<fdu_core::ScanOrder> {
+    let Some(value) = value else {
+        return Ok(fdu_core::ScanOrder::default());
+    };
+    match value.trim().to_ascii_lowercase().replace('_', "-").as_str() {
+        "breadth-first" | "breadth" | "bfs" => Ok(fdu_core::ScanOrder::BreadthFirst),
+        "depth-first" | "depth" | "dfs" => Ok(fdu_core::ScanOrder::DepthFirst),
+        other => Err(PyValueError::new_err(format!(
+            "unknown order {other}; expected breadth-first or depth-first"
+        ))),
     }
 }
 
@@ -611,10 +672,14 @@ fn error_list<'py>(py: Python<'py>, errors: &[ErrorDetail]) -> PyResult<Bound<'p
 
 fn status_dict<'py>(py: Python<'py>, index: &PyIndex) -> PyResult<Bound<'py, PyDict>> {
     let status = PyDict::new(py);
-    status.set_item("complete", index.operation_complete)?;
-    status.set_item("freshness", freshness_label(index.inner.freshness()))?;
-    status.set_item("source", source_label(index.source))?;
-    status.set_item("errors", error_list(py, &index.errors)?)?;
+    let (complete, source, errors) = {
+        let state = index.state();
+        (state.operation_complete, state.source, state.errors.clone())
+    };
+    status.set_item("complete", complete)?;
+    status.set_item("freshness", index.freshness()?)?;
+    status.set_item("source", source_label(source))?;
+    status.set_item("errors", error_list(py, &errors)?)?;
     Ok(status)
 }
 
@@ -1188,6 +1253,8 @@ impl PyOneShot {
     cache = "auto",
     max_depth = None,
     one_filesystem = false,
+    order = None,
+    threads = None,
     analyze = "none",
     analysis_workers = 0,
     views = None,
@@ -1215,6 +1282,8 @@ fn report_once(
     cache: &str,
     max_depth: Option<usize>,
     one_filesystem: bool,
+    order: Option<&str>,
+    threads: Option<usize>,
     analyze: &str,
     analysis_workers: usize,
     views: Option<Vec<String>>,
@@ -1233,7 +1302,13 @@ fn report_once(
 ) -> PyResult<PyOneShot> {
     let analysis = parse_analysis_request(analyze, analysis_workers)?;
     let config = OpenConfig {
-        scan: ScanConfig { max_depth, one_filesystem, ..ScanConfig::default() },
+        scan: ScanConfig {
+            max_depth,
+            one_filesystem,
+            order: parse_scan_order(order)?,
+            threads,
+            ..ScanConfig::default()
+        },
         cache_path: fdu_core::default_cache_path(&root),
         policy: parse_cache_policy(cache)?,
         analysis,
@@ -1437,16 +1512,20 @@ fn clear_all_caches(root: PathBuf) -> PyResult<usize> {
     cache = "auto",
     max_depth = None,
     one_filesystem = false,
+    order = None,
+    threads = None,
     analyze = "none",
     analysis_workers = 0
 ))]
-#[allow(clippy::needless_pass_by_value)]
+#[allow(clippy::needless_pass_by_value, clippy::too_many_arguments)]
 fn open(
     py: Python<'_>,
     root: PathBuf,
     cache: &str,
     max_depth: Option<usize>,
     one_filesystem: bool,
+    order: Option<&str>,
+    threads: Option<usize>,
     analyze: &str,
     analysis_workers: usize,
 ) -> PyResult<PyIndex> {
@@ -1454,7 +1533,13 @@ fn open(
     let policy = parse_cache_policy(cache)?;
     let analysis = parse_analysis_request(analyze, analysis_workers)?;
     let config = OpenConfig {
-        scan: ScanConfig { max_depth, one_filesystem, ..ScanConfig::default() },
+        scan: ScanConfig {
+            max_depth,
+            one_filesystem,
+            order: parse_scan_order(order)?,
+            threads,
+            ..ScanConfig::default()
+        },
         cache_path: fdu_core::default_cache_path(&root),
         policy,
         analysis,
@@ -1477,13 +1562,10 @@ fn open(
     let scan_started_at =
         (report.path_taken != fdu_core::OpenPath::CacheOnly).then_some(operation_started_at);
     Ok(PyIndex {
-        inner: index,
+        inner: IndexHandle::new(index),
         config: config.scan,
         analysis,
-        errors,
-        operation_complete,
-        scan_started_at,
-        source,
+        state: Mutex::new(RunState { errors, operation_complete, scan_started_at, source }),
     })
 }
 
@@ -1494,22 +1576,32 @@ fn open(
     *,
     max_depth = None,
     one_filesystem = false,
+    order = None,
+    threads = None,
     analyze = "none",
     analysis_workers = 0
 ))]
-#[allow(clippy::needless_pass_by_value)]
+#[allow(clippy::needless_pass_by_value, clippy::too_many_arguments)]
 fn scan(
     py: Python<'_>,
     root: PathBuf,
     max_depth: Option<usize>,
     one_filesystem: bool,
+    order: Option<&str>,
+    threads: Option<usize>,
     analyze: &str,
     analysis_workers: usize,
 ) -> PyResult<PyIndex> {
     let scan_started_at = Some(SystemTime::now());
     let analysis = parse_analysis_request(analyze, analysis_workers)?;
     let config = OpenConfig {
-        scan: ScanConfig { max_depth, one_filesystem, ..ScanConfig::default() },
+        scan: ScanConfig {
+            max_depth,
+            one_filesystem,
+            order: parse_scan_order(order)?,
+            threads,
+            ..ScanConfig::default()
+        },
         cache_path: None,
         policy: CachePolicy::Off,
         analysis,
@@ -1525,13 +1617,15 @@ fn scan(
     }
     // A bare scan never consults the cache, so it is always cold.
     Ok(PyIndex {
-        inner: index,
+        inner: IndexHandle::new(index),
         config: config.scan,
         analysis,
-        errors,
-        operation_complete,
-        scan_started_at,
-        source: ReportSource::ColdScan,
+        state: Mutex::new(RunState {
+            errors,
+            operation_complete,
+            scan_started_at,
+            source: ReportSource::ColdScan,
+        }),
     })
 }
 
@@ -1602,29 +1696,79 @@ mod tests {
     use std::sync::mpsc::sync_channel;
     use std::time::Duration;
 
+    fn test_index() -> PyIndex {
+        PyIndex {
+            inner: IndexHandle::new(fdu_core::Index::new("/unused")),
+            config: ScanConfig::default(),
+            analysis: AnalysisRequest::default(),
+            state: Mutex::new(RunState {
+                errors: Vec::new(),
+                operation_complete: true,
+                scan_started_at: None,
+                source: ReportSource::ColdScan,
+            }),
+        }
+    }
+
+    /// No method takes an exclusive object borrow, so a reader is never rejected.
+    ///
+    /// This is the contract `fdu-gav9` established, and it replaced the opposite one: the
+    /// index used to be owned rather than held, `refresh` took `&mut self`, and `PyO3`
+    /// kept that exclusive borrow across the whole detached reconciliation. Any
+    /// overlapping call on the same object raised `Already mutably borrowed`, which for a
+    /// live consumer meant a failed request every time the tree changed under a reader.
     #[test]
-    fn same_python_index_uses_runtime_borrow_exclusion() {
+    fn concurrent_borrows_of_one_python_index_are_all_shared() {
         Python::initialize();
         Python::attach(|py| {
-            let index = Py::new(
-                py,
-                PyIndex {
-                    inner: fdu_core::Index::new("/unused"),
-                    config: ScanConfig::default(),
-                    analysis: AnalysisRequest::default(),
-                    errors: Vec::new(),
-                    operation_complete: true,
-                    scan_started_at: None,
-                    source: ReportSource::ColdScan,
-                },
-            )
-            .expect("allocate Python index");
+            let index = Py::new(py, test_index()).expect("allocate Python index");
 
-            let read = index.try_borrow(py).expect("initial immutable borrow");
+            let first = index.try_borrow(py).expect("first shared borrow");
+            let second = index.try_borrow(py).expect("a second reader is not rejected");
+            // The exclusive borrow that used to span a refresh is now nobody's to take.
             assert!(index.try_borrow_mut(py).is_err());
-            drop(read);
-            assert!(index.try_borrow_mut(py).is_ok());
+            drop((first, second));
         });
+    }
+
+    /// Reads during a write are served rather than rejected, and never tear.
+    ///
+    /// The oracle is that the handle publishes whole applied states: a reader sees the
+    /// clock before or after an apply, never a value assembled from both.
+    #[test]
+    fn reads_during_a_write_are_served_and_never_torn() {
+        let handle = IndexHandle::new(fdu_core::Index::new("/unused"));
+        let before = handle.clock().expect("clock before").0;
+
+        let readers: Vec<_> = (0..4)
+            .map(|_| {
+                let handle = handle.clone();
+                std::thread::spawn(move || {
+                    let mut seen = Vec::new();
+                    for _ in 0..200 {
+                        seen.push(handle.clock().expect("a read during a write is served").0);
+                    }
+                    seen
+                })
+            })
+            .collect();
+
+        let observation = fdu_core::Observation::new(vec![fdu_core::Op::InvalidateSubtree {
+            path: PathBuf::new(),
+            reason: fdu_core::InvalidateReason::Requested,
+        }]);
+        handle.apply(&observation).expect("apply during reads");
+        let after = handle.clock().expect("clock after").0;
+
+        for reader in readers {
+            for clock in reader.join().expect("reader thread") {
+                assert!(
+                    clock == before || clock == after,
+                    "a read observed {clock}, which is neither the pre-write {before} nor \
+                     the post-write {after}",
+                );
+            }
+        }
     }
 
     #[test]

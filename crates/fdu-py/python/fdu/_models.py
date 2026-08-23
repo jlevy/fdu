@@ -95,6 +95,18 @@ class EntryKind(StrEnum):
     OTHER = "other"
 
 
+class ScanOrder(StrEnum):
+    """The order directories are visited in.
+
+    Both orders visit every entry exactly once and leave an identical index behind, so
+    this changes *when* observations are produced, never *which* ones. It matters only to
+    a consumer reading while the walk runs.
+    """
+
+    BREADTH_FIRST = "breadth-first"
+    DEPTH_FIRST = "depth-first"
+
+
 class SizeMetric(StrEnum):
     """Size used for ordering, limits, and percentages."""
 
@@ -175,10 +187,19 @@ class ScanOptions:
 
     max_depth: int | None = None
     one_filesystem: bool = False
+    #: Directory visit order. Breadth-first is the default because it is the order whose
+    #: partial results mean something: a consumer reading mid-walk sees top-level totals
+    #: grow together rather than one subtree finishing while its siblings read zero.
+    order: ScanOrder = ScanOrder.BREADTH_FIRST
+    #: Walker threads, or ``None`` to choose automatically. ``1`` makes emission order
+    #: depend only on the queue, which is what a reproducible recording needs.
+    threads: int | None = None
 
     def __post_init__(self) -> None:
         if self.max_depth is not None and self.max_depth < 0:
             raise ValueError("max_depth must be non-negative")
+        if self.threads is not None and self.threads < 1:
+            raise ValueError("threads must be at least 1")
 
 
 @dataclass(frozen=True, slots=True)

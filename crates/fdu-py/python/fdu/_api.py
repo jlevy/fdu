@@ -344,6 +344,8 @@ def open(
         cache=cache.value,
         max_depth=scan_options.max_depth,
         one_filesystem=scan_options.one_filesystem,
+        order=str(scan_options.order),
+        threads=scan_options.threads,
         analyze=str(analysis_options.analyze),
         analysis_workers=analysis_options.workers,
     )
@@ -365,6 +367,8 @@ def scan(
         root,
         max_depth=scan_options.max_depth,
         one_filesystem=scan_options.one_filesystem,
+        order=str(scan_options.order),
+        threads=scan_options.threads,
         analyze=str(analysis_options.analyze),
         analysis_workers=analysis_options.workers,
     )
@@ -401,6 +405,8 @@ def report(
         cache=str(cache),
         max_depth=scan_options.max_depth,
         one_filesystem=scan_options.one_filesystem,
+        order=str(scan_options.order),
+        threads=scan_options.threads,
         analyze=str(analysis_options.analyze),
         analysis_workers=analysis_options.workers,
         **_query_kwargs(selected),

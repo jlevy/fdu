@@ -440,3 +440,46 @@ $ fdu --cache sometimes project
 fdu: invalid --cache "sometimes": expected one of auto, refresh, read-only, only, off
 ? 2
 ```
+
+## Scope: Traversal Order and Worker Count
+
+Both orders visit every entry exactly once and leave an identical index behind, so a
+completed report is the same either way.
+What they change is *when* observations are produced, which matters only to a consumer
+reading while the walk runs — and which is what makes a recorded progressive session
+reproducible.
+
+### Breadth-First Is the Default, and Naming It Changes Nothing
+
+```console
+$ fdu --order breadth-first --view summary --format jsonl --size apparent project
+{"schema": "fdu.report/4", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "source": "cold_scan", "freshness": "fresh", "complete": true, "errors": []}
+{"view": "summary", "summary": {"files": 6, "dirs": 3, "bytes": 263, "allocated": [ALLOCATED], "newest_mtime_ns": [MTIME_NS]}}
+? 0
+```
+
+### Depth-First Answers Identically
+
+```console
+$ fdu --order depth-first --view summary --format jsonl --size apparent project
+{"schema": "fdu.report/4", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "source": "cold_scan", "freshness": "fresh", "complete": true, "errors": []}
+{"view": "summary", "summary": {"files": 6, "dirs": 3, "bytes": 263, "allocated": [ALLOCATED], "newest_mtime_ns": [MTIME_NS]}}
+? 0
+```
+
+### One Worker Answers Identically Too
+
+```console
+$ fdu --threads 1 --view summary --format jsonl --size apparent project
+{"schema": "fdu.report/4", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "source": "cold_scan", "freshness": "fresh", "complete": true, "errors": []}
+{"view": "summary", "summary": {"files": 6, "dirs": 3, "bytes": 263, "allocated": [ALLOCATED], "newest_mtime_ns": [MTIME_NS]}}
+? 0
+```
+
+### An Unknown Order Names the Two That Exist
+
+```console
+$ fdu --order sideways project
+fdu: unknown --order sideways; expected breadth-first or depth-first
+? 2
+```
