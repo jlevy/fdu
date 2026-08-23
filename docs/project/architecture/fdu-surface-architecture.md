@@ -38,7 +38,7 @@ a library caller the whole API: one name to know either way.
 `fdu-core` exists so that the command line can depend on the engine **as an external
 crate**, which is what makes the boundary real.
 
-Two packages, and no more.
+Two Rust crates, and no more.
 The Python binding needs the command line reachable as a library — its console script
 compiles `run_process` into the extension module — which is why `fdu` is a library as
 well as a binary.
@@ -51,8 +51,15 @@ a crate boundary. That converts a reviewer’s diligence into a compile error.
 `make lib-only` adds the dependency half:
 
 ```shell
-! cargo tree -p fdu-core --all-features | grep -qE '^(clap|anyhow) '
+tree="$(cargo tree -p fdu-core --all-features --prefix none)" || exit 1
+! printf '%s\n' "$tree" | grep -qE '^(clap|anyhow) '
 ```
+
+`--prefix none` is load-bearing: without it `cargo tree` indents dependencies with
+`├── `, so `^clap` matches nothing and the check can never fire.
+Capturing before testing is load-bearing for the same kind of reason — a pipeline’s
+status is its last command’s, so piping a failing `cargo tree` straight into `grep`
+would report success having checked nothing.
 
 The engine must not acquire the command line’s dependencies.
 It had: `report_format` took its ANSI colour types from `clap::builder::styling`, so the
@@ -62,10 +69,15 @@ not print it.
 
 ## How Agreement Is Enforced
 
-`tests/golden/*.tryscript.md` records what the command line prints for 126 sessions.
+`tests/golden/*.tryscript.md` records what the command line prints for 129 sessions.
 The same corpus is replayed against the Python surface through a shim
 (`tests/parity/py/parity_cli.py`) that serves fdu’s argv using only the public Python
 package — not a wrapper around the binary, which would test nothing.
+
+Parity compares 126 of those 129. Three are declined by name in `run-parity.mjs`,
+because they render clap’s own help and usage errors or a static document the package
+does not carry. The two numbers are different on purpose, and a report quoting one where
+it means the other is the kind of drift this document exists to prevent.
 
 Differences land in `tests/parity/deviations-python.diff`, committed and reviewed like
 any golden. Each is matched against a named class in `scripts/parity-classes.mjs`, and

@@ -149,7 +149,6 @@ impl CachePolicy {
     }
 
     /// Whether this policy may write a snapshot back.
-    /// Whether this policy may write a snapshot.
     ///
     /// Public because a caller deciding whether to prepare a cache directory, or to warn
     /// that a run will leave nothing behind, is asking about the policy it was handed --

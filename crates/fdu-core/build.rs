@@ -1,6 +1,9 @@
 //! Embed the checkout revision and compile repository-owned file-type rules.
 //!
 //! Development builds include the Git revision and dirty marker in `--version`.
+//! `emit_version` is duplicated in `fdu/build.rs`; that script explains why neither copy
+//! can be removed, and this one exists because the perf probe is this crate's example and
+//! the provenance gate asserts the revision in its `--version` (fdu-zuyq).
 //! The `[[kind]]` manifest is validated and rendered as native Rust data so runtime
 //! classification never parses configuration or builds match structures.
 

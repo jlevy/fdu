@@ -1,10 +1,28 @@
 //! Stamp the checkout revision into the binary's `--version`.
 //!
-//! Half of the library's build script. The other half compiles file-type rules, which
-//! belong to `fdu` and stay there; a command line has no business owning them.
-//!
 //! Development builds carry the Git revision and a dirty marker, so a binary built from a
 //! checkout never impersonates the published release.
+//!
+//! This duplicates `emit_version` in `fdu-core/build.rs`, and the duplication is
+//! load-bearing rather than an oversight (fdu-zuyq). `env!` expands in the crate that
+//! reads it, so a consumer cannot see the value a dependency's build script emitted, and
+//! the three ways out are all worse:
+//!
+//!   * A `pub const` in `fdu-core` that the command line displays. Tried; it fails
+//!     `cargo package --locked -p fdu-core -p fdu`, because verifying `fdu` resolves
+//!     `fdu-core` through the registry rather than the sibling being packaged. Trading a
+//!     working release path for forty deduplicated lines is the wrong trade.
+//!   * A shared file both scripts `include!`. The file would have to live outside both
+//!     packages, and `cargo package` ships only what is inside one.
+//!   * A shared build-dependency crate. That is a third crate, and this split is
+//!     deliberately two.
+//!
+//! `fdu-core` keeps its own stamp because the perf probe is its example and the
+//! provenance gate (`benchmarks/realtree/provenance.py`) asserts the revision appears in
+//! the probe's `--version`. Neither copy is removable; keep them in step by hand.
+//!
+//! The file-type rules are the other half of `fdu-core`'s build script and stay there:
+//! they are engine data, and a command line has no business owning them.
 
 use std::process::Command;
 

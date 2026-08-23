@@ -4,8 +4,8 @@ version = "0.1.0"
 description = "The fdu engine: incremental hierarchical tallies over large directory trees"
 readme = "README.md"
 documentation = "https://docs.rs/fdu-core"
-keywords = ["disk-usage", "filesystem", "du", "cli", "index"]
-categories = ["command-line-utilities", "filesystem"]
+keywords = ["disk-usage", "filesystem", "du", "index", "cache"]
+categories = ["filesystem", "caching"]
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -23,12 +23,11 @@ path = "tests/watch_session_integration.rs"
 required-features = ["watch"]
 
 [features]
-# The shipped binary watches; `--no-default-features` and library consumers do not,
-# and a `--features cli` build without `watch` still compiles, which is what keeps the
-# watch layer deletable rather than merely optional.
+# The shipped binary watches; `--no-default-features` and library consumers do not.
 default = ["watch"]
-# Gates the OS-native watch layer. Strictly additive: without it, scan, index,
-# snapshot, and the CLI are all fully functional, just without live updates.
+# Gates the OS-native watch layer. Strictly additive: without it, scan, index, and
+# snapshot are all fully functional, just without live updates -- which is what keeps
+# the watch layer deletable rather than merely optional.
 watch = ["dep:notify"]
 [dependencies]
 thiserror = "2.0"

@@ -59,8 +59,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # 1.97.1
         with:
           toolchain: 1.97.1
-      - name: Package and verify crate
-        run: cargo package --locked -p fdu
+      # Both crates in one invocation: `fdu` depends on `fdu-core`, which is not yet on
+      # crates.io, so packaging `fdu` alone cannot resolve it. Naming both makes cargo
+      # verify each against the just-packaged sibling (fdu-pj9w).
+      - name: Package and verify crates
+        run: cargo package --locked -p fdu-core -p fdu
         env:
           FDU_RELEASE_TAG: ${{ needs.plan.outputs.release_tag }}
       - name: Smoke-test extracted crate CLI
@@ -72,10 +75,14 @@ jobs:
         env:
           FDU_RELEASE_TAG: ${{ needs.plan.outputs.release_tag }}
       - run: '"${RUNNER_TEMP}/fdu-crate/bin/fdu" --version'
+      # Both crates are release artifacts: `fdu-core` has to be published first, or `fdu`
+      # has nothing to resolve against.
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: release-crate
-          path: target/package/fdu-${{ needs.plan.outputs.version }}.crate
+          path: |
+            target/package/fdu-core-${{ needs.plan.outputs.version }}.crate
+            target/package/fdu-${{ needs.plan.outputs.version }}.crate
           if-no-files-found: error
 
   sdist:

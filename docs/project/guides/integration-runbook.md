@@ -131,7 +131,7 @@ A metadata-only report never loads one: revalidating a snapshot stats every entr
 anyway, so the load and reconciliation are additive work with nothing to amortise them,
 and a warm path that loses to a cold scan of the same view is a defect by this project’s
 own rule. The field doc on `ReportPlan::read_snapshot` in
-[`execution.rs`](../../../crates/fdu/src/execution.rs) carries the measurement.
+[`execution.rs`](../../../crates/fdu-core/src/execution.rs) carries the measurement.
 
 ```shell
 ls "$XDG_CACHE_HOME"/fdu                 # a snapshot file exists, named by root hash

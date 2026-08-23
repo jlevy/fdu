@@ -566,7 +566,7 @@ fn analysis_json(analysis: Option<&crate::query::ContentReportMetadata>) -> Stri
 /// One section as a JSON object.
 fn section_json(section: &Section, _indent: usize) -> String {
     let mut out = String::new();
-    let _ = write!(out, "{{\n  \"view\": {},\n  ", quote(view_label(section.view())));
+    let _ = write!(out, "{{\n  \"view\": {},\n  ", quote(section.view().label()));
     match section {
         Section::Tree(root) => {
             let _ = write!(out, "\"tree\": {}", indent(&tree_json(root), 2).trim_start());
@@ -863,7 +863,7 @@ fn render_yaml(report: &Report) -> String {
     out.push_str("reports:\n");
 
     for section in &report.sections {
-        let _ = writeln!(out, "  - view: {}", yaml_scalar(view_label(section.view())));
+        let _ = writeln!(out, "  - view: {}", yaml_scalar(section.view().label()));
         match section {
             Section::Tree(root) => {
                 out.push_str("    tree:\n");
@@ -1119,7 +1119,7 @@ fn generator() -> String {
 
 /// All-caps header naming a view in multi-view text output.
 ///
-/// Deliberately not `view_label(..).to_uppercase()`: the wire label is a schema promise
+/// Deliberately not `view.label().to_uppercase()`: the wire label is a schema promise
 /// machine consumers match on, and deriving the human header from it would let a
 /// presentation change reach into the schema, or freeze the schema for a presentation
 /// reason. They spell the same word today because the same word is right in both places,
@@ -1137,13 +1137,6 @@ fn view_header(view: ViewSpec) -> &'static str {
         ViewSpec::Recent => "RECENT",
         ViewSpec::Summary => "SUMMARY",
     }
-}
-
-/// Stable wire label for a view.
-pub(crate) fn view_label(view: ViewSpec) -> &'static str {
-    // One spelling, in the type that owns it. This was a second copy of the same ten arms,
-    // which is how `full` and the view order drifted elsewhere on this branch.
-    view.label()
 }
 
 fn report_schema(report: &Report) -> &'static str {
@@ -1506,8 +1499,10 @@ mod tests {
     use crate::Index;
     use crate::engine_contract::{Attrs, Observation, Op, ScanScope};
     use crate::query::{Bound, Provenance, Query, Selection, report};
+    use std::ffi::OsStr;
     use std::path::PathBuf;
-    use std::time::{Duration, UNIX_EPOCH};
+    use std::process::Command;
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     fn attrs(size: u64, mtime_ns: i64) -> Attrs {
         Attrs {
@@ -2106,7 +2101,7 @@ mod tests {
             ViewSpec::Summary,
         ] {
             let header = view_header(view);
-            assert_eq!(header, view_label(view).to_uppercase(), "{view:?}");
+            assert_eq!(header, view.label().to_uppercase(), "{view:?}");
             assert!(
                 !header.is_empty() && header.chars().all(|c| c.is_ascii_uppercase()),
                 "{view:?}"
@@ -2163,10 +2158,6 @@ mod tests {
     const DEEP_RENDER_DEPTH: usize = 1_024;
     const DEEP_RENDER_STACK_BYTES: usize = 64 * 1_024;
 
-    use std::ffi::OsStr;
-    use std::process::Command;
-    use std::time::SystemTime;
-
     // ---- renderer tests that lived in the command line -------------------------------
     //
     // They test expansion and the three renderers, not argument handling, and they build
@@ -2181,18 +2172,32 @@ mod tests {
         }
 
         let output = Command::new(std::env::current_exe().expect("current test executable"))
-            .args(["--exact", "cli::tests::deep_rendering_is_stack_safe", "--nocapture"])
+            .args(["--exact", DEEP_RENDER_TEST_PATH, "--nocapture"])
             .env(DEEP_RENDER_CHILD_ENV, "1")
             .output()
             .expect("run deep-render child");
 
+        let stdout = String::from_utf8_lossy(&output.stdout);
         assert!(
             output.status.success(),
-            "deep renderer failed in child process\nstdout:\n{}\nstderr:\n{}",
-            String::from_utf8_lossy(&output.stdout),
+            "deep renderer failed in child process\nstdout:\n{stdout}\nstderr:\n{}",
             String::from_utf8_lossy(&output.stderr)
         );
+
+        // The exit code alone cannot tell "the deep render survived" from "the filter
+        // matched nothing": libtest runs zero tests and exits 0 for a name that does not
+        // exist, so a moved test would keep reporting success having stopped running --
+        // which is what happened when this test moved out of `cli::tests` (fdu-rdom).
+        assert!(
+            stdout.contains("1 passed"),
+            "the child must actually run the deep render, not filter it away\nstdout:\n{stdout}"
+        );
     }
+
+    /// The child re-invocation filters on this, so it has to track the module the test
+    /// lives in. Named once, beside the test, rather than spelled in the argument list
+    /// where a move leaves it silently stale.
+    const DEEP_RENDER_TEST_PATH: &str = "report_format::tests::deep_rendering_is_stack_safe";
 
     fn run_deep_render_child() {
         // A deep tree must render, not abort: expansion and all three renderers use

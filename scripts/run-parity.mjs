@@ -25,7 +25,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, isAbsolute, join } from 'node:path';
 import { CLASSES, classify, parseSessions } from './parity-classes.mjs';
 import { fileURLToPath } from 'node:url';
 
@@ -58,7 +58,7 @@ const DECLINED = [
 // Resolved against the repository root: the shim runs inside a sandbox with its own
 // working directory, so a relative interpreter path would not exist by the time it execs.
 const named = process.env.FDU_PARITY_PYTHON;
-const python = named && (named.startsWith('/') ? named : join(root, named));
+const python = named && (isAbsolute(named) ? named : join(root, named));
 if (!named) {
   console.error('run-parity: FDU_PARITY_PYTHON must name an interpreter with the fdu wheel');
   console.error('run-parity: `make test-parity` builds one; `make parity-check` reuses the');
