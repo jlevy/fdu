@@ -38,10 +38,10 @@ impl Sinks {
     ///
     /// // SAFETY: these empty callbacks cannot unwind, allocate, lock, or re-enter.
     /// let sinks = unsafe {
-    ///     fdu::counters::alloc::Sinks::new(allocation, reallocation, deallocation)
+    ///     fdu_core::counters::alloc::Sinks::new(allocation, reallocation, deallocation)
     /// };
     /// let _allocator =
-    ///     fdu::counters::alloc::CountingAlloc::system(sinks);
+    ///     fdu_core::counters::alloc::CountingAlloc::system(sinks);
     /// ```
     #[must_use]
     pub const unsafe fn new(alloc: fn(u64), realloc: fn(u64), dealloc: fn()) -> Self {

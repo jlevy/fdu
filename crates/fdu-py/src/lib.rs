@@ -8,7 +8,7 @@
 //! the native work per item is a field read.
 //!
 //! `open()`, `scan()`, and the native reconciliation phase of `Index.refresh()` release
-//! the GIL. One `PyIndex` still owns one ordinary Rust [`fdu::Index`]: `refresh()` keeps
+//! the GIL. One `PyIndex` still owns one ordinary Rust [`fdu_core::Index`]: `refresh()` keeps
 //! `PyO3`'s exclusive object borrow for the whole detached reconciliation, so an
 //! overlapping call on that same Python object is rejected by `PyO3`'s runtime borrow
 //! check rather than becoming an unsynchronized shared-index read. Calls on independent
@@ -22,20 +22,20 @@ use pyo3::exceptions::{PyOSError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 
-use fdu::content::{AnalysisRequest, AnalysisSet, CoverageReason};
-use fdu::query::{
+use fdu_core::content::{AnalysisRequest, AnalysisSet, CoverageReason};
+use fdu_core::query::{
     AxisNames, Bound as Bound_, MetricRow, MetricSummary, Pattern, Provenance, Query, Report,
     ReportSource, Section, Selection, SizeMetric, SortKey, SummaryRow, TreeNode, ViewSpec,
     document_words,
 };
-use fdu::watch::WatchConfig;
-use fdu::watch_session::{ChangeKind, Session};
-use fdu::{CachePolicy, EntryKind, Freshness, IndexHandle, OpenConfig, RollUp, ScanConfig};
+use fdu_core::watch::WatchConfig;
+use fdu_core::watch_session::{ChangeKind, Session};
+use fdu_core::{CachePolicy, EntryKind, Freshness, IndexHandle, OpenConfig, RollUp, ScanConfig};
 use std::time::{Duration, SystemTime};
 
-fn to_py_err(err: fdu::Error) -> PyErr {
+fn to_py_err(err: fdu_core::Error) -> PyErr {
     match err {
-        fdu::Error::Io { path, source } => PyOSError::new_err((
+        fdu_core::Error::Io { path, source } => PyOSError::new_err((
             source.raw_os_error(),
             source.to_string(),
             path.as_os_str().to_os_string(),
@@ -44,12 +44,12 @@ fn to_py_err(err: fdu::Error) -> PyErr {
         // The caller asked for something the grammar or the scope does not allow. These
         // are argument errors, and `except InvalidArgumentError` should catch exactly
         // them.
-        error @ (fdu::Error::PathEscapesRoot(_)
-        | fdu::Error::UnsupportedScanConfig(_)
-        | fdu::Error::ScanScopeMismatch { .. }
-        | fdu::Error::SubtreeOutsideScanScope { .. }
-        | fdu::Error::InvalidValue { .. }
-        | fdu::Error::WatchRootMismatch { .. }) => PyValueError::new_err(error.to_string()),
+        error @ (fdu_core::Error::PathEscapesRoot(_)
+        | fdu_core::Error::UnsupportedScanConfig(_)
+        | fdu_core::Error::ScanScopeMismatch { .. }
+        | fdu_core::Error::SubtreeOutsideScanScope { .. }
+        | fdu_core::Error::InvalidValue { .. }
+        | fdu_core::Error::WatchRootMismatch { .. }) => PyValueError::new_err(error.to_string()),
 
         // Everything else is the operation failing on its own terms: the cache had no
         // usable snapshot, a lock was poisoned, a watch worker stopped. The arguments were
@@ -69,9 +69,9 @@ struct ErrorDetail {
 }
 
 impl ErrorDetail {
-    fn from_engine(error: &fdu::Error) -> Self {
+    fn from_engine(error: &fdu_core::Error) -> Self {
         match error {
-            fdu::Error::Io { path, source } => Self {
+            fdu_core::Error::Io { path, source } => Self {
                 path: Some(path.clone()),
                 kind: "io",
                 message: error.to_string(),
@@ -129,7 +129,7 @@ fn freshness_label(freshness: Freshness) -> &'static str {
 /// A live index over one directory tree.
 #[pyclass(name = "Index", module = "fdu._native")]
 pub struct PyIndex {
-    inner: fdu::Index,
+    inner: fdu_core::Index,
     config: ScanConfig,
     analysis: AnalysisRequest,
     errors: Vec<ErrorDetail>,
@@ -441,13 +441,13 @@ impl PyIndex {
         self.scan_started_at = Some(SystemTime::now());
         let config = self.config.clone();
         let report = py
-            .detach(|| fdu::scan::reconcile(&mut self.inner, &config, &mut |_| {}))
+            .detach(|| fdu_core::scan::reconcile(&mut self.inner, &config, &mut |_| {}))
             .map_err(to_py_err)?;
         let mut complete = report.scan.is_complete();
         self.errors = report.scan.errors.iter().map(ErrorDetail::from_engine).collect();
         if self.analysis.profile.is_enabled() {
             let analysis =
-                py.detach(|| fdu::content::analyze_index(&mut self.inner, self.analysis));
+                py.detach(|| fdu_core::content::analyze_index(&mut self.inner, self.analysis));
             let analysis_complete = analysis.is_complete();
             append_analysis_error(&mut self.errors, analysis);
             complete &= analysis_complete;
@@ -478,7 +478,7 @@ impl PyIndex {
     /// trusting the returned ops. Ignoring it is how an index silently diverges.
     #[pyo3(signature = (clock))]
     fn since<'py>(&self, py: Python<'py>, clock: u64) -> PyResult<Bound<'py, PyDict>> {
-        let since = self.inner.since(fdu::Clock(clock));
+        let since = self.inner.since(fdu_core::Clock(clock));
         let ops = PyList::empty(py);
         for delta in &since.deltas {
             for op in &delta.ops {
@@ -486,16 +486,16 @@ impl PyIndex {
                 item.set_item("clock", delta.clock.0)?;
                 item.set_item("path", op.path().as_os_str())?;
                 match op {
-                    fdu::Op::Upsert { kind, attrs, .. } => {
+                    fdu_core::Op::Upsert { kind, attrs, .. } => {
                         item.set_item("op", "upsert")?;
                         item.set_item("kind", entry_kind_label(*kind))?;
                         item.set_item("bytes", attrs.size)?;
                         item.set_item("mtime_ns", attrs.mtime_ns)?;
                     }
-                    fdu::Op::Remove { .. } => {
+                    fdu_core::Op::Remove { .. } => {
                         item.set_item("op", "remove")?;
                     }
-                    fdu::Op::InvalidateSubtree { reason, .. } => {
+                    fdu_core::Op::InvalidateSubtree { reason, .. } => {
                         item.set_item("op", "invalidate_subtree")?;
                         item.set_item("reason", format!("{reason:?}"))?;
                     }
@@ -561,7 +561,7 @@ impl PyIndex {
             complete: self.operation_complete,
             errors: self.error_messages(),
         };
-        Ok(fdu::query::report(&self.inner, &query, &provenance))
+        Ok(fdu_core::query::report(&self.inner, &query, &provenance))
     }
 }
 
@@ -587,7 +587,10 @@ fn parse_analysis_request(profile: &str, workers: usize) -> PyResult<AnalysisReq
     Ok(AnalysisRequest { profile, workers })
 }
 
-fn append_analysis_error(errors: &mut Vec<ErrorDetail>, analysis: fdu::content::AnalysisReport) {
+fn append_analysis_error(
+    errors: &mut Vec<ErrorDetail>,
+    analysis: fdu_core::content::AnalysisReport,
+) {
     if let Some(message) = analysis.failure_message() {
         errors.push(ErrorDetail::analysis(message));
     }
@@ -615,23 +618,26 @@ fn status_dict<'py>(py: Python<'py>, index: &PyIndex) -> PyResult<Bound<'py, PyD
     Ok(status)
 }
 
-fn value_source_label(source: fdu::Source) -> &'static str {
+fn value_source_label(source: fdu_core::Source) -> &'static str {
     match source {
-        fdu::Source::Scanned => "scanned",
-        fdu::Source::Revalidated => "revalidated",
-        fdu::Source::JournalScoped => "journal_scoped",
-        fdu::Source::Cached => "cached",
+        fdu_core::Source::Scanned => "scanned",
+        fdu_core::Source::Revalidated => "revalidated",
+        fdu_core::Source::JournalScoped => "journal_scoped",
+        fdu_core::Source::Cached => "cached",
     }
 }
 
-fn coverage_label_value(status: fdu::Status) -> &'static str {
+fn coverage_label_value(status: fdu_core::Status) -> &'static str {
     match status {
-        fdu::Status::Complete => "complete",
+        fdu_core::Status::Complete => "complete",
         _ => "partial",
     }
 }
 
-fn provenance_dict(py: Python<'_>, provenance: fdu::Provenance) -> PyResult<Bound<'_, PyDict>> {
+fn provenance_dict(
+    py: Python<'_>,
+    provenance: fdu_core::Provenance,
+) -> PyResult<Bound<'_, PyDict>> {
     let value = PyDict::new(py);
     value.set_item("source", value_source_label(provenance.source))?;
     value.set_item("observed_at_ns", provenance.observed_at_ns)?;
@@ -640,11 +646,11 @@ fn provenance_dict(py: Python<'_>, provenance: fdu::Provenance) -> PyResult<Boun
 }
 
 /// Name a cache tier for Python callers, matching the CLI's machine output.
-fn source_label(source: fdu::query::ReportSource) -> &'static str {
+fn source_label(source: fdu_core::query::ReportSource) -> &'static str {
     match source {
-        fdu::query::ReportSource::ColdScan => "cold_scan",
-        fdu::query::ReportSource::WarmRevalidate => "warm_revalidate",
-        fdu::query::ReportSource::CacheOnly => "cache_only",
+        fdu_core::query::ReportSource::ColdScan => "cold_scan",
+        fdu_core::query::ReportSource::WarmRevalidate => "warm_revalidate",
+        fdu_core::query::ReportSource::CacheOnly => "cache_only",
     }
 }
 
@@ -653,7 +659,7 @@ fn source_label(source: fdu::query::ReportSource) -> &'static str {
 /// Mirrors the CLI: an instant the index cannot represent must be rejected, never stored
 /// as an absent bound, or the query silently runs with no time filter at all.
 fn bound_nanos(input: &str, when: std::time::SystemTime, field: &str) -> PyResult<i64> {
-    fdu::query::system_time_to_nanos(when).ok_or_else(|| {
+    fdu_core::query::system_time_to_nanos(when).ok_or_else(|| {
         pyo3::exceptions::PyValueError::new_err(format!(
             "invalid {field} {input:?}: that time is outside the range fdu can represent \
              (about 1677 to 2262)"
@@ -669,8 +675,8 @@ fn report_dict<'py>(py: Python<'py>, report: &Report) -> PyResult<Bound<'py, PyD
     dict.set_item("errors", report.errors.clone())?;
     dict.set_item("source", source_label(report.source))?;
     dict.set_item("freshness", freshness_label(report.freshness))?;
-    dict.set_item("generated_at", fdu::query::format_rfc3339(report.generated_at))?;
-    dict.set_item("scan_started_at", report.scan_started_at.map(fdu::query::format_rfc3339))?;
+    dict.set_item("generated_at", fdu_core::query::format_rfc3339(report.generated_at))?;
+    dict.set_item("scan_started_at", report.scan_started_at.map(fdu_core::query::format_rfc3339))?;
     match report.analysis.as_ref() {
         None => dict.set_item("analysis", py.None())?,
         Some(analysis) => {
@@ -714,11 +720,11 @@ fn report_dict<'py>(py: Python<'py>, report: &Report) -> PyResult<Bound<'py, PyD
                 entry.set_item("extensions", list)?;
             }
             Section::Metrics { view, summary } => {
-                entry.set_item("view", view_label(*view))?;
+                entry.set_item("view", view.label())?;
                 entry.set_item("metrics", metric_summary_dict(py, summary)?)?;
             }
             Section::Files { view, rows, total } => {
-                entry.set_item("view", view_label(*view))?;
+                entry.set_item("view", view.label())?;
                 entry.set_item("bound", bound_dict(py, rows.len(), *total)?)?;
                 let list = PyList::empty(py);
                 for row in rows {
@@ -751,8 +757,8 @@ fn metric_summary_dict<'py>(
     dict.set_item(
         "group",
         match summary.group {
-            fdu::query::MetricGroup::Type => "type",
-            fdu::query::MetricGroup::Family => "family",
+            fdu_core::query::MetricGroup::Type => "type",
+            fdu_core::query::MetricGroup::Family => "family",
         },
     )?;
     dict.set_item("share_metric", summary.share_metric.as_str())?;
@@ -833,21 +839,6 @@ fn bound_dict(py: Python<'_>, shown: usize, total: usize) -> PyResult<Option<Bou
     Ok(Some(bound))
 }
 
-fn view_label(view: ViewSpec) -> &'static str {
-    match view {
-        ViewSpec::Tree => "tree",
-        ViewSpec::Extensions => "extensions",
-        ViewSpec::Types => "types",
-        ViewSpec::Families => "families",
-        ViewSpec::Languages => "languages",
-        ViewSpec::Documents => "documents",
-        ViewSpec::Files => "files",
-        ViewSpec::Largest => "largest",
-        ViewSpec::Recent => "recent",
-        ViewSpec::Summary => "summary",
-    }
-}
-
 fn coverage_label(reason: CoverageReason) -> &'static str {
     match reason {
         CoverageReason::Analyzed => "analyzed",
@@ -912,12 +903,12 @@ fn tree_dict<'py>(py: Python<'py>, root: &TreeNode) -> PyResult<Bound<'py, PyDic
 ///
 /// The package can render fdu's own output, not only structured values: a caller who wants
 /// what the command line prints should not have to shell out to the binary to get it.
-fn parse_format(value: &str) -> PyResult<fdu::report_format::Format> {
+fn parse_format(value: &str) -> PyResult<fdu_core::report_format::Format> {
     match value.trim().to_ascii_lowercase().as_str() {
-        "text" => Ok(fdu::report_format::Format::Text),
-        "json" => Ok(fdu::report_format::Format::Json),
-        "jsonl" => Ok(fdu::report_format::Format::Jsonl),
-        "yaml" => Ok(fdu::report_format::Format::Yaml),
+        "text" => Ok(fdu_core::report_format::Format::Text),
+        "json" => Ok(fdu_core::report_format::Format::Json),
+        "jsonl" => Ok(fdu_core::report_format::Format::Jsonl),
+        "yaml" => Ok(fdu_core::report_format::Format::Yaml),
         other => Err(PyValueError::new_err(format!(
             "invalid format {other:?}: expected one of text, json, jsonl, yaml"
         ))),
@@ -1118,14 +1109,14 @@ fn build_query(
         selection.exclude.push(Pattern::parse(&pattern).map_err(to_py_err)?);
     }
     if let Some(value) = min_size {
-        selection.min_size = Some(fdu::query::parse_size(value).map_err(to_py_err)?);
+        selection.min_size = Some(fdu_core::query::parse_size(value).map_err(to_py_err)?);
     }
     if let Some(value) = modified_since {
-        let at = fdu::query::parse_when(value, now).map_err(to_py_err)?;
+        let at = fdu_core::query::parse_when(value, now).map_err(to_py_err)?;
         selection.modified.since = Some(bound_nanos(value, at, "modified_since")?);
     }
     if let Some(value) = modified_before {
-        let at = fdu::query::parse_when(value, now).map_err(to_py_err)?;
+        let at = fdu_core::query::parse_when(value, now).map_err(to_py_err)?;
         selection.modified.before = Some(bound_nanos(value, at, "modified_before")?);
     }
     for value in kind.unwrap_or_default() {
@@ -1162,13 +1153,13 @@ fn build_query(
 /// would mean rescanning -- which is the cost the one-shot exists to avoid.
 #[pyclass(name = "OneShot", module = "fdu._native", frozen)]
 struct PyOneShot {
-    report: fdu::query::Report,
+    report: fdu_core::query::Report,
 }
 
 #[pymethods]
 impl PyOneShot {
     fn render(&self, format: &str, color: bool) -> PyResult<String> {
-        Ok(fdu::report_format::render(&self.report, parse_format(format)?, color))
+        Ok(fdu_core::report_format::render(&self.report, parse_format(format)?, color))
     }
 
     /// What the report says about itself, as values rather than as rendered text.
@@ -1243,7 +1234,7 @@ fn report_once(
     let analysis = parse_analysis_request(analyze, analysis_workers)?;
     let config = OpenConfig {
         scan: ScanConfig { max_depth, one_filesystem, ..ScanConfig::default() },
-        cache_path: fdu::default_cache_path(&root),
+        cache_path: fdu_core::default_cache_path(&root),
         policy: parse_cache_policy(cache)?,
         analysis,
     };
@@ -1265,7 +1256,7 @@ fn report_once(
         words_per_page,
     )?;
 
-    let prepared = py.detach(|| fdu::prepare_report(&root, &config, &query));
+    let prepared = py.detach(|| fdu_core::prepare_report(&root, &config, &query));
     let (report, pending_save, _performance) = prepared.map_err(to_py_err)?;
     // Joined before returning: the command line overlaps the write with rendering, but a
     // caller who gets a value back should not still owe the filesystem a write.
@@ -1292,7 +1283,7 @@ fn watch_rule(at_nanos: i64) -> PyResult<String> {
     let at = at.ok_or_else(|| {
         PyValueError::new_err("timestamp is outside the range this platform can represent")
     })?;
-    Ok(fdu::report_format::watch_rule(at))
+    Ok(fdu_core::report_format::watch_rule(at))
 }
 
 /// Render one watch record the way the CLI streams it, in any format.
@@ -1317,12 +1308,12 @@ fn render_change(
     mtime_ns: Option<i64>,
     format: &str,
 ) -> PyResult<String> {
-    let change = fdu::Change {
+    let change = fdu_core::Change {
         path,
         kind: match op {
-            "upsert" => fdu::ChangeKind::Upsert,
-            "remove" => fdu::ChangeKind::Remove,
-            "invalidate" => fdu::ChangeKind::Invalidate,
+            "upsert" => fdu_core::ChangeKind::Upsert,
+            "remove" => fdu_core::ChangeKind::Remove,
+            "invalidate" => fdu_core::ChangeKind::Invalidate,
             other => {
                 return Err(PyValueError::new_err(format!(
                     "invalid op {other:?}: expected upsert, remove, or invalidate"
@@ -1335,7 +1326,7 @@ fn render_change(
         mtime_ns,
         clock,
     };
-    Ok(fdu::report_format::render_change(&change, parse_format(format)?))
+    Ok(fdu_core::report_format::render_change(&change, parse_format(format)?))
 }
 
 /// Render cache statuses the way the CLI does, in any format.
@@ -1355,15 +1346,15 @@ fn render_cache_status(paths: Vec<PathBuf>, format: &str) -> PyResult<String> {
     let format = parse_format(format)?;
     let statuses = paths
         .iter()
-        .map(|path| fdu::cache_status(path).map_err(to_py_err))
+        .map(|path| fdu_core::cache_status(path).map_err(to_py_err))
         .collect::<PyResult<Vec<_>>>()?;
-    Ok(fdu::report_format::render_cache_status(&statuses, format))
+    Ok(fdu_core::report_format::render_cache_status(&statuses, format))
 }
 
 /// One cache file's status as a dict.
 fn cache_status_dict<'py>(
     py: Python<'py>,
-    status: &fdu::CacheStatus,
+    status: &fdu_core::CacheStatus,
 ) -> PyResult<Bound<'py, PyDict>> {
     let dict = PyDict::new(py);
     dict.set_item("path", status.path.as_os_str())?;
@@ -1388,17 +1379,17 @@ fn cache_status_dict<'py>(
 #[pyfunction]
 #[allow(clippy::needless_pass_by_value)]
 fn cache_path(root: PathBuf) -> Option<PathBuf> {
-    fdu::default_cache_path(&root)
+    fdu_core::default_cache_path(&root)
 }
 
 /// Status of the snapshot for one root.
 #[pyfunction]
 #[allow(clippy::needless_pass_by_value)]
 fn cache_status(py: Python<'_>, root: PathBuf) -> PyResult<Option<Bound<'_, PyDict>>> {
-    let Some(path) = fdu::default_cache_path(&root) else {
+    let Some(path) = fdu_core::default_cache_path(&root) else {
         return Ok(None);
     };
-    let status = fdu::cache_status(&path).map_err(to_py_err)?;
+    let status = fdu_core::cache_status(&path).map_err(to_py_err)?;
     Ok(Some(cache_status_dict(py, &status)?))
 }
 
@@ -1407,11 +1398,12 @@ fn cache_status(py: Python<'_>, root: PathBuf) -> PyResult<Option<Bound<'_, PyDi
 #[allow(clippy::needless_pass_by_value)]
 fn list_caches(py: Python<'_>, root: PathBuf) -> PyResult<Bound<'_, PyList>> {
     let list = PyList::empty(py);
-    let Some(dir) = fdu::default_cache_path(&root).and_then(|p| p.parent().map(Path::to_path_buf))
+    let Some(dir) =
+        fdu_core::default_cache_path(&root).and_then(|p| p.parent().map(Path::to_path_buf))
     else {
         return Ok(list);
     };
-    for status in fdu::list_caches(&dir).map_err(to_py_err)? {
+    for status in fdu_core::list_caches(&dir).map_err(to_py_err)? {
         list.append(cache_status_dict(py, &status)?)?;
     }
     Ok(list)
@@ -1421,8 +1413,8 @@ fn list_caches(py: Python<'_>, root: PathBuf) -> PyResult<Bound<'_, PyList>> {
 #[pyfunction]
 #[allow(clippy::needless_pass_by_value)]
 fn clear_cache(root: PathBuf) -> PyResult<bool> {
-    match fdu::default_cache_path(&root) {
-        Some(path) => fdu::clear_cache(&path).map_err(to_py_err),
+    match fdu_core::default_cache_path(&root) {
+        Some(path) => fdu_core::clear_cache(&path).map_err(to_py_err),
         None => Ok(false),
     }
 }
@@ -1431,8 +1423,8 @@ fn clear_cache(root: PathBuf) -> PyResult<bool> {
 #[pyfunction]
 #[allow(clippy::needless_pass_by_value)]
 fn clear_all_caches(root: PathBuf) -> PyResult<usize> {
-    match fdu::default_cache_path(&root).and_then(|p| p.parent().map(Path::to_path_buf)) {
-        Some(dir) => fdu::clear_all_caches(&dir).map_err(to_py_err),
+    match fdu_core::default_cache_path(&root).and_then(|p| p.parent().map(Path::to_path_buf)) {
+        Some(dir) => fdu_core::clear_all_caches(&dir).map_err(to_py_err),
         None => Ok(0),
     }
 }
@@ -1463,27 +1455,27 @@ fn open(
     let analysis = parse_analysis_request(analyze, analysis_workers)?;
     let config = OpenConfig {
         scan: ScanConfig { max_depth, one_filesystem, ..ScanConfig::default() },
-        cache_path: fdu::default_cache_path(&root),
+        cache_path: fdu_core::default_cache_path(&root),
         policy,
         analysis,
     };
 
-    let opened = py.detach(|| fdu::open(&root, &config));
+    let opened = py.detach(|| fdu_core::open(&root, &config));
     let (index, report) = opened.map_err(to_py_err)?;
     let operation_complete = report.is_complete();
     let mut errors = report.errors().iter().map(ErrorDetail::from_engine).collect::<Vec<_>>();
     if let Some(message) =
-        report.analysis.as_ref().and_then(fdu::content::AnalysisReport::failure_message)
+        report.analysis.as_ref().and_then(fdu_core::content::AnalysisReport::failure_message)
     {
         errors.push(ErrorDetail::analysis(message));
     }
     let source = match report.path_taken {
-        fdu::OpenPath::ColdScan => ReportSource::ColdScan,
-        fdu::OpenPath::WarmRevalidate => ReportSource::WarmRevalidate,
-        fdu::OpenPath::CacheOnly => ReportSource::CacheOnly,
+        fdu_core::OpenPath::ColdScan => ReportSource::ColdScan,
+        fdu_core::OpenPath::WarmRevalidate => ReportSource::WarmRevalidate,
+        fdu_core::OpenPath::CacheOnly => ReportSource::CacheOnly,
     };
     let scan_started_at =
-        (report.path_taken != fdu::OpenPath::CacheOnly).then_some(operation_started_at);
+        (report.path_taken != fdu_core::OpenPath::CacheOnly).then_some(operation_started_at);
     Ok(PyIndex {
         inner: index,
         config: config.scan,
@@ -1522,12 +1514,12 @@ fn scan(
         policy: CachePolicy::Off,
         analysis,
     };
-    let scanned = py.detach(|| fdu::open(&root, &config));
+    let scanned = py.detach(|| fdu_core::open(&root, &config));
     let (index, report) = scanned.map_err(to_py_err)?;
     let operation_complete = report.is_complete();
     let mut errors = report.errors().iter().map(ErrorDetail::from_engine).collect::<Vec<_>>();
     if let Some(message) =
-        report.analysis.as_ref().and_then(fdu::content::AnalysisReport::failure_message)
+        report.analysis.as_ref().and_then(fdu_core::content::AnalysisReport::failure_message)
     {
         errors.push(ErrorDetail::analysis(message));
     }
@@ -1553,7 +1545,7 @@ fn main(py: Python<'_>) -> PyResult<u8> {
     // native Windows wide strings. Narrowing here to String would make the wheel's
     // console script reject paths the native Rust binary accepts.
     let args: Vec<OsString> = py.import("sys")?.getattr("argv")?.extract()?;
-    Ok(py.detach(move || fdu::cli::run_process(args)))
+    Ok(py.detach(move || fdu::run_process(args)))
 }
 
 /// Canonical cross-language vocabulary used by the public facade's parity test.
@@ -1617,7 +1609,7 @@ mod tests {
             let index = Py::new(
                 py,
                 PyIndex {
-                    inner: fdu::Index::new("/unused"),
+                    inner: fdu_core::Index::new("/unused"),
                     config: ScanConfig::default(),
                     analysis: AnalysisRequest::default(),
                     errors: Vec::new(),

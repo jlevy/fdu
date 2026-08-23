@@ -348,20 +348,20 @@ snapshot like any other parse failure.
 
 ### Components
 
-- `crates/fdu/src/journal/mod.rs` — platform-neutral surface: `JournalCursor`
+- `crates/fdu-core/src/journal/mod.rs` — platform-neutral surface: `JournalCursor`
   (encode/decode), `GateDecision`, the gate function, changed-set normalization.
   Compiles everywhere; no FFI.
-- `crates/fdu/src/journal/fsevents.rs` — `#[cfg(target_os = "macos")]`, feature
+- `crates/fdu-core/src/journal/fsevents.rs` — `#[cfg(target_os = "macos")]`, feature
   `journal`. The FFI module: current event ID, volume UUID for a device, and historical
   replay via the non-deprecated dispatch-queue API (create stream with `sinceWhen`,
   `FSEventStreamSetDispatchQueue` onto a private queue, start, receive marshalled
   `(path, flags)` pairs over a channel until `HistoryDone` or the G6 deadline, then
   stop/invalidate/release).
   The only module in the workspace allowed `unsafe`.
-- `crates/fdu/src/scan.rs` — `revalidate_dirs(index, dirs, config, sink)`: the bounded
-  sweep. Reuses the existing per-directory emission; no new op kinds.
-- `crates/fdu/src/snapshot.rs` — format v3 fields; encode and decode the cursor supplied
-  by the caller.
+- `crates/fdu-core/src/scan.rs` — `revalidate_dirs(index, dirs, config, sink)`: the
+  bounded sweep. Reuses the existing per-directory emission; no new op kinds.
+- `crates/fdu-core/src/snapshot.rs` — format v3 fields; encode and decode the cursor
+  supplied by the caller.
 - `crates/fdu/src/cli.rs` — wire the gate into the cached path; `--revalidate=auto|full`
   (default `auto`; `full` forces the sweep).
   Capture the event ID and timestamp before a full scan begins, carry that fence with

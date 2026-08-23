@@ -69,7 +69,7 @@ class InspectArtifactsTests(unittest.TestCase):
                 "python/fdu/_native.pyi",
                 "python/fdu/py.typed",
                 "crates/fdu-py/examples/rollup_adapter.py",
-                "crates/fdu/src/lib.rs",
+                "crates/fdu-core/src/lib.rs",
             ):
                 add_tar(archive, prefix + name)
 

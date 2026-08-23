@@ -94,7 +94,7 @@ jobs:
       - name: Compare the CLI golden contract
         run: npm run test:golden
       - name: Build the repository-only performance probe
-        run: cargo build --locked -p fdu --example perf_probe --no-default-features
+        run: cargo build --locked -p fdu-core --example perf_probe --no-default-features
       - name: Prove the performance harness and every fdu probe job
         run: python -m unittest discover -s benchmarks/tests -p 'test_*.py'
 
@@ -111,9 +111,9 @@ jobs:
           toolchain: 1.97.1
       # Library consumers take `default-features = false`. Without this job, that path
       # would only ever be compiled by them.
-      - run: cargo test --locked -p fdu --no-default-features
+      - run: cargo test --locked -p fdu-core --no-default-features
       # The watch layer is strictly additive and must not inherit CLI-only features.
-      - run: cargo test --locked -p fdu --no-default-features --features watch
+      - run: cargo test --locked -p fdu-core --no-default-features --features watch
 
   msrv:
     name: MSRV (1.85)
@@ -128,7 +128,7 @@ jobs:
           toolchain: 1.85.0
       - run: cargo check --locked --all-features
       # Compile success alone misses behavioral and test-only MSRV regressions.
-      - run: cargo test --locked -p fdu --no-default-features
+      - run: cargo test --locked -p fdu-core --no-default-features
 
   docs:
     name: Documentation
@@ -210,7 +210,7 @@ jobs:
       # job re-records and fails on any difference, so Linux is the authority and the fix
       # is a download rather than a guess.
       - name: Replay the golden corpus against the Python surface
-        run: node scripts/run-parity.mjs --update
+        run: FDU_PARITY_PYTHON=crates/fdu-py/.venv-parity/bin/python node scripts/run-parity.mjs --update
       - name: The recorded deviations must match what this platform produces
         id: parity-diff
         run: git diff --exit-code -- tests/parity/deviations-python.diff

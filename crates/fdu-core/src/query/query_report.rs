@@ -768,7 +768,6 @@ pub fn report(index: &Index, query: &Query, provenance: &Provenance) -> Report {
 /// Pure for the same reason as [`report`]: scanning and time sampling happened before
 /// this boundary.  The execution planner uses this when a one-shot request proves that
 /// retaining paths and hierarchy cannot affect its answer.
-#[cfg(feature = "cli")]
 pub(crate) fn report_summary(
     root: &Path,
     scope: ScanScope,

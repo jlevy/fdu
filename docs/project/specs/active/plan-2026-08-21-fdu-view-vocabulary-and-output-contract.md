@@ -140,7 +140,7 @@ That demonstrates the format working, and the demonstration is also the example 
 learns from. `jsonl` parses line by line, which is the whole of its contract.
 `yaml` needs a parser that does not exist here yet — CI installs neither jq nor yq, and
 node ships no YAML support — so a pinned `yaml` devDependency goes through
-[the supply-chain policy](../../../SUPPLY-CHAIN-SECURITY.md) first.
+[the supply-chain policy](../../../../SUPPLY-CHAIN-SECURITY.md) first.
 
 ### API Changes
 

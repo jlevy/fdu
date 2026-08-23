@@ -76,7 +76,7 @@ and steady query work.
 Build and execute it with:
 
 ```shell
-cargo build --locked --release -p fdu --example perf_probe --no-default-features
+cargo build --locked --release -p fdu-core --example perf_probe --no-default-features
 
 uv run --no-project python -m benchmarks.run execute \
   --scenarios benchmarks/scenarios.json \

@@ -72,8 +72,8 @@ needs a measurement in both.
 
 ## Constants and where their evidence comes from
 
-Every value below is in `crates/fdu/src/scan.rs` unless noted, and every one carries a
-doc comment citing the measurement that chose it.
+Every value below is in `crates/fdu-core/src/scan.rs` unless noted, and every one
+carries a doc comment citing the measurement that chose it.
 The column that matters is the last one.
 
 This table is written by hand because nothing else records the link it carries.
@@ -165,8 +165,8 @@ portable path, falling back rather than failing, exactly as
 
 A platform **tuning** is the same portable code wanting a different value, or a
 different one of two portable strategies.
-Those live in `crates/fdu/src/platform_tuning.rs` as data, one table per platform, and
-the module holds three properties that matter more than the values in it.
+Those live in `crates/fdu-core/src/platform_tuning.rs` as data, one table per platform,
+and the module holds three properties that matter more than the values in it.
 
 **Both tables compile in every build.** `cfg` selects the *default*, never the
 *existence*. This is the load-bearing rule: an arm that only compiles where it is the

@@ -10,10 +10,10 @@ use std::fs;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use fdu::query::{Bound, Query, Selection, ViewSpec};
-use fdu::session::{ChangeKind, Session};
-use fdu::watch::WatchConfig;
-use fdu::{CachePolicy, IndexHandle, OpenConfig, ScanConfig, open};
+use fdu_core::query::{Bound, Query, Selection, ViewSpec};
+use fdu_core::session::{ChangeKind, Session};
+use fdu_core::watch::WatchConfig;
+use fdu_core::{CachePolicy, IndexHandle, OpenConfig, ScanConfig, open};
 
 /// Long enough for a backend to deliver and coalesce, short enough to fail fast.
 const SETTLE: Duration = Duration::from_secs(10);
@@ -31,7 +31,10 @@ fn session(root: &Path, selection: Selection, views: Vec<ViewSpec>) -> Session {
 }
 
 /// Collect changes until `wanted` matches one, or the settle window expires.
-fn wait_for(session: &mut Session, wanted: impl Fn(&fdu::Change) -> bool) -> Option<fdu::Change> {
+fn wait_for(
+    session: &mut Session,
+    wanted: impl Fn(&fdu_core::Change) -> bool,
+) -> Option<fdu_core::Change> {
     let deadline = Instant::now() + SETTLE;
     while Instant::now() < deadline {
         let Some(batch) = session.next_batch(Duration::from_millis(250)).expect("batch") else {
@@ -79,7 +82,7 @@ fn the_run_selection_filters_the_stream() {
     // the live stream too, with no separate watch grammar.
     let dir = tempfile::tempdir().expect("tempdir");
     let selection = Selection {
-        include: vec![fdu::query::Pattern::parse("*.rs").expect("pattern")],
+        include: vec![fdu_core::query::Pattern::parse("*.rs").expect("pattern")],
         ..Selection::default()
     };
     let mut session = session(dir.path(), selection, vec![ViewSpec::Files]);
@@ -152,7 +155,7 @@ fn a_live_report_is_the_same_query_re_evaluated() {
         .report(&session.live_provenance(std::time::SystemTime::UNIX_EPOCH))
         .expect("report");
     let first = match &before.sections[0] {
-        fdu::query::Section::Summary(row) => *row,
+        fdu_core::query::Section::Summary(row) => *row,
         other => panic!("expected a summary, got {other:?}"),
     };
     assert_eq!(first.files, 1);
@@ -165,7 +168,7 @@ fn a_live_report_is_the_same_query_re_evaluated() {
         .report(&session.live_provenance(std::time::SystemTime::UNIX_EPOCH))
         .expect("report");
     let second = match &after.sections[0] {
-        fdu::query::Section::Summary(row) => *row,
+        fdu_core::query::Section::Summary(row) => *row,
         other => panic!("expected a summary, got {other:?}"),
     };
     assert_eq!(second.files, 2, "the live report reflects the applied change");
