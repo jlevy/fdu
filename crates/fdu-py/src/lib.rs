@@ -454,14 +454,31 @@ impl PyIndex {
     ///
     /// This is the revalidation tier: unchanged entries cost a stat and nothing more,
     /// because an upsert whose complete observed state already matches is a no-op.
-    fn refresh<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+    ///
+    /// `path` scopes the sweep to one subtree, which is what a caller ingesting hints
+    /// from its own watcher wants: the cost is the subtree rather than the tree, and a
+    /// missing or non-directory ancestor widens the scope rather than failing.
+    #[pyo3(signature = (path = None))]
+    fn refresh<'py>(&self, py: Python<'py>, path: Option<PathBuf>) -> PyResult<Bound<'py, PyDict>> {
         self.state().scan_started_at = Some(SystemTime::now());
         let config = self.config.clone();
-        // `reconcile_handle` takes the write lock per wave rather than for the whole
-        // sweep, so a reader is served between waves instead of rejected for the
+        // A scoped refresh is the hint-ingestion primitive: a caller that keeps its own
+        // watcher for a filesystem this build's backends cannot serve pushes each hint
+        // through here, so every mutation still arrives through the one delta contract
+        // rather than a second path into the index.
+        let subtree = path.unwrap_or_default();
+        // `reconcile_subtree_handle` takes the write lock per wave rather than for the
+        // whole sweep, so a reader is served between waves instead of rejected for the
         // duration. This is the difference the bug was about.
         let report = py
-            .detach(|| fdu_core::scan::reconcile_handle(&self.inner, &config, &mut |_| {}))
+            .detach(|| {
+                fdu_core::scan::reconcile_subtree_handle(
+                    &self.inner,
+                    &subtree,
+                    &config,
+                    &mut |_| {},
+                )
+            })
             .map_err(to_py_err)?;
         let mut complete = report.scan.is_complete();
         let mut errors: Vec<ErrorDetail> =

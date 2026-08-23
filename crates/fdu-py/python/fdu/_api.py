@@ -282,8 +282,15 @@ class Index:
         value = _call(self._native.provenance, path)
         return None if value is None else provenance_from_dict(value)
 
-    def refresh(self) -> RefreshResult:
-        value = _call(self._native.refresh)
+    def refresh(self, path: str | Path | None = None) -> RefreshResult:
+        """Re-reconcile against the filesystem, optionally scoped to one subtree.
+
+        A scoped refresh is how a caller feeds hints from a watcher of its own: the
+        mutation still arrives through the engine's one delta contract, and it costs the
+        subtree rather than the whole tree.
+        """
+
+        value = _call(self._native.refresh, path)
         return RefreshResult(
             inserted=int(value["inserted"]),
             updated=int(value["updated"]),

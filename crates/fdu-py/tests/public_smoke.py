@@ -423,6 +423,25 @@ def main() -> None:
     assert changes.truncated is False
     assert any(change.path == Path("new.txt") for change in changes.changes)
 
+    # A scoped refresh sees a change inside its subtree and reaches the same state a
+    # whole-tree refresh would. This is the hint-ingestion primitive: a caller running
+    # its own watcher pushes each hint through here rather than through a second path
+    # into the index, and it pays for the subtree rather than the tree.
+    (root / "src" / "scoped.txt").write_text("scoped", encoding="utf-8")
+    scoped = index.refresh("src")
+    assert scoped.inserted == 1, "a scoped refresh must observe a change inside its scope"
+    assert index.rollup("src") is not None
+    scoped_total = index.total().files
+    # The same tree refreshed whole must agree, so scoping changed the cost and not the
+    # answer.
+    assert index.refresh().inserted == 0, "the scoped refresh already applied the change"
+    assert index.total().files == scoped_total
+
+    # A change outside the scope is not observed by a refresh scoped elsewhere.
+    (root / "outside.txt").write_text("outside", encoding="utf-8")
+    assert index.refresh("src").inserted == 0, "a scoped refresh must not reach outside it"
+    assert index.refresh().inserted == 1, "the whole-tree refresh still finds it"
+
     # A naive datetime means local time; the facade must resolve it to the explicit
     # offset the engine's time grammar requires rather than letting it be rejected.
     recent = index.report(
