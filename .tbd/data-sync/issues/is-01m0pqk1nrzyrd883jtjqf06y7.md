@@ -5,12 +5,14 @@ title: The cold-scan path rewrites an identical snapshot on every run
 kind: bug
 status: open
 priority: 1
-version: 2
+version: 4
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-performance-campaign-2.md
-labels: []
+labels:
+  - campaign-2
+  - macos-agenda
 dependencies: []
 created_at: 2026-08-23T07:15:34.199Z
-updated_at: 2026-08-23T07:40:36.223Z
+updated_at: 2026-08-23T09:09:08.795Z
 ---
 Found in the PR #38 senior review (https://github.com/jlevy/fdu/pull/38#issuecomment-5384769585), deferred out of that PR because it is an engine behaviour change with no measuring job.
 

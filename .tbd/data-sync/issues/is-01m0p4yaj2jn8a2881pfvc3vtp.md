@@ -3,14 +3,17 @@ type: is
 id: is-01m0p4yaj2jn8a2881pfvc3vtp
 title: Probe --no-oracle mode and engine-phase counter scoping
 kind: task
-status: open
+status: closed
 priority: 3
-version: 1
+version: 3
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-performance-campaign-2.md
-labels: []
+labels:
+  - campaign-2
 dependencies: []
 created_at: 2026-08-23T01:49:40.801Z
-updated_at: 2026-08-23T01:49:40.801Z
+updated_at: 2026-08-23T09:09:37.922Z
+closed_at: 2026-08-23T09:09:37.921Z
+close_reason: "Duplicate of fdu-4xtm (same deliverable: --no-oracle probe mode and engine-scoped counters). The campaign-2 plan cites fdu-9ydj; the plan now points at fdu-4xtm."
 ---
 The headroom review measured the perf_probe oracle digest at ~39% of probe instructions
 and 46% of its allocation events, and FDU_COUNTERS tallies include those, so

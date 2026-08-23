@@ -5,17 +5,18 @@ title: Resolve the inconclusive quiet-host release-CLI cell before any positive 
 kind: task
 status: open
 priority: 2
-version: 1
+version: 2
 spec_path: docs/project/specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md
 labels:
   - performance
   - benchmark
   - validation
   - macos
+  - campaign-2
 dependencies: []
 parent_id: is-01kzkzm62q1vwxbv9hbp39bxxm
 created_at: 2026-08-15T16:41:53.320Z
-updated_at: 2026-08-15T16:41:53.320Z
+updated_at: 2026-08-23T09:09:04.182Z
 ---
 fdu-j062 ran the Apple Silicon/APFS release-CLI noninferiority matrix against the pinned dust adapter and closed with an explicitly inconclusive result: the predeclared quiet native cell had two host-pressure invalidations, so its fixed-N matrix did not resolve. Uncontrolled diagnostic cells were exact and favored fdu (native 43.10%, wheel-installed 41.70%), but fdu-j062's own contract states that any supported cell which is inferior or inconclusive blocks a positive release-performance conclusion until resolved or explicitly removed from supported scope with product justification.
 

@@ -5,17 +5,18 @@ title: "H70: Tune a shared macOS directory-opener pool"
 kind: task
 status: deferred
 priority: 2
-version: 11
+version: 12
 spec_path: docs/project/specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md
 labels:
   - performance
   - experiment
   - macos
   - research
+  - campaign-2
 dependencies: []
 parent_id: is-01kzkzm62q1vwxbv9hbp39bxxm
 created_at: 2026-08-13T17:14:15.274Z
-updated_at: 2026-08-15T11:06:45.108Z
+updated_at: 2026-08-23T09:09:03.925Z
 ---
 Revisit the shared macOS directory-opener pool only after the adaptive-controller outcome is resolved, because opener threads and scan/parser workers consume one total concurrency budget. Treat the prior H69/H70 results as exploratory: screen exactly two, three, and four opener threads under the settled controller or fixed diagnostic control, then confirm any selected count on independent held-out pairs and an independent large topology. Pre-register wall and CPU/system-CPU/RSS/context-switch rejection thresholds before screening.
 

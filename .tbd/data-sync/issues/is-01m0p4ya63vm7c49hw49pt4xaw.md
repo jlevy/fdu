@@ -5,12 +5,13 @@ title: "make perf-floor: the tier-by-subject floor scoreboard"
 kind: task
 status: open
 priority: 2
-version: 2
+version: 3
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-performance-campaign-2.md
-labels: []
+labels:
+  - campaign-2
 dependencies: []
 created_at: 2026-08-23T01:49:40.418Z
-updated_at: 2026-08-23T08:22:13.754Z
+updated_at: 2026-08-23T09:09:01.467Z
 ---
 Campaign 2 orders work by each tier's measured distance to the parallel syscall floor,
 which makes that distance the scoreboard -- and today deriving it is a by-hand session

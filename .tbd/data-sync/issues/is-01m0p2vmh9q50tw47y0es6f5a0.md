@@ -5,12 +5,13 @@ title: Peer walker ranking needs several real trees before it can be claimed in 
 kind: task
 status: closed
 priority: 1
-version: 3
+version: 4
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-performance-campaign-2.md
-labels: []
+labels:
+  - campaign-2
 dependencies: []
 created_at: 2026-08-23T01:13:15.561Z
-updated_at: 2026-08-23T08:22:13.473Z
+updated_at: 2026-08-23T09:09:07.574Z
 closed_at: 2026-08-23T08:22:13.472Z
 close_reason: "Landed as loop infrastructure: benchmarks/realtree/subjects.py plus make perf-subjects / perf-subjects-check. A host nominates its trees in a gitignored file holding paths; the emitted document is redacted and committable. Policy: three of four characters and no sparse subject before a set may decide an accept. The Darwin/arm64 set is committed. Peer-ranking claims remain a consumer of this and are not themselves closed."
 ---

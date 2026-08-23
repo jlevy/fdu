@@ -5,13 +5,14 @@ title: Probe job for the transient summary tier, with a tallies oracle
 kind: task
 status: closed
 priority: 1
-version: 4
-labels: []
+version: 5
+labels:
+  - campaign-2
 dependencies:
   - type: blocks
     target: is-01kzy2qv7fkcwjcn3g8gas7g4m
 created_at: 2026-08-14T00:03:44.686Z
-updated_at: 2026-08-23T08:22:13.183Z
+updated_at: 2026-08-23T09:09:07.820Z
 closed_at: 2026-08-23T08:22:13.182Z
 close_reason: "Landed: perf_probe gains a 'summary' mode driving prepare_report on the transient plan, and measure.py gains the aggregate-summary job with Job.oracle='tallies'. The blocker recorded in this bead (prepare_report was pub(crate)) had already been removed by fdu-z7sp. component_ns now measurable: ~5ms below wall on a 5,838-entry subject, which is most of what exp-043/044 were arguing over. Verified end to end through a real paired run: 0 invalid samples, tallies oracle agrees, statistics are ledger-shaped."
 ---
