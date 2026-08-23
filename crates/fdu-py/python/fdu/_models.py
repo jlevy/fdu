@@ -392,6 +392,8 @@ class Classification:
     source: DetectionSource
     confidence: DetectionConfidence
     flags: ClassificationFlags
+    group: str | None = None
+    """Browsing group id, or ``None`` when the registry declares none."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -456,6 +458,20 @@ class Child:
     allocated: int | None
     mtime_ns: int | None
     provenance: Provenance
+    classification: Classification | None = None
+    """What the index's rule registry makes of this child; ``None`` unless it is a file.
+
+    Metadata-only: the name decides it and no file is opened. Here so a consumer can stop
+    carrying a classifier of its own -- re-deriving it per row afterwards means answering
+    in a second language, against a rule set with no way to stay in step with this one.
+    """
+
+    extension: str | None = None
+    """The extension this name yields, compound forms folded (``.tar.gz``).
+
+    The same key the parent's ``by_extension`` files it under, so a row and the
+    directory's breakdown agree by construction.
+    """
 
 
 @dataclass(frozen=True, slots=True)
@@ -497,6 +513,15 @@ class FileRow:
     bytes: int
     allocated: int
     mtime_ns: int
+    classification: Classification | None = None
+    """What the active rule registry makes of this row; ``None`` unless it is a file.
+
+    Metadata-only, and filled after the view's bound: a bounded preset classifies the rows
+    it emits rather than every row it considered.
+    """
+
+    extension: str | None = None
+    """The extension this row's name yields, compound forms folded (``.tar.gz``)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -909,9 +934,27 @@ def walk_telemetry_from_dict(value: dict[str, Any]) -> WalkTelemetry:
     )
 
 
+def _file_row(row: dict[str, Any]) -> FileRow:
+    classification = row.get("classification")
+    extension = row.get("extension")
+    return FileRow(
+        path=Path(str(row["path"])),
+        kind=EntryKind(str(row["kind"])),
+        bytes=int(row["bytes"]),
+        allocated=int(row["allocated"]),
+        mtime_ns=int(row["mtime_ns"]),
+        classification=(
+            None if classification is None else classification_from_dict(classification)
+        ),
+        extension=None if extension is None else str(extension),
+    )
+
+
 def classification_from_dict(value: dict[str, Any]) -> Classification:
     flags = value["flags"]
+    group = value.get("group")
     return Classification(
+        group=None if group is None else str(group),
         file_type=str(value["file_type"]),
         family=ContentFamily(str(value["family"])),
         source=DetectionSource(str(value["source"])),
@@ -1089,16 +1132,7 @@ def report_from_dict(wire: dict[str, Any], notes: tuple[str, ...] = ()) -> Repor
             sections.append(
                 FilesSection(
                     view,
-                    tuple(
-                        FileRow(
-                            path=Path(str(row["path"])),
-                            kind=EntryKind(str(row["kind"])),
-                            bytes=int(row["bytes"]),
-                            allocated=int(row["allocated"]),
-                            mtime_ns=int(row["mtime_ns"]),
-                        )
-                        for row in rows
-                    ),
+                    tuple(_file_row(cast("dict[str, Any]", row)) for row in rows),
                     _bound(raw),
                 )
             )

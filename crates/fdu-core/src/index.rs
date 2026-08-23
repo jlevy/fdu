@@ -382,6 +382,27 @@ pub struct ChildSnapshot {
     /// rendering a listing wants provenance for every row and resolving each one
     /// separately would take the read lock once per child and re-walk the path.
     pub provenance: Provenance,
+    /// What the index's rule registry makes of this child, for files.
+    ///
+    /// Metadata-only: the name decides it, no file is opened, and the shebang and
+    /// content-probe tiers -- which need bytes -- are not consulted. `None` for anything
+    /// that is not a regular file.
+    ///
+    /// Here so a consumer can stop carrying a classifier of its own. Resolving it per row
+    /// afterwards would mean re-deriving from the name what the engine already knows, in
+    /// a second language, against a rule set that has no way to stay in step with this
+    /// one.
+    pub classification: Option<crate::classify::Classification>,
+    /// The extension this child's name yields, compound forms folded (`.tar.gz`).
+    ///
+    /// `None` for a name with no usable extension. The roll-up's `by_ext` key for the
+    /// same file, so a listing row and the directory's breakdown agree by construction.
+    pub extension: Option<String>,
+    /// The browsing group this child falls in, resolved to its registry id.
+    ///
+    /// Resolved rather than left as the index `classification` carries, because a snapshot
+    /// travels: a `GroupId` is meaningful only alongside the registry that issued it.
+    pub group: Option<String>,
 }
 
 impl std::ops::Deref for ApplyOutcome {
@@ -587,6 +608,10 @@ impl IndexHandle {
             children
                 .map(|(name, id)| {
                     let entry = index.entry(id);
+                    let is_file = entry.kind == EntryKind::File;
+                    let classification = is_file.then(|| {
+                        crate::classify::classify_with(index.types(), Path::new(name), None)
+                    });
                     ChildSnapshot {
                         id,
                         name: name.to_os_string(),
@@ -597,6 +622,12 @@ impl IndexHandle {
                             .is_dir()
                             .then(|| index.named_rollup_bounded(&entry.rollup, extensions)),
                         provenance: index.provenance_of(id),
+                        classification: classification.clone(),
+                        extension: is_file.then(|| crate::classify::derive_ext(name)).flatten(),
+                        group: classification
+                            .and_then(|verdict| verdict.group)
+                            .and_then(|id| index.types().group(id))
+                            .map(|group| group.id.to_string()),
                     }
                 })
                 .collect(),

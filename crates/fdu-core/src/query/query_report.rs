@@ -680,6 +680,20 @@ pub struct FileRow {
     pub allocated: u64,
     /// Modification time in nanoseconds since the Unix epoch.
     pub mtime_ns: i64,
+    /// What the active rule registry makes of this row, for files.
+    ///
+    /// Metadata-only: the name decides it and no file is opened. Filled in after the
+    /// view's bound is applied, so a bounded preset classifies the rows it emits rather
+    /// than every row it considered.
+    pub classification: Option<crate::classify::Classification>,
+    /// The extension this row's name yields, compound forms folded (`.tar.gz`).
+    pub extension: Option<String>,
+    /// The browsing group this row falls in, resolved to its registry id.
+    ///
+    /// Resolved here rather than left as the index carried by `classification`, because a
+    /// row travels: a `GroupId` is meaningful only alongside the registry that issued it,
+    /// and a serialized report has no registry attached.
+    pub group: Option<String>,
 }
 
 /// The aggregate row of a summary view.
@@ -957,6 +971,10 @@ fn walk(index: &Index, selection: &Selection) -> Walked {
                     bytes: attrs.size,
                     allocated: attrs.allocated,
                     mtime_ns: attrs.mtime_ns,
+                    // Filled after the bound; see `file_rows`.
+                    classification: None,
+                    extension: None,
+                    group: None,
                 });
 
                 if kind == EntryKind::File {
@@ -1364,6 +1382,21 @@ fn file_rows(
         |row| row.path.to_string_lossy().into_owned(),
     );
     let total = truncate(&mut rows, query.limit_for(view));
+    // After the bound, never before: `largest` considers every entry and emits twenty,
+    // and classifying the other 192,851 would be work nothing reads.
+    for row in &mut rows {
+        if row.kind != EntryKind::File {
+            continue;
+        }
+        let name = row.path.file_name().unwrap_or_default();
+        row.extension = crate::classify::derive_ext(name);
+        let classification = index.classify(&row.path);
+        row.group = classification
+            .group
+            .and_then(|id| index.types().group(id))
+            .map(|group| group.id.to_string());
+        row.classification = Some(classification);
+    }
     (rows, total)
 }
 
@@ -1387,6 +1420,9 @@ fn every_entry(index: &Index) -> Vec<FileRow> {
                 bytes: attrs.size,
                 allocated: attrs.allocated,
                 mtime_ns: attrs.mtime_ns,
+                classification: None,
+                extension: None,
+                group: None,
             });
             if kind == EntryKind::Dir {
                 stack.push((child, child_path));

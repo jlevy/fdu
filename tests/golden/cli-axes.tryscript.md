@@ -13,6 +13,9 @@ env:
   XDG_CACHE_HOME: .cache
 patterns:
   ALLOCATED: '\d+'
+  # A directory entry's own apparent size is the filesystem's, not the tree's: it counts
+  # the directory inode, which differs by filesystem and by how many names it has held.
+  DIR_SIZE: '\d+'
   # Paths are reported with the platform's own separator, so the separator is matched
   # rather than asserted. Every other character of the path still has to be exact.
   SEP: '[/\\]'
@@ -590,5 +593,29 @@ taxonomy the caller did not ask for.
 $ fdu --cache off --color never --type-rules mine.toml --view groups --format jsonl --size apparent project
 {"schema": "fdu.report/4", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "source": "cold_scan", "freshness": "fresh", "complete": true, "errors": []}
 {"view": "groups", "bound": null, "groups": []}
+? 0
+```
+
+## View: A Listing Row Says What It Is
+
+Metadata only — no file is opened — so a consumer can drop its own classifier without
+paying for content analysis.
+`source` says which tier decided it, which is what makes the verdict auditable rather
+than merely asserted: a compound extension, a plain one, and an exact filename are three
+different kinds of evidence.
+
+```console
+$ fdu --cache off --color never --view files --kind file --sort size --limit 3 --size apparent --format jsonl project
+{"schema": "fdu.report/4", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "source": "cold_scan", "freshness": "fresh", "complete": true, "errors": []}
+{"view": "files", "bound": {"shown": 3, "total": 6}, "files": [{"path": "dist[SEP]acorn-0.1.0.tar.gz", "kind": "file", "bytes": 128, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "extension": ".tar.gz", "classification": {"file_type": "archive", "family": "binary", "group": "archives", "source": "compound_extension", "confidence": "certain", "flags": {"generated": false, "vendored": false, "documentation": false}}}, {"path": "README.md", "kind": "file", "bytes": 48, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "extension": ".md", "classification": {"file_type": "markdown", "family": "prose", "group": "docs", "source": "extension", "confidence": "certain", "flags": {"generated": false, "vendored": false, "documentation": true}}}, {"path": "Makefile", "kind": "file", "bytes": 28, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "extension": null, "classification": {"file_type": "make", "family": "code", "group": "code", "source": "exact_filename", "confidence": "certain", "flags": {"generated": false, "vendored": false, "documentation": false}}}]}
+? 0
+```
+
+A directory has no identity of its own to report, and says so rather than reporting one.
+
+```console
+$ fdu --cache off --color never --view files --kind dir --format jsonl --size apparent project
+{"schema": "fdu.report/4", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "source": "cold_scan", "freshness": "fresh", "complete": true, "errors": []}
+{"view": "files", "bound": null, "files": [{"path": "dist", "kind": "dir", "bytes": [DIR_SIZE], "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "extension": null, "classification": null}, {"path": "docs", "kind": "dir", "bytes": [DIR_SIZE], "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "extension": null, "classification": null}, {"path": "src", "kind": "dir", "bytes": [DIR_SIZE], "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "extension": null, "classification": null}]}
 ? 0
 ```

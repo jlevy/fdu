@@ -324,6 +324,12 @@ class Index:
                 allocated=(int(item["allocated"]) if item.get("allocated") is not None else None),
                 mtime_ns=int(item["mtime_ns"]) if item.get("mtime_ns") is not None else None,
                 provenance=provenance_from_dict(item["provenance"]),
+                classification=(
+                    classification_from_dict(item["classification"])
+                    if item.get("classification") is not None
+                    else None
+                ),
+                extension=(str(item["extension"]) if item.get("extension") is not None else None),
             )
             for item in raw
         )

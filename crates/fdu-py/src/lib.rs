@@ -263,6 +263,24 @@ impl PyTypeRegistry {
     }
 }
 
+/// A listing row's classification, with its group already resolved to a name.
+///
+/// `None` for an entry no rule set classifies, which is every directory and symlink: the
+/// verdict is about a file's identity, and asking for one where there is none would make
+/// a consumer branch on a sentinel instead of on presence.
+fn row_classification_dict<'py>(
+    py: Python<'py>,
+    classification: Option<&fdu_core::classify::Classification>,
+    group: Option<&str>,
+) -> PyResult<Option<Bound<'py, PyDict>>> {
+    let Some(classification) = classification else {
+        return Ok(None);
+    };
+    let dict = classification_dict(py, classification)?;
+    dict.set_item("group", group)?;
+    Ok(Some(dict))
+}
+
 /// One classification verdict as a dict.
 fn classification_dict<'py>(
     py: Python<'py>,
@@ -589,6 +607,11 @@ impl PyIndex {
             entry.set_item("name", child.name)?;
             entry.set_item("kind", entry_kind_label(child.kind))?;
             entry.set_item("provenance", provenance_dict(py, child.provenance)?)?;
+            entry.set_item("extension", child.extension.as_deref())?;
+            entry.set_item(
+                "classification",
+                row_classification_dict(py, child.classification.as_ref(), child.group.as_deref())?,
+            )?;
             if let Some(roll) = child.rollup {
                 entry.set_item("rollup", rollup_dict(py, &roll)?)?;
             } else {
@@ -1020,6 +1043,15 @@ fn report_dict<'py>(py: Python<'py>, report: &Report) -> PyResult<Bound<'py, PyD
                     item.set_item("bytes", row.bytes)?;
                     item.set_item("allocated", row.allocated)?;
                     item.set_item("mtime_ns", row.mtime_ns)?;
+                    item.set_item("extension", row.extension.as_deref())?;
+                    item.set_item(
+                        "classification",
+                        row_classification_dict(
+                            py,
+                            row.classification.as_ref(),
+                            row.group.as_deref(),
+                        )?,
+                    )?;
                     list.append(item)?;
                 }
                 entry.set_item("files", list)?;

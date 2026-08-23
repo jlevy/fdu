@@ -136,6 +136,62 @@ def _tree_section(report: fdu.Report) -> fdu.TreeNode:
     raise AssertionError("the report has no tree section")
 
 
+def check_a_listing_carries_its_own_identity() -> None:
+    """A listing row says what it is, so a consumer can drop its own classifier.
+
+    Metadata only: nothing is opened, and the answer is the engine's own -- the same
+    verdict the type and group views aggregate. Re-deriving it per row afterwards means
+    answering in a second language, against a rule set with no way to stay in step.
+    """
+
+    root = Path(tempfile.mkdtemp(prefix="fdu-identity-"))
+    (root / "src").mkdir()
+    (root / "src" / "main.rs").write_text("fn main() {}", encoding="utf-8")
+    (root / "notes.md").write_text("# hi", encoding="utf-8")
+    (root / "bundle.tar.gz").write_bytes(b"\x1f\x8b" + b"0" * 30)
+    (root / "Makefile").write_text("all:\n\ttrue\n", encoding="utf-8")
+
+    index = fdu.open(root)
+    children = {child.name: child for child in index.children() or ()}
+
+    notes = children["notes.md"]
+    assert notes.classification is not None
+    assert notes.classification.file_type == "markdown"
+    assert notes.classification.family is fdu.ContentFamily.PROSE
+    assert notes.classification.group == "docs"
+    assert notes.classification.source is fdu.DetectionSource.EXTENSION
+    assert notes.extension == ".md"
+
+    # A compound extension folds, and the row's key is the one its parent files it under.
+    bundle = children["bundle.tar.gz"]
+    assert bundle.extension == ".tar.gz"
+    assert bundle.classification is not None
+    assert bundle.classification.group == "archives"
+    assert bundle.extension in index.total().by_extension
+
+    # An exact-filename rule: no extension at all, and still a full verdict.
+    make = children["Makefile"]
+    assert make.extension is None
+    assert make.classification is not None
+    assert make.classification.file_type == "make"
+    assert make.classification.source is fdu.DetectionSource.EXACT_FILENAME
+
+    # A directory is not a file and has no identity to report.
+    assert children["src"].classification is None
+
+    # Files-view rows carry the same verdict, filled after the view's bound.
+    report = index.report(
+        fdu.Query(views=(fdu.View.FILES,), selection=fdu.Selection(kinds=(fdu.EntryKind.FILE,)))
+    )
+    rows = next(s for s in report.sections if isinstance(s, fdu.FilesSection)).files
+    by_name = {row.path.name: row for row in rows}
+    assert by_name["main.rs"].classification is not None
+    assert by_name["main.rs"].classification.file_type == "rust"
+    assert by_name["main.rs"].classification.group == "code"
+    assert by_name["main.rs"].extension == ".rs"
+    fdu.clear_cache(root)
+
+
 def check_groups_answer_the_browsing_question() -> None:
     """A group axis a family axis cannot answer.
 
@@ -608,6 +664,7 @@ def main() -> None:
     check_bounded_extension_rows_account_for_the_rest()
     check_supplied_type_rules_reach_the_answer()
     check_groups_answer_the_browsing_question()
+    check_a_listing_carries_its_own_identity()
     check_a_bounded_tree_says_what_it_withheld()
     check_render_matches_the_cli(
         root, str(Path(sys.executable).with_name("fdu.exe" if os.name == "nt" else "fdu"))

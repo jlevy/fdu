@@ -17,7 +17,7 @@ use std::path::Path;
 
 use anstyle::{AnsiColor, Style as AnsiStyle};
 
-use crate::classify::{DetectionConfidence, DetectionSource, human_language_name};
+use crate::classify::{Classification, DetectionConfidence, DetectionSource, human_language_name};
 use crate::content::{CoverageReason, MetricValues};
 use crate::engine_contract::{EntryKind, Freshness};
 use crate::query::{
@@ -796,13 +796,36 @@ fn coverage_json(coverage: &std::collections::BTreeMap<CoverageReason, u64>) -> 
 /// One file row as a JSON object.
 fn file_json(row: &FileRow) -> String {
     format!(
-        "{{\"path\": {}{}, \"kind\": {}, \"bytes\": {}, \"allocated\": {}, \"mtime_ns\": {}}}",
+        "{{\"path\": {}{}, \"kind\": {}, \"bytes\": {}, \"allocated\": {}, \"mtime_ns\": {}, \"extension\": {}, \"classification\": {}}}",
         quote(&row.path.to_string_lossy()),
         path_raw_field(&row.path),
         quote(kind_label(row.kind)),
         row.bytes,
         row.allocated,
-        row.mtime_ns
+        row.mtime_ns,
+        row.extension.as_deref().map_or_else(|| "null".to_string(), quote),
+        classification_json(row.classification.as_ref(), row.group.as_deref()),
+    )
+}
+
+/// One row's classification, or `null` for an entry no rule set classifies.
+///
+/// Metadata-only, so a consumer can drop its own classifier without enabling analysis:
+/// the identity is decided by the name, and `source` says which tier decided it.
+fn classification_json(classification: Option<&Classification>, group: Option<&str>) -> String {
+    let Some(classification) = classification else {
+        return "null".to_string();
+    };
+    format!(
+        "{{\"file_type\": {}, \"family\": {}, \"group\": {}, \"source\": {}, \"confidence\": {}, \"flags\": {{\"generated\": {}, \"vendored\": {}, \"documentation\": {}}}}}",
+        quote(classification.file_type.as_str()),
+        quote(classification.family.as_str()),
+        group.map_or_else(|| "null".to_string(), quote),
+        quote(classification.source.as_str()),
+        quote(classification.confidence.as_str()),
+        classification.flags.generated,
+        classification.flags.vendored,
+        classification.flags.documentation,
     )
 }
 
@@ -1002,6 +1025,18 @@ fn render_yaml(report: &Report) -> String {
                         let _ = writeln!(out, "        bytes: {}", row.bytes);
                         let _ = writeln!(out, "        allocated: {}", row.allocated);
                         let _ = writeln!(out, "        mtime_ns: {}", row.mtime_ns);
+                        match row.extension.as_deref() {
+                            Some(extension) => {
+                                let _ =
+                                    writeln!(out, "        extension: {}", yaml_scalar(extension));
+                            }
+                            None => out.push_str("        extension: null\n"),
+                        }
+                        yaml_classification(
+                            &mut out,
+                            row.classification.as_ref(),
+                            row.group.as_deref(),
+                        );
                     }
                 }
             }
@@ -1146,6 +1181,35 @@ fn yaml_tree(out: &mut String, root: &TreeNode, pad: usize) {
             stack.push((child, child_indent, true));
         }
     }
+}
+
+/// The YAML form of a row's classification, matching the JSON field.
+fn yaml_classification(
+    out: &mut String,
+    classification: Option<&Classification>,
+    group: Option<&str>,
+) {
+    let Some(classification) = classification else {
+        out.push_str("        classification: null\n");
+        return;
+    };
+    out.push_str("        classification:\n");
+    let _ =
+        writeln!(out, "          file_type: {}", yaml_scalar(classification.file_type.as_str()));
+    let _ = writeln!(out, "          family: {}", yaml_scalar(classification.family.as_str()));
+    match group {
+        Some(group) => {
+            let _ = writeln!(out, "          group: {}", yaml_scalar(group));
+        }
+        None => out.push_str("          group: null\n"),
+    }
+    let _ = writeln!(out, "          source: {}", yaml_scalar(classification.source.as_str()));
+    let _ =
+        writeln!(out, "          confidence: {}", yaml_scalar(classification.confidence.as_str()));
+    out.push_str("          flags:\n");
+    let _ = writeln!(out, "            generated: {}", classification.flags.generated);
+    let _ = writeln!(out, "            vendored: {}", classification.flags.vendored);
+    let _ = writeln!(out, "            documentation: {}", classification.flags.documentation);
 }
 
 /// An optional integer as a YAML scalar.
@@ -2426,7 +2490,11 @@ mod tests {
         for hex in [first_hex, second_hex] {
             let row = format!(
                 "{{\"path\": \"{lossy}\", \"path_raw\": {{\"encoding\": \"{encoding}\", \"hex\": \"{hex}\"}}, \
-                 \"kind\": \"file\", \"bytes\": 1, \"allocated\": 1, \"mtime_ns\": 0}}"
+                 \"kind\": \"file\", \"bytes\": 1, \"allocated\": 1, \"mtime_ns\": 0, \
+                 \"extension\": null, \"classification\": {{\"file_type\": \"unknown\", \
+                 \"family\": \"unknown\", \"group\": null, \"source\": \"unknown\", \
+                 \"confidence\": \"heuristic\", \"flags\": {{\"generated\": false, \
+                 \"vendored\": false, \"documentation\": false}}}}}}"
             );
             assert!(
                 rendered.contains(&row),

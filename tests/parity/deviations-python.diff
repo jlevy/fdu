@@ -145,6 +145,8 @@ FAIL [ROOT]/tests/parity/.corpus/cli-axes.tryscript.md
   ✓ The Same Tree, Answered Both Ways
   ✓ Machine Rows Carry the Stable Id and the Label
   ✓ Rules Without Groups Leave the Axis Empty
+  ✓ View: A Listing Row Says What It Is
+  ✓ View: A Listing Row Says What It Is
 PASS [ROOT]/tests/parity/.corpus/cli-cache.tryscript.md
   ✓ Scan Without a Cache
   ✓ Verify No Cache Was Created
