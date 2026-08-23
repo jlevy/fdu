@@ -74,7 +74,7 @@ what matters here is which mechanisms carried weight:
 
 1. **One artifact per round, split soft-schema.** Frontmatter carries what a tool reads;
    prose carries the reasoning.
-   31 accepted, 28 rejected — the record leads with its failures, and the refutations
+   33 accepted, 28 rejected — the record leads with its failures, and the refutations
    are what stop the next agent re-running a dead end.
 2. **The contract compiled from a model** (`make perf-schema`), with drift checked.
 3. **The measured half never retyped.** `perf-record` lifts numbers from the run JSON;
@@ -130,7 +130,7 @@ Everything both kept, having built independently, is the invariant core:
 | Invariant | fdu | metabrowser |
 | --- | --- | --- |
 | One soft-schema artifact per round; frontmatter only what a view reads | `experiment.py` docstring | schema header comment says it verbatim |
-| Failures recorded like successes | 28 of 64 rejected | rejected variants written up inside accepted rounds |
+| Failures recorded like successes | 28 of 66 rejected | rejected variants written up inside accepted rounds |
 | Criterion named before measurement; post-hoc metric switch is never an accept | pre-registration rule, exp-051 | “The metric is named before the measurement” |
 | A number without its spread is not a result | 95% bootstrap interval | “A median without its range is not a result” |
 | Verdict = arithmetic plus one written judgment | accept rule, fourth clause | accept rule, fourth clause |
