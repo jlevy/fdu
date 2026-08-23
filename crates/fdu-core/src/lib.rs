@@ -321,7 +321,12 @@ pub(crate) fn open_for_report(
         (true, Some(cache_path)) => snapshot::load(cache_path)?
             // A snapshot describing another root or a different scan scope is not this
             // tree's answer; treat it as absent rather than as data.
-            .filter(|index| index.root_path() == root && index.scope() == config.scan.scope()),
+            .filter(|index| index.root_path() == root && index.scope() == config.scan.scope())
+            // The snapshot records only the fingerprint of the rules it was written
+            // under; the rules themselves come from the caller. Adopting them here keeps
+            // a loaded index classifying under the taxonomy its scope claims -- the
+            // filter above has already rejected any snapshot where those differ.
+            .map(|index| index.with_types(config.scan.types().clone())),
         _ => None,
     };
 
@@ -630,6 +635,63 @@ mod tests {
             fs::create_dir_all(parent).expect("create parent");
         }
         fs::write(path, contents).expect("write");
+    }
+
+    /// Supplied rules reach the answer, and invalidate a snapshot taken under others.
+    ///
+    /// The end-to-end property behind the registry: a consumer whose taxonomy differs
+    /// from this repository's classifies its own way without rebuilding the crate, and a
+    /// snapshot written under one taxonomy is never served under another. The second half
+    /// is the one that would fail silently -- the entry counts and byte totals are
+    /// identical either way, so a stale snapshot looks entirely correct.
+    #[test]
+    fn supplied_type_rules_change_the_answer_and_invalidate_the_snapshot() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let cache = tempfile::tempdir().expect("cache dir");
+        let snapshot_path = cache.path().join("snap.fdu");
+        write_file(&dir.path().join("main.rs"), b"fn main() {}\n");
+
+        let default_config = OpenConfig {
+            cache_path: Some(snapshot_path.clone()),
+            analysis: content::AnalysisRequest {
+                profile: content::AnalysisSet::NONE.with_lines(),
+                ..content::AnalysisRequest::default()
+            },
+            ..OpenConfig::default()
+        };
+        let (index, _) = open(dir.path(), &default_config).expect("default open");
+        assert_eq!(index.classify(Path::new("main.rs")).file_type.as_str(), "rust");
+        drop(index);
+
+        let mine = std::sync::Arc::new(
+            classify::TypeRegistry::from_manifest(
+                "[[kind]]\nid = \"notes\"\nfamily = \"prose\"\nextensions = [\"rs\"]\n",
+            )
+            .expect("a minimal manifest"),
+        );
+        let custom_config = OpenConfig {
+            scan: scan::ScanConfig { types: Some(mine.clone()), ..scan::ScanConfig::default() },
+            ..default_config.clone()
+        };
+
+        assert_ne!(
+            custom_config.scan.scope(),
+            default_config.scan.scope(),
+            "different rules are a different scan scope"
+        );
+
+        let (index, report) = open(dir.path(), &custom_config).expect("custom open");
+        assert_eq!(
+            report.path_taken,
+            OpenPath::ColdScan,
+            "the snapshot was written under other rules and must not be reused"
+        );
+        assert_eq!(index.classify(Path::new("main.rs")).file_type.as_str(), "notes");
+        assert_eq!(index.types().fingerprint(), mine.fingerprint());
+
+        // And the snapshot the custom run wrote is reusable by a run under the same rules.
+        let (_, report) = open(dir.path(), &custom_config).expect("second custom open");
+        assert_eq!(report.path_taken, OpenPath::WarmRevalidate, "same rules, same snapshot");
     }
 
     /// The behaviour table from the design, asserted rather than described.

@@ -6,13 +6,22 @@
 //! headers, and origin flags. Nothing here performs runtime rule parsing or opens a
 //! file; the caller owns the optional read.
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::fmt;
 use std::path::Path;
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock};
 
 mod file_type_detection;
+
+/// The `[[kind]]` manifest dialect, parsed and validated by one implementation.
+///
+/// Compiled into the crate and `include!`d by `build.rs`, so rules supplied at run time
+/// are read by exactly the code that read this repository's own manifest at build time.
+/// Two parsers for one dialect is how a manifest comes to mean one thing to the compiler
+/// and another to a consumer, with neither wrong on its own terms.
+pub mod type_rule_manifest;
 
 /// Broad analysis family for a recognized file type.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
@@ -166,33 +175,194 @@ struct GeneratedRule {
 
 include!(concat!(env!("OUT_DIR"), "/file_type_rules.rs"));
 
-/// The exact-name and extension tiers, resolved once instead of scanned per file.
+/// The engine family a manifest's `family` name selects.
 ///
-/// The scan these replace was
-/// `GENERATED_RULES.iter().filter(..).max_by_key(..)`, and `max_by_key` consumes the
-/// whole iterator, so every file paid all 65 rules and all 167 extension strings even
-/// when its extension matched the first rule in the table. Classification ran twice per
-/// file on a warm content open -- once to build each candidate, once again in
-/// `Index::apply_analysis`'s staleness guard -- so this is charged for on both.
-///
-/// `Iterator::max_by_key` returns the *last* of equally-maximum elements. The builder
-/// reproduces that tie-break by letting a later rule in table order win at equal
-/// priority; changing it would silently reclassify the types that share a key.
-static RULES_BY_FILENAME: LazyLock<HashMap<&'static str, &'static GeneratedRule>> =
-    LazyLock::new(|| index_rules(|rule| rule.filenames));
-static RULES_BY_EXTENSION: LazyLock<HashMap<&'static str, &'static GeneratedRule>> =
-    LazyLock::new(|| index_rules(|rule| rule.extensions));
+/// The manifest carries a name because it is a text file; the engine carries an enum
+/// because the analyzer set is closed. This is the one place the two meet, and
+/// `validate_manifest` has already rejected any name it does not admit.
+fn family_from_name(name: &str) -> Option<ContentFamily> {
+    match name {
+        "code" => Some(ContentFamily::Code),
+        "prose" => Some(ContentFamily::Prose),
+        "markup" => Some(ContentFamily::Markup),
+        "data" => Some(ContentFamily::Data),
+        "binary" => Some(ContentFamily::Binary),
+        "unknown" => Some(ContentFamily::Unknown),
+        _ => None,
+    }
+}
 
-fn index_rules(
-    keys: impl Fn(&'static GeneratedRule) -> &'static [&'static str],
-) -> HashMap<&'static str, &'static GeneratedRule> {
-    let mut table: HashMap<&'static str, &'static GeneratedRule> = HashMap::new();
-    for rule in GENERATED_RULES {
-        for key in keys(rule) {
+/// One rule's identity, after its keys have been indexed.
+///
+/// Extensions and filenames are not retained: they exist to build the two indexes, and
+/// the cascade reads the indexes rather than the lists. `Cow` rather than `String` so the
+/// compiled default borrows the rendered `&'static` data and allocates nothing per rule.
+#[derive(Clone, PartialEq, Eq, Debug)]
+struct TypeRule {
+    id: Cow<'static, str>,
+    family: ContentFamily,
+    shebangs: Vec<Cow<'static, str>>,
+    priority: u16,
+}
+
+/// A set of file-type rules, indexed for the classification cascade.
+///
+/// The registry is a *value*, not a compiled-in table, so a consumer whose taxonomy
+/// differs from this repository's can supply its own without rebuilding the crate or
+/// reclassifying in its own language. The compiled default stays the default and the fast
+/// path: no file to find, no startup parse, and the borrowed form allocates nothing per
+/// rule.
+///
+/// Its `fingerprint` is what makes a rule change safe. A snapshot and a content sidecar
+/// both record the fingerprint of the registry that produced them, and both refuse a
+/// cached answer when it moved — a classification change can move a file between
+/// families, which invalidates the metrics rather than merely their labels.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct TypeRegistry {
+    rules: Vec<TypeRule>,
+    /// Exact-basename tier, resolved once instead of scanned per file.
+    ///
+    /// The scan this replaces was `rules.iter().filter(..).max_by_key(..)`, and
+    /// `max_by_key` consumes the whole iterator, so every file paid all 65 rules and all
+    /// 167 extension strings even when its extension matched the first rule in the table.
+    /// Classification runs twice per file on a warm content open -- once to build each
+    /// candidate, once again in `Index::apply_analysis`'s staleness guard -- so this is
+    /// charged for on both.
+    by_filename: HashMap<Cow<'static, str>, u32>,
+    /// Extension tier, indexed on the same terms.
+    by_extension: HashMap<Cow<'static, str>, u32>,
+    fingerprint: u64,
+}
+
+/// The registry compiled from this repository's manifest.
+///
+/// Built once, lazily, on first classification -- the same one-time index build the two
+/// `LazyLock` tables it replaces performed, in one value instead of two.
+static COMPILED_REGISTRY: LazyLock<Arc<TypeRegistry>> =
+    LazyLock::new(|| Arc::new(TypeRegistry::from_generated()));
+
+impl TypeRegistry {
+    /// The registry compiled from this repository's manifest.
+    pub fn compiled() -> &'static Arc<Self> {
+        &COMPILED_REGISTRY
+    }
+
+    /// Build a registry from the `[[kind]]` manifest dialect.
+    ///
+    /// Validated by the same code that validates this repository's manifest at build
+    /// time, so a manifest this accepts would have compiled and one it rejects would have
+    /// failed the build with the same message.
+    pub fn from_manifest(source: &str) -> crate::Result<Self> {
+        let reject = |message: String| crate::Error::InvalidValue {
+            kind: "type rules",
+            value: String::new(),
+            hint: message,
+        };
+        let parsed = type_rule_manifest::parse_manifest(source).map_err(reject)?;
+        type_rule_manifest::validate_manifest(&parsed).map_err(reject)?;
+        let rules = parsed
+            .iter()
+            .map(|rule| TypeRule {
+                id: Cow::Owned(rule.id.clone()),
+                family: family_from_name(&rule.family).expect("validated family"),
+                shebangs: rule.shebangs.iter().cloned().map(Cow::Owned).collect(),
+                priority: rule.priority,
+            })
+            .collect();
+        Ok(Self::indexed(
+            rules,
+            parsed.iter().map(|rule| rule.filenames.iter().map(String::as_str)),
+            parsed.iter().map(|rule| rule.extensions.iter().map(String::as_str)),
+            type_rule_manifest::manifest_fingerprint(source),
+        ))
+    }
+
+    fn from_generated() -> Self {
+        let rules = GENERATED_RULES
+            .iter()
+            .map(|rule| TypeRule {
+                id: Cow::Borrowed(rule.id),
+                family: rule.family,
+                shebangs: rule.shebangs.iter().copied().map(Cow::Borrowed).collect(),
+                priority: rule.priority,
+            })
+            .collect();
+        Self::indexed(
+            rules,
+            GENERATED_RULES.iter().map(|rule| rule.filenames.iter().copied()),
+            GENERATED_RULES.iter().map(|rule| rule.extensions.iter().copied()),
+            TYPE_RULE_FINGERPRINT,
+        )
+    }
+
+    /// Index both key tiers, reproducing the scan's tie-break exactly.
+    ///
+    /// `Iterator::max_by_key` returns the *last* of equally-maximum elements, so a later
+    /// rule in manifest order wins at equal priority. Changing that would silently
+    /// reclassify the types that share a key.
+    fn indexed<'a>(
+        rules: Vec<TypeRule>,
+        filenames: impl Iterator<Item = impl Iterator<Item = &'a str>>,
+        extensions: impl Iterator<Item = impl Iterator<Item = &'a str>>,
+        fingerprint: u64,
+    ) -> Self {
+        let by_filename = index_keys(&rules, filenames);
+        let by_extension = index_keys(&rules, extensions);
+        Self { rules, by_filename, by_extension, fingerprint }
+    }
+
+    /// Identity of the rules this registry holds.
+    pub fn fingerprint(&self) -> u64 {
+        self.fingerprint
+    }
+
+    /// How many `[[kind]]` rules it holds.
+    pub fn rule_count(&self) -> usize {
+        self.rules.len()
+    }
+
+    /// Distinct exact basenames it claims.
+    pub fn filename_count(&self) -> usize {
+        self.by_filename.len()
+    }
+
+    /// Distinct extensions it claims.
+    pub fn extension_count(&self) -> usize {
+        self.by_extension.len()
+    }
+
+    /// Every stable type identifier it can produce, in manifest order.
+    pub fn type_ids(&self) -> impl Iterator<Item = &str> {
+        self.rules.iter().map(|rule| rule.id.as_ref())
+    }
+
+    fn by_filename(&self, name: &str) -> Option<&TypeRule> {
+        self.by_filename.get(name).map(|index| &self.rules[*index as usize])
+    }
+
+    fn by_extension(&self, key: &str) -> Option<&TypeRule> {
+        self.by_extension.get(key).map(|index| &self.rules[*index as usize])
+    }
+
+    fn by_id(&self, id: &str) -> Option<&TypeRule> {
+        self.rules.iter().find(|rule| rule.id == id)
+    }
+}
+
+/// Resolve one key tier into rule indexes, later-wins at equal priority.
+fn index_keys<'a>(
+    rules: &[TypeRule],
+    keys: impl Iterator<Item = impl Iterator<Item = &'a str>>,
+) -> HashMap<Cow<'static, str>, u32> {
+    let mut table: HashMap<Cow<'static, str>, u32> = HashMap::new();
+    for (position, rule_keys) in keys.enumerate() {
+        let index = u32::try_from(position).expect("a manifest holds fewer than 4 billion rules");
+        for key in rule_keys {
             match table.get(key) {
-                Some(existing) if existing.priority > rule.priority => {}
+                Some(existing) if rules[*existing as usize].priority > rules[position].priority => {
+                }
                 _ => {
-                    table.insert(key, rule);
+                    table.insert(Cow::Owned(key.to_string()), index);
                 }
             }
         }
@@ -201,8 +371,8 @@ fn index_rules(
 }
 
 /// Fingerprint of the repository-owned rule manifest compiled into this build.
-pub const fn type_rule_fingerprint() -> u64 {
-    TYPE_RULE_FINGERPRINT
+pub fn type_rule_fingerprint() -> u64 {
+    TypeRegistry::compiled().fingerprint()
 }
 
 /// Human-facing name for a stable code-type identifier.
@@ -255,22 +425,31 @@ pub(crate) fn human_language_name(id: &str) -> &str {
     }
 }
 
-/// Classify from path metadata only, without opening the file.
+/// Classify from path metadata only, against the compiled default rules.
 pub fn classify_path(path: &Path) -> Classification {
     classify_path_with_prefix(path, None)
 }
 
-/// Classify with an optional bounded content prefix.
+/// Classify with an optional bounded content prefix, against the compiled default rules.
+pub fn classify_path_with_prefix(path: &Path, prefix: Option<&[u8]>) -> Classification {
+    classify_with(TypeRegistry::compiled(), path, prefix)
+}
+
+/// Classify against a specific registry, with an optional bounded content prefix.
 ///
 /// Known exact-name and ordinary extension matches avoid deep detection. The `.h`
 /// ambiguity and generated-file flag alone inspect their documented bounded prefix.
 /// Callers may pass a larger buffer; all content-dependent helpers enforce smaller
 /// internal limits.
-pub fn classify_path_with_prefix(path: &Path, prefix: Option<&[u8]>) -> Classification {
+pub fn classify_with(
+    registry: &TypeRegistry,
+    path: &Path,
+    prefix: Option<&[u8]>,
+) -> Classification {
     let name = path.file_name().unwrap_or_else(|| OsStr::new(""));
     // The rules table is pure ASCII, so a name that is not UTF-8 matched no rule
     // filename under the byte comparison this replaces either.
-    if let Some(rule) = name.to_str().and_then(|name| RULES_BY_FILENAME.get(name).copied()) {
+    if let Some(rule) = name.to_str().and_then(|name| registry.by_filename(name)) {
         return with_flags(
             path,
             prefix,
@@ -281,7 +460,7 @@ pub fn classify_path_with_prefix(path: &Path, prefix: Option<&[u8]>) -> Classifi
     let extension = derive_ext(name);
     if let Some(extension) = extension.as_deref() {
         let key = extension.strip_prefix('.').expect("derived extensions start with a dot");
-        if let Some(rule) = RULES_BY_EXTENSION.get(key).copied() {
+        if let Some(rule) = registry.by_extension(key) {
             let source = if key.contains('.') {
                 DetectionSource::CompoundExtension
             } else {
@@ -290,7 +469,7 @@ pub fn classify_path_with_prefix(path: &Path, prefix: Option<&[u8]>) -> Classifi
             let classification = if key == "h" {
                 prefix
                     .and_then(file_type_detection::resolve_c_header)
-                    .and_then(rule_by_id)
+                    .and_then(|id| registry.by_id(id))
                     .map_or_else(
                         || classified(rule, source, DetectionConfidence::Certain),
                         |cpp| {
@@ -336,9 +515,9 @@ pub fn classify_path_with_prefix(path: &Path, prefix: Option<&[u8]>) -> Classifi
             );
         }
         Some(file_type_detection::PrefixMatch::Rule(id, source))
-            if rule_by_id(id).is_some_and(|rule| rule.family == ContentFamily::Binary) =>
+            if registry.by_id(id).is_some_and(|rule| rule.family == ContentFamily::Binary) =>
         {
-            let rule = rule_by_id(id).expect("guard established a generated rule");
+            let rule = registry.by_id(id).expect("guard established a registry rule");
             return with_flags(
                 path,
                 Some(prefix),
@@ -348,9 +527,10 @@ pub fn classify_path_with_prefix(path: &Path, prefix: Option<&[u8]>) -> Classifi
         _ => {}
     }
     if let Some(interpreter) = file_type_detection::shebang_interpreter(prefix) {
-        if let Some(rule) = GENERATED_RULES
+        if let Some(rule) = registry
+            .rules
             .iter()
-            .filter(|rule| rule.shebangs.contains(&interpreter))
+            .filter(|rule| rule.shebangs.iter().any(|shebang| shebang == interpreter))
             .max_by_key(|rule| rule.priority)
         {
             return with_flags(
@@ -361,7 +541,8 @@ pub fn classify_path_with_prefix(path: &Path, prefix: Option<&[u8]>) -> Classifi
         }
     }
     let classification = match probed {
-        Some(file_type_detection::PrefixMatch::Rule(id, source)) => rule_by_id(id)
+        Some(file_type_detection::PrefixMatch::Rule(id, source)) => registry
+            .by_id(id)
             .map_or_else(unknown, |rule| classified(rule, source, DetectionConfidence::High)),
         Some(file_type_detection::PrefixMatch::UnknownBinary) => {
             unreachable!("returned above")
@@ -372,7 +553,7 @@ pub fn classify_path_with_prefix(path: &Path, prefix: Option<&[u8]>) -> Classifi
 }
 
 fn classified(
-    rule: &GeneratedRule,
+    rule: &TypeRule,
     source: DetectionSource,
     confidence: DetectionConfidence,
 ) -> Classification {
@@ -383,10 +564,6 @@ fn classified(
         confidence,
         flags: ClassificationFlags::default(),
     }
-}
-
-fn rule_by_id(id: &str) -> Option<&'static GeneratedRule> {
-    GENERATED_RULES.iter().find(|rule| rule.id == id)
 }
 
 fn with_flags(
@@ -537,13 +714,21 @@ fn derive_ext_str(name: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    use super::type_rule_manifest::{ManifestRule, parse_manifest};
     use super::{
-        ContentFamily, DetectionConfidence, DetectionSource, RULES_BY_EXTENSION, RULES_BY_FILENAME,
-        classify_path, classify_path_with_prefix, derive_ext, type_rule_fingerprint,
+        ContentFamily, DetectionConfidence, DetectionSource, TypeRegistry, classify_path,
+        classify_path_with_prefix, classify_with, derive_ext, type_rule_fingerprint,
     };
     use super::{GENERATED_RULES, human_language_name};
     use std::ffi::OsStr;
     use std::path::Path;
+
+    /// The manifest this build compiled, readable at test time as text.
+    const DEFAULT_MANIFEST: &str = include_str!("../rules/file-types.toml");
+
+    fn default_manifest_rules() -> Vec<ManifestRule> {
+        parse_manifest(DEFAULT_MANIFEST).expect("the repository's own manifest parses")
+    }
 
     /// The indexed tiers must answer exactly what the scan they replaced answered.
     ///
@@ -551,29 +736,136 @@ mod tests {
     /// *last* of equally-maximum elements. Several keys are claimed by more than one
     /// rule, so a builder that took the first winner instead of the last would
     /// reclassify them silently, with no other test noticing.
-    #[test]
-    fn indexed_rule_tiers_agree_with_the_scan_they_replaced() {
-        for (table, keys_of) in [
-            (&*RULES_BY_FILENAME, (|rule: &super::GeneratedRule| rule.filenames) as fn(_) -> _),
-            (&*RULES_BY_EXTENSION, (|rule: &super::GeneratedRule| rule.extensions) as fn(_) -> _),
-        ] {
+    ///
+    /// Stated over a registry rather than over the compiled tables, so it holds for rules
+    /// a consumer supplies as well as for this repository's.
+    fn tie_break_matches_a_scan(registry: &TypeRegistry, rules: &[ManifestRule], label: &str) {
+        fn filenames(rule: &ManifestRule) -> &Vec<String> {
+            &rule.filenames
+        }
+        fn extensions(rule: &ManifestRule) -> &Vec<String> {
+            &rule.extensions
+        }
+        /// One tier's key accessor, named so the array below stays readable.
+        type KeysOf = fn(&ManifestRule) -> &Vec<String>;
+        let tiers: [(KeysOf, _); 2] =
+            [(filenames, &registry.by_filename), (extensions, &registry.by_extension)];
+        for (keys_of, table) in tiers {
             let mut checked = 0;
-            for key in GENERATED_RULES.iter().flat_map(keys_of) {
-                let scanned = GENERATED_RULES
+            for key in rules.iter().flat_map(keys_of) {
+                let scanned = rules
                     .iter()
                     .filter(|rule| keys_of(rule).contains(key))
                     .max_by_key(|rule| rule.priority)
                     .expect("the key came from a rule, so at least one rule matches");
-                let indexed = table.get(*key).expect("every rule key is indexed");
+                let indexed = &registry.rules[table[key.as_str()] as usize];
                 assert_eq!(
                     indexed.id, scanned.id,
-                    "key {key:?} resolves to {:?} but the scan chose {:?}",
+                    "{label}: key {key:?} resolves to {:?} but the scan chose {:?}",
                     indexed.id, scanned.id
                 );
                 checked += 1;
             }
-            assert!(checked > 0, "the rules table produced no keys to check");
+            assert!(checked > 0, "{label}: the rules produced no keys to check");
         }
+    }
+
+    #[test]
+    fn indexed_rule_tiers_agree_with_the_scan_they_replaced() {
+        let rules = default_manifest_rules();
+        tie_break_matches_a_scan(TypeRegistry::compiled(), &rules, "compiled");
+        let parsed = TypeRegistry::from_manifest(DEFAULT_MANIFEST).expect("parses at run time");
+        tie_break_matches_a_scan(&parsed, &rules, "runtime");
+    }
+
+    /// Parsing the default manifest at run time must reproduce the compiled registry.
+    ///
+    /// The migration assertion: the compiled table is a rendering of this text, so a
+    /// runtime parse that disagreed with it anywhere would mean the two readers of one
+    /// dialect had drifted -- which is exactly what sharing the parser is meant to
+    /// prevent, and what no other test would notice.
+    #[test]
+    fn the_runtime_parsed_default_matches_the_compiled_one() {
+        let compiled = TypeRegistry::compiled();
+        let parsed = TypeRegistry::from_manifest(DEFAULT_MANIFEST).expect("parses at run time");
+
+        assert_eq!(parsed.fingerprint(), compiled.fingerprint(), "same text, same identity");
+        assert_eq!(parsed.rule_count(), compiled.rule_count());
+        assert_eq!(parsed.extension_count(), compiled.extension_count());
+        assert_eq!(parsed.filename_count(), compiled.filename_count());
+        assert_eq!(parsed.type_ids().collect::<Vec<_>>(), compiled.type_ids().collect::<Vec<_>>());
+
+        let mut probes: Vec<String> = Vec::new();
+        for rule in default_manifest_rules() {
+            probes.extend(rule.filenames.iter().cloned());
+            probes.extend(rule.extensions.iter().map(|ext| format!("probe.{ext}")));
+        }
+        assert!(probes.len() > 100, "the manifest should offer a wide key set");
+        for probe in probes {
+            let path = Path::new(&probe);
+            assert_eq!(
+                classify_with(&parsed, path, None),
+                classify_with(compiled, path, None),
+                "{probe} classifies differently under the runtime-parsed default"
+            );
+        }
+    }
+
+    /// Validation is tested for what it rejects: an accepted manifest proves less.
+    #[test]
+    fn a_registry_rejects_manifests_that_would_classify_ambiguously() {
+        for (manifest, expected) in [
+            ("", "at least one [[kind]] rule is required"),
+            (
+                "[[kind]]\nid = \"a\"\nfamily = \"code\"\n[[kind]]\nid = \"a\"\nfamily = \"code\"\n",
+                "duplicate rule id",
+            ),
+            ("[[kind]]\nid = \"a\"\nfamily = \"pictures\"\n", "invalid family"),
+            (
+                "[[kind]]\nid = \"a\"\nfamily = \"code\"\nextensions = [\"q\"]\n[[kind]]\nid = \"b\"\nfamily = \"data\"\nextensions = [\"q\"]\n",
+                "is assigned to both",
+            ),
+            ("[[kind]]\nid = \"A\"\nfamily = \"code\"\n", "invalid rule id"),
+            (
+                "[[kind]]\nid = \"a\"\nfamily = \"code\"\nextensions = [\".q\"]\n",
+                "invalid extension",
+            ),
+            ("id = \"a\"\n", "field appears before [[kind]]"),
+            ("[[kind]]\nid = a\n", "expected a quoted string"),
+        ] {
+            let error =
+                TypeRegistry::from_manifest(manifest).expect_err("this manifest must be rejected");
+            let message = error.to_string();
+            assert!(message.contains(expected), "{message:?} should mention {expected:?}");
+        }
+    }
+
+    /// Supplied rules classify, and are a different registry by identity.
+    #[test]
+    fn supplied_rules_replace_the_compiled_taxonomy() {
+        let registry = TypeRegistry::from_manifest(
+            "[[kind]]\nid = \"notes\"\nfamily = \"prose\"\nextensions = [\"rs\"]\n",
+        )
+        .expect("a minimal manifest");
+
+        let ours = classify_with(&registry, Path::new("main.rs"), None);
+        assert_eq!(ours.file_type.as_str(), "notes");
+        assert_eq!(ours.family, ContentFamily::Prose);
+
+        // The compiled default is untouched by another registry existing.
+        assert_eq!(classify_path(Path::new("main.rs")).file_type.as_str(), "rust");
+
+        // A type the supplied rules do not name falls to unknown rather than to the
+        // default's answer: a registry is the whole taxonomy, not an overlay on one.
+        assert_eq!(
+            classify_with(&registry, Path::new("a.py"), None).source,
+            DetectionSource::Unknown
+        );
+        assert_ne!(
+            registry.fingerprint(),
+            type_rule_fingerprint(),
+            "different rules must invalidate a snapshot taken under the others"
+        );
     }
 
     /// A name that is not valid UTF-8 must classify as unknown, as it did when the tier

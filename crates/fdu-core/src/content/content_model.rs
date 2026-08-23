@@ -227,8 +227,12 @@ pub struct ContentProvenance {
 }
 
 impl ContentProvenance {
-    /// Resolve analyzer dialects implied by a request.
-    pub fn for_request(request: AnalysisRequest) -> Self {
+    /// Resolve analyzer dialects implied by a request, under a given set of type rules.
+    ///
+    /// The fingerprint is passed rather than read from a global: a caller may run two
+    /// indexes under different taxonomies in one process, and a record must record the
+    /// rules that actually produced it.
+    pub fn for_request(request: AnalysisRequest, type_rules_fingerprint: u64) -> Self {
         const VERSION_ONE: AnalyzerVersion = AnalyzerVersion(1);
         let mut analyzers = Vec::new();
         if request.profile.is_enabled() {
@@ -242,7 +246,7 @@ impl ContentProvenance {
             analyzers.push((MARKDOWN_PROSE, VERSION_ONE));
         }
         Self {
-            type_rules_fingerprint: crate::classify::type_rule_fingerprint(),
+            type_rules_fingerprint,
             options_fingerprint: request.options_fingerprint(),
             analyzers,
         }
@@ -259,9 +263,13 @@ impl ContentProvenance {
     /// The type-rule fingerprint still has to match exactly: a classification change can
     /// move a file between families, which invalidates the metrics themselves rather
     /// than merely how they are labelled.
-    pub fn satisfies(&self, stored: AnalysisSet, wanted: AnalysisSet) -> bool {
-        self.type_rules_fingerprint == crate::classify::type_rule_fingerprint()
-            && stored.contains(wanted)
+    pub fn satisfies(
+        &self,
+        stored: AnalysisSet,
+        wanted: AnalysisSet,
+        type_rules_fingerprint: u64,
+    ) -> bool {
+        self.type_rules_fingerprint == type_rules_fingerprint && stored.contains(wanted)
     }
 }
 

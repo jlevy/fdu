@@ -399,6 +399,13 @@ pub struct Index {
     free_ext_ids: Vec<ExtId>,
     /// Sparse derived-data tier, allocated only after analysis is enabled.
     content: Option<Box<ContentIndex>>,
+    /// File-type rules this index classifies against.
+    ///
+    /// Held rather than reached for globally, because a caller may run two indexes under
+    /// different taxonomies in one process. It must agree with `scope`'s type-rule
+    /// fingerprint: an index that classified under one set of rules while claiming
+    /// another would serve a snapshot that is wrong in a way nothing checks.
+    types: std::sync::Arc<crate::classify::TypeRegistry>,
     freshness_epoch: u64,
     freshness_marks: BTreeMap<PathBuf, FreshnessMark>,
 }
@@ -706,7 +713,28 @@ impl Index {
             ext_refcounts: Vec::new(),
             free_ext_ids: Vec::new(),
             content: None,
+            types: crate::classify::TypeRegistry::compiled().clone(),
         }
+    }
+
+    /// Adopt the file-type rules this index is being built under.
+    ///
+    /// Taken from the scan config so the rules and the scope's fingerprint of them are
+    /// established together; defaulting one and setting the other is how they come apart.
+    #[must_use]
+    pub fn with_types(mut self, types: std::sync::Arc<crate::classify::TypeRegistry>) -> Self {
+        self.types = types;
+        self
+    }
+
+    /// The file-type rules this index classifies against.
+    pub fn types(&self) -> &std::sync::Arc<crate::classify::TypeRegistry> {
+        &self.types
+    }
+
+    /// Classify one relative path under this index's rules, without opening the file.
+    pub fn classify(&self, relative_path: &Path) -> crate::classify::Classification {
+        crate::classify::classify_with(&self.types, relative_path, None)
     }
 
     #[cfg(test)]
@@ -1167,9 +1195,10 @@ impl Index {
         if !request.profile.is_enabled() {
             return;
         }
-        self.content
-            .get_or_insert_with(|| Box::new(ContentIndex::default()))
-            .prepare(request.profile, crate::content::ContentProvenance::for_request(request));
+        self.content.get_or_insert_with(|| Box::new(ContentIndex::default())).prepare(
+            request.profile,
+            crate::content::ContentProvenance::for_request(request, self.types.fingerprint()),
+        );
     }
 
     /// Capture every regular-file analysis candidate without retaining a lock or entry
@@ -1196,7 +1225,7 @@ impl Index {
                     entry_id: id,
                     revision: entry.revision,
                     absolute_path: self.root_path.join(&relative_path),
-                    classification: crate::classify::classify_path(&relative_path),
+                    classification: self.classify(&relative_path),
                     relative_path,
                     attrs: entry.attrs,
                     profile,
@@ -1217,7 +1246,11 @@ impl Index {
                     .and_then(|content| content.file(&candidate.relative_path))
                     .is_none_or(|record| {
                         record.fingerprint != candidate.attrs.fingerprint()
-                            || !record.provenance.satisfies(record.profile, request.profile)
+                            || !record.provenance.satisfies(
+                                record.profile,
+                                request.profile,
+                                self.types.fingerprint(),
+                            )
                     })
             })
             .collect()
@@ -1233,7 +1266,7 @@ impl Index {
         if entry.kind != EntryKind::File
             || entry.revision != candidate.revision
             || entry.attrs.fingerprint() != candidate.attrs.fingerprint()
-            || crate::classify::classify_path(&candidate.relative_path) != candidate.classification
+            || self.classify(&candidate.relative_path) != candidate.classification
         {
             return AnalysisApplyOutcome::Stale;
         }
@@ -3371,10 +3404,10 @@ mod tests {
             fingerprint: candidate.attrs.fingerprint(),
             bytes: candidate.attrs.size,
             profile: candidate.profile,
-            provenance: ContentProvenance::for_request(AnalysisRequest {
-                profile: candidate.profile,
-                ..AnalysisRequest::default()
-            }),
+            provenance: ContentProvenance::for_request(
+                AnalysisRequest { profile: candidate.profile, ..AnalysisRequest::default() },
+                crate::classify::type_rule_fingerprint(),
+            ),
             metrics: MetricValues {
                 physical_lines: 2,
                 nonblank_lines: 2,

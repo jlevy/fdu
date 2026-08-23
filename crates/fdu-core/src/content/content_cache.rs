@@ -124,7 +124,8 @@ pub fn load_content_cache(
         return Ok(ContentCacheLoad::default());
     }
     let image = fs::read(path).map_err(|error| Error::io(path, error))?;
-    let Some(records) = parse(&image, index.root_path(), request) else {
+    let Some(records) = parse(&image, index.root_path(), request, index.types().fingerprint())
+    else {
         return Ok(ContentCacheLoad::default());
     };
     index.prepare_content_analysis(request);
@@ -203,6 +204,7 @@ fn parse(
     image: &[u8],
     expected_root: &Path,
     request: AnalysisRequest,
+    type_rules_fingerprint: u64,
 ) -> Option<Vec<(PathBuf, FileAnalysis)>> {
     let payload = integrity_payload(image)?;
     let mut reader = Reader::new(payload.get(MAGIC.len()..)?);
@@ -215,7 +217,7 @@ fn parse(
         options_fingerprint: super::OptionsFingerprint(reader.u64()?),
         analyzers: read_analyzers(&mut reader)?,
     };
-    if !provenance.satisfies(profile, request.profile) {
+    if !provenance.satisfies(profile, request.profile, type_rules_fingerprint) {
         return None;
     }
     if reader.os_string()?.as_os_str() != expected_root.as_os_str() {

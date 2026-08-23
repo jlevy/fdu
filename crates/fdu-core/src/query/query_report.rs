@@ -19,9 +19,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-use crate::classify::{
-    ContentFamily, DetectionConfidence, DetectionSource, classify_path, ext_bucket,
-};
+use crate::classify::{ContentFamily, DetectionConfidence, DetectionSource, ext_bucket};
 use crate::content::{
     AnalysisSet, ContentIndex, ContentProvenance, CoverageReason, LogicalWordStats, MetricValues,
 };
@@ -1040,7 +1038,7 @@ fn metric_summary(
     for file in files.into_iter().filter(|row| row.kind == EntryKind::File) {
         let cached = index.content().and_then(|content| content.file(&file.path));
         let classification = cached
-            .map_or_else(|| classify_path(&file.path), |record| record.classification.clone());
+            .map_or_else(|| index.classify(&file.path), |record| record.classification.clone());
         let included = match view {
             ViewSpec::Languages => classification.family == ContentFamily::Code,
             ViewSpec::Documents => {
