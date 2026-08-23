@@ -193,29 +193,40 @@ impl ContentIndex {
     pub(crate) fn invalidate(&mut self, path: &Path) {
         // The record at `path` itself, if it is a file, plus everything beneath it if it
         // is a directory: in byte order those are `path` and then the contiguous run of
-        // keys that begin with `path` and a separator. The root (an empty path) has no
-        // separator form and owns every record.
+        // keys that begin with `path` and a separator. Windows recognises two separators
+        // and a relative path may carry either, so each one the platform accepts gets its
+        // own run; they cannot overlap. The root (an empty path) has no separator form
+        // and owns every record.
         let mut removed: Vec<(PathBuf, FileAnalysis)> = Vec::new();
         if let Some((key, analysis)) = self.files.get_key_value(path_bytes(path)) {
             removed.push((key.0.clone(), analysis.clone()));
         }
-        let prefix: Vec<u8> = if path.as_os_str().is_empty() {
-            Vec::new()
+        let prefixes: Vec<Vec<u8>> = if path.as_os_str().is_empty() {
+            vec![Vec::new()]
         } else {
-            let mut prefix = path_bytes(path).to_vec();
-            prefix.push(std::path::MAIN_SEPARATOR as u8);
-            prefix
+            b"/\\"
+                .iter()
+                .copied()
+                .filter(|separator| std::path::is_separator(char::from(*separator)))
+                .map(|separator| {
+                    let mut prefix = path_bytes(path).to_vec();
+                    prefix.push(separator);
+                    prefix
+                })
+                .collect()
         };
-        removed.extend(
-            self.files
-                .range::<[u8], _>((
-                    std::ops::Bound::Included(prefix.as_slice()),
-                    std::ops::Bound::Unbounded,
-                ))
-                .take_while(|(key, _)| key.bytes().starts_with(&prefix))
-                .filter(|(key, _)| key.0 != path)
-                .map(|(key, analysis)| (key.0.clone(), analysis.clone())),
-        );
+        for prefix in prefixes {
+            removed.extend(
+                self.files
+                    .range::<[u8], _>((
+                        std::ops::Bound::Included(prefix.as_slice()),
+                        std::ops::Bound::Unbounded,
+                    ))
+                    .take_while(|(key, _)| key.bytes().starts_with(&prefix))
+                    .filter(|(key, _)| key.0 != path)
+                    .map(|(key, analysis)| (key.0.clone(), analysis.clone())),
+            );
+        }
         for (candidate, analysis) in removed {
             self.files.remove(path_bytes(&candidate));
             self.merge_ancestors(&candidate, &analysis, false);
@@ -316,18 +327,29 @@ mod tests {
         }
         assert_eq!(index.len(), 5);
 
+        // On Windows a relative path may carry either separator; `src\\c.rs` is beneath
+        // `src` there and is a file named `src\\c.rs` at the root everywhere else, which
+        // is exactly what `Path::starts_with` would have said too.
+        let other = PathBuf::from("src\\c.rs");
+        index.commit(other.clone(), analysis("src/c.rs", 1));
+        let beneath = other.starts_with("src");
+
         index.invalidate(Path::new("src"));
-        assert_eq!(index.len(), 3);
+        assert_eq!(index.len(), if beneath { 3 } else { 4 });
+        assert_eq!(index.file(&other).is_none(), beneath);
         assert!(index.file(Path::new("src/a.rs")).is_none());
         assert!(index.file(Path::new("src/deep/b.rs")).is_none());
         assert!(index.file(Path::new("src-extra/a.rs")).is_some());
         assert!(index.file(Path::new("src2/b.rs")).is_some());
         assert!(index.file(Path::new("srcfile")).is_some());
-        assert_eq!(index.rollup(Path::new("")).expect("root").total.files, 3);
+        assert_eq!(
+            index.rollup(Path::new("")).expect("root").total.files,
+            if beneath { 3 } else { 4 }
+        );
         assert!(index.rollup(Path::new("src")).is_none());
 
         index.invalidate(Path::new("srcfile"));
-        assert_eq!(index.len(), 2);
+        assert_eq!(index.len(), if beneath { 2 } else { 3 });
         assert!(index.file(Path::new("srcfile")).is_none());
 
         index.invalidate(Path::new(""));
