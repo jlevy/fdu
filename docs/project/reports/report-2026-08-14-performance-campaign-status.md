@@ -401,6 +401,7 @@ The full protocol, including the accept rule and the hypothesis registry, is in
 | [Systems optimization research](../research/research-2026-08-14-systems-performance-optimization-rust.md) | The general problem, Rust-specific |
 | [Ecosystem survey](../research/research-2026-08-14-instrumentation-ecosystem-survey.md) | What the ecosystem already solves |
 | [Structural review](../research/research-2026-08-14-structural-performance-review.md) | What 30 hypotheses had in common, and missed |
+| [Metadata-walk physics](../research/research-2026-08-23-metadata-walk-physics.md) | The measured floor for this workload, and every tier and peer read against it |
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.
