@@ -180,6 +180,13 @@ $defs:
         description: Candidate median, same unit.
         title: Candidate Median
         type: number
+      candidate_p95_over_median:
+        anyOf:
+        - type: number
+        - type: 'null'
+        default: null
+        description: Candidate's tail spread, same unit and same caveat. The index tier measured 3.3x on a quiet host while its median moved 1.04x, so a change can halve the wait a user notices and register as nothing here, or the reverse. Campaign 2's structural experiment pre-registers a target on it.
+        title: Candidate P95 Over Median
       change_pct:
         description: Paired median change, negative meaning the candidate is faster.
         title: Change Pct
@@ -207,6 +214,13 @@ $defs:
         description: Control median, in the metric's own unit.
         title: Control Median
         type: number
+      control_p95_over_median:
+        anyOf:
+        - type: number
+        - type: 'null'
+        default: null
+        description: "Control's right tail as a multiple of its own median: what a user waits through on a bad run, which no median can show. Optional because every artifact recorded before the field existed has none, not because a run may decline to report it."
+        title: Control P95 Over Median
       direction:
         default: unknown
         description: Which way the evidence points, separate from whether we accept it.
@@ -594,4 +608,4 @@ title: Experiment
 type: object
 x-softschema:
   contract: fdu.performance:Experiment/v1
-  schema_sha256: b5d89d270c318f39e6359624019b25b6a71414e4a5662c776e8dccff8858ec1e
+  schema_sha256: 3a1d6234571cad843856c7839255532f3a7d21c01c5a55c0d93fcc83ddb9724f

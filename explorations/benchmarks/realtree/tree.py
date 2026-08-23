@@ -173,6 +173,44 @@ def compare(current: Dict[str, Any], baseline: Dict[str, Any]) -> List[str]:
     return reasons
 
 
+def probe_tallies_agree(fingerprint_document: Dict[str, Any], summary: Any) -> Optional[str]:
+    """The oracle for a tier that retains no index, and so has no digest to compare.
+
+    :func:`probe_agrees` checks nine fields including ``engine_digest``, a multiset hash
+    over every retained entry. The aggregate tier retains nothing, so that check is not
+    merely unavailable -- it is the wrong question. What such a tier can be held to is
+    that the five numbers it exists to produce match an independent walk, which is
+    exactly the check the tool comparison already applies to third-party walkers.
+
+    Weaker than the digest, and the difference is worth stating: two trees with the same
+    five tallies and different contents would pass here and fail there. That is the
+    price of a tier that keeps nothing, not a relaxation of the rule -- the alternative
+    on offer was no oracle at all, which is how exp-043 and exp-044 were decided.
+
+    ``dirs`` carries the one offset in the contract: an fdu summary describes the root's
+    descendants while the fingerprint counts the root itself.
+    """
+    if not isinstance(summary, dict):
+        return "probe emitted no summary to check against the tallies oracle"
+    counts = fingerprint_document["counts"]
+    expected = {
+        "dirs": counts["directories"] - 1,
+        "files": counts["files"],
+        "apparent_bytes": fingerprint_document["sizes"]["apparent_bytes"],
+        "allocated_bytes": fingerprint_document["sizes"]["allocated_bytes"],
+        "newest_file_mtime_ns": fingerprint_document["newest_file_mtime_ns"],
+    }
+    for field, want in expected.items():
+        got = summary.get(field)
+        if got != want:
+            return f"probe {field}={got!r} disagrees with tallies oracle {want!r}"
+    # A tier with no index must not claim one. Silence here would let a future mode
+    # regress into reporting a stale digest and still pass.
+    if summary.get("engine_digest") is not None:
+        return "a tier that retains no index reported an engine digest"
+    return None
+
+
 def probe_agrees(fingerprint_document: Dict[str, Any], summary: Any) -> Optional[str]:
     """Return why a probe summary disagrees with the oracle, or ``None`` if it does not.
 
