@@ -69,15 +69,13 @@ Each one has caught a real mistake.
 
 6. **Fingerprint each subject you will measure on.** The label must be the nominated
    label, because the artifact records it and the ledger groups by it.
+   The paths live only in the gitignored nominations file, so read them from there
+   rather than typing them anywhere a commit could pick them up:
 
    ```shell
-   make perf-baseline PERF_TREE=$HOME/.rustup PERF_LABEL=rustup-toolchains
-   make perf-baseline PERF_TREE=$HOME/wrk/github/fdu/benchmarks/corpus/realtree/metabrowser PERF_LABEL=metabrowser-clone
-   make perf-baseline PERF_TREE=/System/Library/PrivateFrameworks PERF_LABEL=system-private-frameworks
+   python3 -c 'import json;[print(s["label"],s["path"]) for s in json.load(open("explorations/benchmarks/subjects.local.json"))]' \
+     | while read -r label path; do make perf-baseline PERF_TREE="${path/#\~/$HOME}" PERF_LABEL="$label"; done
    ```
-
-   The paths are this host’s; they are in the gitignored
-   `explorations/benchmarks/subjects.local.json` and nowhere else in the repository.
 
 ## One Round
 
