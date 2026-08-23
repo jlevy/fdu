@@ -508,6 +508,10 @@ class IdentifierCollisionTests(unittest.TestCase):
         self.assertEqual(summary.check_identifiers(experiments), [])
 
     def test_one_number_under_two_spellings_warns(self) -> None:
+        # The real case that prompted this check, kept as the fixture. It no longer
+        # describes the committed record: exp-059's local `H87-fixed-worker-knee` was
+        # renumbered to H96 and exp-056/057/058's `H86-*` to H97-H99, so the ledger now
+        # generates warning-free. The warning is what caught them.
         experiments = [
             self._experiment("exp-059", "fixed worker knee", ["H87-fixed-worker-knee"]),
             self._experiment("exp-063", "share the index with the writer", ["H87"]),
