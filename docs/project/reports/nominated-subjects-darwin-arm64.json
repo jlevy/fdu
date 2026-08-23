@@ -1,0 +1,76 @@
+{
+ "characters_required": 3,
+ "host": {
+  "arch": "arm64",
+  "release": "25.5.0",
+  "system": "Darwin",
+  "virtualization": "bare-metal"
+ },
+ "schema": "fdu-nominated-subjects-v1",
+ "subjects": [
+  {
+   "allocated_bytes": 152190976,
+   "apparent_bytes": 140254892,
+   "character": "package-cache",
+   "directories": 1231,
+   "engine_digest": "b58770af5a737a53167e838189172b65a187f2151e1dba360b95796ec9170516",
+   "entries": 5838,
+   "files": 4607,
+   "label": "cargo-registry-src",
+   "max_depth": 10,
+   "provenance": "The cargo registry source cache, populated by cargo fetch over the lockfiles this machine has built. Shape depends on which crates those lockfiles pull, so it is not a recipe another machine can follow. Kept as the small screening subject for smoke runs.",
+   "reconstructible": false,
+   "root_id": "0fc8126bf6ad20b7e7fd34c8419abf6aac0521d5877fcbe6b2472316e07dc158",
+   "sparse_ratio": 0.92,
+   "symlinks": 0
+  },
+  {
+   "allocated_bytes": 1230254080,
+   "apparent_bytes": 1085218928,
+   "character": "source-checkout",
+   "directories": 7350,
+   "engine_digest": "f7150a975da1a887f4687731f5554b3647fbae0885d15999af5c4526274910e4",
+   "entries": 60089,
+   "files": 52717,
+   "label": "metabrowser-clone",
+   "max_depth": 19,
+   "provenance": "A clone of github.com/jlevy/metabrowser at 433fb6e retained as the loop's base tree, with the node_modules, .venv and .claude worktree state left from its use as a workspace. The clone is reproducible; the workspace state on top of it is not, so the shape is not.",
+   "reconstructible": false,
+   "root_id": "dbd79ed9c898f7a2f66530cd95bb61cab88e798375134b86c77ece761de580a9",
+   "sparse_ratio": 0.88,
+   "symlinks": 22
+  },
+  {
+   "allocated_bytes": 5420306432,
+   "apparent_bytes": 4900108867,
+   "character": "package-cache",
+   "directories": 4956,
+   "engine_digest": "fa9b471063e3ffc70ade7d188d8416f9dfdd99f5bb525a74611203aa7681bc8e",
+   "entries": 175191,
+   "files": 170235,
+   "label": "rustup-toolchains",
+   "max_depth": 16,
+   "provenance": "The rustup toolchain store for this machine's installed toolchains. Shape depends on which toolchains and targets are installed, so it is not a recipe another machine can follow to the same tree.",
+   "reconstructible": false,
+   "root_id": "36ce9b22af9a6164721fc2d04580d7da220ffb0de00e0a1c0cac4fd9e9cc21b6",
+   "sparse_ratio": 0.9,
+   "symlinks": 0
+  },
+  {
+   "allocated_bytes": 3910119424,
+   "apparent_bytes": 5752378316,
+   "character": "system-prefix",
+   "directories": 55256,
+   "engine_digest": "2b2b61b282c8ef69981f2b6ddbf7d98264c03c7f19147bb34ed619bc9d749023",
+   "entries": 158705,
+   "files": 96542,
+   "label": "system-private-frameworks",
+   "max_depth": 14,
+   "provenance": "The sealed macOS system volume's private frameworks, read-only and identical on every Mac running the same OS build (Darwin 25.5.0 here). Reconstructible by installing that build.",
+   "reconstructible": true,
+   "root_id": "b718281f3051a0ed5b4fc59d83614845f67e17999095cf2d837a0c551e24869c",
+   "sparse_ratio": 1.47,
+   "symlinks": 6907
+  }
+ ]
+}

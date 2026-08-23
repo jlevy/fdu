@@ -470,7 +470,11 @@ perf-compare-tools:
 # here is redacted and committable.
 #
 # Not in `check`: it walks trees only this machine has.
-PERF_SUBJECTS ?= docs/project/reports/nominated-subjects.json
+#
+# One document per host class, because `root_id` hashes an absolute path and a set is a
+# fact about one machine: a Linux host running this must not overwrite the macOS set.
+PERF_HOST_CLASS := $(shell uname -s | tr '[:upper:]' '[:lower:]')-$(shell uname -m)
+PERF_SUBJECTS ?= docs/project/reports/nominated-subjects-$(PERF_HOST_CLASS).json
 
 perf-subjects:
 	$(PERF_RUN) subjects --out $(PERF_SUBJECTS)

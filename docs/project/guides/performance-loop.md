@@ -260,12 +260,23 @@ The document `perf-subjects` writes is redacted and committable: labels, charact
 shapes, `root_id`s and provenance, which is everything a reader needs to know what a
 claim rests on and nothing that says where it lives.
 
-A set can decide an accept when it spans at least three of `source-checkout`,
-`package-cache`, `system-prefix` and `media-tree`, and no subject it decides on is
-sparse. A sparse tree is a generated tree wearing a real one’s clothes whatever its
-provenance says: reading a hole costs nothing, which is precisely the property that
-inflated exp-064’s cold figure from −2.38% to −13.40%. Below that bar a set still
-screens; it just cannot decide.
+Two rules, answering two questions.
+A *subject* can decide an accept when it is dense and holds at least 50,000 entries —
+that is the campaign’s “at least one nominated real tree in the paired set”, and one
+such subject is enough.
+A sparse tree is a generated tree wearing a real one’s clothes whatever its provenance
+says: reading a hole costs nothing, which is precisely the property that inflated
+exp-064’s cold figure from −2.38% to −13.40%. A small tree fails differently: the
+smallest subject ever to resolve a verdict at the 3% gate on this record is 60k, and on
+a 5,838-entry tree the gate is a single millisecond of spawn jitter.
+Below either bar a subject still screens; it just cannot decide.
+A *set* can carry a ranking or transfer claim when its deciding subjects span at least
+three of `source-checkout`, `package-cache`, `system-prefix` and `media-tree` — one real
+tree retires a generated-corpus ranking and cannot establish a real-tree one.
+`perf-subjects` prints both verdicts, and says which subjects decide.
+
+Each host commits its own document, named by host class
+(`nominated-subjects-darwin-arm64.json`), because a set is a fact about one machine.
 
 Drift is expected — a nominated tree is somebody’s live working directory — and
 `perf-subjects-check` exists to make it visible rather than to forbid it.

@@ -165,12 +165,14 @@ Phases 0 and A–C are parallel where their beads say so; D and E follow their g
 - [x] `fdu-lk9u` — nominate the real-tree subject set.
   **Landed.** `make perf-subjects` observes a host’s nominated trees and writes a
   redacted, committable document; `make perf-subjects-check` reports drift.
-  A set may decide an accept once it spans three of four characters and no subject it
-  decides on is sparse; below that bar it screens.
+  A subject may decide an accept when it is dense and at least 50,000 entries; a set may
+  carry a ranking claim when its deciding subjects span three of four characters; below
+  either bar it screens.
   The nominations file holds absolute paths and is gitignored, so what is committed says
   what a claim rests on without saying where it lives.
   Each host nominates its own, because `root_id` hashes a path — this repository now
-  carries the Darwin/arm64 set.
+  carries the Darwin/arm64 set: a 60k source checkout, the 175k rustup store and the
+  159k sealed system frameworks decide, and a 5.8k cargo registry cache screens.
 - [ ] `fdu-33ri` — `make perf-floor`: run the floor spikes and the tiers across the
   nominated subjects and emit the ×floor table, the campaign’s scoreboard.
   **Now the largest gap, and it has a named obstacle rather than only a size.**

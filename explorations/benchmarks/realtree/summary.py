@@ -317,10 +317,16 @@ def _tail_spread(entry: Optional[Mapping[str, Any]]) -> List[str]:
     notable = [value for value in (control, candidate) if value is not None]
     if not notable or max(notable) < TAIL_SPREAD_THRESHOLD:
         return []
+
+    def _ratio(value: Optional[float]) -> str:
+        # One arm can lack the figure -- a zero median yields none -- and a missing
+        # number should read as missing, not take the line down with it.
+        return f"{value:.2f}x" if value is not None else "unrecorded"
+
     return [
         "",
-        f"Wall-time tail: control p95 is {control:.2f}x its median and candidate "
-        f"{candidate:.2f}x. The verdict above is on the median; a reader deciding "
+        f"Wall-time tail: control p95 is {_ratio(control)} its median and candidate "
+        f"{_ratio(candidate)}. The verdict above is on the median; a reader deciding "
         "whether this is faster to *use* should read the tail beside it.",
     ]
 

@@ -74,6 +74,17 @@ MINIMUM_CHARACTERS = 3
 #: real subject however it was obtained. Shared with the ledger's rendering rule.
 SPARSE_RATIO_LIMIT = 2.0
 
+#: Entries below which a subject screens but cannot decide.
+#:
+#: The accept gate is 3% on a paired median, and a subject has to be large enough for
+#: 3% to be a property of the code rather than of process spawn and scheduler jitter.
+#: The smallest subject on this record to resolve a verdict at that gate is the 60k
+#: tree (exp-007 at 20 trials, exp-010 at -0.03% [-1.37%, +1.64%]); a 5,838-entry tree
+#: runs in about 33 ms, of which 5 ms is spawn, so the gate there is a single
+#: millisecond of noise. Fifty thousand is that floor with a little room beneath the
+#: one subject known to work, not a measured threshold.
+MINIMUM_DECIDING_ENTRIES = 50_000
+
 
 class SubjectError(RuntimeError):
     """A nomination could not be read, or a nominated tree could not be observed."""
@@ -198,8 +209,28 @@ def _redact(nomination: Mapping[str, Any], fingerprint: Mapping[str, Any]) -> Di
     }
 
 
+def can_decide(subject: Mapping[str, Any]) -> bool:
+    """Whether one subject is fit to carry an accept decision on its own.
+
+    Dense and large enough: the two properties that separate a real subject from a
+    generated one wearing a real label, and a measurement from a coin toss.
+    """
+    ratio = subject.get("sparse_ratio")
+    if ratio is not None and ratio >= SPARSE_RATIO_LIMIT:
+        return False
+    return int(subject.get("entries") or 0) >= MINIMUM_DECIDING_ENTRIES
+
+
 def policy_gaps(document: Mapping[str, Any]) -> List[str]:
     """Why this set cannot yet decide an accept, or an empty list when it can.
+
+    Two rules, and they answer different questions. A *subject* decides an accept when
+    it is dense and at least :data:`MINIMUM_DECIDING_ENTRIES` -- that is the campaign's
+    "at least one nominated real tree in the paired set". A *set* carries a ranking or
+    transfer claim when its deciding subjects span :data:`MINIMUM_CHARACTERS`
+    characters -- one real tree retires a generated-corpus ranking and cannot establish
+    a real-tree one. The first is what an overnight run needs; the second is what a
+    peer claim needs, and it is reported separately by :func:`ranking_gaps`.
 
     Reported rather than raised: a host part-way through nominating should be told what
     is missing and still be able to use what it has for screening.
@@ -209,17 +240,10 @@ def policy_gaps(document: Mapping[str, Any]) -> List[str]:
     if not subjects:
         return ["the set is empty"]
 
-    characters = {str(subject.get("character")) for subject in subjects}
-    if len(characters) < MINIMUM_CHARACTERS:
-        absent = sorted(set(CHARACTERS) - characters)
-        gaps.append(
-            f"{len(characters)} of {MINIMUM_CHARACTERS} required characters present; "
-            f"still to nominate one of: {', '.join(absent)}"
-        )
-
     for subject in subjects:
         label = subject.get("label")
         ratio = subject.get("sparse_ratio")
+        entries = int(subject.get("entries") or 0)
         # A sparse tree is a generated tree wearing a real tree's clothes, whatever its
         # provenance says: reading a hole costs nothing, which is exactly the property
         # that flattered exp-064's cold figure by eleven points.
@@ -228,9 +252,50 @@ def policy_gaps(document: Mapping[str, Any]) -> List[str]:
                 f"{label} is {ratio}x sparse, so it screens but cannot decide: "
                 "reading a hole costs nothing and per-file work looks larger than it is"
             )
+        elif entries < MINIMUM_DECIDING_ENTRIES:
+            gaps.append(
+                f"{label} has {entries:,} entries, so it screens but cannot decide: "
+                f"below {MINIMUM_DECIDING_ENTRIES:,} the 3% gate is jitter, not code"
+            )
         if not str(subject.get("provenance") or "").strip():
             gaps.append(f"{label} records no provenance")
+
+    if not set_can_decide(document):
+        gaps.append(
+            "no subject can decide an accept; nominate one dense tree of at least "
+            f"{MINIMUM_DECIDING_ENTRIES:,} entries"
+        )
     return gaps
+
+
+def set_can_decide(document: Mapping[str, Any]) -> bool:
+    """The accept rule's real-subject requirement, as a yes or no.
+
+    One deciding subject is enough: the rule is "at least one nominated real tree in
+    the paired set". The per-subject notes :func:`policy_gaps` reports alongside are
+    what limits a set that passes, not what fails it.
+    """
+    return any(can_decide(subject) for subject in document.get("subjects") or [])
+
+
+def ranking_gaps(document: Mapping[str, Any]) -> List[str]:
+    """Why this set cannot yet carry a ranking or transfer claim.
+
+    Separate from :func:`policy_gaps` because the bar is different: an accept needs one
+    real tree, a claim that a result transfers -- or that fdu leads a peer -- needs real
+    trees that differ along the axes that decided every recorded transfer failure.
+    Only deciding subjects count, so three characters of small or sparse trees do not
+    add up to a claim.
+    """
+    deciding = [subject for subject in document.get("subjects") or [] if can_decide(subject)]
+    characters = {str(subject.get("character")) for subject in deciding}
+    if len(characters) >= MINIMUM_CHARACTERS:
+        return []
+    absent = sorted(set(CHARACTERS) - characters)
+    return [
+        f"{len(characters)} of {MINIMUM_CHARACTERS} required characters among deciding "
+        f"subjects; still to nominate one of: {', '.join(absent)}"
+    ]
 
 
 def drift(document: Mapping[str, Any], observed: Mapping[str, Any]) -> List[str]:
@@ -270,18 +335,26 @@ def render(document: Mapping[str, Any]) -> str:
     for subject in document.get("subjects") or []:
         ratio = subject.get("sparse_ratio")
         density = f", {ratio}x sparse" if ratio is not None and ratio >= SPARSE_RATIO_LIMIT else ""
+        role = "decides" if can_decide(subject) else "screens"
         lines.append(
             f"  {subject['label']:24s} {subject['character']:16s} "
-            f"{subject['entries']:>9,} entries, depth {subject['max_depth']}{density}"
+            f"{subject['entries']:>9,} entries, depth {subject['max_depth']}{density}  [{role}]"
         )
     gaps = policy_gaps(document)
-    if gaps:
-        lines.append("")
-        lines.append("this set screens but cannot decide an accept:")
-        lines.extend(f"  - {gap}" for gap in gaps)
-    else:
-        lines.append("")
+    lines.append("")
+    if set_can_decide(document):
         lines.append("this set satisfies the accept rule's real-subject requirement.")
+    else:
+        lines.append("this set screens but cannot decide an accept.")
+    if gaps:
+        lines.append("limits:")
+        lines.extend(f"  - {gap}" for gap in gaps)
+    ranking = ranking_gaps(document)
+    if ranking:
+        lines.append("it cannot yet carry a ranking or transfer claim:")
+        lines.extend(f"  - {gap}" for gap in ranking)
+    else:
+        lines.append("its deciding subjects span enough characters to carry a ranking claim.")
     return "\n".join(lines)
 
 

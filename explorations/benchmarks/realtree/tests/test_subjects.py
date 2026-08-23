@@ -23,9 +23,9 @@ def _subject(label: str, character: str, **overrides):
         "reconstructible": False,
         "root_id": "a" * 64,
         "engine_digest": "b" * 64,
-        "entries": 1000,
-        "directories": 100,
-        "files": 900,
+        "entries": 100_000,
+        "directories": 10_000,
+        "files": 90_000,
         "symlinks": 0,
         "apparent_bytes": 4096,
         "allocated_bytes": 4096,
@@ -54,21 +54,61 @@ class PolicyTests(unittest.TestCase):
         )
         self.assertEqual(subjects.policy_gaps(document), [])
 
-    def test_three_trees_of_one_character_cannot(self) -> None:
+    def test_one_deciding_tree_decides_an_accept(self) -> None:
+        """The campaign's rule is one nominated real tree per accept, not a spread."""
+        document = _document(_subject("cache", "package-cache"))
+        self.assertEqual(subjects.policy_gaps(document), [])
+
+    def test_three_trees_of_one_character_cannot_rank(self) -> None:
         """Count is not spread.
 
         Three package caches agree with each other about everything that made the
         recorded transfer failures transfer failures, so they are one subject measured
-        three times wearing three labels.
+        three times wearing three labels. They can decide an accept; they cannot say
+        that a result transfers or that fdu leads a peer.
         """
         document = _document(
             _subject("a", "package-cache"),
             _subject("b", "package-cache"),
             _subject("c", "package-cache"),
         )
-        gaps = subjects.policy_gaps(document)
+        self.assertEqual(subjects.policy_gaps(document), [])
+        gaps = subjects.ranking_gaps(document)
         self.assertTrue(gaps)
         self.assertIn("1 of 3 required characters", gaps[0])
+
+    def test_a_small_tree_screens_but_cannot_decide(self) -> None:
+        """Below the size floor the 3% gate is a millisecond of jitter.
+
+        A 5,838-entry tree runs in about 33 ms with 5 ms of spawn inside it; the
+        smallest subject ever to resolve a verdict on this record is 60k. Three such
+        trees spanning three characters satisfied the previous policy on paper, which
+        is how a set earns a status it cannot back.
+        """
+        document = _document(
+            _subject("src", "source-checkout", entries=5_838),
+            _subject("cache", "package-cache", entries=20_180),
+            _subject("prefix", "system-prefix", entries=48_000),
+        )
+        gaps = subjects.policy_gaps(document)
+        self.assertEqual(len([gap for gap in gaps if "screens but cannot decide" in gap]), 3)
+        self.assertTrue(any("no subject can decide an accept" in gap for gap in gaps))
+        self.assertFalse(subjects.set_can_decide(document))
+        self.assertFalse(subjects.can_decide(document["subjects"][0]))
+        self.assertTrue(subjects.can_decide(_subject("big", "package-cache")))
+
+    def test_small_trees_do_not_count_toward_a_ranking(self) -> None:
+        document = _document(
+            _subject("src", "source-checkout", entries=5_838),
+            _subject("cache", "package-cache"),
+            _subject("prefix", "system-prefix"),
+        )
+        self.assertEqual(subjects.policy_gaps(document)[0].split(" ")[0], "src")
+        self.assertTrue(subjects.set_can_decide(document))
+        gaps = subjects.ranking_gaps(document)
+        self.assertTrue(gaps)
+        self.assertIn("2 of 3 required characters", gaps[0])
+        self.assertIn("source-checkout", gaps[0])
 
     def test_a_sparse_tree_screens_but_cannot_decide(self) -> None:
         """The exp-064 failure, caught before it decides anything.
@@ -85,6 +125,11 @@ class PolicyTests(unittest.TestCase):
         gaps = subjects.policy_gaps(document)
         self.assertTrue(any("22.6x sparse" in gap for gap in gaps))
         self.assertTrue(any("screens but cannot decide" in gap for gap in gaps))
+        # The other two still decide, so the set as a whole does; the sparse one is
+        # excluded from the ranking spread rather than quietly counted.
+        self.assertFalse(any("no subject can decide" in gap for gap in gaps))
+        self.assertTrue(subjects.set_can_decide(document))
+        self.assertIn("2 of 3 required characters", subjects.ranking_gaps(document)[0])
 
     def test_a_subject_without_provenance_is_reported(self) -> None:
         document = _document(
@@ -108,11 +153,11 @@ class DriftTests(unittest.TestCase):
     def test_a_changed_tree_names_what_moved(self) -> None:
         before = _document(_subject("src", "source-checkout"))
         after = _document(
-            _subject("src", "source-checkout", engine_digest="c" * 64, entries=1200, files=1100)
+            _subject("src", "source-checkout", engine_digest="c" * 64, entries=120_000, files=110_000)
         )
         reasons = subjects.drift(before, after)
         self.assertEqual(len(reasons), 1)
-        self.assertIn("entries 1000 -> 1200", reasons[0])
+        self.assertIn("entries 100000 -> 120000", reasons[0])
 
     def test_a_tree_that_moved_house_is_not_the_same_subject(self) -> None:
         # root_id hashes the path, so a different one is a different tree wearing a
@@ -172,6 +217,19 @@ class NominationLoadingTests(unittest.TestCase):
         with self.assertRaises(subjects.SubjectError) as raised:
             subjects.load_nominations(Path("/nonexistent/subjects.local.json"))
         self.assertIn("gitignored", str(raised.exception))
+
+
+class RenderTests(unittest.TestCase):
+    def test_the_summary_says_which_subjects_decide(self) -> None:
+        document = _document(
+            _subject("big", "package-cache"),
+            _subject("small", "source-checkout", entries=5_838),
+        )
+        text = subjects.render(document)
+        self.assertIn("[decides]", text.splitlines()[1])
+        self.assertIn("[screens]", text.splitlines()[2])
+        self.assertIn("satisfies the accept rule", text)
+        self.assertIn("cannot yet carry a ranking", text)
 
 
 class RedactionTests(unittest.TestCase):
