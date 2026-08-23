@@ -136,6 +136,43 @@ def _tree_section(report: fdu.Report) -> fdu.TreeNode:
     raise AssertionError("the report has no tree section")
 
 
+def check_polling_is_selectable_for_filesystems_that_drop_events() -> None:
+    """A caller on a network or FUSE mount can ask for polling instead.
+
+    Those filesystems accept a native watch and then deliver nothing -- no error, and an
+    index that quietly stops tracking. Only the source of raw events changes: the same
+    coalescing and the same stat verification produce the same ops, more slowly.
+    """
+
+    root = Path(tempfile.mkdtemp(prefix="fdu-poll-"))
+    (root / "seed.txt").write_text("seed", encoding="utf-8")
+    index = fdu.open(root)
+
+    with index.watch(fdu.WatchOptions(interval=0.1, poll_interval=0.1)) as watch:
+        time.sleep(0.3)
+        (root / "polled.txt").write_text("hello", encoding="utf-8")
+        deadline = time.monotonic() + 30
+        seen = None
+        for batch in watch:
+            for change in batch:
+                if change.path == Path("polled.txt"):
+                    seen = change
+            if seen is not None or time.monotonic() > deadline:
+                break
+        assert seen is not None, "the poll backend must report the created file"
+        assert seen.kind is fdu.ChangeKind.UPSERT
+        assert seen.bytes == 5, "a polled event is still verified by stat"
+
+    # A non-positive interval is a busy restat loop, not a faster watch.
+    try:
+        fdu.WatchOptions(interval=0.1, poll_interval=0)
+    except ValueError as error:
+        assert "poll_interval" in str(error), error
+    else:
+        raise AssertionError("a zero poll_interval must be rejected")
+    fdu.clear_cache(root)
+
+
 def check_a_listing_carries_its_own_identity() -> None:
     """A listing row says what it is, so a consumer can drop its own classifier.
 
@@ -665,6 +702,7 @@ def main() -> None:
     check_supplied_type_rules_reach_the_answer()
     check_groups_answer_the_browsing_question()
     check_a_listing_carries_its_own_identity()
+    check_polling_is_selectable_for_filesystems_that_drop_events()
     check_a_bounded_tree_says_what_it_withheld()
     check_render_matches_the_cli(
         root, str(Path(sys.executable).with_name("fdu.exe" if os.name == "nt" else "fdu"))

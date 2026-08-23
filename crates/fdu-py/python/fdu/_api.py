@@ -369,6 +369,7 @@ class Index:
         selected = options if options is not None else WatchOptions()
         arguments = _query_kwargs(selected.query)
         arguments["interval"] = selected.interval
+        arguments["poll_interval"] = selected.poll_interval
         native = _call(
             self._native.watch,
             **arguments,

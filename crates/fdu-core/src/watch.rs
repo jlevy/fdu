@@ -35,7 +35,7 @@ use std::sync::mpsc::{Receiver, RecvTimeoutError, SyncSender, TrySendError, sync
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher as NotifyWatcher};
+use notify::{EventKind, RecursiveMode, Watcher as NotifyWatcher};
 
 use crate::engine_contract::{AppliedDelta, Error, InvalidateReason, Observation, Op, Result};
 use crate::scan;
@@ -73,6 +73,36 @@ pub struct WatchConfig {
     pub batch_path_capacity: usize,
     /// Maximum coalesced intents awaiting a consumer.
     pub intent_capacity: usize,
+    /// Where raw events come from.
+    pub backend: WatchBackend,
+}
+
+/// The source of a watch's raw filesystem events.
+///
+/// Explicit rather than detected. Auto-detection means reading the mount table and
+/// deciding which filesystem types are trustworthy, and being wrong in the quiet
+/// direction -- choosing native on a filesystem that drops events -- produces an index
+/// that is silently stale rather than one that is visibly slow. A caller that already
+/// knows what it mounted can say so; deciding for it is an open question, not a default.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum WatchBackend {
+    /// The platform's native notification API: `FSEvents`, inotify, or `ReadDirectoryChangesW`.
+    ///
+    /// What a local filesystem should use. Events arrive as they happen and an idle tree
+    /// costs nothing.
+    #[default]
+    Native,
+    /// Periodic restat of the whole tree.
+    ///
+    /// Network and FUSE filesystems accept a native watch and then deliver nothing, which
+    /// is the worst failure available: the watcher reports no error and the index quietly
+    /// stops tracking. Polling trades a fixed cost per interval for the guarantee that a
+    /// change is eventually seen.
+    Poll {
+        /// How often the tree is restatted. Latency is bounded by this, not by the
+        /// settle window.
+        interval: Duration,
+    },
 }
 
 impl Default for WatchConfig {
@@ -83,6 +113,7 @@ impl Default for WatchConfig {
             settle: Duration::from_millis(50),
             max_hold: Duration::from_millis(1600),
             relist_new_dirs: true,
+            backend: WatchBackend::Native,
             event_capacity: 4096,
             batch_path_capacity: 4096,
             intent_capacity: 16,
@@ -105,6 +136,13 @@ impl WatchConfig {
         {
             return Err(Error::UnsupportedScanConfig(
                 "watch durations and capacities exceed the supported nonzero bounds, or max_hold is less than settle",
+            ));
+        }
+        // A zero poll interval is a busy loop over the whole tree, which is not a faster
+        // watch but a slower one: the restat never finishes before the next begins.
+        if matches!(self.backend, WatchBackend::Poll { interval } if interval.is_zero()) {
+            return Err(Error::UnsupportedScanConfig(
+                "the poll backend needs a nonzero interval; polling continuously restats the tree without ever finishing",
             ));
         }
         Ok(())
@@ -145,7 +183,9 @@ pub struct Watcher {
     root: PathBuf,
     config: WatchConfig,
     /// `Option` only so [`Drop`] can release it before joining the worker.
-    inner: Option<RecommendedWatcher>,
+    /// Boxed because the backend is chosen at run time: `notify`'s recommended watcher
+    /// and its poller are different types implementing one trait.
+    inner: Option<Box<dyn NotifyWatcher + Send>>,
     intents: Receiver<CoalescedIntent>,
     control: Option<SyncSender<RawMessage>>,
     cancelled: Arc<AtomicBool>,
@@ -174,10 +214,19 @@ impl Watcher {
         let overflowed = Arc::new(AtomicBool::new(false));
         let callback_overflowed = Arc::clone(&overflowed);
 
-        let mut inner = notify::recommended_watcher(move |res| {
-            enqueue_raw(&raw_tx, &callback_overflowed, res);
-        })
-        .map_err(|e| notify_error(&root, e))?;
+        let handler = move |res| enqueue_raw(&raw_tx, &callback_overflowed, res);
+        let mut inner: Box<dyn NotifyWatcher + Send> = match config.backend {
+            WatchBackend::Native => {
+                Box::new(notify::recommended_watcher(handler).map_err(|e| notify_error(&root, e))?)
+            }
+            WatchBackend::Poll { interval } => Box::new(
+                notify::PollWatcher::new(
+                    handler,
+                    notify::Config::default().with_poll_interval(interval),
+                )
+                .map_err(|e| notify_error(&root, e))?,
+            ),
+        };
 
         inner.watch(&root, RecursiveMode::Recursive).map_err(|e| notify_error(&root, e))?;
 
@@ -655,6 +704,7 @@ fn relative_to(root: &Path, path: &Path) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::EntryKind;
     use notify::event::{CreateKind, Flag, MetadataKind, ModifyKind, RenameMode};
     use std::fs;
 
@@ -784,6 +834,59 @@ mod tests {
             )),
             "a created directory must escalate so its contents get listed, saw {ops:?}"
         );
+    }
+
+    /// The poll backend produces the same verified ops the native one does.
+    ///
+    /// The point of the seam: only the source of raw events changes. Coalescing, the stat
+    /// verification, and the delta path are the same code, so a caller on a filesystem
+    /// that drops native events gets the same answers more slowly rather than different
+    /// answers.
+    #[test]
+    fn the_poll_backend_reports_the_same_verified_ops() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let watcher = Watcher::new(
+            dir.path(),
+            WatchConfig {
+                backend: WatchBackend::Poll { interval: Duration::from_millis(50) },
+                ..WatchConfig::default()
+            },
+        )
+        .expect("poll watcher");
+
+        let created = dir.path().join("polled.txt");
+        fs::write(&created, b"hello").expect("write");
+
+        // Polling latency is the interval plus a restat of the tree, so the wait is
+        // generous: what is asserted is the op, not how fast it arrived.
+        let ops = wait_for(&watcher, Duration::from_secs(10), |ops| {
+            ops.iter().any(|op| op.path() == Path::new("polled.txt"))
+        });
+        let upsert = ops
+            .iter()
+            .find(|op| op.path() == Path::new("polled.txt"))
+            .expect("the poll backend must report the created file");
+        assert!(
+            matches!(upsert, Op::Upsert { kind, attrs, .. }
+                if *kind == EntryKind::File && attrs.size == 5),
+            "a polled event is still verified by stat before becoming an op: {upsert:?}"
+        );
+    }
+
+    /// A zero poll interval is a busy restat loop, not a faster watch.
+    #[test]
+    fn a_zero_poll_interval_is_rejected() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let Err(error) = Watcher::new(
+            dir.path(),
+            WatchConfig {
+                backend: WatchBackend::Poll { interval: Duration::ZERO },
+                ..WatchConfig::default()
+            },
+        ) else {
+            panic!("a zero interval must be rejected");
+        };
+        assert!(error.to_string().contains("nonzero interval"), "{error}");
     }
 
     #[test]

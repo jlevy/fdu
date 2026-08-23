@@ -491,6 +491,7 @@ impl PyIndex {
     #[pyo3(signature = (
         *,
         interval = 2.0,
+        poll_interval = None,
         views = None,
         include = None,
         exclude = None,
@@ -509,6 +510,7 @@ impl PyIndex {
     fn watch(
         &self,
         interval: f64,
+        poll_interval: Option<f64>,
         views: Option<Vec<String>>,
         include: Option<Vec<String>>,
         exclude: Option<Vec<String>>,
@@ -544,8 +546,20 @@ impl PyIndex {
         // The index is cloned into the session: a watcher owns its own handle, so closing
         // the feed cannot disturb the caller's index.
         let handle = IndexHandle::new(self.inner.snapshot().map_err(to_py_err)?);
-        let session = Session::new(handle, self.config.clone(), query, WatchConfig::default())
-            .map_err(to_py_err)?;
+        let backend = match poll_interval {
+            None => fdu_core::watch::WatchBackend::Native,
+            Some(seconds) if seconds > 0.0 => {
+                fdu_core::watch::WatchBackend::Poll { interval: Duration::from_secs_f64(seconds) }
+            }
+            Some(_) => {
+                return Err(PyValueError::new_err(
+                    "poll_interval must be positive; polling continuously restats the tree without ever finishing",
+                ));
+            }
+        };
+        let config = WatchConfig { backend, ..WatchConfig::default() };
+        let session =
+            Session::new(handle, self.config.clone(), query, config).map_err(to_py_err)?;
 
         Ok(PyWatch {
             session: Some(session),

@@ -299,10 +299,25 @@ class WatchOptions:
 
     interval: float = 2.0
     query: Query = field(default_factory=lambda: Query(views=(View.FILES,)))
+    poll_interval: float | None = None
+    """Restat the tree every this many seconds instead of using native notifications.
+
+    Network and FUSE filesystems accept a native watch and then deliver nothing, which is
+    the worst failure available: no error is reported and the index quietly stops
+    tracking. Polling trades a fixed cost per interval for the guarantee that a change is
+    eventually seen, and change latency is then bounded by this rather than by
+    :attr:`interval`.
+
+    ``None`` uses the platform's native API, which is right for a local filesystem.
+    Explicit rather than detected: choosing native on a filesystem that drops events
+    fails silently, so the caller who knows what it mounted decides.
+    """
 
     def __post_init__(self) -> None:
         if self.interval <= 0:
             raise ValueError("interval must be positive")
+        if self.poll_interval is not None and self.poll_interval <= 0:
+            raise ValueError("poll_interval must be positive")
 
 
 @dataclass(frozen=True, slots=True)
