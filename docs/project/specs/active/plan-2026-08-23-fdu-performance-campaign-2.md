@@ -170,6 +170,18 @@ Phases 0 and A–C are parallel where their beads say so; D and E follow their g
   and 46% of its allocation events).
 - [ ] `fdu-c65j` — adopt samply so Linux profiling stops depending on callgrind’s
   serialized world.
+- [ ] `fdu-mx1w` — a ledger job for the **default command**, `fdu <dir>`: scan, index,
+  rendered tree, snapshot write.
+  None of the 66 artifacts measures it.
+  `cold-scan-index`, the proxy every cumulative checkpoint uses, is the probe’s walk
+  plus index build and excludes both the render and the write — and the cache-layers
+  plan already priced that write at roughly a third of a default run on `/usr`. Two
+  defects found in the PR #38 review live in exactly that blind spot and cannot be
+  judged without this job: `fdu-2um8` (the cold-scan path rewrites an identical snapshot
+  on every run) and `fdu-n75m` (the rendered report is withheld until the write, its
+  `F_FULLFSYNC` and the index teardown complete).
+  The `fdu-default-tree` contract already exists; nothing has ever been recorded through
+  it.
 
 ### Phase A: Constants with confirmed mechanisms (tuning track)
 
@@ -299,7 +311,7 @@ strategy and the record is visible in review.
   completion
 - Beads: `fdu-xde5`, `fdu-tyjx`, `fdu-lk9u`, `fdu-33ri`, `fdu-9ydj`, `fdu-tk1b`,
   `fdu-926e`, `fdu-78q6`, `fdu-yr23`, `fdu-pdra`, `fdu-h7sw`, `fdu-sk7v`, `fdu-lf3v`,
-  `fdu-9716`, `fdu-ow8y`
+  `fdu-9716`, `fdu-ow8y`, `fdu-mx1w`, `fdu-2um8`, `fdu-n75m`
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.
