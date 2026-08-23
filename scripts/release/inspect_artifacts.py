@@ -93,9 +93,11 @@ def inspect_sdist(path: Path, version: str) -> None:
         f"{prefix}README.md",
         f"{prefix}pyproject.toml",
         f"{prefix}python/fdu/__init__.py",
+        f"{prefix}python/fdu/aio.py",
         f"{prefix}python/fdu/_native.pyi",
         f"{prefix}python/fdu/py.typed",
         f"{prefix}crates/fdu-py/examples/rollup_adapter.py",
+        f"{prefix}crates/fdu-py/examples/sse_resume.py",
     }
     missing = sorted(required - names)
     require(not missing, f"{path.name}: missing source files: {', '.join(missing)}")

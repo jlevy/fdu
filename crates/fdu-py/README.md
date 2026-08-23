@@ -50,10 +50,26 @@ unrelated Python threads and independent indexes can progress.
 Content analysis streams every eligible file through EOF. Binary data, invalid UTF-8,
 and unsupported SLOC languages remain visible as coverage without making the operation
 partial; I/O failures and files changed during a read remain operational errors.
-One `Index` object still has `PyO3` runtime borrow exclusion: an overlapping call on
-that same object is rejected rather than becoming an unsynchronized shared-index access.
+One `Index` serves concurrent readers, including while a refresh is running: the
+reconciliation takes the engine’s write lock per wave rather than for the whole sweep,
+so a reader is served between waves instead of rejected for the duration.
+A server can hold one index and answer requests from a thread pool while it updates.
+
 The wheel enables the optional watch dependency and exposes `Index.watch()` as a
 closable, event-driven change feed.
+A watch is thread-affine: it belongs to the thread that opened it and is not shareable,
+which the binding enforces rather than merely documents.
+For an asyncio server, `fdu.aio.watch_batches(index, options)` is the handoff -- a
+worker thread that opens the watch, drains it, and closes it, yielding the same typed
+batches on the event loop with real backpressure.
+A live UI should set `WatchOptions.interval` near its frame budget: the interval bounds
+how long one pull blocks before returning empty-handed, not how quickly a change is
+seen. `WatchOptions.poll_interval` selects periodic restat instead, for network and FUSE
+mounts that accept a native watch and then deliver nothing.
+`examples/sse_resume.py` maps `Index.since(clock)` and `ChangeSet.truncated` onto
+Server-Sent Events `Last-Event-ID` resume, including the branch that matters: a client
+further behind than the journal can replay must resync rather than be sent an incomplete
+set it has no way to detect.
 Content analysis itself remains one-shot: refresh reanalyzes after metadata
 reconciliation, while a watch feed reports metadata changes.
 

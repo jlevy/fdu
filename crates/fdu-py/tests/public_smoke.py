@@ -8,6 +8,7 @@ source-tree imports.
 from __future__ import annotations
 
 import ast
+import asyncio
 import importlib.util
 import json
 import os
@@ -134,6 +135,92 @@ def _tree_section(report: fdu.Report) -> fdu.TreeNode:
         if isinstance(section, fdu.TreeSection):
             return section.tree
     raise AssertionError("the report has no tree section")
+
+
+def check_the_event_loop_adapter_delivers_the_same_batches() -> None:
+    """An asyncio consumer gets the typed batches, without owning the thread handoff.
+
+    The adapter changes when a batch arrives, not what it is. It also owns the affinity
+    rule: the watch is created here and touched only by the worker thread, including
+    being closed by it, so a caller never has to reason about which thread it is on.
+    """
+
+    root = Path(tempfile.mkdtemp(prefix="fdu-aio-"))
+    (root / "seed.txt").write_text("seed", encoding="utf-8")
+    index = fdu.open(root)
+
+    async def collect() -> tuple[fdu.Change, ...]:
+        seen: list[fdu.Change] = []
+
+        async def touch() -> None:
+            await asyncio.sleep(0.4)
+            (root / "async.txt").write_text("hello", encoding="utf-8")
+
+        task = asyncio.ensure_future(touch())
+        try:
+            async for batch in fdu.aio.watch_batches(index, fdu.WatchOptions(interval=0.1)):
+                # Empty batches are filtered by the adapter, so anything yielded is real.
+                assert batch, "the adapter must not forward empty batches"
+                seen.extend(batch)
+                if any(change.path == Path("async.txt") for change in seen):
+                    break
+        finally:
+            await task
+        return tuple(seen)
+
+    changes = asyncio.run(asyncio.wait_for(collect(), timeout=30))
+    created = next(change for change in changes if change.path == Path("async.txt"))
+    assert created.kind is fdu.ChangeKind.UPSERT
+    assert created.bytes == 5
+    assert created.clock > 0
+
+    # Leaving the loop early stopped the worker; the index is still usable afterwards,
+    # which is what proves the adapter closed its own watch rather than the caller's.
+    index.refresh()
+    assert index.rollup(Path()) is not None
+    fdu.clear_cache(root)
+
+
+def check_the_sse_example_resumes_or_resyncs() -> None:
+    """The shipped SSE example makes the one decision that fails silently if wrong.
+
+    A truncated `ChangeSet` carries real but incomplete changes. Replaying them produces
+    a client that believes it is current while missing everything the journal evicted, and
+    nothing raises. The example is loaded from the file that ships, so the tested code and
+    the documented code are the same code.
+    """
+
+    example_path = Path(__file__).resolve().parent.parent / "examples" / "sse_resume.py"
+    spec = importlib.util.spec_from_file_location("fdu_sse_example", example_path)
+    assert spec is not None and spec.loader is not None
+    example = importlib.util.module_from_spec(spec)
+    # Registered before execution: `@dataclass(slots=True)` rebuilds the class and looks
+    # its module up in `sys.modules` to do it, so an unregistered module fails to load.
+    sys.modules[spec.name] = example
+    spec.loader.exec_module(example)
+
+    change = fdu.Change(clock=7, path=Path("a.txt"), kind=fdu.ChangeKind.UPSERT)
+    complete = fdu.ChangeSet(truncated=False, clock=7, changes=(change,))
+    replayed = example.decide(complete, current_clock=9)
+    assert replayed.resync is False
+    assert replayed.changes == (change,)
+    assert replayed.clock == 7
+
+    behind = fdu.ChangeSet(truncated=True, clock=7, changes=(change,))
+    resync = example.decide(behind, current_clock=9)
+    assert resync.resync is True
+    assert resync.changes == (), "a truncated set must never be replayed"
+    assert resync.clock == 9, "and the client is told where it now is"
+
+    # A client-supplied header is input, not a promise.
+    assert example.parse_last_event_id(None) is None
+    assert example.parse_last_event_id("not-a-clock") is None
+    assert example.parse_last_event_id("-1") is None
+    assert example.parse_last_event_id("12") == 12
+
+    frame = example.sse_event("change", {"path": "a.txt"}, 12)
+    assert frame.startswith("id: 12\nevent: change\ndata: ")
+    assert frame.endswith("\n\n"), "an SSE frame ends with a blank line"
 
 
 def check_polling_is_selectable_for_filesystems_that_drop_events() -> None:
@@ -703,6 +790,8 @@ def main() -> None:
     check_groups_answer_the_browsing_question()
     check_a_listing_carries_its_own_identity()
     check_polling_is_selectable_for_filesystems_that_drop_events()
+    check_the_event_loop_adapter_delivers_the_same_batches()
+    check_the_sse_example_resumes_or_resyncs()
     check_a_bounded_tree_says_what_it_withheld()
     check_render_matches_the_cli(
         root, str(Path(sys.executable).with_name("fdu.exe" if os.name == "nt" else "fdu"))

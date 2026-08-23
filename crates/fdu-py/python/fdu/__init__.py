@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from . import aio
 from ._api import (
     FduError,
     FilesystemError,
@@ -151,6 +152,7 @@ __all__ = [
     "Watch",
     "WatchOptions",
     "__version__",
+    "aio",
     "cache_path",
     "cache_status",
     "clear_all_caches",
