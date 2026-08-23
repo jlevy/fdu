@@ -5,13 +5,13 @@ title: "tryscript: requires: declares and reports which binary a run resolved"
 kind: feature
 status: closed
 priority: 1
-version: 3
-spec_path: docs/project/specs/active/plan-2026-08-21-fdu-python-cli-parity.md
+version: 4
+spec_path: docs/project/specs/done/plan-2026-08-21-fdu-python-cli-parity.md
 labels: []
 dependencies: []
 parent_id: is-01m0k965p7hx4dy6t0cj29rsae
 created_at: 2026-08-21T23:37:11.272Z
-updated_at: 2026-08-23T00:04:54.761Z
+updated_at: 2026-08-23T00:05:56.691Z
 ---
 tryscript resolves a command through PATH and says nothing about where it landed. For a
 parity run that is the difference between a proven result and a green check.

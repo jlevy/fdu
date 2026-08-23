@@ -5,15 +5,15 @@ title: "Rename: fdu is the installed package, fdu-core is the engine"
 kind: task
 status: closed
 priority: 1
-version: 6
-spec_path: docs/project/specs/active/plan-2026-08-21-fdu-python-cli-parity.md
+version: 7
+spec_path: docs/project/specs/done/plan-2026-08-21-fdu-python-cli-parity.md
 labels: []
 dependencies:
   - type: blocks
     target: is-01m0nvz7j00dm6w1snefmvw713
 parent_id: is-01m0k965p7hx4dy6t0cj29rsae
 created_at: 2026-08-22T23:00:45.795Z
-updated_at: 2026-08-22T23:52:58.481Z
+updated_at: 2026-08-23T00:05:56.691Z
 closed_at: 2026-08-22T23:52:58.481Z
 close_reason: "fdu is the package a user installs (bin plus a lib re-exporting the engine); fdu-core is the engine. Follows the dominant Rust convention -- the name a user types belongs to what they install, as with ripgrep, gitoxide, and ruff. Enforcement is unchanged: the command line depends on the engine as an external crate, so the compiler still decides whether the CLI invents anything. 129 goldens byte-identical."
 ---

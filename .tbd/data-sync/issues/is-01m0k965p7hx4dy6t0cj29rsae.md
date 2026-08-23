@@ -3,10 +3,10 @@ type: is
 id: is-01m0k965p7hx4dy6t0cj29rsae
 title: "Surface parity harness: run the golden corpus against the library and Python APIs"
 kind: epic
-status: open
+status: closed
 priority: 1
-version: 13
-spec_path: docs/project/specs/active/plan-2026-08-21-fdu-python-cli-parity.md
+version: 14
+spec_path: docs/project/specs/done/plan-2026-08-21-fdu-python-cli-parity.md
 labels: []
 dependencies: []
 child_order_hints:
@@ -20,7 +20,7 @@ child_order_hints:
   - is-01m0nvz764v76702g0m1q40vhx
   - is-01m0nvz7j00dm6w1snefmvw713
 created_at: 2026-08-21T23:06:08.965Z
-updated_at: 2026-08-22T23:12:53.311Z
+updated_at: 2026-08-23T00:05:56.539Z
 ---
 Run the existing golden corpus against every surface, not just the CLI.
 
@@ -41,13 +41,8 @@ maintain tryscript, so it is a fix at the source.
 
 ## Notes
 
-Phase 1 landed. 108 of 126 golden sessions reach parity through the Python API alone, and every remaining difference carries a named cause -- an unexplained one fails the run rather than joining the list.
+Closed with the spec at zero unchecked items and every child closed -- both checked, not inferred from bead state.
 
-Deliberately still OPEN, and not on bead state: Phase 2 has no bead yet and exists only as a spec checkbox, which is invisible to tbd ready. That is the case the update-specs-status triage calls out as the one where closing destroys information.
+108 of 126 golden sessions reach parity through the Python API alone; the 20 that differ each carry a named cause and an unexplained one fails the build. Phase 2 was replaced by the CLI-on-the-public-API split (fdu-s74c), which enforces the same property with a crate boundary rather than a second command line.
 
-What remains:
-  - Phase 2: the same shim over the public Rust library API, with its own deviation file. Worth more now than when written -- Phase 1 found seven definitions the CLI had copied from the library and five capabilities only the CLI could reach, and a Rust-side shim is the instrument that would have caught them without a second language in the way.
-  - fdu-ds2x: tryscript requires:. Superseded in practice (run-golden.mjs preflights and states the surface) but still worth moving the check off fdu.
-  - fdu-nluf: tryscript empty path: entries. Real robustness issue, off this critical path now that the corpus carries no path: entry that can be empty.
-
-Two spec items diverged and are recorded in the spec rather than quietly dropped: the shim exits 2 rather than the specified 77, and the legitimate-deviation rule became four named classes rather than two.
+The two remaining items were tryscript behaviours, not fdu work, and are recorded upstream as jlevy/tryscript#54 and #55.
