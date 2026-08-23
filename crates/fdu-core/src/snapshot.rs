@@ -767,6 +767,24 @@ pub(crate) fn write_atomically(path: &Path, bytes: &[u8]) -> Result<()> {
     let parent = parent_dir(path);
     fs::create_dir_all(parent).map_err(|e| Error::io(parent, e))?;
 
+    // Serialization is deterministic -- pre-order over name-sorted children, the same
+    // fields in the same order -- so an unchanged tree encodes to the bytes already on
+    // disk, and replacing them is a full write, an `F_FULLFSYNC`, and a rename that
+    // leave the file exactly as it was. A default run never reads its snapshot for a
+    // metadata query, so on that path the rewrite was the whole cost of having a cache:
+    // about 70 ms of a 375 ms run over 175k entries (exp-066). Comparing against the
+    // page-cached file costs a few milliseconds and the cache cannot go stale, because
+    // the bytes are the same bytes.
+    if same_bytes_on_disk(path, bytes) {
+        // The file's mtime is the snapshot's "as of": the loader reads it as the
+        // observation time of every cached entry. The tree was just verified to encode
+        // identically, so that time is now, and moving the mtime says so without
+        // writing the payload. Best effort: a stale "as of" understates freshness,
+        // which fails safe.
+        let _ = touch(path);
+        return Ok(());
+    }
+
     let (tmp, mut file) = create_temp_file(path, parent)?;
     let write_then_sync = file.write_all(bytes).and_then(|()| file.sync_all());
     if let Err(e) = write_then_sync {
@@ -781,6 +799,43 @@ pub(crate) fn write_atomically(path: &Path, bytes: &[u8]) -> Result<()> {
     }
     reap_stale_temporaries(parent, path, STALE_TEMP_AGE);
     Ok(())
+}
+
+/// Whether `path` already holds exactly `bytes`.
+///
+/// Streamed in 1 MiB pieces rather than read whole, so deciding not to write a 14 MB
+/// snapshot does not cost a second 14 MB allocation beside the one being compared. Any
+/// error -- missing file, short read, a file that grew under the comparison -- reads as
+/// "different", and the caller writes; the comparison can only ever save work.
+fn same_bytes_on_disk(path: &Path, bytes: &[u8]) -> bool {
+    let Ok(mut file) = fs::File::open(path) else { return false };
+    let Ok(metadata) = file.metadata() else { return false };
+    if metadata.len() != u64::try_from(bytes.len()).unwrap_or(u64::MAX) {
+        return false;
+    }
+    let mut buffer = vec![0u8; 1 << 20];
+    let mut offset = 0usize;
+    while offset < bytes.len() {
+        let read = match file.read(&mut buffer) {
+            Ok(0) | Err(_) => return false,
+            Ok(read) => read,
+        };
+        let Some(end) = offset.checked_add(read).filter(|end| *end <= bytes.len()) else {
+            return false;
+        };
+        if buffer[..read] != bytes[offset..end] {
+            return false;
+        }
+        offset = end;
+    }
+    // A file that holds every byte and then more is not the same file.
+    matches!(file.read(&mut buffer[..1]), Ok(0))
+}
+
+/// Move `path`'s modification time to now without touching its contents.
+fn touch(path: &Path) -> io::Result<()> {
+    let file = OpenOptions::new().write(true).open(path)?;
+    file.set_modified(std::time::SystemTime::now())
 }
 
 /// Remove long-abandoned temporaries beside `path`.
@@ -1476,6 +1531,69 @@ mod tests {
         let mut expected = planted;
         expected.sort();
         assert_eq!(survivors, expected, "the write must step over corpses, not consume them");
+    }
+
+    #[test]
+    fn an_identical_payload_leaves_the_file_in_place() {
+        // The default command encodes an unchanged tree to the bytes already on disk.
+        // Replacing them was a full write, an fsync and a rename for nothing; now the
+        // file is left alone, which on a filesystem is observable as the same inode.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("snap.fdu");
+        let payload: Vec<u8> =
+            (0u32..(3 << 20)).map(|i| u8::try_from(i % 251).unwrap_or(0)).collect();
+
+        write_atomically(&path, &payload).expect("first write");
+        let first = fs::metadata(&path).expect("metadata");
+        let before = std::time::SystemTime::now();
+        write_atomically(&path, &payload).expect("identical write");
+        let second = fs::metadata(&path).expect("metadata");
+
+        assert_eq!(fs::read(&path).expect("read back"), payload);
+        assert_same_file(&first, &second);
+        // The "as of" moved even though the bytes did not: the loader reads the mtime
+        // as every cached entry's observation time, and the tree was just verified.
+        assert!(second.modified().expect("mtime") >= before);
+        // No temporary was created and abandoned on the way to deciding not to write.
+        let extras = fs::read_dir(dir.path())
+            .expect("read_dir")
+            .filter_map(std::result::Result::ok)
+            .filter(|entry| entry.file_name() != "snap.fdu")
+            .count();
+        assert_eq!(extras, 0);
+    }
+
+    #[test]
+    fn a_different_payload_of_the_same_length_is_written() {
+        // Length is the cheap pre-check, not the decision: two snapshots of the same
+        // tree with one mtime changed are the same length and must not be confused.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("snap.fdu");
+        write_atomically(&path, b"payload-a").expect("first write");
+        write_atomically(&path, b"payload-b").expect("second write");
+        assert_eq!(fs::read(&path).expect("read back"), b"payload-b");
+
+        // And a file that holds the payload as a prefix is not the payload.
+        fs::write(&path, b"payload-b-and-more").expect("lengthen");
+        assert!(!same_bytes_on_disk(&path, b"payload-b"));
+        assert!(!same_bytes_on_disk(&path, b"payload-b-and-mor"));
+        assert!(same_bytes_on_disk(&path, b"payload-b-and-more"));
+        assert!(!same_bytes_on_disk(&dir.path().join("absent"), b""));
+    }
+
+    #[cfg(unix)]
+    fn assert_same_file(first: &fs::Metadata, second: &fs::Metadata) {
+        use std::os::unix::fs::MetadataExt;
+        assert_eq!(first.ino(), second.ino(), "the snapshot was replaced, not left in place");
+    }
+
+    #[cfg(not(unix))]
+    fn assert_same_file(first: &fs::Metadata, second: &fs::Metadata) {
+        // Creation time survives a skipped write and changes across a rename of a fresh
+        // temporary, on the platforms that report it.
+        if let (Ok(a), Ok(b)) = (first.created(), second.created()) {
+            assert_eq!(a, b, "the snapshot was replaced, not left in place");
+        }
     }
 
     #[test]

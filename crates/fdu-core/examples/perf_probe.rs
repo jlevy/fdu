@@ -661,7 +661,7 @@ fn summary_tier(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
 /// digest. The five numbers the user sees at the top of the tree are what is checked.
 fn default_tree(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     let snapshot = arguments.snapshot()?.to_path_buf();
-    let modified_before = snapshot.metadata().ok().and_then(|metadata| metadata.modified().ok());
+    let identity_before = snapshot_identity(&snapshot);
     let config = OpenConfig {
         scan: arguments.scan.clone(),
         cache_path: Some(snapshot.clone()),
@@ -690,7 +690,7 @@ fn default_tree(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
             _ => None,
         })
         .ok_or_else(|| ProbeError("default tree returned no tree section".to_string()))?;
-    let modified_after = snapshot.metadata().ok().and_then(|metadata| metadata.modified().ok());
+    let identity_after = snapshot_identity(&snapshot);
 
     let mut summary = Summary {
         files: root.files,
@@ -708,11 +708,28 @@ fn default_tree(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     summary.complete = report.complete;
     summary.entries = root.files + root.dirs;
     summary.snapshot_bytes = snapshot.metadata().ok().map(|metadata| metadata.len());
-    // A rename replaces the file, so an identical rewrite still moves the mtime; equal
-    // mtimes mean the run left the snapshot alone, which is the behaviour `fdu-2um8` is
-    // about and the number a reader of this job wants beside the wall time.
-    summary.snapshot_written = Some(modified_after.is_some() && modified_after != modified_before);
+    // A rewrite lands a fresh temporary and renames it over the path, so the file's
+    // identity changes; a run that found the bytes identical leaves the file in place
+    // and only moves its mtime. Identity, not mtime, is therefore the signal, and it is
+    // the number a reader of this job wants beside the wall time.
+    summary.snapshot_written = Some(identity_after.is_some() && identity_after != identity_before);
     Ok(ProbeOutput::new(arguments.mode, "scan", component, summary))
+}
+
+/// Something that changes when a file is replaced and survives when it is left alone.
+///
+/// The inode where the platform has one; elsewhere the creation time, which a rename of
+/// a fresh temporary also moves. `None` when there is no file.
+fn snapshot_identity(path: &Path) -> Option<(u64, Option<std::time::SystemTime>)> {
+    let metadata = path.metadata().ok()?;
+    #[cfg(unix)]
+    let inode = {
+        use std::os::unix::fs::MetadataExt;
+        metadata.ino()
+    };
+    #[cfg(not(unix))]
+    let inode = 0u64;
+    Some((inode, metadata.created().ok()))
 }
 
 /// A cold scan that also writes its cache, through the real `open` path.

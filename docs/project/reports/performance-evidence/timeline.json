@@ -568,6 +568,15 @@
    "subject": "36ce9b22af9a:175191:fa9b471063e3",
    "tool": "dust",
    "wall_ns": 272062250
+  },
+  {
+   "entries": 175191,
+   "id": "exp-067",
+   "per_entry_ns": 1756.867504609255,
+   "platform": "macOS",
+   "subject": "36ce9b22af9a:175191:fa9b471063e3",
+   "tool": "dust",
+   "wall_ns": 307787375
   }
  ],
  "experiments": [
@@ -19454,6 +19463,357 @@
    "subject": "36ce9b22af9a:175191:fa9b471063e3",
    "title": "Baseline for the default command on a real package cache",
    "trials": 12
+  },
+  {
+   "anchored": false,
+   "candidate": "write_atomically compares the encoded bytes against the file and leaves an identical snapshot in place",
+   "change_pct": -10.612,
+   "commit": "62f82f6",
+   "complexity": {
+    "lines_changed": 117,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": ""
+   },
+   "control": "main at 778aa74 with the default-tree probe mode (perf_probe.control)",
+   "date": "2026-08-23",
+   "decision": "accepted",
+   "entries": 175191,
+   "family": "macOS:36ce9b22af9a",
+   "hypotheses": [
+    "H100"
+   ],
+   "id": "exp-067",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "cold-scan-index",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 319328458.5,
+        "control": 326043542
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": 1.133,
+        "ci95_high_pct": 6.492,
+        "ci95_low_pct": -8.071,
+        "evidence": "unclear",
+        "pairs": 16,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 2094363500,
+        "control": 2072146500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -0.755,
+        "ci95_high_pct": 7.031,
+        "ci95_low_pct": -5.75,
+        "evidence": "unclear",
+        "pairs": 16,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 86802432,
+        "control": 86712320
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 0.085,
+        "ci95_high_pct": 1.736,
+        "ci95_low_pct": -1.525,
+        "evidence": "unclear",
+        "pairs": 16,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 1592243000,
+        "control": 1552357500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -2.124,
+        "ci95_high_pct": 7.331,
+        "ci95_low_pct": -6.736,
+        "evidence": "unclear",
+        "pairs": 16,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 514428500,
+        "control": 512107500
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": 1.306,
+        "ci95_high_pct": 3.998,
+        "ci95_low_pct": -3.197,
+        "evidence": "unclear",
+        "pairs": 16,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 660427791,
+        "control": 672129271
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": 0.93,
+        "ci95_high_pct": 4.706,
+        "ci95_low_pct": -5.782,
+        "evidence": "unclear",
+        "pairs": 16,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 3769.7586691097144,
+      "control": 3836.5513696479843
+     },
+     "start_state": "cold"
+    },
+    {
+     "invalid_samples": 0,
+     "job": "default-tree",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 353170041.5,
+        "control": 391981187
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -10.398,
+        "ci95_high_pct": -6.1,
+        "ci95_low_pct": -15.029,
+        "evidence": "improved",
+        "pairs": 16,
+        "significant": true
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 1777663000,
+        "control": 1785889500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -1.569,
+        "ci95_high_pct": 4.37,
+        "ci95_low_pct": -6.325,
+        "evidence": "unclear",
+        "pairs": 16,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 105889792,
+        "control": 107249664
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -1.285,
+        "ci95_high_pct": -0.385,
+        "ci95_low_pct": -3.328,
+        "evidence": "improved",
+        "pairs": 16,
+        "significant": true
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 1584947500,
+        "control": 1580559500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -1.806,
+        "ci95_high_pct": 3.392,
+        "ci95_low_pct": -5.027,
+        "evidence": "unclear",
+        "pairs": 16,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 196872500,
+        "control": 214244000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -1.831,
+        "ci95_high_pct": 3.025,
+        "ci95_low_pct": -13.232,
+        "evidence": "unclear",
+        "pairs": 16,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 358707104.5,
+        "control": 397725187.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -10.612,
+        "ci95_high_pct": -6.054,
+        "ci95_low_pct": -14.85,
+        "evidence": "improved",
+        "pairs": 16,
+        "significant": true
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 2047.520160853012,
+      "control": 2270.2375550113875
+     },
+     "start_state": "warm"
+    },
+    {
+     "invalid_samples": 0,
+     "job": "default-tree-first",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 381352604.5,
+        "control": 386908333.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -0.105,
+        "ci95_high_pct": 7.618,
+        "ci95_low_pct": -5.714,
+        "evidence": "unclear",
+        "pairs": 16,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 1767021500,
+        "control": 1779168500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -0.644,
+        "ci95_high_pct": 4.175,
+        "ci95_low_pct": -8.266,
+        "evidence": "unclear",
+        "pairs": 16,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 106266624,
+        "control": 105816064
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -0.302,
+        "ci95_high_pct": 1.159,
+        "ci95_low_pct": -1.122,
+        "evidence": "unclear",
+        "pairs": 16,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 1549582500,
+        "control": 1575369500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -2.291,
+        "ci95_high_pct": 4.781,
+        "ci95_low_pct": -8.664,
+        "evidence": "unclear",
+        "pairs": 16,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 217991000,
+        "control": 209093000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": 2.814,
+        "ci95_high_pct": 8.528,
+        "ci95_low_pct": -1.208,
+        "evidence": "unclear",
+        "pairs": 16,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 386971479.5,
+        "control": 392807333.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": 0.099,
+        "ci95_high_pct": 7.604,
+        "ci95_low_pct": -5.782,
+        "evidence": "unclear",
+        "pairs": 16,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 2208.854789915007,
+      "control": 2242.1661700658137
+     },
+     "start_state": "cold"
+    }
+   ],
+   "kept": "candidate",
+   "number": 67,
+   "path": "exp-067-skip-the-identical-snapshot-rewrite-on-the-cold-scan-path.md",
+   "platform": "macOS",
+   "primary_job": "default-tree",
+   "primary_metric": "wall_ns",
+   "reason": "default-tree -10.61% [-14.85%, -6.05%] at 16 trials with the first-run and index jobs unchanged and RSS flat: a streamed byte compare for a 60-line change that cannot go stale.",
+   "reference_tools": [
+    {
+     "argv": [
+      "{binary}",
+      "-d",
+      "1",
+      "--no-progress",
+      "{root}"
+     ],
+     "name": "dust",
+     "wall_ns_median": 307787375
+    }
+   ],
+   "subject": "36ce9b22af9a:175191:fa9b471063e3",
+   "title": "Skip the identical snapshot rewrite on the cold-scan path",
+   "trials": 16
   }
  ],
  "prepared": "2026-08-23",
@@ -19746,6 +20106,25 @@
    "synthetic": false
   },
   {
+   "apparent_bytes": 4900108867,
+   "directories": 4956,
+   "entries": 175191,
+   "experiments": [
+    "exp-066",
+    "exp-067"
+   ],
+   "files": 170235,
+   "filesystem": "apfs",
+   "host_cpu": "Apple M1 Pro",
+   "key": "36ce9b22af9a:175191:fa9b471063e3",
+   "labels": [
+    "rustup-toolchains"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "macOS",
+   "synthetic": false
+  },
+  {
    "apparent_bytes": 2170167344,
    "directories": 14701,
    "entries": 120135,
@@ -19870,42 +20249,24 @@
    "os_cache": "warm-steady",
    "platform": "Linux",
    "synthetic": false
-  },
-  {
-   "apparent_bytes": 4900108867,
-   "directories": 4956,
-   "entries": 175191,
-   "experiments": [
-    "exp-066"
-   ],
-   "files": 170235,
-   "filesystem": "apfs",
-   "host_cpu": "Apple M1 Pro",
-   "key": "36ce9b22af9a:175191:fa9b471063e3",
-   "labels": [
-    "rustup-toolchains"
-   ],
-   "os_cache": "warm-steady",
-   "platform": "macOS",
-   "synthetic": false
   }
  ],
  "totals": {
-  "accepted_lines_changed": 8268,
+  "accepted_lines_changed": 8385,
   "decisions": {
-   "accepted": 33,
+   "accepted": 34,
    "baseline": 3,
    "in-progress": 1,
    "rejected": 28,
    "superseded": 2
   },
-  "experiments": 67,
+  "experiments": 68,
   "first_date": "2026-08-10",
-  "hypotheses": 51,
+  "hypotheses": 52,
   "last_date": "2026-08-23",
   "platforms": {
    "Linux": 9,
-   "macOS": 58
+   "macOS": 59
   }
  },
  "version": "fdu.performance.timeline/1"

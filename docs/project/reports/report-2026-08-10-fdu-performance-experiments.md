@@ -66,8 +66,8 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | --- | --- | --- | ---: |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 2 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
-| Darwin 25.5.0, apfs | bare-metal | warm-steady | 1 |
 
 ## Every experiment, including the failures
 
@@ -143,6 +143,7 @@ dead end.
 | 064 | [Content roll-up lookup and indexed type-rule tiers](#exp064--content-rollup-lookup-and-indexed-typerule-tiers) | H94, H95 | `content-cache-hit` | -30.3% | ✅ accepted |
 | 065 | [Validate the content roll-up change on a dense real tree](#exp065--validate-the-content-rollup-change-on-a-dense-real-tree) | H94, H95 | `content-cache-hit` | -25.8% | ✅ accepted |
 | 066 | [Baseline for the default command on a real package cache](#exp066--baseline-for-the-default-command-on-a-real-package-cache) | — | `default-tree` | -1.9% | 📏 baseline |
+| 067 | [Skip the identical snapshot rewrite on the cold-scan path](#exp067--skip-the-identical-snapshot-rewrite-on-the-coldscan-path) | H100 | `default-tree` | -10.6% | ✅ accepted |
 
 ## The experiments
 
@@ -2405,6 +2406,38 @@ snapshot it never reads on all 24 trials, and the write plus render is about 70 
 Full record:
 [`exp-066-baseline-for-the-default-command-on-a-real-package-cache.md`](../experiments/exp-066-baseline-for-the-default-command-on-a-real-package-cache.md)
 
+### exp-067 — Skip the identical snapshot rewrite on the cold-scan path
+
+✅ accepted · 2026-08-23 · H100 · commit `62f82f6`
+
+Control: main at 778aa74 with the default-tree probe mode (perf_probe.control)
+
+Candidate: write_atomically compares the encoded bytes against the file and leaves an
+identical snapshot in place
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 397.7 | 358.7 | -10.61% | [-14.85%, -6.05%] |
+| component (ms) | 392.0 | 353.2 | -10.40% | [-15.03%, -6.10%] |
+| cpu (ms) | 1785.9 | 1777.7 | -1.57% (n.s.) | [-6.33%, +4.37%] |
+| user (ms) | 214.2 | 196.9 | -1.83% (n.s.) | [-13.23%, +3.02%] |
+| system (ms) | 1580.6 | 1584.9 | -1.81% (n.s.) | [-5.03%, +3.39%] |
+| peak rss (MiB) | 102.3 | 101.0 | -1.28% | [-3.33%, -0.39%] |
+
+Other jobs, wall time: `cold-scan-index` +0.9% (n.s.), `default-tree-first` +0.1%
+(n.s.).
+
+Cost to carry: 117 lines; no new dependencies.
+
+**Accepted:** default-tree -10.61% [-14.85%, -6.05%] at 16 trials with the first-run and
+index jobs unchanged and RSS flat: a streamed byte compare for a 60-line change that
+cannot go stale.
+
+Full record:
+[`exp-067-skip-the-identical-snapshot-rewrite-on-the-cold-scan-path.md`](../experiments/exp-067-skip-the-identical-snapshot-rewrite-on-the-cold-scan-path.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -2520,6 +2553,13 @@ Baselines show one value because they measure a state rather than a change.
 | 054 | Validate the Linux campaign’s cumulative effect on macOS | `warm-revalidate` | 393.0 | 335.7 | -15.7% | ✅ accepted |
 | 055 | Validate review fixes on macOS | `cold-scan-index` | 304.9 | 297.5 | -0.9% | ✅ accepted |
 
+### rustup-toolchains (175,191 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 066 | Baseline for the default command on a real package cache | `default-tree` | 386.9 | — | — | 📏 baseline |
+| 067 | Skip the identical snapshot rewrite on the cold-scan path | `default-tree` | 397.7 | 358.7 | -10.6% | ✅ accepted |
+
 ### cargo-registry-src (13,020 entries) — Linux 6.18.44-fc-v21, unrecorded, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
@@ -2591,12 +2631,6 @@ Baselines show one value because they measure a state rather than a change.
 | # | experiment | job | before | after | change | verdict |
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 034 | Post-composable-CLI validation under cache pressure | `cold-scan-index` | 6,699.9 | 5,154.0 | -30.5% | ✅ accepted |
-
-### rustup-toolchains (175,191 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
-
-| # | experiment | job | before | after | change | verdict |
-| --- | --- | --- | ---: | ---: | ---: | --- |
-| 066 | Baseline for the default command on a real package cache | `default-tree` | 386.9 | — | — | 📏 baseline |
 
 ### selfhost-content (307 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 
