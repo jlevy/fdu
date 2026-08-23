@@ -4,7 +4,12 @@
 
 **Author:** fdu project, with Claude Code review assistance
 
-**Status:** Proposed
+**Status:** Measurements current; the queue in
+[The queue, re-ordered by this evidence](#the-queue-re-ordered-by-this-evidence) is
+superseded by
+[the campaign-2 plan](../specs/active/plan-2026-08-23-fdu-performance-campaign-2.md)
+(item 3 has since landed as H87 and H88 with `fdu-6kyn` remaining; H89 was refuted; H90
+landed)
 
 ## Overview
 
@@ -19,11 +24,11 @@ Three conclusions, each carried by a measurement in this note:
 
 1. **The consumer redesign is worth ~4× on the Linux tree view, and it should be run as
    one structural experiment, not four gated increments.** A 250-line oracle-checked
-   spike (`benchmarks/spikes/arena_spike.rs`) that retains an index-shaped result —
-   per-file records, a name arena, per-directory tallies, one bottom-up roll-up pass —
-   runs the same tree, same syscalls, same worker count in **~199 ms and ≤ 23 MiB**
-   where the fdu CLI tree view spends **~849 ms and ~279 MiB**, beside dut’s ~179 ms.
-   S1–S4, H19–H22, H60 and `fdu-2ubt` are one representation change wearing seven
+   spike (`explorations/benchmarks/spikes/arena_spike.rs`) that retains an index-shaped
+   result — per-file records, a name arena, per-directory tallies, one bottom-up roll-up
+   pass — runs the same tree, same syscalls, same worker count in **~199 ms and ≤ 23
+   MiB** where the fdu CLI tree view spends **~849 ms and ~279 MiB**, beside dut’s ~179
+   ms. S1–S4, H19–H22, H60 and `fdu-2ubt` are one representation change wearing seven
    hypothesis numbers, and measuring them one 3%-gate at a time will thrash: each
    partial form pays conversion costs at the boundary that the end state deletes.
 2. **The cold scalar gap to diskus on Linux is a thread-policy constant, nothing else.**
@@ -314,14 +319,14 @@ all.
 
 ```shell
 # Tree (same generator and scale as the scouting doc)
-python3 benchmarks/spikes/gen_tree.py /tmp/fdu-spike/tree 450000
+python3 explorations/benchmarks/spikes/gen_tree.py /tmp/fdu-spike/tree 450000
 
 # Consumer floor beside the walkers
-rustc -O -o arena_spike benchmarks/spikes/arena_spike.rs
+rustc -O -o arena_spike explorations/benchmarks/spikes/arena_spike.rs
 ./arena_spike /tmp/fdu-spike/tree 4
 
 # getdents64 elision census
-gcc -O2 -o walkspike benchmarks/spikes/walkspike.c
+gcc -O2 -o walkspike explorations/benchmarks/spikes/walkspike.c
 ./walkspike statx /tmp/fdu-spike/tree && ./walkspike elide /tmp/fdu-spike/tree
 
 # Write-tax comparison

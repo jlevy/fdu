@@ -31,6 +31,7 @@ class MetadataTests(unittest.TestCase):
 
     def test_artifact_license_copies_match_repository_license(self) -> None:
         expected = (ROOT / "LICENSE").read_bytes()
+        self.assertEqual((ROOT / "crates/fdu-core/LICENSE").read_bytes(), expected)
         self.assertEqual((ROOT / "crates/fdu/LICENSE").read_bytes(), expected)
         self.assertEqual((ROOT / "crates/fdu-py/LICENSE").read_bytes(), expected)
 

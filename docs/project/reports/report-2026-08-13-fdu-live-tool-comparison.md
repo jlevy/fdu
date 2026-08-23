@@ -39,7 +39,7 @@ because they control for filesystem-cache and machine drift.
 
 ## Method and Validity
 
-The subject was the repository’s `benchmarks/` subtree.
+The subject was the repository’s `explorations/benchmarks/` subtree.
 It contains the ignored generated corpus, benchmark environment, harness, schemas, and
 prior result artifacts, but excludes the more volatile repository build and Git state.
 Its immediate redacted fingerprint contained 110,369 directories including the root,
@@ -120,7 +120,7 @@ with SHA-256 `dd4d8a0030ae5967f275c6a38e219ec9e1364020f030b12f32568ddd2ed5a0f5`.
 commands, versions, hashes, host facts, tree facts, resources, and intervals are in the
 [reproduction manifest](fdu-live-tool-comparison-manifest-v2.json).
 The operational procedure is in the
-[performance harness README](../../../benchmarks/README.md).
+[performance harness README](../../../explorations/benchmarks/README.md).
 
 ## Why the Tree Product Leads
 
@@ -215,6 +215,24 @@ fdu excludes symlinks from regular-file roll-ups, while the reviewed dumac revis
 counts each as one 512-byte block.
 That 170,496-byte semantic difference is negligible for timing but must remain visible
 in any total comparison.
+
+## The Linux Walker-Level Companion
+
+This matrix compares *products* on macOS: whole tools, each returning its own work
+class. A separate Linux measurement compares the *walkers* underneath them — fdu’s
+against [`ignore`](https://docs.rs/ignore), which is ripgrep’s, plus `walkdir` and
+`jwalk` — and reads all of them against a hand-written parallel syscall floor.
+Its results are in
+[the metadata-walk floor report](report-2026-08-23-metadata-walk-floor.md).
+
+Two of them bear on this document.
+fdu’s aggregate tier sits at 1.20–1.59× that floor depending on the tree, so the
+headroom this comparison’s lead rests on is smaller than the lead.
+And the peer ordering is not stable across subjects: fdu leads `ignore` by 12–26% on
+generated trees, ties once real filenames appear, and trails by about 12% on `/usr`.
+That report is scouting evidence on one virtualized host and does not meet the bar this
+one does — no pinned binaries, no installation attestation, one real tree — so it orders
+work rather than supporting a claim.
 
 ## Limits and Next Work
 

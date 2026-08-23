@@ -16,6 +16,15 @@ publisher records exist and a rehearsal succeeds from the intended release commi
 
 ## Supported Artifacts
 
+There are two Rust crates, and their order is a release invariant.
+`fdu-core` is the engine; `fdu` is the command line and depends on it.
+So `fdu-core` must be published first: until it exists on crates.io, `fdu` has nothing
+to resolve against and cannot be published — or even packaged alone, which is why the
+rehearsal and the release workflow package both in one `cargo package` invocation rather
+than two.
+Both carry the same version, and a release that publishes one without the other
+leaves `fdu` unbuildable for anyone who installs it.
+
 The Rust crate supports the default CLI with watch support and a minimal library build
 through `default-features = false`. Rust 1.85 is the minimum supported version.
 
@@ -94,7 +103,8 @@ preview, and abort on any mismatch before upload.
 
 Before the first registry write:
 
-1. Recheck that `fdu` is still available on both registries.
+1. Recheck that `fdu`, `fdu-core`, and the Python name are still available on their
+   registries.
 2. Protect the `release` environment and configure the PyPI pending trusted publisher.
 3. Run the non-publishing workflow from the exact intended commit and retain its
    manifest.
@@ -103,8 +113,10 @@ Before the first registry write:
    authority.
 
 Registries are independently retryable, not atomic.
-After a partial failure, verify the successful registry’s version and hash, rerun only
-the missing channel, and stop on any same-version hash conflict.
+Within crates.io the two crates are not independent: publish `fdu-core`, wait for the
+index to carry it, then publish `fdu`. After a partial failure, verify the successful
+registry’s version and hash, rerun only the missing channel, and stop on any
+same-version hash conflict.
 Never retag, replace an immutable artifact, or rebuild from a different commit.
 
 The implementation audit, Flowmark comparison, deliberate divergences, and proposed

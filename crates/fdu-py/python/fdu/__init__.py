@@ -14,18 +14,22 @@ from ._api import (
     clear_cache,
     list_caches,
     open,
+    render_cache_status,
+    report,
     scan,
+    watch_rule,
 )
 from ._api import (
     _main as _main,
 )
 from ._models import (
+    Analysis,
     AnalysisMetadata,
     AnalysisOptions,
-    AnalysisProfile,
     Analyzer,
     Bound,
     CachePolicy,
+    CacheScope,
     CacheStatus,
     Change,
     ChangeKind,
@@ -39,6 +43,7 @@ from ._models import (
     ExtensionTally,
     FileRow,
     FilesSection,
+    Format,
     Freshness,
     MetricRow,
     MetricShare,
@@ -53,6 +58,7 @@ from ._models import (
     ReportSource,
     RollUp,
     ScanOptions,
+    SectionBound,
     Selection,
     SizeMetric,
     SortKey,
@@ -68,12 +74,13 @@ from ._models import (
 from ._native import __version__
 
 __all__ = [
+    "Analysis",
     "AnalysisMetadata",
     "AnalysisOptions",
-    "AnalysisProfile",
     "Analyzer",
     "Bound",
     "CachePolicy",
+    "CacheScope",
     "CacheStatus",
     "Change",
     "ChangeKind",
@@ -89,6 +96,7 @@ __all__ = [
     "FileRow",
     "FilesSection",
     "FilesystemError",
+    "Format",
     "Freshness",
     "Index",
     "InvalidArgumentError",
@@ -105,6 +113,7 @@ __all__ = [
     "ReportSource",
     "RollUp",
     "ScanOptions",
+    "SectionBound",
     "Selection",
     "SizeMetric",
     "SortKey",
@@ -124,7 +133,10 @@ __all__ = [
     "clear_cache",
     "list_caches",
     "open",
+    "render_cache_status",
+    "report",
     "scan",
+    "watch_rule",
 ]
 
 # Python 3.14 exposes the ``__future__.annotations`` feature object as a module

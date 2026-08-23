@@ -52,9 +52,9 @@ Three findings order the work:
   order strategies without measuring device latency.
 - **Subjects:** two nominated trees, both outside the repository, neither written to
   during measurement.
-  - `meta450k` — the committed `benchmarks/spikes/gen_tree.py` generator at 450,000,
-    yielding 450,463 entries (28,629 directories, 421,690 files, 143 symlinks), 3.00 GiB
-    apparent, 748 MB allocated.
+  - `meta450k` — the committed `explorations/benchmarks/spikes/gen_tree.py` generator at
+    450,000, yielding 450,463 entries (28,629 directories, 421,690 files, 143 symlinks),
+    3.00 GiB apparent, 748 MB allocated.
     Chosen to be directly comparable with
     [the 2026-08-13 first Linux measurements](research-2026-08-13-linux-first-measurements.md).
   - `content` — 14,542 real text files in 2,558 directories, 366 MB, assembled from npm
@@ -63,8 +63,8 @@ Three findings order the work:
     filler bytes (`corpus.py` repeats a SHA-256 digest, `gen_tree.py` writes
     `b"x" * size` and sparse-truncates the remainder), so a generated tree measures the
     binary gate and a single pathological line rather than language and prose structure.
-- **Method:** `benchmarks/spikes/paired_runner.py`, adjacent paired trials with
-  alternating order, 10 pairs per matchup, two full-tree warmups per tool, wall via
+- **Method:** `explorations/benchmarks/spikes/paired_runner.py`, adjacent paired trials
+  with alternating order, 10 pairs per matchup, two full-tree warmups per tool, wall via
   monotonic clock around spawn+wait, rusage via `wait4`, paired medians with a
   4,000-resample bootstrap 95% interval.
 - **Binary:** `fdu` release build at the content-metrics head (`2abdb11`), all features.
@@ -228,10 +228,10 @@ still follow.
 ## Reproduction
 
 Both trees are nominated, not committed.
-`meta450k` regenerates deterministically from `benchmarks/spikes/gen_tree.py`; the
-`content` tree is assembled from whatever real source trees the host has and is
-described by its counts rather than its paths, so a replication reports its own
-fingerprint rather than assuming this one.
+`meta450k` regenerates deterministically from
+`explorations/benchmarks/spikes/gen_tree.py`; the `content` tree is assembled from
+whatever real source trees the host has and is described by its counts rather than its
+paths, so a replication reports its own fingerprint rather than assuming this one.
 The matchup definitions are JSON tool tables passed through `SPIKE_TOOLS`, so no
 absolute path from this host is baked into the harness.
 

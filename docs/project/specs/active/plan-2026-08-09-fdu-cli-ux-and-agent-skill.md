@@ -4,7 +4,9 @@
 
 **Author:** fdu project
 
-**Status:** Complete; PR #2 is ready to merge with local and CI gates green
+**Status:** Complete and merged; every bead under it is closed.
+It stays in `active/` only because open follow-up epics still cite it, and it is listed
+in [the archive](../../../../TODO.archive.md)
 
 ## Overview
 

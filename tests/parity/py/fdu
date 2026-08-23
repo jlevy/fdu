@@ -1,0 +1,8 @@
+#!/bin/sh
+# Named `fdu` so the corpus exercises it under the name it stands in for, and so every
+# program-name string the golden pins -- usage lines, diagnostics -- matches without the
+# corpus knowing which surface is running.
+#
+# FDU_PYTHON names an interpreter with the fdu wheel installed; make test-parity builds
+# one. Defaulting to python3 keeps the shim runnable by hand.
+exec "${FDU_PYTHON:-python3}" "$(dirname "$0")/parity_cli.py" "$@"

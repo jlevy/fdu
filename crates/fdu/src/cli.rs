@@ -13,19 +13,22 @@ use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime};
 
+use std::borrow::Cow;
+
 use clap::builder::styling::{AnsiColor, Style as AnsiStyle, Styles};
 use clap::{ArgAction, ColorChoice, CommandFactory, FromArgMatches, Parser, ValueEnum};
 
-use crate::content::{AnalysisProfile, AnalysisRequest};
-use crate::execution::{PerformanceSummary, prepare_report, prepare_report_with_scan_diagnostics};
-use crate::query::{
-    Bound, Pattern, Provenance, Query, ReportSource, Selection, SizeMetric, SortKey, ViewSpec,
-    format_rfc3339, parse_size, parse_when, system_time_to_nanos,
+use fdu_core::content::{AnalysisRequest, AnalysisSet};
+use fdu_core::query::{
+    AxisNames, Bound, Pattern, Provenance, Query, ReportSource, Selection, SizeMetric, SortKey,
+    ViewSpec, parse_size, parse_when, system_time_to_nanos,
 };
-use crate::report_format;
-use crate::{
+use fdu_core::report_format;
+use fdu_core::report_format::human_count;
+use fdu_core::{
     CachePolicy, EntryKind, OpenConfig, ScanConfig, default_cache_path, open_with_pending_save,
 };
+use fdu_core::{PerformanceSummary, prepare_report, prepare_report_with_scan_diagnostics};
 
 const SKILL_TEMPLATE: &str = include_str!("skills/SKILL.md");
 
@@ -36,6 +39,27 @@ const SKILL_TEMPLATE: &str = include_str!("skills/SKILL.md");
 const SCAN_DIAGNOSTICS_ENV: &str = "FDU_SCAN_DIAGNOSTICS";
 const SCAN_DIAGNOSTICS_PREFIX: &str = "__FDU_SCAN_DIAGNOSTICS__=";
 
+// ---- the terminal styling system --------------------------------------------------
+//
+// Five roles, one colour each, and one case convention.  Every human surface — the report,
+// the `--docs` guide, and clap's help — draws from this table rather than choosing its own
+// colours, which is what makes them read as one tool.
+//
+//   heading      cyan bold      ALL CAPS, no trailing colon
+//   warning      yellow bold
+//   error        red bold
+//   cause        dimmed         the chain under an error
+//   telemetry    bright black   the performance footer, notes, watch rules
+//
+// Colour applies only when the destination is a live terminal, and never to a machine
+// format or under NO_COLOR; `ColorContext` owns that decision and `paint` applies it.
+
+/// The one header style every human surface uses.
+///
+/// Report view headers, the `--docs` section headers, and clap's help section headings
+/// are the same kind of thing — a name introducing a block — so they share a style and a
+/// case convention rather than each inventing one. `report_format` re-exports this as the
+/// view-header style so there is a single definition to change.
 const STYLE_HEADING: AnsiStyle = AnsiColor::Cyan.on_default().bold();
 const STYLE_WARNING: AnsiStyle = AnsiColor::Yellow.on_default().bold();
 const STYLE_ERROR: AnsiStyle = AnsiColor::Red.on_default().bold();
@@ -56,61 +80,99 @@ const CLI_STYLES: Styles = Styles::styled()
     .valid(AnsiColor::Green.on_default())
     .invalid(AnsiColor::Yellow.on_default());
 
-const COMMON_REPORTS_HELP: &str = r"Five common reports:
-  Language sizes      fdu --view languages PATH
-                      Uses exact names and extensions; never reads file contents.
-  Languages and LOC   fdu --analyze code --view languages PATH
-                      Reads eligible files for code, comment, and blank lines.
-  All file types      fdu --view types PATH
-                      Includes every family from names and extensions; never reads content.
-  Folder sizes        fdu PATH
-                      Uses the metadata-only tree view and reusable index.
-  Fast totals only    fdu --view summary PATH
-                      Returns bytes plus file and directory counts;
-                      retains no index and writes no cache.
+/// The one line `--help` spends on everything `--docs` covers.
+///
+/// Help stays the flag reference it is supposed to be.  The guide it points at used to
+/// be split across `before_help` and `after_help`, which put a page of prose *above* the
+/// tool's own description — the reader met the examples before learning what the command
+/// was.
+const DOCS_POINTER: &str = "Run `fdu --docs` for more help and important usage examples.";
 
---analyze chooses what may be read; --view chooses what is printed.";
+/// The guide `--docs` prints: the ladder, the two axes, and the contracts worth knowing
+/// before automating against the output.
+const DOCS: &str = r"fdu — a fast, incremental file roll-up engine.
 
-const CONTENT_AFTER_HELP: &str = r"More compositions:
+THE LADDER
+  Every report is one command, and they form a ladder. Each rung costs more than
+  the one above it and tells you more, so stop at the cheapest answer that
+  settles your question.
+
+    fdu --view summary PATH             how big is this tree?        no reads
+    fdu PATH                            which folders are big?       no reads
+    fdu --view types PATH               what kinds of files?         no reads
+    fdu --view languages PATH           which languages?             no reads
+    fdu --analyze code PATH             how much code?               READS FILES
+    fdu --analyze words PATH            how much writing?            READS FILES
+    fdu --analyze all --view all PATH   everything there is          READS FILES
+
+TWO FLAGS DO ALL OF IT
+  --analyze decides what gets read. Anything but `none` opens and reads every
+    eligible file, which is the only setting that makes a run cost more than a
+    single metadata walk.
+  --view decides what gets printed. It is free: every view is a projection over
+    one walk, so asking for more views never touches the filesystem again.
+
+  You rarely need both. Naming analyzers selects a view that displays them, so
+  `fdu --analyze code PATH` already prints language rows with lines of code.
+  Name --view yourself for a different projection; it always wins.
+
+  A view never turns on an analyzer, because choosing how to look at a result
+  should not quietly authorize reading every file in the tree. So a --view that
+  displays none of what you asked to read says how much was read for nothing,
+  and --view all names any view it had to skip.
+
+MORE COMPOSITIONS
   fdu --view extensions ~/Downloads
   fdu --view types,families --format json .
-  fdu --analyze documents --view documents .
+  fdu --analyze words --view documents .
+  fdu --view files --min-size 10M --sort size -n 100 PATH   largest files
+  fdu --view files --modified-since 1h --sort mtime PATH    recent changes
+  fdu --watch --view files --format jsonl PATH              a tail -f for a tree
 
-Five axes, and every option belongs to exactly one:
+  --interval throttles rendering only; change detection is event-driven and
+  unaffected by it, so an idle tree costs nothing between changes.
+
+SIX AXES, AND EVERY OPTION BELONGS TO EXACTLY ONE
   Scope      PATH, --scan-depth                         what is scanned and cached
-  Selection  --include, --exclude, --depth, --limit    which entries are considered
-  View       tree,extensions,types,families,languages,documents,files,summary
+  Content    --analyze none|lines|code|words|all        which file bodies are read
+  Selection  --include, --exclude, --depth, --limit     which entries are considered
+  View       tree,extensions,types,families,languages,documents,files,summary,all
   Format     --format text|json|jsonl|yaml, --color
-  Mode       --cache, --analyze, --analysis-workers
+  Mode       --cache, --watch, --analysis-workers
 
-Content analysis:
+CONTENT ANALYSIS
   none       metadata only; source files are never opened (default)
-  basic      physical, blank, and nonblank lines plus raw prose words
-  code       basic metrics plus the versioned common-language SLOC analyzer
-  documents  basic metrics plus logical and reader-visible prose metrics
-  full       every shipped analyzer
+  lines      physical, blank, and nonblank lines plus raw word counts
+  code       standard SLOC from the versioned common-language analyzer
+  words      normalized and reader-visible word volume
+  all        every shipped analyzer
 
-  languages is metadata-only by default; code or full adds standard LOC.
-  documents requires any enabled profile.
-  Views never enable content analysis implicitly.
+  A comma-separated set: code,words runs both. none and all name the whole
+  axis and cannot be combined. lines comes with any analyzer, free.
+  languages is metadata-only by default; code adds standard LOC.
+  documents requires any enabled analyzer.
   Analysis streams every eligible file through EOF; files are never size-truncated.
   --analysis-workers bounds concurrency.
   --words-per-page changes only report-time page derivation.
-  Unchanged results for the same profile are restored from a separate sidecar.
+  Unchanged results are restored from a separate sidecar; a stored set answers
+  any narrower request without re-reading.
   cache=only never opens source files and fails if requested content is absent.
 
-Output and automation:
-  Metadata-only machine output remains fdu.report/1; metric summaries use fdu.report/2.
+OUTPUT AND AUTOMATION
+  Metadata-only machine output remains fdu.report/4; metric summaries use fdu.report/5.
   Text language rows use canonical names; machine formats retain lowercase IDs.
   Metric rows include detection source, confidence, origin flags, and coverage.
   One-shot text reports end with a gray performance line; machine formats omit it.
   Results go to stdout; warnings and errors go to stderr.
   The command never prompts, pages, or animates progress.
+  Reports require an explicit PATH; bare `fdu` prints help and scans nothing.
+  `fdu --skill` prints a portable agent skill describing this same surface.
 
-Exit status:
+EXIT STATUS
   0  Complete result, or a partial result accepted with --allow-partial
   1  Fatal filesystem or cache error
-  2  Partial result, or command-line usage error";
+  2  Partial result, or command-line usage error
+";
 
 /// When terminal styling should be enabled.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum)]
@@ -230,10 +292,19 @@ pub enum RunOutcome {
     about,
     long_about = None,
     styles = CLI_STYLES,
-    before_help = COMMON_REPORTS_HELP,
-    after_help = CONTENT_AFTER_HELP,
+    after_help = DOCS_POINTER,
+    // Wrap at the terminal's width, never wider than this. clap takes the smaller of the
+    // two, so a narrow terminal still narrows and a wide one stops at a readable measure
+    // rather than running a description across the whole screen.
+    max_term_width = 120,
+    // `--help` renders the same compact block `-h` does. clap's long help puts every
+    // description on its own line with a blank line between flags, which roughly doubles
+    // the height and breaks a section into a list of islands; the prose that justified
+    // that layout now lives in `--docs`.
+    disable_help_flag = true,
+    disable_version_flag = true,
     arg_required_else_help = true,
-    override_usage = "fdu [OPTIONS] <PATH>\n       fdu [PATH] --cache-status[=<SCOPE>] [--cache-clear[=<SCOPE>]]\n       fdu [PATH] --cache-clear[=<SCOPE>]\n       fdu --skill"
+    override_usage = "fdu [OPTIONS] <PATH>\n       fdu [PATH] --cache-status[=<SCOPE>] [--cache-clear[=<SCOPE>]]\n       fdu [PATH] --cache-clear[=<SCOPE>]\n       fdu --docs\n       fdu --skill"
 )]
 // A command line is a flat bag of independent switches. Folding these into enums to
 // satisfy the lint would obscure the one thing this struct exists to mirror: the flags a
@@ -241,83 +312,100 @@ pub enum RunOutcome {
 #[allow(clippy::struct_excessive_bools)]
 pub struct Cli {
     // ---- scope: what the engine observes and retains ----
-    /// Report root; optional only for cache lifecycle operations.
-    #[arg(required_unless_present_any = ["skill", "cache_status", "cache_clear"])]
+    /// Report root; optional only for the discovery and cache-lifecycle flags.
+    #[arg(
+        required_unless_present_any = ["docs", "skill", "cache_status", "cache_clear"],
+        help_heading = "ARGUMENTS"
+    )]
     pub path: Option<PathBuf>,
 
     /// Limit scanning and retention to N entry levels.
-    #[arg(long, value_name = "N", help_heading = "Scope")]
+    #[arg(long, value_name = "N", help_heading = "SCOPE")]
     pub scan_depth: Option<usize>,
 
     /// Stay on the filesystem the root lives on.
-    #[arg(long, action = ArgAction::SetTrue, help_heading = "Scope")]
+    #[arg(long, action = ArgAction::SetTrue, help_heading = "SCOPE")]
     pub one_filesystem: bool,
 
     // ---- selection: which retained entries this query considers ----
     /// Report only entries matching this glob; repeatable.
-    #[arg(long, value_name = "GLOB", help_heading = "Selection")]
+    #[arg(long, value_name = "GLOB", help_heading = "SELECTION")]
     pub include: Vec<String>,
 
     /// Exclude entries matching this glob; repeatable, and wins over --include.
-    #[arg(long, value_name = "GLOB", help_heading = "Selection")]
+    #[arg(long, value_name = "GLOB", help_heading = "SELECTION")]
     pub exclude: Vec<String>,
 
     /// Report only entries at least this large, as 512, 10M, or 1.5GiB.
-    #[arg(long, value_name = "SIZE", help_heading = "Selection")]
+    #[arg(long, value_name = "SIZE", help_heading = "SELECTION")]
     pub min_size: Option<String>,
 
     /// Report only entries modified at or after this time, as 2h or an RFC 3339 stamp.
-    #[arg(long, value_name = "WHEN", help_heading = "Selection")]
+    #[arg(long, value_name = "WHEN", help_heading = "SELECTION")]
     pub modified_since: Option<String>,
 
     /// Report only entries modified before this time.
-    #[arg(long, value_name = "WHEN", help_heading = "Selection")]
+    #[arg(long, value_name = "WHEN", help_heading = "SELECTION")]
     pub modified_before: Option<String>,
 
     /// Entry kinds to report: file, dir, symlink, other.
-    #[arg(long, value_name = "LIST", help_heading = "Selection")]
+    #[arg(long, value_name = "LIST", help_heading = "SELECTION")]
     pub kind: Option<String>,
 
-    /// Directory levels to show; does not limit scanning. Accepts `all`.
-    #[arg(short, long, default_value = "2", value_name = "N", help_heading = "Selection")]
-    pub depth: String,
+    /// Directory levels to show; does not limit scanning. Accepts `all` [tree default: 2].
+    ///
+    /// Optional for the same reason `--limit` is: the tree brings its own default from
+    /// the library, so the CLI does not declare one and every surface agrees. Said in
+    /// the help text rather than by clap, because it is the view's default and not the
+    /// flag's -- only the tree renders a hierarchy for a depth to bound.
+    #[arg(short, long, value_name = "N", help_heading = "SELECTION")]
+    pub depth: Option<String>,
 
-    /// Entries to show per directory. Accepts `all`.
-    #[arg(short = 'n', long, default_value = "10", value_name = "N", help_heading = "Selection")]
-    pub limit: String,
+    /// Rows to show, per group. Accepts `all`.
+    ///
+    /// Each view brings its own default, because one number does not suit them all: a
+    /// tree shows ten per directory, `largest` and `recent` show twenty, and `files`
+    /// enumerates everything.
+    #[arg(short = 'n', long, value_name = "N", help_heading = "SELECTION")]
+    pub limit: Option<String>,
 
     /// Order results: size, count, mtime, or name.
-    #[arg(long, value_name = "KEY", help_heading = "Selection")]
+    #[arg(long, value_name = "KEY", help_heading = "SELECTION")]
     pub sort: Option<String>,
 
     /// Reverse the ordering.
-    #[arg(long, action = ArgAction::SetTrue, help_heading = "Selection")]
+    #[arg(long, action = ArgAction::SetTrue, help_heading = "SELECTION")]
     pub reverse: bool,
 
     /// Which size metric to report: allocated or apparent.
-    #[arg(long, value_name = "METRIC", default_value = "allocated", help_heading = "Selection")]
+    #[arg(long, value_name = "METRIC", default_value = "allocated", help_heading = "SELECTION")]
     pub size: String,
 
     // ---- view: which roll-ups are reported ----
-    /// Views: tree, extensions, types, families, languages, documents, files, summary.
-    #[arg(long, value_name = "LIST", default_value = "tree", help_heading = "Views")]
-    pub view: String,
+    /// Views: tree, extensions, types, families, languages, documents, largest, recent,
+    /// files, summary, or full. Defaults to the view that displays what --analyze asked
+    /// for.
+    #[arg(long, value_name = "LIST", help_heading = "VIEWS")]
+    pub view: Option<String>,
 
-    /// Content depth: none, basic, code, documents, or full.
-    #[arg(long, value_name = "PROFILE", default_value = "none", help_heading = "Content analysis")]
+    /// Analyzers to run: none, lines, code, words, or all.
+    ///
+    /// Anything but none opens and reads every eligible file, which is the only setting
+    /// that makes a run cost more than one metadata walk.
+    #[arg(long, value_name = "LIST", default_value = "none", help_heading = "CONTENT ANALYSIS")]
     pub analyze: String,
 
     /// Content reader workers; zero selects available parallelism.
-    #[arg(long, value_name = "N", default_value_t = 0, help_heading = "Content analysis")]
+    #[arg(long, value_name = "N", default_value_t = 0, help_heading = "CONTENT ANALYSIS")]
     pub analysis_workers: usize,
 
     /// Logical words per derived document page.
-    #[arg(long, value_name = "N", default_value_t = 250, help_heading = "Views")]
+    #[arg(long, value_name = "N", default_value_t = 250, help_heading = "VIEWS")]
     pub words_per_page: u64,
 
     // ---- format: how the report is serialized ----
     /// Output format: text, json, jsonl, or yaml.
-    #[arg(long, value_name = "FORMAT", default_value = "text", help_heading = "Output")]
+    #[arg(long, value_name = "FORMAT", default_value = "text", help_heading = "OUTPUT")]
     pub format: String,
 
     /// Colorize human output: auto, always, or never.
@@ -326,41 +414,53 @@ pub struct Cli {
         value_name = "WHEN",
         default_value = "auto",
         hide_possible_values = true,
-        help_heading = "Output"
+        help_heading = "OUTPUT"
     )]
     pub color: ColorWhen,
 
     // ---- mode: how the cache is used ----
     /// Cache policy: auto, refresh, read-only, only, or off.
-    #[arg(long, value_name = "POLICY", default_value = "auto", help_heading = "Execution")]
+    #[arg(long, value_name = "POLICY", default_value = "auto", help_heading = "EXECUTION")]
     pub cache: String,
 
     /// Accept operationally partial results, including filesystem or analysis failures.
-    #[arg(long, action = ArgAction::SetTrue, help_heading = "Execution")]
+    #[arg(long, action = ArgAction::SetTrue, help_heading = "EXECUTION")]
     pub allow_partial: bool,
 
     /// Report cache contents instead of scanning: root (default) or all.
-    #[arg(long, value_name = "SCOPE", num_args = 0..=1, require_equals = true, default_missing_value = "root", help_heading = "Cache management")]
+    #[arg(long, value_name = "SCOPE", num_args = 0..=1, require_equals = true, default_missing_value = "root", help_heading = "CACHE MANAGEMENT")]
     pub cache_status: Option<String>,
 
     /// Remove cached snapshots instead of scanning: root (default) or all.
-    #[arg(long, value_name = "SCOPE", num_args = 0..=1, require_equals = true, default_missing_value = "root", help_heading = "Cache management")]
+    #[arg(long, value_name = "SCOPE", num_args = 0..=1, require_equals = true, default_missing_value = "root", help_heading = "CACHE MANAGEMENT")]
     pub cache_clear: Option<String>,
 
     /// Stream changes continuously instead of returning one report.
     #[cfg(feature = "watch")]
-    #[arg(long, action = ArgAction::SetTrue, help_heading = "Execution")]
+    #[arg(long, action = ArgAction::SetTrue, help_heading = "EXECUTION")]
     pub watch: bool,
 
     /// How often aggregate views re-render while watching, as a duration.
     ///
     /// Throttles rendering only; change detection is event-driven and unaffected.
     #[cfg(feature = "watch")]
-    #[arg(long, value_name = "DUR", default_value = "2s", help_heading = "Execution")]
+    #[arg(long, value_name = "DUR", default_value = "2s", help_heading = "EXECUTION")]
     pub interval: String,
 
+    /// Print help.
+    #[arg(short = 'h', long = "help", action = ArgAction::HelpShort, help_heading = "OTHER")]
+    pub help: Option<bool>,
+
+    /// Print version.
+    #[arg(short = 'V', long = "version", action = ArgAction::Version, help_heading = "OTHER")]
+    pub version: Option<bool>,
+
+    /// Print the usage guide: the report ladder, both axes, and the output contracts.
+    #[arg(long, action = ArgAction::SetTrue, help_heading = "OTHER")]
+    pub docs: bool,
+
     /// Print a portable agent skill to stdout.
-    #[arg(long, action = ArgAction::SetTrue, help_heading = "Other")]
+    #[arg(long, action = ArgAction::SetTrue, help_heading = "OTHER")]
     pub skill: bool,
 }
 
@@ -392,6 +492,14 @@ impl Cli {
         stdout_is_terminal: bool,
         stderr_is_terminal: bool,
     ) -> anyhow::Result<RunOutcome> {
+        if self.docs {
+            let color =
+                ColorContext::from_environment(self.color, false, false, stdout_is_terminal)
+                    .enabled();
+            write!(out, "{}", style_guide(DOCS, color))?;
+            return Ok(RunOutcome::Complete);
+        }
+
         if self.skill {
             write!(out, "{}", compose_skill())?;
             return Ok(RunOutcome::Complete);
@@ -409,7 +517,12 @@ impl Cli {
         // time costs nothing and reports its own spelling rather than a scan's worth of
         // waiting followed by an error.
         let format = self.parse_format().map_err(|error| usage(&error))?;
-        let query = self.parse_query().map_err(|error| usage(&error))?;
+        // The content axis is parsed first because the view axis defaults from it: a
+        // request that pays to read files should display what it read.
+        let analysis = self.parse_analysis().map_err(|error| usage(&error))?;
+        let views =
+            resolve_views(self.view.as_deref(), analysis.profile).map_err(|error| usage(&error))?;
+        let query = self.parse_query(&views).map_err(|error| usage(&error))?;
         let path = self.path.as_deref().ok_or_else(|| {
             usage(&anyhow::anyhow!(
                 "missing PATH: specify the directory to summarize, for example `fdu .`"
@@ -417,7 +530,6 @@ impl Cli {
         })?;
 
         let policy = self.parse_cache_policy().map_err(|error| usage(&error))?;
-        let analysis = self.parse_analysis().map_err(|error| usage(&error))?;
         query
             .validate_analysis(analysis.profile)
             .map_err(|message| usage(&anyhow::anyhow!(message)))?;
@@ -438,12 +550,7 @@ impl Cli {
             // events against that boundary yet. Selection flags stay legal with --watch
             // precisely because they filter the retained index instead, and the message
             // says so rather than only naming the conflict.
-            return Err(usage(&anyhow::anyhow!(concat!(
-                "--watch cannot be combined with --scan-depth or --one-filesystem: watching ",
-                "requires full scope. ",
-                "Selection flags such as --depth, --include, and --modified-since do work with ",
-                "--watch, because they filter the index rather than narrowing the scan"
-            ))));
+            return Err(usage(&anyhow::anyhow!(watch_scope_guidance())));
         }
 
         #[cfg(feature = "watch")]
@@ -515,6 +622,9 @@ impl Cli {
                     color,
                 )
             )?;
+            for note in display_notes(&views, analysis.profile, performance.bytes_read) {
+                writeln!(out, "{}", paint(&note, STYLE_PERFORMANCE, color))?;
+            }
         }
 
         if format == report_format::Format::Text && !report.complete {
@@ -557,9 +667,9 @@ impl Cli {
         config: &OpenConfig,
         color: bool,
     ) -> anyhow::Result<RunOutcome> {
-        use crate::query::ViewSpec;
-        use crate::watch::WatchConfig;
-        use crate::watch_session::{ChangeKind, Session};
+        use fdu_core::query::ViewSpec;
+        use fdu_core::watch::WatchConfig;
+        use fdu_core::watch_session::{ChangeKind, Session};
 
         let path = self.path.as_deref().expect("run() validates the report path first");
         let interval = parse_duration(&self.interval).map_err(|error| usage(&error))?;
@@ -584,7 +694,7 @@ impl Cli {
         // is the only one left; the watch session needs the index by value.
         let index = std::sync::Arc::into_inner(index)
             .expect("the joined writer released the only other reference");
-        let handle = crate::IndexHandle::new(index);
+        let handle = fdu_core::IndexHandle::new(index);
         let mut session = Session::new(handle, config.scan.clone(), query, WatchConfig::default())?;
 
         // The initial answer, identical to a one-shot run's.
@@ -592,9 +702,9 @@ impl Cli {
             scan_started_at: Some(scan_started_at),
             generated_at: SystemTime::now(),
             source: match open_report.path_taken {
-                crate::OpenPath::ColdScan => ReportSource::ColdScan,
-                crate::OpenPath::WarmRevalidate => ReportSource::WarmRevalidate,
-                crate::OpenPath::CacheOnly => ReportSource::CacheOnly,
+                fdu_core::OpenPath::ColdScan => ReportSource::ColdScan,
+                fdu_core::OpenPath::WarmRevalidate => ReportSource::WarmRevalidate,
+                fdu_core::OpenPath::CacheOnly => ReportSource::CacheOnly,
             },
             complete: open_report.is_complete(),
             errors: open_report.error_messages(),
@@ -677,7 +787,7 @@ impl Cli {
     #[cfg(feature = "watch")]
     #[allow(clippy::too_many_arguments)]
     fn save_if_pending(
-        session: &crate::watch_session::Session,
+        session: &fdu_core::watch_session::Session,
         config: &OpenConfig,
         pending: &mut bool,
         last_save: &mut SystemTime,
@@ -719,7 +829,7 @@ impl Cli {
     /// run's warmth is lost.
     #[cfg(feature = "watch")]
     fn save_live(
-        session: &crate::watch_session::Session,
+        session: &fdu_core::watch_session::Session,
         config: &OpenConfig,
     ) -> anyhow::Result<bool> {
         let (Some(cache_path), true) = (config.cache_path.as_deref(), config.policy.writes())
@@ -727,13 +837,13 @@ impl Cli {
             return Ok(false);
         };
         let index = session.index_snapshot()?;
-        if index.freshness() != crate::Freshness::Fresh {
+        if index.freshness() != fdu_core::Freshness::Fresh {
             // Only a trustworthy index is worth persisting; a partial one would be
             // served as fact on the next run. Reported as "not written" so the caller
             // keeps the change pending and tries again once the index settles.
             return Ok(false);
         }
-        crate::snapshot::save(&index, cache_path)?;
+        fdu_core::snapshot::save(&index, cache_path)?;
         Ok(true)
     }
 
@@ -745,7 +855,7 @@ impl Cli {
     /// the loop — so the rule below can be unconditional.
     fn render_live(
         out: &mut dyn Write,
-        session: &crate::watch_session::Session,
+        session: &fdu_core::watch_session::Session,
         format: report_format::Format,
         color: bool,
     ) -> anyhow::Result<()> {
@@ -759,7 +869,7 @@ impl Cli {
             writeln!(
                 out,
                 "\n{}",
-                paint(&watch_rule(provenance.generated_at), STYLE_WATCH_RULE, color)
+                paint(&report_format::watch_rule(provenance.generated_at), STYLE_WATCH_RULE, color)
             )?;
         }
         write!(out, "{}", report_format::render(&report, format, color))?;
@@ -773,8 +883,8 @@ impl Cli {
         // current-root meaning so `--cache-status=all` and `--cache-clear=all` remain
         // useful discovery/maintenance actions without weakening report safety.
         let root = self.path.as_deref().unwrap_or_else(|| Path::new("."));
-        let cache_dir =
-            crate::default_cache_path(root).and_then(|path| path.parent().map(Path::to_path_buf));
+        let cache_dir = fdu_core::default_cache_path(root)
+            .and_then(|path| path.parent().map(Path::to_path_buf));
 
         if let Some(scope) = &self.cache_clear {
             let scope = CacheScope::parse(scope, "--cache-clear").map_err(|e| usage(&e))?;
@@ -783,7 +893,7 @@ impl Cli {
                     // Echo the directory before acting, so a destructive flag always says
                     // where it is pointed.
                     writeln!(out, "Cache directory: {}", dir.display())?;
-                    let removed = crate::clear_all_caches(dir)?;
+                    let removed = fdu_core::clear_all_caches(dir)?;
                     writeln!(
                         out,
                         "{}",
@@ -798,9 +908,9 @@ impl Cli {
                     )?;
                 }
                 (CacheScope::Root, _) => {
-                    let path = crate::default_cache_path(root);
+                    let path = fdu_core::default_cache_path(root);
                     let removed = match &path {
-                        Some(path) => crate::clear_cache(path)?,
+                        Some(path) => fdu_core::clear_cache(path)?,
                         None => false,
                     };
                     if let Some(path) = &path {
@@ -819,10 +929,10 @@ impl Cli {
         if let Some(scope) = &self.cache_status {
             let scope = CacheScope::parse(scope, "--cache-status").map_err(|e| usage(&e))?;
             let statuses = match (scope, &cache_dir) {
-                (CacheScope::All, Some(dir)) => crate::list_caches(dir)?,
+                (CacheScope::All, Some(dir)) => fdu_core::list_caches(dir)?,
                 (CacheScope::All, None) => Vec::new(),
-                (CacheScope::Root, _) => match crate::default_cache_path(root) {
-                    Some(path) => vec![crate::cache_status(&path)?],
+                (CacheScope::Root, _) => match fdu_core::default_cache_path(root) {
+                    Some(path) => vec![fdu_core::cache_status(&path)?],
                     None => Vec::new(),
                 },
             };
@@ -836,39 +946,11 @@ impl Cli {
     fn write_cache_status(
         &self,
         out: &mut dyn Write,
-        statuses: &[crate::CacheStatus],
+        statuses: &[fdu_core::CacheStatus],
     ) -> anyhow::Result<()> {
         let format = self.parse_format().map_err(|e| usage(&e))?;
-        // Root scope synthesises a status for the path a snapshot *would* occupy, so a
-        // tree that has never been cached still yields one unrecognized entry. Both
-        // renderings resolve that the same way, or the human and machine answers would
-        // disagree about whether a cache exists: a request whose every candidate is
-        // unrecognized reports no snapshots rather than describing absent files.
-        let statuses: &[crate::CacheStatus] =
-            if statuses.iter().all(|status| !status.is_recognized()) { &[] } else { statuses };
-        if format == report_format::Format::Text {
-            if statuses.is_empty() {
-                writeln!(out, "No cached snapshots.")?;
-                return Ok(());
-            }
-            for status in statuses {
-                match &status.snapshot {
-                    Some(info) => writeln!(
-                        out,
-                        "{}  {} entries, {} metadata bytes, {} content bytes  {}",
-                        status.path.display(),
-                        info.entries,
-                        status.bytes,
-                        status.content_bytes.unwrap_or(0),
-                        info.root.display()
-                    )?,
-                    None => writeln!(out, "{}  unrecognized", status.path.display())?,
-                }
-            }
-            return Ok(());
-        }
-
-        // Machine output gets the same facts under the schema envelope's conventions.
+        // Every format, human included, comes from the one renderer. While the CLI kept
+        // the text layout to itself, no other caller could print what fdu prints.
         writeln!(out, "{}", report_format::render_cache_status(statuses, format))?;
         Ok(())
     }
@@ -903,12 +985,24 @@ impl Cli {
     /// This is all the CLI does: parse flags into `Query`, hand it to the library, and
     /// serialize what comes back. Any logic beyond that belongs in the library, where
     /// Rust and Python callers get it too.
-    fn parse_query(&self) -> anyhow::Result<Query> {
+    /// Resolve the content and view axes exactly as [`Cli::run`] does.
+    ///
+    /// Tests go through this rather than calling `parse_query` with a hand-written view
+    /// list, so a change to the resolution order cannot pass the suite while breaking the
+    /// command.
+    #[cfg(test)]
+    fn resolved_query(&self) -> anyhow::Result<Query> {
+        let analysis = self.parse_analysis()?;
+        let views = resolve_views(self.view.as_deref(), analysis.profile)?;
+        self.parse_query(&views)
+    }
+
+    fn parse_query(&self, views: &ResolvedViews) -> anyhow::Result<Query> {
         let now = SystemTime::now();
 
         let mut selection = Selection {
-            depth: parse_bound(&self.depth, "--depth")?,
-            limit: parse_bound(&self.limit, "--limit")?,
+            depth: self.depth.as_deref().map(|value| parse_bound(value, "--depth")).transpose()?,
+            limit: self.limit.as_deref().map(|value| parse_bound(value, "--limit")).transpose()?,
             reverse: self.reverse,
             size: parse_size_metric(&self.size)?,
             ..Selection::default()
@@ -938,26 +1032,67 @@ impl Cli {
             selection.sort = Some(parse_sort(sort)?);
         }
 
-        let views = parse_list(&self.view, "--view", parse_view)?;
+        let omitted_views = views.omitted.clone();
+        let views = views.selected.clone();
         if self.words_per_page == 0 {
             anyhow::bail!("invalid --words-per-page 0: expected a positive integer");
         }
-        Ok(Query { selection, views, words_per_page: self.words_per_page })
+        // The command line names these axes with flags; a library caller names them with
+        // fields, and the report's own diagnostics follow whichever asked.
+        Ok(Query {
+            selection,
+            views,
+            omitted_views,
+            axes: AxisNames::FLAGS,
+            words_per_page: self.words_per_page,
+        })
     }
 
     fn parse_analysis(&self) -> anyhow::Result<AnalysisRequest> {
-        let profile = match self.analyze.trim().to_ascii_lowercase().as_str() {
-            "none" | "off" | "disabled" => AnalysisProfile::Disabled,
-            "basic" => AnalysisProfile::Basic,
-            "code" => AnalysisProfile::Code,
-            "documents" | "docs" => AnalysisProfile::Documents,
-            "full" => AnalysisProfile::Full,
-            other => anyhow::bail!(
-                "invalid --analyze {other:?}: expected one of none, basic, code, documents, full"
-            ),
-        };
+        let profile = AnalysisSet::parse_labeled(&self.analyze, "--analyze")
+            .map_err(|message| anyhow::anyhow!(message))?;
         Ok(AnalysisRequest { profile, workers: self.analysis_workers })
     }
+}
+
+/// What each knob is called on the command line, given its name in the API.
+const WATCH_SCOPE_VOCABULARY: [(&str, &str); 5] = [
+    ("max_depth", "--scan-depth"),
+    ("one_filesystem", "--one-filesystem"),
+    ("modified_since", "--modified-since"),
+    ("depth", "--depth"),
+    ("include", "--include"),
+];
+
+/// The library's watch-scope rule, in the command line's vocabulary.
+///
+/// One rule, stated once, with only the knob names differing. It used to be two separate
+/// messages -- the CLI's naming flags and the library's naming implementation -- which
+/// drifted apart and which the parity harness could not tell were the same rule.
+///
+/// The substitution is an explicit whole-word map rather than a blind replace, which is
+/// the bug fdu-7j6z was: `message.replace("analyze", "--analyze")` rewrote the user's own
+/// token. Here every replacement is a field name that cannot appear inside a value, which
+/// `the_watch_guidance_substitutes_whole_words_only` asserts, and the parity run verifies
+/// the two surfaces stay equivalent.
+fn watch_scope_guidance() -> String {
+    // One pass over whole words, never re-scanning what was already substituted. A
+    // sequential replace does re-scan: max_depth becomes --scan-depth, and then `depth`
+    // matches inside it, giving `--scan---depth`. That is fdu-7j6z again, and it appeared
+    // again here the moment the same shortcut was taken.
+    fdu_core::scan::WATCH_SCOPE_GUIDANCE
+        .split_inclusive(|character: char| !character.is_ascii_alphanumeric() && character != '_')
+        .map(|piece| {
+            let end = piece
+                .find(|character: char| !character.is_ascii_alphanumeric() && character != '_')
+                .unwrap_or(piece.len());
+            let (word, tail) = piece.split_at(end);
+            match WATCH_SCOPE_VOCABULARY.iter().find(|(field, _)| *field == word) {
+                Some((_, flag)) => format!("{flag}{tail}"),
+                None => piece.to_string(),
+            }
+        })
+        .collect()
 }
 
 /// Format transient one-shot work without adding it to the machine-report schema.
@@ -1026,18 +1161,6 @@ fn human_rate(units: u64, elapsed_ns: u64) -> String {
         }
         _ => format!("{}G", scaled_decimal(u128::from(rate), 1_000_000_000, 1)),
     }
-}
-
-fn human_count(value: u64) -> String {
-    let digits = value.to_string();
-    let mut grouped = String::with_capacity(digits.len() + digits.len() / 3);
-    for (index, byte) in digits.bytes().enumerate() {
-        if index > 0 && (digits.len() - index) % 3 == 0 {
-            grouped.push(',');
-        }
-        grouped.push(char::from(byte));
-    }
-    grouped
 }
 
 fn human_duration(duration: Duration) -> String {
@@ -1122,21 +1245,55 @@ fn parse_list<T: PartialEq>(
     Ok(parsed)
 }
 
-/// Parse one `--view` token.
-fn parse_view(token: &str, flag: &str) -> anyhow::Result<ViewSpec> {
-    match token.to_ascii_lowercase().as_str() {
-        "tree" => Ok(ViewSpec::Tree),
-        "types" => Ok(ViewSpec::Types),
-        "extensions" => Ok(ViewSpec::Extensions),
-        "families" => Ok(ViewSpec::Families),
-        "languages" => Ok(ViewSpec::Languages),
-        "documents" | "docs" => Ok(ViewSpec::Documents),
-        "files" => Ok(ViewSpec::Files),
-        "summary" => Ok(ViewSpec::Summary),
-        _ => anyhow::bail!(
-            "invalid {flag} {token:?}: expected one of tree, extensions, types, families, languages, documents, files, summary"
-        ),
+/// Whether a view renders anything the content analyzers produce.
+///
+/// This is the check behind the "paid for nothing" note.  It is deliberately a match
+/// rather than a property of `ViewSpec`, so adding a view forces a decision here about
+/// whether it displays content metrics.
+const fn view_displays_analysis(view: ViewSpec) -> bool {
+    matches!(view, ViewSpec::Types | ViewSpec::Families | ViewSpec::Languages | ViewSpec::Documents)
+}
+
+/// Views to render, plus any `--view all` could not satisfy.
+#[derive(Debug)]
+struct ResolvedViews {
+    selected: Vec<ViewSpec>,
+    omitted: Vec<ViewSpec>,
+}
+
+/// Resolve the view axis against the content axis.
+///
+/// `all` expands to what the requested analyzers can answer rather than failing the
+/// whole run over one unsatisfiable view, and reports what it dropped so the omission is
+/// stated rather than hidden.
+fn resolve_views(spec: Option<&str>, profile: AnalysisSet) -> anyhow::Result<ResolvedViews> {
+    // The whole axis -- list grammar, `full` expansion, and the default -- lives in the
+    // library, so the CLI and the Python API cannot disagree about what a spec means.
+    let (selected, omitted) =
+        ViewSpec::resolve(spec, profile, "--view").map_err(|message| anyhow::anyhow!(message))?;
+    Ok(ResolvedViews { selected, omitted })
+}
+
+/// Notes that keep the display contract legible in human output.
+///
+/// Both are the same rule read in opposite directions: a run displays what it paid for,
+/// and a view it could not render is named rather than quietly dropped.  Machine formats
+/// carry neither, because the `reports` array already enumerates exactly which views were
+/// produced — a consumer reads the omission from what is absent.
+fn display_notes(views: &ResolvedViews, profile: AnalysisSet, bytes_read: u64) -> Vec<String> {
+    // Only the note that needs telemetry. The omission note is a fact about the report and
+    // travels on it, so every surface states it rather than just this one (fdu-x8u6).
+    //
+    // Never an error: warming the content sidecar so a later run is warm is a supported
+    // use, and `--cache`-aware callers depend on it.  Silence would hide the cost instead.
+    if profile.is_enabled() && !views.selected.iter().any(|view| view_displays_analysis(*view)) {
+        return vec![format!(
+            "note: --analyze {} read {}; no selected view displays content metrics — try --view families, languages, or all",
+            profile.labels().join(","),
+            report_format::human_bytes(bytes_read),
+        )];
     }
+    Vec::new()
 }
 
 /// Parse one `--kind` token.
@@ -1285,10 +1442,58 @@ fn write_styled(
     for line in rendered.split_inclusive('\n') {
         let (content, newline) =
             line.strip_suffix('\n').map_or((line, ""), |content| (content, "\n"));
-        out.write_all(content.trim_end_matches([' ', '\t']).as_bytes())?;
+        let content = content.trim_end_matches([' ', '\t']);
+        let content = strip_heading_colon(content);
+        out.write_all(content.as_bytes())?;
         out.write_all(newline.as_bytes())?;
     }
     Ok(())
+}
+
+/// Drop the colon clap appends to a section heading.
+///
+/// clap renders `help_heading` as `HEADING:` with no way to opt out, which would leave
+/// help reading `SCOPE:` while the report reads `SUMMARY`. Rather than fight the
+/// formatter, the one rendering path we already own removes it.
+///
+/// Only a standalone all-caps heading line qualifies. `Usage: fdu ...` keeps its colon
+/// because it carries content after it, and an error line keeps its colon for the same
+/// reason — the test is that the whole line is the heading.
+fn strip_heading_colon(line: &str) -> Cow<'_, str> {
+    let Some(without_colon) = line.strip_suffix(':').or_else(|| {
+        // With colour the reset sequence trails the text, so the colon sits inside it.
+        line.strip_suffix("\u{1b}[0m").and_then(|inner| inner.strip_suffix(':'))
+    }) else {
+        return Cow::Borrowed(line);
+    };
+    let visible = strip_ansi(without_colon);
+    let is_heading = !visible.is_empty()
+        && visible.chars().any(char::is_alphabetic)
+        && visible.chars().all(|c| c.is_uppercase() || c == ' ' || !c.is_alphabetic());
+    if !is_heading {
+        return Cow::Borrowed(line);
+    }
+    // Remove just that colon, keeping any trailing reset sequence intact.
+    let colon = line.rfind(':').expect("the suffix match found one");
+    Cow::Owned(format!("{}{}", &line[..colon], &line[colon + 1..]))
+}
+
+/// The visible characters of a line, with any ANSI escape sequences removed.
+fn strip_ansi(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut chars = line.chars();
+    while let Some(c) = chars.next() {
+        if c == '\u{1b}' {
+            for escape in chars.by_ref() {
+                if escape.is_ascii_alphabetic() {
+                    break;
+                }
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
 }
 
 fn finish(
@@ -1307,8 +1512,21 @@ fn finish(
             2
         }
         Err(error) => {
-            let _ = writeln!(diagnostic, "{} {error}", paint("fdu:", STYLE_ERROR, color));
-            for cause in error.chain().skip(1) {
+            let headline = error.to_string();
+            let _ = writeln!(diagnostic, "{} {headline}", paint("fdu:", STYLE_ERROR, color));
+            // `I/O error at {path}: {source}` embeds its own source, so the first link in
+            // the chain repeated the sentence verbatim -- two lines where one carried the
+            // information, on the most common failure there is. Only that one link is
+            // elided, and only when the headline really does end with it: a plain
+            // `contains` over the whole chain would silently swallow a deeper cause that
+            // happened to be a substring of the headline, which is a different bug wearing
+            // this fix's clothes (fdu-zppc).
+            let mut chain = error.chain().skip(1).peekable();
+            let embedded = chain.peek().is_some_and(|first| headline.ends_with(&first.to_string()));
+            if embedded {
+                chain.next();
+            }
+            for cause in chain {
                 let cause = format!("  caused by: {cause}");
                 let _ = writeln!(diagnostic, "{}", paint(&cause, STYLE_CAUSE, color));
             }
@@ -1394,14 +1612,30 @@ impl ColorContext {
     }
 }
 
-/// The rule drawn above a watch repaint, carrying the instant it was rendered.
+/// Paint the guide's section headers with the shared header style.
 ///
-/// The time is what makes the rule worth a line rather than a bare separator: a watch
-/// reader wants to know when the tree last moved, and it is the one fact that
-/// distinguishes one repaint from another whose numbers happen to match. RFC 3339 in UTC
-/// is the spelling every other timestamp this tool prints uses.
-fn watch_rule(at: SystemTime) -> String {
-    format!("──── {} ────", format_rfc3339(at))
+/// A header is a line that starts at column zero and is upper case — the same shape the
+/// report's view headers take, which is what makes the two surfaces look like one tool.
+/// Everything else passes through untouched, so redirecting to a file or setting `NO_COLOR`
+/// yields exactly the bytes the golden pins.
+fn style_guide(guide: &str, color: bool) -> String {
+    if !color {
+        return guide.to_string();
+    }
+    let mut out = String::with_capacity(guide.len());
+    for line in guide.lines() {
+        let is_header = !line.is_empty()
+            && !line.starts_with(char::is_whitespace)
+            && line.chars().any(char::is_alphabetic)
+            && line.chars().filter(|c| c.is_alphabetic()).all(char::is_uppercase);
+        if is_header {
+            out.push_str(&paint(line, STYLE_HEADING, true));
+        } else {
+            out.push_str(line);
+        }
+        out.push('\n');
+    }
+    out
 }
 
 fn paint(text: &str, style: AnsiStyle, color: bool) -> String {
@@ -1423,7 +1657,6 @@ fn compose_skill_from(template: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::process::Command;
     use std::time::UNIX_EPOCH;
 
     /// Every `--watch` run parses an interval before anything else, so this must work on
@@ -1442,7 +1675,7 @@ mod tests {
         // The separator has to be recognisable as a boundary at a glance and never
         // mistakable for a row: every report row this tool prints starts with a
         // right-aligned size, so a rule starting with a box-drawing run cannot collide.
-        let rule = watch_rule(UNIX_EPOCH + Duration::from_secs(1_786_386_151));
+        let rule = report_format::watch_rule(UNIX_EPOCH + Duration::from_secs(1_786_386_151));
         assert_eq!(rule, "──── 2026-08-10T18:22:31.000000000Z ────");
         assert!(rule.starts_with('─'), "{rule}");
 
@@ -1522,10 +1755,6 @@ mod tests {
         assert!(!pending, "once written, the loop stops rewriting an unchanged index");
     }
 
-    const DEEP_RENDER_CHILD_ENV: &str = "FDU_DEEP_RENDER_CHILD";
-    const DEEP_RENDER_DEPTH: usize = 1_024;
-    const DEEP_RENDER_STACK_BYTES: usize = 64 * 1_024;
-
     struct FailingWriter;
 
     impl Write for FailingWriter {
@@ -1550,12 +1779,13 @@ mod tests {
             modified_since: None,
             modified_before: None,
             kind: None,
-            depth: "2".to_string(),
-            limit: "10".to_string(),
+            // None, as clap now leaves it: the default belongs to the view.
+            depth: None,
+            limit: None,
             sort: None,
             reverse: false,
             size: "allocated".to_string(),
-            view: "tree".to_string(),
+            view: Some("tree".to_string()),
             analyze: "none".to_string(),
             analysis_workers: 0,
             words_per_page: 250,
@@ -1569,12 +1799,15 @@ mod tests {
             #[cfg(feature = "watch")]
             interval: "2s".to_string(),
             allow_partial: false,
+            help: None,
+            version: None,
+            docs: false,
             skill: false,
         }
     }
 
     fn query_error(cli: &Cli) -> String {
-        cli.parse_query().expect_err("expected a rejection").to_string()
+        cli.resolved_query().expect_err("expected a rejection").to_string()
     }
 
     #[test]
@@ -1619,45 +1852,100 @@ mod tests {
 
     #[test]
     fn views_parse_as_an_ordered_comma_list() {
-        let parsed = Cli { view: "types,tree,summary".to_string(), ..cli() }
-            .parse_query()
+        let parsed = Cli { view: Some("types,tree,summary".to_string()), ..cli() }
+            .resolved_query()
             .expect("views parse");
         assert_eq!(parsed.views, vec![ViewSpec::Types, ViewSpec::Tree, ViewSpec::Summary]);
     }
 
     #[test]
     fn an_unknown_view_names_every_valid_value() {
-        let message = query_error(&Cli { view: "bogus".to_string(), ..cli() });
-        assert!(
-            message.contains(
-                "tree, extensions, types, families, languages, documents, files, summary"
-            ),
-            "{message}"
-        );
+        let message = query_error(&Cli { view: Some("bogus".to_string()), ..cli() });
+        // The rejection is how the vocabulary is discovered, so every value must be in it.
+        for view in ViewSpec::ALL {
+            let label = view.label();
+            assert!(message.contains(label), "{label} missing from: {message}");
+        }
+        assert!(message.contains("full"), "the total must be listed too: {message}");
     }
 
     #[test]
     fn a_repeated_view_is_a_typo_not_a_no_op() {
-        let message = query_error(&Cli { view: "tree,tree".to_string(), ..cli() });
+        let message = query_error(&Cli { view: Some("tree,tree".to_string()), ..cli() });
         assert!(message.contains("appears more than once"), "{message}");
     }
 
     #[test]
     fn an_empty_list_entry_is_rejected() {
-        let message = query_error(&Cli { view: "tree,,types".to_string(), ..cli() });
+        let message = query_error(&Cli { view: Some("tree,,types".to_string()), ..cli() });
         assert!(message.contains("empty entry"), "{message}");
     }
 
     #[test]
     fn bounds_accept_all_as_well_as_a_number() {
-        let parsed = Cli { depth: "all".to_string(), limit: "3".to_string(), ..cli() }
-            .parse_query()
+        let parsed = Cli { depth: Some("all".to_string()), limit: Some("3".to_string()), ..cli() }
+            .resolved_query()
             .expect("bounds parse");
-        assert_eq!(parsed.selection.depth, Bound::All);
-        assert_eq!(parsed.selection.limit, Bound::Limit(3));
+        assert_eq!(parsed.selection.depth, Some(Bound::All));
+        assert_eq!(parsed.selection.limit, Some(Bound::Limit(3)));
         // du's meaning of depth 0 survives the rename from --max-depth.
-        let zero = Cli { depth: "0".to_string(), ..cli() }.parse_query().expect("parses");
-        assert_eq!(zero.selection.depth, Bound::Limit(0));
+        let zero = Cli { depth: Some("0".to_string()), ..cli() }.resolved_query().expect("parses");
+        assert_eq!(zero.selection.depth, Some(Bound::Limit(0)));
+    }
+
+    /// The default the CLI used to declare itself now comes from the library, so every
+    /// surface renders the same tree for the same request. While the CLI owned it, a
+    /// Python caller leaving depth unset got an unbounded tree and no warning.
+    /// The CLI's wording and the library's must stay one rule with different knob names,
+    /// because that equivalence is what the parity harness verifies mechanically.
+    ///
+    /// Asserted against the constant and the vocabulary rather than by quoting prose. The
+    /// first three versions of this test quoted phrases and went stale the moment the rule
+    /// was reworded, which is a test measuring its own copy of the thing under test.
+    #[test]
+    fn the_watch_guidance_substitutes_whole_words_only() {
+        let source = fdu_core::scan::WATCH_SCOPE_GUIDANCE;
+        let text = watch_scope_guidance();
+
+        // A sequential replace produced `--scan---depth`: max_depth became --scan-depth and
+        // then `depth` matched inside the replacement. That is fdu-7j6z, and it reappeared
+        // here the moment the same shortcut was taken.
+        assert!(!text.contains("---"), "{text} re-substituted a replacement");
+
+        // Whole words throughout, because `--scan-depth` contains `depth`. Checking with a
+        // plain `contains` fails here for the same reason a sequential replace corrupts the
+        // text -- which is the point, and is why this assertion is written the careful way.
+        let names_word = |haystack: &str, word: &str| {
+            // Hyphens stay inside the token, so `--scan-depth` is one word and not three.
+            // Splitting on them is what made this assertion see a bare `depth` that is not
+            // there -- the same tokenisation mistake, one layer up.
+            haystack
+                .split(|c: char| !c.is_ascii_alphanumeric() && c != '_' && c != '-')
+                .any(|w| w == word)
+        };
+        for (field, flag) in WATCH_SCOPE_VOCABULARY {
+            if names_word(source, field) {
+                assert!(text.contains(flag), "{text} must name {flag} where the rule says {field}");
+            }
+            assert!(!names_word(&text, field), "{text} still names {field} untranslated");
+        }
+
+        // Substitution only: everything that is not a knob name survives untouched, so the
+        // two surfaces state the same rule rather than two rules that happen to agree.
+        let mut rebuilt = text.clone();
+        for (field, flag) in WATCH_SCOPE_VOCABULARY {
+            rebuilt = rebuilt.replace(flag, field);
+        }
+        assert_eq!(rebuilt, source, "the CLI wording must be the library's, knob names aside");
+    }
+
+    #[test]
+    fn an_unnamed_depth_takes_the_view_default_rather_than_unbounded() {
+        let parsed = cli().resolved_query().expect("parses");
+        assert_eq!(parsed.selection.depth, None, "the CLI must not invent a default");
+        assert_eq!(parsed.depth_for(ViewSpec::Tree), Bound::Limit(2));
+        // Only the tree renders a hierarchy, so the question does not arise elsewhere.
+        assert_eq!(parsed.depth_for(ViewSpec::Files), Bound::All);
     }
 
     #[test]
@@ -1669,7 +1957,7 @@ mod tests {
             exclude: vec!["**/target/**".to_string()],
             ..cli()
         }
-        .parse_query()
+        .resolved_query()
         .expect("patterns parse");
         assert_eq!(parsed.selection.include.len(), 2);
         assert_eq!(parsed.selection.exclude.len(), 1);
@@ -1694,7 +1982,7 @@ mod tests {
             modified_before: Some("@2000".to_string()),
             ..cli()
         }
-        .parse_query()
+        .resolved_query()
         .expect("window parses");
         assert_eq!(parsed.selection.modified.since, Some(1_000_000_000_000));
         assert_eq!(parsed.selection.modified.before, Some(2_000_000_000_000));
@@ -1709,7 +1997,7 @@ mod tests {
             reverse: true,
             ..cli()
         }
-        .parse_query()
+        .resolved_query()
         .expect("parses");
         assert_eq!(parsed.selection.kinds, vec![EntryKind::File, EntryKind::Dir]);
         assert_eq!(parsed.selection.sort, Some(SortKey::Mtime));
@@ -1717,21 +2005,205 @@ mod tests {
         assert!(parsed.selection.reverse);
     }
 
+    /// Every flag the guide names must exist.
+    ///
+    /// tbd states this rule for its own docs surface as "the menu must only name
+    /// selectors that exist", and it is worth a test rather than an intention: prose that
+    /// advertises a flag the binary does not have is worse than prose that says nothing,
+    /// because the reader spends their trust before finding out.
+    #[test]
+    fn the_guide_only_names_flags_that_exist() {
+        let command = Cli::command();
+        let known: Vec<String> = command
+            .get_arguments()
+            .filter_map(|arg| arg.get_long().map(|long| format!("--{long}")))
+            .collect();
+        let mut named = Vec::new();
+        for token in DOCS.split(|c: char| !(c.is_alphanumeric() || c == '-' || c == '_')) {
+            if token.starts_with("--") && token.len() > 2 {
+                named.push(token.trim_end_matches('-').to_string());
+            }
+        }
+        assert!(!named.is_empty(), "the guide should name some flags");
+        for flag in &named {
+            assert!(known.contains(flag), "--docs names {flag}, which is not a flag");
+        }
+        // And the pointer must name the flag that prints the guide.
+        assert!(DOCS_POINTER.contains("--docs"), "{DOCS_POINTER}");
+    }
+
+    /// The vocabularies the guide lists must be the ones the parsers accept.
+    #[test]
+    fn the_guide_only_names_views_and_analyzers_that_parse() {
+        for view in [
+            "tree",
+            "extensions",
+            "types",
+            "families",
+            "languages",
+            "documents",
+            "files",
+            "summary",
+        ] {
+            assert!(DOCS.contains(view), "the guide should list the {view} view");
+            ViewSpec::parse(view).unwrap_or_else(|_| panic!("{view} must parse"));
+        }
+        for set in ["none", "lines", "code", "words", "all"] {
+            assert!(DOCS.contains(set), "the guide should list the {set} analyzer value");
+            AnalysisSet::parse(set).unwrap_or_else(|_| panic!("{set} must parse"));
+        }
+    }
+
+    /// The stale-schema bug, made unrepeatable.
+    ///
+    /// The bump to `fdu.report/3` left "metric summaries use fdu.report/2" in the help
+    /// text, contradicting what the binary emits. It survived a vocabulary sweep and a
+    /// full `make check`, because no test compared prose against the constants.
+    #[test]
+    fn no_surface_names_a_schema_the_binary_does_not_emit() {
+        const PREFIX: &str = "fdu.report/";
+        let live = [report_format::REPORT_SCHEMA, report_format::CONTENT_REPORT_SCHEMA];
+        for (surface, text) in [("--docs", DOCS.to_string()), ("--skill", compose_skill())] {
+            let mut rest = text.as_str();
+            let mut found = 0;
+            while let Some(at) = rest.find(PREFIX) {
+                rest = &rest[at..];
+                // The version is the digit run after the prefix; whatever punctuation
+                // follows belongs to the sentence, not to the schema string.
+                let digits = rest[PREFIX.len()..].chars().take_while(char::is_ascii_digit).count();
+                let named = &rest[..PREFIX.len() + digits];
+                assert!(
+                    live.contains(&named),
+                    "{surface} names {named}, but the binary emits {live:?}"
+                );
+                found += 1;
+                rest = &rest[PREFIX.len() + digits..];
+            }
+            assert!(found > 0, "{surface} should state which schema it emits");
+        }
+    }
+
+    /// The defect this axis exists to fix: a request that reads every eligible file must
+    /// not print a report identical to one that read nothing.
+    #[test]
+    fn requesting_analysis_selects_a_view_that_displays_it() {
+        let cases = [
+            (AnalysisSet::NONE, ViewSpec::Tree),
+            (AnalysisSet::NONE.with_lines(), ViewSpec::Families),
+            (AnalysisSet::NONE.with_code(), ViewSpec::Languages),
+            (AnalysisSet::NONE.with_words(), ViewSpec::Documents),
+            (AnalysisSet::ALL, ViewSpec::Families),
+        ];
+        for (profile, expected) in cases {
+            assert_eq!(ViewSpec::default_for(profile), expected, "default view for {profile:?}");
+            if profile.is_enabled() {
+                assert!(
+                    view_displays_analysis(ViewSpec::default_for(profile)),
+                    "a paid-for run must default to a view that shows what it bought"
+                );
+            }
+        }
+    }
+
+    /// An explicit view always wins; the derivation only supplies the default.
+    #[test]
+    fn an_explicit_view_overrides_the_derived_default() {
+        let resolved = resolve_views(Some("tree"), AnalysisSet::ALL).expect("resolve");
+        assert_eq!(resolved.selected, vec![ViewSpec::Tree]);
+        assert!(resolved.omitted.is_empty());
+    }
+
+    #[test]
+    fn view_full_expands_to_the_summary_views_the_analyzer_set_can_answer() {
+        let bare = resolve_views(Some("full"), AnalysisSet::NONE).expect("resolve");
+        assert_eq!(bare.omitted, vec![ViewSpec::Documents], "documents needs content");
+        assert!(!bare.selected.contains(&ViewSpec::Documents));
+
+        let analyzed = resolve_views(Some("full"), AnalysisSet::ALL).expect("resolve");
+        assert!(analyzed.omitted.is_empty());
+        // `full` is the summary views: both bounded presets are in, and the unbounded
+        // enumeration is out, because an enumeration inside a digest destroys the digest.
+        assert!(analyzed.selected.contains(&ViewSpec::Largest));
+        assert!(analyzed.selected.contains(&ViewSpec::Recent));
+        assert!(!analyzed.selected.contains(&ViewSpec::Files), "{:?}", analyzed.selected);
+        assert_eq!(
+            analyzed.selected,
+            ViewSpec::ALL.into_iter().filter(|view| view.is_summary_view()).collect::<Vec<_>>(),
+            "every summary view, in table order"
+        );
+
+        // `all` names the axis, so combining it with a view is a usage error rather than
+        // a silently-widened request.
+        let combined = resolve_views(Some("full,tree"), AnalysisSet::NONE)
+            .expect_err("full cannot be combined")
+            .to_string();
+        assert!(combined.contains("cannot be combined"), "{combined}");
+    }
+
+    /// The display contract has two directions, and they now live in two places.
+    ///
+    /// What a request could not display is a fact about the report, so it travels on the
+    /// report and every surface states it. What a request paid to read is telemetry about
+    /// the run, which the report envelope deliberately excludes, so it stays here with the
+    /// performance footer. Splitting them is what let the Python surface say the first
+    /// (fdu-x8u6); this pins each to its own home.
+    #[test]
+    fn the_display_contract_reports_unspent_reads_from_the_cli() {
+        let unspent = resolve_views(Some("tree"), AnalysisSet::ALL).expect("resolve");
+        let notes = display_notes(&unspent, AnalysisSet::ALL, 1_200);
+        assert_eq!(notes.len(), 1, "{notes:?}");
+        assert!(notes[0].contains("no selected view displays content metrics"), "{notes:?}");
+        assert!(notes[0].contains("1.1 KiB"), "the note quantifies what was read: {notes:?}");
+
+        // A view that does display the metrics earns no note at all.
+        let spent = resolve_views(Some("families"), AnalysisSet::ALL).expect("resolve");
+        assert!(display_notes(&spent, AnalysisSet::ALL, 1_200).is_empty());
+
+        // Neither does a metadata-only run, which bought nothing to display.
+        let plain = resolve_views(None, AnalysisSet::NONE).expect("resolve");
+        assert!(display_notes(&plain, AnalysisSet::NONE, 0).is_empty());
+
+        // And the omission note is no longer the CLI's to make, in either direction.
+        let omitted = resolve_views(Some("full"), AnalysisSet::NONE).expect("resolve");
+        assert!(!omitted.omitted.is_empty(), "full without analyzers must drop documents");
+        assert!(
+            display_notes(&omitted, AnalysisSet::NONE, 0).is_empty(),
+            "the omission travels on the report now"
+        );
+    }
+
+    /// Principle 13, the direction that protects the user: no view, at any content
+    /// setting, may cause a file body to be opened that `--analyze` did not authorize.
+    #[test]
+    fn no_view_enables_an_analyzer() {
+        for view in ViewSpec::ALL {
+            let spec = view.label();
+            let cli = Cli { view: Some(spec.to_string()), ..cli() };
+            let profile = cli.parse_analysis().expect("analysis").profile;
+            assert_eq!(
+                profile,
+                AnalysisSet::NONE,
+                "--view {spec} must leave the content axis empty"
+            );
+        }
+    }
+
     #[test]
     fn analysis_profile_workers_and_page_denominator_parse_before_io() {
         let parsed =
-            Cli { analyze: "basic".to_string(), analysis_workers: 3, words_per_page: 250, ..cli() };
+            Cli { analyze: "lines".to_string(), analysis_workers: 3, words_per_page: 250, ..cli() };
         assert_eq!(
             parsed.parse_analysis().expect("analysis"),
-            AnalysisRequest { profile: AnalysisProfile::Basic, workers: 3 }
+            AnalysisRequest { profile: AnalysisSet::NONE.with_lines(), workers: 3 }
         );
-        assert_eq!(parsed.parse_query().expect("query").words_per_page, 250);
+        assert_eq!(parsed.resolved_query().expect("query").words_per_page, 250);
 
         let invalid = Cli { analyze: "deep".to_string(), ..cli() }
             .parse_analysis()
             .expect_err("invalid profile")
             .to_string();
-        assert!(invalid.contains("none, basic, code, documents, full"));
+        assert!(invalid.contains("none, lines, code, words, all"), "{invalid}");
+        assert!(invalid.contains("--analyze"), "the message names the flag: {invalid}");
         assert!(query_error(&Cli { words_per_page: 0, ..cli() }).contains("positive"));
     }
 
@@ -1741,8 +2213,8 @@ mod tests {
         std::fs::write(root.path().join("notes.md"), b"one two\n\nthree\n").expect("write");
         let command = Cli {
             path: Some(root.path().to_path_buf()),
-            analyze: "basic".to_string(),
-            view: "documents".to_string(),
+            analyze: "lines".to_string(),
+            view: Some("documents".to_string()),
             format: "json".to_string(),
             size: "apparent".to_string(),
             ..cli()
@@ -1752,7 +2224,7 @@ mod tests {
             command.run(&mut output, &mut Vec::new(), false, false).expect("run content report");
         assert_eq!(outcome, RunOutcome::Complete);
         let output = String::from_utf8(output).expect("UTF-8 JSON");
-        assert!(output.contains("\"schema\": \"fdu.report/2\""), "{output}");
+        assert!(output.contains("\"schema\": \"fdu.report/5\""), "{output}");
         assert!(output.contains("\"physical_lines\": 3"), "{output}");
         assert!(output.contains("\"raw_words\": 3"), "{output}");
         assert!(output.contains("\"words_per_page\": 250"), "{output}");
@@ -1766,8 +2238,8 @@ mod tests {
         std::fs::write(root.path().join("two.txt"), b"two\n").expect("write");
         let command = Cli {
             path: Some(root.path().to_path_buf()),
-            analyze: "basic".to_string(),
-            view: "summary".to_string(),
+            analyze: "lines".to_string(),
+            view: Some("summary".to_string()),
             size: "apparent".to_string(),
             ..cli()
         };
@@ -1775,7 +2247,10 @@ mod tests {
         let mut plain = Vec::new();
         command.run(&mut plain, &mut Vec::new(), false, false).expect("plain report");
         let plain = String::from_utf8(plain).expect("plain UTF-8");
-        let footer = plain.lines().last().expect("performance footer");
+        // `summary` displays no content metric, so this run also earns the paid-for-
+        // nothing note; the footer is the line before it rather than the last line.
+        let footer =
+            plain.lines().find(|line| line.contains("Performance:")).expect("performance footer");
         assert!(
             footer.starts_with("Performance: walked 2 files / 8 B; content read 8 B at "),
             "{plain}"
@@ -1790,11 +2265,19 @@ mod tests {
             .run(&mut colored, &mut Vec::new(), false, false)
             .expect("colored report");
         let colored = String::from_utf8(colored).expect("colored UTF-8");
-        let footer = colored.lines().last().expect("colored performance footer");
+        let footer = colored
+            .lines()
+            .find(|line| line.contains("Performance:"))
+            .expect("colored performance footer");
         assert!(
             footer.starts_with("\u{1b}[90mPerformance:"),
             "the footer must use terminal gray when color is active: {colored:?}"
         );
+        // The notes are footer-adjacent telemetry and share its dimming, so a terminal
+        // reading the report sees one quiet block rather than a bright interruption.
+        let note =
+            colored.lines().find(|line| line.contains("note: --analyze")).expect("colored note");
+        assert!(note.starts_with("\u{1b}[90mnote:"), "notes share the footer style: {colored:?}");
     }
 
     #[test]
@@ -1826,7 +2309,7 @@ mod tests {
         for format in ["json", "jsonl", "yaml"] {
             let command = Cli {
                 path: Some(root.path().to_path_buf()),
-                view: "summary".to_string(),
+                view: Some("summary".to_string()),
                 size: "apparent".to_string(),
                 format: format.to_string(),
                 ..cli()
@@ -1863,10 +2346,57 @@ mod tests {
         // scan of a large tree.
         let message = query_error(&Cli {
             path: Some(PathBuf::from("/nonexistent-root-that-should-not-be-scanned")),
-            view: "bogus".to_string(),
+            view: Some("bogus".to_string()),
             ..cli()
         });
         assert!(message.contains("expected one of"), "{message}");
+    }
+
+    /// clap appends a colon to every section heading with no way to opt out, so the one
+    /// rendering path we own removes it. The test is that the whole line is the heading —
+    /// anything carrying content after the colon keeps it.
+    #[test]
+    fn only_a_standalone_heading_loses_its_colon() {
+        // Plain and coloured headings, where the colour puts the colon inside the reset.
+        assert_eq!(strip_heading_colon("SCOPE:"), "SCOPE");
+        assert_eq!(strip_heading_colon("CACHE MANAGEMENT:"), "CACHE MANAGEMENT");
+        assert_eq!(
+            strip_heading_colon("\u{1b}[1m\u{1b}[36mSCOPE:\u{1b}[0m"),
+            "\u{1b}[1m\u{1b}[36mSCOPE\u{1b}[0m"
+        );
+
+        // Lines that merely contain a colon are untouched.
+        for line in [
+            "Usage: fdu [OPTIONS] <PATH>",
+            "fdu: invalid --view \"bogus\": expected one of tree",
+            "  Scope      PATH, --scan-depth",
+            "note: omitted documents — requires content analysis",
+            "",
+            "  --scan-depth <N>  Limit scanning and retention to N entry levels",
+        ] {
+            assert_eq!(strip_heading_colon(line), line, "{line:?} must keep its shape");
+        }
+    }
+
+    #[test]
+    fn every_help_heading_is_upper_case_and_bare() {
+        let mut rendered = Vec::new();
+        write_styled(&mut rendered, &Cli::command().render_help(), false).expect("render");
+        let rendered = String::from_utf8(rendered).expect("utf-8 help");
+        let headings: Vec<&str> = rendered
+            .lines()
+            .filter(|line| {
+                !line.is_empty()
+                    && !line.starts_with(char::is_whitespace)
+                    && line.chars().all(|c| c.is_uppercase() || c == ' ' || c == ':')
+                    && line.chars().any(char::is_alphabetic)
+            })
+            .collect();
+        assert!(headings.len() >= 8, "expected the section headings, got {headings:?}");
+        for heading in headings {
+            assert!(!heading.ends_with(':'), "{heading:?} still carries clap's colon");
+            assert_eq!(heading, heading.to_uppercase(), "{heading:?} is not upper case");
+        }
     }
 
     #[test]
@@ -1946,232 +2476,6 @@ mod tests {
             run_with_io(&args, &mut FailingWriter, &mut diagnostic, false, false),
             1,
             "a non-pipe help-output failure is fatal"
-        );
-    }
-
-    #[test]
-    fn deep_rendering_is_stack_safe() {
-        if std::env::var_os(DEEP_RENDER_CHILD_ENV).is_some() {
-            run_deep_render_child();
-            return;
-        }
-
-        let output = Command::new(std::env::current_exe().expect("current test executable"))
-            .args(["--exact", "cli::tests::deep_rendering_is_stack_safe", "--nocapture"])
-            .env(DEEP_RENDER_CHILD_ENV, "1")
-            .output()
-            .expect("run deep-render child");
-
-        assert!(
-            output.status.success(),
-            "deep renderer failed in child process\nstdout:\n{}\nstderr:\n{}",
-            String::from_utf8_lossy(&output.stdout),
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
-
-    fn run_deep_render_child() {
-        // A deep tree must render, not abort: expansion and all three renderers use
-        // explicit stacks, and this proves it on a 64 KiB stack where recursion would die.
-        let mut index = crate::Index::new("/fixture");
-        let mut path = PathBuf::new();
-        for depth in 0..DEEP_RENDER_DEPTH {
-            path.push("d");
-            index.apply_ok(&crate::Observation::new(vec![crate::Op::Upsert {
-                path: path.clone(),
-                kind: EntryKind::Dir,
-                attrs: crate::Attrs {
-                    mtime_ns: i64::try_from(depth).expect("fixture depth fits i64"),
-                    ..Default::default()
-                },
-            }]));
-        }
-        index.set_initial_freshness(false);
-
-        std::thread::Builder::new()
-            .name("deep-render".to_string())
-            .stack_size(DEEP_RENDER_STACK_BYTES)
-            .spawn(move || {
-                let query = Query {
-                    selection: Selection { depth: Bound::All, ..Selection::default() },
-                    views: vec![ViewSpec::Tree],
-                    ..Query::default()
-                };
-                let provenance = Provenance {
-                    scan_started_at: None,
-                    generated_at: SystemTime::UNIX_EPOCH,
-                    source: ReportSource::ColdScan,
-                    complete: true,
-                    errors: Vec::new(),
-                };
-                let report = crate::query::report(&index, &query, &provenance);
-                for format in [
-                    report_format::Format::Text,
-                    report_format::Format::Json,
-                    report_format::Format::Jsonl,
-                    report_format::Format::Yaml,
-                ] {
-                    let rendered = report_format::render(&report, format, false);
-                    assert!(!rendered.is_empty(), "{format:?} rendered nothing for a deep tree");
-                }
-            })
-            .expect("spawn deep-render thread")
-            .join()
-            .expect("deep-render thread");
-    }
-
-    /// Two names that differ only in bytes `to_string_lossy` cannot represent must stay
-    /// distinguishable in machine output.
-    ///
-    /// This coverage was lost when the CLI moved to the five axes: `raw_identity_json`
-    /// survived the rewrite, its tests did not, and the merge from PR #6 is what surfaced
-    /// the gap. Retargeted here to the report path rather than restored to the old
-    /// `write_json`, because the guarantee belongs to the format, not to the flag that
-    /// used to select it.
-    fn assert_json_preserves_raw_identity(
-        root: PathBuf,
-        first: &OsStr,
-        second: &OsStr,
-        encoding: &str,
-        root_hex: &str,
-        first_hex: &str,
-        second_hex: &str,
-    ) {
-        // The premise: lossy rendering collapses these two into the same string, so a
-        // consumer with only `name` cannot tell them apart.
-        assert_eq!(first.to_string_lossy(), second.to_string_lossy());
-
-        let mut index = crate::Index::new(root);
-        index.apply_ok(&crate::Observation::new(vec![
-            crate::Op::Upsert {
-                path: PathBuf::from(first),
-                kind: EntryKind::File,
-                attrs: crate::Attrs { size: 1, allocated: 1, ..Default::default() },
-            },
-            crate::Op::Upsert {
-                path: PathBuf::from(second),
-                kind: EntryKind::File,
-                attrs: crate::Attrs { size: 1, allocated: 1, ..Default::default() },
-            },
-        ]));
-        index.set_initial_freshness(false);
-
-        let query = Cli { view: "files".to_string(), depth: "all".to_string(), ..cli() }
-            .parse_query()
-            .expect("query parses");
-        let provenance = Provenance {
-            scan_started_at: None,
-            generated_at: std::time::UNIX_EPOCH,
-            source: ReportSource::ColdScan,
-            complete: true,
-            errors: Vec::new(),
-        };
-        let report = crate::query::report(&index, &query, &provenance);
-        let rendered = report_format::render(&report, report_format::Format::Json, false);
-
-        let lossy = first.to_string_lossy();
-        assert_eq!(
-            rendered.matches(&format!("\"{lossy}\"")).count(),
-            2,
-            "both names render the same lossy text: {rendered}"
-        );
-        assert!(
-            rendered.contains(&format!(
-                "\"root_raw\": {{\"encoding\": \"{encoding}\", \"hex\": \"{root_hex}\"}}"
-            )),
-            "{rendered}"
-        );
-
-        // Pinned as the whole row rather than as a substring of it. A loose `contains`
-        // check on the `path_raw` object alone passed while the row around it was
-        // malformed -- the field was emitted with a duplicated separator and a newline
-        // inside a one-line object, so the document did not parse at all. Asserting the
-        // exact row is what makes the surrounding punctuation part of the contract.
-        for hex in [first_hex, second_hex] {
-            let row = format!(
-                "{{\"path\": \"{lossy}\", \"path_raw\": {{\"encoding\": \"{encoding}\", \"hex\": \"{hex}\"}}, \
-                 \"kind\": \"file\", \"bytes\": 1, \"allocated\": 1, \"mtime_ns\": 0}}"
-            );
-            assert!(
-                rendered.contains(&row),
-                "a name that is not valid Unicode must carry its raw bytes in a well-formed \
-                 row.\nexpected: {row}\nrendered: {rendered}"
-            );
-        }
-
-        // Cheap structural guard against the same class of mistake anywhere else in the
-        // document: an empty element is the signature of a separator emitted twice.
-        assert!(
-            !rendered.contains(", ,") && !rendered.contains(",,"),
-            "duplicated separator in machine output: {rendered}"
-        );
-
-        // The tree writer names entries too, and carried the identical defect. Pinning
-        // only the files view would have left half the fix untested. A tree lists
-        // directories, so the case has to be a directory whose own name is not valid
-        // Unicode rather than the files above.
-        let mut dirs = crate::Index::new(PathBuf::from("/tree-fixture"));
-        dirs.apply_ok(&crate::Observation::new(vec![
-            crate::Op::Upsert {
-                path: PathBuf::from(first),
-                kind: EntryKind::Dir,
-                attrs: crate::Attrs { size: 0, allocated: 0, ..Default::default() },
-            },
-            crate::Op::Upsert {
-                path: PathBuf::from(first).join("inside.txt"),
-                kind: EntryKind::File,
-                attrs: crate::Attrs { size: 1, allocated: 1, ..Default::default() },
-            },
-        ]));
-        dirs.set_initial_freshness(false);
-        let tree_query = Cli { view: "tree".to_string(), depth: "all".to_string(), ..cli() }
-            .parse_query()
-            .expect("query parses");
-        let tree = crate::query::report(&dirs, &tree_query, &provenance);
-        let tree_rendered = report_format::render(&tree, report_format::Format::Json, false);
-        assert!(
-            tree_rendered.contains(&format!(
-                ", \"path_raw\": {{\"encoding\": \"{encoding}\", \"hex\": \"{first_hex}\"}}, \"kind\":"
-            )),
-            "the tree view must carry raw identity in a well-formed node: {tree_rendered}"
-        );
-        assert!(
-            !tree_rendered.contains(", ,") && !tree_rendered.contains(",,"),
-            "duplicated separator in tree output: {tree_rendered}"
-        );
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn json_preserves_distinct_non_unicode_unix_names() {
-        use std::ffi::OsString;
-        use std::os::unix::ffi::OsStringExt;
-
-        assert_json_preserves_raw_identity(
-            PathBuf::from(OsString::from_vec(vec![b'/', 0x80])),
-            &OsString::from_vec(vec![b'n', 0x80]),
-            &OsString::from_vec(vec![b'n', 0x81]),
-            "unix-bytes",
-            "2f80",
-            "6e80",
-            "6e81",
-        );
-    }
-
-    #[cfg(windows)]
-    #[test]
-    fn json_preserves_distinct_non_unicode_windows_names() {
-        use std::ffi::OsString;
-        use std::os::windows::ffi::OsStringExt;
-
-        assert_json_preserves_raw_identity(
-            PathBuf::from(OsString::from_wide(&[u16::from(b'R'), u16::from(b':'), 0xd800])),
-            &OsString::from_wide(&[u16::from(b'n'), 0xd800]),
-            &OsString::from_wide(&[u16::from(b'n'), 0xd801]),
-            "windows-wtf16le",
-            "52003a0000d8",
-            "6e0000d8",
-            "6e0001d8",
         );
     }
 }

@@ -17,10 +17,121 @@ Each rule exists because breaking it produces a specific failure: a cache that l
 benchmark that measures the wrong job, or a number a consumer cannot calibrate.
 The reasoning matters more than the rule, so each one states what goes wrong without it.
 
+Start with [First Principles](#first-principles).
+Those three govern the rest, and they are the ones most easily broken by a choice that
+looks ordinary — every example in them is a real defect that passed review because it
+resembled what other tools do.
+
 For what is built and what comes next, see
 [the phase-1 plan](../specs/active/plan-2026-08-08-fdu-phase-1.md).
 For where the design comes from and which prior art each piece draws on, see
 [the file roll-up engine research](../research/research-2026-08-06-file-rollup-engine.md).
+
+## First Principles
+
+These govern everything below.
+Where a later section conflicts with one of them, the principle wins and the section is
+wrong.
+
+### One Engine, and Surfaces That Cannot Disagree With It
+
+fdu answers one question through three surfaces: the `fdu-core` engine, the `fdu`
+command line, and the `fdu` Python package.
+Two rules hold them together, and both are enforced mechanically because both were
+broken while everyone believed they held.
+
+**The command line invents nothing.** Every capability it offers must exist in the
+engine, because a capability reachable only by flag is one a library caller cannot have
+and a script must shell out for.
+This is not checked by review: the command line lives in a separate crate and depends on
+the engine the way any consumer does, so `crate::` does not resolve, private items are
+unreachable, and the compiler decides on every build.
+Anything the command line needs becomes a visible act of making something public rather
+than a `pub(crate)` nobody sees.
+
+The rule had been quietly false in both directions.
+Five capabilities existed only in the command line — rendering cache status, rendering
+watch records, a watch’s live report, the one-shot execution contract, and the note
+naming a view that was dropped.
+And the engine had come to depend on its own front end, calling into the command line to
+format a number.
+
+**Every surface gives the same answer.** One golden corpus is replayed against each
+surface. Differences are recorded in a committed artifact, each one classified by a
+mechanical matcher, and a difference matching no known cause **fails the build** — so
+“we know why these differ” is checked rather than claimed.
+
+The corpus is not duplicated and no expected output is written twice, which matters more
+than it sounds: two copies of the expected bytes drift, and the drift is invisible
+because each copy passes its own test.
+The artifact is also non-empty by construction, because a naive parity run treats “no
+differences” as success — and that is exactly what a harness silently testing the wrong
+binary produces, so the most dangerous failure would otherwise look like the best
+outcome.
+
+The evidence that this needs enforcing: the Python binding drifted behind the command
+line five times, and `make check` was green through every one of them, because no Python
+test had ever named a new view.
+
+See [the surface architecture](fdu-surface-architecture.md) for what each surface is and
+how the harness works.
+
+### Derive the Choice; Do Not Inherit It
+
+Common practice is evidence about what people expect, not evidence about what is
+correct. A convention arrives carrying the assumptions of the tool it came from, and
+those assumptions may not hold here.
+
+`--view files` shipped defaulting to name-ascending order — what `ls`, `find`, and `fd`
+all do — and to ten rows, which keeps a report readable.
+Both are ordinary choices and each is defensible alone.
+Together they produced *the ten alphabetically-first entries of a 192,871-entry tree*,
+which answers no question anyone asks: not what is large, not what changed, not what is
+present.
+
+Name order is right in `ls` and `find` **because those tools list everything**. A
+complete listing in name order is stable and diffable, and that stability is the entire
+reason for the convention.
+Truncate it and the property that justified the order is gone, leaving an arbitrary
+prefix. The convention was imported without the condition that made it right.
+
+So state what a choice is *for* before adopting it, and if the reason it works elsewhere
+does not hold here, do not take it.
+When correctness and common practice disagree, write the disagreement down rather than
+following quietly.
+
+### A Default Must Answer a Question You Can State
+
+Every default claims that most callers want this answer.
+If you cannot name the question it answers in one sentence, it is not a default; it is
+an accident that shipped.
+
+`fdu PATH` answers “which directories are big”: depth two, ten per directory, size
+descending, and every part of that follows from the question.
+The `files` default could not finish the sentence, which is the test it should have
+failed at review.
+
+Defaults also compose, so check them together rather than one at a time.
+Both `files` defaults passed review individually.
+Nothing examined the pair.
+
+### Truncate Freely; Never Truncate Silently
+
+Bounding output is legitimate and usually necessary — an unbounded listing of a million
+entries is unreadable and rarely what was wanted.
+Truncation is not a compromise.
+
+A reader who cannot tell it happened is.
+Every bound states itself: the tree view marks where it dropped children, and once the
+numbers are large it says how much it dropped, because `…` after ten rows of 192,871
+understates the situation by four orders of magnitude.
+
+Every bound is liftable by a flag named where the bound is stated — `--limit all`,
+`--depth all`. A truncation the caller cannot remove is a limitation wearing a default’s
+clothes.
+
+This is the cache’s honesty contract one level up: brevity, like speed, may be traded
+for completeness in the open and never in secret.
 
 ## Architecture
 
@@ -190,7 +301,7 @@ cannot be expressed as a composition of what exists.
 `largest` and `recent` were removed from the design by exactly that test; they are
 `--view files --sort size --limit N` and `--view files --modified-since 2h`.
 
-### Five Axes, No One-Off Flags
+### Six Axes, No One-Off Flags
 
 Every option belongs to exactly one axis:
 
@@ -240,14 +351,31 @@ An additional golden and semantic-hash gate pins that a derived summary serializ
 identically to the indexed summary.
 
 Content analysis adds a third, explicit I/O tier without changing either metadata tier.
-No analysis profile means no regular-file content opens, analyzer workers, sparse
+An empty analyzer set means no regular-file content opens, analyzer workers, sparse
 content index, or content-sidecar load.
-Any enabled `--analyze` profile retains the full metadata index, then streams every
-eligible file absent from the matching sidecar through EOF. Worker count bounds
-concurrency, never per-file coverage.
+Any enabled `--analyze` set retains the full metadata index, then streams every eligible
+file absent from a satisfying sidecar through EOF. Worker count bounds concurrency,
+never per-file coverage.
 `languages` is a metadata-only byte and count view by default; the code analyzer adds
-standard LOC. `documents` requires at least the basic analyzer.
-A view never enables an analyzer implicitly or presents an unmeasured value as zero.
+standard LOC. `documents` requires at least one enabled analyzer.
+
+`--analyze` is a set over the analyzer registry, never an ordered level.
+The analyzers are independent, the registry and the sidecar provenance already record
+which ones ran, and an enum of the combinations can only name the ones somebody thought
+to enumerate. Sidecar reuse is containment, not equality: a record produced by a wider
+set already holds every metric a narrower request would recompute, and only the
+type-rule fingerprint has to match exactly, because a classification change can move a
+file between families and invalidate the metrics themselves.
+
+**Cost flows one way; display follows cost.** A view never enables an analyzer
+implicitly or presents an unmeasured value as zero: choosing how to display a result
+must never authorize reading file bodies.
+The reverse direction carries no such hazard, because it re-projects state already paid
+for, so the requested analyzer set selects the *default* view and an explicit `--view`
+always wins. What this protects is that a run displays what it paid for.
+A request that reads content and renders none of it is a defect -- it is the shape the
+CLI shipped in when `--analyze` had no axis of its own -- and a view omitted for lack of
+analysis is named in the report rather than silently dropped.
 
 Expected content coverage is distinct from operational completeness.
 Binary data, invalid UTF-8, and file types without a requested analyzer remain explicit
@@ -511,6 +639,18 @@ entirely below zero.
 The protocol is [the performance loop](../guides/performance-loop.md); every verdict,
 including the failures, is in
 [the experiment ledger](../reports/report-2026-08-10-fdu-performance-experiments.md).
+
+### Optimize Against the Floor, Not Against Yesterday
+
+A relative verdict can say a change paid; it can never say how much is left, so a queue
+ordered only by relative wins drifts toward whatever is easiest to improve next.
+Each tier’s distance to the measured machine floor — one enumeration and one metadata
+read per entry, and nothing else — is the budget every hypothesis on that tier shares,
+and a hypothesis states the share of that budget its mechanism can reach before it is
+run. A tier close to its floor is a result, recorded and closed, not a place to keep
+digging; the denominators and the closure thresholds are in
+[the floor report](../reports/report-2026-08-23-metadata-walk-floor.md) and
+[the campaign-2 plan](../specs/active/plan-2026-08-23-fdu-performance-campaign-2.md).
 
 ### A Measurement Is Evidence About Its Own Regime
 

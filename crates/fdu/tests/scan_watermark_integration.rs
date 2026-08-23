@@ -15,7 +15,7 @@
 //! (review finding R11). Setting mtimes to exact values derived from the report's own
 //! watermark pins the boundary at nanosecond precision with no dependence on timing,
 //! which is both stronger and faster.
-#![cfg(all(feature = "cli", not(target_os = "windows")))]
+#![cfg(not(target_os = "windows"))]
 
 use std::fs;
 use std::path::Path;
@@ -69,7 +69,7 @@ fn the_watermark_window_is_inclusive_at_exactly_scan_start() {
     // Parse the watermark with the same grammar `--modified-since` uses, so the boundary
     // files below sit at exactly the instant the query will compare against.
     let now = SystemTime::now();
-    let at_watermark = fdu::query::parse_when(&watermark, now).expect("parse watermark");
+    let at_watermark = fdu_core::query::parse_when(&watermark, now).expect("parse watermark");
 
     // Three files, one per side of the boundary and one exactly on it. The on-boundary
     // file is the mid-scan case in its sharpest form: an entry stamped in the same

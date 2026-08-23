@@ -4,7 +4,10 @@
 
 **Author:** fdu project, with Claude Code review assistance
 
-**Status:** Proposed
+**Status:** Analysis current; the ordering in [Order, and why](#order-and-why) is
+superseded by
+[the campaign-2 plan](../specs/active/plan-2026-08-23-fdu-performance-campaign-2.md),
+which runs S1–S4 as one structural experiment (H86)
 
 ## Overview
 

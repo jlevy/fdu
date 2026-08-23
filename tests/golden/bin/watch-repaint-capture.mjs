@@ -35,8 +35,12 @@ if (!tree) {
   process.exit(2);
 }
 
-// Windows needs the extension spelled out: spawn does not apply PATHEXT resolution.
-const binary = process.platform === "win32" ? "fdu.exe" : "fdu";
+// FDU names the executable outright, extension included, so there is no PATH lookup to
+// fall through to a different build and no PATHEXT branch for Windows to get wrong.
+const binary = process.env.FDU;
+if (!binary) {
+  throw new Error("FDU must name the fdu executable under test");
+}
 const child = spawn(
   binary,
   [

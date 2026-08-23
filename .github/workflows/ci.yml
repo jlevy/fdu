@@ -81,6 +81,10 @@ jobs:
         run: node --test scripts/check-rust-module-names.test.mjs
       - name: Check Rust module filenames
         run: node scripts/check-rust-module-names.mjs
+      - name: Check the golden corpus never resolves fdu through PATH
+        run: node scripts/check-golden-invocations.mjs
+      - name: Check committed test data names no machine
+        run: node scripts/check-portability.mjs
       # The watch tests exercise a different notify backend on each of these runners —
       # inotify, FSEvents, and ReadDirectoryChangesW — which is the only way to catch
       # per-platform event semantics before a user does.
@@ -90,9 +94,15 @@ jobs:
       - name: Compare the CLI golden contract
         run: npm run test:golden
       - name: Build the repository-only performance probe
-        run: cargo build --locked -p fdu --example perf_probe --no-default-features
+        run: cargo build --locked -p fdu-core --example perf_probe --no-default-features
+      # `env:` rather than a `PYTHONPATH=... cmd` prefix: this job also runs on the
+      # Windows runner, whose shell is PowerShell, where that POSIX prefix form is a
+      # parse error rather than an assignment. The harness package is still
+      # `benchmarks`; `explorations/` is the directory holding it.
       - name: Prove the performance harness and every fdu probe job
-        run: python -m unittest discover -s benchmarks/tests -p 'test_*.py'
+        env:
+          PYTHONPATH: explorations
+        run: python -m unittest discover -s explorations/benchmarks/tests -p 'test_*.py'
 
   test-lib-only:
     name: Test library feature boundaries
@@ -107,9 +117,9 @@ jobs:
           toolchain: 1.97.1
       # Library consumers take `default-features = false`. Without this job, that path
       # would only ever be compiled by them.
-      - run: cargo test --locked -p fdu --no-default-features
+      - run: cargo test --locked -p fdu-core --no-default-features
       # The watch layer is strictly additive and must not inherit CLI-only features.
-      - run: cargo test --locked -p fdu --no-default-features --features watch
+      - run: cargo test --locked -p fdu-core --no-default-features --features watch
 
   msrv:
     name: MSRV (1.85)
@@ -124,7 +134,7 @@ jobs:
           toolchain: 1.85.0
       - run: cargo check --locked --all-features
       # Compile success alone misses behavioral and test-only MSRV regressions.
-      - run: cargo test --locked -p fdu --no-default-features
+      - run: cargo test --locked -p fdu-core --no-default-features
 
   docs:
     name: Documentation
@@ -168,6 +178,54 @@ jobs:
       - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2
         with:
           arguments: "--all-features --locked"
+
+  parity:
+    name: Python CLI parity
+    needs: supply-chain
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # 1.97.1
+        with:
+          toolchain: 1.97.1
+      - uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6
+        with:
+          node-version: 24.18.0
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          version: "0.12.1"
+          enable-cache: false
+      - run: npm ci --ignore-scripts
+      # The parity surface must be the built wheel, not the working tree: a shim
+      # importing python/fdu/ directly would pass while the built package was broken.
+      - name: Build and install the wheel the parity surface runs on
+        working-directory: crates/fdu-py
+        run: |
+          uv run --frozen --only-group dev maturin build --locked --release --out dist
+          uv venv --clear .venv-parity
+          uv pip install --python .venv-parity --no-index --find-links dist fdu
+      # Replays tests/golden against the Python surface and compares what differs to
+      # tests/parity/deviations-python.diff. That artifact is non-empty by construction,
+      # so an empty result fails: it would mean the shim never ran.
+      # Recorded here rather than compared here. The artifact holds platform-dependent
+      # values -- a cache snapshot encodes to 797 bytes on macOS and 745 on Linux -- so a
+      # developer machine cannot falsify its own recording: it compares its own output to
+      # its own output and agrees by construction. Two escapes reached CI that way. This
+      # job re-records and fails on any difference, so Linux is the authority and the fix
+      # is a download rather than a guess.
+      - name: Replay the golden corpus against the Python surface
+        run: FDU_PARITY_PYTHON=crates/fdu-py/.venv-parity/bin/python node scripts/run-parity.mjs --update
+      - name: The recorded deviations must match what this platform produces
+        id: parity-diff
+        run: git diff --exit-code -- tests/parity/deviations-python.diff
+      - name: Upload the deviations this platform recorded
+        if: failure() && steps.parity-diff.outcome == 'failure'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: deviations-python-linux
+          path: tests/parity/deviations-python.diff
 
   python:
     name: Python ${{ matrix.python }} wheel (${{ matrix.os }})

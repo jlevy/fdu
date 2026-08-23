@@ -1,9 +1,9 @@
 ---
 sandbox: true
+path:
+  - $FDU_BIN
 fixtures:
   - fixtures/project
-path:
-  - $TRYSCRIPT_GIT_ROOT/target/debug
 env:
   FORCE_COLOR: "0"
   LANG: C
@@ -23,7 +23,7 @@ patterns:
 ```console
 $ fdu --cache off --format json --size apparent --depth 2 --limit 10 project
 {
-  "schema": "fdu.report/1",
+  "schema": "fdu.report/4",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "scan_started_at": "[RFC3339]",
@@ -47,7 +47,7 @@ $ fdu --cache off --format json --size apparent --depth 2 --limit 10 project
 ```console
 $ fdu --cache off --format json --size apparent --depth 1 --limit 2 project
 {
-  "schema": "fdu.report/1",
+  "schema": "fdu.report/4",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "scan_started_at": "[RFC3339]",
@@ -71,7 +71,7 @@ $ fdu --cache off --format json --size apparent --depth 1 --limit 2 project
 ```console
 $ fdu --cache off --format json --size apparent --scan-depth 1 --depth 2 --limit 10 project
 {
-  "schema": "fdu.report/1",
+  "schema": "fdu.report/4",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "scan_started_at": "[RFC3339]",
@@ -100,7 +100,7 @@ not just legal but required to work — formats are serializations, not features
 ```console
 $ fdu --cache off --view types --format json --size apparent project
 {
-  "schema": "fdu.report/2",
+  "schema": "fdu.report/5",
   "generator": "fdu 0.1.0",
   "root": "[SCAN_PATH]",
   "scan_started_at": "[RFC3339]",
@@ -113,7 +113,7 @@ $ fdu --cache off --view types --format json --size apparent project
   "reports": [
     {
       "view": "types",
-      "metrics": {"group": "type", "share_metric": "apparent_bytes", "words_per_page": 250, "total": {"id": "total", "family": "unknown", "files": 6, "bytes": 263, "allocated": [ALLOCATED], "analyzed_files": 0, "share": {"numerator": 263, "denominator": 263}, "metrics": {"physical_lines": 0, "blank_lines": 0, "nonblank_lines": 0, "code_lines": 0, "comment_lines": 0, "code_blank_lines": 0, "raw_words": 0, "logical_words": 0, "paragraphs": 0, "visible_words": 0, "visible_logical_words": 0, "document_words": 0}, "coverage": {}, "detection": {"sources": {"exact_filename": 1, "compound_extension": 1, "extension": 4}, "confidence": {"certain": 6}, "flags": {"generated": 0, "vendored": 0, "documentation": 2}}, "pages": {"words": 0, "words_per_page": 250}}, "rows": [
+      "metrics": {"group": "type", "share_metric": "apparent_bytes", "words_per_page": 250, "bound": null, "total": {"id": "total", "family": "unknown", "files": 6, "bytes": 263, "allocated": [ALLOCATED], "analyzed_files": 0, "share": {"numerator": 263, "denominator": 263}, "metrics": {"physical_lines": 0, "blank_lines": 0, "nonblank_lines": 0, "code_lines": 0, "comment_lines": 0, "code_blank_lines": 0, "raw_words": 0, "logical_words": 0, "paragraphs": 0, "visible_words": 0, "visible_logical_words": 0, "document_words": 0}, "coverage": {}, "detection": {"sources": {"exact_filename": 1, "compound_extension": 1, "extension": 4}, "confidence": {"certain": 6}, "flags": {"generated": 0, "vendored": 0, "documentation": 2}}, "pages": {"words": 0, "words_per_page": 250}}, "rows": [
       {"id": "archive", "family": "binary", "files": 1, "bytes": 128, "allocated": [ALLOCATED], "analyzed_files": 0, "share": {"numerator": 128, "denominator": 263}, "metrics": {"physical_lines": 0, "blank_lines": 0, "nonblank_lines": 0, "code_lines": 0, "comment_lines": 0, "code_blank_lines": 0, "raw_words": 0, "logical_words": 0, "paragraphs": 0, "visible_words": 0, "visible_logical_words": 0, "document_words": 0}, "coverage": {}, "detection": {"sources": {"compound_extension": 1}, "confidence": {"certain": 1}, "flags": {"generated": 0, "vendored": 0, "documentation": 0}}, "pages": {"words": 0, "words_per_page": 250}},
       {"id": "markdown", "family": "prose", "files": 2, "bytes": 71, "allocated": [ALLOCATED], "analyzed_files": 0, "share": {"numerator": 71, "denominator": 263}, "metrics": {"physical_lines": 0, "blank_lines": 0, "nonblank_lines": 0, "code_lines": 0, "comment_lines": 0, "code_blank_lines": 0, "raw_words": 0, "logical_words": 0, "paragraphs": 0, "visible_words": 0, "visible_logical_words": 0, "document_words": 0}, "coverage": {}, "detection": {"sources": {"extension": 2}, "confidence": {"certain": 2}, "flags": {"generated": 0, "vendored": 0, "documentation": 2}}, "pages": {"words": 0, "words_per_page": 250}},
       {"id": "rust", "family": "code", "files": 2, "bytes": 36, "allocated": [ALLOCATED], "analyzed_files": 0, "share": {"numerator": 36, "denominator": 263}, "metrics": {"physical_lines": 0, "blank_lines": 0, "nonblank_lines": 0, "code_lines": 0, "comment_lines": 0, "code_blank_lines": 0, "raw_words": 0, "logical_words": 0, "paragraphs": 0, "visible_words": 0, "visible_logical_words": 0, "document_words": 0}, "coverage": {}, "detection": {"sources": {"extension": 2}, "confidence": {"certain": 2}, "flags": {"generated": 0, "vendored": 0, "documentation": 0}}, "pages": {"words": 0, "words_per_page": 250}},

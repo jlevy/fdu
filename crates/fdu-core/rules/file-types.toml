@@ -1,0 +1,354 @@
+# fdu file-type rules. This deliberately uses metabrowser's [[kind]] manifest shape.
+# Fields are build-time only; runtime never parses TOML.
+
+[[kind]]
+id = "rust"
+family = "code"
+extensions = ["rs"]
+
+[[kind]]
+id = "python"
+family = "code"
+extensions = ["py", "pyi", "pyw"]
+shebangs = ["python", "python3", "uv"]
+
+[[kind]]
+id = "javascript"
+family = "code"
+extensions = ["js", "jsx", "mjs", "cjs"]
+shebangs = ["node", "deno", "bun"]
+
+[[kind]]
+id = "typescript"
+family = "code"
+extensions = ["ts", "tsx", "mts", "cts"]
+
+[[kind]]
+id = "go"
+family = "code"
+extensions = ["go"]
+
+[[kind]]
+id = "c"
+family = "code"
+extensions = ["c", "h"]
+
+[[kind]]
+id = "cpp"
+family = "code"
+extensions = ["cc", "cpp", "cxx", "hh", "hpp", "hxx"]
+
+[[kind]]
+id = "csharp"
+family = "code"
+extensions = ["cs"]
+
+[[kind]]
+id = "java"
+family = "code"
+extensions = ["java"]
+
+[[kind]]
+id = "kotlin"
+family = "code"
+extensions = ["kt", "kts"]
+
+[[kind]]
+id = "swift"
+family = "code"
+extensions = ["swift"]
+
+[[kind]]
+id = "ruby"
+family = "code"
+extensions = ["rb"]
+shebangs = ["ruby"]
+
+[[kind]]
+id = "php"
+family = "code"
+extensions = ["php"]
+
+[[kind]]
+id = "shell"
+family = "code"
+extensions = ["sh", "bash", "zsh", "fish"]
+filenames = [".bashrc", ".zshrc", ".profile"]
+shebangs = ["sh", "bash", "zsh", "fish"]
+
+[[kind]]
+id = "powershell"
+family = "code"
+extensions = ["ps1", "psm1", "psd1"]
+
+[[kind]]
+id = "lua"
+family = "code"
+extensions = ["lua"]
+shebangs = ["lua"]
+
+[[kind]]
+id = "perl"
+family = "code"
+extensions = ["pl", "pm"]
+shebangs = ["perl"]
+
+[[kind]]
+id = "r"
+family = "code"
+extensions = ["r"]
+
+[[kind]]
+id = "dart"
+family = "code"
+extensions = ["dart"]
+
+[[kind]]
+id = "scala"
+family = "code"
+extensions = ["scala", "sc"]
+
+[[kind]]
+id = "haskell"
+family = "code"
+extensions = ["hs", "lhs"]
+
+[[kind]]
+id = "elixir"
+family = "code"
+extensions = ["ex", "exs"]
+
+[[kind]]
+id = "erlang"
+family = "code"
+extensions = ["erl", "hrl"]
+
+[[kind]]
+id = "clojure"
+family = "code"
+extensions = ["clj", "cljs", "cljc"]
+
+[[kind]]
+id = "fsharp"
+family = "code"
+extensions = ["fs", "fsx", "fsi"]
+
+[[kind]]
+id = "ocaml"
+family = "code"
+extensions = ["ml", "mli"]
+
+[[kind]]
+id = "objective-c"
+family = "code"
+extensions = ["m", "mm"]
+
+[[kind]]
+id = "julia"
+family = "code"
+extensions = ["jl"]
+
+[[kind]]
+id = "zig"
+family = "code"
+extensions = ["zig"]
+
+[[kind]]
+id = "nim"
+family = "code"
+extensions = ["nim"]
+
+[[kind]]
+id = "solidity"
+family = "code"
+extensions = ["sol"]
+
+[[kind]]
+id = "assembly"
+family = "code"
+extensions = ["asm", "s"]
+
+[[kind]]
+id = "sql"
+family = "code"
+extensions = ["sql"]
+
+[[kind]]
+id = "make"
+family = "code"
+filenames = ["Makefile", "GNUmakefile"]
+
+[[kind]]
+id = "dockerfile"
+family = "code"
+filenames = ["Dockerfile"]
+
+[[kind]]
+id = "cmake"
+family = "code"
+extensions = ["cmake"]
+filenames = ["CMakeLists.txt"]
+
+[[kind]]
+id = "protobuf"
+family = "code"
+extensions = ["proto"]
+
+[[kind]]
+id = "terraform"
+family = "code"
+extensions = ["tf", "hcl"]
+
+[[kind]]
+id = "nix"
+family = "code"
+extensions = ["nix"]
+
+[[kind]]
+id = "html"
+family = "markup"
+extensions = ["html", "htm"]
+
+[[kind]]
+id = "css"
+family = "code"
+extensions = ["css", "scss", "sass", "less"]
+
+[[kind]]
+id = "vue"
+family = "markup"
+extensions = ["vue"]
+
+[[kind]]
+id = "svelte"
+family = "markup"
+extensions = ["svelte"]
+
+[[kind]]
+id = "markdown"
+family = "prose"
+extensions = ["md", "markdown", "mdx"]
+filenames = ["README", "CHANGELOG", "CONTRIBUTING", "LICENSE"]
+
+[[kind]]
+id = "text"
+family = "prose"
+extensions = ["txt", "text"]
+
+[[kind]]
+id = "rst"
+family = "prose"
+extensions = ["rst"]
+
+[[kind]]
+id = "manpage"
+family = "markup"
+
+[[kind]]
+id = "asciidoc"
+family = "prose"
+extensions = ["adoc", "asciidoc"]
+
+[[kind]]
+id = "org"
+family = "prose"
+extensions = ["org"]
+
+[[kind]]
+id = "latex"
+family = "markup"
+extensions = ["tex", "sty", "cls"]
+
+[[kind]]
+id = "json"
+family = "data"
+extensions = ["json", "jsonl", "ndjson"]
+
+[[kind]]
+id = "yaml"
+family = "data"
+extensions = ["yaml", "yml"]
+
+[[kind]]
+id = "toml"
+family = "data"
+extensions = ["toml"]
+
+[[kind]]
+id = "xml"
+family = "markup"
+extensions = ["xml", "xsd", "xsl", "svg"]
+
+[[kind]]
+id = "csv"
+family = "data"
+extensions = ["csv", "tsv"]
+
+[[kind]]
+id = "notebook"
+family = "data"
+extensions = ["ipynb"]
+
+[[kind]]
+id = "pdf"
+family = "binary"
+extensions = ["pdf"]
+
+[[kind]]
+id = "office-document"
+family = "binary"
+extensions = ["doc", "docx", "odt", "rtf", "xls", "xlsx", "ods", "ppt", "pptx", "odp"]
+
+[[kind]]
+id = "image"
+family = "binary"
+extensions = ["png", "jpg", "jpeg", "gif", "webp", "avif", "heic", "bmp", "ico", "tif", "tiff"]
+
+[[kind]]
+id = "audio"
+family = "binary"
+extensions = ["mp3", "wav", "flac", "aac", "m4a", "ogg", "opus"]
+
+[[kind]]
+id = "video"
+family = "binary"
+extensions = ["mp4", "mkv", "mov", "avi", "webm", "m4v"]
+
+[[kind]]
+id = "archive"
+family = "binary"
+extensions = ["zip", "gz", "bz2", "xz", "zst", "tar.gz", "tar.bz2", "tar.xz", "tar.zst", "7z", "rar"]
+
+[[kind]]
+id = "executable"
+family = "binary"
+extensions = ["exe", "dll", "dylib", "so", "a", "o", "class", "jar", "wasm"]
+
+# Compiled bytecode and package payloads. These carried real volume into `unknown` on
+# ordinary trees -- 90 MiB of .pyc across 4,752 files on one checkout -- and they are
+# binary, so a text analyzer must not open them either.
+[[kind]]
+id = "bytecode"
+family = "binary"
+extensions = ["pyc", "pyo", "pyd", "beam", "elc"]
+
+[[kind]]
+id = "package-archive"
+family = "binary"
+extensions = ["pack", "idx", "whl", "egg", "nupkg", "crate"]
+
+# A source map is generated JSON: data, not prose, and never hand-written.
+[[kind]]
+id = "source-map"
+family = "data"
+extensions = ["map"]
+
+[[kind]]
+id = "font"
+family = "binary"
+extensions = ["ttf", "otf", "woff", "woff2"]
+
+[[kind]]
+id = "database"
+family = "binary"
+extensions = ["db", "sqlite", "sqlite3", "parquet", "arrow"]

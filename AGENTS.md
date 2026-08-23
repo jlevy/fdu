@@ -4,9 +4,40 @@ Instructions and context for AI coding agents working on this project.
 
 The design of fdu, and the principles any change must respect, are in
 [fdu-design-principles.md](docs/project/architecture/fdu-design-principles.md).
-Read it before changing engine behavior.
+Read it before changing engine behavior, and read its **First Principles** section
+before choosing a default, an ordering, an output shape, or a bound — those rules exist
+because each was broken once by a choice that looked entirely normal.
 This file covers how to operate on the repository; that one covers what the code must be
 true to.
+
+## Three Surfaces, One Engine
+
+fdu ships the same capability three ways: the `fdu-core` engine, the `fdu` command line,
+and the `fdu` Python package.
+[The surface architecture](docs/project/architecture/fdu-surface-architecture.md) says
+what each is and how they are held together; read it before adding a capability to any
+one of them, because two rules constrain where a change may go.
+
+**The command line invents nothing.** A capability reachable only by flag is one a
+library caller cannot have.
+The command line is a separate crate depending on the engine as any consumer does, so
+this is a compile error rather than a review comment — but it also means a new
+capability belongs in `fdu-core` first, and the command line presents it.
+
+**Every surface gives the same answer.** `make check` replays one golden corpus against
+the command line and against the Python package.
+Differences are recorded and classified, and one matching no known cause fails the
+build.
+
+Two consequences worth knowing before you start:
+
+- Changing what fdu prints changes a golden.
+  That is expected; regenerating one without reading the diff is not, and
+  `tryscript run --update` writes *what it saw*, which expands named patterns into
+  literals and produces a golden that passes only on your machine.
+  `make check` runs a portability check that refuses those.
+- The parity artifact is recorded by CI on Linux, not locally.
+  It holds platform-dependent values, so a local recording cannot falsify itself.
 
 <!-- BEGIN TBD INTEGRATION format=f08 surface=agents-md -->
 ## tbd
@@ -112,7 +143,12 @@ pins.
 
 The rules that decide whether a speed change is kept are in
 [fdu-design-principles.md](docs/project/architecture/fdu-design-principles.md); the
-protocol is [the performance loop](docs/project/guides/performance-loop.md), every
+current strategy — what to work on next, with floor-anchored priorities and per-tier
+termination criteria — is
+[the campaign-2 plan](docs/project/specs/active/plan-2026-08-23-fdu-performance-campaign-2.md);
+the measured denominator behind it is
+[the metadata-walk floor report](docs/project/reports/report-2026-08-23-metadata-walk-floor.md);
+the protocol is [the performance loop](docs/project/guides/performance-loop.md), every
 verdict is in
 [the experiment ledger](docs/project/reports/report-2026-08-10-fdu-performance-experiments.md),
 the charted view across all of them — absolute milliseconds as well as paired effects —
@@ -126,8 +162,8 @@ than the last, which tier answers which question, and how to keep the instrument
 distorting the measurement — is
 [the instrumentation playbook](docs/project/guides/performance-instrumentation-playbook.md).
 Read it before adding instrumentation or starting a fresh optimization campaign; the
-mechanism it describes lives in the [`fdu::counters`](crates/fdu/src/counters.rs)
-subsystem.
+mechanism it describes lives in the
+[`fdu_core::counters`](crates/fdu-core/src/counters.rs) subsystem.
 
 In practice:
 
@@ -176,7 +212,7 @@ Preserve the 14-day cool-off.
 First-party tools are the documented exceptions, listed once by identity under
 `firstParty` in [supply-chain-policy.json](supply-chain-policy.json) and as
 `exclude-newer-package` entries in [uv.toml](crates/fdu-py/uv.toml) and
-[the benchmark environment](benchmarks/uv.toml).
+[the benchmark environment](explorations/benchmarks/uv.toml).
 They carry no version, so upgrading one never means editing a waiver.
 The cool-off exists so a compromised upstream release is noticed by somebody else before
 we take it, and that argument does not apply to a package this project’s own authors

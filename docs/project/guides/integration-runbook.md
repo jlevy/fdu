@@ -124,16 +124,34 @@ export XDG_CACHE_HOME="$(mktemp -d)"     # never touch your real cache while tes
 ./target/debug/fdu --format json . | head -20   # second run
 ```
 
-✅ The first run reports `"source": "cold_scan"`; the second reports `"warm_revalidate"`.
-Both report the same totals.
-If the second run reports a cold scan, the snapshot was not written — check the cache
-directory and any warning on stderr.
+✅ Both runs report `"source": "cold_scan"` and the same totals.
+
+A second cold scan here is correct, not a missing snapshot.
+A metadata-only report never loads one: revalidating a snapshot stats every entry
+anyway, so the load and reconciliation are additive work with nothing to amortise them,
+and a warm path that loses to a cold scan of the same view is a defect by this project’s
+own rule. The field doc on `ReportPlan::read_snapshot` in
+[`execution.rs`](../../../crates/fdu-core/src/execution.rs) carries the measurement.
 
 ```shell
 ls "$XDG_CACHE_HOME"/fdu                 # a snapshot file exists, named by root hash
 ```
 
 ✅ Exactly one snapshot for the root you scanned.
+The cold scan still writes it, for the runs below that can use it.
+
+The warm path belongs to the questions a snapshot can actually answer.
+Content analysis is the one a one-shot report reuses, because an unchanged fingerprint
+lets it skip re-reading file bodies:
+
+```shell
+./target/debug/fdu --analyze code --view languages --format json . | grep '"source"'
+./target/debug/fdu --analyze code --view languages --format json . | grep '"source"'
+```
+
+✅ The first run reports `"source": "cold_scan"`; the second reports `"warm_revalidate"`.
+If the second still reports a cold scan, the snapshot or its content sidecar was not
+written — check the cache directory and any warning on stderr.
 
 ## 6. Watch mode by hand
 
@@ -188,13 +206,14 @@ A partial tree cannot be kept correct against events that may land outside it.
 ## 7. Python wheel
 
 ```shell
-make wheel                               # or: uv build / maturin build
-uv run --with dist/fdu-*.whl python crates/fdu-py/tests/smoke.py
+make python-smoke        # build the wheel, install it, and test the installed artifact
+make python-sdist-smoke  # the same for the source distribution
 ```
 
-✅ The smoke test passes against the **installed wheel**, not the source tree.
-This is the only step that proves packaging: import paths, the `watch` feature actually
-being absent from the wheel, and the console entry point all break here first.
+✅ Both pass against an **installed** artifact in a throwaway virtualenv, never the
+source tree. This is the only step that proves packaging: import paths, the `watch`
+feature actually being absent from the wheel, the typed public surface a consumer sees,
+and the console entry point under `uvx` all break here first.
 
 ## 8. Benchmarks (optional, and never a pass/fail gate)
 

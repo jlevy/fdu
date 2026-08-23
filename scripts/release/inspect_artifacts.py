@@ -100,7 +100,7 @@ def inspect_sdist(path: Path, version: str) -> None:
     missing = sorted(required - names)
     require(not missing, f"{path.name}: missing source files: {', '.join(missing)}")
     require(
-        any(name.endswith("/crates/fdu/src/lib.rs") for name in names),
+        any(name.endswith("/crates/fdu-core/src/lib.rs") for name in names),
         f"{path.name}: core Rust workspace source missing",
     )
 
