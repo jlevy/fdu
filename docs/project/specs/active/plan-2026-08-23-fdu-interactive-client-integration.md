@@ -45,6 +45,11 @@ TUI, an IDE panel, an agent serving repeated queries:
    fallback, a way to ingest hints from a foreign watcher, and a per-batch statement of
    which roll-ups changed.
 5. **The streaming session**, so a cold open serves requests while the walk runs.
+   fdu already streams *changes* — the watch feed is real, verified, and resumable — but
+   it does not stream the *walk*: `scan()` and `open()` return only when complete, and a
+   watch over an idle tree yields empty batches, because it answers “what changed”, not
+   “what is here”. That missing half is also what makes fdu’s breadth-first default inert
+   today, since no consumer can observe the order it pays for.
    [The progressive-results plan](plan-2026-08-11-fdu-progressive-results.md) owns that
    design; this spec adds only the integration-facing shape it must land with.
 
@@ -206,6 +211,9 @@ the index’s clocked delta contract is the same guard, held in one place.
 | Metabrowser needs | fdu today | Verdict |
 | --- | --- | --- |
 | Boot walk that serves requests ~500 ms in | `open()`/`scan()` block until complete | **Session** (progressive results; shape below) |
+| Entries streamed as the first walk discovers them | watch streams changes only; an idle watch yields empty batches | **Session**; the two senses of streaming are distinguished below |
+| A directory row before its total is known | no placeholder; a roll-up exists or does not | **Session** (two-phase yield) |
+| Breadth-first, stated rather than assumed | BFS is the default but neither surface can name it | **Gap: expose `ScanOrder`** |
 | Per-directory recursive tallies, live | `Index.rollup()`, `merge_upward` | Ready |
 | Dual all/unignored values on every row | one plane only; selection re-aggregates at ~1 µs/entry | **Gap: partitioned tallies** |
 | Hidden-file policy with an allowlist | no visibility concept | **Gap: second tag rule** |
@@ -424,6 +432,63 @@ The resumable-cursor mapping needs no new machinery — `since(clock)` with
 `ChangeSet.truncated` already models SSE resume including the “gap too large, resync”
 case — so it becomes documentation with a tested example rather than API.
 
+### Two things called streaming, and the one that is missing
+
+fdu streams, and it is worth being exact about what: the watch session is a real change
+feed, verified, coalesced, clocked, and resumable through `since()`. What it is not is a
+feed of the tree. `Session::new` in `watch_session.rs` says so in its own first line —
+*“Start watching an already-opened index”* — and a watch over an idle tree yields
+nothing at all: measured here, forty consecutive batches, every one empty.
+So `watch()` answers “what changed since I started”, never “what is here”.
+
+Metabrowser streams the other one, which is the half fdu lacks.
+`walk_tree` is an async generator over a strict `popleft()` BFS queue, and it yields
+twice per directory on purpose: a placeholder as soon as the directory is discovered,
+carrying `total_* = None`, and its finalized form later as the sweep completes beneath
+it, deepest first with the root last.
+The inventory batches those yields at 256 into one SSE `FsChange` and pushes them, so
+the browser paints rows the moment they exist and fills their totals in as they settle.
+That two-phase yield *is* the skeleton-then-converge UI, produced by the walker rather
+than simulated above it.
+
+Setting the two side by side names the gap precisely:
+
+|  | initial walk | subsequent changes |
+| --- | --- | --- |
+| metabrowser | streamed, batched at 256, two-phase per directory | streamed |
+| fdu | **blocking; no read until complete** | streamed |
+
+### Traversal order is already right, and currently inert
+
+fdu walks breadth-first by default and has since the progressive-results work landed:
+`ScanOrder` is a public engine type, a field on `ScanConfig`, region-scheduled across
+top-level subtrees, and measured faster than depth-first on the large heterogeneous tree
+(exp-037). Metabrowser derived the same answer independently, queueing BFS to a
+first-render depth.
+
+Two problems follow, and the second is the interesting one.
+
+**Neither surface exposes it** (`fdu-4vkz`). There is no `--order` flag and no
+`ScanOptions` field; `ScanOptions` carries `max_depth` and `one_filesystem` and nothing
+else. A Rust caller may choose the order, and a command-line or Python caller may not —
+the mirror image of the rule that the command line invents nothing, and the same defect,
+since a capability reachable from one surface and not the others is unfinished either
+way. The progressive-results plan recorded `--order` as landed “on the probe”, and the
+probe is not a public surface.
+
+**More importantly, the order cannot currently pay for itself.** Breadth-first exists so
+that a consumer reading mid-walk compares partial values against each other rather than
+against zeros. No Python or command-line consumer can read mid-walk, so today fdu pays
+breadth-first’s costs and collects none of its benefit; the research already said as
+much — a one-shot run “sees nothing, so it should take whichever order is cheapest”.
+That is the sharpest argument for the session in this document.
+It is not a new feature so much as the thing that makes an already-shipped property
+observable, and it is why metabrowser is snappy in interpreted Python while fdu, far
+faster per entry, would still show an empty pane until the walk ends.
+Its measured wins are all of that shape: first row from 1,604 ms to 242 ms by rendering
+inline, and server scanning time from 650 ms to 2 ms by letting rows stop waiting on
+tallies. Neither is a faster walk.
+
 ### The session surface
 
 Progressive results owns the design (`Session::start` / read-anytime / cancel;
@@ -519,6 +584,12 @@ Converts PR #38’s indexed tiers rather than competing with them; that work is 
 - [ ] Polling backend selection in `WatchOptions`, with its interval stated (`fdu-rhu3`)
 - [ ] The asyncio adapter and the thread-affinity documentation, with a tested
   SSE-resume example mapping `since`/`truncated` to `Last-Event-ID`/resync (`fdu-97pb`)
+
+### Phase 2b: Traversal order as a public choice
+
+- [ ] `--order` on the scope axis and `ScanOptions.order` in Python, with goldens and
+  parity rows, so the breadth-first default fdu already pays for is a stated contract
+  rather than an engine-only one (`fdu-4vkz`)
 
 ### Phase 3: Session integration shape
 
