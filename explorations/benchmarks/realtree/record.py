@@ -66,8 +66,11 @@ def main(argv: Sequence[str]) -> int:
         "--tree-reconstructible",
         action="store_true",
         help=(
-            "Following --tree-provenance yields a tree with this run's engine digest. "
-            "Omit for a live workspace or an unpinned clone."
+            "Following --tree-provenance yields a tree of the same shape: the same "
+            "counts, sizes, depth and layout, which is what a timing comparison rests "
+            "on. Not the same engine digest -- that binds inode, device and "
+            "timestamps, so no regenerated tree ever reproduces one. Omit for a live "
+            "workspace or an unpinned clone."
         ),
     )
     parser.add_argument("--control-variant", default=None)

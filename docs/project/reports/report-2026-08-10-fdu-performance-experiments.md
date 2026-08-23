@@ -2332,7 +2332,10 @@ The max_by_key last-wins tie-break is the one subtlety and is pinned by a test.
 content-basic, both intervals well below zero, RSS neutral, mechanism confirmed by
 caller-tree profile rather than inferred from a flat one.
 H95 cold-path transfer prediction dropped: -2.34% [-5.05%, -0.64%] at 40 pairs, below
-the bar.
+the bar. Scope, established afterwards by exp-065: the warm figure this verdict rests on
+transfers to a dense real tree at -25.78%; the -13.40% on content-basic does not,
+reading -2.38% there, because this subject is depth 16 and 22.6x sparse.
+Read the cold number as evidence about this tree, not about the content tier.
 
 Full record:
 [`exp-064-content-roll-up-lookup-and-indexed-type-rule-tiers.md`](../experiments/exp-064-content-roll-up-lookup-and-indexed-type-rule-tiers.md)

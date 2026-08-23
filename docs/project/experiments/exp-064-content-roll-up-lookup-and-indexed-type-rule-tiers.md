@@ -283,7 +283,7 @@ experiment:
     primary_job: content-cache-hit
     primary_metric: wall_ns
     change_pct: -30.307
-    reason: "Cumulative -30.31% [-30.69%, -29.61%] on content-cache-hit and -13.40% on content-basic, both intervals well below zero, RSS neutral, mechanism confirmed by caller-tree profile rather than inferred from a flat one. H95 cold-path transfer prediction dropped: -2.34% [-5.05%, -0.64%] at 40 pairs, below the bar."
+    reason: "Cumulative -30.31% [-30.69%, -29.61%] on content-cache-hit and -13.40% on content-basic, both intervals well below zero, RSS neutral, mechanism confirmed by caller-tree profile rather than inferred from a flat one. H95 cold-path transfer prediction dropped: -2.34% [-5.05%, -0.64%] at 40 pairs, below the bar. Scope, established afterwards by exp-065: the warm figure this verdict rests on transfers to a dense real tree at -25.78%; the -13.40% on content-basic does not, reading -2.38% there, because this subject is depth 16 and 22.6x sparse. Read the cold number as evidence about this tree, not about the content tier."
     commit: 9fb6a33
 ---
 ## What was measured

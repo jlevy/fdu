@@ -401,6 +401,11 @@ class SummaryRenderTests(unittest.TestCase):
         payload.update(overrides)
         return payload
 
+    def _with_subject(self, **subject_overrides):
+        experiment = self._experiment()
+        experiment["subject"] = dict(experiment["subject"], **subject_overrides)
+        return " ".join(summary.render([experiment]).split())
+
     def test_the_report_states_the_decision_and_the_number(self) -> None:
         text = summary.render([self._experiment()])
         self.assertIn("accepted", text)
@@ -456,6 +461,57 @@ class SummaryRenderTests(unittest.TestCase):
         self.assertIn("Label `fixture`, 100 entries", conditions)
         self.assertNotIn("other-tree", conditions)
         self.assertNotIn("999 entries", conditions)
+
+    def test_a_reconstructible_subject_says_how_to_rebuild_it(self) -> None:
+        """Identity says whether you have the tree; only this says how to get one.
+
+        And it must not promise the digest, which no regeneration reproduces --
+        the bar that would make the flag unusable if a reader believed it.
+        """
+        text = self._with_subject(
+            tree_provenance="python3 gen_tree.py <root> 17000",
+            tree_reconstructible=True,
+        )
+        self.assertIn("Rebuild it with python3 gen_tree.py <root> 17000.", text)
+        self.assertIn("the digest not to", text)
+
+    def test_an_unobtainable_subject_says_so_rather_than_implying_a_recipe(self) -> None:
+        text = self._with_subject(
+            tree_provenance="The cargo registry cache for this workspace's lockfile.",
+            tree_reconstructible=False,
+        )
+        self.assertIn("Not reconstructible:", text)
+        self.assertIn("needs a fresh subject and a fresh control", text)
+        self.assertNotIn("Rebuild it with", text)
+
+    def test_an_unrecorded_provenance_is_reported_and_not_passed_over(self) -> None:
+        """Sixty-five artifacts were recorded before this field existed.
+
+        Rendering nothing for them would read as a tree somebody could obtain.
+        """
+        text = self._with_subject(tree_provenance="", tree_reconstructible=False)
+        self.assertIn("Provenance unrecorded", text)
+        self.assertIn("nobody else can re-run them", text)
+
+    def test_a_sparse_subject_is_flagged_beside_the_numbers_it_inflates(self) -> None:
+        """exp-064's subject, the case this rendering exists for.
+
+        `gen_tree.py` writes anything over 256 bytes with `os.truncate`, so reading
+        a file there costs nothing and per-file bookkeeping is most of a cold content
+        job -- which is why its cold figure did not transfer to dense real source.
+        """
+        text = self._with_subject(
+            tree_apparent_bytes=595728806,
+            tree_allocated_bytes=26341376,
+        )
+        self.assertIn("22.6x, so the files are largely sparse", text)
+
+    def test_a_dense_subject_is_not_flagged_as_sparse(self) -> None:
+        text = self._with_subject(
+            tree_apparent_bytes=26341376,
+            tree_allocated_bytes=26341376,
+        )
+        self.assertNotIn("largely sparse", text)
 
 
 class IdentifierCollisionTests(unittest.TestCase):
