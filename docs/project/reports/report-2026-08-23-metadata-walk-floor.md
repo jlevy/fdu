@@ -10,8 +10,8 @@
 
 Every experiment in [the ledger](report-2026-08-10-fdu-performance-experiments.md)
 answers the same shape of question: is this change faster than the code it came from.
-Sixty-four of them now say yes or no with intervals.
-None of them answers the question that decides whether to run a sixty-fifth: **how much
+Every one of them says yes or no with an interval.
+None of them answers the question that decides whether to run the next one: **how much
 is left.**
 
 A relative loop cannot answer that, because it has no denominator.

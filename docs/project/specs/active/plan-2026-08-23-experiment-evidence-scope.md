@@ -140,6 +140,19 @@ margin on at least one property.
 That predicate is what Phase 2’s transfer rule tests against, so it lives in code with
 tests, not in a reviewer’s judgment.
 
+**Denominator is not the only way a result fails to transfer, and the record already
+shows the other one.** exp-064 and exp-065 differ 4.36× in per-file wall saving and only
+1.31× in per-file user-CPU saving: the mechanism carries almost intact, and what changes
+is how much of it the user waits for — 0.95 of each saved CPU microsecond became wall on
+the sparse tree against 0.29 on the dense one, because dense source gives the reader
+threads real work to hide consumer bookkeeping behind.
+So the profile owes a *critical path* property beside its shape ones, derived from the
+run’s own `cpu_ns` and `wall_ns`: the fraction of a change’s CPU saving that reached
+wall. Rendered beside the headline it answers the question a percentage cannot — whether
+this saving is on the path of the regime the change will ship into — and it is the
+property that decides how much of H86’s Linux result should be expected on macOS, where
+the aggregate tier is kernel-bound.
+
 **2. `verdict.scope`, a required field with three values.**
 
 - `transfers` — measured on at least two materially different subjects, effect holds on

@@ -538,7 +538,7 @@ def run(
         "schema": SCHEMA,
         "started_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(started)),
         "duration_seconds": round(time.time() - started, 3),
-        "host": measure.host_facts(),
+        "host": measure.host_facts(root),
         "conditions": {
             "campaign_stage": campaign_stage,
             "confidence_interval": "paired-bootstrap-median-95-v1",

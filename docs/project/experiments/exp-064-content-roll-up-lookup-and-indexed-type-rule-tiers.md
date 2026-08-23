@@ -15,7 +15,7 @@ experiment:
   subject:
     tree_label: spike-15977
     tree_root_id: 15fd30c5887b80cca0244ab1911b73f4ecf9c9d04d3cca889d81ce519a81e83c
-    tree_provenance: "python3 explorations/benchmarks/spikes/gen_tree.py <root> 17000"
+    tree_provenance: "python3 explorations/benchmarks/spikes/gen_tree.py <root> 17000, at generator blob 33a9e74 (seed 42, hard-coded in the script). The generator decides the shape, so pinning it is part of the recipe: an edit to the script changes the tree while the command stays identical."
     tree_reconstructible: true
     tree_engine_digest: 9c17100d19a64045a6ef02b7de83abd5f05c159203300d330171b13f215126af
     tree_entries: 17041

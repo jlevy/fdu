@@ -26,6 +26,23 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence
 EXPERIMENTS_DIR = Path("docs/project/experiments")
 DEFAULT_OUT = Path("docs/project/reports/report-2026-08-10-fdu-performance-experiments.md")
 
+#: The pre-work commit every cumulative experiment measures against. An experiment whose
+#: control is this binary re-measures the original baseline, which is what makes its
+#: candidate value placeable on one absolute axis with the others — and what makes it,
+#: and only it, a statement about the campaign as a whole.
+BASELINE_COMMIT = "b565882"
+
+#: Apparent-to-allocated ratio at which a subject is reported as sparse.
+#:
+#: Reading a hole costs nothing, so on a sparse tree per-file bookkeeping is a much
+#: larger share of a content job than it will be on dense content and a percentage
+#: measured there does not transfer: exp-064's subject is 22.6× by this measure and its
+#: cold figure read −13.40% where a dense tree gave −2.38%. Two is the same margin the
+#: evidence-scope plan proposes for calling two subjects materially different on
+#: sparseness, and it is a first cut from three recorded cases rather than a derived
+#: bound.
+SPARSE_RATIO_THRESHOLD = 2.0
+
 #: Metrics shown per experiment, and how to render them.
 METRIC_COLUMNS = (
     ("wall_ns", "wall", "ms"),
@@ -79,8 +96,12 @@ def check_identifiers(experiments: Sequence[Mapping[str, Any]]) -> List[str]:
     every one of them is correct. What is worth flagging is the softer signal that the
     real collision left — one base number wearing several label spellings, as `H87` and
     `H87-fixed-worker-knee` did — since that is two campaigns talking past each other.
-    It is a warning rather than an error because the committed record already contains
-    a benign instance: three deliberate `H86-*` sub-hypotheses from one campaign.
+    It is a warning rather than an error because a base number wearing several
+    spellings is not *always* the collision signature: it was how three deliberate
+    `H86-*` sub-hypotheses were once written. Those were renumbered to H97-H99 when the
+    real collision was found underneath them, so the committed record now generates
+    warning-free, and `fdu-1xlb` turns the variant-spelling case fatal while leaving
+    genuine reuse across experiments legal.
     """
     errors: List[str] = []
 
@@ -224,14 +245,14 @@ def render(experiments: Sequence[Mapping[str, Any]]) -> str:
 
 
 def _headline(experiments: Sequence[Mapping[str, Any]]) -> List[str]:
-    """Where things ended up, taken from the most recent cumulative experiment.
+    """Where things ended up, taken from the most recent baseline-anchored experiment.
 
-    A cumulative experiment measures today's build against the pre-work baseline in
-    one interleaved run, so it is the only comparison that can honestly be called a
-    total. Adding up the individual experiments would not be: each was measured
-    against a different control on a differently loaded machine.
+    Such an experiment measures today's build against the pre-work baseline in one
+    interleaved run, so it is the only comparison that can honestly be called a total.
+    Adding up the individual experiments would not be: each was measured against a
+    different control on a differently loaded machine.
     """
-    latest = _latest_cumulative(experiments)
+    latest = _campaign_headline(experiments)
     if latest is None:
         return []
     lines = ["## Where it stands", ""]
@@ -272,19 +293,36 @@ def _headline(experiments: Sequence[Mapping[str, Any]]) -> List[str]:
     return lines
 
 
-def _latest_cumulative(
+def _campaign_headline(
     experiments: Sequence[Mapping[str, Any]],
 ) -> Optional[Mapping[str, Any]]:
-    cumulative = [
-        item for item in experiments if "cumulative" in item["title"].lower()
+    """The most recent run that measured the current build against the pre-work binary.
+
+    Selected by what an experiment *measured*, not by what it is called. The obvious
+    rule — the last artifact with "cumulative" in its title — chose exp-054, which is
+    titled "Validate the Linux campaign's cumulative effect on macOS" and whose control
+    is `main at 26280e4`: the code as of that campaign, not the pre-work binary. The
+    ledger then printed exp-054's `cold-scan-index` reading of +1.4% under the heading
+    "measured against the pre-work baseline", where the campaign's own figure is
+    exp-032's −54.5%. A generated view stating the opposite of its own evidence, in the
+    first block a reader meets, is exactly the failure this record exists to prevent.
+
+    A `baseline` decision is excluded because exp-000 *is* the baseline: it names the
+    same commit as its control and has no candidate to compare against.
+    """
+    anchored = [
+        item
+        for item in experiments
+        if BASELINE_COMMIT in str((item.get("method") or {}).get("control") or "")
+        and str((item.get("verdict") or {}).get("decision") or "") != "baseline"
     ]
-    return cumulative[-1] if cumulative else None
+    return anchored[-1] if anchored else None
 
 
 def _conditions(experiments: Sequence[Mapping[str, Any]]) -> List[str]:
     if not experiments:
         return []
-    cumulative = _latest_cumulative(experiments)
+    cumulative = _campaign_headline(experiments)
     anchor = cumulative or experiments[-1]
     subject = anchor["subject"]
     method = anchor["method"]
@@ -310,7 +348,7 @@ def _conditions(experiments: Sequence[Mapping[str, Any]]) -> List[str]:
     # a hole costs nothing, so per-file bookkeeping is a much larger share of a
     # content job here than it will be on dense content, and a percentage measured
     # on such a tree does not transfer. Say so where the number is quoted.
-    if allocated and apparent / allocated >= 2:
+    if allocated and apparent / allocated >= SPARSE_RATIO_THRESHOLD:
         density = (
             f" — {apparent / allocated:.1f}x, so the files are largely sparse and "
             "per-file read cost is near zero"

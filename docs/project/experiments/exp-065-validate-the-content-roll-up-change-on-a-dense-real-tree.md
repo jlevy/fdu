@@ -564,12 +564,34 @@ The real subject’s 221 MB apparent against 249 MB allocated is dense: every by
 analyzed is a byte read.
 
 So the cold job’s denominator differs by far more than its numerator.
-Per-file saving on `content-basic` is 4.39 µs on the generated tree and 0.99 µs on the
-real one, against a per-file cost that is near-zero read plus bookkeeping in the first
-case and real read, decode and analysis in the second.
+Per-file wall saving on `content-basic` is 4.31 µs on the generated tree and 0.99 µs on
+the real one, against a per-file cost that is near-zero read plus bookkeeping in the
+first case and real read, decode and analysis in the second.
 The bookkeeping H94 deletes is most of the sparse tree’s cold work and a small corner of
-the dense tree’s. Both percentages are correct measurements of the same absolute
-mechanism against denominators that are not comparable.
+the dense tree’s.
+
+**The recorded CPU splits that 4.4× into two factors, and only one of them is the
+mechanism getting smaller.** Per-file *user-CPU* saving is 4.53 µs on the generated tree
+and 3.45 µs on the dense one — a ratio of 1.31, close to the 1.41 the warm jobs show and
+consistent with depth 16 against depth 10. The work deleted therefore transfers almost
+intact. What does not transfer is how much of it the user waits for: on the sparse tree
+0.95 of each saved CPU microsecond becomes wall, and on the dense tree 0.29 does.
+Those two factors multiply back to the observed gap, 1.31 × 3.32 = 4.36.
+
+That second factor is overlap, not denominator.
+A cold `content-basic` run on dense source has real read, decode and analysis to do on
+its reader threads, so consumer-side bookkeeping removed from the critical path is
+bookkeeping somebody else was already waiting through; on a tree of holes there is
+nothing to hide behind and every saved cycle is a saved microsecond.
+Both percentages are correct measurements of the same absolute mechanism, against
+denominators that are not comparable *and* against critical paths that are not the same
+shape.
+
+The practical consequence is a second question to ask of any structural result, beside
+“what was the denominator”: **was the saving on the critical path of the regime it will
+ship into?** A change that deletes consumer CPU can be worth its full measured wall on a
+tree where the consumer is the bottleneck and nearly none of it on a tree where the
+kernel or the reader is — without the mechanism weakening at all.
 
 The warm jobs are the ones that transfer because a cache hit does no reading on either
 subject, so the denominators are alike and only depth separates them.

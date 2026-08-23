@@ -208,6 +208,18 @@ against denominators that are not comparable.
 Depth compounds it: the generated tree is depth 16 against the real tree’s 10, and a
 per-file ancestor walk pays for every level.
 
+The recorded CPU tells you which half of that gap is the mechanism and which is the
+regime, and it is worth reading before concluding anything about transfer.
+Per-file *user-CPU* saving moved only 1.31× between those two subjects, close to what
+depth alone predicts; per-file *wall* saving moved 4.36×. The difference is conversion:
+0.95 of each saved CPU microsecond became wall on the tree of holes and 0.29 did on
+dense source, where the reader threads had real work to hide the saving behind.
+So a result carries two questions, not one — what was the denominator, and **was the
+saving on the critical path of the regime it will ship into?** A change that deletes
+consumer CPU is worth its full measured wall where the consumer is the bottleneck and
+almost none of it where the kernel or the reader is, with the mechanism unchanged
+throughout.
+
 Two fields in the subject record predict this before a run happens, and both were
 sitting in exp-064 unread.
 `tree_apparent_bytes` far above `tree_allocated_bytes` means sparse files and therefore
@@ -229,6 +241,11 @@ tree in front of you is the one that was measured, and a regenerated tree never 
 it: re-running `gen_tree.py` reproduced exp-064’s subject on all eight shape fields and
 produced a different digest.
 Shape is what a timing rests on and what provenance can promise.
+
+A generator recipe names the generator’s revision, because the generator decides the
+shape and an edit to it changes the tree while the command stays identical.
+`gen_tree.py` hard-codes its seed, so its command plus its blob hash is a complete
+recipe and its command alone is not.
 
 Where no recipe exists — a live workspace, an unpinned clone — say so in the field
 rather than leaving it empty.

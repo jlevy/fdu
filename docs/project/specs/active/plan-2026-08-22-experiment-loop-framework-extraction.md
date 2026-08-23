@@ -130,7 +130,7 @@ Everything both kept, having built independently, is the invariant core:
 | Invariant | fdu | metabrowser |
 | --- | --- | --- |
 | One soft-schema artifact per round; frontmatter only what a view reads | `experiment.py` docstring | schema header comment says it verbatim |
-| Failures recorded like successes | 28 of 64 rejected | rejected variants written up inside accepted rounds |
+| Failures recorded like successes | 28 of 66 rejected | rejected variants written up inside accepted rounds |
 | Criterion named before measurement; post-hoc metric switch is never an accept | pre-registration rule, exp-051 | “The metric is named before the measurement” |
 | A number without its spread is not a result | 95% bootstrap interval | “A median without its range is not a result” |
 | Verdict = arithmetic plus one written judgment | accept rule, fourth clause | accept rule, fourth clause |

@@ -42,7 +42,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
-from benchmarks.realtree.summary import EXPERIMENTS_DIR, load_experiments
+from benchmarks.realtree.summary import BASELINE_COMMIT, EXPERIMENTS_DIR, load_experiments
 
 #: Emitted alongside the data so a consumer can tell which projection it holds.
 DATASET_VERSION = "fdu.performance.timeline/1"
@@ -63,27 +63,53 @@ METRICS = {
     "peak_rss_bytes": "bytes",
 }
 
+#: A tree built by this generator is generated, whatever it is labelled.
+#:
+#: `tree_provenance` is the general answer and needs no list, which is why it is checked
+#: first. The list below only has to cover the artifacts recorded before that field
+#: existed.
+TREE_GENERATOR = "gen_tree.py"
+
 #: Subjects that are not a sample of ordinary work and must never be averaged with one.
 #:
 #: `adaptive-fast-slow-100k` interleaves fast and slow directories deliberately to make
 #: an adaptive worker policy fail; it costs about 18 µs per entry where a real tree of
 #: the same age costs 5. Left unmarked it would read as a catastrophic regression on the
 #: normalised axis rather than as the adversarial probe it is.
+#:
+#: `meta450k`, `vm450k` and `spike-15977` are `gen_tree.py` trees too — the whole Linux
+#: index-tier record and exp-064's content-tier subject — and were missing from this
+#: list while it was maintained by hand, so every generated Linux subject was averaged
+#: with the real ones on the normalised axis. That is the same mistake the floor report
+#: measured at about 15 points of fdu's distance from the floor, made by the page that
+#: exists to report it.
 SYNTHETIC_SUBJECTS = {
     "adaptive-fast-slow-100k",
     "diagnostics-overhead",
     "generated-markdown-2000",
+    "meta450k",
+    "spike-15977",
     "threshold-boundary-2x",
+    "vm450k",
 }
-
-#: The pre-work commit every cumulative experiment measures against. An experiment whose
-#: control is this binary re-measures the original baseline, which is what makes its
-#: candidate value placeable on one absolute axis with the others.
-BASELINE_COMMIT = "b565882"
 
 
 class TimelineError(RuntimeError):
     """The artifacts could not be projected into a coherent dataset."""
+
+
+def is_synthetic(subject: Mapping[str, Any]) -> bool:
+    """Whether a subject was generated rather than observed.
+
+    Asked of the recorded provenance first, because that is a property of the run and
+    cannot fall behind: a recipe naming the generator describes a generated tree. The
+    label set is the fallback for the artifacts recorded before `tree_provenance`
+    existed, and a hand-maintained set is exactly why this needed fixing — three
+    `gen_tree.py` subjects were never added to it.
+    """
+    if TREE_GENERATOR in str(subject.get("tree_provenance") or ""):
+        return True
+    return str(subject.get("tree_label") or "") in SYNTHETIC_SUBJECTS
 
 
 def platform_of(subject: Mapping[str, Any]) -> str:
@@ -201,7 +227,7 @@ def project(experiments: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
                 "host_cpu": subject.get("host_cpu"),
                 "filesystem": subject.get("filesystem"),
                 "os_cache": subject.get("os_cache"),
-                "synthetic": label in SYNTHETIC_SUBJECTS,
+                "synthetic": is_synthetic(subject),
                 "experiments": [],
             },
         )
@@ -209,7 +235,7 @@ def project(experiments: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
             subjects[key]["labels"].append(label)
         # One subject can be reached under several labels; synthetic is a property of
         # the tree, so any label that marks it marks the subject.
-        subjects[key]["synthetic"] = subjects[key]["synthetic"] or label in SYNTHETIC_SUBJECTS
+        subjects[key]["synthetic"] = subjects[key]["synthetic"] or is_synthetic(subject)
         subjects[key]["experiments"].append(experiment["id"])
 
         verdict = experiment["verdict"]

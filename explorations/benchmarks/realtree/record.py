@@ -55,11 +55,13 @@ def main(argv: Sequence[str]) -> int:
     parser.add_argument("--complexity-note", default="")
     parser.add_argument(
         "--tree-provenance",
-        default="",
+        required=True,
         help=(
             "How this run's tree was obtained, precisely enough to obtain it again: "
-            "the generator command with its arguments, the clone source and revision, "
-            "or the reason no recipe exists. The run cannot infer this."
+            "the generator command with its arguments and the generator's revision, the "
+            "clone source and revision, or the reason no recipe exists. The run cannot "
+            "infer this, and there is no default: an unrecorded provenance renders as a "
+            "tree nobody else can obtain, which is a claim, not an absence."
         ),
     )
     parser.add_argument(
@@ -79,6 +81,16 @@ def main(argv: Sequence[str]) -> int:
     parser.add_argument("--output-dir", type=Path, default=EXPERIMENTS_DIR)
     parser.add_argument("--no-validate", action="store_true")
     arguments = parser.parse_args(list(argv))
+
+    # `required=True` stops the flag being forgotten; this stops it being satisfied with
+    # nothing. `from_run` carries the same rule for callers that do not come through
+    # argparse, including the consistency one: claiming a tree can be rebuilt while
+    # naming no way to rebuild it is a promise the record cannot keep.
+    if not arguments.tree_provenance.strip():
+        parser.error(
+            "--tree-provenance may not be empty: name the generator command and its "
+            "revision, the clone source and revision, or the reason no recipe exists"
+        )
 
     run = json.loads(arguments.run.read_text(encoding="utf-8"))
     try:

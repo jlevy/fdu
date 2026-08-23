@@ -783,7 +783,7 @@ def run(
         "started_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(started)),
         "duration_seconds": round(time.time() - started, 3),
         "note": note,
-        "host": host_facts(),
+        "host": host_facts(root),
         "conditions": {
             "campaign_stage": campaign_stage,
             "confidence_interval": "paired-bootstrap-median-95-v1",
@@ -2052,8 +2052,20 @@ def _bootstrap_median_interval(
 # --------------------------------------------------------------------------------
 
 
-def host_facts() -> Dict[str, Any]:
-    """Machine facts that change timings. No hostname, no user, no paths."""
+def host_facts(subject_root: Optional[Path] = None) -> Dict[str, Any]:
+    """Machine facts that change timings. No hostname, no user, no paths.
+
+    ``subject_root`` selects which filesystem is described. Without it the root
+    filesystem is, which is right only when the subject lives there — a subject under
+    ``/tmp`` can be tmpfs while ``/`` is ext4, and which filesystem a tree sat on
+    decides what a metadata timing is evidence about.
+
+    Everything below the portable block used to be Darwin-only, so every Linux artifact
+    in the record carries ``host_cpu: Linux``, no memory, and no filesystem, and the
+    loop guide's rule that all three regime axes belong in every result was one the
+    harness could not keep. ``virtualization`` is asked on both platforms for the same
+    reason: it decides what a *cold* sample can mean, and nothing was recording it.
+    """
     facts: Dict[str, Any] = {
         "arch": platform.machine(),
         "cpu_count": os.cpu_count(),
@@ -2061,6 +2073,7 @@ def host_facts() -> Dict[str, Any]:
         "system": platform.system(),
         "release": platform.release(),
         "toolchain": _toolchain(),
+        "virtualization": _virtualization(),
     }
     if sys.platform == "darwin":
         facts["cpu_model"] = _sysctl("machdep.cpu.brand_string")
@@ -2068,8 +2081,166 @@ def host_facts() -> Dict[str, Any]:
         facts["max_vnodes"] = _sysctl_int("kern.maxvnodes")
         facts["performance_cores"] = _sysctl_int("hw.perflevel0.logicalcpu")
         facts["efficiency_cores"] = _sysctl_int("hw.perflevel1.logicalcpu")
-        facts["filesystem"] = _darwin_filesystem()
+        facts["filesystem"] = _darwin_filesystem(subject_root)
+    elif sys.platform.startswith("linux"):
+        facts["cpu_model"] = parse_linux_cpu_model(_read_proc("/proc/cpuinfo"))
+        facts["memory_bytes"] = parse_linux_memory_bytes(_read_proc("/proc/meminfo"))
+        facts["filesystem"] = _linux_filesystem(subject_root)
     return facts
+
+
+#: Reported for a host that is a guest, and for one that is not. Two values rather than
+#: a hypervisor name because this is read as a precondition -- a cold sample on a guest
+#: measures the hypervisor's page cache, whatever the hypervisor is called.
+VIRTUALIZED = "virtualized"
+BARE_METAL = "bare-metal"
+
+
+def parse_linux_cpu_model(cpuinfo: str) -> Optional[str]:
+    """The CPU model from ``/proc/cpuinfo``, or None when it does not name one.
+
+    ``model name`` on x86, ``Model`` on some arm64 kernels, and neither on others --
+    where the honest answer is None rather than a guess assembled from part numbers.
+    """
+    for line in cpuinfo.splitlines():
+        key, separator, value = line.partition(":")
+        if not separator:
+            continue
+        if key.strip().lower() in {"model name", "cpu model"}:
+            return value.strip() or None
+    return None
+
+
+def parse_linux_memory_bytes(meminfo: str) -> Optional[int]:
+    """Total RAM from ``/proc/meminfo``. The file reports kibibytes; this returns bytes."""
+    for line in meminfo.splitlines():
+        key, separator, value = line.partition(":")
+        if not separator or key.strip() != "MemTotal":
+            continue
+        fields = value.split()
+        if not fields:
+            return None
+        try:
+            total = int(fields[0])
+        except ValueError:
+            return None
+        return total * 1024 if len(fields) > 1 and fields[1] == "kB" else total
+    return None
+
+
+def parse_linux_filesystem(mountinfo: str, target: str) -> Optional[str]:
+    """The filesystem type carrying ``target``, from ``/proc/self/mountinfo``.
+
+    Longest matching mount point wins, which is the only correct rule: ``/`` prefixes
+    every path, so a first match would report the root filesystem for a subject on any
+    other mount. Fields before the ``-`` separator are optional and variable in number,
+    so the type is read relative to the separator rather than from a fixed index.
+    """
+    best: Optional[str] = None
+    best_length = -1
+    for line in mountinfo.splitlines():
+        fields = line.split()
+        try:
+            separator = fields.index("-")
+        except ValueError:
+            continue
+        if separator + 1 >= len(fields) or separator < 5:
+            continue
+        mount_point = fields[4].replace("\\040", " ")
+        if _covers(mount_point, target) and len(mount_point) > best_length:
+            best_length = len(mount_point)
+            best = fields[separator + 1]
+    return best
+
+
+def parse_darwin_filesystem(mount_output: str, target: str) -> Optional[str]:
+    """The filesystem type carrying ``target``, from ``mount`` output.
+
+    Same longest-match rule as the Linux reader, and for the same reason: this used to
+    look for the literal `` on / `` and so reported the root filesystem no matter where
+    the measured tree actually lived.
+    """
+    best: Optional[str] = None
+    best_length = -1
+    for line in mount_output.splitlines():
+        marker = line.find(" on ")
+        start = line.find("(", marker if marker != -1 else 0)
+        if marker == -1 or start == -1:
+            continue
+        mount_point = line[marker + 4 : start].strip()
+        if _covers(mount_point, target) and len(mount_point) > best_length:
+            best_length = len(mount_point)
+            best = line[start + 1 :].split(",")[0].strip().rstrip(")")
+    return best
+
+
+def _covers(mount_point: str, target: str) -> bool:
+    """Whether a mount point contains a path, by component and not by prefix.
+
+    ``/var`` does not carry ``/variable``, and a textual prefix test says it does.
+    """
+    if mount_point == target:
+        return True
+    return target.startswith(mount_point.rstrip("/") + "/")
+
+
+def _read_proc(path: str) -> str:
+    try:
+        return Path(path).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+
+
+def _resolved_target(subject_root: Optional[Path]) -> str:
+    if subject_root is None:
+        return "/"
+    try:
+        return str(subject_root.resolve())
+    except OSError:
+        return str(subject_root)
+
+
+def _linux_filesystem(subject_root: Optional[Path]) -> Optional[str]:
+    return parse_linux_filesystem(
+        _read_proc("/proc/self/mountinfo"), _resolved_target(subject_root)
+    )
+
+
+def _virtualization() -> str:
+    """Whether this host is a guest, by the cheapest reliable signal per platform.
+
+    Empty when nothing answers, because "undetermined" and "bare metal" are different
+    claims and only one of them can be made from a missing file.
+    """
+    if sys.platform == "darwin":
+        # Set by xnu when the kernel detects it is running under a hypervisor. Absent on
+        # kernels too old to report it, which is why the empty case is preserved.
+        present = _sysctl_int("kern.hv_vmm_present")
+        if present is None:
+            return ""
+        return VIRTUALIZED if present else BARE_METAL
+    if sys.platform.startswith("linux"):
+        detector = shutil.which("systemd-detect-virt")
+        if detector is not None:
+            completed = subprocess.run([detector], capture_output=True, check=False)
+            answer = completed.stdout.decode("utf-8", errors="replace").strip()
+            if answer:
+                return BARE_METAL if answer == "none" else VIRTUALIZED
+        # The CPUID hypervisor-present bit: set by every mainstream hypervisor and by
+        # nothing on bare metal. Weaker than systemd's probe, which is why it is second.
+        flags = parse_linux_cpu_flags(_read_proc("/proc/cpuinfo"))
+        if flags:
+            return VIRTUALIZED if "hypervisor" in flags else BARE_METAL
+    return ""
+
+
+def parse_linux_cpu_flags(cpuinfo: str) -> frozenset:
+    """The first core's feature flags from ``/proc/cpuinfo``, empty when absent."""
+    for line in cpuinfo.splitlines():
+        key, separator, value = line.partition(":")
+        if separator and key.strip().lower() in {"flags", "features"}:
+            return frozenset(value.split())
+    return frozenset()
 
 
 def _toolchain() -> str:
@@ -2101,19 +2272,16 @@ def _sysctl_int(name: str) -> Optional[int]:
         return None
 
 
-def _darwin_filesystem() -> Optional[str]:
+def _darwin_filesystem(subject_root: Optional[Path] = None) -> Optional[str]:
     binary = shutil.which("mount")
     if binary is None:
         return None
     completed = subprocess.run([binary], capture_output=True)
     if completed.returncode != 0:
         return None
-    for line in completed.stdout.decode("utf-8", errors="replace").splitlines():
-        if " on / " in line:
-            start = line.find("(")
-            if start != -1:
-                return line[start + 1 :].split(",")[0]
-    return None
+    return parse_darwin_filesystem(
+        completed.stdout.decode("utf-8", errors="replace"), _resolved_target(subject_root)
+    )
 
 
 def _darwin_power_source() -> Optional[str]:

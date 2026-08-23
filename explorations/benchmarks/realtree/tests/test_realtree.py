@@ -919,6 +919,101 @@ Call graph:
         self.assertEqual(parsed["total_samples"], 1)
 
 
+MOUNTINFO = """\
+25 30 0:23 / /sys rw,nosuid,nodev,noexec,relatime shared:7 - sysfs sysfs rw
+26 30 0:5 / /proc rw,nosuid,nodev,noexec,relatime shared:14 - proc proc rw
+30 1 253:0 / / rw,relatime shared:1 - ext4 /dev/vda1 rw,errors=remount-ro
+36 30 8:1 / /mnt rw,noatime - ext3 /dev/sdb1 rw
+41 30 0:38 / /tmp rw,nosuid,nodev shared:22 - tmpfs tmpfs rw,nr_inodes=1048576
+"""
+
+DARWIN_MOUNT = """\
+/dev/disk3s1s1 on / (apfs, sealed, local, read-only, journaled)
+devfs on /dev (devfs, local, nobrowse)
+/dev/disk3s5 on /System/Volumes/Data (apfs, local, journaled, nobrowse)
+/dev/disk5s1 on /Volumes/ramdisk (hfs, local, nodev, nosuid)
+"""
+
+CPUINFO = """\
+processor\t: 0
+vendor_id\t: GenuineIntel
+model name\t: Intel(R) Xeon(R) CPU E5-2680 v4 @ 2.40GHz
+flags\t\t: fpu vme de pse tsc msr hypervisor lahf_lm
+"""
+
+MEMINFO = """\
+MemTotal:       16316108 kB
+MemFree:          123456 kB
+"""
+
+
+class HostFactsTests(unittest.TestCase):
+    """The regime axes a measurement means nothing without.
+
+    Every one of these readers was Darwin-only or absent, so all nine Linux artifacts in
+    the record carry `host_cpu: Linux`, no memory and no filesystem, and no artifact on
+    any platform records whether its host was a guest -- which is the axis that decides
+    what a cold sample can mean.
+    """
+
+    def test_the_filesystem_reported_is_the_one_the_subject_sits_on(self) -> None:
+        # The bug this replaces looked for the literal " on / " and so answered for the
+        # root filesystem wherever the tree actually lived. A subject under /tmp on
+        # tmpfs measured as ext4 is a metadata timing attributed to the wrong device.
+        self.assertEqual(measure.parse_linux_filesystem(MOUNTINFO, "/tmp/fdu/tree"), "tmpfs")
+        self.assertEqual(measure.parse_linux_filesystem(MOUNTINFO, "/home/user/src"), "ext4")
+        self.assertEqual(measure.parse_linux_filesystem(MOUNTINFO, "/"), "ext4")
+
+    def test_a_mount_line_without_optional_fields_still_parses(self) -> None:
+        # The optional-field group before the "-" is variable in length and often empty,
+        # so the type has to be read relative to the separator, never from a fixed index.
+        self.assertEqual(measure.parse_linux_filesystem(MOUNTINFO, "/mnt/data"), "ext3")
+
+    def test_a_mount_point_is_not_a_string_prefix(self) -> None:
+        mountinfo = MOUNTINFO + "42 30 0:39 / /var rw - xfs /dev/sdc1 rw\n"
+        self.assertEqual(measure.parse_linux_filesystem(mountinfo, "/variable/thing"), "ext4")
+        self.assertEqual(measure.parse_linux_filesystem(mountinfo, "/var/log"), "xfs")
+
+    def test_the_darwin_reader_uses_the_same_longest_match(self) -> None:
+        self.assertEqual(
+            measure.parse_darwin_filesystem(DARWIN_MOUNT, "/System/Volumes/Data/Users/x"),
+            "apfs",
+        )
+        self.assertEqual(
+            measure.parse_darwin_filesystem(DARWIN_MOUNT, "/Volumes/ramdisk/tree"), "hfs"
+        )
+        self.assertEqual(measure.parse_darwin_filesystem(DARWIN_MOUNT, "/usr/share"), "apfs")
+
+    def test_the_cpu_model_is_read_rather_than_left_as_the_kernel_name(self) -> None:
+        self.assertEqual(
+            measure.parse_linux_cpu_model(CPUINFO),
+            "Intel(R) Xeon(R) CPU E5-2680 v4 @ 2.40GHz",
+        )
+
+    def test_an_unnamed_cpu_is_none_rather_than_a_guess(self) -> None:
+        self.assertIsNone(measure.parse_linux_cpu_model("processor\t: 0\nBogoMIPS\t: 50.00\n"))
+
+    def test_memory_is_converted_out_of_the_kibibytes_meminfo_reports(self) -> None:
+        self.assertEqual(measure.parse_linux_memory_bytes(MEMINFO), 16316108 * 1024)
+
+    def test_missing_memory_is_none(self) -> None:
+        self.assertIsNone(measure.parse_linux_memory_bytes("MemFree: 1 kB\n"))
+
+    def test_the_hypervisor_flag_is_read_from_the_first_core(self) -> None:
+        self.assertIn("hypervisor", measure.parse_linux_cpu_flags(CPUINFO))
+        self.assertNotIn(
+            "hypervisor", measure.parse_linux_cpu_flags(CPUINFO.replace(" hypervisor", ""))
+        )
+
+    def test_host_facts_reports_a_virtualization_verdict(self) -> None:
+        # Empty is allowed -- "undetermined" and "bare metal" are different claims -- but
+        # anything else must be one of the two the guide's regime table names.
+        facts = measure.host_facts()
+        self.assertIn(
+            facts["virtualization"], {"", measure.VIRTUALIZED, measure.BARE_METAL}
+        )
+
+
 class ScheduleTests(unittest.TestCase):
     def _variants(self, count: int):
         return [measure.Variant(name=f"v{index}", path=Path(__file__)) for index in range(count)]

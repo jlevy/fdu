@@ -278,7 +278,7 @@ test sweeps every platform’s table on every CI platform.
 
 |  | macOS | Linux | Windows |
 | --- | --- | --- | --- |
-| Experiments recorded | 57 | 7 | 0 |
+| Experiments recorded | 57 | 9 | 0 |
 | Profiler available | bespoke script | callgrind | none |
 | Bulk directory read | `getattrlistbulk` | `read_dir` (2 syscalls/dir) | `read_dir` |
 | Process counter tier | total syscalls, faults | read/write syscalls, faults | none yet |
@@ -333,7 +333,7 @@ once real filenames appear, and 11.8% behind on `/usr`. Any figure taken against
 `gen_tree.py` is a lower bound on real-tree cost, and no ranking established on one is
 evidence of a ranking at all.
 
-**Platform asymmetry.** 57 experiments on macOS, 7 on Linux.
+**Platform asymmetry.** 57 experiments on macOS, 9 on Linux.
 Every Linux constant not explicitly measured is inherited.
 
 **No bare metal.** All Linux measurement here is virtualized.

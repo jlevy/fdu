@@ -18,28 +18,27 @@ must not be divided into each other:
 ## Where it stands
 
 Every accepted change together, measured against the pre-work baseline in one
-interleaved run of 12 paired trials (exp-054).
+interleaved run of 12 paired trials (exp-032).
 
 | job | before | after | change | 95% interval |
 | --- | ---: | ---: | ---: | --- |
-| `cold-scan-index` | 298 ms | 306 ms | **+1.4%** | [-0.2%, +3.9%] |
-| `warm-revalidate` | 393 ms | 336 ms | **-15.7%** | [-16.3%, -14.0%] |
-
-Third-party tools on the same tree, for calibration only — they answer a slightly
-different question with different guarantees, and never enter the accept rule: `dust`
-246 ms.
+| `cold-scan-index` | 635 ms | 290 ms | **-54.5%** | [-55.3%, -53.7%] |
+| `cold-scan-producer` | 1219 ms | 457 ms | **-60.0%** | [-62.2%, -58.7%] |
+| `cold-snapshot-save` | 737 ms | 333 ms | **-52.4%** | [-56.6%, -51.0%] |
+| `warm-revalidate` | 902 ms | 442 ms | **-52.0%** | [-54.1%, -50.1%] |
+| `warm-snapshot-load` | 321 ms | 207 ms | **-35.7%** | [-36.2%, -35.3%] |
 
 ## Reproducing the cumulative comparison
 
 **The tree.** Pinned by content, not by name.
 
-- Label `pr22-macos-benchmarks`, 60,993 entries (7,466 directories, 53,502 files, 25
-  symlinks), max depth 22.
-- 1.03 GiB apparent, 1.17 GiB allocated.
-- Content digest `f708694be70261d65046e934ef03aed21a52bfed19fe456a11e18f9305b62ca4`
+- Label `metabrowser-20260812`, 60,067 entries (7,350 directories, 52,695 files, 22
+  symlinks), max depth 19.
+- 1.01 GiB apparent, 1.15 GiB allocated.
+- Content digest `ce5a7430e152412a519ee9f9776c2fec73e59c58fa553aa3e9c2f8c085d26619`
   (`fdu-index-record-v1`). Two trees with this digest are the same tree in the same
   state.
-- Identified as `c95b1edda5762c39…`, the SHA-256 of its path.
+- Identified as `dbd79ed9c898f7a2…`, the SHA-256 of its path.
   The path itself is deliberately not recorded.
 - Provenance unrecorded, so this tree cannot be obtained again.
   The numbers stand as evidence about it; nobody else can re-run them.

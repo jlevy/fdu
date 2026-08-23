@@ -387,7 +387,18 @@ def from_run(
     A run can fingerprint the tree it walked but has no way to learn the command
     that built it, so nothing but the recorder can supply it — and for sixty-five
     artifacts nothing did.
+
+    Raises:
+        ValueError: if ``tree_reconstructible`` is set without a ``tree_provenance``
+            to follow. That pair is never true together, and it renders as a rebuild
+            recipe the record does not hold.
     """
+    if tree_reconstructible and not str(tree_provenance).strip():
+        raise ValueError(
+            "tree_reconstructible needs a tree_provenance to follow: reconstructible "
+            "means following the recipe yields a tree of the same shape, so a run with "
+            "no recipe cannot be one"
+        )
     # Declaration order decides which variant is the control, and it is recorded
     # explicitly because the run document sorts its keys. Falling back to the mapping
     # order would silently invert the comparison on an older run.
@@ -491,6 +502,7 @@ def from_run(
             "host_memory_bytes": host.get("memory_bytes") or 0,
             "host_system": f"{host.get('system', '')} {host.get('release', '')}".strip(),
             "filesystem": host.get("filesystem") or "",
+            "host_virtualization": host.get("virtualization") or "",
             "os_cache": conditions["os_cache"],
         },
         "method": {

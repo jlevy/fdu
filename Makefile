@@ -82,7 +82,7 @@ $(NODE_INSTALL_STAMP): package.json package-lock.json .npmrc
 	$(NPM) ci
 
 # Everything CI enforces, in the order that fails fastest.
-check: uv-version supply-chain rust-module-names golden-invocations portability fmt-check clippy test docs docs-format-check perf-report-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke parity-check release-test
+check: uv-version supply-chain rust-module-names golden-invocations portability fmt-check clippy test docs docs-format-check perf-test perf-schema-check perf-ledger-check perf-report-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke parity-check release-test
 
 # The uv.toml files express the supply-chain cool-off as a relative `exclude-newer`
 # ("14 days"). uv releases older than this cannot parse that form: they abort with
@@ -134,7 +134,7 @@ uv-version:
 # configuration. Keep this list aligned with the recipe-coverage test.
 UV_BACKED_TARGETS := test-performance python-check python-concurrency python-smoke python-sdist-smoke release-test release-rehearse docs-format docs-format-check \
 	perf-baseline perf-profile perf-content-profile perf-compare perf-content-compare \
-	perf-compare-tools perf-record perf-test perf-ledger perf-report perf-report-check perf-schema perf-schema-check
+	perf-compare-tools perf-record perf-test perf-ledger perf-ledger-check perf-report perf-report-check perf-schema perf-schema-check
 
 $(UV_BACKED_TARGETS): uv-version
 
@@ -388,7 +388,7 @@ PERF_TOOL_EVIDENCE_ARGS = $(PERF_EVIDENCE_ARGS) \
 PERF_UV := PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=explorations $(UV) run --project explorations/benchmarks --frozen
 PERF_RUN := $(PERF_UV) python -m benchmarks.realtree
 
-.PHONY: perf-probe-release perf-probe-profiling perf-baseline perf-profile perf-compare perf-content-profile perf-content-compare perf-compare-tools perf-record perf-test perf-ledger perf-report perf-report-check perf-schema perf-schema-check
+.PHONY: perf-probe-release perf-probe-profiling perf-baseline perf-profile perf-compare perf-content-profile perf-content-compare perf-compare-tools perf-record perf-test perf-ledger perf-ledger-check perf-report perf-report-check perf-schema perf-schema-check
 
 perf-probe-release:
 	$(CARGO) build --locked --release -p fdu-core --example perf_probe --no-default-features
@@ -463,15 +463,22 @@ perf-compare-tools:
 perf-record:
 	$(PERF_UV) --group dev python -m benchmarks.realtree.record $(ARGS)
 
+# In `check` even though the measurement loop is not, and the distinction is the point:
+# running an experiment needs a large real tree and a quiet machine, but the harness that
+# decides what an experiment *means* -- the accept arithmetic, the identifier checks, the
+# rendering a reader quotes from -- is ordinary code that CI can and should test. It went
+# untested there long enough for four rendering branches to ship uncovered.
 perf-test:
 	$(PERF_UV) --group dev python -m unittest discover -s explorations/benchmarks/realtree/tests -p 'test_*.py'
+
+PERF_LEDGER := docs/project/reports/report-2026-08-10-fdu-performance-experiments.md
 
 # Regenerate the ledger from the committed experiment artifacts. Every number in it
 # is read back out of a validated artifact, so the report cannot drift from the record.
 # --group dev because the ledger validates every artifact on the way in, and the
 # validator lives in that group.
 perf-ledger:
-	$(PERF_UV) --group dev python -m benchmarks.realtree.summary
+	$(PERF_UV) --group dev python -m benchmarks.realtree.summary --out $(PERF_LEDGER)
 	$(MAKE) docs-format
 
 # The charted view of the same artifacts the ledger renders. Two steps because they are
@@ -497,6 +504,21 @@ perf-report-check:
 		--out $(PERF_REPORT_DIR)/timeline.json --check
 	$(PERF_UV) --group dev python -m benchmarks.realtree.report_html \
 		--data $(PERF_REPORT_DIR)/timeline.json --out $(PERF_REPORT_DIR)/index.html --check
+
+# The ledger is the file people actually read, and it was the one generated view with no
+# drift gate: `perf-report-check` covers the projection and the page, and AGENTS.md
+# promised the ledger was covered too. It is generated and *then* formatted, so the check
+# has to reproduce both steps rather than compare against raw output.
+perf-ledger-check:
+	@scratch=$$(mktemp -d) && trap 'rm -rf "$$scratch"' EXIT && \
+		$(PERF_UV) --group dev python -m benchmarks.realtree.summary \
+			--out "$$scratch/ledger.md" && \
+		$(FLOWMARK) --auto "$$scratch/ledger.md" >/dev/null && \
+		if ! diff -u "$(PERF_LEDGER)" "$$scratch/ledger.md"; then \
+			echo "$(PERF_LEDGER) is stale: the artifacts no longer produce it." >&2; \
+			echo "Run \`make perf-ledger\` and commit the result." >&2; \
+			exit 1; \
+		fi
 
 # The experiment contract is compiled from the Pydantic model; --check fails on drift.
 # Pinned in explorations/benchmarks/pyproject.toml, not `@latest`: this validator is the
