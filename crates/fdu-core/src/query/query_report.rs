@@ -25,9 +25,9 @@ use crate::classify::{
 use crate::content::{
     AnalysisSet, ContentIndex, ContentProvenance, CoverageReason, LogicalWordStats, MetricValues,
 };
-use crate::engine_contract::{EntryKind, Freshness, ScanScope};
+use crate::engine_contract::{Bound, EntryKind, Freshness, ScanScope};
 use crate::index::{EntryId, ExtTally, Index, RollUpScalars};
-use crate::query::query_selection::{Bound, Candidate, Selection, SizeMetric, SortKey};
+use crate::query::query_selection::{Candidate, Selection, SizeMetric, SortKey};
 
 /// Which roll-up or listing a view reports.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

@@ -328,6 +328,28 @@ class ExtensionTally:
 
 
 @dataclass(frozen=True, slots=True)
+class ExtensionRemainder:
+    """Extension tallies a bound withheld from a roll-up.
+
+    Same contract as a tree node's `Remainder`: the listed rows plus this account for
+    every file in the subtree, so a listing that shows five extensions can label the rest
+    instead of appearing to have shown them all.
+    """
+
+    extensions: int
+    """Distinct extensions not listed."""
+
+    files: int
+    """Files carrying them."""
+
+    bytes: int
+    """Apparent bytes across those files."""
+
+    allocated: int
+    """Allocated bytes across those files."""
+
+
+@dataclass(frozen=True, slots=True)
 class RollUp:
     files: int
     dirs: int
@@ -335,6 +357,9 @@ class RollUp:
     allocated: int
     newest_mtime_ns: int
     by_extension: MappingProxyType[str, ExtensionTally]
+    extension_remainder: ExtensionRemainder | None = None
+    """What an extension bound withheld from `by_extension`, or `None` when it holds all."""
+
     provenance: Provenance | None = None
 
 
@@ -794,7 +819,21 @@ def rollup_from_dict(value: dict[str, Any], provenance: Provenance | None = None
         allocated=int(value["allocated"]),
         newest_mtime_ns=int(value["newest_mtime_ns"]),
         by_extension=MappingProxyType(tallies),
+        extension_remainder=_extension_remainder(value.get("extension_remainder")),
         provenance=provenance,
+    )
+
+
+def _extension_remainder(value: object) -> ExtensionRemainder | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise TypeError("expected an extension remainder")
+    return ExtensionRemainder(
+        extensions=int(value["extensions"]),
+        files=int(value["files"]),
+        bytes=int(value["bytes"]),
+        allocated=int(value["allocated"]),
     )
 
 

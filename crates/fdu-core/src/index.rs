@@ -41,8 +41,9 @@ use crate::content::{
     ContentRollUp,
 };
 use crate::engine_contract::{
-    AppliedDelta, Attrs, Clock, EntryIdentity, EntryKind, Expectation, Freshness, InvalidateReason,
-    Observation, Op, PathExpectation, PathState, Provenance, ScanScope, Source, Status,
+    AppliedDelta, Attrs, Bound, Clock, EntryIdentity, EntryKind, Expectation, Freshness,
+    InvalidateReason, Observation, Op, PathExpectation, PathState, Provenance, ScanScope, Source,
+    Status,
 };
 
 /// Verification intervals kept before the oldest are dropped.
@@ -120,7 +121,28 @@ pub struct RollUp {
     /// Newest mtime among descendant files, or 0 when there are none.
     pub newest_mtime_ns: i64,
     /// Per-extension file and byte tallies across the subtree.
+    ///
+    /// Complete unless `ext_remainder` says otherwise.
     pub by_ext: BTreeMap<String, ExtTally>,
+    /// Extension tallies a bound withheld from `by_ext`, or `None` when it holds them all.
+    ///
+    /// Same contract as a tree node's remainder: presence is the signal, and the listed
+    /// rows plus this account for every file in the subtree. A caller rendering a handful
+    /// of rows can label the rest instead of appearing to have shown everything.
+    pub ext_remainder: Option<ExtRemainder>,
+}
+
+/// Extension tallies a bound withheld from a roll-up.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub struct ExtRemainder {
+    /// Distinct extensions not listed.
+    pub extensions: u64,
+    /// Files carrying them.
+    pub files: u64,
+    /// Apparent bytes across those files.
+    pub bytes: u64,
+    /// Allocated bytes across those files.
+    pub allocated: u64,
 }
 
 /// Hot-path aggregate state owned by one index.
@@ -449,12 +471,22 @@ impl IndexHandle {
 
     /// Owned roll-up totals for the whole tree.
     pub fn total(&self) -> crate::Result<RollUp> {
-        Ok(self.read_index()?.total())
+        self.total_bounded(Bound::All)
+    }
+
+    /// [`IndexHandle::total`] carrying at most `extensions` extension rows.
+    pub fn total_bounded(&self, extensions: Bound) -> crate::Result<RollUp> {
+        Ok(self.read_index()?.total_bounded(extensions))
     }
 
     /// Owned roll-up state for a relative directory path.
     pub fn rollup(&self, path: &Path) -> crate::Result<Option<RollUp>> {
-        Ok(self.read_index()?.rollup(path))
+        self.rollup_bounded(path, Bound::All)
+    }
+
+    /// [`IndexHandle::rollup`] carrying at most `extensions` extension rows.
+    pub fn rollup_bounded(&self, path: &Path, extensions: Bound) -> crate::Result<Option<RollUp>> {
+        Ok(self.read_index()?.rollup_bounded(path, extensions))
     }
 
     /// Owned metadata for a relative path.
@@ -484,6 +516,19 @@ impl IndexHandle {
 
     /// Direct children captured coherently at one read boundary.
     pub fn children(&self, path: &Path) -> crate::Result<Option<Vec<ChildSnapshot>>> {
+        self.children_bounded(path, Bound::All)
+    }
+
+    /// [`IndexHandle::children`] with each child's roll-up bounded to `extensions` rows.
+    ///
+    /// The bound that matters most for a listing: a wide directory multiplies its child
+    /// count by every child's distinct extensions, and a browser showing five rows per
+    /// child pays for all of them.
+    pub fn children_bounded(
+        &self,
+        path: &Path,
+        extensions: Bound,
+    ) -> crate::Result<Option<Vec<ChildSnapshot>>> {
         let index = self.read_index()?;
         let Some(children) = index.children(path) else {
             return Ok(None);
@@ -497,7 +542,10 @@ impl IndexHandle {
                         name: name.to_os_string(),
                         kind: entry.kind,
                         attrs: entry.attrs,
-                        rollup: entry.kind.is_dir().then(|| index.named_rollup(&entry.rollup)),
+                        rollup: entry
+                            .kind
+                            .is_dir()
+                            .then(|| index.named_rollup_bounded(&entry.rollup, extensions)),
                         provenance: index.provenance_of(id),
                     }
                 })
@@ -708,7 +756,12 @@ impl Index {
 
     /// Owned, self-describing roll-up state for the whole tree.
     pub fn total(&self) -> RollUp {
-        self.named_rollup(&self.entry(EntryId::ROOT).rollup)
+        self.total_bounded(Bound::All)
+    }
+
+    /// [`Index::total`] carrying at most `extensions` extension rows.
+    pub fn total_bounded(&self, extensions: Bound) -> RollUp {
+        self.named_rollup_bounded(&self.entry(EntryId::ROOT).rollup, extensions)
     }
 
     /// Map-free whole-tree totals for in-crate reporting paths.
@@ -1008,9 +1061,19 @@ impl Index {
     /// Owned, self-describing roll-up state for a directory by relative path.
     /// The empty path is the root.
     pub fn rollup(&self, path: &Path) -> Option<RollUp> {
+        self.rollup_bounded(path, Bound::All)
+    }
+
+    /// [`Index::rollup`] carrying at most `extensions` extension rows.
+    ///
+    /// A wide subtree can hold hundreds of distinct extensions while a listing shows a
+    /// handful. Bounding here rather than at the caller keeps the rows that were dropped
+    /// accounted for -- see [`RollUp::ext_remainder`] -- and avoids materialising names
+    /// nobody reads.
+    pub fn rollup_bounded(&self, path: &Path, extensions: Bound) -> Option<RollUp> {
         let id = self.lookup(path)?;
         let entry = self.entry(id);
-        entry.kind.is_dir().then(|| self.named_rollup(&entry.rollup))
+        entry.kind.is_dir().then(|| self.named_rollup_bounded(&entry.rollup, extensions))
     }
 
     /// Attributes for any entry, by relative path.
@@ -1482,18 +1545,58 @@ impl Index {
 
     /// Resolve hot-path integer keys exactly once at a public query boundary.
     fn named_rollup(&self, rollup: &InternedRollUp) -> RollUp {
-        let by_ext = rollup
-            .by_ext
-            .iter()
-            .map(|(id, tally)| {
-                let name = self
-                    .ext_names
-                    .get(*id as usize)
-                    .and_then(Option::as_ref)
-                    .expect("a live roll-up's extension id has a name");
-                (name.clone(), *tally)
-            })
-            .collect();
+        self.named_rollup_bounded(rollup, Bound::All)
+    }
+
+    /// Resolve interned extension ids to names, keeping at most what `extensions` admits.
+    ///
+    /// Under a limit the kept rows are the largest by apparent bytes, ties broken by name
+    /// so the same subtree always yields the same rows -- an order that varied with
+    /// hashing would make a golden pass on one run and fail on the next. What the limit
+    /// drops is aggregated rather than discarded, so a caller showing five rows can still
+    /// say what the sixth through five-hundredth were worth.
+    ///
+    /// The limit is applied before the names are cloned: a wide subtree's cost is then
+    /// one pass for the selection plus `n` clones, rather than one clone per distinct
+    /// extension for a map the caller is about to throw most of away.
+    fn named_rollup_bounded(&self, rollup: &InternedRollUp, extensions: Bound) -> RollUp {
+        let name_of = |id: &ExtId| -> &String {
+            self.ext_names
+                .get(*id as usize)
+                .and_then(Option::as_ref)
+                .expect("a live roll-up's extension id has a name")
+        };
+
+        let (by_ext, ext_remainder) = match extensions.limit() {
+            Some(limit) if limit < rollup.by_ext.len() => {
+                let mut ranked: Vec<(&ExtId, &ExtTally)> = rollup.by_ext.iter().collect();
+                // `sort_unstable_by` is fine because the key is total: no two entries
+                // share both a byte count and a name.
+                ranked.sort_unstable_by(|(left_id, left), (right_id, right)| {
+                    right
+                        .bytes
+                        .cmp(&left.bytes)
+                        .then_with(|| name_of(left_id).cmp(name_of(right_id)))
+                });
+                let mut remainder = ExtRemainder::default();
+                for (_, tally) in &ranked[limit..] {
+                    remainder.extensions += 1;
+                    remainder.files += tally.files;
+                    remainder.bytes += tally.bytes;
+                    remainder.allocated += tally.allocated;
+                }
+                let kept = ranked[..limit]
+                    .iter()
+                    .map(|(id, tally)| (name_of(id).clone(), **tally))
+                    .collect();
+                (kept, Some(remainder))
+            }
+            _ => (
+                rollup.by_ext.iter().map(|(id, tally)| (name_of(id).clone(), *tally)).collect(),
+                None,
+            ),
+        };
+
         RollUp {
             files: rollup.files,
             dirs: rollup.dirs,
@@ -1501,6 +1604,7 @@ impl Index {
             allocated: rollup.allocated,
             newest_mtime_ns: rollup.newest_mtime_ns,
             by_ext,
+            ext_remainder,
         }
     }
 
@@ -2663,6 +2767,67 @@ mod tests {
             matches!(error, crate::Error::PathEscapesRoot(path) if path == Path::new(r"C:\escape"))
         );
         assert_eq!(index.clock(), before_clock);
+    }
+
+    /// The kept rows are the largest, and what is dropped is still accounted for.
+    ///
+    /// Checked against the unbounded roll-up rather than against literals: a bound that
+    /// kept the wrong end, or a remainder summed over the wrong slice, agrees with a
+    /// hand-written number as readily as the right one.
+    #[test]
+    fn a_bounded_rollup_keeps_the_largest_rows_and_accounts_for_the_rest() {
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![
+            // `file_attrs` derives allocated from size as whole 512-byte blocks, so
+            // every file here allocates one block whatever its apparent size.
+            upsert("big.rs", EntryKind::File, file_attrs(500, 1)),
+            upsert("mid.md", EntryKind::File, file_attrs(300, 2)),
+            upsert("small.txt", EntryKind::File, file_attrs(100, 3)),
+            upsert("tiny.toml", EntryKind::File, file_attrs(10, 4)),
+        ]));
+
+        let all = index.total();
+        assert_eq!(all.by_ext.len(), 4);
+        assert!(all.ext_remainder.is_none(), "an unbounded roll-up withheld nothing");
+
+        let bounded = index.total_bounded(Bound::Limit(2));
+        assert_eq!(
+            bounded.by_ext.keys().collect::<Vec<_>>(),
+            vec![".md", ".rs"],
+            "the two largest by bytes, still keyed by name"
+        );
+        let remainder = bounded.ext_remainder.expect("two of four rows were withheld");
+        assert_eq!(remainder.extensions, 2);
+        assert_eq!(remainder.files, 2);
+        assert_eq!(remainder.bytes, 110);
+        assert_eq!(remainder.allocated, 1024, "one 512-byte block each");
+
+        let kept: u64 = bounded.by_ext.values().map(|tally| tally.bytes).sum();
+        assert_eq!(kept + remainder.bytes, all.by_ext.values().map(|t| t.bytes).sum::<u64>());
+        let kept_files: u64 = bounded.by_ext.values().map(|tally| tally.files).sum();
+        assert_eq!(kept_files + remainder.files, all.files);
+    }
+
+    /// A limit at or above what is present is not a truncation.
+    #[test]
+    fn a_bound_wider_than_the_map_withholds_nothing() {
+        let index = index_with_sample_tree();
+        let all = index.total();
+        let bounded = index.total_bounded(Bound::Limit(all.by_ext.len()));
+        assert_eq!(bounded.by_ext, all.by_ext);
+        assert!(bounded.ext_remainder.is_none());
+    }
+
+    /// Ties break by name, so the same subtree always yields the same rows.
+    #[test]
+    fn equal_sized_extensions_are_ordered_by_name() {
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![
+            upsert("a.zzz", EntryKind::File, file_attrs(100, 1)),
+            upsert("b.aaa", EntryKind::File, file_attrs(100, 2)),
+        ]));
+        let bounded = index.total_bounded(Bound::Limit(1));
+        assert_eq!(bounded.by_ext.keys().collect::<Vec<_>>(), vec![".aaa"]);
     }
 
     fn index_with_sample_tree() -> Index {

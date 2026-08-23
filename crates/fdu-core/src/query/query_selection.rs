@@ -8,7 +8,7 @@
 
 use std::path::Path;
 
-use crate::engine_contract::EntryKind;
+use crate::engine_contract::{Bound, EntryKind};
 use crate::query::query_glob::Pattern;
 
 /// Which size metric a report answers in.
@@ -59,37 +59,6 @@ impl ModifiedWindow {
     /// Whether the window constrains anything at all.
     pub fn is_unbounded(&self) -> bool {
         self.since.is_none() && self.before.is_none()
-    }
-}
-
-/// A bound that may be unlimited.
-///
-/// `--depth all` and `-n all` are spelled the same way as their numeric forms rather than
-/// as a separate flag, so "how deep" and "how many" stay single questions.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
-pub enum Bound {
-    /// No limit.
-    #[default]
-    All,
-    /// At most this many.
-    Limit(usize),
-}
-
-impl Bound {
-    /// Whether a zero-based index is within the bound.
-    pub fn admits(self, index: usize) -> bool {
-        match self {
-            Self::All => true,
-            Self::Limit(limit) => index < limit,
-        }
-    }
-
-    /// The bound as a count, when it has one.
-    pub fn limit(self) -> Option<usize> {
-        match self {
-            Self::All => None,
-            Self::Limit(limit) => Some(limit),
-        }
     }
 }
 

@@ -650,6 +650,40 @@ impl Error {
 /// Result alias for engine operations.
 pub type Result<T> = std::result::Result<T, Error>;
 
+/// A bound that may be unlimited.
+///
+/// One vocabulary for every "how deep", "how many", and "how many rows" the library
+/// answers, so a bound reads the same wherever it appears -- a report's depth and row
+/// limits, and the extension rows a roll-up carries. The command line spells the
+/// unlimited case the same way as the numeric one (`--depth all`, `-n all`) rather than
+/// as a separate flag, which is this type surfacing rather than a second grammar.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum Bound {
+    /// No limit.
+    #[default]
+    All,
+    /// At most this many.
+    Limit(usize),
+}
+
+impl Bound {
+    /// Whether a zero-based index is within the bound.
+    pub fn admits(self, index: usize) -> bool {
+        match self {
+            Self::All => true,
+            Self::Limit(limit) => index < limit,
+        }
+    }
+
+    /// The bound as a count, when it has one.
+    pub fn limit(self) -> Option<usize> {
+        match self {
+            Self::All => None,
+            Self::Limit(limit) => Some(limit),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

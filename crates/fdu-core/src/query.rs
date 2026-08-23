@@ -18,5 +18,9 @@ pub use query_report::{
     Provenance, Query, Remainder, Report, ReportSource, Section, ShareMetric, SummaryRow, TreeNode,
     TypeRow, ViewSpec, document_words, report,
 };
-pub use query_selection::{Bound, Candidate, ModifiedWindow, Selection, SizeMetric, SortKey};
+// One bound vocabulary, defined in the shared contract layer and re-exported here so
+// `query::Bound` keeps naming it: the report's depth and row limits and a roll-up's
+// extension rows are the same question asked in three places.
+pub use crate::engine_contract::Bound;
+pub use query_selection::{Candidate, ModifiedWindow, Selection, SizeMetric, SortKey};
 pub use query_values::{format_rfc3339, parse_size, parse_when, system_time_to_nanos};

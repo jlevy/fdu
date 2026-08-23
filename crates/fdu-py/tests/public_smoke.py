@@ -136,6 +136,53 @@ def _tree_section(report: fdu.Report) -> fdu.TreeNode:
     raise AssertionError("the report has no tree section")
 
 
+def check_bounded_extension_rows_account_for_the_rest() -> None:
+    """A listing can ask for a handful of extension rows and still be told the total.
+
+    The same contract as a tree node's remainder, one level down: what the bound keeps
+    plus what it reports withheld is what the unbounded call returns. Bounding in Rust is
+    the point -- a wide directory multiplies its child count by every child's distinct
+    extensions, and a browser showing five rows should not pay to marshal five hundred.
+    """
+
+    root = Path(tempfile.mkdtemp(prefix="fdu-ext-bound-"))
+    sizes = {".rs": 500, ".md": 300, ".txt": 100, ".toml": 10}
+    for suffix, size in sizes.items():
+        (root / f"file{suffix}").write_text("x" * size, encoding="utf-8")
+
+    index = fdu.open(root)
+    everything = index.total()
+    assert set(everything.by_extension) == set(sizes)
+    assert everything.extension_remainder is None, "an unbounded roll-up withheld nothing"
+
+    bounded = index.total(extensions=2)
+    assert set(bounded.by_extension) == {".rs", ".md"}, "the two largest by bytes"
+    withheld = bounded.extension_remainder
+    assert withheld is not None
+    assert withheld.extensions == 2
+    assert withheld.files == 2
+    kept = sum(tally.bytes for tally in bounded.by_extension.values())
+    assert kept + withheld.bytes == sum(tally.bytes for tally in everything.by_extension.values())
+
+    # A bound at or above what is present is not a truncation.
+    assert index.total(extensions=len(sizes)).extension_remainder is None
+
+    # And it reaches a listing, which is where it earns its keep: every child's
+    # breakdown is bounded, not just the root's.
+    nested = root / "sub"
+    nested.mkdir()
+    for suffix, size in sizes.items():
+        (nested / f"file{suffix}").write_text("x" * size, encoding="utf-8")
+    index.refresh()
+
+    child = next(item for item in index.children(extensions=1) or () if item.name == "sub")
+    assert child.rollup is not None
+    assert len(child.rollup.by_extension) == 1
+    assert child.rollup.extension_remainder is not None
+    assert child.rollup.extension_remainder.extensions == 3
+    fdu.clear_cache(root)
+
+
 def check_telemetry_measures_the_run_not_the_tree() -> None:
     """Each call reports its own cost, and the numbers are the walk's, not a total.
 
@@ -461,6 +508,7 @@ def main() -> None:
     check_watch_reports_its_own_index(root)
     check_the_dirty_set_names_every_moved_rollup()
     check_telemetry_measures_the_run_not_the_tree()
+    check_bounded_extension_rows_account_for_the_rest()
     check_a_bounded_tree_says_what_it_withheld()
     check_render_matches_the_cli(
         root, str(Path(sys.executable).with_name("fdu.exe" if os.name == "nt" else "fdu"))

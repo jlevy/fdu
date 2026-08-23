@@ -276,15 +276,37 @@ class Index:
             _renderer=renderer,
         )
 
-    def total(self) -> RollUp:
-        return rollup_from_dict(_call(self._native.total), self.provenance())
+    def total(self, extensions: int | None = None) -> RollUp:
+        """Roll-up totals for the whole tree.
 
-    def rollup(self, path: str | Path) -> RollUp | None:
-        raw = _call(self._native.rollup, path)
+        `extensions` bounds the per-extension breakdown to that many rows, largest by
+        apparent bytes; what it drops is aggregated into `extension_remainder` rather
+        than discarded. `None` keeps every row.
+        """
+
+        return rollup_from_dict(_call(self._native.total, extensions), self.provenance())
+
+    def rollup(self, path: str | Path, extensions: int | None = None) -> RollUp | None:
+        """Roll-up totals for one directory, or `None` if it is absent or not a directory.
+
+        `extensions` bounds the per-extension breakdown; see `total`.
+        """
+
+        raw = _call(self._native.rollup, path, extensions)
         return None if raw is None else rollup_from_dict(raw, self.provenance(path))
 
-    def children(self, path: str | Path = Path()) -> tuple[Child, ...] | None:
-        raw = _call(self._native.children, path)
+    def children(
+        self, path: str | Path = Path(), extensions: int | None = None
+    ) -> tuple[Child, ...] | None:
+        """Every direct child of a directory, with its roll-up, in one call.
+
+        `None` when the path is absent or is not a directory, which is distinct from an
+        empty tuple. `extensions` bounds each child's per-extension breakdown -- the
+        bound that matters most for a listing, because a wide directory multiplies its
+        child count by every child's distinct extensions.
+        """
+
+        raw = _call(self._native.children, path, extensions)
         if raw is None:
             return None
         return tuple(

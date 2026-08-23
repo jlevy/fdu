@@ -109,7 +109,29 @@ fn rollup_dict<'py>(py: Python<'py>, roll: &RollUp) -> PyResult<Bound<'py, PyDic
         by_ext.set_item(ext, entry)?;
     }
     dict.set_item("by_extension", by_ext)?;
+    dict.set_item("extension_remainder", ext_remainder_dict(py, roll.ext_remainder)?)?;
     Ok(dict)
+}
+
+/// What an extension bound withheld, or `None` when it withheld nothing.
+fn ext_remainder_dict(
+    py: Python<'_>,
+    remainder: Option<fdu_core::ExtRemainder>,
+) -> PyResult<Option<Bound<'_, PyDict>>> {
+    let Some(remainder) = remainder else {
+        return Ok(None);
+    };
+    let value = PyDict::new(py);
+    value.set_item("extensions", remainder.extensions)?;
+    value.set_item("files", remainder.files)?;
+    value.set_item("bytes", remainder.bytes)?;
+    value.set_item("allocated", remainder.allocated)?;
+    Ok(Some(value))
+}
+
+/// Read a caller's extension bound, where `None` means every row.
+fn ext_bound(extensions: Option<usize>) -> fdu_core::Bound {
+    extensions.map_or(fdu_core::Bound::All, fdu_core::Bound::Limit)
 }
 
 fn entry_kind_label(kind: EntryKind) -> &'static str {
@@ -411,15 +433,26 @@ impl PyIndex {
     }
 
     /// Roll-up totals for the whole tree.
-    fn total<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
-        rollup_dict(py, &self.inner.total().map_err(to_py_err)?)
+    #[pyo3(signature = (extensions = None))]
+    fn total<'py>(
+        &self,
+        py: Python<'py>,
+        extensions: Option<usize>,
+    ) -> PyResult<Bound<'py, PyDict>> {
+        let total = self.inner.total_bounded(ext_bound(extensions)).map_err(to_py_err)?;
+        rollup_dict(py, &total)
     }
 
     /// Roll-up totals for one directory, or `None` if it is absent or not a directory.
-    #[pyo3(signature = (path))]
+    #[pyo3(signature = (path, extensions = None))]
     #[allow(clippy::needless_pass_by_value)]
-    fn rollup<'py>(&self, py: Python<'py>, path: PathBuf) -> PyResult<Option<Bound<'py, PyDict>>> {
-        match self.inner.rollup(&path).map_err(to_py_err)? {
+    fn rollup<'py>(
+        &self,
+        py: Python<'py>,
+        path: PathBuf,
+        extensions: Option<usize>,
+    ) -> PyResult<Option<Bound<'py, PyDict>>> {
+        match self.inner.rollup_bounded(&path, ext_bound(extensions)).map_err(to_py_err)? {
             Some(roll) => Ok(Some(rollup_dict(py, &roll)?)),
             None => Ok(None),
         }
@@ -429,17 +462,20 @@ impl PyIndex {
     ///
     /// Returns `None` when the path is absent or is not a directory — distinct from an
     /// empty list, which means a directory with no children.
-    #[pyo3(signature = (path = None))]
+    #[pyo3(signature = (path = None, extensions = None))]
     fn children<'py>(
         &self,
         py: Python<'py>,
         path: Option<PathBuf>,
+        extensions: Option<usize>,
     ) -> PyResult<Option<Bound<'py, PyList>>> {
         let path = path.unwrap_or_default();
         // One capture under one read lock, rather than a lookup per child per field:
         // `ChildSnapshot` already carries kind, attrs, roll-up and provenance together,
         // so a listing cannot see two different instants down its own rows.
-        let Some(children) = self.inner.children(&path).map_err(to_py_err)? else {
+        let Some(children) =
+            self.inner.children_bounded(&path, ext_bound(extensions)).map_err(to_py_err)?
+        else {
             return Ok(None);
         };
 
