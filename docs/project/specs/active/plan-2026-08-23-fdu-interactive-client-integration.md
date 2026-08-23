@@ -18,23 +18,33 @@ instrument available for finding where the API is still shaped for the CLI rathe
 for a program.
 
 This spec records what that exercise found.
-Most of the contract is already served: the typed Python API walks the reference corpus
+Much of the contract is already served: the typed Python API walks the reference corpus
 roughly 29× faster than the walker it would replace, revalidates an unchanged tree in
 about 100 ms, answers per-directory queries in microseconds, and delivers verified watch
 batches at whatever throttle the caller asks for.
-Three gaps are real, and each generalizes past metabrowser to any embedded consumer — a
+Five gaps are real, and each generalizes past metabrowser to any embedded consumer — a
 TUI, an IDE panel, an agent serving repeated queries:
 
-1. **Partitioned tallies.** Metabrowser renders two numbers for every directory —
+1. **Concurrent reads during a write.** Measured, not inferred: while `refresh()` runs,
+   reader threads raise `FduError: Already mutably borrowed`. A server answering
+   requests from a thread pool while a watch batch commits therefore fails those
+   requests. The engine already models the right thing — `IndexHandle` serves readers
+   during short writes — so this is a binding-layer defect, and it is the one item that
+   breaks a naive drop-in outright.
+2. **Partitioned tallies.** Metabrowser renders two numbers for every directory —
    everything, and everything not gitignored — and fdu can maintain only one.
    Selection-time filtering is measured two to three orders of magnitude too slow to
    serve it per request.
-   This is the one genuinely new engine capability this spec proposes.
-2. **An embedder-grade watch contract.** The watch layer’s event-driven core is right,
+3. **A customizable roll-up taxonomy.** fdu’s type rules are compiled at build time and
+   cannot be varied at runtime at all, and its one grouping axis answers an *analysis*
+   question — which analyzer may open this file — rather than a *browsing* one.
+   Every image, video, PDF, and archive is therefore a single `binary` row, which is not
+   a roll-up a file browser can display.
+4. **An embedder-grade watch contract.** The watch layer’s event-driven core is right,
    but a server that lives on an event loop needs an async story, a network-filesystem
    fallback, a way to ingest hints from a foreign watcher, and a per-batch statement of
    which roll-ups changed.
-3. **The streaming session**, so a cold open serves requests while the walk runs.
+5. **The streaming session**, so a cold open serves requests while the walk runs.
    [The progressive-results plan](plan-2026-08-11-fdu-progressive-results.md) owns that
    design; this spec adds only the integration-facing shape it must land with.
 
@@ -49,7 +59,11 @@ performance loop, and documentation of thread affinity.
   watcher replaced by fdu, and with no per-request re-aggregation in Python.
 - Every capability lands engine-first, then CLI and Python present it, preserving the
   parity contract: nothing here is reachable by flag but not by typed call, or the
-  reverse.
+  reverse. Classification, grouping, and aggregation in particular stay in Rust: a
+  consumer supplies rules and reads typed rows, and never runs a per-entry loop of its
+  own to get a roll-up fdu could have maintained.
+- Defaults keep answering the question they answer today with no configuration, and
+  every axis this spec opens is opt-in.
 - The first-release Python API is cleaner for every embedded consumer, not shaped to one
   client: each addition names the question it answers, and metabrowser-specific policy
   stays out of the core.
@@ -65,9 +79,14 @@ performance loop, and documentation of thread affinity.
   [progressive results](plan-2026-08-11-fdu-progressive-results.md), and the FSEvents
   journal, owned by [its own plan](plan-2026-08-10-fdu-fsevents-scoped-revalidation.md).
   This spec consumes both and re-states neither.
-- Arbitrary user-defined tag vocabularies.
+- Arbitrary user-defined *tag* vocabularies.
   Two rules — gitignore and visibility — have a consumer today; a tag registry is
   speculation and fails the axis test.
+  The *type* registry is a different axis and is explicitly customizable here: it
+  already has two divergent real registries, which is the evidence the tag axis lacks.
+- Display metadata as engine policy.
+  A registry may carry colours and labels through to consumers, but fdu neither
+  interprets nor validates them; theming belongs to the client.
 - Content-analysis changes.
   The content tier is untouched.
 
@@ -97,9 +116,11 @@ already observed.
 
 Since that research was written, metabrowser also shipped the shared file-type taxonomy
 (its 2026-08-13 plan, in that repository): it hosts the reference
-`recommended-file-types.toml`, fdu compiles the same registry, and both serve
-`file-type-breakdown-v1`. The classification seam this spec relies on is therefore
-already aligned by contract.
+`recommended-file-types.toml` and serves a `file-type-breakdown-v1` envelope, and fdu
+adopted its `[[kind]]` manifest *dialect*. The seam is therefore aligned in grammar but
+not yet in vocabulary — metabrowser’s registry is deeper and larger than fdu’s, and only
+one of the two has a browsing group level, which is what the taxonomy section below
+addresses.
 
 ### Orientation measurements, this host
 
@@ -120,13 +141,27 @@ this integration, not ledger claims, and not comparable across regimes.
 | Bounded tree report | — | 1.03 ms |
 | Watch delivery, `interval=0.05` | — | 51 ms steady state |
 | Summary, selection-filtered | — | 122 ms |
+| Resident memory, one retained index | 99.8 MB | 70.3 MB |
+| 3,200 concurrent reads, 16 threads | — | 0.31 s, no errors |
+| Reads concurrent with `refresh()` | — | **readers raise** |
 
 Both engines returned identical byte totals for the tree.
-The last row is the design signal: an unfiltered summary reads pre-computed roll-up
+
+Two rows carry design weight.
+The filtered summary is the first: an unfiltered summary reads pre-computed roll-up
 state in 0.29 ms, while any selection filter pays a full re-aggregating traversal —
 about 1 µs per retained entry.
 That tier is priced for occasional filtered reports, not for serving every directory
 listing twice per navigation on a millions-of-entries tree.
+
+The last row is the second, and it is a defect rather than a cost.
+Sixteen threads issuing `children`, `rollup`, and `report` concurrently complete 3,200
+calls with no errors, so shared reads are already fine.
+But four reader threads running while the main thread calls `refresh()` raise
+`FduError: Already mutably borrowed`. PyO3’s runtime borrow check is rejecting what
+`IndexHandle` exists to allow, so the exclusion is in the binding rather than in the
+engine. A live server commits on every watch batch, so this is not a rare race: it is a
+failed request every time a change lands under a reader.
 
 ### What is already settled
 
@@ -135,8 +170,14 @@ listing twice per navigation on a millions-of-entries tree.
   entry with 100 patterns and 1.50–1.76 µs with 1,000, and recorded the design decision:
   an optional compiled tagging mode, never hidden in the default metadata walk.
   This spec is that mode’s specification.
-- **The type-rule dialect is compatible by construction** (bead `fdu-v4lc`, closed): the
-  compiled registry is the one metabrowser hosts.
+- **The type-rule *dialect* is shared; the registries are not.** Bead `fdu-v4lc` adopted
+  metabrowser’s `[[kind]]` manifest shape, and the rules file says so in its first line.
+  What that bead delivered was 64 types (now 68) in fdu’s own file, and an earlier draft
+  of this spec overstated it as “the compiled registry is the one metabrowser hosts.”
+  It is not: metabrowser’s reference registry carries 126 families under six browsing
+  *groups* (`archives`, `code`, `data`, `docs`, `media`, `other`) plus display metadata,
+  where fdu has 68 kinds, no group level, and five analysis families.
+  Same grammar, different vocabulary and one fewer level.
 - **Sessions, provenance, lazy open** are specified in progressive results, with the
   session (`fdu-e86o`), its Python mirror (`fdu-a0j0`), attention-following verification
   (`fdu-1mwt`), and lazy warm open (`fdu-hd96`) already tracked there.
@@ -173,7 +214,11 @@ the index’s clocked delta contract is the same guard, held in one place.
 | Per-extension tallies per directory | `RollUp.by_extension` | Ready |
 | Recency queries (top-N by mtime) | `files` view, `sort=mtime` | Ready |
 | Per-entry type identity (kind, family, logical ext) | classified internally, not exposed in listings | Polish: expose |
-| `file-type-breakdown-v1` envelope | same registry, `types`/`families` views | Adapter in the example |
+| Browsing groups (media, docs, archives) | all collapse to `family = "binary"` | **Gap: group level** |
+| Its own 126-family registry, revised on its own cadence | 68 kinds compiled at build time | **Gap: runtime registry** |
+| Bounded per-directory extension rows | `by_extension` is unbounded | **Gap: bound with remainder** |
+| Serving reads while a change commits | reader raises `Already mutably borrowed` | **Gap: shared reads** |
+| `file-type-breakdown-v1` envelope | same dialect, different vocabulary and depth | Adapter, once groups exist |
 | Live change feed, verified, coalesced | `Index.watch()` → typed batches | Ready |
 | Event-loop (asyncio) consumption | blocking iterator, thread-affine | **Gap: async adapter** |
 | Resumable cursor (SSE `Last-Event-ID`) | `since(clock)`, `ChangeSet.truncated` | Ready — document the mapping |
@@ -183,6 +228,93 @@ the index’s clocked delta contract is the same guard, held in one place.
 | Second open instant | snapshot load + revalidation (0.09 s + 0.11 s at 120k) | Ready now; instant at millions via lazy open (progressive results) |
 | Index status for progress UI | `Status` after the fact | Session exposes it mid-walk |
 | Client’s own perf loop instrumentation | counters and `PerformanceSummary` are CLI-only | Polish: expose |
+
+### Concurrent reads during a write
+
+`IndexHandle` exists so readers can be served while a producer applies short writes, and
+the engine honours that.
+The Python binding does not: PyO3’s runtime borrow check treats `refresh()` as an
+exclusive borrow of the whole `Index`, so a reader thread calling `rollup()` during it
+raises `FduError: Already mutably borrowed` rather than waiting or reading the prior
+state. Measured above, and it is not a narrow race — a live client commits a batch every
+time the tree changes, so any request landing in that window fails.
+
+The fix is at the boundary, not in the engine: the Python `Index` holds the handle the
+engine already provides rather than an exclusively-borrowed value, so reads take a
+shared borrow and mutation takes the handle’s own short write.
+Two properties then need pinning by test, because both are what a server depends on: a
+read concurrent with a write never raises, and it returns either the pre-write or the
+post-write value — never a torn one.
+
+This is the one item on this list that makes a naive drop-in fail rather than merely
+cost something, so it leads the implementation plan.
+
+### A customizable roll-up taxonomy
+
+**The defaults are right and stay; what is missing is the ability to vary them.** Two
+separate problems, and the second is why the first matters.
+
+**The grouping axis answers the wrong question for a browser.** `ContentFamily` is a
+fixed five-value enum — `code`, `prose`, `markup`, `data`, `binary` — and it exists to
+decide *which analyzer may open a file*. That is the correct question for the content
+tier and the wrong one for a listing: `png`, `jpg`, `mp4`, `mkv`, `pdf`, and every
+archive all carry `family = "binary"`, so `--view families` over a photo directory is
+one row reading `binary 100%`. Metabrowser’s registry answers the browsing question
+instead, with `media`, `docs`, and `archives` as distinct groups.
+These are two different taxonomies over the same files, and collapsing them into one
+enum is what makes the roll-up useless to a browser.
+So the display taxonomy becomes its own axis — a **group** level above families — rather
+than a reinterpretation of the analysis one, and the analysis family keeps meaning
+exactly what it means today.
+
+**Nothing is variable at runtime.** The rules are compiled by `build.rs` into `OUT_DIR`
+and the module says plainly that runtime never parses TOML. A consumer wanting a type
+fdu does not know, or a grouping fdu does not ship, has exactly two options today:
+rebuild the crate from a patched file, or reclassify in its own language — which for
+metabrowser means keeping the Python classifier this integration exists to delete, and
+re-deriving groups per request over hundreds of thousands of entries.
+Neither is acceptable, and the second is the same per-request re-aggregation the
+partitioned-tallies section rejects for the same reason.
+
+The shape, then:
+
+- **The compiled registry remains the default and the fast path.** Zero configuration,
+  no file to find, no parse at startup, and the CLI’s behaviour is unchanged.
+  A caller that names no registry gets exactly what it gets today.
+- **A caller may supply its own registry** as a typed value — built in the engine from
+  the same `[[kind]]` dialect, with the group level added — and every surface accepts
+  it: `ScanOptions`/`AnalysisOptions` in Python, the corresponding scope axis on the
+  command line, `OpenConfig` in Rust.
+  Parsing, validation, indexing, and grouping all happen in Rust; Python hands over a
+  path or a manifest and receives typed rows back, never a classification loop.
+- **Grouping is maintained, not recomputed.** A registry’s groups are roll-up state on
+  the same reducer path as extensions, so a per-directory group breakdown is a
+  pre-computed read, not a traversal.
+  This is the same argument as planes, and it is why the work belongs in the engine.
+- **The registry versions the cache, and the plumbing already exists.**
+  `type_rules_fingerprint` is already carried in the scan scope and the content model
+  and already compared for validity; it reads a `const fn` today and must read the
+  active registry’s fingerprint instead.
+  A rule change then invalidates exactly what it should, by the mechanism the design
+  principles already require for a bucketing change.
+- **Bounded per-directory extension tallies.** `RollUp.by_extension` is an unbounded map
+  per directory; metabrowser bounds its equivalents (`ext_top`, `filename_top`,
+  `remaining_top`) because a browser shows a handful of rows and a wide tree has many.
+  A bound with a stated remainder belongs here for the same reason it belongs on trees.
+
+**Sequencing against PR #38.** That PR replaces the per-file linear scan of the rules
+table with two `LazyLock<HashMap<&'static str, &'static GeneratedRule>>` statics, worth
+about 5% on warm content jobs.
+Process-global statics over `&'static` data are exactly what a per-instance registry
+cannot be, so the two changes meet in one file — but they do not conflict in substance.
+The indexed-lookup *shape* is what the win comes from, and it survives being owned by a
+registry value instead of by a static; what changes is lifetime, not algorithm.
+So #38 lands first and this work converts its statics into a field on the registry,
+keeping the index and keeping its test.
+That test — `indexed_rule_tiers_agree_with_the_scan_they_replaced`, which pins
+`max_by_key`’s last-wins tie-break — generalizes rather than retires: it becomes a
+property over *any* registry, which is worth more once registries are user-supplied and
+a tie-break bug can no longer be caught by reading one committed file.
 
 ### Partitioned tallies
 
@@ -314,6 +446,15 @@ consumers rather than wrapped.
 
 Tracked under epic `fdu-u7vo`; each item names its bead.
 
+### Phase 0: Shared reads during a write
+
+First because it is the only outright blocker, and it is small.
+
+- [ ] Python `Index` reads take a shared borrow over the engine handle rather than an
+  exclusive borrow of the whole object, so `refresh()` and watch commits no longer raise
+  in reader threads; tests pin that a concurrent read never raises and never returns a
+  torn value (`fdu-gav9`)
+
 ### Phase 1: Partitioned tallies
 
 - [ ] Tag rules in the engine: compiled gitignore and hidden-with-allowlist matchers,
@@ -324,6 +465,22 @@ Tracked under epic `fdu-u7vo`; each item names its bead.
 - [ ] Surfaces: `--tags`/`--plane` on the CLI, `Selection.plane` and per-plane
   `RollUp`/`Child` values in Python, tagged-fixture goldens in every format, parity
   rows, and plane-equals-all equivalence when no entry is tagged (`fdu-7rwf`)
+
+### Phase 1b: The customizable taxonomy
+
+Lands after PR #38, converting its statics rather than competing with them.
+
+- [ ] A `group` level in the rule dialect and in roll-up state, so a browsing taxonomy
+  is its own axis rather than a reinterpretation of the analysis families; the compiled
+  default registry gains groups and the `groups` view renders them (`fdu-b2vy`)
+- [ ] A runtime-supplied registry: parse, validate, index, and fingerprint in Rust;
+  accepted by `OpenConfig`, `ScanOptions`/`AnalysisOptions`, and the CLI scope axis;
+  `type_rules_fingerprint` reads the active registry so a rule change invalidates the
+  snapshot and sidecar through the path that already exists.
+  PR #38’s `LazyLock` statics become a per-registry index, and its tie-break test
+  generalizes to a property over any registry (`fdu-ctp5`)
+- [ ] Bounded per-directory extension and filename rows with a stated remainder
+  (`fdu-e2p7`)
 
 ### Phase 2: The embedder watch contract
 
@@ -356,10 +513,18 @@ Tracked under epic `fdu-u7vo`; each item names its bead.
 
 ## Testing Strategy
 
-Partition sums are the load-bearing property: for every enabled tag, plane plus
-complement equals the untagged totals, by property test across scan, refresh, and watch
-mutations. Golden sessions add a tagged fixture exercising `--tags`/`--plane` in every
-format, and the parity harness replays them against Python as it does every axis.
+Two properties are load-bearing and both are cheap to state.
+Partition sums: for every enabled tag, plane plus complement equals the untagged totals,
+by property test across scan, refresh, and watch mutations; and for a registry, every
+group’s families and every family’s types sum to what the same selection reports, so a
+custom registry cannot lose a file the way the extension view once did.
+Concurrency gets the pair named in its section — a read during a write never raises and
+never tears — driven by the existing thread test, which found the defect.
+Registry validation is tested for what it rejects as much as what it accepts: duplicate
+ids, an unknown group, a tie-break ambiguity, and a manifest whose fingerprint collides
+with the compiled default.
+Golden sessions add a tagged fixture exercising `--tags`/`--plane` in every format, and
+the parity harness replays them against Python as it does every axis.
 Watch additions get the same treatment the layer already has — dirty sets asserted
 against independently computed ancestor sets; scoped refresh asserted equivalent to full
 refresh on the touched subtree; the async adapter driven by the existing watch tests
@@ -381,6 +546,14 @@ here records its regime.
   Explicit ships first; probing is additive.
 - Does `children()` need its own bound, or is the tree view’s remainder enough for wide
   directories?
+- Should the two projects converge on one registry file, or stay two registries over one
+  dialect? Convergence is attractive and couples release cadences: metabrowser could not
+  then add a file type without an fdu release.
+  A runtime registry makes the question answerable later rather than now, which is part
+  of why it comes first.
+- Does a runtime registry cost measurable throughput against the compiled one?
+  The index shape is the same, but its strings are owned rather than `&'static`, so the
+  comparison is a loop job on the same subject as PR #38’s.
 - Free-threaded CPython (3.14t) wheels: metabrowser’s H48 expects real parallelism in
   Python; fdu’s abi3 wheel does not cover the t-ABI today.
   Out of scope here, tracked as a release-matrix question.
@@ -397,6 +570,9 @@ here records its regime.
   provenance, lazy open
 - [FSEvents-scoped revalidation plan](plan-2026-08-10-fdu-fsevents-scoped-revalidation.md)
   — the convergence half for warm opens
+- PR #38 (`perf(content)`: roll-up ancestor walk and indexed type-rule tiers) — the
+  indexed classification tiers this spec’s registry work converts from statics into
+  per-registry state, and the tie-break test it generalizes
 - Beads: `fdu-p02b` (the integration), `fdu-p35d` (the gitignore spike verdict),
   `fdu-v4lc` (the shared type-rule dialect), `fdu-e86o`/`fdu-a0j0`/`fdu-1mwt` (the
   session), `fdu-hd96` (lazy open priority)
