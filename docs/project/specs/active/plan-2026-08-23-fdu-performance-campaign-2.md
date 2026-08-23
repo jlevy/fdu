@@ -201,6 +201,9 @@ Phases 0 and A–C are parallel where their beads say so; D and E follow their g
   exactly the per-file bookkeeping this deletes.
   A structural result measured only there would overstate by the width of exp-064’s two
   readings, 13.4 points against 2.4.
+  [The evidence-scope plan](plan-2026-08-23-experiment-evidence-scope.md) turns that
+  requirement into a checked `verdict.scope`, and this is the experiment it is most
+  likely to bind first.
 - [ ] Post-landing re-screens, in order: `fdu-h7sw` (H85 — expect the arena to have
   consumed it; screen against −20%, not 3%), `fdu-sk7v` (H66 — the directory-only
   transient tree may be moot at 1.06×), snapshot economics (below), and the tier

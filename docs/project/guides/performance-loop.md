@@ -237,6 +237,15 @@ ever re-run it, and the reader is entitled to know that before building on it.
 Of the 65 artifacts recorded before this rule, exactly one named how its subject was
 built, and that one omitted the argument that determined the tree.
 
+The fields above are the first slice of a larger fix.
+Recording provenance stops a subject being unobtainable; it does not stop a number
+measured on one subject being quoted as a general claim, which has happened three times
+on the record.
+[The evidence-scope plan](../specs/active/plan-2026-08-23-experiment-evidence-scope.md)
+owns that work — a derived subject profile, a required `verdict.scope`, and the
+qualifier rendered inline wherever a figure is — and supersedes this section once it
+lands.
+
 The loop therefore runs against a real directory the operator nominates, and treats it
 as immutable and confidential:
 
