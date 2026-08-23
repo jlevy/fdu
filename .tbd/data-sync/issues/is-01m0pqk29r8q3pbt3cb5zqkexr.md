@@ -5,11 +5,12 @@ title: No ledger job measures the default command, so default-path regressions a
 kind: task
 status: open
 priority: 1
-version: 1
+version: 2
+spec_path: docs/project/specs/active/plan-2026-08-23-fdu-performance-campaign-2.md
 labels: []
 dependencies: []
 created_at: 2026-08-23T07:15:34.840Z
-updated_at: 2026-08-23T07:15:34.840Z
+updated_at: 2026-08-23T07:40:35.659Z
 ---
 Found in the PR #38 senior review (https://github.com/jlevy/fdu/pull/38#issuecomment-5384769585).
 

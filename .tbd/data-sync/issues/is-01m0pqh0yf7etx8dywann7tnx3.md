@@ -3,9 +3,9 @@ type: is
 id: is-01m0pqh0yf7etx8dywann7tnx3
 title: "Address review: PR #38 — senior review of exp-064/065 and the performance loop"
 kind: task
-status: open
+status: closed
 priority: 1
-version: 12
+version: 13
 labels: []
 dependencies: []
 child_order_hints:
@@ -21,5 +21,7 @@ child_order_hints:
   - is-01m0pqhvgb65fe32d9kfzmnr6d
   - is-01m0pqhvwk08w78ke1rzmmqkb0
 created_at: 2026-08-23T07:14:27.918Z
-updated_at: 2026-08-23T07:14:55.486Z
+updated_at: 2026-08-23T07:40:04.379Z
+closed_at: 2026-08-23T07:40:04.378Z
+close_reason: All eleven review findings fixed in 4b80fab; the two engine findings the review deferred are tracked as fdu-2um8 and fdu-n75m, gated on fdu-mx1w.
 ---

@@ -5,11 +5,12 @@ title: The rendered report is withheld until the snapshot write and index teardo
 kind: bug
 status: open
 priority: 2
-version: 1
+version: 2
+spec_path: docs/project/specs/active/plan-2026-08-23-fdu-performance-campaign-2.md
 labels: []
 dependencies: []
 created_at: 2026-08-23T07:15:34.518Z
-updated_at: 2026-08-23T07:15:34.518Z
+updated_at: 2026-08-23T07:40:36.691Z
 ---
 Found in the PR #38 senior review (https://github.com/jlevy/fdu/pull/38#issuecomment-5384769585), deferred out of that PR for the same reason as its sibling: it is a latency change on a path no ledger job measures.
 
