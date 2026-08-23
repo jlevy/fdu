@@ -5,12 +5,13 @@ title: "make perf-floor: the tier-by-subject floor scoreboard"
 kind: task
 status: open
 priority: 2
-version: 1
+version: 3
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-performance-campaign-2.md
-labels: []
+labels:
+  - campaign-2
 dependencies: []
 created_at: 2026-08-23T01:49:40.418Z
-updated_at: 2026-08-23T01:49:40.418Z
+updated_at: 2026-08-23T09:09:01.467Z
 ---
 Campaign 2 orders work by each tier's measured distance to the parallel syscall floor,
 which makes that distance the scoreboard -- and today deriving it is a by-hand session
@@ -26,3 +27,7 @@ Every accepted change re-runs it, which is what makes the shared-cost re-screen 
 termination criteria in the campaign-2 plan checkable rather than asserted. The floor
 report (docs/project/reports/report-2026-08-23-metadata-walk-floor.md) documents the
 instruments and the protocol this automates.
+
+## Notes
+
+Blocked on a design decision, not on effort. parfloor.c -- the denominator every x-floor threshold in campaign 2 is defined against -- is Linux-only (SYS_getdents64, statx; no Darwin equivalents). arena_spike.rs and peerwalk.rs are portable. So a macOS scoreboard needs either a getattrlistbulk port of the floor or a different floor set with the regime difference recorded, and that should be decided in the plan rather than by a harness falling back. The Linux half is straightforwardly scriptable today.

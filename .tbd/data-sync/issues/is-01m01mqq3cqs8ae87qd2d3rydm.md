@@ -5,10 +5,11 @@ title: "H86: consumer representation as one structural experiment"
 kind: epic
 status: open
 priority: 1
-version: 11
+version: 12
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-performance-campaign-2.md
 labels:
   - perf
+  - campaign-2
 dependencies:
   - type: blocks
     target: is-01kzzbbjxb78m4rde2gb10kmjk
@@ -23,7 +24,7 @@ child_order_hints:
   - is-01kzzj0bqfxfgxakh7a0xhanqd
   - is-01kzzj0c367rtcr2vxb8wrkz2w
 created_at: 2026-08-15T02:41:38.411Z
-updated_at: 2026-08-23T01:52:37.321Z
+updated_at: 2026-08-23T09:09:01.722Z
 ---
 One representation decision currently wearing seven hypothesis numbers: worker-local arena entries (fixed-width records), single name arena, children as sorted arena slices, batch-shaped observations carrying parent EntryId, and a one-pass bottom-up roll-up for the cold bootstrap. Measured ceiling on the 450k Linux rig: arena_spike.rs retains an index-shaped result in ~199ms / <=23MiB vs fdu tree view ~849ms / ~279MiB (dut 179ms), tallies exact. Gate with the differential harness (assert_same_image at every worker count), exp-022 precedent for one large structural verdict. Absorbs/supersedes the piecemeal forms in fdu-2ubt, fdu-prph (H19-22), fdu-weey (H60), fdu-fnfc/fdu-uv0s; composes with H85 (arenas make frees thread-local). Pre-registered signal: cold-scan-index wall down >=50% on the 450k Linux subject; peak RSS down >=60%; engine digests byte-identical at 1..N workers.
 

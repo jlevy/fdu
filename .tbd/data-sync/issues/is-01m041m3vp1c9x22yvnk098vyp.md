@@ -5,13 +5,14 @@ title: Adaptive worker threshold sits inside the operating range of real macOS t
 kind: bug
 status: open
 priority: 2
-version: 1
+version: 2
 labels:
   - performance
   - macos
+  - campaign-2
 dependencies: []
 created_at: 2026-08-16T01:05:20.757Z
-updated_at: 2026-08-16T01:05:20.757Z
+updated_at: 2026-08-23T09:09:04.425Z
 ---
 ADAPTIVE_SCAN_SLOW_WORK_NS_PER_ENTRY is 30,000 ns. On /Users/levy/wrk/aisw/trading
 (505,415 entries, 129,833 dirs, ~2.9 files/dir, macOS/APFS) the calibration window

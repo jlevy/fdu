@@ -5,14 +5,15 @@ title: "Inode-ordered statting: cold verdict needs bare metal"
 kind: chore
 status: open
 priority: 3
-version: 2
+version: 3
 spec_path: docs/project/specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md
 labels:
   - perf
   - linux
+  - campaign-2
 dependencies: []
 parent_id: is-01kzy554jjg27mz97mryenftym
 created_at: 2026-08-13T17:29:48.969Z
-updated_at: 2026-08-13T18:11:55.243Z
+updated_at: 2026-08-23T09:09:03.660Z
 ---
 The frontier research lists d_ino-sorted statting as the highest-ROI cold technique (4-6x literature claim, ext4/btrfs-gated). Scouting rig could not decide it: -2.3% cold [-3.9%, +0.5%] and +6.8% warm [+2.8%, +13.7%] (sort cost) at 450k entries, because guest-cold virtio reads are host-cached and carry no seek penalty. Keep the hypothesis alive but require a bare-metal ext4 SSD/HDD host; pair it with the planned controlled-cold matrix (fdu-tk1b). Sort only above a per-directory entry threshold and only in cold-suspected states (service-time calibration already detects those) so the warm regression cannot ship.

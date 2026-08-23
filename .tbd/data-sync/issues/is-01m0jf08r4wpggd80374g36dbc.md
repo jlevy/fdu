@@ -5,11 +5,14 @@ title: "H94: Content roll-up ancestor walk re-descends a path-ordered tree per f
 kind: task
 status: closed
 priority: 1
-version: 3
-labels: []
-dependencies: []
+version: 5
+labels:
+  - campaign-2
+dependencies:
+  - type: blocks
+    target: is-01m0py2a8eb90n6r21f4hygyvr
 created_at: 2026-08-21T15:28:32.516Z
-updated_at: 2026-08-23T05:06:24.362Z
+updated_at: 2026-08-23T09:09:11.815Z
 ---
 **Tier: content** (index plus content records). Not evidence about the aggregate or index tiers.
 

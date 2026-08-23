@@ -5,13 +5,14 @@ title: Narrow the getattrlistbulk attribute set to what the plan consumes
 kind: task
 status: open
 priority: 2
-version: 2
+version: 3
 labels:
   - performance
   - macos
+  - campaign-2
 dependencies: []
 created_at: 2026-08-16T01:24:51.506Z
-updated_at: 2026-08-16T01:31:46.906Z
+updated_at: 2026-08-23T09:09:04.671Z
 ---
 Candidate hypothesis (H94 when the ledger takes it; H86-H93 are all consumer-side or
 I/O-path -- none touch the kernel-side attr request).
