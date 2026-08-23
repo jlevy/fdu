@@ -17,12 +17,13 @@
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use pyo3::exceptions::{PyOSError, PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyList};
 
+use fdu_core::classify::TypeRegistry;
 use fdu_core::content::{AnalysisRequest, AnalysisSet, CoverageReason};
 use fdu_core::query::{
     AxisNames, Bound as Bound_, MetricRow, MetricSummary, Pattern, Provenance, Query, Report,
@@ -53,6 +54,7 @@ fn to_py_err(err: fdu_core::Error) -> PyErr {
         | fdu_core::Error::ScanScopeMismatch { .. }
         | fdu_core::Error::SubtreeOutsideScanScope { .. }
         | fdu_core::Error::InvalidValue { .. }
+        | fdu_core::Error::TypeRules(_)
         | fdu_core::Error::WatchRootMismatch { .. }) => PyValueError::new_err(error.to_string()),
 
         // Everything else is the operation failing on its own terms: the cache had no
@@ -175,6 +177,98 @@ struct RunState {
     /// counter that accumulated across refreshes would answer a different question
     /// while looking like this one.
     telemetry: PerformanceSummary,
+}
+
+/// A compiled set of file-type rules.
+///
+/// Built once and passed to as many scans as needed: parsing is the cost, and a registry
+/// is read-only afterwards. Passing the same object to several opens shares one copy
+/// rather than reparsing per call.
+#[pyclass(name = "TypeRegistry", module = "fdu._native", frozen)]
+pub struct PyTypeRegistry {
+    inner: Arc<TypeRegistry>,
+}
+
+#[pymethods]
+impl PyTypeRegistry {
+    /// Parse rules in the `[[kind]]` manifest dialect.
+    #[staticmethod]
+    fn from_manifest(source: &str) -> PyResult<Self> {
+        Ok(Self { inner: Arc::new(TypeRegistry::from_manifest(source).map_err(to_py_err)?) })
+    }
+
+    /// The rules fdu ships, used when a scan names no others.
+    #[staticmethod]
+    fn compiled() -> Self {
+        Self { inner: Arc::clone(TypeRegistry::compiled()) }
+    }
+
+    /// Identity of these rules.
+    ///
+    /// A snapshot and a content sidecar both record it, and both refuse a cached answer
+    /// when it moves: a classification change can move a file between families, which
+    /// invalidates the metrics rather than merely their labels.
+    #[getter]
+    fn fingerprint(&self) -> u64 {
+        self.inner.fingerprint()
+    }
+
+    /// How many `[[kind]]` rules it holds.
+    #[getter]
+    fn rule_count(&self) -> usize {
+        self.inner.rule_count()
+    }
+
+    /// Distinct extensions it claims.
+    #[getter]
+    fn extension_count(&self) -> usize {
+        self.inner.extension_count()
+    }
+
+    /// Distinct exact basenames it claims.
+    #[getter]
+    fn filename_count(&self) -> usize {
+        self.inner.filename_count()
+    }
+
+    /// Every stable type identifier it can produce, in manifest order.
+    fn type_ids(&self) -> Vec<String> {
+        self.inner.type_ids().map(str::to_owned).collect()
+    }
+
+    /// Classify one path against these rules, from its name alone.
+    #[pyo3(signature = (path))]
+    #[allow(clippy::needless_pass_by_value)]
+    fn classify<'py>(&self, py: Python<'py>, path: PathBuf) -> PyResult<Bound<'py, PyDict>> {
+        classification_dict(py, &fdu_core::classify::classify_with(&self.inner, &path, None))
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "TypeRegistry(rules={}, extensions={}, fingerprint={:#x})",
+            self.inner.rule_count(),
+            self.inner.extension_count(),
+            self.inner.fingerprint()
+        )
+    }
+}
+
+/// One classification verdict as a dict.
+fn classification_dict<'py>(
+    py: Python<'py>,
+    classification: &fdu_core::classify::Classification,
+) -> PyResult<Bound<'py, PyDict>> {
+    let dict = PyDict::new(py);
+    dict.set_item("file_type", classification.file_type.as_str())?;
+    dict.set_item("family", classification.family.as_str())?;
+    dict.set_item("source", classification.source.as_str())?;
+    dict.set_item("confidence", classification.confidence.as_str())?;
+    let flags = PyDict::new(py);
+    flags.set_item("generated", classification.flags.generated)?;
+    flags.set_item("vendored", classification.flags.vendored)?;
+    flags.set_item("documentation", classification.flags.documentation)?;
+    dict.set_item("flags", flags)?;
+    Ok(dict)
 }
 
 /// A live index over one directory tree.
@@ -1398,6 +1492,7 @@ impl PyOneShot {
     one_filesystem = false,
     order = None,
     threads = None,
+    type_rules = None,
     analyze = "none",
     analysis_workers = 0,
     views = None,
@@ -1427,6 +1522,7 @@ fn report_once(
     one_filesystem: bool,
     order: Option<&str>,
     threads: Option<usize>,
+    type_rules: Option<&PyTypeRegistry>,
     analyze: &str,
     analysis_workers: usize,
     views: Option<Vec<String>>,
@@ -1450,6 +1546,7 @@ fn report_once(
             one_filesystem,
             order: parse_scan_order(order)?,
             threads,
+            types: type_rules.map(|rules| Arc::clone(&rules.inner)),
             ..ScanConfig::default()
         },
         cache_path: fdu_core::default_cache_path(&root),
@@ -1657,6 +1754,7 @@ fn clear_all_caches(root: PathBuf) -> PyResult<usize> {
     one_filesystem = false,
     order = None,
     threads = None,
+    type_rules = None,
     analyze = "none",
     analysis_workers = 0
 ))]
@@ -1669,6 +1767,7 @@ fn open(
     one_filesystem: bool,
     order: Option<&str>,
     threads: Option<usize>,
+    type_rules: Option<&PyTypeRegistry>,
     analyze: &str,
     analysis_workers: usize,
 ) -> PyResult<PyIndex> {
@@ -1681,6 +1780,7 @@ fn open(
             one_filesystem,
             order: parse_scan_order(order)?,
             threads,
+            types: type_rules.map(|rules| Arc::clone(&rules.inner)),
             ..ScanConfig::default()
         },
         cache_path: fdu_core::default_cache_path(&root),
@@ -1727,6 +1827,7 @@ fn open(
     one_filesystem = false,
     order = None,
     threads = None,
+    type_rules = None,
     analyze = "none",
     analysis_workers = 0
 ))]
@@ -1738,6 +1839,7 @@ fn scan(
     one_filesystem: bool,
     order: Option<&str>,
     threads: Option<usize>,
+    type_rules: Option<&PyTypeRegistry>,
     analyze: &str,
     analysis_workers: usize,
 ) -> PyResult<PyIndex> {
@@ -1749,6 +1851,7 @@ fn scan(
             one_filesystem,
             order: parse_scan_order(order)?,
             threads,
+            types: type_rules.map(|rules| Arc::clone(&rules.inner)),
             ..ScanConfig::default()
         },
         cache_path: None,
@@ -1820,6 +1923,7 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     m.add_class::<PyIndex>()?;
     m.add_class::<PyWatch>()?;
+    m.add_class::<PyTypeRegistry>()?;
     m.add_function(wrap_pyfunction!(open, m)?)?;
     m.add_function(wrap_pyfunction!(cache_path, m)?)?;
     m.add_function(wrap_pyfunction!(cache_status, m)?)?;

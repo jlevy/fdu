@@ -136,6 +136,59 @@ def _tree_section(report: fdu.Report) -> fdu.TreeNode:
     raise AssertionError("the report has no tree section")
 
 
+def check_supplied_type_rules_reach_the_answer() -> None:
+    """A caller's own taxonomy classifies, and is a different cache identity.
+
+    The point of the registry: a consumer whose file-type vocabulary differs from fdu's
+    supplies it rather than rebuilding the crate or reclassifying in Python. The second
+    assertion is the one that would fail silently -- entry counts and byte totals are the
+    same under either taxonomy, so a snapshot reused across a rule change looks correct.
+    """
+
+    rules = fdu.TypeRegistry.from_manifest(
+        '[[kind]]\nid = "notes"\nfamily = "prose"\nextensions = ["rs"]\n'
+    )
+    assert rules.rule_count == 1
+    assert rules.type_ids() == ("notes",)
+
+    mine = rules.classify("main.rs")
+    assert mine.file_type == "notes"
+    assert mine.family is fdu.ContentFamily.PROSE
+    assert mine.source is fdu.DetectionSource.EXTENSION
+    assert mine.confidence is fdu.DetectionConfidence.CERTAIN
+
+    shipped = fdu.TypeRegistry.compiled()
+    assert shipped.classify("main.rs").file_type == "rust"
+    assert shipped.rule_count > rules.rule_count
+    assert shipped.fingerprint != rules.fingerprint, (
+        "different rules must be a different cache identity"
+    )
+
+    # A manifest that would classify ambiguously is rejected, with the parser's message.
+    try:
+        fdu.TypeRegistry.from_manifest(
+            '[[kind]]\nid = "a"\nfamily = "code"\n[[kind]]\nid = "a"\nfamily = "code"\n'
+        )
+    except fdu.InvalidArgumentError as error:
+        assert "duplicate rule id" in str(error), error
+        assert "invalid type rules" in str(error), error
+    else:
+        raise AssertionError("a duplicate id must be rejected")
+
+    # And the rules reach a real scan.
+    root = Path(tempfile.mkdtemp(prefix="fdu-type-rules-"))
+    (root / "main.rs").write_text("fn main() {}", encoding="utf-8")
+    index = fdu.scan(root, scan=fdu.ScanOptions(type_rules=rules))
+    report = index.report(fdu.Query(views=(fdu.View.TYPES,)))
+    labels = {
+        row.id
+        for section in report.sections
+        if isinstance(section, fdu.MetricsSection)
+        for row in section.rows
+    }
+    assert labels == {"notes"}, labels
+
+
 def check_bounded_extension_rows_account_for_the_rest() -> None:
     """A listing can ask for a handful of extension rows and still be told the total.
 
@@ -509,6 +562,7 @@ def main() -> None:
     check_the_dirty_set_names_every_moved_rollup()
     check_telemetry_measures_the_run_not_the_tree()
     check_bounded_extension_rows_account_for_the_rest()
+    check_supplied_type_rules_reach_the_answer()
     check_a_bounded_tree_says_what_it_withheld()
     check_render_matches_the_cli(
         root, str(Path(sys.executable).with_name("fdu.exe" if os.name == "nt" else "fdu"))

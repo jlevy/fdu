@@ -18,6 +18,7 @@ use std::borrow::Cow;
 use clap::builder::styling::{AnsiColor, Style as AnsiStyle, Styles};
 use clap::{ArgAction, ColorChoice, CommandFactory, FromArgMatches, Parser, ValueEnum};
 
+use fdu_core::classify::TypeRegistry;
 use fdu_core::content::{AnalysisRequest, AnalysisSet};
 use fdu_core::query::{
     AxisNames, Bound, Pattern, Provenance, Query, ReportSource, Selection, SizeMetric, SortKey,
@@ -134,7 +135,7 @@ MORE COMPOSITIONS
   unaffected by it, so an idle tree costs nothing between changes.
 
 SIX AXES, AND EVERY OPTION BELONGS TO EXACTLY ONE
-  Scope      PATH, --scan-depth, --order, --threads     what is scanned and cached
+  Scope      PATH, --scan-depth, --order, --threads, --type-rules
   Content    --analyze none|lines|code|words|all        which file bodies are read
   Selection  --include, --exclude, --depth, --limit     which entries are considered
   View       tree,extensions,types,families,languages,documents,files,summary,all
@@ -343,6 +344,14 @@ pub struct Cli {
     #[arg(long, value_name = "N", help_heading = "SCOPE")]
     pub threads: Option<usize>,
 
+    /// Classify against a `[[kind]]` rule file instead of fdu's taxonomy.
+    ///
+    /// Scope rather than Selection: the rules decide what every type row *means*, so a
+    /// snapshot taken under one file is not answerable under another and the cache
+    /// invalidates accordingly.
+    #[arg(long, value_name = "FILE", help_heading = "SCOPE")]
+    pub type_rules: Option<PathBuf>,
+
     // ---- selection: which retained entries this query considers ----
     /// Report only entries matching this glob; repeatable.
     #[arg(long, value_name = "GLOB", help_heading = "SELECTION")]
@@ -550,12 +559,14 @@ impl Cli {
             .validate_analysis(analysis.profile)
             .map_err(|message| usage(&anyhow::anyhow!(message)))?;
         let order = self.parse_order()?;
+        let types = self.load_type_rules()?;
         let config = OpenConfig {
             scan: ScanConfig {
                 max_depth: self.scan_depth,
                 one_filesystem: self.one_filesystem,
                 order,
                 threads: self.threads,
+                types,
                 ..ScanConfig::default()
             },
             cache_path: default_cache_path(path),
@@ -978,6 +989,22 @@ impl Cli {
     /// The requested traversal order, or the engine default when unset.
     fn parse_order(&self) -> anyhow::Result<ScanOrder> {
         self.order.as_deref().map_or_else(|| Ok(ScanOrder::default()), parse_order)
+    }
+
+    /// Read `--type-rules`, or `None` for the compiled taxonomy.
+    ///
+    /// Read and rejected here rather than deep in a scan: a manifest with a typo should
+    /// fail before a walk starts, with the parser's own line-numbered message, and the
+    /// command line invents no vocabulary of its own for it.
+    fn load_type_rules(&self) -> anyhow::Result<Option<std::sync::Arc<TypeRegistry>>> {
+        let Some(path) = self.type_rules.as_deref() else {
+            return Ok(None);
+        };
+        let source = std::fs::read_to_string(path)
+            .map_err(|error| anyhow::anyhow!("{}: {error}", path.display()))?;
+        let registry = TypeRegistry::from_manifest(&source)
+            .map_err(|error| usage(&anyhow::anyhow!("{}: {error}", path.display())))?;
+        Ok(Some(std::sync::Arc::new(registry)))
     }
 
     fn parse_cache_policy(&self) -> anyhow::Result<CachePolicy> {
@@ -1810,6 +1837,7 @@ mod tests {
             one_filesystem: false,
             order: None,
             threads: None,
+            type_rules: None,
             include: Vec::new(),
             exclude: Vec::new(),
             min_size: None,

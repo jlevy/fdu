@@ -15,7 +15,13 @@ from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
+
+if TYPE_CHECKING:
+    # Typing only: `TypeRegistry` wraps a native handle and lives beside `Index` in
+    # `_api`, while this module stays free of the extension. `from __future__ import
+    # annotations` makes the reference lazy, so there is no runtime cycle.
+    from ._api import TypeRegistry
 
 type JsonScalar = bool | int | float | str | None
 type JsonValue = JsonScalar | list[JsonValue] | dict[str, JsonValue]
@@ -194,6 +200,13 @@ class ScanOptions:
     #: Walker threads, or ``None`` to choose automatically. ``1`` makes emission order
     #: depend only on the queue, which is what a reproducible recording needs.
     threads: int | None = None
+    #: File-type rules to classify against, or ``None`` for the ones fdu ships.
+    #:
+    #: Scope rather than selection: the rules decide what every type row *means*, so a
+    #: snapshot taken under one set is not answerable under another and the cache
+    #: invalidates accordingly. Build one with :meth:`TypeRegistry.from_manifest` and
+    #: reuse it across calls -- parsing is the cost, and a registry is read-only after.
+    type_rules: TypeRegistry | None = None
 
     def __post_init__(self) -> None:
         if self.max_depth is not None and self.max_depth < 0:
@@ -318,6 +331,66 @@ class Provenance:
     source: ValueSource
     observed_at_ns: int
     status: Coverage
+
+
+class DetectionSource(StrEnum):
+    """Which bounded step established a classification."""
+
+    EXACT_FILENAME = "exact_filename"
+    COMPOUND_EXTENSION = "compound_extension"
+    EXTENSION = "extension"
+    SHEBANG = "shebang"
+    MODELINE = "modeline"
+    AMBIGUOUS_CONTENT = "ambiguous_content"
+    FORMAT_SIGNATURE = "format_signature"
+    CONTENT_PROBE = "content_probe"
+    UNKNOWN = "unknown"
+
+
+class DetectionConfidence(StrEnum):
+    """Strength of the evidence a classification rests on."""
+
+    CERTAIN = "certain"
+    HIGH = "high"
+    HEURISTIC = "heuristic"
+
+
+class ContentFamily(StrEnum):
+    """Broad analysis family: which analyzer may open a file.
+
+    An analysis question, not a browsing one. Every image, video, PDF, and archive is
+    ``BINARY`` here because none of them can be read as text, which is the only thing
+    this axis decides.
+    """
+
+    CODE = "code"
+    PROSE = "prose"
+    MARKUP = "markup"
+    DATA = "data"
+    BINARY = "binary"
+    UNKNOWN = "unknown"
+
+
+@dataclass(frozen=True, slots=True)
+class ClassificationFlags:
+    """Origin and purpose attributes, orthogonal to the type itself."""
+
+    generated: bool
+    vendored: bool
+    documentation: bool
+
+
+@dataclass(frozen=True, slots=True)
+class Classification:
+    """What the type rules make of one path."""
+
+    file_type: str
+    """Stable identifier, or ``unknown:.ext`` for an extension no rule claims."""
+
+    family: ContentFamily
+    source: DetectionSource
+    confidence: DetectionConfidence
+    flags: ClassificationFlags
 
 
 @dataclass(frozen=True, slots=True)
@@ -792,6 +865,21 @@ def walk_telemetry_from_dict(value: dict[str, Any]) -> WalkTelemetry:
         cached_files=int(value["cached_files"]),
         cached_bytes=int(value["cached_bytes"]),
         source=ReportSource(str(value["source"])),
+    )
+
+
+def classification_from_dict(value: dict[str, Any]) -> Classification:
+    flags = value["flags"]
+    return Classification(
+        file_type=str(value["file_type"]),
+        family=ContentFamily(str(value["family"])),
+        source=DetectionSource(str(value["source"])),
+        confidence=DetectionConfidence(str(value["confidence"])),
+        flags=ClassificationFlags(
+            generated=bool(flags["generated"]),
+            vendored=bool(flags["vendored"]),
+            documentation=bool(flags["documentation"]),
+        ),
     )
 
 

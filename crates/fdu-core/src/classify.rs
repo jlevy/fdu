@@ -253,13 +253,8 @@ impl TypeRegistry {
     /// time, so a manifest this accepts would have compiled and one it rejects would have
     /// failed the build with the same message.
     pub fn from_manifest(source: &str) -> crate::Result<Self> {
-        let reject = |message: String| crate::Error::InvalidValue {
-            kind: "type rules",
-            value: String::new(),
-            hint: message,
-        };
-        let parsed = type_rule_manifest::parse_manifest(source).map_err(reject)?;
-        type_rule_manifest::validate_manifest(&parsed).map_err(reject)?;
+        let parsed = type_rule_manifest::parse_manifest(source).map_err(crate::Error::TypeRules)?;
+        type_rule_manifest::validate_manifest(&parsed).map_err(crate::Error::TypeRules)?;
         let rules = parsed
             .iter()
             .map(|rule| TypeRule {

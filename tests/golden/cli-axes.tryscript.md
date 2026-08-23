@@ -483,3 +483,60 @@ $ fdu --order sideways project
 fdu: unknown --order sideways; expected breadth-first or depth-first
 ? 2
 ```
+
+## Scope: Supplied File-Type Rules
+
+The taxonomy is scope, not selection.
+It decides what every type row *means*, so a snapshot taken under one rule set is not
+answerable under another — and a consumer whose vocabulary differs from fdu’s supplies
+its own rather than reclassifying afterwards in its own language.
+
+### The Compiled Taxonomy Is What a Run Uses by Default
+
+```console
+$ fdu --cache off --color never --view types --format text --size apparent --sort count --limit all project
+      71 B   27.0%  markdown           2 files, 2 documentation
+      36 B   13.7%  rust               2 files
+     128 B   48.7%  archive            1 file
+      28 B   10.6%  make               1 file
+Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+? 0
+```
+
+### Supplied Rules Replace It Whole
+
+A registry is the taxonomy, not an overlay on fdu’s: what these rules do not name falls
+to `unknown`, with the extension preserved so nothing is lost.
+
+```console
+$ node -e "require('node:fs').writeFileSync('mine.toml', '[[kind]]\nid = \"notes\"\nfamily = \"prose\"\nextensions = [\"rs\"]\n'); console.log('rules written')"
+rules written
+? 0
+```
+
+```console
+$ fdu --cache off --color never --type-rules mine.toml --view types --format text --size apparent --sort count --limit all project
+      36 B   13.7%  notes              2 files
+      71 B   27.0%  unknown:.md        2 files, 2 documentation
+      28 B   10.6%  unknown            1 file
+     128 B   48.7%  unknown:.tar.gz    1 file
+Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+? 0
+```
+
+### A Manifest That Would Classify Ambiguously Is Rejected
+
+Before the walk starts, and with the parser’s own message rather than a second opinion
+about what went wrong.
+
+```console
+$ node -e "require('node:fs').writeFileSync('dupe.toml', '[[kind]]\nid = \"a\"\nfamily = \"code\"\n[[kind]]\nid = \"a\"\nfamily = \"code\"\n'); console.log('rules written')"
+rules written
+? 0
+```
+
+```console
+$ fdu --type-rules dupe.toml project
+fdu: dupe.toml: invalid type rules: duplicate rule id "a"
+? 2
+```

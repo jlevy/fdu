@@ -20,6 +20,7 @@ from ._models import (
     ChangeKind,
     ChangeSet,
     Child,
+    Classification,
     EntryKind,
     Format,
     Provenance,
@@ -31,6 +32,7 @@ from ._models import (
     Status,
     WalkTelemetry,
     WatchOptions,
+    classification_from_dict,
     provenance_from_dict,
     report_from_dict,
     rollup_from_dict,
@@ -382,6 +384,84 @@ def _change(value: dict[str, Any]) -> Change:
     )
 
 
+class TypeRegistry:
+    """A compiled set of file-type rules.
+
+    fdu ships a taxonomy; this is how a caller supplies its own. Rules are parsed,
+    validated, indexed, and fingerprinted in Rust -- the same code that reads fdu's own
+    manifest at build time -- so a manifest this accepts is one that would have compiled,
+    and classification runs at the engine's speed rather than the caller's.
+
+    Build one and reuse it: parsing is the cost, and a registry is read-only afterwards.
+    Pass it as :attr:`ScanOptions.type_rules`.
+
+    Rules are scope, not selection. They decide what every type row *means*, so an index
+    built under one registry is not answerable under another and the snapshot cache
+    invalidates on :attr:`fingerprint`.
+    """
+
+    __slots__ = ("_native",)
+
+    def __init__(self, native: _native.TypeRegistry) -> None:
+        self._native = native
+
+    @staticmethod
+    def from_manifest(source: str) -> TypeRegistry:
+        """Parse rules in the ``[[kind]]`` manifest dialect.
+
+        Raises :class:`fdu.InvalidArgumentError` with the parser's own line-numbered
+        message for a manifest that would classify ambiguously -- a duplicate id, an
+        unknown family, or a key two rules both claim.
+        """
+
+        return TypeRegistry(_call(_native.TypeRegistry.from_manifest, source))
+
+    @staticmethod
+    def compiled() -> TypeRegistry:
+        """The rules fdu ships, used when a scan names no others."""
+
+        return TypeRegistry(_call(_native.TypeRegistry.compiled))
+
+    @property
+    def fingerprint(self) -> int:
+        """Identity of these rules, which a snapshot and a content sidecar both record."""
+
+        return self._native.fingerprint
+
+    @property
+    def rule_count(self) -> int:
+        return self._native.rule_count
+
+    @property
+    def extension_count(self) -> int:
+        return self._native.extension_count
+
+    @property
+    def filename_count(self) -> int:
+        return self._native.filename_count
+
+    def type_ids(self) -> tuple[str, ...]:
+        """Every stable type identifier these rules can produce, in manifest order."""
+
+        return tuple(_call(self._native.type_ids))
+
+    def classify(self, path: str | Path) -> Classification:
+        """What these rules make of one path, from its name alone.
+
+        No file is opened, so this answers for a path that does not exist -- which is
+        what makes it usable for checking a taxonomy before scanning with it.
+        """
+
+        return classification_from_dict(_call(self._native.classify, path))
+
+    def __repr__(self) -> str:
+        return repr(self._native)
+
+
+def _native_rules(registry: TypeRegistry | None) -> _native.TypeRegistry | None:
+    return None if registry is None else registry._native
+
+
 def open(
     root: str | Path,
     *,
@@ -401,6 +481,7 @@ def open(
         one_filesystem=scan_options.one_filesystem,
         order=str(scan_options.order),
         threads=scan_options.threads,
+        type_rules=_native_rules(scan_options.type_rules),
         analyze=str(analysis_options.analyze),
         analysis_workers=analysis_options.workers,
     )
@@ -424,6 +505,7 @@ def scan(
         one_filesystem=scan_options.one_filesystem,
         order=str(scan_options.order),
         threads=scan_options.threads,
+        type_rules=_native_rules(scan_options.type_rules),
         analyze=str(analysis_options.analyze),
         analysis_workers=analysis_options.workers,
     )
@@ -462,6 +544,7 @@ def report(
         one_filesystem=scan_options.one_filesystem,
         order=str(scan_options.order),
         threads=scan_options.threads,
+        type_rules=_native_rules(scan_options.type_rules),
         analyze=str(analysis_options.analyze),
         analysis_workers=analysis_options.workers,
         **_query_kwargs(selected),

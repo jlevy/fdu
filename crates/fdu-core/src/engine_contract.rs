@@ -631,6 +631,13 @@ pub enum Error {
         hint: String,
     },
 
+    /// A supplied file-type rule manifest could not be used.
+    ///
+    /// Carries the parser's own line-numbered message: a manifest is something a person
+    /// edits, and "rejected" without a location is a worse message than none.
+    #[error("invalid type rules: {0}")]
+    TypeRules(String),
+
     /// A watcher was paired with an index rooted at a different directory.
     #[error("watch root {watched:?} does not match index root {indexed:?}")]
     WatchRootMismatch {

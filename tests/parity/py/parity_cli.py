@@ -49,7 +49,27 @@ def _scan_options(args: Args) -> fdu.ScanOptions:
         one_filesystem=args.one_filesystem,
         order=order,
         threads=args.threads,
+        type_rules=load_type_rules(args.type_rules),
     )
+
+
+def load_type_rules(path: str | None) -> fdu.TypeRegistry | None:
+    """Read `--type-rules`, failing the way the command line fails.
+
+    Both surfaces reject a bad manifest before any walk starts, with the engine parser's
+    own message; the shim only has to prefix the flag the same way.
+    """
+
+    if path is None:
+        return None
+    try:
+        source = Path(path).read_text(encoding="utf-8")
+    except OSError as error:
+        fail(f"{path}: {error.strerror} (os error {error.errno})")
+    try:
+        return fdu.TypeRegistry.from_manifest(source)
+    except fdu.FduError as error:
+        raise UsageError(f"{path}: {error}") from None
 
 
 def fail(message: str, code: int = 2) -> NoReturn:
@@ -149,6 +169,7 @@ class Args:
         self.one_filesystem = False
         self.order: str | None = None
         self.threads: int | None = None
+        self.type_rules: str | None = None
         self.include: list[str] = []
         self.exclude: list[str] = []
         self.min_size: str | None = None
@@ -214,6 +235,8 @@ def parse_args(argv: list[str]) -> Args:
             args.order = take()
         elif flag == "--threads":
             args.threads = int(take())
+        elif flag == "--type-rules":
+            args.type_rules = take()
         elif flag == "--include":
             args.include.append(take())
         elif flag == "--exclude":
