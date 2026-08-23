@@ -5,7 +5,7 @@ title: "Spec: fdu for interactive clients — the metabrowser contract"
 kind: epic
 status: open
 priority: 1
-version: 23
+version: 24
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 labels: []
 dependencies: []
@@ -32,10 +32,10 @@ child_order_hints:
   - is-01m0qs197189wae43fmqxs82bs
   - is-01m0qs19pg77zfmd3s2kg7k905
 created_at: 2026-08-23T07:31:34.794Z
-updated_at: 2026-08-23T20:34:48.588Z
+updated_at: 2026-08-23T21:53:07.335Z
 ---
 Root epic for the interactive-client integration spec: partitioned tallies (tag planes), the embedder watch contract, the session integration shape, and the adoption proof. Each capability lands engine-first and clears the parity harness. The measured basis and the requirement-by-requirement contract map are in the spec.
 
 ## Notes
 
-Amendments pending cross-repo consensus. metabrowser PR #74 answered PR #44 with its own architecture (Metabrowser-owned inventory-engine boundary, two providers); the reconciliation at docs/project/research/research-2026-08-23-interactive-contract-reconciliation.md adjudicates eight differences and lists the amendments this epic's beads take. Four pushbacks are open with metabrowser. Read it before starting any bead under this epic — two of them change scope.
+Delivery is two independent tracks. Metabrowser Phase 1 extracts its Python stack behind the final sealed InventoryBackend/InventoryHandle contract with NO fdu dependency; Phase 2 implements the same contract against fdu, opening with a small real PyO3 spike (shared handle, one bundled directory+rollup read returning one version/cursor/state/work record, convergence after one live mutation, no mirror index). A bad seam there revises both designs before either surface expands. So fdu sequences its own phases independently; the earlier three-spike wording is metabrowser's Phase 2 evidence loop, not a joint delivery plan. Land fdu-gav9 and the bundled read early since the coupled spike needs them. The conformance packet gates verification of the classification work, not the work itself. Full record: docs/project/research/research-2026-08-23-interactive-contract-reconciliation.md
