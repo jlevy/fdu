@@ -185,14 +185,18 @@ Phases 0 and A–C are parallel where their beads say so; D and E follow their g
   by falling back.
 - [ ] `fdu-5yjk` — extend scan diagnostics to the FullIndex plan, the plan users run and
   the one Phase B rebuilds; instrument before restructuring.
-- [ ] `fdu-9ydj` — a `--no-oracle` probe mode and engine-phase counter scoping, so
+- [ ] `fdu-4xtm` — a `--no-oracle` probe mode and engine-phase counter scoping, so
   attribution runs stop counting the harness (the oracle is ~39% of probe instructions
   and 46% of its allocation events).
 - [ ] `fdu-c65j` — adopt samply so Linux profiling stops depending on callgrind’s
   serialized world.
-- [ ] `fdu-mx1w` — a ledger job for the **default command**, `fdu <dir>`: scan, index,
+- [x] `fdu-mx1w` — a ledger job for the **default command**, `fdu <dir>`: scan, index,
   rendered tree, snapshot write.
-  None of the 66 artifacts measures it.
+  **Landed** as two jobs, `default-tree-first` and `default-tree`, over a
+  `perf_probe default-tree` mode that drives `prepare_report` exactly as the command
+  line does; exp-066 is the baseline on the 175k rustup store, and it shows the repeated
+  run rewriting a 13.9 MB snapshot it never reads on every trial.
+  None of the 66 artifacts before it measured this path.
   `cold-scan-index`, the proxy every cumulative checkpoint uses, is the probe’s walk
   plus index build and excludes both the render and the write — and the cache-layers
   plan already priced that write at roughly a third of a default run on `/usr`. Two
@@ -202,6 +206,27 @@ Phases 0 and A–C are parallel where their beads say so; D and E follow their g
   `F_FULLFSYNC` and the index teardown complete).
   The `fdu-default-tree` contract already exists; nothing has ever been recorded through
   it.
+
+### The macOS agenda
+
+The phases above are ordered by a Linux floor that does not exist on macOS, and this is
+the host the project’s performance bar is set on.
+[The strategy review](../../reports/report-2026-08-23-research-loop-strategy-review.md)
+derives a macOS ordering from what is measurable here and states the case against each
+item; the beads carry it under the `macos-agenda` label, and
+[the runbook](../../guides/performance-loop-runbook.md) is how an unattended agent runs
+one round of it.
+
+- **Tier 1, unattended, in order:** `fdu-mx1w` (landed), `fdu-2um8` (skip the identical
+  snapshot rewrite), `fdu-n75m` part 1 (flush the render before the join), `fdu-pdne`
+  (PGO, screen only), `fdu-78q6` (sidecar restore, on the metabrowser clone).
+- **Tier 2, instruments:** `fdu-9hdc` (a `getattrlistbulk` floor, so `fdu-33ri` can ship
+  two scoreboards with the regime difference recorded), `fdu-4xtm`, `fdu-5yjk`,
+  `fdu-0pzh` (measure only), and promoting `host_regime` into the artifact schema.
+- **Tier 3, with a person:** `fdu-xde5` (H86), `fdu-jxhk` (its content-tier instance),
+  `fdu-6kyn` (an `unsafe`-versus-dependency policy), `fdu-9716` (`searchfs`), `fdu-n75m`
+  parts 2 and 3 (durability policy), the FSEvents journal (Phase D), and Phase E’s
+  other-host work.
 
 ### Phase A: Constants with confirmed mechanisms (tuning track)
 
@@ -331,7 +356,7 @@ strategy and the record is visible in review.
   rung
 - [The record spec](plan-2026-08-15-fdu-performance-record-and-report.md) — evidence
   completion
-- Beads: `fdu-xde5`, `fdu-tyjx`, `fdu-lk9u`, `fdu-33ri`, `fdu-9ydj`, `fdu-tk1b`,
+- Beads: `fdu-xde5`, `fdu-tyjx`, `fdu-lk9u`, `fdu-33ri`, `fdu-4xtm`, `fdu-tk1b`,
   `fdu-926e`, `fdu-78q6`, `fdu-yr23`, `fdu-pdra`, `fdu-h7sw`, `fdu-sk7v`, `fdu-lf3v`,
   `fdu-9716`, `fdu-ow8y`, `fdu-mx1w`, `fdu-2um8`, `fdu-n75m`
 

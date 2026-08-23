@@ -202,23 +202,31 @@ def _measure(arguments: argparse.Namespace) -> int:
         else None
     )
 
-    document = measure.run(
-        root=arguments.root,
-        label=arguments.label,
-        variants=variants,
-        jobs=jobs,
-        trials=arguments.trials,
-        warmups=arguments.warmups,
-        scratch=arguments.scratch,
-        baseline_fingerprint=baseline_document,
-        purge=arguments.purge,
-        note=arguments.note,
-        campaign_stage=arguments.stage,
-        corpus=corpus_document,
-        host_regime=arguments.host_regime,
-        background_load_workers=arguments.background_load_workers,
-        provenance_document=provenance_document,
-    )
+    try:
+        document = measure.run(
+            root=arguments.root,
+            label=arguments.label,
+            variants=variants,
+            jobs=jobs,
+            trials=arguments.trials,
+            warmups=arguments.warmups,
+            scratch=arguments.scratch,
+            baseline_fingerprint=baseline_document,
+            purge=arguments.purge,
+            note=arguments.note,
+            campaign_stage=arguments.stage,
+            corpus=corpus_document,
+            host_regime=arguments.host_regime,
+            background_load_workers=arguments.background_load_workers,
+            provenance_document=provenance_document,
+        )
+    except measure.MeasureError as error:
+        # A refused cell is the harness doing its job -- the host was not quiet, the tree
+        # moved, a snapshot could not be prepared -- and it should read as a verdict
+        # about the run, not as a traceback from the harness. An operator, or an agent
+        # at 3 a.m., retries when the stated condition clears.
+        print(f"measurement refused: {error}", file=sys.stderr)
+        return 1
 
     if arguments.corpus_manifest:
         verified_after = _verified_corpus_manifest(arguments.root, arguments.corpus_manifest)

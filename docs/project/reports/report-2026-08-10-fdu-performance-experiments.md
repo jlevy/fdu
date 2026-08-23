@@ -67,6 +67,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 1 |
 
 ## Every experiment, including the failures
 
@@ -141,6 +142,7 @@ dead end.
 | 063 | [Share the index with the snapshot writer instead of deep-cloning it](#exp063--share-the-index-with-the-snapshot-writer-instead-of-deepcloning-it) | H87 | `cold-open-save` | -10.5% | ✅ accepted |
 | 064 | [Content roll-up lookup and indexed type-rule tiers](#exp064--content-rollup-lookup-and-indexed-typerule-tiers) | H94, H95 | `content-cache-hit` | -30.3% | ✅ accepted |
 | 065 | [Validate the content roll-up change on a dense real tree](#exp065--validate-the-content-rollup-change-on-a-dense-real-tree) | H94, H95 | `content-cache-hit` | -25.8% | ✅ accepted |
+| 066 | [Baseline for the default command on a real package cache](#exp066--baseline-for-the-default-command-on-a-real-package-cache) | — | `default-tree` | -1.9% | 📏 baseline |
 
 ## The experiments
 
@@ -2378,6 +2380,31 @@ work.
 Full record:
 [`exp-065-validate-the-content-roll-up-change-on-a-dense-real-tree.md`](../experiments/exp-065-validate-the-content-roll-up-change-on-a-dense-real-tree.md)
 
+### exp-066 — Baseline for the default command on a real package cache
+
+📏 baseline · 2026-08-23 · no hypothesis id · commit `778aa74`
+
+**`default-tree`** (warm start) — measured
+
+| metric | value |
+| --- | ---: |
+| wall (ms) | 386.9 |
+| component (ms) | 381.9 |
+| cpu (ms) | 1787.4 |
+| user (ms) | 209.1 |
+| system (ms) | 1573.4 |
+| peak rss (MiB) | 101.6 |
+
+Other jobs, wall time: `aggregate-summary` 299 ms, `cold-scan-index` 659 ms,
+`default-tree-first` 386 ms.
+
+**Baseline:** First measurement of fdu <dir> itself: the repeated run rewrites a 13.9 MB
+snapshot it never reads on all 24 trials, and the write plus render is about 70 ms of a
+375 ms default run.
+
+Full record:
+[`exp-066-baseline-for-the-default-command-on-a-real-package-cache.md`](../experiments/exp-066-baseline-for-the-default-command-on-a-real-package-cache.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -2564,6 +2591,12 @@ Baselines show one value because they measure a state rather than a change.
 | # | experiment | job | before | after | change | verdict |
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 034 | Post-composable-CLI validation under cache pressure | `cold-scan-index` | 6,699.9 | 5,154.0 | -30.5% | ✅ accepted |
+
+### rustup-toolchains (175,191 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 066 | Baseline for the default command on a real package cache | `default-tree` | 386.9 | — | — | 📏 baseline |
 
 ### selfhost-content (307 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 

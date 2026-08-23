@@ -794,28 +794,28 @@ Recorded in the ledger with the numbers that killed them.
 Prerequisites: a release probe, a profiling probe, and a nominated tree.
 
 ```shell
-# One-time: record what the tree looked like, so later runs can prove it is the same.
-uv run --no-project python -m benchmarks.realtree baseline \
-  --root /path/to/tree --label mytree
+# One-time per subject: record what the tree looked like, so later runs can prove it is
+# the same. PERF_LABEL must be the subject's nominated label.
+make perf-baseline PERF_TREE=/path/to/tree PERF_LABEL=mytree
 
 # Profile: where does the time actually go?
-cargo build --locked --profile profiling -p fdu --example perf_probe --no-default-features
-uv run --no-project python -m benchmarks.realtree profile \
-  --root /path/to/tree --job cold-scan-index --label baseline
+make perf-probe-profiling
+make perf-profile PERF_TREE=/path/to/tree PERF_LABEL=mytree
 
-# Measure: is the candidate faster than the control?
-cargo build --locked --release -p fdu --example perf_probe --no-default-features
-uv run --no-project python -m benchmarks.realtree measure \
-  --root /path/to/tree --label mytree \
-  --variant control=/tmp/perf_probe.control \
-  --variant candidate=target/release/examples/perf_probe \
-  --job cold-scan-index --job warm-revalidate \
-  --trials 12 --baseline-fingerprint explorations/benchmarks/results/realtree/tree-mytree.json \
-  --name exp007-parallel-producer
+# Measure: is the candidate faster than the control? CONTROL is the probe built from the
+# control commit and copied outside the tree before the change was made.
+make perf-compare PERF_TREE=/path/to/tree PERF_LABEL=mytree \
+  CONTROL=/tmp/fdu-realtree/perf_probe.control \
+  JOBS="cold-scan-index warm-revalidate" TRIALS=12 NAME=exp-067-parallel-producer
 ```
 
-`make perf-baseline`, `make perf-profile`, and `make perf-compare` wrap these with the
-project’s usual arguments; `PERF_TREE` selects the tree.
+The targets run `python -m benchmarks.realtree` through
+`uv run --project explorations/benchmarks` with `PYTHONPATH=explorations`; invoking the
+module any other way does not resolve the package.
+`PERF_TREE` selects the tree, `JOBS` the jobs (all six metadata jobs by default), and
+`NAME` the run, which becomes `run-<NAME>.json` under `PERF_RESULTS`.
+[The runbook](performance-loop-runbook.md) is one round of this on the nominated
+subjects, start to finish, including the record and the handoff.
 Evidence qualification is explicit: `PERF_STAGE`, `PERF_HOST_REGIME`,
 `PERF_BACKGROUND_LOAD_WORKERS`, `PERF_PROVENANCE`, and `PERF_CORPUS_MANIFEST` map
 directly to the harness contracts.

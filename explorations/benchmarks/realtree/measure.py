@@ -341,6 +341,37 @@ PROBE_JOBS: Dict[str, Job] = {
         oracle="tallies",
         parallel_cpu=True,
     ),
+    "default-tree-first": Job(
+        id="default-tree-first",
+        argv=("{binary}", "default-tree", "--root", "{root}", "--snapshot", "{snapshot}"),
+        start_state="cold",
+        description=(
+            "The default command on a tree it has never seen: `fdu <dir>` with no "
+            "snapshot present -- scan, index, the rendered tree, and the snapshot write "
+            "the user's next run will find. Cache policy auto, tree view at its default "
+            "depth, the save joined before exit, exactly as the command line does."
+        ),
+        oracle="tallies",
+        writes_snapshot=True,
+        parallel_cpu=True,
+    ),
+    "default-tree": Job(
+        id="default-tree",
+        argv=("{binary}", "default-tree", "--root", "{root}", "--snapshot", "{snapshot}"),
+        start_state="warm",
+        description=(
+            "The default command repeated over an unchanged tree with its own snapshot "
+            "present from the previous run. `prepare_report` does not read the snapshot "
+            "for a metadata query, so this is a cold scan plus whatever the run does "
+            "with the file it finds; `snapshot_written` in the probe summary says "
+            "whether it rewrote it. The shape of the second `fdu <dir>` a user types, "
+            "and the job the two default-path defects are judged on."
+        ),
+        oracle="tallies",
+        needs_snapshot=True,
+        snapshot_preparation_mode="default-tree",
+        parallel_cpu=True,
+    ),
     "cold-scan-index": Job(
         id="cold-scan-index",
         argv=("{binary}", "scan-index", "--root", "{root}"),
