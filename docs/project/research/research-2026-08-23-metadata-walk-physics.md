@@ -27,12 +27,13 @@ Three results carry the note:
    a hand-written parallel syscall floor** on this rig, so the entire remaining prize on
    that tier, in this regime, is 15–26% — and `arena_spike`, the consumer redesign this
    project has already prototyped, measures **1.06×**. There is no third act.
-2. **fdu’s walker beats ripgrep’s, and the reason is one line of code.** Against
-   [`ignore`](https://docs.rs/ignore) — ripgrep’s walker — doing the identical job, fdu
-   is **22% faster using 24% less CPU**. The mechanism is not scheduling or batching:
-   `ignore` and `walkdir` stat each entry by full absolute path, fdu stats relative to
-   the directory descriptor, and pricing that difference alone (**+37%**) more than
-   accounts for the whole gap.
+2. **fdu leads ripgrep’s walker on every generated tree and loses on the real one.**
+   Against [`ignore`](https://docs.rs/ignore) — ripgrep’s walker — doing the identical
+   job, fdu is **12–26% faster on four synthetic subjects, tied on a tree carrying real
+   filenames, and 11.8% slower on `/usr`**. Both halves have one mechanism: `ignore` and
+   `walkdir` stat each entry by full absolute path where fdu stats relative to the
+   directory descriptor, worth **+37%** to fdu — and a real tree’s names and widths cost
+   fdu about that much back, while costing `ignore` nothing.
 3. **Batching syscalls is the wrong lever, measured twice.** io_uring-batched `statx`
    cuts syscalls 21× and runs **19× slower** than plain `statx` single-threaded, and
    never beats plain threads at any thread count in either cache state.
@@ -311,19 +312,34 @@ the pure-enumeration floor; with ripgrep’s default gitignore and hidden-file f
 `walkdir` alone is 892.7 ms and `jwalk` 864.0 ms, so `ignore`’s parallel walker is worth
 3.2× over the crate it is built on and `jwalk` is not competitive with either.
 
-**How does fdu compare?** On the identical job, fdu’s aggregate tier is **22% faster
-using 24% less CPU** (216.5 ms / 829 ms against 278.0 ms / 1,088 ms), while additionally
-returning exact directory counts, apparent and allocated bytes, and newest mtime.
-That result held in every sitting taken for this note.
+**How does fdu compare?** It depends on the tree, and the dependence is the finding.
+Thirteen paired trials per subject after three warmups, alternating order, reporting the
+median of the paired differences:
 
-But the honest comparison has two halves, and the second one favours ripgrep.
-On *ripgrep’s* job fdu cannot compete at all, because that job is 118.9 ms and fdu’s
-floor is 184.3 ms: a search tool learns what it needs from `d_type` and never makes a
-metadata call, while a disk-usage tool must make one per entry.
-**The interesting difference between these two tools is not implementation quality, it
-is that one of them is allowed to skip 91% of the kernel work.**
+| Subject | Entries/dir | fdu | `ignore` | Paired |
+| --- | ---: | ---: | ---: | ---: |
+| `tree` — synthetic | 21.0 | 218.4 ms | 300.9 ms | **−26.2%** |
+| `usrshape` — synthetic, generated names | 11.0 | 59.0 ms | 72.6 ms | **−21.3%** |
+| `wide` — synthetic | 201.0 | 200.2 ms | 242.4 ms | **−16.2%** |
+| `narrow` — synthetic | 5.0 | 332.4 ms | 379.1 ms | **−12.6%** |
+| `usrnolnk` — `/usr`’s real names | 10.8 | 69.8 ms | 68.7 ms | **+1.5%** |
+| `/usr` — real tree | 10.8 | 70.8 ms | 63.3 ms | **+11.8%** |
 
-### Why fdu wins the half it wins
+fdu leads by 12–26% on every generated subject regardless of shape, ties the moment real
+filenames are introduced, and loses by 11.8% on the one real tree.
+
+An earlier draft of this note reported the first row alone as “22% faster, and that
+result held in every sitting”.
+It did hold — on that subject.
+It was read off the primary synthetic tree and generalised without checking it against
+the real-tree row printed in this document’s own matched-control table, which already
+disagreed. The correction is recorded rather than quietly fixed because the mistake is
+the one this whole section is about: a uniform corpus flatters fdu specifically, and the
+person most likely to be fooled by that is the one who just measured it.
+
+The two halves of the comparison have a single mechanism, pulling opposite ways.
+
+### Why fdu leads, and why the lead does not survive a real tree
 
 Not scheduling, not batching, and not the parallel walker: `ignore` achieves marginally
 *better* parallelism here (3.91 against 3.83). It is one line.
@@ -341,15 +357,30 @@ resolving a single component.
 | `parfloor stat` (dirfd-relative) | 184.3 ms | 695 ms | — |
 | `parfloor abspath` (absolute path) | 252.2 ms | 975 ms | **+37% wall, +40% CPU** |
 
-The absolute-path penalty is 67.9 ms; the entire fdu-to-`ignore` gap is 61.5 ms.
-One choice more than accounts for the whole result, and it is a choice fdu did not have
-to make deliberately — it falls out of using `DirEntry::metadata()` rather than
+The absolute-path penalty is 67.9 ms; the fdu-to-`ignore` gap on the primary synthetic
+subject is 61.5 ms. One choice more than accounts for the whole lead, and it is a choice
+fdu did not make deliberately — it falls out of using `DirEntry::metadata()` rather than
 re-statting a joined path.
 
-This is worth recording as a positive finding rather than only a comparison.
-Redundant path resolution is the largest single avoidable cost in this workload, it is
-**0.16 µs/entry** on this rig, and it is invisible in a syscall census because the call
-counts are identical.
+Redundant path resolution is therefore the largest single avoidable cost in this
+workload, **0.16 µs/entry** on this rig, and it is invisible in a syscall census because
+the call counts are identical.
+That is a real finding about the ecosystem’s walkers and it stands on its own.
+
+What it does not do is survive contact with `/usr`. Going from `usrshape` to `usrnolnk`
+— same entry count, same directory widths, no symlinks in either, only the filenames
+differ — moves fdu by 22.8 points against `ignore` while moving `ignore` itself barely
+at all. That is the same effect measured against the floor in Part 4, and it is large
+enough to eat a 21-point lead exactly.
+So fdu banks a structural advantage in how it stats and spends it back in how it handles
+names and paths; on a generated corpus only the first is visible.
+
+The last half of the comparison favours ripgrep outright.
+On *ripgrep’s* job fdu cannot compete at all, because that job is 118.9 ms and fdu’s
+floor is 184.3 ms: a search tool learns what it needs from `d_type` and never makes a
+metadata call, while a disk-usage tool must make one per entry.
+**The interesting difference between these two tools is not implementation quality, it
+is that one of them is allowed to skip 91% of the kernel work.**
 
 ## Part 4 — What this changes
 
@@ -411,14 +442,23 @@ files.
 Per-entry allocation counts are within 3% across the pair, so it is not allocation
 volume either.
 
-Two consequences. The cost lands on fdu and not on `ignore` (60.7 → 56.5 → 57.3, flat),
+Three consequences.
+The cost lands on fdu and not on `ignore` (60.7 → 56.5 → 57.3, flat),
 which points at fdu’s per-entry name and path handling — `fdu-2ubt`’s `PathBuf` clone
 per entry is the obvious candidate and this raises its value.
-And more importantly: **a uniform corpus hides roughly 15 percentage points of fdu’s
-distance from the floor.** [The loop](../guides/performance-loop.md#the-reference-tree)
-already requires a real nominated tree for exactly this reason; this quantifies the
-requirement on the aggregate tier, and it means any figure taken against `gen_tree.py`
-should be read as a lower bound on real-tree cost, not as an estimate of it.
+
+**A uniform corpus hides roughly 15 percentage points of fdu’s distance from the
+floor.** [The loop](../guides/performance-loop.md#the-reference-tree) already requires a
+real nominated tree for exactly this reason; this quantifies the requirement on the
+aggregate tier, and it means any figure taken against `gen_tree.py` should be read as a
+lower bound on real-tree cost, not as an estimate of it.
+
+And it is not only a bound on fdu’s own numbers — **it can invert a comparison.** The
+peer result in Part 3 is the demonstration: on generated trees fdu leads `ignore` by
+12–26% at every shape tested, and on `/usr` it trails by 11.8%, because the effect this
+table isolates is exactly large enough to consume the lead.
+A ranking established on a generated corpus is not evidence of a ranking, and this
+document produced the wrong one before the controls were run.
 
 ### The one `fstat` per directory is free to remove and worth little
 
@@ -453,6 +493,14 @@ would be needed before any of this is published as a product comparison.
 way a disk-usage tool would, not ripgrep.
 It says what the walker costs; it says nothing about ripgrep’s search performance, which
 is a different program.
+
+**One real tree is not a population.** The peer comparison inverts between generated
+trees and `/usr`, and `/usr` is the only real tree measured here.
+That is enough to retire the generated-corpus ranking; it is not enough to establish the
+real-tree one. A claim in either direction needs several real trees on more than one
+host, with the pinned binaries and installation attestation the
+[macOS tool comparison](../reports/report-2026-08-13-fdu-live-tool-comparison.md)
+carries.
 
 **The floor is a floor for this product.** `parfloor` retains nothing, reports no
 errors, handles no partial results, and has no delta contract.

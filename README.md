@@ -134,6 +134,38 @@ its own starting point on a 450k-entry tree: warm snapshot load **−31.4%**, wa
 revalidate **−25.3%**, cold indexed scan **−9.1%**. A warm open now runs about 23%
 faster than a cold scan, where that campaign began with it 69% *slower*.
 
+### How close is any of this to the machine?
+
+A relative loop cannot say, so the floor was measured directly: a hand-written parallel
+walker doing raw `getdents64` plus one `statx` per entry into four integer accumulators,
+retaining nothing.
+fdu’s exact summary runs at **1.17–1.35×** that floor, which means the
+whole remaining prize on that tier, in this regime, is 15–26%. Two of the levers people
+reach for first are already closed: batching the metadata calls through io_uring cuts
+syscalls 21× and runs **7.6× slower**, because a warm `statx` is 9% syscall boundary and
+91% kernel lookup.
+
+**Against the ecosystem’s walker.** A Rust program that needs to walk a tree usually
+reaches for [`ignore`](https://docs.rs/ignore), which is ripgrep’s walker.
+fdu does not use it — nor `walkdir` — and writing its own turns out to be worth
+something, but not unconditionally.
+Set to fdu’s job, statting every entry for its size, `ignore` is **12–26% slower than
+fdu on four generated trees of different shapes, level once the tree carries real
+filenames, and 11.8% faster on `/usr`**.
+
+The lead and its disappearance share one mechanism.
+`ignore` and `walkdir` stat each entry by full absolute path, so the kernel re-resolves
+every component from the root; fdu stats relative to the directory descriptor, which is
+worth 37% — and a real tree’s names and directory widths cost fdu roughly that much
+back. On *ripgrep’s own* job fdu cannot compete at all, and should not be expected to: a
+search tool learns what it needs from `d_type` and never makes a metadata call, while a
+disk-usage tool must make one per entry.
+
+Both are one virtualized Linux host with a warm cache, and are scouting evidence rather
+than product claims — the standard the macOS table above meets and this does not.
+The floor, the peer measurements, and what they change are in
+[the metadata-walk physics research](docs/project/research/research-2026-08-23-metadata-walk-physics.md).
+
 ### Two paths to an answer, and fdu labels which one you got
 
 **Without a usable cache, it is a fast walk and roll-up.** Every entry is enumerated and
