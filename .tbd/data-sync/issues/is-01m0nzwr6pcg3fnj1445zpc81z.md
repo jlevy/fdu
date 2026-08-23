@@ -3,9 +3,9 @@ type: is
 id: is-01m0nzwr6pcg3fnj1445zpc81z
 title: "Address review: PR #42 — CLI on the public API, and the fdu/fdu-core rename"
 kind: task
-status: open
+status: closed
 priority: 1
-version: 22
+version: 23
 labels: []
 dependencies: []
 child_order_hints:
@@ -31,6 +31,8 @@ child_order_hints:
   - is-01m0nzy19r3f8gg1rwz29bc5zh
   - is-01m0nzy1p6w4322fjr367wxt91
 created_at: 2026-08-23T00:21:26.358Z
-updated_at: 2026-08-23T00:22:08.838Z
+updated_at: 2026-08-23T00:43:25.312Z
+closed_at: 2026-08-23T00:43:25.312Z
+close_reason: "All 19 findings and both suggestions addressed: 21 fixed, none deferred, and two findings corrected where the review's premise or its suggested fix did not survive verification (R6's cross-crate include! would not reach the published .crate; R13's 126 was the compared-session count and was right). Disposition map posted on PR #42. make check green end to end, and make release-rehearse -- which is not in the gate, and is where the packaging blocker hid -- now completes."
 ---
 Structured review of PR #42 published as a PR comment. 2 Blocker, 3 High, 6 Medium, 8 Low findings plus 2 non-blocking suggestions. Each finding is a child bead; every one gets an explicit disposition (fixed, rebutted, or deferred).
