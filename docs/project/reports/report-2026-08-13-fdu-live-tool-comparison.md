@@ -216,6 +216,24 @@ counts each as one 512-byte block.
 That 170,496-byte semantic difference is negligible for timing but must remain visible
 in any total comparison.
 
+## The Linux Walker-Level Companion
+
+This matrix compares *products* on macOS: whole tools, each returning its own work
+class. A separate Linux measurement compares the *walkers* underneath them — fdu’s
+against [`ignore`](https://docs.rs/ignore), which is ripgrep’s, plus `walkdir` and
+`jwalk` — and reads all of them against a hand-written parallel syscall floor.
+Its results are in
+[the metadata-walk floor report](report-2026-08-23-metadata-walk-floor.md).
+
+Two of them bear on this document.
+fdu’s aggregate tier sits at 1.20–1.59× that floor depending on the tree, so the
+headroom this comparison’s lead rests on is smaller than the lead.
+And the peer ordering is not stable across subjects: fdu leads `ignore` by 12–26% on
+generated trees, ties once real filenames appear, and trails by 11.8% on `/usr`. That
+report is scouting evidence on one virtualized host and does not meet the bar this one
+does — no pinned binaries, no installation attestation, one real tree — so it orders
+work rather than supporting a claim.
+
 ## Limits and Next Work
 
 This is a local claim for one near-million-entry tree, one M1 Pro, one local APFS SSD,

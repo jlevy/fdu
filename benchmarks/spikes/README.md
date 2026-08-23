@@ -119,7 +119,7 @@ cargo build --release --manifest-path /tmp/peerwalk/Cargo.toml
 ```
 
 The numbers it produced are in
-[the metadata-walk physics research](../../docs/project/research/research-2026-08-23-metadata-walk-physics.md).
+[the metadata-walk floor report](../../docs/project/reports/report-2026-08-23-metadata-walk-floor.md).
 
 ## arena_spike.rs
 

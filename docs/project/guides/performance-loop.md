@@ -184,6 +184,18 @@ Generated corpora are uniform; real trees have a `node_modules` with 6,800 tiny
 JavaScript files at depth 12 next to a `.git` with a handful of large packs, and the
 distribution is what stresses a walker.
 
+The size of that difference is now measured rather than asserted, and it is larger than
+the accept gate. Against a syscall floor, on subjects matched for entry count and
+directory width, replacing generated filenames with a real tree’s moves fdu from 1.35×
+to 1.42× and `/usr` itself sits at 1.59×, while the same substitution moves a peer
+walker barely at all.
+Roughly 15 percentage points of fdu’s distance from the floor is invisible on a uniform
+corpus — enough to reverse a peer ranking, which
+[the floor report](../reports/report-2026-08-23-metadata-walk-floor.md) records
+happening to its own first draft.
+Treat a generated-corpus figure as a lower bound on real-tree cost, and never let one
+establish an ordering between tools.
+
 The loop therefore runs against a real directory the operator nominates, and treats it
 as immutable and confidential:
 

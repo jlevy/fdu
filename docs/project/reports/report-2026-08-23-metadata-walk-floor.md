@@ -1,16 +1,15 @@
-# Research: The Physics of a Metadata Walk, and Where fdu Sits Against It
+# The Metadata Walk Floor: What the Machine Costs, and Where fdu Sits Against It
 
 **Date:** 2026-08-23
 
-**Author:** fdu project, with Claude Code research assistance
+**Author:** fdu project, with Claude Code review assistance
 
-**Status:** Proposed
+**Status:** Current
 
 ## Overview
 
-Every experiment in
-[the ledger](../reports/report-2026-08-10-fdu-performance-experiments.md) answers the
-same shape of question: is this change faster than the code it came from.
+Every experiment in [the ledger](report-2026-08-10-fdu-performance-experiments.md)
+answers the same shape of question: is this change faster than the code it came from.
 Sixty-four of them now say yes or no with intervals.
 None of them answers the question that decides whether to run a sixty-fifth: **how much
 is left.**
@@ -23,10 +22,11 @@ every peer walker, and every queued mechanism against it.
 
 Three results carry the note:
 
-1. **The aggregate tier is close to done.** fdu’s `--view summary` runs at **1.17–1.35×
-   a hand-written parallel syscall floor** on this rig, so the entire remaining prize on
-   that tier, in this regime, is 15–26% — and `arena_spike`, the consumer redesign this
-   project has already prototyped, measures **1.06×**. There is no third act.
+1. **The aggregate tier is close to done, and how close depends on the tree.** fdu’s
+   `--view summary` runs at **1.20× a hand-written parallel syscall floor on the primary
+   synthetic subject and 1.59× on `/usr`**, so the remaining prize on that tier, in this
+   regime, is 17–37% — and `arena_spike`, the consumer redesign this project has already
+   prototyped, measures **1.06×**. There is no third act.
 2. **fdu leads ripgrep’s walker on every generated tree and loses on the real one.**
    Against [`ignore`](https://docs.rs/ignore) — ripgrep’s walker — doing the identical
    job, fdu is **12–26% faster on four synthetic subjects, tied on a tree carrying real
@@ -35,13 +35,13 @@ Three results carry the note:
    directory descriptor, worth **+37%** to fdu — and a real tree’s names and widths cost
    fdu about that much back, while costing `ignore` nothing.
 3. **Batching syscalls is the wrong lever, measured twice.** io_uring-batched `statx`
-   cuts syscalls 21× and runs **19× slower** than plain `statx` single-threaded, and
-   never beats plain threads at any thread count in either cache state.
-   The warm floor is VFS work, not the syscall boundary, which bounds what any bulk
-   interface could ever buy here at about **9%**.
+   cuts syscalls 21× and runs **5.9–7.6× slower** than plain `statx`, each ring against
+   its own single-threaded control, and never beats plain threads at any thread count in
+   either cache state. The warm floor is VFS work, not the syscall boundary, which bounds
+   what any bulk interface could ever buy here at about **9%**.
 
-Two queue items change priority as a result, and one methodological defect surfaces that
-affects how every generated-corpus number in this project should be read.
+Three queue items change priority as a result, and one methodological defect surfaces
+that affects how every generated-corpus number in this project should be read.
 
 Everything here is one virtualized host, warm page cache unless stated, and is scouting
 evidence under [the loop’s](../guides/performance-loop.md) rules: it orders the queue
@@ -52,7 +52,7 @@ and must not be quoted as product numbers.
 4-vCPU Intel Xeon @ 2.80 GHz KVM guest, 15 GiB RAM, kernel 6.18.44, ext4 on virtio,
 root; rustc 1.97.1; release profile.
 This is the same class of rig as
-[the consumer structural-headroom review](research-2026-08-15-consumer-structural-headroom.md),
+[the consumer structural-headroom review](../research/research-2026-08-15-consumer-structural-headroom.md),
 so its numbers are directly comparable.
 
 Five subjects, because one tree cannot separate size from shape from content:
@@ -71,6 +71,19 @@ Five subjects, because one tree cannot separate size from shape from content:
 second reproduces `/usr`’s actual directory tree and filenames with every symlink
 replaced by an ordinary file.
 Between the three, size, width, names, and symlinks each vary alone.
+
+Two binaries were measured, either side of the workspace split that moved the engine to
+`fdu-core` and put the CLI on its public API. The split touches exactly the layer the
+aggregate tier’s one-shot plan runs through, so it could not be assumed to carry.
+It did, on the three subjects re-run against it: 1.20× the floor against 1.17× before,
+`usrnolnk` at +1.7% against `ignore` where it was +1.5%, `/usr` at +12.4% where it was
++11.8%, and every tally identical.
+
+The full sweeps below — the sixteen-program floor table and the six-subject peer
+comparison — are the pre-split binary, because re-running both in full would move every
+number by less than the drift between sittings.
+Where a post-split value exists it is given beside the original.
+Nothing in the record depends on the difference.
 
 Every instrument reports the same five tallies, and on the primary subject all of them
 agree exactly — 19,999 directories, 419,999 entries, 1,199,792,066 apparent bytes,
@@ -231,20 +244,39 @@ Peak RSS has the harness’s 11.4 MiB copy-on-write baseline subtracted.
 | `peerwalk walkdir` j1 | five tallies | 892.7 ms | 4.84 | 903 ms | 1.01 | ~0 |
 | `walkspike uring` j1 | five tallies | 3,534.2 ms | 19.18 | 4,341 ms | 1.23 | ~0 |
 
-The floor implementation matters at the margin and should be stated rather than hidden:
-`parfloor` keeps a queue of directory *paths*, as `walkspike` does, and pays a `strdup`
-and a mutex per directory.
+Two things about that ratio have to be stated rather than hidden, because a single
+number for it would be wrong in both directions.
+
+**The floor implementation matters at the margin.** `parfloor` keeps a queue of
+directory *paths*, as `walkspike` does, and pays a `strdup` and a mutex per directory.
 A variant holding directory descriptors instead measured 173.8–177.3 ms across sittings.
-So fdu’s aggregate tier is **1.17× the committed floor and 1.32–1.35× the tightest floor
-measured** — call it within 20–35%, and note that the residual is smaller than the
-disagreement between two reasonable definitions of “floor”.
+On this subject fdu is 1.17–1.20× the committed floor and 1.32–1.35× the tightest one —
+a residual smaller than the disagreement between two reasonable definitions of “floor”.
+
+**And the tree matters much more than the implementation does.** The ratio is not a
+constant of the program; it is a property of the program *and* the tree, and it moves by
+more than a third across subjects:
+
+| Subject | fdu | floor | ×floor |
+| --- | ---: | ---: | ---: |
+| `narrow` — 400k synthetic, 5 entries/dir | 312.2 ms | 269.6 ms | **1.16** |
+| `tree` — 420k synthetic, 21 entries/dir | 197.6 ms | 164.3 ms | **1.20** |
+| `usrshape` — 86k synthetic, generated names | 51.2 ms | 37.9 ms | **1.35** |
+| `usrnolnk` — 84k, `/usr`’s real names | 57.6 ms | 40.6 ms | **1.42** |
+| `wide` — 402k synthetic, 201 entries/dir | 193.6 ms | 128.7 ms | **1.50** |
+| `/usr` — 85k real tree | 70.8 ms | 44.7 ms | **1.59** |
+
+Quoting the primary subject alone would claim 17% of headroom where the real tree says
+37%. Part 4 explains why the real-tree rows sit highest, and it is the same effect that
+decides the peer comparison in Part 3.
 
 ### The aggregate tier is nearly finished
 
-At 1.17–1.35×, the whole remaining prize on `--view summary` in this regime is 15–26%,
-and `arena_spike` at 1.06× shows what claims it: the representation change.
+At 1.20× on the primary subject and 1.59× on `/usr`, the remaining prize on
+`--view summary` in this regime is 17–37%, and `arena_spike` at 1.06× shows what claims
+it: the representation change.
 Reading that against
-[the structural-headroom review’s](research-2026-08-15-consumer-structural-headroom.md)
+[the structural-headroom review’s](../research/research-2026-08-15-consumer-structural-headroom.md)
 conclusion sharpens it usefully.
 That review measured the redesign as worth ~4× on the *tree* view.
 Against the floor it is worth something stronger and more final: it lands essentially
@@ -486,8 +518,8 @@ Linux only — on macOS the equivalent bound is what makes the bulk reader worth
 0.8.1, resolved at the time of this note.
 ripgrep’s dependency declaration was read from the crates.io index at version 15.2.0. A
 pinned installation attestation of the kind
-[the tool comparison](../reports/report-2026-08-13-fdu-live-tool-comparison.md) carries
-would be needed before any of this is published as a product comparison.
+[the tool comparison](report-2026-08-13-fdu-live-tool-comparison.md) carries would be
+needed before any of this is published as a product comparison.
 
 **`peerwalk` measures the walkers, not the tools.** It is a harness calling `ignore` the
 way a disk-usage tool would, not ripgrep.
@@ -499,8 +531,7 @@ trees and `/usr`, and `/usr` is the only real tree measured here.
 That is enough to retire the generated-corpus ranking; it is not enough to establish the
 real-tree one. A claim in either direction needs several real trees on more than one
 host, with the pinned binaries and installation attestation the
-[macOS tool comparison](../reports/report-2026-08-13-fdu-live-tool-comparison.md)
-carries.
+[macOS tool comparison](report-2026-08-13-fdu-live-tool-comparison.md) carries.
 
 **The floor is a floor for this product.** `parfloor` retains nothing, reports no
 errors, handles no partial results, and has no delta contract.

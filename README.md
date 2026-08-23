@@ -138,12 +138,12 @@ faster than a cold scan, where that campaign began with it 69% *slower*.
 
 A relative loop cannot say, so the floor was measured directly: a hand-written parallel
 walker doing raw `getdents64` plus one `statx` per entry into four integer accumulators,
-retaining nothing.
-fdu’s exact summary runs at **1.17–1.35×** that floor, which means the
-whole remaining prize on that tier, in this regime, is 15–26%. Two of the levers people
-reach for first are already closed: batching the metadata calls through io_uring cuts
-syscalls 21× and runs **7.6× slower**, because a warm `statx` is 9% syscall boundary and
-91% kernel lookup.
+retaining nothing. fdu’s exact summary runs at **1.20×** that floor on a 420k generated
+tree and **1.59×** on `/usr`, so the remaining prize on that tier, in this regime, is
+17–37% — how close depends on the tree, and the real one is furthest.
+Two of the levers people reach for first are already closed: batching the metadata calls
+through io_uring cuts syscalls 21× and runs **6–8× slower**, because a warm `statx` is
+9% syscall boundary and 91% kernel lookup.
 
 **Against the ecosystem’s walker.** A Rust program that needs to walk a tree usually
 reaches for [`ignore`](https://docs.rs/ignore), which is ripgrep’s walker.
@@ -151,7 +151,7 @@ fdu does not use it — nor `walkdir` — and writing its own turns out to be wo
 something, but not unconditionally.
 Set to fdu’s job, statting every entry for its size, `ignore` is **12–26% slower than
 fdu on four generated trees of different shapes, level once the tree carries real
-filenames, and 11.8% faster on `/usr`**.
+filenames, and about 12% faster on `/usr`**.
 
 The lead and its disappearance share one mechanism.
 `ignore` and `walkdir` stat each entry by full absolute path, so the kernel re-resolves
@@ -164,7 +164,7 @@ disk-usage tool must make one per entry.
 Both are one virtualized Linux host with a warm cache, and are scouting evidence rather
 than product claims — the standard the macOS table above meets and this does not.
 The floor, the peer measurements, and what they change are in
-[the metadata-walk physics research](docs/project/research/research-2026-08-23-metadata-walk-physics.md).
+[the metadata-walk floor report](docs/project/reports/report-2026-08-23-metadata-walk-floor.md).
 
 ### Two paths to an answer, and fdu labels which one you got
 

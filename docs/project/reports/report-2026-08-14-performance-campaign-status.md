@@ -314,6 +314,18 @@ the loop’s first step).
 
 Stated plainly, because these are the places a confident number could mislead.
 
+**A generated corpus can invert a comparison, not merely understate a cost.** Measured
+against a syscall floor, a real tree’s filenames and directory widths cost fdu about 15
+percentage points that a uniform corpus of matched size and shape does not, and cost the
+peer walker nothing.
+That is large enough to reverse a ranking, and it did:
+[the metadata-walk floor report](report-2026-08-23-metadata-walk-floor.md) first claimed
+fdu beat ripgrep’s walker by 22% on the strength of the primary generated subject, and a
+paired sweep across six trees then put fdu 12–26% ahead on every generated one, level
+once real filenames appear, and 11.8% behind on `/usr`. Any figure taken against
+`gen_tree.py` is a lower bound on real-tree cost, and no ranking established on one is
+evidence of a ranking at all.
+
 **Platform asymmetry.** 57 experiments on macOS, 3 on Linux.
 Every Linux constant not explicitly measured is inherited.
 
@@ -401,7 +413,7 @@ The full protocol, including the accept rule and the hypothesis registry, is in
 | [Systems optimization research](../research/research-2026-08-14-systems-performance-optimization-rust.md) | The general problem, Rust-specific |
 | [Ecosystem survey](../research/research-2026-08-14-instrumentation-ecosystem-survey.md) | What the ecosystem already solves |
 | [Structural review](../research/research-2026-08-14-structural-performance-review.md) | What 30 hypotheses had in common, and missed |
-| [Metadata-walk physics](../research/research-2026-08-23-metadata-walk-physics.md) | The measured floor for this workload, and every tier and peer read against it |
+| [Metadata-walk floor](report-2026-08-23-metadata-walk-floor.md) | The measured floor for this workload, and every tier and peer read against it |
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

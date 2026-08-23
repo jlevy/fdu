@@ -56,6 +56,10 @@ These are the ones a reader of this page should know about:
   **Blocks every positive peer-comparison claim**, including the current fdu-versus-dust
   and fdu-versus-dumac results, which are ties and decisive-loss respectively on an
   uncontrolled host.
+- `fdu-lk9u` — the second blocker on peer claims, and a larger one: the corpus.
+  The Linux walker comparison inverts with the subject — fdu leads ripgrep’s `ignore` by
+  12–26% on four generated trees and trails by about 12% on `/usr`, the only real tree
+  measured. A quiet host is not sufficient if the tree is generated.
 - `fdu-f6n7` — narrow the `getattrlistbulk` attribute set to what the plan consumes.
   The registered path to the scalar class: fdu requests ctime, inode, and flags per
   entry for a cache fingerprint the transient summary provably never uses, and measures
