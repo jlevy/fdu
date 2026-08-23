@@ -10,7 +10,7 @@ experiment:
   title: Reject higher fixed worker counts on mixed-phase APFS
   date: "2026-08-15"
   hypotheses:
-    - H87-fixed-worker-knee
+    - H96
   subject:
     tree_label: adaptive-fast-slow-100k
     tree_root_id: 314ea87cd4c0f7e4669757bc583cc1551ab6b944a86c267db74da7de704a6584
@@ -181,8 +181,13 @@ experiment:
 
 ## Hypothesis
 
-H87-fixed-worker-knee: if the slow suffix benefits from deeper concurrency, a fixed
-count above six should identify a useful hardware bound before controller design.
+H96: if the slow suffix benefits from deeper concurrency, a fixed count above six should
+identify a useful hardware bound before controller design.
+
+Recorded at the time as `H87-fixed-worker-knee`, a local id coined before the registry
+assigned H87 to the `spawn_save` deep clone (exp-063). Renumbered to the next free id so
+no number means two things, per the loop’s own rule.
+Only the label changed; every measurement below is as recorded.
 
 ## What was tried
 

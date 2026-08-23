@@ -68,7 +68,7 @@ Its value is not any single step but that each pass leaves the next one cheaper.
 
 ### Why the accept rule is strict
 
-Of 64 recorded experiments, **28 were rejected** — close to the 31 accepted.
+Of 66 recorded experiments, **28 were rejected** — close to the 33 accepted.
 Several were rejected despite a real, working mechanism, because the measured effect did
 not clear 3%. That is the rule doing its job: a real mechanism is exactly what makes a
 small number feel worth keeping, and a codebase that accumulates 1% wins for 50 lines
@@ -260,8 +260,8 @@ wide shallow trees.
 This is the most important section for anyone reading a number and deciding what it
 means.
 
-**The evidence is still overwhelmingly macOS.** Of 64 recorded experiments, **57 were
-measured on Darwin and 7 on Linux.** The macOS work is mature — a bulk-attribute reader
+**The evidence is still overwhelmingly macOS.** Of 66 recorded experiments, **57 were
+measured on Darwin and 9 on Linux.** The macOS work is mature — a bulk-attribute reader
 using `getattrlistbulk`, tuning constants measured across three APFS regimes, a
 scheduler tuned against a real device.
 The Linux work is younger but no longer trivial: the consumer campaign landed there

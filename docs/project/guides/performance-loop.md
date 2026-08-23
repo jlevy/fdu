@@ -196,6 +196,47 @@ happening to its own first draft.
 Treat a generated-corpus figure as a lower bound on real-tree cost, and never let one
 establish an ordering between tools.
 
+The content tier has its own version of this, and it cuts the other way — a generated
+corpus can make a change look *better* than it is.
+`gen_tree.py` writes anything over 256 bytes with `os.truncate`, so its files are holes:
+595.7 MB apparent against 26.3 MB allocated on the 15,977-file subject, a factor of
+22.6. Reading a hole costs nothing, so per-file bookkeeping is most of a cold content
+job there and a corner of one on real source.
+exp-064 measured a change at −13.40% on that tree; exp-065 measured the same binaries at
+−2.38% on 10,703 files of real Rust source, both correct, the same absolute saving
+against denominators that are not comparable.
+Depth compounds it: the generated tree is depth 16 against the real tree’s 10, and a
+per-file ancestor walk pays for every level.
+
+Two fields in the subject record predict this before a run happens, and both were
+sitting in exp-064 unread.
+`tree_apparent_bytes` far above `tree_allocated_bytes` means sparse files and therefore
+a flattered content-tier percentage; `tree_max_depth` sets how much a per-file ancestor
+walk costs. The ledger now prints the ratio whenever it reaches 2×, so a reader meets it
+beside the number rather than after being surprised by one.
+
+### Say where the tree came from
+
+Every experiment must record `tree_provenance`: the generator command with its
+arguments, the clone source and revision, or the reason no recipe exists.
+Set `tree_reconstructible` when following it yields a tree of the same shape.
+`make perf-record` takes `--tree-provenance` and `--tree-reconstructible`, which is the
+moment to write it — the run itself cannot know.
+
+The digest is not a substitute, and the two answer different questions.
+`tree_engine_digest` binds inode, device, mtime and ctime, so it tells you whether the
+tree in front of you is the one that was measured, and a regenerated tree never matches
+it: re-running `gen_tree.py` reproduced exp-064’s subject on all eight shape fields and
+produced a different digest.
+Shape is what a timing rests on and what provenance can promise.
+
+Where no recipe exists — a live workspace, an unpinned clone — say so in the field
+rather than leaving it empty.
+A result whose subject cannot be obtained is still evidence, but only its author can
+ever re-run it, and the reader is entitled to know that before building on it.
+Of the 65 artifacts recorded before this rule, exactly one named how its subject was
+built, and that one omitted the argument that determined the tree.
+
 The loop therefore runs against a real directory the operator nominates, and treats it
 as immutable and confidential:
 
@@ -574,7 +615,7 @@ Kept as a live list; the *ordering* — which of these to run next and why — i
 Numbering is shared with the
 [performance-frontier research](../research/research-2026-08-10-performance-frontier.md),
 whose backlog owns H12–H46; new hypotheses from any source take the next free number
-(currently H94) so no id ever means two things.
+(currently H100) so no id ever means two things.
 Each is stated so it can be wrong, with the metric that would show it.
 Status is updated as experiments resolve them; see the ledger for results.
 
@@ -597,6 +638,20 @@ Status is updated as experiments resolve them; see the ledger for results.
 | H73 | Sorting each directory’s entries by `d_ino` before statting turns random inode reads into near-sequential ones on ext4 and btrfs. | controlled-cold wall down substantially; warm unchanged | **Unresolved** (`fdu-lf3v`). The scouting rig measured −2.3% cold with an interval crossing zero and +6.8% warm from the sort itself, but its guest-cold reads were host-cached, so the cold claim was untestable there. Needs bare metal, and any implementation must stay behind a cold-suspected trigger. |
 | H76 | Linux cold scans are under-parallelized: `diskus` runs three times the core count and the automatic policy’s thresholds were calibrated on APFS. | controlled-cold wall down at least 3% at the swept depth; warm unchanged | **Queued** (`fdu-tk1b`). The scouting rig measured `diskus` 22.8% ahead of the summary plan cold while tying warm. Sweep depth per regime and filesystem rather than inheriting the APFS constants. |
 | H77 | Both fdu and dumac pay at least one directory open plus one bulk call across 110,369 directories, and exp-045/046 profiles put about 95% of worker samples there. macOS `searchfs` reads the volume catalog without opening each directory, removing that per-directory work rather than shaving it. | macOS cold and warm wall down substantially at near-million scale, with exact oracle parity | **Speculative, unscreened** (`fdu-9716`). Needs parent-id tree reconstruction, subtree scoping, a permission-semantics audit, non-UTF-8 handling, and probe-and-fallback. Prototype standalone before any production path. |
+
+| H96 | If the slow suffix of a mixed-phase APFS scan benefits from deeper concurrency,
+a fixed worker count above six should identify a useful hardware bound before any
+controller is designed.
+| one of 8, 10, or 16 fixed workers beats 6 on mixed-phase wall by at least 3% |
+**Refuted** (exp-059): eight workers were 35.55% *slower* than six, and ten and sixteen
+worse still — the knee is below the performance-core count, not above it.
+Recorded at the time as `H87-fixed-worker-knee`, before the registry assigned H87 to the
+`spawn_save` deep clone; renumbered here so no id means two things.
+|
+
+| H97 | Collecting a bounded worker-policy and backend trace should cost no more than 3% of scan wall time when explicitly enabled, which is what makes the adaptive scheduler observable at all. | scan wall within the +3% non-regression margin with diagnostics on | **Confirmed** (exp-056): −0.55% [−1.09%, +0.17%], inside the margin, so the trace is affordable where it is needed. Recorded as `H86-observability` before the registry assigned H86 to the structural consumer rewrite; renumbered here. |
+| H98 | Revisiting the 16,384-entry service-time decision should detect a late slow phase on APFS without losing more than 3% wall or crossing the pre-registered resource limits. | mixed-phase wall no worse than −3%, every resource gate held | **Refuted** (exp-057): +58.49% [+49.94%, +66.38%], and CPU, system-CPU, RSS, and scheduler-pressure gates all exceeded. Recorded as `H86-repeated-windows`; renumbered here. |
+| H99 | Staged expansion gated by useful ready work should correct the late slow-phase sensitivity without the contention cost of jumping straight to 16 workers. | mixed-phase wall no worse than −3% with gates held, beating H98’s immediate jump | **Refuted** (exp-058): +60.73% [+49.80%, +67.33%] — worse than the form it was designed to improve on, and over the CPU, system-CPU, and scheduler-pressure gates. Together with H96 and H98 this closes deeper APFS concurrency as a direction: the knee sits below six workers, not above it. Recorded as `H86-staged-gated`; renumbered here. |
 
 ### Index and allocation
 
@@ -641,8 +696,8 @@ Status is updated as experiments resolve them; see the ledger for results.
 | H80 | `BasicAccumulator::push_text` is the largest named analyzer cost in the frozen SLOC profile because it computes prose-only word, paragraph, and logical-word statistics for code files and discards them afterward. Selecting its prose collectors from the already-known content family should remove that work without changing admission or line semantics. | Immutable self-host `code-sloc` wall and component down at least 3%; CPU and semantic digest no worse; `content-basic`, cache-hit, golden, and unit semantics unchanged | **Refuted** (exp-048): the 12-pair `code-sloc` wall interval crossed zero and the median failed the 3% bar; cache-hit and basic jobs were neutral. Reverted. |
 | H81 | `markdown-prose-v1` knows the admitted file size before reading but grows its retained parser buffer from zero. Reserving the bounded file size once should remove repeated growth and copying from the Markdown path. | Generated `markdown-prose` wall and component down at least 3% with both intervals below zero; peak RSS, document-cache-hit, semantic digest, goldens, and self-host behavior no worse | **Refuted** (exp-049): Markdown wall moved −3.55%, but its paired interval [−14.49%, +7.45%] crossed zero; cache-hit behavior was neutral. Most files already fit one 64 KiB read, so the hint removed too little work. Reverted. |
 | H82 | `BasicAccumulator::push()` allocates and copies every read chunk into a temporary vector even when no split UTF-8 sequence is pending. Decoding ordinary complete chunks in place should remove one allocation and one full byte copy per read while retaining the carry path for boundary splits. | Generated `text-prose` and `markdown-prose` wall and component down at least 3% with intervals below zero on the primary Markdown job; peak RSS, cache-hit, semantic digests, chunk-boundary tests, goldens, and self-host behavior no worse | **Confirmed** (exp-050, `2fef9bf`): the 32-pair Markdown run improved wall 12.04% [−16.46%, −8.38%], component 13.67%, user CPU 12.24%, and peak RSS 9.12%. Plain text, self-host wall, and cache hits were neutral; all semantic oracles passed. |
-| H94 | `ContentIndex::merge_ancestors` walks every ancestor of every file and does an independent `BTreeMap<PathBuf, ContentRollUp>` descent at each level, so a warm content open pays O(depth × log n) `compare_components` calls per file plus one `to_path_buf()` per ancestor per file even when the roll-up already exists. The map is only ever point-queried, so its ordering is unobservable and it can be a `HashMap`. | `content-cache-hit` wall and component down at least 3% with both intervals below zero; RSS no worse; content digest and rendered views identical | **Confirmed, well past its prediction** (`fdu-cq7t`): wall −25.42% [−26.51%, −24.46%] and component −27.13% [−29.00%, −26.24%] over 24 pairs on a 15,977-file tree; RSS +0.5%, neutral. Instructions −34.53%, and `merge_ancestors` inclusive 43.73% → 14.07% of profile (−78.9% absolute). The `--depth 12` multi-view JSON render is byte-identical, so intermediate roll-ups are verified and not only the root total. |
-| H95 | Both tiers of the type cascade are `GENERATED_RULES.iter().filter(..).max_by_key(..)`, and `max_by_key` never short-circuits, so every file pays all 65 rules and 167 extension strings. Classification also runs twice per warm file: once to build each candidate, once again in `apply_analysis`’s staleness guard. Two `LazyLock` hash tables make both call sites cheap without touching the public candidate contract. | `content-cache-hit` wall and component down at least 3% with both intervals below zero; RSS no worse; classification byte-identical against the scan over every declared rule key | **Confirmed on the warm path; its cold-transfer prediction refuted** (`fdu-9dcj`): warm wall −5.08% [−6.39%, −3.60%] and component −5.44% [−7.27%, −4.11%] over 40 pairs against the post-H94 base; `classify_path_with_prefix` −41.4% absolute. The predicted transfer to the analysis path did not survive: `content-basic` read −4.20% [−6.10%, −0.06%] at 24 pairs and −2.34% [−5.05%, −0.64%] at 40, direction right but below the bar once settled — a worked example of why a 24-pair reading is not a result. |
+| H94 | `ContentIndex::merge_ancestors` walks every ancestor of every file and does an independent `BTreeMap<PathBuf, ContentRollUp>` descent at each level, so a warm content open pays O(depth × log n) `compare_components` calls per file plus one `to_path_buf()` per ancestor per file even when the roll-up already exists. The map is only ever point-queried, so its ordering is unobservable and it can be a `HashMap`. | `content-cache-hit` wall and component down at least 3% with both intervals below zero; RSS no worse; content digest and rendered views identical | **Confirmed, well past its prediction** (`fdu-cq7t`): wall −25.42% [−26.51%, −24.46%] and component −27.13% [−29.00%, −26.24%] over 24 pairs on a 15,977-file tree; RSS +0.5%, neutral. Instructions −34.53%, and `merge_ancestors` inclusive 43.73% → 14.07% of profile (−78.9% absolute). The `--depth 12` multi-view JSON render is byte-identical, so intermediate roll-ups are verified and not only the root total. **Re-measured against main 44 commits later** (exp-065): reproduces on its own regenerated subject and transfers to a dense real tree at −25.78% [−26.74%, −24.52%] warm. The cold `content-basic` figure recorded alongside it (−13.40%) does not transfer — −2.38% on a dense tree — because that subject is depth 16 and 22.6× sparse. |
+| H95 | Both tiers of the type cascade are `GENERATED_RULES.iter().filter(..).max_by_key(..)`, and `max_by_key` never short-circuits, so every file pays all 65 rules and 167 extension strings. Classification also runs twice per warm file: once to build each candidate, once again in `apply_analysis`’s staleness guard. Two `LazyLock` hash tables make both call sites cheap without touching the public candidate contract. | `content-cache-hit` wall and component down at least 3% with both intervals below zero; RSS no worse; classification byte-identical against the scan over every declared rule key | **Confirmed on the warm path; its cold-transfer prediction refuted** (`fdu-9dcj`): warm wall −5.08% [−6.39%, −3.60%] and component −5.44% [−7.27%, −4.11%] over 40 pairs against the post-H94 base; `classify_path_with_prefix` −41.4% absolute. The predicted transfer to the analysis path did not survive: `content-basic` read −4.20% [−6.10%, −0.06%] at 24 pairs and −2.34% [−5.05%, −0.64%] at 40, direction right but below the bar once settled — a worked example of why a 24-pair reading is not a result. exp-065 makes the same point from the other side: the cold-path figure H95 was denied is subject-shaped too, reading −2.38% on a dense tree where the generated one gave −13.56%. |
 
 ### Warm start
 

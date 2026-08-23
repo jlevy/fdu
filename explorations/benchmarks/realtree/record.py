@@ -53,6 +53,23 @@ def main(argv: Sequence[str]) -> int:
     parser.add_argument("--new-unsafe", type=int, default=0)
     parser.add_argument("--failure-mode", action="append", default=[])
     parser.add_argument("--complexity-note", default="")
+    parser.add_argument(
+        "--tree-provenance",
+        default="",
+        help=(
+            "How this run's tree was obtained, precisely enough to obtain it again: "
+            "the generator command with its arguments, the clone source and revision, "
+            "or the reason no recipe exists. The run cannot infer this."
+        ),
+    )
+    parser.add_argument(
+        "--tree-reconstructible",
+        action="store_true",
+        help=(
+            "Following --tree-provenance yields a tree with this run's engine digest. "
+            "Omit for a live workspace or an unpinned clone."
+        ),
+    )
     parser.add_argument("--control-variant", default=None)
     parser.add_argument("--candidate-variant", default=None)
     parser.add_argument("--body", type=Path, help="Markdown body file; a stub is written otherwise")
@@ -90,6 +107,8 @@ def main(argv: Sequence[str]) -> int:
             "reason": arguments.reason,
             "commit": arguments.commit,
         },
+        tree_provenance=arguments.tree_provenance,
+        tree_reconstructible=arguments.tree_reconstructible,
     )
 
     body = (

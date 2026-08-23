@@ -621,9 +621,22 @@ identified on any platform:
    pre-change profile, and `files: BTreeMap<PathBuf, FileAnalysis>` whose `remove` was
    11.09%.
 
+   **Both figures were re-measured against main 44 commits later** (exp-065), and they
+   do not carry equally.
+   On a regenerated copy of exp-064’s own subject both reproduced — `content-basic`
+   −13.56%, `content-cache-hit` −32.61% — so the record is sound.
+   On a dense real tree, 10,703 files of Rust source at depth 10, the warm number
+   transfers at −25.78% [−26.74%, −24.52%] and the cold one collapses to −2.38%, under
+   the bar. exp-064’s subject is depth 16 and 22.6× sparse by its own recorded byte
+   totals, so per-file bookkeeping is most of its cold work and a corner of a real
+   tree’s. The verdict rested on `content-cache-hit` and stands; read the −13.40% as
+   evidence about that subject.
+
    The larger successor is the structural form of H94 — key roll-ups by `EntryId` and
    defer to one bottom-up pass, the shape that won −51.9% on snapshot load in
-   `fdu-91ts`. That is now the biggest remaining item on the content tier.
+   `fdu-91ts`. That is now the biggest remaining item on the content tier, and it is the
+   content-tier instance of H86: same argument, one level down, and the same reason to
+   measure it on a dense subject rather than a generated one.
 
    The transferable lesson is method, not this function: **a flat profile has now sent
    this campaign at the wrong function twice on the same code path**, once at the

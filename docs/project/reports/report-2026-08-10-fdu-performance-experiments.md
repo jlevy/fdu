@@ -41,6 +41,8 @@ different question with different guarantees, and never enter the accept rule: `
   state.
 - Identified as `c95b1edda5762c39…`, the SHA-256 of its path.
   The path itself is deliberately not recorded.
+- Provenance unrecorded, so this tree cannot be obtained again.
+  The numbers stand as evidence about it; nobody else can re-run them.
 
 **The machine.**
 
@@ -65,7 +67,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | --- | --- | --- | ---: |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
-| Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 1 |
+| Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 
 ## Every experiment, including the failures
 
@@ -130,15 +132,16 @@ dead end.
 | 053 | [Move instrumentation to a runtime toggle and measure all three of its costs](#exp053--move-instrumentation-to-a-runtime-toggle-and-measure-all-three-of-its-costs) | — | `cold-scan-index` | -1.3% | ✅ accepted |
 | 054 | [Validate the Linux campaign’s cumulative effect on macOS](#exp054--validate-the-linux-campaigns-cumulative-effect-on-macos) | — | `warm-revalidate` | -15.7% | ✅ accepted |
 | 055 | [Validate review fixes on macOS](#exp055--validate-review-fixes-on-macos) | — | `cold-scan-index` | -0.9% | ✅ accepted |
-| 056 | [Bound adaptive scan diagnostics overhead](#exp056--bound-adaptive-scan-diagnostics-overhead) | H86-observability | `cold-scan-index` | -0.5% | ✅ accepted |
-| 057 | [Reject repeated adaptive worker windows on APFS](#exp057--reject-repeated-adaptive-worker-windows-on-apfs) | H86-repeated-windows | `adaptive-scan-index` | +58.5% | ❌ rejected |
-| 058 | [Reject staged adaptive worker expansion on APFS](#exp058--reject-staged-adaptive-worker-expansion-on-apfs) | H86-staged-gated | `adaptive-scan-index` | +60.7% | ❌ rejected |
-| 059 | [Reject higher fixed worker counts on mixed-phase APFS](#exp059--reject-higher-fixed-worker-counts-on-mixedphase-apfs) | H87-fixed-worker-knee | `adaptive-scan-index` | +35.6% | ❌ rejected |
+| 056 | [Bound adaptive scan diagnostics overhead](#exp056--bound-adaptive-scan-diagnostics-overhead) | H97 | `cold-scan-index` | -0.5% | ✅ accepted |
+| 057 | [Reject repeated adaptive worker windows on APFS](#exp057--reject-repeated-adaptive-worker-windows-on-apfs) | H98 | `adaptive-scan-index` | +58.5% | ❌ rejected |
+| 058 | [Reject staged adaptive worker expansion on APFS](#exp058--reject-staged-adaptive-worker-expansion-on-apfs) | H99 | `adaptive-scan-index` | +60.7% | ❌ rejected |
+| 059 | [Reject higher fixed worker counts on mixed-phase APFS](#exp059--reject-higher-fixed-worker-counts-on-mixedphase-apfs) | H96 | `adaptive-scan-index` | +35.6% | ❌ rejected |
 | 060 | [One-slot extension memo in front of derive-and-intern](#exp060--oneslot-extension-memo-in-front-of-deriveandintern) | H89 | `cold-scan-index` | +1.6% | ❌ rejected |
 | 061 | [CRC-32C slicing-by-8 on the snapshot digest](#exp061--crc32c-slicingby8-on-the-snapshot-digest) | H88 | `cold-snapshot-save` | -12.2% | ✅ accepted |
 | 062 | [Skip unread journal capture on the bootstrap apply path](#exp062--skip-unread-journal-capture-on-the-bootstrap-apply-path) | H90 | `cold-scan-index` | -5.1% | ✅ accepted |
 | 063 | [Share the index with the snapshot writer instead of deep-cloning it](#exp063--share-the-index-with-the-snapshot-writer-instead-of-deepcloning-it) | H87 | `cold-open-save` | -10.5% | ✅ accepted |
 | 064 | [Content roll-up lookup and indexed type-rule tiers](#exp064--content-rollup-lookup-and-indexed-typerule-tiers) | H94, H95 | `content-cache-hit` | -30.3% | ✅ accepted |
+| 065 | [Validate the content roll-up change on a dense real tree](#exp065--validate-the-content-rollup-change-on-a-dense-real-tree) | H94, H95 | `content-cache-hit` | -25.8% | ✅ accepted |
 
 ## The experiments
 
@@ -2058,8 +2061,7 @@ Full record:
 
 ### exp-056 — Bound adaptive scan diagnostics overhead
 
-✅ accepted · 2026-08-15 · H86-observability · commit
-`1f7251149f9ec8147a7ebc037a31555ae1351bde`
+✅ accepted · 2026-08-15 · H97 · commit `1f7251149f9ec8147a7ebc037a31555ae1351bde`
 
 Control: scan without diagnostics
 
@@ -2088,8 +2090,7 @@ Full record:
 
 ### exp-057 — Reject repeated adaptive worker windows on APFS
 
-❌ rejected · 2026-08-15 · H86-repeated-windows · commit
-`1d70c628cc4ed262ed2e4d04d992eb977b73c8b1`
+❌ rejected · 2026-08-15 · H98 · commit `1d70c628cc4ed262ed2e4d04d992eb977b73c8b1`
 
 Control: shipped one-shot controller
 
@@ -2118,8 +2119,7 @@ Full record:
 
 ### exp-058 — Reject staged adaptive worker expansion on APFS
 
-❌ rejected · 2026-08-15 · H86-staged-gated · commit
-`1d70c628cc4ed262ed2e4d04d992eb977b73c8b1`
+❌ rejected · 2026-08-15 · H99 · commit `1d70c628cc4ed262ed2e4d04d992eb977b73c8b1`
 
 Control: shipped one-shot controller
 
@@ -2148,8 +2148,7 @@ Full record:
 
 ### exp-059 — Reject higher fixed worker counts on mixed-phase APFS
 
-❌ rejected · 2026-08-15 · H87-fixed-worker-knee · commit
-`1d70c628cc4ed262ed2e4d04d992eb977b73c8b1`
+❌ rejected · 2026-08-15 · H96 · commit `1d70c628cc4ed262ed2e4d04d992eb977b73c8b1`
 
 Control: fixed six workers
 
@@ -2338,6 +2337,45 @@ the bar.
 Full record:
 [`exp-064-content-roll-up-lookup-and-indexed-type-rule-tiers.md`](../experiments/exp-064-content-roll-up-lookup-and-indexed-type-rule-tiers.md)
 
+### exp-065 — Validate the content roll-up change on a dense real tree
+
+✅ accepted · 2026-08-23 · H94, H95 · commit `b061f5b`
+
+Control: origin/main at ac4806a
+
+Candidate: HashMap rollups plus LazyLock-indexed name and extension tiers, as accepted
+in exp-064
+
+**`content-cache-hit`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 270.7 | 201.9 | -25.78% | [-26.74%, -24.52%] |
+| component (ms) | 234.3 | 164.7 | -29.85% | [-31.14%, -28.62%] |
+| cpu (ms) | 270.2 | 201.2 | -25.80% | [-26.77%, -24.52%] |
+| user (ms) | 241.6 | 167.3 | -31.37% | [-33.87%, -27.85%] |
+| system (ms) | 26.0 | 31.9 | +26.39% (n.s.) | [-0.61%, +51.10%] |
+| blocked (ms) | 0.4 | 0.5 | -1.30% (n.s.) | [-9.08%, +13.29%] |
+| peak rss (MiB) | 36.7 | 36.6 | -0.18% | [-0.31%, -0.12%] |
+
+Other jobs, wall time: `code-sloc` -1.1% (n.s.), `code-sloc-cache-hit` -26.5%,
+`content-basic` -2.4%.
+
+Cost to carry: 0 lines; no new dependencies.
+
+No production change; this re-measures the exp-064 candidate against current main on a
+second subject.
+
+**Accepted:** The warm mechanism transfers to a dense real tree at -25.78%
+[-26.74%, -24.52%] on content-cache-hit and -26.51% on code-sloc-cache-hit; exp-064 also
+reproduced on its own regenerated subject at -13.56% against -13.401% recorded.
+The cold half does not transfer: content-basic reads -2.38% here against -13.56% there,
+because that subject is depth 16 and 22.6x sparse, so bookkeeping is most of its cold
+work.
+
+Full record:
+[`exp-065-validate-the-content-roll-up-change-on-a-dense-real-tree.md`](../experiments/exp-065-validate-the-content-roll-up-change-on-a-dense-real-tree.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -2452,6 +2490,12 @@ Baselines show one value because they measure a state rather than a change.
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 054 | Validate the Linux campaign’s cumulative effect on macOS | `warm-revalidate` | 393.0 | 335.7 | -15.7% | ✅ accepted |
 | 055 | Validate review fixes on macOS | `cold-scan-index` | 304.9 | 297.5 | -0.9% | ✅ accepted |
+
+### cargo-registry-src (13,020 entries) — Linux 6.18.44-fc-v21, unrecorded, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 065 | Validate the content roll-up change on a dense real tree | `content-cache-hit` | 270.7 | 201.9 | -25.8% | ✅ accepted |
 
 ### diagnostics-overhead (100,001 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 

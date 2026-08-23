@@ -10,7 +10,7 @@ experiment:
   title: Reject staged adaptive worker expansion on APFS
   date: "2026-08-15"
   hypotheses:
-    - H86-staged-gated
+    - H99
   subject:
     tree_label: adaptive-fast-slow-100k
     tree_root_id: 314ea87cd4c0f7e4669757bc583cc1551ab6b944a86c267db74da7de704a6584
@@ -180,8 +180,13 @@ experiment:
 
 ## Hypothesis
 
-H86-staged-gated: staged expansion gated by useful ready work should correct the late
-slow-phase sensitivity without the contention cost of an immediate jump to 16 workers.
+H99: staged expansion gated by useful ready work should correct the late slow-phase
+sensitivity without the contention cost of an immediate jump to 16 workers.
+
+Recorded at the time as `H86-staged-gated`, a local id coined before the registry
+assigned H86 to the structural consumer rewrite that is now campaign 2’s centerpiece.
+Renumbered to a free id so no number means two things, per the loop’s own rule.
+Only the label changed; every measurement below is as recorded.
 
 ## What was tried
 

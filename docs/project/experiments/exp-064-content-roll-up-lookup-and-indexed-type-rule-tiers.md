@@ -15,6 +15,8 @@ experiment:
   subject:
     tree_label: spike-15977
     tree_root_id: 15fd30c5887b80cca0244ab1911b73f4ecf9c9d04d3cca889d81ce519a81e83c
+    tree_provenance: "python3 explorations/benchmarks/spikes/gen_tree.py <root> 17000"
+    tree_reconstructible: true
     tree_engine_digest: 9c17100d19a64045a6ef02b7de83abd5f05c159203300d330171b13f215126af
     tree_entries: 17041
     tree_directories: 1045
@@ -326,12 +328,42 @@ named the owner.
 ## Results
 
 Real-tree harness, 24 interleaved trials per job, 15,977-file / 1,045-directory
-generated tree (`gen_tree.py` seed 42), tree fingerprint bound to the run:
+generated tree, tree fingerprint bound to the run.
+
+The subject is `python3 explorations/benchmarks/spikes/gen_tree.py <root> 17000` (seed
+42 is hard-coded), and two of its properties decide how far these percentages travel —
+see **What these numbers are evidence about** below, and exp-065, which measured it.
+It is depth 16, and `gen_tree.py` writes anything over 256 bytes with `os.truncate`, so
+it is 595.7 MB apparent against 26.3 MB allocated: 22.6× sparse.
 
 | Job | Control | Candidate | Change | 95% interval |
 | --- | --- | --- | --- | --- |
 | `content-cache-hit` | 450.4 ms | 314.7 ms | **−30.31%** | [−30.69%, −29.61%] |
 | `content-basic` | 518.9 ms | 450.0 ms | **−13.40%** | [−14.74%, −10.92%] |
+
+### What these numbers are evidence about
+
+**Re-measured on 2026-08-23 against `origin/main` at `ac4806a`, 44 commits later, on a
+regenerated copy of this subject** (exp-065). Both figures reproduced: `content-basic`
+−13.56% [−15.57%, −12.73%] against the −13.401% below, and `content-cache-hit` −32.61%
+against −30.307%. Nothing here needs correcting.
+
+What the re-measurement did establish is how far each number carries.
+On a dense real tree — 10,703 files of Rust source, depth 10, no sparseness — the same
+binaries measure:
+
+| Job | This subject | Dense real tree |
+| --- | --- | --- |
+| `content-cache-hit` | −32.61% | **−25.78%** |
+| `content-basic` | −13.56% | **−2.38%** |
+
+The warm number transfers, and it is the one this experiment took its verdict on.
+The cold number does not: on a dense tree it is under the 3% bar.
+Both are correct measurements of one absolute saving against denominators that differ by
+more than the saving does — this tree is deeper (more ancestors per file) and its files
+are holes (near-zero read cost per file), so bookkeeping is most of its cold work and a
+corner of a real tree’s. Read the −13.40% as evidence about this subject, not about the
+content tier.
 
 Attribution between the two arms, `content-cache-hit`, `paired_runner.py`:
 

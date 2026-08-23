@@ -10,7 +10,7 @@ experiment:
   title: Reject repeated adaptive worker windows on APFS
   date: "2026-08-15"
   hypotheses:
-    - H86-repeated-windows
+    - H98
   subject:
     tree_label: adaptive-fast-slow-100k
     tree_root_id: 314ea87cd4c0f7e4669757bc583cc1551ab6b944a86c267db74da7de704a6584
@@ -181,9 +181,13 @@ experiment:
 
 ## Hypothesis
 
-H86-repeated-windows: revisiting the 16,384-entry service-time decision should detect a
-late slow phase without losing more than 3% wall time or crossing the pre-registered
-resource limits.
+H98: revisiting the 16,384-entry service-time decision should detect a late slow phase
+without losing more than 3% wall time or crossing the pre-registered resource limits.
+
+Recorded at the time as `H86-repeated-windows`, a local id coined before the registry
+assigned H86 to the structural consumer rewrite that is now campaign 2’s centerpiece.
+Renumbered to a free id so no number means two things, per the loop’s own rule.
+Only the label changed; every measurement below is as recorded.
 
 ## What was tried
 

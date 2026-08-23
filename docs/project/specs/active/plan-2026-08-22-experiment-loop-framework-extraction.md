@@ -74,7 +74,7 @@ what matters here is which mechanisms carried weight:
 
 1. **One artifact per round, split soft-schema.** Frontmatter carries what a tool reads;
    prose carries the reasoning.
-   31 accepted, 28 rejected — the record leads with its failures, and the refutations
+   33 accepted, 28 rejected — the record leads with its failures, and the refutations
    are what stop the next agent re-running a dead end.
 2. **The contract compiled from a model** (`make perf-schema`), with drift checked.
 3. **The measured half never retyped.** `perf-record` lifts numbers from the run JSON;

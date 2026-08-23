@@ -303,9 +303,21 @@ def _conditions(experiments: Sequence[Mapping[str, Any]]) -> List[str]:
         f"{subject['tree_files']:,} files, {subject['tree_symlinks']} symlinks), "
         f"max depth {subject['tree_max_depth']}."
     )
+    allocated = subject.get("tree_allocated_bytes") or 0
+    apparent = subject.get("tree_apparent_bytes") or 0
+    density = ""
+    # Apparent far above allocated means sparse files. It is not a curiosity: reading
+    # a hole costs nothing, so per-file bookkeeping is a much larger share of a
+    # content job here than it will be on dense content, and a percentage measured
+    # on such a tree does not transfer. Say so where the number is quoted.
+    if allocated and apparent / allocated >= 2:
+        density = (
+            f" — {apparent / allocated:.1f}x, so the files are largely sparse and "
+            "per-file read cost is near zero"
+        )
     lines.append(
-        f"- {subject['tree_apparent_bytes'] / 2**30:.2f} GiB apparent, "
-        f"{subject['tree_allocated_bytes'] / 2**30:.2f} GiB allocated."
+        f"- {apparent / 2**30:.2f} GiB apparent, "
+        f"{allocated / 2**30:.2f} GiB allocated{density}."
     )
     if subject.get("tree_engine_digest"):
         lines.append(
@@ -317,6 +329,27 @@ def _conditions(experiments: Sequence[Mapping[str, Any]]) -> List[str]:
         f"- Identified as `{subject['tree_root_id'][:16]}…`, the SHA-256 of its path. "
         "The path itself is deliberately not recorded."
     )
+    # Identity tells a reader whether they have the same tree; only provenance tells
+    # them how to get one. A section headed "Reproducing this" that omits the second
+    # is offering verification and calling it reproduction.
+    provenance = str(subject.get("tree_provenance") or "").strip()
+    if provenance:
+        if subject.get("tree_reconstructible"):
+            lines.append(
+                f"- Rebuild it with {provenance}. Expect the counts, sizes and depth "
+                "above to match and the digest not to: that digest binds inode, "
+                "device and timestamps, which no regeneration reproduces."
+            )
+        else:
+            lines.append(
+                f"- Not reconstructible: {provenance} "
+                "Re-running this comparison needs a fresh subject and a fresh control."
+            )
+    else:
+        lines.append(
+            "- Provenance unrecorded, so this tree cannot be obtained again. The "
+            "numbers stand as evidence about it; nobody else can re-run them."
+        )
     lines.append("")
     lines.append("**The machine.**")
     lines.append("")

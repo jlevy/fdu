@@ -162,15 +162,60 @@ class Subject(Strict):
     needs to know whether they are looking at the same tree on comparable hardware,
     and a timing without that context is a number without a claim attached.
 
-    The tree is pinned by content, not by name: ``tree_engine_digest`` is the
-    `fdu-index-record-v1` digest over every entry's path, kind, size, mtime, ctime,
-    inode, and device. Two trees with that digest are the same tree in the same
-    state. The path is never recorded — ``tree_root_id`` is its SHA-256, enough to
-    tell two trees apart without disclosing where either lives.
+    Reproduction takes two things, and this record long carried only the first.
+
+    **Identity.** The tree is pinned by content, not by name: ``tree_engine_digest``
+    is the `fdu-index-record-v1` digest over every entry's path, kind, size, mtime,
+    ctime, inode, and device. Two trees with that digest are the same tree in the
+    same state. The path is never recorded — ``tree_root_id`` is its SHA-256, enough
+    to tell two trees apart without disclosing where either lives.
+
+    **Provenance.** Identity answers "is this the same tree?" and cannot answer
+    "how do I get one?". ``tree_provenance`` answers the second, and
+    ``tree_reconstructible`` says whether it is an answer at all: a generator
+    command is, a live workspace never can be. Without this, a result is verifiable
+    only by whoever still has the tree, and its subject-dependence is invisible —
+    which is how exp-064's -13.40% was read as a general claim when it was evidence
+    about one deep, sparse, generated tree.
+
+    The two are checked differently, and conflating them sets an impossible bar.
+    Re-running ``gen_tree.py`` reproduced exp-064's subject exactly on every shape
+    field -- 17,041 entries, 1,045 directories, 15,977 files, 19 symlinks, depth 16,
+    both byte totals -- and produced a different ``tree_engine_digest``, because that
+    digest binds inode, device, mtime and ctime. Shape is what a timing rests on and
+    what provenance can promise; the digest pins one instance and is how you check a
+    tree you still have.
+
+    The shape fields already carry more than they are usually read for.
+    ``tree_apparent_bytes`` far exceeding ``tree_allocated_bytes`` means sparse
+    files, so per-file read cost is near zero and any per-file bookkeeping saving
+    looks larger than it will on dense content; ``tree_max_depth`` sets how many
+    ancestors a per-file walk touches. Both decide what a content-tier number
+    transfers to.
     """
 
     tree_label: str
     tree_root_id: str = Field(description="SHA-256 of the tree's path. Never the path.")
+    tree_provenance: str = Field(
+        default="",
+        description=(
+            "How this tree was obtained, precisely enough to obtain it again: the "
+            "generator command with its arguments, the clone source and revision, or "
+            "the reason no recipe exists. Empty means the run did not record it, "
+            "which is itself a finding about that artifact."
+        ),
+    )
+    tree_reconstructible: bool = Field(
+        default=False,
+        description=(
+            "Whether following tree_provenance yields a tree of the same shape: the "
+            "same counts, sizes, depth and layout, which is what a timing comparison "
+            "rests on. Not the same tree_engine_digest -- that binds inode, device, "
+            "mtime and ctime, so a regenerated tree never matches one and a copied "
+            "one rarely does. False for a live workspace or an unpinned clone: the "
+            "result stays evidence, but only its author can ever re-run it."
+        ),
+    )
     tree_engine_digest: str = Field(
         default="",
         description="fdu-index-record-v1 digest of the whole tree; pins exact content.",
@@ -328,13 +373,20 @@ def from_run(
     run_artifact: Optional[str] = None,
     control_variant: Optional[str] = None,
     candidate_variant: Optional[str] = None,
+    tree_provenance: str = "",
+    tree_reconstructible: bool = False,
 ) -> Dict[str, Any]:
     """Derive an experiment payload from a measurement run document.
 
     Everything measurable is read from the run rather than retyped, so the ledger
     cannot drift from the data. What the caller supplies is exactly what the run
-    cannot know: which hypothesis this tested, what it cost in complexity, and what
-    a person decided.
+    cannot know: which hypothesis this tested, what it cost in complexity, what
+    a person decided, and where the tree came from.
+
+    That last one is why ``tree_provenance`` is a parameter and not a measurement.
+    A run can fingerprint the tree it walked but has no way to learn the command
+    that built it, so nothing but the recorder can supply it — and for sixty-five
+    artifacts nothing did.
     """
     # Declaration order decides which variant is the control, and it is recorded
     # explicitly because the run document sorts its keys. Falling back to the mapping
@@ -421,6 +473,8 @@ def from_run(
             "tree_label": tree["label"],
             "tree_root_id": tree["root_id"],
             "tree_engine_digest": tree.get("engine_digest", ""),
+            "tree_provenance": tree_provenance,
+            "tree_reconstructible": bool(tree_reconstructible),
             "tree_entries": tree["counts"]["total"],
             "tree_directories": tree["counts"]["directories"],
             "tree_files": tree["counts"].get("files", 0),

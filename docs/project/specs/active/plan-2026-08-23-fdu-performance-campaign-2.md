@@ -195,7 +195,12 @@ Phases 0 and A–C are parallel where their beads say so; D and E follow their g
   subjects (the name-handling tax is in scope); p95/median wall spread ≤1.5× where it is
   3.3× today; `assert_same_image` at every worker count; at least one real tree in the
   accept set. macOS validation follows the exp-054 pattern before any macOS number is
-  claimed.
+  claimed. The content tier has the same shape one level down — Phase C’s `fdu-cq7t`
+  follow-on is H86’s instance there — and exp-065 sharpened what “at least one real
+  tree” is for: a generated subject is depth-inflated and 22.6× sparse, which flatters
+  exactly the per-file bookkeeping this deletes.
+  A structural result measured only there would overstate by the width of exp-064’s two
+  readings, 13.4 points against 2.4.
 - [ ] Post-landing re-screens, in order: `fdu-h7sw` (H85 — expect the arena to have
   consumed it; screen against −20%, not 3%), `fdu-sk7v` (H66 — the directory-only
   transient tree may be moot at 1.06×), snapshot economics (below), and the tier
@@ -203,11 +208,32 @@ Phases 0 and A–C are parallel where their beads say so; D and E follow their g
 
 ### Phase C: The content tier (independent of B)
 
-- [ ] `fdu-926e` — classification keyed by the interned `ExtId`, not recomputed per open
-  (~34% of a warm content open, already P0).
+**The structural item is the one to run.** H94 and H95 (exp-064) took the cheap form of
+this tier’s problem and were confirmed; exp-065 then measured them against main 44
+commits later on two subjects.
+The warm win is real and transfers — −25.78% on `content-cache-hit` over dense real
+source — and the cold `content-basic` figure recorded beside it does not: −13.40% on the
+generated subject, −2.38% on a real one.
+Plan Phase C against the warm number.
+
+- [ ] `fdu-cq7t` follow-on — **the content-tier instance of H86**, and the reason this
+  phase is not finished.
+  Key roll-ups by `EntryId` and defer to one bottom-up pass, the shape that won −51.9%
+  on snapshot load in `fdu-91ts`. H94 made the per-file ancestor walk cheap; this
+  deletes it. Same argument as H86 on the index tier, same reason not to gate its pieces
+  separately, and it should be measured on a dense subject because a sparse one flatters
+  exactly this kind of change.
+- [ ] `fdu-926e` — classification keyed by the interned `ExtId`, not recomputed per
+  open. **Largely closed by exp-064, and its priority rested on a number that was
+  wrong.** The bead claimed ~34% of a warm content open from a flat callgrind profile;
+  the caller tree put classification at 11.11% inclusive, and H95’s indexed tiers have
+  since taken −41.4% absolute off `classify_path_with_prefix`. What remains is the
+  double classification in `apply_analysis`’s staleness guard, which is a
+  public-contract change (`AnalysisCandidate` is constructible by callers) for a corner
+  of 11%. Re-scope or close; do not carry it as P0.
 - [ ] `fdu-78q6` — the sidecar restore path (H83): 25 µs/file against 3 µs for a
   metadata record, same re-derivation shape as the snapshot loader had; expect the same
-  class of fix.
+  class of fix. Now the largest unexamined item on this tier after the structural one.
 
 ### Phase D: The warm end-state (after B, because the representation decides the format)
 
