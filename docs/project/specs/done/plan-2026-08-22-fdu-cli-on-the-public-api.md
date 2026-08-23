@@ -148,8 +148,8 @@ In addition:
 
 - [Python CLI parity](plan-2026-08-21-fdu-python-cli-parity.md), whose Phase 2 this
   replaces
-- [fdu design principles](../architecture/fdu-design-principles.md), Principle 7: same
-  concepts at every level; the CLI invents nothing
+- [fdu design principles](../../architecture/fdu-design-principles.md), Principle 7:
+  same concepts at every level; the CLI invents nothing
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

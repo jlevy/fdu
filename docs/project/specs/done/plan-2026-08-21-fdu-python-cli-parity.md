@@ -389,16 +389,18 @@ Landed. 108 of 126 golden sessions reach parity through the Python API alone.
 - [x] Commit the first deviation file and review every hunk (`fdu-5clp`)
 - [x] Add `make test-parity` with its anti-vacuity guards (`fdu-szti`)
 
-Two Phase 1 entries were **deferred rather than done**, and both are tryscript-side:
+Two Phase 1 entries turned out to belong upstream, and are **recorded there rather than
+done here**:
 
-- [ ] tryscript: drop empty `path:` entries, with a test that a bare `$VAR` does not put
-  the working directory on `PATH` (`fdu-nluf`) — still a real robustness issue, but no
-  longer on this critical path: the corpus carries no `path:` entry that can be empty.
-- [ ] tryscript: add `requires:`, so named commands must resolve before the first
-  session and the run reports where each resolved (`fdu-ds2x`) — superseded in practice.
+- [x] tryscript: drop empty `path:` entries —
+  [jlevy/tryscript#55](https://github.com/jlevy/tryscript/issues/55). Still a real
+  robustness issue, but fdu’s corpus no longer carries a `path:` entry that can be
+  empty.
+- [x] tryscript: add `requires:` —
+  [jlevy/tryscript#54](https://github.com/jlevy/tryscript/issues/54).
   `scripts/run-golden.mjs` preflights the binary and states which surface it resolved,
-  so the guarantee exists; having tryscript enforce it would move the check off fdu,
-  which is still worth doing and is why the bead stays open.
+  so the guarantee exists; what `requires:` adds is moving the check off fdu and letting
+  tryscript report what *it* resolved, which no external wrapper can do.
 
 Neither was dropped silently, and neither blocks the harness.
 
@@ -489,7 +491,7 @@ unrelated work.
 - [Composable CLI and query surface](plan-2026-08-10-fdu-composable-cli-surface.md),
   Principle 7
 - [View vocabulary and the output contract](plan-2026-08-21-fdu-view-vocabulary-and-output-contract.md)
-- [tbd guidelines: golden testing](../../../.tbd/docs/guidelines/golden-testing-guidelines.md)
+- [tbd guidelines: golden testing](../../../../.tbd/docs/guidelines/golden-testing-guidelines.md)
   — the size budget and the “easy to diff” requirement are what argue for a deviation
   file rather than a second corpus
 - Beads: `fdu-luwc` (epic), `fdu-ds2x` (tryscript `requires:`), `fdu-nluf` (the

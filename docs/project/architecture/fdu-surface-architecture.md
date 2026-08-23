@@ -106,7 +106,7 @@ would not have.
 
 - [Design principles](fdu-design-principles.md) — the rules and why they are
   load-bearing
-- [Python CLI parity](../specs/active/plan-2026-08-21-fdu-python-cli-parity.md) — the
+- [Python CLI parity](../specs/done/plan-2026-08-21-fdu-python-cli-parity.md) — the
   harness and what it found
 - [The command line on the public API](../specs/done/plan-2026-08-22-fdu-cli-on-the-public-api.md)
   — the crate split, and why a test-only Rust shim was the wrong instrument
