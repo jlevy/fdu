@@ -393,9 +393,11 @@ that replacement’s shape, not against today’s — a per-plane, per-group cos
 acceptable on the current ancestor walk may be the wrong measurement entirely.
 And these features supply what that structural work has so far lacked: a consumer whose
 requirements make the multiplication real, on a dense subject rather than a generated
-one. The loop job (`fdu-n4gn`) belongs in both specs, and its subject should be a real
-tree for the reason exp-065 established — a sparse generated corpus flatters exactly
-this class of change.
+one. The loop job (`fdu-n4gn`) belongs in both specs, and campaign 2 has since built the
+instrument it needs: `make perf-subjects` nominates a host’s real trees by size and
+density, and a subject may decide an accept when it is dense and at least 50,000
+entries. So the subject is chosen by that rule rather than by hand, for the reason
+exp-065 established — a sparse generated corpus flatters exactly this class of change.
 
 ### The embedder watch contract
 
