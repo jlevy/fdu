@@ -640,6 +640,18 @@ The protocol is [the performance loop](../guides/performance-loop.md); every ver
 including the failures, is in
 [the experiment ledger](../reports/report-2026-08-10-fdu-performance-experiments.md).
 
+### Optimize Against the Floor, Not Against Yesterday
+
+A relative verdict can say a change paid; it can never say how much is left, so a queue
+ordered only by relative wins drifts toward whatever is easiest to improve next.
+Each tier’s distance to the measured machine floor — one enumeration and one metadata
+read per entry, and nothing else — is the budget every hypothesis on that tier shares,
+and a hypothesis states the share of that budget its mechanism can reach before it is
+run. A tier close to its floor is a result, recorded and closed, not a place to keep
+digging; the denominators and the closure thresholds are in
+[the floor report](../reports/report-2026-08-23-metadata-walk-floor.md) and
+[the campaign-2 plan](../specs/active/plan-2026-08-23-fdu-performance-campaign-2.md).
+
 ### A Measurement Is Evidence About Its Own Regime
 
 A number describes the platform, host, and cache state it was taken in.

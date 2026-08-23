@@ -362,8 +362,8 @@ has watched fail is not yet evidence.
 - [The experiment ledger](../../reports/report-2026-08-10-fdu-performance-experiments.md)
   and [the evidence report](../../reports/report-2026-08-20-fdu-performance-evidence.md)
   — fdu’s generated views
-- [`benchmarks/realtree/experiment.py`](../../../../benchmarks/realtree/experiment.py) —
-  fdu’s contract
+- [`explorations/benchmarks/realtree/experiment.py`](../../../../explorations/benchmarks/realtree/experiment.py)
+  — fdu’s contract
 - [metabrowser PR #66](https://github.com/jlevy/metabrowser/pull/66) — the second
   implementation: `explorations/README.md`, `run.py`, and four artifacts
 - [The design principles](../../architecture/fdu-design-principles.md) — “Claim Only

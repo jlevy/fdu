@@ -4,7 +4,12 @@
 
 **Author:** fdu project
 
-**Status:** Draft
+**Status:** Draft, and now scheduled rather than speculative.
+[The campaign-2 plan](plan-2026-08-23-fdu-performance-campaign-2.md) places the Phase 0
+validation spike in its Phase D on the reasoning that a warm metadata revalidation stats
+every entry regardless of what the snapshot holds — measured twice — so a journal is not
+one warm optimization among several but the only mechanism that goes under the stat
+floor at all.
 
 ## Overview
 

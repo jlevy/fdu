@@ -10,7 +10,7 @@ Current published measurements and their limitations live in the README and comm
 performance reports; raw host-specific runs remain outside the repository.
 
 The full methodology, runner design, and release gates live in the
-[end-to-end performance plan](../docs/project/specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md).
+[end-to-end performance plan](../../docs/project/specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md).
 
 ## Quick Start
 
@@ -21,7 +21,7 @@ Run it from the repository root:
 ```shell
 uv run --no-project python -m benchmarks.generate create \
   --recipe contract \
-  --work-dir benchmarks/corpus
+  --work-dir explorations/benchmarks/corpus
 ```
 
 The command prints one JSON object.
@@ -29,10 +29,10 @@ Save its `run_root`, then verify or remove that exact run:
 
 ```shell
 uv run --no-project python -m benchmarks.generate verify \
-  --run-root benchmarks/corpus/fdu-perf-EXAMPLE
+  --run-root explorations/benchmarks/corpus/fdu-perf-EXAMPLE
 
 uv run --no-project python -m benchmarks.generate cleanup \
-  --run-root benchmarks/corpus/fdu-perf-EXAMPLE
+  --run-root explorations/benchmarks/corpus/fdu-perf-EXAMPLE
 ```
 
 Churn recipes declare an ordered state machine.
@@ -42,10 +42,10 @@ Each transition verifies the current manifest before changing anything:
 uv run --no-project python -m benchmarks.generate create \
   --recipe churn-local \
   --entries 1000 \
-  --work-dir benchmarks/corpus
+  --work-dir explorations/benchmarks/corpus
 
 uv run --no-project python -m benchmarks.generate mutate \
-  --run-root benchmarks/corpus/fdu-perf-EXAMPLE \
+  --run-root explorations/benchmarks/corpus/fdu-perf-EXAMPLE \
   --transition one-change
 ```
 
@@ -79,7 +79,7 @@ Build and execute it with:
 cargo build --locked --release -p fdu-core --example perf_probe --no-default-features
 
 uv run --no-project python -m benchmarks.run execute \
-  --scenarios benchmarks/scenarios.json \
+  --scenarios explorations/benchmarks/scenarios.json \
   --executable fdu-probe=/absolute/path/to/target/release/examples/perf_probe \
   --work-dir /absolute/scratch/fdu-performance \
   --output-dir /absolute/results/fdu-performance \
@@ -132,15 +132,15 @@ developer and hosted-CI runs remain `uncontrolled`.
 
 ### Standard Local Near-Million-Entry Comparison
 
-The repository’s `benchmarks/` subtree is the standard self-contained large local
-testbed. Its 2026-08-13 fingerprint contained 901,963 entries: the ignored generated
-corpus, benchmark environment, harness, schemas, and prior result artifacts.
+The repository’s `explorations/benchmarks/` subtree is the standard self-contained large
+local testbed. Its 2026-08-13 fingerprint contained 901,963 entries: the ignored
+generated corpus, benchmark environment, harness, schemas, and prior result artifacts.
 It is large and heterogeneous enough to expose real directory topology while excluding
 volatile Git and Rust build state.
 Generated state moves the count, so fingerprint every run and treat “near-million scale”
 as the designation rather than assuming an exact size across machines.
 
-Finish every change under `benchmarks/` before measuring.
+Finish every change under `explorations/benchmarks/` before measuring.
 Copy immutable binaries outside the subtree, and do not run the benchmark test suite,
 update its environment, or write result artifacts there until the post-run fingerprint
 finishes.
@@ -181,9 +181,9 @@ Reports label indexed-tree, rendered-tree, transient-summary, and total-only wor
 classes because those jobs are not semantically identical.
 
 The reviewed M1/APFS result and exact manifest are in the
-[live tool comparison](../docs/project/reports/report-2026-08-13-fdu-live-tool-comparison.md).
+[live tool comparison](../../docs/project/reports/report-2026-08-13-fdu-live-tool-comparison.md).
 The architecture-level synthesis is the
-[performance white paper](../docs/project/reports/report-2026-08-12-fdu-performance-architecture.md).
+[performance white paper](../../docs/project/reports/report-2026-08-12-fdu-performance-architecture.md).
 
 The tool runner’s `warm-steady` label is deliberately narrower than “everything fits in
 RAM.” Before timing, the independent fingerprint walks every entry, and every tool then

@@ -4,7 +4,16 @@
 
 **Author:** fdu project
 
-**Status:** Active
+**Status:** Active, with narrowed scope.
+This plan owns the evidence harness — the generated-corpus contract, the probe modes,
+the comparator adapters, and the regression governance.
+It no longer owns *which experiment runs next*: the standing optimization loop
+(`fdu-j2ka`) moved to
+[the campaign-2 plan](plan-2026-08-23-fdu-performance-campaign-2.md) on 2026-08-23, when
+a measured floor per tier replaced three competing queue orderings.
+One harness change follows from that: campaign-2 requires a nominated real tree in the
+paired set for any accept decision, because a generated corpus was measured hiding about
+15 points of fdu’s distance from the floor — enough to invert a peer ranking.
 
 ## Overview
 
@@ -271,8 +280,8 @@ The maintainer selected Python 3.12 as the new minimum for the wheel and
 repository-owned tooling; `fdu-c7z2` owns the pending PyO3 ABI, package metadata, uv
 lock, CI, and documentation alignment.
 Earlier Python 3.9 evidence is no longer an acceptance requirement.
-See the [performance harness README](../../../../benchmarks/README.md) for commands,
-manifest contract, mutation model, and cleanup rules.
+See the [performance harness README](../../../../explorations/benchmarks/README.md) for
+commands, manifest contract, mutation model, and cleanup rules.
 
 The first exact-oracle revalidation curve measured 72.258 ms at 10k, 725.023 ms at 100k,
 8.186 s at 500k, and 62.906 s at 1M on one uncontrolled local APFS host.
@@ -380,10 +389,10 @@ It supplies their common corpus, evidence schema, and runner.
 
 ### Approach
 
-Commit a small performance system under `benchmarks/`:
+Commit a small performance system under `explorations/benchmarks/`:
 
 ```text
-benchmarks/
+explorations/benchmarks/
 ├── README.md                  commands, host requirements, and claim policy
 ├── scenarios.json            named jobs, states, corpora, and acceptance class
 ├── corpora.json              parametric recipes and scale points
@@ -1333,8 +1342,8 @@ adaptive-worker sub-epic is complete as documented above.
 - [fdu file-roll-up engine research](../../research/research-2026-08-06-file-rollup-engine.md)
 - [fdu CLI golden-test plan](../done/plan-2026-08-09-fdu-cli-golden-tests.md)
 - [fdu Rust engineering quality plan](plan-2026-08-09-fdu-rust-engineering-quality.md)
-- [Flowmark performance report at the reviewed revision](https://github.com/jlevy/flowmark-rs/blob/015f23989af3e5cfb3f8b58dfc72822c534df25a/benchmarks/REPORT.md)
-- [Flowmark benchmark comparison runner](https://github.com/jlevy/flowmark-rs/blob/015f23989af3e5cfb3f8b58dfc72822c534df25a/benchmarks/run_comparison.sh)
+- [Flowmark performance report at the reviewed revision](https://github.com/jlevy/flowmark-rs/blob/015f23989af3e5cfb3f8b58dfc72822c534df25a/explorations/benchmarks/REPORT.md)
+- [Flowmark benchmark comparison runner](https://github.com/jlevy/flowmark-rs/blob/015f23989af3e5cfb3f8b58dfc72822c534df25a/explorations/benchmarks/run_comparison.sh)
 - [Flowmark performance and profiling plan](https://github.com/jlevy/flowmark-rs/blob/015f23989af3e5cfb3f8b58dfc72822c534df25a/docs/project/specs/done/plan-2026-02-26-perf-comparison-profiling.md)
 - [Flowmark parallel-processing plan](https://github.com/jlevy/flowmark-rs/blob/015f23989af3e5cfb3f8b58dfc72822c534df25a/docs/project/specs/done/plan-2026-02-27-parallel-file-processing.md)
 - [Flowmark cache and performance roadmap](https://github.com/jlevy/flowmark-rs/blob/015f23989af3e5cfb3f8b58dfc72822c534df25a/docs/project/specs/done/plan-2026-02-27-incremental-cache-and-performance-roadmap.md)

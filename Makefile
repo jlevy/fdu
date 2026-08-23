@@ -69,8 +69,8 @@ performance-probe:
 	$(CARGO) build --locked -p fdu-core --example perf_probe --no-default-features
 
 test-performance: performance-probe
-	$(UV) run --no-project python -m unittest discover -s benchmarks/tests -p 'test_*.py'
-	$(PERF_UV) --group dev python -m unittest discover -s benchmarks/realtree/tests -p 'test_*.py'
+	PYTHONPATH=explorations $(UV) run --no-project python -m unittest discover -s explorations/benchmarks/tests -p 'test_*.py'
+	$(PERF_UV) --group dev python -m unittest discover -s explorations/benchmarks/realtree/tests -p 'test_*.py'
 
 # Tryscript returns nonzero when it updates a previously failing block. The immediate
 # comparison is authoritative and catches execution failures or incomplete updates.
@@ -336,7 +336,7 @@ cli:
 # `--auto` owns repository-wide file discovery and applicable cleanups. The committed
 # tooling lock pins the native Rust formatter used locally and in CI. Generated Markdown
 # uses this same path after generation, so regenerating it cannot create format drift.
-FLOWMARK := $(UV) run --project benchmarks --frozen --only-group docs flowmark
+FLOWMARK := $(UV) run --project explorations/benchmarks --frozen --only-group docs flowmark
 
 docs-format:
 	@$(FLOWMARK) --auto .
@@ -355,7 +355,7 @@ docs-format-check:
 # PERF_TREE names the reference tree. Freeze all writers for the whole run; the
 # harness rejects any difference between its immediate pre/post fingerprints.
 
-PERF_TREE ?= benchmarks
+PERF_TREE ?= explorations/benchmarks
 PERF_LABEL ?= benchmarks-self-contained
 PERF_RESULTS ?= /tmp/fdu-realtree/results
 PERF_SCRATCH ?= /tmp/fdu-realtree/scratch
@@ -382,8 +382,10 @@ PERF_TOOL_EVIDENCE_ARGS = $(PERF_EVIDENCE_ARGS) \
 	$(PERF_TOOL_SUPPORTING_ARGS)
 # The harness runs from the repo root against a committed, frozen environment, so a
 # benchmark run resolves nothing at invocation time. `--project` (not `--directory`)
-# keeps the working directory here, which is what makes `-m benchmarks.realtree` work.
-PERF_UV := PYTHONDONTWRITEBYTECODE=1 $(UV) run --project benchmarks --frozen
+# keeps the working directory here, and `PYTHONPATH` puts the harness's parent on the
+# import path; together they are what make `-m benchmarks.realtree` work. The package is
+# still `benchmarks` -- only the directory holding it moved under `explorations/`.
+PERF_UV := PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=explorations $(UV) run --project explorations/benchmarks --frozen
 PERF_RUN := $(PERF_UV) python -m benchmarks.realtree
 
 .PHONY: perf-probe-release perf-probe-profiling perf-baseline perf-profile perf-compare perf-content-profile perf-content-compare perf-compare-tools perf-record perf-test perf-ledger perf-report perf-report-check perf-schema perf-schema-check
@@ -462,7 +464,7 @@ perf-record:
 	$(PERF_UV) --group dev python -m benchmarks.realtree.record $(ARGS)
 
 perf-test:
-	$(PERF_UV) --group dev python -m unittest discover -s benchmarks/realtree/tests -p 'test_*.py'
+	$(PERF_UV) --group dev python -m unittest discover -s explorations/benchmarks/realtree/tests -p 'test_*.py'
 
 # Regenerate the ledger from the committed experiment artifacts. Every number in it
 # is read back out of a validated artifact, so the report cannot drift from the record.
@@ -497,19 +499,19 @@ perf-report-check:
 		--data $(PERF_REPORT_DIR)/timeline.json --out $(PERF_REPORT_DIR)/index.html --check
 
 # The experiment contract is compiled from the Pydantic model; --check fails on drift.
-# Pinned in benchmarks/pyproject.toml, not `@latest`: this validator is the
+# Pinned in explorations/benchmarks/pyproject.toml, not `@latest`: this validator is the
 # reproducibility boundary for committed evidence, so an artifact that validated
 # yesterday must validate identically today.
 SOFTSCHEMA ?= $(PERF_UV) --group dev softschema
 SCHEMA_QUIET := python3 -c "import json,sys; d=json.load(sys.stdin); print('schema', d['out_path'], 'drift:', d['drift'])"
 
 perf-schema:
-	@PYTHONPATH=. $(SOFTSCHEMA) compile benchmarks.realtree.experiment:Experiment \
+	@PYTHONPATH=explorations $(SOFTSCHEMA) compile benchmarks.realtree.experiment:Experiment \
 		--out docs/project/experiments/experiment.schema.yaml \
 		--contract fdu.performance:Experiment/v1 | $(SCHEMA_QUIET)
 
 perf-schema-check:
-	@PYTHONPATH=. $(SOFTSCHEMA) compile benchmarks.realtree.experiment:Experiment \
+	@PYTHONPATH=explorations $(SOFTSCHEMA) compile benchmarks.realtree.experiment:Experiment \
 		--out docs/project/experiments/experiment.schema.yaml \
 		--contract fdu.performance:Experiment/v1 --check | $(SCHEMA_QUIET)
 

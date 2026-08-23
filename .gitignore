@@ -12,8 +12,8 @@ debug/
 attic/
 
 # Benchmark corpora and results are generated, often large, and machine-specific.
-benchmarks/corpus/
-benchmarks/results/
+explorations/benchmarks/corpus/
+explorations/benchmarks/results/
 
 # Python build artifacts from maturin
 *.so
@@ -32,6 +32,12 @@ node_modules/
 .DS_Store
 *.swp
 
+# Backup files left by in-place rewriting tools: repren writes `<file>.orig` beside
+# every file it changes, and a `git add -A` after a repo-wide rename will otherwise
+# sweep all of them in — which happened once, at 71 files and 24,193 lines.
+*.orig
+*.rej
+
 # Real-tree benchmark scratch: clones of large external trees, kept out of git.
-benchmarks/corpus/realtree/
+explorations/benchmarks/corpus/realtree/
 tests/parity/.corpus/

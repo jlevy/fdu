@@ -461,6 +461,9 @@ def _host_regime(name: str, load_workers: int):
         raise MeasureError("controlled background workers must be between 1 and 64")
     environment = dict(BASE_ENVIRONMENT)
     environment["PATH"] = os.environ.get("PATH", "")
+    # The import root for the `benchmarks` package, which is the directory holding it
+    # (`explorations/`) rather than the repository root. Those coincided before the
+    # harness moved under `explorations/`; they do not now.
     environment["PYTHONPATH"] = str(Path(__file__).resolve().parents[2])
     process = subprocess.Popen(
         [

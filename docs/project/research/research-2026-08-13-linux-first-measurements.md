@@ -71,8 +71,8 @@ All caveats up front, per the reporting rules in
   v2.41.1, diskus from crates.io release builds.
   dut defaults to a hardcoded 4 threads, which happens to equal this host’s cores.
 
-The single-file C harness (`benchmarks/spikes/walkspike.c`) isolates the enumeration and
-metadata layer with interchangeable strategies over one BFS walk: glibc
+The single-file C harness (`explorations/benchmarks/spikes/walkspike.c`) isolates the
+enumeration and metadata layer with interchangeable strategies over one BFS walk: glibc
 `readdir`+`fstatat`; raw 256 KiB `getdents64` with `fstatat`, `statx`
 (`STATX_BASIC_STATS`), and a narrow mask; a files-only tier that skips `statx` for
 `d_type`-known directories and symlinks; an inode-sorted `statx` order; and a
@@ -221,11 +221,11 @@ Ordered by expected effect on the Linux ranking:
 ## Reproduction
 
 The walker harness, paired runner, and tree generator used here are committed under
-`benchmarks/spikes/` with usage in its README; the summary rows the runner printed are
-the tables above, and the session-local raw samples were deliberately not committed.
-Nothing here entered the experiment ledger: the rig is virtualized and the subject was
-generated for this session, so any of these results that motivates a production change
-must re-run under the ledger’s protocol on real hardware first.
+`explorations/benchmarks/spikes/` with usage in its README; the summary rows the runner
+printed are the tables above, and the session-local raw samples were deliberately not
+committed. Nothing here entered the experiment ledger: the rig is virtualized and the
+subject was generated for this session, so any of these results that motivates a
+production change must re-run under the ledger’s protocol on real hardware first.
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

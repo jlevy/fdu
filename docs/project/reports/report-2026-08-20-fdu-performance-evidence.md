@@ -127,11 +127,12 @@ are in [the performance loop](../guides/performance-loop.md#publishing-the-evide
 
 ## How it is built
 
-`benchmarks/realtree/timeline.py` reads every artifact through the softschema validator
-— the same path the ledger uses, so an artifact that no longer satisfies its contract
-fails the build rather than quietly contributing a wrong row — and projects it into
-`performance-evidence/timeline.json`. `benchmarks/realtree/report_html.py` draws the
-page from that projection and touches no artifact.
+`explorations/benchmarks/realtree/timeline.py` reads every artifact through the
+softschema validator — the same path the ledger uses, so an artifact that no longer
+satisfies its contract fails the build rather than quietly contributing a wrong row —
+and projects it into `performance-evidence/timeline.json`.
+`explorations/benchmarks/realtree/report_html.py` draws the page from that projection
+and touches no artifact.
 
 The projection is committed so a reviewer can diff what the page claims rather than only
 how it looks. Charts are hand-written inline SVG for the same reason the crate’s

@@ -68,7 +68,7 @@ with SHA-256 `bc6c69c0ac777e9ea7653ece1931e79a433fca63556dca516e3f76288b5ff910`.
 commands, versions, hashes, host facts, tree facts, medians, and paired intervals are in
 the [reproduction manifest](fdu-live-tool-comparison-manifest-v1.json).
 The operational procedure is in the
-[performance harness README](../../../benchmarks/README.md).
+[performance harness README](../../../explorations/benchmarks/README.md).
 
 ## Why fdu Is Faster Than the Tree Renderers
 

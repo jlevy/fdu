@@ -1027,7 +1027,7 @@ def _git_output(git: str, *arguments: str) -> Optional[str]:
     try:
         completed = subprocess.run(
             [git, *arguments],
-            cwd=Path(__file__).resolve().parent.parent,
+            cwd=Path(__file__).resolve().parents[2],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,

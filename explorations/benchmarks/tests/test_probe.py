@@ -15,8 +15,8 @@ from benchmarks.runner import run_scenario_set
 from benchmarks.schema import load_scenario_set
 
 
-REPOSITORY = Path(__file__).resolve().parents[2]
-SCENARIOS = REPOSITORY / "benchmarks" / "scenarios.json"
+REPOSITORY = Path(__file__).resolve().parents[3]
+SCENARIOS = REPOSITORY / "explorations" / "benchmarks" / "scenarios.json"
 
 
 def _probe_path() -> Path:

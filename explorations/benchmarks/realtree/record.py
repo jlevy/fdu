@@ -1,7 +1,7 @@
 """Write a measurement run out as a soft-schema experiment artifact.
 
     python -m benchmarks.realtree record \\
-      --run benchmarks/results/realtree/run-exp002-....json \\
+      --run explorations/benchmarks/results/realtree/run-exp002-....json \\
       --id exp-002 --title "Parallel revalidation sweep" \\
       --hypothesis H9 --decision rejected \\
       --control "exp001 parallel scan" --candidate "parallel revalidation too" \\

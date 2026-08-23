@@ -4,8 +4,14 @@
 
 **Author:** fdu project
 
-**Status:** Phases 1 and 3 landed; Phase 2 closed by measurement rather than
-implemented. Only `fdu-wu6w` remains, gated on progressive results.
+**Status:** Complete (2026-08-23). Phases 1 and 3 landed; Phase 2 was closed by
+measurement rather than implemented — the APFS trial argued against a size threshold
+rather than supplying one, so `SNAPSHOT_MIN_ENTRIES` stays `None` as a measured
+decision. The prefer-cache tier (`fdu-wu6w`) first named here belongs to
+[progressive results](../active/plan-2026-08-11-fdu-progressive-results.md) and is
+specified there. The cost model this plan established is what
+[the campaign-2 plan](../active/plan-2026-08-23-fdu-performance-campaign-2.md)’s warm
+posture rests on.
 
 ## Overview
 
@@ -26,8 +32,8 @@ select:
    completes, with FSEvents narrowing the revalidation on macOS.
 
 Requirement 3 is already specified in
-[progressive results](plan-2026-08-11-fdu-progressive-results.md) and tracked under epic
-`fdu-wpa0`; this plan does not restate it.
+[progressive results](../active/plan-2026-08-11-fdu-progressive-results.md) and tracked
+under epic `fdu-wpa0`; this plan does not restate it.
 What is missing, and what this plan covers, is the cost model underneath all three:
 which requests should touch the snapshot at all.
 
@@ -43,9 +49,9 @@ which requests should touch the snapshot at all.
 ## Non-Goals
 
 - The progressive session API, lazy open, and provenance composition, which are
-  [their own plan](plan-2026-08-11-fdu-progressive-results.md)
+  [their own plan](../active/plan-2026-08-11-fdu-progressive-results.md)
 - The FSEvents journal, which is
-  [its own plan](plan-2026-08-10-fdu-fsevents-scoped-revalidation.md)
+  [its own plan](../active/plan-2026-08-10-fdu-fsevents-scoped-revalidation.md)
 - Changing what any policy *means* once selected; `--cache off`, `refresh`, `read-only`,
   and `only` keep their documented contracts
 - Cross-regime claims: the Background numbers are Linux/ext4, Phases 2 and 3 carry their
@@ -244,8 +250,9 @@ Phase 2 is an independent optimisation and does not gate it.
 
 ## References
 
-- [Progressive results](plan-2026-08-11-fdu-progressive-results.md), epic `fdu-wpa0`
-- [FSEvents-scoped revalidation](plan-2026-08-10-fdu-fsevents-scoped-revalidation.md)
+- [Progressive results](../active/plan-2026-08-11-fdu-progressive-results.md), epic
+  `fdu-wpa0`
+- [FSEvents-scoped revalidation](../active/plan-2026-08-10-fdu-fsevents-scoped-revalidation.md)
 - [Adaptive-worker gap closure](../../reports/report-2026-08-15-adaptive-worker-gap-closure.md)
 - [Platform tuning](../../guides/platform-tuning.md), for the rule on inherited
   constants
