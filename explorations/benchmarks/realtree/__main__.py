@@ -22,6 +22,7 @@ from typing import Any, Dict, List, Sequence
 
 from benchmarks import corpus as corpus_tools
 from benchmarks.realtree import ledger, measure, profile, provenance, tree
+from benchmarks.realtree import subjects as subjects_module
 
 DEFAULT_RESULTS = Path(tempfile.gettempdir()) / "fdu-realtree" / "results"
 DEFAULT_SCRATCH = Path(tempfile.gettempdir()) / "fdu-realtree" / "scratch"
@@ -125,6 +126,13 @@ def main(argv: Sequence[str]) -> int:
     profiled.add_argument("--output", type=Path)
     profiled.add_argument("--label", default="")
 
+    subjects = subparsers.add_parser(
+        "subjects", help="observe and check this host's nominated real-tree set"
+    )
+    subjects.add_argument("--nominations", type=Path, default=None)
+    subjects.add_argument("--out", type=Path, default=None)
+    subjects.add_argument("--check", type=Path, default=None)
+
     rendered = subparsers.add_parser("render", help="render a stored run as Markdown")
     rendered.add_argument("--run", required=True, type=Path)
     rendered.add_argument("--profiles", type=Path)
@@ -137,7 +145,21 @@ def main(argv: Sequence[str]) -> int:
         return _measure(arguments)
     if arguments.command == "profile":
         return _profile(arguments)
+    if arguments.command == "subjects":
+        return _subjects(arguments)
     return _render(arguments)
+
+
+def _subjects(arguments: argparse.Namespace) -> int:
+    """Delegate to the subjects module, which owns its own argument shape."""
+    forwarded = []
+    if arguments.nominations is not None:
+        forwarded += ["--nominations", str(arguments.nominations)]
+    if arguments.out is not None:
+        forwarded += ["--out", str(arguments.out)]
+    if arguments.check is not None:
+        forwarded += ["--check", str(arguments.check)]
+    return subjects_module.main(forwarded)
 
 
 def _baseline(arguments: argparse.Namespace) -> int:

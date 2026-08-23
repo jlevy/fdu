@@ -293,6 +293,44 @@ def _headline(experiments: Sequence[Mapping[str, Any]]) -> List[str]:
     return lines
 
 
+#: Tail spread at or above which a run's right tail is reported beside its median.
+#:
+#: The median is what the accept rule reads and the tail is what a user waits through,
+#: and on the index tier those two have disagreed by a factor of three: fifteen
+#: consecutive samples on a quiet host ran 456 ms to 1,489 ms while the median moved by
+#: 4%. Campaign 2 pre-registers 1.5x as the target for its structural experiment, so
+#: that is the line at which the number is worth a reader's attention.
+TAIL_SPREAD_THRESHOLD = 1.5
+
+
+def _tail_spread(entry: Optional[Mapping[str, Any]]) -> List[str]:
+    """Say when a run's right tail is much worse than the median the verdict used.
+
+    Rendered only past the threshold, and only for wall time, because that is the
+    metric a person experiences. Below it the spread is noise about a quiet host and
+    printing it every time would train readers to skip the line that matters.
+    """
+    if not entry:
+        return []
+    control = entry.get("control_p95_over_median")
+    candidate = entry.get("candidate_p95_over_median")
+    notable = [value for value in (control, candidate) if value is not None]
+    if not notable or max(notable) < TAIL_SPREAD_THRESHOLD:
+        return []
+
+    def _ratio(value: Optional[float]) -> str:
+        # One arm can lack the figure -- a zero median yields none -- and a missing
+        # number should read as missing, not take the line down with it.
+        return f"{value:.2f}x" if value is not None else "unrecorded"
+
+    return [
+        "",
+        f"Wall-time tail: control p95 is {_ratio(control)} its median and candidate "
+        f"{_ratio(candidate)}. The verdict above is on the median; a reader deciding "
+        "whether this is faster to *use* should read the tail beside it.",
+    ]
+
+
 def _campaign_headline(
     experiments: Sequence[Mapping[str, Any]],
 ) -> Optional[Mapping[str, Any]]:
@@ -554,6 +592,7 @@ def _section(experiment: Mapping[str, Any]) -> List[str]:
                 f"| {entry['change_pct']:+.2f}%{_mark(low, high)} "
                 + (f"| [{low:+.2f}%, {high:+.2f}%] |" if low is not None else "| — |")
             )
+        lines.extend(_tail_spread(primary["metrics"].get("wall_ns")))
         lines.append("")
 
     others = [
