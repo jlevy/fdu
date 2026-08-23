@@ -66,7 +66,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | --- | --- | --- | ---: |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
-| Darwin 25.5.0, apfs | bare-metal | warm-steady | 2 |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 3 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 
 ## Every experiment, including the failures
@@ -144,6 +144,7 @@ dead end.
 | 065 | [Validate the content roll-up change on a dense real tree](#exp065--validate-the-content-rollup-change-on-a-dense-real-tree) | H94, H95 | `content-cache-hit` | -25.8% | ✅ accepted |
 | 066 | [Baseline for the default command on a real package cache](#exp066--baseline-for-the-default-command-on-a-real-package-cache) | — | `default-tree` | -1.9% | 📏 baseline |
 | 067 | [Skip the identical snapshot rewrite on the cold-scan path](#exp067--skip-the-identical-snapshot-rewrite-on-the-coldscan-path) | H100 | `default-tree` | -10.6% | ✅ accepted |
+| 068 | [Flush the rendered report before joining the snapshot writer](#exp068--flush-the-rendered-report-before-joining-the-snapshot-writer) | H101 | `default-tree` | +1.2% | ✅ accepted |
 
 ## The experiments
 
@@ -2438,6 +2439,36 @@ cannot go stale.
 Full record:
 [`exp-067-skip-the-identical-snapshot-rewrite-on-the-cold-scan-path.md`](../experiments/exp-067-skip-the-identical-snapshot-rewrite-on-the-cold-scan-path.md)
 
+### exp-068 — Flush the rendered report before joining the snapshot writer
+
+✅ accepted · 2026-08-23 · H101 · commit `c013f1a`
+
+Control: the command line at c013f1a: report buffered until after the save is joined
+
+Candidate: out.flush() before pending_save.join(): same bytes, earlier
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 353.3 | 361.3 | +1.24% (n.s.) | [-14.22%, +13.17%] |
+| component (ms) | 348.4 | 356.2 | +1.16% (n.s.) | [-14.21%, +12.79%] |
+| cpu (ms) | 1780.0 | 1826.7 | +2.68% (n.s.) | [-4.49%, +10.02%] |
+| user (ms) | 212.9 | 206.7 | -4.04% (n.s.) | [-11.63%, +6.11%] |
+| system (ms) | 1577.6 | 1629.1 | +3.28% (n.s.) | [-5.09%, +10.56%] |
+| peak rss (MiB) | 101.2 | 101.2 | -0.82% (n.s.) | [-1.27%, +1.97%] |
+
+Other jobs, wall time: `default-tree-first` -4.0% (n.s.).
+
+Cost to carry: 9 lines; no new dependencies.
+
+**Accepted:** Time to first byte on the real CLI -7.54% [-8.55%, -5.18%] repeated and
+-12.47% [-15.66%, -9.84%] first run with total wall unchanged; the engine-path guard in
+the frontmatter shows the expected nothing for a one-line latency change.
+
+Full record:
+[`exp-068-flush-the-rendered-report-before-joining-the-snapshot-writer.md`](../experiments/exp-068-flush-the-rendered-report-before-joining-the-snapshot-writer.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -2532,6 +2563,14 @@ Baselines show one value because they measure a state rather than a change.
 | 052 | Per-layer counters cost less than the measurement can see | `cold-scan-index` | 1,891.3 | 1,870.1 | +0.0% | ✅ accepted |
 | 053 | Move instrumentation to a runtime toggle and measure all three of its costs | `cold-scan-index` | 1,858.8 | 1,847.0 | -1.3% | ✅ accepted |
 
+### rustup-toolchains (175,191 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 066 | Baseline for the default command on a real package cache | `default-tree` | 386.9 | — | — | 📏 baseline |
+| 067 | Skip the identical snapshot rewrite on the cold-scan path | `default-tree` | 397.7 | 358.7 | -10.6% | ✅ accepted |
+| 068 | Flush the rendered report before joining the snapshot writer | `default-tree` | 353.3 | 361.3 | +1.2% | ✅ accepted |
+
 ### generated-markdown-2000 (2,001 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
@@ -2552,13 +2591,6 @@ Baselines show one value because they measure a state rather than a change.
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 054 | Validate the Linux campaign’s cumulative effect on macOS | `warm-revalidate` | 393.0 | 335.7 | -15.7% | ✅ accepted |
 | 055 | Validate review fixes on macOS | `cold-scan-index` | 304.9 | 297.5 | -0.9% | ✅ accepted |
-
-### rustup-toolchains (175,191 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
-
-| # | experiment | job | before | after | change | verdict |
-| --- | --- | --- | ---: | ---: | ---: | --- |
-| 066 | Baseline for the default command on a real package cache | `default-tree` | 386.9 | — | — | 📏 baseline |
-| 067 | Skip the identical snapshot rewrite on the cold-scan path | `default-tree` | 397.7 | 358.7 | -10.6% | ✅ accepted |
 
 ### cargo-registry-src (13,020 entries) — Linux 6.18.44-fc-v21, unrecorded, warm-steady
 

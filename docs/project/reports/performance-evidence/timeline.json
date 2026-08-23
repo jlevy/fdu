@@ -577,6 +577,15 @@
    "subject": "36ce9b22af9a:175191:fa9b471063e3",
    "tool": "dust",
    "wall_ns": 307787375
+  },
+  {
+   "entries": 175191,
+   "id": "exp-068",
+   "per_entry_ns": 2381.6099285922223,
+   "platform": "macOS",
+   "subject": "36ce9b22af9a:175191:fa9b471063e3",
+   "tool": "dust",
+   "wall_ns": 417236625
   }
  ],
  "experiments": [
@@ -19814,6 +19823,256 @@
    "subject": "36ce9b22af9a:175191:fa9b471063e3",
    "title": "Skip the identical snapshot rewrite on the cold-scan path",
    "trials": 16
+  },
+  {
+   "anchored": false,
+   "candidate": "out.flush() before pending_save.join(): same bytes, earlier",
+   "change_pct": 1.238,
+   "commit": "c013f1a",
+   "complexity": {
+    "lines_changed": 9,
+    "new_dependencies": [],
+    "new_failure_modes": [],
+    "new_unsafe_blocks": 0,
+    "notes": ""
+   },
+   "control": "the command line at c013f1a: report buffered until after the save is joined",
+   "date": "2026-08-23",
+   "decision": "accepted",
+   "entries": 175191,
+   "family": "macOS:36ce9b22af9a",
+   "hypotheses": [
+    "H101"
+   ],
+   "id": "exp-068",
+   "interleaved": true,
+   "jobs": [
+    {
+     "invalid_samples": 0,
+     "job": "default-tree",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 356227229.5,
+        "control": 348400604
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": 1.164,
+        "ci95_high_pct": 12.791,
+        "ci95_low_pct": -14.214,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 1826650500,
+        "control": 1779972500
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": 2.676,
+        "ci95_high_pct": 10.024,
+        "ci95_low_pct": -4.486,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 106127360,
+        "control": 106070016
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": -0.823,
+        "ci95_high_pct": 1.969,
+        "ci95_low_pct": -1.275,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 1629083500,
+        "control": 1577551500
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": 3.284,
+        "ci95_high_pct": 10.565,
+        "ci95_low_pct": -5.087,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 206671500,
+        "control": 212891000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -4.037,
+        "ci95_high_pct": 6.11,
+        "ci95_low_pct": -11.632,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 361330187.5,
+        "control": 353310708.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": 1.238,
+        "ci95_high_pct": 13.171,
+        "ci95_low_pct": -14.222,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 2062.492864930276,
+      "control": 2016.717231478786
+     },
+     "start_state": "warm"
+    },
+    {
+     "invalid_samples": 0,
+     "job": "default-tree-first",
+     "metrics": {
+      "component_ns": {
+       "absolute": {
+        "candidate": 407631187.5,
+        "control": 451906687.5
+       },
+       "metric": "component_ns",
+       "paired": {
+        "change_pct": -7.944,
+        "ci95_high_pct": 12.381,
+        "ci95_low_pct": -22.87,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "cpu_ns": {
+       "absolute": {
+        "candidate": 1463482000,
+        "control": 1514920000
+       },
+       "metric": "cpu_ns",
+       "paired": {
+        "change_pct": -3.161,
+        "ci95_high_pct": 4.837,
+        "ci95_low_pct": -11.72,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "peak_rss_bytes": {
+       "absolute": {
+        "candidate": 113434624,
+        "control": 114155520
+       },
+       "metric": "peak_rss_bytes",
+       "paired": {
+        "change_pct": 1.187,
+        "ci95_high_pct": 4.245,
+        "ci95_low_pct": -5.638,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "system_cpu_ns": {
+       "absolute": {
+        "candidate": 1253674000,
+        "control": 1292611000
+       },
+       "metric": "system_cpu_ns",
+       "paired": {
+        "change_pct": -3.816,
+        "ci95_high_pct": 6.49,
+        "ci95_low_pct": -13.526,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "user_cpu_ns": {
+       "absolute": {
+        "candidate": 211343000,
+        "control": 217472000
+       },
+       "metric": "user_cpu_ns",
+       "paired": {
+        "change_pct": -1.905,
+        "ci95_high_pct": 2.78,
+        "ci95_low_pct": -6.524,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      },
+      "wall_ns": {
+       "absolute": {
+        "candidate": 417804417,
+        "control": 467667812.5
+       },
+       "metric": "wall_ns",
+       "paired": {
+        "change_pct": -4.046,
+        "ci95_high_pct": 12.975,
+        "ci95_low_pct": -23.503,
+        "evidence": "unclear",
+        "pairs": 12,
+        "significant": false
+       }
+      }
+     },
+     "per_entry_ns": {
+      "candidate": 2384.8509169991607,
+      "control": 2669.4739598495357
+     },
+     "start_state": "cold"
+    }
+   ],
+   "kept": "candidate",
+   "number": 68,
+   "path": "exp-068-flush-the-rendered-report-before-joining-the-snapshot-writer.md",
+   "platform": "macOS",
+   "primary_job": "default-tree",
+   "primary_metric": "wall_ns",
+   "reason": "Time to first byte on the real CLI -7.54% [-8.55%, -5.18%] repeated and -12.47% [-15.66%, -9.84%] first run with total wall unchanged; the engine-path guard in the frontmatter shows the expected nothing for a one-line latency change.",
+   "reference_tools": [
+    {
+     "argv": [
+      "{binary}",
+      "-d",
+      "1",
+      "--no-progress",
+      "{root}"
+     ],
+     "name": "dust",
+     "wall_ns_median": 417236625
+    }
+   ],
+   "subject": "36ce9b22af9a:175191:fa9b471063e3",
+   "title": "Flush the rendered report before joining the snapshot writer",
+   "trials": 12
   }
  ],
  "prepared": "2026-08-23",
@@ -20029,6 +20288,26 @@
    "synthetic": true
   },
   {
+   "apparent_bytes": 4900108867,
+   "directories": 4956,
+   "entries": 175191,
+   "experiments": [
+    "exp-066",
+    "exp-067",
+    "exp-068"
+   ],
+   "files": 170235,
+   "filesystem": "apfs",
+   "host_cpu": "Apple M1 Pro",
+   "key": "36ce9b22af9a:175191:fa9b471063e3",
+   "labels": [
+    "rustup-toolchains"
+   ],
+   "os_cache": "warm-steady",
+   "platform": "macOS",
+   "synthetic": false
+  },
+  {
    "apparent_bytes": 16537501222,
    "directories": 110369,
    "entries": 901963,
@@ -20100,25 +20379,6 @@
    "key": "c95b1edda576:60993:f708694be702",
    "labels": [
     "pr22-macos-benchmarks"
-   ],
-   "os_cache": "warm-steady",
-   "platform": "macOS",
-   "synthetic": false
-  },
-  {
-   "apparent_bytes": 4900108867,
-   "directories": 4956,
-   "entries": 175191,
-   "experiments": [
-    "exp-066",
-    "exp-067"
-   ],
-   "files": 170235,
-   "filesystem": "apfs",
-   "host_cpu": "Apple M1 Pro",
-   "key": "36ce9b22af9a:175191:fa9b471063e3",
-   "labels": [
-    "rustup-toolchains"
    ],
    "os_cache": "warm-steady",
    "platform": "macOS",
@@ -20252,21 +20512,21 @@
   }
  ],
  "totals": {
-  "accepted_lines_changed": 8385,
+  "accepted_lines_changed": 8394,
   "decisions": {
-   "accepted": 34,
+   "accepted": 35,
    "baseline": 3,
    "in-progress": 1,
    "rejected": 28,
    "superseded": 2
   },
-  "experiments": 68,
+  "experiments": 69,
   "first_date": "2026-08-10",
-  "hypotheses": 52,
+  "hypotheses": 53,
   "last_date": "2026-08-23",
   "platforms": {
    "Linux": 9,
-   "macOS": 59
+   "macOS": 60
   }
  },
  "version": "fdu.performance.timeline/1"

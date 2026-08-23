@@ -177,3 +177,21 @@ metadata-path timing and wrong for anything comparing allocated-byte semantics.
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.
 -->
+
+## ttfb.py
+
+Time to first stdout byte for the real command line, paired and interleaved — the one
+signal a change to *when* the report is flushed moves, and one no probe job can see,
+because the flush is command-line code.
+Control and candidate `fdu` binaries run in counterbalanced pairs with their snapshots
+isolated under `XDG_CACHE_HOME`; `repeated` leaves each arm’s snapshot in place between
+trials and `first` removes it, so both default-path shapes are measured.
+Reports medians and a bootstrap interval over the paired differences for first byte and
+for total wall, which is the guard: a change that moves no work must leave wall alone.
+
+```shell
+python3 ttfb.py /path/to/tree /tmp/fdu.control /tmp/fdu.candidate 12 repeated
+python3 ttfb.py /path/to/tree /tmp/fdu.control /tmp/fdu.candidate 12 first
+```
+
+exp-068 is the worked example.
