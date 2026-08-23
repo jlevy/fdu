@@ -651,15 +651,26 @@ tracks the metabrowser-side adoption, and `fdu-eu8t` is the older “specify a p
 Python session” request that Phase 5 and Phase 6 between them answer.
 Both stay open until the work they describe lands.
 
-**The phases group the work; three vertical spikes order it.** Building either full
-surface against a protocol shape nobody has run is the risk worth retiring first, so the
-sequence is: classification and one coherent read through the real PyO3 handle; then the
-live lifecycle, including the reducer union’s real cost on a dense subject; then the
-production surface, the oracles, and the layered comparison that precedes any default
-change. A failed spike edits this document rather than being worked around, and spike
-code is promoted only once its semantics, bounds, and measurements survive that loop.
-Phase 2 in particular should run before or beside Phase 1: every cross-engine oracle
-depends on classification agreement, while the plane needs it only at validation time.
+**These phases are fdu’s own order, and nothing here waits on the client.**
+[Metabrowser’s refactor spec](https://github.com/jlevy/metabrowser/blob/3e563a8/docs/project/specs/active/plan-2026-08-23-inventory-provider-refactor-and-fdu-adoption.md)
+ships its Python provider behind the sealed contract first, with no fdu dependency, and
+only then implements the same contract against this engine.
+So fdu refines and builds its native prerequisites independently rather than
+interleaving with that refactor.
+Phase 2 should still run before or beside Phase 1 — every cross-engine oracle depends on
+classification agreement, while the plane needs it only at validation time — but that is
+an fdu sequencing judgment, not a client dependency.
+The conformance packet gates *verification* of the classification work, not the work
+itself.
+
+**One moment is genuinely coupled, and it is worth building toward.** Metabrowser’s
+Phase 2 opens with the smallest real PyO3 spike: open a shared handle, perform one
+bundled directory-plus-roll-up read returning a single version, cursor, state, and work
+record, and converge after one live mutation with no mirror index in Python.
+That slice is where this contract first meets an actual consumer, and a seam that
+translates badly there revises both documents before either surface expands.
+It draws on Phase 0’s shared reads and Phase 3’s bundled read, which is the argument for
+landing those two early even though the phase list would otherwise let them drift.
 
 ### Phase 0: Two surface defects
 

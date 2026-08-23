@@ -243,24 +243,37 @@ Amendments to the integration spec, in its own phase order:
 
 ## How It Gets Built
 
-Three vertical spikes rather than either full surface built against an assumed protocol,
-with both design documents refined first:
+The two sides ship on independent tracks, which is the useful consequence of putting the
+contract above both providers.
 
-1. **Classification and coherent read.** Extend and export the packet, vendor it into
-   fdu, pass it unchanged, and serve one directory page plus one roll-up through the
-   real PyO3 handle with a single version, cursor, and state record.
-2. **Live lifecycle.** Capture-before-baseline under mutation, aggregated trust zero
-   crossings, bounded dirty sets with read-on-dirty, gap and reset behavior, and the
-   reducer union’s real cost on a dense subject.
-3. **Production surface and adoption.** The full projections and the stateless adapter,
-   the three oracles, then the engine, server, and browser comparison before any default
-   changes.
+[Metabrowser’s refactor spec](https://github.com/jlevy/metabrowser/blob/3e563a8/docs/project/specs/active/plan-2026-08-23-inventory-provider-refactor-and-fdu-adoption.md)
+splits its work in two.
+Phase 1 moves the existing Python walker, index, roll-ups, refresh, and watch behind the
+final sealed contract, migrates every consumer, deletes the old seams, and establishes
+the provider-aware performance baseline — all with no fdu dependency and no change in
+product behavior. Phase 2 implements the same contract against this engine.
+The constraint that makes this work is that Phase 1 is not a facade shaped around
+today’s implementation: it has to be the contract fdu will also satisfy, or Phase 2
+discovers the difference the expensive way.
 
-A failed spike edits both documents and is rerun; spike code is promoted only once its
-semantics, bounds, and measurements survive that loop.
-The virtue of this order over phase-by-phase construction is that the riskiest
-assumption — that the protocol shape survives contact with the real PyO3 handle — gets
-tested in spike 1 instead of after both surfaces are built.
+fdu therefore proceeds on its own phase order without waiting, and the earlier
+three-spike sequence is best read as the evidence loop inside metabrowser’s Phase 2
+rather than as a joint delivery plan.
+
+**The coupled moment is the opening of that phase**, and it is small on purpose: open a
+shared fdu handle through PyO3, perform one bundled directory-plus-roll-up read that
+returns a single version, cursor, state, and work record, and converge after one live
+mutation with no Python mirror index — then run that slice through the provider contract
+tests and the conformance packet.
+If translation there needs provider-specific branches or lossy values, both documents
+change before either surface expands.
+That slice leans on shared reads (`fdu-gav9`) and the bundled read, which is the reason
+to land those early rather than let the phase list drift them late.
+
+The rest of fdu’s list — the registry and its two extension levels, the plane, the
+reducer union’s cost, trust on the clock, the session and its handoff — is fdu’s to
+sequence, and the conformance packet gates verification of the classification work
+rather than the work itself.
 
 ## Open Questions
 
