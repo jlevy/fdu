@@ -302,19 +302,28 @@ The shape, then:
   `remaining_top`) because a browser shows a handful of rows and a wide tree has many.
   A bound with a stated remainder belongs here for the same reason it belongs on trees.
 
-**Sequencing against PR #38.** That PR replaces the per-file linear scan of the rules
-table with two `LazyLock<HashMap<&'static str, &'static GeneratedRule>>` statics, worth
-about 5% on warm content jobs.
+**What this inherits from PR #38, now merged.** That work replaced the per-file linear
+scan of the rules table with two
+`LazyLock<HashMap<&'static str, &'static GeneratedRule>>` statics, worth about 5% on
+warm content jobs on top of a larger roll-up fix.
 Process-global statics over `&'static` data are exactly what a per-instance registry
 cannot be, so the two changes meet in one file — but they do not conflict in substance.
-The indexed-lookup *shape* is what the win comes from, and it survives being owned by a
+The indexed-lookup *shape* is where the win comes from, and it survives being owned by a
 registry value instead of by a static; what changes is lifetime, not algorithm.
-So #38 lands first and this work converts its statics into a field on the registry,
-keeping the index and keeping its test.
-That test — `indexed_rule_tiers_agree_with_the_scan_they_replaced`, which pins
-`max_by_key`’s last-wins tie-break — generalizes rather than retires: it becomes a
+So this work converts those statics into a field on the registry, keeps the index, and
+keeps its test.
+That test — `indexed_rule_tiers_agree_with_the_scan_they_replaced`, which
+pins `max_by_key`’s last-wins tie-break — generalizes rather than retires: it becomes a
 property over *any* registry, which is worth more once registries are user-supplied and
 a tie-break bug can no longer be caught by reading one committed file.
+`type_rule_fingerprint()` is a `const fn` over a compiled constant for the same reason
+and becomes a value read from the active registry.
+
+That PR also merged
+[the evidence-scope plan](plan-2026-08-23-experiment-evidence-scope.md), whose finding —
+that a number measured on one subject travels as a general claim unless the record stops
+it — is why this spec’s comparison table states its corpus, host, cache state, and
+single-trial status inline rather than in a footnote.
 
 ### Partitioned tallies
 
@@ -358,6 +367,27 @@ same: this is pre-computed roll-up state, the thing the index exists to hold.
 What this deliberately is not: a general predicate store.
 A tag is a named, versioned, compiled rule the engine owns end to end — that is what
 keeps the cache honest and the cost stated.
+
+### Where the cost of both lands
+
+Planes and groups are the same kind of change measured from opposite ends: each adds
+maintained per-directory state, so together they multiply the ancestor-merge path rather
+than adding to it once.
+That is precisely the path exp-064’s H94 just made cheap — its `merge_ancestors` went
+from 43.73% of profile to 14.07% — and precisely the path campaign 2 plans to delete
+rather than tune, in the `fdu-cq7t` follow-on it names the content-tier instance of H86:
+key roll-ups by `EntryId`, defer to one bottom-up pass.
+
+Two consequences, both following the floor rule that a tier close to its floor is a
+result rather than a place to keep digging.
+Adding state to a path scheduled for structural replacement should be measured against
+that replacement’s shape, not against today’s — a per-plane, per-group cost that looks
+acceptable on the current ancestor walk may be the wrong measurement entirely.
+And these features supply what that structural work has so far lacked: a consumer whose
+requirements make the multiplication real, on a dense subject rather than a generated
+one. The loop job (`fdu-n4gn`) belongs in both specs, and its subject should be a real
+tree for the reason exp-065 established — a sparse generated corpus flatters exactly
+this class of change.
 
 ### The embedder watch contract
 
@@ -468,7 +498,7 @@ First because it is the only outright blocker, and it is small.
 
 ### Phase 1b: The customizable taxonomy
 
-Lands after PR #38, converting its statics rather than competing with them.
+Converts PR #38’s indexed tiers rather than competing with them; that work is merged.
 
 - [ ] A `group` level in the rule dialect and in roll-up state, so a browsing taxonomy
   is its own axis rather than a reinterpretation of the analysis families; the compiled
@@ -570,8 +600,8 @@ here records its regime.
   provenance, lazy open
 - [FSEvents-scoped revalidation plan](plan-2026-08-10-fdu-fsevents-scoped-revalidation.md)
   — the convergence half for warm opens
-- PR #38 (`perf(content)`: roll-up ancestor walk and indexed type-rule tiers) — the
-  indexed classification tiers this spec’s registry work converts from statics into
+- PR #38, merged (`perf(content)`: roll-up ancestor walk and indexed type-rule tiers) —
+  the indexed classification tiers this spec’s registry work converts from statics into
   per-registry state, and the tie-break test it generalizes
 - Beads: `fdu-p02b` (the integration), `fdu-p35d` (the gitignore spike verdict),
   `fdu-v4lc` (the shared type-rule dialect), `fdu-e86o`/`fdu-a0j0`/`fdu-1mwt` (the
