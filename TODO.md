@@ -83,8 +83,9 @@ These are the ones a reader of this page should know about:
 - `fdu-rjqx` / `fdu-tgsx` — the controlled-cold macOS protocol.
   `purge` only approximates boot conditions, so every macOS cold claim is currently
   diagnostic.
-- `fdu-tt49` — lint and typecheck `benchmarks/`. The 8,000-line harness that decides
-  accept/reject and validates every artifact is unit-tested but never linted.
+- `fdu-tt49` — lint and typecheck `explorations/benchmarks/`. The 8,000-line harness
+  that decides accept/reject and validates every artifact is unit-tested but never
+  linted.
 - `fdu-f8ni` — reserve experiment and hypothesis ids at registration time.
   The duplicate-id half is now enforced by `make perf-ledger`; the reservation
   convention is not.

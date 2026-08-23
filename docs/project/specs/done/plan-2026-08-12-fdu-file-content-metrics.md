@@ -780,8 +780,8 @@ No report reads a file.
 | `tests/golden/cli-content.tryscript.md` | human, JSON, JSONL, YAML, aliases, errors, coverage, and equivalent-preset transcripts | Lock the end-to-end CLI and schema contract before optimization begins |
 | `scripts/content-selfcheck.mjs` and `make content-selfcheck` | materialize tracked `HEAD` files with `git archive`, run the release binary with cache off, and validate the machine report | Exercise fdu on its own multilingual Rust, Python, JavaScript, Markdown, TOML, YAML, and shell sources without scanning `.git`, build output, caches, or other worktrees |
 | `crates/fdu/examples/perf_probe.rs` | add `content-basic`, `code-sloc`, `text-prose`, `markdown-prose`, and `binary-gate` modes | Measure components through supported public APIs and emit semantic digests outside the component timer |
-| `benchmarks/corpora.json`, `benchmarks/scenarios.json`, and `benchmarks/schema/` | add content recipes, named jobs, transitions, and result fields | Reuse the existing generated-corpus, validation, and paired-measurement contracts |
-| `benchmarks/realtree/` and the experiment ledger | add immutable self-host tree fingerprints and SCC/Tokei comparators | Measure real multilingual behavior and record accepted and rejected optimization hypotheses |
+| `explorations/benchmarks/corpora.json`, `explorations/benchmarks/scenarios.json`, and `explorations/benchmarks/schema/` | add content recipes, named jobs, transitions, and result fields | Reuse the existing generated-corpus, validation, and paired-measurement contracts |
+| `explorations/benchmarks/realtree/` and the experiment ledger | add immutable self-host tree fingerprints and SCC/Tokei comparators | Measure real multilingual behavior and record accepted and rejected optimization hypotheses |
 
 The self-host check intentionally asserts identities and coverage, not a permanently
 pinned total for the moving repository.

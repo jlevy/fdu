@@ -20,7 +20,7 @@ from benchmarks.realtree import measure
 
 
 SCHEMA = "fdu-claim-provenance-v1"
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
 ARTIFACT_KINDS = {
     "fdu-perf-probe",
     "homebrew-dust",

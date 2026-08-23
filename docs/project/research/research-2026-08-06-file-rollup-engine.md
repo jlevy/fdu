@@ -1506,8 +1506,9 @@ reimplementations.
    on the same corpus; warm re-run (snapshot + revalidation) well under 1 s for 500k
    entries, against flowmark’s 23 ms bar at ~1k files.
    Build the corpus generator first, mirroring flowmark’s
-   `benchmarks/generate_corpus.sh`, and always report cold and warm separately — every
-   benchmark in this document that omitted that distinction was misleading.
+   `explorations/benchmarks/generate_corpus.sh`, and always report cold and warm
+   separately — every benchmark in this document that omitted that distinction was
+   misleading.
 3. **Adopt the memory and snapshot targets explicitly:** ~25–32 bytes per file record
    and O(1) snapshot open with lazy per-directory decompression (both ncdu 2), and no
    relational store on the hot path (gdu’s SQLite result).

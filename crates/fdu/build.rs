@@ -18,7 +18,7 @@
 //!     deliberately two.
 //!
 //! `fdu-core` keeps its own stamp because the perf probe is its example and the
-//! provenance gate (`benchmarks/realtree/provenance.py`) asserts the revision appears in
+//! provenance gate (`explorations/benchmarks/realtree/provenance.py`) asserts the revision appears in
 //! the probe's `--version`. Neither copy is removable; keep them in step by hand.
 //!
 //! The file-type rules are the other half of `fdu-core`'s build script and stay there:

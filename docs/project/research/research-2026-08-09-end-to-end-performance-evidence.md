@@ -430,8 +430,9 @@ JSON result schema, and a report renderer.
 
 ## Recommendations
 
-1. Implement Option C under `benchmarks/`, with generated corpora and results ignored
-   but recipes, schemas, adapters, tests, and report templates committed.
+1. Implement Option C under `explorations/benchmarks/`, with generated corpora and
+   results ignored but recipes, schemas, adapters, tests, and report templates
+   committed.
 2. Name every job and state explicitly; prohibit unqualified *cold*, *warm*, and *raw*
    in generated result records.
 3. Share one corpus generator and manifest validator across the 500k revalidation spike,
@@ -470,10 +471,10 @@ It defines the evidence required before one can be validated.
 
 ## References
 
-- [Flowmark performance report at the reviewed revision](https://github.com/jlevy/flowmark-rs/blob/015f23989af3e5cfb3f8b58dfc72822c534df25a/benchmarks/REPORT.md)
-- [Flowmark corpus generator](https://github.com/jlevy/flowmark-rs/blob/015f23989af3e5cfb3f8b58dfc72822c534df25a/benchmarks/generate_corpus.sh)
-- [Flowmark cross-tool runner](https://github.com/jlevy/flowmark-rs/blob/015f23989af3e5cfb3f8b58dfc72822c534df25a/benchmarks/run_comparison.sh)
-- [Flowmark profiling runner](https://github.com/jlevy/flowmark-rs/blob/015f23989af3e5cfb3f8b58dfc72822c534df25a/benchmarks/profile_rust.sh)
+- [Flowmark performance report at the reviewed revision](https://github.com/jlevy/flowmark-rs/blob/015f23989af3e5cfb3f8b58dfc72822c534df25a/explorations/benchmarks/REPORT.md)
+- [Flowmark corpus generator](https://github.com/jlevy/flowmark-rs/blob/015f23989af3e5cfb3f8b58dfc72822c534df25a/explorations/benchmarks/generate_corpus.sh)
+- [Flowmark cross-tool runner](https://github.com/jlevy/flowmark-rs/blob/015f23989af3e5cfb3f8b58dfc72822c534df25a/explorations/benchmarks/run_comparison.sh)
+- [Flowmark profiling runner](https://github.com/jlevy/flowmark-rs/blob/015f23989af3e5cfb3f8b58dfc72822c534df25a/explorations/benchmarks/profile_rust.sh)
 - [Flowmark performance and profiling plan](https://github.com/jlevy/flowmark-rs/blob/015f23989af3e5cfb3f8b58dfc72822c534df25a/docs/project/specs/done/plan-2026-02-26-perf-comparison-profiling.md)
 - [Flowmark parallel-processing plan](https://github.com/jlevy/flowmark-rs/blob/015f23989af3e5cfb3f8b58dfc72822c534df25a/docs/project/specs/done/plan-2026-02-27-parallel-file-processing.md)
 - [Flowmark cache and performance roadmap](https://github.com/jlevy/flowmark-rs/blob/015f23989af3e5cfb3f8b58dfc72822c534df25a/docs/project/specs/done/plan-2026-02-27-incremental-cache-and-performance-roadmap.md)

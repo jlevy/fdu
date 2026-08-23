@@ -39,7 +39,7 @@ because they control for filesystem-cache and machine drift.
 
 ## Method and Validity
 
-The subject was the repository’s `benchmarks/` subtree.
+The subject was the repository’s `explorations/benchmarks/` subtree.
 It contains the ignored generated corpus, benchmark environment, harness, schemas, and
 prior result artifacts, but excludes the more volatile repository build and Git state.
 Its immediate redacted fingerprint contained 110,369 directories including the root,
@@ -120,7 +120,7 @@ with SHA-256 `dd4d8a0030ae5967f275c6a38e219ec9e1364020f030b12f32568ddd2ed5a0f5`.
 commands, versions, hashes, host facts, tree facts, resources, and intervals are in the
 [reproduction manifest](fdu-live-tool-comparison-manifest-v2.json).
 The operational procedure is in the
-[performance harness README](../../../benchmarks/README.md).
+[performance harness README](../../../explorations/benchmarks/README.md).
 
 ## Why the Tree Product Leads
 

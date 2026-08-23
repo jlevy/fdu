@@ -104,13 +104,13 @@ to peer tools rather than to two fdu builds.
 Both were re-run here rather than re-derived, and both reproduced.
 Two instruments were genuinely missing and are added by this note:
 
-- **`benchmarks/spikes/parfloor.c`** — the *parallel* syscall floor.
+- **`explorations/benchmarks/spikes/parfloor.c`** — the *parallel* syscall floor.
   `walkspike` is single-threaded, which ranks syscall strategies correctly and cannot
   serve as a lower bound for a four-worker walker: a one-thread floor sits above fdu,
   not below it. `parfloor` also carries the `abspath` variant that prices absolute-path
   statting on its own.
-- **`benchmarks/spikes/peerwalk.rs`** — the ecosystem anchor: `ignore`, `walkdir`, and
-  `jwalk` over one tree on one job.
+- **`explorations/benchmarks/spikes/peerwalk.rs`** — the ecosystem anchor: `ignore`,
+  `walkdir`, and `jwalk` over one tree on one job.
   Nothing in this repository previously compared fdu against the walker a Rust program
   would otherwise reach for.
 

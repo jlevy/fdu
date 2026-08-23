@@ -4,7 +4,8 @@ Small, self-contained instruments for one-off measurement spikes.
 Nothing here runs in `make check` or the benchmark suite, and nothing here produces
 ledger evidence by itself: results from these tools order hypotheses, and anything that
 motivates a production change re-runs under
-[the performance loop](../../docs/project/guides/performance-loop.md) on real hardware.
+[the performance loop](../../../docs/project/guides/performance-loop.md) on real
+hardware.
 
 ## walkspike.c
 
@@ -119,7 +120,7 @@ cargo build --release --manifest-path /tmp/peerwalk/Cargo.toml
 ```
 
 The numbers it produced are in
-[the metadata-walk floor report](../../docs/project/reports/report-2026-08-23-metadata-walk-floor.md).
+[the metadata-walk floor report](../../../docs/project/reports/report-2026-08-23-metadata-walk-floor.md).
 
 ## arena_spike.rs
 
@@ -139,7 +140,7 @@ rustc -O -o arena_spike arena_spike.rs
 It is a physics measurement, not a correctness prototype: no delta contract, no
 progressive publication, no error provenance.
 See
-[the consumer structural-headroom research](../../docs/project/research/research-2026-08-15-consumer-structural-headroom.md)
+[the consumer structural-headroom research](../../../docs/project/research/research-2026-08-15-consumer-structural-headroom.md)
 for the numbers it produced.
 
 ## paired_runner.py
@@ -163,7 +164,7 @@ binaries by absolute path so the exact artifact measured is unambiguous.
 Deterministic heterogeneous tree generator (node_modules-heavy projects, nested
 packages, sparse pack files, assets, symlinks) used for the 2026-08-13 Linux scouting
 measurements in
-[the Linux first-measurements research](../../docs/project/research/research-2026-08-13-linux-first-measurements.md).
+[the Linux first-measurements research](../../../docs/project/research/research-2026-08-13-linux-first-measurements.md).
 
 ```shell
 python3 gen_tree.py /tmp/fdu-spike/tree 450000

@@ -13,11 +13,11 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 //
 // Auditing one of them is worse than auditing none, because the summary line then
 // reports a clean Python surface while a whole environment goes unchecked. The
-// benchmark environment carries its own cool-off policy in `benchmarks/uv.toml` and is
+// benchmark environment carries its own cool-off policy in `explorations/benchmarks/uv.toml` and is
 // as much a place a compromised release could land as the Python extension is.
 const UV_LOCKS = [
   ["crates", "fdu-py", "uv.lock"],
-  ["benchmarks", "uv.lock"],
+  ["explorations/benchmarks", "uv.lock"],
 ];
 
 function fail(message) {

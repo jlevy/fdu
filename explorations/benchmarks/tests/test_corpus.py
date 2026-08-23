@@ -504,7 +504,7 @@ class CorpusSafetyTests(unittest.TestCase):
 
     def test_cleanup_rejects_workspace_and_symlink_targets(self) -> None:
         with self.assertRaisesRegex(CorpusError, "workspace"):
-            cleanup_run_directory(Path(__file__).resolve().parents[2])
+            cleanup_run_directory(Path(__file__).resolve().parents[3])
 
         with tempfile.TemporaryDirectory() as temporary_directory:
             base = Path(temporary_directory)

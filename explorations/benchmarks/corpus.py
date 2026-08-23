@@ -31,7 +31,7 @@ MAX_TARGET_ENTRIES = 10_000_000
 DETAIL_ENTRY_LIMIT = 512
 MAX_JSON_BYTES = 8 * 1024 * 1024
 BASE_MTIME_SECONDS = 1_700_000_000
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 # Windows directory-enumeration metadata omits file identity and may be stale. The
 # independent oracle needs fresh identity to distinguish hardlinks from unrelated files.

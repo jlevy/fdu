@@ -212,8 +212,9 @@ as immutable and confidential:
   If it changed, the run says so and exits nonzero, because timings taken against two
   different trees are not comparable.
 
-The repository’s `benchmarks/` subtree is the standard self-contained large local
-testbed. Its 2026-08-13 comparison fingerprint contained 901,963 entries across the
+The repository’s `explorations/benchmarks/` subtree is the standard self-contained large
+local testbed.
+Its 2026-08-13 comparison fingerprint contained 901,963 entries across the
 ignored generated corpus, benchmark environment, harness, schemas, and result fixtures.
 It excludes volatile Git and Rust build state while retaining realistic language,
 dependency, and generated-file distributions.
@@ -227,13 +228,14 @@ Use it when background builds make the live workspace mutate, and fingerprint it
 because it is generated state, not a committed fixture.
 
 Clean up generated replication subjects after an experiment unless the next planned run
-needs them. `benchmarks/corpus/realtree-scratch/` is ignored, can grow to tens of
-gigabytes and hundreds of thousands of entries, and is reproducible from the retained
-base tree. First confirm that no benchmark process is using it, then move that scratch
-directory to Trash on macOS or use the platform’s equivalent recoverable cleanup.
-Keep `benchmarks/corpus/realtree/` unless the base tree itself is intentionally being
-rebuilt. Moving data to Trash does not guarantee physical space is reclaimed until the
-user empties Trash.
+needs them. `explorations/benchmarks/corpus/realtree-scratch/` is ignored, can grow to
+tens of gigabytes and hundreds of thousands of entries, and is reproducible from the
+retained base tree. First confirm that no benchmark process is using it, then move that
+scratch directory to Trash on macOS or use the platform’s equivalent recoverable
+cleanup. Keep `explorations/benchmarks/corpus/realtree/` unless the base tree itself is
+intentionally being rebuilt.
+Moving data to Trash does not guarantee physical space is reclaimed until the user
+empties Trash.
 
 ### Temporary volumes on macOS
 
@@ -304,8 +306,8 @@ preservation checks.
 A new agent must perform this audit before starting another performance run; an
 unexplained RAM disk is cleanup work, not a shared cache.
 
-For a publishable `benchmarks/` run, first finish every benchmark-harness, environment,
-corpus, schema, and result-fixture change.
+For a publishable `explorations/benchmarks/` run, first finish every benchmark-harness,
+environment, corpus, schema, and result-fixture change.
 Copy immutable release binaries outside the root; write scratch snapshots, immediate
 baselines, JSON, Markdown, and command output outside the root too.
 The Make defaults use `/tmp/fdu-realtree`, and the harness rejects explicit state paths
@@ -350,7 +352,7 @@ A candidate is accepted when, on paired wall-time differences at equal ordinals:
 - the complexity is worth it.
 
 The first three are arithmetic and live in
-[`benchmarks/realtree/ledger.py`](../../../benchmarks/realtree/ledger.py).
+[`explorations/benchmarks/realtree/ledger.py`](../../../explorations/benchmarks/realtree/ledger.py).
 The fourth is a judgment and is written down as one.
 
 The accept metric is wall time by default, with one narrow exception: when a hypothesis
@@ -486,8 +488,8 @@ That is what lets the ledger lead with its failures.
 
 - **The contract is compiled, not hand-written.** `make perf-schema` compiles the schema
   from the Pydantic model in
-  [`benchmarks/realtree/experiment.py`](../../../benchmarks/realtree/experiment.py), and
-  `make perf-schema-check` fails on drift.
+  [`explorations/benchmarks/realtree/experiment.py`](../../../explorations/benchmarks/realtree/experiment.py),
+  and `make perf-schema-check` fails on drift.
   The model is the source of truth, and its field descriptions are the documentation
   every artifact ships with.
 - **The measured half is never retyped.** `make perf-record` lifts the medians and
@@ -550,8 +552,9 @@ wrong once and each fails silently.
 - **Absolute values only mean something against their own subject.** A new figure that
   puts two subjects on one axis has to normalise, and has to keep synthetic subjects
   visibly apart. `SYNTHETIC_SUBJECTS` in
-  [`timeline.py`](../../../benchmarks/realtree/timeline.py) is a hand-maintained set; a
-  new adversarial tree must be added to it or it will be averaged in with ordinary work.
+  [`timeline.py`](../../../explorations/benchmarks/realtree/timeline.py) is a
+  hand-maintained set; a new adversarial tree must be added to it or it will be averaged
+  in with ordinary work.
 - **A rejected candidate is not the product’s state.** Anything plotting “where we are
   now” must read the kept arm, which is the candidate only for an accepted experiment.
 
@@ -561,8 +564,8 @@ It must not fetch anything: the page is a single file that has to render from
 a `file://` URL, offline, on a machine that has never opened it.
 Its stylesheet and script must be ASCII, because the output is emitted with character
 references and neither `<style>` nor `<script>` decodes them; the tests in
-[`test_timeline.py`](../../../benchmarks/realtree/tests/test_timeline.py) enforce this
-along with the standalone document shape.
+[`test_timeline.py`](../../../explorations/benchmarks/realtree/tests/test_timeline.py)
+enforce this along with the standalone document shape.
 
 ## Hypotheses
 
@@ -620,7 +623,7 @@ Status is updated as experiments resolve them; see the ledger for results.
 | H61 | A completed bootstrap can live in a dense immutable base while subsequent changes use a sparse overlay and bounded compaction, avoiding the full mutable-entry overhead on nearly every record. | million-scale RSS down at least 40% plus cold indexed wall down at least 3% or a decisive warm/query win | **Queued after H19–H22** (`fdu-f67r`). Preserve stable identities, exact snapshots, all views, progressive publication, errors, deltas, and watch semantics. |
 | H74 | Producers allocate paths and observation batches that the consumer frees, which is the cross-thread pattern glibc `malloc` handles worst. A different global allocator should recover that cost where the scan is not syscall-bound. | transient-summary wall down at least 3%; RSS increase bounded at million scale | **Confirmed for one tier only, and not adopted.** A local mimalloc build on 450k entries measured the aggregate tier at −23.03% [−28.36%, −16.72%], the index tier at +3.66% [−17.62%, +17.53%] (spans zero), and snapshot load at −0.81% [−26.42%, +38.01%] (spans zero). The load result is the interaction to remember: `fdu-91ts` removed roughly four of five per-record allocations structurally first, so the allocator had nothing left to win there — the same competition H13 lost to H18. Peak RSS on the aggregate tier rose 18.1→43.3 MB, +139% on the tier whose whole pitch is low memory. Not adopted: it is a C-building dependency for a one-tier win, unmeasured on macOS, and H85 may capture the same cost without it. |
 | H85 | The aggregate tier’s cost is not allocation *volume* but glibc’s cross-thread free path: workers allocate, one consumer frees. Returning drained batch buffers to their producing worker would make each arena allocated and freed on one thread, capturing H74’s win without a dependency or its memory cost. | transient-summary wall down at least 20%, i.e. comparable to mimalloc; peak RSS no worse than today | **Queued** (`fdu-h7sw`). The evidence for the diagnosis is that H51 and H62 both *reduced allocation counts* on this tier and were both refuted on wall, while mimalloc changes no counts and wins 23%. Anything below about 20% is not capturing the same cost. Note H86’s worker-local arenas dissolve the same pathology structurally; screen H85 only if H86 stalls. |
-| H86 | The remaining consumer cost is the representation, not any one part of it: boxed `BTreeMap` entries, twice-stored names, per-op `PathBuf`s, per-entry ancestor merges, and the channel are one decision wearing seven hypothesis numbers (S1–S4, H19–H22, H60, `fdu-2ubt`). An oracle-checked spike (`benchmarks/spikes/arena_spike.rs`) holding worker-local arena entries, one name arena, per-directory tallies, and a single bottom-up roll-up runs the 450k Linux tree in ~199 ms / ≤23 MiB where the tree view spends ~849 ms / ~279 MiB, so the composite — measured as **one structural experiment**, exp-022 precedent — has a measured ceiling rather than an argued one. Intermediate forms pay conversion costs the end state deletes, which is why the pieces must not be gated separately. | cold-scan-index wall down at least 50% and peak RSS down at least 60% on the 450k Linux subject; engine digests byte-identical at every worker count via the differential harness | **Queued** (`fdu-xde5`, epic over `fdu-2ubt`, `fdu-prph`, `fdu-weey`, `fdu-fnfc`, `fdu-uv0s`), now the centerpiece of [campaign 2](../specs/active/plan-2026-08-23-fdu-performance-campaign-2.md). The floor report hardened the ceiling from a spike number into a denominator: `arena_spike` runs at **1.06× the parallel syscall floor** where the index tier runs 2.68×, and the ~15-point real-tree tax lands in exactly the name/path handling this deletes, so real-tree evidence understates the win. Floor-anchored targets supersede the piecemeal predictions: index ≤1.4× floor, aggregate ≤1.25× on real subjects, p95/median spread ≤1.5×, RSS ≤3× `arena_spike`; absorbs `fdu-0pzh` and the H89 headroom, and decides `fdu-refc` as layout. See [the structural-headroom review](../research/research-2026-08-15-consumer-structural-headroom.md). |
+| H86 | The remaining consumer cost is the representation, not any one part of it: boxed `BTreeMap` entries, twice-stored names, per-op `PathBuf`s, per-entry ancestor merges, and the channel are one decision wearing seven hypothesis numbers (S1–S4, H19–H22, H60, `fdu-2ubt`). An oracle-checked spike (`explorations/benchmarks/spikes/arena_spike.rs`) holding worker-local arena entries, one name arena, per-directory tallies, and a single bottom-up roll-up runs the 450k Linux tree in ~199 ms / ≤23 MiB where the tree view spends ~849 ms / ~279 MiB, so the composite — measured as **one structural experiment**, exp-022 precedent — has a measured ceiling rather than an argued one. Intermediate forms pay conversion costs the end state deletes, which is why the pieces must not be gated separately. | cold-scan-index wall down at least 50% and peak RSS down at least 60% on the 450k Linux subject; engine digests byte-identical at every worker count via the differential harness | **Queued** (`fdu-xde5`, epic over `fdu-2ubt`, `fdu-prph`, `fdu-weey`, `fdu-fnfc`, `fdu-uv0s`), now the centerpiece of [campaign 2](../specs/active/plan-2026-08-23-fdu-performance-campaign-2.md). The floor report hardened the ceiling from a spike number into a denominator: `arena_spike` runs at **1.06× the parallel syscall floor** where the index tier runs 2.68×, and the ~15-point real-tree tax lands in exactly the name/path handling this deletes, so real-tree evidence understates the win. Floor-anchored targets supersede the piecemeal predictions: index ≤1.4× floor, aggregate ≤1.25× on real subjects, p95/median spread ≤1.5×, RSS ≤3× `arena_spike`; absorbs `fdu-0pzh` and the H89 headroom, and decides `fdu-refc` as layout. See [the structural-headroom review](../research/research-2026-08-15-consumer-structural-headroom.md). |
 | H87 | `spawn_save` deep-clones the entire index synchronously before its thread spawns, so the clone sits on the render path of every cache-writing run — the first-run default shape, not only the changed-warm path. Measured: `--cache off` 860 ms vs `--cache refresh` 1,341 ms on the 450k Linux subject. Sharing the index with the writer (Arc, or serialize-before-return) removes it. | cache-writing end-to-end wall down at least 10% on the 450k subject; `--cache off` unchanged | **Confirmed on Linux, at its predicted size** (exp-063): the new `cold-open-save` job measured wall −10.50% [−21.96%, −8.11%], component −17.26%, and peak RSS −35.26% [−38.16%, −33.08%] — the second copy of the index disappearing. `cold-scan-index`, which writes no cache, was the placebo and did not move. **Validated on macOS/APFS** (`fdu-m4r6`): a cross-branch paired A/B over a 494,031-entry tree measured the cache-writing CLI path −174 ms (−4.3%), 95% CI [−418, −60], user-CPU −254 ms, on an uncontrolled host — conservative, since host noise widens rather than narrows that interval. |
 | H88 | Snapshot CRC-32C is computed one byte at a time through a lookup table over a ~28.7 MB image on both save and load; slicing-by-8 needs no unsafe and hardware CRC32C (SSE 4.2 / ARMv8) is a follow-up behind runtime detection. | `warm-snapshot-load` and `cold-snapshot-save` component down at least 3% | **Confirmed on the pre-registered signal, on Linux** (exp-061): save component −12.20% [−36.02%, −0.10%], load component −2.02% [−7.00%, −0.34%], both walls improved with intervals below zero; accepted for ~55 dependency-free lines under the exp-009 exception. The digest is bit-identical by construction, but the speed claim is Linux evidence: the macOS A/B recorded on `fdu-m4r6` exercised this change inside H87’s confirmed interval, with no separate component measurement yet; the hardware-CRC32C follow-up (ARMv8 first, so a macOS agent’s item) is `fdu-6kyn`. |
 | H89 | `derive_ext` allocates a `Vec` per file, validates it with `String::from_utf8`, and `intern_ext` resolves it by string comparison — per file, for an id that directory-listing extension runs make nearly constant. A one-slot `(bytes, ExtId)` memo beside the parent memo removes the allocation, the UTF-8 pass, and most lookups. | cold-scan-index `user_cpu_ns` down and wall down at least 3%, alone or folded into H86 | **Refuted on Linux** (exp-060): wall +1.59% [−1.62%, +6.08%] and user CPU regressed +1.42% [+0.39%, +3.98%] — the memo’s own extraction and compare cost what derive-and-intern saved, the H51/H62 shape on a new site. The reasoning is glibc-specific, so the refutation is Linux-scoped; `fdu-m4r6` notes the optional libmalloc re-screen. The headroom accrues to H86, where arena entries intern from batch context. |
@@ -679,7 +682,7 @@ uv run --no-project python -m benchmarks.realtree measure \
   --variant control=/tmp/perf_probe.control \
   --variant candidate=target/release/examples/perf_probe \
   --job cold-scan-index --job warm-revalidate \
-  --trials 12 --baseline-fingerprint benchmarks/results/realtree/tree-mytree.json \
+  --trials 12 --baseline-fingerprint explorations/benchmarks/results/realtree/tree-mytree.json \
   --name exp007-parallel-producer
 ```
 
@@ -692,8 +695,9 @@ The defaults are exploratory and uncontrolled, so an omitted variable cannot
 accidentally create a held-out claim.
 
 Results land under `/tmp/fdu-realtree/results/` by default because the standard measured
-tree contains `benchmarks/results/`; writing evidence into the subject would invalidate
-the run. Host-specific raw artifacts remain outside the repository.
+tree contains `explorations/benchmarks/results/`; writing evidence into the subject
+would invalidate the run.
+Host-specific raw artifacts remain outside the repository.
 What gets committed is the ledger entry: the numbers that mattered, the verdict, and the
 reasoning.
 
