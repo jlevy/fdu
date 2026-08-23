@@ -573,6 +573,33 @@ class SummaryRenderTests(unittest.TestCase):
         text = summary.render([self._experiment(title="Cumulative effect, but unanchored")])
         self.assertNotIn("## Where it stands", text)
 
+    def _with_wall(self, **wall_overrides):
+        experiment = self._experiment()
+        primary = experiment["results"][0]
+        primary["metrics"]["wall_ns"] = dict(primary["metrics"]["wall_ns"], **wall_overrides)
+        experiment["verdict"] = dict(experiment["verdict"], primary_job=primary["job"])
+        return " ".join(summary.render([experiment]).split())
+
+    def test_a_heavy_tail_is_reported_beside_the_median_the_verdict_used(self) -> None:
+        """The failure the median structurally cannot show.
+
+        The index tier ran 456 ms to 1,489 ms across fifteen consecutive samples on a
+        quiet host while its median moved 4%, and every verdict on that tier was taken
+        on the median alone.
+        """
+        text = self._with_wall(control_p95_over_median=3.27, candidate_p95_over_median=1.10)
+        self.assertIn("Wall-time tail", text)
+        self.assertIn("3.27x its median", text)
+
+    def test_a_steady_run_does_not_print_a_tail_line(self) -> None:
+        # Printing it every time would train a reader to skip the line that matters.
+        text = self._with_wall(control_p95_over_median=1.04, candidate_p95_over_median=1.06)
+        self.assertNotIn("Wall-time tail", text)
+
+    def test_an_artifact_recorded_before_the_field_existed_prints_nothing(self) -> None:
+        text = " ".join(summary.render([self._experiment()]).split())
+        self.assertNotIn("Wall-time tail", text)
+
     def test_a_reconstructible_subject_says_how_to_rebuild_it(self) -> None:
         """Identity says whether you have the tree; only this says how to get one.
 

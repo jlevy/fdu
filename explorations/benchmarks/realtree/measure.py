@@ -104,6 +104,15 @@ class Job:
     allow_incomplete: bool = False
     needs_snapshot: bool = False
     verify_oracle: bool = True
+    #: Which independent check a sample's summary is held to.
+    #:
+    #: ``index-digest`` compares nine fields including the multiset hash over every
+    #: retained entry, and is right for every tier that keeps an index. ``tallies``
+    #: compares the five numbers a tier that keeps nothing can still be held to. The
+    #: second is weaker, and naming it here rather than setting ``verify_oracle=False``
+    #: is the point: a tier with no digest still has an oracle, and which one it faces
+    #: is a property of the tier rather than a concession made per run.
+    oracle: str = "index-digest"
     #: The job writes the snapshot itself, so it needs a path but not a prepared
     #: file — and the path must be empty at the start of every trial, or the job
     #: would be measured overwriting rather than creating.
@@ -198,6 +207,15 @@ class Sample:
 # --------------------------------------------------------------------------------
 # Job catalogue
 # --------------------------------------------------------------------------------
+
+#: The independent checks a job can declare, by name.
+#:
+#: A registry rather than a branch so an unknown name is a rejected sample carrying a
+#: reason, not a check silently skipped.
+_ORACLES = {
+    "index-digest": reference_tree.probe_agrees,
+    "tallies": reference_tree.probe_tallies_agree,
+}
 
 #: ``start_state`` is the cache condition the job measures, and it is the axis the
 #: whole loop is organised around:
@@ -309,6 +327,18 @@ PROBE_JOBS: Dict[str, Job] = {
             "Analyze plain text with raw and normalized words, paragraphs, and page "
             "sufficient statistics after metadata setup."
         ),
+        parallel_cpu=True,
+    ),
+    "aggregate-summary": Job(
+        id="aggregate-summary",
+        argv=("{binary}", "summary", "--root", "{root}"),
+        start_state="cold",
+        description=(
+            "The aggregate tier: five exact tallies through the transient plan, no "
+            "retained index and no snapshot. The shape of `fdu --view summary`, and "
+            "the tier closest to the machine floor."
+        ),
+        oracle="tallies",
         parallel_cpu=True,
     ),
     "cold-scan-index": Job(
@@ -982,9 +1012,13 @@ def _measure_once(
         reasons.extend(probe_reasons)
         component_ns = probe.get("component_ns")
         if job.verify_oracle and probe:
-            disagreement = reference_tree.probe_agrees(fingerprint_document, probe.get("summary"))
-            if disagreement is not None:
-                reasons.append(disagreement)
+            check = _ORACLES.get(job.oracle)
+            if check is None:
+                reasons.append(f"job declares unknown oracle {job.oracle!r}")
+            else:
+                disagreement = check(fingerprint_document, probe.get("summary"))
+                if disagreement is not None:
+                    reasons.append(disagreement)
 
     metrics = dict(result["resources"])
     metrics["wall_ns"] = result["wall_ns"]
@@ -1698,6 +1732,22 @@ def distribution(values: Sequence[int]) -> Optional[Dict[str, float]]:
         "median": median,
         "mean": round(statistics.fmean(ordered), 1),
         "p90": ordered[min(len(ordered) - 1, int(round(0.9 * (len(ordered) - 1))))],
+        "p95": ordered[min(len(ordered) - 1, int(round(0.95 * (len(ordered) - 1))))],
+        # The right tail as a multiple of the middle, which is what a user actually
+        # waits through and what a median cannot see. The index tier spreads 3.3x on a
+        # quiet host -- fifteen consecutive samples between 456 ms and 1,489 ms -- and
+        # every accept decision ever taken on that tier was taken on the median alone.
+        # Campaign 2's structural experiment pre-registers this ratio as a target, so it
+        # has to be a recorded number rather than something re-derived by hand.
+        #
+        # At the twelve trials the loop usually runs, the p95 index rounds to the
+        # second-largest sample: a real order statistic of this run, not an estimate of
+        # a population quantile, and it should be read that way.
+        "p95_over_median": (
+            round(ordered[min(len(ordered) - 1, int(round(0.95 * (len(ordered) - 1))))] / median, 3)
+            if median
+            else None
+        ),
         "stdev": round(statistics.stdev(ordered), 1) if len(ordered) > 1 else 0.0,
         # Median absolute deviation resists the single slow trial that a background
         # process causes, which stdev does not.

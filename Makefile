@@ -134,7 +134,7 @@ uv-version:
 # configuration. Keep this list aligned with the recipe-coverage test.
 UV_BACKED_TARGETS := test-performance python-check python-concurrency python-smoke python-sdist-smoke release-test release-rehearse docs-format docs-format-check \
 	perf-baseline perf-profile perf-content-profile perf-compare perf-content-compare \
-	perf-compare-tools perf-record perf-test perf-ledger perf-ledger-check perf-report perf-report-check perf-schema perf-schema-check
+	perf-compare-tools perf-record perf-subjects perf-subjects-check perf-test perf-ledger perf-ledger-check perf-report perf-report-check perf-schema perf-schema-check
 
 $(UV_BACKED_TARGETS): uv-version
 
@@ -388,7 +388,7 @@ PERF_TOOL_EVIDENCE_ARGS = $(PERF_EVIDENCE_ARGS) \
 PERF_UV := PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=explorations $(UV) run --project explorations/benchmarks --frozen
 PERF_RUN := $(PERF_UV) python -m benchmarks.realtree
 
-.PHONY: perf-probe-release perf-probe-profiling perf-baseline perf-profile perf-compare perf-content-profile perf-content-compare perf-compare-tools perf-record perf-test perf-ledger perf-ledger-check perf-report perf-report-check perf-schema perf-schema-check
+.PHONY: perf-probe-release perf-probe-profiling perf-baseline perf-profile perf-compare perf-content-profile perf-content-compare perf-compare-tools perf-record perf-subjects perf-subjects-check perf-test perf-ledger perf-ledger-check perf-report perf-report-check perf-schema perf-schema-check
 
 perf-probe-release:
 	$(CARGO) build --locked --release -p fdu-core --example perf_probe --no-default-features
@@ -422,6 +422,7 @@ perf-compare: perf-probe-release
 		--variant "control=$(CONTROL)" \
 		--variant "candidate=$(PERF_RELEASE)" \
 		--reference dust=$(shell command -v dust 2>/dev/null || echo /usr/bin/du) \
+		--job aggregate-summary \
 		--job cold-scan-index --job cold-scan-producer \
 		--job cold-snapshot-save --job warm-revalidate \
 		--job warm-snapshot-load \
@@ -460,6 +461,26 @@ perf-compare-tools:
 		--storage "$(or $(STORAGE),local storage)" $(PERF_TOOL_EVIDENCE_ARGS)
 
 # Record an experiment artifact from a completed measurement run.
+# This host's nominated real-tree subject set.
+#
+# Campaign 2 requires at least one nominated real tree behind any accept decision, and
+# nothing could express that before: a run names one `--root` and the record had no
+# notion of which trees are fit to decide. The nominations file is local and gitignored
+# because it holds absolute paths, which the loop never records; the document written
+# here is redacted and committable.
+#
+# Not in `check`: it walks trees only this machine has.
+PERF_SUBJECTS ?= docs/project/reports/nominated-subjects.json
+
+perf-subjects:
+	$(PERF_RUN) subjects --out $(PERF_SUBJECTS)
+
+# Re-observe the nominated trees and report what moved. A nominated tree is somebody's
+# live working directory, so drift is expected -- what matters is that a reader is told
+# before they compare last month's number with today's.
+perf-subjects-check:
+	$(PERF_RUN) subjects --check $(PERF_SUBJECTS)
+
 perf-record:
 	$(PERF_UV) --group dev python -m benchmarks.realtree.record $(ARGS)
 

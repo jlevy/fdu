@@ -53,6 +53,24 @@ class MetricChange(Strict):
     ci95_high_pct: Optional[float] = Field(
         default=None, description="Upper bound of the 95% bootstrap interval."
     )
+    control_p95_over_median: Optional[float] = Field(
+        default=None,
+        description=(
+            "Control's right tail as a multiple of its own median: what a user waits "
+            "through on a bad run, which no median can show. Optional because every "
+            "artifact recorded before the field existed has none, not because a run "
+            "may decline to report it."
+        ),
+    )
+    candidate_p95_over_median: Optional[float] = Field(
+        default=None,
+        description=(
+            "Candidate's tail spread, same unit and same caveat. The index tier "
+            "measured 3.3x on a quiet host while its median moved 1.04x, so a change "
+            "can halve the wait a user notices and register as nothing here, or the "
+            "reverse. Campaign 2's structural experiment pre-registers a target on it."
+        ),
+    )
     significant: bool = Field(
         default=False,
         description=(
@@ -425,6 +443,12 @@ def from_run(
             metrics[metric] = {
                 "control_median": float(control_summary["median"]),
                 "candidate_median": float(candidate_summary["median"]),
+                # Read off each arm's own distribution rather than the paired
+                # comparison: a tail is a property of one arm's runs, and pairing
+                # deltas would describe how the tails moved together, which is not what
+                # a user waits through.
+                "control_p95_over_median": control_summary.get("p95_over_median"),
+                "candidate_p95_over_median": candidate_summary.get("p95_over_median"),
                 "change_pct": float(entry.get("median_change_pct") or 0.0),
                 "ci95_low_pct": interval[0],
                 "ci95_high_pct": interval[1],

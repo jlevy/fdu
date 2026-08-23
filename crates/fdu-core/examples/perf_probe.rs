@@ -92,6 +92,7 @@ enum Mode {
     ScanIndex,
     ScanProducer,
     SnapshotLoad,
+    Summary,
     SnapshotSave,
     TextProse,
     ValidateIndex,
@@ -123,6 +124,7 @@ impl Mode {
             "scan-producer" => Ok(Self::ScanProducer),
             "snapshot-load" => Ok(Self::SnapshotLoad),
             "snapshot-save" => Ok(Self::SnapshotSave),
+            "summary" => Ok(Self::Summary),
             "text-prose" => Ok(Self::TextProse),
             "validate-index" => Ok(Self::ValidateIndex),
             _ => Err(ProbeError(format!("unknown mode {value:?}"))),
@@ -154,6 +156,7 @@ impl Mode {
             Self::ScanProducer => "scan-producer",
             Self::SnapshotLoad => "snapshot-load",
             Self::SnapshotSave => "snapshot-save",
+            Self::Summary => "summary",
             Self::TextProse => "text-prose",
             Self::ValidateIndex => "validate-index",
         }
@@ -333,6 +336,7 @@ fn execute(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
         Mode::SnapshotSave => snapshot_save(arguments),
         Mode::ColdOpenSave => cold_open_save(arguments),
         Mode::SnapshotLoad => snapshot_load(arguments),
+        Mode::Summary => summary_tier(arguments),
         Mode::Revalidate => revalidate(arguments),
         Mode::DeltaApply => delta_apply(arguments),
         Mode::MarkdownProse | Mode::TextProse => content_analysis(arguments, document_request()),
@@ -556,6 +560,80 @@ fn scan_index(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     summary.attribution = Some(report.attribution);
     summary.errors = u64::try_from(report.errors.len()).unwrap_or(u64::MAX);
     summary.complete = report.is_complete();
+    Ok(ProbeOutput::new(arguments.mode, "scan", component, summary))
+}
+
+/// The aggregate tier: five exact tallies, no retained index, no snapshot.
+///
+/// This is `fdu --view summary` -- the plan `plan_report` selects when a caller asks one
+/// unfiltered question and keeps nothing. It is the tier closest to the machine floor
+/// (1.20x on the primary synthetic subject, 1.59x on `/usr`) and it was the only tier
+/// with no probe mode, so every number about it came from the command line and carried
+/// process spawn, argument parsing, canonicalization and rendering. exp-043 and exp-044
+/// both resolved on wall changes of +0.67% and -1.15% while user CPU fell 40% and 50%,
+/// with no component timer available to tell dilution from a real effect.
+///
+/// The blocker recorded against this in `fdu-tyjx` was that the planner was
+/// `pub(crate)`, so an example could not reach the tier at all. `fdu-z7sp` has since
+/// exported `prepare_report` for an unrelated reason -- a library caller wanting one
+/// report without retaining an index -- and that is the whole API this needs.
+///
+/// **The oracle is different here, and it has to be.** Every other mode returns
+/// `engine_digest`, a multiset hash over every entry the index retained. This tier
+/// retains nothing to hash. What it can prove is that its five tallies agree with an
+/// independent walk, which is the same check the tool comparison already makes against
+/// third-party walkers; `Job.oracle` selects it. A tier that reported no oracle at all
+/// would be a tier whose speed nobody could trust.
+fn summary_tier(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
+    // `cache_path: None` with `CachePolicy::Off` is what keeps the planner on the
+    // transient tier: `Refresh` would demand an index to write, and `Only` would demand
+    // a snapshot to read. Off is also what the measured invocation uses.
+    let config = OpenConfig {
+        scan: arguments.scan.clone(),
+        cache_path: None,
+        policy: CachePolicy::Off,
+        analysis: AnalysisRequest::default(),
+    };
+    let query = Query { views: vec![ViewSpec::Summary], ..Query::default() };
+
+    let started = Instant::now();
+    // `_performance` is what the command line prints in its footer; this tier's tallies
+    // come out of the report itself, so it is deliberately unused here.
+    let (report, pending, _performance) =
+        fdu_core::prepare_report(&arguments.root, &config, &query)?;
+    let component = started.elapsed();
+    // Nothing to join on this tier -- it writes no cache -- but joining is what the
+    // command line does, and a mode that skipped it would stop measuring the same thing
+    // the moment the tier ever gained a write.
+    pending.join()?;
+
+    let row = report
+        .sections
+        .iter()
+        .find_map(|section| match section {
+            fdu_core::query::Section::Summary(row) => Some(*row),
+            _ => None,
+        })
+        .ok_or_else(|| ProbeError("summary plan returned no summary section".to_string()))?;
+
+    let mut summary = Summary {
+        files: row.files,
+        dirs: row.dirs,
+        apparent_bytes: u128::from(row.bytes),
+        allocated_bytes: u128::from(row.allocated),
+        newest_file_mtime_ns: row.newest_mtime_ns,
+        // Deliberately absent rather than zero: this tier never observed an index, and a
+        // zero digest would read as "no entries" to an oracle rather than "not offered".
+        engine_digest: None,
+        index_len: None,
+        ..Summary::default()
+    };
+    summary.errors = u64::try_from(report.errors.len()).unwrap_or(u64::MAX);
+    summary.complete = report.complete;
+    // The walk counted more than the summary reports -- symlinks and other kinds are
+    // observed and then deliberately not tallied -- so entries is the honest total of
+    // what this tier can speak for, not of what it touched.
+    summary.entries = row.files + row.dirs;
     Ok(ProbeOutput::new(arguments.mode, "scan", component, summary))
 }
 

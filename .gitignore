@@ -38,6 +38,11 @@ node_modules/
 *.orig
 *.rej
 
+# The nominated subject set names real trees on this machine by absolute path, which
+# is the one thing the loop never records. The redacted document `realtree subjects`
+# emits from it is what gets committed.
+explorations/benchmarks/subjects.local.json
+
 # Real-tree benchmark scratch: clones of large external trees, kept out of git.
 explorations/benchmarks/corpus/realtree/
 tests/parity/.corpus/

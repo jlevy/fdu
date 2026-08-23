@@ -57,12 +57,25 @@ machine. Every run therefore records all of these, per trial:
 | User CPU | `user_cpu_ns` | Time in our code: allocation, hashing, tree building |
 | System CPU | `system_cpu_ns` | Time in the kernel: `getdirentries`, `stat`, `open` |
 | Blocked | `blocked_ns` | `wall - cpu`; I/O waits and scheduler delay |
+| Tail spread | `*_p95_over_median` | The right tail as a multiple of the median: what a user waits through on a bad run |
 | Peak RSS | `peak_rss_bytes` | Whether a speedup was bought with memory |
 | Page faults | `minor_faults`, `major_faults` | Allocation churn; major faults mean real disk |
 | Context switches | `voluntary_*`, `involuntary_*` | Contention, and whether threads are thrashing |
 
 `cpu_ns / wall_ns` is the parallelism actually achieved, and it is the number that
 explains most surprises.
+
+The tail is the number the accept rule cannot see.
+Every verdict rests on a paired median, which is right — it controls for host drift —
+and it is silent about a distribution with a heavy right side.
+The index tier ran 456 ms to 1,489 ms across fifteen consecutive samples on a quiet
+host, a 3.3× spread, while the aggregate tier over the same fifteen spread 1.04×; the
+difference is allocation and page faults, and it is latency a user notices.
+So each arm reports `p95_over_median` alongside its median, the ledger prints it beside
+a verdict once it reaches 1.5×, and a structural experiment may pre-register a target on
+it. At twelve trials the p95 index is the second-largest sample — a real order statistic
+of that run rather than an estimate of a population quantile, and it should be read that
+way.
 
 Two axes cross these dimensions:
 
@@ -226,6 +239,37 @@ sitting in exp-064 unread.
 a flattered content-tier percentage; `tree_max_depth` sets how much a per-file ancestor
 walk costs. The ledger now prints the ratio whenever it reaches 2×, so a reader meets it
 beside the number rather than after being surprised by one.
+
+### The nominated set
+
+One real tree retires a generated-corpus ranking and cannot establish a real-tree one.
+Real trees differ from each other along exactly the axes that decided every recorded
+transfer failure — name shape, directory width, depth, file density — so a set spread
+across characters is what makes “this transfers” a claim about more than one accident.
+
+A host nominates its own set, because `root_id` hashes an absolute path:
+
+```shell
+make perf-subjects        # observe this host's set and write the redacted document
+make perf-subjects-check  # re-observe and report what has moved since
+```
+
+The nominations file (`explorations/benchmarks/subjects.local.json`) is local and
+gitignored — it holds paths, which the loop never records.
+The document `perf-subjects` writes is redacted and committable: labels, characters,
+shapes, `root_id`s and provenance, which is everything a reader needs to know what a
+claim rests on and nothing that says where it lives.
+
+A set can decide an accept when it spans at least three of `source-checkout`,
+`package-cache`, `system-prefix` and `media-tree`, and no subject it decides on is
+sparse. A sparse tree is a generated tree wearing a real one’s clothes whatever its
+provenance says: reading a hole costs nothing, which is precisely the property that
+inflated exp-064’s cold figure from −2.38% to −13.40%. Below that bar a set still
+screens; it just cannot decide.
+
+Drift is expected — a nominated tree is somebody’s live working directory — and
+`perf-subjects-check` exists to make it visible rather than to forbid it.
+What matters is that a reader is told before comparing last month’s number with today’s.
 
 ### Say where the tree came from
 
@@ -773,6 +817,28 @@ would invalidate the run.
 Host-specific raw artifacts remain outside the repository.
 What gets committed is the ledger entry: the numbers that mattered, the verdict, and the
 reasoning.
+
+### The aggregate tier
+
+`--job aggregate-summary` measures the transient plan: five exact tallies, no retained
+index, no snapshot — the shape of `fdu --view summary`, and the tier the floor report
+puts closest to the machine floor at 1.20× synthetic and 1.59× on `/usr`.
+
+It was the last tier with no probe mode, so every number about it came from the command
+line and carried process spawn, argument parsing and rendering: exp-043 and exp-044 both
+resolved on wall changes of +0.67% and −1.15% with no component timer to tell dilution
+from a real effect. On a 5,838-entry subject the gap between wall and component is about
+5 ms, which is most of what those experiments were arguing over.
+
+Its oracle is different, and has to be.
+Every other job compares `engine_digest`, a multiset hash over every retained entry; a
+tier that retains nothing has none to offer.
+`Job.oracle` selects `tallies` instead — the five numbers the tier exists to produce,
+checked against an independent walk, which is the same check the tool comparison applies
+to third-party walkers.
+That is weaker than a digest and named rather than waived: two trees with the same five
+tallies and different contents would pass.
+The alternative on offer was no oracle at all.
 
 ### Comparing against other tools
 

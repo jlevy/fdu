@@ -154,15 +154,33 @@ Phases 0 and A–C are parallel where their beads say so; D and E follow their g
 
 ### Phase 0: Instruments (multipliers, each an afternoon-scale item)
 
-- [ ] `fdu-tyjx` — the aggregate-tier probe job with a tallies oracle.
-  The tier where fdu meets `diskus` still cannot enter the ledger, and it gates the cold
-  thread-policy experiment below.
-- [ ] `fdu-lk9u` — nominate the real-tree subject set: three to four trees of different
-  character (a source checkout with `node_modules`, a package cache, a system prefix, a
-  documents/media tree), digest-pinned, wired into the harness as paired subjects.
-  Re-scoped from a peer-claims blocker to loop infrastructure.
+- [x] `fdu-tyjx` — the aggregate-tier probe job with a tallies oracle.
+  **Landed.** `perf_probe summary` drives the transient plan through `prepare_report`,
+  and the `aggregate-summary` job measures it with `Job.oracle = "tallies"`. The blocker
+  recorded against this bead — that the planner was `pub(crate)`, so an example could
+  not reach the tier at all — had been removed in the meantime by `fdu-z7sp`, which
+  exported `prepare_report` for an unrelated reason.
+  The tier now has a `component_ns`: about 5 ms below wall on a 5,838-entry subject,
+  which is most of what exp-043 and exp-044 were arguing over.
+- [x] `fdu-lk9u` — nominate the real-tree subject set.
+  **Landed.** `make perf-subjects` observes a host’s nominated trees and writes a
+  redacted, committable document; `make perf-subjects-check` reports drift.
+  A set may decide an accept once it spans three of four characters and no subject it
+  decides on is sparse; below that bar it screens.
+  The nominations file holds absolute paths and is gitignored, so what is committed says
+  what a claim rests on without saying where it lives.
+  Each host nominates its own, because `root_id` hashes a path — this repository now
+  carries the Darwin/arm64 set.
 - [ ] `fdu-33ri` — `make perf-floor`: run the floor spikes and the tiers across the
   nominated subjects and emit the ×floor table, the campaign’s scoreboard.
+  **Now the largest gap, and it has a named obstacle rather than only a size.**
+  `parfloor.c` — the denominator every ×floor threshold below is defined against — is
+  Linux-only: `SYS_getdents64` and `statx` have no Darwin equivalents.
+  A macOS scoreboard therefore needs either a `getattrlistbulk` port of the floor or a
+  different floor set (`arena_spike` and `peerwalk` are portable; `dumac` is the
+  practical anchor) with the regime difference recorded.
+  That is a decision this plan should make deliberately rather than let a harness make
+  by falling back.
 - [ ] `fdu-5yjk` — extend scan diagnostics to the FullIndex plan, the plan users run and
   the one Phase B rebuilds; instrument before restructuring.
 - [ ] `fdu-9ydj` — a `--no-oracle` probe mode and engine-phase counter scoping, so
@@ -205,12 +223,14 @@ Phases 0 and A–C are parallel where their beads say so; D and E follow their g
   Floor-anchored targets, superseding the piecemeal predictions: index tier ≤1.4× floor
   and RSS ≤3× `arena_spike` on the primary subject; aggregate ≤1.25× on the real
   subjects (the name-handling tax is in scope); p95/median wall spread ≤1.5× where it is
-  3.3× today; `assert_same_image` at every worker count; at least one real tree in the
-  accept set. macOS validation follows the exp-054 pattern before any macOS number is
-  claimed. The content tier has the same shape one level down — Phase C’s `fdu-cq7t`
-  follow-on is H86’s instance there — and exp-065 sharpened what “at least one real
-  tree” is for: a generated subject is depth-inflated and 22.6× sparse, which flatters
-  exactly the per-file bookkeeping this deletes.
+  3.3× today — now a recorded field on both arms rather than a figure to re-derive by
+  hand, and printed in the ledger beside any verdict whose tail reaches 1.5×;
+  `assert_same_image` at every worker count; at least one real tree in the accept set.
+  macOS validation follows the exp-054 pattern before any macOS number is claimed.
+  The content tier has the same shape one level down — Phase C’s `fdu-cq7t` follow-on is
+  H86’s instance there — and exp-065 sharpened what “at least one real tree” is for: a
+  generated subject is depth-inflated and 22.6× sparse, which flatters exactly the
+  per-file bookkeeping this deletes.
   A structural result measured only there would overstate by the width of exp-064’s two
   readings, 13.4 points against 2.4.
   [The evidence-scope plan](plan-2026-08-23-experiment-evidence-scope.md) turns that

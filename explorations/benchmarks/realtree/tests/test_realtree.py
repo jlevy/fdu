@@ -412,6 +412,7 @@ class StatisticsTests(unittest.TestCase):
         # These are the jobs whose measured process runs the scan worker pool or the
         # content analyzer pool. Left undeclared, each would publish a zero.
         for job_id in (
+            "aggregate-summary",
             "cold-scan-index",
             "cold-scan-producer",
             "warm-revalidate",
@@ -945,6 +946,94 @@ MEMINFO = """\
 MemTotal:       16316108 kB
 MemFree:          123456 kB
 """
+
+
+class TailSpreadTests(unittest.TestCase):
+    """The median is what the rule reads; the tail is what a person waits through."""
+
+    def test_the_spread_is_the_tail_over_the_middle(self) -> None:
+        # Ten quick samples and two slow ones: the median barely moves and the tail
+        # doubles, which is the index tier's measured shape in miniature.
+        values = [100] * 10 + [200, 300]
+        summary = measure.distribution(values)
+        self.assertEqual(summary["median"], 100)
+        self.assertEqual(summary["p95"], 200)
+        self.assertEqual(summary["p95_over_median"], 2.0)
+
+    def test_a_steady_run_reports_a_spread_of_one(self) -> None:
+        self.assertEqual(measure.distribution([50] * 12)["p95_over_median"], 1.0)
+
+    def test_a_zero_median_reports_no_spread_rather_than_dividing(self) -> None:
+        self.assertIsNone(measure.distribution([0, 0, 0])["p95_over_median"])
+
+    def test_the_spread_does_not_disturb_the_median_the_verdict_uses(self) -> None:
+        values = [100] * 10 + [200, 300]
+        self.assertEqual(measure.distribution(values)["median"], statistics.median(values))
+
+
+class OracleSelectionTests(unittest.TestCase):
+    """A tier that keeps no index still faces an oracle, just a different one."""
+
+    def _fingerprint(self):
+        return {
+            "counts": {"directories": 11, "total": 111, "files": 100, "other": 0, "symlinks": 0},
+            "sizes": {"apparent_bytes": 4096, "allocated_bytes": 8192},
+            "newest_file_mtime_ns": 1234,
+            "engine_digest": "d" * 64,
+        }
+
+    def _summary(self, **overrides):
+        summary = {
+            # An aggregate summary describes descendants; the fingerprint counts the root.
+            "dirs": 10,
+            "files": 100,
+            "apparent_bytes": 4096,
+            "allocated_bytes": 8192,
+            "newest_file_mtime_ns": 1234,
+            "engine_digest": None,
+        }
+        summary.update(overrides)
+        return summary
+
+    def test_the_root_offset_is_part_of_the_contract(self) -> None:
+        self.assertIsNone(tree.probe_tallies_agree(self._fingerprint(), self._summary()))
+        # And the index oracle rightly rejects the same summary, which is why the
+        # aggregate tier needed its own rather than a relaxed flag.
+        self.assertIsNotNone(tree.probe_agrees(self._fingerprint(), self._summary()))
+
+    def test_a_wrong_tally_is_caught(self) -> None:
+        for field, wrong in (
+            ("files", 99),
+            ("dirs", 9),
+            ("apparent_bytes", 4095),
+            ("allocated_bytes", 1),
+            ("newest_file_mtime_ns", 0),
+        ):
+            with self.subTest(field=field):
+                disagreement = tree.probe_tallies_agree(
+                    self._fingerprint(), self._summary(**{field: wrong})
+                )
+                self.assertIsNotNone(disagreement)
+                self.assertIn(field, disagreement)
+
+    def test_a_tier_with_no_index_may_not_claim_a_digest(self) -> None:
+        # Guards the regression where a future mode reports a stale digest and passes.
+        disagreement = tree.probe_tallies_agree(
+            self._fingerprint(), self._summary(engine_digest="d" * 64)
+        )
+        self.assertIsNotNone(disagreement)
+        self.assertIn("retains no index", disagreement)
+
+    def test_every_job_declares_a_known_oracle(self) -> None:
+        for job_id, job in measure.PROBE_JOBS.items():
+            with self.subTest(job=job_id):
+                self.assertIn(job.oracle, measure._ORACLES)
+
+    def test_only_the_indexless_tier_uses_the_weaker_oracle(self) -> None:
+        # The weaker check is for tiers that structurally cannot offer a digest, not a
+        # convenience for a job whose digest is inconvenient.
+        weaker = {job_id for job_id, job in measure.PROBE_JOBS.items() if job.oracle == "tallies"}
+        self.assertEqual(weaker, {"aggregate-summary"})
 
 
 class HostFactsTests(unittest.TestCase):
