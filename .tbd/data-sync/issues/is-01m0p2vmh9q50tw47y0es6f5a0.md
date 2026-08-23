@@ -3,14 +3,16 @@ type: is
 id: is-01m0p2vmh9q50tw47y0es6f5a0
 title: Peer walker ranking needs several real trees before it can be claimed in either direction
 kind: task
-status: open
+status: closed
 priority: 1
-version: 2
+version: 3
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-performance-campaign-2.md
 labels: []
 dependencies: []
 created_at: 2026-08-23T01:13:15.561Z
-updated_at: 2026-08-23T01:52:05.533Z
+updated_at: 2026-08-23T08:22:13.473Z
+closed_at: 2026-08-23T08:22:13.472Z
+close_reason: "Landed as loop infrastructure: benchmarks/realtree/subjects.py plus make perf-subjects / perf-subjects-check. A host nominates its trees in a gitignored file holding paths; the emitted document is redacted and committable. Policy: three of four characters and no sparse subject before a set may decide an accept. The Darwin/arm64 set is committed. Peer-ranking claims remain a consumer of this and are not themselves closed."
 ---
 The Linux walker comparison inverts with the subject: fdu leads ignore (ripgrep's walker)
 by 12-26% on four generated trees of different shapes, ties on a tree carrying real
