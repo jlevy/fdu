@@ -5,7 +5,7 @@ title: "Clarify and validate PR #15 content performance layers"
 kind: task
 status: in_progress
 priority: 1
-version: 28
+version: 29
 labels: []
 dependencies: []
 child_order_hints:
@@ -29,9 +29,9 @@ child_order_hints:
   - is-01kzyzpjp5rz94mz5ma25t0tdz
   - is-01kzz1krveqzt0ap63a4wjk961
 created_at: 2026-08-13T22:59:35.718Z
-updated_at: 2026-08-14T02:28:57.317Z
+updated_at: 2026-08-23T05:42:48.583Z
 ---
 
 ## Notes
 
-PR #15 merged at 241a3c8 with the content-analysis hardening: eligible text is read through EOF with no size cap; expected binary/encoding/unsupported coverage is non-fatal; language summaries are aligned and metadata-only unless analysis is requested; help, README, design/spec/decision docs, benchmark contracts, and scratch-corpus cleanup guidance are aligned. Follow-up PR #18 at 4bce242 adds exact one-shot text walked/read/fresh/cache performance telemetry; machine formats and watch/lifecycle output omit it. Full local make check and all 16 required PR #18 checks pass across macOS/Linux/Windows and Python 3.12/3.14. Global fdu 0.0.1-dev+g4bce242 is installed. Remaining broader readiness gaps continue in the open child issues.
+Flagged stale at the 2026-08-23 handoff: left in_progress by a session that ended without closing it, last touched 8-13 days earlier. Status not changed because this session could not verify whether the work landed. Triage before trusting the in_progress marker -- either close it or restart it deliberately.
