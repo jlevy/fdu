@@ -245,6 +245,20 @@ def check_one_bundle_answers_a_whole_page() -> None:
     assert src.totals is not None and src.totals.files == 1
     assert page.rollups[0].files == src.totals.files
 
+    # Every bundle says what it cost, beside what it answered, and the number is the
+    # sum of what its projections did rather than a fact about the tree. Here: the
+    # listing walks the root and its two rows (3), the totals read the root (1), the
+    # "src" roll-up walks root and src (2), and the absent path stops at the root (1).
+    assert page.work.rows == 2
+    assert page.work.entries_visited == 3 + 1 + 2 + 1
+    assert page.work.dirs_visited == page.work.entries_visited, "nothing here is a file"
+
+    # The extension bound applies to the rows returned, not to the tallies ranked to
+    # choose them -- which is the whole reason the counter reports what it examined.
+    assert page.work.tally_rows > len(page.total.by_extension)
+    assert page.work.lock_wait_ns <= page.work.wall_ns
+    assert page.work.wall_seconds > 0
+
     # And the cursor works: what happened after it is what changed since.
     (root / "docs" / "extra.md").write_text("more", encoding="utf-8")
     index.refresh()

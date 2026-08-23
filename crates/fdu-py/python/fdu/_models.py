@@ -499,6 +499,65 @@ class Child:
 
 
 @dataclass(frozen=True, slots=True)
+class Work:
+    """What one read actually did, beside the answer rather than inside it.
+
+    Execution telemetry, not a fact about the tree: two reads that answer identically can
+    do very different amounts of work, and the difference is what a serving loop needs to
+    see. It also turns "no hidden O(index) pass" into something a benchmark can assert --
+    a frequent read must be proportional to its own output or to maintained state, and
+    ``entries_visited`` is where a regression shows up first.
+
+    Two things are deliberately absent. **CPU time**: a read on a maintained index does no
+    I/O, so its wall time is CPU plus whatever it waited for the guard, and
+    ``lock_wait_ns`` already separates those. **Bytes across the binding**: the engine
+    cannot see a binding, and ``name_bytes`` is the one term in a result that grows
+    without bound -- the rest is a fixed per-row schema that ``rows`` and ``tally_rows``
+    multiply.
+    """
+
+    entries_visited: int
+    """Index entries this read examined, including those walked past to find a path.
+
+    The load-bearing number. A read of maintained state visits its path's depth plus the
+    rows it returns; one that visits a subtree is doing an aggregate pass, and says so
+    here whatever its answer looks like.
+    """
+
+    dirs_visited: int
+    """Directories among them."""
+
+    rows: int
+    """Rows the result carries."""
+
+    tally_rows: int
+    """Extension and group tallies the result *examined*, which a bound may exceed.
+
+    Bounding a roll-up's extension rows still ranks every tally to decide which survive,
+    so a read whose rows look bounded can still be doing work that is not.
+    """
+
+    name_bytes: int
+    """Bytes of entry and extension names the result carries."""
+
+    lock_wait_ns: int
+    """Nanoseconds spent waiting for the read guard.
+
+    Separate from ``wall_ns`` because a slow read and a read behind a long write are
+    different problems with different fixes.
+    """
+
+    wall_ns: int
+    """Nanoseconds from entering the call to returning, guard wait included."""
+
+    @property
+    def wall_seconds(self) -> float:
+        """``wall_ns`` as seconds, for reporting rather than for arithmetic."""
+
+        return self.wall_ns / 1_000_000_000
+
+
+@dataclass(frozen=True, slots=True)
 class ChildRemainder:
     """The children a page does not carry, as their share of the directory's totals.
 
@@ -906,6 +965,16 @@ class Bundle:
     """The requested directory's children, or ``None`` when no directory was named or it
     is absent -- distinct from a page with no rows, which means a directory with no
     children."""
+
+    work: Work
+    """What producing this bundle cost.
+
+    Here rather than on each part because the parts shared one guard and one wall clock:
+    attributing a lock wait to one of three projections that waited together would be
+    inventing a number. It is also why measurement rides with the bundled read rather
+    than with every accessor -- the bundled read is what an interactive client serves
+    from.
+    """
 
 
 @dataclass(frozen=True, slots=True)

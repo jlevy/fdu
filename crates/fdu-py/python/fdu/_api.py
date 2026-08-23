@@ -36,6 +36,7 @@ from ._models import (
     SummaryRow,
     WalkTelemetry,
     WatchOptions,
+    Work,
     classification_from_dict,
     provenance_from_dict,
     report_from_dict,
@@ -370,6 +371,7 @@ class Index:
                 None if roll is None else rollup_from_dict(roll) for roll in value["rollups"]
             ),
             children=None if children is None else _child_page(children),
+            work=_work(value["work"]),
         )
 
     def provenance(self, path: str | Path = Path()) -> Provenance | None:
@@ -413,6 +415,20 @@ class Index:
             **arguments,
         )
         return Watch(native)
+
+
+def _work(value: dict[str, Any]) -> Work:
+    """What one read cost, parsed beside what it answered."""
+
+    return Work(
+        entries_visited=int(value["entries_visited"]),
+        dirs_visited=int(value["dirs_visited"]),
+        rows=int(value["rows"]),
+        tally_rows=int(value["tally_rows"]),
+        name_bytes=int(value["name_bytes"]),
+        lock_wait_ns=int(value["lock_wait_ns"]),
+        wall_ns=int(value["wall_ns"]),
+    )
 
 
 def _child_page(value: dict[str, Any]) -> ChildPage:

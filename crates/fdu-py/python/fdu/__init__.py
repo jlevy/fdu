@@ -87,6 +87,7 @@ from ._models import (
     View,
     WalkTelemetry,
     WatchOptions,
+    Work,
 )
 from ._native import __version__
 
@@ -159,6 +160,7 @@ __all__ = [
     "WalkTelemetry",
     "Watch",
     "WatchOptions",
+    "Work",
     "__version__",
     "aio",
     "cache_path",

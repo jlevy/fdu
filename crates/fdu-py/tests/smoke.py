@@ -83,6 +83,16 @@ def main() -> None:
     assert by_name["a.txt"]["bytes"] == 5
     assert page["remainder"] is None and page["next"] is None, page
 
+    # Every bundled read reports what it cost, beside what it answered. The count is the
+    # sum of what its projections did: the listing walks the root and its two rows (3),
+    # the totals read the root (1), and the "src" roll-up walks root and src (2).
+    bundled = index.read(children_of="", rollups=["src"], total=True)
+    work = bundled["work"]
+    assert work["rows"] == 2, work
+    assert work["entries_visited"] == 3 + 1 + 2, work
+    assert work["dirs_visited"] == 5, work
+    assert work["lock_wait_ns"] <= work["wall_ns"], work
+
     # And it pages: a bound on the rows, a cursor to resume from, and what was left out.
     first = index.children("", None, 1)
     assert first is not None and len(first["rows"]) == 1, first

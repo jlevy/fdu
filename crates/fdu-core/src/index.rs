@@ -521,6 +521,86 @@ impl ChildPage {
     }
 }
 
+/// What one read actually did, beside the answer rather than inside it.
+///
+/// Execution telemetry, not a fact about the tree: two reads that answer identically can
+/// do very different amounts of work, and the difference is what a serving loop needs to
+/// see. It also turns "no hidden `O(index)` pass" from a review principle into something
+/// a test can assert -- a frequent read must be proportional to its own output or to
+/// maintained state, and `entries_visited` is where a regression shows up.
+///
+/// # What is deliberately not here
+///
+/// **CPU time.** A read on a maintained index performs no I/O, so its wall time is CPU
+/// time plus whatever it spent waiting for the guard, and `lock_wait_ns` already
+/// separates those. Sampling a thread clock would add a platform-gated syscall per read
+/// to restate a number these two already carry.
+///
+/// **Bytes copied across a language binding.** The engine cannot see a binding, and a
+/// binding can only estimate what its own serialisation costs. `name_bytes` is the one
+/// term that grows without bound, and it is exact; the rest is a fixed per-row schema
+/// that `rows` and `tally_rows` multiply.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub struct Work {
+    /// Index entries this read examined, including those it walked past to find a path.
+    ///
+    /// The load-bearing number. A read of maintained state visits its path's depth plus
+    /// the rows it returns; one that visits a subtree is doing an aggregate pass, and
+    /// says so here whatever its result looks like.
+    pub entries_visited: u64,
+    /// Directories among them.
+    pub dirs_visited: u64,
+    /// Rows the result carries.
+    pub rows: u64,
+    /// Extension and group tallies the result *examined*, which a bound may exceed.
+    ///
+    /// Examined rather than returned on purpose: bounding a roll-up's extension rows
+    /// still ranks every tally to decide which ones survive, and a counter that reported
+    /// the bound would hide exactly that.
+    pub tally_rows: u64,
+    /// Bytes of entry and extension names the result carries.
+    ///
+    /// The only unbounded term in what a consumer copies out of a result; everything else
+    /// is a fixed-width row.
+    pub name_bytes: u64,
+    /// Nanoseconds spent waiting for the read guard.
+    ///
+    /// Separated from `wall_ns` because a slow read and a read behind a long write are
+    /// different problems with different fixes, and a single duration cannot tell a
+    /// serving loop which one it has.
+    pub lock_wait_ns: u64,
+    /// Nanoseconds from entering the call to returning, guard wait included.
+    pub wall_ns: u64,
+}
+
+/// A sink for the entries a lookup walks past.
+///
+/// Generic rather than an `Option<&mut Work>` so the uncounted case compiles to nothing:
+/// [`Index::lookup`] is on the apply path, where an unconditional counter would be a
+/// throughput change to justify rather than an instrument. One body serves both, so the
+/// counted and uncounted walks cannot drift apart.
+trait Visits {
+    fn visit(&mut self, kind: EntryKind);
+}
+
+/// The uncounted case. Every method is empty, so a monomorphised walk keeps no counter.
+struct Uncounted;
+
+impl Visits for Uncounted {
+    #[inline]
+    fn visit(&mut self, _kind: EntryKind) {}
+}
+
+impl Visits for Work {
+    #[inline]
+    fn visit(&mut self, kind: EntryKind) {
+        self.entries_visited += 1;
+        if kind.is_dir() {
+            self.dirs_visited += 1;
+        }
+    }
+}
+
 /// What one bundled read should evaluate.
 ///
 /// Everything is optional because a caller composes the page it is drawing: a directory
@@ -566,6 +646,14 @@ pub struct ReadBundle {
     ///
     /// Distinct from a page with no rows, which means a directory with no children.
     pub children: Option<ChildPage>,
+    /// What producing this bundle cost.
+    ///
+    /// Here rather than on each part because the parts shared one guard and one wall
+    /// clock: attributing a lock wait to one of three projections that waited together
+    /// would be inventing a number. This is also why measurement rides with the bundled
+    /// read rather than with every accessor -- the bundled read is what an interactive
+    /// client serves from.
+    pub work: Work,
 }
 
 /// The in-memory hierarchical index.
@@ -755,25 +843,44 @@ impl IndexHandle {
     /// It also collapses the per-call cost. Across a language boundary each of these is a
     /// crossing and a lock acquisition; bundled, they are one of each.
     pub fn read(&self, request: &ReadRequest) -> crate::Result<ReadBundle> {
+        let started = std::time::Instant::now();
         let index = self.read_index()?;
+        // Each projection counts the entries it walks, so a bundle's visits are the sum
+        // of its parts -- including the root, counted once per projection that reads it,
+        // because that is what a projection actually does.
+        let mut work = Work { lock_wait_ns: nanos(started.elapsed()), ..Work::default() };
         let children = request
             .children_of
             .as_deref()
-            .and_then(|path| child_page(&index, path, &request.children_page));
-        Ok(ReadBundle {
+            .and_then(|path| child_page(&index, path, &request.children_page, &mut work));
+        let total = request.total.then(|| {
+            let root = &index.entry(EntryId::ROOT).rollup;
+            work.visit(EntryKind::Dir);
+            work.tally_rows += (root.by_ext.len() + root.by_group.len()) as u64;
+            let roll = index.total_bounded(request.extensions);
+            work.name_bytes += roll.by_ext.keys().map(|name| name.len() as u64).sum::<u64>();
+            work.name_bytes += roll.by_group.keys().map(|name| name.len() as u64).sum::<u64>();
+            roll
+        });
+        let rollups: Vec<Option<RollUp>> = request
+            .rollups
+            .iter()
+            .map(|path| index.rollup_measured(path, request.extensions, &mut work))
+            .collect();
+        let bundle = ReadBundle {
             clock: index.clock(),
             scope: index.scope(),
             freshness: index.freshness(),
             entries: index.len(),
             root: index.root_path().to_path_buf(),
-            total: request.total.then(|| index.total_bounded(request.extensions)),
-            rollups: request
-                .rollups
-                .iter()
-                .map(|path| index.rollup_bounded(path, request.extensions))
-                .collect(),
+            total,
+            rollups,
             children,
-        })
+            work,
+        };
+        // Stamped last, and after the guard is still held, so the figure covers the whole
+        // call rather than the part that happened to be convenient to time.
+        Ok(ReadBundle { work: Work { wall_ns: nanos(started.elapsed()), ..bundle.work }, ..bundle })
     }
 
     /// Every direct child, captured coherently at one read boundary.
@@ -801,7 +908,7 @@ impl IndexHandle {
         request: &ChildPageRequest,
     ) -> crate::Result<Option<ChildPage>> {
         let index = self.read_index()?;
-        Ok(child_page(&index, path, request))
+        Ok(child_page(&index, path, request, &mut Work::default()))
     }
 
     /// Origin, observation time, and coverage for one retained path.
@@ -1324,9 +1431,19 @@ impl Index {
 
     /// Look up an entry id by path relative to the root.
     pub fn lookup(&self, path: &Path) -> Option<EntryId> {
+        self.lookup_visiting(path, &mut Uncounted)
+    }
+
+    /// [`Index::lookup`], reporting each entry it walks past to a sink.
+    ///
+    /// The one body both cases share; see [`Visits`] for why the sink is a type parameter
+    /// rather than an option.
+    fn lookup_visiting<V: Visits>(&self, path: &Path, visits: &mut V) -> Option<EntryId> {
         let mut current = EntryId::ROOT;
+        visits.visit(EntryKind::Dir);
         for part in normalize(path)? {
             current = *self.entry(current).children.get(part)?;
+            visits.visit(self.entry(current).kind);
         }
         Some(current)
     }
@@ -1344,9 +1461,20 @@ impl Index {
     /// accounted for -- see [`RollUp::ext_remainder`] -- and avoids materialising names
     /// nobody reads.
     pub fn rollup_bounded(&self, path: &Path, extensions: Bound) -> Option<RollUp> {
-        let id = self.lookup(path)?;
+        self.rollup_measured(path, extensions, &mut Work::default())
+    }
+
+    /// [`Index::rollup_bounded`], folding what it cost into a running record.
+    fn rollup_measured(&self, path: &Path, extensions: Bound, work: &mut Work) -> Option<RollUp> {
+        let id = self.lookup_visiting(path, work)?;
         let entry = self.entry(id);
-        entry.kind.is_dir().then(|| self.named_rollup_bounded(&entry.rollup, extensions))
+        entry.kind.is_dir().then(|| {
+            work.tally_rows += (entry.rollup.by_ext.len() + entry.rollup.by_group.len()) as u64;
+            let roll = self.named_rollup_bounded(&entry.rollup, extensions);
+            work.name_bytes += roll.by_ext.keys().map(|name| name.len() as u64).sum::<u64>();
+            work.name_bytes += roll.by_group.keys().map(|name| name.len() as u64).sum::<u64>();
+            roll
+        })
     }
 
     /// Attributes for any entry, by relative path.
@@ -2321,8 +2449,13 @@ pub(crate) fn collect_child_expectations(
 ///
 /// Returns `None` for a path that is absent or is not a directory, which is distinct from
 /// a page with no rows.
-fn child_page(index: &Index, path: &Path, request: &ChildPageRequest) -> Option<ChildPage> {
-    let id = index.lookup(path)?;
+fn child_page(
+    index: &Index,
+    path: &Path,
+    request: &ChildPageRequest,
+    work: &mut Work,
+) -> Option<ChildPage> {
+    let id = index.lookup_visiting(path, work)?;
     let entry = index.entry(id);
     if !entry.kind.is_dir() {
         return None;
@@ -2352,7 +2485,11 @@ fn child_page(index: &Index, path: &Path, request: &ChildPageRequest) -> Option<
         }
         emitted.absorb(index, *child);
         last = Some(name.clone());
-        rows.push(child_snapshot(index, name.as_os_str(), *child));
+        let row = child_snapshot(index, name.as_os_str(), *child);
+        work.visit(row.kind);
+        work.rows += 1;
+        work.name_bytes += name.as_encoded_bytes().len() as u64;
+        rows.push(row);
     }
 
     // The remainder is this page's complement within the whole directory, so it is the
@@ -2412,6 +2549,14 @@ impl<T, L: Iterator<Item = T>, R: Iterator<Item = T>> Iterator for Either<L, R> 
             Self::Right(right) => right.next(),
         }
     }
+}
+
+/// A duration as nanoseconds, saturating rather than wrapping.
+///
+/// A read that took more than 584 years is a broken clock, not a number worth
+/// representing; saturating says so without making every caller handle a `u128`.
+fn nanos(elapsed: std::time::Duration) -> u64 {
+    u64::try_from(elapsed.as_nanos()).unwrap_or(u64::MAX)
 }
 
 /// One child's captured row.
@@ -3461,6 +3606,125 @@ mod tests {
             .expect("read")
             .expect("e is a directory");
         assert!(empty.rows.is_empty() && empty.remainder.is_none(), "empty is a page, not None");
+    }
+
+    /// A tree wide and deep enough that "proportional to output" and "proportional to
+    /// the index" are different numbers by an order of magnitude.
+    fn measured_tree() -> IndexHandle {
+        let handle = IndexHandle::new(Index::new("/root"));
+        let mut ops = vec![upsert("a", EntryKind::Dir, file_attrs(0, 1))];
+        ops.push(upsert("a/b", EntryKind::Dir, file_attrs(0, 1)));
+        ops.push(upsert("a/b/c", EntryKind::Dir, file_attrs(0, 1)));
+        for index_of in 0..200 {
+            ops.push(upsert(&format!("a/b/c/f{index_of}.txt"), EntryKind::File, file_attrs(10, 1)));
+        }
+        handle.apply(&Observation::new(ops)).expect("apply");
+        handle
+    }
+
+    /// The contract the counter exists to make assertable: a roll-up read is proportional
+    /// to its path's depth, not to the subtree it summarises.
+    ///
+    /// Two hundred files sit under the directory being asked about. A read that visited
+    /// them -- an aggregate pass where a maintained value was expected -- reports it here
+    /// even though its answer is identical, which is the regression no assertion on the
+    /// result itself can catch.
+    #[test]
+    fn a_rollup_read_visits_its_path_and_not_its_subtree() {
+        let handle = measured_tree();
+        let bundle = handle
+            .read(&ReadRequest {
+                rollups: vec![PathBuf::from("a/b/c")],
+                total: true,
+                ..ReadRequest::default()
+            })
+            .expect("bundle");
+
+        assert_eq!(bundle.rollups[0].as_ref().expect("a/b/c").files, 200);
+        assert_eq!(
+            bundle.work.entries_visited, 5,
+            "the root, then a, b and c, then the root again for the totals"
+        );
+        assert!(
+            bundle.work.entries_visited < bundle.entries / 10,
+            "203 entries, {} visited",
+            bundle.work.entries_visited
+        );
+    }
+
+    /// A listing is proportional to the rows it returns, at every bound.
+    #[test]
+    fn a_listing_visits_the_rows_it_returns() {
+        let handle = measured_tree();
+        for limit in [1_usize, 5, 50] {
+            let bundle = handle
+                .read(&ReadRequest {
+                    children_of: Some(PathBuf::from("a/b/c")),
+                    children_page: ChildPageRequest {
+                        limit: Bound::Limit(limit),
+                        ..ChildPageRequest::default()
+                    },
+                    ..ReadRequest::default()
+                })
+                .expect("bundle");
+
+            let work = bundle.work;
+            assert_eq!(work.rows, limit as u64, "limit {limit}: rows");
+            // The root, plus a, b and c on the way down, plus one per row returned.
+            assert_eq!(work.entries_visited, 4 + limit as u64, "limit {limit}: entries");
+            assert_eq!(work.dirs_visited, 4, "limit {limit}: only the path is directories");
+        }
+    }
+
+    /// A bound on the extension rows does not bound the tallies a roll-up ranks, and the
+    /// counter says so rather than reporting the bound back.
+    ///
+    /// This is the counter earning its keep on the surface it was added for: the result
+    /// looks perfectly bounded, and the work behind it is not.
+    #[test]
+    fn a_bounded_rollup_still_reports_every_tally_it_ranked() {
+        let handle = IndexHandle::new(Index::new("/root"));
+        let ops: Vec<Op> = (0..12)
+            .map(|index_of| {
+                upsert(&format!("f{index_of}.e{index_of}"), EntryKind::File, file_attrs(10, 1))
+            })
+            .collect();
+        handle.apply(&Observation::new(ops)).expect("apply");
+
+        let bundle = handle
+            .read(&ReadRequest {
+                rollups: vec![PathBuf::new()],
+                extensions: Bound::Limit(3),
+                ..ReadRequest::default()
+            })
+            .expect("bundle");
+
+        assert_eq!(bundle.rollups[0].as_ref().expect("the root").by_ext.len(), 3, "rows are bound");
+        assert_eq!(bundle.work.tally_rows, 12, "the ranking was not");
+    }
+
+    /// Both clocks are stamped, and the guard wait is separated from the whole call.
+    ///
+    /// Times are not asserted against thresholds -- a shared runner measures the runner --
+    /// but a field nobody fills is worse than one that is absent, so presence and their
+    /// one structural relation are pinned.
+    #[test]
+    fn a_bundle_states_what_it_spent_and_what_it_waited_for() {
+        let handle = measured_tree();
+        let bundle = handle
+            .read(&ReadRequest {
+                children_of: Some(PathBuf::from("a/b/c")),
+                total: true,
+                ..ReadRequest::default()
+            })
+            .expect("bundle");
+
+        assert!(bundle.work.wall_ns > 0, "a read that took no measurable time did not happen");
+        assert!(
+            bundle.work.lock_wait_ns <= bundle.work.wall_ns,
+            "waiting for the guard is part of the call, not beside it"
+        );
+        assert!(bundle.work.name_bytes >= bundle.work.rows, "each row carries at least a name");
     }
 
     /// A bundle carries the identity a consumer's cache key derives from.

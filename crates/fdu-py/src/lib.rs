@@ -304,6 +304,19 @@ fn child_list<'py>(
     Ok(out)
 }
 
+/// What one read actually did, beside its answer.
+fn work_dict(py: Python<'_>, work: fdu_core::Work) -> PyResult<Bound<'_, PyDict>> {
+    let out = PyDict::new(py);
+    out.set_item("entries_visited", work.entries_visited)?;
+    out.set_item("dirs_visited", work.dirs_visited)?;
+    out.set_item("rows", work.rows)?;
+    out.set_item("tally_rows", work.tally_rows)?;
+    out.set_item("name_bytes", work.name_bytes)?;
+    out.set_item("lock_wait_ns", work.lock_wait_ns)?;
+    out.set_item("wall_ns", work.wall_ns)?;
+    Ok(out)
+}
+
 /// One page of children, with the rest of the directory accounted for beside it.
 fn child_page_dict<'py>(
     py: Python<'py>,
@@ -745,6 +758,7 @@ impl PyIndex {
             "children",
             bundle.children.as_ref().map(|page| child_page_dict(py, page)).transpose()?,
         )?;
+        out.set_item("work", work_dict(py, bundle.work)?)?;
         Ok(out)
     }
 
