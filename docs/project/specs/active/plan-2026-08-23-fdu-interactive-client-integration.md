@@ -651,6 +651,19 @@ tracks the metabrowser-side adoption, and `fdu-eu8t` is the older “specify a p
 Python session” request that Phase 5 and Phase 6 between them answer.
 Both stay open until the work they describe lands.
 
+**This list says what to build; the bead status says what is left.** Much of it is
+already closed — shared reads, `ScanOrder` on the surfaces, the group level, the runtime
+registry, bounded extension rows, the watch contract’s four items, and listing-row
+identity among them — with the file-and-function map and the implementation itself in
+[the implementation spec](plan-2026-08-23-fdu-interactive-client-implementation.md) and
+the branch stacked on this one.
+Checkboxes here are not flipped as that work lands, because the code arrives in the
+stacked branch rather than in this PR; read the tracker for current state and this
+document for intent.
+Two items that survived their bead are worth naming: the two extension levels and the
+conformance packet split out to `fdu-5q6e` when `fdu-ctp5` closed carrying the registry
+alone.
+
 **These phases are fdu’s own order, and nothing here waits on the client.**
 [Metabrowser’s refactor spec](https://github.com/jlevy/metabrowser/blob/3e563a8/docs/project/specs/active/plan-2026-08-23-inventory-provider-refactor-and-fdu-adoption.md)
 ships its Python provider behind the sealed contract first, with no fdu dependency, and
@@ -716,9 +729,9 @@ Converts PR #38’s indexed tiers rather than competing with them; that work is 
   generalizes to a property over any registry (`fdu-ctp5`)
 - [ ] The two extension levels: a raw logical extension per the format’s eligibility
   rule, plus canonical suffix matching for rule lookup and roll-up bucketing, with a
-  test pinning that no existing bucket or type row moves (`fdu-ctp5`)
+  test pinning that no existing bucket or type row moves (`fdu-5q6e`)
 - [ ] The conformance packet vendored at a reviewed metabrowser revision, its manifest
-  and hashes verified locally in CI, executed against fdu’s classifier (`fdu-ctp5`)
+  and hashes verified locally in CI, executed against fdu’s classifier (`fdu-5q6e`)
 - [ ] Bounded per-directory extension and filename rows with a stated remainder
   (`fdu-e2p7`)
 - [ ] Loop job: what the maintained-state union costs on the ancestor-merge path — the
@@ -739,17 +752,18 @@ and nothing ties several Python calls to one clock.
 - [ ] Scalar paged child rows — per-child directory facts, classification identity,
   tags, and provenance, with an explicit bound, a page cursor, and a stated remainder;
   the extension breakdown moves to its own bounded roll-up projection rather than riding
-  every listing (`fdu-e2p7` covers the bound; the row shape is new work)
+  every listing (`fdu-plwq`, with `fdu-e2p7` bounding the breakdown itself)
 - [ ] A bundled multi-projection read evaluated under one read guard, returning one
   engine version, the change cursor captured at the same boundary, index state, and the
   scope and registry fingerprints, so a composed response cannot straddle a commit and a
-  consumer’s cache key derives from what it actually read
+  consumer’s cache key derives from what it actually read (`fdu-2ivi`, blocked by
+  `fdu-gav9`)
 - [ ] Per-result work counters — entries and directories visited, rows returned, lock
   wait, bytes copied across the binding — so “no hidden O(index) pass” is an assertion
-  rather than a review principle
+  rather than a review principle (`fdu-qgl9`)
 - [ ] Roll-up leaf counts for symlinks and special objects, so a complete subtree’s
   emptiness is decidable from the aggregate rather than by listing it; the partition
-  property extends to the new fields and the snapshot version increments
+  property extends to the new fields and the snapshot version increments (`fdu-5hip`)
 
 ### Phase 4: The embedder watch contract
 
