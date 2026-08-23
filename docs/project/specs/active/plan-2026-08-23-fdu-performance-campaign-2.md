@@ -200,10 +200,12 @@ Phases 0 and A–C are parallel where their beads say so; D and E follow their g
   `cold-scan-index`, the proxy every cumulative checkpoint uses, is the probe’s walk
   plus index build and excludes both the render and the write — and the cache-layers
   plan already priced that write at roughly a third of a default run on `/usr`. Two
-  defects found in the PR #38 review live in exactly that blind spot and cannot be
-  judged without this job: `fdu-2um8` (the cold-scan path rewrites an identical snapshot
-  on every run) and `fdu-n75m` (the rendered report is withheld until the write, its
-  `F_FULLFSYNC` and the index teardown complete).
+  defects found in the PR #38 review lived in exactly that blind spot and were judged on
+  this job the night it landed: `fdu-2um8` (the cold-scan path rewrote an identical
+  snapshot on every run; exp-067, `default-tree` −10.6%) and `fdu-n75m` part 1 (the
+  rendered report was withheld until the write, its `F_FULLFSYNC` and the index teardown
+  completed; exp-068, time to first byte −7.5% to −12.5%). Parts 2 and 3 of `fdu-n75m`
+  are durability decisions and remain.
   The `fdu-default-tree` contract already exists; nothing has ever been recorded through
   it.
 
@@ -296,6 +298,9 @@ Plan Phase C against the warm number.
 - [ ] `fdu-78q6` — the sidecar restore path (H83): 25 µs/file against 3 µs for a
   metadata record, same re-derivation shape as the snapshot loader had; expect the same
   class of fix. Now the largest unexamined item on this tier after the structural one.
+  First increment landed (exp-069, H102): the file map ordered by path bytes instead of
+  components took `content-cache-hit` −31% and `content-query` −67% on a dense 52k-file
+  checkout, to about 7.8 µs/file; the next is the `Path::hash` cost on the roll-up map.
 
 ### Phase D: The warm end-state (after B, because the representation decides the format)
 
