@@ -37,6 +37,8 @@ use std::time::{Duration, Instant};
 
 use notify::{EventKind, RecursiveMode, Watcher as NotifyWatcher};
 
+mod scripted_events;
+
 use crate::engine_contract::{AppliedDelta, Error, InvalidateReason, Observation, Op, Result};
 use crate::scan;
 use crate::{ApplyOutcome, IndexHandle, ScanConfig};
@@ -53,7 +55,10 @@ const MAX_BATCH_PATH_CAPACITY: usize = 64 * 1024;
 const MAX_BUFFERED_INTENT_PATHS: usize = 1024 * 1024;
 
 /// Tuning for event coalescing.
-#[derive(Clone, Copy, Debug)]
+// No longer `Copy`: a scripted backend names a file, and a config that holds a path is
+// a config that allocates. Cloned in the one place that needs two -- the watcher keeps
+// its own and the worker takes one.
+#[derive(Clone, Debug)]
 pub struct WatchConfig {
     /// How long the event stream must be quiet before a batch is emitted.
     pub settle: Duration,
@@ -84,7 +89,7 @@ pub struct WatchConfig {
 /// direction -- choosing native on a filesystem that drops events -- produces an index
 /// that is silently stale rather than one that is visibly slow. A caller that already
 /// knows what it mounted can say so; deciding for it is an open question, not a default.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+#[derive(Clone, PartialEq, Eq, Debug, Default)]
 pub enum WatchBackend {
     /// The platform's native notification API: `FSEvents`, inotify, or `ReadDirectoryChangesW`.
     ///
@@ -102,6 +107,22 @@ pub enum WatchBackend {
         /// How often the tree is restatted. Latency is bounded by this, not by the
         /// settle window.
         interval: Duration,
+    },
+    /// Events read from a script instead of from the kernel.
+    ///
+    /// A test seam for the conditions a real filesystem cannot be asked for: every
+    /// [`InvalidateReason`] except `Requested` exists for something the kernel does under
+    /// pressure, and none of them can be provoked on demand. The script replaces the
+    /// event source and nothing else -- the same coalescing, the same stat verification,
+    /// the same delta path -- so a scripted event is still verified against the real
+    /// filesystem before it becomes an `Op`. A script cannot state a fact about the tree,
+    /// only claim that something there may have changed.
+    ///
+    /// See `watch/scripted_events.rs` for the format.
+    #[doc(hidden)]
+    Scripted {
+        /// Path to the script, whose own paths are relative to the watch root.
+        events: PathBuf,
     },
 }
 
@@ -122,7 +143,7 @@ impl Default for WatchConfig {
 }
 
 impl WatchConfig {
-    fn validate(self) -> Result<()> {
+    fn validate(&self) -> Result<()> {
         let buffered_paths = self.batch_path_capacity.checked_mul(self.intent_capacity);
         if self.settle.is_zero()
             || self.max_hold.is_zero()
@@ -215,22 +236,39 @@ impl Watcher {
         let callback_overflowed = Arc::clone(&overflowed);
 
         let handler = move |res| enqueue_raw(&raw_tx, &callback_overflowed, res);
-        let mut inner: Box<dyn NotifyWatcher + Send> = match config.backend {
-            WatchBackend::Native => {
-                Box::new(notify::recommended_watcher(handler).map_err(|e| notify_error(&root, e))?)
-            }
-            WatchBackend::Poll { interval } => Box::new(
+        let mut inner: Option<Box<dyn NotifyWatcher + Send>> = match &config.backend {
+            WatchBackend::Native => Some(Box::new(
+                notify::recommended_watcher(handler).map_err(|e| notify_error(&root, e))?,
+            )),
+            WatchBackend::Poll { interval } => Some(Box::new(
                 notify::PollWatcher::new(
                     handler,
-                    notify::Config::default().with_poll_interval(interval),
+                    notify::Config::default().with_poll_interval(*interval),
                 )
                 .map_err(|e| notify_error(&root, e))?,
-            ),
+            )),
+            WatchBackend::Scripted { events } => {
+                // Read before anything is spawned, so a malformed script fails at
+                // construction naming its line rather than starting a watch that goes
+                // quiet. Fed through the same queue the kernel's callback uses, so the
+                // overflow path a full queue takes is the scripted path too.
+                let scripted =
+                    scripted_events::read_script(events, &root).map_err(Error::WatchScript)?;
+                for event in scripted {
+                    handler(event);
+                }
+                None
+            }
         };
 
-        inner.watch(&root, RecursiveMode::Recursive).map_err(|e| notify_error(&root, e))?;
+        if let Some(inner) = inner.as_mut() {
+            inner.watch(&root, RecursiveMode::Recursive).map_err(|e| notify_error(&root, e))?;
+        }
 
         let worker_root = root.clone();
+        // The watcher keeps the config it was given; the worker takes its own, because a
+        // config that names a script file is no longer `Copy`.
+        let worker_config = config.clone();
         let cancelled = Arc::new(AtomicBool::new(false));
         let worker_cancelled = Arc::clone(&cancelled);
         let worker_overflowed = Arc::clone(&overflowed);
@@ -243,7 +281,7 @@ impl Watcher {
                 run_tracked_worker(&tracked_status, || {
                     run_worker(
                         &worker_root,
-                        config,
+                        &worker_config,
                         &raw_rx,
                         &intent_tx,
                         &worker_overflowed,
@@ -256,7 +294,7 @@ impl Watcher {
         Ok(Self {
             root,
             config,
-            inner: Some(inner),
+            inner,
             intents: intent_rx,
             control: Some(control_tx),
             cancelled,
@@ -276,7 +314,7 @@ impl Watcher {
         let Some(intent) = self.next_intent(timeout)? else {
             return Ok(None);
         };
-        Ok(Some(verify_intent(&self.root, self.config, &intent)))
+        Ok(Some(verify_intent(&self.root, &self.config, &intent)))
     }
 
     fn next_intent(&self, timeout: Duration) -> Result<Option<CoalescedIntent>> {
@@ -313,14 +351,14 @@ impl Watcher {
         let Some(intent) = self.next_intent(timeout)? else {
             return Ok(None);
         };
-        apply_intent(index, &self.root, self.config, &intent, scan_config, sink).map(Some)
+        apply_intent(index, &self.root, &self.config, &intent, scan_config, sink).map(Some)
     }
 }
 
 fn apply_intent(
     index: &IndexHandle,
     root: &Path,
-    watch_config: WatchConfig,
+    watch_config: &WatchConfig,
     intent: &CoalescedIntent,
     scan_config: &ScanConfig,
     sink: &mut dyn FnMut(&AppliedDelta),
@@ -452,7 +490,7 @@ fn run_tracked_worker(status: &AtomicU8, worker: impl FnOnce()) {
 
 fn run_worker(
     root: &Path,
-    config: WatchConfig,
+    config: &WatchConfig,
     raw: &Receiver<RawMessage>,
     out: &SyncSender<CoalescedIntent>,
     overflowed: &AtomicBool,
@@ -648,7 +686,7 @@ fn try_deliver_overflow(out: &SyncSender<CoalescedIntent>) -> std::result::Resul
 }
 
 /// Verify one bounded intent: stat once per path, never once per backend event.
-fn verify_intent(root: &Path, config: WatchConfig, intent: &CoalescedIntent) -> Observation {
+fn verify_intent(root: &Path, config: &WatchConfig, intent: &CoalescedIntent) -> Observation {
     let mut ops = Vec::with_capacity(intent.pending.len());
 
     for (rel, state) in &intent.pending {
@@ -889,6 +927,118 @@ mod tests {
         assert!(error.to_string().contains("nonzero interval"), "{error}");
     }
 
+    /// Write a script beside the watched tree and open a watcher driven by it.
+    ///
+    /// The script lives outside the root so it cannot itself be an event, and its own
+    /// paths stay relative so the file says nothing about this machine.
+    fn scripted_watcher(root: &Path, script_dir: &Path, script: &str) -> Result<Watcher> {
+        let path = script_dir.join("events.script");
+        fs::write(&path, script).expect("write script");
+        Watcher::new(
+            root,
+            WatchConfig {
+                backend: WatchBackend::Scripted { events: path },
+                settle: Duration::from_millis(10),
+                max_hold: Duration::from_millis(100),
+                ..WatchConfig::default()
+            },
+        )
+    }
+
+    /// A dropped-event queue escalates, scoped to the path the backend named.
+    ///
+    /// The condition every backend signals and no test can provoke: `Q_OVERFLOW`,
+    /// `MustScanSubDirs`, a `ReadDirectoryChangesW` overrun. Swallowing the flag silently
+    /// corrupts any index built on events, so the escalation is the contract -- and until
+    /// there was a seam, nothing exercised it end to end.
+    ///
+    /// Scoped rather than root-wide: the backend told us *where* it lost events, and
+    /// reconciling the whole tree for a subtree's worth of loss is a cost with nothing
+    /// behind it.
+    #[test]
+    fn a_scripted_overflow_escalates_the_path_it_names() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let scripts = tempfile::tempdir().expect("script dir");
+        fs::create_dir(dir.path().join("src")).expect("mkdir");
+        fs::write(dir.path().join("src/present.txt"), b"x").expect("write");
+
+        let watcher = scripted_watcher(dir.path(), scripts.path(), "rescan\tsrc\n")
+            .expect("scripted watcher");
+        let ops = wait_for(&watcher, Duration::from_secs(5), |ops| !ops.is_empty());
+        assert!(
+            ops.iter().any(|op| matches!(
+                op,
+                Op::InvalidateSubtree { path, reason: InvalidateReason::WatchOverflow }
+                    if path == Path::new("src")
+            )),
+            "a dropped-event flag must escalate the subtree it named: {ops:?}"
+        );
+    }
+
+    /// A rename with no partner reconciles the whole tree rather than guessing.
+    ///
+    /// `FSEvents` reports one side of a rename with no way to associate the other. A lone
+    /// `From` must not be read as a delete -- the file may have moved anywhere in the tree
+    /// -- and there is no safe bound on where its counterpart landed, so the escalation is
+    /// root-wide even though the event named one path. That is the expensive answer, and
+    /// it is the only one that can neither leave the old name behind nor miss a moved-in
+    /// subtree.
+    #[test]
+    fn a_scripted_unpaired_rename_reconciles_the_whole_tree() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let scripts = tempfile::tempdir().expect("script dir");
+        fs::create_dir(dir.path().join("src")).expect("mkdir");
+        fs::write(dir.path().join("src/moved.txt"), b"x").expect("write");
+
+        let watcher = scripted_watcher(dir.path(), scripts.path(), "rename-from\tsrc/moved.txt\n")
+            .expect("scripted watcher");
+        let ops = wait_for(&watcher, Duration::from_secs(5), |ops| !ops.is_empty());
+        assert!(
+            ops.iter().any(|op| matches!(
+                op,
+                Op::InvalidateSubtree { path, reason: InvalidateReason::UnpairedRename }
+                    if path.as_os_str().is_empty()
+            )),
+            "an unpaired rename has no safe bound and must escalate to the root: {ops:?}"
+        );
+    }
+
+    /// A scripted event is still verified by stat before it becomes an op.
+    ///
+    /// The property that keeps this a test seam rather than a back door: a script claims
+    /// something *may* have changed, and the filesystem decides what actually did. Here
+    /// the script names a file that was never created, and the engine reports a removal
+    /// rather than inventing the file the script implied.
+    #[test]
+    fn a_scripted_event_cannot_state_a_fact_the_filesystem_denies() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let scripts = tempfile::tempdir().expect("script dir");
+
+        let watcher = scripted_watcher(dir.path(), scripts.path(), "create\tnever-existed.txt\n")
+            .expect("scripted watcher");
+        let ops = wait_for(&watcher, Duration::from_secs(5), |ops| !ops.is_empty());
+        let reported = ops
+            .iter()
+            .find(|op| op.path() == Path::new("never-existed.txt"))
+            .expect("the script's path must be reported one way or the other");
+        assert!(
+            matches!(reported, Op::Remove { .. }),
+            "a create the filesystem denies must not become an upsert: {reported:?}"
+        );
+    }
+
+    /// A malformed script fails at construction, naming its line.
+    #[test]
+    fn a_malformed_script_is_rejected_before_the_watch_starts() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let scripts = tempfile::tempdir().expect("script dir");
+        let Err(error) = scripted_watcher(dir.path(), scripts.path(), "teleport\ta.txt\n") else {
+            panic!("a malformed script must be rejected");
+        };
+        assert!(error.to_string().contains("line 1"), "{error}");
+        assert!(error.to_string().contains("unknown directive"), "{error}");
+    }
+
     #[test]
     fn watching_a_missing_path_is_an_error() {
         let dir = tempfile::tempdir().expect("tempdir");
@@ -1083,7 +1233,7 @@ mod tests {
         receiver.try_recv().expect("make output capacity");
         assert!(try_deliver_overflow(&sender).expect("connected"));
         let intent = receiver.try_recv().expect("sticky overflow intent");
-        let observation = verify_intent(Path::new("/unused"), WatchConfig::default(), &intent);
+        let observation = verify_intent(Path::new("/unused"), &WatchConfig::default(), &intent);
         assert!(matches!(
             &observation.ops[0].op,
             Op::InvalidateSubtree {
@@ -1115,11 +1265,12 @@ mod tests {
         let overflowed = Arc::new(AtomicBool::new(false));
         let worker_overflowed = Arc::clone(&overflowed);
         let worker_root = root.clone();
+        let worker_config = config.clone();
         let worker = std::thread::spawn(move || {
             run_tracked_worker(&tracked_status, || {
                 run_worker(
                     &worker_root,
-                    config,
+                    &worker_config,
                     &raw,
                     &output,
                     &worker_overflowed,
@@ -1158,7 +1309,7 @@ mod tests {
         };
 
         fs::write(dir.path().join(&relative), b"current").expect("create after coalescing");
-        let observation = verify_intent(dir.path(), WatchConfig::default(), &intent);
+        let observation = verify_intent(dir.path(), &WatchConfig::default(), &intent);
 
         assert!(matches!(
             &observation.ops[0].op,

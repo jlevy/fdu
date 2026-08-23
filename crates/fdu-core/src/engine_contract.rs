@@ -631,6 +631,13 @@ pub enum Error {
         hint: String,
     },
 
+    /// A scripted watch backend's event file could not be used.
+    ///
+    /// A test seam's own error, carried rather than flattened into a scan-config message,
+    /// so a malformed script fails where it was written instead of going quiet.
+    #[error("invalid watch script: {0}")]
+    WatchScript(String),
+
     /// A supplied file-type rule manifest could not be used.
     ///
     /// Carries the parser's own line-numbered message: a manifest is something a person
