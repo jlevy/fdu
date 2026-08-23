@@ -4,7 +4,12 @@
 
 **Author:** fdu project, with Claude Code review assistance
 
-**Status:** Proposed
+**Status:** Measurements current; the queue in
+[The queue, re-ordered by this evidence](#the-queue-re-ordered-by-this-evidence) is
+superseded by
+[the campaign-2 plan](../specs/active/plan-2026-08-23-fdu-performance-campaign-2.md)
+(item 3 has since landed as H87 and H88 with `fdu-6kyn` remaining; H89 was refuted; H90
+landed)
 
 ## Overview
 

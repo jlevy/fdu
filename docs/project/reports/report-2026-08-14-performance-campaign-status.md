@@ -1,6 +1,6 @@
 # fdu Performance Campaign: Status, Method, and What Remains
 
-**Date:** 2026-08-14
+**Date:** 2026-08-14 (updated 2026-08-23)
 
 **Author:** fdu project, with Claude Code assistance
 
@@ -290,25 +290,28 @@ untested on macOS.
 
 ## 6. What remains
 
-Nine hypotheses are open in the registry, plus structural items from a recent review.
-Ordered by expected value:
+The current strategy — priorities, phases, targets, and how the campaign ends — is owned
+by [the campaign-2 plan](../specs/active/plan-2026-08-23-fdu-performance-campaign-2.md),
+which consolidated three earlier queue orderings (this section’s original table, the
+structural review’s S1–S7 sequence, and the headroom review’s re-ordering) after
+[the floor report](report-2026-08-23-metadata-walk-floor.md) gave every tier a measured
+denominator. The queue below is that plan’s summary; the plan is normative.
 
-| Target | Size | Blocked on |
+| Phase | Work | Why it is where it is |
 | --- | --- | --- |
-| `fdu-926e` — classification on every content open | ~34% of a warm content open | nothing |
-| `fdu-2ubt` — batch-shaped observations | producer still clones a `PathBuf` per entry | nothing |
-| `fdu-h7sw` (H85) — cross-thread free | screened against mimalloc’s own −23% | nothing |
-| `fdu-fnfc` / `fdu-uv0s` — name arena, children as arena slices | RSS is the clearest defect | nothing |
-| `fdu-vnwk` — cold bootstrap without arbitration | consumer is ~2.3 µs/entry vs dut’s ~0.1 | do the cheaper ones first |
-| `fdu-refc` — per-directory extension tallies | retained everywhere, read almost nowhere | nothing |
-| `fdu-jnuo` — the doubled `getdents64` | ~50% of directory-read syscalls | safety analysis |
-| `fdu-zgxd` — 11 reallocations per entry | unattributed | needs `dhat-rs` |
-| `fdu-73hj` (H73) — inode-ordered statting | 4–6× claimed in prior art | **bare metal** |
+| 0 — instruments | `fdu-tyjx` aggregate probe, `fdu-lk9u` real-tree subject set, `fdu-33ri` `make perf-floor`, `fdu-5yjk` FullIndex diagnostics, `fdu-9ydj` un-contaminated attribution, `fdu-c65j` samply | Multipliers: each unblocks or de-biases every later verdict |
+| A — confirmed-mechanism constants | `fdu-tk1b` Linux cold thread policy (~22% cold scalar), `fdu-pdne` PGO screen, `fdu-6kyn` hardware CRC32C | Mechanisms already observed; cheap; tuning track |
+| B — the structural experiment | `fdu-xde5` (H86) as **one** experiment over `fdu-2ubt`, `fdu-prph`, `fdu-weey`, `fdu-fnfc`, `fdu-uv0s` | `arena_spike` measures 1.06× the floor where the index tier runs 2.68×; the ~15-point real-tree tax lands in the code it deletes; the largest prize on any tier and the last one on the aggregate tier |
+| C — content tier | `fdu-926e` classification by `ExtId` (~34% of a warm content open), `fdu-78q6` sidecar restore (25 µs/file) | Independent of B; the tier where the cache genuinely pays |
+| D — warm end-state | `fdu-yr23` + `fdu-pdra` adoption-shaped snapshot, then the fsevents journal rung | After B, because the representation decides the format; the stat floor is a theorem, and journal scoping is the only thing under it |
+| E — cold truth and release | `fdu-lf3v` bare metal (H73/H28, queue depth, io_uring-cold), `fdu-9716` `searchfs` spike, `fdu-druf` opener pool, `fdu-ow8y` quiet peer cell, record-spec Phases B–D | Evidence class: turns scouting signs into claims |
 
-Two items are *unblocking* rather than optimizing, and multiply what later work can
-settle: `fdu-tyjx` (the aggregate tier has no probe job, so it cannot be measured under
-the accept rule at all) and `fdu-c65j` (adopt `samply`, so Linux and Windows can take
-the loop’s first step).
+Post-B re-screens are part of the plan rather than afterthoughts: `fdu-h7sw` (H85,
+expected consumed by the arena), `fdu-sk7v` (H66, possibly moot at 1.06×), and the
+snapshot economics. Settled and demoted since this report’s first queue: `fdu-zgxd`
+closed as an oracle artifact, `fdu-jnuo` priced under 1% of aggregate wall, warm-Linux
+syscall batching bounded at 9% and measured 6–8× slower, and H87/H88/H90 landed while
+H89 was refuted.
 
 ## 7. Where the evidence is weak
 
@@ -414,6 +417,7 @@ The full protocol, including the accept rule and the hypothesis registry, is in
 | [Ecosystem survey](../research/research-2026-08-14-instrumentation-ecosystem-survey.md) | What the ecosystem already solves |
 | [Structural review](../research/research-2026-08-14-structural-performance-review.md) | What 30 hypotheses had in common, and missed |
 | [Metadata-walk floor](report-2026-08-23-metadata-walk-floor.md) | The measured floor for this workload, and every tier and peer read against it |
+| [Campaign-2 plan](../specs/active/plan-2026-08-23-fdu-performance-campaign-2.md) | The current strategy: priorities, phases, floor-anchored targets, termination |
 
 <!-- This document follows common-doc-guidelines.md.
 See github.com/jlevy/practical-prose and review guidelines before editing.

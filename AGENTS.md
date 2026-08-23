@@ -143,7 +143,12 @@ pins.
 
 The rules that decide whether a speed change is kept are in
 [fdu-design-principles.md](docs/project/architecture/fdu-design-principles.md); the
-protocol is [the performance loop](docs/project/guides/performance-loop.md), every
+current strategy — what to work on next, with floor-anchored priorities and per-tier
+termination criteria — is
+[the campaign-2 plan](docs/project/specs/active/plan-2026-08-23-fdu-performance-campaign-2.md);
+the measured denominator behind it is
+[the metadata-walk floor report](docs/project/reports/report-2026-08-23-metadata-walk-floor.md);
+the protocol is [the performance loop](docs/project/guides/performance-loop.md), every
 verdict is in
 [the experiment ledger](docs/project/reports/report-2026-08-10-fdu-performance-experiments.md),
 the charted view across all of them — absolute milliseconds as well as paired effects —
