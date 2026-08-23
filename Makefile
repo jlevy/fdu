@@ -176,18 +176,25 @@ parity-venv: uv-version
 		$(UV) venv --clear .venv-parity && \
 		$(UV) pip install --python .venv-parity --no-index --find-links "$$wheel_dir" fdu
 
+# The interpreter each parity target runs the Python surface on. Named once here rather
+# than spelled at every call site: run-parity.mjs refuses to guess between the two venvs
+# on purpose, so the caller has to say which, and four literal copies of the same path is
+# how the two drift apart.
+PARITY_VENV_PYTHON := crates/fdu-py/.venv-parity/bin/python
+SMOKE_VENV_PYTHON := crates/fdu-py/.venv-smoke/bin/python
+
 # Replay the golden corpus against the Python surface. The committed deviation file is
 # non-empty by construction, so an empty result means the shim never ran (fdu-9h2w).
 test-parity: build parity-venv $(NODE_INSTALL_STAMP)
-	FDU_PARITY_PYTHON=crates/fdu-py/.venv-parity/bin/python $(NODE) scripts/run-parity.mjs
+	FDU_PARITY_PYTHON=$(PARITY_VENV_PYTHON) $(NODE) scripts/run-parity.mjs
 
 # Used by the gate, where python-smoke has already installed the wheel into
 # .venv-smoke; standalone runs want test-parity, which builds its own.
 parity-check: build $(NODE_INSTALL_STAMP)
-	FDU_PARITY_PYTHON=crates/fdu-py/.venv-smoke/bin/python $(NODE) scripts/run-parity.mjs
+	FDU_PARITY_PYTHON=$(SMOKE_VENV_PYTHON) $(NODE) scripts/run-parity.mjs
 
 parity-update: build parity-venv $(NODE_INSTALL_STAMP)
-	FDU_PARITY_PYTHON=crates/fdu-py/.venv-parity/bin/python $(NODE) scripts/run-parity.mjs --update
+	FDU_PARITY_PYTHON=$(PARITY_VENV_PYTHON) $(NODE) scripts/run-parity.mjs --update
 
 fmt:
 	$(CARGO) fmt --all
@@ -227,15 +234,21 @@ cross-lint:
 docs:
 	RUSTDOCFLAGS="-D warnings" $(CARGO) doc --locked --no-deps --all-features
 
-# Library consumers take `default-features = false`; prove both the minimal core and
-# the additive watch layer without accidentally relying on CLI defaults.
-# How library consumers build, and after the command line moved to its own crate this is
-# the only way the library builds at all. The third line is the check that the move stuck:
-# a library that pulls in an argument parser has the dependency the split removed.
+# How library consumers build: `default-features = false`, and the additive watch layer
+# on its own. After the command line moved to its own crate this is also the only way the
+# engine builds at all, so nothing here may rely on CLI defaults.
+#
+# The dependency guard is the other half of the split. `--prefix none` is what makes the
+# `^` anchor work -- with cargo's tree glyphs in front, `^clap` matches nothing and the
+# guard passes no matter what the engine depends on. The output is captured before it is
+# searched for the same reason: a pipeline's status is the last command's, so a failing
+# `cargo tree` would hand `grep` an empty input and the check would report success
+# without having checked anything.
 lib-only:
 	$(CARGO) test --locked -p fdu-core --no-default-features
 	$(CARGO) test --locked -p fdu-core --no-default-features --features watch
-	@! $(CARGO) tree -p fdu-core --all-features --prefix none | grep -qE '^(clap|anyhow) ' \
+	@tree="$$($(CARGO) tree -p fdu-core --all-features --prefix none)" || exit 1; \
+		! printf '%s\n' "$$tree" | grep -qE '^(clap|anyhow) ' \
 		|| { echo 'fdu-core must not depend on clap or anyhow; they belong to fdu'; exit 1; }
 
 msrv:
@@ -303,8 +316,7 @@ release-rehearse: release-test
 		trap 'rm -r -- "$$artifact_dir"' EXIT && \
 		version="$$($(UV) run --no-project --python 3.12 python -c 'import pathlib,tomllib; print(tomllib.loads(pathlib.Path("crates/fdu/Cargo.toml").read_text())["package"]["version"])')" && \
 		export FDU_RELEASE_TAG="v$$version" && \
-		$(CARGO) package --locked -p fdu-core --allow-dirty && \
-		$(CARGO) package --locked -p fdu --allow-dirty && \
+		$(CARGO) package --locked -p fdu-core -p fdu --allow-dirty && \
 		cp "target/package/fdu-core-$$version.crate" "target/package/fdu-$$version.crate" "$$artifact_dir/" && \
 		$(UV) build --directory crates/fdu-py --no-sources --sdist --out-dir "$$artifact_dir" && \
 		$(UV) run --directory crates/fdu-py --frozen --only-group dev maturin build --locked --release --out "$$artifact_dir" && \

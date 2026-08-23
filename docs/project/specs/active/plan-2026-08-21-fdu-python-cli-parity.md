@@ -4,10 +4,11 @@
 
 **Author:** fdu project
 
-**Status:** Phase 1 landed; Phase 2 not started
+**Status:** Phase 1 landed; Phase 2 replaced by the CLI-on-the-public-API split, landed
 
-108 of 126 golden sessions reach parity through the Python API alone.
-The 18 that differ each carry a named cause, and an unexplained difference fails the run
+106 of the 126 compared golden sessions reach parity through the Python API alone; the
+corpus records 129, and three are declined by name rather than diffed.
+The 20 that differ each carry a named cause, and an unexplained difference fails the run
 rather than joining the list.
 Two Phase 1 items were deferred to tryscript (`fdu-nluf`, `fdu-ds2x`) and are recorded
 as deferred rather than done.
@@ -377,7 +378,8 @@ file.
 
 ### Phase 1
 
-Landed. 108 of 126 golden sessions reach parity through the Python API alone.
+Landed. 106 of the 126 compared golden sessions reach parity through the Python API
+alone.
 
 - [x] Add `Report.render(format, color)` to the Python API over the existing renderer,
   so the package can produce fdu’s own output rather than only structured values

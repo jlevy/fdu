@@ -39,6 +39,16 @@ fn main() {
     fs::write(output.join(GENERATED_NAME), generated).expect("write compiled file-type rules");
 }
 
+// BEGIN shared version stamp -- keep byte-identical with the other crate's build.rs.
+//
+// Duplicated rather than shared on purpose. A cross-crate `include!` would name a file
+// outside the including crate's package, so it would not be in the published `.crate`
+// and the packaged source would not compile -- the same failure that shipped `fdu`
+// without its build script once. A third crate to hold twenty lines is worse than two
+// copies. `tests/release/test_metadata.py` fails if the copies drift, which is the risk
+// that actually matters: `fdu --version` and the performance probe's `--version`
+// describe the same checkout, and the perf harness matches the probe's git revision
+// against the source it claims to measure.
 fn git(args: &[&str]) -> Option<String> {
     let output = Command::new("git").args(args).output().ok()?;
     if !output.status.success() {
@@ -86,6 +96,7 @@ fn emit_version() {
     };
     println!("cargo:rustc-env=FDU_BUILD_VERSION={version}");
 }
+// END shared version stamp.
 
 fn parse_rules(source: &str) -> Result<Vec<Rule>, String> {
     let mut rules = Vec::new();

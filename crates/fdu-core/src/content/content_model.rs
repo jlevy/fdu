@@ -122,7 +122,6 @@ impl AnalysisSet {
     /// `none` and `all` are totals and cannot be combined with anything, including each
     /// other — `none,code` has no coherent reading, and silently letting one win is how a
     /// caller ends up with analysis they did not ask for or did not get.
-    /// Parse an analyzer list, naming the axis as the Python API spells it.
     pub fn parse(value: &str) -> Result<Self, String> {
         Self::parse_labeled(value, "analyze")
     }

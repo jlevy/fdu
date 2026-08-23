@@ -566,7 +566,7 @@ fn analysis_json(analysis: Option<&crate::query::ContentReportMetadata>) -> Stri
 /// One section as a JSON object.
 fn section_json(section: &Section, _indent: usize) -> String {
     let mut out = String::new();
-    let _ = write!(out, "{{\n  \"view\": {},\n  ", quote(view_label(section.view())));
+    let _ = write!(out, "{{\n  \"view\": {},\n  ", quote(section.view().label()));
     match section {
         Section::Tree(root) => {
             let _ = write!(out, "\"tree\": {}", indent(&tree_json(root), 2).trim_start());
@@ -863,7 +863,7 @@ fn render_yaml(report: &Report) -> String {
     out.push_str("reports:\n");
 
     for section in &report.sections {
-        let _ = writeln!(out, "  - view: {}", yaml_scalar(view_label(section.view())));
+        let _ = writeln!(out, "  - view: {}", yaml_scalar(section.view().label()));
         match section {
             Section::Tree(root) => {
                 out.push_str("    tree:\n");
@@ -1119,8 +1119,8 @@ fn generator() -> String {
 
 /// All-caps header naming a view in multi-view text output.
 ///
-/// Deliberately not `view_label(..).to_uppercase()`: the wire label is a schema promise
-/// machine consumers match on, and deriving the human header from it would let a
+/// Deliberately not `ViewSpec::label(..).to_uppercase()`: the wire label is a schema
+/// promise machine consumers match on, and deriving the human header from it would let a
 /// presentation change reach into the schema, or freeze the schema for a presentation
 /// reason. They spell the same word today because the same word is right in both places,
 /// and a test holds them in step rather than a shared expression.
@@ -1137,13 +1137,6 @@ fn view_header(view: ViewSpec) -> &'static str {
         ViewSpec::Recent => "RECENT",
         ViewSpec::Summary => "SUMMARY",
     }
-}
-
-/// Stable wire label for a view.
-pub(crate) fn view_label(view: ViewSpec) -> &'static str {
-    // One spelling, in the type that owns it. This was a second copy of the same ten arms,
-    // which is how `full` and the view order drifted elsewhere on this branch.
-    view.label()
 }
 
 fn report_schema(report: &Report) -> &'static str {
@@ -1506,8 +1499,10 @@ mod tests {
     use crate::Index;
     use crate::engine_contract::{Attrs, Observation, Op, ScanScope};
     use crate::query::{Bound, Provenance, Query, Selection, report};
+    use std::ffi::OsStr;
     use std::path::PathBuf;
-    use std::time::{Duration, UNIX_EPOCH};
+    use std::process::Command;
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
     fn attrs(size: u64, mtime_ns: i64) -> Attrs {
         Attrs {
@@ -2106,7 +2101,7 @@ mod tests {
             ViewSpec::Summary,
         ] {
             let header = view_header(view);
-            assert_eq!(header, view_label(view).to_uppercase(), "{view:?}");
+            assert_eq!(header, view.label().to_uppercase(), "{view:?}");
             assert!(
                 !header.is_empty() && header.chars().all(|c| c.is_ascii_uppercase()),
                 "{view:?}"
@@ -2162,16 +2157,25 @@ mod tests {
     const DEEP_RENDER_CHILD_ENV: &str = "FDU_DEEP_RENDER_CHILD";
     const DEEP_RENDER_DEPTH: usize = 1_024;
     const DEEP_RENDER_STACK_BYTES: usize = 64 * 1_024;
+    const DEEP_RENDER_TEST: &str = "deep_rendering_is_stack_safe";
 
-    use std::ffi::OsStr;
-    use std::process::Command;
-    use std::time::SystemTime;
+    // Renderer tests that lived in the command line. They test expansion and the
+    // renderers, not argument handling, and they build an index by hand -- which is why
+    // moving the CLI into its own crate surfaced them: the fixture helpers they need are
+    // `pub(crate)` here and unreachable from there.
 
-    // ---- renderer tests that lived in the command line -------------------------------
-    //
-    // They test expansion and the three renderers, not argument handling, and they build
-    // an index by hand -- which is why moving the CLI into its own crate surfaced them:
-    // the fixture helpers they need are `pub(crate)` here and unreachable from there.
+    /// The libtest name of a test in this module, as `--exact` wants it.
+    ///
+    /// Derived rather than written down. This test moved from `cli::tests` to here and
+    /// its hard-coded filter came along unchanged, so the child matched nothing, ran zero
+    /// tests, exited 0, and the parent's success assertion passed while the renderer was
+    /// never called. `module_path!` cannot go stale that way; the crate name is stripped
+    /// because libtest does not include it.
+    fn test_filter(name: &str) -> String {
+        let module = module_path!();
+        let path = module.split_once("::").map_or(module, |(_crate, rest)| rest);
+        format!("{path}::{name}")
+    }
 
     #[test]
     fn deep_rendering_is_stack_safe() {
@@ -2180,17 +2184,26 @@ mod tests {
             return;
         }
 
+        let filter = test_filter(DEEP_RENDER_TEST);
         let output = Command::new(std::env::current_exe().expect("current test executable"))
-            .args(["--exact", "cli::tests::deep_rendering_is_stack_safe", "--nocapture"])
+            .args(["--exact", &filter, "--nocapture"])
             .env(DEEP_RENDER_CHILD_ENV, "1")
             .output()
             .expect("run deep-render child");
 
+        let stdout = String::from_utf8_lossy(&output.stdout);
         assert!(
             output.status.success(),
-            "deep renderer failed in child process\nstdout:\n{}\nstderr:\n{}",
-            String::from_utf8_lossy(&output.stdout),
+            "deep renderer failed in child process\nstdout:\n{stdout}\nstderr:\n{}",
             String::from_utf8_lossy(&output.stderr)
+        );
+        // A filter matching nothing is a passing run of zero tests, which is
+        // indistinguishable from success by exit code alone. Require the child to say it
+        // ran one.
+        assert!(
+            stdout.contains("1 passed"),
+            "the child ran no test, so nothing was rendered: {filter:?} matched \
+             nothing.\nstdout:\n{stdout}"
         );
     }
 

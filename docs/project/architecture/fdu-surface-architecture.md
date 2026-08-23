@@ -38,10 +38,21 @@ a library caller the whole API: one name to know either way.
 `fdu-core` exists so that the command line can depend on the engine **as an external
 crate**, which is what makes the boundary real.
 
-Two packages, and no more.
+Two Rust crates, and no more: the binding is a third package but not a third engine, and
+`fdu-py` is not published under its own name.
 The Python binding needs the command line reachable as a library — its console script
 compiles `run_process` into the extension module — which is why `fdu` is a library as
 well as a binary.
+
+The split makes publication ordered: `fdu` depends on `fdu-core`, so `fdu-core` is
+published first and `fdu` cannot even be *packaged* on its own until it exists in the
+index. `cargo package -p fdu` alone fails with *no matching package named `fdu-core`
+found*; naming both in one invocation is what lets cargo verify the packaged command
+line against the engine it just packaged.
+The rehearsal does that, records both crates as artifacts, and checks each carries its
+build script — `fdu` shipped without one once, and everything built locally because the
+file was on disk. The two versions move together, and `tests/release/test_metadata.py`
+fails if they do not.
 
 ## How the Boundary Is Enforced
 
@@ -51,8 +62,15 @@ a crate boundary. That converts a reviewer’s diligence into a compile error.
 `make lib-only` adds the dependency half:
 
 ```shell
-! cargo tree -p fdu-core --all-features | grep -qE '^(clap|anyhow) '
+tree="$(cargo tree -p fdu-core --all-features --prefix none)" || exit 1
+! printf '%s\n' "$tree" | grep -qE '^(clap|anyhow) '
 ```
+
+`--prefix none` is not cosmetic: without it every dependency is printed behind `├── `,
+so `^clap` matches nothing and the guard reports success no matter what the engine
+depends on. The output is captured before it is searched for the same reason — a
+pipeline’s status is the last command’s, so a failing `cargo tree` would otherwise feed
+`grep` an empty input and pass.
 
 The engine must not acquire the command line’s dependencies.
 It had: `report_format` took its ANSI colour types from `clap::builder::styling`, so the
@@ -62,7 +80,7 @@ not print it.
 
 ## How Agreement Is Enforced
 
-`tests/golden/*.tryscript.md` records what the command line prints for 126 sessions.
+`tests/golden/*.tryscript.md` records what the command line prints for 129 sessions.
 The same corpus is replayed against the Python surface through a shim
 (`tests/parity/py/parity_cli.py`) that serves fdu’s argv using only the public Python
 package — not a wrapper around the binary, which would test nothing.

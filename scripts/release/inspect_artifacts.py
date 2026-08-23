@@ -105,12 +105,24 @@ def inspect_sdist(path: Path, version: str) -> None:
     )
 
 
-def inspect_crate(path: Path, version: str) -> None:
-    """Validate the Cargo package's identity and legal/discovery files."""
-    prefix = f"fdu-{version}/"
+def inspect_crate(path: Path, package: str, version: str) -> None:
+    """Validate one Cargo package's identity and legal/discovery files.
+
+    `build.rs` is required because omitting it from a crate's `include` list is a
+    failure that already happened: everything built locally, because the file was on
+    disk, and the published source would not compile.
+    """
+    prefix = f"{package}-{version}/"
     with tarfile.open(path, "r:gz") as archive:
         names = set(archive.getnames())
-    for member in ("Cargo.toml", "Cargo.toml.orig", "LICENSE", "README.md", "src/lib.rs"):
+    for member in (
+        "Cargo.toml",
+        "Cargo.toml.orig",
+        "LICENSE",
+        "README.md",
+        "build.rs",
+        "src/lib.rs",
+    ):
         require(f"{prefix}{member}" in names, f"{path.name}: missing {member}")
 
 
@@ -120,14 +132,20 @@ def inspect_directory(
     *,
     require_release_matrix: bool = False,
 ) -> list[Artifact]:
-    """Validate exactly one crate/sdist and every wheel in a release directory."""
+    """Validate both crates, one sdist, and every wheel in a release directory.
+
+    Both crates, because `fdu` depends on `fdu-core` and cannot be installed without
+    it: a release recording only the crate a user names records half an artifact set.
+    """
     paths = sorted(path for path in directory.iterdir() if path.is_file())
     wheels = [path for path in paths if path.suffix == ".whl"]
     sdists = [path for path in paths if path.name == f"fdu-{version}.tar.gz"]
     crates = [path for path in paths if path.name == f"fdu-{version}.crate"]
+    core_crates = [path for path in paths if path.name == f"fdu-core-{version}.crate"]
     require(bool(wheels), "no wheels found")
     require(len(sdists) == 1, "expected exactly one fdu source distribution")
     require(len(crates) == 1, "expected exactly one fdu crate")
+    require(len(core_crates) == 1, "expected exactly one fdu-core crate")
     if require_release_matrix:
         require(len(wheels) == len(RELEASE_WHEEL_PLATFORMS), "expected exactly five wheels")
         for label, pattern in RELEASE_WHEEL_PLATFORMS.items():
@@ -140,9 +158,10 @@ def inspect_directory(
         )
         inspect_wheel(wheel, version)
     inspect_sdist(sdists[0], version)
-    inspect_crate(crates[0], version)
+    inspect_crate(core_crates[0], "fdu-core", version)
+    inspect_crate(crates[0], "fdu", version)
     artifacts = []
-    for path in [*wheels, *sdists, *crates]:
+    for path in [*wheels, *sdists, *core_crates, *crates]:
         kind = "wheel" if path.suffix == ".whl" else "sdist" if path in sdists else "crate"
         artifacts.append(Artifact(path.name, kind, path.stat().st_size, digest(path)))
     return artifacts

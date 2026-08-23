@@ -720,11 +720,11 @@ fn report_dict<'py>(py: Python<'py>, report: &Report) -> PyResult<Bound<'py, PyD
                 entry.set_item("extensions", list)?;
             }
             Section::Metrics { view, summary } => {
-                entry.set_item("view", view_label(*view))?;
+                entry.set_item("view", view.label())?;
                 entry.set_item("metrics", metric_summary_dict(py, summary)?)?;
             }
             Section::Files { view, rows, total } => {
-                entry.set_item("view", view_label(*view))?;
+                entry.set_item("view", view.label())?;
                 entry.set_item("bound", bound_dict(py, rows.len(), *total)?)?;
                 let list = PyList::empty(py);
                 for row in rows {
@@ -837,21 +837,6 @@ fn bound_dict(py: Python<'_>, shown: usize, total: usize) -> PyResult<Option<Bou
     bound.set_item("shown", shown)?;
     bound.set_item("total", total)?;
     Ok(Some(bound))
-}
-
-fn view_label(view: ViewSpec) -> &'static str {
-    match view {
-        ViewSpec::Tree => "tree",
-        ViewSpec::Extensions => "extensions",
-        ViewSpec::Types => "types",
-        ViewSpec::Families => "families",
-        ViewSpec::Languages => "languages",
-        ViewSpec::Documents => "documents",
-        ViewSpec::Files => "files",
-        ViewSpec::Largest => "largest",
-        ViewSpec::Recent => "recent",
-        ViewSpec::Summary => "summary",
-    }
 }
 
 fn coverage_label(reason: CoverageReason) -> &'static str {

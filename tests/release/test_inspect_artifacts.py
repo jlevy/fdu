@@ -29,7 +29,8 @@ class InspectArtifactsTests(unittest.TestCase):
         self.directory = Path(self.temporary.name)
         self._write_wheel()
         self._write_sdist()
-        self._write_crate()
+        self._write_crate("fdu")
+        self._write_crate("fdu-core")
 
     def tearDown(self) -> None:
         self.temporary.cleanup()
@@ -73,17 +74,39 @@ class InspectArtifactsTests(unittest.TestCase):
             ):
                 add_tar(archive, prefix + name)
 
-    def _write_crate(self) -> None:
-        path = self.directory / f"fdu-{VERSION}.crate"
-        prefix = f"fdu-{VERSION}/"
+    def _write_crate(self, package: str, *, build_script: bool = True) -> None:
+        path = self.directory / f"{package}-{VERSION}.crate"
+        prefix = f"{package}-{VERSION}/"
+        names = ["Cargo.toml", "Cargo.toml.orig", "LICENSE", "README.md", "src/lib.rs"]
+        if build_script:
+            names.append("build.rs")
         with tarfile.open(path, "w:gz") as archive:
-            for name in ("Cargo.toml", "Cargo.toml.orig", "LICENSE", "README.md", "src/lib.rs"):
+            for name in names:
                 add_tar(archive, prefix + name)
 
     def test_valid_artifacts_produce_hash_evidence(self) -> None:
         artifacts = inspect_directory(self.directory, VERSION)
         self.assertEqual({item.kind for item in artifacts}, {"crate", "sdist", "wheel"})
         self.assertTrue(all(len(item.sha256) == 64 for item in artifacts))
+
+    def test_both_crates_are_evidence(self) -> None:
+        """`fdu` cannot be installed without `fdu-core`, so a release that records only
+        one of them records half an artifact set."""
+        names = {item.filename for item in inspect_directory(self.directory, VERSION)}
+        self.assertIn(f"fdu-{VERSION}.crate", names)
+        self.assertIn(f"fdu-core-{VERSION}.crate", names)
+
+    def test_a_missing_engine_crate_is_rejected(self) -> None:
+        (self.directory / f"fdu-core-{VERSION}.crate").unlink()
+        with self.assertRaisesRegex(ValueError, "fdu-core crate"):
+            inspect_directory(self.directory, VERSION)
+
+    def test_a_crate_without_its_build_script_is_rejected(self) -> None:
+        """The `fdu` crate shipped without `build.rs` once: everything compiled locally
+        because the file was on disk, and the published source would not build."""
+        self._write_crate("fdu", build_script=False)
+        with self.assertRaisesRegex(ValueError, "build.rs"):
+            inspect_directory(self.directory, VERSION)
 
     def test_missing_typing_marker_is_rejected(self) -> None:
         self._write_wheel(typed=False)

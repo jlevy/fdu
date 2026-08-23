@@ -1,7 +1,7 @@
 //! Stamp the checkout revision into the binary's `--version`.
 //!
-//! Half of the library's build script. The other half compiles file-type rules, which
-//! belong to `fdu` and stay there; a command line has no business owning them.
+//! Half of what was one build script. The other half compiles the file-type rules,
+//! which belong to `fdu-core` and stay there; a command line has no business owning them.
 //!
 //! Development builds carry the Git revision and a dirty marker, so a binary built from a
 //! checkout never impersonates the published release.
@@ -12,6 +12,16 @@ fn main() {
     emit_version();
 }
 
+// BEGIN shared version stamp -- keep byte-identical with the other crate's build.rs.
+//
+// Duplicated rather than shared on purpose. A cross-crate `include!` would name a file
+// outside the including crate's package, so it would not be in the published `.crate`
+// and the packaged source would not compile -- the same failure that shipped `fdu`
+// without its build script once. A third crate to hold twenty lines is worse than two
+// copies. `tests/release/test_metadata.py` fails if the copies drift, which is the risk
+// that actually matters: `fdu --version` and the performance probe's `--version`
+// describe the same checkout, and the perf harness matches the probe's git revision
+// against the source it claims to measure.
 fn git(args: &[&str]) -> Option<String> {
     let output = Command::new("git").args(args).output().ok()?;
     if !output.status.success() {
@@ -59,3 +69,4 @@ fn emit_version() {
     };
     println!("cargo:rustc-env=FDU_BUILD_VERSION={version}");
 }
+// END shared version stamp.

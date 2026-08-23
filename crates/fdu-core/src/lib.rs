@@ -148,7 +148,6 @@ impl CachePolicy {
         matches!(self, Self::Auto | Self::ReadOnly | Self::Only)
     }
 
-    /// Whether this policy may write a snapshot back.
     /// Whether this policy may write a snapshot.
     ///
     /// Public because a caller deciding whether to prepare a cache directory, or to warn

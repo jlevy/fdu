@@ -4,8 +4,10 @@ version = "0.1.0"
 description = "The fdu engine: incremental hierarchical tallies over large directory trees"
 readme = "README.md"
 documentation = "https://docs.rs/fdu-core"
-keywords = ["disk-usage", "filesystem", "du", "cli", "index"]
-categories = ["command-line-utilities", "filesystem"]
+# The engine, not the command line: `cli` and `command-line-utilities` describe `fdu`,
+# which is the crate that carries the binary.
+keywords = ["disk-usage", "filesystem", "du", "index", "cache"]
+categories = ["filesystem", "caching"]
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true

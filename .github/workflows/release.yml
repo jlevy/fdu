@@ -59,23 +59,37 @@ jobs:
       - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # 1.97.1
         with:
           toolchain: 1.97.1
-      - name: Package and verify crate
-        run: cargo package --locked -p fdu
+      # Both crates in one invocation, which is what makes this work at all: `fdu`
+      # depends on `fdu-core`, which is not on crates.io yet, so packaging `fdu` alone
+      # fails with "no matching package named `fdu-core` found". Named together, cargo
+      # verifies the packaged `fdu` against the `fdu-core` it just packaged. It also
+      # states the publication order -- `fdu-core` first, then `fdu`.
+      - name: Package and verify crates
+        run: cargo package --locked -p fdu-core -p fdu
         env:
           FDU_RELEASE_TAG: ${{ needs.plan.outputs.release_tag }}
+      # Installs the packaged sources rather than the working tree, so this tests the
+      # artifact. The patch points `fdu-core` at its own packaged directory for the same
+      # reason as above; it comes out once `fdu-core` is published, and until then
+      # `cargo install` would go to crates.io for a version that does not exist.
       - name: Smoke-test extracted crate CLI
         run: >-
           cargo install
           --path "target/package/fdu-${{ needs.plan.outputs.version }}"
           --locked
           --root "${RUNNER_TEMP}/fdu-crate"
+          --config
+          'patch.crates-io.fdu-core.path="target/package/fdu-core-${{ needs.plan.outputs.version }}"'
         env:
           FDU_RELEASE_TAG: ${{ needs.plan.outputs.release_tag }}
       - run: '"${RUNNER_TEMP}/fdu-crate/bin/fdu" --version'
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: release-crate
-          path: target/package/fdu-${{ needs.plan.outputs.version }}.crate
+          # Both, because neither is installable without the other.
+          path: |
+            target/package/fdu-core-${{ needs.plan.outputs.version }}.crate
+            target/package/fdu-${{ needs.plan.outputs.version }}.crate
           if-no-files-found: error
 
   sdist:
