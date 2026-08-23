@@ -36,7 +36,7 @@ $ fdu --cache off --color never --size apparent --depth 1 --limit 2 project
      263 B  ██████████   100%  . (6 files)
      128 B  █████░░░░░    49%    dist (1 file)
       36 B  █░░░░░░░░░    14%    src (2 files)
-                                 …
+      23 B  █░░░░░░░░░     9%    … 1 more dir (1 file)
 Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 0
 ```

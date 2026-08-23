@@ -537,7 +537,7 @@ TREE
      256 B  ██████████   100%  . (7 files)
       98 B  ████░░░░░░    38%    assets (2 files)
       77 B  ███░░░░░░░    30%    src (2 files)
-                                 …
+      81 B  ███░░░░░░░    32%    … 2 more dirs (3 files)
 
 FAMILIES  (2 of 4; --limit all for every one)
       80 B   31.2%  binary             1 file
@@ -578,7 +578,7 @@ TREE
      256 B  ██████████   100%  . (7 files)
       98 B  ████░░░░░░    38%    assets (2 files)
       77 B  ███░░░░░░░    30%    src (2 files)
-                                 …
+      81 B  ███░░░░░░░    32%    … 2 more dirs (3 files)
 
 FAMILIES  (2 of 4; --limit all for every one)
       80 B   31.2%  binary             1 file, 1 binary

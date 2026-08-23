@@ -376,6 +376,36 @@ class FileRow:
 
 
 @dataclass(frozen=True, slots=True)
+class Remainder:
+    """What a depth or limit bound withheld from one tree node's children.
+
+    "Truncate freely, never silently": a caller showing the rows it was given can also
+    show what it was not given, which is what a treemap's "other" cell is. Fields are the
+    withheld rows' own aggregates summed, so these bytes plus the emitted children's
+    account for every directory beneath the node.
+    """
+
+    rows: int
+    """Directory rows not emitted beneath this node."""
+
+    files: int
+    """Files in those withheld subtrees."""
+
+    dirs: int
+    """Directories nested inside those withheld subtrees.
+
+    The withheld rows themselves are `rows`, so `rows + dirs` is every directory the
+    bound hid.
+    """
+
+    bytes: int
+    """Apparent bytes in those withheld subtrees."""
+
+    allocated: int
+    """Allocated bytes in those withheld subtrees."""
+
+
+@dataclass(frozen=True, slots=True)
 class TreeNode:
     name: str
     path: Path
@@ -386,6 +416,11 @@ class TreeNode:
     dirs: int
     newest_mtime_ns: int | None
     truncated: bool
+    """Whether any child row was withheld. `remainder` says how much."""
+
+    remainder: Remainder | None
+    """The withheld aggregate, or `None` when nothing was withheld."""
+
     children: tuple[TreeNode, ...]
 
 
@@ -803,7 +838,22 @@ def _tree(value: dict[str, Any]) -> TreeNode:
             int(value["newest_mtime_ns"]) if value.get("newest_mtime_ns") is not None else None
         ),
         truncated=bool(value["truncated"]),
+        remainder=_remainder(value.get("remainder")),
         children=tuple(_tree(child) for child in value["children"]),
+    )
+
+
+def _remainder(value: object) -> Remainder | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise TypeError("expected a tree-node remainder")
+    return Remainder(
+        rows=int(value["rows"]),
+        files=int(value["files"]),
+        dirs=int(value["dirs"]),
+        bytes=int(value["bytes"]),
+        allocated=int(value["allocated"]),
     )
 
 

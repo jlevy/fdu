@@ -274,7 +274,11 @@ Check the process exit status and these fields:
   rather than guessing at the fields.
 - `complete` and `errors` before trusting totals
 - `freshness` and `source` before presenting data as current
-- `truncated` on a tree node before treating it as exhaustive
+- `truncated` on a tree node before treating it as exhaustive, and `remainder` for what
+  it withheld: `rows`, `files`, `dirs`, `bytes`, and `allocated` for the child rows not
+  emitted, or `null` when none were.
+  Emitted children plus `remainder` account for every directory beneath the node, which
+  is what makes an “other” row addable without a second query.
 - `coverage` before presenting a metric summary as complete
 - `detection.sources`, `detection.confidence`, and `detection.flags` before treating a
   deep-detected type or origin label as exact

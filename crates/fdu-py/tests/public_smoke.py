@@ -91,6 +91,51 @@ def check_the_dirty_set_names_every_moved_rollup() -> None:
             break
 
 
+def check_a_bounded_tree_says_what_it_withheld() -> None:
+    """A truncated tree node carries the aggregate of the rows it dropped.
+
+    "Truncate freely, never silently": the emitted children plus the remainder account
+    for every directory beneath the node, so a caller can render an "other" cell without
+    a second query. Checked against the same query with the bound lifted rather than
+    against a hand-written number, which would agree with a remainder taken from the
+    wrong side of the cut.
+    """
+
+    # Its own tree: the shared fixture has one directory at the root, so a limit of
+    # one would withhold nothing there and the check would pass without testing anything.
+    root = Path(tempfile.mkdtemp(prefix="fdu-remainder-"))
+    for name, size in (("alpha", 8), ("beta", 4), ("gamma", 2)):
+        (root / name).mkdir()
+        (root / name / "f.txt").write_text("x" * size, encoding="utf-8")
+
+    index = fdu.open(root)
+    full = _tree_section(index.report(fdu.Query(views=(fdu.View.TREE,))))
+    assert len(full.children) == 3, full.children
+    assert full.remainder is None, "an unbounded tree withheld nothing"
+
+    bounded = _tree_section(
+        index.report(fdu.Query(views=(fdu.View.TREE,), selection=fdu.Selection(limit=1)))
+    )
+    remainder = bounded.remainder
+    assert remainder is not None, "one row kept out of several is a truncation"
+    assert bounded.truncated is True
+    assert len(bounded.children) + remainder.rows == len(full.children)
+    assert sum(child.bytes for child in bounded.children) + remainder.bytes == sum(
+        child.bytes for child in full.children
+    )
+    assert sum(child.files for child in bounded.children) + remainder.files == sum(
+        child.files for child in full.children
+    )
+    fdu.clear_cache(root)
+
+
+def _tree_section(report: fdu.Report) -> fdu.TreeNode:
+    for section in report.sections:
+        if isinstance(section, fdu.TreeSection):
+            return section.tree
+    raise AssertionError("the report has no tree section")
+
+
 def check_telemetry_measures_the_run_not_the_tree() -> None:
     """Each call reports its own cost, and the numbers are the walk's, not a total.
 
@@ -416,6 +461,7 @@ def main() -> None:
     check_watch_reports_its_own_index(root)
     check_the_dirty_set_names_every_moved_rollup()
     check_telemetry_measures_the_run_not_the_tree()
+    check_a_bounded_tree_says_what_it_withheld()
     check_render_matches_the_cli(
         root, str(Path(sys.executable).with_name("fdu.exe" if os.name == "nt" else "fdu"))
     )

@@ -21,8 +21,8 @@ use crate::classify::{DetectionConfidence, DetectionSource, human_language_name}
 use crate::content::{CoverageReason, MetricValues};
 use crate::engine_contract::{EntryKind, Freshness};
 use crate::query::{
-    FileRow, MetricGroup, MetricRow, MetricSummary, Report, ReportSource, Section, SizeMetric,
-    SummaryRow, TreeNode, TypeRow, ViewSpec, document_words, format_rfc3339,
+    FileRow, MetricGroup, MetricRow, MetricSummary, Remainder, Report, ReportSource, Section,
+    SizeMetric, SummaryRow, TreeNode, TypeRow, ViewSpec, document_words, format_rfc3339,
 };
 
 /// The all-caps label naming which view a block of text output belongs to.
@@ -315,7 +315,7 @@ fn human_coverage_label(reason: CoverageReason) -> &'static str {
 fn render_text_tree(out: &mut String, root: &TreeNode, size: SizeMetric, color: bool) {
     enum Row<'a> {
         Node(&'a TreeNode, usize),
-        Truncation(usize),
+        Truncation(&'a Remainder, usize),
     }
 
     let grand = pick(size, root.bytes, root.allocated);
@@ -342,16 +342,34 @@ fn render_text_tree(out: &mut String, root: &TreeNode, size: SizeMetric, color: 
                 // marking every boundary directory overwhelms a real tree with dots.
                 // Retained children plus truncation means the sibling list hit its
                 // limit; that omission gets one marker after the rows that were kept.
-                if node.truncated && !node.children.is_empty() {
-                    stack.push(Row::Truncation(depth + 1));
+                if !node.children.is_empty() {
+                    if let Some(remainder) = node.remainder.as_ref() {
+                        stack.push(Row::Truncation(remainder, depth + 1));
+                    }
                 }
                 for child in node.children.iter().rev() {
                     stack.push(Row::Node(child, depth + 1));
                 }
             }
-            Row::Truncation(depth) => {
+            Row::Truncation(remainder, depth) => {
+                // Same grammar as a node row, because it stands for the rows that would
+                // have been there: a bare ellipsis tells a reader that something is
+                // missing and nothing about how much, which is the half of "truncate
+                // freely, never silently" that a blank size column drops.
+                let bytes = pick(size, remainder.bytes, remainder.allocated);
+                let share = ratio(bytes, grand);
                 let indent = "  ".repeat(depth);
-                let _ = writeln!(out, "{:>10}  {:10}  {:>5}  {indent}…", "", "", "");
+                let _ = writeln!(
+                    out,
+                    "{:>10}  {}  {:>4.0}%  {indent}… {} more {} ({} {})",
+                    human_bytes(bytes),
+                    bar(share, color),
+                    share * 100.0,
+                    remainder.rows,
+                    plural(remainder.rows, "dir", "dirs"),
+                    remainder.files,
+                    plural(remainder.files, "file", "files"),
+                );
             }
         }
     }
@@ -385,6 +403,34 @@ fn yaml_bound(out: &mut String, shown: usize, total: usize) {
         let _ = writeln!(out, "      shown: {shown}");
         let _ = writeln!(out, "      total: {total}");
     }
+}
+
+/// What a tree node's bound withheld, as a machine field.
+///
+/// `null` when nothing was withheld, exactly as [`bound_json`] does at section level: one
+/// truncation contract, read the same way wherever it appears.
+fn remainder_json(remainder: Option<Remainder>) -> String {
+    let Some(remainder) = remainder else {
+        return "null".to_string();
+    };
+    format!(
+        "{{\"rows\": {}, \"files\": {}, \"dirs\": {}, \"bytes\": {}, \"allocated\": {}}}",
+        remainder.rows, remainder.files, remainder.dirs, remainder.bytes, remainder.allocated
+    )
+}
+
+/// The YAML form of a tree node's remainder, matching the JSON field.
+fn yaml_remainder(out: &mut String, rest: &str, remainder: Option<Remainder>) {
+    let Some(remainder) = remainder else {
+        let _ = writeln!(out, "{rest}remainder: null");
+        return;
+    };
+    let _ = writeln!(out, "{rest}remainder:");
+    let _ = writeln!(out, "{rest}  rows: {}", remainder.rows);
+    let _ = writeln!(out, "{rest}  files: {}", remainder.files);
+    let _ = writeln!(out, "{rest}  dirs: {}", remainder.dirs);
+    let _ = writeln!(out, "{rest}  bytes: {}", remainder.bytes);
+    let _ = writeln!(out, "{rest}  allocated: {}", remainder.allocated);
 }
 
 /// The bound a section applied, as a machine field.
@@ -775,8 +821,9 @@ fn tree_json(node: &TreeNode) -> String {
                     node.dirs,
                     node.newest_mtime_ns
                         .map_or_else(|| "null".to_string(), |value| value.to_string()),
-                    node.truncated
+                    node.truncated()
                 );
+                let _ = write!(out, ", \"remainder\": {}", remainder_json(node.remainder));
                 if node.children.is_empty() {
                     out.push_str(", \"children\": []}");
                     continue;
@@ -1033,7 +1080,8 @@ fn yaml_tree(out: &mut String, root: &TreeNode, pad: usize) {
         let _ = writeln!(out, "{rest}files: {}", node.files);
         let _ = writeln!(out, "{rest}dirs: {}", node.dirs);
         let _ = writeln!(out, "{rest}newest_mtime_ns: {}", yaml_option(node.newest_mtime_ns));
-        let _ = writeln!(out, "{rest}truncated: {}", node.truncated);
+        let _ = writeln!(out, "{rest}truncated: {}", node.truncated());
+        yaml_remainder(out, &rest, node.remainder);
         if node.children.is_empty() {
             let _ = writeln!(out, "{rest}children: []");
             continue;

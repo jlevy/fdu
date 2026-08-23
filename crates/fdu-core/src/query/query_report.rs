@@ -450,8 +450,58 @@ pub struct TreeNode {
     pub newest_mtime_ns: Option<i64>,
     /// Children reported beneath this node.
     pub children: Vec<TreeNode>,
-    /// Whether children were withheld by the depth or limit bound.
-    pub truncated: bool,
+    /// What the depth or limit bound withheld from this node's children.
+    ///
+    /// `None` when nothing was withheld, matching the section-level bound: a consumer
+    /// branches on presence rather than comparing counts it would have to know to
+    /// compare. This is the only stored form of the fact; [`TreeNode::truncated`]
+    /// derives the flag, so the two cannot disagree.
+    pub remainder: Option<Remainder>,
+}
+
+/// The aggregate of the child rows a bound withheld from one node.
+///
+/// "Truncate freely, never silently" applied to the tree view: a caller that shows the
+/// rows it was given can also show what it was not given, which is what a treemap's
+/// "other" cell is. Fields are the withheld rows' own aggregates, summed, so
+/// `remainder.bytes` plus the emitted children's bytes accounts for every directory
+/// beneath this node.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub struct Remainder {
+    /// Directory rows not emitted beneath this node.
+    pub rows: u64,
+    /// Files in those withheld subtrees.
+    pub files: u64,
+    /// Directories nested inside those withheld subtrees.
+    ///
+    /// The withheld rows themselves are `rows`, so `rows + dirs` is every directory the
+    /// bound hid.
+    pub dirs: u64,
+    /// Apparent bytes in those withheld subtrees.
+    pub bytes: u64,
+    /// Allocated bytes in those withheld subtrees.
+    pub allocated: u64,
+}
+
+impl Remainder {
+    /// Fold one withheld row into the aggregate.
+    fn absorb(&mut self, node: &TreeNode) {
+        self.rows += 1;
+        self.files += node.files;
+        self.dirs += node.dirs;
+        self.bytes += node.bytes;
+        self.allocated += node.allocated;
+    }
+}
+
+impl TreeNode {
+    /// Whether any child row was withheld by the depth or limit bound.
+    ///
+    /// Derived rather than stored: a second field carrying the same fact is a field that
+    /// eventually disagrees with the first.
+    pub fn truncated(&self) -> bool {
+        self.remainder.is_some()
+    }
 }
 
 impl Drop for TreeNode {
@@ -1260,7 +1310,7 @@ fn tree_node(index: &Index, query: &Query, walked: Option<&Walked>) -> TreeNode 
         dirs: root_summary.dirs,
         newest_mtime_ns: root_summary.newest_mtime_ns,
         children: Vec::new(),
-        truncated: false,
+        remainder: None,
     };
     expand(index, query, walked, EntryId::ROOT, &PathBuf::new(), &mut root, 0);
     root
@@ -1302,7 +1352,7 @@ fn expand(
             dirs: node.dirs,
             newest_mtime_ns: node.newest_mtime_ns,
             children: Vec::new(),
-            truncated: false,
+            remainder: None,
         },
         id: root_id,
         depth: start_depth,
@@ -1319,16 +1369,23 @@ fn expand(
             // Files are already represented in this directory's totals and never become
             // tree rows. Only a directory child hidden by the depth bound makes the
             // rendered hierarchy incomplete.
-            built[cursor].node.truncated = index.children_of(id).is_some_and(|mut children| {
-                children.any(|(_, child)| index.kind_of(child) == Some(EntryKind::Dir))
-            });
+            // Every directory child is withheld here, so the remainder is all of
+            // them. Summed directly rather than by building rows: the rows would be
+            // sorted and pathed for an ordering nothing will read.
+            built[cursor].node.remainder = withheld_children(index, walked, id);
             cursor += 1;
             continue;
         }
 
         let mut rows = child_rows(index, query, walked, id, &path);
         let kept = query.limit_for(ViewSpec::Tree).limit().unwrap_or(rows.len()).min(rows.len());
-        built[cursor].node.truncated = kept < rows.len();
+        built[cursor].node.remainder = (kept < rows.len()).then(|| {
+            let mut remainder = Remainder::default();
+            for (row, _) in &rows[kept..] {
+                remainder.absorb(row);
+            }
+            remainder
+        });
         rows.truncate(kept);
 
         for (child_node, child_id) in rows {
@@ -1352,7 +1409,41 @@ fn expand(
 
     let mut root = built.pop().expect("the root is always present");
     node.children = std::mem::take(&mut root.node.children);
-    node.truncated = root.node.truncated;
+    node.remainder = root.node.remainder;
+}
+
+/// One child's subtree totals, from precomputed roll-ups or from the filtered walk.
+///
+/// The `walked` arm is not an optimisation of the other: a filtered query's totals are
+/// the walk's, and reading the precomputed roll-up there would answer about the whole
+/// subtree rather than about the selection.
+fn child_summary(index: &Index, walked: Option<&Walked>, child: EntryId) -> SummaryRow {
+    match walked {
+        None => index.rollup_scalars_of(child).map(summary_from_scalars).unwrap_or_default(),
+        Some(walked) => walked.per_directory.get(&child).copied().unwrap_or_default(),
+    }
+}
+
+/// The aggregate of every directory child of `id`, which the depth bound withholds whole.
+///
+/// `None` when the node has no directory children: files are already counted in this
+/// node's own totals and never become tree rows, so a directory of files alone withholds
+/// nothing.
+fn withheld_children(index: &Index, walked: Option<&Walked>, id: EntryId) -> Option<Remainder> {
+    let children = index.children_of(id)?;
+    let mut remainder = Remainder::default();
+    for (_, child) in children {
+        if index.kind_of(child) != Some(EntryKind::Dir) {
+            continue;
+        }
+        let summary = child_summary(index, walked, child);
+        remainder.rows += 1;
+        remainder.files += summary.files;
+        remainder.dirs += summary.dirs;
+        remainder.bytes += summary.bytes;
+        remainder.allocated += summary.allocated;
+    }
+    (remainder.rows > 0).then_some(remainder)
 }
 
 /// The directory children of one node, shaped and sorted but not yet expanded.
@@ -1379,10 +1470,7 @@ fn child_rows(
         if kind != EntryKind::Dir {
             continue;
         }
-        let summary = match walked {
-            None => index.rollup_scalars_of(child).map(summary_from_scalars).unwrap_or_default(),
-            Some(walked) => walked.per_directory.get(&child).copied().unwrap_or_default(),
-        };
+        let summary = child_summary(index, walked, child);
         let name = child_path
             .file_name()
             .map(|name| name.to_string_lossy().into_owned())
@@ -1398,7 +1486,7 @@ fn child_rows(
                 dirs: summary.dirs,
                 newest_mtime_ns: summary.newest_mtime_ns,
                 children: Vec::new(),
-                truncated: false,
+                remainder: None,
             },
             child,
         ));
@@ -1842,7 +1930,7 @@ mod tests {
         let tree = tree_of(&run(&index, &query(&[ViewSpec::Tree], selection)));
         assert_eq!(tree.bytes, 657, "totals still cover the whole tree");
         assert!(tree.children.is_empty(), "but nothing below the root is listed");
-        assert!(tree.truncated, "and the report says so rather than implying emptiness");
+        assert!(tree.truncated(), "and the report says so rather than implying emptiness");
     }
 
     /// A view `full` had to drop is named on the report, so every surface says so.
@@ -1926,12 +2014,12 @@ mod tests {
         let tree = tree_of(&run(&index, &query(&[ViewSpec::Tree], selection)));
 
         let src = tree.children.iter().find(|child| child.name == "src").expect("src");
-        assert!(src.truncated, "src with a hidden directory child is truncated");
+        assert!(src.truncated(), "src with a hidden directory child is truncated");
 
         let docs = tree.children.iter().find(|child| child.name == "docs").expect("docs");
         assert!(docs.children.is_empty());
         assert!(
-            !docs.truncated,
+            !docs.truncated(),
             "file children contribute to a directory row; they are not hidden tree rows"
         );
     }
@@ -1942,7 +2030,65 @@ mod tests {
         let selection = Selection { limit: Some(Bound::Limit(1)), ..Selection::default() };
         let tree = tree_of(&run(&index, &query(&[ViewSpec::Tree], selection)));
         assert_eq!(tree.children.len(), 1);
-        assert!(tree.truncated);
+        assert!(tree.truncated());
+    }
+
+    /// The remainder is the rows that were dropped, checked against the unbounded tree.
+    ///
+    /// The oracle is the same query with the bound lifted: whatever the bounded tree
+    /// emitted plus whatever it says it withheld must be what the unbounded tree emitted.
+    /// A remainder computed from the wrong side of the cut passes a hand-written
+    /// expectation and fails this.
+    #[test]
+    fn a_bounded_tree_plus_its_remainder_is_the_unbounded_tree() {
+        let index = sample();
+        let full = tree_of(&run(&index, &query(&[ViewSpec::Tree], Selection::default())));
+        let bounded = tree_of(&run(
+            &index,
+            &query(
+                &[ViewSpec::Tree],
+                Selection { limit: Some(Bound::Limit(1)), ..Selection::default() },
+            ),
+        ));
+
+        let remainder = bounded.remainder.expect("the sample root has more than one directory");
+        assert_eq!(
+            bounded.children.len() as u64 + remainder.rows,
+            full.children.len() as u64,
+            "every row is either emitted or counted in the remainder"
+        );
+
+        let shown: u64 = bounded.children.iter().map(|child| child.bytes).sum();
+        let all: u64 = full.children.iter().map(|child| child.bytes).sum();
+        assert_eq!(shown + remainder.bytes, all, "and so is every byte");
+
+        let shown_files: u64 = bounded.children.iter().map(|child| child.files).sum();
+        let all_files: u64 = full.children.iter().map(|child| child.files).sum();
+        assert_eq!(shown_files + remainder.files, all_files);
+    }
+
+    /// A depth bound withholds every directory child, so the remainder is all of them.
+    #[test]
+    fn a_depth_bound_reports_the_whole_withheld_subtree() {
+        let index = sample();
+        let full = tree_of(&run(&index, &query(&[ViewSpec::Tree], Selection::default())));
+        let bounded = tree_of(&run(
+            &index,
+            &query(
+                &[ViewSpec::Tree],
+                Selection { depth: Some(Bound::Limit(1)), ..Selection::default() },
+            ),
+        ));
+
+        let full_src = full.children.iter().find(|child| child.name == "src").expect("src");
+        let src = bounded.children.iter().find(|child| child.name == "src").expect("src");
+        let remainder = src.remainder.expect("src has a hidden directory child");
+        assert!(src.children.is_empty(), "the depth bound withheld them all");
+        assert_eq!(remainder.rows, full_src.children.len() as u64);
+        assert_eq!(remainder.bytes, full_src.children.iter().map(|child| child.bytes).sum::<u64>());
+
+        let docs = bounded.children.iter().find(|child| child.name == "docs").expect("docs");
+        assert!(docs.remainder.is_none(), "a directory of files alone withholds no rows");
     }
 
     #[test]

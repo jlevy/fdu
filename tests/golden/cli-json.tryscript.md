@@ -35,7 +35,7 @@ $ fdu --cache off --format json --size apparent --depth 2 --limit 10 project
   "reports": [
     {
       "view": "tree",
-      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 263, "allocated": [ALLOCATED], "files": 6, "dirs": 3, "newest_mtime_ns": [MTIME_NS], "truncated": false, "children": [{"name": "dist", "path": "dist", "kind": "dir", "bytes": 128, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "children": []},{"name": "src", "path": "src", "kind": "dir", "bytes": 36, "allocated": [ALLOCATED], "files": 2, "dirs": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "children": []},{"name": "docs", "path": "docs", "kind": "dir", "bytes": 23, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "children": []}]}
+      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 263, "allocated": [ALLOCATED], "files": 6, "dirs": 3, "newest_mtime_ns": [MTIME_NS], "truncated": false, "remainder": null, "children": [{"name": "dist", "path": "dist", "kind": "dir", "bytes": 128, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "remainder": null, "children": []},{"name": "src", "path": "src", "kind": "dir", "bytes": 36, "allocated": [ALLOCATED], "files": 2, "dirs": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "remainder": null, "children": []},{"name": "docs", "path": "docs", "kind": "dir", "bytes": 23, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "remainder": null, "children": []}]}
     }
   ]
 }
@@ -59,7 +59,7 @@ $ fdu --cache off --format json --size apparent --depth 1 --limit 2 project
   "reports": [
     {
       "view": "tree",
-      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 263, "allocated": [ALLOCATED], "files": 6, "dirs": 3, "newest_mtime_ns": [MTIME_NS], "truncated": true, "children": [{"name": "dist", "path": "dist", "kind": "dir", "bytes": 128, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "children": []},{"name": "src", "path": "src", "kind": "dir", "bytes": 36, "allocated": [ALLOCATED], "files": 2, "dirs": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "children": []}]}
+      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 263, "allocated": [ALLOCATED], "files": 6, "dirs": 3, "newest_mtime_ns": [MTIME_NS], "truncated": true, "remainder": {"rows": 1, "files": 1, "dirs": 0, "bytes": 23, "allocated": [ALLOCATED]}, "children": [{"name": "dist", "path": "dist", "kind": "dir", "bytes": 128, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "remainder": null, "children": []},{"name": "src", "path": "src", "kind": "dir", "bytes": 36, "allocated": [ALLOCATED], "files": 2, "dirs": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "remainder": null, "children": []}]}
     }
   ]
 }
@@ -83,7 +83,7 @@ $ fdu --cache off --format json --size apparent --scan-depth 1 --depth 2 --limit
   "reports": [
     {
       "view": "tree",
-      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 76, "allocated": [ALLOCATED], "files": 2, "dirs": 3, "newest_mtime_ns": [MTIME_NS], "truncated": false, "children": [{"name": "dist", "path": "dist", "kind": "dir", "bytes": 0, "allocated": [ALLOCATED], "files": 0, "dirs": 0, "newest_mtime_ns": null, "truncated": false, "children": []},{"name": "docs", "path": "docs", "kind": "dir", "bytes": 0, "allocated": [ALLOCATED], "files": 0, "dirs": 0, "newest_mtime_ns": null, "truncated": false, "children": []},{"name": "src", "path": "src", "kind": "dir", "bytes": 0, "allocated": [ALLOCATED], "files": 0, "dirs": 0, "newest_mtime_ns": null, "truncated": false, "children": []}]}
+      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 76, "allocated": [ALLOCATED], "files": 2, "dirs": 3, "newest_mtime_ns": [MTIME_NS], "truncated": false, "remainder": null, "children": [{"name": "dist", "path": "dist", "kind": "dir", "bytes": 0, "allocated": [ALLOCATED], "files": 0, "dirs": 0, "newest_mtime_ns": null, "truncated": false, "remainder": null, "children": []},{"name": "docs", "path": "docs", "kind": "dir", "bytes": 0, "allocated": [ALLOCATED], "files": 0, "dirs": 0, "newest_mtime_ns": null, "truncated": false, "remainder": null, "children": []},{"name": "src", "path": "src", "kind": "dir", "bytes": 0, "allocated": [ALLOCATED], "files": 0, "dirs": 0, "newest_mtime_ns": null, "truncated": false, "remainder": null, "children": []}]}
     }
   ]
 }

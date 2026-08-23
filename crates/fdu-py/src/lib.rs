@@ -996,6 +996,26 @@ fn summary_dict<'py>(py: Python<'py>, row: &SummaryRow) -> PyResult<Bound<'py, P
     Ok(dict)
 }
 
+/// What a tree node's bound withheld, or `None` when it withheld nothing.
+///
+/// Presence is the signal, matching the section-level bound: a consumer branches on it
+/// rather than comparing counts it would have to know to compare.
+fn remainder_dict(
+    py: Python<'_>,
+    remainder: Option<fdu_core::query::Remainder>,
+) -> PyResult<Option<Bound<'_, PyDict>>> {
+    let Some(remainder) = remainder else {
+        return Ok(None);
+    };
+    let value = PyDict::new(py);
+    value.set_item("rows", remainder.rows)?;
+    value.set_item("files", remainder.files)?;
+    value.set_item("dirs", remainder.dirs)?;
+    value.set_item("bytes", remainder.bytes)?;
+    value.set_item("allocated", remainder.allocated)?;
+    Ok(Some(value))
+}
+
 /// One tree node as a nested dict.
 ///
 /// Built with an explicit stack: the tree can be deeper than the interpreter's recursion
@@ -1010,7 +1030,8 @@ fn tree_dict<'py>(py: Python<'py>, root: &TreeNode) -> PyResult<Bound<'py, PyDic
         dict.set_item("files", node.files)?;
         dict.set_item("dirs", node.dirs)?;
         dict.set_item("newest_mtime_ns", node.newest_mtime_ns)?;
-        dict.set_item("truncated", node.truncated)?;
+        dict.set_item("truncated", node.truncated())?;
+        dict.set_item("remainder", remainder_dict(py, node.remainder)?)?;
         dict.set_item("children", PyList::empty(py))?;
         Ok(dict)
     }
