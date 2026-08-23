@@ -413,6 +413,51 @@ impl std::ops::Deref for ApplyOutcome {
     }
 }
 
+/// What one bundled read should evaluate.
+///
+/// Everything is optional because a caller composes the page it is drawing: a directory
+/// listing wants children and its own totals, a breadcrumb wants several roll-ups and no
+/// children at all.
+#[derive(Clone, Debug, Default)]
+pub struct ReadRequest {
+    /// Directory whose children to list, when any.
+    pub children_of: Option<PathBuf>,
+    /// Relative paths whose roll-ups to return, in the order given.
+    pub rollups: Vec<PathBuf>,
+    /// Whether to include the whole-tree totals.
+    pub total: bool,
+    /// Bound on the extension rows every roll-up in this bundle carries.
+    pub extensions: Bound,
+}
+
+/// Everything one bundled read saw, at one boundary.
+///
+/// The parts cannot disagree, because there was no moment between them at which a write
+/// could land. `clock` is the version all of them saw and the cursor to resume from.
+#[derive(Clone, Debug)]
+pub struct ReadBundle {
+    /// The version every part of this bundle saw, and the cursor to pass to
+    /// [`IndexHandle::since`] next.
+    pub clock: Clock,
+    /// The scan scope this index represents, carrying the ignore, type-rule, and reducer
+    /// fingerprints a consumer cache key should derive from.
+    pub scope: ScanScope,
+    /// Whether the index is fully verified, or holds anything stale or unverified.
+    pub freshness: Freshness,
+    /// Live entries, including the root.
+    pub entries: u64,
+    /// Absolute filesystem root.
+    pub root: PathBuf,
+    /// Whole-tree totals, when requested.
+    pub total: Option<RollUp>,
+    /// One entry per requested path, `None` where the path is absent or not a directory.
+    pub rollups: Vec<Option<RollUp>>,
+    /// The requested directory's children, or `None` when it is absent or not a directory.
+    ///
+    /// Distinct from an empty list, which means a directory with no children.
+    pub children: Option<Vec<ChildSnapshot>>,
+}
+
 /// The in-memory hierarchical index.
 #[derive(Clone, Debug)]
 pub struct Index {
@@ -585,6 +630,46 @@ impl IndexHandle {
         Ok(self.read_index()?.since(clock))
     }
 
+    /// Several projections evaluated under one read guard.
+    ///
+    /// A composed response must not straddle a commit. Answering a directory listing and
+    /// its parent's totals with two calls lets a write land between them, and the
+    /// resulting page is internally inconsistent in a way nothing in it reports -- the
+    /// rows say one thing, the header another, and both are individually true. One guard
+    /// makes that impossible rather than unlikely.
+    ///
+    /// The returned `clock` is the version every part of this bundle saw, so it is also
+    /// the cursor to pass to [`Self::since`] next time: a consumer's cache key derives
+    /// from what was actually read rather than from a version sampled before dispatch.
+    ///
+    /// It also collapses the per-call cost. Across a language boundary each of these is a
+    /// crossing and a lock acquisition; bundled, they are one of each.
+    pub fn read(&self, request: &ReadRequest) -> crate::Result<ReadBundle> {
+        let index = self.read_index()?;
+        let children = request.children_of.as_deref().and_then(|path| {
+            let children = index.children(path)?;
+            Some(
+                children
+                    .map(|(name, id)| child_snapshot(&index, name, id, request.extensions))
+                    .collect(),
+            )
+        });
+        Ok(ReadBundle {
+            clock: index.clock(),
+            scope: index.scope(),
+            freshness: index.freshness(),
+            entries: index.len(),
+            root: index.root_path().to_path_buf(),
+            total: request.total.then(|| index.total_bounded(request.extensions)),
+            rollups: request
+                .rollups
+                .iter()
+                .map(|path| index.rollup_bounded(path, request.extensions))
+                .collect(),
+            children,
+        })
+    }
+
     /// Direct children captured coherently at one read boundary.
     pub fn children(&self, path: &Path) -> crate::Result<Option<Vec<ChildSnapshot>>> {
         self.children_bounded(path, Bound::All)
@@ -604,34 +689,7 @@ impl IndexHandle {
         let Some(children) = index.children(path) else {
             return Ok(None);
         };
-        Ok(Some(
-            children
-                .map(|(name, id)| {
-                    let entry = index.entry(id);
-                    let is_file = entry.kind == EntryKind::File;
-                    let classification = is_file.then(|| {
-                        crate::classify::classify_with(index.types(), Path::new(name), None)
-                    });
-                    ChildSnapshot {
-                        id,
-                        name: name.to_os_string(),
-                        kind: entry.kind,
-                        attrs: entry.attrs,
-                        rollup: entry
-                            .kind
-                            .is_dir()
-                            .then(|| index.named_rollup_bounded(&entry.rollup, extensions)),
-                        provenance: index.provenance_of(id),
-                        classification: classification.clone(),
-                        extension: is_file.then(|| crate::classify::derive_ext(name)).flatten(),
-                        group: classification
-                            .and_then(|verdict| verdict.group)
-                            .and_then(|id| index.types().group(id))
-                            .map(|group| group.id.to_string()),
-                    }
-                })
-                .collect(),
-        ))
+        Ok(Some(children.map(|(name, id)| child_snapshot(&index, name, id, extensions)).collect()))
     }
 
     /// Origin, observation time, and coverage for one retained path.
@@ -2141,6 +2199,36 @@ pub(crate) fn collect_child_expectations(
     })
 }
 
+/// One child's captured row, built the same way for a listing and for a bundled read.
+///
+/// Shared so the two cannot describe the same child differently: a bundle whose rows
+/// disagreed with the listing API's would be a second definition of what a child is.
+fn child_snapshot(
+    index: &Index,
+    name: &std::ffi::OsStr,
+    id: EntryId,
+    extensions: Bound,
+) -> ChildSnapshot {
+    let entry = index.entry(id);
+    let is_file = entry.kind == EntryKind::File;
+    let classification =
+        is_file.then(|| crate::classify::classify_with(index.types(), Path::new(name), None));
+    ChildSnapshot {
+        id,
+        name: name.to_os_string(),
+        kind: entry.kind,
+        attrs: entry.attrs,
+        rollup: entry.kind.is_dir().then(|| index.named_rollup_bounded(&entry.rollup, extensions)),
+        provenance: index.provenance_of(id),
+        classification: classification.clone(),
+        extension: is_file.then(|| crate::classify::derive_ext(name)).flatten(),
+        group: classification
+            .and_then(|verdict| verdict.group)
+            .and_then(|group| index.types().group(group))
+            .map(|group| group.id.to_string()),
+    }
+}
+
 /// Split a relative path into its normal components, rejecting anything that escapes.
 ///
 /// Returns `None` for paths containing `..`, a root, or a prefix — an index keyed by
@@ -2903,6 +2991,96 @@ mod tests {
             matches!(error, crate::Error::PathEscapesRoot(path) if path == Path::new(r"C:\escape"))
         );
         assert_eq!(index.clock(), before_clock);
+    }
+
+    /// A bundle's parts cannot disagree, even while a writer commits between reads.
+    ///
+    /// The property the primitive exists for, and it fails silently without it: two
+    /// separate reads can straddle a commit, and the page they compose says one thing in
+    /// its rows and another in its header, with both individually true and nothing in the
+    /// response reporting the split. Here the oracle is arithmetic -- the root's totals
+    /// must equal the sum over its children -- and it is checked while a writer is adding
+    /// files as fast as it can.
+    ///
+    /// The negative was checked by hand rather than asserted, because asserting that a
+    /// race *occurs* is a flaky test: replacing the bundle with two separate calls under
+    /// this same writer fails within a few iterations (6 files in the rows against 4 in
+    /// the header). So this passes because the guard holds, not because nothing overlapped.
+    #[test]
+    fn a_bundled_read_cannot_straddle_a_commit() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let handle = IndexHandle::new(Index::new("/root"));
+        handle
+            .apply(&Observation::new(vec![
+                upsert("src", EntryKind::Dir, Attrs::default()),
+                upsert("docs", EntryKind::Dir, Attrs::default()),
+            ]))
+            .expect("seed");
+
+        let stop = Arc::new(AtomicBool::new(false));
+        let writer_stop = Arc::clone(&stop);
+        let writer_handle = handle.clone();
+        let writer = std::thread::spawn(move || {
+            for round in 0..400i64 {
+                if writer_stop.load(Ordering::Relaxed) {
+                    break;
+                }
+                let parent = if round % 2 == 0 { "src" } else { "docs" };
+                writer_handle
+                    .apply(&Observation::new(vec![upsert(
+                        &format!("{parent}/f{round}.txt"),
+                        EntryKind::File,
+                        file_attrs(100, round + 1),
+                    )]))
+                    .expect("apply");
+            }
+        });
+
+        let request = ReadRequest {
+            children_of: Some(PathBuf::new()),
+            total: true,
+            ..ReadRequest::default()
+        };
+        for _ in 0..500 {
+            let bundle = handle.read(&request).expect("bundle");
+            let total = bundle.total.as_ref().expect("totals were requested");
+            let children = bundle.children.as_ref().expect("the root is a directory");
+            let from_children: u64 = children
+                .iter()
+                .map(|child| child.rollup.as_ref().map_or(0, |roll| roll.files))
+                .sum();
+            assert_eq!(
+                from_children, total.files,
+                "one bundle's rows and header must describe one instant"
+            );
+            assert!(bundle.clock.0 >= 1, "every bundle reports the version it read");
+        }
+        stop.store(true, Ordering::Relaxed);
+        writer.join().expect("writer");
+    }
+
+    /// A bundle carries the identity a consumer's cache key derives from.
+    #[test]
+    fn a_bundle_reports_the_scope_and_rules_it_was_read_under() {
+        let handle = IndexHandle::new(Index::new("/root"));
+        let bundle = handle
+            .read(&ReadRequest {
+                rollups: vec![PathBuf::from("missing")],
+                ..ReadRequest::default()
+            })
+            .expect("bundle");
+
+        assert_eq!(bundle.rollups.len(), 1);
+        assert!(bundle.rollups[0].is_none(), "an absent path is None, not an empty roll-up");
+        assert!(bundle.total.is_none(), "totals were not requested");
+        assert!(bundle.children.is_none(), "no directory was named");
+        assert_eq!(
+            bundle.scope.type_rules_fingerprint,
+            crate::classify::type_rule_fingerprint(),
+            "the registry a consumer cache key must key on travels with the read"
+        );
+        assert_eq!(bundle.entries, 1, "an empty index is its root");
     }
 
     /// Group tallies are maintained by the reducer, and survive removal.

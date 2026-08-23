@@ -137,6 +137,57 @@ def _tree_section(report: fdu.Report) -> fdu.TreeNode:
     raise AssertionError("the report has no tree section")
 
 
+def check_one_bundle_answers_a_whole_page() -> None:
+    """A composed page comes from one read, at one instant, with its own cursor.
+
+    The listing, the totals it is summarised by, and the version to resume from all come
+    back together. Read separately, a write can land between them and the page is
+    internally inconsistent in a way nothing in it reports.
+    """
+
+    root = Path(tempfile.mkdtemp(prefix="fdu-bundle-"))
+    (root / "src").mkdir()
+    (root / "src" / "main.rs").write_text("fn main() {}", encoding="utf-8")
+    (root / "docs").mkdir()
+    (root / "docs" / "guide.md").write_text("# guide", encoding="utf-8")
+
+    index = fdu.open(root)
+    page = index.read(children_of=".", rollups=("src", "missing"), total=True, extensions=1)
+
+    assert page.children is not None
+    assert {child.name for child in page.children} == {"src", "docs"}
+    assert page.total is not None
+    # The rows and the header describe one instant, so they add up by construction.
+    assert sum(child.rollup.files for child in page.children if child.rollup) == page.total.files
+
+    assert len(page.rollups) == 2
+    assert page.rollups[0] is not None and page.rollups[0].files == 1
+    assert page.rollups[1] is None, "an absent path is None, not an empty roll-up"
+
+    assert page.clock == index.clock, "the bundle reports the version it read"
+    assert page.entries == len(index)
+    assert page.status.complete is True
+    assert page.status.source is fdu.ReportSource.COLD_SCAN
+    assert os.path.samefile(page.root, root)
+
+    # The identity a consumer cache key derives from travels with the read.
+    assert page.scope.type_rules_fingerprint == fdu.TypeRegistry.compiled().fingerprint
+    assert page.scope.max_depth is None
+
+    # The extension bound reaches every roll-up in the bundle, not just the top one.
+    for rollup in (page.total, *(child.rollup for child in page.children), page.rollups[0]):
+        if rollup is not None:
+            assert len(rollup.by_extension) <= 1
+
+    # And the cursor works: what happened after it is what changed since.
+    (root / "docs" / "extra.md").write_text("more", encoding="utf-8")
+    index.refresh()
+    changed = index.since(page.clock)
+    assert not changed.truncated
+    assert any(change.path == Path("docs/extra.md") for change in changed.changes)
+    fdu.clear_cache(root)
+
+
 def check_the_event_loop_adapter_delivers_the_same_batches() -> None:
     """An asyncio consumer gets the typed batches, without owning the thread handoff.
 
@@ -790,6 +841,7 @@ def main() -> None:
     check_groups_answer_the_browsing_question()
     check_a_listing_carries_its_own_identity()
     check_polling_is_selectable_for_filesystems_that_drop_events()
+    check_one_bundle_answers_a_whole_page()
     check_the_event_loop_adapter_delivers_the_same_batches()
     check_the_sse_example_resumes_or_resyncs()
     check_a_bounded_tree_says_what_it_withheld()

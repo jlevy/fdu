@@ -785,6 +785,57 @@ class Report:
 
 
 @dataclass(frozen=True, slots=True)
+class ScanScope:
+    """The scan semantics an index represents, and the rule sets behind them.
+
+    The fingerprints are what a consumer cache key should derive from: a change to any of
+    them means the same tree answers differently, and an answer cached across one is wrong
+    in a way no field of the answer reveals.
+    """
+
+    max_depth: int | None
+    follow_symlinks: bool
+    one_filesystem: bool
+    ignore_rules_fingerprint: int
+    type_rules_fingerprint: int
+    reducers_fingerprint: int
+
+
+@dataclass(frozen=True, slots=True)
+class Bundle:
+    """Several projections read under one guard, at one instant.
+
+    A composed page must not straddle a commit. Answering a listing and its parent's
+    totals with two calls lets a write land between them, and the page is then internally
+    inconsistent in a way nothing in it reports -- the rows say one thing, the header
+    another, and both are individually true.
+
+    :attr:`clock` is the version every part of this bundle saw, so it is also the cursor
+    to pass to :meth:`Index.since` next: a cache key derives from what was actually read
+    rather than from a version sampled before dispatch.
+    """
+
+    clock: int
+    """The version every part of this bundle saw, and the cursor to resume from."""
+
+    root: Path
+    entries: int
+    """Live entries, including the root."""
+
+    scope: ScanScope
+    status: Status
+    total: RollUp | None
+    """Whole-tree totals, or ``None`` when they were not requested."""
+
+    rollups: tuple[RollUp | None, ...]
+    """One entry per requested path; ``None`` where it is absent or not a directory."""
+
+    children: tuple[Child, ...] | None
+    """The requested directory's children, or ``None`` when no directory was named or it
+    is absent -- distinct from an empty tuple, which means a directory with no children."""
+
+
+@dataclass(frozen=True, slots=True)
 class WalkTelemetry:
     """What one scan or refresh actually did, beside the report rather than inside it.
 
@@ -933,6 +984,18 @@ def status_from_dict(value: dict[str, Any]) -> Status:
         freshness=Freshness(str(value["freshness"])),
         source=ReportSource(str(value["source"])),
         errors=tuple(_operation_error(item) for item in value.get("errors", [])),
+    )
+
+
+def scan_scope_from_dict(value: dict[str, Any]) -> ScanScope:
+    depth = value["max_depth"]
+    return ScanScope(
+        max_depth=None if depth is None else int(depth),
+        follow_symlinks=bool(value["follow_symlinks"]),
+        one_filesystem=bool(value["one_filesystem"]),
+        ignore_rules_fingerprint=int(value["ignore_rules_fingerprint"]),
+        type_rules_fingerprint=int(value["type_rules_fingerprint"]),
+        reducers_fingerprint=int(value["reducers_fingerprint"]),
     )
 
 

@@ -89,7 +89,7 @@ pub use crate::engine_contract::{
 };
 pub use crate::index::{
     ApplyOutcome, ApplyStats, ChildSnapshot, EntryId, ExtRemainder, ExtTally, Index, IndexHandle,
-    RollUp, Since,
+    ReadBundle, ReadRequest, RollUp, Since,
 };
 // Ungated with report_format, for the same reason: one-shot planning is an execution
 // strategy, not a front end. A caller wanting one report without retaining an index was

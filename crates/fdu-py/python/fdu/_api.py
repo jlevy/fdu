@@ -14,6 +14,7 @@ from . import _native
 from ._models import (
     AnalysisOptions,
     Bound,
+    Bundle,
     CachePolicy,
     CacheStatus,
     Change,
@@ -36,6 +37,7 @@ from ._models import (
     provenance_from_dict,
     report_from_dict,
     rollup_from_dict,
+    scan_scope_from_dict,
     status_from_dict,
     walk_telemetry_from_dict,
 )
@@ -309,29 +311,49 @@ class Index:
         """
 
         raw = _call(self._native.children, path, extensions)
-        if raw is None:
-            return None
-        return tuple(
-            Child(
-                name=str(item["name"]),
-                kind=EntryKind(item["kind"]),
-                rollup=(
-                    rollup_from_dict(item["rollup"], provenance_from_dict(item["provenance"]))
-                    if item.get("rollup") is not None
-                    else None
-                ),
-                bytes=int(item["bytes"]) if item.get("bytes") is not None else None,
-                allocated=(int(item["allocated"]) if item.get("allocated") is not None else None),
-                mtime_ns=int(item["mtime_ns"]) if item.get("mtime_ns") is not None else None,
-                provenance=provenance_from_dict(item["provenance"]),
-                classification=(
-                    classification_from_dict(item["classification"])
-                    if item.get("classification") is not None
-                    else None
-                ),
-                extension=(str(item["extension"]) if item.get("extension") is not None else None),
-            )
-            for item in raw
+        return None if raw is None else tuple(_child(item) for item in raw)
+
+    def read(
+        self,
+        *,
+        children_of: str | Path | None = None,
+        rollups: Sequence[str | Path] = (),
+        total: bool = False,
+        extensions: int | None = None,
+    ) -> Bundle:
+        """Several projections read under one guard, at one instant.
+
+        A composed page must not straddle a commit: answering a listing and its parent's
+        totals with two calls lets a write land between them, and the page is then
+        internally inconsistent in a way nothing in it reports.
+
+        The returned `clock` is the version every part saw, so it is also the cursor to
+        pass to `since()` next -- a cache key derives from what was actually read rather
+        than from a version sampled before dispatch.
+
+        It is also one crossing of the language boundary and one lock acquisition,
+        instead of one of each per call.
+        """
+
+        value = _call(
+            self._native.read,
+            children_of,
+            [str(path) for path in rollups],
+            total,
+            extensions,
+        )
+        children = value["children"]
+        return Bundle(
+            clock=int(value["clock"]),
+            root=Path(str(value["root"])),
+            entries=int(value["entries"]),
+            scope=scan_scope_from_dict(value["scope"]),
+            status=status_from_dict(value),
+            total=None if value["total"] is None else rollup_from_dict(value["total"]),
+            rollups=tuple(
+                None if roll is None else rollup_from_dict(roll) for roll in value["rollups"]
+            ),
+            children=None if children is None else tuple(_child(item) for item in children),
         )
 
     def provenance(self, path: str | Path = Path()) -> Provenance | None:
@@ -375,6 +397,28 @@ class Index:
             **arguments,
         )
         return Watch(native)
+
+
+def _child(item: dict[str, Any]) -> Child:
+    """One listing row, parsed the same way wherever it came from."""
+
+    provenance = provenance_from_dict(item["provenance"])
+    classification = item.get("classification")
+    extension = item.get("extension")
+    rollup = item.get("rollup")
+    return Child(
+        name=str(item["name"]),
+        kind=EntryKind(item["kind"]),
+        rollup=None if rollup is None else rollup_from_dict(rollup, provenance),
+        bytes=int(item["bytes"]) if item.get("bytes") is not None else None,
+        allocated=int(item["allocated"]) if item.get("allocated") is not None else None,
+        mtime_ns=int(item["mtime_ns"]) if item.get("mtime_ns") is not None else None,
+        provenance=provenance,
+        classification=(
+            None if classification is None else classification_from_dict(classification)
+        ),
+        extension=None if extension is None else str(extension),
+    )
 
 
 def _change(value: dict[str, Any]) -> Change:

@@ -263,6 +263,48 @@ impl PyTypeRegistry {
     }
 }
 
+/// One captured listing, shared by `children()` and the bundled read.
+///
+/// Shared so a bundle's rows cannot describe a child differently from the listing API's.
+fn child_list<'py>(
+    py: Python<'py>,
+    children: &[fdu_core::ChildSnapshot],
+) -> PyResult<Bound<'py, PyList>> {
+    let out = PyList::empty(py);
+    for child in children {
+        let entry = PyDict::new(py);
+        entry.set_item("name", child.name.as_os_str())?;
+        entry.set_item("kind", entry_kind_label(child.kind))?;
+        entry.set_item("provenance", provenance_dict(py, child.provenance)?)?;
+        entry.set_item("extension", child.extension.as_deref())?;
+        entry.set_item(
+            "classification",
+            row_classification_dict(py, child.classification.as_ref(), child.group.as_deref())?,
+        )?;
+        if let Some(roll) = child.rollup.as_ref() {
+            entry.set_item("rollup", rollup_dict(py, roll)?)?;
+        } else {
+            entry.set_item("bytes", child.attrs.size)?;
+            entry.set_item("allocated", child.attrs.allocated)?;
+            entry.set_item("mtime_ns", child.attrs.mtime_ns)?;
+        }
+        out.append(entry)?;
+    }
+    Ok(out)
+}
+
+/// The scan scope a read happened under, including the fingerprints a cache key needs.
+fn scope_dict<'py>(py: Python<'py>, scope: &fdu_core::ScanScope) -> PyResult<Bound<'py, PyDict>> {
+    let value = PyDict::new(py);
+    value.set_item("max_depth", scope.max_depth)?;
+    value.set_item("follow_symlinks", scope.follow_symlinks)?;
+    value.set_item("one_filesystem", scope.one_filesystem)?;
+    value.set_item("ignore_rules_fingerprint", scope.ignore_rules_fingerprint)?;
+    value.set_item("type_rules_fingerprint", scope.type_rules_fingerprint)?;
+    value.set_item("reducers_fingerprint", scope.reducers_fingerprint)?;
+    Ok(value)
+}
+
 /// A listing row's classification, with its group already resolved to a name.
 ///
 /// `None` for an entry no rule set classifies, which is every directory and symlink: the
@@ -594,6 +636,68 @@ impl PyIndex {
         }
     }
 
+    /// Several projections evaluated under one read guard.
+    ///
+    /// A composed page must not straddle a commit. Answering a listing and its parent's
+    /// totals with two calls lets a write land between them, and the page is then
+    /// internally inconsistent in a way nothing in it reports: the rows say one thing,
+    /// the header another, and both are individually true.
+    ///
+    /// `clock` is the version every part of this bundle saw, so it is also the cursor to
+    /// pass to `since()` next: a cache key derives from what was actually read rather
+    /// than from a version sampled before dispatch.
+    ///
+    /// It is also one crossing and one lock acquisition instead of one of each per call.
+    #[pyo3(signature = (children_of = None, rollups = None, total = false, extensions = None))]
+    #[allow(clippy::needless_pass_by_value)]
+    fn read<'py>(
+        &self,
+        py: Python<'py>,
+        children_of: Option<PathBuf>,
+        rollups: Option<Vec<PathBuf>>,
+        total: bool,
+        extensions: Option<usize>,
+    ) -> PyResult<Bound<'py, PyDict>> {
+        let request = fdu_core::ReadRequest {
+            children_of,
+            rollups: rollups.unwrap_or_default(),
+            total,
+            extensions: ext_bound(extensions),
+        };
+        let bundle = self.inner.read(&request).map_err(to_py_err)?;
+
+        let out = PyDict::new(py);
+        out.set_item("clock", bundle.clock.0)?;
+        out.set_item("root", bundle.root.as_os_str())?;
+        out.set_item("entries", bundle.entries)?;
+        out.set_item("freshness", freshness_label(bundle.freshness))?;
+        out.set_item("scope", scope_dict(py, &bundle.scope)?)?;
+        // Run state comes from beside the index, not from it: completeness and errors
+        // describe the operation that built this index, and the engine's read guard has
+        // no opinion about them.
+        let (complete, source, errors) = {
+            let state = self.state();
+            (state.operation_complete, state.source, state.errors.clone())
+        };
+        out.set_item("complete", complete)?;
+        out.set_item("source", source_label(source))?;
+        out.set_item("errors", error_list(py, &errors)?)?;
+        out.set_item(
+            "total",
+            bundle.total.as_ref().map(|roll| rollup_dict(py, roll)).transpose()?,
+        )?;
+        let rollups = PyList::empty(py);
+        for roll in &bundle.rollups {
+            rollups.append(roll.as_ref().map(|roll| rollup_dict(py, roll)).transpose()?)?;
+        }
+        out.set_item("rollups", rollups)?;
+        out.set_item(
+            "children",
+            bundle.children.as_ref().map(|children| child_list(py, children)).transpose()?,
+        )?;
+        Ok(out)
+    }
+
     /// Every direct child of a directory, with its roll-up, in one call.
     ///
     /// Returns `None` when the path is absent or is not a directory — distinct from an
@@ -615,27 +719,7 @@ impl PyIndex {
             return Ok(None);
         };
 
-        let out = PyList::empty(py);
-        for child in children {
-            let entry = PyDict::new(py);
-            entry.set_item("name", child.name)?;
-            entry.set_item("kind", entry_kind_label(child.kind))?;
-            entry.set_item("provenance", provenance_dict(py, child.provenance)?)?;
-            entry.set_item("extension", child.extension.as_deref())?;
-            entry.set_item(
-                "classification",
-                row_classification_dict(py, child.classification.as_ref(), child.group.as_deref())?,
-            )?;
-            if let Some(roll) = child.rollup {
-                entry.set_item("rollup", rollup_dict(py, &roll)?)?;
-            } else {
-                entry.set_item("bytes", child.attrs.size)?;
-                entry.set_item("allocated", child.attrs.allocated)?;
-                entry.set_item("mtime_ns", child.attrs.mtime_ns)?;
-            }
-            out.append(entry)?;
-        }
-        Ok(Some(out))
+        Ok(Some(child_list(py, &children)?))
     }
 
     /// Provenance for one retained path, or `None` when it is absent.
