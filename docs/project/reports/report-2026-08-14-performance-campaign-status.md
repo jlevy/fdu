@@ -68,7 +68,7 @@ Its value is not any single step but that each pass leaves the next one cheaper.
 
 ### Why the accept rule is strict
 
-Of 60 recorded experiments, **27 were rejected** — close to the 28 accepted.
+Of 64 recorded experiments, **28 were rejected** — close to the 31 accepted.
 Several were rejected despite a real, working mechanism, because the measured effect did
 not clear 3%. That is the rule doing its job: a real mechanism is exactly what makes a
 small number feel worth keeping, and a codebase that accumulates 1% wins for 50 lines
@@ -260,11 +260,15 @@ wide shallow trees.
 This is the most important section for anyone reading a number and deciding what it
 means.
 
-**The evidence is overwhelmingly macOS.** Of 60 recorded experiments, **57 were measured
-on Darwin and 3 on Linux.** The macOS work is mature — a bulk-attribute reader using
-`getattrlistbulk`, tuning constants measured across three APFS regimes, a scheduler
-tuned against a real device.
-The Linux work is recent and thin.
+**The evidence is still overwhelmingly macOS.** Of 64 recorded experiments, **57 were
+measured on Darwin and 7 on Linux.** The macOS work is mature — a bulk-attribute reader
+using `getattrlistbulk`, tuning constants measured across three APFS regimes, a
+scheduler tuned against a real device.
+The Linux work is younger but no longer trivial: the consumer campaign landed there
+(H87, H88, H90), H89 was refuted there, and the floor measurement that now anchors the
+strategy is Linux evidence.
+What Linux still lacks is not experiments but *bare metal* — every one of those seven
+ran virtualized, which is a limit on the class of claim rather than on the count.
 
 **A constant measured on one platform is inherited, not proven, on the other.** Which
 shipped constants were measured where is recorded in
@@ -274,7 +278,7 @@ test sweeps every platform’s table on every CI platform.
 
 |  | macOS | Linux | Windows |
 | --- | --- | --- | --- |
-| Experiments recorded | 57 | 3 | 0 |
+| Experiments recorded | 57 | 7 | 0 |
 | Profiler available | bespoke script | callgrind | none |
 | Bulk directory read | `getattrlistbulk` | `read_dir` (2 syscalls/dir) | `read_dir` |
 | Process counter tier | total syscalls, faults | read/write syscalls, faults | none yet |
@@ -329,7 +333,7 @@ once real filenames appear, and 11.8% behind on `/usr`. Any figure taken against
 `gen_tree.py` is a lower bound on real-tree cost, and no ranking established on one is
 evidence of a ranking at all.
 
-**Platform asymmetry.** 57 experiments on macOS, 3 on Linux.
+**Platform asymmetry.** 57 experiments on macOS, 7 on Linux.
 Every Linux constant not explicitly measured is inherited.
 
 **No bare metal.** All Linux measurement here is virtualized.

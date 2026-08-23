@@ -42,6 +42,9 @@ Three results carry the note:
 
 Three queue items change priority as a result, and one methodological defect surfaces
 that affects how every generated-corpus number in this project should be read.
+Part 4 states each verdict; where they landed in the actual work order is
+[the campaign-2 plan](../specs/active/plan-2026-08-23-fdu-performance-campaign-2.md),
+which this report’s denominators are the basis for.
 
 Everything here is one virtualized host, warm page cache unless stated, and is scouting
 evidence under [the loop’s](../guides/performance-loop.md) rules: it orders the queue
