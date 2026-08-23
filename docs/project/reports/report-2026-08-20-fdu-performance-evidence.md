@@ -1,6 +1,6 @@
 # fdu Performance Evidence: Absolute and Relative
 
-A charted view of the 64 experiment artifacts in
+A charted view of every experiment artifact in
 [docs/project/experiments/](../experiments/). It exists to show two things: how the
 iterative research loop works, which is a method that transfers to any system worth
 optimising, and what that loop found in this one.
@@ -74,10 +74,13 @@ Milliseconds are only comparable against the tree that produced them and this re
 spans 307 entries to 1.01 million, so the check that the speed-up is not a small-tree
 artifact has to be made in normalised units.
 
-**Mechanism.** The fifteen individual accepted changes that moved their primary job at
-least 5%, with total CPU beside wall time.
+**Mechanism.** The individual accepted changes that moved their primary job at least 5%,
+with total CPU beside wall time.
 Both moving work off the critical path and deleting it shorten wall time, and only CPU
-distinguishes them; twelve of the fifteen deleted work outright.
+distinguishes them; the page states how many of them deleted work outright.
+That distinction is not bookkeeping: a change that deletes CPU keeps its wall saving
+only where the consumer is the bottleneck, which is why exp-064’s saving converted to
+wall at 0.95 on a sparse tree and 0.29 on dense source.
 
 ## The trap this report is built to avoid
 
@@ -100,8 +103,8 @@ changed, measured between 210 ms and 327 ms across eleven runs.
 
 ## Two things the counts do not say on their own
 
-Thirty-one changes were kept and thirty-one measured an improvement whose interval
-excluded zero, and those are not the same thirty-one.
+The number of changes kept and the number that measured an improvement whose interval
+excluded zero are close, and they are not the same set — the page prints both.
 
 Five improved and were not kept — below the threshold, superseded, or unfinished.
 Five were kept although their interval crossed zero, because what they bought was not

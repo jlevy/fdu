@@ -33,8 +33,8 @@ metadata layout move as a unit.
 
 | Platform | Status | What is different about it |
 | --- | --- | --- |
-| macOS / APFS | Primary; all 51 ledger experiments | `getattrlistbulk` returns enumeration and complete stat-tier metadata per directory, so the per-entry metadata wait the portable path pays is largely hidden |
-| Linux / ext4 | Measured, not yet in the ledger | No bulk-metadata analog is profitable; the standard library already issues `getdents64` + dirfd-relative `statx`, so per-entry kernel time is the floor |
+| macOS / APFS | Primary; 57 of the 66 ledger experiments | `getattrlistbulk` returns enumeration and complete stat-tier metadata per directory, so the per-entry metadata wait the portable path pays is largely hidden |
+| Linux / ext4 | 9 ledger experiments, all virtualized | No bulk-metadata analog is profitable; the standard library already issues `getdents64` + dirfd-relative `statx`, so per-entry kernel time is the floor |
 | Windows / NTFS | CI-tested for correctness; unmeasured for speed | — |
 
 ### Host

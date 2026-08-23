@@ -193,12 +193,12 @@ fdu runs a disciplined optimization loop rather than a list of tweaks: instrumen
 profile, write the hypothesis down, change one thing, measure paired and interleaved
 against a control with an independent oracle checking that faster output is still
 *identical* output, keep it only if it clears a fixed bar, and record the verdict —
-**including the failures**. Of 64 recorded experiments, 28 were rejected against 31
+**including the failures**. Of 66 recorded experiments, 28 were rejected against 33
 accepted, several rejected despite a real working mechanism that simply did not clear
 the bar.
 
-One caveat worth carrying into any number above: **57 of those 64 experiments were
-measured on macOS and 7 on Linux.** A constant measured on one platform is inherited,
+One caveat worth carrying into any number above: **57 of those 66 experiments were
+measured on macOS and 9 on Linux.** A constant measured on one platform is inherited,
 not proven, on the other.
 
 **→

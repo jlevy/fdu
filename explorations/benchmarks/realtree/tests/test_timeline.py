@@ -12,6 +12,8 @@ from typing import Any, Dict, List
 from benchmarks.realtree.report_html import STYLE, axis_ticks, figure_absolute, render
 from benchmarks.realtree.timeline import (
     BASELINE_COMMIT,
+    SYNTHETIC_SUBJECTS,
+    is_synthetic,
     kept_variant,
     project,
     subject_family,
@@ -136,6 +138,51 @@ class SubjectIdentityTests(unittest.TestCase):
         mac = {"host_system": "Darwin 25.5.0", "tree_root_id": "f" * 64}
         linux = {"host_system": "Linux 6.18.5", "tree_root_id": "f" * 64}
         self.assertNotEqual(subject_family(mac), subject_family(linux))
+
+
+class SyntheticSubjectTests(unittest.TestCase):
+    """A generated tree averaged in with real ones is the mistake the record measured.
+
+    The floor report put a uniform corpus at about 15 points of fdu's distance from the
+    floor, and this page is where that distance is drawn.
+    """
+
+    def test_a_generator_recipe_marks_a_subject_generated(self) -> None:
+        subject = {
+            "tree_label": "never-seen-before",
+            "tree_provenance": "python3 explorations/benchmarks/spikes/gen_tree.py <root> 17000",
+        }
+        self.assertTrue(is_synthetic(subject))
+
+    def test_an_observed_tree_is_not_marked_generated(self) -> None:
+        subject = {
+            "tree_label": "cargo-registry-src",
+            "tree_provenance": "The cargo registry source cache for this lockfile.",
+        }
+        self.assertFalse(is_synthetic(subject))
+
+    def test_the_label_list_still_covers_artifacts_predating_provenance(self) -> None:
+        self.assertTrue(is_synthetic({"tree_label": "adaptive-fast-slow-100k"}))
+        self.assertFalse(is_synthetic({"tree_label": "metabrowser"}))
+
+    def test_every_linux_generated_subject_is_covered(self) -> None:
+        """The three that were missing, named so a silent removal fails here.
+
+        `meta450k` and `vm450k` are `gen_tree.py` at 450,463 entries -- the whole Linux
+        index-tier record -- and `spike-15977` is exp-064's subject, 22.6x sparse.
+        """
+        for label in ("meta450k", "vm450k", "spike-15977"):
+            with self.subTest(label=label):
+                self.assertIn(label, SYNTHETIC_SUBJECTS)
+
+    def test_one_label_marking_a_subject_marks_it_everywhere(self) -> None:
+        dataset = project(
+            [
+                experiment("exp-001", label="meta450k"),
+                experiment("exp-002", label="meta450k"),
+            ]
+        )
+        self.assertTrue(all(subject["synthetic"] for subject in dataset["subjects"]))
 
 
 class ProjectionTests(unittest.TestCase):

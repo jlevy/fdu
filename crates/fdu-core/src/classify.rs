@@ -6,9 +6,11 @@
 //! headers, and origin flags. Nothing here performs runtime rule parsing or opens a
 //! file; the caller owns the optional read.
 
+use std::collections::HashMap;
 use std::ffi::OsStr;
 use std::fmt;
 use std::path::Path;
+use std::sync::LazyLock;
 
 mod file_type_detection;
 
@@ -164,6 +166,40 @@ struct GeneratedRule {
 
 include!(concat!(env!("OUT_DIR"), "/file_type_rules.rs"));
 
+/// The exact-name and extension tiers, resolved once instead of scanned per file.
+///
+/// The scan these replace was
+/// `GENERATED_RULES.iter().filter(..).max_by_key(..)`, and `max_by_key` consumes the
+/// whole iterator, so every file paid all 65 rules and all 167 extension strings even
+/// when its extension matched the first rule in the table. Classification ran twice per
+/// file on a warm content open -- once to build each candidate, once again in
+/// `Index::apply_analysis`'s staleness guard -- so this is charged for on both.
+///
+/// `Iterator::max_by_key` returns the *last* of equally-maximum elements. The builder
+/// reproduces that tie-break by letting a later rule in table order win at equal
+/// priority; changing it would silently reclassify the types that share a key.
+static RULES_BY_FILENAME: LazyLock<HashMap<&'static str, &'static GeneratedRule>> =
+    LazyLock::new(|| index_rules(|rule| rule.filenames));
+static RULES_BY_EXTENSION: LazyLock<HashMap<&'static str, &'static GeneratedRule>> =
+    LazyLock::new(|| index_rules(|rule| rule.extensions));
+
+fn index_rules(
+    keys: impl Fn(&'static GeneratedRule) -> &'static [&'static str],
+) -> HashMap<&'static str, &'static GeneratedRule> {
+    let mut table: HashMap<&'static str, &'static GeneratedRule> = HashMap::new();
+    for rule in GENERATED_RULES {
+        for key in keys(rule) {
+            match table.get(key) {
+                Some(existing) if existing.priority > rule.priority => {}
+                _ => {
+                    table.insert(key, rule);
+                }
+            }
+        }
+    }
+    table
+}
+
 /// Fingerprint of the repository-owned rule manifest compiled into this build.
 pub const fn type_rule_fingerprint() -> u64 {
     TYPE_RULE_FINGERPRINT
@@ -232,11 +268,9 @@ pub fn classify_path(path: &Path) -> Classification {
 /// internal limits.
 pub fn classify_path_with_prefix(path: &Path, prefix: Option<&[u8]>) -> Classification {
     let name = path.file_name().unwrap_or_else(|| OsStr::new(""));
-    if let Some(rule) = GENERATED_RULES
-        .iter()
-        .filter(|rule| rule.filenames.iter().any(|candidate| name == OsStr::new(candidate)))
-        .max_by_key(|rule| rule.priority)
-    {
+    // The rules table is pure ASCII, so a name that is not UTF-8 matched no rule
+    // filename under the byte comparison this replaces either.
+    if let Some(rule) = name.to_str().and_then(|name| RULES_BY_FILENAME.get(name).copied()) {
         return with_flags(
             path,
             prefix,
@@ -247,11 +281,7 @@ pub fn classify_path_with_prefix(path: &Path, prefix: Option<&[u8]>) -> Classifi
     let extension = derive_ext(name);
     if let Some(extension) = extension.as_deref() {
         let key = extension.strip_prefix('.').expect("derived extensions start with a dot");
-        if let Some(rule) = GENERATED_RULES
-            .iter()
-            .filter(|rule| rule.extensions.contains(&key))
-            .max_by_key(|rule| rule.priority)
-        {
+        if let Some(rule) = RULES_BY_EXTENSION.get(key).copied() {
             let source = if key.contains('.') {
                 DetectionSource::CompoundExtension
             } else {
@@ -508,12 +538,57 @@ fn derive_ext_str(name: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        ContentFamily, DetectionConfidence, DetectionSource, classify_path,
-        classify_path_with_prefix, derive_ext, type_rule_fingerprint,
+        ContentFamily, DetectionConfidence, DetectionSource, RULES_BY_EXTENSION, RULES_BY_FILENAME,
+        classify_path, classify_path_with_prefix, derive_ext, type_rule_fingerprint,
     };
     use super::{GENERATED_RULES, human_language_name};
     use std::ffi::OsStr;
     use std::path::Path;
+
+    /// The indexed tiers must answer exactly what the scan they replaced answered.
+    ///
+    /// The scan was `filter(..).max_by_key(priority)`, and `max_by_key` returns the
+    /// *last* of equally-maximum elements. Several keys are claimed by more than one
+    /// rule, so a builder that took the first winner instead of the last would
+    /// reclassify them silently, with no other test noticing.
+    #[test]
+    fn indexed_rule_tiers_agree_with_the_scan_they_replaced() {
+        for (table, keys_of) in [
+            (&*RULES_BY_FILENAME, (|rule: &super::GeneratedRule| rule.filenames) as fn(_) -> _),
+            (&*RULES_BY_EXTENSION, (|rule: &super::GeneratedRule| rule.extensions) as fn(_) -> _),
+        ] {
+            let mut checked = 0;
+            for key in GENERATED_RULES.iter().flat_map(keys_of) {
+                let scanned = GENERATED_RULES
+                    .iter()
+                    .filter(|rule| keys_of(rule).contains(key))
+                    .max_by_key(|rule| rule.priority)
+                    .expect("the key came from a rule, so at least one rule matches");
+                let indexed = table.get(*key).expect("every rule key is indexed");
+                assert_eq!(
+                    indexed.id, scanned.id,
+                    "key {key:?} resolves to {:?} but the scan chose {:?}",
+                    indexed.id, scanned.id
+                );
+                checked += 1;
+            }
+            assert!(checked > 0, "the rules table produced no keys to check");
+        }
+    }
+
+    /// A name that is not valid UTF-8 must classify as unknown, as it did when the tier
+    /// compared raw `OsStr` bytes against an all-ASCII rules table.
+    #[test]
+    fn non_utf8_names_still_reach_the_unknown_tier() {
+        #[cfg(unix)]
+        {
+            use std::os::unix::ffi::OsStrExt;
+            let name = OsStr::from_bytes(b"weird\xff\xfename");
+            let classification = classify_path(Path::new(name));
+            assert_eq!(classification.source, DetectionSource::Unknown);
+            assert_eq!(classification.family, ContentFamily::Unknown);
+        }
+    }
 
     #[test]
     fn plain_extensions_lowercase() {

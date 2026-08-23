@@ -10,7 +10,7 @@ experiment:
   title: Bound adaptive scan diagnostics overhead
   date: "2026-08-15"
   hypotheses:
-    - H86-observability
+    - H97
   subject:
     tree_label: diagnostics-overhead
     tree_root_id: 314ea87cd4c0f7e4669757bc583cc1551ab6b944a86c267db74da7de704a6584
@@ -180,8 +180,13 @@ experiment:
 
 ## Hypothesis
 
-H86-observability: collecting a bounded worker-policy and backend trace should add no
-more than 3% to scan wall time when explicitly enabled.
+H97: collecting a bounded worker-policy and backend trace should add no more than 3% to
+scan wall time when explicitly enabled.
+
+Recorded at the time as `H86-observability`, a local id coined before the registry
+assigned H86 to the structural consumer rewrite that is now campaign 2’s centerpiece.
+Renumbered to a free id so no number means two things, per the loop’s own rule.
+Only the label changed; every measurement below is as recorded.
 
 ## What was tried
 

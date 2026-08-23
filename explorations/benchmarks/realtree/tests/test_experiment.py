@@ -8,6 +8,8 @@ letting an artifact that no longer matches its contract contribute a row anyway.
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import shutil
 import subprocess
@@ -188,6 +190,62 @@ class FromRunTests(unittest.TestCase):
                 f"payload carries a filesystem path: {text!r}",
             )
         self.assertIn("{root}", payload["reference_tools"][0]["argv"])
+
+
+class ProvenanceRecordingTests(unittest.TestCase):
+    """Provenance is the one field a run cannot infer, so the recorder has to demand it.
+
+    The guide says every experiment must record it. Until this was enforced the flag
+    defaulted to empty, and of the 65 artifacts recorded before it existed exactly one
+    named how its subject was built.
+    """
+
+    def test_reconstructible_without_a_recipe_is_refused(self) -> None:
+        with self.assertRaises(ValueError) as raised:
+            experiment_model.from_run(
+                _run_document(),
+                experiment_id="exp-042",
+                title="Test experiment",
+                hypotheses=["H1"],
+                control="before",
+                candidate="after",
+                complexity={"lines_changed": 10, "new_dependencies": [], "notes": ""},
+                verdict={
+                    "decision": "accepted",
+                    "primary_job": "cold-scan-index",
+                    "primary_metric": "wall_ns",
+                    "change_pct": -30.0,
+                    "reason": "faster",
+                },
+                tree_provenance="   ",
+                tree_reconstructible=True,
+            )
+        self.assertIn("needs a tree_provenance", str(raised.exception))
+
+    def test_the_recorder_requires_a_provenance(self) -> None:
+        """argparse exits 2 on a missing required flag; the message names the flag."""
+        with contextlib.redirect_stderr(io.StringIO()) as captured, self.assertRaises(SystemExit):
+            record.main(
+                [
+                    "--run",
+                    "/nonexistent.json",
+                    "--id",
+                    "exp-042",
+                    "--title",
+                    "t",
+                    "--control",
+                    "c",
+                    "--candidate",
+                    "d",
+                    "--decision",
+                    "accepted",
+                    "--primary-job",
+                    "cold-scan-index",
+                    "--reason",
+                    "r",
+                ]
+            )
+        self.assertIn("--tree-provenance", captured.getvalue())
 
 
 class HeadlineSelectionTests(unittest.TestCase):
@@ -401,6 +459,24 @@ class SummaryRenderTests(unittest.TestCase):
         payload.update(overrides)
         return payload
 
+    def _anchored(self, **overrides):
+        """A run whose control is the pre-work binary.
+
+        That, and not the word "cumulative" in a title, is what makes a run a statement
+        about the campaign as a whole.
+        """
+        experiment = self._experiment(**overrides)
+        experiment["method"] = dict(
+            experiment["method"],
+            control=f"{summary.BASELINE_COMMIT} before the iterative performance work",
+        )
+        return experiment
+
+    def _with_subject(self, **subject_overrides):
+        experiment = self._experiment()
+        experiment["subject"] = dict(experiment["subject"], **subject_overrides)
+        return " ".join(summary.render([experiment]).split())
+
     def test_the_report_states_the_decision_and_the_number(self) -> None:
         text = summary.render([self._experiment()])
         self.assertIn("accepted", text)
@@ -440,7 +516,7 @@ class SummaryRenderTests(unittest.TestCase):
         self.assertIn("no new dependencies", text)
 
     def test_reproduction_conditions_stay_with_the_cumulative_comparison(self) -> None:
-        cumulative = self._experiment(title="Cumulative effect of accepted changes")
+        cumulative = self._anchored(title="Cumulative effect of accepted changes")
         later = self._experiment(title="Later experiment on another tree")
         later["subject"] = dict(
             later["subject"],
@@ -456,6 +532,97 @@ class SummaryRenderTests(unittest.TestCase):
         self.assertIn("Label `fixture`, 100 entries", conditions)
         self.assertNotIn("other-tree", conditions)
         self.assertNotIn("999 entries", conditions)
+
+    def test_the_headline_is_chosen_by_control_not_by_title(self) -> None:
+        """The bug this rule replaces, reproduced as a fixture.
+
+        exp-054 is titled "Validate the Linux campaign's cumulative effect on macOS"
+        and controls against `main at 26280e4`. Picking the last title containing
+        "cumulative" chose it, so the ledger printed its +1.4% under the heading
+        "measured against the pre-work baseline" while the campaign's own figure was
+        exp-032's -54.5%.
+        """
+        anchored = self._anchored(id="exp-032", title="Cumulative effect of accepted changes")
+        validation = self._experiment(
+            id="exp-054", title="Validate the campaign's cumulative effect on macOS"
+        )
+
+        headline = summary.render([anchored, validation]).split("## Where it stands", 1)[1]
+        headline = headline.split("\n## ", 1)[0]
+
+        self.assertIn("exp-032", headline)
+        self.assertNotIn("exp-054", headline)
+
+    def test_the_baseline_run_itself_is_not_the_headline(self) -> None:
+        """exp-000 names the baseline commit as its control because it *is* the baseline.
+
+        It has no candidate to compare against, so reporting it as "every accepted
+        change together" would report nothing at all.
+        """
+        baseline = self._anchored(id="exp-000", title="Baseline on a real tree")
+        baseline["verdict"] = dict(baseline["verdict"], decision="baseline")
+        later = self._anchored(id="exp-032", title="Cumulative effect of accepted changes")
+
+        headline = summary.render([baseline, later]).split("## Where it stands", 1)[1]
+        headline = headline.split("\n## ", 1)[0]
+
+        self.assertIn("exp-032", headline)
+        self.assertNotIn("exp-000", headline)
+
+    def test_a_record_with_no_baseline_anchored_run_states_nothing(self) -> None:
+        text = summary.render([self._experiment(title="Cumulative effect, but unanchored")])
+        self.assertNotIn("## Where it stands", text)
+
+    def test_a_reconstructible_subject_says_how_to_rebuild_it(self) -> None:
+        """Identity says whether you have the tree; only this says how to get one.
+
+        And it must not promise the digest, which no regeneration reproduces --
+        the bar that would make the flag unusable if a reader believed it.
+        """
+        text = self._with_subject(
+            tree_provenance="python3 gen_tree.py <root> 17000",
+            tree_reconstructible=True,
+        )
+        self.assertIn("Rebuild it with python3 gen_tree.py <root> 17000.", text)
+        self.assertIn("the digest not to", text)
+
+    def test_an_unobtainable_subject_says_so_rather_than_implying_a_recipe(self) -> None:
+        text = self._with_subject(
+            tree_provenance="The cargo registry cache for this workspace's lockfile.",
+            tree_reconstructible=False,
+        )
+        self.assertIn("Not reconstructible:", text)
+        self.assertIn("needs a fresh subject and a fresh control", text)
+        self.assertNotIn("Rebuild it with", text)
+
+    def test_an_unrecorded_provenance_is_reported_and_not_passed_over(self) -> None:
+        """Sixty-five artifacts were recorded before this field existed.
+
+        Rendering nothing for them would read as a tree somebody could obtain.
+        """
+        text = self._with_subject(tree_provenance="", tree_reconstructible=False)
+        self.assertIn("Provenance unrecorded", text)
+        self.assertIn("nobody else can re-run them", text)
+
+    def test_a_sparse_subject_is_flagged_beside_the_numbers_it_inflates(self) -> None:
+        """exp-064's subject, the case this rendering exists for.
+
+        `gen_tree.py` writes anything over 256 bytes with `os.truncate`, so reading
+        a file there costs nothing and per-file bookkeeping is most of a cold content
+        job -- which is why its cold figure did not transfer to dense real source.
+        """
+        text = self._with_subject(
+            tree_apparent_bytes=595728806,
+            tree_allocated_bytes=26341376,
+        )
+        self.assertIn("22.6x, so the files are largely sparse", text)
+
+    def test_a_dense_subject_is_not_flagged_as_sparse(self) -> None:
+        text = self._with_subject(
+            tree_apparent_bytes=26341376,
+            tree_allocated_bytes=26341376,
+        )
+        self.assertNotIn("largely sparse", text)
 
 
 class IdentifierCollisionTests(unittest.TestCase):
@@ -508,6 +675,10 @@ class IdentifierCollisionTests(unittest.TestCase):
         self.assertEqual(summary.check_identifiers(experiments), [])
 
     def test_one_number_under_two_spellings_warns(self) -> None:
+        # The real case that prompted this check, kept as the fixture. It no longer
+        # describes the committed record: exp-059's local `H87-fixed-worker-knee` was
+        # renumbered to H96 and exp-056/057/058's `H86-*` to H97-H99, so the ledger now
+        # generates warning-free. The warning is what caught them.
         experiments = [
             self._experiment("exp-059", "fixed worker knee", ["H87-fixed-worker-knee"]),
             self._experiment("exp-063", "share the index with the writer", ["H87"]),
