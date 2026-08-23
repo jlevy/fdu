@@ -5,15 +5,15 @@ title: Refresh definitive competitor comparison with oracle-checked summaries
 kind: task
 status: closed
 priority: 1
-version: 3
-spec_path: docs/project/specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md
+version: 4
+spec_path: docs/project/specs/active/plan-2026-08-23-fdu-performance-campaign-2.md
 labels:
   - performance
   - benchmark
 dependencies: []
 parent_id: is-01kzpvshmzfp0804ywk18v4pzr
 created_at: 2026-08-13T11:59:20.571Z
-updated_at: 2026-08-13T13:54:54.027Z
+updated_at: 2026-08-23T02:11:33.033Z
 closed_at: 2026-08-13T13:54:54.026Z
 close_reason: Published the definitive v3 tree and scalar comparison with five-field independent summary oracles, exact immutable binaries, uncertainty, resources, no drift/mutation, and mechanically checked manifest/README/report/spec/research updates.
 ---

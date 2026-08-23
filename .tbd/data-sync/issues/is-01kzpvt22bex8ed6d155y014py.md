@@ -5,8 +5,8 @@ title: Profile and optimize compatible-snapshot real-tree revalidation
 kind: task
 status: closed
 priority: 1
-version: 12
-spec_path: docs/project/specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md
+version: 13
+spec_path: docs/project/specs/active/plan-2026-08-23-fdu-performance-campaign-2.md
 labels: []
 dependencies:
   - type: blocks
@@ -17,7 +17,7 @@ child_order_hints:
   - is-01kzv0dfwab6whteads2kzy2f9
   - is-01kzv21f0c1508pd22gxrncxy3
 created_at: 2026-08-10T22:13:36.458Z
-updated_at: 2026-08-12T13:34:40.054Z
+updated_at: 2026-08-23T02:11:33.033Z
 closed_at: 2026-08-12T13:24:49.962Z
 close_reason: Compatible-snapshot full-revalidation loop complete through exp-030/032. H12 bounded four-worker immutable-baseline waves improve warm wall 30.25% at 60k and 59.53% at 720k over exp-026; cumulative warm wall -54.26% versus b565882. Snapshot load now owns most of the 60k warm-vs-cold gap and remains tracked separately by fdu-1vd0; FSEvents orchestration is a separate scoped-cache feature.
 ---

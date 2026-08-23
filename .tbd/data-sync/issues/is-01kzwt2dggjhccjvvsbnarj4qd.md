@@ -5,15 +5,15 @@ title: Compare diskus benchmark protocol with FDU evidence protocol
 kind: task
 status: closed
 priority: 2
-version: 5
-spec_path: docs/project/specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md
+version: 6
+spec_path: docs/project/specs/active/plan-2026-08-23-fdu-performance-campaign-2.md
 labels:
   - performance
   - research
 dependencies: []
 parent_id: is-01kzpvshmzfp0804ywk18v4pzr
 created_at: 2026-08-13T05:38:39.759Z
-updated_at: 2026-08-13T05:51:09.409Z
+updated_at: 2026-08-23T02:11:33.033Z
 closed_at: 2026-08-13T05:51:09.408Z
 close_reason: Reviewed current diskus upstream README and repository. Captured its Linux per-sample drop_caches, separate warm regime, and parameter-scan practices; synchronized the Linux plan while retaining FDU's stronger oracle/provenance protocol.
 ---

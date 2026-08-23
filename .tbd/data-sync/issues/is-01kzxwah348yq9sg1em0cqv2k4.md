@@ -5,8 +5,8 @@ title: "Audit PR #8 performance narrative and dumac gap"
 kind: task
 status: closed
 priority: 1
-version: 6
-spec_path: docs/project/specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md
+version: 7
+spec_path: docs/project/specs/active/plan-2026-08-23-fdu-performance-campaign-2.md
 labels:
   - performance
   - review
@@ -16,7 +16,7 @@ child_order_hints:
   - is-01kzxwdc5w2hpw5yefe75xnxdv
   - is-01kzxxkmmqedebn5wqdr2gxjft
 created_at: 2026-08-13T15:37:17.156Z
-updated_at: 2026-08-13T16:18:26.431Z
+updated_at: 2026-08-23T02:11:33.033Z
 closed_at: 2026-08-13T16:18:26.430Z
 close_reason: "Completed the full PR #8 audit against source, current main, experiment artifacts, manifests, goldens, and live comparator evidence. Made the architecture report and active spec authoritative for the integration boundary and batching explanation, rewrote the PR body as their organized summary, fixed both evidence-oracle gaps, resolved all review threads, passed local make check and all GitHub checks, and retained H67 (fdu-ea8e) as the only open dumac-gap experiment."
 ---

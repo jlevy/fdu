@@ -5,14 +5,14 @@ title: Add a perf-harness job for the default one-shot CLI plan
 kind: task
 status: closed
 priority: 2
-version: 3
-spec_path: docs/project/specs/active/plan-2026-08-15-fdu-cache-layers-and-defaults.md
+version: 4
+spec_path: docs/project/specs/done/plan-2026-08-15-fdu-cache-layers-and-defaults.md
 labels:
   - performance
 dependencies: []
 parent_id: is-01m03bjey08898z8t9a2vhakm1
 created_at: 2026-08-16T00:03:30.711Z
-updated_at: 2026-08-16T17:44:28.074Z
+updated_at: 2026-08-23T02:14:25.248Z
 closed_at: 2026-08-16T17:44:28.074Z
 close_reason: Default-CLI measurement path landed as the fdu-default-tree installed-command contract, with cache isolation for cache-writing contracts. Verified end-to-end on a real subject with zero invalid samples and no disturbance of the operator's cache.
 ---

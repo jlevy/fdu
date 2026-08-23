@@ -5,8 +5,8 @@ title: Add a mutation-detecting real-tree benchmark baseline
 kind: task
 status: closed
 priority: 1
-version: 4
-spec_path: docs/project/specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md
+version: 5
+spec_path: docs/project/specs/active/plan-2026-08-23-fdu-performance-campaign-2.md
 labels: []
 dependencies:
   - type: blocks
@@ -15,7 +15,7 @@ dependencies:
     target: is-01kzpvt22bex8ed6d155y014py
 parent_id: is-01kzpvshmzfp0804ywk18v4pzr
 created_at: 2026-08-10T22:13:36.013Z
-updated_at: 2026-08-11T00:24:28.828Z
+updated_at: 2026-08-23T02:11:33.033Z
 closed_at: 2026-08-11T00:24:28.827Z
 close_reason: "Real-tree harness landed in benchmarks/realtree: path-redacted fingerprint (root_id is the SHA-256 of the path, never the path), fdu-index-record-v1 content digest, before/after mutation check that exits nonzero, and a per-trial oracle comparison that marks disagreeing samples invalid rather than dropping them. Baselines recorded for scan-producer, scan-index, snapshot save/load, and revalidation on a 59,654-entry checkout, with snapshot state and page-cache state reported independently. The mutation check earned itself immediately: the first run against a live checkout invalidated 48 of 60 samples, so reference trees are now APFS clones held still. Evidence: exp-000 in the ledger."
 ---

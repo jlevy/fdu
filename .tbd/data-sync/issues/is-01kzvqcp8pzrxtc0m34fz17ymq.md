@@ -5,13 +5,13 @@ title: Golden the realistic default human report UX
 kind: task
 status: closed
 priority: 1
-version: 5
-spec_path: docs/project/specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md
+version: 6
+spec_path: docs/project/specs/active/plan-2026-08-23-fdu-performance-campaign-2.md
 labels: []
 dependencies: []
 parent_id: is-01kzpvshmzfp0804ywk18v4pzr
 created_at: 2026-08-12T19:32:36.245Z
-updated_at: 2026-08-13T05:51:07.667Z
+updated_at: 2026-08-23T02:11:33.033Z
 closed_at: 2026-08-13T05:51:07.666Z
 close_reason: Added the realistic cli-overview tryscript golden and retained focused limit/ellipsis coverage; all 72 golden cases pass with compact ten-cell aligned bars and explicit-root help behavior.
 ---

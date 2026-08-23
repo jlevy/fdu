@@ -5,8 +5,8 @@ title: Iterate on measured high-impact live-scan bottlenecks
 kind: task
 status: closed
 priority: 1
-version: 12
-spec_path: docs/project/specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md
+version: 13
+spec_path: docs/project/specs/active/plan-2026-08-23-fdu-performance-campaign-2.md
 labels: []
 dependencies: []
 parent_id: is-01kzpvshmzfp0804ywk18v4pzr
@@ -19,7 +19,7 @@ child_order_hints:
   - is-01kzwsr47nxr6arn4qbdz66949
   - is-01kzxp0fjq8f0q545tag20ffwf
 created_at: 2026-08-12T23:09:49.696Z
-updated_at: 2026-08-13T13:54:54.851Z
+updated_at: 2026-08-23T02:11:33.033Z
 closed_at: 2026-08-13T13:54:54.850Z
 close_reason: "This measured iteration phase is complete: accepted gains were retained, weak experiments reverted and recorded, PR #5 integration was semantically checked, a full near-million competitor comparison was published, goldens/harness/full checks pass, and every next architectural experiment remains tracked in its own open bead."
 ---

@@ -5,8 +5,8 @@ title: "H69: Pipeline macOS directory opens ahead of bulk enumeration"
 kind: task
 status: closed
 priority: 1
-version: 6
-spec_path: docs/project/specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md
+version: 7
+spec_path: docs/project/specs/active/plan-2026-08-23-fdu-performance-campaign-2.md
 labels:
   - performance
   - experiment
@@ -14,7 +14,7 @@ labels:
 dependencies: []
 parent_id: is-01kzpvshmzfp0804ywk18v4pzr
 created_at: 2026-08-13T16:46:37.857Z
-updated_at: 2026-08-13T18:23:47.707Z
+updated_at: 2026-08-23T02:11:33.033Z
 closed_at: 2026-08-13T18:23:47.706Z
 close_reason: "Superseded by H70/exp-046: the corrected pairwise-helper screen was inconclusive under host noise, no production code was retained, and the shared-pool design owns confirmation."
 ---

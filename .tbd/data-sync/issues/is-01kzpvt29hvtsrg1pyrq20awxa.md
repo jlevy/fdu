@@ -5,13 +5,13 @@ title: Publish the real-tree optimization decision ledger
 kind: task
 status: closed
 priority: 1
-version: 5
-spec_path: docs/project/specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md
+version: 6
+spec_path: docs/project/specs/active/plan-2026-08-23-fdu-performance-campaign-2.md
 labels: []
 dependencies: []
 parent_id: is-01kzpvshmzfp0804ywk18v4pzr
 created_at: 2026-08-10T22:13:36.688Z
-updated_at: 2026-08-13T18:28:25.720Z
+updated_at: 2026-08-23T02:11:33.033Z
 closed_at: 2026-08-13T18:28:25.719Z
 close_reason: "Complete for the macOS landing: 47 validated artifacts generate the decision ledger, covering real 60k, 720k, 901k, and 1.0M subjects plus accepted, rejected, superseded, and in-progress results. Controlled Linux extension is now owned by fdu-0myw."
 ---

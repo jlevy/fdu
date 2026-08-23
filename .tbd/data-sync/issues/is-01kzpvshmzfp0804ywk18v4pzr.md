@@ -5,8 +5,8 @@ title: Iteratively profile and optimize real-world traversal
 kind: epic
 status: open
 priority: 1
-version: 28
-spec_path: docs/project/specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md
+version: 29
+spec_path: docs/project/specs/active/plan-2026-08-23-fdu-performance-campaign-2.md
 labels: []
 dependencies: []
 parent_id: is-01kzkzm62q1vwxbv9hbp39bxxm
@@ -38,10 +38,20 @@ child_order_hints:
   - is-01kzy5tnvsmxc25m0cmeg6wg13
   - is-01kzy3eb1181ps223nwn9rj5ws
 created_at: 2026-08-10T22:13:19.646Z
-updated_at: 2026-08-13T18:23:40.233Z
+updated_at: 2026-08-23T02:11:32.622Z
 ---
 Run a measurement-first optimization campaign on an operator-supplied checkout with tens of thousands of files and a large dependency tree, using the local metabrowser checkout as the first subject without persisting personal absolute paths. Measure snapshot-absent and compatible-snapshot behavior separately, keep filesystem-cache state explicit, profile before each change, commit each accepted improvement independently, and retain rejected experiments when gains are small, unstable, or not worth their complexity. This campaign coordinates the existing walker, revalidation, snapshot, and final-report beads rather than weakening their correctness gates.
 
 ## Notes
 
-Sequence is baseline/oracle, snapshot-absent profile loop, compatible-snapshot profile loop, then multi-scale decision ledger. Use an operator-supplied large JS checkout without persisting its personal absolute path. Each accepted improvement is one commit with paired evidence; rejected complexity is documented and reverted.
+Repointed 2026-08-23 from the end-to-end-performance-testing plan to the campaign-2 plan.
+
+This bead is the standing optimization loop itself -- "iteratively profile and optimize
+real-world traversal" -- and that is exactly what campaign 2 now directs. The end-to-end
+plan retains what it actually owns: the generated-corpus harness, the evidence contract,
+the comparator adapters, and the regression governance. What it no longer owns is which
+experiment to run next, which lived in three documents with three orderings until the
+floor measurement gave every tier a denominator.
+
+Work under this bead now follows the campaign-2 phases: floor-normalized priorities,
+the tuning/structural two-track split, and the per-tier termination criteria.

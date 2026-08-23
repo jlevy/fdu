@@ -5,8 +5,8 @@ title: Profile and optimize snapshot-absent real-tree traversal
 kind: task
 status: closed
 priority: 1
-version: 16
-spec_path: docs/project/specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md
+version: 17
+spec_path: docs/project/specs/active/plan-2026-08-23-fdu-performance-campaign-2.md
 labels: []
 dependencies:
   - type: blocks
@@ -20,7 +20,7 @@ child_order_hints:
   - is-01kztzfvcgsf3nd7tt5z3mh9fr
   - is-01kztzsap3wvna2dg5kf03qgfe
 created_at: 2026-08-10T22:13:36.233Z
-updated_at: 2026-08-12T13:34:39.656Z
+updated_at: 2026-08-23T02:11:33.033Z
 closed_at: 2026-08-12T13:24:49.687Z
 close_reason: "Cold real-tree loop complete through exp-032: exact cumulative cold-index wall -53.59% and producer -57.87% versus b565882. Accepted H31 adaptive depth and H3/H26 macOS bulk metadata; post-BFS root-openat, excessive workers, staging reuse, and larger buffers were measured and rejected. Remaining material work is platform-specific Linux evidence or a bounded parent-dirfd design, not another unprofiled constant tweak."
 ---

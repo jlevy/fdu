@@ -5,12 +5,12 @@ title: "tryscript: an unset path variable puts the working directory on PATH"
 kind: bug
 status: closed
 priority: 1
-version: 4
-spec_path: docs/project/specs/active/plan-2026-08-21-fdu-python-cli-parity.md
+version: 5
+spec_path: docs/project/specs/done/plan-2026-08-21-fdu-python-cli-parity.md
 labels: []
 dependencies: []
 created_at: 2026-08-21T23:06:09.341Z
-updated_at: 2026-08-23T00:05:43.691Z
+updated_at: 2026-08-23T02:11:21.051Z
 ---
 An unset `path:` variable expands to an empty string and is passed through as an empty
 PATH entry, which POSIX resolves as the current directory.

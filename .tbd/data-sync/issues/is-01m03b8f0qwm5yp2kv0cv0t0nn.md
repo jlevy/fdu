@@ -3,10 +3,10 @@ type: is
 id: is-01m03b8f0qwm5yp2kv0cv0t0nn
 title: Stop persisting a snapshot where it will not be read profitably
 kind: task
-status: open
+status: closed
 priority: 1
-version: 5
-spec_path: docs/project/specs/active/plan-2026-08-15-fdu-cache-layers-and-defaults.md
+version: 7
+spec_path: docs/project/specs/done/plan-2026-08-15-fdu-cache-layers-and-defaults.md
 labels:
   - performance
   - macos
@@ -14,7 +14,23 @@ labels:
 dependencies: []
 parent_id: is-01m03bjey08898z8t9a2vhakm1
 created_at: 2026-08-15T18:34:30.295Z
-updated_at: 2026-08-15T22:47:08.785Z
+updated_at: 2026-08-23T02:14:23.075Z
+closed_at: 2026-08-23T02:11:21.800Z
+close_reason: |
+  Resolved as a measured decision, not implemented -- which is the outcome the cache-layers
+  plan records for its Phase 2.
+
+  The Apple Silicon/APFS measurement this was waiting on argued against a size threshold
+  rather than supplying one: over 175,128 entries, warm, nine interleaved paired trials, a
+  no-scan --cache only read took 146 ms against 521 ms to scan, a better-than-threefold win
+  where ext4 had shown an 18% loss, because deserialisation costs about the same on both
+  filesystems while an APFS metadata walk costs roughly 3.5x as much per entry. The write
+  measures ~50-90 ms and is repaid several times over by the first later only read at any
+  tree size, so a size gate would give up real value on exactly the trees it gated.
+
+  SNAPSHOT_MIN_ENTRIES stays None as a measured decision; the mechanism remains in place
+  should a future regime justify a value. Evidence: the cache-layers plan Phase 2 and the
+  platform tuning guide.
 ---
 Designed but deliberately unimplemented pending macOS measurement.
 

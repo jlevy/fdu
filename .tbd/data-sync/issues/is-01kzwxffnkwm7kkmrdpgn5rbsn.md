@@ -5,8 +5,8 @@ title: Compare cache-off FDU summary with dumac
 kind: task
 status: closed
 priority: 1
-version: 7
-spec_path: docs/project/specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md
+version: 8
+spec_path: docs/project/specs/active/plan-2026-08-23-fdu-performance-campaign-2.md
 labels:
   - performance
   - benchmark
@@ -14,7 +14,7 @@ labels:
 dependencies: []
 parent_id: is-01kzpvshmzfp0804ywk18v4pzr
 created_at: 2026-08-13T06:38:13.682Z
-updated_at: 2026-08-13T13:54:54.238Z
+updated_at: 2026-08-23T02:11:33.033Z
 closed_at: 2026-08-13T13:54:54.237Z
 close_reason: Completed the claim-grade rich-summary versus dumac comparison and matched-workload H64 experiment. The rich result is a statistical wall-time tie with materially lower CPU/RSS; selected-total specialization was rejected and reverted.
 ---

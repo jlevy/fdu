@@ -5,15 +5,15 @@ title: Fix overflow retry reconciliation statistics
 kind: bug
 status: closed
 priority: 1
-version: 3
-spec_path: docs/project/specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md
+version: 4
+spec_path: docs/project/specs/active/plan-2026-08-23-fdu-performance-campaign-2.md
 labels:
   - review
   - correctness
 dependencies: []
 parent_id: is-01kzpvshmzfp0804ywk18v4pzr
 created_at: 2026-08-13T13:57:06.856Z
-updated_at: 2026-08-13T14:11:40.705Z
+updated_at: 2026-08-23T02:11:33.033Z
 closed_at: 2026-08-13T14:11:40.704Z
 close_reason: Late overflow now resumes at the unapplied wave without repeating the completed prefix; deterministic serial-oracle regression and complete handoff gate pass.
 ---

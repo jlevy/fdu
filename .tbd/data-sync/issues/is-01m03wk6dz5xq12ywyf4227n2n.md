@@ -5,15 +5,15 @@ title: Warm default metadata run loses to a cold scan of the same view
 kind: bug
 status: closed
 priority: 1
-version: 3
-spec_path: docs/project/specs/active/plan-2026-08-15-fdu-cache-layers-and-defaults.md
+version: 4
+spec_path: docs/project/specs/done/plan-2026-08-15-fdu-cache-layers-and-defaults.md
 labels:
   - performance
   - cli
 dependencies: []
 parent_id: is-01m03bjey08898z8t9a2vhakm1
 created_at: 2026-08-15T23:37:27.733Z
-updated_at: 2026-08-16T00:03:43.580Z
+updated_at: 2026-08-23T02:14:23.811Z
 closed_at: 2026-08-16T00:03:43.579Z
 close_reason: "Fixed by the snapshot-read cost gate: repeat fdu . fell 4808->3829 ms on the 494k-entry field-report tree, from behind dust to level with it; warm-loses-to-cold defect eliminated. Golden contracts updated deliberately; open()/watch keep the warm path."
 ---

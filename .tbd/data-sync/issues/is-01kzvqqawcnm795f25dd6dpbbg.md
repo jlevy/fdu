@@ -5,13 +5,13 @@ title: "Revalidate PR #8 performance against post-PR-#5 main"
 kind: task
 status: closed
 priority: 1
-version: 3
-spec_path: docs/project/specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md
+version: 4
+spec_path: docs/project/specs/active/plan-2026-08-23-fdu-performance-campaign-2.md
 labels: []
 dependencies: []
 parent_id: is-01kzpvshmzfp0804ywk18v4pzr
 created_at: 2026-08-12T19:38:25.035Z
-updated_at: 2026-08-13T05:51:07.885Z
+updated_at: 2026-08-23T02:11:33.033Z
 closed_at: 2026-08-13T05:51:07.884Z
 close_reason: Revalidated against merged post-PR-5 main at 60k, 720k, and million scale with exact-oracle paired experiments 033-035; the performance stack remains a strict speed improvement.
 ---

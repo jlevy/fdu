@@ -5,8 +5,8 @@ title: "H67: Isolate the macOS directory-open syscall floor against dumac"
 kind: task
 status: closed
 priority: 1
-version: 5
-spec_path: docs/project/specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md
+version: 6
+spec_path: docs/project/specs/active/plan-2026-08-23-fdu-performance-campaign-2.md
 labels:
   - performance
   - experiment
@@ -18,7 +18,7 @@ dependencies:
     target: is-01kzy1w2vbam0mr1z5we4y6fy0
 parent_id: is-01kzpvshmzfp0804ywk18v4pzr
 created_at: 2026-08-13T15:45:19.716Z
-updated_at: 2026-08-13T17:14:15.274Z
+updated_at: 2026-08-23T02:11:33.033Z
 closed_at: 2026-08-13T17:04:32.544Z
 close_reason: Completed the exact-binary replay and profile. Current FDU and dumac both spend about 94-96% of worker top-frame residency in synchronous open/getattrlistbulk work; the main threads wait. The published quiet-host comparison remains a statistical tie, while exact binaries show a dumac lead under heavier host pressure because dumac sustains greater concurrency. This isolates a host-sensitive kernel/concurrency floor rather than a functional or reconciliation regression. H69/fdu-hzf0 owns the bounded open-ahead follow-up.
 ---

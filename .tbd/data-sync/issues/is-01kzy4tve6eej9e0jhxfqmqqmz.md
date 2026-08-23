@@ -5,8 +5,8 @@ title: "Address review: PR #8 — macOS stability and general correctness"
 kind: task
 status: closed
 priority: 1
-version: 13
-spec_path: docs/project/specs/active/plan-2026-08-09-fdu-end-to-end-performance-testing.md
+version: 14
+spec_path: docs/project/specs/active/plan-2026-08-23-fdu-performance-campaign-2.md
 labels:
   - review
   - correctness
@@ -25,7 +25,7 @@ child_order_hints:
   - is-01kzy5tnkdtdvnxv2zcv4kthv8
   - is-01kzy5tp48xn18jsjqttbj5ac8
 created_at: 2026-08-13T18:06:00.645Z
-updated_at: 2026-08-13T18:40:32.901Z
+updated_at: 2026-08-23T02:11:33.033Z
 closed_at: 2026-08-13T18:40:32.900Z
 close_reason: "Complete: every PR #8 review finding has an explicit fixed, rebutted, or deferred disposition; APFS resource-fork parity is proven; portable differential coverage is integrated; make check and all 14 CI checks pass; PR description and formal review channel are current; branch is zero behind main with no conflicts."
 ---
