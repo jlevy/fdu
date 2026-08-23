@@ -262,8 +262,8 @@ strategy and the record is visible in review.
 - [The structural review](../../research/research-2026-08-14-structural-performance-review.md)
   — S1–S7
 - [The performance loop](../../guides/performance-loop.md) — protocol and registry
-- [The cache layers plan](plan-2026-08-15-fdu-cache-layers-and-defaults.md) — the cost
-  model this plan’s warm posture rests on
+- [The cache layers plan](../done/plan-2026-08-15-fdu-cache-layers-and-defaults.md) —
+  the cost model this plan’s warm posture rests on
 - [The fsevents plan](plan-2026-08-10-fdu-fsevents-scoped-revalidation.md) — the journal
   rung
 - [The record spec](plan-2026-08-15-fdu-performance-record-and-report.md) — evidence

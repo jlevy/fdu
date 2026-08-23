@@ -258,7 +258,7 @@ on every tree small enough to be gated.
 a deferred one; `fdu-hvs5` carries the evidence.
 This is the clearest case in this guide of a constant that was reasonable in the regime
 that produced it and wrong in the one it would have shipped to.
-[The cache-layers plan](../specs/active/plan-2026-08-15-fdu-cache-layers-and-defaults.md)
+[The cache-layers plan](../specs/done/plan-2026-08-15-fdu-cache-layers-and-defaults.md)
 carries the full cost model.
 
 ## The rule for a platform-specific constant

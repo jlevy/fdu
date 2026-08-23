@@ -4,7 +4,11 @@
 
 **Author:** fdu project
 
-**Status:** Draft
+**Status:** Active. Phase A landed and Phase B’s harness landed; Phase B’s artifact
+backfill is blocked on a quiet host, and Phases C–D are open.
+Scheduled as Phase E of
+[the campaign-2 plan](plan-2026-08-23-fdu-performance-campaign-2.md), which owns the
+work order; this plan owns what the record must contain.
 
 ## Overview
 

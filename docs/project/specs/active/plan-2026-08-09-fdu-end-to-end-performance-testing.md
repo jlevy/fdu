@@ -4,7 +4,16 @@
 
 **Author:** fdu project
 
-**Status:** Active
+**Status:** Active, with narrowed scope.
+This plan owns the evidence harness — the generated-corpus contract, the probe modes,
+the comparator adapters, and the regression governance.
+It no longer owns *which experiment runs next*: the standing optimization loop
+(`fdu-j2ka`) moved to
+[the campaign-2 plan](plan-2026-08-23-fdu-performance-campaign-2.md) on 2026-08-23, when
+a measured floor per tier replaced three competing queue orderings.
+One harness change follows from that: campaign-2 requires a nominated real tree in the
+paired set for any accept decision, because a generated corpus was measured hiding about
+15 points of fdu’s distance from the floor — enough to invert a peer ranking.
 
 ## Overview
 
