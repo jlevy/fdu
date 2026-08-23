@@ -726,6 +726,9 @@ here records its regime.
 
 ## References
 
+- [The contract reconciliation](../research/research-2026-08-23-interactive-contract-reconciliation.md)
+  — this spec read against metabrowser’s inventory-engine research, with the eight
+  differences adjudicated and the amendment list this spec’s next revision applies
 - [Design principles](../architecture/fdu-design-principles.md) — the axis rules, cache
   honesty, and truncation contracts this spec extends
 - [Surface architecture](../architecture/fdu-surface-architecture.md) — the parity
