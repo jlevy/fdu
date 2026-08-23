@@ -70,6 +70,7 @@ from ._models import (
     TreeSection,
     ValueSource,
     View,
+    WalkTelemetry,
     WatchOptions,
 )
 from ._native import __version__
@@ -126,6 +127,7 @@ __all__ = [
     "TreeSection",
     "ValueSource",
     "View",
+    "WalkTelemetry",
     "Watch",
     "WatchOptions",
     "__version__",

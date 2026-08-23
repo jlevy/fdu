@@ -91,6 +91,46 @@ def check_the_dirty_set_names_every_moved_rollup() -> None:
             break
 
 
+def check_telemetry_measures_the_run_not_the_tree() -> None:
+    """Each call reports its own cost, and the numbers are the walk's, not a total.
+
+    An embedder timing its own loop attributes cost to the call it just made. The two
+    properties that makes true are that a scan's counts match the tree it read, and that
+    a refresh replaces them rather than adding to them -- so a server refreshing on every
+    change reads a per-refresh cost instead of a sum that only grows.
+    """
+
+    own = Path(tempfile.mkdtemp(prefix="fdu-telemetry-"))
+    (own / "src").mkdir()
+    (own / "src" / "a.txt").write_text("aaaa", encoding="utf-8")
+    (own / "b.txt").write_text("bb", encoding="utf-8")
+
+    index = fdu.scan(own)
+    walk = index.telemetry
+    assert walk.source is fdu.ReportSource.COLD_SCAN, walk.source
+    assert walk.walked_files == 2, walk.walked_files
+    assert walk.walked_bytes == 6, walk.walked_bytes
+    # No analysis was requested, so nothing was read and nothing was restored.
+    assert (walk.fresh_files, walk.bytes_read, walk.cached_files) == (0, 0, 0)
+    assert walk.analysis_seconds == walk.analysis_ns / 1e9
+
+    (own / "src" / "c.txt").write_text("ccc", encoding="utf-8")
+    index.refresh()
+    after = index.telemetry
+    assert after.source is fdu.ReportSource.WARM_REVALIDATE, after.source
+    # Three files now, and the count is the refresh's own -- not five, which is what a
+    # running total across both calls would report.
+    assert after.walked_files == 3, after.walked_files
+    assert after.walked_bytes == 9, after.walked_bytes
+
+    scoped = fdu.open(own)
+    scoped.refresh("src")
+    # A scoped refresh reads the subtree, so its telemetry is smaller than the whole
+    # tree's. This is the evidence that scoping cost anything at all.
+    assert scoped.telemetry.walked_files == 2, scoped.telemetry.walked_files
+    fdu.clear_cache(own)
+
+
 def check_the_one_shot_retains_nothing(root: Path) -> None:
     """`fdu.report` runs the contract the command line runs, not a session.
 
@@ -375,6 +415,7 @@ def main() -> None:
     check_the_one_shot_retains_nothing(root)
     check_watch_reports_its_own_index(root)
     check_the_dirty_set_names_every_moved_rollup()
+    check_telemetry_measures_the_run_not_the_tree()
     check_render_matches_the_cli(
         root, str(Path(sys.executable).with_name("fdu.exe" if os.name == "nt" else "fdu"))
     )

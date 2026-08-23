@@ -31,7 +31,10 @@ use fdu_core::query::{
 };
 use fdu_core::watch::WatchConfig;
 use fdu_core::watch_session::{ChangeKind, Session};
-use fdu_core::{CachePolicy, EntryKind, Freshness, IndexHandle, OpenConfig, RollUp, ScanConfig};
+use fdu_core::{
+    CachePolicy, EntryKind, Freshness, IndexHandle, OpenConfig, PerformanceSummary, RollUp,
+    ScanConfig,
+};
 use std::time::{Duration, SystemTime};
 
 fn to_py_err(err: fdu_core::Error) -> PyErr {
@@ -143,6 +146,13 @@ struct RunState {
     /// cold scan would be a small lie in exactly the field a caller consults to decide
     /// whether to trust the answer.
     source: ReportSource,
+    /// What the run that produced this state actually did.
+    ///
+    /// Describes the most recent operation only, never a running total. An embedder
+    /// timing its own loop needs to attribute cost to the call it just made, and a
+    /// counter that accumulated across refreshes would answer a different question
+    /// while looking like this one.
+    telemetry: PerformanceSummary,
 }
 
 /// A live index over one directory tree.
@@ -167,6 +177,17 @@ impl PyIndex {
     #[getter]
     fn root(&self) -> PyResult<OsString> {
         Ok(self.inner.root_path().map_err(to_py_err)?.as_os_str().to_os_string())
+    }
+
+    /// What the most recent scan or refresh actually did.
+    ///
+    /// Beside the report, never inside it: this is telemetry about a run, not a fact
+    /// about the tree, and putting it in the versioned envelope would make every
+    /// machine-readable answer depend on how it happened to be produced. The command
+    /// line prints the same numbers as its footer.
+    #[getter]
+    fn telemetry<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        telemetry_dict(py, self.state().telemetry)
     }
 
     /// The current logical clock. Pass it to `since()` later to get what changed.
@@ -487,17 +508,24 @@ impl PyIndex {
         let mut complete = report.scan.is_complete();
         let mut errors: Vec<ErrorDetail> =
             report.scan.errors.iter().map(ErrorDetail::from_engine).collect();
+        let mut analyzed = None;
         if self.analysis.profile.is_enabled() {
             let analysis = py.detach(|| self.inner.analyze(self.analysis)).map_err(to_py_err)?;
             let analysis_complete = analysis.is_complete();
             append_analysis_error(&mut errors, analysis);
             complete &= analysis_complete;
+            analyzed = Some(analysis);
         }
         {
             let mut state = self.state();
             state.errors = errors;
             state.operation_complete = complete;
             state.source = ReportSource::WarmRevalidate;
+            state.telemetry = PerformanceSummary::from_reconcile(
+                &report.scan,
+                analyzed,
+                ReportSource::WarmRevalidate,
+            );
         }
         let stats = report.apply;
 
@@ -728,6 +756,23 @@ fn provenance_dict(
     value.set_item("source", value_source_label(provenance.source))?;
     value.set_item("observed_at_ns", provenance.observed_at_ns)?;
     value.set_item("status", coverage_label_value(provenance.status))?;
+    Ok(value)
+}
+
+/// Render one run's telemetry, field for field with the command line's footer.
+///
+/// Nanoseconds rather than seconds because the caller is measuring: a float of seconds
+/// is the shape that loses the short intervals an interactive loop is made of.
+fn telemetry_dict(py: Python<'_>, telemetry: PerformanceSummary) -> PyResult<Bound<'_, PyDict>> {
+    let value = PyDict::new(py);
+    value.set_item("walked_files", telemetry.walked_files)?;
+    value.set_item("walked_bytes", telemetry.walked_bytes)?;
+    value.set_item("fresh_files", telemetry.fresh_files)?;
+    value.set_item("bytes_read", telemetry.bytes_read)?;
+    value.set_item("analysis_ns", telemetry.analysis_ns)?;
+    value.set_item("cached_files", telemetry.cached_files)?;
+    value.set_item("cached_bytes", telemetry.cached_bytes)?;
+    value.set_item("source", source_label(telemetry.source))?;
     Ok(value)
 }
 
@@ -1606,7 +1651,13 @@ fn open(
         inner: IndexHandle::new(index),
         config: config.scan,
         analysis,
-        state: Mutex::new(RunState { errors, operation_complete, scan_started_at, source }),
+        state: Mutex::new(RunState {
+            errors,
+            operation_complete,
+            scan_started_at,
+            source,
+            telemetry: PerformanceSummary::from_open_report(&report),
+        }),
     })
 }
 
@@ -1657,6 +1708,7 @@ fn scan(
         errors.push(ErrorDetail::analysis(message));
     }
     // A bare scan never consults the cache, so it is always cold.
+    let telemetry = PerformanceSummary::from_open_report(&report);
     Ok(PyIndex {
         inner: IndexHandle::new(index),
         config: config.scan,
@@ -1666,6 +1718,7 @@ fn scan(
             operation_complete,
             scan_started_at,
             source: ReportSource::ColdScan,
+            telemetry,
         }),
     })
 }
@@ -1747,6 +1800,7 @@ mod tests {
                 operation_complete: true,
                 scan_started_at: None,
                 source: ReportSource::ColdScan,
+                telemetry: PerformanceSummary::default(),
             }),
         }
     }

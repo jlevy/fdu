@@ -29,11 +29,13 @@ from ._models import (
     RollUp,
     ScanOptions,
     Status,
+    WalkTelemetry,
     WatchOptions,
     provenance_from_dict,
     report_from_dict,
     rollup_from_dict,
     status_from_dict,
+    walk_telemetry_from_dict,
 )
 
 #: Named so the arithmetic in `_epoch_nanos` reads as units rather than as digits.
@@ -233,6 +235,17 @@ class Index:
     @property
     def status(self) -> Status:
         return status_from_dict(_call(self._native.status))
+
+    @property
+    def telemetry(self) -> WalkTelemetry:
+        """What the most recent scan or refresh actually did.
+
+        Beside the report rather than inside it, so a machine-readable answer stays a
+        fact about the tree and does not vary with how it happened to be produced.
+        Read it right after the call whose cost you mean: a later refresh replaces it.
+        """
+
+        return walk_telemetry_from_dict(self._native.telemetry)
 
     def __len__(self) -> int:
         return len(self._native)

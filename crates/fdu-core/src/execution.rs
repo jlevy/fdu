@@ -91,7 +91,14 @@ impl Default for PerformanceSummary {
 }
 
 impl PerformanceSummary {
-    fn from_open_report(report: &crate::OpenReport) -> Self {
+    /// Telemetry for an [`crate::open`] call, from the report that call already returns.
+    ///
+    /// Public because embedders run measured loops of their own and need the same
+    /// evidence the command line's footer prints. Deriving it here rather than in each
+    /// surface is what keeps the two from drifting: a binding that recomputed
+    /// `cached_files` from a different field would report a different number for the
+    /// same run, and no test compares the two.
+    pub fn from_open_report(report: &crate::OpenReport) -> Self {
         let analysis = report.analysis.unwrap_or_default();
         Self {
             walked_files: report.scan.files_walked,
@@ -106,6 +113,31 @@ impl PerformanceSummary {
                 OpenPath::WarmRevalidate => ReportSource::WarmRevalidate,
                 OpenPath::CacheOnly => ReportSource::CacheOnly,
             },
+        }
+    }
+
+    /// Telemetry for reconciling an index that is already open.
+    ///
+    /// A refresh has no snapshot to load, so the restored-record fields are zero rather
+    /// than carried over: they describe work this run did, and reporting the opening
+    /// run's cache hits again would double-count them across a loop that refreshes on
+    /// every change. `source` is the caller's, because only the caller knows whether the
+    /// reconciliation revalidated a warm index or rebuilt a cold one.
+    pub fn from_reconcile(
+        scan: &crate::scan::ScanReport,
+        analysis: Option<crate::content::AnalysisReport>,
+        source: ReportSource,
+    ) -> Self {
+        let analysis = analysis.unwrap_or_default();
+        Self {
+            walked_files: scan.files_walked,
+            walked_bytes: scan.bytes_walked,
+            fresh_files: analysis.candidates,
+            bytes_read: analysis.bytes_read,
+            analysis_ns: analysis.elapsed_ns,
+            cached_files: 0,
+            cached_bytes: 0,
+            source,
         }
     }
 }
@@ -467,6 +499,35 @@ mod tests {
             open_report.path_taken,
             OpenPath::WarmRevalidate,
             "a caller holding the index still amortises the load"
+        );
+    }
+
+    #[test]
+    fn reconcile_telemetry_reports_only_what_this_run_did() {
+        // The restored-record fields describe a snapshot load, and a refresh has none.
+        // Carrying the opening run's hits forward would double-count them on every
+        // refresh of a long-lived index, which is precisely the loop an embedder runs.
+        let root = tempfile::tempdir().expect("tempdir");
+        fs::write(root.path().join("file.txt"), b"contents").expect("file");
+        let auto = config(CachePolicy::Auto, None);
+        let (index, open_report) = crate::open(root.path(), &auto).expect("open");
+        drop(index);
+
+        let opened = PerformanceSummary::from_open_report(&open_report);
+        assert_eq!(opened.walked_files, 1);
+
+        let reconciled = PerformanceSummary::from_reconcile(
+            &open_report.scan,
+            None,
+            ReportSource::WarmRevalidate,
+        );
+        assert_eq!(reconciled.walked_files, opened.walked_files, "the walk is the same walk");
+        assert_eq!(reconciled.cached_files, 0, "a refresh restores nothing");
+        assert_eq!(reconciled.cached_bytes, 0);
+        assert_eq!(
+            reconciled.source,
+            ReportSource::WarmRevalidate,
+            "the caller's tier, not a guess"
         );
     }
 

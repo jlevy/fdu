@@ -571,6 +571,51 @@ class Report:
 
 
 @dataclass(frozen=True, slots=True)
+class WalkTelemetry:
+    """What one scan or refresh actually did, beside the report rather than inside it.
+
+    Telemetry about a run, not a fact about the tree: two runs that answer identically
+    can do very different amounts of work, and that difference is what an embedder
+    running its own measured loop needs to see. These are the numbers ``fdu`` prints as
+    its footer.
+
+    Fields describe the most recent operation alone. They are not running totals, so a
+    loop that refreshes on every change reads each refresh's own cost rather than a sum
+    that grows without bound.
+    """
+
+    walked_files: int
+    """Regular files whose metadata was observed."""
+
+    walked_bytes: int
+    """Apparent bytes represented by those walked files."""
+
+    fresh_files: int
+    """Content-analysis candidates processed from the filesystem."""
+
+    bytes_read: int
+    """Bytes actually returned by those fresh reads."""
+
+    analysis_ns: int
+    """Wall time spent on fresh analysis candidates."""
+
+    cached_files: int
+    """Content-analysis records restored from the sidecar instead of re-read."""
+
+    cached_bytes: int
+    """Apparent bytes represented by those restored records."""
+
+    source: ReportSource
+    """Which metadata cache tier produced the index."""
+
+    @property
+    def analysis_seconds(self) -> float:
+        """`analysis_ns` as seconds, for reporting rather than for arithmetic."""
+
+        return self.analysis_ns / 1e9
+
+
+@dataclass(frozen=True, slots=True)
 class RefreshResult:
     inserted: int
     updated: int
@@ -674,6 +719,19 @@ def status_from_dict(value: dict[str, Any]) -> Status:
         freshness=Freshness(str(value["freshness"])),
         source=ReportSource(str(value["source"])),
         errors=tuple(_operation_error(item) for item in value.get("errors", [])),
+    )
+
+
+def walk_telemetry_from_dict(value: dict[str, Any]) -> WalkTelemetry:
+    return WalkTelemetry(
+        walked_files=int(value["walked_files"]),
+        walked_bytes=int(value["walked_bytes"]),
+        fresh_files=int(value["fresh_files"]),
+        bytes_read=int(value["bytes_read"]),
+        analysis_ns=int(value["analysis_ns"]),
+        cached_files=int(value["cached_files"]),
+        cached_bytes=int(value["cached_bytes"]),
+        source=ReportSource(str(value["source"])),
     )
 
 
