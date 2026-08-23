@@ -95,8 +95,14 @@ jobs:
         run: npm run test:golden
       - name: Build the repository-only performance probe
         run: cargo build --locked -p fdu-core --example perf_probe --no-default-features
+      # `env:` rather than a `PYTHONPATH=... cmd` prefix: this job also runs on the
+      # Windows runner, whose shell is PowerShell, where that POSIX prefix form is a
+      # parse error rather than an assignment. The harness package is still
+      # `benchmarks`; `explorations/` is the directory holding it.
       - name: Prove the performance harness and every fdu probe job
-        run: PYTHONPATH=explorations python -m unittest discover -s explorations/benchmarks/tests -p 'test_*.py'
+        env:
+          PYTHONPATH: explorations
+        run: python -m unittest discover -s explorations/benchmarks/tests -p 'test_*.py'
 
   test-lib-only:
     name: Test library feature boundaries
