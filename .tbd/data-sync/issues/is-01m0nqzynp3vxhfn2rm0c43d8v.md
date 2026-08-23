@@ -5,13 +5,13 @@ title: "Phase 2: the same parity shim over the public Rust library API"
 kind: feature
 status: closed
 priority: 2
-version: 2
-spec_path: docs/project/specs/active/plan-2026-08-21-fdu-python-cli-parity.md
+version: 3
+spec_path: docs/project/specs/done/plan-2026-08-21-fdu-python-cli-parity.md
 labels: []
 dependencies: []
 parent_id: is-01m0k965p7hx4dy6t0cj29rsae
 created_at: 2026-08-22T22:03:22.676Z
-updated_at: 2026-08-22T22:21:29.836Z
+updated_at: 2026-08-23T00:05:56.691Z
 ---
 Phase 2 of docs/project/specs/active/plan-2026-08-21-fdu-python-cli-parity.md, which until now existed only as a spec checkbox and so was invisible to tbd ready.
 

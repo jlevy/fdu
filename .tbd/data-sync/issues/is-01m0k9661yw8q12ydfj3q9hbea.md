@@ -3,14 +3,14 @@ type: is
 id: is-01m0k9661yw8q12ydfj3q9hbea
 title: "tryscript: an unset path variable puts the working directory on PATH"
 kind: bug
-status: open
+status: closed
 priority: 1
-version: 3
+version: 4
 spec_path: docs/project/specs/active/plan-2026-08-21-fdu-python-cli-parity.md
 labels: []
 dependencies: []
 created_at: 2026-08-21T23:06:09.341Z
-updated_at: 2026-08-22T07:50:10.091Z
+updated_at: 2026-08-23T00:05:43.691Z
 ---
 An unset `path:` variable expands to an empty string and is passed through as an empty
 PATH entry, which POSIX resolves as the current directory.
@@ -24,6 +24,6 @@ PATH. Blocks the parity switch, but worth fixing on its own.
 
 ## Notes
 
-Still valid as a tryscript robustness issue: an empty path: entry expands to an empty PATH element, which POSIX reads as the current directory.
+Recorded upstream as jlevy/tryscript#55 rather than implemented here; it is a tryscript behaviour and fdu's corpus no longer carries a path: entry that can be empty.
 
-No longer on fdu's critical path. After jlevy/tryscript#51 the corpus carries no path: entries at all -- each golden names its binary through env: instead. See fdu-9h2w for the prepend behaviour that actually broke things here, and fdu-z7sp for the cleanup.
+Still a real robustness issue for tryscript generally: an unset variable expands to an empty PATH element, which POSIX reads as the current directory, so a test naming a directory it cannot resolve searches the sandbox instead of failing cleanly.

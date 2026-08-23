@@ -5,13 +5,13 @@ title: Python API cannot render text; expose Report.render over the existing ren
 kind: task
 status: closed
 priority: 1
-version: 3
-spec_path: docs/project/specs/active/plan-2026-08-21-fdu-python-cli-parity.md
+version: 4
+spec_path: docs/project/specs/done/plan-2026-08-21-fdu-python-cli-parity.md
 labels: []
 dependencies: []
 parent_id: is-01m0k965p7hx4dy6t0cj29rsae
 created_at: 2026-08-22T00:22:19.296Z
-updated_at: 2026-08-22T06:13:23.588Z
+updated_at: 2026-08-23T00:05:56.691Z
 closed_at: 2026-08-22T06:13:23.587Z
 close_reason: "Report.render landed in PR #40. Index.report binds a renderer onto the frozen Report; a detached Report refuses to render rather than diverging from the CLI. Format added to contract() so the StrEnum parity assertion covers it. Verified across 3 views x 4 formats against the built wheel and the sdist."
 ---

@@ -5,13 +5,13 @@ title: Parity by committed deviation file, non-empty by construction
 kind: task
 status: closed
 priority: 1
-version: 2
-spec_path: docs/project/specs/active/plan-2026-08-21-fdu-python-cli-parity.md
+version: 3
+spec_path: docs/project/specs/done/plan-2026-08-21-fdu-python-cli-parity.md
 labels: []
 dependencies: []
 parent_id: is-01m0k965p7hx4dy6t0cj29rsae
 created_at: 2026-08-21T23:37:34.725Z
-updated_at: 2026-08-22T06:53:20.280Z
+updated_at: 2026-08-23T00:05:56.691Z
 closed_at: 2026-08-22T06:53:20.279Z
 close_reason: "tests/parity/deviations-python.diff is committed, headed with how to read it, and non-empty by construction. Verified reproducible across runs after normalising sandbox paths, cache hashes, RFC3339 stamps and mtime_ns. Verified to catch the dangerous case: a shim secretly exec'ing the Rust binary fails the run."
 ---
