@@ -3,9 +3,9 @@ type: is
 id: is-01m0tdy6k1kfkywsy4f8kga870
 title: Warm snapshots rebuild derived state under the wrong registry
 kind: bug
-status: open
+status: closed
 priority: 0
-version: 4
+version: 5
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-implementation.md
 labels:
   - pr47-review
@@ -17,7 +17,57 @@ dependencies:
     target: is-01m0tra5gw0ap6nbbzgt7egvr4
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T17:43:51.648Z
-updated_at: 2026-08-24T20:45:43.135Z
+updated_at: 2026-08-24T21:12:02.652Z
+closed_at: 2026-08-24T21:12:02.651Z
+close_reason: |
+  Shipped. `make check` green.
+
+  THE DEFECT, as verified rather than as reported. `snapshot::load` built an index with
+  `Index::new_with_scope` -- compiled registry, empty tag rules -- materialized every entry
+  through `insert_loaded_child`, deriving `ext_id` and `group_id` under the COMPILED
+  registry, and only then did `open_for_report` swap the pointers. So the scope fingerprint
+  said "the caller's rules" while the derived state was built from whatever the default
+  happened to be. A warm answer and a cold answer disagreed about the same tree, and only
+  under a custom registry -- invisible to every test that used the default.
+
+  Two things the review did not name, found by reading the same path:
+  - The root/scope guard ran AFTER full materialization. A snapshot belonging to another
+    tree was parsed, allocated, and dropped: the most expensive possible way to say no,
+    when the header carries everything needed to say it.
+  - `retag`'s traversal joined a `PathBuf` per entry even when every rule was Name-tier.
+
+  THE FIX. `snapshot::load_for(path, &LoadRequest { root, scope, types, tags })`. The
+  request is both halves at once, which is the point -- the guard and the rules it names
+  travel together instead of one being checked and the other applied later. Order is now:
+  parse header -> refuse a foreign root or scope (`ParseError::Mismatch`, distinct from
+  `Invalid` because an intact snapshot about another question is not corruption) ->
+  `install_semantics` on the empty index -> materialize, deriving each entry once and
+  correctly. `retag` has no load-path caller left; it is the rebind path only, and its doc
+  says so.
+
+  Path-tier tags at load cost one join per entry rather than an ancestor walk: the loader
+  carries a `Vec<PathBuf>` parallel to its slot table, each a single join off the parent it
+  already holds, files getting the non-allocating empty path. When no rule reads a path the
+  table is never built at all -- `TagRules::needs_path()` is the question, and false is the
+  common case.
+
+  TESTS.
+  - `a_warm_load_derives_under_the_callers_registry_not_the_compiled_one`: cold scan and
+    warm load must agree on `by_group` and `by_ext` under a registry that classifies `rs`
+    as prose in a group called `scribbles`, which no default would. Mutation-checked:
+    installing `TypeRegistry::compiled()` instead of the caller's fails it on the extension
+    tallies, so it tests the derivation rather than agreeing with whatever ran.
+  - `a_snapshot_for_another_root_or_scope_is_refused_without_materializing_it`: a control
+    that loads, then a different root and a different scope that do not.
+  - `a_warm_load_builds_no_paths_for_name_tier_rules`: new `loader_paths_built` counter,
+    asserted zero. The counter is the claim -- the load path's whole advantage is that it
+    never resolves a path, and a comment saying so is not checkable.
+
+  FOLLOW-ON. `fdu-0778` (gitignore bind-walk) shares this ordering and is next: binding
+  Path-tier matchers from the loaded index's own control-file entries, rather than from a
+  tree walk, is what makes `--cache only` stop touching the tree.
+resolution: null
+duplicate_of: null
 ---
 At PR 47 head e658915, snapshot::load materializes entries before the caller registry is attached. insert_loaded_child therefore recomputes canonical extension and group state with TypeRegistry::compiled, while with_types only swaps the registry pointer after derived rollups already exist. An unchanged warm reconciliation never rebuilds them, so a custom registry can return default-registry extension or group totals indefinitely. The same late-attachment path calls retag, whose traversal joins one PathBuf per entry even for Name-tier rules, reversing the loader optimization called out in the PR. Fix: make snapshot materialization accept the validated active TypeRegistry and TagRules after checking header fingerprints, install them before inserting entries, and derive every entry and rollup exactly once. Tests: cold, warm, and cache-only opens under a deliberately different compound-extension and group registry must agree; a Name-tier tag warm load must not reconstruct paths per entry. Review finding FDU47-R1.
 
