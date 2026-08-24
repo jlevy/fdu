@@ -3,9 +3,9 @@ type: is
 id: is-01m0tdy9ceep2byvbtyvwc2vky
 title: Release the GIL and measure the full Python read boundary
 kind: task
-status: closed
+status: open
 priority: 1
-version: 5
+version: 6
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 labels:
   - pr47-review
@@ -16,42 +16,9 @@ dependencies:
     target: is-01m0prhqd27m471dn47yt973k0
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T17:43:54.508Z
-updated_at: 2026-08-24T23:30:06.619Z
-closed_at: 2026-08-24T23:30:06.619Z
-close_reason: |
-  Shipped. `make check` green.
-
-  THE GIL. `py.detach` already wrapped refresh, analyze, watch `next_batch`, `prepare_report`
-  and both opens -- but not `PyIndex.read`, which `fdu-samw` had just made the heaviest of
-  them. A filtered report re-aggregates the entire index, so holding the GIL across it froze
-  every other Python thread for a full traversal, and an asyncio consumer moving the call to
-  a worker thread would still have frozen its event loop. Now detached, with the GIL
-  reacquired only for conversion.
-
-  THE BINDING'S COST. `binding_bytes` counts what the result materializes into Python
-  objects; `conversion_ns` times the reacquired half separately from `wall_ns`, since the
-  native read now runs without the GIL and the conversion does not. `name_bytes` is what the
-  engine *read* and `binding_bytes` is what a caller *pays* to receive -- the difference is
-  exactly the conversion, which is why an engine-side counter cannot supply it.
-
-  CPU: ABSENT, NOT INFERRED. `cpu_ns` is `None`. Wall minus lock wait is not CPU time on a
-  preemptive system, and putting an inferred number in the one field an embedder uses to
-  compare engines is worse than leaving it empty. `Work`'s docstring had previously argued
-  CPU was deliberately absent *because* wall minus lock wait covered it; that reasoning is
-  replaced rather than kept. MetaBrowser's contract currently makes CPU a mandatory
-  nonnegative count -- the comment on their PR #74 (MB74-C2) asks for optional-or-sentinel
-  so an honest provider is expressible; the adapter maps `None` to whatever they settle on.
-
-  TESTS, and an honest scoping note. The Rust test blocks *inside* the detach, so a second
-  thread must reach `Python::attach` and send while the read runs -- a path needing the
-  interpreter hangs rather than finishing late. It exercises the handle read rather than the
-  pymethod, so it pins the *precondition* (the whole read path is `Send` and touches no
-  Python) rather than the pymethod's detach itself; the name and doc say so instead of
-  overclaiming. The first draft counted attaches after the reads finished, which would have
-  passed with the GIL held -- worth recording, because that is the shape of a vacuous
-  concurrency test. The Python side runs four threads through the real `Index.read` with a
-  filtered query and asserts they all finish, plus that `binding_bytes` is non-zero and
-  `cpu_ns` is `None`.
+updated_at: 2026-08-24T23:45:59.098Z
+closed_at: null
+close_reason: null
 resolution: null
 duplicate_of: null
 ---
@@ -81,3 +48,5 @@ holds a long report (the R6 test); binding_bytes nonzero for a row-bearing read 
 zero for the empty checkpoint; conversion cost visible in the provider harness.
 
 METABROWSER DECISION LANDED at 68eeaac (2026-08-24). The consumer contract now represents CPU as exact-or-absent: WorkCounters.cpu_time_ns is optional, aggregation is absent if any component is unavailable, and debug JSON emits null rather than zero. Implement the already-settled fdu design directly: exact opt-in native CPU measurement or absence, never wall minus lock wait. No adapter sentinel or compatibility shim is needed.
+
+Reopened: Reopened at exact PR 47 head 56dcf56 after review. The GIL detach is correct, but the full-boundary acceptance is not met: conversion_ns is stamped at crates/fdu-py/src/lib.rs:919 before projection dictionaries at lines 925-930, and it cannot include the public Bundle/model conversion in python/fdu/_api.py:384-409. wall_ns therefore remains native-only despite the public Work and Bundle wording that describes total call cost. materialized_bytes at lib.rs:326-346 is an undocumented estimate and a second O(output) traversal; it omits envelope, issue, tag, classification, provenance, and other dynamic fields, so it cannot be mapped honestly to MetaBrowser bytes_copied. The public smoke test at public_smoke.py:529-551 only proves four calls eventually finish and would pass if they serialized while the GIL stayed held. Fix by defining one exact full public-call wall counter plus explicit native/conversion components, count a documented logical binding payload during conversion without a second traversal, and add a forced-interleaving test through actual Index.read that fails when the GIL is retained. CPU None is correct.
