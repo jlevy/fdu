@@ -5,13 +5,15 @@ title: The bundled read carries only three projections, not the query algebra
 kind: feature
 status: open
 priority: 1
-version: 2
+version: 3
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 labels: []
-dependencies: []
+dependencies:
+  - type: blocks
+    target: is-01m0tdy9ceep2byvbtyvwc2vky
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T03:15:04.465Z
-updated_at: 2026-08-24T03:15:43.134Z
+updated_at: 2026-08-24T17:44:15.828Z
 ---
 The contract's point 2 is that "every result carries the exact version, resume cursor,
 lifecycle and coverage facts, and work counters that describe THE SAME observation
