@@ -74,6 +74,15 @@ pub struct Counts {
     /// is the distinction [`crate::scan`] fails closed on, and it must not read as a
     /// decision to hold.
     pub adaptive_policy_undecided: u64,
+    /// Relative paths the snapshot loader constructed while materializing entries.
+    ///
+    /// The loader holds a parent id and a basename per record, which is the whole reason
+    /// it is faster than the observation path, and building a path per entry gives that
+    /// advantage straight back. This counter is what makes the claim checkable rather
+    /// than asserted: a load under Name-tier rules must leave it at zero, and a load
+    /// under a Path-tier rule must charge exactly one per entry rather than an ancestor
+    /// chain's worth.
+    pub loader_paths_built: u64,
 }
 
 impl Counts {
@@ -98,6 +107,7 @@ impl Counts {
         adaptive_calibration_work_us: 0,
         adaptive_scale_ups: 0,
         adaptive_policy_undecided: 0,
+        loader_paths_built: 0,
     };
 
     /// Every counter as `(group, label, value)`, in report order.
@@ -128,6 +138,7 @@ impl Counts {
             ),
             ("adaptive scan policy", "reserve expansions", self.adaptive_scale_ups),
             ("adaptive scan policy", "walks left undecided", self.adaptive_policy_undecided),
+            ("snapshot load", "relative paths built", self.loader_paths_built),
         ]
     }
 
@@ -179,6 +190,7 @@ impl Counts {
             ("adaptive_calibration_work_us", self.adaptive_calibration_work_us),
             ("adaptive_scale_ups", self.adaptive_scale_ups),
             ("adaptive_policy_undecided", self.adaptive_policy_undecided),
+            ("loader_paths_built", self.loader_paths_built),
         ]
     }
 
@@ -214,6 +226,7 @@ impl Counts {
         self.adaptive_scale_ups = self.adaptive_scale_ups.saturating_add(other.adaptive_scale_ups);
         self.adaptive_policy_undecided =
             self.adaptive_policy_undecided.saturating_add(other.adaptive_policy_undecided);
+        self.loader_paths_built = self.loader_paths_built.saturating_add(other.loader_paths_built);
     }
 
     /// Per-event ratios against a denominator, in report order.
@@ -247,6 +260,7 @@ struct GlobalCounts {
     adaptive_calibration_work_us: AtomicU64,
     adaptive_scale_ups: AtomicU64,
     adaptive_policy_undecided: AtomicU64,
+    loader_paths_built: AtomicU64,
 }
 
 impl GlobalCounts {
@@ -272,6 +286,7 @@ impl GlobalCounts {
             adaptive_calibration_work_us: AtomicU64::new(0),
             adaptive_scale_ups: AtomicU64::new(0),
             adaptive_policy_undecided: AtomicU64::new(0),
+            loader_paths_built: AtomicU64::new(0),
         }
     }
 
@@ -305,6 +320,7 @@ impl GlobalCounts {
         );
         atomic_saturating_add(&self.adaptive_scale_ups, counts.adaptive_scale_ups);
         atomic_saturating_add(&self.adaptive_policy_undecided, counts.adaptive_policy_undecided);
+        atomic_saturating_add(&self.loader_paths_built, counts.loader_paths_built);
     }
 
     fn snapshot(&self) -> Counts {
@@ -329,6 +345,7 @@ impl GlobalCounts {
             adaptive_calibration_work_us: self.adaptive_calibration_work_us.load(Ordering::Relaxed),
             adaptive_scale_ups: self.adaptive_scale_ups.load(Ordering::Relaxed),
             adaptive_policy_undecided: self.adaptive_policy_undecided.load(Ordering::Relaxed),
+            loader_paths_built: self.loader_paths_built.load(Ordering::Relaxed),
         }
     }
 

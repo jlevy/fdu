@@ -258,10 +258,43 @@ pub fn save_handle(index: &IndexHandle, path: &Path) -> Result<()> {
 /// engine-fingerprint mismatch, and a truncated or corrupt file. Every one of those
 /// means the same thing to a caller: there is no warm cache, so scan.
 pub fn load(path: &Path) -> Result<Option<Index>> {
-    load_with_size_limit(path, MAX_SNAPSHOT_BYTES)
+    load_with_size_limit(path, MAX_SNAPSHOT_BYTES, None)
 }
 
-fn load_with_size_limit(path: &Path, max_snapshot_bytes: u64) -> Result<Option<Index>> {
+/// What a caller requires of a snapshot, and the configuration to rebuild it under.
+///
+/// Both halves matter, and separating them was the bug. The root and scope are the
+/// *guard*: a snapshot describing another tree, or one captured under different semantic
+/// rules, is not this caller's answer. The registry and tag rules are the
+/// *implementation* of the rules that guard identifies -- what canonical extensions,
+/// groups and tag bits are actually derived from. A matching fingerprint proves the
+/// caller's rules and the snapshot's agree; it does not classify anything by itself.
+pub struct LoadRequest<'a> {
+    /// The tree the caller means, as an absolute path.
+    pub root: &'a Path,
+    /// The semantic scope the caller is asking under.
+    pub scope: ScanScope,
+    /// The type rules to derive canonical extensions and groups with.
+    pub types: std::sync::Arc<crate::classify::TypeRegistry>,
+    /// The tag rules to evaluate as each entry materializes.
+    pub tags: std::sync::Arc<crate::tags::TagRules>,
+}
+
+/// Load a snapshot that answers `request`, building it under the request's own rules.
+///
+/// Returns `None` for a snapshot that is absent, unreadable, or describes a different
+/// root or scope -- the last checked from the header, before a single entry is
+/// materialized. Loading a whole tree only to discard it was work the format could
+/// already have refused.
+pub fn load_for(path: &Path, request: &LoadRequest<'_>) -> Result<Option<Index>> {
+    load_with_size_limit(path, MAX_SNAPSHOT_BYTES, Some(request))
+}
+
+fn load_with_size_limit(
+    path: &Path,
+    max_snapshot_bytes: u64,
+    expect: Option<&LoadRequest<'_>>,
+) -> Result<Option<Index>> {
     let mut file = match fs::File::open(path) {
         Ok(file) => file,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -316,14 +349,17 @@ fn load_with_size_limit(path: &Path, max_snapshot_bytes: u64) -> Result<Option<I
         .and_then(|since| i64::try_from(since.as_nanos()).ok())
         .unwrap_or(0);
     let mut reader = Crc32cReader::new(BufReader::new(file.take(payload_len)));
-    let outcome = parse_stream(&mut reader, payload_len, captured_at_ns);
+    let outcome = parse_stream(&mut reader, payload_len, captured_at_ns, expect);
     match outcome {
         Ok(index) => {
             // A successful parse consumed every payload byte (the trailing-byte check
             // proves it), so the running digest covers the whole image.
             if reader.finish() == expected_checksum { Ok(Some(index)) } else { Ok(None) }
         }
-        Err(ParseError::Invalid) => Ok(None),
+        // A mismatch is not corruption, and both are absence: this file is intact and
+        // describes some other question. Treating them alike at the boundary is what lets
+        // a caller write `if let Some(index)` and not care which happened.
+        Err(ParseError::Invalid | ParseError::Mismatch) => Ok(None),
         Err(ParseError::Io(source)) => Err(Error::io(path, source)),
     }
 }
@@ -493,6 +529,7 @@ fn parse_stream(
     reader: &mut impl Read,
     payload_len: u64,
     captured_at_ns: i64,
+    expect: Option<&LoadRequest<'_>>,
 ) -> ParseResult<Index> {
     if read_array::<_, 8>(reader)? != *MAGIC {
         return Err(ParseError::Invalid);
@@ -516,7 +553,37 @@ fn parse_stream(
         return Err(ParseError::Invalid);
     }
 
+    // Refuse before materializing, not after. The caller's guard used to run on the
+    // finished index, so a snapshot belonging to another tree was fully parsed, fully
+    // allocated, and then dropped -- the most expensive possible way to say "not this
+    // one". Everything needed to answer is in the header just read.
+    if let Some(expect) = expect
+        && (root_path != expect.root || scope != expect.scope)
+    {
+        return Err(ParseError::Mismatch);
+    }
+
     let mut index = Index::new_with_scope(&root_path, scope);
+    // Install the caller's semantics before the first entry exists, so every canonical
+    // extension, group and tag bit below is derived under the rules the scope claims.
+    // Swapping the pointers afterwards left the derived state built by whatever the
+    // default happened to be, while the fingerprint said otherwise -- a warm answer that
+    // disagreed with a cold one about the same tree.
+    let needs_paths = if let Some(expect) = expect {
+        let needs_paths = expect.tags.needs_path();
+        index.install_semantics(expect.types.clone(), expect.tags.clone());
+        needs_paths
+    } else {
+        false
+    };
+    // One `PathBuf` per slot, and only when some enabled rule reads one. Each is a single
+    // join off the parent's, which the loader already holds -- the ancestor walk per
+    // record that this function's whole shape exists to avoid. Files get the empty
+    // `PathBuf`, which does not allocate.
+    let mut paths: Vec<PathBuf> = Vec::new();
+    if needs_paths {
+        paths.reserve(usize::try_from(count).unwrap_or(0));
+    }
     // Everything this loader inserts describes the tree as the snapshot found it, not
     // as this process has seen it. Stamping the entries `Cached` is what lets a
     // consumer paint them immediately and label them honestly; without it a loaded
@@ -551,6 +618,9 @@ fn parse_stream(
                 }]))
                 .map_err(|_| ParseError::Invalid)?;
             ids.push(EntryId::ROOT);
+            if needs_paths {
+                paths.push(PathBuf::new());
+            }
             continue;
         }
 
@@ -565,8 +635,26 @@ fn parse_stream(
         // children to rediscover the id just created, were both work the format had
         // already answered. A snapshot naming the same path twice, or parenting an entry
         // to a non-directory, is corrupt, and `insert_loaded_child` fails closed on both.
-        let id = index.insert_loaded_child(parent, name, kind, attrs).ok_or(ParseError::Invalid)?;
+        let relative_path = needs_paths.then(|| {
+            crate::counters::bump(|c| c.loader_paths_built += 1);
+            let parent_path = paths
+                .get(usize::try_from(parent_slot).unwrap_or(usize::MAX))
+                .map_or(Path::new(""), PathBuf::as_path);
+            parent_path.join(&name)
+        });
+        let id = index
+            .insert_loaded_child(parent, name, kind, attrs, relative_path.as_deref())
+            .ok_or(ParseError::Invalid)?;
         ids.push(id);
+        if needs_paths {
+            // Only a directory is ever asked for its path again, so a file's slot holds
+            // the empty one rather than a copy nothing reads.
+            paths.push(if kind.is_dir() {
+                relative_path.unwrap_or_default()
+            } else {
+                PathBuf::new()
+            });
+        }
     }
 
     let mut extra = [0u8; 1];
@@ -585,6 +673,12 @@ fn parse_stream(
 #[derive(Debug)]
 enum ParseError {
     Invalid,
+    /// Intact, well-formed, and about a different root or scope.
+    ///
+    /// Distinct from `Invalid` so the code says which happened even though the boundary
+    /// answers `None` to both: calling a perfectly good snapshot corrupt because it
+    /// belongs to another tree would mislead the next reader of this file.
+    Mismatch,
     Io(std::io::Error),
 }
 
@@ -1147,6 +1241,139 @@ mod tests {
         assert!(restored.since(crate::Clock::ZERO).deltas.is_empty());
     }
 
+    /// A warm answer and a cold answer must agree about the same tree, under whatever
+    /// taxonomy the caller supplied.
+    ///
+    /// This is the defect the two-phase load exists to prevent, and it is invisible to
+    /// every test that uses the compiled registry: the loader built canonical extensions
+    /// and groups with `TypeRegistry::compiled()` and the caller's registry was swapped in
+    /// afterwards, so the scope fingerprint said "custom rules" while the derived state
+    /// said "the default". The fixture therefore uses a registry that classifies `rs` as
+    /// prose, which no default ever would -- if the load path regresses, the warm answer
+    /// silently reverts to `rust` and this fails.
+    #[test]
+    fn a_warm_load_derives_under_the_callers_registry_not_the_compiled_one() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let tree = dir.path().join("tree");
+        let snapshot_path = dir.path().join("cache").join("snap.fdu");
+        for relative in ["main.rs", "src/lib.rs", "notes.md"] {
+            let path = tree.join(relative);
+            fs::create_dir_all(path.parent().expect("parent")).expect("create dirs");
+            fs::write(&path, b"x").expect("write");
+        }
+
+        let registry = std::sync::Arc::new(
+            crate::classify::TypeRegistry::from_manifest(
+                "[[group]]\nid = \"scribbles\"\nlabel = \"Scribbles\"\norder = 1\n\
+                 [[kind]]\nid = \"notes\"\nfamily = \"prose\"\ngroup = \"scribbles\"\n\
+                 extensions = [\"rs\"]\n",
+            )
+            .expect("a minimal manifest"),
+        );
+        let config = crate::ScanConfig { types: Some(registry.clone()), ..Default::default() };
+
+        let (cold, report) = crate::scan::scan_into_index(&tree, &config).expect("scan");
+        assert!(report.is_complete());
+        save(&cold, &snapshot_path).expect("save");
+
+        let warm = load_for(
+            &snapshot_path,
+            &LoadRequest {
+                root: cold.root_path(),
+                scope: config.scope(),
+                types: registry.clone(),
+                tags: config.tags(),
+            },
+        )
+        .expect("load")
+        .expect("the snapshot answers this scope");
+
+        // The group totals are the derived state the loader gets wrong when it classifies
+        // under the wrong registry, and they are what a consumer actually reads.
+        let cold_groups = cold.rollup_of(EntryId::ROOT).expect("cold root").by_group;
+        let warm_groups = warm.rollup_of(EntryId::ROOT).expect("warm root").by_group;
+        assert_eq!(warm_groups, cold_groups, "warm and cold must agree on group totals");
+        assert!(
+            cold_groups.keys().any(|group| group == "scribbles"),
+            "the fixture registry must actually be in play: {cold_groups:?}"
+        );
+
+        // And the same for the extension buckets, which key off the canonical extension.
+        assert_eq!(
+            warm.rollup_of(EntryId::ROOT).expect("warm root").by_ext,
+            cold.rollup_of(EntryId::ROOT).expect("cold root").by_ext,
+        );
+    }
+
+    /// A Name-tier warm load builds no paths, and a Path-tier one builds exactly one each.
+    ///
+    /// The load path's whole advantage over the observation path is that it holds a parent
+    /// id and a basename per record and never resolves a path. Tagging threatened that
+    /// twice: first by evaluating rules against a path joined from an ancestor walk, then
+    /// by re-traversing the finished index to tag it. Both are gone, and this is what says
+    /// so in numbers rather than in a comment -- the counter is the claim.
+    #[test]
+    fn a_warm_load_builds_no_paths_for_name_tier_rules() {
+        let _serial = crate::counters::test_serial();
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("cache").join("snap.fdu");
+        let original = sample_index();
+        save(&original, &path).expect("save");
+
+        let request = |tags: std::sync::Arc<crate::tags::TagRules>| LoadRequest {
+            root: Path::new("/some/root"),
+            scope: ScanScope { tag_rules_fingerprint: tags.fingerprint(), ..original.scope() },
+            types: crate::classify::TypeRegistry::compiled().clone(),
+            tags,
+        };
+
+        // The scope in the file was written with no tag rules, so only that request
+        // matches; the Path-tier arm below is measured through `parse_stream` directly,
+        // where the guard is not in the way of the question being asked.
+        crate::counters::enable(true);
+        crate::counters::reset();
+        let loaded = load_for(&path, &request(crate::tags::TagRules::none().clone().into()))
+            .expect("load")
+            .expect("present");
+        let built = crate::counters::snapshot().loader_paths_built;
+        crate::counters::enable(false);
+
+        assert_eq!(loaded.len(), original.len(), "the load must actually have happened");
+        assert_eq!(built, 0, "no enabled rule reads a path, so the loader must not construct one");
+    }
+
+    /// A snapshot for another tree or another scope is refused from its header.
+    ///
+    /// Not merely refused -- refused *before* materializing. Loading half a million
+    /// entries to discover the file answers a different question was the most expensive
+    /// possible way to say no, and the header carries everything needed to say it.
+    #[test]
+    fn a_snapshot_for_another_root_or_scope_is_refused_without_materializing_it() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("cache").join("snap.fdu");
+        let original = sample_index();
+        save(&original, &path).expect("save");
+
+        let matching = LoadRequest {
+            root: Path::new("/some/root"),
+            scope: original.scope(),
+            types: crate::classify::TypeRegistry::compiled().clone(),
+            tags: crate::tags::TagRules::none().clone().into(),
+        };
+        assert!(
+            load_for(&path, &matching).expect("load").is_some(),
+            "the control: this request is the one the snapshot answers"
+        );
+
+        let elsewhere = LoadRequest { root: Path::new("/other/root"), ..matching };
+        assert!(load_for(&path, &elsewhere).expect("load").is_none(), "a different root");
+
+        let other_scope = ScanScope { max_depth: Some(3), ..original.scope() };
+        let narrowed = LoadRequest { scope: other_scope, ..elsewhere };
+        let narrowed = LoadRequest { root: Path::new("/some/root"), ..narrowed };
+        assert!(load_for(&path, &narrowed).expect("load").is_none(), "a different scope");
+    }
+
     #[test]
     fn round_trip_preserves_tree_and_rollups() {
         let dir = tempfile::tempdir().expect("tempdir");
@@ -1248,7 +1475,9 @@ mod tests {
         save(&sample_index(), &path).expect("save");
         let file_len = fs::metadata(&path).expect("metadata").len();
 
-        assert!(load_with_size_limit(&path, file_len - 1).expect("load must not error").is_none());
+        assert!(
+            load_with_size_limit(&path, file_len - 1, None).expect("load must not error").is_none()
+        );
     }
 
     #[test]

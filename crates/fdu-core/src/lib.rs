@@ -320,17 +320,20 @@ pub(crate) fn open_for_report(
     let policy = config.policy;
 
     let loaded = match ((read_snapshot || !policy.scans()) && policy.reads(), &config.cache_path) {
-        (true, Some(cache_path)) => snapshot::load(cache_path)?
-            // A snapshot describing another root or a different scan scope is not this
-            // tree's answer; treat it as absent rather than as data.
-            .filter(|index| index.root_path() == root && index.scope() == config.scan.scope())
-            // The snapshot records only the fingerprint of the rules it was written
-            // under; the rules themselves come from the caller. Adopting them here keeps
-            // a loaded index classifying under the taxonomy its scope claims -- the
-            // filter above has already rejected any snapshot where those differ.
-            .map(|index| {
-                index.with_types(config.scan.types().clone()).with_tag_rules(config.scan.tags())
-            }),
+        // The guard and the rules go down together. A snapshot describing another root or
+        // a different scan scope is not this tree's answer, and it is refused from the
+        // header rather than after a full parse; one that does answer is built under the
+        // caller's own registry and tag rules, so every derived value is right the first
+        // time instead of being relabelled afterwards.
+        (true, Some(cache_path)) => snapshot::load_for(
+            cache_path,
+            &snapshot::LoadRequest {
+                root: &root,
+                scope: config.scan.scope(),
+                types: config.scan.types().clone(),
+                tags: config.scan.tags(),
+            },
+        )?,
         _ => None,
     };
 

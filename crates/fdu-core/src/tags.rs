@@ -395,6 +395,23 @@ impl TagRules {
         self.fingerprint
     }
 
+    /// Whether any enabled rule reads a path.
+    ///
+    /// The loader asks before it starts building paths at all: it holds a parent id and a
+    /// basename per record, and constructing a relative path for every entry when nothing
+    /// reads one is precisely the per-record allocation the snapshot format exists to
+    /// avoid. False is the common case, and it is the whole answer.
+    pub fn needs_path(&self) -> bool {
+        #[cfg(feature = "gitignore")]
+        {
+            self.matchers.iter().any(|matcher| matches!(matcher, Matcher::Path(_)))
+        }
+        #[cfg(not(feature = "gitignore"))]
+        {
+            false
+        }
+    }
+
     /// Whether any rule is enabled.
     pub fn is_empty(&self) -> bool {
         self.rules.is_empty()

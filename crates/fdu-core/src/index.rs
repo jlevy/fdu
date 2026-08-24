@@ -1316,6 +1316,28 @@ impl Index {
         self
     }
 
+    /// Install the semantic configuration before any entry exists.
+    ///
+    /// The loader's form, and the reason it is separate from [`Index::with_types`] and
+    /// [`Index::adopt_tag_rules`]: those adopt rules onto a populated index and must
+    /// re-derive what is already there, while this runs on an empty one and must not,
+    /// because there is nothing to re-derive and the whole point is that every entry is
+    /// derived correctly the first time. Installing after materialization was the defect
+    /// this replaces -- entries derived under the compiled registry while the scope
+    /// claimed the caller's.
+    pub(crate) fn install_semantics(
+        &mut self,
+        types: std::sync::Arc<crate::classify::TypeRegistry>,
+        tag_rules: Arc<crate::tags::TagRules>,
+    ) {
+        debug_assert!(
+            self.live <= 1,
+            "install_semantics runs before entries exist; use adopt_tag_rules otherwise"
+        );
+        self.types = types;
+        self.tag_rules = tag_rules;
+    }
+
     /// Adopt a rule set in place, re-tagging what is already here.
     ///
     /// The `&mut` form of [`Index::with_tag_rules`], for the caller that holds a write
@@ -1327,14 +1349,15 @@ impl Index {
 
     /// Recompute every entry's tag bits under the current rules.
     ///
-    /// Called from [`Index::with_tag_rules`], which on the scan path runs against an empty
-    /// index and does nothing. It exists for the *load* path, where it is the whole reason
-    /// tag bits are not in the snapshot format: a snapshot is adopted into a caller's rules
-    /// after it is read, so entries arrive untagged, and a warm start would otherwise
-    /// answer every tag question with "no" -- a bug that reads as a cache fault rather than
-    /// a tagging one. Re-deriving is also the cheaper contract: bits are a pure function of
-    /// facts the index already holds, so storing them would widen the format to cache
-    /// something a traversal reproduces.
+    /// This is the *rebind* path and no longer the load path. A control file changed, so
+    /// the same rule set now decides differently and every entry has to be asked again;
+    /// there is no cheaper answer, because the change is in the rules rather than in the
+    /// tree. The loader installs its rules before the first entry materializes and derives
+    /// each one once, which is why a warm start no longer pays this traversal.
+    ///
+    /// Re-deriving rather than storing is still the right contract: bits are a pure
+    /// function of facts the index already holds, so putting them in the snapshot would
+    /// widen the format to cache something a traversal reproduces.
     fn retag(&mut self) {
         if self.tag_rules.is_empty() {
             // Nothing to compute, and nothing to clear: a snapshot written under a
@@ -2683,6 +2706,7 @@ impl Index {
         name: OsString,
         kind: EntryKind,
         attrs: Attrs,
+        relative_path: Option<&Path>,
     ) -> Option<EntryId> {
         let parent_entry = self.try_entry(parent)?;
         if parent_entry.kind != EntryKind::Dir || parent_entry.children.contains_key(&name) {
@@ -2694,9 +2718,15 @@ impl Index {
         let group_id = (kind == EntryKind::File).then(|| self.types.group_of_name(&name)).flatten();
         // The path is a closure, not a value: this is the loader, which holds a parent id
         // and a basename precisely so that it never joins one per record.  No Name-tier
-        // rule calls it.
+        // rule calls it, and when one does the caller has already supplied the path as a
+        // single join off the parent it was tracking -- not an ancestor walk per record,
+        // which is the cost this whole function exists to avoid.
         let tag_bits = Arc::clone(&self.tag_rules).evaluate(&name, kind.is_dir(), || {
-            Cow::Owned(self.path_of(parent).unwrap_or_default().join(&name))
+            debug_assert!(
+                relative_path.is_some(),
+                "a Path-tier rule is enabled but the loader supplied no path"
+            );
+            relative_path.map_or_else(|| Cow::Owned(PathBuf::new()), Cow::Borrowed)
         });
         let id = self.alloc(Entry {
             parent: Some(parent),
