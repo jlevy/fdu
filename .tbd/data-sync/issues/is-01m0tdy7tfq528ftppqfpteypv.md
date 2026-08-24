@@ -3,9 +3,9 @@ type: is
 id: is-01m0tdy7tfq528ftppqfpteypv
 title: Resume cursor can skip deltas and cannot reject another session
 kind: bug
-status: open
+status: closed
 priority: 0
-version: 5
+version: 6
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 labels:
   - pr47-review
@@ -19,7 +19,53 @@ dependencies:
     target: is-01m0prhqd27m471dn47yt973k0
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T17:43:52.910Z
-updated_at: 2026-08-24T20:45:44.003Z
+updated_at: 2026-08-24T22:04:05.358Z
+closed_at: 2026-08-24T22:04:05.358Z
+close_reason: |
+  Shipped. `make check` green. This is the third and last of the P0 authority defects.
+
+  TWO DEFECTS, one type. `PyIndex.since` took the journal slice under one guard and then
+  sampled `self.inner.clock()` under a second, so a commit landing between them made the
+  reported position one ahead of the deltas returned -- and resuming from it skipped that
+  commit permanently, silently, only under concurrency. And the cursor was a bare integer: a
+  `Last-Event-ID` from a prior process or a prior open compares as an ordinary position in
+  the new index, so `since` answered with an empty, untruncated set. "Nothing changed", about
+  a place this index has never been.
+
+  `Cursor { session: SessionId, clock: Clock }` fixes both, and it belongs in core rather
+  than the binding because the atomicity half does. `Since` now carries its terminal cursor,
+  captured in the same expression as the slice, so a two-call interleaving is not merely
+  unlikely but unrepresentable. `SessionId::mint()` folds wall-clock nanoseconds and a
+  process-global counter through the crate's own FNV-1a -- no new dependency, no randomness
+  API. Zero is reserved and never minted, so `Cursor::default()` matches nothing and is
+  refused rather than read as the start of whichever index it reaches. This is the same
+  shape MetaBrowser's provider contract already specifies for its own cursors.
+
+  `Index::since` now returns `Result`: a foreign session and a future clock both raise
+  `Error::CursorNotOfThisSession`, carrying the token, the serving session, and how far it
+  has advanced. Refusing is the whole point -- an empty answer and a refusal are different
+  facts, and only one of them is safe to believe.
+
+  SURFACES. `Index.cursor()` and `Index.since(cursor)` on both the native and typed Python
+  layers; a `Cursor` dataclass exported from `fdu`; `ChangeSet.clock` becomes
+  `ChangeSet.cursor`. A bare integer is rejected with a message saying why, rather than
+  being read as this session -- accepting it would put callers back where the session field
+  was added to rescue them.
+
+  THE SSE EXAMPLE is the consumer this was written for, so it moved with the type: the
+  event id is now `session-clock`, `parse_last_event_id` rejects session 0, and an
+  unrecognized token yields a `resync` frame with reason `unknown-session`. That branch did
+  not exist before because the failure it handles was invisible.
+
+  TESTS.
+  - `a_resume_position_never_runs_ahead_of_the_deltas_it_was_captured_with`: the cursor
+    equals the last delta's clock, and resuming from it returns nothing.
+  - `a_cursor_from_another_session_or_from_the_future_is_refused`: two independently opened
+    indexes mint different identities; both bad shapes and the default token are refused.
+  - Python: both smoke suites assert the cursor comes back with the ops and that a foreign
+    session raises; the SSE test covers the new id format and the session-0 rejection.
+resolution: null
+duplicate_of: null
 ---
 At PR 47 head e658915, IndexHandle::since captures deltas under one guard but PyIndex.since samples the returned clock under a later guard. A commit between those calls returns clock N+1 with operations only through N, so resuming at N+1 permanently skips the change. Clock also has no opened-session identity, so a Last-Event-ID from a prior process or root can be greater than the current clock and is accepted as an empty nontruncated replay. Fix: Since carries the terminal clock captured with its journal slice; define a cursor as opened-session identity plus sequence and reset or reject mismatched and future cursors. Test the forced interleaving and process or root replacement. fdu-jxs0 remains the separate trust-transition gap and fdu-4o0m remains the no-gap session handoff. Review finding FDU47-R3.
 
