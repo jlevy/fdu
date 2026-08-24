@@ -22,8 +22,8 @@ use std::path::{Component, Path, PathBuf};
 
 use crate::ApplyStats;
 use crate::engine_contract::{
-    AppliedDelta, Attrs, EntryKind, Error, Observation, ObservationOp, Op, PathExpectation,
-    PathState, Result, ScanScope,
+    AppliedDelta, Attrs, CoverageReason, EntryKind, Error, Observation, ObservationOp, Op,
+    PathExpectation, PathState, Result, ScanScope, Status,
 };
 use crate::index::{Index, IndexHandle, collect_child_expectations};
 
@@ -322,6 +322,20 @@ impl ScanReport {
     /// True when every directory in scope was read successfully.
     pub fn is_complete(&self) -> bool {
         self.errors.is_empty()
+    }
+
+    /// This walk's coverage, as the index records it.
+    ///
+    /// Derived here rather than at each call site so every producer of partial coverage
+    /// names the same reason for the same condition. A walk that finished while skipping
+    /// what it could not read is `Inaccessible` -- distinct from one that failed
+    /// outright, which its caller reports as `Failed`.
+    pub fn coverage(&self) -> Status {
+        if self.errors.is_empty() {
+            Status::Complete
+        } else {
+            Status::Partial(CoverageReason::Inaccessible)
+        }
     }
 
     /// Fold one worker's share of a parallel walk into the whole-walk report.
@@ -763,6 +777,11 @@ pub struct ReconcileReport {
 impl ReconcileReport {
     /// True when the filesystem walk was complete and no conditional observation lost
     /// a race with another producer.
+    pub fn coverage(&self) -> Status {
+        if self.is_complete() { Status::Complete } else { self.scan.coverage() }
+    }
+
+    /// Whether this reconciliation read everything in scope and applied it all.
     pub fn is_complete(&self) -> bool {
         self.scan.is_complete() && self.apply.stale == 0
     }
@@ -843,10 +862,10 @@ impl ReconcileTarget<'_> {
         }
     }
 
-    fn finish_reconcile(&mut self, path: &Path, started_at: u64, complete: bool) -> Result<()> {
+    fn finish_reconcile(&mut self, path: &Path, started_at: u64, coverage: Status) -> Result<()> {
         match self {
-            Self::Direct(index) => index.finish_reconcile(path, started_at, complete),
-            Self::Shared(handle) => handle.finish_reconcile(path, started_at, complete)?,
+            Self::Direct(index) => index.finish_reconcile(path, started_at, coverage),
+            Self::Shared(handle) => handle.finish_reconcile(path, started_at, coverage)?,
         }
         Ok(())
     }
@@ -2658,7 +2677,7 @@ pub fn scan_into_index(root: &Path, config: &ScanConfig) -> Result<(Index, ScanR
     if let Some(error) = apply_error {
         return Err(error);
     }
-    index.set_initial_freshness(report.is_complete());
+    index.set_initial_coverage(report.coverage());
     Ok((index, report))
 }
 
@@ -2700,7 +2719,7 @@ pub fn scan_into_index_with_policy_diagnostics(
     if let Some(error) = apply_error {
         return Err(error);
     }
-    index.set_initial_freshness(report.is_complete());
+    index.set_initial_coverage(report.coverage());
     Ok((index, report, diagnostics))
 }
 
@@ -2909,11 +2928,18 @@ fn reconcile_target(
     let started_at = target.begin_reconcile(&subtree)?;
     match reconcile_target_inner(target, &subtree, config, MAX_DEFERRED_RECONCILE_OPS, sink) {
         Ok(report) => {
-            target.finish_reconcile(&subtree, started_at, report.is_complete())?;
+            target.finish_reconcile(&subtree, started_at, report.coverage())?;
             Ok(report)
         }
         Err(error) => {
-            target.finish_reconcile(&subtree, started_at, false)?;
+            // The pass returned an error rather than completing around one, which is
+            // a different fact from an unreadable directory and reads differently to a
+            // consumer deciding whether to retry.
+            target.finish_reconcile(
+                &subtree,
+                started_at,
+                Status::Partial(CoverageReason::Failed),
+            )?;
             Err(error)
         }
     }

@@ -340,6 +340,26 @@ class Status:
     errors: tuple[OperationError, ...] = ()
 
 
+class CoverageReason(StrEnum):
+    """Why a value's coverage is partial.
+
+    The interactive-client contract's vocabulary, declared whole. Two members are
+    reachable from today's engine -- ``INACCESSIBLE`` and ``FAILED``. The other four are
+    declared and currently unreachable: an in-progress walk and a cancellation both need
+    the session, fdu has no walk budget, and a watcher gap marks a subtree *untrusted*
+    rather than *uncovered* -- its totals still account for every entry, they may simply
+    be wrong. Matching on all six today means not having to revisit the match when the
+    engine learns to produce them.
+    """
+
+    BUILDING = "building"
+    BUDGET = "budget"
+    CANCELLED = "cancelled"
+    INACCESSIBLE = "inaccessible"
+    WATCHER_GAP = "watcher_gap"
+    FAILED = "failed"
+
+
 @dataclass(frozen=True, slots=True)
 class Provenance:
     """Origin, observation time, and coverage for one retained value."""
@@ -347,6 +367,14 @@ class Provenance:
     source: ValueSource
     observed_at_ns: int
     status: Coverage
+
+    reason: CoverageReason | None = None
+    """Why ``status`` is partial, and ``None`` whenever it is complete.
+
+    Separate from ``status`` rather than folded into it, so a consumer that only branches
+    on complete-or-not keeps working without learning six new values. The two cannot
+    disagree: the engine spells the reason inside the partial variant itself.
+    """
 
 
 class DetectionSource(StrEnum):
@@ -1261,6 +1289,7 @@ def provenance_from_dict(value: dict[str, Any]) -> Provenance:
         source=ValueSource(str(value["source"])),
         observed_at_ns=int(value["observed_at_ns"]),
         status=Coverage(str(value["status"])),
+        reason=None if value.get("reason") is None else CoverageReason(str(value["reason"])),
     )
 
 

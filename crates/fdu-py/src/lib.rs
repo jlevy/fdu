@@ -1088,6 +1088,25 @@ fn coverage_label_value(status: fdu_core::Status) -> &'static str {
     }
 }
 
+/// Why coverage is partial, or `None` when it is complete.
+///
+/// Separate from the status label rather than folded into it, because a consumer that
+/// only branches on complete-or-not should not have to learn six new strings to keep
+/// working.
+fn coverage_reason_label(status: fdu_core::Status) -> Option<&'static str> {
+    let fdu_core::Status::Partial(reason) = status else {
+        return None;
+    };
+    Some(match reason {
+        fdu_core::CoverageReason::Building => "building",
+        fdu_core::CoverageReason::Budget => "budget",
+        fdu_core::CoverageReason::Cancelled => "cancelled",
+        fdu_core::CoverageReason::Inaccessible => "inaccessible",
+        fdu_core::CoverageReason::WatcherGap => "watcher_gap",
+        _ => "failed",
+    })
+}
+
 fn provenance_dict(
     py: Python<'_>,
     provenance: fdu_core::Provenance,
@@ -1096,6 +1115,7 @@ fn provenance_dict(
     value.set_item("source", value_source_label(provenance.source))?;
     value.set_item("observed_at_ns", provenance.observed_at_ns)?;
     value.set_item("status", coverage_label_value(provenance.status))?;
+    value.set_item("reason", coverage_reason_label(provenance.status))?;
     Ok(value)
 }
 

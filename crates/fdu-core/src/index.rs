@@ -41,9 +41,9 @@ use crate::content::{
     ContentRollUp,
 };
 use crate::engine_contract::{
-    AppliedDelta, Attrs, Bound, Clock, EntryIdentity, EntryKind, Expectation, Freshness,
-    InvalidateReason, Observation, Op, PathExpectation, PathState, Provenance, ScanScope, Source,
-    Status,
+    AppliedDelta, Attrs, Bound, Clock, CoverageReason, EntryIdentity, EntryKind, Expectation,
+    Freshness, InvalidateReason, Observation, Op, PathExpectation, PathState, Provenance,
+    ScanScope, Source, Status,
 };
 
 /// Verification intervals kept before the oldest are dropped.
@@ -789,6 +789,14 @@ pub struct Index {
 struct FreshnessMark {
     state: Freshness,
     epoch: u64,
+    /// Why coverage was lost, for the marks that lose it.
+    ///
+    /// `None` for every mark whose state is about trust rather than coverage --
+    /// `Reconciling` and `Stale` both leave a subtree fully accounted for. Carried here
+    /// because the site that marks a subtree is the only one that still knows why, and
+    /// re-deriving a reason at read time from a state that has forgotten it is how a
+    /// plausible-but-wrong reason gets reported.
+    reason: Option<CoverageReason>,
 }
 
 /// Shareable owner for serving readers while reconciliation applies short writes.
@@ -1050,9 +1058,9 @@ impl IndexHandle {
         &self,
         path: &Path,
         started_at: u64,
-        complete: bool,
+        coverage: Status,
     ) -> crate::Result<()> {
-        self.write_index()?.finish_reconcile(path, started_at, complete);
+        self.write_index()?.finish_reconcile(path, started_at, coverage);
         Ok(())
     }
 
@@ -1185,6 +1193,21 @@ impl Index {
             .map(|(_, mark)| mark.state)
             .max_by_key(|state| state.rank())
             .unwrap_or(Freshness::Fresh)
+    }
+
+    /// How much of one subtree the index accounts for, and why not all of it.
+    ///
+    /// Resolved from the same overlapping marks as [`Index::freshness_at`] and by the
+    /// same rule -- worst wins -- but over a different axis. Only [`Freshness::Partial`]
+    /// marks contribute: `Reconciling` and `Stale` describe values whose *trust* is in
+    /// doubt while their coverage is not.
+    pub fn coverage_at(&self, path: &Path) -> Status {
+        self.freshness_marks
+            .iter()
+            .filter(|(marked, _)| path.starts_with(marked) || marked.starts_with(path))
+            .filter_map(|(_, mark)| mark.reason)
+            .max()
+            .map_or(Status::Complete, Status::Partial)
     }
 
     /// The clock of the most recently applied delta.
@@ -1389,10 +1412,10 @@ impl Index {
         self.mark_unfresh(Path::new(""), Freshness::Stale);
     }
 
-    pub(crate) fn set_initial_freshness(&mut self, complete: bool) {
+    pub(crate) fn set_initial_coverage(&mut self, coverage: Status) {
         self.freshness_marks.clear();
-        if !complete {
-            self.mark_unfresh(Path::new(""), Freshness::Partial);
+        if let Status::Partial(reason) = coverage {
+            self.mark_unfresh_because(Path::new(""), Freshness::Partial, Some(reason));
         }
     }
 
@@ -1400,11 +1423,11 @@ impl Index {
         self.mark_unfresh(path, Freshness::Reconciling)
     }
 
-    pub(crate) fn finish_reconcile(&mut self, path: &Path, started_at: u64, complete: bool) {
+    pub(crate) fn finish_reconcile(&mut self, path: &Path, started_at: u64, coverage: Status) {
         self.freshness_marks
             .retain(|marked, mark| !marked.starts_with(path) || mark.epoch > started_at);
-        if !complete {
-            self.mark_unfresh(path, Freshness::Partial);
+        if let Status::Partial(reason) = coverage {
+            self.mark_unfresh_because(path, Freshness::Partial, Some(reason));
             return;
         }
         // A completed sweep stat'd every entry beneath `path`, including the ones the
@@ -1439,10 +1462,24 @@ impl Index {
     }
 
     fn mark_unfresh(&mut self, path: &Path, state: Freshness) -> u64 {
+        self.mark_unfresh_because(path, state, None)
+    }
+
+    fn mark_unfresh_because(
+        &mut self,
+        path: &Path,
+        state: Freshness,
+        reason: Option<CoverageReason>,
+    ) -> u64 {
+        debug_assert_eq!(
+            reason.is_some(),
+            state == Freshness::Partial,
+            "a coverage reason belongs to Partial and to nothing else"
+        );
         self.freshness_epoch =
             self.freshness_epoch.checked_add(1).expect("freshness epoch exhausted");
         let epoch = self.freshness_epoch;
-        self.freshness_marks.insert(path.to_path_buf(), FreshnessMark { state, epoch });
+        self.freshness_marks.insert(path.to_path_buf(), FreshnessMark { state, epoch, reason });
         epoch
     }
 
@@ -1947,10 +1984,7 @@ impl Index {
         let Some(path) = self.path_of(id) else {
             return Status::Complete;
         };
-        match self.freshness_at(&path) {
-            Freshness::Fresh | Freshness::Reconciling | Freshness::Stale => Status::Complete,
-            Freshness::Partial => Status::Partial,
-        }
+        self.coverage_at(&path)
     }
 
     /// When an entry with this source was observed.
@@ -3849,6 +3883,94 @@ mod tests {
         assert_eq!(row("hollow"), Some(true));
     }
 
+    /// A partial subtree says why, and the reason survives the read path a consumer uses.
+    #[test]
+    fn coverage_carries_the_reason_it_was_lost_for() {
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![upsert("part", EntryKind::Dir, file_attrs(0, 1))]));
+        assert_eq!(index.coverage_at(Path::new("")), Status::Complete, "nothing lost yet");
+
+        let started = index.begin_reconcile(Path::new("part"));
+        index.finish_reconcile(
+            Path::new("part"),
+            started,
+            Status::Partial(CoverageReason::Inaccessible),
+        );
+
+        assert_eq!(
+            index.coverage_at(Path::new("part")),
+            Status::Partial(CoverageReason::Inaccessible)
+        );
+        // Coverage propagates the way freshness does: a parent is only as covered as its
+        // least-covered descendant.
+        assert_eq!(
+            index.coverage_at(Path::new("")),
+            Status::Partial(CoverageReason::Inaccessible),
+            "an uncovered subtree makes its ancestors uncovered"
+        );
+        assert_eq!(
+            IndexHandle::new(index)
+                .provenance(Path::new("part"))
+                .expect("read")
+                .expect("part")
+                .status,
+            Status::Partial(CoverageReason::Inaccessible),
+            "and the reason reaches the provenance a consumer actually reads"
+        );
+    }
+
+    /// Trust and coverage are different axes, and an invalidated subtree is the case that
+    /// proves it: its totals still account for every entry, they may simply be wrong.
+    ///
+    /// This is why `CoverageReason::WatcherGap` is declared and unreachable. The obvious
+    /// implementation reports it here, and would be saying "part of this subtree is
+    /// missing" about a subtree that is entirely present.
+    #[test]
+    fn a_dropped_watch_queue_costs_trust_and_not_coverage() {
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![
+            upsert("watched", EntryKind::Dir, file_attrs(0, 1)),
+            upsert("watched/a.txt", EntryKind::File, file_attrs(10, 1)),
+        ]));
+        index.apply_ok(&Observation::new(vec![Op::InvalidateSubtree {
+            path: PathBuf::from("watched"),
+            reason: crate::engine_contract::InvalidateReason::WatchOverflow,
+        }]));
+
+        assert_eq!(index.freshness_at(Path::new("watched")), Freshness::Stale, "trust is gone");
+        assert_eq!(
+            index.coverage_at(Path::new("watched")),
+            Status::Complete,
+            "coverage is not: every entry is still accounted for"
+        );
+        assert_eq!(index.total().files, 1, "and the totals still include it");
+    }
+
+    /// The worst reason wins when contributors disagree, so a consumer sees the one it
+    /// most needs to act on rather than whichever subtree happened to be visited last.
+    #[test]
+    fn combining_coverage_surfaces_the_most_alarming_reason() {
+        let mild = Provenance {
+            source: Source::Scanned,
+            observed_at_ns: 10,
+            status: Status::Partial(CoverageReason::Inaccessible),
+        };
+        let severe = Provenance {
+            source: Source::Scanned,
+            observed_at_ns: 10,
+            status: Status::Partial(CoverageReason::Failed),
+        };
+        assert_eq!(mild.combine(severe).status, Status::Partial(CoverageReason::Failed));
+        assert_eq!(severe.combine(mild).status, Status::Partial(CoverageReason::Failed));
+
+        let whole = Provenance { status: Status::Complete, ..mild };
+        assert_eq!(
+            whole.combine(mild).status,
+            Status::Partial(CoverageReason::Inaccessible),
+            "any partial contributor makes the combination partial"
+        );
+    }
+
     /// A partial subtree can never claim emptiness, however its counts read.
     ///
     /// Zero entries under a partial roll-up means "nothing found yet", and a listing that
@@ -3860,7 +3982,11 @@ mod tests {
         // A sweep that ended without reading everything -- which is what a reconciliation
         // error looks like from here.
         let started = index.begin_reconcile(Path::new("part"));
-        index.finish_reconcile(Path::new("part"), started, false);
+        index.finish_reconcile(
+            Path::new("part"),
+            started,
+            Status::Partial(CoverageReason::Inaccessible),
+        );
         let handle = IndexHandle::new(index);
 
         let page = handle
@@ -4654,7 +4780,7 @@ mod tests {
                 attrs: file_attrs(9, 2),
             },
         ]));
-        index.finish_reconcile(Path::new(""), 0, true);
+        index.finish_reconcile(Path::new(""), 0, Status::Complete);
 
         let kept = index.provenance(Path::new("a/kept.txt")).expect("present");
         let changed = index.provenance(Path::new("a/changed.txt")).expect("present");
@@ -4685,7 +4811,7 @@ mod tests {
             "nothing has checked it yet"
         );
         // A completed sweep then covers the whole tree.
-        index.finish_reconcile(Path::new(""), 0, true);
+        index.finish_reconcile(Path::new(""), 0, Status::Complete);
         let path = Path::new("a/file.txt");
         assert_eq!(
             index.provenance(path).expect("present").source,
@@ -4716,7 +4842,7 @@ mod tests {
         // dropping the oldest only ever under-claims trust.
         let mut index = Index::new("/root");
         for which in 0..(MAX_VERIFIED_INTERVALS * 2) {
-            index.finish_reconcile(&PathBuf::from(format!("dir-{which}")), 0, true);
+            index.finish_reconcile(&PathBuf::from(format!("dir-{which}")), 0, Status::Complete);
         }
         assert!(
             index.verified.len() <= MAX_VERIFIED_INTERVALS,

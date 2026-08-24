@@ -191,6 +191,37 @@ def check_empty_is_decidable_from_the_aggregate() -> None:
     fdu.clear_cache(root)
 
 
+def check_partial_coverage_says_why() -> None:
+    """A complete value carries no reason, and the vocabulary is reachable from Python.
+
+    The engine spells the reason inside the partial variant, so the two cannot disagree;
+    what this pins is that the binding surfaces it and that a complete value stays
+    reason-free, which is the half a consumer branches on.
+    """
+
+    root = Path(tempfile.mkdtemp(prefix="fdu-coverage-"))
+    (root / "a.txt").write_text("x", encoding="utf-8")
+
+    index = fdu.open(root)
+    provenance = index.provenance()
+    assert provenance is not None
+    assert provenance.status is fdu.Coverage.COMPLETE
+    assert provenance.reason is None, "a complete value has nothing to explain"
+
+    # The contract's whole vocabulary is importable, so a consumer can match on it today
+    # rather than after the engine learns to produce every member.
+    assert {reason.value for reason in fdu.CoverageReason} == {
+        "building",
+        "budget",
+        "cancelled",
+        "inaccessible",
+        "watcher_gap",
+        "failed",
+    }
+
+    fdu.clear_cache(root)
+
+
 def check_a_listing_pages_and_accounts_for_the_rest() -> None:
     """A wide directory is drawn a page at a time, and the page says what it left out.
 
@@ -986,6 +1017,7 @@ def main() -> None:
     check_polling_is_selectable_for_filesystems_that_drop_events()
     check_one_bundle_answers_a_whole_page()
     check_a_listing_pages_and_accounts_for_the_rest()
+    check_partial_coverage_says_why()
     check_empty_is_decidable_from_the_aggregate()
     check_the_event_loop_adapter_delivers_the_same_batches()
     check_the_sse_example_resumes_or_resyncs()

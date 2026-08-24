@@ -196,14 +196,74 @@ pub enum Status {
     /// The value accounts for everything beneath this path that is in scope.
     #[default]
     Complete,
-    /// The value does not account for everything beneath this path.
+    /// The value does not account for everything beneath this path, and why.
+    ///
+    /// The reason rides inside the variant rather than beside it so the two cannot
+    /// disagree: there is no way to spell a complete value carrying a reason, or a
+    /// partial one carrying none. It also keeps the derived `Ord` correct for
+    /// [`Provenance::combine`] -- `Complete` sorts below every `Partial`, and two
+    /// partials sort by [`CoverageReason`], so taking the maximum still yields the
+    /// least trustworthy contributor.
     ///
     /// **Not a promise of monotonicity.** A value being built by an additive walk only
     /// grows, but one left incomplete by reconciliation errors can move either way once
     /// the missing part is read. Monotonicity is a property of the *producer* that is
     /// running, not of this status, and a consumer that needs it must know a walk is in
     /// progress rather than infer it from here.
-    Partial,
+    Partial(CoverageReason),
+}
+
+/// Why a [`Status::Partial`] value does not cover its whole subtree.
+///
+/// The vocabulary is the interactive-client contract's, declared whole so a consumer can
+/// match exhaustively today and not have its match break when the engine learns to
+/// produce a variant it currently cannot. Two of the six are reachable now; the other
+/// four are declared and unreachable, each noted with what would make it real. That is
+/// deliberate: a vocabulary that matches the contract with stated gaps is honest, where
+/// one that quietly omits four names invites a consumer to assume the engine can never
+/// mean them.
+///
+/// Ordered least to most alarming, so [`Provenance::combine`] surfaces the reason a
+/// consumer most needs to act on when a subtree's contributors disagree. A walk still
+/// running is the mildest -- it resolves itself -- and an outright failure is the worst.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
+#[non_exhaustive]
+pub enum CoverageReason {
+    /// A walk is still adding to this subtree.
+    ///
+    /// **Not reachable yet.** An in-progress reconciliation marks [`Freshness::Reconciling`],
+    /// which is deliberately coverage-*complete*: a cached subtree still accounts for every
+    /// entry it knows about. Producing this needs a session that can publish totals
+    /// mid-walk, which is the progressive-results work (`fdu-4o0m`).
+    Building,
+    /// A cap stopped the walk before it finished.
+    ///
+    /// **Not reachable yet**: fdu has no walk budget. Declared because the contract has
+    /// it and a bounded walk is a plausible future scope knob.
+    Budget,
+    /// A caller stopped the walk.
+    ///
+    /// **Not reachable yet**: cancellation belongs to the session (`fdu-4o0m`).
+    Cancelled,
+    /// Some of the subtree could not be read -- a permission error, a vanished directory,
+    /// an I/O failure during enumeration.
+    ///
+    /// Reachable: this is what a scan or reconciliation with a non-empty error list means.
+    Inaccessible,
+    /// A watcher lost events and the subtree has not been re-read since.
+    ///
+    /// **Not reachable yet**, and the reason is worth stating because it looks like it
+    /// should be. An [`Op::InvalidateSubtree`] marks [`Freshness::Stale`], which is a
+    /// statement about *trust*, not coverage: the totals still account for every entry,
+    /// they may simply be wrong. Coverage becomes partial only if the re-read that
+    /// follows cannot complete, and then the reason is `Inaccessible`. This variant
+    /// becomes real if the engine ever drops entries it can no longer vouch for.
+    WatcherGap,
+    /// The operation building this value returned an error.
+    ///
+    /// Reachable: a reconciliation that failed outright, as distinct from one that
+    /// completed while skipping unreadable parts.
+    Failed,
 }
 
 /// Everything a consumer needs to decide how far to trust one value.
@@ -231,7 +291,7 @@ pub struct Provenance {
     /// Unix epoch. For [`Source::Cached`] this is when the snapshot captured it — the
     /// "as of" a consumer displays. Zero when unknown.
     pub observed_at_ns: i64,
-    /// How settled the value is.
+    /// How much of the subtree the value covers, and why it does not cover all of it.
     pub status: Status,
 }
 
@@ -746,12 +806,19 @@ mod provenance_tests {
     fn combining_takes_the_least_trustworthy_of_each_fact() {
         let verified =
             Provenance { source: Source::Scanned, observed_at_ns: 900, status: Status::Complete };
-        let stale =
-            Provenance { source: Source::Cached, observed_at_ns: 100, status: Status::Partial };
+        let stale = Provenance {
+            source: Source::Cached,
+            observed_at_ns: 100,
+            status: Status::Partial(CoverageReason::Inaccessible),
+        };
         let combined = verified.combine(stale);
         assert_eq!(combined.source, Source::Cached, "weakest source wins");
         assert_eq!(combined.observed_at_ns, 100, "oldest observation wins");
-        assert_eq!(combined.status, Status::Partial, "worst status wins");
+        assert_eq!(
+            combined.status,
+            Status::Partial(CoverageReason::Inaccessible),
+            "worst status wins, and carries its reason"
+        );
         assert_eq!(combined, stale.combine(verified), "combination is commutative");
     }
 

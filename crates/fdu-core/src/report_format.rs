@@ -2382,7 +2382,7 @@ mod tests {
                 },
             }]));
         }
-        index.set_initial_freshness(false);
+        index.set_initial_coverage(crate::Status::Partial(crate::CoverageReason::Inaccessible));
 
         std::thread::Builder::new()
             .name("deep-render".to_string())
@@ -2445,7 +2445,7 @@ mod tests {
                 attrs: crate::Attrs { size: 1, allocated: 1, ..Default::default() },
             },
         ]));
-        index.set_initial_freshness(false);
+        index.set_initial_coverage(crate::Status::Partial(crate::CoverageReason::Inaccessible));
 
         // Built directly rather than through the command line's argument struct: what is
         // under test is that the renderer preserves a non-UTF-8 name's raw identity, and
@@ -2527,7 +2527,7 @@ mod tests {
                 attrs: crate::Attrs { size: 1, allocated: 1, ..Default::default() },
             },
         ]));
-        dirs.set_initial_freshness(false);
+        dirs.set_initial_coverage(crate::Status::Partial(crate::CoverageReason::Inaccessible));
         let tree_query = crate::query::Query {
             views: vec![ViewSpec::Tree],
             selection: Selection {

@@ -1663,7 +1663,7 @@ mod tests {
         let complete_bytes = fs::read(&path).expect("read complete snapshot");
 
         let mut index = Index::new("/root");
-        index.set_initial_freshness(false);
+        index.set_initial_coverage(crate::Status::Partial(crate::CoverageReason::Inaccessible));
 
         assert!(matches!(save(&index, &path), Err(Error::Snapshot(_))));
         assert_eq!(fs::read(&path).expect("old snapshot remains"), complete_bytes);
