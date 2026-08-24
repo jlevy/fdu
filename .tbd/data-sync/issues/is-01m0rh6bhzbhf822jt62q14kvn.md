@@ -5,13 +5,15 @@ title: Report views still cannot tell a symlink-only directory from an empty one
 kind: task
 status: open
 priority: 2
-version: 1
+version: 2
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 labels: []
-dependencies: []
+dependencies:
+  - type: blocks
+    target: is-01m0tf9pw281n7hsaenyp0aq3e
 parent_id: is-01m0racd5dxjfx1g5e0dsfay8q
 created_at: 2026-08-24T00:02:15.743Z
-updated_at: 2026-08-24T00:02:15.743Z
+updated_at: 2026-08-24T18:07:37.337Z
 ---
 fdu-5hip added a non-file leaf count to roll-up state, so RollUp, RollUpScalars and a
 listing row can now decide emptiness exactly. The report views cannot: SummaryRow and
