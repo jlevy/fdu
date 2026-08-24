@@ -703,17 +703,62 @@ and both are small. `fdu-gav9` leads because it is the only outright drop-in blo
 
 ### Phase 1: Partitioned tallies
 
-- [ ] The gitignore tag rule in the engine: compiled matcher with correct negation,
-  entry tag bits, opt-in `ScanOptions` configuration, snapshot fingerprint coverage; the
-  `unignored` plane through the reducer path — per-plane roll-up state, `merge_upward`,
-  refresh and watch re-tagging, `.gitignore`-edit escalation; partition-sum property
-  tests and fingerprint invalidation (`fdu-mvt3`)
-- [ ] Hidden-path admission as scope: prune hidden components except a configured
-  exact-name allowlist, keep governing control files readable without retaining them,
-  and fingerprint the rule and its allowlist into snapshot identity (`fdu-mvt3`)
-- [ ] Surfaces: `--tags`/`--plane` on the CLI, `Selection.plane` and per-plane
-  `RollUp`/`Child` values in Python, tagged-fixture goldens in every format, parity
-  rows, and plane-equals-all equivalence when no entry is tagged (`fdu-7rwf`)
+Restructured 2026-08-24, after the owner directed that gitignore be one flag among
+several rather than the feature’s name.
+The model that results, stated once here and in detail on the beads:
+
+- **Tags and planes are decoupled.** A tag is a named boolean fact stored as one bit
+  beside `ext_id` and `group_id` — unbounded and cheap.
+  A plane is a maintained aggregate for a rule explicitly *promoted*, and promotion is a
+  small declared subset, because planes ride the ancestor-merge path and tags do not.
+  Filtering by an unpromoted tag re-aggregates by walking — the two-tier rule the query
+  surface already applies to every other predicate.
+  The 1:1 coupling this replaces had already forced `hidden` out of the model once.
+
+- **Rules carry a tier** — Name, Path, or Content — declaring what they may read.
+  Content-tier rules are rejected at enable time in v1 with an error naming the cost
+  class, so a future `binary` tag cannot silently turn a metadata walk into a content
+  walk.
+
+- **Categorical facts are not tags.** Mime type and its kin are interned-key tally maps,
+  the mechanism extensions and groups already use.
+  Two shapes; neither absorbs the other.
+
+- **`ScanScope.ignore_rules_fingerprint` becomes `tag_rules_fingerprint`.** Same wire
+  position, and an empty rule set still fingerprints to zero, so every existing snapshot
+  stays valid.
+
+- **The `ignore` crate lands behind a default-on `gitignore` feature**, `notify`’s exact
+  precedent, on measured evidence (+1.06 MiB stripped and LTO’d, nine new crates, no
+  lean mode) — pinned `=0.4.30` because newer releases need Rust 1.88 against the 1.85
+  MSRV. The tag model itself stays dependency-free.
+
+- [ ] Tag model foundation: registry, tiers, entry bits computed at apply time, the
+  fingerprint rename, the zero-dependency `dotfile` reference rule, tag filtering by
+  re-aggregation, `--tags` on the scope axis, goldens and parity (`fdu-mvt3`)
+
+- [ ] The gitignore rule: the feature-gated `ignore` dependency with its supply-chain
+  and MSRV pins, an index-held evaluator with correct negation, `.gitignore`-edit
+  escalation to `InvalidateSubtree`, watch re-tagging (`fdu-brt0`, blocked by
+  `fdu-mvt3`)
+
+- [ ] Promotion: per-promoted-tag plane state through the reducer path, the partition
+  property as property tests, plane reads gating the precomputed tier, dual-value
+  listing rows — and the recorded subtlety that a derived complement’s `newest_mtime`
+  cannot come from subtraction (`fdu-pxfz`, blocked by `fdu-mvt3`)
+
+- [ ] Surfaces: `--plane` taking a promoted rule’s name, `Selection(plane=...)`,
+  per-plane values in Python, tagged-fixture goldens in every format, parity rows, and
+  plane-equals-all equivalence when nothing is tagged (`fdu-7rwf`, blocked by the two
+  above)
+
+- [ ] Hidden-path admission as scope: prune hidden components except an exact-name
+  allowlist, fingerprinted into snapshot identity — a scope rule, deliberately not a
+  tag, and distinct from the `dotfile` tag, which filters with both numbers visible
+  where this excludes from the index entirely (`fdu-xyvu`)
+
+- [ ] Later fold-in: `Classification.flags` (generated, vendored, documentation) become
+  Name-tier rules instead of per-query recomputation (`fdu-n7mv`, P3)
 
 ### Phase 2: The customizable taxonomy
 

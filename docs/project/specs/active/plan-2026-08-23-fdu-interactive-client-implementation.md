@@ -278,6 +278,13 @@ This bead blocks every progressive golden.
 
 ### `fdu-mvt3` / `fdu-7rwf` — planes
 
+> **Superseded 2026-08-24** by *The tag model, made generic* below: tags decoupled from
+> planes, the work re-split across
+> `fdu-mvt3`/`fdu-brt0`/`fdu-pxfz`/`fdu-xyvu`/`fdu-7rwf`. The file-level observations
+> here (where the state goes, the `Entry` padding, the non-invertibility of
+> `newest_mtime_ns`) remain correct and are inherited by the new beads; the bead
+> boundaries are not.
+
 **Where the state goes.** `index.rs` holds two roll-up types: the public `RollUp`
 (`:111`) with `by_ext: BTreeMap<String, ExtTally>`, and the hot-path `InternedRollUp`
 (`:133`) keyed by `ExtId`. Planes add a parallel set of totals to both, maintained by
@@ -635,18 +642,50 @@ are the settled rule, and points 1, 3 and 6 — one handle owning the retained i
 bounded scalar and paged projections, a translational adapter holding no semantic state
 — are built and were the subject of this branch.
 
+### The tag model, made generic
+
+The owner’s direction (2026-08-24): gitignore is one flag among several — text, binary,
+and other facts will follow — so the model must be generic and the code must not fill
+with if-gitignore blocks.
+The review that preceded this found nothing built beyond the reserved
+`ignore_rules_fingerprint` slot at `0`, which made it the cheapest possible moment to
+fix the shape.
+The approach was then delegated; these are the decisions, each recorded on
+the bead that owns it:
+
+| Decision | Bead |
+| --- | --- |
+| Tags (unbounded entry bits) decoupled from planes (a small *declared* promoted subset) — the 1:1 coupling had already forced `hidden` out of the model once | `fdu-mvt3`, `fdu-pxfz` |
+| Rules carry a tier — Name, Path, Content — and Content-tier rules are rejected at enable time in v1, so a future `binary` tag cannot silently turn a metadata walk into a content walk | `fdu-mvt3` |
+| Categorical facts (mime type) are not tags: they are interned-key tally maps, the `ext_id`/`group_id` mechanism. Two shapes; neither absorbs the other | spec Phase 1 |
+| `ScanScope.ignore_rules_fingerprint` → `tag_rules_fingerprint`; same wire position, empty set still fingerprints to 0, every existing snapshot stays valid | `fdu-mvt3` |
+| `ignore` lands behind a default-on `gitignore` feature (notify’s precedent; measured +1.06 MiB, 9 crates, no lean mode). MSRV trap found by checking: current releases need Rust 1.88 > MSRV 1.85, so pin `=0.4.30` with `globset` held at 0.4.19 — both clear the cool-off | `fdu-brt0` |
+| `dotfile` ships as the zero-dependency Name-tier reference rule, unpromoted — the model is provable end-to-end before the dependency lands | `fdu-mvt3` |
+| Hidden admission is scope (prune + allowlist + fingerprint), its own bead, owning its `FORMAT_VERSION` bump | `fdu-xyvu` |
+| `Classification.flags` fold in later as Name-tier rules | `fdu-n7mv`, P3 |
+| Keep the `others` leaf counts — the implemented contract requires them; the measurement (`fdu-2ig2`) runs on any quiet host or rides `fdu-n4gn` | beads |
+| `fdu-vrwy` stays its own change, not this PR | bead |
+
+The build order this implies: **Track A** (contract completion, engine-internal) is
+`fdu-5yqb` → `fdu-samw`, with `fdu-fltq` behind `fdu-jxs0` and `fdu-sgp7` behind the
+session. **Track B** (tags) is `fdu-mvt3` → `fdu-brt0` / `fdu-pxfz` → `fdu-7rwf` →
+`fdu-vfyw` / `fdu-n4gn`. **Track C** (independent smalls, any time): `fdu-or38`,
+`fdu-xyvu`, `fdu-vrwy`. The session chain stays behind the progressive-results epic.
+Ready today: `fdu-5yqb`, `fdu-mvt3`, and Track C.
+
 ## What Did Not Land, And Why
 
 Seven beads under the epic are open, and none of them is open because the work was
 tedious.
 
-**`fdu-mvt3`, `fdu-7rwf` — partitioned tallies.** Blocked on two things, either of which
-alone would be enough.
-The bead itself says not to build the hidden plane until metabrowser confirms it needs
-one, because a second maintained plane costs on every reducer path and an unused one
-costs the same as a used one.
-And the unignored plane needs gitignore semantics, which means the `ignore` crate, which
-owes the 14-day supply-chain cool-off.
+**`fdu-mvt3`, `fdu-7rwf` — partitioned tallies.** Both blockers this paragraph
+originally stated dissolved on inspection, and are kept struck rather than deleted:
+~~metabrowser confirming the hidden plane~~ (the confirmation arrived — hidden prunes at
+scope, now `fdu-xyvu`) and ~~the 14-day cool-off on the `ignore` crate~~ (the cool-off
+gates young releases, and `ignore` is mature — the real constraint found by checking is
+that its current release needs Rust 1.88 against MSRV 1.85, answered by pinning
+`=0.4.30`). What remained was a design decision, since taken: see *The tag model, made
+generic*.
 
 **`fdu-4o0m`, `fdu-m893`, `fdu-ey9q` — the session, progress mode, progressive
 goldens.** These sit behind the progressive-results epic (`fdu-wpa0`), which owns the
