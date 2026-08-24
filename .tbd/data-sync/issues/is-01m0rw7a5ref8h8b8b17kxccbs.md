@@ -3,9 +3,9 @@ type: is
 id: is-01m0rw7a5ref8h8b8b17kxccbs
 title: "Coverage reason: partial must say why, not only that"
 kind: feature
-status: closed
+status: open
 priority: 1
-version: 5
+version: 7
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 labels: []
 dependencies:
@@ -13,7 +13,7 @@ dependencies:
     target: is-01m0rw7d4h3t49rwvk11cmk5xb
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T03:15:01.418Z
-updated_at: 2026-08-24T23:31:10.622Z
+updated_at: 2026-08-24T23:34:02.744Z
 closed_at: 2026-08-24T23:31:10.622Z
 close_reason: |
   Shipped earlier in this branch (commit a07fa17, "engine: partial coverage says why, not
@@ -62,4 +62,17 @@ coverage. The reason attaches to the latter.
 
 ## Notes
 
-Reopened: MetaBrowser contract review landed at 68eeaac and removed watcher_gap from CoverageReason: a watcher observation gap changes freshness and emits a typed issue, not coverage. FDU head a3960fb still exports CoverageReason::WatcherGap through Rust and Python even though it is deliberately unreachable. Remove that dead public variant and its docs/smoke mappings; partial coverage remains for actual missing scope such as inaccessible or failed reconciliation.
+REOPENED at `a3960fb`; I closed it again by mistake and have reopened it.
+
+MetaBrowser removed `watcher_gap` from the coverage-reason vocabulary, which settles the
+question I raised as MB74-C3 on their PR #74 -- and settles it the way I recommended:
+coverage and freshness are independent axes, observation loss is a *freshness* fact.
+
+So `CoverageReason::WatcherGap` is now a dead variant that FDU still exports through both
+Rust and Python, even though the implementation correctly never produces it. Exporting a
+reason nothing can return invites a consumer to branch on it forever.
+
+FIX. Remove the variant from the enum and from every surface that names it. Observation
+loss makes freshness stale and emits a typed issue; coverage becomes partial only when the
+answer actually omits scope. Update the ordering comment on the enum, which currently
+explains the least-to-most-alarming ordering including this variant.

@@ -3,9 +3,9 @@ type: is
 id: is-01m0tdy8swsdre8d15s96wx4km
 title: Watch invalidation batches lose required dirty information
 kind: bug
-status: closed
+status: open
 priority: 1
-version: 7
+version: 9
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 labels:
   - pr47-review
@@ -17,7 +17,7 @@ dependencies:
     target: is-01m0prhqd27m471dn47yt973k0
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T17:43:53.915Z
-updated_at: 2026-08-24T23:31:11.228Z
+updated_at: 2026-08-24T23:34:02.148Z
 closed_at: 2026-08-24T23:31:11.228Z
 close_reason: |
   Shipped. `make check` green, parity holds.
@@ -65,33 +65,41 @@ At PR 47 head e658915, two paths lose invalidation information. Core dirty_rollu
 
 ## Notes
 
-DESIGN SETTLED (2026-08-24 review). All three layers verified:
-- `dirty_rollups`: `Op::Remove { path } => (path, false)` -- a removed directory's own
-  key is never inserted, only its ancestors; a consumer caching that rollup gets no
-  invalidation for it.
-- Sync surface: `Watch.__next__` yields bare change tuples; dirty paths sit as mutable
-  side state on PyWatch.
-- aio: `if batch: hand_over(batch)` drops a dirty-only batch (a filtered-out mutation
-  moves aggregates and yields no changes -- the only signal is discarded); cleanup sets
-  the stop flag and drains the queue but never `worker.join()`s.
+REOPENED at `558461a` by the owner; I then closed it again by mistake and have reopened
+it. Two P1 defects in what I shipped, plus mapped remainder.
 
-THE VALUE. One immutable `WatchBatch` in fdu-core, the same value on sync and async
-surfaces: { cursor: Cursor (fdu-325q's type -- resulting version), changes: bounded,
-dirty: bounded set of paths, all_dirty: bool (set when dirtiness exceeded its bound --
-the bound is new; today the set is unbounded, which MetaBrowser's contract explicitly
-disallows), reset: bool (cursor gap / watcher-queue overflow -- ties to `truncated`),
-state, work }. Removes are conservative: insert the removed path itself always (a
-removed file's key is harmlessly absent from consumer caches; a removed directory's key
-is the bug). Dirty-only batches are DELIVERED, not dropped -- `if batch:` goes.
+P1-A: THE TERMINAL CURSOR IS SAMPLED AFTER THE COMMIT. `Session::next_batch` lets
+`Watcher::apply_next` finish and release its write guards, then calls
+`self.index.cursor()` separately. A refresh committing between those makes the batch
+carry no record of it while returning a cursor past it -- resuming skips that commit
+permanently. This is the same defect `fdu-325q` fixed for `since`, reintroduced one path
+over, which is worth noticing: fixing an instance is not fixing the class.
 
-aio: queue `WatchBatch` objects; `finally` joins the worker after the drain (bounded
-join -- the drain unblocks it, so a timeout join failing is a bug surfaced, not hidden).
+FIX. The batch's cursor is the clock of the last delta *this batch carried*, not wherever
+the index has since reached. Those clocks were assigned under the write guard that applied
+them, so the capture is already atomic and no new locking is needed. A commit landing
+after is simply unseen and replays on the next resume, which is correct. `SessionId` is
+immutable for the life of an index, so reading it separately is safe -- only the clock
+needed atomic capture, and the delta already carries it. `cursor` becomes `Option<Cursor>`:
+a batch carrying no deltas names no new position, and saying so beats inventing one.
 
-fdu-fltq then extends this carrier with the final vocabulary (dirty query kinds, the
-reset/all-dirty distinction MetaBrowser names) rather than replacing it.
+P1-B: ASYNC CANCELLATION CAN BLOCK THE EVENT LOOP. `watch_batches`' cleanup calls a
+blocking `worker.join(timeout=5)` on the loop thread, while the worker's exit path is
+`run_coroutine_threadsafe(queue.put(None), loop).result()`. The loop waits for the worker;
+the worker waits for the loop. It resolves by timeout, stalling every request for five
+seconds, and then returns without checking `is_alive()`. I added that join in this same
+bead to fix "cancellation does not join" -- and introduced a worse failure than the one it
+fixed.
 
-TESTS. Filtered-out mutation delivers a dirty-only batch; deleted directory invalidates
-its own key; sync and async equivalence over one scripted sequence; cancellation joins;
-overflow sets all_dirty not silence.
+FIX. Await the join off-loop (`run_in_executor`) so the loop keeps servicing the worker's
+handoff, and keep draining while waiting. Test must bound cancellation latency, prove an
+unrelated loop heartbeat keeps running, and assert the worker is gone -- not merely that
+the index still works.
 
-Reopened: Post-landing exact-head review at 558461a found the WatchBatch carrier is not yet lossless. Session.next_batch samples self.index.cursor() after Watcher.apply_next has released its commit guards, so a concurrent refresh can land between the returned deltas and cursor; resuming from that cursor skips the unseen commit. The asyncio finally path blocks the event loop in worker.join while the worker may be waiting on run_coroutine_threadsafe(queue.put(None)).result(), causing a deterministic timeout-scale stall and returning without proving the worker stopped. Batch also still omits the state and work fields in this bead's acceptance contract. Add forced interleaving, cancellation-latency/thread-termination, state/work, filtered-dirty, and removed-directory tests before re-closing.
+REMAINDER, still open on this bead: the batch omits provider state and per-batch work,
+which the observation envelope requires in the same atomic value.
+
+MOVED OFF THIS BEAD: the `reset` mapping. Under the settled contract, provider observation
+loss is stale state + typed issue + reconciliation + dirty/`all_dirty`; `reset` is reserved
+for a consumer cursor/session that cannot resume. My implementation maps watcher
+overflow/setup-race to `reset`, which is wrong under that split. `fdu-fltq` owns it.
