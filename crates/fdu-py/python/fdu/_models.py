@@ -746,6 +746,14 @@ class ChildPage:
 class SummaryRow:
     files: int
     dirs: int
+    others: int
+    """Entries that are neither files nor directories: symlinks, sockets, devices, fifos.
+
+    Weightless and not nothing. Without this a directory of a hundred symlinks reports
+    zero files, zero directories and zero bytes -- the same arithmetic as empty -- and a
+    reader has no way to tell the two apart.
+    """
+
     bytes: int
     allocated: int
     newest_mtime_ns: int | None
@@ -841,6 +849,13 @@ class TreeNode:
     allocated: int
     files: int
     dirs: int
+    others: int
+    """Entries in this subtree that are neither files nor directories.
+
+    Carried so a node of a hundred symlinks does not read identically to an empty one; see
+    :attr:`SummaryRow.others`.
+    """
+
     newest_mtime_ns: int | None
     truncated: bool
     """Whether any child row was withheld. `remainder` says how much."""
@@ -1453,6 +1468,7 @@ def _tree(value: dict[str, Any]) -> TreeNode:
         allocated=int(value["allocated"]),
         files=int(value["files"]),
         dirs=int(value["dirs"]),
+        others=int(value["others"]),
         newest_mtime_ns=(
             int(value["newest_mtime_ns"]) if value.get("newest_mtime_ns") is not None else None
         ),

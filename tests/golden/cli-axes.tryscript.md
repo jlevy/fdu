@@ -323,7 +323,7 @@ $ fdu --cache off --view summary --format json --size apparent project
   "reports": [
     {
       "view": "summary",
-      "summary": {"files": 6, "dirs": 3, "bytes": 263, "allocated": [ALLOCATED], "newest_mtime_ns": [MTIME_NS]}
+      "summary": {"files": 6, "dirs": 3, "others": 0, "bytes": 263, "allocated": [ALLOCATED], "newest_mtime_ns": [MTIME_NS]}
     }
   ]
 }
@@ -357,6 +357,7 @@ reports:
     summary:
       files: 6
       dirs: 3
+      others: 0
       bytes: 263
       allocated: [ALLOCATED]
       newest_mtime_ns: [MTIME_NS]
@@ -458,7 +459,7 @@ Every report says which tier answered it, so no policy can quietly serve old dat
 ```console
 $ fdu --view tree --format jsonl --size apparent project
 {"schema": "fdu.report/4", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "source": "cold_scan", "freshness": "fresh", "complete": true, "errors": []}
-{"view": "tree", "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 263, "allocated": [ALLOCATED], "files": 6, "dirs": 3, "newest_mtime_ns": [MTIME_NS], "truncated": false, "remainder": null, "children": [{"name": "dist", "path": "dist", "kind": "dir", "bytes": 128, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "remainder": null, "children": []},{"name": "src", "path": "src", "kind": "dir", "bytes": 36, "allocated": [ALLOCATED], "files": 2, "dirs": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "remainder": null, "children": []},{"name": "docs", "path": "docs", "kind": "dir", "bytes": 23, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "remainder": null, "children": []}]}}
+{"view": "tree", "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 263, "allocated": [ALLOCATED], "files": 6, "dirs": 3, "others": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "remainder": null, "children": [{"name": "dist", "path": "dist", "kind": "dir", "bytes": 128, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "others": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "remainder": null, "children": []},{"name": "src", "path": "src", "kind": "dir", "bytes": 36, "allocated": [ALLOCATED], "files": 2, "dirs": 0, "others": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "remainder": null, "children": []},{"name": "docs", "path": "docs", "kind": "dir", "bytes": 23, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "others": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "remainder": null, "children": []}]}}
 ? 0
 ```
 
@@ -473,7 +474,7 @@ this is the one-shot contract only.
 ```console
 $ fdu --view tree --format jsonl --size apparent project
 {"schema": "fdu.report/4", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "source": "cold_scan", "freshness": "fresh", "complete": true, "errors": []}
-{"view": "tree", "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 263, "allocated": [ALLOCATED], "files": 6, "dirs": 3, "newest_mtime_ns": [MTIME_NS], "truncated": false, "remainder": null, "children": [{"name": "dist", "path": "dist", "kind": "dir", "bytes": 128, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "remainder": null, "children": []},{"name": "src", "path": "src", "kind": "dir", "bytes": 36, "allocated": [ALLOCATED], "files": 2, "dirs": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "remainder": null, "children": []},{"name": "docs", "path": "docs", "kind": "dir", "bytes": 23, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "remainder": null, "children": []}]}}
+{"view": "tree", "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 263, "allocated": [ALLOCATED], "files": 6, "dirs": 3, "others": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "remainder": null, "children": [{"name": "dist", "path": "dist", "kind": "dir", "bytes": 128, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "others": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "remainder": null, "children": []},{"name": "src", "path": "src", "kind": "dir", "bytes": 36, "allocated": [ALLOCATED], "files": 2, "dirs": 0, "others": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "remainder": null, "children": []},{"name": "docs", "path": "docs", "kind": "dir", "bytes": 23, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "others": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "remainder": null, "children": []}]}}
 ? 0
 ```
 
@@ -482,7 +483,7 @@ $ fdu --view tree --format jsonl --size apparent project
 ```console
 $ fdu --cache only --view tree --format jsonl --size apparent project
 {"schema": "fdu.report/4", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "source": "cache_only", "freshness": "stale", "complete": true, "errors": []}
-{"view": "tree", "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 263, "allocated": [ALLOCATED], "files": 6, "dirs": 3, "newest_mtime_ns": [MTIME_NS], "truncated": false, "remainder": null, "children": [{"name": "dist", "path": "dist", "kind": "dir", "bytes": 128, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "remainder": null, "children": []},{"name": "src", "path": "src", "kind": "dir", "bytes": 36, "allocated": [ALLOCATED], "files": 2, "dirs": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "remainder": null, "children": []},{"name": "docs", "path": "docs", "kind": "dir", "bytes": 23, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "remainder": null, "children": []}]}}
+{"view": "tree", "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 263, "allocated": [ALLOCATED], "files": 6, "dirs": 3, "others": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "remainder": null, "children": [{"name": "dist", "path": "dist", "kind": "dir", "bytes": 128, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "others": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "remainder": null, "children": []},{"name": "src", "path": "src", "kind": "dir", "bytes": 36, "allocated": [ALLOCATED], "files": 2, "dirs": 0, "others": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "remainder": null, "children": []},{"name": "docs", "path": "docs", "kind": "dir", "bytes": 23, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "others": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "remainder": null, "children": []}]}}
 ? 0
 ```
 
@@ -491,7 +492,7 @@ $ fdu --cache only --view tree --format jsonl --size apparent project
 ```console
 $ fdu --cache refresh --view tree --format jsonl --size apparent project
 {"schema": "fdu.report/4", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "source": "cold_scan", "freshness": "fresh", "complete": true, "errors": []}
-{"view": "tree", "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 263, "allocated": [ALLOCATED], "files": 6, "dirs": 3, "newest_mtime_ns": [MTIME_NS], "truncated": false, "remainder": null, "children": [{"name": "dist", "path": "dist", "kind": "dir", "bytes": 128, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "remainder": null, "children": []},{"name": "src", "path": "src", "kind": "dir", "bytes": 36, "allocated": [ALLOCATED], "files": 2, "dirs": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "remainder": null, "children": []},{"name": "docs", "path": "docs", "kind": "dir", "bytes": 23, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "remainder": null, "children": []}]}}
+{"view": "tree", "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 263, "allocated": [ALLOCATED], "files": 6, "dirs": 3, "others": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "remainder": null, "children": [{"name": "dist", "path": "dist", "kind": "dir", "bytes": 128, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "others": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "remainder": null, "children": []},{"name": "src", "path": "src", "kind": "dir", "bytes": 36, "allocated": [ALLOCATED], "files": 2, "dirs": 0, "others": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "remainder": null, "children": []},{"name": "docs", "path": "docs", "kind": "dir", "bytes": 23, "allocated": [ALLOCATED], "files": 1, "dirs": 0, "others": 0, "newest_mtime_ns": [MTIME_NS], "truncated": false, "remainder": null, "children": []}]}}
 ? 0
 ```
 
@@ -516,7 +517,7 @@ reproducible.
 ```console
 $ fdu --order breadth-first --view summary --format jsonl --size apparent project
 {"schema": "fdu.report/4", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "source": "cold_scan", "freshness": "fresh", "complete": true, "errors": []}
-{"view": "summary", "summary": {"files": 6, "dirs": 3, "bytes": 263, "allocated": [ALLOCATED], "newest_mtime_ns": [MTIME_NS]}}
+{"view": "summary", "summary": {"files": 6, "dirs": 3, "others": 0, "bytes": 263, "allocated": [ALLOCATED], "newest_mtime_ns": [MTIME_NS]}}
 ? 0
 ```
 
@@ -525,7 +526,7 @@ $ fdu --order breadth-first --view summary --format jsonl --size apparent projec
 ```console
 $ fdu --order depth-first --view summary --format jsonl --size apparent project
 {"schema": "fdu.report/4", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "source": "cold_scan", "freshness": "fresh", "complete": true, "errors": []}
-{"view": "summary", "summary": {"files": 6, "dirs": 3, "bytes": 263, "allocated": [ALLOCATED], "newest_mtime_ns": [MTIME_NS]}}
+{"view": "summary", "summary": {"files": 6, "dirs": 3, "others": 0, "bytes": 263, "allocated": [ALLOCATED], "newest_mtime_ns": [MTIME_NS]}}
 ? 0
 ```
 
@@ -534,7 +535,7 @@ $ fdu --order depth-first --view summary --format jsonl --size apparent project
 ```console
 $ fdu --threads 1 --view summary --format jsonl --size apparent project
 {"schema": "fdu.report/4", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "source": "cold_scan", "freshness": "fresh", "complete": true, "errors": []}
-{"view": "summary", "summary": {"files": 6, "dirs": 3, "bytes": 263, "allocated": [ALLOCATED], "newest_mtime_ns": [MTIME_NS]}}
+{"view": "summary", "summary": {"files": 6, "dirs": 3, "others": 0, "bytes": 263, "allocated": [ALLOCATED], "newest_mtime_ns": [MTIME_NS]}}
 ? 0
 ```
 

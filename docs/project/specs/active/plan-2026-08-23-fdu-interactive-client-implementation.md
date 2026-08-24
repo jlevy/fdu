@@ -421,7 +421,7 @@ This section records what was actually built, at the same file-and-function leve
 the two can be compared — and so the places where implementation contradicted the plan
 are on the record rather than in a commit message nobody re-reads.
 
-Twenty-two of the twenty-six beads under the contract epic are closed.
+Twenty-three of the twenty-six beads under the contract epic are closed.
 Every one cleared `make check`, which replays the golden corpus against the command line
 and against the Python package and fails on any unclassified difference.
 
@@ -437,6 +437,7 @@ and against the Python package and fails on any unclassified difference.
 | `fdu-e2p7` | `Bound` on every roll-up’s extension rows, with `ExtRemainder` | `index.rs:named_rollup_bounded` |
 | `fdu-knyw` | `TreeNode::remainder` replaces a bare `truncated: bool` | `query/query_report.rs:withheld_children` |
 | `fdu-samw` | `ReadRequest::report` and `ReadBundle::report`: the whole query algebra under the bundle’s guard, with `ProjectionWork` saying what each part cost | `index.rs:IndexHandle::read`, `index.rs:ProjectionWork` |
+| `fdu-or38` | `others` on `SummaryRow` and `TreeNode`, so the report views can tell a directory of symlinks from an empty one | `query/query_report.rs`, `report_format.rs:others_suffix` |
 
 Four things about this group were not obvious from the outside.
 
@@ -494,6 +495,19 @@ directories and zero bytes: the same arithmetic as empty.
 `others` counts them, and `ChildSnapshot::is_empty_subtree` returns `Option<bool>` so a
 `Status::Partial` subtree declines to answer rather than claiming emptiness it has not
 established.
+
+The report views could not read that count, so the same bug survived at the surface the
+surfaces are supposed to agree on: `--view tree` went on rendering a hundred symlinks
+and nothing at all identically.
+`fdu-or38` carries it into `SummaryRow` and `TreeNode`, and it was left open
+deliberately because what remained was a *display* decision rather than an engine one.
+The decision is a suffix, not a column, and absent rather than zero: a column spends
+width on every row of every tree for a number that is zero almost everywhere, and a
+printed `0 others` does the same to the eye.
+Machine formats carry the field unconditionally, because a consumer branching on a key’s
+presence is a consumer with two code paths for one question -- the same argument the tag
+work made for always emitting `"tags": []`. The text goldens did not move at all, which
+is that decision working.
 
 ### Engine: classification
 

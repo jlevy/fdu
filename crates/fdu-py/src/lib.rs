@@ -1487,6 +1487,7 @@ fn summary_dict<'py>(py: Python<'py>, row: &SummaryRow) -> PyResult<Bound<'py, P
     let dict = PyDict::new(py);
     dict.set_item("files", row.files)?;
     dict.set_item("dirs", row.dirs)?;
+    dict.set_item("others", row.others)?;
     dict.set_item("bytes", row.bytes)?;
     dict.set_item("allocated", row.allocated)?;
     dict.set_item("newest_mtime_ns", row.newest_mtime_ns)?;
@@ -1526,6 +1527,7 @@ fn tree_dict<'py>(py: Python<'py>, root: &TreeNode) -> PyResult<Bound<'py, PyDic
         dict.set_item("allocated", node.allocated)?;
         dict.set_item("files", node.files)?;
         dict.set_item("dirs", node.dirs)?;
+        dict.set_item("others", node.others)?;
         dict.set_item("newest_mtime_ns", node.newest_mtime_ns)?;
         dict.set_item("truncated", node.truncated())?;
         dict.set_item("remainder", remainder_dict(py, node.remainder)?)?;

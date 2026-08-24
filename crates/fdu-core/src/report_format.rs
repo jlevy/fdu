@@ -333,13 +333,14 @@ fn render_text_tree(out: &mut String, root: &TreeNode, size: SizeMetric, color: 
                 let indent = "  ".repeat(depth);
                 let _ = writeln!(
                     out,
-                    "{:>10}  {}  {:>4.0}%  {indent}{} ({} {})",
+                    "{:>10}  {}  {:>4.0}%  {indent}{} ({} {}{})",
                     human_bytes(bytes),
                     bar(share, color),
                     share * 100.0,
                     paint(&node.name, STYLE_DIRECTORY, color),
                     node.files,
                     plural(node.files, "file", "files"),
+                    others_suffix(node.others),
                 );
                 // Reaching the requested depth is visible from the outline itself and
                 // marking every boundary directory overwhelms a real tree with dots.
@@ -532,13 +533,29 @@ fn render_text_ranked_files(
 fn render_text_summary(out: &mut String, row: &SummaryRow, size: SizeMetric) {
     let _ = writeln!(
         out,
-        "{:>10}  {} {}, {} {}",
+        "{:>10}  {} {}, {} {}{}",
         human_bytes(pick(size, row.bytes, row.allocated)),
         row.files,
         plural(row.files, "file", "files"),
         row.dirs,
         plural(row.dirs, "directory", "directories"),
+        others_suffix(row.others),
     );
+}
+
+/// What to append when a count includes entries that are neither files nor directories.
+///
+/// A suffix rather than a column, and absent rather than zero. A column would spend width
+/// on every row of every tree for a number that is zero almost everywhere; a printed
+/// `0 others` would do the same to the eye. What the fact has to do is stop a directory of
+/// a hundred symlinks from rendering identically to an empty one, and it only has to do
+/// that where such a directory exists. Machine formats carry the field unconditionally,
+/// because a consumer branching on a key's presence is a consumer with two code paths.
+fn others_suffix(others: u64) -> String {
+    if others == 0 {
+        return String::new();
+    }
+    format!(", {others} other{}", if others == 1 { "" } else { "s" })
 }
 
 // ---- json ----
@@ -860,9 +877,10 @@ fn path_raw_field(path: &Path) -> String {
 /// A summary row as a JSON object.
 fn summary_json(row: &SummaryRow) -> String {
     format!(
-        "{{\"files\": {}, \"dirs\": {}, \"bytes\": {}, \"allocated\": {}, \"newest_mtime_ns\": {}}}",
+        "{{\"files\": {}, \"dirs\": {}, \"others\": {}, \"bytes\": {}, \"allocated\": {}, \"newest_mtime_ns\": {}}}",
         row.files,
         row.dirs,
+        row.others,
         row.bytes,
         row.allocated,
         row.newest_mtime_ns.map_or_else(|| "null".to_string(), |value| value.to_string())
@@ -890,7 +908,7 @@ fn tree_json(node: &TreeNode) -> String {
             Step::Open(node) => {
                 let _ = write!(
                     out,
-                    "{{\"name\": {}, \"path\": {}{}, \"kind\": {}, \"bytes\": {}, \"allocated\": {}, \"files\": {}, \"dirs\": {}, \"newest_mtime_ns\": {}, \"truncated\": {}",
+                    "{{\"name\": {}, \"path\": {}{}, \"kind\": {}, \"bytes\": {}, \"allocated\": {}, \"files\": {}, \"dirs\": {}, \"others\": {}, \"newest_mtime_ns\": {}, \"truncated\": {}",
                     quote(&node.name),
                     quote(&node.path.to_string_lossy()),
                     path_raw_field(&node.path),
@@ -899,6 +917,7 @@ fn tree_json(node: &TreeNode) -> String {
                     node.allocated,
                     node.files,
                     node.dirs,
+                    node.others,
                     node.newest_mtime_ns
                         .map_or_else(|| "null".to_string(), |value| value.to_string()),
                     node.truncated()
@@ -1071,6 +1090,7 @@ fn render_yaml(report: &Report) -> String {
                 out.push_str("    summary:\n");
                 let _ = writeln!(out, "      files: {}", row.files);
                 let _ = writeln!(out, "      dirs: {}", row.dirs);
+                let _ = writeln!(out, "      others: {}", row.others);
                 let _ = writeln!(out, "      bytes: {}", row.bytes);
                 let _ = writeln!(out, "      allocated: {}", row.allocated);
                 let _ =
@@ -1195,6 +1215,7 @@ fn yaml_tree(out: &mut String, root: &TreeNode, pad: usize) {
         let _ = writeln!(out, "{rest}allocated: {}", node.allocated);
         let _ = writeln!(out, "{rest}files: {}", node.files);
         let _ = writeln!(out, "{rest}dirs: {}", node.dirs);
+        let _ = writeln!(out, "{rest}others: {}", node.others);
         let _ = writeln!(out, "{rest}newest_mtime_ns: {}", yaml_option(node.newest_mtime_ns));
         let _ = writeln!(out, "{rest}truncated: {}", node.truncated());
         yaml_remainder(out, &rest, node.remainder);
@@ -1717,6 +1738,63 @@ mod tests {
             inode: 7,
             dev: 1,
         }
+    }
+
+    /// Weightless leaves are said where they exist, and nowhere else.
+    ///
+    /// The display decision this pins is the whole of `fdu-or38`'s open question: a
+    /// suffix, not a column, and absent rather than zero. Not a golden, because pinning it
+    /// there would mean a fixture that creates a symlink, and a symlink in a corpus that
+    /// also runs on Windows is the class of defect this branch has already paid for once.
+    /// The renderers are pure functions of a report, so a constructed one reaches them
+    /// exactly.
+    #[test]
+    fn a_directory_of_symlinks_is_rendered_differently_from_an_empty_one() {
+        let mut index = Index::new_with_scope("/root", ScanScope::default());
+        index
+            .apply(&Observation::new(vec![
+                Op::Upsert {
+                    path: PathBuf::from("links"),
+                    kind: EntryKind::Dir,
+                    attrs: Attrs::default(),
+                },
+                Op::Upsert {
+                    path: PathBuf::from("links/a"),
+                    kind: EntryKind::Symlink,
+                    attrs: attrs(0, 1),
+                },
+                Op::Upsert {
+                    path: PathBuf::from("hollow"),
+                    kind: EntryKind::Dir,
+                    attrs: Attrs::default(),
+                },
+            ]))
+            .expect("apply");
+        let query = Query { views: vec![ViewSpec::Summary, ViewSpec::Tree], ..Query::default() };
+        let rendered = report(
+            &index,
+            &query,
+            &Provenance {
+                scan_started_at: None,
+                generated_at: UNIX_EPOCH,
+                source: crate::query::ReportSource::ColdScan,
+                complete: true,
+                errors: Vec::new(),
+            },
+        );
+
+        let text = render(&rendered, Format::Text, false);
+        assert!(text.contains("2 directories, 1 other"), "singular, and only once: {text}");
+        assert!(text.contains("links (0 files, 1 other)"), "the node says what it holds: {text}");
+        assert!(text.contains("hollow (0 files)"), "and an empty one says nothing extra: {text}");
+
+        // Machine formats carry the field whether or not it is zero, so a consumer never
+        // branches on a key's presence.
+        let json = render(&rendered, Format::Json, false);
+        assert!(json.contains("\"others\": 1"), "{json:.400}");
+        assert!(json.contains("\"others\": 0"), "{json:.400}");
+        let yaml = render(&rendered, Format::Yaml, false);
+        assert!(yaml.contains("others: 1"), "{yaml:.400}");
     }
 
     /// A bound states itself, and the count it states is the count it dropped.

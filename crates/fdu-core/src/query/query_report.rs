@@ -455,6 +455,11 @@ pub struct TreeNode {
     pub files: u64,
     /// Directories in this subtree.
     pub dirs: u64,
+    /// Entries in this subtree that are neither files nor directories.
+    ///
+    /// Carried so a node of a hundred symlinks does not render identically to an empty
+    /// one; see [`SummaryRow::others`].
+    pub others: u64,
     /// Newest modification time in this subtree, when it holds any files.
     pub newest_mtime_ns: Option<i64>,
     /// Children reported beneath this node.
@@ -713,6 +718,14 @@ pub struct SummaryRow {
     pub files: u64,
     /// Directories selected.
     pub dirs: u64,
+    /// Entries that are neither: symlinks, sockets, devices, fifos.
+    ///
+    /// Weightless and not nothing. Without this a directory of a hundred symlinks reports
+    /// zero files, zero directories and zero bytes -- the same arithmetic as empty -- and
+    /// a person reading the tree has no way to tell the two apart. `fdu-5hip` gave the
+    /// roll-up state this count; the report views could not read it, so the same bug
+    /// survived at the surface the surfaces are supposed to agree on.
+    pub others: u64,
     /// Apparent bytes.
     pub bytes: u64,
     /// Allocated bytes.
@@ -1085,6 +1098,12 @@ fn walk(index: &Index, selection: &Selection) -> Walked {
                     // `--kind file` answered "6 files, 3 directories", and a summary
                     // disagreed with the files view over the very same query.
                     walked.per_directory.entry(id).or_default().dirs += 1;
+                } else {
+                    // Everything that is neither, counted for the same reason the
+                    // precomputed tier counts it: a subtree of symlinks is not an empty
+                    // one, and a filtered summary that dropped the distinction would
+                    // disagree with the unfiltered summary of the same tree.
+                    walked.per_directory.entry(id).or_default().others += 1;
                 }
             }
 
@@ -1101,6 +1120,7 @@ fn walk(index: &Index, selection: &Selection) -> Walked {
 fn merge_summary(into: &mut SummaryRow, from: &SummaryRow) {
     into.files += from.files;
     into.dirs += from.dirs;
+    into.others += from.others;
     into.bytes += from.bytes;
     into.allocated += from.allocated;
     into.newest_mtime_ns = match (into.newest_mtime_ns, from.newest_mtime_ns) {
@@ -1140,6 +1160,7 @@ fn summary_from_scalars(rollup: RollUpScalars) -> SummaryRow {
     SummaryRow {
         files: rollup.files,
         dirs: rollup.dirs,
+        others: rollup.others,
         bytes: rollup.bytes,
         allocated: rollup.allocated,
         newest_mtime_ns: (rollup.files > 0).then_some(rollup.newest_mtime_ns),
@@ -1534,6 +1555,7 @@ fn tree_node(index: &Index, query: &Query, walked: Option<&Walked>) -> TreeNode 
         allocated: root_summary.allocated,
         files: root_summary.files,
         dirs: root_summary.dirs,
+        others: root_summary.others,
         newest_mtime_ns: root_summary.newest_mtime_ns,
         children: Vec::new(),
         remainder: None,
@@ -1576,6 +1598,7 @@ fn expand(
             allocated: node.allocated,
             files: node.files,
             dirs: node.dirs,
+            others: node.others,
             newest_mtime_ns: node.newest_mtime_ns,
             children: Vec::new(),
             remainder: None,
@@ -1710,6 +1733,7 @@ fn child_rows(
                 allocated: summary.allocated,
                 files: summary.files,
                 dirs: summary.dirs,
+                others: summary.others,
                 newest_mtime_ns: summary.newest_mtime_ns,
                 children: Vec::new(),
                 remainder: None,
@@ -1843,6 +1867,61 @@ mod tests {
 
     fn query(views: &[ViewSpec], selection: Selection) -> Query {
         Query { selection, views: views.to_vec(), ..Query::default() }
+    }
+
+    /// A directory of symlinks is not an empty directory, in either tier.
+    ///
+    /// `fdu-5hip` gave the roll-up state a non-file leaf count, so a listing row could
+    /// decide emptiness exactly; the report views could not read it, so `--view tree`
+    /// went on rendering a hundred symlinks and nothing at all identically. Both tiers
+    /// are checked, because a filtered query re-aggregates by walking rather than reading
+    /// the maintained roll-up, and a count carried by only one of them is a count the two
+    /// surfaces disagree about.
+    #[test]
+    fn a_directory_of_symlinks_reports_more_than_an_empty_one() {
+        let mut index = Index::new("/root");
+        index
+            .apply(&Observation::new(vec![
+                upsert("links", EntryKind::Dir, Attrs::default()),
+                upsert("links/a", EntryKind::Symlink, attrs(0, 1)),
+                upsert("links/b", EntryKind::Symlink, attrs(0, 2)),
+                upsert("hollow", EntryKind::Dir, Attrs::default()),
+            ]))
+            .expect("apply");
+
+        let unfiltered =
+            run(&index, &query(&[ViewSpec::Summary, ViewSpec::Tree], Selection::default()));
+        let Some(Section::Summary(summary)) = unfiltered.sections.first() else {
+            panic!("the summary view produces one summary section");
+        };
+        assert_eq!((summary.files, summary.dirs, summary.others), (0, 2, 2));
+
+        let Some(Section::Tree(root)) = unfiltered.sections.get(1) else {
+            panic!("the tree view produces one tree section");
+        };
+        let node = |name: &str| {
+            root.children.iter().find(|child| child.name == name).expect("a directory child")
+        };
+        assert_eq!(node("links").others, 2, "two symlinks, and the node says so");
+        assert_eq!(node("hollow").others, 0);
+        assert_ne!(
+            (node("links").files, node("links").dirs, node("links").others),
+            (node("hollow").files, node("hollow").dirs, node("hollow").others),
+            "a directory of symlinks must not render identically to an empty one"
+        );
+
+        // The filtered tier re-aggregates by walking, so it counts these itself. A
+        // selection that admits everything must reach the same answer as reading the
+        // maintained state, or the two tiers disagree about the same tree.
+        let filtered = run(
+            &index,
+            &query(&[ViewSpec::Summary], Selection { min_size: Some(0), ..Selection::default() }),
+        );
+        let Some(Section::Summary(walked)) = filtered.sections.first() else {
+            panic!("the summary view produces one summary section");
+        };
+        assert!(!Selection { min_size: Some(0), ..Selection::default() }.is_unfiltered());
+        assert_eq!(walked.others, summary.others, "both tiers count the same leaves");
     }
 
     #[test]
