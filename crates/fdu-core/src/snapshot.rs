@@ -1238,7 +1238,13 @@ mod tests {
 
         // The loader must not leave the index looking like it has pending history.
         assert_eq!(restored.clock(), crate::Clock::ZERO);
-        assert!(restored.since(crate::Clock::ZERO).deltas.is_empty());
+        assert!(
+            restored
+                .since(crate::Cursor::start(restored.session()))
+                .expect("own session")
+                .deltas
+                .is_empty()
+        );
     }
 
     /// A warm answer and a cold answer must agree about the same tree, under whatever
@@ -1385,7 +1391,13 @@ mod tests {
 
         assert_eq!(restored.root_path(), Path::new("/some/root"));
         assert_eq!(restored.clock(), crate::Clock::ZERO);
-        assert!(restored.since(crate::Clock::ZERO).deltas.is_empty());
+        assert!(
+            restored
+                .since(crate::Cursor::start(restored.session()))
+                .expect("own session")
+                .deltas
+                .is_empty()
+        );
         assert_eq!(restored.len(), original.len());
         // Public roll-ups resolve assignment-ordered extension ids to stable names.
         let (restored_total, original_total) = (restored.total(), original.total());

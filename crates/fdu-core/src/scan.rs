@@ -5316,7 +5316,13 @@ mod tests {
         let (index, _) = scan_into_index(dir.path(), &ScanConfig::default()).expect("scan");
 
         assert_eq!(index.clock(), crate::Clock::ZERO);
-        assert!(index.since(crate::Clock::ZERO).deltas.is_empty());
+        assert!(
+            index
+                .since(crate::Cursor::start(index.session()))
+                .expect("own session")
+                .deltas
+                .is_empty()
+        );
     }
 
     #[test]

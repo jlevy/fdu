@@ -997,14 +997,29 @@ impl PyIndex {
         Ok(out)
     }
 
-    /// Changes applied after `clock`.
+    /// Changes applied after a cursor, and the cursor to resume from next.
     ///
-    /// `truncated` is the field that matters: when it is true the caller has fallen
+    /// The cursor is `{session, clock}`, and both halves are load-bearing. `clock` says
+    /// where to resume; `session` says whether resuming means anything -- a token held
+    /// across a restart, or taken from a different opened root, is refused instead of
+    /// answered with an empty list that reads as "nothing changed". Pass the whole dict
+    /// back, not just the number.
+    ///
+    /// `truncated` is the other field that matters: when it is true the caller has fallen
     /// further behind than the retained journal and must re-read state instead of
     /// trusting the returned ops. Ignoring it is how an index silently diverges.
-    #[pyo3(signature = (clock))]
-    fn since<'py>(&self, py: Python<'py>, clock: u64) -> PyResult<Bound<'py, PyDict>> {
-        let since = self.inner.since(fdu_core::Clock(clock)).map_err(to_py_err)?;
+    ///
+    /// `session` and `clock` come back together, from the same read that produced the
+    /// ops. Sampling the clock separately let a commit land in between, and the resume
+    /// position would then sit one past the last op returned -- skipping that commit
+    /// permanently, with nothing in the result reporting the loss.
+    #[pyo3(signature = (cursor))]
+    fn since<'py>(
+        &self,
+        py: Python<'py>,
+        cursor: &Bound<'py, PyAny>,
+    ) -> PyResult<Bound<'py, PyDict>> {
+        let since = self.inner.since(parse_cursor(cursor)?).map_err(to_py_err)?;
         let ops = PyList::empty(py);
         for delta in &since.deltas {
             for op in &delta.ops {
@@ -1032,10 +1047,49 @@ impl PyIndex {
 
         let out = PyDict::new(py);
         out.set_item("truncated", since.truncated)?;
-        out.set_item("clock", self.inner.clock().map_err(to_py_err)?.0)?;
+        out.set_item("cursor", cursor_dict(py, since.cursor)?)?;
         out.set_item("ops", ops)?;
         Ok(out)
     }
+
+    /// The current resume position, as a cursor to pass to `since`.
+    fn cursor<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        cursor_dict(py, self.inner.cursor().map_err(to_py_err)?)
+    }
+}
+
+/// One resume position, as the dict `since` returns and accepts.
+fn cursor_dict(py: Python<'_>, cursor: fdu_core::Cursor) -> PyResult<Bound<'_, PyDict>> {
+    let out = PyDict::new(py);
+    out.set_item("session", cursor.session.0)?;
+    out.set_item("clock", cursor.clock.0)?;
+    Ok(out)
+}
+
+/// Read a cursor a caller stored and handed back.
+///
+/// A bare integer is accepted as the start of *this* session, because that is the only
+/// reading of it that cannot be wrong: an integer carries no session, and inventing one
+/// would put the caller back where the session field was added to rescue them.
+fn parse_cursor(value: &Bound<'_, PyAny>) -> PyResult<fdu_core::Cursor> {
+    if let Ok(mapping) = value.cast::<PyDict>() {
+        let session = mapping
+            .get_item("session")?
+            .ok_or_else(|| PyValueError::new_err("a cursor needs a 'session'"))?
+            .extract::<u64>()?;
+        let clock = mapping
+            .get_item("clock")?
+            .ok_or_else(|| PyValueError::new_err("a cursor needs a 'clock'"))?
+            .extract::<u64>()?;
+        return Ok(fdu_core::Cursor {
+            session: fdu_core::SessionId(session),
+            clock: fdu_core::Clock(clock),
+        });
+    }
+    Err(PyValueError::new_err(
+        "expected a cursor dict with 'session' and 'clock', as returned by Index.cursor() \
+         or Index.since(); a bare integer cannot say which opened index it came from",
+    ))
 }
 
 impl PyIndex {

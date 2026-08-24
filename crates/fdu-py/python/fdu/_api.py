@@ -24,6 +24,7 @@ from ._models import (
     ChildPage,
     ChildRemainder,
     Classification,
+    Cursor,
     DirectoryTotals,
     EntryKind,
     Format,
@@ -428,11 +429,23 @@ class Index:
             status=status_from_dict(value),
         )
 
-    def since(self, clock: int) -> ChangeSet:
-        value = _call(self._native.since, clock)
+    def cursor(self) -> Cursor:
+        """The current resume position, to hand back to `since()`."""
+        return _cursor(_call(self._native.cursor))
+
+    def since(self, cursor: Cursor) -> ChangeSet:
+        """Changes applied after `cursor`, and the position to resume from next.
+
+        The returned cursor comes from the same read that produced the changes, so
+        resuming from it is exact. A cursor from another opened index -- or from a
+        previous run over the same tree -- raises rather than returning an empty set,
+        because "nothing changed" and "I cannot place you" are different answers and only
+        one of them is safe to believe.
+        """
+        value = _call(self._native.since, {"session": cursor.session, "clock": cursor.clock})
         return ChangeSet(
             truncated=bool(value["truncated"]),
-            clock=int(value["clock"]),
+            cursor=_cursor(value["cursor"]),
             changes=tuple(_change(item) for item in value["ops"]),
         )
 
@@ -522,6 +535,13 @@ def _child(item: dict[str, Any]) -> Child:
         tags=tuple(str(tag) for tag in item.get("tags", ())),
         empty=None if empty is None else bool(empty),
     )
+
+
+def _cursor(value: object) -> Cursor:
+    if not isinstance(value, dict):
+        raise TypeError("expected a cursor mapping")
+    mapping = cast("dict[str, Any]", value)
+    return Cursor(session=int(mapping["session"]), clock=int(mapping["clock"]))
 
 
 def _change(value: dict[str, Any]) -> Change:

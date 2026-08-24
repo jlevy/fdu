@@ -2,7 +2,15 @@
 
 An SSE client that drops its connection reconnects with `Last-Event-ID`, and expects to
 be told everything it missed. fdu answers that directly: every applied change carries a
-logical clock, and `Index.since(clock)` returns what happened after it.
+cursor, and `Index.since(cursor)` returns what happened after it.
+
+The cursor is `{session, clock}`, and the session half is what makes a reconnect safe
+across a *restart*. A bare clock cannot say which opened index it came from: two runs over
+the same tree both count from zero, so a `Last-Event-ID` minted by a previous process
+compares as a perfectly ordinary position in the new one, and `since` would answer with an
+empty set -- "you are up to date" about a place this index has never been. Carrying the
+session turns that into a refusal the feed can act on, which is why `resume_cursor` below
+returns `None` for a token this index does not recognize.
 
 The part worth getting right is the other branch. The journal is bounded, so a client that
 was away long enough has fallen further behind than fdu can replay -- and `ChangeSet`
@@ -43,11 +51,11 @@ class Resume:
     changes: tuple[fdu.Change, ...]
     """The changes to replay; empty when `resync` is set."""
 
-    clock: int
-    """The clock the client should report next time."""
+    cursor: fdu.Cursor
+    """The position the client should report next time."""
 
 
-def decide(changeset: fdu.ChangeSet, current_clock: int) -> Resume:
+def decide(changeset: fdu.ChangeSet, current: fdu.Cursor) -> Resume:
     """Replay what the client missed, or tell it to start over.
 
     `truncated` is the whole decision. The changes a truncated set carries are real but
@@ -55,30 +63,39 @@ def decide(changeset: fdu.ChangeSet, current_clock: int) -> Resume:
     """
 
     if changeset.truncated:
-        return Resume(resync=True, changes=(), clock=current_clock)
-    return Resume(resync=False, changes=changeset.changes, clock=changeset.clock)
+        return Resume(resync=True, changes=(), cursor=current)
+    return Resume(resync=False, changes=changeset.changes, cursor=changeset.cursor)
 
 
-def parse_last_event_id(header: str | None) -> int | None:
-    """Read the clock a reconnecting client reports, rejecting anything else.
+def format_event_id(cursor: fdu.Cursor) -> str:
+    """The `id:` a client sends back, carrying both halves of the position."""
+
+    return f"{cursor.session}-{cursor.clock}"
+
+
+def parse_last_event_id(header: str | None) -> fdu.Cursor | None:
+    """Read the position a reconnecting client reports, rejecting anything else.
 
     A header is client-controlled input. A malformed one means "I have no position",
     which is the same as a first connection -- not an error, and not a reason to guess.
+    A token from a previous process parses fine here and is rejected one step later, by
+    the engine, which is the only thing that knows which session is serving.
     """
 
     if header is None:
         return None
+    session, _, clock = header.partition("-")
     try:
-        clock = int(header)
+        parsed = fdu.Cursor(session=int(session), clock=int(clock))
     except ValueError:
         return None
-    return clock if clock >= 0 else None
+    return parsed if parsed.session > 0 and parsed.clock >= 0 else None
 
 
-def sse_event(name: str, payload: object, event_id: int) -> str:
+def sse_event(name: str, payload: object, event_id: fdu.Cursor) -> str:
     """One SSE frame. `id:` is what comes back as `Last-Event-ID`."""
 
-    return f"id: {event_id}\nevent: {name}\ndata: {json.dumps(payload)}\n\n"
+    return f"id: {format_event_id(event_id)}\nevent: {name}\ndata: {json.dumps(payload)}\n\n"
 
 
 async def feed(
@@ -92,25 +109,43 @@ async def feed(
     during a burst does not miss the changes that landed while it was gone.
     """
 
+    current = index.cursor()
     resumed = parse_last_event_id(last_event_id)
     if resumed is None:
         # A first connection has nothing to catch up on, and is told where it starts.
-        yield sse_event("resync", {"reason": "first-connection"}, index.clock)
+        yield sse_event("resync", {"reason": "first-connection"}, current)
     else:
-        decision = decide(index.since(resumed), index.clock)
+        try:
+            changeset = index.since(resumed)
+        except fdu.FduError:
+            # The engine did not recognize the position: another process opened this
+            # tree, or this one reopened it. Both are a resync, and both used to be
+            # invisible -- a stale token returned an empty set that read as "current".
+            yield sse_event("resync", {"reason": "unknown-session"}, current)
+            return
+        decision = decide(changeset, current)
         if decision.resync:
             yield sse_event(
                 "resync",
-                {"reason": "journal-truncated", "behind_by": index.clock - resumed},
-                decision.clock,
+                {
+                    "reason": "journal-truncated",
+                    "behind_by": current.clock - resumed.clock,
+                },
+                decision.cursor,
             )
         else:
             for change in decision.changes:
-                yield sse_event("change", _wire(change), change.clock)
+                yield sse_event("change", _wire(change), _at(current, change.clock))
 
     async for batch in fdu.aio.watch_batches(index, options):
         for change in batch:
-            yield sse_event("change", _wire(change), change.clock)
+            yield sse_event("change", _wire(change), _at(current, change.clock))
+
+
+def _at(cursor: fdu.Cursor, clock: int) -> fdu.Cursor:
+    """One change's position within the session serving this connection."""
+
+    return fdu.Cursor(session=cursor.session, clock=clock)
 
 
 def _wire(change: fdu.Change) -> dict[str, object]:

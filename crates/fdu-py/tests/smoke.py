@@ -220,7 +220,7 @@ def main() -> None:
             assert raw_name in raw_names, raw_children
             assert raw_index.total()["by_extension"][".rs"]["files"] == 1
 
-            raw_mark = raw_index.clock
+            raw_mark = raw_index.cursor()
             added_name = b"notes-\xfd.md"
             with open(raw_root + b"/" + added_name, "wb") as raw_file:
                 raw_file.write(b"notes")
@@ -242,7 +242,7 @@ def main() -> None:
             assert raw_scan.stderr == b"", raw_scan.stderr
 
     # Revalidation reconciles against the filesystem and reports what moved.
-    mark = index.clock
+    mark = index.cursor()
     (root / "added.md").write_text("new")
     os.remove(root / "a.txt")
 
@@ -265,6 +265,26 @@ def main() -> None:
     ops = {(op["op"], op["path"]) for op in changed["ops"]}
     assert ("remove", "a.txt") in ops, ops
     assert ("upsert", "added.md") in ops, ops
+
+    # The cursor comes back with the ops, from the same read, and is the position to
+    # resume from. Sampling the clock separately let a commit land in between, so the
+    # next resume would start past a commit nobody had seen.
+    assert changed["cursor"]["session"] == mark["session"], changed
+    assert changed["cursor"]["clock"] >= mark["clock"], changed
+
+    # A cursor this index cannot place is refused, not answered. Both shapes below used
+    # to return an empty op list -- indistinguishable from "you are up to date" about a
+    # position this index has never been at.
+    for bad, why in (
+        ({"session": mark["session"] ^ 0xFFFF, "clock": 0}, "another opened index"),
+        ({"session": mark["session"], "clock": mark["clock"] + 10_000}, "a future position"),
+    ):
+        try:
+            index.since(bad)
+        except RuntimeError:  # the engine refuses; FduError derives from RuntimeError
+            pass
+        else:
+            raise AssertionError(f"{why} must be refused rather than answered")
 
     # refresh() retains the semantic scan scope used to create the index.
     scoped_root = pathlib.Path(tempfile.mkdtemp())

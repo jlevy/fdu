@@ -547,7 +547,7 @@ report = index.report(
 )
 print(report.sections)
 
-mark = index.clock
+mark = index.cursor()
 index.refresh()
 print(index.since(mark).changes)
 ```

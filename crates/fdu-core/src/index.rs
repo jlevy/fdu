@@ -42,9 +42,9 @@ use crate::content::{
     ContentRollUp,
 };
 use crate::engine_contract::{
-    AppliedDelta, Attrs, Bound, Clock, CoverageReason, EntryIdentity, EntryKind, Expectation,
-    Freshness, InvalidateReason, Observation, Op, PathExpectation, PathState, Provenance,
-    ScanScope, Source, Status,
+    AppliedDelta, Attrs, Bound, Clock, CoverageReason, Cursor, EntryIdentity, EntryKind,
+    Expectation, Freshness, InvalidateReason, Observation, Op, PathExpectation, PathState,
+    Provenance, ScanScope, SessionId, Source, Status,
 };
 
 /// Verification intervals kept before the oldest are dropped.
@@ -381,6 +381,12 @@ enum Slot {
 pub struct Since {
     /// Deltas applied strictly after the requested clock, oldest first.
     pub deltas: Vec<AppliedDelta>,
+    /// Where the caller now is, captured with the deltas rather than sampled after them.
+    ///
+    /// Resuming from this is exact. Asking the index for its clock in a second call is
+    /// not: a commit landing between the two makes this position one ahead of the last
+    /// delta returned, and the next resume starts past a commit nobody ever saw.
+    pub cursor: Cursor,
     /// True when the requested clock is older than the retained journal, meaning the
     /// caller has missed changes and must re-read state rather than trust `deltas`.
     pub truncated: bool,
@@ -830,6 +836,11 @@ pub struct Index {
     free_head: Option<u32>,
     live: u64,
     clock: Clock,
+    /// Identity of this opened index, so a resume token can be checked against it.
+    ///
+    /// Minted per construction and never persisted: a snapshot reload is a new session by
+    /// definition, because the journal a cursor resumes against was never on disk.
+    session: SessionId,
     journal: VecDeque<AppliedDelta>,
     journal_ops: usize,
     journal_op_capacity: usize,
@@ -1022,9 +1033,24 @@ impl IndexHandle {
         Ok(self.read_index()?.expectation(path))
     }
 
-    /// Owned deltas committed after `clock`.
-    pub fn since(&self, clock: Clock) -> crate::Result<Since> {
-        Ok(self.read_index()?.since(clock))
+    /// Owned deltas committed after `cursor`, with the position they end at.
+    ///
+    /// One guard covers both, which is the point: the terminal cursor is captured with the
+    /// slice rather than sampled afterwards, so it cannot name a commit the deltas do not
+    /// include. A token from another session, or from ahead of this one, is refused rather
+    /// than answered with an empty set that reads as "nothing changed".
+    pub fn since(&self, cursor: Cursor) -> crate::Result<Since> {
+        self.read_index()?.since(cursor)
+    }
+
+    /// The current resume position for this handle.
+    pub fn cursor(&self) -> crate::Result<Cursor> {
+        Ok(self.read_index()?.cursor())
+    }
+
+    /// Identity of the index behind this handle.
+    pub fn session(&self) -> crate::Result<SessionId> {
+        Ok(self.read_index()?.session())
     }
 
     /// Several projections evaluated under one read guard.
@@ -1271,6 +1297,7 @@ impl Index {
             scope,
             arena: vec![Slot::Occupied { generation: 0, entry: Box::new(root) }],
             free_head: None,
+            session: SessionId::mint(),
             live: 1,
             clock: Clock::ZERO,
             journal: VecDeque::new(),
@@ -1825,11 +1852,37 @@ impl Index {
     }
 
     /// Deltas applied since `clock`, oldest first.
-    pub fn since(&self, clock: Clock) -> Since {
-        Since {
-            deltas: self.journal.iter().filter(|d| d.clock > clock).cloned().collect(),
-            truncated: clock < self.journal_floor,
+    pub fn since(&self, cursor: Cursor) -> crate::Result<Since> {
+        if cursor.session != self.session || cursor.clock > self.clock {
+            // A foreign session and a future position fail the same way and for the same
+            // reason: both would otherwise select no deltas and report no truncation,
+            // which reads as "you are up to date" about a place this index has never
+            // been. Refusing is what lets a consumer reset and reread.
+            return Err(crate::Error::CursorNotOfThisSession {
+                requested: cursor,
+                current: self.session,
+                clock: self.clock,
+            });
         }
+        Ok(Since {
+            deltas: self.journal.iter().filter(|d| d.clock > cursor.clock).cloned().collect(),
+            // The terminal position, taken here rather than sampled by the caller
+            // afterwards. Two calls let a commit land between them, and the cursor would
+            // then point one past the deltas returned -- so resuming from it would skip
+            // that commit for good, with nothing reporting the loss.
+            cursor: self.cursor(),
+            truncated: cursor.clock < self.journal_floor,
+        })
+    }
+
+    /// This index's identity, for minting and checking resume tokens.
+    pub fn session(&self) -> SessionId {
+        self.session
+    }
+
+    /// The current resume position: this session, at this commit.
+    pub fn cursor(&self) -> Cursor {
+        Cursor { session: self.session, clock: self.clock }
     }
 
     /// Take the subtrees that producers escalated for re-scan.
@@ -3290,7 +3343,8 @@ mod tests {
     fn shared_queries_return_owned_values_and_release_the_lock() {
         let handle = IndexHandle::new(index_with_sample_tree());
         let retained_total = handle.total().expect("total");
-        let retained_history = handle.since(Clock::ZERO).expect("history");
+        let retained_history =
+            handle.since(Cursor::start(handle.session().expect("session"))).expect("history");
         let retained_children = handle.children(Path::new("src")).expect("children");
         let retained_snapshot = handle.snapshot().expect("snapshot");
 
@@ -3381,7 +3435,7 @@ mod tests {
         assert_eq!(handle.clock().expect("clock"), Clock(last_clock));
 
         let journal_clocks: Vec<u64> = handle
-            .since(Clock::ZERO)
+            .since(Cursor::start(handle.session().expect("session")))
             .expect("journal")
             .deltas
             .iter()
@@ -4899,7 +4953,13 @@ mod tests {
         assert_eq!(stats.updated, 0);
         assert_eq!(index.total(), before);
         assert_eq!(index.clock(), mark);
-        assert!(index.since(mark).deltas.is_empty());
+        assert!(
+            index
+                .since(Cursor { session: index.session(), clock: mark })
+                .expect("same session")
+                .deltas
+                .is_empty()
+        );
     }
 
     #[test]
@@ -5119,6 +5179,71 @@ mod tests {
         assert_eq!(index.path_of(EntryId::ROOT), Some(PathBuf::new()));
     }
 
+    /// The terminal cursor rides with the deltas, so it cannot name a commit they omit.
+    ///
+    /// The binding used to take the journal slice under one guard and then ask for the
+    /// clock under a second. A commit landing between them made the reported position one
+    /// ahead of the last delta returned, so resuming from it skipped that commit for good
+    /// -- permanently, silently, and only under concurrency. Capturing both under one
+    /// guard is what makes the interleaving unrepresentable rather than unlikely; the
+    /// assertion here is on the property that fix establishes.
+    #[test]
+    fn a_resume_position_never_runs_ahead_of_the_deltas_it_was_captured_with() {
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![upsert("a.txt", EntryKind::File, file_attrs(1, 1))]));
+        let mark = index.cursor();
+
+        for (name, size) in [("b.txt", 2_u64), ("c.txt", 3)] {
+            index.apply_ok(&Observation::new(vec![upsert(
+                name,
+                EntryKind::File,
+                file_attrs(size, size.cast_signed()),
+            )]));
+        }
+
+        let since = index.since(mark).expect("our own cursor");
+        let last = since.deltas.last().expect("two commits landed").clock;
+        assert_eq!(
+            since.cursor.clock, last,
+            "the cursor must be the last delta's clock, not a later sample of the index"
+        );
+        assert_eq!(since.cursor.session, index.session());
+
+        // And resuming from it is exact: nothing repeats, nothing is skipped.
+        assert!(index.since(since.cursor).expect("resume").deltas.is_empty());
+    }
+
+    /// A cursor this index cannot place is refused rather than answered.
+    ///
+    /// Both shapes below used to return an empty, untruncated set -- which a consumer
+    /// reads as "you are up to date". A token from a previous process is the realistic
+    /// one: two runs over the same tree both count from zero, so a `Last-Event-ID` minted
+    /// yesterday is an ordinary-looking position today.
+    #[test]
+    fn a_cursor_from_another_session_or_from_the_future_is_refused() {
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![upsert("a.txt", EntryKind::File, file_attrs(1, 1))]));
+
+        let other = Index::new("/root");
+        assert_ne!(index.session(), other.session(), "each open mints its own identity");
+
+        let foreign = Cursor::start(other.session());
+        assert!(
+            matches!(index.since(foreign), Err(crate::Error::CursorNotOfThisSession { .. })),
+            "a cursor from another opened index must not be answered"
+        );
+
+        let ahead = Cursor { session: index.session(), clock: Clock(index.clock().0 + 5) };
+        assert!(
+            matches!(index.since(ahead), Err(crate::Error::CursorNotOfThisSession { .. })),
+            "a position this index has not reached must not be answered"
+        );
+
+        // A default-constructed token names no session, so it is refused too rather than
+        // being read as the start of whichever index it happens to reach.
+        assert!(index.since(Cursor::default()).is_err());
+    }
+
     #[test]
     fn since_returns_deltas_after_a_clock() {
         let mut index = Index::new("/root");
@@ -5126,12 +5251,13 @@ mod tests {
         let mark = index.clock();
         index.apply_ok(&Observation::new(vec![upsert("b.txt", EntryKind::File, file_attrs(2, 2))]));
 
-        let since = index.since(mark);
+        let since =
+            index.since(Cursor { session: index.session(), clock: mark }).expect("same session");
         assert!(!since.truncated);
         assert_eq!(since.deltas.len(), 1);
         assert_eq!(since.deltas[0].ops[0].path(), Path::new("b.txt"));
 
-        assert_eq!(index.since(index.clock()).deltas.len(), 0);
+        assert_eq!(index.since(index.cursor()).expect("own cursor").deltas.len(), 0);
     }
 
     #[test]
@@ -5144,7 +5270,7 @@ mod tests {
         ]));
 
         assert_eq!(outcome.applied.as_ref().expect("committed").len(), 3);
-        let since = index.since(Clock::ZERO);
+        let since = index.since(Cursor::start(index.session())).expect("own session");
         assert!(since.truncated);
         assert!(since.deltas.is_empty());
     }
@@ -5161,7 +5287,7 @@ mod tests {
             upsert("d.txt", EntryKind::File, file_attrs(4, 4)),
         ]));
 
-        let since = index.since(Clock::ZERO);
+        let since = index.since(Cursor::start(index.session())).expect("own session");
         assert!(since.truncated);
         assert_eq!(since.deltas.len(), 1);
         assert_eq!(since.deltas[0].len(), 2);

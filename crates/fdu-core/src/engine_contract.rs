@@ -40,6 +40,80 @@ impl Clock {
     }
 }
 
+/// Identity of one opened index, minted when it is constructed.
+///
+/// A [`Clock`] alone cannot say *whose* clock it is. Two processes watching the same tree
+/// both count from zero, and so does the same process after reopening -- so a resume token
+/// from a prior run compares numerically against an unrelated sequence and looks perfectly
+/// valid. `Index::since` would answer with an empty, untruncated set: "nothing changed",
+/// about a position that never existed here. That is the failure a session identity
+/// exists to make impossible, and it is the same shape `MetaBrowser`'s provider contract
+/// already specifies for its own cursors.
+///
+/// Process-local and not persisted. A snapshot reload is a new session by definition:
+/// the journal it would resume against was never written to disk.
+/// `Default` is the zero identity, which no minted session ever takes. That is what
+/// makes a default-constructed token safe: it matches nothing, so it is refused rather
+/// than mistaken for a position in whatever index it reaches.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Hash)]
+pub struct SessionId(pub u64);
+
+impl SessionId {
+    /// Mint an identity for a newly constructed index.
+    ///
+    /// Wall-clock nanoseconds mixed with a process-global counter, folded through the same
+    /// FNV-1a this crate uses elsewhere. The counter alone would collide across processes
+    /// and the clock alone would collide within one -- two indexes opened in the same
+    /// nanosecond are ordinary in a test suite. Neither is a cryptographic claim: this
+    /// distinguishes sessions, it does not authenticate them.
+    #[must_use]
+    pub fn mint() -> Self {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT: AtomicU64 = AtomicU64::new(1);
+
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            // Truncating to the low 64 bits is exactly what is wanted: this feeds a hash,
+            // so the high bits of a nanosecond count carry no information the mix needs.
+            .map_or(0, |since| u64::try_from(since.as_nanos() & u128::from(u64::MAX)).unwrap_or(0));
+        let ordinal = NEXT.fetch_add(1, Ordering::Relaxed);
+
+        let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+        for byte in nanos.to_le_bytes().iter().chain(ordinal.to_le_bytes().iter()) {
+            hash ^= u64::from(*byte);
+            hash = hash.wrapping_mul(0x1000_0000_01b3);
+        }
+        // Zero is reserved so a default-constructed token cannot impersonate a session.
+        Self(if hash == 0 { 1 } else { hash })
+    }
+}
+
+/// A resume position: which session, and how far into it.
+///
+/// Both halves are load-bearing. The clock says where to resume; the session says whether
+/// resuming means anything at all. A caller storing this and replaying it after a restart
+/// gets a refusal it can act on rather than an empty answer it will believe.
+///
+/// Captured with the data it describes, never sampled afterwards. Reading a journal slice
+/// and then asking for the clock is two operations, and a commit landing between them
+/// yields a cursor one ahead of the deltas returned -- so resuming from it skips that
+/// commit permanently, and nothing reports the loss.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Hash)]
+pub struct Cursor {
+    /// Which opened index this position belongs to.
+    pub session: SessionId,
+    /// How far into that session's commits it points.
+    pub clock: Clock,
+}
+
+impl Cursor {
+    /// The position at the start of a session, before anything is applied.
+    #[must_use]
+    pub const fn start(session: SessionId) -> Self {
+        Self { session, clock: Clock::ZERO }
+    }
+}
+
 /// What kind of filesystem entry a record describes.
 ///
 /// The numeric values reach the snapshot format, so they are pinned: never renumber a
@@ -672,6 +746,25 @@ pub enum Error {
     /// No further logical commit clock can be represented.
     #[error("the process-local index clock is exhausted")]
     ClockExhausted,
+
+    /// A resume token belongs to a different opened index, or to a position that has not
+    /// happened yet.
+    ///
+    /// Refused rather than answered. Both shapes would otherwise return an empty,
+    /// untruncated result -- indistinguishable from "you are up to date" -- so a consumer
+    /// resuming from a stale or foreign token would silently believe it had missed
+    /// nothing. Saying so is what lets it reset and reread instead.
+    #[error(
+        "cursor {requested:?} does not belong to this index (session {current:?}, clock {clock:?})"
+    )]
+    CursorNotOfThisSession {
+        /// The token the caller presented.
+        requested: Cursor,
+        /// The session actually serving.
+        current: SessionId,
+        /// How far that session has advanced.
+        clock: Clock,
+    },
 
     /// The watch worker ended permanently without panicking.
     #[error("watch worker stopped before another observation was available")]

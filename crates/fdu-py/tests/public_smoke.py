@@ -466,9 +466,10 @@ def check_one_bundle_answers_a_whole_page() -> None:
     # And the cursor works: what happened after it is what changed since.
     (root / "docs" / "extra.md").write_text("more", encoding="utf-8")
     index.refresh()
-    changed = index.since(page.clock)
+    changed = index.since(fdu.Cursor(session=index.cursor().session, clock=page.clock))
     assert not changed.truncated
     assert any(change.path == Path("docs/extra.md") for change in changed.changes)
+    assert changed.cursor.clock >= page.clock
     fdu.clear_cache(root)
 
 
@@ -535,26 +536,31 @@ def check_the_sse_example_resumes_or_resyncs() -> None:
     spec.loader.exec_module(example)
 
     change = fdu.Change(clock=7, path=Path("a.txt"), kind=fdu.ChangeKind.UPSERT)
-    complete = fdu.ChangeSet(truncated=False, clock=7, changes=(change,))
-    replayed = example.decide(complete, current_clock=9)
+    at_seven = fdu.Cursor(session=42, clock=7)
+    at_nine = fdu.Cursor(session=42, clock=9)
+
+    complete = fdu.ChangeSet(truncated=False, cursor=at_seven, changes=(change,))
+    replayed = example.decide(complete, current=at_nine)
     assert replayed.resync is False
     assert replayed.changes == (change,)
-    assert replayed.clock == 7
+    assert replayed.cursor == at_seven
 
-    behind = fdu.ChangeSet(truncated=True, clock=7, changes=(change,))
-    resync = example.decide(behind, current_clock=9)
+    behind = fdu.ChangeSet(truncated=True, cursor=at_seven, changes=(change,))
+    resync = example.decide(behind, current=at_nine)
     assert resync.resync is True
     assert resync.changes == (), "a truncated set must never be replayed"
-    assert resync.clock == 9, "and the client is told where it now is"
+    assert resync.cursor == at_nine, "and the client is told where it now is"
 
-    # A client-supplied header is input, not a promise.
+    # A client-supplied header is input, not a promise. The session half is why a token
+    # minted by a previous process cannot pass as a position in this one.
     assert example.parse_last_event_id(None) is None
-    assert example.parse_last_event_id("not-a-clock") is None
-    assert example.parse_last_event_id("-1") is None
-    assert example.parse_last_event_id("12") == 12
+    assert example.parse_last_event_id("not-a-cursor") is None
+    assert example.parse_last_event_id("42--1") is None
+    assert example.parse_last_event_id("0-12") is None, "session 0 names no index"
+    assert example.parse_last_event_id("42-12") == fdu.Cursor(session=42, clock=12)
 
-    frame = example.sse_event("change", {"path": "a.txt"}, 12)
-    assert frame.startswith("id: 12\nevent: change\ndata: ")
+    frame = example.sse_event("change", {"path": "a.txt"}, fdu.Cursor(session=42, clock=12))
+    assert frame.startswith("id: 42-12\nevent: change\ndata: ")
     assert frame.endswith("\n\n"), "an SSE frame ends with a blank line"
 
 
@@ -1223,7 +1229,7 @@ def main() -> None:
     assert provenance.status is fdu.Coverage.COMPLETE
     assert provenance.source is fdu.ValueSource.SCANNED
 
-    mark = index.clock
+    mark = index.cursor()
     (root / "new.txt").write_text("new", encoding="utf-8")
     refresh = index.refresh()
     assert refresh.inserted == 1
@@ -1231,6 +1237,19 @@ def main() -> None:
     changes = index.since(mark)
     assert changes.truncated is False
     assert any(change.path == Path("new.txt") for change in changes.changes)
+
+    # A cursor is a position *in one opened index*. Held across a restart, or taken from
+    # another root, it names nothing here -- and saying so is the whole point: an empty
+    # change set would read as "you are current" to a consumer that had missed everything.
+    assert changes.cursor.session == mark.session
+    assert changes.cursor.clock >= mark.clock
+    foreign = fdu.Cursor(session=mark.session ^ 0xFFFF, clock=mark.clock)
+    try:
+        index.since(foreign)
+    except fdu.FduError:
+        pass
+    else:
+        raise AssertionError("a cursor from another session must be refused")
 
     # A scoped refresh sees a change inside its subtree and reaches the same state a
     # whole-tree refresh would. This is the hint-ingestion primitive: a caller running

@@ -1273,9 +1273,32 @@ class Change:
 
 
 @dataclass(frozen=True, slots=True)
+class Cursor:
+    """A resume position: which opened index, and how far into it.
+
+    Both halves are load-bearing. `clock` says where to resume; `session` says whether
+    resuming means anything at all. A cursor held across a restart, or taken from a
+    different opened root, is refused by `since()` rather than answered with an empty
+    change set -- which would otherwise read as "nothing changed" about a position that
+    index has never been at.
+
+    Store and replay the whole value. A bare `clock` cannot say which index it came from,
+    and two runs over the same tree both count from zero.
+    """
+
+    session: int
+    """Identity of the opened index this position belongs to."""
+
+    clock: int
+    """How far into that index's commits it points."""
+
+
+@dataclass(frozen=True, slots=True)
 class ChangeSet:
     truncated: bool
-    clock: int
+    cursor: Cursor
+    """Where to resume, captured with the changes rather than sampled after them."""
+
     changes: tuple[Change, ...]
 
 
