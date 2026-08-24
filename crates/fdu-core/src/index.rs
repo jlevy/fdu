@@ -932,9 +932,13 @@ impl IndexHandle {
             return Ok(Vec::new());
         }
         let root = index.root_path().to_path_buf();
-        let rebound = index.tag_rules().rebound(&root);
-        let governed = rebound.governed_directories();
-        index.adopt_tag_rules(Arc::new(rebound));
+        // Where the control files are is a question the index answers, not the filesystem:
+        // it already holds every entry, so re-walking the tree to rediscover files it can
+        // list is work with no question behind it.
+        let directories = index.control_file_directories();
+        let bound = index.tag_rules().bound_to(&root, directories.iter().map(PathBuf::as_path));
+        let governed = bound.governed_directories();
+        index.adopt_tag_rules(Arc::new(bound));
         Ok(governed)
     }
 
@@ -1404,7 +1408,60 @@ impl Index {
     /// resolving to strings per entry to compare strings would be the expensive way to ask
     /// the same question.
     pub fn tag_bits_of(&self, id: EntryId) -> crate::tags::TagBits {
+        self.debug_assert_tags_bound();
         self.try_entry(id).map_or(0, |entry| entry.tag_bits)
+    }
+
+    /// Catch a read of tags that were never bound to the tree they describe.
+    ///
+    /// A scan tags each entry as it lands, which is necessarily before a Path-tier rule
+    /// can be bound -- the control files are not all known until the walk ends. The bind
+    /// that follows re-tags everything, so writing under unbound rules is a step in a
+    /// correct sequence. Reading under them is not: an unbound gitignore rule answers
+    /// "nothing is ignored", which is a wrong answer rather than a missing one, and it
+    /// would surface as a consumer quietly showing files it was asked to hide.
+    fn debug_assert_tags_bound(&self) {
+        debug_assert!(
+            !self.tag_rules.needs_binding(),
+            "reading tags under a Path-tier rule that was never bound to this tree"
+        );
+    }
+
+    /// Directories holding a control file some enabled rule reads, relative to the root.
+    ///
+    /// What binds a Path-tier rule, and the reason binding can wait for an index instead
+    /// of preceding one. A `.gitignore` is an ordinary entry, so the set of them is
+    /// already here; the alternative was a second full traversal of the filesystem, which
+    /// on the cache-only path is not merely wasteful but contradicts what that path
+    /// promises.
+    ///
+    /// Cheap because the test is on the basename: only a name that matches costs a path,
+    /// and control files number in the tens. Empty when no enabled rule reads one.
+    pub fn control_file_directories(&self) -> Vec<PathBuf> {
+        if !self.tag_rules.needs_path() {
+            return Vec::new();
+        }
+        let mut directories = Vec::new();
+        let mut stack = vec![EntryId::ROOT];
+        while let Some(id) = stack.pop() {
+            let Some(entry) = self.try_entry(id) else {
+                continue;
+            };
+            for (name, child) in &entry.children {
+                let Some(child_entry) = self.try_entry(*child) else {
+                    continue;
+                };
+                if child_entry.kind.is_dir() {
+                    stack.push(*child);
+                } else if self.tag_rules.is_control_file(Path::new(name.as_os_str())) {
+                    // Only now is a path worth building, and only the parent's.
+                    directories.push(self.path_of(id).unwrap_or_default());
+                }
+            }
+        }
+        directories.sort();
+        directories.dedup();
+        directories
     }
 
     /// Tags carried by one relative path, resolved to names.
@@ -1412,6 +1469,7 @@ impl Index {
     /// Empty for an absent path and for one no enabled rule matches; a caller
     /// distinguishing those wants [`Index::path_state`].
     pub fn tags_of(&self, path: &Path) -> Vec<&str> {
+        self.debug_assert_tags_bound();
         self.lookup(path)
             .map(|id| self.tag_rules.names_of(self.entry(id).tag_bits))
             .unwrap_or_default()
@@ -4518,8 +4576,7 @@ mod tests {
     #[test]
     fn every_insert_path_tags_an_entry_the_same_way() {
         let rules = std::sync::Arc::new(
-            crate::tags::TagRules::from_names(["dotfile"], Path::new("/root"))
-                .expect("dotfile is a real rule"),
+            crate::tags::TagRules::from_names(["dotfile"]).expect("dotfile is a real rule"),
         );
         let mut index = Index::new("/root").with_tag_rules(std::sync::Arc::clone(&rules));
         index.apply_ok(&Observation::new(vec![
@@ -4558,7 +4615,7 @@ mod tests {
         assert!(index.tags_of(Path::new(".env")).is_empty(), "no rules, no tags");
 
         let index = index.with_tag_rules(std::sync::Arc::new(
-            crate::tags::TagRules::from_names(["dotfile"], Path::new("/root")).expect("enables"),
+            crate::tags::TagRules::from_names(["dotfile"]).expect("enables"),
         ));
         assert_eq!(index.tags_of(Path::new(".env")), vec!["dotfile"]);
         assert_eq!(
@@ -4589,8 +4646,7 @@ mod tests {
 
         let tagged = crate::scan::ScanConfig {
             tags: Some(std::sync::Arc::new(
-                crate::tags::TagRules::from_names(["dotfile"], Path::new("/root"))
-                    .expect("enables"),
+                crate::tags::TagRules::from_names(["dotfile"]).expect("enables"),
             )),
             ..crate::scan::ScanConfig::default()
         };

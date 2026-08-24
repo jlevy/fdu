@@ -347,6 +347,7 @@ pub(crate) fn open_for_report(
         // marked unverified so the answer cannot claim a currency it has not earned — a
         // snapshot records the freshness it was written with, which was true then.
         index.mark_unverified();
+        bind_path_tags(&mut index, config);
         let content_cache = load_content(&mut index, config)?;
         if config.analysis.profile.is_enabled()
             && (!content_cache.usable
@@ -373,6 +374,7 @@ pub(crate) fn open_for_report(
     if let Some(mut index) = loaded {
         let reconciled = scan::reconcile(&mut index, &config.scan, &mut |_| {})?;
         let scan_report = reconciled.scan;
+        bind_path_tags(&mut index, config);
         index.establish_baseline();
         let content_cache = load_content(&mut index, config)?;
         let analysis = config
@@ -407,6 +409,7 @@ pub(crate) fn open_for_report(
     }
 
     let (mut index, scan_report) = scan::scan_into_index(&root, &config.scan)?;
+    bind_path_tags(&mut index, config);
     let content_cache = load_content(&mut index, config)?;
     let analysis = config
         .analysis
@@ -425,6 +428,33 @@ pub(crate) fn open_for_report(
         OpenReport { path_taken: OpenPath::ColdScan, scan: scan_report, analysis, content_cache },
         pending,
     ))
+}
+
+/// Bind Path-tier tag rules against the index that now exists, and re-tag under them.
+///
+/// Called once on each of the three open paths, at the point the tree stops changing. A
+/// Path-tier rule reads control files, and where those files are is something only an
+/// index knows; binding earlier meant finding them by walking the tree, which cost a cold
+/// scan a second full traversal, cost every `.gitignore` save another, and on the
+/// cache-only path broke that path's one promise -- it opened by walking the tree it is
+/// defined not to touch.
+///
+/// So the rules arrive unbound, entries are tagged as they land with whatever the
+/// Name-tier rules decide, and this closes the gap: it reads exactly the control files the
+/// index lists, then re-tags. The re-tag is an in-memory traversal, which is the trade --
+/// one pass over entries already in hand instead of a second pass over the filesystem.
+///
+/// A no-op when no enabled rule reads a path, which is the default.
+fn bind_path_tags(index: &mut Index, config: &OpenConfig) {
+    let tags = config.scan.tags();
+    if !tags.needs_path() {
+        return;
+    }
+    let root = index.root_path().to_path_buf();
+    let directories = index.control_file_directories();
+    index.adopt_tag_rules(std::sync::Arc::new(
+        tags.bound_to(&root, directories.iter().map(std::path::PathBuf::as_path)),
+    ));
 }
 
 /// Which cache artifacts a completed open still needs to write.
@@ -651,6 +681,152 @@ mod tests {
     /// snapshot written under one taxonomy is never served under another. The second half
     /// is the one that would fail silently -- the entry counts and byte totals are
     /// identical either way, so a stale snapshot looks entirely correct.
+    /// A cold scan with gitignore rules visits each directory once, not twice.
+    ///
+    /// Binding used to walk the tree looking for control files, and then the metadata walk
+    /// visited every one of those directories again. With the rule default-on, that
+    /// doubled directory I/O for every run on a git tree -- a tagging option quietly
+    /// paying for a second traversal of the filesystem. Binding from the index costs an
+    /// in-memory re-tag instead.
+    ///
+    /// One scan inside the measured window, and a bound rather than an equality. The
+    /// counters are process-global and `test_serial` only serializes the tests that take
+    /// it, so concurrent work can inflate these -- never deflate them. That asymmetry is
+    /// what the assertion is built on: the interesting failure is a *second* traversal,
+    /// which cannot hide under an upper bound of one.
+    #[cfg(feature = "gitignore")]
+    #[test]
+    fn a_cold_scan_with_gitignore_rules_opens_each_directory_once() {
+        const DIRECTORIES: u64 = 4; // the root, `src`, `docs`, `docs/deep`
+
+        let _serial = crate::counters::test_serial();
+        let dir = tempfile::tempdir().expect("tempdir");
+        let tree = dir.path().join("tree");
+        for (relative, contents) in [
+            (".gitignore", "*.log\n"),
+            ("src/.gitignore", "!keep.log\n"),
+            ("src/main.rs", "fn main() {}"),
+            ("docs/notes.md", "# notes"),
+            ("docs/deep/more.md", "# more"),
+        ] {
+            let path = tree.join(relative);
+            std::fs::create_dir_all(path.parent().expect("parent")).expect("mkdir");
+            std::fs::write(&path, contents).expect("write");
+        }
+
+        let config = OpenConfig {
+            policy: CachePolicy::Refresh,
+            cache_path: None,
+            scan: ScanConfig {
+                // Single-threaded, so the walk's own counts are on this thread and land in
+                // the window rather than trailing out of a pool after it closes.
+                threads: Some(1),
+                tags: Some(std::sync::Arc::new(
+                    crate::tags::TagRules::from_names(["gitignore"]).expect("enables"),
+                )),
+                ..ScanConfig::default()
+            },
+            ..OpenConfig::default()
+        };
+
+        crate::counters::enable(true);
+        let before = crate::counters::snapshot();
+        let opened = open_for_report(&tree, &config, false);
+        crate::counters::flush_thread();
+        let after = crate::counters::snapshot();
+        crate::counters::enable(false);
+
+        let (index, _report, pending) = opened.expect("scan");
+        pending.join().expect("no cache path is configured, so there is nothing to write");
+        let opens = after.dir_opens - before.dir_opens;
+
+        assert!(opens >= DIRECTORIES, "the walk must have happened at all: {opens} opens");
+        assert!(
+            opens < DIRECTORIES * 2,
+            "a Path-tier tag added a second traversal: {opens} opens for {DIRECTORIES} \
+             directories"
+        );
+        // And the rule actually decided something, so the bound above is about a scan that
+        // did the work rather than one that skipped it.
+        assert!(index.tags_of(Path::new("src/keep.log")).is_empty());
+    }
+
+    /// The cache-only tier must not touch the tree, and gitignore used to make it.
+    ///
+    /// Binding a Path-tier rule meant finding its control files, and finding them meant
+    /// walking the root -- so `--cache only`, whose entire contract is that it answers
+    /// from the snapshot without going to the filesystem, opened by traversing the very
+    /// tree it promises not to look at. The answer was still right; the promise was
+    /// silently broken, and the cost was the whole point of the tier.
+    ///
+    /// The counters are the assertion, because the promise is about work rather than about
+    /// output: a test that only compared rows would have passed throughout.
+    #[cfg(feature = "gitignore")]
+    #[test]
+    fn a_cache_only_open_with_gitignore_rules_does_not_walk_the_tree() {
+        let _serial = crate::counters::test_serial();
+        let dir = tempfile::tempdir().expect("tempdir");
+        let tree = dir.path().join("tree");
+        let cache = dir.path().join("cache").join("snap.fdu");
+        for (relative, contents) in [
+            (".gitignore", "*.log\n"),
+            ("src/.gitignore", "!keep.log\n"),
+            ("src/main.rs", "fn main() {}"),
+            ("src/keep.log", "kept"),
+            ("debug.log", "dropped"),
+        ] {
+            let path = tree.join(relative);
+            std::fs::create_dir_all(path.parent().expect("parent")).expect("mkdir");
+            std::fs::write(&path, contents).expect("write");
+        }
+
+        let tags =
+            std::sync::Arc::new(crate::tags::TagRules::from_names(["gitignore"]).expect("enables"));
+        let config = |policy| OpenConfig {
+            policy,
+            cache_path: Some(cache.clone()),
+            scan: ScanConfig { tags: Some(tags.clone()), ..ScanConfig::default() },
+            ..OpenConfig::default()
+        };
+
+        // Cold, to leave a snapshot behind.
+        let (cold, _, pending) =
+            open_for_report(&tree, &config(CachePolicy::Auto), false).expect("cold open");
+        pending.join().expect("the snapshot must land before the warm open reads it");
+        assert_eq!(cold.tags_of(Path::new("debug.log")), vec!["gitignore"]);
+        assert!(
+            cold.tags_of(Path::new("src/keep.log")).is_empty(),
+            "the nested negation must win, or the fixture is not exercising precedence"
+        );
+
+        // Warm, from the snapshot alone. A delta rather than an absolute, for the reason
+        // the scan counters use one: these are process-global and a test that does not
+        // take `test_serial` can add to them. Concurrency inflates and never deflates, so
+        // zero is the one value it cannot manufacture.
+        crate::counters::enable(true);
+        let before = crate::counters::snapshot();
+        let opened = open_for_report(&tree, &config(CachePolicy::Only), true);
+        crate::counters::flush_thread();
+        let after = crate::counters::snapshot();
+        crate::counters::enable(false);
+
+        let (warm, report, _) = opened.expect("cache-only open");
+        assert_eq!(report.path_taken, OpenPath::CacheOnly);
+        assert_eq!(
+            after.dir_opens - before.dir_opens,
+            0,
+            "the cache-only tier read a directory: {} opens, {} entries",
+            after.dir_opens - before.dir_opens,
+            after.dir_entries - before.dir_entries
+        );
+
+        // And it still answers the same, which is what makes the zero above a saving
+        // rather than a regression.
+        assert_eq!(warm.tags_of(Path::new("debug.log")), vec!["gitignore"]);
+        assert!(warm.tags_of(Path::new("src/keep.log")).is_empty());
+        assert!(warm.tags_of(Path::new("src/main.rs")).is_empty());
+    }
+
     #[test]
     fn supplied_type_rules_change_the_answer_and_invalidate_the_snapshot() {
         let dir = tempfile::tempdir().expect("tempdir");

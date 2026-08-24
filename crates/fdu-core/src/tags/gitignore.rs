@@ -39,49 +39,47 @@ pub struct GitignoreSet {
     /// tree is small — tens, not thousands — and ordered iteration makes the built set
     /// reproducible, which a fingerprint over it would need.
     by_directory: BTreeMap<PathBuf, Gitignore>,
+    /// Whether this set has been shown a tree at all.
+    ///
+    /// `Default` leaves it false, which is the safe direction: a set nobody bound is one
+    /// nobody should be evaluating.
+    bound: bool,
 }
 
 impl GitignoreSet {
-    /// Read every `.gitignore` beneath `root`, skipping what cannot be read.
+    /// Read the `.gitignore` in each named directory, skipping what cannot be read.
+    ///
+    /// The directories are *given*, not discovered, and that is the whole design. This set
+    /// used to find its own control files by walking the tree with `ignore`'s walker,
+    /// which made a tagging option pay for a second full traversal: `--cache only`, whose
+    /// entire contract is that it does not touch the tree, opened by walking it; a cold
+    /// scan visited every directory twice; and every `.gitignore` save re-walked the root.
+    /// The index already lists every control file in the tree, so the caller hands them
+    /// down and this reads exactly those files.
     ///
     /// A control file that cannot be parsed is not a fatal error: the tree is still
     /// answerable, just with one fewer opinion in it. Refusing to open an index because a
     /// `.gitignore` had a bad line would make a tagging option able to fail a scan, which
-    /// is a far worse trade than tagging that directory less precisely.
-    ///
-    /// Walks with the `ignore` crate's own walker, which is already in the dependency
-    /// tree and already knows not to descend into `.git`.
-    pub fn build(root: &Path) -> Self {
+    /// is a far worse trade than tagging that directory less precisely. A file deleted
+    /// since the index recorded it arrives here too, and is skipped the same way.
+    pub fn from_directories<'a, I>(root: &Path, directories: I) -> Self
+    where
+        I: IntoIterator<Item = &'a Path>,
+    {
         let mut by_directory = BTreeMap::new();
-        // `require_git(false)`: a tree that is not a git repository can still carry
-        // `.gitignore` files, and a caller who asked for the tag meant those files.
-        // `standard_filters(false)`: this walk is looking *for* the control files, so
-        // letting the walker apply them would let one `.gitignore` hide another.
-        let walker = ignore::WalkBuilder::new(root)
-            .standard_filters(false)
-            .hidden(false)
-            .require_git(false)
-            .filter_entry(|entry| entry.file_name() != std::ffi::OsStr::new(".git"))
-            .build();
-        for entry in walker.flatten() {
-            if entry.file_name() != std::ffi::OsStr::new(CONTROL_FILE) {
-                continue;
-            }
-            let Some(directory) = entry.path().parent() else {
-                continue;
-            };
-            let relative = directory.strip_prefix(root).unwrap_or(Path::new("")).to_path_buf();
+        for relative in directories {
+            let directory = root.join(relative);
             // The builder's root is the governing directory, so a pattern anchored with a
-            // leading slash anchors *there* — which is what git means by it.
-            let mut builder = GitignoreBuilder::new(directory);
-            if builder.add(entry.path()).is_some() {
+            // leading slash anchors *there* -- which is what git means by it.
+            let mut builder = GitignoreBuilder::new(&directory);
+            if builder.add(directory.join(CONTROL_FILE)).is_some() {
                 continue;
             }
             if let Ok(matcher) = builder.build() {
-                by_directory.insert(relative, matcher);
+                by_directory.insert(relative.to_path_buf(), matcher);
             }
         }
-        Self { by_directory }
+        Self { by_directory, bound: true }
     }
 
     /// Whether any governing `.gitignore` ignores this relative path.
@@ -121,6 +119,21 @@ impl GitignoreSet {
         false
     }
 
+    /// A set that has not been bound to a tree yet.
+    ///
+    /// Distinct from a bound set that found no control files, and the distinction matters:
+    /// both ignore nothing, but one of them is an answer and the other is the absence of
+    /// one. [`TagRules::needs_binding`](crate::tags::TagRules::needs_binding) reports it so
+    /// the open path can be asserted to close the window before anything reads a tag.
+    pub fn unbound() -> Self {
+        Self { by_directory: BTreeMap::new(), bound: false }
+    }
+
+    /// Whether this set is still waiting to be bound to a tree.
+    pub fn is_unbound(&self) -> bool {
+        !self.bound
+    }
+
     /// Whether this set read anything at all.
     pub fn is_empty(&self) -> bool {
         self.by_directory.is_empty()
@@ -157,7 +170,15 @@ mod tests {
             }
             std::fs::write(&full, contents).expect("write");
         }
-        let set = GitignoreSet::build(dir.path());
+        // The directories the fixture put a control file in -- which is exactly what an
+        // index hands over in production, so the tests drive the same entry point.
+        let governing: Vec<PathBuf> = files
+            .iter()
+            .filter(|(path, _)| is_control_file(Path::new(path)))
+            .map(|(path, _)| Path::new(path).parent().unwrap_or(Path::new("")).to_path_buf())
+            .collect();
+        let set =
+            GitignoreSet::from_directories(dir.path(), governing.iter().map(PathBuf::as_path));
         (dir, set)
     }
 
