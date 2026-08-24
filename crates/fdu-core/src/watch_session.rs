@@ -185,6 +185,27 @@ impl Session {
             dirty: !applied.is_empty(),
             dirty_rollups: dirty_rollups(&applied),
         };
+        // A control file that moved changes what the tag rules decide about entries the
+        // batch never touched, so it is handled before the rows are read: rebinding first
+        // means the tags this batch reports are the ones the new file produces, not the
+        // ones the old one did.
+        //
+        // The escalations go out even though nothing beneath those directories was
+        // upserted or removed. That is the point -- a consumer holding rows for a subtree
+        // has no other way to learn that its tags moved, and a silently re-tagged subtree
+        // is a view that is wrong without ever having been told it changed.
+        for governed in self.rebind_tags_for(&applied)? {
+            batch.changes.push(Change {
+                path: governed,
+                kind: ChangeKind::Invalidate,
+                entry_kind: None,
+                bytes: None,
+                allocated: None,
+                mtime_ns: None,
+                clock: applied.last().map_or(0, |delta| delta.clock.0),
+            });
+        }
+
         // Tags are read from the index, which is where they were computed, so this needs a
         // read guard -- one for the batch rather than one per op, since a batch can carry
         // thousands. Skipped entirely when nothing filters on tags, which is the default.
@@ -206,6 +227,26 @@ impl Session {
             }
         }
         Ok(Some(batch))
+    }
+
+    /// Re-read the tag rules' control files when this batch moved one.
+    ///
+    /// Returns the directories whose tags may have changed, or nothing at all -- the
+    /// common case, and one cheap `any` over the batch -- when no control file was
+    /// touched or no enabled rule reads one.
+    fn rebind_tags_for(&self, applied: &[AppliedDelta]) -> Result<Vec<PathBuf>> {
+        let moved = self.index.with_index(|index| {
+            let rules = index.tag_rules();
+            !rules.is_empty()
+                && applied
+                    .iter()
+                    .flat_map(|delta| &delta.ops)
+                    .any(|op| rules.is_control_file(op.path()))
+        })?;
+        if !moved {
+            return Ok(Vec::new());
+        }
+        self.index.rebind_tag_rules()
     }
 
     /// Translate one applied op into a change, when the selection admits it.

@@ -756,7 +756,7 @@ the bead that owns it:
 | Rules carry a tier — Name, Path, Content — and Content-tier rules are rejected at enable time in v1, so a future `binary` tag cannot silently turn a metadata walk into a content walk | `fdu-mvt3` |
 | Categorical facts (mime type) are not tags: they are interned-key tally maps, the `ext_id`/`group_id` mechanism. Two shapes; neither absorbs the other | spec Phase 1 |
 | `ScanScope.ignore_rules_fingerprint` → `tag_rules_fingerprint`; same wire position, empty set still fingerprints to 0, every existing snapshot stays valid | `fdu-mvt3` |
-| `ignore` lands behind a default-on `gitignore` feature (notify’s precedent; measured +1.06 MiB, 9 crates, no lean mode). MSRV trap found by checking: current releases need Rust 1.88 > MSRV 1.85, so pin `=0.4.30` with `globset` held at 0.4.19 — both clear the cool-off | `fdu-brt0` |
+| `ignore` lands behind a default-on `gitignore` feature (notify’s precedent; measured +1.06 MiB, 9 crates, no lean mode). The MSRV trap found by checking went deeper than a version pin: 0.4.30 declares no `rust-version` and still needs 1.88, so the workspace floor moved to 1.88 rather than the crate moving back | `fdu-brt0` |
 | `dotfile` ships as the zero-dependency Name-tier reference rule, unpromoted — the model is provable end-to-end before the dependency lands | `fdu-mvt3` |
 | Hidden admission is scope (prune + allowlist + fingerprint), its own bead, owning its `FORMAT_VERSION` bump | `fdu-xyvu` |
 | `Classification.flags` fold in later as Name-tier rules | `fdu-n7mv`, P3 |
@@ -780,9 +780,9 @@ originally stated dissolved on inspection, and are kept struck rather than delet
 ~~metabrowser confirming the hidden plane~~ (the confirmation arrived — hidden prunes at
 scope, now `fdu-xyvu`) and ~~the 14-day cool-off on the `ignore` crate~~ (the cool-off
 gates young releases, and `ignore` is mature — the real constraint found by checking is
-that its current release needs Rust 1.88 against MSRV 1.85, answered by pinning
-`=0.4.30`). What remained was a design decision, since taken: see *The tag model, made
-generic*.
+that its current release needs Rust 1.88, answered by raising the workspace floor to
+1.88 rather than holding the crate back).
+What remained was a design decision, since taken: see *The tag model, made generic*.
 
 **`fdu-4o0m`, `fdu-m893`, `fdu-ey9q` — the session, progress mode, progressive
 goldens.** These sit behind the progressive-results epic (`fdu-wpa0`), which owns the

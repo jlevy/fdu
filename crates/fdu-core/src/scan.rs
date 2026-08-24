@@ -2578,11 +2578,12 @@ impl DirectoryQueue {
             // that reached the maximum pool. Without this shadow history a slow-prefix
             // expansion makes a later fast phase unobservable, precisely the
             // irreversible over-expansion case the evidence matrix must detect.
-            if let (Some(spec), Some(window)) = (controller_spec, completed_window) {
-                if self.diagnostics.is_some() && !finished {
-                    state.shadow_calibration =
-                        Some(RepeatedCalibration::starting_at(spec, window.end_entry_ordinal));
-                }
+            if let (Some(spec), Some(window)) = (controller_spec, completed_window)
+                && self.diagnostics.is_some()
+                && !finished
+            {
+                state.shadow_calibration =
+                    Some(RepeatedCalibration::starting_at(spec, window.end_entry_ordinal));
             }
             state.controller = None;
         }
@@ -2681,10 +2682,10 @@ pub fn scan_into_index(root: &Path, config: &ScanConfig) -> Result<(Index, ScanR
         .with_tag_rules(config.tags());
     let mut apply_error: Option<Error> = None;
     let report = scan(&root, config, &mut |observation| {
-        if apply_error.is_none() {
-            if let Err(error) = index.apply_baseline(&observation) {
-                apply_error = Some(error);
-            }
+        if apply_error.is_none()
+            && let Err(error) = index.apply_baseline(&observation)
+        {
+            apply_error = Some(error);
         }
     })?;
     if let Some(error) = apply_error {
@@ -2723,10 +2724,10 @@ pub fn scan_into_index_with_policy_diagnostics(
         &root,
         config,
         &mut |observation| {
-            if apply_error.is_none() {
-                if let Err(error) = index.apply_baseline(&observation) {
-                    apply_error = Some(error);
-                }
+            if apply_error.is_none()
+                && let Err(error) = index.apply_baseline(&observation)
+            {
+                apply_error = Some(error);
             }
         },
         policy,
@@ -2847,34 +2848,32 @@ pub fn revalidate(
 
             if should_descend(kind, attrs, depth, root_dev, config) {
                 queue.push_back((rel_path, depth + 1));
-            } else if kind.is_dir() {
-                if let Some(children) = index.children(&rel_path) {
-                    for (child_name, _) in children {
-                        let child_path = rel_path.join(child_name);
-                        batch.push(ObservationOp::if_state(
-                            Op::Remove { path: child_path.clone() },
-                            index.relaxed_expectation(&child_path),
-                        ));
-                        if batch.len() >= batch_limit {
-                            sink(Observation::from_ops(std::mem::take(&mut batch)));
-                            batch.reserve(batch_limit);
-                        }
+            } else if kind.is_dir()
+                && let Some(children) = index.children(&rel_path)
+            {
+                for (child_name, _) in children {
+                    let child_path = rel_path.join(child_name);
+                    batch.push(ObservationOp::if_state(
+                        Op::Remove { path: child_path.clone() },
+                        index.relaxed_expectation(&child_path),
+                    ));
+                    if batch.len() >= batch_limit {
+                        sink(Observation::from_ops(std::mem::take(&mut batch)));
+                        batch.reserve(batch_limit);
                     }
                 }
             }
         }
 
         // Anything the index still lists here but the filesystem did not return is gone.
-        if listing_complete {
-            if let Some(known) = index.children(&rel_dir) {
-                for (name, _) in known {
-                    if !seen.contains(name) {
-                        let path = rel_dir.join(name);
-                        batch.push(ObservationOp::if_state(
-                            Op::Remove { path: path.clone() },
-                            index.relaxed_expectation(&path),
-                        ));
-                    }
+        if listing_complete && let Some(known) = index.children(&rel_dir) {
+            for (name, _) in known {
+                if !seen.contains(name) {
+                    let path = rel_dir.join(name);
+                    batch.push(ObservationOp::if_state(
+                        Op::Remove { path: path.clone() },
+                        index.relaxed_expectation(&path),
+                    ));
                 }
             }
         }
@@ -3039,15 +3038,15 @@ fn reconcile_target_inner(
         }
     }
 
-    if subtree.as_os_str().is_empty() && config.reconciliation_worker_threads() > 1 {
-        if let ReconcileTarget::Direct(index) = target {
-            match reconcile_direct_parallel(index, &root, root_dev, config, max_deferred_ops, sink)?
-            {
-                DirectParallelOutcome::Complete(parallel) => return Ok(parallel),
-                DirectParallelOutcome::RetrySerial { prefix, remaining } => {
-                    report = prefix;
-                    retry_frontier = Some(remaining);
-                }
+    if subtree.as_os_str().is_empty()
+        && config.reconciliation_worker_threads() > 1
+        && let ReconcileTarget::Direct(index) = target
+    {
+        match reconcile_direct_parallel(index, &root, root_dev, config, max_deferred_ops, sink)? {
+            DirectParallelOutcome::Complete(parallel) => return Ok(parallel),
+            DirectParallelOutcome::RetrySerial { prefix, remaining } => {
+                report = prefix;
+                retry_frontier = Some(remaining);
             }
         }
     }
@@ -4381,10 +4380,10 @@ mod tests {
         let mut depths_in_order: Vec<usize> = Vec::new();
         scan(dir.path(), &config, &mut |observation| {
             for op in &observation.ops {
-                if let Op::Upsert { path, kind, .. } = &op.op {
-                    if kind.is_dir() {
-                        depths_in_order.push(path.components().count());
-                    }
+                if let Op::Upsert { path, kind, .. } = &op.op
+                    && kind.is_dir()
+                {
+                    depths_in_order.push(path.components().count());
                 }
             }
         })
@@ -4411,10 +4410,10 @@ mod tests {
         let mut files: Vec<PathBuf> = Vec::new();
         scan(dir, &config, &mut |observation| {
             for op in &observation.ops {
-                if let Op::Upsert { path, kind, .. } = &op.op {
-                    if !kind.is_dir() {
-                        files.push(path.clone());
-                    }
+                if let Op::Upsert { path, kind, .. } = &op.op
+                    && !kind.is_dir()
+                {
+                    files.push(path.clone());
                 }
             }
         })
@@ -4518,10 +4517,10 @@ mod tests {
         let mut files: Vec<PathBuf> = Vec::new();
         scan(dir, &config, &mut |observation| {
             for op in &observation.ops {
-                if let Op::Upsert { path, kind, .. } = &op.op {
-                    if !kind.is_dir() {
-                        files.push(path.clone());
-                    }
+                if let Op::Upsert { path, kind, .. } = &op.op
+                    && !kind.is_dir()
+                {
+                    files.push(path.clone());
                 }
             }
         })

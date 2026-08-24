@@ -8,6 +8,15 @@
 // Measurement scaffolding, kept out of the library so the engine's unsafe-free
 // guarantee stands: counting allocations needs `unsafe impl GlobalAlloc`, and the
 // probe is the right place to pay for that.
+
+// The rejected value in an argument error is printed with `Debug`, not `Display`. Clippy
+// prefers `OsStr::display()` here, and for a *path being reported* that is right -- but
+// this is the value a user typed that the parser could not accept, and `Display` is lossy
+// exactly where that matters: a non-UTF-8 argument becomes U+FFFD, so the message shows
+// something the user did not write. `Debug` escapes it instead, and quotes it, which is
+// the same choice the CLI's own `invalid --flag {value:?}` errors make.
+#![allow(clippy::unnecessary_debug_formatting)]
+
 use std::env;
 use std::ffi::OsString;
 use std::fmt::Write as _;

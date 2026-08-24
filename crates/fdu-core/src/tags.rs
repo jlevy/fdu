@@ -22,8 +22,9 @@
 //! whose tier it cannot afford:
 //!
 //! - [`TagTier::Name`] sees the basename. Free — the walk already has it.
-//! - [`TagTier::Path`] sees the relative path and control files found during the walk.
-//!   Cheap, and where gitignore lives.
+//! - [`TagTier::Path`] sees the relative path and control files read from the tree.
+//!   Cheap, and where `gitignore` lives -- the one rule that costs a dependency, which is
+//!   why it and it alone sits behind a cargo feature.
 //! - [`TagTier::Content`] would need file bytes. That is fdu's content tier: a different
 //!   cost class, opt-in for exactly that reason, and **rejected in v1**. Without this
 //!   check, adding a `binary` or `text` tag would silently turn a metadata walk into a
@@ -35,6 +36,9 @@
 //! value; it belongs to the interned-key tally maps that `ext_id` and `group_id` already
 //! use. Two shapes, and neither should absorb the other: booleans get a bit and maybe a
 //! plane, categories get an id and a map.
+
+#[cfg(feature = "gitignore")]
+pub mod gitignore;
 
 use std::borrow::Cow;
 use std::ffi::OsStr;
@@ -81,6 +85,46 @@ pub struct TagRule {
 /// Decides a [`TagTier::Name`] rule from a basename.
 type NameMatcher = fn(&OsStr) -> bool;
 
+/// What actually decides one enabled rule for one entry.
+///
+/// An enum rather than a trait object because the set is engine-declared and closed, and
+/// because the Name arm has to stay a bare function pointer: it runs once per entry per
+/// insert, and a virtual call there would be paid across every entry of every tree for a
+/// generality nothing has asked for.
+#[derive(Clone, Debug)]
+enum Matcher {
+    /// Reads the basename. Free -- the walk already holds it.
+    Name(NameMatcher),
+    /// Reads the relative path, against state gathered from the tree.
+    ///
+    /// Gated with the only rule that produces one. Without that feature the variant does
+    /// not exist, so the Path-tier arms below vanish with it rather than becoming
+    /// unreachable code the compiler has to be told about.
+    #[cfg(feature = "gitignore")]
+    Path(PathMatcher),
+}
+
+/// State a [`TagTier::Path`] rule matches against.
+///
+/// Built once when the rule set is, from the tree the set will be used on, and shared:
+/// the set lives behind an `Arc` on the index, and rebuilding it is how a changed control
+/// file takes effect.
+#[cfg(feature = "gitignore")]
+#[derive(Clone, Debug)]
+enum PathMatcher {
+    /// Every `.gitignore` under the root, composed with git's own precedence.
+    Gitignore(std::sync::Arc<gitignore::GitignoreSet>),
+}
+
+#[cfg(feature = "gitignore")]
+impl PathMatcher {
+    fn matches(&self, relative_path: &Path, is_dir: bool) -> bool {
+        match self {
+            Self::Gitignore(set) => set.is_ignored(relative_path, is_dir),
+        }
+    }
+}
+
 /// The enabled rule set for one index.
 ///
 /// Built once at open and then read-only, the same shape as
@@ -90,7 +134,7 @@ type NameMatcher = fn(&OsStr) -> bool;
 #[derive(Clone, Debug, Default)]
 pub struct TagRules {
     rules: Vec<TagRule>,
-    matchers: Vec<Option<NameMatcher>>,
+    matchers: Vec<Matcher>,
     fingerprint: u64,
 }
 
@@ -116,6 +160,18 @@ pub enum TagRuleError {
         /// What this index does evaluate.
         enabled: String,
     },
+    /// A real rule this build was compiled without.
+    ///
+    /// Its own variant, not `Unknown`, because the answer is a build flag rather than a
+    /// spelling correction -- and because a binary that silently ignored the request would
+    /// answer a gitignore question with "nothing is ignored", which is a wrong answer
+    /// rather than a missing one.
+    Unavailable {
+        /// The rule that was asked for.
+        id: String,
+        /// The cargo feature that carries it.
+        feature: &'static str,
+    },
     /// A rule whose tier the engine will not run.
     ///
     /// Carried as its own variant rather than folded into `Unknown` because the two need
@@ -136,6 +192,11 @@ impl std::fmt::Display for TagRuleError {
                 write!(f, "unknown tag rule {id:?}; available: {}", available_names())
             }
             Self::Duplicate(id) => write!(f, "tag rule {id:?} named twice"),
+            Self::Unavailable { id, feature } => write!(
+                f,
+                "tag rule {id:?} is not in this build: it needs the {feature:?} cargo feature, \
+                 which is on by default and off under --no-default-features"
+            ),
             Self::NotEnabled { id, enabled } if enabled.is_empty() => {
                 write!(f, "tag rule {id:?} is not enabled: this index evaluates no tag rules")
             }
@@ -161,16 +222,42 @@ impl std::error::Error for TagRuleError {}
 /// Engine-declared rather than caller-supplied in v1. A runtime rule dialect is plausible
 /// later — [`TypeRegistry`](crate::classify::TypeRegistry) already shows the shape — but a
 /// closed set is what lets the tier check be a guarantee rather than a request.
-fn catalogue() -> &'static [(TagRule, Option<NameMatcher>)] {
-    static CATALOGUE: std::sync::LazyLock<Vec<(TagRule, Option<NameMatcher>)>> =
+fn catalogue() -> &'static [(TagRule, Decides)] {
+    static CATALOGUE: std::sync::LazyLock<Vec<(TagRule, Decides)>> =
         std::sync::LazyLock::new(|| {
-            vec![(
-                TagRule { id: Cow::Borrowed("dotfile"), tier: TagTier::Name },
-                Some(is_dotfile as NameMatcher),
-            )]
+            vec![
+                (
+                    TagRule { id: Cow::Borrowed("dotfile"), tier: TagTier::Name },
+                    Decides::Name(is_dotfile as NameMatcher),
+                ),
+                (
+                    TagRule { id: Cow::Borrowed("gitignore"), tier: TagTier::Path },
+                    Decides::Gitignore,
+                ),
+            ]
         });
     &CATALOGUE
 }
+
+/// How the catalogue says a rule is decided, before it is bound to a tree.
+///
+/// The catalogue is static and a Path-tier matcher is not: it is built from the tree the
+/// rule set will be used on. So the catalogue names the *kind*, and
+/// [`TagRules::from_names`] binds it.
+#[derive(Clone, Copy, Debug)]
+enum Decides {
+    /// A pure function of the basename, ready to use as it stands.
+    Name(NameMatcher),
+    /// Needs a `.gitignore` evaluator built from the root.
+    Gitignore,
+}
+
+/// The cargo feature carrying the gitignore rule, named once.
+///
+/// Only reachable in a build without that feature, which is the build whose error message
+/// has to name it.
+#[cfg(not(feature = "gitignore"))]
+const GITIGNORE_FEATURE: &str = "gitignore";
 
 fn available_names() -> String {
     catalogue().iter().map(|(rule, _)| rule.id.as_ref()).collect::<Vec<_>>().join(", ")
@@ -196,11 +283,17 @@ impl TagRules {
         &NONE
     }
 
-    /// Enable rules by name, in the order given.
+    /// Enable rules by name, in the order given, bound to the tree they will run on.
     ///
     /// The order is the bit order, and it is the caller's, so a set is reproducible from
     /// what a user typed rather than from an engine-internal ordering they cannot see.
-    pub fn from_names<I, S>(names: I) -> Result<Self, TagRuleError>
+    ///
+    /// `root` is where Path-tier rules read their control files. Taken here rather than at
+    /// evaluation time because binding is the expensive part -- a `.gitignore` set is one
+    /// walk of a tree's control files -- and because a set that could be evaluated unbound
+    /// would answer "nothing is ignored" about a tree it had never looked at, which is a
+    /// wrong answer rather than a missing one.
+    pub fn from_names<I, S>(names: I, root: &Path) -> Result<Self, TagRuleError>
     where
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
@@ -219,14 +312,78 @@ impl TagRules {
             if found.0.tier == TagTier::Content {
                 return Err(TagRuleError::TierRefused { id: name.to_string(), tier: found.0.tier });
             }
+            matchers.push(bind(name, found.1, root)?);
             rules.push(found.0.clone());
-            matchers.push(found.1);
         }
         if rules.len() > MAX_TAG_RULES {
             return Err(TagRuleError::TooMany(rules.len()));
         }
         let fingerprint = fingerprint_of(&rules);
         Ok(Self { rules, matchers, fingerprint })
+    }
+
+    /// The same enabled set, rebound to the tree as it is now.
+    ///
+    /// What a changed control file needs: the enabled rules and their bit order do not
+    /// move -- so the fingerprint does not move either, and no cache is invalidated --
+    /// while the state they match against is read again. The index adopts the result and
+    /// re-tags, which is the same path a snapshot takes when its rules are adopted.
+    ///
+    /// Infallible on purpose, and not `from_names` over the same names. Re-resolving names
+    /// would reintroduce every way naming can fail -- unknown, duplicate, refused tier,
+    /// missing feature -- into a path where none of them can happen, and would leave a
+    /// caller holding a `Result` it has no sensible way to handle. Rebinding the matchers
+    /// this set already holds cannot fail, and the fingerprint is carried across rather
+    /// than recomputed, which is the property that makes this cache-safe.
+    #[must_use]
+    pub fn rebound(&self, root: &Path) -> Self {
+        let _ = root;
+        let matchers = self
+            .matchers
+            .iter()
+            .map(|matcher| match matcher {
+                Matcher::Name(decide) => Matcher::Name(*decide),
+                #[cfg(feature = "gitignore")]
+                Matcher::Path(PathMatcher::Gitignore(_)) => Matcher::Path(PathMatcher::Gitignore(
+                    std::sync::Arc::new(gitignore::GitignoreSet::build(root)),
+                )),
+            })
+            .collect();
+        Self { rules: self.rules.clone(), matchers, fingerprint: self.fingerprint }
+    }
+
+    /// Directories whose control files this set read, relative to the root.
+    ///
+    /// The scope a rebuild moved. A consumer's cached rows for these subtrees may now be
+    /// tagged differently without any entry beneath them having been touched, which is a
+    /// change nothing else in the delta stream would tell them about.
+    pub fn governed_directories(&self) -> Vec<std::path::PathBuf> {
+        let mut governed = Vec::new();
+        for matcher in &self.matchers {
+            match matcher {
+                Matcher::Name(_) => {}
+                #[cfg(feature = "gitignore")]
+                Matcher::Path(PathMatcher::Gitignore(set)) => {
+                    governed.extend(set.governed_directories().map(Path::to_path_buf));
+                }
+            }
+        }
+        governed.sort();
+        governed.dedup();
+        governed
+    }
+
+    /// Whether an enabled rule reads a control file that this path is.
+    ///
+    /// The signal a watch loop acts on: creating, editing or removing a path this answers
+    /// `true` for changes what the rules decide, without changing which rules are enabled.
+    pub fn is_control_file(&self, relative_path: &Path) -> bool {
+        let _ = relative_path;
+        self.matchers.iter().any(|matcher| match matcher {
+            Matcher::Name(_) => false,
+            #[cfg(feature = "gitignore")]
+            Matcher::Path(PathMatcher::Gitignore(_)) => gitignore::is_control_file(relative_path),
+        })
     }
 
     /// Identity of the enabled set, folded into the scan scope.
@@ -272,20 +429,34 @@ impl TagRules {
     /// [`TagTier::Name`] rule does.
     ///
     /// Returns zero when nothing is enabled, which is the default and costs one branch.
-    pub fn evaluate<'a, F>(&self, name: &OsStr, relative_path: F) -> TagBits
+    pub fn evaluate<'a, F>(&self, name: &OsStr, is_dir: bool, relative_path: F) -> TagBits
     where
         F: FnOnce() -> Cow<'a, Path>,
     {
         if self.rules.is_empty() {
             return 0;
         }
-        // Every rule in the v1 catalogue is Name-tier, so nothing reads a path yet. The
-        // first Path-tier rule calls this; the closure exists so that adding one is a
-        // change to this function rather than to every insert site in the index.
-        let _ = relative_path;
+        // Materialized at most once, and only when a rule actually reads it. The closure
+        // is `FnOnce`, so it is moved out on first use and every later Path-tier rule
+        // reads the value it produced. Both locals are Path-tier machinery, so a build
+        // with no Path-tier rule does not have them -- or the closure they hold -- at all.
+        #[cfg(feature = "gitignore")]
+        let (mut produce, mut path) = (Some(relative_path), None::<Cow<'a, Path>>);
+        #[cfg(not(feature = "gitignore"))]
+        let (_, _) = (relative_path, is_dir);
         let mut bits: TagBits = 0;
         for (index, matcher) in self.matchers.iter().enumerate() {
-            if matcher.is_some_and(|decide| decide(name)) {
+            let hit = match matcher {
+                Matcher::Name(decide) => decide(name),
+                #[cfg(feature = "gitignore")]
+                Matcher::Path(decide) => {
+                    if path.is_none() {
+                        path = produce.take().map(|produce| produce());
+                    }
+                    path.as_deref().is_some_and(|path| decide.matches(path, is_dir))
+                }
+            };
+            if hit {
                 bits |= 1 << index;
             }
         }
@@ -336,6 +507,31 @@ impl TagRules {
     }
 }
 
+/// Turn a catalogue entry into the matcher that will decide it for this tree.
+///
+/// The one place a Path-tier rule is bound, and the one place a rule missing from the
+/// build is refused. Both belong together: "this build does not carry the rule" and "this
+/// is how the rule is wired up" are the same question asked of the same table.
+// Infallible in a build that carries every rule, and not in one that does not: the `Err`
+// arm below is the refusal a missing feature produces. Scoped to the feature rather than
+// allowed outright, so the lint still speaks in the configuration where it can be right.
+#[cfg_attr(feature = "gitignore", allow(clippy::unnecessary_wraps))]
+fn bind(name: &str, decides: Decides, root: &Path) -> Result<Matcher, TagRuleError> {
+    let _ = name;
+    match decides {
+        Decides::Name(matcher) => Ok(Matcher::Name(matcher)),
+        #[cfg(feature = "gitignore")]
+        Decides::Gitignore => Ok(Matcher::Path(PathMatcher::Gitignore(std::sync::Arc::new(
+            gitignore::GitignoreSet::build(root),
+        )))),
+        #[cfg(not(feature = "gitignore"))]
+        Decides::Gitignore => {
+            let _ = root;
+            Err(TagRuleError::Unavailable { id: name.to_string(), feature: GITIGNORE_FEATURE })
+        }
+    }
+}
+
 /// FNV-1a over the enabled names and tiers, in order.
 fn fingerprint_of(rules: &[TagRule]) -> u64 {
     if rules.is_empty() {
@@ -362,7 +558,7 @@ mod tests {
     use std::ffi::OsString;
 
     fn bits(rules: &TagRules, name: &str) -> TagBits {
-        rules.evaluate(&OsString::from(name), || Cow::Borrowed(Path::new(name)))
+        rules.evaluate(&OsString::from(name), false, || Cow::Borrowed(Path::new(name)))
     }
 
     #[test]
@@ -371,13 +567,18 @@ mod tests {
         // set hashed to anything else, shipping tags would discard every cache in the
         // world to express "still no rules".
         assert_eq!(TagRules::none().fingerprint(), 0);
-        assert_eq!(TagRules::from_names::<[&str; 0], &str>([]).expect("empty").fingerprint(), 0);
+        assert_eq!(
+            TagRules::from_names::<[&str; 0], &str>([], Path::new("/root"))
+                .expect("empty")
+                .fingerprint(),
+            0
+        );
         assert!(TagRules::none().is_empty());
     }
 
     #[test]
     fn the_dotfile_rule_tags_what_a_person_would_call_hidden() {
-        let rules = TagRules::from_names(["dotfile"]).expect("enables");
+        let rules = TagRules::from_names(["dotfile"], Path::new("/root")).expect("enables");
         assert_ne!(bits(&rules, ".gitignore"), 0);
         assert_ne!(bits(&rules, ".config"), 0);
         assert_eq!(bits(&rules, "README.md"), 0);
@@ -388,7 +589,7 @@ mod tests {
 
     #[test]
     fn an_unknown_rule_lists_the_ones_that_exist() {
-        let error = TagRules::from_names(["nope"]).expect_err("rejected");
+        let error = TagRules::from_names(["nope"], Path::new("/root")).expect_err("rejected");
         assert_eq!(error, TagRuleError::Unknown("nope".to_string()));
         assert!(error.to_string().contains("dotfile"), "{error}");
     }
@@ -396,7 +597,7 @@ mod tests {
     #[test]
     fn a_rule_named_twice_is_a_typo_rather_than_a_no_op() {
         assert_eq!(
-            TagRules::from_names(["dotfile", "dotfile"]).expect_err("rejected"),
+            TagRules::from_names(["dotfile", "dotfile"], Path::new("/root")).expect_err("rejected"),
             TagRuleError::Duplicate("dotfile".to_string())
         );
     }
@@ -422,17 +623,80 @@ mod tests {
 
     #[test]
     fn the_fingerprint_follows_the_enabled_set_and_its_order() {
-        let one = TagRules::from_names(["dotfile"]).expect("enables");
+        let one = TagRules::from_names(["dotfile"], Path::new("/root")).expect("enables");
         assert_ne!(one.fingerprint(), 0, "an enabled rule is not the empty set");
         assert_eq!(
             one.fingerprint(),
-            TagRules::from_names(["dotfile"]).expect("enables").fingerprint()
+            TagRules::from_names(["dotfile"], Path::new("/root")).expect("enables").fingerprint()
         );
+    }
+
+    /// A rebind reads the tree again without moving the identity of the set.
+    ///
+    /// The load-bearing half is the fingerprint. If rebinding produced a different one,
+    /// every `.gitignore` save would invalidate the snapshot for a tree whose enabled
+    /// rules had not changed at all -- a cache thrown away to express "the same rules,
+    /// applied to a file that moved".
+    #[cfg(feature = "gitignore")]
+    #[test]
+    fn rebinding_re_reads_the_control_files_without_moving_the_fingerprint() {
+        let dir = tempfile::tempdir().expect("a temporary directory");
+        std::fs::write(dir.path().join(".gitignore"), "*.log\n").expect("write");
+
+        let rules = TagRules::from_names(["gitignore"], dir.path()).expect("enables");
+        let bits = |rules: &TagRules, path: &str| {
+            rules.evaluate(&OsString::from(path), false, || Cow::Borrowed(Path::new(path)))
+        };
+        assert_ne!(bits(&rules, "debug.log"), 0);
+        assert_eq!(bits(&rules, "notes.txt"), 0);
+
+        std::fs::write(dir.path().join(".gitignore"), "*.txt\n").expect("rewrite");
+        let rebound = rules.rebound(dir.path());
+        assert_eq!(bits(&rebound, "debug.log"), 0, "the old rule is gone");
+        assert_ne!(bits(&rebound, "notes.txt"), 0, "and the new one applies");
+        assert_eq!(
+            rebound.fingerprint(),
+            rules.fingerprint(),
+            "the same rules were enabled, so no snapshot is invalidated"
+        );
+        assert_eq!(rebound.governed_directories(), vec![std::path::PathBuf::new()]);
+    }
+
+    /// The control-file question is asked of the enabled set, not of the catalogue.
+    #[cfg(feature = "gitignore")]
+    #[test]
+    fn only_a_set_that_reads_control_files_recognizes_one() {
+        let dir = tempfile::tempdir().expect("a temporary directory");
+        let names = TagRules::from_names(["dotfile"], dir.path()).expect("enables");
+        assert!(
+            !names.is_control_file(Path::new(".gitignore")),
+            "a Name-tier set reads no files, so nothing is a control file for it"
+        );
+
+        let paths = TagRules::from_names(["gitignore"], dir.path()).expect("enables");
+        assert!(paths.is_control_file(Path::new(".gitignore")));
+        assert!(paths.is_control_file(Path::new("docs/.gitignore")));
+        assert!(!paths.is_control_file(Path::new("docs/notes.md")));
+    }
+
+    /// A build without the rule refuses it by name and says which flag carries it.
+    ///
+    /// Exercised through `Display` rather than through `from_names`, because in a build
+    /// that *has* the feature the refusal is unreachable -- and a test that passes because
+    /// the thing it guards cannot happen stops being true in the build where it can.
+    #[test]
+    fn a_rule_missing_from_the_build_names_the_feature_rather_than_the_spelling() {
+        let refused =
+            TagRuleError::Unavailable { id: "gitignore".to_string(), feature: "gitignore" };
+        let message = refused.to_string();
+        assert!(message.contains("not in this build"), "{message}");
+        assert!(message.contains("cargo feature"), "{message}");
+        assert!(message.contains("--no-default-features"), "{message}");
     }
 
     #[test]
     fn a_mask_over_a_rule_that_is_real_but_off_says_so_rather_than_matching_nothing() {
-        let rules = TagRules::from_names(["dotfile"]).expect("enables");
+        let rules = TagRules::from_names(["dotfile"], Path::new("/root")).expect("enables");
         assert_eq!(rules.mask_of(["dotfile"]).expect("enabled"), 1);
         assert_eq!(rules.mask_of::<[&str; 0], &str>([]).expect("empty"), 0, "no names, no filter");
 
@@ -447,7 +711,7 @@ mod tests {
 
     #[test]
     fn ids_and_names_round_trip_through_the_enabled_set() {
-        let rules = TagRules::from_names(["dotfile"]).expect("enables");
+        let rules = TagRules::from_names(["dotfile"], Path::new("/root")).expect("enables");
         let id = rules.id_of("dotfile").expect("enabled");
         assert_eq!(rules.name_of(id), Some("dotfile"));
         assert_eq!(rules.id_of("gitignore"), None, "not enabled is not the same as unknown");

@@ -26,11 +26,11 @@ extension-module = ["pyo3/extension-module"]
 [dependencies]
 # `watch` is enabled because the module exposes a watcher; the fdu crate still builds
 # without it, which is what keeps the layer deletable.
-fdu-core = { workspace = true, features = ["watch"] }
+fdu-core = { workspace = true, features = ["watch", "gitignore"] }
 # The wheel installs an `fdu` console script that runs the real command line, so the
 # binding needs the crate that owns it. It is a dependency like any other now, which is
 # the point: nothing here can reach the library's internals through the CLI.
-fdu = { workspace = true, default-features = false, features = ["watch"] }
+fdu = { workspace = true, default-features = false, features = ["watch", "gitignore"] }
 pyo3 = { version = "0.29", features = ["abi3-py312"] }
 
 # Deliberately not `[lints] workspace = true`: the pyo3 attribute macros expand to

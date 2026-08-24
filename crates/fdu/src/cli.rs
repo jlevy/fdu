@@ -353,7 +353,7 @@ pub struct Cli {
     #[arg(long, value_name = "FILE", help_heading = "SCOPE")]
     pub type_rules: Option<PathBuf>,
 
-    /// Tag rules to evaluate per entry, comma-separated. Try `dotfile`.
+    /// Tag rules to evaluate per entry, comma-separated: dotfile, gitignore.
     ///
     /// Scope rather than Selection, and for the same reason --type-rules is: the rules
     /// decide what facts an entry carries, so an index built without them cannot answer a
@@ -569,13 +569,15 @@ impl Cli {
         let analysis = self.parse_analysis().map_err(|error| usage(&error))?;
         let views =
             resolve_views(self.view.as_deref(), analysis.profile).map_err(|error| usage(&error))?;
-        let tags = self.load_tag_rules()?;
-        let query = self.parse_query(&views, &tags).map_err(|error| usage(&error))?;
         let path = self.path.as_deref().ok_or_else(|| {
             usage(&anyhow::anyhow!(
                 "missing PATH: specify the directory to summarize, for example `fdu .`"
             ))
         })?;
+        // After the path, because a Path-tier rule reads control files out of the tree the
+        // run is about: there is no rule set to build until the root is known.
+        let tags = self.load_tag_rules(path)?;
+        let query = self.parse_query(&views, &tags).map_err(|error| usage(&error))?;
 
         let policy = self.parse_cache_policy().map_err(|error| usage(&error))?;
         query
@@ -1036,7 +1038,7 @@ impl Cli {
     /// Returned rather than stored because two callers need it and they need it for
     /// opposite reasons: the scan records the fingerprint, and the query resolves names to
     /// bits against the same set. Building it twice would let those drift.
-    fn load_tag_rules(&self) -> anyhow::Result<std::sync::Arc<TagRules>> {
+    fn load_tag_rules(&self, root: &Path) -> anyhow::Result<std::sync::Arc<TagRules>> {
         let Some(list) = self.tag_rules.as_deref() else {
             return Ok(std::sync::Arc::new(TagRules::none().clone()));
         };
@@ -1045,8 +1047,8 @@ impl Cli {
         // on top: the message already quotes the name that was rejected and lists the ones
         // that exist, so a prefix would add only the one thing the Python surface cannot
         // say the same way -- and the parity harness caught exactly that.
-        let rules =
-            TagRules::from_names(names).map_err(|error| usage(&anyhow::anyhow!("{error}")))?;
+        let rules = TagRules::from_names(names, root)
+            .map_err(|error| usage(&anyhow::anyhow!("{error}")))?;
         Ok(std::sync::Arc::new(rules))
     }
 
@@ -1088,7 +1090,7 @@ impl Cli {
     fn resolved_query(&self) -> anyhow::Result<Query> {
         let analysis = self.parse_analysis()?;
         let views = resolve_views(self.view.as_deref(), analysis.profile)?;
-        let tags = self.load_tag_rules()?;
+        let tags = self.load_tag_rules(self.path.as_deref().unwrap_or(Path::new(".")))?;
         self.parse_query(&views, &tags)
     }
 

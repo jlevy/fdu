@@ -736,8 +736,9 @@ The model that results, stated once here and in detail on the beads:
 
 - **The `ignore` crate lands behind a default-on `gitignore` feature**, `notify`’s exact
   precedent, on measured evidence (+1.06 MiB stripped and LTO’d, nine new crates, no
-  lean mode) — pinned `=0.4.30` because newer releases need Rust 1.88 against the 1.85
-  MSRV. The tag model itself stays dependency-free.
+  lean mode) — unpinned, because the workspace MSRV moved to 1.88 rather than holding
+  the crate a release behind.
+  The tag model itself stays dependency-free.
 
 - [x] Tag model foundation: registry, tiers, entry bits computed at apply time, the
   fingerprint rename, the zero-dependency `dotfile` reference rule, tag filtering by

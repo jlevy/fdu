@@ -296,11 +296,57 @@ $ fdu --cache off --view files --not-tag dotfile tagged
 ? 2
 ```
 
+### Gitignore Is One Rule Among Several, and Negation Is Why It Needs a Real Matcher
+
+The rule reads the `.gitignore` files in the tree, with git’s own precedence: the
+nearest file has the last word, so a nested `!keep.log` beats a broader `*.log` above
+it. A glob list would get that backwards, which is the reason this rule carries a
+dependency and the rest of the tag model carries none.
+
+```console
+$ node -e "const fs = require('node:fs'); fs.mkdirSync('repo/docs', {recursive: true}); fs.mkdirSync('repo/target', {recursive: true}); fs.writeFileSync('repo/.gitignore', '*.log\ntarget/\n'); fs.writeFileSync('repo/docs/.gitignore', '!keep.log\n'); fs.writeFileSync('repo/debug.log', 'x'); fs.writeFileSync('repo/main.rs', 'x'); fs.writeFileSync('repo/docs/keep.log', 'x'); fs.writeFileSync('repo/docs/other.log', 'x'); fs.writeFileSync('repo/target/out', 'x')"
+? 0
+```
+
+```console
+$ fdu --cache off --view files --tag-rules gitignore --tag gitignore repo
+debug.log
+docs[SEP]other.log
+target
+target[SEP]out
+Performance: walked 7 files / 29 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+? 0
+```
+
+`target` the directory is tagged as well as what is inside it: a trailing-slash pattern
+matches directories only, so an evaluator that never told it what kind of entry it was
+looking at would leave the directory untagged and tag everything beneath it.
+
+```console
+$ fdu --cache off --view files --tag-rules gitignore --not-tag gitignore repo
+.gitignore
+docs
+docs[SEP].gitignore
+docs[SEP]keep.log
+main.rs
+Performance: walked 7 files / 29 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+? 0
+```
+
+Rules compose, and a row says every tag it carries.
+
+```console
+$ fdu --cache off --view files --tag-rules dotfile,gitignore --tag dotfile --format jsonl repo
+{"schema": "fdu.report/4", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "source": "cold_scan", "freshness": "fresh", "complete": true, "errors": []}
+{"view": "files", "bound": null, "files": [{"path": ".gitignore", "kind": "file", "bytes": 14, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "tags": ["dotfile"], "extension": null, "classification": {"file_type": "unknown", "family": "unknown", "group": null, "source": "unknown", "confidence": "heuristic", "flags": {"generated": false, "vendored": false, "documentation": false}}}, {"path": "docs[JSON_SEP].gitignore", "kind": "file", "bytes": 10, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "tags": ["dotfile"], "extension": null, "classification": {"file_type": "unknown", "family": "unknown", "group": null, "source": "unknown", "confidence": "heuristic", "flags": {"generated": false, "vendored": false, "documentation": true}}}]}
+? 0
+```
+
 ### An Unknown Tag Rule Lists the Ones That Exist
 
 ```console
 $ fdu --cache off --tag-rules nope tagged
-! fdu: unknown tag rule "nope"; available: dotfile
+! fdu: unknown tag rule "nope"; available: dotfile, gitignore
 ? 2
 ```
 

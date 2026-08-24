@@ -218,12 +218,12 @@ fn linux_snapshot() -> Snapshot {
             }
         }
     }
-    if let Ok(stat) = std::fs::read_to_string("/proc/self/stat") {
-        if let Some(rest) = stat.rsplit_once(')').map(|(_, rest)| rest) {
-            let fields: Vec<&str> = rest.split_whitespace().collect();
-            snapshot.minor_faults = fields.get(7).and_then(|value| value.parse().ok());
-            snapshot.major_faults = fields.get(9).and_then(|value| value.parse().ok());
-        }
+    if let Ok(stat) = std::fs::read_to_string("/proc/self/stat")
+        && let Some(rest) = stat.rsplit_once(')').map(|(_, rest)| rest)
+    {
+        let fields: Vec<&str> = rest.split_whitespace().collect();
+        snapshot.minor_faults = fields.get(7).and_then(|value| value.parse().ok());
+        snapshot.major_faults = fields.get(9).and_then(|value| value.parse().ok());
     }
     if snapshot.read_syscalls.is_some()
         || snapshot.write_syscalls.is_some()

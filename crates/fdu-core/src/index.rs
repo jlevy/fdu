@@ -917,6 +917,27 @@ impl IndexHandle {
         self.inner.write().map_err(|_| crate::Error::IndexLockPoisoned)
     }
 
+    /// Read the tag rules' control files again and re-tag under one write guard.
+    ///
+    /// What a changed `.gitignore` needs. The enabled set and its bit order do not move,
+    /// so the fingerprint does not move and no snapshot is invalidated -- only the state
+    /// the rules match against is read again. Returns the directories the rebuilt rules
+    /// govern, which is what a consumer's cached rows for those subtrees have to be told
+    /// about: their tags may have changed without any entry beneath them being touched.
+    ///
+    /// A no-op, and cheap, when no enabled rule reads a control file.
+    pub fn rebind_tag_rules(&self) -> crate::Result<Vec<PathBuf>> {
+        let mut index = self.write_index()?;
+        if index.tag_rules().is_empty() {
+            return Ok(Vec::new());
+        }
+        let root = index.root_path().to_path_buf();
+        let rebound = index.tag_rules().rebound(&root);
+        let governed = rebound.governed_directories();
+        index.adopt_tag_rules(Arc::new(rebound));
+        Ok(governed)
+    }
+
     /// Arbitrate and apply one observation under the single-writer lock.
     pub fn apply(&self, observation: &Observation) -> crate::Result<ApplyOutcome> {
         self.write_index()?.apply(observation)
@@ -1291,9 +1312,17 @@ impl Index {
     /// setting the other is how they come apart.
     #[must_use]
     pub fn with_tag_rules(mut self, tag_rules: Arc<crate::tags::TagRules>) -> Self {
+        self.adopt_tag_rules(tag_rules);
+        self
+    }
+
+    /// Adopt a rule set in place, re-tagging what is already here.
+    ///
+    /// The `&mut` form of [`Index::with_tag_rules`], for the caller that holds a write
+    /// guard rather than an owned index -- rebinding after a control file changed.
+    pub fn adopt_tag_rules(&mut self, tag_rules: Arc<crate::tags::TagRules>) {
         self.tag_rules = tag_rules;
         self.retag();
-        self
     }
 
     /// Recompute every entry's tag bits under the current rules.
@@ -1326,7 +1355,11 @@ impl Index {
             };
             // The root has no name and cannot be tagged; every other entry can.
             if entry.parent.is_some() {
-                computed.push((id, rules.evaluate(&entry.name, || Cow::Borrowed(path.as_path()))));
+                let is_dir = entry.kind.is_dir();
+                computed.push((
+                    id,
+                    rules.evaluate(&entry.name, is_dir, || Cow::Borrowed(path.as_path())),
+                ));
             }
             for (name, child) in &entry.children {
                 stack.push((*child, path.join(name)));
@@ -1501,12 +1534,12 @@ impl Index {
         let mut accepted = Vec::with_capacity(observation.len());
         for observed in &observation.ops {
             let op = &observed.op;
-            if let Expectation::State(expected) = observed.expectation {
-                if !self.expectation_matches(op, expected) {
-                    stats.stale += 1;
-                    accepted.push(false);
-                    continue;
-                }
+            if let Expectation::State(expected) = observed.expectation
+                && !self.expectation_matches(op, expected)
+            {
+                stats.stale += 1;
+                accepted.push(false);
+                continue;
             }
             accepted.push(true);
         }
@@ -2153,18 +2186,12 @@ impl Index {
         // `Scanned` is excluded because it is *stronger* than `Revalidated`: a path
         // walked fresh this session is not improved by a sweep having covered it, and
         // its own scan time is already the right answer.
-        if entry.source >= Source::Revalidated {
-            if let Some(path) = self.path_of(id) {
-                if self.freshness_at(&path) == Freshness::Fresh {
-                    if let Some(verified_at) = self.verified_at(&path) {
-                        return Provenance {
-                            source: Source::Revalidated,
-                            observed_at_ns: verified_at,
-                            status,
-                        };
-                    }
-                }
-            }
+        if entry.source >= Source::Revalidated
+            && let Some(path) = self.path_of(id)
+            && self.freshness_at(&path) == Freshness::Fresh
+            && let Some(verified_at) = self.verified_at(&path)
+        {
+            return Provenance { source: Source::Revalidated, observed_at_ns: verified_at, status };
         }
         Provenance { source: entry.source, observed_at_ns: self.observed_at(entry.source), status }
     }
@@ -2457,7 +2484,9 @@ impl Index {
             // source only, so a placeholder that entered untagged would stay untagged for
             // the life of the index — and every ancestor of a deep first observation
             // enters through this line.
-            let tag_bits = rules.evaluate(part, || {
+            // Always a directory: this is the placeholder-ancestor path, and a `target/`
+            // pattern only matches when the entry is one.
+            let tag_bits = rules.evaluate(part, true, || {
                 Cow::Owned(self.path_of(current).unwrap_or_default().join(part))
             });
             let child = self.alloc(Entry {
@@ -2498,11 +2527,11 @@ impl Index {
         // turns the common case into a single path comparison and skips both the
         // component vector and the descent below.
         crate::counters::bump(|c| c.upserts += 1);
-        if let (Some(dir), Some(name)) = (path.parent(), path.file_name()) {
-            if let Some(parent) = parent_memo.get(dir) {
-                crate::counters::bump(|c| c.parent_memo_hits += 1);
-                return self.upsert_beneath(parent, name, path, kind, attrs, stats);
-            }
+        if let (Some(dir), Some(name)) = (path.parent(), path.file_name())
+            && let Some(parent) = parent_memo.get(dir)
+        {
+            crate::counters::bump(|c| c.parent_memo_hits += 1);
+            return self.upsert_beneath(parent, name, path, kind, attrs, stats);
         }
         crate::counters::bump(|c| c.parent_resolutions += 1);
 
@@ -2606,7 +2635,8 @@ impl Index {
         let ext_id = (kind == EntryKind::File)
             .then(|| self.intern_ext(&ext_bucket(&self.types.clone(), name)));
         let group_id = (kind == EntryKind::File).then(|| self.types.group_of_name(name)).flatten();
-        let tag_bits = Arc::clone(&self.tag_rules).evaluate(name, || Cow::Borrowed(path));
+        let tag_bits =
+            Arc::clone(&self.tag_rules).evaluate(name, kind.is_dir(), || Cow::Borrowed(path));
         let id = self.alloc(Entry {
             parent: Some(parent),
             name: name.to_os_string(),
@@ -2665,8 +2695,9 @@ impl Index {
         // The path is a closure, not a value: this is the loader, which holds a parent id
         // and a basename precisely so that it never joins one per record.  No Name-tier
         // rule calls it.
-        let tag_bits = Arc::clone(&self.tag_rules)
-            .evaluate(&name, || Cow::Owned(self.path_of(parent).unwrap_or_default().join(&name)));
+        let tag_bits = Arc::clone(&self.tag_rules).evaluate(&name, kind.is_dir(), || {
+            Cow::Owned(self.path_of(parent).unwrap_or_default().join(&name))
+        });
         let id = self.alloc(Entry {
             parent: Some(parent),
             name: name.clone(),
@@ -4457,7 +4488,8 @@ mod tests {
     #[test]
     fn every_insert_path_tags_an_entry_the_same_way() {
         let rules = std::sync::Arc::new(
-            crate::tags::TagRules::from_names(["dotfile"]).expect("dotfile is a real rule"),
+            crate::tags::TagRules::from_names(["dotfile"], Path::new("/root"))
+                .expect("dotfile is a real rule"),
         );
         let mut index = Index::new("/root").with_tag_rules(std::sync::Arc::clone(&rules));
         index.apply_ok(&Observation::new(vec![
@@ -4496,7 +4528,7 @@ mod tests {
         assert!(index.tags_of(Path::new(".env")).is_empty(), "no rules, no tags");
 
         let index = index.with_tag_rules(std::sync::Arc::new(
-            crate::tags::TagRules::from_names(["dotfile"]).expect("enables"),
+            crate::tags::TagRules::from_names(["dotfile"], Path::new("/root")).expect("enables"),
         ));
         assert_eq!(index.tags_of(Path::new(".env")), vec!["dotfile"]);
         assert_eq!(
@@ -4527,7 +4559,8 @@ mod tests {
 
         let tagged = crate::scan::ScanConfig {
             tags: Some(std::sync::Arc::new(
-                crate::tags::TagRules::from_names(["dotfile"]).expect("enables"),
+                crate::tags::TagRules::from_names(["dotfile"], Path::new("/root"))
+                    .expect("enables"),
             )),
             ..crate::scan::ScanConfig::default()
         };

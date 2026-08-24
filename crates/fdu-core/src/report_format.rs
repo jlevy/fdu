@@ -346,10 +346,10 @@ fn render_text_tree(out: &mut String, root: &TreeNode, size: SizeMetric, color: 
                 // marking every boundary directory overwhelms a real tree with dots.
                 // Retained children plus truncation means the sibling list hit its
                 // limit; that omission gets one marker after the rows that were kept.
-                if !node.children.is_empty() {
-                    if let Some(remainder) = node.remainder.as_ref() {
-                        stack.push(Row::Truncation(remainder, depth + 1));
-                    }
+                if !node.children.is_empty()
+                    && let Some(remainder) = node.remainder.as_ref()
+                {
+                    stack.push(Row::Truncation(remainder, depth + 1));
                 }
                 for child in node.children.iter().rev() {
                     stack.push(Row::Node(child, depth + 1));
@@ -1472,7 +1472,7 @@ pub fn human_count(value: u64) -> String {
     let digits = value.to_string();
     let mut grouped = String::with_capacity(digits.len() + digits.len() / 3);
     for (index, byte) in digits.bytes().enumerate() {
-        if index > 0 && (digits.len() - index) % 3 == 0 {
+        if index > 0 && (digits.len() - index).is_multiple_of(3) {
             grouped.push(',');
         }
         grouped.push(char::from(byte));

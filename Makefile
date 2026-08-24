@@ -6,7 +6,7 @@ CARGO ?= cargo
 NODE ?= node
 NPM ?= npm
 UV ?= uv
-MSRV ?= 1.85.0
+MSRV ?= 1.88.0
 NODE_INSTALL_STAMP := node_modules/.package-lock.json
 
 .PHONY: help build release test rust-test test-golden golden-invocations portability parity-venv test-parity parity-check parity-update content-selfcheck yaml-selfcheck performance-probe test-performance golden-update check uv-version supply-chain rust-module-names fix fmt fmt-check clippy docs docs-format docs-format-check lib-only msrv audit npm-audit python-check python-concurrency python-smoke python-sdist-smoke release-test release-rehearse clean cli perf-help verify-beads

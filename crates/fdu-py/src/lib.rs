@@ -1746,11 +1746,14 @@ impl PyWatch {
 ///
 /// `None` and an empty list are the same request -- no rules -- and both fingerprint to
 /// zero, so a caller who does not ask for tags keeps every snapshot they already have.
-fn enabled_tag_rules(names: Option<Vec<String>>) -> PyResult<Arc<fdu_core::tags::TagRules>> {
+fn enabled_tag_rules(
+    names: Option<Vec<String>>,
+    root: &Path,
+) -> PyResult<Arc<fdu_core::tags::TagRules>> {
     let Some(names) = names else {
         return Ok(Arc::new(fdu_core::tags::TagRules::none().clone()));
     };
-    let rules = fdu_core::tags::TagRules::from_names(names)
+    let rules = fdu_core::tags::TagRules::from_names(names, root)
         .map_err(|error| PyValueError::new_err(error.to_string()))?;
     Ok(Arc::new(rules))
 }
@@ -1939,7 +1942,7 @@ fn report_once(
     size: &str,
     words_per_page: u64,
 ) -> PyResult<PyOneShot> {
-    let rules = enabled_tag_rules(tag_rules)?;
+    let rules = enabled_tag_rules(tag_rules, &root)?;
     let analysis = parse_analysis_request(analyze, analysis_workers)?;
     let config = OpenConfig {
         scan: ScanConfig {
@@ -2180,7 +2183,7 @@ fn open(
 ) -> PyResult<PyIndex> {
     let operation_started_at = SystemTime::now();
     let policy = parse_cache_policy(cache)?;
-    let tags = enabled_tag_rules(tag_rules)?;
+    let tags = enabled_tag_rules(tag_rules, &root)?;
     let analysis = parse_analysis_request(analyze, analysis_workers)?;
     let config = OpenConfig {
         scan: ScanConfig {
@@ -2255,7 +2258,7 @@ fn scan(
     analysis_workers: usize,
 ) -> PyResult<PyIndex> {
     let scan_started_at = Some(SystemTime::now());
-    let tags = enabled_tag_rules(tag_rules)?;
+    let tags = enabled_tag_rules(tag_rules, &root)?;
     let analysis = parse_analysis_request(analyze, analysis_workers)?;
     let config = OpenConfig {
         scan: ScanConfig {

@@ -23,12 +23,26 @@ path = "tests/watch_session_integration.rs"
 required-features = ["watch"]
 
 [features]
-# The shipped binary watches; `--no-default-features` and library consumers do not.
-default = ["watch"]
+# The shipped binary watches and matches gitignore; `--no-default-features` and library
+# consumers do neither. Both gates answer the same asymmetry: a command-line user expects
+# the behaviour, and a library consumer embedding the engine should not inherit a
+# dependency tree they did not ask for.
+default = ["watch", "gitignore"]
 # Gates the OS-native watch layer. Strictly additive: without it, scan, index, and
 # snapshot are all fully functional, just without live updates -- which is what keeps
 # the watch layer deletable rather than merely optional.
 watch = ["dep:notify"]
+# Gates the `gitignore` tag rule, and with it the only dependency the tag model costs.
+# The model itself -- rules, tiers, bits, the fingerprint -- is always on and pulls
+# nothing; this rule is the one that needs a matcher engine.
+#
+# Measured before it was taken (2026-08-24): +1.06 MiB on a stripped LTO release binary
+# against a realistic `GitignoreBuilder` use, nine new crates, lockfile 73 -> 82, and no
+# lean mode -- `ignore` has one feature flag and `regex-automata` is mandatory. `fd` takes
+# the same crates among sixteen direct dependencies; ripgrep owns them as workspace
+# members, so it is not a precedent for depending on them. The library/binary asymmetry is
+# what this gate answers.
+gitignore = ["dep:ignore"]
 [dependencies]
 thiserror = "2.0"
 
@@ -40,6 +54,14 @@ thiserror = "2.0"
 anstyle = "1.0"
 
 notify = { version = "8.2", optional = true }
+# Not pinned, which is what the declared MSRV buys. Current releases of `ignore` and
+# `globset` need Rust 1.88 for let-chains: 0.4.31 and later say so in `rust-version`,
+# while 0.4.30 says nothing and fails to compile on 1.85 anyway. That is worth recording
+# once -- a missing `rust-version` is the absence of a claim, not a promise of
+# compatibility, and the only way to learn a crate's real floor is to build against it.
+# Holding the workspace at edition 2024's own minimum would have meant pinning this crate
+# a release behind, and doing the same again for every dependency as let-chains spread.
+ignore = { version = "0.4.33", optional = true }
 pulldown-cmark = { version = "=0.13.4", default-features = false }
 
 [target.'cfg(target_os = "macos")'.dependencies]

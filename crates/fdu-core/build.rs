@@ -60,10 +60,10 @@ fn emit_version() {
             println!("cargo:rerun-if-changed=.");
             if let Some(git_dir) = git(&["rev-parse", "--absolute-git-dir"]) {
                 println!("cargo:rerun-if-changed={git_dir}/HEAD");
-                if let Some(head_ref) = git(&["symbolic-ref", "-q", "HEAD"]) {
-                    if let Some(common) = git(&["rev-parse", "--git-common-dir"]) {
-                        println!("cargo:rerun-if-changed={common}/{head_ref}");
-                    }
+                if let Some(head_ref) = git(&["symbolic-ref", "-q", "HEAD"])
+                    && let Some(common) = git(&["rev-parse", "--git-common-dir"])
+                {
+                    println!("cargo:rerun-if-changed={common}/{head_ref}");
                 }
             }
             let dirty = git(&["status", "--porcelain", "--untracked-files=no"])

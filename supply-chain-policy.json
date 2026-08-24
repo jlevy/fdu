@@ -96,9 +96,9 @@
         ]
       },
       {
-        "version": "1.85.0",
-        "manifest": "https://static.rust-lang.org/dist/channel-rust-1.85.0.toml",
-        "sha256": "009e8b5ff43f12bf644b5e5b9fd89f96453072062a450c623882f64e85405da5",
+        "version": "1.88.0",
+        "manifest": "https://static.rust-lang.org/dist/channel-rust-1.88.0.toml",
+        "sha256": "431b7c5c0b9a511d8e31d29b378bbc74124e8521f14beb92d3a5a5f7e7e55449",
         "files": [
           ".github/workflows/ci.yml"
         ]

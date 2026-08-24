@@ -44,7 +44,7 @@ SCOPE
       --order <ORDER>      Directory visit order: breadth-first (default) or depth-first
       --threads <N>        Walker threads, or unset to choose automatically
       --type-rules <FILE>  Classify against a `[[kind]]` rule file instead of fdu's taxonomy
-      --tag-rules <LIST>   Tag rules to evaluate per entry, comma-separated. Try `dotfile`
+      --tag-rules <LIST>   Tag rules to evaluate per entry, comma-separated: dotfile, gitignore
 
 SELECTION
       --include <GLOB>          Report only entries matching this glob; repeatable
@@ -177,12 +177,14 @@ Without it, fdu classifies against its compiled taxonomy, which is also the fast
 there is no file to find and no startup parse.
 
 `--tag-rules LIST` is scope for the same reason, and `--tag`/`--not-tag` are selection.
-A tag is one named boolean fact recorded on an entry — `dotfile` is the rule that ships
-— so an index built without a rule carries no bit for it and genuinely cannot answer.
-Filtering on a rule that is not enabled is refused rather than answered with nothing,
-because a filter that matches nothing is indistinguishable from no filter at all.
-A tag rides on the entry itself, never on its ancestors: `--not-tag dotfile` drops
-`.git` and keeps what is inside it, which is what separates a tag from scope pruning.
+A tag is one named boolean fact recorded on an entry — `dotfile` and `gitignore` are the
+rules that ship — so an index built without a rule carries no bit for it and genuinely
+cannot answer. Filtering on a rule that is not enabled is refused rather than answered
+with nothing, because a filter that matches nothing is indistinguishable from no filter
+at all. A tag rides on the entry itself, never on its ancestors: `--not-tag dotfile`
+drops `.git` and keeps what is inside it, which is what separates a tag from scope
+pruning. `gitignore` reads the tree’s `.gitignore` files with git’s own precedence, so a
+nested `!keep.log` beats a broader `*.log` above it.
 
 Cost has three layers.
 A single unfiltered `--view summary PATH` is the one exact composition that retains only

@@ -42,10 +42,14 @@ path = "tests/watch_persistence.rs"
 required-features = ["watch"]
 
 [features]
-default = ["watch"]
+default = ["watch", "gitignore"]
 # Passed through to the library. Without it the command line still builds and works,
 # just without `--watch`, which is what keeps the watch layer deletable.
 watch = ["fdu-core/watch"]
+# Passed through the same way. Without it `--tag-rules gitignore` is refused by name,
+# with a message saying which feature carries it -- rather than accepted and answered
+# with "nothing is ignored", which would be a wrong answer instead of a missing one.
+gitignore = ["fdu-core/gitignore"]
 
 [dependencies]
 # An ordinary dependency, which is the whole point: `crate::` does not reach the library

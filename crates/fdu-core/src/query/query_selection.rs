@@ -193,10 +193,10 @@ impl Selection {
         if !self.kinds.is_empty() && !self.kinds.contains(&candidate.kind) {
             return false;
         }
-        if let Some(min_size) = self.min_size {
-            if self.size_of(candidate) < min_size {
-                return false;
-            }
+        if let Some(min_size) = self.min_size
+            && self.size_of(candidate) < min_size
+        {
+            return false;
         }
         if !self.modified.contains(candidate.mtime_ns) {
             return false;

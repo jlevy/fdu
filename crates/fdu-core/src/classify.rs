@@ -320,14 +320,14 @@ impl TypeRegistry {
     /// without an error anywhere.
     pub fn from_manifest_expecting(source: &str, expected: Option<u64>) -> crate::Result<Self> {
         let registry = Self::parse_manifest(source)?;
-        if let Some(expected) = expected {
-            if registry.fingerprint != expected {
-                return Err(crate::Error::TypeRules(format!(
-                    "type rules identity mismatch: supplied packet indexes to {:#018x}, caller \
+        if let Some(expected) = expected
+            && registry.fingerprint != expected
+        {
+            return Err(crate::Error::TypeRules(format!(
+                "type rules identity mismatch: supplied packet indexes to {:#018x}, caller \
                      expected {expected:#018x}",
-                    registry.fingerprint
-                )));
-            }
+                registry.fingerprint
+            )));
         }
         Ok(registry)
     }
@@ -718,19 +718,18 @@ pub fn classify_with(
         }
         _ => {}
     }
-    if let Some(interpreter) = file_type_detection::shebang_interpreter(prefix) {
-        if let Some(rule) = registry
+    if let Some(interpreter) = file_type_detection::shebang_interpreter(prefix)
+        && let Some(rule) = registry
             .rules
             .iter()
             .filter(|rule| rule.shebangs.iter().any(|shebang| shebang == interpreter))
             .max_by_key(|rule| rule.priority)
-        {
-            return with_flags(
-                path,
-                Some(prefix),
-                classified(rule, DetectionSource::Shebang, DetectionConfidence::High),
-            );
-        }
+    {
+        return with_flags(
+            path,
+            Some(prefix),
+            classified(rule, DetectionSource::Shebang, DetectionConfidence::High),
+        );
     }
     let classification = match probed {
         Some(file_type_detection::PrefixMatch::Rule(id, source)) => registry
