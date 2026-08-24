@@ -57,6 +57,17 @@ The rest is polish that working the contract surfaced: classification identity i
 listings, a machine-readable truncation remainder, walk telemetry for the client’s own
 performance loop, and documentation of thread affinity.
 
+Reading this against
+[the metabrowser plan](https://github.com/jlevy/metabrowser/blob/954b6ed/docs/project/specs/active/plan-2026-08-23-pluggable-inventory-engine.md)
+added two gaps this exercise had graded as served, and both are recorded in
+[the reconciliation](../../research/research-2026-08-23-interactive-contract-reconciliation.md).
+A **coherent read surface**: `children()` copies every child’s whole extension map, and
+nothing ties several Python calls into one version, so a composed response can straddle
+a commit. And a **second extension level**: fdu derives the canonical extension the File
+Rollup Format wants — `release.v2.zip` already classifies as `archive` and buckets as
+`.zip` — but not the raw two-component value beside it, and swapping the derivation
+rather than adding the level would turn that same archive into `unknown:.v2.zip`.
+
 ## Goals
 
 - A metabrowser build can serve its default UI — dual tallies, live updates, resumable
@@ -85,10 +96,12 @@ performance loop, and documentation of thread affinity.
   journal, owned by [its own plan](plan-2026-08-10-fdu-fsevents-scoped-revalidation.md).
   This spec consumes both and re-states neither.
 - Arbitrary user-defined *tag* vocabularies.
-  Two rules — gitignore and visibility — have a consumer today; a tag registry is
-  speculation and fails the axis test.
-  The *type* registry is a different axis and is explicitly customizable here: it
-  already has two divergent real registries, which is the evidence the tag axis lacks.
+  One rule — gitignore — has a consumer today; a tag registry is speculation and fails
+  the axis test. Visibility looked like a second rule and turned out to be scope: hidden
+  paths are pruned rather than tagged, for the reasons in the partitioned-tallies
+  section. The *type* registry is a different axis and is explicitly customizable here:
+  it already has two divergent real registries, which is the evidence the tag axis
+  lacks.
 - Display metadata as engine policy.
   A registry may carry colours and labels through to consumers, but fdu neither
   interprets nor validates them; theming belongs to the client.
@@ -216,12 +229,12 @@ the index’s clocked delta contract is the same guard, held in one place.
 | Breadth-first, stated rather than assumed | BFS is the default but neither surface can name it | **Gap: expose `ScanOrder`** |
 | Per-directory recursive tallies, live | `Index.rollup()`, `merge_upward` | Ready |
 | Dual all/unignored values on every row | one plane only; selection re-aggregates at ~1 µs/entry | **Gap: partitioned tallies** |
-| Hidden-file policy with an allowlist | no visibility concept | **Gap: second tag rule** |
-| Children listing with per-child totals | `Index.children()`, paged | Ready |
+| Hidden-file policy with an allowlist | no visibility concept | **Gap: scope admission rule** |
+| Children listing with per-child totals | `Index.children()`, paged, scalar rows | Ready |
 | Bounded subtree tree with omission accounting | `TreeNode.truncated` is a bare bool | Polish: remainder aggregate |
 | Per-extension tallies per directory | `RollUp.by_extension` | Ready |
 | Recency queries (top-N by mtime) | `files` view, `sort=mtime` | Ready |
-| Per-entry type identity (kind, family, logical ext) | classified internally, not exposed in listings | Polish: expose |
+| Per-entry type identity (kind, family, logical ext) | classified internally, not exposed in listings; the raw logical extension is not derived at all | Polish: expose, plus **Gap: raw extension level** |
 | Browsing groups (media, docs, archives) | all collapse to `family = "binary"` | **Gap: group level** |
 | Its own 126-family registry, revised on its own cadence | 68 kinds compiled at build time | **Gap: runtime registry** |
 | Bounded per-directory extension rows | `by_extension` is unbounded | **Gap: bound with remainder** |
@@ -229,7 +242,7 @@ the index’s clocked delta contract is the same guard, held in one place.
 | `file-type-breakdown-v1` envelope | same dialect, different vocabulary and depth | Adapter, once groups exist |
 | Live change feed, verified, coalesced | `Index.watch()` → typed batches | Ready |
 | Event-loop (asyncio) consumption | blocking iterator, thread-affine | **Gap: async adapter** |
-| Resumable cursor (SSE `Last-Event-ID`) | `since(clock)`, `ChangeSet.truncated` | Ready — document the mapping |
+| Resumable cursor (SSE `Last-Event-ID`) | `since(clock)`, `ChangeSet.truncated`, but trust transitions never reach it | **Gap: trust on the clock**, then document the mapping |
 | “Which roll-ups went stale” per batch | client re-derives from paths | **Gap: dirty set** |
 | NFS/FUSE watching (polling fallback) | native backends only | **Gap: poll backend** |
 | Foreign-watcher hints | `refresh()` is whole-root only in Python | **Gap: scoped refresh** |
@@ -310,6 +323,38 @@ The shape, then:
   `remaining_top`) because a browser shows a handful of rows and a wide tree has many.
   A bound with a stated remainder belongs here for the same reason it belongs on trees.
 
+#### The extension has two levels, and fdu has only the second
+
+File Rollup Format derives a **raw** logical extension of up to two eligible trailing
+components, then **suffix-matches** it to a canonical extension that drives rule lookup
+and roll-up bucketing.
+`release.v2.zip` derives `.v2.zip` and matches canonical `.zip`; `bundle.umd.min.js`
+derives `.min.js` and matches canonical `.js`.
+
+fdu produces the canonical answer already.
+Run on a fixture, `release.v2.zip` classifies as `archive` and buckets as `.zip`, and
+`bundle.umd.min.js` classifies as `javascript` and buckets as `.js` — which is what the
+format wants. What fdu lacks is the raw level, and the naive fix breaks the working one:
+`classify_path_with_prefix` looks rules up by exact key in `RULES_BY_EXTENSION` with no
+suffix fallback, so returning `.v2.zip` from `derive_ext` would miss every rule and
+yield `unknown:.v2.zip`, while `ext_bucket` — the same function — would split the `.zip`
+bucket at the same time.
+One edit, two regressions, in exactly the names the change was meant to serve.
+
+So this lands as a pair, not a replacement:
+
+- a **raw logical extension** following the format’s eligibility rule, carried on
+  entries and exposed in the projections that want it — navigation tallies, literal
+  filters, recent and catalog rows, and unknown `remaining_types` keys;
+- **canonical suffix matching**, so a raw extension matching no rule falls back to its
+  trailing component for both rule lookup and the roll-up bucket.
+
+The property to pin: adopting the raw level moves no existing bucket and no existing
+type row. Eligibility belongs in the rule dialect rather than a hand-maintained list,
+which is what `derive_ext`’s own comment already asks for — now as one of two levels.
+The conformance packet gains direct basename-to-logical-extension cases before it can
+serve as fdu’s oracle, since today it tests matching rather than derivation.
+
 **What this inherits from PR #38, now merged.** That work replaced the per-file linear
 scan of the rules table with two
 `LazyLock<HashMap<&'static str, &'static GeneratedRule>>` statics, worth about 5% on
@@ -345,15 +390,13 @@ same: this is pre-computed roll-up state, the thing the index exists to hold.
 **Tags are observations; planes are maintained aggregates.**
 
 - `ScanOptions` (and the corresponding CLI scope axis) gains an explicit, off-by-default
-  tag configuration naming rules from a small fixed vocabulary: `gitignore` (the
-  `ignore`-crate compiled matcher, correct negation semantics — which retires the whole
-  class of the hand-rolled prefixing bug metabrowser’s review calls F3) and `hidden`
-  (dot-prefix, with a configurable allowlist so a client policy like “`.logs` and
-  `.state` stay visible” is configuration, not a fork).
-  Each entry carries its tag bits; tagging happens during the walk at the spike’s
-  measured per-entry cost, and the watch layer re-tags on change.
-  An observed change to a governing `.gitignore` escalates to subtree invalidation —
-  re-tagging a subtree is exactly what `InvalidateSubtree` already expresses.
+  tag configuration naming one rule: `gitignore` (the `ignore`-crate compiled matcher,
+  correct negation semantics — which retires the whole class of the hand-rolled
+  prefixing bug metabrowser’s review calls F3). Each entry carries its tag bits; tagging
+  happens during the walk at the spike’s measured per-entry cost, and the watch layer
+  re-tags on change. An observed change to a governing `.gitignore` escalates to subtree
+  invalidation — re-tagging a subtree is exactly what `InvalidateSubtree` already
+  expresses.
 - For each enabled tag, every directory’s roll-up maintains one additional **plane**:
   the same fields it keeps today (files, dirs, bytes, allocated, newest mtime,
   per-extension tallies) restricted to entries not carrying the tag.
@@ -375,6 +418,20 @@ same: this is pre-computed roll-up state, the thing the index exists to hold.
 What this deliberately is not: a general predicate store.
 A tag is a named, versioned, compiled rule the engine owns end to end — that is what
 keeps the cache honest and the cost stated.
+
+**Hidden paths are scope, not a tag.** An earlier revision made visibility a second tag
+rule with its own plane.
+It is instead an admission rule: hidden components are outside the scan scope except for
+a configured exact-name allowlist, and the excluded subtree is never walked.
+A plane would still have to walk `.git`, caches, and virtualenvs — routinely the largest
+part of a working tree — in order to exclude them, and the toggle that would have
+justified paying for that does not exist in any consumer.
+Governing control files stay readable without being retained, so `.gitignore` can be
+parsed and a repository root detected inside a pruned subtree.
+The admission rule and its allowlist are semantic scope, so they are fingerprinted into
+snapshot identity like any other change to the retained set.
+fdu’s own CLI default is untouched: a du replacement counts everything, and hidden
+exclusion is opt-in scope configuration presented under the usual parity rules.
 
 ### Where the cost of both lands
 
@@ -592,10 +649,43 @@ consumers rather than wrapped.
 
 Tracked under epic `fdu-u7vo`; every item names its bead, and every bead under the epic
 appears here. Two beads linked to this spec are deliberately not phase items: `fdu-p02b`
-tracks the metabrowser-side adoption and is coordination rather than fdu work, and
-`fdu-eu8t` is the older “specify a progressive Python session” request that Phase 4 and
-Phase 5 between them answer.
+tracks the metabrowser-side adoption, and `fdu-eu8t` is the older “specify a progressive
+Python session” request that Phase 5 and Phase 6 between them answer.
 Both stay open until the work they describe lands.
+
+**This list says what to build; the bead status says what is left.** Much of it is
+already closed — shared reads, `ScanOrder` on the surfaces, the group level, the runtime
+registry, bounded extension rows, the watch contract’s four items, and listing-row
+identity among them — with the file-and-function map and the implementation itself in
+[the implementation spec](plan-2026-08-23-fdu-interactive-client-implementation.md) and
+the branch stacked on this one.
+Checkboxes here are not flipped as that work lands, because the code arrives in the
+stacked branch rather than in this PR; read the tracker for current state and this
+document for intent.
+Two items that survived their bead are worth naming: the two extension levels and the
+conformance packet split out to `fdu-5q6e` when `fdu-ctp5` closed carrying the registry
+alone.
+
+**These phases are fdu’s own order, and nothing here waits on the client.**
+[Metabrowser’s refactor spec](https://github.com/jlevy/metabrowser/blob/3e563a8/docs/project/specs/active/plan-2026-08-23-inventory-provider-refactor-and-fdu-adoption.md)
+ships its Python provider behind the sealed contract first, with no fdu dependency, and
+only then implements the same contract against this engine.
+So fdu refines and builds its native prerequisites independently rather than
+interleaving with that refactor.
+Phase 2 should still run before or beside Phase 1 — every cross-engine oracle depends on
+classification agreement, while the plane needs it only at validation time — but that is
+an fdu sequencing judgment, not a client dependency.
+The conformance packet gates *verification* of the classification work, not the work
+itself.
+
+**One moment is genuinely coupled, and it is worth building toward.** Metabrowser’s
+Phase 2 opens with the smallest real PyO3 spike: open a shared handle, perform one
+bundled directory-plus-roll-up read returning a single version, cursor, state, and work
+record, and converge after one live mutation with no mirror index in Python.
+That slice is where this contract first meets an actual consumer, and a seam that
+translates badly there revises both documents before either surface expands.
+It draws on Phase 0’s shared reads and Phase 3’s bundled read, which is the argument for
+landing those two early even though the phase list would otherwise let them drift.
 
 ### Phase 0: Two surface defects
 
@@ -612,11 +702,14 @@ and both are small. `fdu-gav9` leads because it is the only outright drop-in blo
 
 ### Phase 1: Partitioned tallies
 
-- [ ] Tag rules in the engine: compiled gitignore and hidden-with-allowlist matchers,
-  entry tag bits, opt-in `ScanOptions` configuration, snapshot fingerprint coverage;
-  planes through the reducer path — per-plane roll-up state, `merge_upward`, refresh and
-  watch re-tagging, `.gitignore`-edit escalation; partition-sum property tests and
-  fingerprint invalidation (`fdu-mvt3`)
+- [ ] The gitignore tag rule in the engine: compiled matcher with correct negation,
+  entry tag bits, opt-in `ScanOptions` configuration, snapshot fingerprint coverage; the
+  `unignored` plane through the reducer path — per-plane roll-up state, `merge_upward`,
+  refresh and watch re-tagging, `.gitignore`-edit escalation; partition-sum property
+  tests and fingerprint invalidation (`fdu-mvt3`)
+- [ ] Hidden-path admission as scope: prune hidden components except a configured
+  exact-name allowlist, keep governing control files readable without retaining them,
+  and fingerprint the rule and its allowlist into snapshot identity (`fdu-mvt3`)
 - [ ] Surfaces: `--tags`/`--plane` on the CLI, `Selection.plane` and per-plane
   `RollUp`/`Child` values in Python, tagged-fixture goldens in every format, parity
   rows, and plane-equals-all equivalence when no entry is tagged (`fdu-7rwf`)
@@ -629,19 +722,52 @@ Converts PR #38’s indexed tiers rather than competing with them; that work is 
   is its own axis rather than a reinterpretation of the analysis families; the compiled
   default registry gains groups and the `groups` view renders them (`fdu-b2vy`)
 - [ ] A runtime-supplied registry: parse, validate, index, and fingerprint in Rust;
-  accepted by `OpenConfig`, `ScanOptions`/`AnalysisOptions`, and the CLI scope axis;
-  `type_rules_fingerprint` reads the active registry so a rule change invalidates the
-  snapshot and sidecar through the path that already exists.
+  supplied as an immutable packet at open with its expected identity echoed back and
+  disagreement failing the open; accepted by `OpenConfig`,
+  `ScanOptions`/`AnalysisOptions`, and the CLI scope axis; `type_rules_fingerprint`
+  reads the active registry so a rule change invalidates the snapshot and sidecar
+  through the path that already exists.
   PR #38’s `LazyLock` statics become a per-registry index, and its tie-break test
   generalizes to a property over any registry (`fdu-ctp5`)
+- [ ] The two extension levels: a raw logical extension per the format’s eligibility
+  rule, plus canonical suffix matching for rule lookup and roll-up bucketing, with a
+  test pinning that no existing bucket or type row moves (`fdu-5q6e`)
+- [ ] The conformance packet vendored at a reviewed metabrowser revision, its manifest
+  and hashes verified locally in CI, executed against fdu’s classifier (`fdu-5q6e`)
 - [ ] Bounded per-directory extension and filename rows with a stated remainder
   (`fdu-e2p7`)
-- [ ] Loop job: what planes and groups together cost on the ancestor-merge path,
-  measured against H86’s replacement shape on a dense real subject rather than against
-  today’s walk (`fdu-n4gn`, blocked by `fdu-mvt3` and `fdu-b2vy` — it cannot measure
-  what does not exist yet)
+- [ ] Loop job: what the maintained-state union costs on the ancestor-merge path — the
+  `unignored` plane, browsing groups, composed subtree provenance, and non-directory
+  leaf counts priced together rather than as four increments, since the reducer carries
+  all of them or none.
+  Measured against H86’s replacement shape on a dense real subject of at least 50,000
+  entries rather than against today’s walk (`fdu-n4gn`, blocked by `fdu-mvt3` and
+  `fdu-b2vy` — it cannot measure what does not exist yet)
 
-### Phase 3: The embedder watch contract
+### Phase 3: The coherent read surface
+
+Every read a server composes into one response must observe one version, and every read
+must cost what its output costs.
+Neither is true today: `children()` clones each directory child’s whole extension map,
+and nothing ties several Python calls to one clock.
+
+- [ ] Scalar paged child rows — per-child directory facts, classification identity,
+  tags, and provenance, with an explicit bound, a page cursor, and a stated remainder;
+  the extension breakdown moves to its own bounded roll-up projection rather than riding
+  every listing (`fdu-plwq`, with `fdu-e2p7` bounding the breakdown itself)
+- [ ] A bundled multi-projection read evaluated under one read guard, returning one
+  engine version, the change cursor captured at the same boundary, index state, and the
+  scope and registry fingerprints, so a composed response cannot straddle a commit and a
+  consumer’s cache key derives from what it actually read (`fdu-2ivi`, blocked by
+  `fdu-gav9`)
+- [ ] Per-result work counters — entries and directories visited, rows returned, lock
+  wait, bytes copied across the binding — so “no hidden O(index) pass” is an assertion
+  rather than a review principle (`fdu-qgl9`)
+- [ ] Roll-up leaf counts for symlinks and special objects, so a complete subtree’s
+  emptiness is decidable from the aggregate rather than by listing it; the partition
+  property extends to the new fields and the snapshot version increments (`fdu-5hip`)
+
+### Phase 4: The embedder watch contract
 
 - [ ] Per-batch dirty roll-up set, engine through Python (`fdu-mz1a`)
 - [ ] `Index.refresh(path=...)` scoped reconciliation in the Python surface (`fdu-fh0k`)
@@ -651,18 +777,37 @@ Converts PR #38’s indexed tiers rather than competing with them; that work is 
   blocked by `fdu-gav9`: an event-loop adapter over a surface that raises under
   concurrent access would only relocate the defect)
 
-### Phase 4: Session integration shape
+### Phase 5: Session integration shape
 
 One bead, `fdu-4o0m`, blocked by the progressive-results session beads `fdu-e86o` and
 `fdu-a0j0` which land the core.
 Its three requirements:
 
-- [ ] Mid-walk progress surface: entries applied, clock, completeness
+- [ ] Mid-walk progress surface: entries applied, clock, completeness, with coverage
+  labelled by phase and cause — it is monotone only while discovery is additive
 - [ ] Async session adapter, same policy as watch — pull over a bounded queue, never a
   callback across the boundary
-- [ ] Session-to-watch clock handoff, tested for the no-gap property
+- [ ] Session-to-watch handoff as a stated sequence, not an outcome: capture watch
+  events before or atomically with baseline discovery, accumulate them in a bounded
+  native log while the walk or revalidation runs, reconcile each against observation
+  expectations, publish complete and fresh only once reconciliation reaches a known
+  cursor, and invalidate plus verify the affected scope on overflow.
+  Cold and warm alike.
+  Tested for the property that a mutation landing during the walk appears in the walk or
+  in the feed, never in neither and never torn across both
 
-### Phase 5: Adoption proof
+Landing beside it, because subtree provenance and clocked trust are one mechanism rather
+than two: an unverified-descendant count per directory yields both the composed subtree
+value and a bounded event at its zero crossing, which is what keeps a revalidation sweep
+from emitting millions of provenance-only entry changes into the feed it serves.
+
+- [ ] Provenance composed through the reducer path, with the non-invertibility of those
+  aggregates under deletion and revalidation given an explicit recompute path
+  (`fdu-fka6`, `fdu-b1ts`)
+- [ ] Trust transitions on the committed delta contract, so `since()` and polling cannot
+  disagree about the visible state (`fdu-jxs0`, `fdu-livs`)
+
+### Phase 6: Adoption proof
 
 - [ ] Classification identity in `children()` and files rows; registry identity readable
   from Python (`fdu-16l7`)
@@ -670,9 +815,12 @@ Its three requirements:
 - [ ] `TreeNode` remainder aggregates (`fdu-knyw`)
 - [ ] Reference embedder example under `crates/fdu-py/examples/` — boot, serve dual
   tallies, stream changes with dirty sets, resume from a cursor — plus the cross-engine
-  agreement fixture comparing fdu against the metabrowser walker’s semantics (symlinks
-  as leaves, hidden allowlist, gitignore negations), differences documented or
-  eliminated (`fdu-vfyw`)
+  agreement stack: the vendored conformance packet, a recorded-observation replay driven
+  into both engines, and filesystem scenarios over immutable or stepwise-mutated
+  fixtures (symlinks as leaves, hidden allowlist, gitignore negations).
+  Running two live engines against one changing tree is not an oracle — the observation
+  moments are incomparable and the dual walk perturbs what is being measured.
+  Differences documented or eliminated (`fdu-vfyw`)
 
 ## Testing Strategy
 
@@ -705,13 +853,26 @@ here records its regime.
 
 ## Open Questions
 
-- Are two maintained planes (all, unignored) the shipped set, or does the client’s
-  show-all mode justify a third (visible)?
-  Per-plane cost is real; measure the reducer overhead before enabling more than one
-  extra plane by default in the tagged mode.
+- What does the maintained-state union actually cost on the ancestor-merge path,
+  measured against H86’s replacement shape?
+  The plane, groups, composed provenance, and leaf counts are priced together by
+  `fdu-n4gn`, and that measurement should choose the final representation.
+  This is the one item in the contract that is neither settled nor cheap.
 - Should the engine probe mount tables to choose the watch backend, or stay explicit and
   let clients own detection?
   Explicit ships first; probing is additive.
+- Do prefix-scoped entry deltas ever beat invalidation plus a bounded read for expanded
+  folders? The v1 change stream carries no entry rows either way; entry deltas enter the
+  contract only if a live-change A/B shows lower end-to-end latency and copy cost once
+  binding copies and browser convergence are counted.
+- ~~Does fdu’s compiled default registry adopt the raw extension level for its own views,
+  or expose it only to registry-supplied consumers?~~
+  Answered by building it: the compiled default adopts it, on listing and files rows and
+  as the `unknown:` type id, while roll-up buckets and type rows stay canonical.
+  It was indeed low-stakes — running the change against its own fixture gave
+  byte-identical `--view types` and `--view extensions` output — and exposing the level
+  only to registry-supplied consumers would have meant two answers to "what is this
+  name's extension" depending on who was asking.
 - Should the two projects converge on one registry file, or stay two registries over one
   dialect? Convergence is attractive and couples release cadences: metabrowser could not
   then add a file type without an fdu release.
@@ -726,6 +887,9 @@ here records its regime.
 
 ## References
 
+- [The contract reconciliation](../research/research-2026-08-23-interactive-contract-reconciliation.md)
+  — this spec read against metabrowser’s inventory-engine research, with the eight
+  differences adjudicated and the amendment list this spec’s next revision applies
 - [Design principles](../architecture/fdu-design-principles.md) — the axis rules, cache
   honesty, and truncation contracts this spec extends
 - [Surface architecture](../architecture/fdu-surface-architecture.md) — the parity
