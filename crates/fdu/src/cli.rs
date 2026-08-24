@@ -593,9 +593,14 @@ impl Cli {
         )
         .enabled();
         // The write is already running; rendering is the other reader. Whether output
-        // finishes first or the save does, both complete.
+        // finishes first or the save does, both complete -- and the rendered report is
+        // flushed to the terminal *before* waiting on the save, or the overlap is only
+        // nominal: the caller's writer is buffered, a default depth-2 tree fits inside
+        // that buffer, and the user would see nothing until the snapshot's fsync and the
+        // index teardown had finished (fdu-n75m). Same bytes in the same order; only
+        // when they arrive changes.
         let rendered = report_format::render(&report, format, color);
-        let render_result = write!(out, "{rendered}");
+        let render_result = write!(out, "{rendered}").and_then(|()| out.flush());
 
         // Joined before returning, and before the render error is raised: a broken pipe
         // must not abandon a finished scan's snapshot, because the next run would then

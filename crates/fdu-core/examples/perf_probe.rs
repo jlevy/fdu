@@ -88,6 +88,7 @@ enum Mode {
     MarkdownProse,
     Query,
     ColdOpenSave,
+    DefaultTree,
     Revalidate,
     ScanIndex,
     ScanProducer,
@@ -120,6 +121,7 @@ impl Mode {
             "query" => Ok(Self::Query),
             "revalidate" => Ok(Self::Revalidate),
             "cold-open-save" => Ok(Self::ColdOpenSave),
+            "default-tree" => Ok(Self::DefaultTree),
             "scan-index" => Ok(Self::ScanIndex),
             "scan-producer" => Ok(Self::ScanProducer),
             "snapshot-load" => Ok(Self::SnapshotLoad),
@@ -152,6 +154,7 @@ impl Mode {
             Self::Query => "query",
             Self::Revalidate => "revalidate",
             Self::ColdOpenSave => "cold-open-save",
+            Self::DefaultTree => "default-tree",
             Self::ScanIndex => "scan-index",
             Self::ScanProducer => "scan-producer",
             Self::SnapshotLoad => "snapshot-load",
@@ -335,6 +338,7 @@ fn execute(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
         Mode::ScanIndex | Mode::ValidateIndex => scan_index(arguments),
         Mode::SnapshotSave => snapshot_save(arguments),
         Mode::ColdOpenSave => cold_open_save(arguments),
+        Mode::DefaultTree => default_tree(arguments),
         Mode::SnapshotLoad => snapshot_load(arguments),
         Mode::Summary => summary_tier(arguments),
         Mode::Revalidate => revalidate(arguments),
@@ -637,6 +641,97 @@ fn summary_tier(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
     Ok(ProbeOutput::new(arguments.mode, "scan", component, summary))
 }
 
+/// The default command, `fdu <dir>`: scan, index, rendered tree, snapshot write.
+///
+/// This is the path a user takes by typing nothing else, and no ledger job measured it
+/// before this mode existed: `cold-scan-index`, the proxy every cumulative checkpoint
+/// used, is the walk plus the index build and excludes both the render and the write,
+/// which the cache-layers plan priced at about a third of a default run. Two defects found
+/// in the PR #38 review live in exactly that blind spot (`fdu-2um8`, `fdu-n75m`).
+///
+/// Faithful to the command line rather than to the cheapest probe-able shape: cache
+/// policy `Auto` with a real cache path, the tree view at its default depth, the text
+/// renderer run to completion, and the save joined before returning -- which is what the
+/// command line does before it exits. `prepare_report` never reads the snapshot for a
+/// metadata query (revalidation would stat every entry anyway), so a repeated run over an
+/// unchanged tree scans cold and writes again; `snapshot_written` says whether it did.
+///
+/// The oracle is `tallies`, read off the tree's root node, because the index is consumed
+/// inside `prepare_report` and never returned -- the same reason the aggregate tier has no
+/// digest. The five numbers the user sees at the top of the tree are what is checked.
+fn default_tree(arguments: &Arguments) -> ProbeResult<ProbeOutput> {
+    let snapshot = arguments.snapshot()?.to_path_buf();
+    let identity_before = snapshot_identity(&snapshot);
+    let config = OpenConfig {
+        scan: arguments.scan.clone(),
+        cache_path: Some(snapshot.clone()),
+        policy: CachePolicy::Auto,
+        analysis: AnalysisRequest::default(),
+    };
+    let query = Query { views: vec![ViewSpec::Tree], ..Query::default() };
+
+    let started = Instant::now();
+    let (report, pending, _performance) =
+        fdu_core::prepare_report(&arguments.root, &config, &query)?;
+    // Rendered to a string the way the command line renders into its writer; the bytes
+    // are not printed because stdout carries this probe's JSON, and `black_box` keeps the
+    // render from being optimised away as an unused value.
+    let rendered =
+        fdu_core::report_format::render(&report, fdu_core::report_format::Format::Text, false);
+    black_box(rendered.len());
+    pending.join()?;
+    let component = started.elapsed();
+
+    let root = report
+        .sections
+        .iter()
+        .find_map(|section| match section {
+            fdu_core::query::Section::Tree(node) => Some(node),
+            _ => None,
+        })
+        .ok_or_else(|| ProbeError("default tree returned no tree section".to_string()))?;
+    let identity_after = snapshot_identity(&snapshot);
+
+    let mut summary = Summary {
+        files: root.files,
+        dirs: root.dirs,
+        apparent_bytes: u128::from(root.bytes),
+        allocated_bytes: u128::from(root.allocated),
+        newest_file_mtime_ns: root.newest_mtime_ns,
+        // Absent rather than zero, as for the aggregate tier: the index was consumed
+        // inside `prepare_report`, so this mode has no digest to offer and says so.
+        engine_digest: None,
+        index_len: None,
+        ..Summary::default()
+    };
+    summary.errors = u64::try_from(report.errors.len()).unwrap_or(u64::MAX);
+    summary.complete = report.complete;
+    summary.entries = root.files + root.dirs;
+    summary.snapshot_bytes = snapshot.metadata().ok().map(|metadata| metadata.len());
+    // A rewrite lands a fresh temporary and renames it over the path, so the file's
+    // identity changes; a run that found the bytes identical leaves the file in place
+    // and only moves its mtime. Identity, not mtime, is therefore the signal, and it is
+    // the number a reader of this job wants beside the wall time.
+    summary.snapshot_written = Some(identity_after.is_some() && identity_after != identity_before);
+    Ok(ProbeOutput::new(arguments.mode, "scan", component, summary))
+}
+
+/// Something that changes when a file is replaced and survives when it is left alone.
+///
+/// The inode where the platform has one; elsewhere the creation time, which a rename of
+/// a fresh temporary also moves. `None` when there is no file.
+fn snapshot_identity(path: &Path) -> Option<(u64, Option<std::time::SystemTime>)> {
+    let metadata = path.metadata().ok()?;
+    #[cfg(unix)]
+    let inode = {
+        use std::os::unix::fs::MetadataExt;
+        metadata.ino()
+    };
+    #[cfg(not(unix))]
+    let inode = 0u64;
+    Some((inode, metadata.created().ok()))
+}
+
 /// A cold scan that also writes its cache, through the real `open` path.
 ///
 /// `snapshot-save` calls `snapshot::save` directly, so it never exercises what a
@@ -821,6 +916,8 @@ struct Summary {
     query_observations: u64,
     scan_diagnostics: Option<fdu_core::scan::ScanDiagnostics>,
     snapshot_bytes: Option<u64>,
+    /// Whether the run replaced the snapshot file; `None` for modes that have no snapshot.
+    snapshot_written: Option<bool>,
     symlinks: u64,
 }
 
@@ -853,6 +950,7 @@ impl Default for Summary {
             query_observations: 0,
             scan_diagnostics: None,
             snapshot_bytes: None,
+            snapshot_written: None,
             symlinks: 0,
         }
     }
@@ -1017,6 +1115,9 @@ impl ProbeOutput {
         let index_len = json_optional_u64(summary.index_len);
         let newest_file_mtime_ns = json_optional_i64(summary.newest_file_mtime_ns);
         let snapshot_bytes = json_optional_u64(summary.snapshot_bytes);
+        let snapshot_written = summary
+            .snapshot_written
+            .map_or_else(|| "null".to_string(), |written| written.to_string());
         format!(
             concat!(
                 "{{\"component_ns\":{},\"attribution\":{},\"mode\":\"{}\",\"schema\":\"{}\",",
@@ -1031,7 +1132,7 @@ impl ProbeOutput {
                 "\"engine_digest\":{},\"entries\":{},\"errors\":{},",
                 "\"files\":{},\"index_len\":{},\"newest_file_mtime_ns\":{},\"other\":{},",
                 "\"query_iterations\":{},\"query_observations\":{},",
-                "\"snapshot_bytes\":{},",
+                "\"snapshot_bytes\":{},\"snapshot_written\":{},",
                 "\"symlinks\":{}}}}}"
             ),
             self.component_ns,
@@ -1069,6 +1170,7 @@ impl ProbeOutput {
             summary.query_iterations,
             summary.query_observations,
             snapshot_bytes,
+            snapshot_written,
             summary.symlinks,
         )
     }

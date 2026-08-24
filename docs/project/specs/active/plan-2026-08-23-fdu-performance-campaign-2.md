@@ -185,23 +185,50 @@ Phases 0 and A–C are parallel where their beads say so; D and E follow their g
   by falling back.
 - [ ] `fdu-5yjk` — extend scan diagnostics to the FullIndex plan, the plan users run and
   the one Phase B rebuilds; instrument before restructuring.
-- [ ] `fdu-9ydj` — a `--no-oracle` probe mode and engine-phase counter scoping, so
+- [ ] `fdu-4xtm` — a `--no-oracle` probe mode and engine-phase counter scoping, so
   attribution runs stop counting the harness (the oracle is ~39% of probe instructions
   and 46% of its allocation events).
 - [ ] `fdu-c65j` — adopt samply so Linux profiling stops depending on callgrind’s
   serialized world.
-- [ ] `fdu-mx1w` — a ledger job for the **default command**, `fdu <dir>`: scan, index,
+- [x] `fdu-mx1w` — a ledger job for the **default command**, `fdu <dir>`: scan, index,
   rendered tree, snapshot write.
-  None of the 66 artifacts measures it.
+  **Landed** as two jobs, `default-tree-first` and `default-tree`, over a
+  `perf_probe default-tree` mode that drives `prepare_report` exactly as the command
+  line does; exp-066 is the baseline on the 175k rustup store, and it shows the repeated
+  run rewriting a 13.9 MB snapshot it never reads on every trial.
+  None of the 66 artifacts before it measured this path.
   `cold-scan-index`, the proxy every cumulative checkpoint uses, is the probe’s walk
   plus index build and excludes both the render and the write — and the cache-layers
   plan already priced that write at roughly a third of a default run on `/usr`. Two
-  defects found in the PR #38 review live in exactly that blind spot and cannot be
-  judged without this job: `fdu-2um8` (the cold-scan path rewrites an identical snapshot
-  on every run) and `fdu-n75m` (the rendered report is withheld until the write, its
-  `F_FULLFSYNC` and the index teardown complete).
+  defects found in the PR #38 review lived in exactly that blind spot and were judged on
+  this job the night it landed: `fdu-2um8` (the cold-scan path rewrote an identical
+  snapshot on every run; exp-067, `default-tree` −10.6%) and `fdu-n75m` part 1 (the
+  rendered report was withheld until the write, its `F_FULLFSYNC` and the index teardown
+  completed; exp-068, time to first byte −7.5% to −12.5%). Parts 2 and 3 of `fdu-n75m`
+  are durability decisions and remain.
   The `fdu-default-tree` contract already exists; nothing has ever been recorded through
   it.
+
+### The macOS agenda
+
+The phases above are ordered by a Linux floor that does not exist on macOS, and this is
+the host the project’s performance bar is set on.
+[The strategy review](../../reports/report-2026-08-23-research-loop-strategy-review.md)
+derives a macOS ordering from what is measurable here and states the case against each
+item; the beads carry it under the `macos-agenda` label, and
+[the runbook](../../guides/performance-loop-runbook.md) is how an unattended agent runs
+one round of it.
+
+- **Tier 1, unattended, in order:** `fdu-mx1w` (landed), `fdu-2um8` (skip the identical
+  snapshot rewrite), `fdu-n75m` part 1 (flush the render before the join), `fdu-pdne`
+  (PGO, screen only), `fdu-78q6` (sidecar restore, on the metabrowser clone).
+- **Tier 2, instruments:** `fdu-9hdc` (a `getattrlistbulk` floor, so `fdu-33ri` can ship
+  two scoreboards with the regime difference recorded), `fdu-4xtm`, `fdu-5yjk`,
+  `fdu-0pzh` (measure only), and promoting `host_regime` into the artifact schema.
+- **Tier 3, with a person:** `fdu-xde5` (H86), `fdu-jxhk` (its content-tier instance),
+  `fdu-6kyn` (an `unsafe`-versus-dependency policy), `fdu-9716` (`searchfs`), `fdu-n75m`
+  parts 2 and 3 (durability policy), the FSEvents journal (Phase D), and Phase E’s
+  other-host work.
 
 ### Phase A: Constants with confirmed mechanisms (tuning track)
 
@@ -271,6 +298,9 @@ Plan Phase C against the warm number.
 - [ ] `fdu-78q6` — the sidecar restore path (H83): 25 µs/file against 3 µs for a
   metadata record, same re-derivation shape as the snapshot loader had; expect the same
   class of fix. Now the largest unexamined item on this tier after the structural one.
+  First increment landed (exp-069, H102): the file map ordered by path bytes instead of
+  components took `content-cache-hit` −31% and `content-query` −67% on a dense 52k-file
+  checkout, to about 7.8 µs/file; the next is the `Path::hash` cost on the roll-up map.
 
 ### Phase D: The warm end-state (after B, because the representation decides the format)
 
@@ -331,7 +361,7 @@ strategy and the record is visible in review.
   rung
 - [The record spec](plan-2026-08-15-fdu-performance-record-and-report.md) — evidence
   completion
-- Beads: `fdu-xde5`, `fdu-tyjx`, `fdu-lk9u`, `fdu-33ri`, `fdu-9ydj`, `fdu-tk1b`,
+- Beads: `fdu-xde5`, `fdu-tyjx`, `fdu-lk9u`, `fdu-33ri`, `fdu-4xtm`, `fdu-tk1b`,
   `fdu-926e`, `fdu-78q6`, `fdu-yr23`, `fdu-pdra`, `fdu-h7sw`, `fdu-sk7v`, `fdu-lf3v`,
   `fdu-9716`, `fdu-ow8y`, `fdu-mx1w`, `fdu-2um8`, `fdu-n75m`
 

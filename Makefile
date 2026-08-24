@@ -417,28 +417,38 @@ perf-content-profile: perf-probe-profiling
 
 # Is the candidate faster than the control? Set CONTROL to a saved reference binary.
 CONTROL ?= $(PERF_RELEASE)
+# JOBS selects the jobs for one round; the default is the metadata set. An experiment
+# whose hypothesis names one tier should measure that tier's job and the jobs its
+# mechanism could move, not all six: every extra job is wall time the subject spends
+# drifting between the pairs that matter.
+PERF_DEFAULT_JOBS := aggregate-summary cold-scan-index cold-scan-producer \
+	cold-snapshot-save warm-revalidate warm-snapshot-load
+PERF_JOB_ARGS = $(foreach job,$(or $(JOBS),$(PERF_DEFAULT_JOBS)),--job $(job))
+
 perf-compare: perf-probe-release
 	$(PERF_RUN) measure --root $(PERF_TREE) --label $(PERF_LABEL) \
 		--variant "control=$(CONTROL)" \
 		--variant "candidate=$(PERF_RELEASE)" \
 		--reference dust=$(shell command -v dust 2>/dev/null || echo /usr/bin/du) \
-		--job aggregate-summary \
-		--job cold-scan-index --job cold-scan-producer \
-		--job cold-snapshot-save --job warm-revalidate \
-		--job warm-snapshot-load \
+		$(PERF_JOB_ARGS) \
 		--trials $(or $(TRIALS),12) \
 		--scratch $(PERF_SCRATCH) --output-dir $(PERF_RESULTS) \
 		--baseline-fingerprint $(PERF_BASELINE) \
 		--name $(or $(NAME),adhoc) $(PERF_MEASURE_EVIDENCE_ARGS)
 
+# JOBS selects the jobs for one content round, exactly as it does for `perf-compare`;
+# the default is the whole content set.
+PERF_CONTENT_DEFAULT_JOBS := content-basic content-cache-hit code-sloc \
+	code-sloc-cache-hit text-prose markdown-prose document-cache-hit content-query
+PERF_CONTENT_JOB_ARGS = $(foreach job,$(or $(JOBS),$(PERF_CONTENT_DEFAULT_JOBS)),--job $(job))
+
 perf-content-compare: perf-probe-release
 	$(PERF_RUN) measure --root $(PERF_TREE) --label $(PERF_LABEL) \
 		--variant "control=$(CONTROL)" \
 		--variant "candidate=$(PERF_RELEASE)" \
-		--job content-basic --job content-cache-hit --job code-sloc \
-		--job code-sloc-cache-hit --job text-prose --job markdown-prose \
-		--job document-cache-hit --job content-query \
+		$(PERF_CONTENT_JOB_ARGS) \
 		--trials $(or $(TRIALS),12) \
+		--scratch $(PERF_SCRATCH) --output-dir $(PERF_RESULTS) \
 		--baseline-fingerprint $(PERF_BASELINE) \
 		--name $(or $(NAME),content-adhoc) $(PERF_MEASURE_EVIDENCE_ARGS)
 

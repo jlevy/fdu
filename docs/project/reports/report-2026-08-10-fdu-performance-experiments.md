@@ -66,6 +66,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | --- | --- | --- | ---: |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 5 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 
 ## Every experiment, including the failures
@@ -141,6 +142,11 @@ dead end.
 | 063 | [Share the index with the snapshot writer instead of deep-cloning it](#exp063--share-the-index-with-the-snapshot-writer-instead-of-deepcloning-it) | H87 | `cold-open-save` | -10.5% | ✅ accepted |
 | 064 | [Content roll-up lookup and indexed type-rule tiers](#exp064--content-rollup-lookup-and-indexed-typerule-tiers) | H94, H95 | `content-cache-hit` | -30.3% | ✅ accepted |
 | 065 | [Validate the content roll-up change on a dense real tree](#exp065--validate-the-content-rollup-change-on-a-dense-real-tree) | H94, H95 | `content-cache-hit` | -25.8% | ✅ accepted |
+| 066 | [Baseline for the default command on a real package cache](#exp066--baseline-for-the-default-command-on-a-real-package-cache) | — | `default-tree` | -1.9% | 📏 baseline |
+| 067 | [Skip the identical snapshot rewrite on the cold-scan path](#exp067--skip-the-identical-snapshot-rewrite-on-the-coldscan-path) | H100 | `default-tree` | -10.6% | ✅ accepted |
+| 068 | [Flush the rendered report before joining the snapshot writer](#exp068--flush-the-rendered-report-before-joining-the-snapshot-writer) | H101 | `default-tree` | +1.2% | ✅ accepted |
+| 069 | [Order the content file map by path bytes instead of components](#exp069--order-the-content-file-map-by-path-bytes-instead-of-components) | H102 | `content-cache-hit` | -31.0% | ✅ accepted |
+| 070 | [Validate the separator fixes against the result they landed on](#exp070--validate-the-separator-fixes-against-the-result-they-landed-on) | — | `content-cache-hit` | -1.3% | ✅ accepted |
 
 ## The experiments
 
@@ -2378,6 +2384,162 @@ work.
 Full record:
 [`exp-065-validate-the-content-roll-up-change-on-a-dense-real-tree.md`](../experiments/exp-065-validate-the-content-roll-up-change-on-a-dense-real-tree.md)
 
+### exp-066 — Baseline for the default command on a real package cache
+
+📏 baseline · 2026-08-23 · no hypothesis id · commit `62f82f6`
+
+**`default-tree`** (warm start) — measured
+
+| metric | value |
+| --- | ---: |
+| wall (ms) | 386.9 |
+| component (ms) | 381.9 |
+| cpu (ms) | 1787.4 |
+| user (ms) | 209.1 |
+| system (ms) | 1573.4 |
+| peak rss (MiB) | 101.6 |
+
+Other jobs, wall time: `aggregate-summary` 299 ms, `cold-scan-index` 659 ms,
+`default-tree-first` 386 ms.
+
+**Baseline:** First measurement of fdu <dir> itself: the repeated run rewrites a 13.9 MB
+snapshot it never reads on all 24 trials, and the write plus render is about 70 ms of a
+375 ms default run.
+
+Full record:
+[`exp-066-baseline-for-the-default-command-on-a-real-package-cache.md`](../experiments/exp-066-baseline-for-the-default-command-on-a-real-package-cache.md)
+
+### exp-067 — Skip the identical snapshot rewrite on the cold-scan path
+
+✅ accepted · 2026-08-23 · H100 · commit `c013f1a`
+
+Control: main at 778aa74 with the default-tree probe mode (perf_probe.control)
+
+Candidate: write_atomically compares the encoded bytes against the file and leaves an
+identical snapshot in place
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 397.7 | 358.7 | -10.61% | [-14.85%, -6.05%] |
+| component (ms) | 392.0 | 353.2 | -10.40% | [-15.03%, -6.10%] |
+| cpu (ms) | 1785.9 | 1777.7 | -1.57% (n.s.) | [-6.33%, +4.37%] |
+| user (ms) | 214.2 | 196.9 | -1.83% (n.s.) | [-13.23%, +3.02%] |
+| system (ms) | 1580.6 | 1584.9 | -1.81% (n.s.) | [-5.03%, +3.39%] |
+| peak rss (MiB) | 102.3 | 101.0 | -1.28% | [-3.33%, -0.39%] |
+
+Other jobs, wall time: `cold-scan-index` +0.9% (n.s.), `default-tree-first` +0.1%
+(n.s.).
+
+Cost to carry: 117 lines; no new dependencies.
+
+**Accepted:** default-tree -10.61% [-14.85%, -6.05%] at 16 trials with the first-run and
+index jobs unchanged and RSS flat: a streamed byte compare for a 60-line change that
+cannot go stale.
+
+Full record:
+[`exp-067-skip-the-identical-snapshot-rewrite-on-the-cold-scan-path.md`](../experiments/exp-067-skip-the-identical-snapshot-rewrite-on-the-cold-scan-path.md)
+
+### exp-068 — Flush the rendered report before joining the snapshot writer
+
+✅ accepted · 2026-08-23 · H101 · commit `4d29d6d`
+
+Control: the command line at c013f1a: report buffered until after the save is joined
+
+Candidate: out.flush() before pending_save.join(): same bytes, earlier
+
+**`default-tree`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 353.3 | 361.3 | +1.24% (n.s.) | [-14.22%, +13.17%] |
+| component (ms) | 348.4 | 356.2 | +1.16% (n.s.) | [-14.21%, +12.79%] |
+| cpu (ms) | 1780.0 | 1826.7 | +2.68% (n.s.) | [-4.49%, +10.02%] |
+| user (ms) | 212.9 | 206.7 | -4.04% (n.s.) | [-11.63%, +6.11%] |
+| system (ms) | 1577.6 | 1629.1 | +3.28% (n.s.) | [-5.09%, +10.56%] |
+| peak rss (MiB) | 101.2 | 101.2 | -0.82% (n.s.) | [-1.27%, +1.97%] |
+
+Other jobs, wall time: `default-tree-first` -4.0% (n.s.).
+
+Cost to carry: 9 lines; no new dependencies.
+
+**Accepted:** Time to first byte on the real CLI -7.54% [-8.55%, -5.18%] repeated and
+-12.47% [-15.66%, -9.84%] first run with total wall unchanged; the engine-path guard in
+the frontmatter shows the expected nothing for a one-line latency change.
+
+Full record:
+[`exp-068-flush-the-rendered-report-before-joining-the-snapshot-writer.md`](../experiments/exp-068-flush-the-rendered-report-before-joining-the-snapshot-writer.md)
+
+### exp-069 — Order the content file map by path bytes instead of components
+
+✅ accepted · 2026-08-23 · H102 · commit `50260a5`
+
+Control: main at 4d29d6d (perf_probe.control)
+
+Candidate: ContentIndex::files keyed by a byte-ordered PathKey; prefix-range
+invalidation with an explicit separator
+
+**`content-cache-hit`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 577.9 | 408.9 | -31.00% | [-31.43%, -27.80%] |
+| component (ms) | 453.5 | 283.6 | -38.64% | [-39.31%, -36.43%] |
+| cpu (ms) | 573.8 | 404.6 | -31.12% | [-31.45%, -28.50%] |
+| user (ms) | 543.0 | 371.7 | -32.24% | [-33.02%, -30.41%] |
+| system (ms) | 29.6 | 29.6 | -7.48% (n.s.) | [-9.72%, +1.56%] |
+| blocked (ms) | 3.8 | 4.1 | -1.61% (n.s.) | [-19.71%, +88.55%] |
+| peak rss (MiB) | 181.0 | 178.9 | -0.39% (n.s.) | [-2.84%, +0.51%] |
+
+Other jobs, wall time: `code-sloc` +0.3% (n.s.), `code-sloc-cache-hit` -30.0%,
+`content-basic` +3.1% (n.s.), `content-query` -67.3%, `document-cache-hit` -30.2%,
+`markdown-prose` +6.4% (n.s.), `text-prose` -0.6% (n.s.).
+
+Cost to carry: 133 lines; no new dependencies.
+
+**Accepted:** content-cache-hit -31.00% [-31.43%, -27.80%] on a dense 52k-file real
+checkout with the content digest identical and RSS flat, for a key type that changes
+nothing observable; the cold jobs are unchanged and content-query fell 67% by the same
+mechanism.
+
+Full record:
+[`exp-069-order-the-content-file-map-by-path-bytes-instead-of-componen.md`](../experiments/exp-069-order-the-content-file-map-by-path-bytes-instead-of-componen.md)
+
+### exp-070 — Validate the separator fixes against the result they landed on
+
+✅ accepted · 2026-08-24 · no hypothesis id · commit `f204abb`
+
+Control: exp-069 accepted binary at 50260a5
+
+Candidate: f204abb: normalized() on the content key path, for Path equality on Windows
+
+**`content-cache-hit`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 452.2 | 450.8 | -1.28% (n.s.) | [-5.66%, +1.86%] |
+| component (ms) | 312.9 | 316.1 | -0.93% (n.s.) | [-3.97%, +2.23%] |
+| cpu (ms) | 437.1 | 431.6 | -0.89% (n.s.) | [-3.18%, +0.69%] |
+| user (ms) | 389.9 | 385.1 | -1.02% (n.s.) | [-2.65%, +0.64%] |
+| system (ms) | 46.0 | 48.1 | -0.87% (n.s.) | [-11.12%, +8.17%] |
+| blocked (ms) | 13.7 | 18.5 | -4.49% (n.s.) | [-46.02%, +80.56%] |
+| peak rss (MiB) | 178.6 | 176.1 | -1.27% (n.s.) | [-2.86%, +0.28%] |
+
+Other jobs, wall time: `code-sloc` +0.6% (n.s.), `code-sloc-cache-hit` -0.7% (n.s.),
+`content-basic` -0.1% (n.s.), `content-query` +0.9% (regression), `document-cache-hit`
++0.1% (n.s.), `markdown-prose` +6.8% (n.s.), `text-prose` -2.4% (n.s.).
+
+Cost to carry: 0 lines; no new dependencies.
+
+**Accepted:** The pre-registered warm job moves -1.28% [-5.66%, +1.86%], inside the
+non-inferiority margin, so exp-069 -31% still describes what ships; content-query +0.94%
+[+0.08%, +2.38%] excludes zero but user CPU is flat-to-lower and system CPU falls, so
+the run bounds the fixes below the margin rather than showing a cost.
+
+Full record:
+[`exp-070-validate-the-separator-fixes-against-the-result-they-landed-.md`](../experiments/exp-070-validate-the-separator-fixes-against-the-result-they-landed-.md)
+
 ## Absolute timings
 
 What each experiment’s primary job actually cost, in milliseconds, for the runs above.
@@ -2472,6 +2634,14 @@ Baselines show one value because they measure a state rather than a change.
 | 052 | Per-layer counters cost less than the measurement can see | `cold-scan-index` | 1,891.3 | 1,870.1 | +0.0% | ✅ accepted |
 | 053 | Move instrumentation to a runtime toggle and measure all three of its costs | `cold-scan-index` | 1,858.8 | 1,847.0 | -1.3% | ✅ accepted |
 
+### rustup-toolchains (175,191 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 066 | Baseline for the default command on a real package cache | `default-tree` | 386.9 | — | — | 📏 baseline |
+| 067 | Skip the identical snapshot rewrite on the cold-scan path | `default-tree` | 397.7 | 358.7 | -10.6% | ✅ accepted |
+| 068 | Flush the rendered report before joining the snapshot writer | `default-tree` | 353.3 | 361.3 | +1.2% | ✅ accepted |
+
 ### generated-markdown-2000 (2,001 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
@@ -2485,6 +2655,13 @@ Baselines show one value because they measure a state rather than a change.
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 045 | Pipeline macOS directory opens | `rich-summary-open-pipeline` | 3,468.3 | 3,325.4 | -4.5% | ↩︎ superseded |
 | 046 | Tune a shared macOS directory-opener pool | `rich-summary-shared-openers` | 3,337.9 | 3,220.9 | -4.0% | ⏳ in progress |
+
+### metabrowser-clone (60,089 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 069 | Order the content file map by path bytes instead of components | `content-cache-hit` | 577.9 | 408.9 | -31.0% | ✅ accepted |
+| 070 | Validate the separator fixes against the result they landed on | `content-cache-hit` | 452.2 | 450.8 | -1.3% | ✅ accepted |
 
 ### pr22-macos-benchmarks (60,993 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 

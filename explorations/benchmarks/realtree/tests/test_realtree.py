@@ -413,6 +413,8 @@ class StatisticsTests(unittest.TestCase):
         # content analyzer pool. Left undeclared, each would publish a zero.
         for job_id in (
             "aggregate-summary",
+            "default-tree-first",
+            "default-tree",
             "cold-scan-index",
             "cold-scan-producer",
             "warm-revalidate",
@@ -1029,11 +1031,26 @@ class OracleSelectionTests(unittest.TestCase):
             with self.subTest(job=job_id):
                 self.assertIn(job.oracle, measure._ORACLES)
 
-    def test_only_the_indexless_tier_uses_the_weaker_oracle(self) -> None:
-        # The weaker check is for tiers that structurally cannot offer a digest, not a
-        # convenience for a job whose digest is inconvenient.
+    def test_only_jobs_that_cannot_offer_a_digest_use_the_weaker_oracle(self) -> None:
+        # The weaker check is for jobs that structurally cannot offer a digest, not a
+        # convenience for a job whose digest is inconvenient. The aggregate tier retains
+        # no index; the default-command jobs consume theirs inside `prepare_report`, which
+        # never returns it -- and measuring a different entry point to get a digest would
+        # stop measuring the command.
         weaker = {job_id for job_id, job in measure.PROBE_JOBS.items() if job.oracle == "tallies"}
-        self.assertEqual(weaker, {"aggregate-summary"})
+        self.assertEqual(weaker, {"aggregate-summary", "default-tree-first", "default-tree"})
+
+    def test_the_default_command_is_measured_first_run_and_repeated(self) -> None:
+        # The two defects found in the PR #38 review are properties of the repeated run:
+        # a snapshot that exists and is rewritten anyway. A job that emptied the path each
+        # trial would measure the first run only and could never see either.
+        first, repeated = measure.PROBE_JOBS["default-tree-first"], measure.PROBE_JOBS["default-tree"]
+        self.assertTrue(first.writes_snapshot)
+        self.assertFalse(first.needs_snapshot)
+        self.assertTrue(repeated.needs_snapshot)
+        self.assertFalse(repeated.writes_snapshot)
+        self.assertEqual(repeated.snapshot_preparation_mode, "default-tree")
+        self.assertEqual(first.argv, repeated.argv)
 
 
 class HostFactsTests(unittest.TestCase):

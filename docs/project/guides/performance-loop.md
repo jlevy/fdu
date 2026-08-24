@@ -696,7 +696,7 @@ Kept as a live list; the *ordering* — which of these to run next and why — i
 Numbering is shared with the
 [performance-frontier research](../research/research-2026-08-10-performance-frontier.md),
 whose backlog owns H12–H46; new hypotheses from any source take the next free number
-(currently H100) so no id ever means two things.
+(currently H103) so no id ever means two things.
 Each is stated so it can be wrong, with the metric that would show it.
 Status is updated as experiments resolve them; see the ledger for results.
 
@@ -769,6 +769,7 @@ Status is updated as experiments resolve them; see the ledger for results.
 | H82 | `BasicAccumulator::push()` allocates and copies every read chunk into a temporary vector even when no split UTF-8 sequence is pending. Decoding ordinary complete chunks in place should remove one allocation and one full byte copy per read while retaining the carry path for boundary splits. | Generated `text-prose` and `markdown-prose` wall and component down at least 3% with intervals below zero on the primary Markdown job; peak RSS, cache-hit, semantic digests, chunk-boundary tests, goldens, and self-host behavior no worse | **Confirmed** (exp-050, `2fef9bf`): the 32-pair Markdown run improved wall 12.04% [−16.46%, −8.38%], component 13.67%, user CPU 12.24%, and peak RSS 9.12%. Plain text, self-host wall, and cache hits were neutral; all semantic oracles passed. |
 | H94 | `ContentIndex::merge_ancestors` walks every ancestor of every file and does an independent `BTreeMap<PathBuf, ContentRollUp>` descent at each level, so a warm content open pays O(depth × log n) `compare_components` calls per file plus one `to_path_buf()` per ancestor per file even when the roll-up already exists. The map is only ever point-queried, so its ordering is unobservable and it can be a `HashMap`. | `content-cache-hit` wall and component down at least 3% with both intervals below zero; RSS no worse; content digest and rendered views identical | **Confirmed, well past its prediction** (`fdu-cq7t`): wall −25.42% [−26.51%, −24.46%] and component −27.13% [−29.00%, −26.24%] over 24 pairs on a 15,977-file tree; RSS +0.5%, neutral. Instructions −34.53%, and `merge_ancestors` inclusive 43.73% → 14.07% of profile (−78.9% absolute). The `--depth 12` multi-view JSON render is byte-identical, so intermediate roll-ups are verified and not only the root total. **Re-measured against main 44 commits later** (exp-065): reproduces on its own regenerated subject and transfers to a dense real tree at −25.78% [−26.74%, −24.52%] warm. The cold `content-basic` figure recorded alongside it (−13.40%) does not transfer — −2.38% on a dense tree — because that subject is depth 16 and 22.6× sparse. |
 | H95 | Both tiers of the type cascade are `GENERATED_RULES.iter().filter(..).max_by_key(..)`, and `max_by_key` never short-circuits, so every file pays all 65 rules and 167 extension strings. Classification also runs twice per warm file: once to build each candidate, once again in `apply_analysis`’s staleness guard. Two `LazyLock` hash tables make both call sites cheap without touching the public candidate contract. | `content-cache-hit` wall and component down at least 3% with both intervals below zero; RSS no worse; classification byte-identical against the scan over every declared rule key | **Confirmed on the warm path; its cold-transfer prediction refuted** (`fdu-9dcj`): warm wall −5.08% [−6.39%, −3.60%] and component −5.44% [−7.27%, −4.11%] over 40 pairs against the post-H94 base; `classify_path_with_prefix` −41.4% absolute. The predicted transfer to the analysis path did not survive: `content-basic` read −4.20% [−6.10%, −0.06%] at 24 pairs and −2.34% [−5.05%, −0.64%] at 40, direction right but below the bar once settled — a worked example of why a 24-pair reading is not a result. exp-065 makes the same point from the other side: the cold-path figure H95 was denied is subject-shaped too, reading −2.38% on a dense tree where the generated one gave −13.56%. |
+| H102 | `ContentIndex::files` is a `BTreeMap<PathBuf, _>`, and `PathBuf` orders component by component, re-parsing both sides at every node of every descent: on a 52k-file warm content open, `compare_components` and `Components::next` were a third of the profile. Ordering the same map by the path’s bytes makes each comparison one `memcmp`, keeps the order deterministic for the sidecar, and keeps subtree invalidation a contiguous prefix range. | `content-cache-hit` wall down at least 15% on a dense real checkout; content digest unchanged; cold content jobs unchanged | **Confirmed, larger than predicted** (exp-069): `content-cache-hit` −31.00% [−31.43%, −27.80%] on the metabrowser clone, `code-sloc-cache-hit` and `document-cache-hit` −30%, cold jobs unchanged, RSS flat, digest identical; `content-query` −67.25% unpredicted, the same comparisons on the metrics views’ per-file lookup. Next increment: `Path::hash` and SipHash on the roll-up map (8%). The Windows separator fixes that followed were re-measured against this result (exp-070): the warm job is unaffected, so the figure above describes what ships. |
 
 ### Warm start
 
@@ -784,6 +785,8 @@ Status is updated as experiments resolve them; see the ledger for results.
 | H83 | The content sidecar rebuilds per-record state on load exactly as the metadata snapshot does, so warm content runs are bound by restoring precomputed metrics rather than by analysis. | `--cache only` content load component down several-fold; warm content wall below the profile-independent floor | **Open, measured** (`fdu-78q6`): the sidecar load costs about 370 ms for 14,542 files, roughly 25 µs per file against about 3 µs per metadata record, and all three analysis profiles converge on the same ~520 ms warm floor regardless of how much analysis the sidecar saved. Same shape as H78 and probably the same answer. |
 | H84 | `ADAPTIVE_SCAN_SLOW_WORK_NS_PER_ENTRY` was placed between APFS regimes of ~18, 22 and 42 µs per entry, but the Linux warm floor is about 1.5 µs, so the adaptive unlock never fires on Linux and an automatic scan stays at its six-worker cap in every regime the threshold was meant to separate. | calibration never crossing the threshold on a Linux warm scan; a `--threads` sweep finding a knee above six | **Queued** (`fdu-mjwr`, with H76/`fdu-tk1b`). A mechanism for the cold scalar-class gap, not yet a measurement — but the sign now has independent support: guest-cold at the raw syscall floor itself, sixteen workers beat four by 32% on four cores, which can only be queue depth. Gated on the aggregate probe (`fdu-tyjx`); bare metal (`fdu-lf3v`) sizes it. See [platform tuning](platform-tuning.md). |
 | S1 | `apply_upsert` resolved every entry’s parent by splitting the path into a component vector and descending from the root, one `BTreeMap` lookup per level, to reach a directory the walker was standing in when it produced the record. A walker reports a directory’s children consecutively, so remembering the previous upsert’s parent answers almost every entry with one path comparison. | cold-scan-index wall down at least 15% | **Confirmed, at a different number than predicted** (exp-051, `fdu-ypk2`). Wall fell 7.35% [−10.42%, −6.12%]; the index-build *component* fell 16.6%, which is what the 15% prediction actually described. Stating a component prediction against a wall-clock accept rule is the mistake to avoid repeating. `normalize` instructions fell 89%, so the memo hits; the remaining gap to the loader’s −51.9% is the producer’s per-entry `PathBuf`, which needs a batch-shaped observation (`fdu-2ubt`). |
+| H100 | The default command never reads its snapshot for a metadata query, yet the cold-scan path rewrites it on every run: serialization is deterministic, so an unchanged tree encodes to the bytes already on disk, and the full write, `F_FULLFSYNC` and rename replace a file with itself. Comparing the encoded bytes against the page-cached file before writing removes that cost on the repeated run and cannot go stale, because the bytes are the same bytes. | `default-tree` wall down at least 15% on the 175k subject; `default-tree-first` and `cold-scan-index` unchanged; RSS flat | **Confirmed, smaller than predicted** (exp-067): `default-tree` −10.61% [−14.85%, −6.05%] at 16 trials, the other two jobs unchanged, RSS flat, the snapshot left in place on every candidate trial. The write was about 40 ms of the run, not the 70 ms the render and write share. |
+| H101 | The command line renders its report into an 8 KiB buffer and joins the snapshot writer — serialization, `F_FULLFSYNC`, rename, index teardown — before that buffer is flushed, so a default depth-2 tree reaches the terminal only after all of it completes. Flushing before the join moves no work and changes no bytes; it changes when the user sees them. | time to first stdout byte on the command line down by the join’s duration; total wall unchanged | **Confirmed** (exp-068): first byte −7.54% [−8.55%, −5.18%] on a repeated run and −12.47% [−15.66%, −9.84%] on a first run over 175k entries, total wall unchanged; the report now lands 41–49 ms before exit. Parts 2 and 3 of `fdu-n75m` (teardown off the exit path, the fsync policy) remain, bounded by those 41 ms. |
 
 ### Rejected or superseded
 
@@ -794,28 +797,28 @@ Recorded in the ledger with the numbers that killed them.
 Prerequisites: a release probe, a profiling probe, and a nominated tree.
 
 ```shell
-# One-time: record what the tree looked like, so later runs can prove it is the same.
-uv run --no-project python -m benchmarks.realtree baseline \
-  --root /path/to/tree --label mytree
+# One-time per subject: record what the tree looked like, so later runs can prove it is
+# the same. PERF_LABEL must be the subject's nominated label.
+make perf-baseline PERF_TREE=/path/to/tree PERF_LABEL=mytree
 
 # Profile: where does the time actually go?
-cargo build --locked --profile profiling -p fdu --example perf_probe --no-default-features
-uv run --no-project python -m benchmarks.realtree profile \
-  --root /path/to/tree --job cold-scan-index --label baseline
+make perf-probe-profiling
+make perf-profile PERF_TREE=/path/to/tree PERF_LABEL=mytree
 
-# Measure: is the candidate faster than the control?
-cargo build --locked --release -p fdu --example perf_probe --no-default-features
-uv run --no-project python -m benchmarks.realtree measure \
-  --root /path/to/tree --label mytree \
-  --variant control=/tmp/perf_probe.control \
-  --variant candidate=target/release/examples/perf_probe \
-  --job cold-scan-index --job warm-revalidate \
-  --trials 12 --baseline-fingerprint explorations/benchmarks/results/realtree/tree-mytree.json \
-  --name exp007-parallel-producer
+# Measure: is the candidate faster than the control? CONTROL is the probe built from the
+# control commit and copied outside the tree before the change was made.
+make perf-compare PERF_TREE=/path/to/tree PERF_LABEL=mytree \
+  CONTROL=/tmp/fdu-realtree/perf_probe.control \
+  JOBS="cold-scan-index warm-revalidate" TRIALS=12 NAME=exp-067-parallel-producer
 ```
 
-`make perf-baseline`, `make perf-profile`, and `make perf-compare` wrap these with the
-project’s usual arguments; `PERF_TREE` selects the tree.
+The targets run `python -m benchmarks.realtree` through
+`uv run --project explorations/benchmarks` with `PYTHONPATH=explorations`; invoking the
+module any other way does not resolve the package.
+`PERF_TREE` selects the tree, `JOBS` the jobs (all six metadata jobs by default), and
+`NAME` the run, which becomes `run-<NAME>.json` under `PERF_RESULTS`.
+[The runbook](performance-loop-runbook.md) is one round of this on the nominated
+subjects, start to finish, including the record and the handoff.
 Evidence qualification is explicit: `PERF_STAGE`, `PERF_HOST_REGIME`,
 `PERF_BACKGROUND_LOAD_WORKERS`, `PERF_PROVENANCE`, and `PERF_CORPUS_MANIFEST` map
 directly to the harness contracts.
