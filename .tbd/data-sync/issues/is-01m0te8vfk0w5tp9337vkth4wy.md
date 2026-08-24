@@ -3,9 +3,9 @@ type: is
 id: is-01m0te8vfk0w5tp9337vkth4wy
 title: Report work counters hide full-index traversal
 kind: bug
-status: open
+status: closed
 priority: 1
-version: 3
+version: 4
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-implementation.md
 labels:
   - pr47-review
@@ -16,7 +16,42 @@ dependencies:
     target: is-01m0prhqd27m471dn47yt973k0
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T17:49:40.722Z
-updated_at: 2026-08-24T20:46:48.181Z
+updated_at: 2026-08-24T23:19:38.573Z
+closed_at: 2026-08-24T23:19:38.573Z
+close_reason: |
+  Shipped. `make check` green.
+
+  THE FINDING WAS RIGHT, and it overturns something I wrote deliberately two commits
+  earlier. `IndexHandle::read` charged the report projection rows, returned-name bytes and
+  wall time, and index.rs carried a comment saying it "deliberately does not claim an
+  `entries_visited`" because a report may serve from maintained state. The argument was that
+  claiming a walk it did not do, or a zero for one it did, was worse than claiming neither.
+  The counter-argument is better: the work record exists as a *structural performance gate*,
+  and a route that defeats the gate exactly when its output is small is what the gate is for.
+  Both tiers returning one row looked identical in the record.
+
+  THE FIX. `query::report_measured(index, query, provenance, &mut Work)` beside `report`,
+  which is now a thin wrapper passing a throwaway -- most callers have nowhere to put the
+  number, and the one that does is the bundled read. `walk` takes the sink and charges every
+  entry it examines, admitted or not: the rejected ones are the point, since a filter that
+  admits nothing still read the whole index to find out. `Work::visit_entry` is the inherent
+  form of the private `Visits` impl, so callers outside `index.rs` can charge through the
+  same body rather than a parallel one.
+
+  TEST. `a_filtered_report_charges_the_index_it_walked_rather_than_the_rows_it_returned`
+  builds 200 files, runs an unfiltered and a filtered summary under the same output bound
+  -- one section each -- and asserts the filtered read visits at least 200 entries and more
+  than ten times the unfiltered one. Orders apart, not merely different, because "different"
+  would pass on an off-by-one. Mutation-checked by emptying `visit_entry`.
+
+  AND THE CHECKPOINT TEST GAINED ITS TEETH. `fdu-91ru` left
+  `an_empty_read_is_a_checkpoint_that_visits_nothing` asserting zero visits, noting it was
+  partly true because the report projection charged none. It is now a real constraint: a
+  projection that ran unconditionally would show up.
+
+  Unblocks `fdu-vfyw`.
+resolution: null
+duplicate_of: null
 ---
 PR 47 commit e47a535 adds the full Query report under IndexHandle::read, but ProjectionWork.report deliberately leaves entries_visited and dirs_visited at zero because a report may use maintained state or reaggregate. That distinction is exactly what the work contract must expose: a filtered report can walk the entire index, return few or zero rows, and claim zero visited entries, so the MetaBrowser performance ceiling cannot detect the hidden O(index) path. Fix: thread a Work sink or visit counter through query::report and every view traversal, charging actual index and directory visits to the report projection while keeping maintained reads constant. Add paired unfiltered and filtered tests with identical output bounds and a large difference in visited entries. Review follow-up FDU47-R8 at e47a535.
 
