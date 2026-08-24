@@ -5,7 +5,7 @@ title: "Partitioned tallies: tag rules and per-plane roll-ups in the engine"
 kind: feature
 status: open
 priority: 1
-version: 7
+version: 8
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-implementation.md
 labels: []
 dependencies:
@@ -15,7 +15,7 @@ dependencies:
     target: is-01m0ptezmtmkn04mh1f1rwgdxb
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-23T07:31:53.944Z
-updated_at: 2026-08-24T00:53:40.827Z
+updated_at: 2026-08-24T02:29:20.544Z
 ---
 Opt-in tag configuration on ScanOptions: compiled gitignore (ignore-crate matcher, correct negation) and hidden-with-allowlist rules; entry tag bits; per-plane roll-up state (files, dirs, bytes, allocated, newest mtime, per-extension) through merge_upward, refresh, and watch re-tagging; .gitignore-edit escalation to InvalidateSubtree; enabled rule set versions the snapshot fingerprint. Builds on the closed spike fdu-p35d (0.39-1.76 us/entry measured). Partition-sum property tests and fingerprint-invalidation tests land with it.
 
@@ -34,9 +34,48 @@ So GITIGNORE IS THE SOLE TAG RULE here, and this bead is two pieces of work rath
 three: the gitignore matcher plus the unignored plane through the reducer path, and
 hidden admission as a scope rule fingerprinted into snapshot identity.
 
-WHAT ACTUALLY BLOCKS IT NOW: only the `ignore` crate, which is not yet a dependency and
-owes the 14-day supply-chain cool-off. That is a scheduled step, not an open question --
-the spike fdu-p35d already measured the matcher at 0.39-1.76 us/entry and closed.
+WHAT ACTUALLY BLOCKS IT NOW: one undecided design question, not a queue position. The
+cool-off framing was wrong -- it applies to a release being younger than 14 days, and
+`ignore` is mature, so picking a settled release is a chore. The real question is
+dependency weight on fdu-core, MEASURED 2026-08-24 rather than estimated:
+
+  9 new crates: ignore, globset, aho-corasick, bstr, regex-automata, regex-syntax,
+  crossbeam-deque, crossbeam-epoch, crossbeam-utils. Lockfile 73 -> 82. It pulls
+  regex-automata + regex-syntax directly, not the `regex` facade crate.
+
+  Binary size +1.06 MiB. Measured under fdu's own release profile (opt-level 3, lto,
+  codegen-units 1, strip) with a REALISTIC use -- build a GitignoreBuilder from rules and
+  match a path -- because an unused import is stripped and would understate it. Empty
+  binary 312 KB; the same binary doing real gitignore work 1393 KB. fdu is 3.45 MiB
+  today, so about +29%.
+
+  Cold compile of that subtree ~13s against fdu's ~59s full release build. Noisy host.
+
+  No lean mode exists: `ignore` has one feature (simd-accel) and globset's only trimmable
+  default is `log`. regex-automata is mandatory. Whole or nothing.
+
+FOR CONTEXT, what comparable tools do. ripgrep is NOT a precedent -- it owns ignore and
+globset as in-repo workspace members and publishes them. fd is the precedent: it takes
+ignore, globset, regex, regex-syntax, aho-corasick and crossbeam-channel among 16 direct
+dependencies, and nobody calls fd bloated. At 4.5 MiB fdu's binary is unremarkable for
+its class.
+
+THE ASYMMETRY THAT ACTUALLY MATTERS: fd and ripgrep are binaries, where dependency weight
+is a distribution question. fdu-core is a LIBRARY and imposes it on every consumer --
+the Python wheel, and any Rust caller wanting disk totals with no interest in gitignore.
+
+PRECEDENT ALREADY IN THIS REPO: notify is feature-gated exactly this way. fdu-core has
+default = ["watch"], whose comment reads "the shipped binary watches;
+--no-default-features and library consumers do not", and CI tests -p fdu-core
+--no-default-features AND --features watch separately. Parity is unaffected: it compares
+the built CLI against the built wheel, both with default features on, while the
+feature-boundary job only checks that the crate still compiles without them. So
+default = ["watch", "gitignore"] gets the correct matcher and keeps the core lean, with
+no new machinery invented for it.
+
+Awaiting the owner's call; do not decide it unilaterally.
+
+The spike fdu-p35d already measured the matcher itself at 0.39-1.76 us/entry and closed.
 
 READ BEFORE BUILDING: fdu-n4gn prices this plane together with groups, composed
 provenance and leaf counts as ONE reducer union, on the ancestor-merge path exp-064 took
