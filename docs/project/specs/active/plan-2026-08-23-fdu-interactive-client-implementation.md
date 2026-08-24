@@ -586,6 +586,55 @@ The example now says so.
 **One amendment had not been applied to the beads at all**: `fdu-jxs0` was to rise from
 P2 and had not. It has now.
 
+### Read against the implemented provider contract
+
+MetaBrowser Phase 1 shipped, and with it the consumer-side contract became concrete
+rather than prospective
+([`arch-inventory-provider.md`](https://github.com/jlevy/metabrowser/blob/b17fafb/docs/project/architecture/arch-inventory-provider.md),
+relayed on PR #44 on 2026-08-24). Reading fdu’s Python surface against the real
+`InventoryHandle` rather than against a description of it answers three of five
+operations and finds four concrete gaps.
+
+| `InventoryHandle` | fdu today |  |
+| --- | --- | --- |
+| `open(root, config)` | `fdu.open` / `fdu.scan` | built |
+| `read(request)` → version, cursor, state, projections, work | `Index.read` under one guard | built (`fdu-2ivi`, `fdu-plwq`, `fdu-qgl9`) |
+| `refresh(request)` | `Index.refresh(path=…)` | built (`fdu-fh0k`) |
+| `prioritize(request)` | — | **`fdu-sgp7`** |
+| `close()` | on `Watch`, not on `Index` | **`fdu-sgp7`** |
+
+**Coverage says whether, not why.** The contract wants complete, or partial with one of
+`building`, `budget`, `cancelled`, `inaccessible`, `watcher_gap`, `failed`. `Status` is
+a bare `Complete | Partial`, so a consumer cannot tell a walk still running from a
+directory it could not read from a dropped watch queue — three situations with three
+different correct responses.
+Four of the six reasons are already engine state that simply is not carried; two need
+the session. **`fdu-5yqb`**, and the one of these four that is ready now.
+
+**The invalidation vocabulary is one of four signals.** `reset` is built and is exactly
+`ChangeSet.truncated`. Dirty *paths* exist as `Watch.dirty_rollups`. `all_dirty` is not
+distinguishable — when the watch escalates to a root invalidation the set is unlabelled,
+so “the root’s own roll-up moved” and “throw everything away” look alike, and they
+demand opposite amounts of work.
+Dirty *query kinds* are absent entirely.
+A state-only transition produces no signal at all, which is `fdu-jxs0`. **`fdu-fltq`**.
+
+**The bundled read is one level short of the promise.** Its guarantee is that everything
+in a result describes *the same observation boundary*, over an algebra of nine kinds.
+`ReadRequest` carries three of them — directory, roll-up, totals — and every other kind
+is reachable only through `report()`, which takes its own guard.
+So a consumer wanting a listing and a recent list at one instant makes two calls, a
+write lands between them, and the page is internally inconsistent in precisely the way
+the bundled read exists to prevent.
+That is the defect `fdu-2ivi` fixed for listing-plus-header, still present one level up.
+**`fdu-samw`**.
+
+What the contract confirms rather than changes: fdu’s freshness vocabulary (`fresh`,
+`reconciling`, `stale`, `partial`) is already the contract’s, the two extension levels
+are the settled rule, and points 1, 3 and 6 — one handle owning the retained index,
+bounded scalar and paged projections, a translational adapter holding no semantic state
+— are built and were the subject of this branch.
+
 ## What Did Not Land, And Why
 
 Seven beads under the epic are open, and none of them is open because the work was
