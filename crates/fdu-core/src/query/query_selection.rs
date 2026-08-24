@@ -109,6 +109,17 @@ pub struct Selection {
     pub exclude: Vec<Pattern>,
     /// Smallest size, in the selected metric, an entry may have.
     pub min_size: Option<u64>,
+    /// Largest size to admit, inclusive, measured by the same metric as `min_size`.
+    ///
+    /// Inclusive, mirroring `min_size`, because that is what a person means by "at most
+    /// 1M" on a command line. A consumer whose own contract has an *exclusive* upper
+    /// bound translates at its boundary rather than pushing exclusivity into the engine's
+    /// vocabulary: `size_less_than: n` becomes `max_size: n - 1`, with zero meaning an
+    /// empty selection.
+    ///
+    /// Exists because filtering above the engine means moving every candidate across the
+    /// boundary just to discard it, which is the cost a native provider is for.
+    pub max_size: Option<u64>,
     /// Entry kinds to consider; empty means every kind.
     pub kinds: Vec<EntryKind>,
     /// Modification-time window.
@@ -183,6 +194,7 @@ impl Selection {
         self.include.is_empty()
             && self.exclude.is_empty()
             && self.min_size.is_none()
+            && self.max_size.is_none()
             && self.kinds.is_empty()
             && self.modified.is_unbounded()
             && self.tags.is_unconstrained()
@@ -191,6 +203,11 @@ impl Selection {
     /// Whether an entry passes every filter.
     pub fn admits(&self, candidate: &Candidate<'_>) -> bool {
         if !self.kinds.is_empty() && !self.kinds.contains(&candidate.kind) {
+            return false;
+        }
+        if let Some(max_size) = self.max_size
+            && self.size_of(candidate) > max_size
+        {
             return false;
         }
         if let Some(min_size) = self.min_size
@@ -289,6 +306,36 @@ mod tests {
         selection.exclude.push(pattern("**/generated/**"));
         assert!(!admits(&selection, "src/generated/api.rs", EntryKind::File, 10, 5));
         assert!(admits(&selection, "src/hand/api.rs", EntryKind::File, 10, 5));
+    }
+
+    /// An upper bound admits what a lower bound would keep, from the other side.
+    ///
+    /// Exists because the alternative is filtering above the engine, which means carrying
+    /// every candidate across a language boundary in order to throw it away -- the exact
+    /// cost a native provider is supposed to remove. Inclusive on purpose, mirroring
+    /// `min_size`: a caller whose own contract is exclusive translates at its boundary.
+    #[test]
+    fn max_size_bounds_from_above_the_way_min_size_bounds_from_below() {
+        let capped = Selection { max_size: Some(600), ..Selection::default() };
+        assert!(admits(&capped, "at.bin", EntryKind::File, 600, 0), "the bound is inclusive");
+        assert!(admits(&capped, "under.bin", EntryKind::File, 599, 0));
+        assert!(!admits(&capped, "over.bin", EntryKind::File, 601, 0));
+
+        // Both ends together are a window.
+        let window = Selection { min_size: Some(400), max_size: Some(600), ..Selection::default() };
+        assert!(admits(&window, "inside.bin", EntryKind::File, 500, 0));
+        assert!(!admits(&window, "small.bin", EntryKind::File, 399, 0));
+        assert!(!admits(&window, "large.bin", EntryKind::File, 601, 0));
+
+        // A reversed window admits nothing, rather than quietly preferring one bound.
+        let empty = Selection { min_size: Some(600), max_size: Some(400), ..Selection::default() };
+        assert!(!admits(&empty, "any.bin", EntryKind::File, 500, 0));
+
+        // And it follows the selected metric, like every other size predicate: 100
+        // apparent bytes occupy 512 allocated, which exceeds a 200-byte cap.
+        let allocated =
+            Selection { max_size: Some(200), size: SizeMetric::Allocated, ..Selection::default() };
+        assert!(!admits(&allocated, "a.bin", EntryKind::File, 100, 0));
     }
 
     #[test]

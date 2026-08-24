@@ -376,6 +376,10 @@ pub struct Cli {
     #[arg(long, value_name = "SIZE", help_heading = "SELECTION")]
     pub min_size: Option<String>,
 
+    /// Report only entries at most this large, as 512, 10M, or 1.5GiB.
+    #[arg(long, value_name = "SIZE", help_heading = "SELECTION")]
+    pub max_size: Option<String>,
+
     /// Report only entries modified at or after this time, as 2h or an RFC 3339 stamp.
     #[arg(long, value_name = "WHEN", help_heading = "SELECTION")]
     pub modified_since: Option<String>,
@@ -1113,6 +1117,9 @@ impl Cli {
         }
         for pattern in &self.exclude {
             selection.exclude.push(Pattern::parse(pattern)?);
+        }
+        if let Some(max_size) = &self.max_size {
+            selection.max_size = Some(parse_size(max_size)?);
         }
         if let Some(min_size) = &self.min_size {
             selection.min_size = Some(parse_size(min_size)?);
@@ -1900,6 +1907,7 @@ mod tests {
             include: Vec::new(),
             exclude: Vec::new(),
             min_size: None,
+            max_size: None,
             modified_since: None,
             modified_before: None,
             kind: None,

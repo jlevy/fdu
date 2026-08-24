@@ -137,6 +137,7 @@ def _query_kwargs(query: Query) -> dict[str, object]:
         "include": list(selection.include),
         "exclude": list(selection.exclude),
         "min_size": str(selection.min_size) if selection.min_size is not None else None,
+        "max_size": str(selection.max_size) if selection.max_size is not None else None,
         "modified_since": _when(selection.modified_since),
         "modified_before": _when(selection.modified_before),
         "kind": [kind.value for kind in selection.kinds],

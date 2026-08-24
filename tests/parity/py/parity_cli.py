@@ -177,6 +177,7 @@ class Args:
         self.include: list[str] = []
         self.exclude: list[str] = []
         self.min_size: str | None = None
+        self.max_size: str | None = None
         self.modified_since: str | None = None
         self.modified_before: str | None = None
         self.kinds: list[fdu.EntryKind] = []
@@ -253,6 +254,8 @@ def parse_args(argv: list[str]) -> Args:
             args.exclude.append(take())
         elif flag == "--min-size":
             args.min_size = take()
+        elif flag == "--max-size":
+            args.max_size = take()
         elif flag == "--modified-since":
             args.modified_since = take()
         elif flag == "--modified-before":
@@ -325,6 +328,7 @@ def build_query(args: Args) -> fdu.Query:
         include=tuple(args.include),
         exclude=tuple(args.exclude),
         min_size=args.min_size,
+        max_size=args.max_size,
         modified_since=args.modified_since,
         modified_before=args.modified_before,
         kinds=tuple(args.kinds),

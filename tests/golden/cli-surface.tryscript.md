@@ -51,6 +51,7 @@ SELECTION
       --exclude <GLOB>          Exclude entries matching this glob; repeatable, and wins over
                                 --include
       --min-size <SIZE>         Report only entries at least this large, as 512, 10M, or 1.5GiB
+      --max-size <SIZE>         Report only entries at most this large, as 512, 10M, or 1.5GiB
       --modified-since <WHEN>   Report only entries modified at or after this time, as 2h or an RFC
                                 3339 stamp
       --modified-before <WHEN>  Report only entries modified before this time

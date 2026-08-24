@@ -246,6 +246,13 @@ class Selection:
     include: tuple[str, ...] = ()
     exclude: tuple[str, ...] = ()
     min_size: int | str | None = None
+    max_size: int | str | None = None
+    """Largest size to admit, inclusive, by the same metric as ``min_size``.
+
+    Inclusive because that is what "at most 1M" means to a person. A caller whose own
+    contract has an exclusive upper bound translates at its own boundary rather than
+    pushing exclusivity into this vocabulary.
+    """
     modified_since: datetime | str | None = None
     modified_before: datetime | str | None = None
     kinds: tuple[EntryKind, ...] = ()
@@ -284,6 +291,8 @@ class Selection:
                 raise ValueError(f"{name} must be non-negative or Bound.ALL")
         if isinstance(self.min_size, int) and self.min_size < 0:
             raise ValueError("min_size must be non-negative")
+        if isinstance(self.max_size, int) and self.max_size < 0:
+            raise ValueError("max_size must be non-negative")
 
 
 @dataclass(frozen=True, slots=True)

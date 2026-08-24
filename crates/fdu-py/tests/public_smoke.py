@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import ast
 import asyncio
+import dataclasses
 import importlib.util
 import json
 import os
@@ -487,6 +488,42 @@ def check_one_bundle_answers_a_whole_page() -> None:
         pass
     else:
         raise AssertionError("a pin the index has moved past must not be answered")
+
+    # An upper size bound, which a catalog query needs so a consumer stops carrying
+    # candidates across the binding only to discard them.
+    files_only = fdu.Selection(kinds=(fdu.EntryKind.FILE,), size=fdu.SizeMetric.APPARENT)
+    everything = index.report(fdu.Query(views=(fdu.View.FILES,), selection=files_only))
+    sizes = sorted(row.bytes for row in everything.sections[0].files)
+    assert len(sizes) >= 2, sizes
+
+    # A cap below the largest file admits strictly fewer, which is the whole claim.
+    cap = sizes[-1] - 1
+    capped = index.report(
+        fdu.Query(
+            views=(fdu.View.FILES,),
+            selection=dataclasses.replace(files_only, max_size=cap),
+        )
+    )
+    assert all(row.bytes <= cap for row in capped.sections[0].files)
+    assert len(capped.sections[0].files) < len(sizes), "the cap must exclude the largest"
+
+    # A reversed window admits nothing, rather than quietly preferring one bound.
+    windowed = index.report(
+        fdu.Query(
+            views=(fdu.View.FILES,),
+            selection=dataclasses.replace(files_only, min_size=sizes[-1], max_size=sizes[0]),
+        )
+    )
+    assert windowed.sections[0].files == (), "a reversed window admits nothing"
+
+    # A zero page limit is refused: it would be truncated and terminal at once, with a
+    # remainder saying there is more and no cursor to ask with.
+    try:
+        index.read(children_of="docs", limit=0)
+    except fdu.FduError:
+        pass
+    else:
+        raise AssertionError("a zero page limit must be refused")
 
     # An empty request is the constant-work checkpoint: it carries the envelope and reads
     # no entries, which is what lets a caller validate a cached body before paying.

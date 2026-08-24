@@ -534,8 +534,34 @@ pub struct ChildPageRequest {
     /// cursor silently repeats or skips rows, where a name resumes at the right place
     /// whatever happened in between. Resuming is a range seek, not a scan.
     pub after: Option<OsString>,
-    /// Most rows to return.
+    /// Most rows to return. Must be positive; `Bound::All` asks for the whole directory.
+    ///
+    /// Zero is refused rather than served, and the reason is specific to a *paged* bound.
+    /// A page of zero rows out of a non-empty directory is truncated -- there is a
+    /// remainder -- and simultaneously terminal, because the continuation cursor is the
+    /// last emitted name and no row was emitted. The caller is told there is more and
+    /// given no way to ask for it. Every other bound in the engine tolerates zero,
+    /// because none of them promises resumability: an extension map with everything in
+    /// the remainder is a real answer, and a depth of zero is the root by itself.
     pub limit: Bound,
+}
+
+impl ChildPageRequest {
+    /// Refuse a bound that would produce a truncated page nobody can continue.
+    ///
+    /// Checked here rather than clamped to one, because a clamp answers a question the
+    /// caller did not ask: they said zero, and zero has no sensible page.
+    pub fn validate(&self) -> crate::Result<()> {
+        if self.limit == Bound::Limit(0) {
+            return Err(crate::Error::InvalidValue {
+                kind: "page limit",
+                value: "0".to_string(),
+                hint: "a page limit must be positive; omit it to read the whole directory"
+                    .to_string(),
+            });
+        }
+        Ok(())
+    }
 }
 
 /// One page of a directory's children, with what the bound withheld stated on it.
@@ -1115,6 +1141,7 @@ impl IndexHandle {
     /// It also collapses the per-call cost. Across a language boundary each of these is a
     /// crossing and a lock acquisition; bundled, they are one of each.
     pub fn read(&self, request: &ReadRequest) -> crate::Result<ReadBundle> {
+        request.children_page.validate()?;
         let started = std::time::Instant::now();
         let index = self.read_index()?;
         let lock_wait_ns = nanos(started.elapsed());
@@ -1217,6 +1244,7 @@ impl IndexHandle {
         path: &Path,
         request: &ChildPageRequest,
     ) -> crate::Result<Option<ChildPage>> {
+        request.validate()?;
         let index = self.read_index()?;
         Ok(child_page(&index, path, request, &mut Work::default()))
     }
@@ -3030,6 +3058,10 @@ fn child_page(
     request: &ChildPageRequest,
     work: &mut Work,
 ) -> Option<ChildPage> {
+    debug_assert!(
+        request.limit != Bound::Limit(0),
+        "a zero page limit is unresumable; reject it at the request boundary"
+    );
     let id = index.lookup_visiting(path, work)?;
     let entry = index.entry(id);
     if !entry.kind.is_dir() {
@@ -3929,6 +3961,67 @@ mod tests {
         }
     }
 
+    /// A page of zero rows would be truncated and terminal at once, so it is refused.
+    ///
+    /// The mechanism is worth stating because it is not obvious: with a limit of zero the
+    /// loop breaks on the first child, so `more` is true and a remainder is produced --
+    /// and `next` is the last *emitted* name, of which there is none. The caller is told
+    /// there is more and given no cursor to ask for it.
+    ///
+    /// Only a paged bound is refused. An extension map with everything in the remainder is
+    /// a real answer, and a depth of zero is the root by itself; neither promises
+    /// resumability, so neither has anything to strand.
+    #[test]
+    fn a_zero_page_limit_is_refused_because_no_page_can_satisfy_it() {
+        let handle = IndexHandle::new(Index::new("/root"));
+        handle
+            .apply(&Observation::new(vec![
+                upsert("dir", EntryKind::Dir, Attrs::default()),
+                upsert("dir/a.txt", EntryKind::File, file_attrs(1, 1)),
+            ]))
+            .expect("apply");
+
+        let zero = ChildPageRequest { after: None, limit: Bound::Limit(0) };
+        assert!(
+            matches!(
+                handle.children_page(Path::new("dir"), &zero),
+                Err(crate::Error::InvalidValue { kind: "page limit", .. })
+            ),
+            "a zero page limit must be refused at the request boundary"
+        );
+        assert!(
+            handle
+                .read(&ReadRequest {
+                    children_of: Some(PathBuf::from("dir")),
+                    children_page: zero.clone(),
+                    ..ReadRequest::default()
+                })
+                .is_err(),
+            "and refused on the bundled path too, not only the listing one"
+        );
+
+        // One row is a page: truncated, and with a cursor to continue from.
+        let one = ChildPageRequest { after: None, limit: Bound::Limit(1) };
+        let page = handle.children_page(Path::new("dir"), &one).expect("read").expect("directory");
+        assert_eq!(page.rows.len(), 1);
+
+        // The whole directory is also fine; `All` is how a caller asks for no bound.
+        let all = ChildPageRequest::default();
+        assert!(handle.children_page(Path::new("dir"), &all).expect("read").is_some());
+
+        // A zero *extension* bound is not a paging bound and stays legal: everything lands
+        // in the remainder, which is an answer rather than a stranded page.
+        assert!(
+            handle
+                .read(&ReadRequest {
+                    total: true,
+                    extensions: Bound::Limit(0),
+                    ..ReadRequest::default()
+                })
+                .is_ok()
+        );
+    }
+
     #[cfg(windows)]
     #[test]
     fn windows_prefix_is_rejected_before_mutation() {
@@ -4257,7 +4350,11 @@ mod tests {
         let handle = paged_directory();
         let whole = handle.rollup(Path::new("")).expect("read").expect("the root");
 
-        for limit in 0..=7 {
+        // From one, not zero: a zero page is refused now, because it would be truncated
+        // and terminal at once -- a remainder saying there is more, and no cursor to ask
+        // with. `a_zero_page_limit_is_refused_because_no_page_can_satisfy_it` covers that
+        // end; this covers every page that can exist.
+        for limit in 1..=7 {
             let page = handle
                 .children_page(
                     Path::new(""),

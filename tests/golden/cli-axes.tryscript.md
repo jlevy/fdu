@@ -216,6 +216,19 @@ Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cache
 ? 0
 ```
 
+### Max-Size Bounds From Above, and the Two Compose a Window
+
+```console
+$ fdu --cache off --view files --kind file --max-size 100 --size apparent project
+Makefile
+README.md
+docs[SEP]FAQ.MD
+src[SEP]alpha.rs
+src[SEP]omega.rs
+Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+? 0
+```
+
 ### Sort and Limit Compose Into a Top-N, With No Dedicated View
 
 ```console
