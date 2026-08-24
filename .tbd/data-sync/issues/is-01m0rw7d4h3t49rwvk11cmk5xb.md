@@ -5,13 +5,13 @@ title: The bundled read carries only three projections, not the query algebra
 kind: feature
 status: open
 priority: 1
-version: 1
+version: 2
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 labels: []
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T03:15:04.465Z
-updated_at: 2026-08-24T03:15:04.465Z
+updated_at: 2026-08-24T03:15:43.134Z
 ---
 The contract's point 2 is that "every result carries the exact version, resume cursor,
 lifecycle and coverage facts, and work counters that describe THE SAME observation
@@ -33,7 +33,7 @@ and return them with one version, cursor, state and work record. The likely shap
 ReadRequest gaining the projections report() already knows how to build, evaluated inside
 the same read guard, with the work record summing across them.
 
-Sequence after fdu-jkq2 (coverage reason) so the state facts a bundle carries are the
+Sequence after fdu-5yqb (coverage reason) so the state facts a bundle carries are the
 final ones, and check the work counters still add up per projection rather than only in
 total -- a bundle that hides which projection cost what is a counter that stopped being
 useful.

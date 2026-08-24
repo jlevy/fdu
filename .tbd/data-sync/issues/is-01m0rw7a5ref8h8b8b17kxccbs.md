@@ -5,13 +5,15 @@ title: "Coverage reason: partial must say why, not only that"
 kind: feature
 status: open
 priority: 1
-version: 1
+version: 2
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 labels: []
-dependencies: []
+dependencies:
+  - type: blocks
+    target: is-01m0rw7d4h3t49rwvk11cmk5xb
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T03:15:01.418Z
-updated_at: 2026-08-24T03:15:01.418Z
+updated_at: 2026-08-24T03:16:02.656Z
 ---
 MetaBrowser's implemented provider contract (arch-inventory-provider.md, PR #44 comment
 2026-08-24) requires every result to carry coverage as "either complete with no reason or
