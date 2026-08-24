@@ -209,8 +209,11 @@ pub struct PyTypeRegistry {
 impl PyTypeRegistry {
     /// Parse rules in the `[[kind]]` manifest dialect.
     #[staticmethod]
-    fn from_manifest(source: &str) -> PyResult<Self> {
-        Ok(Self { inner: Arc::new(TypeRegistry::from_manifest(source).map_err(to_py_err)?) })
+    #[pyo3(signature = (source, expect_fingerprint = None))]
+    fn from_manifest(source: &str, expect_fingerprint: Option<u64>) -> PyResult<Self> {
+        let registry =
+            TypeRegistry::from_manifest_expecting(source, expect_fingerprint).map_err(to_py_err)?;
+        Ok(Self { inner: Arc::new(registry) })
     }
 
     /// The rules fdu ships, used when a scan names no others.

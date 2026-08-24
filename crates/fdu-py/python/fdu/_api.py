@@ -528,15 +528,20 @@ class TypeRegistry:
         self._native = native
 
     @staticmethod
-    def from_manifest(source: str) -> TypeRegistry:
+    def from_manifest(source: str, expect_fingerprint: int | None = None) -> TypeRegistry:
         """Parse rules in the ``[[kind]]`` manifest dialect.
 
         Raises :class:`fdu.InvalidArgumentError` with the parser's own line-numbered
         message for a manifest that would classify ambiguously -- a duplicate id, an
         unknown family, or a key two rules both claim.
+
+        Pass ``expect_fingerprint`` when the packet's supplier recorded an identity for
+        it, and the open fails on disagreement rather than classifying under rules nobody
+        chose. Both fingerprints were always readable, so a caller could always have
+        compared them; what it could not do was be unable to skip the comparison.
         """
 
-        return TypeRegistry(_call(_native.TypeRegistry.from_manifest, source))
+        return TypeRegistry(_call(_native.TypeRegistry.from_manifest, source, expect_fingerprint))
 
     @staticmethod
     def compiled() -> TypeRegistry:

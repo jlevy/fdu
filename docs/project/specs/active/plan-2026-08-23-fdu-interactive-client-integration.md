@@ -729,7 +729,11 @@ Converts PR #38’s indexed tiers rather than competing with them; that work is 
   reads the active registry so a rule change invalidates the snapshot and sidecar
   through the path that already exists.
   PR #38’s `LazyLock` statics become a per-registry index, and its tie-break test
-  generalizes to a property over any registry (`fdu-ctp5`)
+  generalizes to a property over any registry (`fdu-ctp5`). “Disagreement failing the
+  open” is `from_manifest`’s expected-identity argument, added after the reconciliation
+  review found the first pass had shipped only the supply and the echo — two
+  fingerprints a caller could always have compared, and could never be prevented from
+  skipping
 - [x] The two extension levels: a raw logical extension per the format’s eligibility
   rule, plus canonical suffix matching for rule lookup and roll-up bucketing, with a
   test pinning that no existing bucket or type row moves (`fdu-5q6e`)
@@ -785,7 +789,9 @@ This phase is now complete apart from the per-row tags, which wait on Phase 1.
 - [x] `Index.refresh(path=...)` scoped reconciliation in the Python surface (`fdu-fh0k`)
 - [x] Polling backend selection in `WatchOptions`, with its interval stated (`fdu-rhu3`)
 - [x] The asyncio adapter and the thread-affinity documentation, with a tested
-  SSE-resume example mapping `since`/`truncated` to `Last-Event-ID`/resync (`fdu-97pb`,
+  SSE-resume example mapping `since`/`truncated` to `Last-Event-ID`/resync — carrying
+  the reconciliation’s verdict that this cursor is not yet complete for a production
+  feed, since trust transitions do not ride this clock until `fdu-jxs0` (`fdu-97pb`,
   blocked by `fdu-gav9`: an event-loop adapter over a surface that raises under
   concurrent access would only relocate the defect).
   The adapter owns the affinity rule rather than documenting it — it opens, drains and

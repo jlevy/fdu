@@ -13,6 +13,14 @@ from the journal, which no error will ever surface.
 
 `decide` is a pure function over the `ChangeSet` so both branches are testable without
 having to evict 64k ops from a journal to reach the interesting one.
+
+**What this clock does not yet carry.** `since()` replays *data* changes. Provenance and
+trust transitions -- a subtree moving from cached to verified, say -- do not ride this
+clock today, so a client resuming from one is current on what changed and not on how far
+to trust it. The interactive-client contract records that the resume cursor is not
+complete for a production SSE feed until those transitions share the clock, which is
+`fdu-jxs0`. Until then a feed built on this either omits trust from its envelope or
+re-reads provenance on reconnect; what it must not do is imply currency it does not have.
 """
 
 from __future__ import annotations

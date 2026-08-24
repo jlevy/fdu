@@ -302,6 +302,37 @@ impl TypeRegistry {
     /// time, so a manifest this accepts would have compiled and one it rejects would have
     /// failed the build with the same message.
     pub fn from_manifest(source: &str) -> crate::Result<Self> {
+        Self::from_manifest_expecting(source, None)
+    }
+
+    /// [`TypeRegistry::from_manifest`], refusing a packet whose identity is not the one
+    /// the supplier says it exported.
+    ///
+    /// The supplier computes a fingerprint when it writes the packet; this recomputes one
+    /// from what was actually parsed and indexed. A disagreement means the bytes are not
+    /// the rules the supplier believes it sent -- a truncated file, an edit nobody meant
+    /// to ship, or a dialect this parser reads differently than the writer wrote.
+    ///
+    /// Failing here rather than returning the mismatch is the point. Both fingerprints
+    /// were already readable, so a caller could always have compared them; what it could
+    /// not do was be *unable* to skip the comparison. A registry that silently classifies
+    /// under rules nobody chose invalidates every cached answer keyed on it, and does so
+    /// without an error anywhere.
+    pub fn from_manifest_expecting(source: &str, expected: Option<u64>) -> crate::Result<Self> {
+        let registry = Self::parse_manifest(source)?;
+        if let Some(expected) = expected {
+            if registry.fingerprint != expected {
+                return Err(crate::Error::TypeRules(format!(
+                    "type rules identity mismatch: supplied packet indexes to {:#018x}, caller \
+                     expected {expected:#018x}",
+                    registry.fingerprint
+                )));
+            }
+        }
+        Ok(registry)
+    }
+
+    fn parse_manifest(source: &str) -> crate::Result<Self> {
         let manifest =
             type_rule_manifest::parse_manifest(source).map_err(crate::Error::TypeRules)?;
         type_rule_manifest::validate_manifest(&manifest).map_err(crate::Error::TypeRules)?;
@@ -1089,6 +1120,41 @@ mod tests {
     fn plain_extensions_lowercase() {
         assert_eq!(logical_ext(OsStr::new("main.RS")).as_deref(), Some(".rs"));
         assert_eq!(logical_ext(OsStr::new("Photo.JPEG")).as_deref(), Some(".jpeg"));
+    }
+
+    /// A packet whose identity is not the one its supplier recorded is refused, and the
+    /// message names both numbers so the disagreement is diagnosable rather than merely
+    /// reported.
+    ///
+    /// The check exists because both fingerprints were already readable and a caller
+    /// could therefore always skip comparing them. Silently classifying under rules
+    /// nobody chose invalidates every cached answer keyed on the registry, with no error
+    /// anywhere.
+    #[test]
+    fn a_registry_refuses_a_packet_that_is_not_the_one_its_supplier_recorded() {
+        let manifest = "[[kind]]\nid = \"rust\"\nfamily = \"code\"\nextensions = [\"rs\"]\n";
+        let registry = TypeRegistry::from_manifest(manifest).expect("parses");
+        let identity = registry.fingerprint();
+
+        // The identity it actually has is accepted, and is the one echoed back.
+        let checked = TypeRegistry::from_manifest_expecting(manifest, Some(identity))
+            .expect("its own identity is accepted");
+        assert_eq!(checked.fingerprint(), identity);
+
+        let error = TypeRegistry::from_manifest_expecting(manifest, Some(identity ^ 1))
+            .expect_err("a mismatch must fail the open");
+        let message = error.to_string();
+        assert!(message.contains("identity mismatch"), "{message}");
+        assert!(message.contains(&format!("{identity:#018x}")), "names what it got: {message}");
+
+        // A manifest that is merely different is caught by the same check rather than
+        // classifying quietly under rules the caller did not choose.
+        let edited =
+            "[[kind]]\nid = \"rust\"\nfamily = \"code\"\nextensions = [\"rs\", \"rlib\"]\n";
+        assert!(
+            TypeRegistry::from_manifest_expecting(edited, Some(identity)).is_err(),
+            "an edited packet does not pass its predecessor's identity"
+        );
     }
 
     #[test]

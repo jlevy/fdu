@@ -551,6 +551,41 @@ And a cache-only session cannot be warmed with `--view summary`: that view is se
 from the transient tier and writes no snapshot, so the warming run has to be
 `--view tree`.
 
+### Read against the reconciliation
+
+The contract was amended after this map was written, by
+[the reconciliation](../research/research-2026-08-23-interactive-contract-reconciliation.md)
+and metabrowser’s reply on PR #44. Checking what landed against that amended list rather
+than against the original found three things, and two of them were gaps in work already
+called done.
+
+**Every “new work” item is built**: the batched multi-projection read under one guard
+returning clock, cursor, state and fingerprints; per-result work counters; roll-up leaf
+counts. Both flipped readiness verdicts are addressed on the `children()` side.
+Nothing here reproduces metabrowser’s HTTP or wire types, and the poll backend is
+exactly the “capability negotiation limited to real platform gaps such as native-watch
+availability” the amendment asks for.
+
+**The registry packet was supplied and echoed but not checked.** “Supply the immutable
+registry packet at open, echo the indexed identity, and fail on disagreement” — the
+first two thirds landed and the third did not.
+Both fingerprints were readable, so a caller could always have compared them; what it
+could not do was be *unable* to skip the comparison, which is the whole point of a
+packet identity. `from_manifest` now takes the expected identity and fails the open,
+naming both numbers.
+
+**The SSE example was silent about a gap the contract names.** The amendment says the
+resume cursor is not ready for a production feed until trust transitions ride the same
+clock. The example did not claim otherwise, and did not say so either — and `fdu-jxs0`
+records why: an unchanged upsert mutates `entry.source` and returns `false`, and
+`finish_reconcile` mutates `verified` directly, so neither advances the clock nor
+reaches an `AppliedDelta`. A consumer following the example would have built a feed that
+is current on what changed and silent on how far to trust it.
+The example now says so.
+
+**One amendment had not been applied to the beads at all**: `fdu-jxs0` was to rise from
+P2 and had not. It has now.
+
 ## What Did Not Land, And Why
 
 Seven beads under the epic are open, and none of them is open because the work was
