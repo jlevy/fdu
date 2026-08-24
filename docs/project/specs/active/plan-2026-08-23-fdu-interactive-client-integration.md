@@ -61,12 +61,13 @@ Reading this against
 [the metabrowser plan](https://github.com/jlevy/metabrowser/blob/954b6ed/docs/project/specs/active/plan-2026-08-23-pluggable-inventory-engine.md)
 added two gaps this exercise had graded as served, and both are recorded in
 [the reconciliation](../../research/research-2026-08-23-interactive-contract-reconciliation.md).
-A **coherent read surface**: `children()` copies every child’s whole extension map, and
-nothing ties several Python calls into one version, so a composed response can straddle
-a commit. And a **second extension level**: fdu derives the canonical extension the File
-Rollup Format wants — `release.v2.zip` already classifies as `archive` and buckets as
-`.zip` — but not the raw two-component value beside it, and swapping the derivation
-rather than adding the level would turn that same archive into `unknown:.v2.zip`.
+A **coherent read surface**: `children()` copied every child’s whole extension map, and
+nothing tied several Python calls into one version, so a composed response could
+straddle a commit. And a **second extension level**: fdu derived the canonical extension
+the File Rollup Format wants — `release.v2.zip` already classified as `archive` and
+bucketed as `.zip` — but not the raw two-component value beside it, and swapping the
+derivation rather than adding the level would have turned that same archive into
+`unknown:.v2.zip`. Both are now built; the phase lists below carry which beads closed.
 
 ## Goals
 
@@ -636,9 +637,9 @@ consumers rather than wrapped.
   aggregate of what was dropped (dirs, files, bytes per plane), machine-readable —
   “truncate freely, never silently” applied to the one place it is still a bare bool.
   A treemap’s “other” cell is this value.
-- `children()` takes its own bound.
-  Answered in the affirmative: a listing is paged by a row limit and a name cursor, its
-  rows carry scalar subtree totals, and the page states what it does not carry.
+- `children()` takes its own bound, and now does.
+  A listing is paged by a row limit and a name cursor, its rows carry scalar subtree
+  totals, and the page states what it does not carry.
   The per-extension breakdown moves to `rollup()` for the one directory being inspected,
   because per row it cost a map clone per child to render one number per child.
 - `WatchOptions.interval` default (2.0 s) is tuned for terminal repaints; embedder
@@ -692,11 +693,11 @@ landing those two early even though the phase list would otherwise let them drif
 Both are cases where the engine can already do the thing and no surface can reach it,
 and both are small. `fdu-gav9` leads because it is the only outright drop-in blocker.
 
-- [ ] Python `Index` reads take a shared borrow over the engine handle rather than an
+- [x] Python `Index` reads take a shared borrow over the engine handle rather than an
   exclusive borrow of the whole object, so `refresh()` and watch commits no longer raise
   in reader threads; tests pin that a concurrent read never raises and never returns a
   torn value (`fdu-gav9`)
-- [ ] `--order` on the scope axis and `ScanOptions.order` in Python, with goldens and
+- [x] `--order` on the scope axis and `ScanOptions.order` in Python, with goldens and
   parity rows, so the breadth-first default fdu already pays for is a stated contract
   rather than an engine-only one (`fdu-4vkz`)
 
@@ -718,10 +719,10 @@ and both are small. `fdu-gav9` leads because it is the only outright drop-in blo
 
 Converts PR #38’s indexed tiers rather than competing with them; that work is merged.
 
-- [ ] A `group` level in the rule dialect and in roll-up state, so a browsing taxonomy
+- [x] A `group` level in the rule dialect and in roll-up state, so a browsing taxonomy
   is its own axis rather than a reinterpretation of the analysis families; the compiled
   default registry gains groups and the `groups` view renders them (`fdu-b2vy`)
-- [ ] A runtime-supplied registry: parse, validate, index, and fingerprint in Rust;
+- [x] A runtime-supplied registry: parse, validate, index, and fingerprint in Rust;
   supplied as an immutable packet at open with its expected identity echoed back and
   disagreement failing the open; accepted by `OpenConfig`,
   `ScanOptions`/`AnalysisOptions`, and the CLI scope axis; `type_rules_fingerprint`
@@ -729,12 +730,15 @@ Converts PR #38’s indexed tiers rather than competing with them; that work is 
   through the path that already exists.
   PR #38’s `LazyLock` statics become a per-registry index, and its tie-break test
   generalizes to a property over any registry (`fdu-ctp5`)
-- [ ] The two extension levels: a raw logical extension per the format’s eligibility
+- [x] The two extension levels: a raw logical extension per the format’s eligibility
   rule, plus canonical suffix matching for rule lookup and roll-up bucketing, with a
   test pinning that no existing bucket or type row moves (`fdu-5q6e`)
 - [ ] The conformance packet vendored at a reviewed metabrowser revision, its manifest
-  and hashes verified locally in CI, executed against fdu’s classifier (`fdu-5q6e`)
-- [ ] Bounded per-directory extension and filename rows with a stated remainder
+  and hashes verified locally in CI, executed against fdu’s classifier.
+  Blocked on the packet: its cases are matching-only, so they pass against a single
+  extension level and would have gone green both before and after the level above
+  (`fdu-gy3g`, split out of `fdu-5q6e`)
+- [x] Bounded per-directory extension and filename rows with a stated remainder
   (`fdu-e2p7`)
 - [ ] Loop job: what the maintained-state union costs on the ancestor-merge path — the
   `unignored` plane, browsing groups, composed subtree provenance, and non-directory
@@ -748,34 +752,45 @@ Converts PR #38’s indexed tiers rather than competing with them; that work is 
 
 Every read a server composes into one response must observe one version, and every read
 must cost what its output costs.
-Neither is true today: `children()` clones each directory child’s whole extension map,
-and nothing ties several Python calls to one clock.
+Neither was true when this phase was written: `children()` cloned each directory child’s
+whole extension map, and nothing tied several Python calls to one clock.
+This phase is now complete apart from the per-row tags, which wait on Phase 1.
 
-- [ ] Scalar paged child rows — per-child directory facts, classification identity,
-  tags, and provenance, with an explicit bound, a page cursor, and a stated remainder;
-  the extension breakdown moves to its own bounded roll-up projection rather than riding
-  every listing (`fdu-plwq`, with `fdu-e2p7` bounding the breakdown itself)
-- [ ] A bundled multi-projection read evaluated under one read guard, returning one
+- [x] Scalar paged child rows — per-child directory facts, classification identity, and
+  provenance, with an explicit bound, a page cursor, and a stated remainder; the
+  extension breakdown moves to its own bounded roll-up projection rather than riding
+  every listing (`fdu-plwq`, with `fdu-e2p7` bounding the breakdown itself).
+  Tags are the one part still outstanding, waiting on the planes in Phase 1
+- [x] A bundled multi-projection read evaluated under one read guard, returning one
   engine version, the change cursor captured at the same boundary, index state, and the
   scope and registry fingerprints, so a composed response cannot straddle a commit and a
   consumer’s cache key derives from what it actually read (`fdu-2ivi`, blocked by
   `fdu-gav9`)
-- [ ] Per-result work counters — entries and directories visited, rows returned, lock
-  wait, bytes copied across the binding — so “no hidden O(index) pass” is an assertion
-  rather than a review principle (`fdu-qgl9`)
-- [ ] Roll-up leaf counts for symlinks and special objects, so a complete subtree’s
+- [x] Per-result work counters — entries and directories visited, rows returned, lock
+  wait, wall time, and the name bytes a result carries — so “no hidden O(index) pass” is
+  an assertion rather than a review principle (`fdu-qgl9`). CPU time and total bytes
+  across the binding are stated as absent, with the reason: the first is wall time less
+  the lock wait on a read that does no I/O, and the second is something a binding can
+  only estimate
+- [x] Roll-up leaf counts for symlinks and special objects, so a complete subtree’s
   emptiness is decidable from the aggregate rather than by listing it; the partition
-  property extends to the new fields and the snapshot version increments (`fdu-5hip`)
+  property extends to the new field (`fdu-5hip`). No snapshot bump after all: the format
+  persists kind and rebuilds roll-ups on load, so the count is derived from data already
+  stored and a bump would discard every cache to gain nothing.
+  The report views still cannot tell the two apart (`fdu-or38`)
 
 ### Phase 4: The embedder watch contract
 
-- [ ] Per-batch dirty roll-up set, engine through Python (`fdu-mz1a`)
-- [ ] `Index.refresh(path=...)` scoped reconciliation in the Python surface (`fdu-fh0k`)
-- [ ] Polling backend selection in `WatchOptions`, with its interval stated (`fdu-rhu3`)
-- [ ] The asyncio adapter and the thread-affinity documentation, with a tested
+- [x] Per-batch dirty roll-up set, engine through Python (`fdu-mz1a`)
+- [x] `Index.refresh(path=...)` scoped reconciliation in the Python surface (`fdu-fh0k`)
+- [x] Polling backend selection in `WatchOptions`, with its interval stated (`fdu-rhu3`)
+- [x] The asyncio adapter and the thread-affinity documentation, with a tested
   SSE-resume example mapping `since`/`truncated` to `Last-Event-ID`/resync (`fdu-97pb`,
   blocked by `fdu-gav9`: an event-loop adapter over a surface that raises under
-  concurrent access would only relocate the defect)
+  concurrent access would only relocate the defect).
+  The adapter owns the affinity rule rather than documenting it — it opens, drains and
+  closes the watch on the worker thread, because `PyWatch` is `unsendable` and handing
+  one across panics
 
 ### Phase 5: Session integration shape
 
@@ -809,10 +824,10 @@ from emitting millions of provenance-only entry changes into the feed it serves.
 
 ### Phase 6: Adoption proof
 
-- [ ] Classification identity in `children()` and files rows; registry identity readable
+- [x] Classification identity in `children()` and files rows; registry identity readable
   from Python (`fdu-16l7`)
-- [ ] Walk telemetry as typed values beside report/session/watch results (`fdu-tib6`)
-- [ ] `TreeNode` remainder aggregates (`fdu-knyw`)
+- [x] Walk telemetry as typed values beside report/session/watch results (`fdu-tib6`)
+- [x] `TreeNode` remainder aggregates (`fdu-knyw`)
 - [ ] Reference embedder example under `crates/fdu-py/examples/` — boot, serve dual
   tallies, stream changes with dirty sets, resume from a cursor — plus the cross-engine
   agreement stack: the vendored conformance packet, a recorded-observation replay driven
@@ -865,14 +880,14 @@ here records its regime.
   folders? The v1 change stream carries no entry rows either way; entry deltas enter the
   contract only if a live-change A/B shows lower end-to-end latency and copy cost once
   binding copies and browser convergence are counted.
-- ~~Does fdu’s compiled default registry adopt the raw extension level for its own views,
-  or expose it only to registry-supplied consumers?~~
-  Answered by building it: the compiled default adopts it, on listing and files rows and
-  as the `unknown:` type id, while roll-up buckets and type rows stay canonical.
+- ~~Does fdu’s compiled default registry adopt the raw extension level for its own
+  views, or expose it only to registry-supplied consumers?~~ Answered by building it:
+  the compiled default adopts it, on listing and files rows and as the `unknown:` type
+  id, while roll-up buckets and type rows stay canonical.
   It was indeed low-stakes — running the change against its own fixture gave
   byte-identical `--view types` and `--view extensions` output — and exposing the level
-  only to registry-supplied consumers would have meant two answers to "what is this
-  name's extension" depending on who was asking.
+  only to registry-supplied consumers would have meant two answers to “what is this
+  name’s extension” depending on who was asking.
 - Should the two projects converge on one registry file, or stay two registries over one
   dialect? Convergence is attractive and couples release cadences: metabrowser could not
   then add a file type without an fdu release.
