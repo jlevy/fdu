@@ -474,6 +474,9 @@ def _work(value: dict[str, Any]) -> Work:
         name_bytes=int(value["name_bytes"]),
         lock_wait_ns=int(value["lock_wait_ns"]),
         wall_ns=int(value["wall_ns"]),
+        binding_bytes=int(value.get("binding_bytes", 0)),
+        conversion_ns=int(value.get("conversion_ns", 0)),
+        cpu_ns=None if value.get("cpu_ns") is None else int(value["cpu_ns"]),
     )
 
 

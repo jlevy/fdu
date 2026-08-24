@@ -639,12 +639,9 @@ class Work:
     a frequent read must be proportional to its own output or to maintained state, and
     ``entries_visited`` is where a regression shows up first.
 
-    Two things are deliberately absent. **CPU time**: a read on a maintained index does no
-    I/O, so its wall time is CPU plus whatever it waited for the guard, and
-    ``lock_wait_ns`` already separates those. **Bytes across the binding**: the engine
-    cannot see a binding, and ``name_bytes`` is the one term in a result that grows
-    without bound -- the rest is a fixed per-row schema that ``rows`` and ``tally_rows``
-    multiply.
+    ``cpu_ns`` is ``None`` unless something measured it. Wall minus lock wait is not CPU
+    time on a preemptive system, and putting an inferred number in the one field an
+    embedder uses to compare engines would be worse than leaving it empty.
     """
 
     entries_visited: int
@@ -680,6 +677,27 @@ class Work:
 
     wall_ns: int
     """Nanoseconds from entering the call to returning, guard wait included."""
+
+    binding_bytes: int = 0
+    """Bytes this result copied into Python objects.
+
+    A cost no engine-side counter can see. ``name_bytes`` is what the engine *read*;
+    this is what a caller *pays* to receive, and the two differ by exactly the conversion
+    that happens after the native read returns.
+    """
+
+    conversion_ns: int = 0
+    """Nanoseconds spent turning the native result into Python objects.
+
+    Separate from ``wall_ns`` on purpose: the native read runs with the GIL released, and
+    this is the part that does not.
+    """
+
+    cpu_ns: int | None = None
+    """CPU nanoseconds, when something measured them; ``None`` when nothing did.
+
+    Never inferred. See the class docstring.
+    """
 
     @property
     def wall_seconds(self) -> float:

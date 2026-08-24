@@ -17,6 +17,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -524,6 +525,35 @@ def check_one_bundle_answers_a_whole_page() -> None:
         pass
     else:
         raise AssertionError("a zero page limit must be refused")
+
+    # Concurrent readers through the real Index.read path. The native read runs detached,
+    # so threads are not serialized behind one another for the length of a traversal --
+    # and a filtered report is a full traversal, which is what makes this worth pinning.
+    filtered = fdu.Query(
+        views=(fdu.View.SUMMARY,),
+        selection=fdu.Selection(min_size=1, kinds=(fdu.EntryKind.FILE,)),
+    )
+    errors: list[BaseException] = []
+
+    def hammer() -> None:
+        try:
+            for _ in range(20):
+                assert index.read(total=True, query=filtered).cursor.session > 0
+        except BaseException as error:
+            errors.append(error)
+
+    workers = [threading.Thread(target=hammer) for _ in range(4)]
+    for worker in workers:
+        worker.start()
+    for worker in workers:
+        worker.join(timeout=60)
+        assert not worker.is_alive(), "a concurrent reader did not finish"
+    assert not errors, errors
+
+    # And the binding's own cost is reported, which no engine-side counter can see.
+    measured = index.read(total=True, query=filtered)
+    assert measured.work.binding_bytes > 0, measured.work
+    assert measured.work.cpu_ns is None, "CPU is absent rather than inferred"
 
     # An empty request is the constant-work checkpoint: it carries the envelope and reads
     # no entries, which is what lets a caller validate a cached body before paying.

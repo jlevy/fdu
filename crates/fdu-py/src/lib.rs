@@ -312,6 +312,40 @@ fn child_list<'py>(
 }
 
 /// What one read actually did, beside its answer.
+/// Nanoseconds since an instant, saturating rather than panicking on an absurd clock.
+fn nanos_since(started: std::time::Instant) -> u64 {
+    u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX)
+}
+
+/// Bytes this bundle will materialize into Python objects.
+///
+/// An estimate of the copy, not of the objects: path and name bytes, plus a fixed cost per
+/// scalar row, which is what actually crosses the boundary. Counted because no engine-side
+/// counter can see it -- the engine's `name_bytes` is what it *read*, and this is what a
+/// caller *pays* to receive, and the two differ by exactly the conversion this measures.
+fn materialized_bytes(bundle: &fdu_core::ReadBundle) -> u64 {
+    /// Rough bytes per scalar field crossing into a Python object.
+    const PER_SCALAR: u64 = 8;
+
+    let mut bytes = bundle.root.as_os_str().len() as u64;
+    if let Some(page) = &bundle.children {
+        for row in &page.rows {
+            bytes += row.name.len() as u64 + PER_SCALAR * 6;
+        }
+    }
+    bytes += bundle.rollups.iter().flatten().map(rollup_bytes).sum::<u64>();
+    bytes += bundle.total.as_ref().map_or(0, rollup_bytes);
+    if let Some(report) = &bundle.report {
+        bytes += report.name_bytes() + report.row_count() * PER_SCALAR * 6;
+    }
+    bytes
+}
+
+fn rollup_bytes(roll: &fdu_core::RollUp) -> u64 {
+    let keys: u64 = roll.by_ext.keys().chain(roll.by_group.keys()).map(|k| k.len() as u64).sum();
+    keys + 8 * ((roll.by_ext.len() + roll.by_group.len()) as u64 * 3 + 6)
+}
+
 fn work_dict(py: Python<'_>, work: fdu_core::Work) -> PyResult<Bound<'_, PyDict>> {
     let out = PyDict::new(py);
     out.set_item("entries_visited", work.entries_visited)?;
@@ -838,8 +872,19 @@ impl PyIndex {
             report: wanted,
             expected: expected.map(parse_cursor).transpose()?,
         };
-        let bundle = self.inner.read(&request).map_err(to_py_err)?;
+        // Detached for the whole native read. Every other native call here already
+        // released the GIL; this one did not, and `fdu-samw` made it the heaviest of them
+        // -- a filtered report re-aggregates the index, so holding the GIL across it
+        // freezes every other Python thread for the length of a full traversal. An
+        // asyncio consumer moving this to a worker thread would still have frozen its
+        // event loop.
+        let bundle = py.detach(|| self.inner.read(&request)).map_err(to_py_err)?;
 
+        // Reacquired only for conversion, which is bounded by what the request asked for.
+        // What it copies is counted: bytes crossing the binding are a real cost that no
+        // engine-side counter can see, and an embedder comparing providers needs it.
+        let converted = std::time::Instant::now();
+        let mut binding_bytes: u64 = 0;
         let out = PyDict::new(py);
         out.set_item("clock", bundle.clock.0)?;
         out.set_item("cursor", cursor_dict(py, bundle.cursor)?)?;
@@ -868,7 +913,15 @@ impl PyIndex {
             "report",
             bundle.report.as_ref().map(|rendered| report_dict(py, rendered)).transpose()?,
         )?;
-        out.set_item("work", work_dict(py, bundle.work)?)?;
+        binding_bytes += materialized_bytes(&bundle);
+        let work = work_dict(py, bundle.work)?;
+        work.set_item("binding_bytes", binding_bytes)?;
+        work.set_item("conversion_ns", nanos_since(converted))?;
+        // CPU is absent rather than inferred. Wall minus lock wait is not CPU time on a
+        // preemptive system, and reporting it as such would put a number in the record
+        // that nothing measured -- in the one field an embedder uses to compare engines.
+        work.set_item("cpu_ns", py.None())?;
+        out.set_item("work", work)?;
         let projections = PyDict::new(py);
         projections.set_item("children", work_dict(py, bundle.projections.children)?)?;
         projections.set_item("total", work_dict(py, bundle.projections.total)?)?;
@@ -2475,17 +2528,46 @@ mod tests {
     /// kept that exclusive borrow across the whole detached reconciliation. Any
     /// overlapping call on the same object raised `Already mutably borrowed`, which for a
     /// live consumer meant a failed request every time the tree changed under a reader.
+    /// The whole read path is detachable: it holds nothing Python and blocks nobody.
+    ///
+    /// This is the precondition for `PyIndex.read` releasing the GIL, and it is the part a
+    /// test can pin. `read` was the one native call here that did not detach, and
+    /// `fdu-samw` made it the heaviest -- a filtered report re-aggregates the entire index,
+    /// so holding the GIL across it freezes every other Python thread for a full
+    /// traversal, and an asyncio consumer moving it to a worker thread would still have
+    /// frozen its event loop.
+    ///
+    /// The oracle blocks *inside* the detach rather than counting after it: a second
+    /// thread has to reach `Python::attach` and send while the read is running, so a path
+    /// that needed the interpreter would hang here rather than merely finish late. That
+    /// the request and bundle are `Send` at all is the other half, and the compiler checks
+    /// that one every build.
     #[test]
-    fn concurrent_borrows_of_one_python_index_are_all_shared() {
+    fn the_native_read_path_runs_detached_and_blocks_no_python_thread() {
         Python::initialize();
         Python::attach(|py| {
             let index = Py::new(py, test_index()).expect("allocate Python index");
+            let handle = index.borrow(py).inner.clone();
 
-            let first = index.try_borrow(py).expect("first shared borrow");
-            let second = index.try_borrow(py).expect("a second reader is not rejected");
-            // The exclusive borrow that used to span a refresh is now nobody's to take.
-            assert!(index.try_borrow_mut(py).is_err());
-            drop((first, second));
+            let (ready_tx, ready_rx) = sync_channel(1);
+            let (progress_tx, progress_rx) = sync_channel(1);
+            let worker = std::thread::spawn(move || {
+                ready_tx.send(()).expect("signal worker ready");
+                Python::attach(|_| progress_tx.send(()).expect("report Python progress"));
+            });
+            ready_rx.recv().expect("worker ready");
+
+            // The read's own detach is the only thing that can let the worker through.
+            let bundle = py
+                .detach(move || {
+                    progress_rx
+                        .recv_timeout(Duration::from_secs(5))
+                        .expect("another Python thread must run while the native read works");
+                    handle.read(&fdu_core::ReadRequest { total: true, ..Default::default() })
+                })
+                .expect("read");
+            assert!(bundle.total.is_some(), "and the read still answers");
+            worker.join().expect("Python worker");
         });
     }
 
