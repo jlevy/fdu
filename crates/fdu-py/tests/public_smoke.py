@@ -73,14 +73,14 @@ def check_the_dirty_set_names_every_moved_rollup() -> None:
         time.sleep(0.5)
         (nested / "leaf.txt").write_text("leaf", encoding="utf-8")
         for batch in watch:
-            if not batch:
+            if not batch.changes:
                 continue
             # Compared as paths throughout: the engine's root is the empty path, which
             # Python normalizes to Path("."), so comparing strings would fail on a
             # spelling rather than on the set.
-            dirty = set(watch.dirty_rollups)
+            dirty = set(batch.dirty_rollups)
             expected: set[Path] = set()
-            for change in batch:
+            for change in batch.changes:
                 parent = change.path.parent
                 while True:
                     expected.add(parent)
@@ -520,8 +520,10 @@ def check_the_event_loop_adapter_delivers_the_same_batches() -> None:
         try:
             async for batch in fdu.aio.watch_batches(index, fdu.WatchOptions(interval=0.1)):
                 # Empty batches are filtered by the adapter, so anything yielded is real.
-                assert batch, "the adapter must not forward empty batches"
-                seen.extend(batch)
+                assert batch.dirty or batch.changes, (
+                    "the adapter must not forward batches that observed nothing"
+                )
+                seen.extend(batch.changes)
                 if any(change.path == Path("async.txt") for change in seen):
                     break
         finally:
@@ -606,7 +608,7 @@ def check_polling_is_selectable_for_filesystems_that_drop_events() -> None:
         deadline = time.monotonic() + 30
         seen = None
         for batch in watch:
-            for change in batch:
+            for change in batch.changes:
                 if change.path == Path("polled.txt"):
                     seen = change
             if seen is not None or time.monotonic() > deadline:

@@ -37,6 +37,7 @@ from ._models import (
     ScanOptions,
     Status,
     WalkTelemetry,
+    WatchBatch,
     WatchOptions,
     Work,
     classification_from_dict,
@@ -165,7 +166,7 @@ def _cache_status(value: dict[str, Any]) -> CacheStatus:
     )
 
 
-class Watch(Iterator[tuple[Change, ...]]):
+class Watch(Iterator[WatchBatch]):
     """Closable iterator of event-driven change batches."""
 
     __slots__ = ("_native",)
@@ -176,21 +177,8 @@ class Watch(Iterator[tuple[Change, ...]]):
     def __iter__(self) -> Watch:
         return self
 
-    def __next__(self) -> tuple[Change, ...]:
-        return tuple(_change(item) for item in next(self._native))
-
-    @property
-    def dirty_rollups(self) -> tuple[Path, ...]:
-        """Directories whose roll-ups the batch just yielded may have moved.
-
-        Root first, sorted, and never filtered by the selection: a change the selection
-        hides still moves the totals its ancestors report. Invalidate exactly these and
-        keep the rest, rather than dropping every cached per-directory answer.
-
-        Scoped to the most recent batch, so read it after each iteration step.
-        """
-
-        return tuple(Path(path) for path in self._native.dirty_rollups)
+    def __next__(self) -> WatchBatch:
+        return _watch_batch(next(self._native))
 
     def report(self) -> Report:
         """The live answer, as of now, from the index this session has been updating.
@@ -547,6 +535,18 @@ def _child(item: dict[str, Any]) -> Child:
         extension=None if extension is None else str(extension),
         tags=tuple(str(tag) for tag in item.get("tags", ())),
         empty=None if empty is None else bool(empty),
+    )
+
+
+def _watch_batch(value: dict[str, Any]) -> WatchBatch:
+    raw_cursor = value["cursor"]
+    return WatchBatch(
+        changes=tuple(_change(item) for item in value["changes"]),
+        dirty=bool(value["dirty"]),
+        dirty_rollups=tuple(Path(path) for path in value["dirty_rollups"]),
+        all_dirty=bool(value["all_dirty"]),
+        reset=bool(value["reset"]),
+        cursor=None if raw_cursor is None else _cursor(raw_cursor),
     )
 
 

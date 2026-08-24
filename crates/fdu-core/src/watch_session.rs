@@ -78,8 +78,38 @@ pub struct Batch {
     /// Sorted and deduplicated, and never filtered by the selection: a change the
     /// selection hides still moves the totals its ancestors report, which is the same
     /// reason `dirty` is not computed from `changes`.
+    ///
+    /// Empty when `all_dirty` is set: past a bound, listing the paths costs more than the
+    /// consumer saves by having them.
     pub dirty_rollups: Vec<PathBuf>,
+    /// Every cached roll-up should be discarded; `dirty_rollups` is not the answer.
+    ///
+    /// A bounded carrier has to say when it gave up enumerating, or a consumer reads a
+    /// truncated list as a complete one and keeps rows it should have dropped. This is
+    /// that signal, and it is why the list above can be empty while `dirty` is true.
+    pub all_dirty: bool,
+    /// The consumer's position is gone; it must re-read rather than apply these changes.
+    ///
+    /// Set when the kernel dropped events, when a rename could not be paired, or when a
+    /// directory's watch was registered too late to see what was created inside it. The
+    /// engine recovers by re-scanning the affected subtree, so the index is right either
+    /// way -- but a consumer replaying `changes` alone would be applying a suffix to
+    /// state that no longer matches, which is the one recovery it cannot do.
+    pub reset: bool,
+    /// The version this batch leaves the index at, and the position to resume from.
+    ///
+    /// Captured after the batch is applied, under the index's own guard, so it names
+    /// exactly the commits this batch carries -- not a later sample that would skip
+    /// whatever landed in between.
+    pub cursor: crate::Cursor,
 }
+
+/// How many dirty directories a batch enumerates before it says "all of them".
+///
+/// A rename near the root, or a reconciliation sweep, touches every ancestor of every
+/// path -- so the honest list is sometimes the whole tree, and shipping it costs a
+/// `PathBuf` per directory to tell a consumer something one bit says better.
+const MAX_DIRTY_ROLLUPS: usize = 1024;
 
 /// Directories whose roll-up values a set of applied deltas may have moved.
 ///
@@ -91,14 +121,20 @@ fn dirty_rollups(applied: &[AppliedDelta]) -> Vec<PathBuf> {
     let mut dirty: BTreeSet<PathBuf> = BTreeSet::new();
     for delta in applied {
         for op in &delta.ops {
-            let (path, is_directory) = match op {
+            let (path, own_key) = match op {
+                // A file's own key is not a roll-up, so naming it would invalidate
+                // something no consumer caches.
                 Op::Upsert { path, kind, .. } => (path, kind.is_dir()),
-                // A removed entry's own roll-up is gone, so only its ancestors move. An
-                // invalidated subtree is a directory whose own totals are in doubt.
-                Op::Remove { path } => (path, false),
-                Op::InvalidateSubtree { path, .. } => (path, true),
+                // A removal names its own key whatever it removed, and an invalidated
+                // subtree is a directory whose totals are in doubt. `Remove` does not say
+                // what was there, and the two ways of guessing are not symmetric: a
+                // removed *file* has no cached roll-up, so naming its key costs a consumer
+                // nothing, while a removed *directory* had one and would otherwise keep it
+                // forever -- stale, with no later event ever naming it again, because the
+                // entry is gone. Guessing in the cheap direction is the whole trade.
+                Op::Remove { path } | Op::InvalidateSubtree { path, .. } => (path, true),
             };
-            if is_directory {
+            if own_key {
                 dirty.insert(path.clone());
             }
             let mut ancestor = path.parent();
@@ -183,10 +219,36 @@ impl Session {
             return Ok(None);
         };
 
+        // A dropped event, an unpaired rename, or a watch registered after its
+        // directory already had contents: in each case the engine re-scans and the index
+        // ends up right, but a consumer replaying `changes` alone would be applying a
+        // suffix to state that no longer matches. It has to re-read, and this is the only
+        // thing that tells it so.
+        let reset = applied.iter().any(|delta| {
+            delta.ops.iter().any(|op| {
+                matches!(
+                    op,
+                    Op::InvalidateSubtree {
+                        reason: crate::InvalidateReason::WatchOverflow
+                            | crate::InvalidateReason::UnpairedRename
+                            | crate::InvalidateReason::WatchSetupRace,
+                        ..
+                    }
+                )
+            })
+        });
+        let dirty_rollups = dirty_rollups(&applied);
+        let all_dirty = dirty_rollups.len() > MAX_DIRTY_ROLLUPS;
         let mut batch = Batch {
             changes: Vec::new(),
             dirty: !applied.is_empty(),
-            dirty_rollups: dirty_rollups(&applied),
+            // Past the bound the list is dropped rather than truncated. A truncated list
+            // is indistinguishable from a complete one at the consumer, which is how a
+            // stale row survives an invalidation that named it.
+            dirty_rollups: if all_dirty { Vec::new() } else { dirty_rollups },
+            all_dirty,
+            reset,
+            cursor: self.index.cursor()?,
         };
         // A control file that moved changes what the tag rules decide about entries the
         // batch never touched, so it is handled before the rows are read: rebinding first
@@ -330,5 +392,69 @@ impl Session {
             complete: true,
             errors: Vec::new(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::engine_contract::{Attrs, Clock, EntryKind};
+
+    fn delta(clock: u64, ops: Vec<Op>) -> AppliedDelta {
+        AppliedDelta { clock: Clock(clock), ops }
+    }
+
+    /// A removed directory's own cached roll-up has to be invalidated too.
+    ///
+    /// The set used to be the ancestors of every touched path plus a touched *directory*,
+    /// and a `Remove` was classified as a non-directory because the op does not say what
+    /// it removed. So deleting a directory invalidated everything above it and never the
+    /// key a consumer had actually cached for it -- which no later event would ever name
+    /// again, because the entry is gone. The row survives forever, stale.
+    ///
+    /// Guessing in the cheap direction is the fix: a removed *file* has no cached roll-up,
+    /// so naming its key costs a consumer nothing, while a removed directory's key is the
+    /// whole bug. The two errors are not symmetric, so the conservative one wins.
+    #[test]
+    fn a_removed_directory_invalidates_its_own_rollup_and_not_only_its_ancestors() {
+        let dirty =
+            dirty_rollups(&[delta(1, vec![Op::Remove { path: PathBuf::from("src/deep") }])]);
+
+        assert!(
+            dirty.contains(&PathBuf::from("src/deep")),
+            "the removed directory's own key must be invalidated: {dirty:?}"
+        );
+        assert!(dirty.contains(&PathBuf::from("src")), "and its ancestors: {dirty:?}");
+        assert!(dirty.contains(&PathBuf::new()), "including the root: {dirty:?}");
+    }
+
+    /// The set is sorted, deduplicated, and rooted, whatever order the ops arrived in.
+    #[test]
+    fn the_dirty_set_is_a_set_rather_than_a_transcript() {
+        let dirty = dirty_rollups(&[delta(
+            1,
+            vec![
+                Op::Upsert {
+                    path: PathBuf::from("a/b/one.txt"),
+                    kind: EntryKind::File,
+                    attrs: Attrs::default(),
+                },
+                Op::Upsert {
+                    path: PathBuf::from("a/b/two.txt"),
+                    kind: EntryKind::File,
+                    attrs: Attrs::default(),
+                },
+            ],
+        )]);
+
+        let mut sorted = dirty.clone();
+        sorted.sort();
+        sorted.dedup();
+        assert_eq!(dirty, sorted, "a consumer iterates this; it should not have to clean it");
+        assert_eq!(
+            dirty,
+            vec![PathBuf::new(), PathBuf::from("a"), PathBuf::from("a/b")],
+            "two files in one directory move three roll-ups, not six"
+        );
     }
 }

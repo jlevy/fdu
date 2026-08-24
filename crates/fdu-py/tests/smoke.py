@@ -437,7 +437,7 @@ def main() -> None:
     (watch_root / "created.rs").write_text("fn main() {}")
     seen = []
     for _ in range(40):
-        seen.extend(next(feed))
+        seen.extend(next(feed)["changes"])
         if any(change["path"].endswith("created.rs") for change in seen):
             break
     assert any(change["path"].endswith("created.rs") for change in seen), seen

@@ -689,11 +689,7 @@ impl PyIndex {
         let session =
             Session::new(handle, self.config.clone(), query, config).map_err(to_py_err)?;
 
-        Ok(PyWatch {
-            session: Some(session),
-            timeout: Duration::from_secs_f64(interval),
-            dirty_rollups: Vec::new(),
-        })
+        Ok(PyWatch { session: Some(session), timeout: Duration::from_secs_f64(interval) })
     }
 
     /// Roll-up totals for the whole tree.
@@ -1705,11 +1701,6 @@ fn parse_bound(value: &str, name: &str) -> PyResult<Bound_> {
 struct PyWatch {
     session: Option<Session>,
     timeout: Duration,
-    /// Directories whose roll-ups the batch just yielded may have moved.
-    ///
-    /// Held beside the feed rather than yielded with it, so the iterator keeps yielding
-    /// changes and a consumer that does not cache per-directory answers pays nothing.
-    dirty_rollups: Vec<PathBuf>,
 }
 
 #[pymethods]
@@ -1737,8 +1728,15 @@ impl PyWatch {
         slf
     }
 
-    /// Wait for the next batch, yielding a possibly empty list of changes.
-    fn __next__(&mut self, py: Python<'_>) -> PyResult<Option<Py<PyList>>> {
+    /// Wait for the next batch, yielding one immutable record of what happened.
+    ///
+    /// A batch, not a list of changes. The changes alone are lossy: a mutation the
+    /// selection filters out still moves the totals a tree view reports, so a consumer
+    /// that re-rendered on a non-empty list would miss it entirely -- and the dirty set
+    /// used to sit beside the feed as mutable state, readable only if you knew to look
+    /// between iteration steps. Everything a consumer must not miss now travels in the
+    /// value it already receives.
+    fn __next__(&mut self, py: Python<'_>) -> PyResult<Option<Py<PyDict>>> {
         let Some(session) = self.session.as_mut() else {
             // A closed feed is exhausted rather than an error, so `for ... in` ends
             // cleanly after close().
@@ -1749,10 +1747,20 @@ impl PyWatch {
         // holding the GIL across it would freeze every other Python thread.
         let batch = py.detach(|| session.next_batch(self.timeout)).map_err(to_py_err)?;
 
+        let out = PyDict::new(py);
         let list = PyList::empty(py);
-        self.dirty_rollups.clear();
+        let mut dirty = false;
+        let mut all_dirty = false;
+        let mut reset = false;
+        let mut dirty_rollups: Vec<OsString> = Vec::new();
+        let mut cursor = None;
         if let Some(batch) = batch {
-            self.dirty_rollups.clone_from(&batch.dirty_rollups);
+            dirty = batch.dirty;
+            all_dirty = batch.all_dirty;
+            reset = batch.reset;
+            dirty_rollups =
+                batch.dirty_rollups.iter().map(|path| path.as_os_str().to_os_string()).collect();
+            cursor = Some(batch.cursor);
             for change in &batch.changes {
                 let dict = PyDict::new(py);
                 dict.set_item("path", change.path.as_os_str())?;
@@ -1772,20 +1780,19 @@ impl PyWatch {
                 list.append(dict)?;
             }
         }
-        Ok(Some(list.unbind()))
-    }
-
-    /// Directories whose roll-up values the batch just yielded may have moved.
-    ///
-    /// Root first, sorted, deduplicated, and never filtered by the selection: a change
-    /// the selection hides still moves the totals its ancestors report. A consumer
-    /// caching a per-directory answer invalidates exactly these and keeps the rest,
-    /// rather than re-deriving the set from change paths or dropping every cached row.
-    ///
-    /// Scoped to the most recent batch, so read it after each iteration step.
-    #[getter]
-    fn dirty_rollups(&self) -> Vec<OsString> {
-        self.dirty_rollups.iter().map(|path| path.as_os_str().to_os_string()).collect()
+        out.set_item("changes", list)?;
+        out.set_item("dirty", dirty)?;
+        out.set_item("dirty_rollups", dirty_rollups)?;
+        out.set_item("all_dirty", all_dirty)?;
+        out.set_item("reset", reset)?;
+        out.set_item(
+            "cursor",
+            match cursor {
+                Some(cursor) => Some(cursor_dict(py, cursor)?),
+                None => None,
+            },
+        )?;
+        Ok(Some(out.unbind()))
     }
 
     /// Stop watching and release the backend registration.

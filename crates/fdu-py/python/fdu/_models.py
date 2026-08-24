@@ -1298,6 +1298,54 @@ class Cursor:
 
 
 @dataclass(frozen=True, slots=True)
+class WatchBatch:
+    """One immutable record of what a watch step observed.
+
+    The changes alone are lossy. A mutation the selection filters out still moves the
+    totals a tree view reports, so a batch can carry no changes and still require a
+    re-render -- which is what :attr:`dirty` says and :attr:`changes` cannot. Everything a
+    consumer must not miss travels here rather than beside the feed as state readable only
+    between iteration steps.
+    """
+
+    changes: tuple[Change, ...]
+    """Changes the selection admitted, in commit order."""
+
+    dirty: bool
+    """Whether anything was applied at all, before selection filtering.
+
+    Re-render aggregates on this, not on ``changes``: a filtered-out mutation still
+    changes what a total says.
+    """
+
+    dirty_rollups: tuple[Path, ...]
+    """Directories whose cached roll-ups this batch may have moved.
+
+    Root first, sorted, and never filtered by the selection. Invalidate exactly these and
+    keep the rest. Empty when :attr:`all_dirty` is set, which is not the same as nothing
+    having moved.
+    """
+
+    all_dirty: bool
+    """Discard every cached roll-up; the list above gave up enumerating.
+
+    A bounded carrier has to say when it stopped listing, or a truncated list reads as a
+    complete one and a stale row survives the invalidation that named it.
+    """
+
+    reset: bool
+    """The consumer's position is gone; re-read rather than applying ``changes``.
+
+    Set when the kernel dropped events, a rename could not be paired, or a directory's
+    watch was registered too late. The engine re-scans and the index ends up right; a
+    consumer applying a suffix to state that no longer matches does not.
+    """
+
+    cursor: Cursor | None
+    """Where the index stands after this batch, or ``None`` for an idle step."""
+
+
+@dataclass(frozen=True, slots=True)
 class ChangeSet:
     truncated: bool
     cursor: Cursor

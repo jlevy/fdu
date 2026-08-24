@@ -412,17 +412,20 @@ def run_watch(args: Args) -> int:
         dirty = False
 
         for batch in watch:
-            if not batch:
+            if not batch.dirty:
                 # The idle tick: repaint only if something moved since the last one.
                 if has_aggregates and dirty:
                     _repaint(args, watch)
                     dirty = False
                 continue
-            for change in batch:
+            for change in batch.changes:
                 if streams_changes:
                     # The one renderer, so the stream is fdu's bytes and not the shim's
                     # idea of them. This printed repr() until Change.render (fdu-m66a).
                     print(change.render(args.format), flush=True)
+            # `batch.dirty`, not "the change list was non-empty". A mutation the selection
+            # filters out still moves the aggregates, and deriving this from the changes
+            # meant an aggregate view could go stale with no tick ever saying so.
             dirty = True
     return 0
 
@@ -430,9 +433,8 @@ def run_watch(args: Args) -> int:
 def _repaint(args: Args, watch: fdu.Watch) -> None:
     """Redraw the aggregate views, separated from the repaint before them.
 
-    From the watch's own index, not the one it was opened from: the aggregates stopped
-    being true at the first event, and repainting the opened index shows numbers that
-    never change while claiming to be live.
+    From the session's report, which is the opened index: a watch shares the handle it was
+    opened from, so there is no second index to prefer.
     """
 
     if args.format is fdu.Format.TEXT:

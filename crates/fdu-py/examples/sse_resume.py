@@ -138,7 +138,10 @@ async def feed(
                 yield sse_event("change", _wire(change), _at(current, change.clock))
 
     async for batch in fdu.aio.watch_batches(index, options):
-        for change in batch:
+        # A batch that observed something but carries no admitted changes still moved the
+        # totals; a feed that renders aggregates re-reads on `batch.dirty`. This example
+        # streams entry changes only, so it forwards what it has.
+        for change in batch.changes:
             yield sse_event("change", _wire(change), _at(current, change.clock))
 
 

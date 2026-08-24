@@ -26,9 +26,16 @@ import threading
 from collections.abc import AsyncIterator
 
 from ._api import Index
-from ._models import Change, WatchOptions
+from ._models import WatchBatch, WatchOptions
 
 __all__ = ["watch_batches"]
+
+#: How long cancellation waits for the worker to notice and exit.
+#:
+#: The drain that precedes the join unblocks it, so this bound is a guard against a bug
+#: rather than a normal path -- a worker that is still alive after it has been told to
+#: stop and had its queue emptied is not waiting on anything this code controls.
+_WORKER_JOIN_TIMEOUT = 5.0
 
 #: Batches held for a slow consumer before the worker stops pulling.
 #:
@@ -43,7 +50,7 @@ async def watch_batches(
     options: WatchOptions | None = None,
     *,
     queue_size: int = DEFAULT_QUEUE_SIZE,
-) -> AsyncIterator[tuple[Change, ...]]:
+) -> AsyncIterator[WatchBatch]:
     """Yield `index.watch(options)`'s batches on the running event loop.
 
     A live UI should set `WatchOptions.interval` near its frame budget. The interval bounds
@@ -64,7 +71,7 @@ async def watch_batches(
 
     selected = options if options is not None else WatchOptions()
     loop = asyncio.get_running_loop()
-    queue: asyncio.Queue[tuple[Change, ...] | BaseException | None] = asyncio.Queue(
+    queue: asyncio.Queue[WatchBatch | BaseException | None] = asyncio.Queue(
         maxsize=max(1, queue_size)
     )
     stop = threading.Event()
@@ -83,7 +90,7 @@ async def watch_batches(
         be doing releases the GIL anyway.
         """
 
-        def hand_over(item: tuple[Change, ...] | BaseException | None) -> None:
+        def hand_over(item: WatchBatch | BaseException | None) -> None:
             # The loop can already be gone -- a cancelled task, a closing process -- and
             # there is nothing to report at that point: nobody is reading. The coroutine
             # is closed explicitly on that path, because one that was created and never
@@ -100,7 +107,12 @@ async def watch_batches(
                 for batch in watch:
                     if stop.is_set():
                         break
-                    if batch:
+                    # Every batch that observed something, not only those carrying
+                    # changes. A mutation the selection filters out still moves the totals
+                    # a tree view reports, and `if batch.changes` would discard the only
+                    # signal saying so -- the async consumer would go on rendering numbers
+                    # that had stopped being true, with no event to blame.
+                    if batch.dirty or batch.changes:
                         hand_over(batch)
         except BaseException as error:
             hand_over(error)
@@ -127,3 +139,9 @@ async def watch_batches(
                 queue.get_nowait()
             except asyncio.QueueEmpty:
                 break
+        # And wait for it to actually be gone. Setting a flag says "please stop"; joining
+        # is what makes cancellation mean the watch registration is released by the time
+        # this returns, rather than at some point afterwards. The drain above is what
+        # guarantees the join finishes: a worker blocked on a full queue can now complete
+        # its put and exit.
+        worker.join(timeout=_WORKER_JOIN_TIMEOUT)
