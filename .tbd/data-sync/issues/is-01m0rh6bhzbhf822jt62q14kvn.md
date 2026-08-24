@@ -5,13 +5,15 @@ title: Report views still cannot tell a symlink-only directory from an empty one
 kind: task
 status: closed
 priority: 2
-version: 2
+version: 3
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 labels: []
-dependencies: []
+dependencies:
+  - type: blocks
+    target: is-01m0tf9pw281n7hsaenyp0aq3e
 parent_id: is-01m0racd5dxjfx1g5e0dsfay8q
 created_at: 2026-08-24T00:02:15.743Z
-updated_at: 2026-08-24T17:59:51.978Z
+updated_at: 2026-08-24T18:07:46.220Z
 closed_at: 2026-08-24T17:59:51.978Z
 close_reason: |
   `others` now rides on `SummaryRow` and `TreeNode`, so the report views can tell a
