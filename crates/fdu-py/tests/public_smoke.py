@@ -222,6 +222,74 @@ def check_partial_coverage_says_why() -> None:
     fdu.clear_cache(root)
 
 
+def check_tags_are_a_named_fact_per_entry() -> None:
+    """A tag rides on the entry, and asking about a rule that is off is refused.
+
+    Three things are pinned here that a Rust unit test cannot reach: that enabling is
+    Scope (``ScanOptions.tag_rules``) while filtering is Selection, that a listing row and
+    a report row agree about the same entry, and that a rule which is not enabled raises
+    rather than quietly matching nothing -- a mask of zero being indistinguishable from no
+    constraint, so the permissive reading would hand back everything.
+    """
+
+    root = Path(tempfile.mkdtemp(prefix="fdu-tags-"))
+    (root / ".cache").mkdir()
+    (root / ".cache" / "blob").write_text("z", encoding="utf-8")
+    (root / ".env").write_text("x", encoding="utf-8")
+    (root / "main.rs").write_text("y", encoding="utf-8")
+
+    index = fdu.open(root, scan=fdu.ScanOptions(tag_rules=("dotfile",)))
+    page = index.children()
+    assert page is not None
+    rows = {child.name: child for child in page.rows}
+    assert rows[".env"].tags == ("dotfile",)
+    assert rows[".cache"].tags == ("dotfile",), "a directory is as taggable as a file"
+    assert rows["main.rs"].tags == ()
+
+    # The same entry, through the report surface rather than the listing.
+    report = index.report(
+        fdu.Query(
+            views=(fdu.View.FILES,),
+            selection=fdu.Selection(tags=("dotfile",), limit=fdu.Bound.ALL),
+        )
+    )
+    tagged = {
+        row.path.as_posix(): row.tags
+        for section in report.sections
+        if isinstance(section, fdu.FilesSection)
+        for row in section.files
+    }
+    assert set(tagged) == {".env", ".cache"}, tagged
+    assert all(tags == ("dotfile",) for tags in tagged.values()), tagged
+
+    # A tag is about the entry, never its ancestors: excluding `.cache` keeps what is
+    # inside it, which is what separates a tag from scope pruning.
+    excluded = index.report(
+        fdu.Query(
+            views=(fdu.View.FILES,),
+            selection=fdu.Selection(not_tags=("dotfile",), limit=fdu.Bound.ALL),
+        )
+    )
+    kept = {
+        row.path.as_posix()
+        for section in excluded.sections
+        if isinstance(section, fdu.FilesSection)
+        for row in section.files
+    }
+    assert kept == {".cache/blob", "main.rs"}, kept
+
+    # An index that never evaluated the rule cannot answer for it, and says so.
+    plain = fdu.open(root, cache=fdu.CachePolicy.OFF)
+    try:
+        plain.report(fdu.Query(selection=fdu.Selection(tags=("dotfile",))))
+    except fdu.InvalidArgumentError as error:
+        assert "not enabled" in str(error), error
+    else:  # pragma: no cover - the failure this guards is a silent one
+        raise AssertionError("filtering on a rule that is off must be refused")
+
+    fdu.clear_cache(root)
+
+
 def check_a_listing_pages_and_accounts_for_the_rest() -> None:
     """A wide directory is drawn a page at a time, and the page says what it left out.
 
@@ -1018,6 +1086,7 @@ def main() -> None:
     check_one_bundle_answers_a_whole_page()
     check_a_listing_pages_and_accounts_for_the_rest()
     check_partial_coverage_says_why()
+    check_tags_are_a_named_fact_per_entry()
     check_empty_is_decidable_from_the_aggregate()
     check_the_event_loop_adapter_delivers_the_same_batches()
     check_the_sse_example_resumes_or_resyncs()

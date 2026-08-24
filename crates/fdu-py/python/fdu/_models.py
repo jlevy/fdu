@@ -208,12 +208,22 @@ class ScanOptions:
     #: invalidates accordingly. Build one with :meth:`TypeRegistry.from_manifest` and
     #: reuse it across calls -- parsing is the cost, and a registry is read-only after.
     type_rules: TypeRegistry | None = None
+    #: Tag rules to evaluate per entry, by name. Try ``("dotfile",)``.
+    #:
+    #: Scope rather than selection, for the same reason `type_rules` is: an index built
+    #: without a rule carries no bit for it and cannot answer a question about it, so the
+    #: cache invalidates accordingly. Enabling costs one branch per insert and nothing per
+    #: query; the default evaluates none and fingerprints to zero, which is what every
+    #: existing snapshot recorded.
+    tag_rules: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if self.max_depth is not None and self.max_depth < 0:
             raise ValueError("max_depth must be non-negative")
         if self.threads is not None and self.threads < 1:
             raise ValueError("threads must be at least 1")
+        if isinstance(self.tag_rules, str):
+            raise TypeError("tag_rules takes a tuple of names; wrap the single value in a tuple")
 
 
 @dataclass(frozen=True, slots=True)
@@ -239,6 +249,14 @@ class Selection:
     modified_since: datetime | str | None = None
     modified_before: datetime | str | None = None
     kinds: tuple[EntryKind, ...] = ()
+    #: Tags an entry must carry at least one of. Any-of rather than all-of, matching
+    #: `include`: naming a second tag widens, and the way to narrow is `not_tags`.
+    #: Every name must be enabled on the index via `tag_rules=`; a rule that is off is
+    #: refused rather than treated as a filter that matches nothing.
+    tags: tuple[str, ...] = ()
+    #: Tags that exclude an entry outright. Wins over `tags`, as `exclude` wins over
+    #: `include`.
+    not_tags: tuple[str, ...] = ()
     #: Accepts a raw token as well as an int or `Bound`, so a caller passing user input
     #: straight through gets the library's own grammar and wording rather than having to
     #: pre-validate and invent a second opinion about what is acceptable.
@@ -256,6 +274,8 @@ class Selection:
             ("include", self.include),
             ("exclude", self.exclude),
             ("kinds", self.kinds),
+            ("tags", self.tags),
+            ("not_tags", self.not_tags),
         ):
             if isinstance(value, str):
                 raise TypeError(f"{name} takes a tuple of values; wrap the single value in a tuple")
@@ -578,6 +598,14 @@ class Child:
     pile. Filter on this; sum bytes by the breakdown's key.
     """
 
+    tags: tuple[str, ...] = ()
+    """Tags this child carries, in the enabled set's bit order.
+
+    Empty unless the index was opened with ``tag_rules=``, which is the default. A name
+    here is a named boolean fact about this entry alone -- never about its ancestors, so a
+    file inside a ``dotfile`` directory is not itself tagged.
+    """
+
     empty: bool | None = None
     """Whether this is a directory whose subtree is provably empty.
 
@@ -764,6 +792,13 @@ class FileRow:
     """The *logical* extension: this row's final two eligible components.
 
     The raw level, which may differ from the type and the roll-up bucket.
+    """
+
+    tags: tuple[str, ...] = ()
+    """Tags this row carries, in the enabled set's bit order.
+
+    Empty unless the index was opened with ``tag_rules=``, which is the default: a caller
+    who does not ask for tags pays nothing for them.
     """
 
 
@@ -1024,7 +1059,7 @@ class ScanScope:
     max_depth: int | None
     follow_symlinks: bool
     one_filesystem: bool
-    ignore_rules_fingerprint: int
+    tag_rules_fingerprint: int
     type_rules_fingerprint: int
     reducers_fingerprint: int
 
@@ -1232,7 +1267,7 @@ def scan_scope_from_dict(value: dict[str, Any]) -> ScanScope:
         max_depth=None if depth is None else int(depth),
         follow_symlinks=bool(value["follow_symlinks"]),
         one_filesystem=bool(value["one_filesystem"]),
-        ignore_rules_fingerprint=int(value["ignore_rules_fingerprint"]),
+        tag_rules_fingerprint=int(value["tag_rules_fingerprint"]),
         type_rules_fingerprint=int(value["type_rules_fingerprint"]),
         reducers_fingerprint=int(value["reducers_fingerprint"]),
     )
@@ -1264,6 +1299,7 @@ def _file_row(row: dict[str, Any]) -> FileRow:
             None if classification is None else classification_from_dict(classification)
         ),
         extension=None if extension is None else str(extension),
+        tags=tuple(str(tag) for tag in row.get("tags", ())),
     )
 
 

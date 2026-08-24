@@ -59,9 +59,6 @@ const MAX_DEFERRED_RECONCILE_OPS: usize = MAX_SCAN_BATCH_SIZE;
 const RECONCILE_WAVE_DIRECTORIES: usize =
     crate::platform_tuning::tuning().reconcile_wave_directories.get();
 
-/// Identity of the current built-in ignore policy. No ignore rules exist yet.
-const IGNORE_RULES_FINGERPRINT: u64 = 0;
-
 /// Identity of the fixed stat-tier reducer set.
 const REDUCERS_FINGERPRINT: u64 = 1;
 
@@ -166,6 +163,12 @@ pub struct ScanConfig {
     /// change to it invalidates a snapshot. Shared rather than owned because a scan
     /// clones its config per wave and a registry is read-only once built.
     pub types: Option<std::sync::Arc<crate::classify::TypeRegistry>>,
+    /// Tag rules to evaluate per entry, or `None` for none enabled.
+    ///
+    /// Semantic for the same reason [`Self::types`] is, and shared for the same reason.
+    /// The default is the empty set, which fingerprints to zero and costs one branch per
+    /// insert: a caller who asks for no tags pays for no tags.
+    pub tags: Option<std::sync::Arc<crate::tags::TagRules>>,
 }
 
 impl Default for ScanConfig {
@@ -178,6 +181,7 @@ impl Default for ScanConfig {
             threads: None,
             order: ScanOrder::default(),
             types: None,
+            tags: None,
         }
     }
 }
@@ -206,6 +210,13 @@ impl ScanConfig {
         self.types.as_ref().unwrap_or_else(|| crate::classify::TypeRegistry::compiled())
     }
 
+    /// The tag rules in effect: the supplied set, or none enabled.
+    pub fn tags(&self) -> std::sync::Arc<crate::tags::TagRules> {
+        self.tags
+            .clone()
+            .unwrap_or_else(|| std::sync::Arc::new(crate::tags::TagRules::none().clone()))
+    }
+
     /// Semantic cache identity, excluding operational batching choices.
     ///
     /// No longer `const`: the type-rule fingerprint is now a property of the registry in
@@ -216,7 +227,7 @@ impl ScanConfig {
             max_depth: self.max_depth,
             follow_symlinks: self.follow_symlinks,
             one_filesystem: self.one_filesystem,
-            ignore_rules_fingerprint: IGNORE_RULES_FINGERPRINT,
+            tag_rules_fingerprint: self.tags().fingerprint(),
             type_rules_fingerprint: self.types().fingerprint(),
             reducers_fingerprint: REDUCERS_FINGERPRINT,
         }
@@ -2665,7 +2676,9 @@ fn record_adaptive_worker_expansion(diagnostics: Option<&std::sync::Arc<ScanDiag
 pub fn scan_into_index(root: &Path, config: &ScanConfig) -> Result<(Index, ScanReport)> {
     config.validate()?;
     let root = root.canonicalize().map_err(|error| Error::io(root, error))?;
-    let mut index = Index::new_with_scope(&root, config.scope()).with_types(config.types().clone());
+    let mut index = Index::new_with_scope(&root, config.scope())
+        .with_types(config.types().clone())
+        .with_tag_rules(config.tags());
     let mut apply_error: Option<Error> = None;
     let report = scan(&root, config, &mut |observation| {
         if apply_error.is_none() {
@@ -2702,7 +2715,9 @@ pub fn scan_into_index_with_policy_diagnostics(
 ) -> Result<(Index, ScanReport, ScanDiagnostics)> {
     config.validate()?;
     let root = root.canonicalize().map_err(|error| Error::io(root, error))?;
-    let mut index = Index::new_with_scope(&root, config.scope()).with_types(config.types().clone());
+    let mut index = Index::new_with_scope(&root, config.scope())
+        .with_types(config.types().clone())
+        .with_tag_rules(config.tags());
     let mut apply_error: Option<Error> = None;
     let (report, diagnostics) = scan_with_policy_diagnostics(
         &root,

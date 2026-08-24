@@ -667,7 +667,7 @@ fn put_scope(buf: &mut Vec<u8>, scope: ScanScope) -> Result<()> {
         flags |= SCOPE_ONE_FILESYSTEM;
     }
     buf.push(flags);
-    buf.extend_from_slice(&scope.ignore_rules_fingerprint.to_le_bytes());
+    buf.extend_from_slice(&scope.tag_rules_fingerprint.to_le_bytes());
     buf.extend_from_slice(&scope.type_rules_fingerprint.to_le_bytes());
     buf.extend_from_slice(&scope.reducers_fingerprint.to_le_bytes());
     Ok(())
@@ -688,7 +688,7 @@ fn read_scope(reader: &mut impl Read) -> ParseResult<ScanScope> {
         max_depth,
         follow_symlinks: flags & SCOPE_FOLLOW_SYMLINKS != 0,
         one_filesystem: flags & SCOPE_ONE_FILESYSTEM != 0,
-        ignore_rules_fingerprint: read_u64(reader)?,
+        tag_rules_fingerprint: read_u64(reader)?,
         type_rules_fingerprint: read_u64(reader)?,
         reducers_fingerprint: read_u64(reader)?,
     })
@@ -1677,7 +1677,7 @@ mod tests {
             max_depth: Some(7),
             follow_symlinks: false,
             one_filesystem: true,
-            ignore_rules_fingerprint: 11,
+            tag_rules_fingerprint: 11,
             type_rules_fingerprint: 22,
             reducers_fingerprint: 33,
         };

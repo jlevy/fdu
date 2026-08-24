@@ -421,7 +421,7 @@ This section records what was actually built, at the same file-and-function leve
 the two can be compared — and so the places where implementation contradicted the plan
 are on the record rather than in a commit message nobody re-reads.
 
-Nineteen of the twenty-six beads under the contract epic are closed.
+Twenty-one of the twenty-six beads under the contract epic are closed.
 Every one cleared `make check`, which replays the golden corpus against the command line
 and against the Python package and fails on any unclassified difference.
 
@@ -520,6 +520,63 @@ loop only ever sees a queue.
 Backpressure is `asyncio.run_coroutine_threadsafe(...).result()`, and the `finally`
 block drains the queue so a cancelled consumer cannot leave a producer blocked on a full
 one.
+
+### Engine: the tag model
+
+| Bead | What shipped | Where |
+| --- | --- | --- |
+| `fdu-5yqb` | `Status::Partial(CoverageReason)` — partial coverage says why, not only that | `engine_contract.rs:CoverageReason`, `index.rs:FreshnessMark` |
+| `fdu-mvt3` | `TagRule`, `TagTier`, `TagRules`, `TagBits`; `Entry.tag_bits`; `Selection::tags`; `--tag-rules`/`--tag`/`--not-tag`; `ScanOptions.tag_rules`, `Selection.tags`/`.not_tags` | `tags.rs`, `index.rs`, `query/query_selection.rs`, `cli.rs`, `fdu-py/src/lib.rs` |
+
+Four things about the tag model were decided against the plan as written, and each was
+decided by something the code made visible rather than by argument.
+
+**A tag is not a plane.** The plan had them one and the same, and the coupling had
+already forced `hidden` out of the model once: a maintained per-directory aggregate for
+hidden entries would have to walk the `.git`, cache and virtualenv trees the tag exists
+to identify. They are now separate concepts in the same module, with the split stated at
+the top of it: tags are unbounded and nearly free, planes are a small *declared* subset
+that rides the ancestor-merge path and costs on every mutation whether or not anyone
+reads them. Filtering by an unpromoted tag re-aggregates by walking, which is the
+two-tier rule the query surface already applies to every other predicate.
+
+**A rule declares what it may read, and the engine refuses what it cannot afford.**
+`TagTier` is `Name`, `Path` or `Content`, and `TagRules::from_names` rejects a
+Content-tier rule at enable time.
+Without that check, adding a `binary` or `text` tag would silently turn a metadata walk
+into a content walk, and the only symptom would be that scans got mysteriously slower.
+The refusal is its own error variant rather than folded into “unknown”, because an
+unknown name is a typo and this is a real rule that costs more than the caller asked to
+spend — opposite responses to what looks like one class of mistake.
+
+**Tag bits are not in the snapshot, and that is the design.** They are derived from
+facts the index already holds, so `Index::with_tag_rules` re-tags what is already there.
+That is not an optimization: the loader restores entries *before* the caller’s rules are
+known, so an index that only tagged at insert would answer “no tags” for every entry
+after a warm start while a cold scan of the same tree answered correctly — one tree, two
+answers, and it would read as a cache fault rather than a tagging one.
+A `--cache only` run that walks zero files now returns the same rows as a cold scan.
+
+**The loader must not be handed back its own optimization.** `TagRules::evaluate` takes
+the relative path as a closure rather than a value.
+The upsert path already holds a path; the snapshot loader holds a parent id and a
+basename, and reconstructing a path per record is exactly the work a callgrind profile
+put at about 27% of load in the allocator and which that path was rewritten to avoid.
+The first draft of this wiring called `path_of(parent).join(name)` per record — in the
+function whose own doc comment says why it must not.
+
+Two smaller decisions are worth recording because they were reversed once.
+
+`ensure_dir_chain` tags its placeholder directories rather than leaving them at zero.
+`apply_upsert` on an existing entry of the same kind rewrites attributes and source
+only, so a directory that entered as an ancestor placeholder would have stayed untagged
+for the life of the index — and every ancestor of a deep first observation enters there.
+
+The command line no longer wraps a tag error in `invalid --tag:`. The parity harness
+caught it: the library message already quotes the rejected name and lists what is
+available, so the prefix added only the one thing the Python surface could not say
+identically. Both surfaces now print the same sentence, and the five new golden sessions
+record as exact matches rather than as a declared deviation class.
 
 ### Test architecture
 

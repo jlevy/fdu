@@ -137,6 +137,8 @@ def _query_kwargs(query: Query) -> dict[str, object]:
         "modified_since": _when(selection.modified_since),
         "modified_before": _when(selection.modified_before),
         "kind": [kind.value for kind in selection.kinds],
+        "tags": list(selection.tags),
+        "not_tags": list(selection.not_tags),
         "depth": _bound(selection.depth),
         "limit": _bound(selection.limit),
         "sort": selection.sort.value if selection.sort is not None else None,
@@ -488,6 +490,7 @@ def _child(item: dict[str, Any]) -> Child:
             None if classification is None else classification_from_dict(classification)
         ),
         extension=None if extension is None else str(extension),
+        tags=tuple(str(tag) for tag in item.get("tags", ())),
         empty=None if empty is None else bool(empty),
     )
 
@@ -609,6 +612,7 @@ def open(
         order=str(scan_options.order),
         threads=scan_options.threads,
         type_rules=_native_rules(scan_options.type_rules),
+        tag_rules=list(scan_options.tag_rules),
         analyze=str(analysis_options.analyze),
         analysis_workers=analysis_options.workers,
     )
@@ -633,6 +637,7 @@ def scan(
         order=str(scan_options.order),
         threads=scan_options.threads,
         type_rules=_native_rules(scan_options.type_rules),
+        tag_rules=list(scan_options.tag_rules),
         analyze=str(analysis_options.analyze),
         analysis_workers=analysis_options.workers,
     )
@@ -672,6 +677,7 @@ def report(
         order=str(scan_options.order),
         threads=scan_options.threads,
         type_rules=_native_rules(scan_options.type_rules),
+        tag_rules=list(scan_options.tag_rules),
         analyze=str(analysis_options.analyze),
         analysis_workers=analysis_options.workers,
         **_query_kwargs(selected),

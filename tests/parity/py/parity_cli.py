@@ -50,6 +50,7 @@ def _scan_options(args: Args) -> fdu.ScanOptions:
         order=order,
         threads=args.threads,
         type_rules=load_type_rules(args.type_rules),
+        tag_rules=tuple(args.tag_rules),
     )
 
 
@@ -170,6 +171,9 @@ class Args:
         self.order: str | None = None
         self.threads: int | None = None
         self.type_rules: str | None = None
+        self.tag_rules: list[str] = []
+        self.tags: list[str] = []
+        self.not_tags: list[str] = []
         self.include: list[str] = []
         self.exclude: list[str] = []
         self.min_size: str | None = None
@@ -237,6 +241,12 @@ def parse_args(argv: list[str]) -> Args:
             args.threads = int(take())
         elif flag == "--type-rules":
             args.type_rules = take()
+        elif flag == "--tag-rules":
+            args.tag_rules = [name.strip() for name in take().split(",") if name.strip()]
+        elif flag == "--tag":
+            args.tags.append(take())
+        elif flag == "--not-tag":
+            args.not_tags.append(take())
         elif flag == "--include":
             args.include.append(take())
         elif flag == "--exclude":
@@ -318,6 +328,8 @@ def build_query(args: Args) -> fdu.Query:
         modified_since=args.modified_since,
         modified_before=args.modified_before,
         kinds=tuple(args.kinds),
+        tags=tuple(args.tags),
+        not_tags=tuple(args.not_tags),
         depth=args.depth,
         limit=args.limit,
         sort=args.sort,

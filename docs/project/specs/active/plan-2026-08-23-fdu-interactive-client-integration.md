@@ -728,14 +728,32 @@ The model that results, stated once here and in detail on the beads:
   position, and an empty rule set still fingerprints to zero, so every existing snapshot
   stays valid.
 
+- **Tag bits are derived, not serialized.** A snapshot carries no tag data; adopting a
+  rule set re-tags the loaded index.
+  That is not an optimization — the loader restores entries before the caller’s rules
+  are known, so tagging only at insert would make a warm start answer “no tags” where a
+  cold scan of the same tree answered correctly.
+
 - **The `ignore` crate lands behind a default-on `gitignore` feature**, `notify`’s exact
   precedent, on measured evidence (+1.06 MiB stripped and LTO’d, nine new crates, no
   lean mode) — pinned `=0.4.30` because newer releases need Rust 1.88 against the 1.85
   MSRV. The tag model itself stays dependency-free.
 
-- [ ] Tag model foundation: registry, tiers, entry bits computed at apply time, the
+- [x] Tag model foundation: registry, tiers, entry bits computed at apply time, the
   fingerprint rename, the zero-dependency `dotfile` reference rule, tag filtering by
-  re-aggregation, `--tags` on the scope axis, goldens and parity (`fdu-mvt3`)
+  re-aggregation, `--tag-rules` on the scope axis with `--tag`/`--not-tag` on selection,
+  goldens and parity (`fdu-mvt3`)
+
+  Shipped as `crates/fdu-core/src/tags.rs` plus wiring.
+  Two names changed against this plan.
+  The scope axis is `--tag-rules`, matching `--type-rules`, because it enables rules
+  rather than naming tags; filtering is `--tag`/`--not-tag` on the Selection axis,
+  repeatable and any-of, matching `--include`/`--exclude`. Keeping them one flag would
+  have made `--not-tag` silently invalidate a snapshot, which is exactly the
+  scope-versus-selection line this design exists to hold.
+  Filtering on a rule that is not enabled is refused rather than answered with nothing:
+  a mask of zero is indistinguishable from no constraint, so accepting it would hand
+  back every entry to a caller who believed they had narrowed.
 
 - [ ] The gitignore rule: the feature-gated `ignore` dependency with its supply-chain
   and MSRV pins, an index-held evaluator with correct negation, `.gitignore`-edit

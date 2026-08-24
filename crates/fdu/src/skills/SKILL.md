@@ -51,8 +51,8 @@ There are no subcommands: the grammar is always “report on a path”.
 
 | Axis | Question | Options |
 | --- | --- | --- |
-| Scope | What is scanned and cached? | `PATH`, `--scan-depth N`, `--order`, `--threads`, `--type-rules FILE` |
-| Selection | Which entries does this query consider? | `--include`, `--exclude`, `--min-size`, `--modified-since`, `--modified-before`, `--kind`, `--depth`, `-n/--limit`, `--sort`, `--reverse`, `--size` |
+| Scope | What is scanned and cached? | `PATH`, `--scan-depth N`, `--order`, `--threads`, `--type-rules FILE`, `--tag-rules LIST` |
+| Selection | Which entries does this query consider? | `--include`, `--exclude`, `--min-size`, `--modified-since`, `--modified-before`, `--kind`, `--tag`, `--not-tag`, `--depth`, `-n/--limit`, `--sort`, `--reverse`, `--size` |
 | View | Which roll-up is reported? | `--view tree,groups,families,types,extensions,languages,documents,files,summary` |
 | Format | How is it serialized? | `--format text\|json\|jsonl\|yaml`, `--color` |
 | Mode | How is work performed? | `--cache auto\|refresh\|read-only\|only\|off`, `--analyze none\|basic\|code\|documents\|full` |
@@ -66,6 +66,14 @@ every type and group row *means*, so a snapshot taken under one file is not answ
 under another and the cache invalidates accordingly.
 Without it, fdu classifies against its compiled taxonomy, which is also the fast path —
 there is no file to find and no startup parse.
+
+`--tag-rules LIST` is scope for the same reason, and `--tag`/`--not-tag` are selection.
+A tag is one named boolean fact recorded on an entry — `dotfile` is the rule that ships
+— so an index built without a rule carries no bit for it and genuinely cannot answer.
+Filtering on a rule that is not enabled is refused rather than answered with nothing,
+because a filter that matches nothing is indistinguishable from no filter at all.
+A tag rides on the entry itself, never on its ancestors: `--not-tag dotfile` drops
+`.git` and keeps what is inside it, which is what separates a tag from scope pruning.
 
 Cost has three layers.
 A single unfiltered `--view summary PATH` is the one exact composition that retains only

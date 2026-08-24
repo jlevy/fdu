@@ -10,6 +10,7 @@ use std::path::Path;
 
 use crate::engine_contract::{Bound, EntryKind};
 use crate::query::query_glob::Pattern;
+use crate::tags::TagBits;
 
 /// Which size metric a report answers in.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
@@ -62,6 +63,43 @@ impl ModifiedWindow {
     }
 }
 
+/// Which tags an entry must and must not carry.
+///
+/// Two masks rather than a list of names because this is tested once per entry: the whole
+/// predicate is two `and`s and two compares, and it stays that size however many rules the
+/// engine grows. Masks are meaningful only alongside the [`TagRules`](crate::tags::TagRules)
+/// that issued them, so every surface resolves names to bits once, where the request is
+/// parsed, and a name that is not enabled is a rejected request rather than a filter that
+/// silently matches nothing.
+///
+/// Deliberately not a set of `if tag == gitignore` branches anywhere downstream. A rule is
+/// a bit; adding one adds a catalogue entry and nothing else.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub struct TagFilter {
+    /// Tags an entry must carry at least one of, when non-zero.
+    ///
+    /// Any-of rather than all-of, matching `include`: naming a second tag widens, and the
+    /// way to narrow is to ask twice.
+    pub any: TagBits,
+    /// Tags that exclude an entry outright. Exclusion wins, as it does for patterns.
+    pub none: TagBits,
+}
+
+impl TagFilter {
+    /// Whether an entry's tags pass the filter.
+    pub fn admits(self, tags: TagBits) -> bool {
+        if tags & self.none != 0 {
+            return false;
+        }
+        self.any == 0 || tags & self.any != 0
+    }
+
+    /// Whether the filter constrains anything at all.
+    pub fn is_unconstrained(self) -> bool {
+        self.any == 0 && self.none == 0
+    }
+}
+
 /// Which retained entries a query considers, and how its results are shaped.
 #[derive(Clone, Debug, Default)]
 pub struct Selection {
@@ -75,6 +113,13 @@ pub struct Selection {
     pub kinds: Vec<EntryKind>,
     /// Modification-time window.
     pub modified: ModifiedWindow,
+    /// Tags an entry must and must not carry.
+    ///
+    /// A view-time filter like every other field here, which is what keeps enabling a tag
+    /// rule from invalidating a cache the way changing scope does: the bits are recorded
+    /// once at insert, and asking a different question of them re-reads, never re-walks
+    /// the filesystem.
+    pub tags: TagFilter,
     /// How deep a rendered tree descends, or `None` to let each view apply its own.
     ///
     /// Optional for the same reason `limit` and `sort` are. The depth that suits a tree
@@ -120,6 +165,12 @@ pub struct Candidate<'a> {
     pub allocated: u64,
     /// Modification time in nanoseconds since the Unix epoch.
     pub mtime_ns: i64,
+    /// Tag bits the index recorded for this entry when it was inserted.
+    ///
+    /// Read, never re-derived. The rules are pure functions of a name and a path, so
+    /// re-running them here would usually agree — but "usually" is how a filtered view and
+    /// a projected row come to disagree about one entry, and the bits are already in hand.
+    pub tags: TagBits,
 }
 
 impl Selection {
@@ -134,6 +185,7 @@ impl Selection {
             && self.min_size.is_none()
             && self.kinds.is_empty()
             && self.modified.is_unbounded()
+            && self.tags.is_unconstrained()
     }
 
     /// Whether an entry passes every filter.
@@ -147,6 +199,9 @@ impl Selection {
             }
         }
         if !self.modified.contains(candidate.mtime_ns) {
+            return false;
+        }
+        if !self.tags.admits(candidate.tags) {
             return false;
         }
         // Exclusion wins: a pattern the caller wrote to keep something out should not be
@@ -184,6 +239,19 @@ mod tests {
         (relative, name)
     }
 
+    fn admits_tagged(selection: &Selection, path: &str, tags: TagBits) -> bool {
+        let (relative, name) = candidate(path, EntryKind::File, 1, 0);
+        selection.admits(&Candidate {
+            relative: &relative,
+            name: &name,
+            kind: EntryKind::File,
+            bytes: 1,
+            allocated: 512,
+            mtime_ns: 0,
+            tags,
+        })
+    }
+
     fn admits(selection: &Selection, path: &str, kind: EntryKind, bytes: u64, mtime: i64) -> bool {
         let (relative, name) = candidate(path, kind, bytes, mtime);
         selection.admits(&Candidate {
@@ -193,6 +261,7 @@ mod tests {
             bytes,
             allocated: bytes.div_ceil(512) * 512,
             mtime_ns: mtime,
+            tags: 0,
         })
     }
 
@@ -272,6 +341,34 @@ mod tests {
         assert_eq!(Bound::Limit(2).limit(), Some(2));
         // `--depth 0` keeps du's meaning: root totals only, nothing below.
         assert!(!Bound::Limit(0).admits(0));
+    }
+
+    #[test]
+    fn tag_filters_narrow_by_any_of_and_exclusion_wins() {
+        const DOTFILE: TagBits = 1;
+        const VENDORED: TagBits = 1 << 1;
+
+        let mut selection = Selection::default();
+        assert!(selection.is_unfiltered(), "no tag constraint is no constraint");
+        assert!(admits_tagged(&selection, "a", 0));
+        assert!(admits_tagged(&selection, "b", DOTFILE));
+
+        // Any-of, matching `include`: naming a second tag widens.
+        selection.tags.any = DOTFILE;
+        assert!(!selection.is_unfiltered(), "a tag filter drops the report off the fast tier");
+        assert!(admits_tagged(&selection, "a", DOTFILE));
+        assert!(!admits_tagged(&selection, "b", VENDORED));
+        selection.tags.any = DOTFILE | VENDORED;
+        assert!(admits_tagged(&selection, "b", VENDORED));
+
+        // Exclusion wins over inclusion, as it does for patterns.
+        selection.tags.none = VENDORED;
+        assert!(!admits_tagged(&selection, "b", VENDORED));
+        assert!(admits_tagged(&selection, "a", DOTFILE));
+        assert!(
+            !admits_tagged(&selection, "c", DOTFILE | VENDORED),
+            "carrying an excluded tag is disqualifying even while carrying an included one"
+        );
     }
 
     #[test]

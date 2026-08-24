@@ -249,6 +249,61 @@ Performance: walked 6 files / 263 B; content read 0 B; analysis 0 fresh, 0 cache
 ? 0
 ```
 
+### Tags Are a Named Fact per Entry, and a Rule Must Be Enabled to Ask About It
+
+A tag rides on the entry, so enabling one is Scope and filtering on one is Selection.
+The two are separate flags on purpose: an index built without a rule carries no bit for
+it and genuinely cannot answer, so folding the enable into the filter would make
+`--not-tag` silently invalidate a snapshot.
+
+Built as its own tree rather than by adding a dotfile to the shared fixture: the sandbox
+is one directory for the whole document, so a file dropped into `project` here would
+move every count asserted below it.
+
+```console
+$ node -e "const fs = require('node:fs'); fs.mkdirSync('tagged/.cache', {recursive: true}); fs.writeFileSync('tagged/.env', 'x'); fs.writeFileSync('tagged/main.rs', 'y'); fs.writeFileSync('tagged/.cache/blob', 'z')"
+? 0
+```
+
+```console
+$ fdu --cache off --view files --tag-rules dotfile --tag dotfile tagged
+.cache
+.env
+Performance: walked 3 files / 3 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+? 0
+```
+
+A tag is a fact about the entry, not about its ancestors: `.cache` carries the bit and
+`blob` inside it does not.
+That is the difference from scope pruning, which would remove the subtree entirely.
+
+```console
+$ fdu --cache off --view files --tag-rules dotfile --not-tag dotfile tagged
+.cache[SEP]blob
+main.rs
+Performance: walked 3 files / 3 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+? 0
+```
+
+### A Tag Filter Without the Rule Is Refused, Not Answered With Nothing
+
+A mask of zero reads as “no constraint”, so accepting an unenabled name would return
+every entry to a caller who believed they had narrowed.
+
+```console
+$ fdu --cache off --view files --not-tag dotfile tagged
+! fdu: tag rule "dotfile" is not enabled: this index evaluates no tag rules
+? 2
+```
+
+### An Unknown Tag Rule Lists the Ones That Exist
+
+```console
+$ fdu --cache off --tag-rules nope tagged
+! fdu: unknown tag rule "nope"; available: dotfile
+? 2
+```
+
 ## Format: Every View in Every Serialization
 
 ### JSON Carries the Versioned Envelope
@@ -611,7 +666,7 @@ different kinds of evidence.
 ```console
 $ fdu --cache off --color never --view files --kind file --sort size --limit 3 --size apparent --format jsonl project
 {"schema": "fdu.report/4", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "source": "cold_scan", "freshness": "fresh", "complete": true, "errors": []}
-{"view": "files", "bound": {"shown": 3, "total": 6}, "files": [{"path": "dist[JSON_SEP]acorn-0.1.0.tar.gz", "kind": "file", "bytes": 128, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "extension": ".tar.gz", "classification": {"file_type": "archive", "family": "binary", "group": "archives", "source": "compound_extension", "confidence": "certain", "flags": {"generated": false, "vendored": false, "documentation": false}}}, {"path": "README.md", "kind": "file", "bytes": 48, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "extension": ".md", "classification": {"file_type": "markdown", "family": "prose", "group": "docs", "source": "extension", "confidence": "certain", "flags": {"generated": false, "vendored": false, "documentation": true}}}, {"path": "Makefile", "kind": "file", "bytes": 28, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "extension": null, "classification": {"file_type": "make", "family": "code", "group": "code", "source": "exact_filename", "confidence": "certain", "flags": {"generated": false, "vendored": false, "documentation": false}}}]}
+{"view": "files", "bound": {"shown": 3, "total": 6}, "files": [{"path": "dist[JSON_SEP]acorn-0.1.0.tar.gz", "kind": "file", "bytes": 128, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "tags": [], "extension": ".tar.gz", "classification": {"file_type": "archive", "family": "binary", "group": "archives", "source": "compound_extension", "confidence": "certain", "flags": {"generated": false, "vendored": false, "documentation": false}}}, {"path": "README.md", "kind": "file", "bytes": 48, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "tags": [], "extension": ".md", "classification": {"file_type": "markdown", "family": "prose", "group": "docs", "source": "extension", "confidence": "certain", "flags": {"generated": false, "vendored": false, "documentation": true}}}, {"path": "Makefile", "kind": "file", "bytes": 28, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "tags": [], "extension": null, "classification": {"file_type": "make", "family": "code", "group": "code", "source": "exact_filename", "confidence": "certain", "flags": {"generated": false, "vendored": false, "documentation": false}}}]}
 ? 0
 ```
 
@@ -620,6 +675,6 @@ A directory has no identity of its own to report, and says so rather than report
 ```console
 $ fdu --cache off --color never --view files --kind dir --format jsonl --size apparent project
 {"schema": "fdu.report/4", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "source": "cold_scan", "freshness": "fresh", "complete": true, "errors": []}
-{"view": "files", "bound": null, "files": [{"path": "dist", "kind": "dir", "bytes": [DIR_SIZE], "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "extension": null, "classification": null}, {"path": "docs", "kind": "dir", "bytes": [DIR_SIZE], "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "extension": null, "classification": null}, {"path": "src", "kind": "dir", "bytes": [DIR_SIZE], "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "extension": null, "classification": null}]}
+{"view": "files", "bound": null, "files": [{"path": "dist", "kind": "dir", "bytes": [DIR_SIZE], "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "tags": [], "extension": null, "classification": null}, {"path": "docs", "kind": "dir", "bytes": [DIR_SIZE], "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "tags": [], "extension": null, "classification": null}, {"path": "src", "kind": "dir", "bytes": [DIR_SIZE], "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "tags": [], "extension": null, "classification": null}]}
 ? 0
 ```

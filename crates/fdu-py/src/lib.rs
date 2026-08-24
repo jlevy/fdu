@@ -286,6 +286,7 @@ fn child_list<'py>(
         entry.set_item("kind", entry_kind_label(child.kind))?;
         entry.set_item("provenance", provenance_dict(py, child.provenance)?)?;
         entry.set_item("extension", child.extension.as_deref())?;
+        entry.set_item("tags", child.tags.as_slice())?;
         entry.set_item(
             "classification",
             row_classification_dict(py, child.classification.as_ref(), child.group.as_deref())?,
@@ -362,7 +363,7 @@ fn scope_dict<'py>(py: Python<'py>, scope: &fdu_core::ScanScope) -> PyResult<Bou
     value.set_item("max_depth", scope.max_depth)?;
     value.set_item("follow_symlinks", scope.follow_symlinks)?;
     value.set_item("one_filesystem", scope.one_filesystem)?;
-    value.set_item("ignore_rules_fingerprint", scope.ignore_rules_fingerprint)?;
+    value.set_item("tag_rules_fingerprint", scope.tag_rules_fingerprint)?;
     value.set_item("type_rules_fingerprint", scope.type_rules_fingerprint)?;
     value.set_item("reducers_fingerprint", scope.reducers_fingerprint)?;
     Ok(value)
@@ -487,6 +488,8 @@ impl PyIndex {
         modified_since = None,
         modified_before = None,
         kind = None,
+        tags = None,
+        not_tags = None,
         depth = None,
         limit = None,
         sort = None,
@@ -505,6 +508,8 @@ impl PyIndex {
         modified_since: Option<&str>,
         modified_before: Option<&str>,
         kind: Option<Vec<String>>,
+        tags: Option<Vec<String>>,
+        not_tags: Option<Vec<String>>,
         depth: Option<&str>,
         limit: Option<&str>,
         sort: Option<&str>,
@@ -520,6 +525,8 @@ impl PyIndex {
             modified_since,
             modified_before,
             kind,
+            tags,
+            not_tags,
             depth,
             limit,
             sort,
@@ -547,6 +554,8 @@ impl PyIndex {
         modified_since = None,
         modified_before = None,
         kind = None,
+        tags = None,
+        not_tags = None,
         depth = None,
         limit = None,
         sort = None,
@@ -564,6 +573,8 @@ impl PyIndex {
         modified_since: Option<&str>,
         modified_before: Option<&str>,
         kind: Option<Vec<String>>,
+        tags: Option<Vec<String>>,
+        not_tags: Option<Vec<String>>,
         depth: Option<&str>,
         limit: Option<&str>,
         sort: Option<&str>,
@@ -579,6 +590,8 @@ impl PyIndex {
             modified_since,
             modified_before,
             kind,
+            tags,
+            not_tags,
             depth,
             limit,
             sort,
@@ -604,6 +617,8 @@ impl PyIndex {
         modified_since = None,
         modified_before = None,
         kind = None,
+        tags = None,
+        not_tags = None,
         depth = None,
         limit = None,
         sort = None,
@@ -623,6 +638,8 @@ impl PyIndex {
         modified_since: Option<&str>,
         modified_before: Option<&str>,
         kind: Option<Vec<String>>,
+        tags: Option<Vec<String>>,
+        not_tags: Option<Vec<String>>,
         depth: Option<&str>,
         limit: Option<&str>,
         sort: Option<&str>,
@@ -640,6 +657,9 @@ impl PyIndex {
             modified_since,
             modified_before,
             kind,
+            tags,
+            not_tags,
+            &self.config.tags(),
             depth,
             limit,
             sort,
@@ -952,6 +972,8 @@ impl PyIndex {
         modified_since: Option<&str>,
         modified_before: Option<&str>,
         kind: Option<Vec<String>>,
+        tags: Option<Vec<String>>,
+        not_tags: Option<Vec<String>>,
         depth: Option<&str>,
         limit: Option<&str>,
         sort: Option<&str>,
@@ -972,6 +994,9 @@ impl PyIndex {
             modified_since,
             modified_before,
             kind,
+            tags,
+            not_tags,
+            &self.config.tags(),
             depth,
             limit,
             sort,
@@ -1240,6 +1265,7 @@ fn report_dict<'py>(py: Python<'py>, report: &Report) -> PyResult<Bound<'py, PyD
                     item.set_item("bytes", row.bytes)?;
                     item.set_item("allocated", row.allocated)?;
                     item.set_item("mtime_ns", row.mtime_ns)?;
+                    item.set_item("tags", row.tags.as_slice())?;
                     item.set_item("extension", row.extension.as_deref())?;
                     item.set_item(
                         "classification",
@@ -1627,6 +1653,19 @@ impl PyWatch {
     }
 }
 
+/// Resolve tag-rule names into the set an index will evaluate.
+///
+/// `None` and an empty list are the same request -- no rules -- and both fingerprint to
+/// zero, so a caller who does not ask for tags keeps every snapshot they already have.
+fn enabled_tag_rules(names: Option<Vec<String>>) -> PyResult<Arc<fdu_core::tags::TagRules>> {
+    let Some(names) = names else {
+        return Ok(Arc::new(fdu_core::tags::TagRules::none().clone()));
+    };
+    let rules = fdu_core::tags::TagRules::from_names(names)
+        .map_err(|error| PyValueError::new_err(error.to_string()))?;
+    Ok(Arc::new(rules))
+}
+
 /// Build a query from the keyword arguments both report paths accept.
 ///
 /// Extracted so the session path and the one-shot cannot disagree about what a request
@@ -1642,6 +1681,9 @@ fn build_query(
     modified_since: Option<&str>,
     modified_before: Option<&str>,
     kind: Option<Vec<String>>,
+    tags: Option<Vec<String>>,
+    not_tags: Option<Vec<String>>,
+    rules: &fdu_core::tags::TagRules,
     depth: Option<&str>,
     limit: Option<&str>,
     sort: Option<&str>,
@@ -1678,6 +1720,15 @@ fn build_query(
     for value in kind.unwrap_or_default() {
         selection.kinds.push(parse_kind(&value)?);
     }
+    // Resolved against the set this index evaluates, not the catalogue: naming a rule that
+    // is off is refused, because a mask of zero reads as "no constraint" and the caller
+    // would get every entry back believing they had narrowed.
+    selection.tags.any = rules
+        .mask_of(tags.unwrap_or_default())
+        .map_err(|error| PyValueError::new_err(error.to_string()))?;
+    selection.tags.none = rules
+        .mask_of(not_tags.unwrap_or_default())
+        .map_err(|error| PyValueError::new_err(error.to_string()))?;
     if let Some(value) = sort {
         selection.sort = Some(parse_sort(value)?);
     }
@@ -1747,6 +1798,7 @@ impl PyOneShot {
     order = None,
     threads = None,
     type_rules = None,
+    tag_rules = None,
     analyze = "none",
     analysis_workers = 0,
     views = None,
@@ -1756,6 +1808,8 @@ impl PyOneShot {
     modified_since = None,
     modified_before = None,
     kind = None,
+    tags = None,
+    not_tags = None,
     depth = None,
     limit = None,
     sort = None,
@@ -1777,6 +1831,7 @@ fn report_once(
     order: Option<&str>,
     threads: Option<usize>,
     type_rules: Option<&PyTypeRegistry>,
+    tag_rules: Option<Vec<String>>,
     analyze: &str,
     analysis_workers: usize,
     views: Option<Vec<String>>,
@@ -1786,6 +1841,8 @@ fn report_once(
     modified_since: Option<&str>,
     modified_before: Option<&str>,
     kind: Option<Vec<String>>,
+    tags: Option<Vec<String>>,
+    not_tags: Option<Vec<String>>,
     depth: Option<&str>,
     limit: Option<&str>,
     sort: Option<&str>,
@@ -1793,6 +1850,7 @@ fn report_once(
     size: &str,
     words_per_page: u64,
 ) -> PyResult<PyOneShot> {
+    let rules = enabled_tag_rules(tag_rules)?;
     let analysis = parse_analysis_request(analyze, analysis_workers)?;
     let config = OpenConfig {
         scan: ScanConfig {
@@ -1800,7 +1858,8 @@ fn report_once(
             one_filesystem,
             order: parse_scan_order(order)?,
             threads,
-            types: type_rules.map(|rules| Arc::clone(&rules.inner)),
+            types: type_rules.map(|registry| Arc::clone(&registry.inner)),
+            tags: Some(Arc::clone(&rules)),
             ..ScanConfig::default()
         },
         cache_path: fdu_core::default_cache_path(&root),
@@ -1817,6 +1876,9 @@ fn report_once(
         modified_since,
         modified_before,
         kind,
+        tags,
+        not_tags,
+        &rules,
         depth,
         limit,
         sort,
@@ -2009,6 +2071,7 @@ fn clear_all_caches(root: PathBuf) -> PyResult<usize> {
     order = None,
     threads = None,
     type_rules = None,
+    tag_rules = None,
     analyze = "none",
     analysis_workers = 0
 ))]
@@ -2022,11 +2085,13 @@ fn open(
     order: Option<&str>,
     threads: Option<usize>,
     type_rules: Option<&PyTypeRegistry>,
+    tag_rules: Option<Vec<String>>,
     analyze: &str,
     analysis_workers: usize,
 ) -> PyResult<PyIndex> {
     let operation_started_at = SystemTime::now();
     let policy = parse_cache_policy(cache)?;
+    let tags = enabled_tag_rules(tag_rules)?;
     let analysis = parse_analysis_request(analyze, analysis_workers)?;
     let config = OpenConfig {
         scan: ScanConfig {
@@ -2035,6 +2100,7 @@ fn open(
             order: parse_scan_order(order)?,
             threads,
             types: type_rules.map(|rules| Arc::clone(&rules.inner)),
+            tags: Some(Arc::clone(&tags)),
             ..ScanConfig::default()
         },
         cache_path: fdu_core::default_cache_path(&root),
@@ -2082,6 +2148,7 @@ fn open(
     order = None,
     threads = None,
     type_rules = None,
+    tag_rules = None,
     analyze = "none",
     analysis_workers = 0
 ))]
@@ -2094,10 +2161,12 @@ fn scan(
     order: Option<&str>,
     threads: Option<usize>,
     type_rules: Option<&PyTypeRegistry>,
+    tag_rules: Option<Vec<String>>,
     analyze: &str,
     analysis_workers: usize,
 ) -> PyResult<PyIndex> {
     let scan_started_at = Some(SystemTime::now());
+    let tags = enabled_tag_rules(tag_rules)?;
     let analysis = parse_analysis_request(analyze, analysis_workers)?;
     let config = OpenConfig {
         scan: ScanConfig {
@@ -2106,6 +2175,7 @@ fn scan(
             order: parse_scan_order(order)?,
             threads,
             types: type_rules.map(|rules| Arc::clone(&rules.inner)),
+            tags: Some(Arc::clone(&tags)),
             ..ScanConfig::default()
         },
         cache_path: None,

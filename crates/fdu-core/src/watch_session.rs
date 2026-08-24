@@ -185,9 +185,22 @@ impl Session {
             dirty: !applied.is_empty(),
             dirty_rollups: dirty_rollups(&applied),
         };
+        // Tags are read from the index, which is where they were computed, so this needs a
+        // read guard -- one for the batch rather than one per op, since a batch can carry
+        // thousands. Skipped entirely when nothing filters on tags, which is the default.
+        let tagged = !self.selection().tags.is_unconstrained();
         for delta in &applied {
             for op in &delta.ops {
-                if let Some(change) = self.change_for(op, delta.clock.0) {
+                let tags = if tagged {
+                    self.index
+                        .with_index(|index| {
+                            index.lookup(op.path()).map_or(0, |id| index.tag_bits_of(id))
+                        })
+                        .unwrap_or(0)
+                } else {
+                    0
+                };
+                if let Some(change) = self.change_for(op, delta.clock.0, tags) {
                     batch.changes.push(change);
                 }
             }
@@ -196,7 +209,7 @@ impl Session {
     }
 
     /// Translate one applied op into a change, when the selection admits it.
-    fn change_for(&self, op: &Op, clock: u64) -> Option<Change> {
+    fn change_for(&self, op: &Op, clock: u64, tags: crate::tags::TagBits) -> Option<Change> {
         match op {
             Op::Upsert { path, kind, attrs } => {
                 let name = path.file_name()?.to_string_lossy().into_owned();
@@ -207,6 +220,7 @@ impl Session {
                     bytes: attrs.size,
                     allocated: attrs.allocated,
                     mtime_ns: attrs.mtime_ns,
+                    tags,
                 };
                 self.selection().admits(&candidate).then(|| Change {
                     path: path.clone(),
@@ -220,7 +234,9 @@ impl Session {
             }
             // A removal carries no attributes to filter on, so only the path-shaped parts
             // of a selection can apply. Filtering it out entirely on a size or time bound
-            // would hide the disappearance of something the caller was watching.
+            // would hide the disappearance of something the caller was watching. Tags fall
+            // on the same side of that line: the entry is gone, so its bits are gone with
+            // it, and a tag filter cannot speak for what is no longer there.
             Op::Remove { path } => {
                 let name = path.file_name()?.to_string_lossy().into_owned();
                 self.admits_by_path(path, &name).then(|| Change {

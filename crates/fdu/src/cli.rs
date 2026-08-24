@@ -26,6 +26,7 @@ use fdu_core::query::{
 };
 use fdu_core::report_format;
 use fdu_core::report_format::human_count;
+use fdu_core::tags::TagRules;
 use fdu_core::{
     CachePolicy, EntryKind, OpenConfig, ScanConfig, ScanOrder, default_cache_path,
     open_with_pending_save,
@@ -352,6 +353,16 @@ pub struct Cli {
     #[arg(long, value_name = "FILE", help_heading = "SCOPE")]
     pub type_rules: Option<PathBuf>,
 
+    /// Tag rules to evaluate per entry, comma-separated. Try `dotfile`.
+    ///
+    /// Scope rather than Selection, and for the same reason --type-rules is: the rules
+    /// decide what facts an entry carries, so an index built without them cannot answer a
+    /// question about them, and the cache invalidates accordingly. Enabling costs one
+    /// branch per insert and nothing per query; filtering on a rule that is not enabled is
+    /// refused rather than silently matching nothing.
+    #[arg(long, value_name = "LIST", help_heading = "SCOPE")]
+    pub tag_rules: Option<String>,
+
     // ---- selection: which retained entries this query considers ----
     /// Report only entries matching this glob; repeatable.
     #[arg(long, value_name = "GLOB", help_heading = "SELECTION")]
@@ -376,6 +387,17 @@ pub struct Cli {
     /// Entry kinds to report: file, dir, symlink, other.
     #[arg(long, value_name = "LIST", help_heading = "SELECTION")]
     pub kind: Option<String>,
+
+    /// Report only entries carrying this tag; repeatable, and any one of them matches.
+    ///
+    /// Any-of rather than all-of, matching --include: a second --tag widens the report,
+    /// and the way to narrow is to exclude. The rule must be enabled with --tag-rules.
+    #[arg(long, value_name = "TAG", help_heading = "SELECTION")]
+    pub tag: Vec<String>,
+
+    /// Exclude entries carrying this tag; repeatable, and wins over --tag.
+    #[arg(long = "not-tag", value_name = "TAG", help_heading = "SELECTION")]
+    pub not_tag: Vec<String>,
 
     /// Directory levels to show; does not limit scanning. Accepts `all` [tree default: 2].
     ///
@@ -547,7 +569,8 @@ impl Cli {
         let analysis = self.parse_analysis().map_err(|error| usage(&error))?;
         let views =
             resolve_views(self.view.as_deref(), analysis.profile).map_err(|error| usage(&error))?;
-        let query = self.parse_query(&views).map_err(|error| usage(&error))?;
+        let tags = self.load_tag_rules()?;
+        let query = self.parse_query(&views, &tags).map_err(|error| usage(&error))?;
         let path = self.path.as_deref().ok_or_else(|| {
             usage(&anyhow::anyhow!(
                 "missing PATH: specify the directory to summarize, for example `fdu .`"
@@ -567,6 +590,7 @@ impl Cli {
                 order,
                 threads: self.threads,
                 types,
+                tags: Some(tags),
                 ..ScanConfig::default()
             },
             cache_path: default_cache_path(path),
@@ -1007,6 +1031,25 @@ impl Cli {
         Ok(Some(std::sync::Arc::new(registry)))
     }
 
+    /// Build the enabled tag-rule set from --tag-rules.
+    ///
+    /// Returned rather than stored because two callers need it and they need it for
+    /// opposite reasons: the scan records the fingerprint, and the query resolves names to
+    /// bits against the same set. Building it twice would let those drift.
+    fn load_tag_rules(&self) -> anyhow::Result<std::sync::Arc<TagRules>> {
+        let Some(list) = self.tag_rules.as_deref() else {
+            return Ok(std::sync::Arc::new(TagRules::none().clone()));
+        };
+        let names = parse_list(list, "--tag-rules", |token, _| Ok(token.to_string()))?;
+        // Reported as the library words it, with no `invalid --tag-rules:` framing added
+        // on top: the message already quotes the name that was rejected and lists the ones
+        // that exist, so a prefix would add only the one thing the Python surface cannot
+        // say the same way -- and the parity harness caught exactly that.
+        let rules =
+            TagRules::from_names(names).map_err(|error| usage(&anyhow::anyhow!("{error}")))?;
+        Ok(std::sync::Arc::new(rules))
+    }
+
     fn parse_cache_policy(&self) -> anyhow::Result<CachePolicy> {
         match self.cache.trim().to_ascii_lowercase().as_str() {
             "auto" => Ok(CachePolicy::Auto),
@@ -1045,10 +1088,11 @@ impl Cli {
     fn resolved_query(&self) -> anyhow::Result<Query> {
         let analysis = self.parse_analysis()?;
         let views = resolve_views(self.view.as_deref(), analysis.profile)?;
-        self.parse_query(&views)
+        let tags = self.load_tag_rules()?;
+        self.parse_query(&views, &tags)
     }
 
-    fn parse_query(&self, views: &ResolvedViews) -> anyhow::Result<Query> {
+    fn parse_query(&self, views: &ResolvedViews, tags: &TagRules) -> anyhow::Result<Query> {
         let now = SystemTime::now();
 
         let mut selection = Selection {
@@ -1079,6 +1123,13 @@ impl Cli {
         if let Some(kinds) = &self.kind {
             selection.kinds = parse_list(kinds, "--kind", parse_kind)?;
         }
+        // Resolved against the enabled set, not the catalogue: a mask only means anything
+        // alongside the rules that issued it, and naming a rule that is off is a mistake
+        // worth reporting rather than a filter that quietly admits everything.
+        selection.tags.any =
+            tags.mask_of(&self.tag).map_err(|error| usage(&anyhow::anyhow!("{error}")))?;
+        selection.tags.none =
+            tags.mask_of(&self.not_tag).map_err(|error| usage(&anyhow::anyhow!("{error}")))?;
         if let Some(sort) = &self.sort {
             selection.sort = Some(parse_sort(sort)?);
         }
@@ -1838,6 +1889,9 @@ mod tests {
             order: None,
             threads: None,
             type_rules: None,
+            tag_rules: None,
+            tag: Vec::new(),
+            not_tag: Vec::new(),
             include: Vec::new(),
             exclude: Vec::new(),
             min_size: None,

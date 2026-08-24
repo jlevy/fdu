@@ -796,16 +796,34 @@ fn coverage_json(coverage: &std::collections::BTreeMap<CoverageReason, u64>) -> 
 /// One file row as a JSON object.
 fn file_json(row: &FileRow) -> String {
     format!(
-        "{{\"path\": {}{}, \"kind\": {}, \"bytes\": {}, \"allocated\": {}, \"mtime_ns\": {}, \"extension\": {}, \"classification\": {}}}",
+        "{{\"path\": {}{}, \"kind\": {}, \"bytes\": {}, \"allocated\": {}, \"mtime_ns\": {}, \"tags\": {}, \"extension\": {}, \"classification\": {}}}",
         quote(&row.path.to_string_lossy()),
         path_raw_field(&row.path),
         quote(kind_label(row.kind)),
         row.bytes,
         row.allocated,
         row.mtime_ns,
+        string_array_json(&row.tags),
         row.extension.as_deref().map_or_else(|| "null".to_string(), quote),
         classification_json(row.classification.as_ref(), row.group.as_deref()),
     )
+}
+
+/// A list of names as a JSON array.
+///
+/// Always an array, empty when no rule is enabled, rather than a key that appears only
+/// when tags are on: a consumer parsing a report should not have to branch on whether the
+/// producer had a feature turned on.
+fn string_array_json(values: &[String]) -> String {
+    let mut out = String::from("[");
+    for (index, value) in values.iter().enumerate() {
+        if index > 0 {
+            out.push_str(", ");
+        }
+        out.push_str(&quote(value));
+    }
+    out.push(']');
+    out
 }
 
 /// One row's classification, or `null` for an entry no rule set classifies.
@@ -1025,6 +1043,15 @@ fn render_yaml(report: &Report) -> String {
                         let _ = writeln!(out, "        bytes: {}", row.bytes);
                         let _ = writeln!(out, "        allocated: {}", row.allocated);
                         let _ = writeln!(out, "        mtime_ns: {}", row.mtime_ns);
+                        let _ = writeln!(
+                            out,
+                            "        tags: [{}]",
+                            row.tags
+                                .iter()
+                                .map(|tag| yaml_scalar(tag))
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        );
                         match row.extension.as_deref() {
                             Some(extension) => {
                                 let _ =
@@ -2491,7 +2518,7 @@ mod tests {
             let row = format!(
                 "{{\"path\": \"{lossy}\", \"path_raw\": {{\"encoding\": \"{encoding}\", \"hex\": \"{hex}\"}}, \
                  \"kind\": \"file\", \"bytes\": 1, \"allocated\": 1, \"mtime_ns\": 0, \
-                 \"extension\": null, \"classification\": {{\"file_type\": \"unknown\", \
+                 \"tags\": [], \"extension\": null, \"classification\": {{\"file_type\": \"unknown\", \
                  \"family\": \"unknown\", \"group\": null, \"source\": \"unknown\", \
                  \"confidence\": \"heuristic\", \"flags\": {{\"generated\": false, \
                  \"vendored\": false, \"documentation\": false}}}}}}"

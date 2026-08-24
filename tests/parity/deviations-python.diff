@@ -113,6 +113,11 @@ FAIL [ROOT]/tests/parity/.corpus/cli-axes.tryscript.md
   ✓ Sort and Limit Compose Into a Top-N, With No Dedicated View
   ✓ Reverse Flips Whatever Order Is in Effect
   ✓ Depth Bounds the Rendered Tree, Not the Scan
+  ✓ Tags Are a Named Fact per Entry, and a Rule Must Be Enabled to Ask About It
+  ✓ Tags Are a Named Fact per Entry, and a Rule Must Be Enabled to Ask About It
+  ✓ Tags Are a Named Fact per Entry, and a Rule Must Be Enabled to Ask About It
+  ✓ A Tag Filter Without the Rule Is Refused, Not Answered With Nothing
+  ✓ An Unknown Tag Rule Lists the Ones That Exist
   ✓ JSON Carries the Versioned Envelope
   ✓ JSONL Is One Document per Line
   ✓ YAML Quotes Only What Would Be Ambiguous

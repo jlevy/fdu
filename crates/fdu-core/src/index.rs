@@ -29,6 +29,7 @@
 //! delta contract being the only mutation path means escalating later to epoch or
 //! arc-swap snapshots stays contained rather than becoming a rewrite.
 
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::collections::VecDeque;
 use std::ffi::{OsStr, OsString};
@@ -340,6 +341,14 @@ struct Entry {
     /// groups. Precomputed here for the same reason `ext_id` is: the reducer that
     /// maintains group totals must not classify.
     group_id: Option<crate::classify::GroupId>,
+    /// Named boolean facts about this entry, one bit per enabled tag rule.
+    ///
+    /// Computed at insert for the same reason `ext_id` and `group_id` are: the reducer
+    /// and every projection must be able to read a fact without re-deriving it, and a
+    /// watch upsert must reach the same answer as a scan upsert because it ran the same
+    /// line of code rather than a matching one. Zero when no rule is enabled, which is
+    /// the default and costs nothing.
+    tag_bits: crate::tags::TagBits,
     /// Where this entry's metadata came from.
     ///
     /// One byte, not a `Provenance` struct: the timestamps that complete the picture
@@ -461,6 +470,13 @@ pub struct ChildSnapshot {
     /// both `.zip`/`archive`. A consumer filtering on a literal extension or labelling a
     /// row wants this; one summing bytes per pile wants the breakdown's key.
     pub extension: Option<String>,
+    /// Tags this child carries, in the enabled set's bit order.
+    ///
+    /// Names rather than bits, and for the same reason `group` is a `String`: a mask means
+    /// nothing without the rule set that issued it, and a captured row outlives the read
+    /// guard it came from. Empty when no rule is enabled, which is the default and costs
+    /// no allocation.
+    pub tags: Vec<String>,
     /// The browsing group this child falls in, resolved to its registry id.
     ///
     /// Resolved rather than left as the index `classification` carries, because a snapshot
@@ -781,6 +797,7 @@ pub struct Index {
     /// fingerprint: an index that classified under one set of rules while claiming
     /// another would serve a snapshot that is wrong in a way nothing checks.
     types: std::sync::Arc<crate::classify::TypeRegistry>,
+    tag_rules: Arc<crate::tags::TagRules>,
     freshness_epoch: u64,
     freshness_marks: BTreeMap<PathBuf, FreshnessMark>,
 }
@@ -1110,6 +1127,7 @@ impl Index {
             name: OsString::new(),
             ext_id: None,
             group_id: None,
+            tag_bits: 0,
             source: Source::Scanned,
             kind: EntryKind::Dir,
             attrs: Attrs::default(),
@@ -1142,6 +1160,7 @@ impl Index {
             free_ext_ids: Vec::new(),
             content: None,
             types: crate::classify::TypeRegistry::compiled().clone(),
+            tag_rules: std::sync::Arc::new(crate::tags::TagRules::none().clone()),
         }
     }
 
@@ -1158,6 +1177,83 @@ impl Index {
     /// The file-type rules this index classifies against.
     pub fn types(&self) -> &std::sync::Arc<crate::classify::TypeRegistry> {
         &self.types
+    }
+
+    /// Adopt the tag rules this index is being built under.
+    ///
+    /// Taken from the scan config for the same reason the type registry is: the rules and
+    /// the scope's fingerprint of them are established together, and defaulting one while
+    /// setting the other is how they come apart.
+    #[must_use]
+    pub fn with_tag_rules(mut self, tag_rules: Arc<crate::tags::TagRules>) -> Self {
+        self.tag_rules = tag_rules;
+        self.retag();
+        self
+    }
+
+    /// Recompute every entry's tag bits under the current rules.
+    ///
+    /// Called from [`Index::with_tag_rules`], which on the scan path runs against an empty
+    /// index and does nothing. It exists for the *load* path, where it is the whole reason
+    /// tag bits are not in the snapshot format: a snapshot is adopted into a caller's rules
+    /// after it is read, so entries arrive untagged, and a warm start would otherwise
+    /// answer every tag question with "no" -- a bug that reads as a cache fault rather than
+    /// a tagging one. Re-deriving is also the cheaper contract: bits are a pure function of
+    /// facts the index already holds, so storing them would widen the format to cache
+    /// something a traversal reproduces.
+    fn retag(&mut self) {
+        if self.tag_rules.is_empty() {
+            // Nothing to compute, and nothing to clear: a snapshot written under a
+            // non-empty set never reaches an index with an empty one, because the scope
+            // fingerprints differ and the loader rejects it before this runs.
+            return;
+        }
+        let rules = Arc::clone(&self.tag_rules);
+        // Walked from the root with the path carried down rather than reconstructed per
+        // entry, so a Path-tier rule costs one join per entry instead of one ancestor
+        // chain. Collected first because evaluating borrows the entry the assignment
+        // writes to.
+        let mut computed: Vec<(EntryId, crate::tags::TagBits)> = Vec::new();
+        let mut stack: Vec<(EntryId, PathBuf)> = vec![(EntryId::ROOT, PathBuf::new())];
+        while let Some((id, path)) = stack.pop() {
+            let Some(entry) = self.try_entry(id) else {
+                continue;
+            };
+            // The root has no name and cannot be tagged; every other entry can.
+            if entry.parent.is_some() {
+                computed.push((id, rules.evaluate(&entry.name, || Cow::Borrowed(path.as_path()))));
+            }
+            for (name, child) in &entry.children {
+                stack.push((*child, path.join(name)));
+            }
+        }
+        for (id, bits) in computed {
+            self.entry_mut(id).tag_bits = bits;
+        }
+    }
+
+    /// The tag rules this index evaluates.
+    pub fn tag_rules(&self) -> &Arc<crate::tags::TagRules> {
+        &self.tag_rules
+    }
+
+    /// Raw tag bits for an entry id, or zero when the handle is stale.
+    ///
+    /// The filtering path reads bits rather than names: selection compares masks, and
+    /// resolving to strings per entry to compare strings would be the expensive way to ask
+    /// the same question.
+    pub fn tag_bits_of(&self, id: EntryId) -> crate::tags::TagBits {
+        self.try_entry(id).map_or(0, |entry| entry.tag_bits)
+    }
+
+    /// Tags carried by one relative path, resolved to names.
+    ///
+    /// Empty for an absent path and for one no enabled rule matches; a caller
+    /// distinguishing those wants [`Index::path_state`].
+    pub fn tags_of(&self, path: &Path) -> Vec<&str> {
+        self.lookup(path)
+            .map(|id| self.tag_rules.names_of(self.entry(id).tag_bits))
+            .unwrap_or_default()
     }
 
     /// Classify one relative path under this index's rules, without opening the file.
@@ -2238,6 +2334,7 @@ impl Index {
     /// with default attributes keeps the delta applicable; a later upsert or the
     /// revalidation sweep fills in their real attributes.
     fn ensure_dir_chain(&mut self, parts: &[&OsStr], stats: &mut ApplyStats) -> EntryId {
+        let rules = Arc::clone(&self.tag_rules);
         let mut current = EntryId::ROOT;
         for part in parts {
             if let Some(existing) = self.entry(current).children.get(*part).copied() {
@@ -2250,11 +2347,20 @@ impl Index {
                 // for the ancestor fills in its real attributes.
                 self.remove_entry(existing, stats);
             }
+            // Tagged here rather than left at zero for a later observation to fill in.
+            // `apply_upsert` on an existing entry of the same kind rewrites attributes and
+            // source only, so a placeholder that entered untagged would stay untagged for
+            // the life of the index — and every ancestor of a deep first observation
+            // enters through this line.
+            let tag_bits = rules.evaluate(part, || {
+                Cow::Owned(self.path_of(current).unwrap_or_default().join(part))
+            });
             let child = self.alloc(Entry {
                 parent: Some(current),
                 name: (*part).to_os_string(),
                 ext_id: None,
                 group_id: None,
+                tag_bits,
                 source: self.applying_source,
                 kind: EntryKind::Dir,
                 attrs: Attrs::default(),
@@ -2395,9 +2501,11 @@ impl Index {
         let ext_id = (kind == EntryKind::File)
             .then(|| self.intern_ext(&ext_bucket(&self.types.clone(), name)));
         let group_id = (kind == EntryKind::File).then(|| self.types.group_of_name(name)).flatten();
+        let tag_bits = Arc::clone(&self.tag_rules).evaluate(name, || Cow::Borrowed(path));
         let id = self.alloc(Entry {
             parent: Some(parent),
             name: name.to_os_string(),
+            tag_bits,
             ext_id,
             group_id,
             source,
@@ -2449,9 +2557,15 @@ impl Index {
         let ext_id = (kind == EntryKind::File)
             .then(|| self.intern_ext(&ext_bucket(&self.types.clone(), &name)));
         let group_id = (kind == EntryKind::File).then(|| self.types.group_of_name(&name)).flatten();
+        // The path is a closure, not a value: this is the loader, which holds a parent id
+        // and a basename precisely so that it never joins one per record.  No Name-tier
+        // rule calls it.
+        let tag_bits = Arc::clone(&self.tag_rules)
+            .evaluate(&name, || Cow::Owned(self.path_of(parent).unwrap_or_default().join(&name)));
         let id = self.alloc(Entry {
             parent: Some(parent),
             name: name.clone(),
+            tag_bits,
             ext_id,
             group_id,
             source,
@@ -2681,6 +2795,12 @@ fn child_snapshot(index: &Index, name: &std::ffi::OsStr, id: EntryId) -> ChildSn
         attrs: entry.attrs,
         totals: entry.kind.is_dir().then(|| RollUpScalars::from(&entry.rollup)),
         provenance: index.provenance_of(id),
+        tags: index
+            .tag_rules()
+            .names_of(entry.tag_bits)
+            .iter()
+            .map(|tag| (*tag).to_string())
+            .collect(),
         classification: classification.clone(),
         extension: is_file.then(|| crate::classify::logical_ext(name)).flatten(),
         group: classification
@@ -4081,6 +4201,92 @@ mod tests {
         assert!(!total.by_group.contains_key("docs"), "{:?}", total.by_group);
         assert_eq!(total.by_group["code"].files, 3);
         assert_eq!(total.by_group.values().map(|tally| tally.files).sum::<u64>(), total.files);
+    }
+
+    /// Both insert paths tag, and a directory is as taggable as a file.
+    ///
+    /// The observation path and the snapshot loader are separate bodies of code, and the
+    /// loader is deliberately the one that never reconstructs a path -- so a tag that only
+    /// the walk applied would survive a scan and vanish on the next warm start, which is
+    /// the failure that looks like a cache bug rather than a tagging one.
+    #[test]
+    fn every_insert_path_tags_an_entry_the_same_way() {
+        let rules = std::sync::Arc::new(
+            crate::tags::TagRules::from_names(["dotfile"]).expect("dotfile is a real rule"),
+        );
+        let mut index = Index::new("/root").with_tag_rules(std::sync::Arc::clone(&rules));
+        index.apply_ok(&Observation::new(vec![
+            upsert(".env", EntryKind::File, file_attrs(10, 1)),
+            upsert("README.md", EntryKind::File, file_attrs(20, 2)),
+            // Never observed directly: `.git` enters through `ensure_dir_chain` as an
+            // ancestor of the file below it, which is the path a placeholder takes.
+            upsert(".git/HEAD", EntryKind::File, file_attrs(30, 3)),
+        ]));
+
+        assert_eq!(index.tags_of(Path::new(".env")), vec!["dotfile"]);
+        assert!(index.tags_of(Path::new("README.md")).is_empty());
+        assert_eq!(
+            index.tags_of(Path::new(".git")),
+            vec!["dotfile"],
+            "a directory that entered as a placeholder is tagged, not left at zero"
+        );
+        assert!(index.tags_of(Path::new(".git/HEAD")).is_empty(), "HEAD is not a dotfile");
+        assert!(index.tags_of(Path::new("absent")).is_empty(), "an absent path carries no tags");
+    }
+
+    /// Adopting rules re-tags what is already there, which is what a warm start needs.
+    ///
+    /// A snapshot carries no tag bits -- they are derived, and the loader restores entries
+    /// before the caller's rules are known -- so an index that only tagged at insert would
+    /// answer "no tags" for every entry after a warm start, while a cold scan of the same
+    /// tree answered correctly. Two surfaces, one tree, two answers.
+    #[test]
+    fn adopting_rules_tags_entries_that_are_already_in_the_index() {
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![
+            upsert(".env", EntryKind::File, file_attrs(10, 1)),
+            upsert("src/main.rs", EntryKind::File, file_attrs(20, 2)),
+            upsert("src/.keep", EntryKind::File, file_attrs(0, 3)),
+        ]));
+        assert!(index.tags_of(Path::new(".env")).is_empty(), "no rules, no tags");
+
+        let index = index.with_tag_rules(std::sync::Arc::new(
+            crate::tags::TagRules::from_names(["dotfile"]).expect("enables"),
+        ));
+        assert_eq!(index.tags_of(Path::new(".env")), vec!["dotfile"]);
+        assert_eq!(
+            index.tags_of(Path::new("src/.keep")),
+            vec!["dotfile"],
+            "the walk reaches nested entries, not only the root's children"
+        );
+        assert!(index.tags_of(Path::new("src/main.rs")).is_empty());
+        assert!(index.tags_of(Path::new("src")).is_empty());
+    }
+
+    /// Enabling a rule changes the scan scope, and the empty set changes nothing.
+    ///
+    /// The second half is the load-bearing one: the fingerprint slot this occupies held a
+    /// constant zero for an ignore policy nobody implemented, so every snapshot in
+    /// existence recorded zero there. A non-zero empty set would discard all of them to
+    /// express "still no rules".
+    #[test]
+    fn enabling_a_tag_rule_invalidates_a_snapshot_and_enabling_none_does_not() {
+        let none = crate::scan::ScanConfig::default();
+        assert_eq!(none.scope().tag_rules_fingerprint, 0);
+
+        let empty = crate::scan::ScanConfig {
+            tags: Some(std::sync::Arc::new(crate::tags::TagRules::none().clone())),
+            ..crate::scan::ScanConfig::default()
+        };
+        assert_eq!(empty.scope(), none.scope(), "asking for no rules is not asking for anything");
+
+        let tagged = crate::scan::ScanConfig {
+            tags: Some(std::sync::Arc::new(
+                crate::tags::TagRules::from_names(["dotfile"]).expect("enables"),
+            )),
+            ..crate::scan::ScanConfig::default()
+        };
+        assert_ne!(tagged.scope(), none.scope(), "an index without the bit cannot answer for it");
     }
 
     /// A registry with no groups leaves the axis empty rather than inventing one.

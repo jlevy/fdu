@@ -61,6 +61,7 @@ mod platform_tuning;
 pub mod query;
 pub mod scan;
 pub mod snapshot;
+pub mod tags;
 #[cfg(test)]
 mod test_support;
 
@@ -327,7 +328,9 @@ pub(crate) fn open_for_report(
             // under; the rules themselves come from the caller. Adopting them here keeps
             // a loaded index classifying under the taxonomy its scope claims -- the
             // filter above has already rejected any snapshot where those differ.
-            .map(|index| index.with_types(config.scan.types().clone())),
+            .map(|index| {
+                index.with_types(config.scan.types().clone()).with_tag_rules(config.scan.tags())
+            }),
         _ => None,
     };
 

@@ -698,6 +698,12 @@ pub struct FileRow {
     /// row travels: a `GroupId` is meaningful only alongside the registry that issued it,
     /// and a serialized report has no registry attached.
     pub group: Option<String>,
+    /// Tags this row carries, in the enabled set's bit order.
+    ///
+    /// Names rather than bits, and for the same reason `group` is a `String`: a mask means
+    /// nothing without the rule set that issued it, and a report outlives its index. Empty
+    /// when no rule is enabled, which is the default.
+    pub tags: Vec<String>,
 }
 
 /// The aggregate row of a summary view.
@@ -966,6 +972,7 @@ fn walk(index: &Index, selection: &Selection) -> Walked {
                 bytes: attrs.size,
                 allocated: attrs.allocated,
                 mtime_ns: attrs.mtime_ns,
+                tags: index.tag_bits_of(child),
             };
 
             if selection.admits(&candidate) {
@@ -979,6 +986,7 @@ fn walk(index: &Index, selection: &Selection) -> Walked {
                     classification: None,
                     extension: None,
                     group: None,
+                    tags: Vec::new(),
                 });
 
                 if kind == EntryKind::File {
@@ -1389,7 +1397,16 @@ fn file_rows(
     let total = truncate(&mut rows, query.limit_for(view));
     // After the bound, never before: `largest` considers every entry and emits twenty,
     // and classifying the other 192,851 would be work nothing reads.
+    //
+    // Tag names are resolved in the same pass and for the same reason, but ahead of the
+    // file guard: a directory can be a dotfile, and `.git` is the row a caller most wants
+    // to see labelled. Skipped wholesale when no rule is enabled, so the default case does
+    // not pay a path lookup per row.
+    let tagged = !index.tag_rules().is_empty();
     for row in &mut rows {
+        if tagged {
+            row.tags = index.tags_of(&row.path).into_iter().map(str::to_string).collect();
+        }
         if row.kind != EntryKind::File {
             continue;
         }
@@ -1428,6 +1445,7 @@ fn every_entry(index: &Index) -> Vec<FileRow> {
                 classification: None,
                 extension: None,
                 group: None,
+                tags: Vec::new(),
             });
             if kind == EntryKind::Dir {
                 stack.push((child, child_path));

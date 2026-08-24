@@ -141,8 +141,13 @@ pub struct ScanScope {
     pub follow_symlinks: bool,
     /// Whether traversal stays on the root filesystem.
     pub one_filesystem: bool,
-    /// Identity of the compiled ignore policy.
-    pub ignore_rules_fingerprint: u64,
+    /// Identity of the enabled tag-rule set.
+    ///
+    /// Occupies the wire position that named a compiled ignore policy while nothing
+    /// implemented one, and holds the same value — the empty set fingerprints to zero — so
+    /// the rename costs no snapshot. Tags decide which entries carry which named facts, so
+    /// an index built under one set cannot answer a question posed under another.
+    pub tag_rules_fingerprint: u64,
     /// Identity of the compiled type-classification policy.
     pub type_rules_fingerprint: u64,
     /// Identity of the enabled reducer set.
