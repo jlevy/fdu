@@ -5,13 +5,13 @@ title: Price the leaf-count field that already shipped on the ancestor-merge pat
 kind: task
 status: open
 priority: 1
-version: 1
+version: 2
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 labels: []
 dependencies: []
 parent_id: is-01m0racd5dxjfx1g5e0dsfay8q
 created_at: 2026-08-24T00:53:25.163Z
-updated_at: 2026-08-24T00:53:25.163Z
+updated_at: 2026-08-24T15:23:03.474Z
 ---
 fdu-5hip added `others` to InternedRollUp, so every ancestor merge now carries one more
 u64 add and every unmerge one more saturating_sub. That shipped WITHOUT a measurement.
@@ -36,3 +36,10 @@ worth recording precisely so the next person does not re-run it. Republish with
 NEEDS A QUIET HOST. Run on a shared CI runner it measures the runner, which is why no
 timing gate is in `make check`. State platform, host (bare metal or virtualized) and
 cache state with the number.
+
+DECIDED 2026-08-24: keep `others`. Reverting was considered and rejected -- the
+implemented provider contract explicitly requires roll-up leaf counts, so removing the
+field churns a required surface to un-ship one u64 add per merge. The measurement stands
+as the open obligation: run on ANY quiet host as soon as one is available, or fold into
+fdu-n4gn's paired run when the planes exist -- whichever comes first; do not wait for
+n4gn on principle.
