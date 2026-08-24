@@ -5,13 +5,13 @@ title: "Invalidation vocabulary: dirty query kinds, all-dirty, and reset as dist
 kind: feature
 status: open
 priority: 1
-version: 1
+version: 2
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 labels: []
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T03:15:03.165Z
-updated_at: 2026-08-24T03:15:03.165Z
+updated_at: 2026-08-24T22:53:52.395Z
 ---
 MetaBrowser's changes() contract emits "bounded dirty paths or query kinds", "`all_dirty`
 when individual dirtiness exceeds its bound", "`reset` when the requested cursor or
@@ -38,3 +38,7 @@ unlabelled empty list already means two different things today, and adding a sec
 unlabelled list would compound that.
 
 Depends on fdu-jxs0 for the state-only member.
+
+## Notes
+
+METABROWSER DECISION LANDED at 68eeaac (2026-08-24). Reset and provider observation-gap recovery are distinct. reset means the requested consumer cursor/session cannot resume coherently and requires checkpoint+reread. A primary watcher overflow instead marks freshness stale, emits a typed watcher-gap issue, reconciles the affected scope when possible, and publishes bounded dirty/all_dirty or state transitions on the provider clock; it is not itself reset. The current WatchBatch carrier sets reset for WatchOverflow/UnpairedRename/WatchSetupRace, so this bead must split those meanings and pin them with separate tests. Unrecoverable observer failure remains stale with a typed issue rather than masquerading as reset recovery failure.
