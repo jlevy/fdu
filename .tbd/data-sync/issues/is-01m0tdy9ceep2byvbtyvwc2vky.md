@@ -3,9 +3,9 @@ type: is
 id: is-01m0tdy9ceep2byvbtyvwc2vky
 title: Release the GIL and measure the full Python read boundary
 kind: task
-status: open
+status: closed
 priority: 1
-version: 4
+version: 5
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 labels:
   - pr47-review
@@ -16,7 +16,44 @@ dependencies:
     target: is-01m0prhqd27m471dn47yt973k0
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T17:43:54.508Z
-updated_at: 2026-08-24T22:53:51.648Z
+updated_at: 2026-08-24T23:30:06.619Z
+closed_at: 2026-08-24T23:30:06.619Z
+close_reason: |
+  Shipped. `make check` green.
+
+  THE GIL. `py.detach` already wrapped refresh, analyze, watch `next_batch`, `prepare_report`
+  and both opens -- but not `PyIndex.read`, which `fdu-samw` had just made the heaviest of
+  them. A filtered report re-aggregates the entire index, so holding the GIL across it froze
+  every other Python thread for a full traversal, and an asyncio consumer moving the call to
+  a worker thread would still have frozen its event loop. Now detached, with the GIL
+  reacquired only for conversion.
+
+  THE BINDING'S COST. `binding_bytes` counts what the result materializes into Python
+  objects; `conversion_ns` times the reacquired half separately from `wall_ns`, since the
+  native read now runs without the GIL and the conversion does not. `name_bytes` is what the
+  engine *read* and `binding_bytes` is what a caller *pays* to receive -- the difference is
+  exactly the conversion, which is why an engine-side counter cannot supply it.
+
+  CPU: ABSENT, NOT INFERRED. `cpu_ns` is `None`. Wall minus lock wait is not CPU time on a
+  preemptive system, and putting an inferred number in the one field an embedder uses to
+  compare engines is worse than leaving it empty. `Work`'s docstring had previously argued
+  CPU was deliberately absent *because* wall minus lock wait covered it; that reasoning is
+  replaced rather than kept. MetaBrowser's contract currently makes CPU a mandatory
+  nonnegative count -- the comment on their PR #74 (MB74-C2) asks for optional-or-sentinel
+  so an honest provider is expressible; the adapter maps `None` to whatever they settle on.
+
+  TESTS, and an honest scoping note. The Rust test blocks *inside* the detach, so a second
+  thread must reach `Python::attach` and send while the read runs -- a path needing the
+  interpreter hangs rather than finishing late. It exercises the handle read rather than the
+  pymethod, so it pins the *precondition* (the whole read path is `Send` and touches no
+  Python) rather than the pymethod's detach itself; the name and doc say so instead of
+  overclaiming. The first draft counted attaches after the reads finished, which would have
+  passed with the GIL held -- worth recording, because that is the shape of a vacuous
+  concurrency test. The Python side runs four threads through the real `Index.read` with a
+  filtered query and asserts they all finish, plus that `binding_bytes` is non-zero and
+  `cpu_ns` is `None`.
+resolution: null
+duplicate_of: null
 ---
 At PR 47 head e658915, PyIndex.read calls IndexHandle::read while holding the GIL. As fdu-samw adds filtered tree, recent, and catalog projections, native O(entries) work on an asyncio worker thread will still freeze the event-loop thread because the extension owns the GIL. The Work record also omits CPU time and binding-copy bytes, and wall_ns stops before Python object construction, despite closed fdu-qgl9 promising those dimensions. Fix: detach the native read and reacquire the GIL only for bounded conversion; count bytes materialized across that conversion. Measure CPU exactly in an opt-in detailed mode or mark it unavailable in both contracts rather than deriving it from wall minus lock wait. Test the actual Index.read path for concurrent Python progress and include conversion in the performance harness. Review finding FDU47-R6.
 
