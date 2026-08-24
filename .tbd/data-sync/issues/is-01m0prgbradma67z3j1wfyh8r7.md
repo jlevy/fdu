@@ -5,7 +5,7 @@ title: "Spec: fdu for interactive clients — the metabrowser contract"
 kind: epic
 status: open
 priority: 1
-version: 52
+version: 54
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 labels: []
 dependencies: []
@@ -57,7 +57,7 @@ child_order_hints:
   - is-01m0tra5gw0ap6nbbzgt7egvr4
   - is-01m0tra6d42b6r8vsecjnh36e8
 created_at: 2026-08-23T07:31:34.794Z
-updated_at: 2026-08-24T20:46:48.513Z
+updated_at: 2026-08-24T23:00:23.235Z
 ---
 Root epic for the interactive-client integration spec: partitioned tallies (tag planes), the embedder watch contract, the session integration shape, and the adoption proof. Each capability lands engine-first and clears the parity harness. The measured basis and the requirement-by-requirement contract map are in the spec.
 
@@ -92,3 +92,7 @@ Consumer-side issues found in the same review (stale bd1dcf8 doc pins; mandatory
 vs exact-or-absent; watcher-gap axis ambiguity; singular registry fingerprint; reset vs
 gap recovery cost) are consolidated in a comment on metabrowser PR #74 rather than
 tracked as fdu beads.
+
+ALIGNMENT UPDATE at exact PR #47 head a3960fb / MetaBrowser 68eeaac (2026-08-24; all 19 FDU checks green). MetaBrowser resolved the five consumer-side ambiguities and hardened the as_of requirement. Existing beads now carry the implementation consequences: fdu-5yqb reopened to remove watcher_gap from coverage vocabulary; fdu-91ru remains open for the structured envelope, state-clock atomicity, and caller-pinned as_of; fdu-kbir has the final exact-or-absent CPU contract; fdu-fltq distinguishes consumer reset from provider gap recovery; fdu-vfyw pins canonical combination of type/tag/reducer fingerprints and cross-engine acceptance. Do not create parallel alignment beads; update these owners as #47 advances.
+
+MONITOR UPDATE: PR #47 advanced to 558461a (2026-08-24; all 19 checks green). The lossless WatchBatch direction is correct and fixes removed-directory and filtered-dirty loss, but exact-head review reopened fdu-vfx7: terminal cursor is sampled after apply_next under a separate guard and can skip a concurrent commit; asyncio teardown blocks the event loop while the worker can be waiting on that same loop, then does not assert termination; state/work remain absent. fdu-jxs0 and fdu-fltq notes now record the retag-clock and reset-vs-gap interactions. Review the delta before treating the green carrier commit as adoption-ready.
