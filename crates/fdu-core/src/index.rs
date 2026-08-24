@@ -114,6 +114,12 @@ pub struct RollUp {
     pub files: u64,
     /// Descendant directories, not counting the directory that owns this roll-up.
     pub dirs: u64,
+    /// Descendant entries that are neither files nor directories: symlinks and the rest.
+    ///
+    /// Zero bytes each, and counted anyway, because otherwise a subtree holding a hundred
+    /// symlinks and one holding nothing at all are the same arithmetic and a listing
+    /// cannot tell them apart. See [`RollUp::is_empty`].
+    pub others: u64,
     /// Apparent bytes across descendant files.
     pub bytes: u64,
     /// Allocated bytes across descendant files.
@@ -141,6 +147,39 @@ pub struct RollUp {
     pub ext_remainder: Option<ExtRemainder>,
 }
 
+impl RollUp {
+    /// Descendant entries of every kind.
+    ///
+    /// The sum the emptiness question is really about: `bytes` cannot answer it, because
+    /// an empty file, a symlink and nothing at all all weigh nothing.
+    pub fn entries(&self) -> u64 {
+        self.files + self.dirs + self.others
+    }
+
+    /// Whether this subtree holds no entries at all.
+    ///
+    /// An exact fact only about a **complete** value. A [`Status::Partial`] roll-up has
+    /// not accounted for its whole subtree, so zero here means "nothing found yet", and a
+    /// caller holding one must consult its provenance before believing this -- see
+    /// [`ChildSnapshot::is_empty_subtree`], which does that consulting.
+    pub fn is_empty(&self) -> bool {
+        self.entries() == 0
+    }
+}
+
+impl RollUpScalars {
+    /// Descendant entries of every kind.
+    pub fn entries(&self) -> u64 {
+        self.files + self.dirs + self.others
+    }
+
+    /// Whether this subtree holds no entries at all, with the same caveat as
+    /// [`RollUp::is_empty`].
+    pub fn is_empty(&self) -> bool {
+        self.entries() == 0
+    }
+}
+
 /// Extension tallies a bound withheld from a roll-up.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub struct ExtRemainder {
@@ -164,6 +203,7 @@ pub struct ExtRemainder {
 struct InternedRollUp {
     files: u64,
     dirs: u64,
+    others: u64,
     bytes: u64,
     allocated: u64,
     newest_mtime_ns: i64,
@@ -193,6 +233,8 @@ pub struct RollUpScalars {
     pub files: u64,
     /// Descendant directories, not counting the directory that owns this roll-up.
     pub dirs: u64,
+    /// Descendant entries that are neither files nor directories.
+    pub others: u64,
     /// Apparent bytes across descendant files.
     pub bytes: u64,
     /// Allocated bytes across descendant files.
@@ -206,6 +248,7 @@ impl From<&InternedRollUp> for RollUpScalars {
         Self {
             files: rollup.files,
             dirs: rollup.dirs,
+            others: rollup.others,
             bytes: rollup.bytes,
             allocated: rollup.allocated,
             newest_mtime_ns: rollup.newest_mtime_ns,
@@ -220,6 +263,7 @@ impl InternedRollUp {
         let had_files = self.files > 0;
         self.files += other.files;
         self.dirs += other.dirs;
+        self.others += other.others;
         self.bytes += other.bytes;
         self.allocated += other.allocated;
         if other.files > 0 {
@@ -256,6 +300,7 @@ impl InternedRollUp {
     fn unmerge(&mut self, other: &InternedRollUp) {
         self.files = self.files.saturating_sub(other.files);
         self.dirs = self.dirs.saturating_sub(other.dirs);
+        self.others = self.others.saturating_sub(other.others);
         self.bytes = self.bytes.saturating_sub(other.bytes);
         self.allocated = self.allocated.saturating_sub(other.allocated);
         for (ext, tally) in &other.by_ext {
@@ -431,6 +476,27 @@ impl std::ops::Deref for ApplyOutcome {
     }
 }
 
+impl ChildSnapshot {
+    /// Whether this child is a directory whose subtree is provably empty.
+    ///
+    /// `None` rather than `false` for anything that cannot be decided: a non-directory,
+    /// which has no subtree, and a directory whose roll-up is [`Status::Partial`], which
+    /// has not accounted for one. A partial subtree reporting zero entries means "nothing
+    /// found yet", and a listing that greyed out such a row would be greying out a
+    /// directory it had not finished reading.
+    ///
+    /// Decidable at all only because a roll-up counts symlinks and other non-file entries
+    /// as well as files and directories. Before that a subtree of a hundred symlinks was
+    /// zero files, zero directories and zero bytes -- the same arithmetic as nothing.
+    pub fn is_empty_subtree(&self) -> Option<bool> {
+        let totals = self.totals?;
+        if self.provenance.status != Status::Complete {
+            return None;
+        }
+        Some(totals.is_empty())
+    }
+}
+
 /// Which slice of a directory's children one listing call should return.
 ///
 /// A directory is unbounded in a way a screen is not, and a listing that always returns
@@ -499,6 +565,8 @@ pub struct ChildRemainder {
     pub files: u64,
     /// Directories those rows account for.
     pub dirs: u64,
+    /// Symlinks and other non-file, non-directory entries those rows account for.
+    pub others: u64,
     /// Apparent bytes those rows account for.
     pub bytes: u64,
     /// Allocated bytes those rows account for.
@@ -2017,6 +2085,7 @@ impl Index {
         RollUp {
             files: rollup.files,
             dirs: rollup.dirs,
+            others: rollup.others,
             bytes: rollup.bytes,
             allocated: rollup.allocated,
             newest_mtime_ns: rollup.newest_mtime_ns,
@@ -2039,6 +2108,7 @@ impl Index {
                 let mut roll = InternedRollUp {
                     files: 1,
                     dirs: 0,
+                    others: 0,
                     bytes: entry.attrs.size,
                     allocated: entry.attrs.allocated,
                     newest_mtime_ns: entry.attrs.mtime_ns,
@@ -2067,7 +2137,12 @@ impl Index {
                 }
                 roll
             }
-            EntryKind::Symlink | EntryKind::Other => InternedRollUp::default(),
+            // Zero bytes, and one entry. A default here made a subtree of symlinks
+            // arithmetically identical to an empty one, so nothing downstream could tell
+            // "nothing is here" from "nothing here has a size".
+            EntryKind::Symlink | EntryKind::Other => {
+                InternedRollUp { others: 1, ..InternedRollUp::default() }
+            }
         }
     }
 
@@ -2501,6 +2576,7 @@ fn child_page(
         rows: withheld,
         files: entry.rollup.files - emitted.files,
         dirs: entry.rollup.dirs - emitted.dirs,
+        others: entry.rollup.others - emitted.others,
         bytes: entry.rollup.bytes - emitted.bytes,
         allocated: entry.rollup.allocated - emitted.allocated,
     });
@@ -2527,9 +2603,8 @@ impl ChildRemainder {
                 self.bytes += entry.attrs.size;
                 self.allocated += entry.attrs.allocated;
             }
-            // A symlink or a device contributes nothing to its parent's totals, so it
-            // withholds nothing either.
-            EntryKind::Symlink | EntryKind::Other => {}
+            // No bytes, but one entry: a page that withheld only symlinks still says so.
+            EntryKind::Symlink | EntryKind::Other => self.others += 1,
         }
     }
 }
@@ -3468,13 +3543,14 @@ mod tests {
                         shown.bytes += row.attrs.size;
                         shown.allocated += row.attrs.allocated;
                     }
-                    EntryKind::Symlink | EntryKind::Other => {}
+                    EntryKind::Symlink | EntryKind::Other => shown.others += 1,
                 }
             }
             let rest = page.remainder.unwrap_or_default();
             assert_eq!(shown.rows + rest.rows, 6, "limit {limit}: every child is on one side");
             assert_eq!(shown.files + rest.files, whole.files, "limit {limit}: files");
             assert_eq!(shown.dirs + rest.dirs, whole.dirs, "limit {limit}: dirs");
+            assert_eq!(shown.others + rest.others, whole.others, "limit {limit}: others");
             assert_eq!(shown.bytes + rest.bytes, whole.bytes, "limit {limit}: bytes");
             assert_eq!(
                 shown.allocated + rest.allocated,
@@ -3725,6 +3801,85 @@ mod tests {
             "waiting for the guard is part of the call, not beside it"
         );
         assert!(bundle.work.name_bytes >= bundle.work.rows, "each row carries at least a name");
+    }
+
+    /// A subtree of symlinks weighs nothing and is not nothing, and the roll-up now says
+    /// which.
+    ///
+    /// Before non-file leaves were counted, `links` below was zero files, zero
+    /// directories and zero bytes -- arithmetically identical to `hollow`, which really
+    /// is empty. A listing had no way to tell them apart, so it either greyed out a
+    /// directory with contents or greyed out nothing.
+    #[test]
+    fn a_symlink_only_subtree_is_not_an_empty_one() {
+        let handle = IndexHandle::new(Index::new("/root"));
+        handle
+            .apply(&Observation::new(vec![
+                upsert("links", EntryKind::Dir, file_attrs(0, 1)),
+                upsert("links/to-a", EntryKind::Symlink, file_attrs(0, 1)),
+                upsert("links/to-b", EntryKind::Symlink, file_attrs(0, 1)),
+                upsert("hollow", EntryKind::Dir, file_attrs(0, 1)),
+            ]))
+            .expect("apply");
+
+        let links = handle.rollup(Path::new("links")).expect("read").expect("links");
+        let hollow = handle.rollup(Path::new("hollow")).expect("read").expect("hollow");
+        assert_eq!((links.files, links.dirs, links.bytes), (0, 0, 0));
+        assert_eq!((hollow.files, hollow.dirs, hollow.bytes), (0, 0, 0));
+        assert_eq!(links.others, 2, "the symlinks are counted even though they weigh nothing");
+        assert_eq!(hollow.others, 0);
+        assert!(!links.is_empty(), "two entries is not empty");
+        assert!(hollow.is_empty());
+
+        // And it reaches a listing row, decided rather than left to the consumer.
+        let page = handle
+            .children_page(Path::new(""), &ChildPageRequest::default())
+            .expect("read")
+            .expect("the root");
+        let row = |name: &str| {
+            page.rows.iter().find(|row| row.name == name).expect("row").is_empty_subtree()
+        };
+        assert_eq!(row("links"), Some(false));
+        assert_eq!(row("hollow"), Some(true));
+    }
+
+    /// A partial subtree can never claim emptiness, however its counts read.
+    ///
+    /// Zero entries under a partial roll-up means "nothing found yet", and a listing that
+    /// greyed the row out would be greying out a directory it had not finished reading.
+    #[test]
+    fn a_partial_subtree_declines_to_answer_rather_than_claiming_empty() {
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![upsert("part", EntryKind::Dir, file_attrs(0, 1))]));
+        // A sweep that ended without reading everything -- which is what a reconciliation
+        // error looks like from here.
+        let started = index.begin_reconcile(Path::new("part"));
+        index.finish_reconcile(Path::new("part"), started, false);
+        let handle = IndexHandle::new(index);
+
+        let page = handle
+            .children_page(Path::new(""), &ChildPageRequest::default())
+            .expect("read")
+            .expect("the root");
+        let row = page.rows.iter().find(|row| row.name == "part").expect("part");
+        assert_ne!(row.provenance.status, Status::Complete, "the fixture must be partial");
+        assert_eq!(
+            row.is_empty_subtree(),
+            None,
+            "an unfinished directory reporting zero has not proved anything"
+        );
+    }
+
+    /// A file row has no subtree, so emptiness is not a question it can answer.
+    #[test]
+    fn a_file_row_has_no_emptiness_to_report() {
+        let handle = paged_directory();
+        let page = handle
+            .children_page(Path::new(""), &ChildPageRequest::default())
+            .expect("read")
+            .expect("the root");
+        let file = page.rows.iter().find(|row| row.name == "b.txt").expect("b.txt");
+        assert_eq!(file.is_empty_subtree(), None);
     }
 
     /// A bundle carries the identity a consumer's cache key derives from.

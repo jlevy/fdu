@@ -444,6 +444,13 @@ class ExtensionRemainder:
 class RollUp:
     files: int
     dirs: int
+    others: int
+    """Descendant entries that are neither files nor directories: symlinks and the rest.
+
+    Zero bytes each, and counted anyway, because otherwise a subtree of a hundred
+    symlinks and one holding nothing at all are the same arithmetic. See ``is_empty``.
+    """
+
     bytes: int
     allocated: int
     newest_mtime_ns: int
@@ -463,12 +470,58 @@ class RollUp:
 
     provenance: Provenance | None = None
 
+    @property
+    def entries(self) -> int:
+        """Descendant entries of every kind.
+
+        The sum the emptiness question is really about: ``bytes`` cannot answer it,
+        because an empty file, a symlink and nothing at all all weigh nothing.
+        """
+
+        return self.files + self.dirs + self.others
+
+    @property
+    def is_empty(self) -> bool:
+        """Whether this subtree holds no entries at all.
+
+        Exact only for a value whose ``provenance.status`` is ``COMPLETE``. A partial
+        roll-up has not accounted for its whole subtree, so zero here means "nothing
+        found yet". ``Child.empty`` does that consulting for a listing row.
+        """
+
+        return self.entries == 0
+
+
+@dataclass(frozen=True, slots=True)
+class DirectoryTotals:
+    """Subtree totals for one listing row: scalars, no per-extension breakdown.
+
+    Not a ``SummaryRow``. A view's summary row answers "what does this query cover"; this
+    answers "how big is this child, and is there anything in it", which is why it carries
+    ``others`` and a summary row does not.
+    """
+
+    files: int
+    dirs: int
+    others: int
+    """Descendant symlinks and other non-file, non-directory entries."""
+
+    bytes: int
+    allocated: int
+    newest_mtime_ns: int | None
+
+    @property
+    def entries(self) -> int:
+        """Descendant entries of every kind."""
+
+        return self.files + self.dirs + self.others
+
 
 @dataclass(frozen=True, slots=True)
 class Child:
     name: str
     kind: EntryKind
-    totals: SummaryRow | None
+    totals: DirectoryTotals | None
     """Subtree totals for a directory child, or ``None`` for anything else.
 
     Scalars, not a breakdown. A listing wants a size column per row; asking for the
@@ -495,6 +548,19 @@ class Child:
     name. It may differ from both the type and the parent's ``by_extension`` key:
     ``release.v2.zip`` is ``.v2.zip`` here, an ``archive`` by type, and on the ``.zip``
     pile. Filter on this; sum bytes by the breakdown's key.
+    """
+
+    empty: bool | None = None
+    """Whether this is a directory whose subtree is provably empty.
+
+    ``None`` rather than ``False`` for anything undecidable: a non-directory, which has no
+    subtree, and a directory whose roll-up is partial, which has not accounted for one. A
+    partial subtree reporting zero entries means "nothing found yet", and a listing that
+    greyed out such a row would be greying out a directory it had not finished reading.
+
+    Decidable at all only because a roll-up counts symlinks and other non-file entries:
+    before that, a subtree of a hundred symlinks was zero files, zero directories and zero
+    bytes -- the same arithmetic as nothing.
     """
 
 
@@ -582,6 +648,9 @@ class ChildRemainder:
 
     dirs: int
     """Directories those rows account for, counting a withheld directory row itself."""
+
+    others: int
+    """Symlinks and other non-file, non-directory entries those rows account for."""
 
     bytes: int
     allocated: int
@@ -1207,6 +1276,7 @@ def rollup_from_dict(value: dict[str, Any], provenance: Provenance | None = None
     return RollUp(
         files=int(value["files"]),
         dirs=int(value["dirs"]),
+        others=int(value.get("others", 0)),
         bytes=int(value["bytes"]),
         allocated=int(value["allocated"]),
         newest_mtime_ns=int(value["newest_mtime_ns"]),

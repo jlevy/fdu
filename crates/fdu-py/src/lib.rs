@@ -98,6 +98,7 @@ fn rollup_dict<'py>(py: Python<'py>, roll: &RollUp) -> PyResult<Bound<'py, PyDic
     let dict = PyDict::new(py);
     dict.set_item("files", roll.files)?;
     dict.set_item("dirs", roll.dirs)?;
+    dict.set_item("others", roll.others)?;
     dict.set_item("bytes", roll.bytes)?;
     dict.set_item("allocated", roll.allocated)?;
     dict.set_item("newest_mtime_ns", roll.newest_mtime_ns)?;
@@ -291,9 +292,14 @@ fn child_list<'py>(
             // inspected, and one map per row is the cost this listing exists to avoid.
             entry.set_item("files", totals.files)?;
             entry.set_item("dirs", totals.dirs)?;
+            entry.set_item("others", totals.others)?;
             entry.set_item("bytes", totals.bytes)?;
             entry.set_item("allocated", totals.allocated)?;
             entry.set_item("newest_mtime_ns", totals.newest_mtime_ns)?;
+            // Decided here rather than in the consumer, because deciding it needs the
+            // row's provenance as well as its counts: a partial subtree reporting zero
+            // means "nothing found yet".
+            entry.set_item("empty", child.is_empty_subtree())?;
         } else {
             entry.set_item("bytes", child.attrs.size)?;
             entry.set_item("allocated", child.attrs.allocated)?;
@@ -341,6 +347,7 @@ fn child_remainder_dict(
     value.set_item("rows", rest.rows)?;
     value.set_item("files", rest.files)?;
     value.set_item("dirs", rest.dirs)?;
+    value.set_item("others", rest.others)?;
     value.set_item("bytes", rest.bytes)?;
     value.set_item("allocated", rest.allocated)?;
     Ok(Some(value))

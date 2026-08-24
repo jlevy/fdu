@@ -137,6 +137,44 @@ def _tree_section(report: fdu.Report) -> fdu.TreeNode:
     raise AssertionError("the report has no tree section")
 
 
+def check_empty_is_decidable_from_the_aggregate() -> None:
+    """A directory of symlinks weighs nothing and is not nothing.
+
+    Files, directories and bytes are all zero for both of these, so the aggregate could
+    not tell them apart until non-file leaves were counted. A listing that greys out
+    empty directories was greying out one with contents, or greying out none.
+    """
+
+    root = Path(tempfile.mkdtemp(prefix="fdu-empty-"))
+    (root / "target.txt").write_text("x", encoding="utf-8")
+    (root / "links").mkdir()
+    (root / "links" / "a").symlink_to(root / "target.txt")
+    (root / "links" / "b").symlink_to(root / "target.txt")
+    (root / "hollow").mkdir()
+
+    index = fdu.open(root)
+    links = index.rollup("links")
+    hollow = index.rollup("hollow")
+    assert links is not None and hollow is not None
+    assert (links.files, links.dirs, links.bytes) == (0, 0, 0)
+    assert (hollow.files, hollow.dirs, hollow.bytes) == (0, 0, 0)
+    assert links.others == 2, "the symlinks are counted even though they weigh nothing"
+    assert hollow.others == 0
+    assert not links.is_empty and hollow.is_empty
+
+    # And a listing row carries the verdict, decided rather than left to the consumer:
+    # deciding it needs the row's provenance as well as its counts.
+    page = index.children()
+    assert page is not None
+    rows = {child.name: child for child in page.rows}
+    assert rows["links"].empty is False
+    assert rows["hollow"].empty is True
+    assert rows["target.txt"].empty is None, "a file has no subtree to be empty"
+    assert rows["links"].totals is not None and rows["links"].totals.entries == 2
+
+    fdu.clear_cache(root)
+
+
 def check_a_listing_pages_and_accounts_for_the_rest() -> None:
     """A wide directory is drawn a page at a time, and the page says what it left out.
 
@@ -932,6 +970,7 @@ def main() -> None:
     check_polling_is_selectable_for_filesystems_that_drop_events()
     check_one_bundle_answers_a_whole_page()
     check_a_listing_pages_and_accounts_for_the_rest()
+    check_empty_is_decidable_from_the_aggregate()
     check_the_event_loop_adapter_delivers_the_same_batches()
     check_the_sse_example_resumes_or_resyncs()
     check_a_bounded_tree_says_what_it_withheld()

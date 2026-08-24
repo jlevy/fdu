@@ -24,6 +24,7 @@ from ._models import (
     ChildPage,
     ChildRemainder,
     Classification,
+    DirectoryTotals,
     EntryKind,
     Format,
     Provenance,
@@ -33,7 +34,6 @@ from ._models import (
     RollUp,
     ScanOptions,
     Status,
-    SummaryRow,
     WalkTelemetry,
     WatchOptions,
     Work,
@@ -449,6 +449,7 @@ def _child_remainder(value: dict[str, Any]) -> ChildRemainder:
         rows=int(value["rows"]),
         files=int(value["files"]),
         dirs=int(value["dirs"]),
+        others=int(value["others"]),
         bytes=int(value["bytes"]),
         allocated=int(value["allocated"]),
     )
@@ -463,9 +464,10 @@ def _child(item: dict[str, Any]) -> Child:
     # A directory row carries subtree totals and a non-directory carries its own attrs;
     # the two field sets are disjoint, so presence of `files` is what tells them apart.
     totals = (
-        SummaryRow(
+        DirectoryTotals(
             files=int(item["files"]),
             dirs=int(item["dirs"]),
+            others=int(item["others"]),
             bytes=int(item["bytes"]),
             allocated=int(item["allocated"]),
             newest_mtime_ns=int(item["newest_mtime_ns"]) or None,
@@ -473,6 +475,7 @@ def _child(item: dict[str, Any]) -> Child:
         if item.get("files") is not None
         else None
     )
+    empty = item.get("empty")
     return Child(
         name=str(item["name"]),
         kind=EntryKind(item["kind"]),
@@ -485,6 +488,7 @@ def _child(item: dict[str, Any]) -> Child:
             None if classification is None else classification_from_dict(classification)
         ),
         extension=None if extension is None else str(extension),
+        empty=None if empty is None else bool(empty),
     )
 
 
