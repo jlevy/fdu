@@ -5,7 +5,7 @@ title: Watch invalidation batches lose required dirty information
 kind: bug
 status: open
 priority: 1
-version: 3
+version: 4
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 labels:
   - pr47-review
@@ -17,6 +17,37 @@ dependencies:
     target: is-01m0prhqd27m471dn47yt973k0
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T17:43:53.915Z
-updated_at: 2026-08-24T17:44:16.249Z
+updated_at: 2026-08-24T20:46:14.205Z
 ---
 At PR 47 head e658915, two paths lose invalidation information. Core dirty_rollups treats every Remove as a non-directory and omits the removed path itself, so a cached rollup for a deleted or renamed directory is never invalidated. The Python async adapter queues only tuple[Change, ...]; dirty_rollups is a side property on the worker-owned Watch, and the adapter drops an empty selected batch even when hidden changes dirtied aggregates. It also returns after setting stop without joining the worker. Fix: define one immutable WatchBatch returned by sync and async surfaces, carrying resulting cursor or version, changes, bounded dirty data, reset or all-dirty, state, and work. Include removed paths conservatively or retain old kind. Test filtered-out mutations, removed directories, async delivery, and joined cancellation. This supplies the lossless carrier that fdu-fltq can extend. Review finding FDU47-R5.
+
+## Notes
+
+DESIGN SETTLED (2026-08-24 review). All three layers verified:
+- `dirty_rollups`: `Op::Remove { path } => (path, false)` -- a removed directory's own
+  key is never inserted, only its ancestors; a consumer caching that rollup gets no
+  invalidation for it.
+- Sync surface: `Watch.__next__` yields bare change tuples; dirty paths sit as mutable
+  side state on PyWatch.
+- aio: `if batch: hand_over(batch)` drops a dirty-only batch (a filtered-out mutation
+  moves aggregates and yields no changes -- the only signal is discarded); cleanup sets
+  the stop flag and drains the queue but never `worker.join()`s.
+
+THE VALUE. One immutable `WatchBatch` in fdu-core, the same value on sync and async
+surfaces: { cursor: Cursor (fdu-325q's type -- resulting version), changes: bounded,
+dirty: bounded set of paths, all_dirty: bool (set when dirtiness exceeded its bound --
+the bound is new; today the set is unbounded, which MetaBrowser's contract explicitly
+disallows), reset: bool (cursor gap / watcher-queue overflow -- ties to `truncated`),
+state, work }. Removes are conservative: insert the removed path itself always (a
+removed file's key is harmlessly absent from consumer caches; a removed directory's key
+is the bug). Dirty-only batches are DELIVERED, not dropped -- `if batch:` goes.
+
+aio: queue `WatchBatch` objects; `finally` joins the worker after the drain (bounded
+join -- the drain unblocks it, so a timeout join failing is a bug surfaced, not hidden).
+
+fdu-fltq then extends this carrier with the final vocabulary (dirty query kinds, the
+reset/all-dirty distinction MetaBrowser names) rather than replacing it.
+
+TESTS. Filtered-out mutation delivers a dirty-only batch; deleted directory invalidates
+its own key; sync and async equivalence over one scripted sequence; cancellation joins;
+overflow sets all_dirty not silence.
