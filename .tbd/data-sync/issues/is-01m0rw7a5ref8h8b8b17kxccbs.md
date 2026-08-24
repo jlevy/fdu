@@ -3,9 +3,9 @@ type: is
 id: is-01m0rw7a5ref8h8b8b17kxccbs
 title: "Coverage reason: partial must say why, not only that"
 kind: feature
-status: open
+status: closed
 priority: 1
-version: 4
+version: 5
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 labels: []
 dependencies:
@@ -13,9 +13,23 @@ dependencies:
     target: is-01m0rw7d4h3t49rwvk11cmk5xb
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T03:15:01.418Z
-updated_at: 2026-08-24T22:53:15.169Z
-closed_at: null
-close_reason: null
+updated_at: 2026-08-24T23:31:10.622Z
+closed_at: 2026-08-24T23:31:10.622Z
+close_reason: |
+  Shipped earlier in this branch (commit a07fa17, "engine: partial coverage says why, not
+  only that"). Re-closed 2026-08-25 after a `tbd sync` reverted the status.
+
+  `Status::Partial` carries a `CoverageReason`: `Building`, `Budget`, `Cancelled`,
+  `Inaccessible`, `WatcherGap`, `Failed`. Ordered least-to-most-alarming so
+  `Provenance::combine`'s `max` surfaces the worst reason in a subtree rather than an
+  arbitrary one -- a consumer asking "why is this partial" gets the answer that matters
+  rather than whichever child happened to be visited last.
+
+  The bead's own estimate was corrected during implementation: it claimed four of the six
+  reasons were reachable engine state, and only two are. `WatcherGap` in particular is not,
+  because `InvalidateSubtree` marks `Freshness::Stale` -- a statement about *trust* rather
+  than about coverage. That distinction is now the subject of MB74-C3 on metabrowser PR #74,
+  which asks the two projects to pick one axis before the semantic digest compares them.
 resolution: null
 duplicate_of: null
 ---
