@@ -26,9 +26,8 @@ use pyo3::types::{PyDict, PyList};
 use fdu_core::classify::TypeRegistry;
 use fdu_core::content::{AnalysisRequest, AnalysisSet, CoverageReason};
 use fdu_core::query::{
-    AxisNames, Bound as Bound_, MetricRow, MetricSummary, Pattern, Provenance, Query, Report,
-    ReportSource, Section, Selection, SizeMetric, SortKey, SummaryRow, TreeNode, ViewSpec,
-    document_words,
+    AxisNames, Bound as Bound_, MetricRow, MetricSummary, Pattern, Query, Report, ReportSource,
+    Section, Selection, SizeMetric, SortKey, SummaryRow, TreeNode, ViewSpec, document_words,
 };
 use fdu_core::watch::WatchConfig;
 use fdu_core::watch_session::{ChangeKind, Session};
@@ -177,16 +176,14 @@ fn freshness_label(freshness: Freshness) -> &'static str {
 /// fields are the only other thing a refresh mutates. The lock is taken for a field
 /// assignment and never across native work.
 struct RunState {
-    errors: Vec<ErrorDetail>,
-    operation_complete: bool,
-    scan_started_at: Option<SystemTime>,
-    /// Which cache tier produced this index.
-    ///
-    /// Carried rather than assumed: reporting `warm_revalidate` for an index built by a
-    /// cold scan would be a small lie in exactly the field a caller consults to decide
-    /// whether to trust the answer.
-    source: ReportSource,
     /// What the run that produced this state actually did.
+    ///
+    /// The only field left, and the only one that belongs here: it is about *this call*
+    /// rather than about the index. Coverage, source, the start watermark and the typed
+    /// failures moved onto the index itself, because a read has to return them with the
+    /// rows they describe -- held beside the index in this lock, they were sampled at a
+    /// different instant, and a refresh landing between the two acquisitions paired an
+    /// old projection with new status.
     ///
     /// Describes the most recent operation only, never a running total. An embedder
     /// timing its own loop needs to attribute cost to the call it just made, and a
@@ -449,7 +446,7 @@ impl PyIndex {
     /// Whether every path in this index's configured scope is currently trustworthy.
     #[getter]
     fn complete(&self) -> bool {
-        self.state().operation_complete
+        self.inner.with_index(|index| index.run_facts().complete).unwrap_or(false)
     }
 
     /// Current trust state: fresh, reconciling, stale, or partial.
@@ -760,6 +757,7 @@ impl PyIndex {
         reverse = false,
         size = "allocated",
         words_per_page = 250,
+        expected = None,
     ))]
     #[allow(
         clippy::needless_pass_by_value,
@@ -791,16 +789,13 @@ impl PyIndex {
         reverse: bool,
         size: &str,
         words_per_page: u64,
+        expected: Option<&Bound<'py, PyAny>>,
     ) -> PyResult<Bound<'py, PyDict>> {
-        // Run state comes from beside the index, not from it: completeness and errors
-        // describe the operation that built this index, and the engine's read guard has
-        // no opinion about them. Read before the bundle because the report projection
-        // needs them for its envelope -- the same facts, so the report cannot disagree
-        // with the bundle it arrived in.
-        let (complete, source, errors) = {
-            let state = self.state();
-            (state.operation_complete, state.source, state.errors.clone())
-        };
+        // Run state is no longer sampled here. It used to be read from a second lock
+        // before the bundle, which made the report and the bundle agree with each other
+        // and with nothing else: a refresh landing between the two acquisitions paired an
+        // old projection with new status, or the reverse, both halves individually true.
+        // The engine holds these facts beside the tree now, so they arrive with the rows.
         let wanted = if report {
             let query = build_query(
                 self.analysis.profile,
@@ -822,16 +817,7 @@ impl PyIndex {
                 size,
                 words_per_page,
             )?;
-            Some(fdu_core::ReportRequest {
-                query,
-                provenance: Provenance {
-                    scan_started_at: self.state().scan_started_at,
-                    generated_at: SystemTime::now(),
-                    source,
-                    complete,
-                    errors: errors.iter().map(|error| error.message.clone()).collect(),
-                },
-            })
+            Some(fdu_core::ReportRequest { query, generated_at: SystemTime::now() })
         } else {
             None
         };
@@ -842,18 +828,21 @@ impl PyIndex {
             total,
             extensions: ext_bound(extensions),
             report: wanted,
+            expected: expected.map(parse_cursor).transpose()?,
         };
         let bundle = self.inner.read(&request).map_err(to_py_err)?;
 
         let out = PyDict::new(py);
         out.set_item("clock", bundle.clock.0)?;
+        out.set_item("cursor", cursor_dict(py, bundle.cursor)?)?;
         out.set_item("root", bundle.root.as_os_str())?;
         out.set_item("entries", bundle.entries)?;
         out.set_item("freshness", freshness_label(bundle.freshness))?;
         out.set_item("scope", scope_dict(py, &bundle.scope)?)?;
-        out.set_item("complete", complete)?;
-        out.set_item("source", source_label(source))?;
-        out.set_item("errors", error_list(py, &errors)?)?;
+        // From the bundle, so every field below describes the instant the rows were read.
+        out.set_item("complete", bundle.run.complete)?;
+        out.set_item("source", source_label(bundle.run.source))?;
+        out.set_item("errors", PyList::new(py, bundle.run.errors.iter())?)?;
         out.set_item(
             "total",
             bundle.total.as_ref().map(|roll| rollup_dict(py, roll)).transpose()?,
@@ -934,7 +923,9 @@ impl PyIndex {
     /// missing or non-directory ancestor widens the scope rather than failing.
     #[pyo3(signature = (path = None))]
     fn refresh<'py>(&self, py: Python<'py>, path: Option<PathBuf>) -> PyResult<Bound<'py, PyDict>> {
-        self.state().scan_started_at = Some(SystemTime::now());
+        // The operation's start, which is the conservative watermark: a file modified
+        // mid-sweep may have been observed before the modification.
+        let started_at = Some(SystemTime::now());
         let config = self.config.clone();
         // A scoped refresh is the hint-ingestion primitive: a caller that keeps its own
         // watcher for a filesystem this build's backends cannot serve pushes each hint
@@ -965,11 +956,20 @@ impl PyIndex {
             complete &= analysis_complete;
             analyzed = Some(analysis);
         }
+        // Onto the index, under its own write guard, so the next read returns these facts
+        // with the rows they describe rather than from a second lock a refresh can land
+        // between. The binding keeps only telemetry, which is about this call rather than
+        // about the index.
+        self.inner
+            .set_run_facts(fdu_core::query::RunFacts {
+                scan_started_at: started_at,
+                source: ReportSource::WarmRevalidate,
+                complete,
+                errors: errors.iter().map(|error| error.message.clone()).collect(),
+            })
+            .map_err(to_py_err)?;
         {
             let mut state = self.state();
-            state.errors = errors;
-            state.operation_complete = complete;
-            state.source = ReportSource::WarmRevalidate;
             state.telemetry = PerformanceSummary::from_reconcile(
                 &report.scan,
                 analyzed,
@@ -984,14 +984,10 @@ impl PyIndex {
         out.set_item("removed", stats.removed)?;
         out.set_item("unchanged", stats.unchanged)?;
         out.set_item("stale", stats.stale)?;
-        let (error_details, source) = {
-            let run = self.state();
-            (run.errors.clone(), run.source)
-        };
-        out.set_item("error_count", error_details.len())?;
-        out.set_item("errors", error_list(py, &error_details)?)?;
-        out.set_item("source", source_label(source))?;
-        out.set_item("complete", self.complete())?;
+        out.set_item("error_count", errors.len())?;
+        out.set_item("errors", error_list(py, &errors)?)?;
+        out.set_item("source", source_label(ReportSource::WarmRevalidate))?;
+        out.set_item("complete", complete)?;
         out.set_item("freshness", self.freshness()?)?;
         out.set_item("clock", self.inner.clock().map_err(to_py_err)?.0)?;
         Ok(out)
@@ -1102,7 +1098,7 @@ impl PyIndex {
     }
 
     fn error_messages(&self) -> Vec<String> {
-        self.state().errors.iter().map(|error| error.message.clone()).collect()
+        self.inner.with_index(|index| index.run_facts().errors.clone()).unwrap_or_default()
     }
 
     #[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
@@ -1147,21 +1143,19 @@ impl PyIndex {
             size,
             words_per_page,
         )?;
-        let provenance = {
-            let state = self.state();
-            Provenance {
-                scan_started_at: state.scan_started_at,
-                generated_at: now,
-                source: state.source,
-                complete: state.operation_complete,
-                errors: state.errors.iter().map(|error| error.message.clone()).collect(),
-            }
-        };
         // Read in place rather than cloning: `report` is a pure reader, so it runs under
         // the shared lock. Snapshotting here instead would copy every entry per call,
         // which is O(entries) on a path a consumer calls per navigation.
+        //
+        // The envelope is built *inside* the guard, off the same index the rows come
+        // from. Sampling it outside let a refresh land between the two, so a report could
+        // pair one instant's numbers with another instant's claim about how far to trust
+        // them -- both individually true, and the disagreement invisible.
         self.inner
-            .with_index(|index| fdu_core::query::report(index, &query, &provenance))
+            .with_index(|index| {
+                let provenance = index.run_facts().provenance(now);
+                fdu_core::query::report(index, &query, &provenance)
+            })
             .map_err(to_py_err)
     }
 }
@@ -1229,14 +1223,19 @@ fn error_list<'py>(py: Python<'py>, errors: &[ErrorDetail]) -> PyResult<Bound<'p
 
 fn status_dict<'py>(py: Python<'py>, index: &PyIndex) -> PyResult<Bound<'py, PyDict>> {
     let status = PyDict::new(py);
-    let (complete, source, errors) = {
-        let state = index.state();
-        (state.operation_complete, state.source, state.errors.clone())
-    };
+    // One guard for all four, including freshness: a status envelope whose fields came
+    // from different instants is exactly the thing this describes itself as not being.
+    let (complete, source, errors, freshness) = index
+        .inner
+        .with_index(|inner| {
+            let run = inner.run_facts();
+            (run.complete, run.source, run.errors.clone(), inner.freshness())
+        })
+        .map_err(to_py_err)?;
     status.set_item("complete", complete)?;
-    status.set_item("freshness", index.freshness()?)?;
+    status.set_item("freshness", freshness_label(freshness))?;
     status.set_item("source", source_label(source))?;
-    status.set_item("errors", error_list(py, &errors)?)?;
+    status.set_item("errors", PyList::new(py, errors.iter())?)?;
     Ok(status)
 }
 
@@ -2276,17 +2275,21 @@ fn open(
     };
     let scan_started_at =
         (report.path_taken != fdu_core::OpenPath::CacheOnly).then_some(operation_started_at);
+    // Onto the index, before anything can read it. The engine recorded what the *scan*
+    // did; this adds what analysis did, which the engine has no view of, and commits the
+    // combined answer where a read finds it under the same guard as the rows.
+    let mut index = index;
+    index.set_run_facts(fdu_core::query::RunFacts {
+        scan_started_at,
+        source,
+        complete: operation_complete,
+        errors: errors.iter().map(|error| error.message.clone()).collect(),
+    });
     Ok(PyIndex {
         inner: IndexHandle::new(index),
         config: config.scan,
         analysis,
-        state: Mutex::new(RunState {
-            errors,
-            operation_complete,
-            scan_started_at,
-            source,
-            telemetry: PerformanceSummary::from_open_report(&report),
-        }),
+        state: Mutex::new(RunState { telemetry: PerformanceSummary::from_open_report(&report) }),
     })
 }
 
@@ -2345,17 +2348,18 @@ fn scan(
     }
     // A bare scan never consults the cache, so it is always cold.
     let telemetry = PerformanceSummary::from_open_report(&report);
+    let mut index = index;
+    index.set_run_facts(fdu_core::query::RunFacts {
+        scan_started_at,
+        source: ReportSource::ColdScan,
+        complete: operation_complete,
+        errors: errors.iter().map(|error| error.message.clone()).collect(),
+    });
     Ok(PyIndex {
         inner: IndexHandle::new(index),
         config: config.scan,
         analysis,
-        state: Mutex::new(RunState {
-            errors,
-            operation_complete,
-            scan_started_at,
-            source: ReportSource::ColdScan,
-            telemetry,
-        }),
+        state: Mutex::new(RunState { telemetry }),
     })
 }
 
@@ -2432,13 +2436,7 @@ mod tests {
             inner: IndexHandle::new(fdu_core::Index::new("/unused")),
             config: ScanConfig::default(),
             analysis: AnalysisRequest::default(),
-            state: Mutex::new(RunState {
-                errors: Vec::new(),
-                operation_complete: true,
-                scan_started_at: None,
-                source: ReportSource::ColdScan,
-                telemetry: PerformanceSummary::default(),
-            }),
+            state: Mutex::new(RunState { telemetry: PerformanceSummary::default() }),
         }
     }
 

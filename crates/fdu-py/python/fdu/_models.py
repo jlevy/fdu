@@ -1096,13 +1096,17 @@ class Bundle:
     inconsistent in a way nothing in it reports -- the rows say one thing, the header
     another, and both are individually true.
 
-    :attr:`clock` is the version every part of this bundle saw, so it is also the cursor
-    to pass to :meth:`Index.since` next: a cache key derives from what was actually read
-    rather than from a version sampled before dispatch.
+    :attr:`cursor` is the version every part of this bundle saw, so it is also what to
+    pass to :meth:`Index.since` next and what to pin a follow-up page to: a cache key
+    derives from what was actually read rather than from a version sampled before
+    dispatch.
     """
 
     clock: int
-    """The version every part of this bundle saw, and the cursor to resume from."""
+    """The version every part of this bundle saw."""
+
+    cursor: Cursor
+    """The same version as a resume token, for `since()` and for pinning a next page."""
 
     root: Path
     entries: int

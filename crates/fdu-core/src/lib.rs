@@ -318,6 +318,10 @@ pub(crate) fn open_for_report(
 ) -> Result<(std::sync::Arc<Index>, OpenReport, PendingSave)> {
     let root = root.canonicalize().map_err(|e| Error::io(root, e))?;
     let policy = config.policy;
+    // The *start* of the operation, not its end. A file modified mid-walk may have been
+    // observed before the modification, so only the start bound is conservative for an
+    // incremental follow-up query -- which is what this watermark is for.
+    let started_at = Some(std::time::SystemTime::now());
 
     let loaded = match ((read_snapshot || !policy.scans()) && policy.reads(), &config.cache_path) {
         // The guard and the rules go down together. A snapshot describing another root or
@@ -348,6 +352,10 @@ pub(crate) fn open_for_report(
         // snapshot records the freshness it was written with, which was true then.
         index.mark_unverified();
         bind_path_tags(&mut index, config);
+        // A cache-only open ran no walk, so there is nothing that could have failed: the
+        // snapshot covered its scope when it was written, and `mark_unverified` above is
+        // what says the tree has not been checked since.
+        record_run(&mut index, crate::query::ReportSource::CacheOnly, &ScanReport::default(), None);
         let content_cache = load_content(&mut index, config)?;
         if config.analysis.profile.is_enabled()
             && (!content_cache.usable
@@ -375,6 +383,12 @@ pub(crate) fn open_for_report(
         let reconciled = scan::reconcile(&mut index, &config.scan, &mut |_| {})?;
         let scan_report = reconciled.scan;
         bind_path_tags(&mut index, config);
+        record_run(
+            &mut index,
+            crate::query::ReportSource::WarmRevalidate,
+            &scan_report,
+            started_at,
+        );
         index.establish_baseline();
         let content_cache = load_content(&mut index, config)?;
         let analysis = config
@@ -410,6 +424,7 @@ pub(crate) fn open_for_report(
 
     let (mut index, scan_report) = scan::scan_into_index(&root, &config.scan)?;
     bind_path_tags(&mut index, config);
+    record_run(&mut index, crate::query::ReportSource::ColdScan, &scan_report, started_at);
     let content_cache = load_content(&mut index, config)?;
     let analysis = config
         .analysis
@@ -428,6 +443,27 @@ pub(crate) fn open_for_report(
         OpenReport { path_taken: OpenPath::ColdScan, scan: scan_report, analysis, content_cache },
         pending,
     ))
+}
+
+/// Record what the operation that just finished did, on the index it produced.
+///
+/// One place, so the three open paths cannot disagree about what they claim. These facts
+/// used to live beside the index in the caller -- which meant a read sampled them from a
+/// different lock than the rows, and a refresh landing between the two acquisitions
+/// paired an old projection with new status. Committing them with the tree makes that
+/// pairing impossible rather than unlikely.
+fn record_run(
+    index: &mut Index,
+    source: crate::query::ReportSource,
+    scan: &ScanReport,
+    started_at: Option<std::time::SystemTime>,
+) {
+    index.set_run_facts(crate::query::RunFacts {
+        scan_started_at: started_at,
+        source,
+        complete: scan.is_complete(),
+        errors: scan.errors.iter().map(ToString::to_string).collect(),
+    });
 }
 
 /// Bind Path-tier tag rules against the index that now exists, and re-tag under them.

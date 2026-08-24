@@ -340,6 +340,7 @@ class Index:
         after: str | None = None,
         limit: int | None = None,
         query: Query | None = None,
+        expected: Cursor | None = None,
     ) -> Bundle:
         """Several projections read under one guard, at one instant.
 
@@ -353,9 +354,17 @@ class Index:
         moments, each individually true and together wrong. It is the same `Query`
         `report()` takes, not a second grammar.
 
-        The returned `clock` is the version every part saw, so it is also the cursor to
-        pass to `since()` next -- a cache key derives from what was actually read rather
-        than from a version sampled before dispatch.
+        The returned `cursor` is the version every part saw, so it is also what to pass
+        to `since()` next -- a cache key derives from what was actually read rather than
+        from a version sampled before dispatch.
+
+        `expected` pins the read. A name cursor keeps page two from skipping or repeating
+        a row; it cannot keep page two from describing a different tree than page one, and
+        a caller stitching bounded pages into one complete answer needs both. A pinned
+        read returns exactly that version or raises, and never quietly continues on a
+        newer one. Only the current version is retained, so a pin that has aged out fails
+        and the assembly restarts -- which is cheap, unlike holding history so it could
+        succeed.
 
         It is also one crossing of the language boundary and one lock acquisition,
         instead of one of each per call.
@@ -379,12 +388,16 @@ class Index:
             after,
             limit,
             **report_kwargs,
+            expected=(
+                None if expected is None else {"session": expected.session, "clock": expected.clock}
+            ),
         )
         children = value["children"]
         report = value["report"]
         projections = value["projections"]
         return Bundle(
             clock=int(value["clock"]),
+            cursor=_cursor(value["cursor"]),
             root=Path(str(value["root"])),
             entries=int(value["entries"]),
             scope=scan_scope_from_dict(value["scope"]),

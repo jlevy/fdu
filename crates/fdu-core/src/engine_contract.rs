@@ -747,6 +747,21 @@ pub enum Error {
     #[error("the process-local index clock is exhausted")]
     ClockExhausted,
 
+    /// A pinned read asked for a version this index is no longer at.
+    ///
+    /// Retaining only the current image is the policy, so this is the expected answer to a
+    /// pin that has aged out rather than a failure of one. A consumer assembling a
+    /// complete result from bounded pages restarts on it; the alternative -- silently
+    /// continuing on a newer version -- produces one answer stitched from two trees, with
+    /// nothing in it saying so.
+    #[error("version {requested:?} is no longer available; this index is at {current:?}")]
+    VersionUnavailable {
+        /// The version the caller pinned to.
+        requested: Cursor,
+        /// The version it is at now.
+        current: Cursor,
+    },
+
     /// A resume token belongs to a different opened index, or to a position that has not
     /// happened yet.
     ///

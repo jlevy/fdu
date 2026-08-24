@@ -412,6 +412,59 @@ pub enum ReportSource {
     CacheOnly,
 }
 
+/// What the operation that built an index's current state did.
+///
+/// Held on the index, under the same lock as the tree, and that placement is the whole
+/// point. These facts describe the *run*, so it was natural to pass them in beside a
+/// query -- but a caller can only pass what it sampled, and sampling them from one lock
+/// while the projections come from another lets a refresh land in between. The result
+/// pairs an old projection with new status, or the reverse, and both halves are
+/// individually true, which is what makes the disagreement invisible.
+///
+/// `generated_at` is deliberately absent: it belongs to a rendering, not to the index,
+/// and stamping it here would freeze one instant across every later report.
+#[derive(Clone, Debug)]
+pub struct RunFacts {
+    /// When the walk or revalidation behind this index began.
+    pub scan_started_at: Option<SystemTime>,
+    /// Which cache tier answered.
+    pub source: ReportSource,
+    /// Whether every path in scope was read successfully.
+    pub complete: bool,
+    /// Per-path failures that made this result partial, already rendered.
+    pub errors: Vec<String>,
+}
+
+impl Default for RunFacts {
+    /// What an index nobody has filled yet honestly reports.
+    ///
+    /// `complete: false` rather than true: an empty index covers nothing, and claiming
+    /// completeness before a producer has run would make the one field a consumer checks
+    /// before trusting an answer say yes by default.
+    fn default() -> Self {
+        Self {
+            scan_started_at: None,
+            source: ReportSource::ColdScan,
+            complete: false,
+            errors: Vec::new(),
+        }
+    }
+}
+
+impl RunFacts {
+    /// The report envelope these facts produce, rendered now.
+    #[must_use]
+    pub fn provenance(&self, generated_at: SystemTime) -> Provenance {
+        Provenance {
+            scan_started_at: self.scan_started_at,
+            generated_at,
+            source: self.source,
+            complete: self.complete,
+            errors: self.errors.clone(),
+        }
+    }
+}
+
 /// Facts about how a report's index was produced.
 ///
 /// Passed in rather than sampled inside [`report`] so the view layer stays a pure

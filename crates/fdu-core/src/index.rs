@@ -720,6 +720,19 @@ pub struct ReadRequest {
     /// other surface already takes, evaluated under the guard the rest of the bundle is
     /// reading through.
     pub report: Option<ReportRequest>,
+    /// The version this read must observe, when the caller is assembling pages.
+    ///
+    /// A name cursor keeps page two from skipping or repeating a row, but it cannot keep
+    /// page two from describing a *different tree* than page one -- a consumer stitching
+    /// bounded pages into one complete answer needs both. Setting this pins the read: it
+    /// returns exactly that version or [`crate::Error::VersionUnavailable`], and never quietly
+    /// continues on a newer one.
+    ///
+    /// Only the current image is retained, which is the whole retention policy. A pin
+    /// that has aged out fails, and the caller restarts the assembly; keeping historical
+    /// images so a stale pin could succeed would trade a cheap restart for unbounded
+    /// memory.
+    pub expected: Option<Cursor>,
 }
 
 /// One query, and the run facts its envelope needs.
@@ -733,8 +746,13 @@ pub struct ReadRequest {
 pub struct ReportRequest {
     /// Views and selection to answer.
     pub query: crate::query::Query,
-    /// Run facts for the report's envelope.
-    pub provenance: crate::query::Provenance,
+    /// When the report is being rendered, for its `generated_at`.
+    ///
+    /// The only run fact still passed in, because it is the only one that belongs to the
+    /// rendering rather than to the index. Everything else in the envelope -- the tier
+    /// that answered, whether the scan completed, what failed -- now comes off the index
+    /// under the same guard as the rows, so the two cannot describe different instants.
+    pub generated_at: std::time::SystemTime,
 }
 
 /// Everything one bundled read saw, at one boundary.
@@ -743,14 +761,25 @@ pub struct ReportRequest {
 /// could land. `clock` is the version all of them saw and the cursor to resume from.
 #[derive(Clone, Debug)]
 pub struct ReadBundle {
-    /// The version every part of this bundle saw, and the cursor to pass to
-    /// [`IndexHandle::since`] next.
+    /// The version every part of this bundle saw.
     pub clock: Clock,
+    /// The same version as a resume token: which session, and how far in.
+    ///
+    /// This is what [`IndexHandle::since`] takes and what `ReadRequest::expected` pins to,
+    /// so a consumer's cache key, its next replay, and its page pin all derive from one
+    /// value that a read actually returned.
+    pub cursor: Cursor,
     /// The scan scope this index represents, carrying the ignore, type-rule, and reducer
     /// fingerprints a consumer cache key should derive from.
     pub scope: ScanScope,
     /// Whether the index is fully verified, or holds anything stale or unverified.
     pub freshness: Freshness,
+    /// What the operation that built this state did, captured with everything else.
+    ///
+    /// Lifecycle, coverage, source and typed failures from the same boundary as the
+    /// projections. A caller reading them from anywhere else is reading them at another
+    /// instant, which is the defect this field exists to remove.
+    pub run: crate::query::RunFacts,
     /// Live entries, including the root.
     pub entries: u64,
     /// Absolute filesystem root.
@@ -836,6 +865,14 @@ pub struct Index {
     free_head: Option<u32>,
     live: u64,
     clock: Clock,
+    /// What the operation that built this index's current state did.
+    ///
+    /// Beside the tree and under the same lock, so a read returns them with the
+    /// projections they describe. Held in a second lock beside the index, they could be
+    /// sampled at a different instant than the rows, and a refresh landing in between
+    /// paired an old projection with new status -- both halves true, the disagreement
+    /// invisible.
+    run: crate::query::RunFacts,
     /// Identity of this opened index, so a resume token can be checked against it.
     ///
     /// Minted per construction and never persisted: a snapshot reload is a new session by
@@ -1053,6 +1090,16 @@ impl IndexHandle {
         Ok(self.read_index()?.session())
     }
 
+    /// Record what the operation that just finished did.
+    ///
+    /// Takes the write guard, briefly, so these facts commit with the index rather than
+    /// beside it. A caller holding them in its own lock is a caller whose reads can pair
+    /// one instant's rows with another instant's status.
+    pub fn set_run_facts(&self, run: crate::query::RunFacts) -> crate::Result<()> {
+        self.write_index()?.set_run_facts(run);
+        Ok(())
+    }
+
     /// Several projections evaluated under one read guard.
     ///
     /// A composed response must not straddle a commit. Answering a directory listing and
@@ -1071,6 +1118,17 @@ impl IndexHandle {
         let started = std::time::Instant::now();
         let index = self.read_index()?;
         let lock_wait_ns = nanos(started.elapsed());
+        // Checked under the guard, before any projection runs. Checking it afterwards
+        // would answer the pin with a version the rows were not read at, and checking it
+        // outside the guard would be the very race the pin exists to close.
+        if let Some(expected) = request.expected
+            && expected != index.cursor()
+        {
+            return Err(crate::Error::VersionUnavailable {
+                requested: expected,
+                current: index.cursor(),
+            });
+        }
         // Each projection counts into its own record, and the bundle's total is their sum
         // -- including the root, counted once per projection that reads it, because that
         // is what a projection actually does. Splitting them is what lets a serving loop
@@ -1107,7 +1165,8 @@ impl IndexHandle {
         // call that a write could land between.
         let report = request.report.as_ref().map(|wanted| {
             timed(&mut projections.report, |work| {
-                let rendered = crate::query::report(&index, &wanted.query, &wanted.provenance);
+                let provenance = index.run_facts().provenance(wanted.generated_at);
+                let rendered = crate::query::report(&index, &wanted.query, &provenance);
                 work.rows += rendered.row_count();
                 work.name_bytes += rendered.name_bytes();
                 rendered
@@ -1116,8 +1175,10 @@ impl IndexHandle {
 
         let bundle = ReadBundle {
             clock: index.clock(),
+            cursor: index.cursor(),
             scope: index.scope(),
             freshness: index.freshness(),
+            run: index.run_facts().clone(),
             entries: index.len(),
             root: index.root_path().to_path_buf(),
             total,
@@ -1297,6 +1358,7 @@ impl Index {
             scope,
             arena: vec![Slot::Occupied { generation: 0, entry: Box::new(root) }],
             free_head: None,
+            run: crate::query::RunFacts::default(),
             session: SessionId::mint(),
             live: 1,
             clock: Clock::ZERO,
@@ -1873,6 +1935,19 @@ impl Index {
             cursor: self.cursor(),
             truncated: cursor.clock < self.journal_floor,
         })
+    }
+
+    /// What the operation that built this index's current state did.
+    pub fn run_facts(&self) -> &crate::query::RunFacts {
+        &self.run
+    }
+
+    /// Record what the operation that just finished did.
+    ///
+    /// Called by the paths that already hold the write guard, so these facts commit with
+    /// the tree they describe rather than shortly after it.
+    pub fn set_run_facts(&mut self, run: crate::query::RunFacts) {
+        self.run = run;
     }
 
     /// This index's identity, for minting and checking resume tokens.
@@ -3883,6 +3958,106 @@ mod tests {
     /// race *occurs* is a flaky test: replacing the bundle with two separate calls under
     /// this same writer fails within a few iterations (6 files in the rows against 4 in
     /// the header). So this passes because the guard holds, not because nothing overlapped.
+    /// A pinned read returns that exact version or refuses; it never continues.
+    ///
+    /// A name cursor already keeps page two from skipping or repeating a row. What it
+    /// cannot do is keep page two from describing a *different tree* than page one, and a
+    /// consumer stitching bounded pages into one complete answer needs both -- otherwise
+    /// it assembles a result from two generations with nothing in it saying so.
+    ///
+    /// Retaining only the current image is the whole retention policy, so an aged-out pin
+    /// failing is the designed answer rather than a shortcoming: the caller restarts a
+    /// bounded assembly, which is cheap, instead of the engine holding history, which is
+    /// not.
+    #[test]
+    fn a_pinned_read_refuses_a_version_the_index_has_moved_past() {
+        let handle = IndexHandle::new(Index::new("/root"));
+        handle
+            .apply(&Observation::new(vec![upsert("a.txt", EntryKind::File, file_attrs(1, 1))]))
+            .expect("apply");
+
+        let pinned = handle.cursor().expect("cursor");
+        let request = ReadRequest { total: true, expected: Some(pinned), ..ReadRequest::default() };
+        assert_eq!(
+            handle.read(&request).expect("the pin matches").cursor,
+            pinned,
+            "a pin at the current version reads normally"
+        );
+
+        // A write lands; the same pin is now stale.
+        handle
+            .apply(&Observation::new(vec![upsert("b.txt", EntryKind::File, file_attrs(2, 2))]))
+            .expect("apply");
+        assert!(
+            matches!(handle.read(&request), Err(crate::Error::VersionUnavailable { .. })),
+            "a stale pin must fail rather than answer at a newer version"
+        );
+
+        // Unpinned, the same request reads the newer tree, which is what an unpinned read
+        // is for -- the refusal above is the caller's choice, not a lock on the index.
+        let open = ReadRequest { total: true, ..ReadRequest::default() };
+        assert_eq!(handle.read(&open).expect("unpinned").total.expect("total").files, 2);
+    }
+
+    /// A read with no projections is a checkpoint, and costs like one.
+    ///
+    /// The contract this serves calls an empty request the constant-work form: a consumer
+    /// validates a retained body against the current version before paying for anything.
+    /// "Constant work" has to be checked rather than asserted, because the cheap way to
+    /// break it is to add a projection that runs unconditionally and only looks free when
+    /// the tree is small.
+    #[test]
+    fn an_empty_read_is_a_checkpoint_that_visits_nothing() {
+        let handle = IndexHandle::new(Index::new("/root"));
+        handle
+            .apply(&Observation::new(vec![
+                upsert("dir", EntryKind::Dir, Attrs::default()),
+                upsert("dir/a.txt", EntryKind::File, file_attrs(1, 1)),
+                upsert("dir/b.txt", EntryKind::File, file_attrs(2, 2)),
+            ]))
+            .expect("apply");
+
+        let bundle = handle.read(&ReadRequest::default()).expect("checkpoint");
+        assert_eq!(bundle.work.entries_visited, 0, "a checkpoint reads no entries");
+        assert_eq!(bundle.work.dirs_visited, 0);
+        assert_eq!(bundle.work.rows, 0);
+        assert!(bundle.total.is_none() && bundle.children.is_none() && bundle.report.is_none());
+
+        // And it still carries the envelope, which is the entire point of asking.
+        assert_eq!(bundle.cursor, handle.cursor().expect("cursor"));
+        assert_eq!(bundle.entries, 4, "root, dir, and two files");
+    }
+
+    /// The envelope and the rows come from one boundary, so they cannot disagree.
+    ///
+    /// Run facts used to live beside the index in the caller, which meant a read sampled
+    /// them from one lock and the projections from another. A refresh landing between the
+    /// two acquisitions paired an old projection with new status -- both halves true, and
+    /// the disagreement invisible. Holding them on the index makes the pairing
+    /// unrepresentable; this pins that they travel together.
+    #[test]
+    fn the_run_envelope_arrives_with_the_rows_it_describes() {
+        let handle = IndexHandle::new(Index::new("/root"));
+        handle
+            .apply(&Observation::new(vec![upsert("a.txt", EntryKind::File, file_attrs(1, 1))]))
+            .expect("apply");
+        handle
+            .set_run_facts(crate::query::RunFacts {
+                scan_started_at: None,
+                source: crate::query::ReportSource::CacheOnly,
+                complete: false,
+                errors: vec!["one path could not be read".to_string()],
+            })
+            .expect("record");
+
+        let bundle =
+            handle.read(&ReadRequest { total: true, ..ReadRequest::default() }).expect("read");
+        assert_eq!(bundle.run.source, crate::query::ReportSource::CacheOnly);
+        assert!(!bundle.run.complete);
+        assert_eq!(bundle.run.errors, vec!["one path could not be read".to_string()]);
+        assert_eq!(bundle.total.expect("total").files, 1, "and the rows are the same read's");
+    }
+
     #[test]
     fn a_bundled_read_cannot_straddle_a_commit() {
         use std::sync::atomic::{AtomicBool, Ordering};
@@ -3938,20 +4113,6 @@ mod tests {
         writer.join().expect("writer");
     }
 
-    /// Run facts for a bundled report under test.
-    ///
-    /// Fixed rather than sampled, because `report` is a pure function of its inputs and a
-    /// test that varied them would be testing the clock.
-    fn test_provenance() -> crate::query::Provenance {
-        crate::query::Provenance {
-            scan_started_at: None,
-            generated_at: std::time::UNIX_EPOCH,
-            source: crate::query::ReportSource::ColdScan,
-            complete: true,
-            errors: Vec::new(),
-        }
-    }
-
     /// A report in the bundle describes the same instant as the rows beside it.
     ///
     /// This is the same property `a_bundled_read_cannot_straddle_a_commit` pins one level
@@ -3995,7 +4156,7 @@ mod tests {
                     views: vec![crate::query::ViewSpec::Summary],
                     ..crate::query::Query::default()
                 },
-                provenance: test_provenance(),
+                generated_at: std::time::SystemTime::UNIX_EPOCH,
             }),
             ..ReadRequest::default()
         };
@@ -4033,7 +4194,7 @@ mod tests {
                         views: vec![crate::query::ViewSpec::Files],
                         ..crate::query::Query::default()
                     },
-                    provenance: test_provenance(),
+                    generated_at: std::time::SystemTime::UNIX_EPOCH,
                 }),
                 ..ReadRequest::default()
             })

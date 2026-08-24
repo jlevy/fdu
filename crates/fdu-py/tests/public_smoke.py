@@ -463,6 +463,13 @@ def check_one_bundle_answers_a_whole_page() -> None:
     assert page.work.lock_wait_ns <= page.work.wall_ns
     assert page.work.wall_seconds > 0
 
+    # A pinned read returns exactly that version or raises. A name cursor keeps page two
+    # from skipping or repeating a row; only a pin keeps page two from describing a
+    # different tree than page one, which is what a caller assembling a complete answer
+    # from bounded pages needs.
+    pinned = index.read(children_of="docs", total=True, expected=page.cursor)
+    assert pinned.cursor == page.cursor
+
     # And the cursor works: what happened after it is what changed since.
     (root / "docs" / "extra.md").write_text("more", encoding="utf-8")
     index.refresh()
@@ -470,6 +477,23 @@ def check_one_bundle_answers_a_whole_page() -> None:
     assert not changed.truncated
     assert any(change.path == Path("docs/extra.md") for change in changed.changes)
     assert changed.cursor.clock >= page.clock
+
+    # The tree moved, so the earlier pin has aged out. Failing is the designed answer:
+    # only the current version is retained, and a caller restarts a bounded assembly
+    # rather than the engine holding history so a stale pin could succeed.
+    try:
+        index.read(children_of="docs", expected=page.cursor)
+    except fdu.FduError:
+        pass
+    else:
+        raise AssertionError("a pin the index has moved past must not be answered")
+
+    # An empty request is the constant-work checkpoint: it carries the envelope and reads
+    # no entries, which is what lets a caller validate a cached body before paying.
+    checkpoint = index.read()
+    assert checkpoint.work.entries_visited == 0, checkpoint.work
+    assert checkpoint.total is None and checkpoint.children is None
+    assert checkpoint.cursor.session == index.cursor().session
     fdu.clear_cache(root)
 
 
