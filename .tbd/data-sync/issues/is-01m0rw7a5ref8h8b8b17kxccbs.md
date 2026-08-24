@@ -3,9 +3,9 @@ type: is
 id: is-01m0rw7a5ref8h8b8b17kxccbs
 title: "Coverage reason: partial must say why, not only that"
 kind: feature
-status: open
+status: closed
 priority: 1
-version: 7
+version: 8
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 labels: []
 dependencies:
@@ -13,23 +13,28 @@ dependencies:
     target: is-01m0rw7d4h3t49rwvk11cmk5xb
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T03:15:01.418Z
-updated_at: 2026-08-24T23:34:02.744Z
-closed_at: 2026-08-24T23:31:10.622Z
+updated_at: 2026-08-24T23:51:03.913Z
+closed_at: 2026-08-24T23:51:03.913Z
 close_reason: |
-  Shipped earlier in this branch (commit a07fa17, "engine: partial coverage says why, not
-  only that"). Re-closed 2026-08-25 after a `tbd sync` reverted the status.
+  Closed. `make check` green.
 
-  `Status::Partial` carries a `CoverageReason`: `Building`, `Budget`, `Cancelled`,
-  `Inaccessible`, `WatcherGap`, `Failed`. Ordered least-to-most-alarming so
-  `Provenance::combine`'s `max` surfaces the worst reason in a subtree rather than an
-  arbitrary one -- a consumer asking "why is this partial" gets the answer that matters
-  rather than whichever child happened to be visited last.
+  `CoverageReason::WatcherGap` is gone from the enum and from every surface that named it
+  -- the Rust variant, the Python `CoverageReason.WATCHER_GAP` member, the label mapping in
+  the binding, the smoke suite's expected vocabulary, and the implementation spec.
 
-  The bead's own estimate was corrected during implementation: it claimed four of the six
-  reasons were reachable engine state, and only two are. `WatcherGap` in particular is not,
-  because `InvalidateSubtree` marks `Freshness::Stale` -- a statement about *trust* rather
-  than about coverage. That distinction is now the subject of MB74-C3 on metabrowser PR #74,
-  which asks the two projects to pick one axis before the semantic digest compares them.
+  MetaBrowser removed `watcher_gap` from coverage, which settles MB74-C3 (the question I
+  raised on their PR #74) the way I recommended: coverage and freshness are independent
+  axes, and observation loss is a *freshness* fact. The variant had been declared and
+  documented as unreachable from the start; the implementation was right and the vocabulary
+  was wrong. Exporting a reason nothing can return invites a consumer to branch on it
+  forever, so declaring-and-not-producing is not a safe halfway house.
+
+  The reasoning now lives on the enum itself, as an explicit note that the omission is the
+  point rather than an oversight: an `InvalidateSubtree` marks `Freshness::Stale`, which is
+  a statement about trust -- the totals still account for every entry, they may simply be
+  wrong. Coverage becomes partial only when the answer actually omits scope, and then the
+  reason is `Inaccessible`. `a_dropped_watch_queue_costs_trust_and_not_coverage` already
+  pinned that behaviour and now explains why no such variant exists.
 resolution: null
 duplicate_of: null
 ---
