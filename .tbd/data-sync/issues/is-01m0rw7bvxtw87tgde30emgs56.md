@@ -5,13 +5,13 @@ title: "Invalidation vocabulary: dirty query kinds, all-dirty, and reset as dist
 kind: feature
 status: open
 priority: 1
-version: 2
+version: 3
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 labels: []
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T03:15:03.165Z
-updated_at: 2026-08-24T22:53:52.395Z
+updated_at: 2026-08-24T23:00:21.914Z
 ---
 MetaBrowser's changes() contract emits "bounded dirty paths or query kinds", "`all_dirty`
 when individual dirtiness exceeds its bound", "`reset` when the requested cursor or
@@ -42,3 +42,5 @@ Depends on fdu-jxs0 for the state-only member.
 ## Notes
 
 METABROWSER DECISION LANDED at 68eeaac (2026-08-24). Reset and provider observation-gap recovery are distinct. reset means the requested consumer cursor/session cannot resume coherently and requires checkpoint+reread. A primary watcher overflow instead marks freshness stale, emits a typed watcher-gap issue, reconciles the affected scope when possible, and publishes bounded dirty/all_dirty or state transitions on the provider clock; it is not itself reset. The current WatchBatch carrier sets reset for WatchOverflow/UnpairedRename/WatchSetupRace, so this bead must split those meanings and pin them with separate tests. Unrecoverable observer failure remains stale with a typed issue rather than masquerading as reset recovery failure.
+
+EXACT CODE STATE at 558461a (2026-08-24). The newly landed carrier sets reset for WatchOverflow, UnpairedRename, and WatchSetupRace in Session.next_batch. This is the concrete site to change under the settled MetaBrowser rule: provider observation loss drives stale state, typed issue, reconciliation, and dirty/all_dirty; reset is only for an unresumable consumer cursor/session. Add separate overflow-recovery and stale-consumer-cursor tests so the two signals cannot collapse again.
