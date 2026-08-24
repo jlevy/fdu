@@ -4,7 +4,7 @@
 
 **Author:** fdu project
 
-**Status:** Draft
+**Status:** In Progress
 
 ## Overview
 
@@ -407,23 +407,210 @@ inside the size budget the guidelines set.
 - The reference embedder and the cross-engine fixture are the acceptance test `fdu-p02b`
   asked for.
 
+## What Landed
+
+The map above was written before the code was.
+This section records what was actually built, at the same file-and-function level, so
+the two can be compared — and so the places where implementation contradicted the plan
+are on the record rather than in a commit message nobody re-reads.
+
+Nineteen of the twenty-six beads under the contract epic are closed.
+Every one cleared `make check`, which replays the golden corpus against the command line
+and against the Python package and fails on any unclassified difference.
+
+### Engine: the read path
+
+| Bead | What shipped | Where |
+| --- | --- | --- |
+| `fdu-gav9` | `PyIndex` holds an `IndexHandle`, so a read is served during a write | `fdu-py/src/lib.rs`, `index.rs:IndexHandle::with_index` |
+| `fdu-2ivi` | `IndexHandle::read(&ReadRequest) -> ReadBundle`: children, roll-ups and totals under one guard | `index.rs:IndexHandle::read` |
+| `fdu-plwq` | `IndexHandle::children_page(&ChildPageRequest) -> Option<ChildPage>` | `index.rs:child_page` |
+| `fdu-qgl9` | `ReadBundle::work`, a per-read `Work` record | `index.rs:Work`, `Index::lookup_visiting` |
+| `fdu-5hip` | `RollUp::others`, `RollUp::is_empty`, `ChildSnapshot::is_empty_subtree` | `index.rs:contribution` |
+| `fdu-e2p7` | `Bound` on every roll-up’s extension rows, with `ExtRemainder` | `index.rs:named_rollup_bounded` |
+| `fdu-knyw` | `TreeNode::remainder` replaces a bare `truncated: bool` | `query/query_report.rs:withheld_children` |
+
+Four things about this group were not obvious from the outside.
+
+**`snapshot()` is not a read.** The first fix for `fdu-gav9` routed `build_report`
+through `IndexHandle::snapshot()`, which deep-clones every entry.
+Every test passed and a report went from milliseconds to seconds — a 1,900× regression
+that only re-running the measurement caught.
+`with_index` holds the read guard and hands out `&Index` instead, which is what a pure
+reader needs and what `snapshot` was never for.
+
+**A listing row must not carry a map.** `ChildSnapshot` built an owned `RollUp` per
+directory child, so a thousand children cloned a thousand `BTreeMap`s to render a
+thousand size columns.
+`ChildSnapshot::totals` is now `Option<RollUpScalars>`, which is `Copy` — the type is
+the assertion, since a row physically cannot hold a map.
+The breakdown stays available as its own projection for the one directory being
+inspected.
+
+**A page’s remainder is the complement of that page, not of the delivery.** Stating it
+against the whole directory keeps it exact on every page with no cursor carrying a
+running total, and “showing 50 of 812” is the sentence a listing wants.
+It also means `remainder` stays present on the last page, so `next` — and only `next` —
+says whether paging continues.
+A consumer looping on `truncated` would never stop, which is why there is a test named
+for exactly that.
+
+**Symlinks weigh nothing and are not nothing.** `contribution()` gave symlinks and
+devices a default roll-up, so a directory of a hundred symlinks was zero files, zero
+directories and zero bytes: the same arithmetic as empty.
+`others` counts them, and `ChildSnapshot::is_empty_subtree` returns `Option<bool>` so a
+`Status::Partial` subtree declines to answer rather than claiming emptiness it has not
+established.
+
+### Engine: classification
+
+| Bead | What shipped | Where |
+| --- | --- | --- |
+| `fdu-ctp5` | `TypeRegistry` as a runtime value; the compiled default is one instance of it | `classify.rs`, `classify/type_rule_manifest.rs` |
+| `fdu-b2vy` | `GroupId`, `RollUp::by_group`, `--view groups` | `classify.rs:TypeGroup`, `index.rs:InternedRollUp::by_group` |
+| `fdu-16l7` | `Classification` and logical extension on listing and files rows | `index.rs:child_snapshot`, `query_report.rs:file_rows` |
+| `fdu-5q6e` | Two extension levels: `logical_ext` and `TypeRegistry::canonical_ext` | `classify.rs` |
+
+The manifest parser is `include!`d by `build.rs`, so the dialect that parses a
+user-supplied rule file is the same code that generates the compiled default — one
+parser, not two that agree until they do not.
+Its header comment uses `//` rather than `//!`, which is not style: an `include!`d file
+is spliced mid-module and an inner doc comment there is a compile error.
+
+Group tallies are **maintained**, not derived from `by_ext`. Deriving is wrong twice
+over: an exact-filename rule (`Makefile`, `Dockerfile`) has no extension bucket to
+derive from, and a registry may map two extensions of one group to different types.
+
+The two extension levels are one change with two regressions hiding in it.
+`classify_with` matches rules by exact key with no suffix fallback, so returning the raw
+`.v2.zip` alone makes the archive `unknown:.v2.zip`, and `ext_bucket` wraps the same
+lookup, so the `.zip` roll-up bucket splits at the same moment — in exactly the names
+the change is for. The canonical level exists to make the logical level safe.
+The property the bead asked to pin was verified by running `fdu` against its own fixture
+before and after: `--view types` and `--view extensions` are byte-identical.
+
+### Surfaces
+
+| Bead | What shipped | Where |
+| --- | --- | --- |
+| `fdu-4vkz` | `--order` and `--threads` on the Scope axis; `ScanOptions.order`/`.threads` | `fdu/src/cli.rs`, `fdu-py/python/fdu/_models.py` |
+| `fdu-ctp5` | `--type-rules` and `ScanOptions.type_rules`; `fdu.TypeRegistry` | `cli.rs:load_type_rules`, `fdu-py/src/lib.rs:PyTypeRegistry` |
+| `fdu-tib6` | `Index.telemetry` as a typed `WalkTelemetry` | `fdu-py/python/fdu/_models.py` |
+| `fdu-mz1a` | `Watch.dirty_rollups`: the roll-ups each batch invalidated | `watch.rs`, `fdu-py/src/lib.rs` |
+| `fdu-rhu3` | `WatchBackend::Poll { interval }`, reachable as `poll_interval` | `watch.rs:WatchBackend` |
+| `fdu-97pb` | `fdu.aio.watch_batches()` and an SSE-resume example | `fdu-py/python/fdu/aio.py`, `examples/sse_resume.py` |
+
+`WatchConfig` lost `Copy` when the poll interval arrived, which threaded `&WatchConfig`
+through `validate`, `apply_intent`, `verify_intent` and `run_worker`. That is the kind
+of change worth naming because it looks like churn and is not: a config that can no
+longer be copied is a config that can no longer be silently diverged.
+
+The asyncio adapter owns the thread-affinity rule rather than documenting it.
+`PyWatch` is `#[pyclass(unsendable)]`, so the first version — create the watch, hand it
+to a worker — panicked at runtime.
+The adapter opens, drains and closes the watch **on** the worker thread, and the event
+loop only ever sees a queue.
+Backpressure is `asyncio.run_coroutine_threadsafe(...).result()`, and the `finally`
+block drains the queue so a cancelled consumer cannot leave a producer blocked on a full
+one.
+
+### Test architecture
+
+| Bead | What shipped | Where |
+| --- | --- | --- |
+| `fdu-0jyz` | `WatchBackend::Scripted { events }`, a tab-separated event script | `watch/scripted_events.rs` |
+| `fdu-524n` | `FDU_COUNTERS` machine payload on stderr, asserted by relation | `counters.rs:Counts::to_json`, `tests/golden/cli-cost.tryscript.md` |
+
+The scripted backend is what makes the `InvalidateReason` paths testable at all: a test
+cannot ask a filesystem for an inotify `Q_OVERFLOW`. Writing those tests found two
+assertions **backwards** in the plan and in this author’s head: a rescan flag escalates
+*the subtree it names*, and an unpaired rename escalates *to the root*, because there is
+no safe bound on where the counterpart landed.
+The tests now pin the engine’s real contract, which is the opposite of the one that was
+assumed.
+
+Counter assertions are relational and never wall-clock, as the strategy above requires.
+The Python surface emits no `__FDU_COUNTERS__` line, so the golden driver scripts are
+guarded and the difference is a declared `process-instrumentation` class in
+`parity-classes.mjs` rather than a harness crash.
+
+### What the corpus learned
+
+Two golden-corpus rules earned their keep and are worth restating with the evidence.
+
+`tryscript run --update` writes *what it saw*, expanding named patterns into literals
+and producing a golden that passes only on the machine that recorded it.
+The workflow that works is: snapshot `tests/golden`, run the update, then transplant —
+keep the named patterns from the before-file and take only genuine behaviour changes
+from the after-file.
+`make check`’s portability pass refuses the alternative.
+
+A directory’s `bytes` is filesystem-dependent (4096 on ext4, not 0), which needed a new
+`DIR_SIZE` named pattern.
+And a cache-only session cannot be warmed with `--view summary`: that view is served
+from the transient tier and writes no snapshot, so the warming run has to be
+`--view tree`.
+
+## What Did Not Land, And Why
+
+Seven beads under the epic are open, and none of them is open because the work was
+tedious.
+
+**`fdu-mvt3`, `fdu-7rwf` — partitioned tallies.** Blocked on two things, either of which
+alone would be enough.
+The bead itself says not to build the hidden plane until metabrowser confirms it needs
+one, because a second maintained plane costs on every reducer path and an unused one
+costs the same as a used one.
+And the unignored plane needs gitignore semantics, which means the `ignore` crate, which
+owes the 14-day supply-chain cool-off.
+
+**`fdu-4o0m`, `fdu-m893`, `fdu-ey9q` — the session, progress mode, progressive
+goldens.** These sit behind the progressive-results epic (`fdu-wpa0`), which owns the
+session type these three present.
+Building a progress mode against a session that does not exist yet would mean inventing
+the session in the command line, which is the one thing the surface architecture
+forbids.
+
+**`fdu-n4gn` — what planes and groups cost.** A loop job needs a quiet host.
+Run on a shared runner it measures the runner, which is the same reason no timing gate
+is in `make check`.
+
+**`fdu-vfyw` — the reference embedder and cross-engine fixture.** Needs the dual-plane
+tallies above and gitignore negations to be meaningful; a fixture that agrees on the
+half both engines already implement proves nothing about the half they do not.
+
+Two follow-ups were split out of work that did land, rather than being quietly dropped:
+
+- `fdu-gy3g` — vendoring the File Rollup conformance packet.
+  Its cases are matching-only, so they pass against a single extension level and would
+  have gone green both before and after `fdu-5q6e`. It needs direct
+  basename-to-logical-extension cases from metabrowser first; vendoring it as it stands
+  buys a green check that proves nothing.
+- `fdu-or38` — the report views still cannot tell a symlink-only directory from an empty
+  one, because `SummaryRow` and `TreeNode` carry no leaf count.
+  Adding a column to the text table is a command-line display decision and moves every
+  golden, so it is worth choosing deliberately rather than inheriting.
+
 ## Implementation Plan
 
 One phase, because the sequencing is already carried by bead dependencies and the phases
 in the parent spec. The work here is to attach this map to those beads and add the
 testing beads it introduces.
 
-- [ ] Record the file/function map above on each existing bead’s notes so an implementer
+Checked items are recorded in **What Landed** above, at the same file-and-function level
+as the map they came from.
+
+- [x] Record the file/function map above on each existing bead’s notes so an implementer
   starts from it (`fdu-u7vo` children)
 - [ ] `--progress`/`--progress-at` on the Mode axis, the refactor that lets watch and
   progress share one repaint loop, and the `--docs` amendment (`fdu-m893`, blocked by
-  `fdu-4vkz` and `fdu-4o0m`)
-- [ ] Scripted watch events behind the watch feature gate, with goldens for the
+  `fdu-4o0m`, which is blocked by the progressive-results epic)
+- [x] Scripted watch events behind the watch feature gate, with goldens for the
   `InvalidateReason` cases a real filesystem cannot be made to produce (`fdu-0jyz`)
-- [ ] Counter relations as a golden-visible cost oracle, following the
+- [x] Counter relations as a golden-visible cost oracle, following the
   `FDU_SCAN_DIAGNOSTICS` precedent (`fdu-524n`)
 - [ ] Progressive goldens for both traversal orders, and the tagged fixture the plane
-  goldens need (`fdu-ey9q`, blocked by the two above and by `fdu-4vkz`)
+  goldens need (`fdu-ey9q`, blocked by `fdu-m893` and by the tagged planes)
 
 ## Testing Strategy
 
@@ -445,14 +632,19 @@ The rules that govern all of it:
 
 ## Open Questions
 
+Answered questions are struck through with the answer, rather than deleted: what a
+decision replaced is part of the record.
+
 - Should `--progress-at depth` be the only checkpoint that ships?
   `entries:N` is useful to a consumer and awkward in a golden, because the frame count
   then depends on tree size.
-- Does the scripted-event source belong behind the `watch` feature gate or behind a
-  separate test-only feature?
-  The gate keeps the layer deletable, which argues for the former; a test-only feature
-  keeps a scripted-event path out of released binaries entirely, which argues for the
-  latter.
+- ~~Does the scripted-event source belong behind the `watch` feature gate or behind a
+  separate test-only feature?~~ Answered: the `watch` gate.
+  A separate feature would mean the scripted backend is not compiled in the
+  configuration anyone ships, so the seam it tests would be exercised only in a build no
+  user runs — which is how a test-only path drifts from the one it stands in for.
+  `WatchBackend` is a plain enum variant beside `Native` and `Poll`, and the gate keeps
+  the whole layer deletable exactly as before.
 - Owned registry strings cost something against `&'static` ones.
   The measurement is a loop job on PR #38’s own subject, and the answer decides whether
   the compiled default keeps a specialized path.
