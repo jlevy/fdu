@@ -22,6 +22,7 @@ them, not what they are.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import threading
 from collections.abc import AsyncIterator
 
@@ -32,10 +33,14 @@ __all__ = ["watch_batches"]
 
 #: How long cancellation waits for the worker to notice and exit.
 #:
-#: The drain that precedes the join unblocks it, so this bound is a guard against a bug
-#: rather than a normal path -- a worker that is still alive after it has been told to
-#: stop and had its queue emptied is not waiting on anything this code controls.
+#: A backstop, not a normal path. The join runs in an executor and the queue keeps
+#: draining beside it, so a worker that has been told to stop and can still reach the loop
+#: exits in microseconds. Reaching this bound means something outside this module is
+#: holding it.
 _WORKER_JOIN_TIMEOUT = 5.0
+
+#: How often teardown gives the loop a turn while waiting for the worker to exit.
+_TEARDOWN_POLL = 0.005
 
 #: Batches held for a slow consumer before the worker stops pulling.
 #:
@@ -131,17 +136,26 @@ async def watch_batches(
             yield item
     finally:
         stop.set()
-        # Drain what is queued so a worker blocked on a full queue can complete its put,
-        # see the stop, and exit. Without this a consumer that leaves early would leave
-        # the thread parked on a future nothing will ever await.
-        while True:
-            try:
+        # Cleanup runs while *this task* is being cancelled, which is why every await
+        # below is guarded. The first await in a cancelled task re-raises
+        # `CancelledError` immediately; without suppressing it the teardown aborts
+        # halfway and the worker outlives the consumer that stopped it.
+        #
+        # The loop itself is still running -- only this task was cancelled -- so the
+        # worker can complete its own `run_coroutine_threadsafe` handoff as long as
+        # nothing blocks the loop. That is the other half: the join goes to an executor
+        # rather than running here. Joining on the loop thread deadlocks, because the
+        # worker needs the loop the join is stopping, and it resolves by timing out --
+        # every request stalled for the timeout, and the worker still alive at the end.
+        loop = asyncio.get_running_loop()
+        joined = loop.run_in_executor(None, worker.join, _WORKER_JOIN_TIMEOUT)
+        deadline = loop.time() + _WORKER_JOIN_TIMEOUT
+        while not joined.done() and loop.time() < deadline:
+            # Drain beside the join: a worker parked on a full queue cannot reach its
+            # exit, and after the stop nobody is going to read these.
+            with contextlib.suppress(asyncio.QueueEmpty):
                 queue.get_nowait()
-            except asyncio.QueueEmpty:
-                break
-        # And wait for it to actually be gone. Setting a flag says "please stop"; joining
-        # is what makes cancellation mean the watch registration is released by the time
-        # this returns, rather than at some point afterwards. The drain above is what
-        # guarantees the join finishes: a worker blocked on a full queue can now complete
-        # its put and exit.
-        worker.join(timeout=_WORKER_JOIN_TIMEOUT)
+            with contextlib.suppress(asyncio.CancelledError):
+                await asyncio.sleep(_TEARDOWN_POLL)
+        with contextlib.suppress(asyncio.CancelledError):
+            await joined

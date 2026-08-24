@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import ast
 import asyncio
+import contextlib
 import dataclasses
 import importlib.util
 import json
@@ -217,7 +218,6 @@ def check_partial_coverage_says_why() -> None:
         "budget",
         "cancelled",
         "inaccessible",
-        "watcher_gap",
         "failed",
     }
 
@@ -607,6 +607,54 @@ def check_the_event_loop_adapter_delivers_the_same_batches() -> None:
     # which is what proves the adapter closed its own watch rather than the caller's.
     index.refresh()
     assert index.rollup(Path()) is not None
+
+    # Cancellation must be prompt, must not stall the loop, and must actually end the
+    # worker. Joining the worker *on* the loop thread deadlocks: its exit path is
+    # `run_coroutine_threadsafe(queue.put(None), loop).result()`, so it needs the loop to
+    # run while the join stops the loop from running. That resolves by timeout -- every
+    # request stalled for seconds, and the worker still alive at the end.
+    async def cancel_promptly() -> tuple[float, int, int]:
+        beats = 0
+
+        async def heartbeat() -> None:
+            nonlocal beats
+            while True:
+                beats += 1
+                await asyncio.sleep(0.01)
+
+        async def follow() -> None:
+            async for _ in fdu.aio.watch_batches(index, fdu.WatchOptions(interval=0.1)):
+                pass
+
+        def watchers() -> int:
+            # By name, not by total count: the teardown hands its join to an executor,
+            # whose pool thread is expected to outlive the call and would otherwise read
+            # as the leak this is looking for.
+            return sum(1 for t in threading.enumerate() if t.name == "fdu-watch-aio")
+
+        pulse = asyncio.ensure_future(heartbeat())
+        watching = asyncio.ensure_future(follow())
+        # Let the worker start and settle into its pull, so the teardown below is the
+        # interesting one rather than a race with startup.
+        await asyncio.sleep(0.3)
+
+        beats_before = beats
+        started = time.monotonic()
+        watching.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await watching
+        elapsed = time.monotonic() - started
+
+        # Let an exiting thread finish unwinding before counting it.
+        await asyncio.sleep(0.1)
+        pulse.cancel()
+        return elapsed, beats - beats_before, watchers()
+
+    elapsed, beats, leaked = asyncio.run(asyncio.wait_for(cancel_promptly(), timeout=30))
+    assert elapsed < 3.0, f"cancellation must not stall the loop: {elapsed:.2f}s"
+    assert beats > 0, "the loop must keep running its other tasks while the watch tears down"
+    assert leaked == 0, f"the worker thread must be gone, not merely told to stop: {leaked}"
+
     fdu.clear_cache(root)
 
 

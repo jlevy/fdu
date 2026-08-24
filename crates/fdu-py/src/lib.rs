@@ -1332,7 +1332,6 @@ fn coverage_reason_label(status: fdu_core::Status) -> Option<&'static str> {
         fdu_core::CoverageReason::Budget => "budget",
         fdu_core::CoverageReason::Cancelled => "cancelled",
         fdu_core::CoverageReason::Inaccessible => "inaccessible",
-        fdu_core::CoverageReason::WatcherGap => "watcher_gap",
         _ => "failed",
     })
 }
@@ -1827,7 +1826,7 @@ impl PyWatch {
             reset = batch.reset;
             dirty_rollups =
                 batch.dirty_rollups.iter().map(|path| path.as_os_str().to_os_string()).collect();
-            cursor = Some(batch.cursor);
+            cursor = batch.cursor;
             for change in &batch.changes {
                 let dict = PyDict::new(py);
                 dict.set_item("path", change.path.as_os_str())?;

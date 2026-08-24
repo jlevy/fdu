@@ -96,12 +96,19 @@ pub struct Batch {
     /// way -- but a consumer replaying `changes` alone would be applying a suffix to
     /// state that no longer matches, which is the one recovery it cannot do.
     pub reset: bool,
-    /// The version this batch leaves the index at, and the position to resume from.
+    /// The last commit this batch carries, and the position to resume from.
     ///
-    /// Captured after the batch is applied, under the index's own guard, so it names
-    /// exactly the commits this batch carries -- not a later sample that would skip
-    /// whatever landed in between.
-    pub cursor: crate::Cursor,
+    /// Derived from the deltas rather than sampled from the index afterwards, which is the
+    /// difference between correct and nearly correct. Sampling let a concurrent refresh
+    /// commit between the apply and the sample: the batch then carried no record of that
+    /// commit while naming a position past it, so resuming skipped it permanently. The
+    /// clocks here were assigned under the write guard that applied them, so this capture
+    /// is atomic without any new locking, and a commit landing afterwards is simply unseen
+    /// and replays on the next resume.
+    ///
+    /// `None` when the batch carried no deltas: it names no new position, and saying so
+    /// beats inventing one.
+    pub cursor: Option<crate::Cursor>,
 }
 
 /// How many dirty directories a batch enumerates before it says "all of them".
@@ -237,6 +244,7 @@ impl Session {
                 )
             })
         });
+        let session = self.index.session()?;
         let dirty_rollups = dirty_rollups(&applied);
         let all_dirty = dirty_rollups.len() > MAX_DIRTY_ROLLUPS;
         let mut batch = Batch {
@@ -248,7 +256,9 @@ impl Session {
             dirty_rollups: if all_dirty { Vec::new() } else { dirty_rollups },
             all_dirty,
             reset,
-            cursor: self.index.cursor()?,
+            // The last delta's own clock. `SessionId` is fixed for the life of an index,
+            // so only the clock ever needed capturing, and the delta already carries it.
+            cursor: applied.last().map(|delta| crate::Cursor { session, clock: delta.clock }),
         };
         // A control file that moved changes what the tag rules decide about entries the
         // batch never touched, so it is handled before the rows are read: rebinding first

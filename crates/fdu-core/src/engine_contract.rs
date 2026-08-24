@@ -323,21 +323,21 @@ pub enum CoverageReason {
     /// A caller stopped the walk.
     ///
     /// **Not reachable yet**: cancellation belongs to the session (`fdu-4o0m`).
+    ///
+    /// Observation loss is deliberately *not* a reason in this enum, and the omission is
+    /// the point rather than an oversight. An [`Op::InvalidateSubtree`] marks
+    /// [`Freshness::Stale`], which is a statement about *trust*: the totals still account
+    /// for every entry, they may simply be wrong. Coverage becomes partial only when the
+    /// answer actually omits scope -- if the re-read that follows cannot complete, and
+    /// then the reason is `Inaccessible`. A `WatcherGap` variant was declared here and
+    /// never produced; exporting a reason nothing can return invites a consumer to branch
+    /// on it forever, so it is gone.
     Cancelled,
     /// Some of the subtree could not be read -- a permission error, a vanished directory,
     /// an I/O failure during enumeration.
     ///
     /// Reachable: this is what a scan or reconciliation with a non-empty error list means.
     Inaccessible,
-    /// A watcher lost events and the subtree has not been re-read since.
-    ///
-    /// **Not reachable yet**, and the reason is worth stating because it looks like it
-    /// should be. An [`Op::InvalidateSubtree`] marks [`Freshness::Stale`], which is a
-    /// statement about *trust*, not coverage: the totals still account for every entry,
-    /// they may simply be wrong. Coverage becomes partial only if the re-read that
-    /// follows cannot complete, and then the reason is `Inaccessible`. This variant
-    /// becomes real if the engine ever drops entries it can no longer vouch for.
-    WatcherGap,
     /// The operation building this value returned an error.
     ///
     /// Reachable: a reconciliation that failed outright, as distinct from one that

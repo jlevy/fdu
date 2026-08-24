@@ -4799,9 +4799,11 @@ mod tests {
     /// Trust and coverage are different axes, and an invalidated subtree is the case that
     /// proves it: its totals still account for every entry, they may simply be wrong.
     ///
-    /// This is why `CoverageReason::WatcherGap` is declared and unreachable. The obvious
-    /// implementation reports it here, and would be saying "part of this subtree is
-    /// missing" about a subtree that is entirely present.
+    /// This is why there is no `WatcherGap` coverage reason. One was declared, never
+    /// produced, and has now been removed: the obvious implementation reports it here, and
+    /// would be saying "part of this subtree is missing" about a subtree that is entirely
+    /// present. Observation loss costs trust and emits a typed issue; coverage becomes
+    /// partial only when the answer actually omits scope.
     #[test]
     fn a_dropped_watch_queue_costs_trust_and_not_coverage() {
         let mut index = Index::new("/root");

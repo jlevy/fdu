@@ -385,7 +385,6 @@ class CoverageReason(StrEnum):
     BUDGET = "budget"
     CANCELLED = "cancelled"
     INACCESSIBLE = "inaccessible"
-    WATCHER_GAP = "watcher_gap"
     FAILED = "failed"
 
 

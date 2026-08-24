@@ -713,12 +713,12 @@ operations and finds four concrete gaps.
 | `close()` | on `Watch`, not on `Index` | **`fdu-sgp7`** |
 
 **Coverage says whether, not why.** The contract wants complete, or partial with one of
-`building`, `budget`, `cancelled`, `inaccessible`, `watcher_gap`, `failed`. `Status` is
-a bare `Complete | Partial`, so a consumer cannot tell a walk still running from a
-directory it could not read from a dropped watch queue — three situations with three
-different correct responses.
-Four of the six reasons are already engine state that simply is not carried; two need
-the session. **`fdu-5yqb`**, and the one of these four that is ready now.
+`building`, `budget`, `cancelled`, `inaccessible`, `failed`. `Status` is a bare
+`Complete | Partial`, so a consumer cannot tell a walk still running from a directory it
+could not read from a dropped watch queue — three situations with three different
+correct responses. Four of the six reasons are already engine state that simply is not
+carried; two need the session.
+**`fdu-5yqb`**, and the one of these four that is ready now.
 
 **The invalidation vocabulary is one of four signals.** `reset` is built and is exactly
 `ChangeSet.truncated`. Dirty *paths* exist as `Watch.dirty_rollups`. `all_dirty` is not

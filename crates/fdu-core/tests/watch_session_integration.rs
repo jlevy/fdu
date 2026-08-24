@@ -225,3 +225,83 @@ fn a_session_mutates_the_handle_it_was_opened_from() {
     drop(session);
     assert_eq!(handle.total().expect("total").files, 2);
 }
+
+/// A batch's cursor names a commit the batch carried, never one it did not.
+///
+/// `next_batch` used to let the watcher's write guards drop and then sample
+/// `index.cursor()`. A refresh committing in that window produced a batch with no record
+/// of it and a cursor past it, so resuming skipped that commit permanently -- the same
+/// defect `fdu-325q` fixed for `since`, one path over. Fixing an instance is not fixing
+/// the class, which is the reason this test exists rather than a comment.
+///
+/// The interleaving is forced rather than hoped for: a second writer commits while the
+/// batch is being assembled, and the assertion is the property that survives either
+/// ordering -- the write is in this batch, or it is strictly after this batch's cursor.
+/// Never both absent and behind.
+#[test]
+fn a_batch_cursor_never_runs_ahead_of_the_deltas_it_carried() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    fs::write(dir.path().join("a.txt"), b"12345").expect("seed");
+
+    let config = OpenConfig { policy: CachePolicy::Off, ..OpenConfig::default() };
+    let (index, _report) = open(dir.path(), &config).expect("open");
+    let handle = IndexHandle::new(index);
+    let mut session = Session::new(
+        handle.clone(),
+        ScanConfig::default(),
+        Query {
+            selection: Selection::default(),
+            views: vec![ViewSpec::Summary],
+            ..Query::default()
+        },
+        WatchConfig::default(),
+    )
+    .expect("session");
+
+    // A writer that keeps committing straight through the batch boundary.
+    let writer_handle = handle.clone();
+    let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let writer_stop = std::sync::Arc::clone(&stop);
+    let writer = std::thread::spawn(move || {
+        let mut n = 0_u64;
+        while !writer_stop.load(std::sync::atomic::Ordering::Relaxed) {
+            let path = std::path::PathBuf::from(format!("w{n}.txt"));
+            writer_handle
+                .apply(&fdu_core::Observation::new(vec![fdu_core::Op::Upsert {
+                    path,
+                    kind: fdu_core::EntryKind::File,
+                    attrs: fdu_core::Attrs { size: 1, ..fdu_core::Attrs::default() },
+                }]))
+                .expect("apply");
+            n += 1;
+            std::thread::yield_now();
+        }
+        n
+    });
+
+    fs::write(dir.path().join("b.txt"), b"678").expect("create");
+    let mut checked = 0_u32;
+    let deadline = Instant::now() + SETTLE;
+    while Instant::now() < deadline && checked < 20 {
+        let Some(batch) = session.next_batch(Duration::from_millis(50)).expect("batch") else {
+            continue;
+        };
+        let Some(cursor) = batch.cursor else {
+            assert!(batch.changes.is_empty(), "a batch with changes must name a position");
+            continue;
+        };
+        let highest = batch.changes.iter().map(|change| change.clock).max().unwrap_or(0);
+        assert!(
+            highest <= cursor.clock.0,
+            "the cursor must not sit behind a change this batch carried: {highest} > {}",
+            cursor.clock.0
+        );
+        assert_eq!(cursor.session, handle.session().expect("session"));
+        checked += 1;
+    }
+
+    stop.store(true, std::sync::atomic::Ordering::Relaxed);
+    let written = writer.join().expect("writer");
+    assert!(written > 0, "the writer must actually have interleaved");
+    assert!(checked > 0, "at least one batch must have been examined");
+}
