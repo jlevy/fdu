@@ -304,7 +304,7 @@ experiment:
     primary_metric: wall_ns
     change_pct: 1.238
     reason: "Time to first byte on the real CLI -7.54% [-8.55%, -5.18%] repeated and -12.47% [-15.66%, -9.84%] first run with total wall unchanged; the engine-path guard in the frontmatter shows the expected nothing for a one-line latency change."
-    commit: c013f1a
+    commit: 4d29d6d
 ---
 ## What was measured
 

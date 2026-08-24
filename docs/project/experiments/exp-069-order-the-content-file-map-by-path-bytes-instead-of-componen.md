@@ -1015,7 +1015,7 @@ experiment:
     primary_metric: wall_ns
     change_pct: -31.003
     reason: "content-cache-hit -31.00% [-31.43%, -27.80%] on a dense 52k-file real checkout with the content digest identical and RSS flat, for a key type that changes nothing observable; the cold jobs are unchanged and content-query fell 67% by the same mechanism."
-    commit: 4d29d6d
+    commit: 50260a5
 ---
 ## What was measured
 

@@ -530,7 +530,7 @@ experiment:
     primary_metric: wall_ns
     change_pct: -1.925
     reason: "First measurement of fdu <dir> itself: the repeated run rewrites a 13.9 MB snapshot it never reads on all 24 trials, and the write plus render is about 70 ms of a 375 ms default run."
-    commit: 778aa74
+    commit: 62f82f6
 ---
 ## What was measured
 

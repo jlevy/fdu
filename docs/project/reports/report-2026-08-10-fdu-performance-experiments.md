@@ -66,7 +66,7 @@ without it, is in [the platform tuning guide](../guides/platform-tuning.md).
 | --- | --- | --- | ---: |
 | Darwin 25.5.0, apfs | unrecorded | warm-steady | 57 |
 | Linux 6.18.5-fc-v20 | unrecorded | warm-steady | 7 |
-| Darwin 25.5.0, apfs | bare-metal | warm-steady | 4 |
+| Darwin 25.5.0, apfs | bare-metal | warm-steady | 5 |
 | Linux 6.18.44-fc-v21 | unrecorded | warm-steady | 2 |
 
 ## Every experiment, including the failures
@@ -146,6 +146,7 @@ dead end.
 | 067 | [Skip the identical snapshot rewrite on the cold-scan path](#exp067--skip-the-identical-snapshot-rewrite-on-the-coldscan-path) | H100 | `default-tree` | -10.6% | ✅ accepted |
 | 068 | [Flush the rendered report before joining the snapshot writer](#exp068--flush-the-rendered-report-before-joining-the-snapshot-writer) | H101 | `default-tree` | +1.2% | ✅ accepted |
 | 069 | [Order the content file map by path bytes instead of components](#exp069--order-the-content-file-map-by-path-bytes-instead-of-components) | H102 | `content-cache-hit` | -31.0% | ✅ accepted |
+| 070 | [Validate the separator fixes against the result they landed on](#exp070--validate-the-separator-fixes-against-the-result-they-landed-on) | — | `content-cache-hit` | -1.3% | ✅ accepted |
 
 ## The experiments
 
@@ -2385,7 +2386,7 @@ Full record:
 
 ### exp-066 — Baseline for the default command on a real package cache
 
-📏 baseline · 2026-08-23 · no hypothesis id · commit `778aa74`
+📏 baseline · 2026-08-23 · no hypothesis id · commit `62f82f6`
 
 **`default-tree`** (warm start) — measured
 
@@ -2410,7 +2411,7 @@ Full record:
 
 ### exp-067 — Skip the identical snapshot rewrite on the cold-scan path
 
-✅ accepted · 2026-08-23 · H100 · commit `62f82f6`
+✅ accepted · 2026-08-23 · H100 · commit `c013f1a`
 
 Control: main at 778aa74 with the default-tree probe mode (perf_probe.control)
 
@@ -2442,7 +2443,7 @@ Full record:
 
 ### exp-068 — Flush the rendered report before joining the snapshot writer
 
-✅ accepted · 2026-08-23 · H101 · commit `c013f1a`
+✅ accepted · 2026-08-23 · H101 · commit `4d29d6d`
 
 Control: the command line at c013f1a: report buffered until after the save is joined
 
@@ -2472,7 +2473,7 @@ Full record:
 
 ### exp-069 — Order the content file map by path bytes instead of components
 
-✅ accepted · 2026-08-23 · H102 · commit `4d29d6d`
+✅ accepted · 2026-08-23 · H102 · commit `50260a5`
 
 Control: main at 4d29d6d (perf_probe.control)
 
@@ -2504,6 +2505,40 @@ mechanism.
 
 Full record:
 [`exp-069-order-the-content-file-map-by-path-bytes-instead-of-componen.md`](../experiments/exp-069-order-the-content-file-map-by-path-bytes-instead-of-componen.md)
+
+### exp-070 — Validate the separator fixes against the result they landed on
+
+✅ accepted · 2026-08-24 · no hypothesis id · commit `f204abb`
+
+Control: exp-069 accepted binary at 50260a5
+
+Candidate: f204abb: normalized() on the content key path, for Path equality on Windows
+
+**`content-cache-hit`** (warm start) — the comparison the verdict rests on
+
+| metric | control | candidate | change | 95% interval |
+| --- | ---: | ---: | ---: | --- |
+| wall (ms) | 452.2 | 450.8 | -1.28% (n.s.) | [-5.66%, +1.86%] |
+| component (ms) | 312.9 | 316.1 | -0.93% (n.s.) | [-3.97%, +2.23%] |
+| cpu (ms) | 437.1 | 431.6 | -0.89% (n.s.) | [-3.18%, +0.69%] |
+| user (ms) | 389.9 | 385.1 | -1.02% (n.s.) | [-2.65%, +0.64%] |
+| system (ms) | 46.0 | 48.1 | -0.87% (n.s.) | [-11.12%, +8.17%] |
+| blocked (ms) | 13.7 | 18.5 | -4.49% (n.s.) | [-46.02%, +80.56%] |
+| peak rss (MiB) | 178.6 | 176.1 | -1.27% (n.s.) | [-2.86%, +0.28%] |
+
+Other jobs, wall time: `code-sloc` +0.6% (n.s.), `code-sloc-cache-hit` -0.7% (n.s.),
+`content-basic` -0.1% (n.s.), `content-query` +0.9% (regression), `document-cache-hit`
++0.1% (n.s.), `markdown-prose` +6.8% (n.s.), `text-prose` -2.4% (n.s.).
+
+Cost to carry: 0 lines; no new dependencies.
+
+**Accepted:** The pre-registered warm job moves -1.28% [-5.66%, +1.86%], inside the
+non-inferiority margin, so exp-069 -31% still describes what ships; content-query +0.94%
+[+0.08%, +2.38%] excludes zero but user CPU is flat-to-lower and system CPU falls, so
+the run bounds the fixes below the margin rather than showing a cost.
+
+Full record:
+[`exp-070-validate-the-separator-fixes-against-the-result-they-landed-.md`](../experiments/exp-070-validate-the-separator-fixes-against-the-result-they-landed-.md)
 
 ## Absolute timings
 
@@ -2621,6 +2656,13 @@ Baselines show one value because they measure a state rather than a change.
 | 045 | Pipeline macOS directory opens | `rich-summary-open-pipeline` | 3,468.3 | 3,325.4 | -4.5% | ↩︎ superseded |
 | 046 | Tune a shared macOS directory-opener pool | `rich-summary-shared-openers` | 3,337.9 | 3,220.9 | -4.0% | ⏳ in progress |
 
+### metabrowser-clone (60,089 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
+
+| # | experiment | job | before | after | change | verdict |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| 069 | Order the content file map by path bytes instead of components | `content-cache-hit` | 577.9 | 408.9 | -31.0% | ✅ accepted |
+| 070 | Validate the separator fixes against the result they landed on | `content-cache-hit` | 452.2 | 450.8 | -1.3% | ✅ accepted |
+
 ### pr22-macos-benchmarks (60,993 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 
 | # | experiment | job | before | after | change | verdict |
@@ -2693,12 +2735,6 @@ Baselines show one value because they measure a state rather than a change.
 | # | experiment | job | before | after | change | verdict |
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | 012 | Breadth-first traversal order | `cold-scan-index` | 337.9 | 337.0 | -0.6% | ✅ accepted |
-
-### metabrowser-clone (60,089 entries) — Darwin 25.5.0, apfs, bare-metal, warm-steady
-
-| # | experiment | job | before | after | change | verdict |
-| --- | --- | --- | ---: | ---: | ---: | --- |
-| 069 | Order the content file map by path bytes instead of components | `content-cache-hit` | 577.9 | 408.9 | -31.0% | ✅ accepted |
 
 ### post-cli-cache-pressure-12x (720,805 entries) — Darwin 25.5.0, apfs, unrecorded, warm-steady
 

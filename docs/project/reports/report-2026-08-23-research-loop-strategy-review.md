@@ -36,7 +36,7 @@ them are done in this branch:
 | Component | State | Evidence |
 | --- | --- | --- |
 | Protocol and accept rule | Sound: paired, interleaved, oracle-checked, 3% gate with a bootstrap interval, structural track with composite gates, floor-normalized budgets | [the performance loop](../guides/performance-loop.md) |
-| Record | 66 artifacts (exp-000 to exp-065), 41 at 12 trials, every one `os_cache: warm-steady`; 57 macOS, 9 Linux | `docs/project/experiments/` |
+| Record | 66 artifacts (exp-000 to exp-065) when this review was written, 41 at 12 trials, every one `os_cache: warm-steady`; 57 macOS, 9 Linux. The agenda below records what the first night added | `docs/project/experiments/` |
 | Views | Ledger and evidence page generated from artifacts; drift-checked in CI since PR #38 (`perf-test`, `perf-schema-check`, `perf-ledger-check`, `perf-report-check`) | `.github/workflows`, the **Performance evidence** job |
 | Instruments | Per-layer counters; scan diagnostics; the aggregate-tier job with a tallies oracle, the nominated subject set and the tail statistic (PR #45) | `explorations/benchmarks/realtree/` |
 | Subjects on this host | Three deciding: the 60k metabrowser clone (source checkout — and campaign 1’s own reference tree, exp-032), `~/.rustup` at 175k (package cache), the sealed `/System/Library/PrivateFrameworks` at 159k (system prefix). One screening: the 5.8k cargo registry | `docs/project/reports/nominated-subjects-darwin-arm64.json` |
@@ -107,7 +107,7 @@ bead though `fdu-cq7t` was closed; `fdu-926e` was carried as a priority though t
 says re-scope or close; `fdu-tk1b` still recorded a blocker PR #45 had removed.
 All six are reconciled in this branch (`fdu-02vv`), the campaign’s beads carry the
 `campaign-2` label and the runnable-here subset carries `macos-agenda`, so the queue is
-findable among 198 open issues.
+findable among the roughly two hundred open issues.
 
 **The subject set could be satisfied by labeling.** Before the PR #45 review fixes, a
 5,838-entry cargo registry cache labeled `source-checkout` gave the set its “can decide”

@@ -199,7 +199,14 @@ holds each subject’s sentence, read into `PROV` above, and `--tree-reconstruct
 added only when that document says `true` for the subject.
 `ARGS` is re-parsed by the recipe’s shell, so keep titles and reasons free of
 apostrophes, or double-quote them with the quotes escaped as `PROV` is.
-`--primary-metric` is added only when the hypothesis pre-registered a component.
+
+`--commit` names the commit that **contains the change**, which is not the commit that
+is checked out while recording: the schema means it as the place a reader goes to find
+the code. So an accepted experiment lands in two commits — the change alone first, then
+the artifact and the regenerated views naming its hash.
+Recording before committing puts the *control’s* hash in the field, which points a
+reader at the code without the change; that had happened to four artifacts before it was
+caught. `--primary-metric` is added only when the hypothesis pre-registered a component.
 The id is the next free `exp-NNN`; two agents in one night reserve ranges first, because
 a collision is silent until `perf-ledger` fails.
 

@@ -416,7 +416,7 @@ experiment:
     primary_metric: wall_ns
     change_pct: -10.612
     reason: "default-tree -10.61% [-14.85%, -6.05%] at 16 trials with the first-run and index jobs unchanged and RSS flat: a streamed byte compare for a 60-line change that cannot go stale."
-    commit: 62f82f6
+    commit: c013f1a
 ---
 ## What was measured
 

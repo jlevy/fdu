@@ -436,13 +436,17 @@ perf-compare: perf-probe-release
 		--baseline-fingerprint $(PERF_BASELINE) \
 		--name $(or $(NAME),adhoc) $(PERF_MEASURE_EVIDENCE_ARGS)
 
+# JOBS selects the jobs for one content round, exactly as it does for `perf-compare`;
+# the default is the whole content set.
+PERF_CONTENT_DEFAULT_JOBS := content-basic content-cache-hit code-sloc \
+	code-sloc-cache-hit text-prose markdown-prose document-cache-hit content-query
+PERF_CONTENT_JOB_ARGS = $(foreach job,$(or $(JOBS),$(PERF_CONTENT_DEFAULT_JOBS)),--job $(job))
+
 perf-content-compare: perf-probe-release
 	$(PERF_RUN) measure --root $(PERF_TREE) --label $(PERF_LABEL) \
 		--variant "control=$(CONTROL)" \
 		--variant "candidate=$(PERF_RELEASE)" \
-		--job content-basic --job content-cache-hit --job code-sloc \
-		--job code-sloc-cache-hit --job text-prose --job markdown-prose \
-		--job document-cache-hit --job content-query \
+		$(PERF_CONTENT_JOB_ARGS) \
 		--trials $(or $(TRIALS),12) \
 		--scratch $(PERF_SCRATCH) --output-dir $(PERF_RESULTS) \
 		--baseline-fingerprint $(PERF_BASELINE) \
