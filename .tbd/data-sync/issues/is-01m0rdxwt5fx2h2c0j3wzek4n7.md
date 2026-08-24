@@ -5,13 +5,15 @@ title: Vendor the File Rollup conformance packet and run it against fdu's classi
 kind: task
 status: open
 priority: 1
-version: 1
+version: 2
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 labels: []
 dependencies: []
 parent_id: is-01m0rahh7entj80k486sxs5k45
+hold: blocked
+hold_until: null
 created_at: 2026-08-23T23:05:12.772Z
-updated_at: 2026-08-23T23:05:12.772Z
+updated_at: 2026-08-24T00:53:10.384Z
 ---
 Second half of fdu-5q6e, split out because it needs an artifact that is not in this
 repository. The first half -- the two extension levels themselves -- landed: logical_ext

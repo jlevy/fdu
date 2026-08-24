@@ -5,15 +5,15 @@ title: Scalar paged child rows with remainder, no extension-map copy
 kind: feature
 status: closed
 priority: 1
-version: 2
+version: 4
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 labels: []
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-23T22:03:13.370Z
-updated_at: 2026-08-23T23:29:38.211Z
-closed_at: 2026-08-23T23:29:38.211Z
-close_reason: |-
+updated_at: 2026-08-24T00:49:20.034Z
+closed_at: 2026-08-24T00:49:20.033Z
+close_reason: |
   The listing and the breakdown are separate questions and now cost separately.
 
   WHAT WAS TRUE: IndexHandle::children built an owned RollUp per directory child, so a
@@ -57,6 +57,14 @@ close_reason: |-
   updated.
 
   make check passes.
+
+  NOT EVERYTHING IN THE BEAD LANDED. The description asks rows to carry "scalar directory
+  facts, classification identity, tags, and provenance". Tags did not land and cannot yet:
+  there is no tag plane to read one from until fdu-mvt3 builds it, and that is blocked on
+  metabrowser confirming it wants the hidden plane plus the ignore crate clearing the
+  14-day cool-off. Everything else in the description is built. When the planes land,
+  adding a tag field to ChildSnapshot is a small follow-on inside fdu-7rwf, which already
+  owns the per-plane Child values -- so this is recorded rather than re-opened.
 resolution: null
 duplicate_of: null
 ---
