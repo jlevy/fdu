@@ -833,6 +833,14 @@ class Remainder:
     bound hid.
     """
 
+    others: int
+    """Entries in those withheld subtrees that are neither files nor directories.
+
+    Without this a node could truthfully report a hundred non-file leaves, have the one
+    child holding them withheld by a bound, and return a remainder accounting for none of
+    them. Truncating freely is fine; truncating silently in one dimension is not.
+    """
+
     bytes: int
     """Apparent bytes in those withheld subtrees."""
 
@@ -1487,6 +1495,7 @@ def _remainder(value: object) -> Remainder | None:
         rows=int(value["rows"]),
         files=int(value["files"]),
         dirs=int(value["dirs"]),
+        others=int(value["others"]),
         bytes=int(value["bytes"]),
         allocated=int(value["allocated"]),
     )

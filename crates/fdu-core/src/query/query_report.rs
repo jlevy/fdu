@@ -491,6 +491,14 @@ pub struct Remainder {
     /// The withheld rows themselves are `rows`, so `rows + dirs` is every directory the
     /// bound hid.
     pub dirs: u64,
+    /// Entries in those withheld subtrees that are neither files nor directories.
+    ///
+    /// Without this a node could truthfully report a hundred non-file leaves, have the one
+    /// child holding them withheld by a bound, and return a remainder accounting for none
+    /// of them -- so the emitted rows plus the remainder would no longer be the node. The
+    /// whole point of a remainder is that truncating is never silent, and a dimension the
+    /// node carries but the remainder drops is silent truncation in that dimension.
+    pub others: u64,
     /// Apparent bytes in those withheld subtrees.
     pub bytes: u64,
     /// Allocated bytes in those withheld subtrees.
@@ -503,6 +511,7 @@ impl Remainder {
         self.rows += 1;
         self.files += node.files;
         self.dirs += node.dirs;
+        self.others += node.others;
         self.bytes += node.bytes;
         self.allocated += node.allocated;
     }
@@ -1689,6 +1698,7 @@ fn withheld_children(index: &Index, walked: Option<&Walked>, id: EntryId) -> Opt
         remainder.rows += 1;
         remainder.files += summary.files;
         remainder.dirs += summary.dirs;
+        remainder.others += summary.others;
         remainder.bytes += summary.bytes;
         remainder.allocated += summary.allocated;
     }
@@ -1922,6 +1932,66 @@ mod tests {
         };
         assert!(!Selection { min_size: Some(0), ..Selection::default() }.is_unfiltered());
         assert_eq!(walked.others, summary.others, "both tiers count the same leaves");
+    }
+
+    /// A bound never hides a dimension the node reports.
+    ///
+    /// The defect this pins is one a bounded view makes easy to miss: `TreeNode` gained
+    /// `others` while `Remainder` did not, so a node could truthfully say it held a
+    /// hundred non-file leaves, have the one child holding them withheld, and return a
+    /// remainder accounting for none of them. Emitted rows plus remainder would no longer
+    /// be the node. "Truncate freely, never silently" has to hold per dimension, not just
+    /// for the dimensions that happened to exist when the remainder was written.
+    ///
+    /// Both bound kinds, because they aggregate through different code: the limit bound
+    /// folds withheld rows one at a time through `Remainder::absorb`, and the depth bound
+    /// sums every directory child at once in `withheld_children`.
+    #[test]
+    fn a_bound_accounts_for_withheld_non_file_leaves_in_both_aggregation_paths() {
+        let mut index = Index::new("/root");
+        index
+            .apply(&Observation::new(vec![
+                // Three directory children, each holding symlinks, so a bound of one or
+                // two has something to withhold whichever way it ranks them.
+                upsert("big", EntryKind::Dir, Attrs::default()),
+                upsert("big/a", EntryKind::Symlink, attrs(0, 1)),
+                upsert("big/b", EntryKind::Symlink, attrs(0, 2)),
+                upsert("big/weight.bin", EntryKind::File, attrs(900, 3)),
+                upsert("mid", EntryKind::Dir, Attrs::default()),
+                upsert("mid/c", EntryKind::Symlink, attrs(0, 4)),
+                upsert("mid/weight.bin", EntryKind::File, attrs(500, 5)),
+                upsert("small", EntryKind::Dir, Attrs::default()),
+                upsert("small/d", EntryKind::Symlink, attrs(0, 6)),
+            ]))
+            .expect("apply");
+
+        let whole = {
+            let report = run(&index, &query(&[ViewSpec::Tree], Selection::default()));
+            let Some(Section::Tree(root)) = report.sections.first() else {
+                panic!("the tree view produces one tree section");
+            };
+            root.others
+        };
+        assert_eq!(whole, 4, "four symlinks across three subtrees");
+
+        for (label, selection) in [
+            ("limit", Selection { limit: Some(Bound::Limit(1)), ..Selection::default() }),
+            ("depth", Selection { depth: Some(Bound::Limit(0)), ..Selection::default() }),
+        ] {
+            let report = run(&index, &query(&[ViewSpec::Tree], selection));
+            let Some(Section::Tree(root)) = report.sections.first() else {
+                panic!("the tree view produces one tree section");
+            };
+            let emitted: u64 = root.children.iter().map(|child| child.others).sum();
+            let withheld = root.remainder.map_or(0, |remainder| remainder.others);
+            assert_eq!(
+                emitted + withheld,
+                root.others,
+                "{label} bound: what is shown plus what is withheld must be the node"
+            );
+            assert_eq!(root.others, whole, "a bound narrows the rendering, never the totals");
+            assert!(withheld > 0, "{label} bound: this fixture withholds leaves to account for");
+        }
     }
 
     #[test]

@@ -38,7 +38,7 @@ $ fdu --cache off --format json --size apparent --depth 0 --limit 0 project
   "reports": [
     {
       "view": "tree",
-      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 263, "allocated": [ALLOCATED], "files": 6, "dirs": 3, "others": 0, "newest_mtime_ns": [MTIME_NS], "truncated": true, "remainder": {"rows": 3, "files": 4, "dirs": 0, "bytes": 187, "allocated": [ALLOCATED]}, "children": []}
+      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 263, "allocated": [ALLOCATED], "files": 6, "dirs": 3, "others": 0, "newest_mtime_ns": [MTIME_NS], "truncated": true, "remainder": {"rows": 3, "files": 4, "dirs": 0, "others": 0, "bytes": 187, "allocated": [ALLOCATED]}, "children": []}
     }
   ]
 }
@@ -72,7 +72,7 @@ $ fdu --format json --size apparent --depth 0 --limit 0 project
   "reports": [
     {
       "view": "tree",
-      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 263, "allocated": [ALLOCATED], "files": 6, "dirs": 3, "others": 0, "newest_mtime_ns": [MTIME_NS], "truncated": true, "remainder": {"rows": 3, "files": 4, "dirs": 0, "bytes": 187, "allocated": [ALLOCATED]}, "children": []}
+      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 263, "allocated": [ALLOCATED], "files": 6, "dirs": 3, "others": 0, "newest_mtime_ns": [MTIME_NS], "truncated": true, "remainder": {"rows": 3, "files": 4, "dirs": 0, "others": 0, "bytes": 187, "allocated": [ALLOCATED]}, "children": []}
     }
   ]
 }
@@ -109,7 +109,7 @@ $ fdu --format json --size apparent --depth 0 --limit 0 project
   "reports": [
     {
       "view": "tree",
-      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 263, "allocated": [ALLOCATED], "files": 6, "dirs": 3, "others": 0, "newest_mtime_ns": [MTIME_NS], "truncated": true, "remainder": {"rows": 3, "files": 4, "dirs": 0, "bytes": 187, "allocated": [ALLOCATED]}, "children": []}
+      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 263, "allocated": [ALLOCATED], "files": 6, "dirs": 3, "others": 0, "newest_mtime_ns": [MTIME_NS], "truncated": true, "remainder": {"rows": 3, "files": 4, "dirs": 0, "others": 0, "bytes": 187, "allocated": [ALLOCATED]}, "children": []}
     }
   ]
 }
@@ -143,7 +143,7 @@ $ fdu --format json --size apparent --depth 0 --limit 0 project
   "reports": [
     {
       "view": "tree",
-      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 288, "allocated": [ALLOCATED], "files": 6, "dirs": 3, "others": 0, "newest_mtime_ns": [MTIME_NS], "truncated": true, "remainder": {"rows": 3, "files": 4, "dirs": 0, "bytes": 212, "allocated": [ALLOCATED]}, "children": []}
+      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 288, "allocated": [ALLOCATED], "files": 6, "dirs": 3, "others": 0, "newest_mtime_ns": [MTIME_NS], "truncated": true, "remainder": {"rows": 3, "files": 4, "dirs": 0, "others": 0, "bytes": 212, "allocated": [ALLOCATED]}, "children": []}
     }
   ]
 }
@@ -170,7 +170,7 @@ $ fdu --cache only --format json --size apparent --depth 0 --limit 0 project
   "reports": [
     {
       "view": "tree",
-      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 288, "allocated": [ALLOCATED], "files": 6, "dirs": 3, "others": 0, "newest_mtime_ns": [MTIME_NS], "truncated": true, "remainder": {"rows": 3, "files": 4, "dirs": 0, "bytes": 212, "allocated": [ALLOCATED]}, "children": []}
+      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 288, "allocated": [ALLOCATED], "files": 6, "dirs": 3, "others": 0, "newest_mtime_ns": [MTIME_NS], "truncated": true, "remainder": {"rows": 3, "files": 4, "dirs": 0, "others": 0, "bytes": 212, "allocated": [ALLOCATED]}, "children": []}
     }
   ]
 }
@@ -194,7 +194,7 @@ $ fdu --format json --size apparent --scan-depth 1 --depth 0 --limit 0 project
   "reports": [
     {
       "view": "tree",
-      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 76, "allocated": [ALLOCATED], "files": 2, "dirs": 3, "others": 0, "newest_mtime_ns": [MTIME_NS], "truncated": true, "remainder": {"rows": 3, "files": 0, "dirs": 0, "bytes": 0, "allocated": [ALLOCATED]}, "children": []}
+      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 76, "allocated": [ALLOCATED], "files": 2, "dirs": 3, "others": 0, "newest_mtime_ns": [MTIME_NS], "truncated": true, "remainder": {"rows": 3, "files": 0, "dirs": 0, "others": 0, "bytes": 0, "allocated": [ALLOCATED]}, "children": []}
     }
   ]
 }
@@ -228,7 +228,7 @@ $ fdu --format json --size apparent --scan-depth 1 --depth 0 --limit 0 project
   "reports": [
     {
       "view": "tree",
-      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 76, "allocated": [ALLOCATED], "files": 2, "dirs": 3, "others": 0, "newest_mtime_ns": [MTIME_NS], "truncated": true, "remainder": {"rows": 3, "files": 0, "dirs": 0, "bytes": 0, "allocated": [ALLOCATED]}, "children": []}
+      "tree": {"name": ".", "path": "", "kind": "dir", "bytes": 76, "allocated": [ALLOCATED], "files": 2, "dirs": 3, "others": 0, "newest_mtime_ns": [MTIME_NS], "truncated": true, "remainder": {"rows": 3, "files": 0, "dirs": 0, "others": 0, "bytes": 0, "allocated": [ALLOCATED]}, "children": []}
     }
   ]
 }

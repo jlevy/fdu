@@ -1509,6 +1509,7 @@ fn remainder_dict(
     value.set_item("rows", remainder.rows)?;
     value.set_item("files", remainder.files)?;
     value.set_item("dirs", remainder.dirs)?;
+    value.set_item("others", remainder.others)?;
     value.set_item("bytes", remainder.bytes)?;
     value.set_item("allocated", remainder.allocated)?;
     Ok(Some(value))

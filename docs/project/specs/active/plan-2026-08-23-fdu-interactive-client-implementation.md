@@ -421,8 +421,13 @@ This section records what was actually built, at the same file-and-function leve
 the two can be compared — and so the places where implementation contradicted the plan
 are on the record rather than in a commit message nobody re-reads.
 
-Twenty-three of the twenty-six beads under the contract epic are closed.
-Every one cleared `make check`, which replays the golden corpus against the command line
+The tables below are the shipped rows, and they are the claim: each names a bead and
+where its work landed.
+A count is deliberately not stated here.
+`fdu-u7vo` expands through implementation and review — the last count written into this
+file was stale as it landed — so `tbd list --parent fdu-u7vo --all` is the live map and
+this document is the record of what was built.
+Every row cleared `make check`, which replays the golden corpus against the command line
 and against the Python package and fails on any unclassified difference.
 
 ### Engine: the read path

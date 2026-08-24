@@ -437,8 +437,13 @@ fn remainder_json(remainder: Option<Remainder>) -> String {
         return "null".to_string();
     };
     format!(
-        "{{\"rows\": {}, \"files\": {}, \"dirs\": {}, \"bytes\": {}, \"allocated\": {}}}",
-        remainder.rows, remainder.files, remainder.dirs, remainder.bytes, remainder.allocated
+        "{{\"rows\": {}, \"files\": {}, \"dirs\": {}, \"others\": {}, \"bytes\": {}, \"allocated\": {}}}",
+        remainder.rows,
+        remainder.files,
+        remainder.dirs,
+        remainder.others,
+        remainder.bytes,
+        remainder.allocated
     )
 }
 
@@ -452,6 +457,7 @@ fn yaml_remainder(out: &mut String, rest: &str, remainder: Option<Remainder>) {
     let _ = writeln!(out, "{rest}  rows: {}", remainder.rows);
     let _ = writeln!(out, "{rest}  files: {}", remainder.files);
     let _ = writeln!(out, "{rest}  dirs: {}", remainder.dirs);
+    let _ = writeln!(out, "{rest}  others: {}", remainder.others);
     let _ = writeln!(out, "{rest}  bytes: {}", remainder.bytes);
     let _ = writeln!(out, "{rest}  allocated: {}", remainder.allocated);
 }
