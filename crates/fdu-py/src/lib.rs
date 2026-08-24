@@ -668,9 +668,15 @@ impl PyIndex {
             words_per_page,
         )?;
 
-        // The index is cloned into the session: a watcher owns its own handle, so closing
-        // the feed cannot disturb the caller's index.
-        let handle = IndexHandle::new(self.inner.snapshot().map_err(to_py_err)?);
+        // The session watches *this* index, not a copy of it. An `IndexHandle` clone is an
+        // `Arc` to the same authority, so a mutation the watcher applies is a mutation the
+        // caller's `read`, `rollup` and `since` see -- which is the entire point of
+        // watching. The previous deep clone gave the session a private index, so the
+        // object the caller held went stale after the first event and never recovered
+        // without a `refresh`; it also paid O(entries) in time and memory at watch start
+        // and made "closing the feed disturbs the caller's index" a fear rather than a
+        // risk. Dropping a handle drops a reference, and the index outlives it.
+        let handle = self.inner.clone();
         let backend = match poll_interval {
             None => fdu_core::watch::WatchBackend::Native,
             Some(seconds) if seconds > 0.0 => {
@@ -1655,13 +1661,15 @@ struct PyWatch {
 
 #[pymethods]
 impl PyWatch {
-    /// The live answer, as of now, from the index this session has been updating.
+    /// The live answer, as of now.
     ///
     /// A watch run has no final answer: the aggregates are only true until the next
-    /// change, so a caller redrawing them needs the session's own index rather than the
-    /// one it was opened from. Reporting the opened index instead repaints numbers that
-    /// stopped being true at the first event, which looks like a working display and is
-    /// not one (fdu-m66a).
+    /// change, so a caller redrawing them needs what the session has applied. That used to
+    /// require reaching for the session's *own* index, because a watch held a private copy
+    /// and the opened index went stale at the first event -- a display that looked live and
+    /// was not (`fdu-m66a`). A session now watches the index it was opened from, so the
+    /// distinction is gone: this and `Index.read` are two views of one authority, and both
+    /// are current.
     ///
     /// Returns a snapshot, so rendering it twice gives the same answer both times.
     fn report(&self) -> PyResult<PyOneShot> {

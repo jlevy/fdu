@@ -174,3 +174,54 @@ fn a_live_report_is_the_same_query_re_evaluated() {
     assert_eq!(second.files, 2, "the live report reflects the applied change");
     assert_eq!(second.bytes, first.bytes + 3);
 }
+
+/// A session and the handle it was opened from are one authority, not two.
+///
+/// `Session` took an `IndexHandle` and the Python binding handed it
+/// `IndexHandle::new(inner.snapshot())` -- a deep clone into a second index. Every
+/// mutation the watcher applied then landed somewhere the opener could not see, so a
+/// server holding that index served numbers that stopped being true at the first event,
+/// with nothing in the answer saying so. A handle clone is an `Arc` to the same lock, and
+/// that is what a session should be given.
+///
+/// Reported as FDU47-R2 and tracked as `fdu-37dv`.
+#[test]
+fn a_session_mutates_the_handle_it_was_opened_from() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    fs::write(dir.path().join("a.txt"), b"12345").expect("seed");
+
+    let config = OpenConfig { policy: CachePolicy::Off, ..OpenConfig::default() };
+    let (index, _report) = open(dir.path(), &config).expect("open");
+    let handle = IndexHandle::new(index);
+    // What the caller keeps. Sharing is the whole claim, so the test has to hold the
+    // handle the session was built from rather than ask the session for one.
+    let mut session = Session::new(
+        handle.clone(),
+        ScanConfig::default(),
+        Query {
+            selection: Selection::default(),
+            views: vec![ViewSpec::Summary],
+            ..Query::default()
+        },
+        WatchConfig::default(),
+    )
+    .expect("session");
+
+    let before = handle.clock().expect("clock");
+    fs::write(dir.path().join("b.txt"), b"678").expect("create");
+    wait_for(&mut session, |change| change.path.ends_with("b.txt"))
+        .expect("the change should arrive");
+
+    assert_ne!(
+        handle.clock().expect("clock"),
+        before,
+        "a mutation the session applied must be visible from the opened handle"
+    );
+    let total = handle.total().expect("total");
+    assert_eq!(total.files, 2, "and the numbers it carries must be the new ones");
+
+    // Dropping the session drops a reference, not the index. This is the fear the deep
+    // clone was defending against; sharing an `Arc` makes it a non-event.
+    drop(session);
+    assert_eq!(handle.total().expect("total").files, 2);
+}

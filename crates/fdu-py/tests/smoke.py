@@ -425,9 +425,40 @@ def main() -> None:
     assert created["op"] == "upsert", created
     assert created["bytes"] == 12, created
 
+    # One opened root is one authority. A watch used to deep-clone the index into a
+    # private handle, so the object the caller kept went stale at the first event and
+    # only a refresh() brought it back -- a server holding that index would serve numbers
+    # that stopped being true, with nothing in the answer saying so. The session now
+    # shares the opened handle, so consuming a mutation on the feed is consuming it on
+    # the index.
+    before = watch_index.read(total=True)
+    # The `created.rs` event above was consumed on the feed, so the shared index has
+    # already advanced. Under the old private clone this read still said clock 0, because
+    # the mutation landed somewhere the caller could not see.
+    assert before["clock"] > 0, (
+        "events consumed on the feed must have advanced the opened index: "
+        f"clock is still {before['clock']}"
+    )
+    (watch_root / "second.rs").write_text("fn second() {}")
+    for _ in range(40):
+        next(feed)
+        after = watch_index.read(total=True)
+        if after["clock"] != before["clock"]:
+            break
+    assert after["clock"] != before["clock"], (
+        "a watch mutation must be visible from the index it was opened on, "
+        f"without refresh: {before['clock']} == {after['clock']}"
+    )
+    assert after["total"]["files"] > before["total"]["files"], (before, after)
+
     # A closed feed is exhausted rather than an error, so a for-loop ends cleanly
     # instead of raising something a caller has to special-case.
     feed.close()
+
+    # Closing the feed drops a reference, not the index. This is the fear the old deep
+    # clone was defending against, and sharing the handle is what makes it a non-event.
+    still_usable = watch_index.read(total=True)
+    assert still_usable["total"]["files"] == after["total"]["files"], still_usable
     try:
         next(feed)
     except StopIteration:

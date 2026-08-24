@@ -147,8 +147,11 @@ impl Session {
     /// The same `report` a one-shot run produces, from the same index, which is what
     /// makes "watch is the same query repeated" true rather than aspirational.
     pub fn report(&self, provenance: &Provenance) -> Result<Report> {
-        let index = self.index.snapshot()?;
-        Ok(report(&index, &self.query, provenance))
+        // Under the read guard, not over a copy. `snapshot` deep-clones every entry, so a
+        // repaint of a large tree paid for the whole index each time it drew -- the same
+        // regression `with_index` exists to prevent, and the one the read path was already
+        // fixed for. A report is a read; it takes a reader's lock like any other.
+        self.index.with_index(|index| report(index, &self.query, provenance))
     }
 
     /// A consistent copy of the current index.
