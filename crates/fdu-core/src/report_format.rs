@@ -1306,7 +1306,11 @@ fn quote(text: &str) -> String {
 }
 
 /// This binary's identity, for the `generator` field.
-fn generator() -> String {
+///
+/// Public because a projection that builds the envelope without going through a
+/// serializer -- the Python binding's report dict -- must name the same producer this
+/// does. Two spellings of "who made this" is one spelling too many.
+pub fn generator() -> String {
     format!("fdu {}", env!("CARGO_PKG_VERSION"))
 }
 
@@ -1333,7 +1337,13 @@ fn view_header(view: ViewSpec) -> &'static str {
     }
 }
 
-fn report_schema(report: &Report) -> &'static str {
+/// Which schema version this report's envelope claims.
+///
+/// A report carrying content metrics is a different document than one carrying only
+/// metadata, so it says so rather than leaving a consumer to discover the extra fields.
+/// Public for the same reason [`generator`] is: every projection that writes an envelope
+/// has to arrive at this from one place.
+pub fn report_schema(report: &Report) -> &'static str {
     if report.analysis.is_some()
         || report.sections.iter().any(|section| matches!(section, Section::Metrics { .. }))
     {

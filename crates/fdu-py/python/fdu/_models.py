@@ -1098,14 +1098,57 @@ class Bundle:
     is absent -- distinct from a page with no rows, which means a directory with no
     children."""
 
-    work: Work
-    """What producing this bundle cost.
+    report: Report | None
+    """The report the requested query produced, or ``None`` when none was requested.
 
-    Here rather than on each part because the parts shared one guard and one wall clock:
-    attributing a lock wait to one of three projections that waited together would be
-    inventing a number. It is also why measurement rides with the bundled read rather
-    than with every accessor -- the bundled read is what an interactive client serves
-    from.
+    This is what makes a composed page whole. A listing beside a "recently changed" panel
+    used to need two calls, and a write landing between them left the two halves
+    describing different instants -- each individually true, and together wrong. Pass a
+    :class:`Query` to :meth:`Index.read` and both come back from one guard, sharing this
+    bundle's ``clock``.
+
+    Not a second query language: it is the same :class:`Query` :meth:`Index.report` takes.
+    """
+
+    work: Work
+    """What producing this bundle cost, in total.
+
+    The guard wait is here and only here, because the projections waited together:
+    attributing one wait to one of them would be inventing a number. It is also why
+    measurement rides with the bundled read rather than with every accessor -- the
+    bundled read is what an interactive client serves from.
+    """
+
+    projections: ProjectionWork
+    """What each projection cost on its own.
+
+    A total alone answers "this read was slow" without ever answering "which part of it",
+    which is the question a serving loop has to act on. The parts ran in sequence inside
+    one guard, so their wall times are genuinely theirs; ``lock_wait_ns`` stays zero on
+    each, because that one is shared and stays on the bundle.
+    """
+
+
+@dataclass(frozen=True, slots=True)
+class ProjectionWork:
+    """What each projection of a bundled read cost on its own."""
+
+    children: Work
+    """Listing one directory's children."""
+
+    total: Work
+    """The whole-tree totals."""
+
+    rollups: Work
+    """Every requested per-directory roll-up, summed."""
+
+    report: Work
+    """Answering the requested query.
+
+    Counts what the result carries -- rows and the bytes of their names -- and how long it
+    took. It deliberately does not claim an ``entries_visited``: a report may serve from
+    maintained roll-up state or re-aggregate by walking, and reporting a walk it did not
+    do, or a zero for one it did, would be worse than reporting neither.
     """
 
 

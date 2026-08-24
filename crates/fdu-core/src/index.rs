@@ -702,6 +702,33 @@ pub struct ReadRequest {
     pub total: bool,
     /// Bound on the extension rows every roll-up in this bundle carries.
     pub extensions: Bound,
+    /// A full query to answer at the same boundary as the rest of the bundle.
+    ///
+    /// The reason this exists is the reason the bundle does, one level up. A consumer
+    /// drawing a directory listing beside a "recently changed" panel had to make two
+    /// calls; a write landing between them left the page internally inconsistent in
+    /// exactly the way a bundled read prevents -- the rows saying one thing, the sidebar
+    /// another, and both individually true.
+    ///
+    /// This is not a second query language. It is the one [`crate::query::Query`] every
+    /// other surface already takes, evaluated under the guard the rest of the bundle is
+    /// reading through.
+    pub report: Option<ReportRequest>,
+}
+
+/// One query, and the run facts its envelope needs.
+///
+/// The provenance rides with the query rather than being derived here because those facts
+/// belong to the *run*, not to the index: a read cannot know when a scan started or which
+/// cache tier answered, and filling them in from what happens to be in reach would put a
+/// number in the envelope that nothing measured. Every caller that renders a report
+/// already holds one.
+#[derive(Clone, Debug)]
+pub struct ReportRequest {
+    /// Views and selection to answer.
+    pub query: crate::query::Query,
+    /// Run facts for the report's envelope.
+    pub provenance: crate::query::Provenance,
 }
 
 /// Everything one bundled read saw, at one boundary.
@@ -730,14 +757,68 @@ pub struct ReadBundle {
     ///
     /// Distinct from a page with no rows, which means a directory with no children.
     pub children: Option<ChildPage>,
-    /// What producing this bundle cost.
+    /// The report the requested query produced, at the same boundary as everything else.
+    pub report: Option<crate::query::Report>,
+    /// What producing this bundle cost, in total.
     ///
-    /// Here rather than on each part because the parts shared one guard and one wall
-    /// clock: attributing a lock wait to one of three projections that waited together
-    /// would be inventing a number. This is also why measurement rides with the bundled
-    /// read rather than with every accessor -- the bundled read is what an interactive
-    /// client serves from.
+    /// The guard wait is here and only here, because the projections waited together:
+    /// attributing one wait to one of them would be inventing a number. This is also why
+    /// measurement rides with the bundled read rather than with every accessor -- the
+    /// bundled read is what an interactive client serves from.
     pub work: Work,
+    /// What each projection cost on its own.
+    ///
+    /// A bundle that reported only a total would answer "this read was slow" without ever
+    /// answering "which part of it", which is the question a serving loop has to act on.
+    /// The parts ran in sequence inside one guard, so their wall times are genuinely
+    /// theirs; `lock_wait_ns` stays zero on each, because that one is shared and stays on
+    /// the bundle.
+    pub projections: ProjectionWork,
+}
+
+/// What each projection of a bundled read cost on its own.
+///
+/// Summing these gives the bundle's counted work; the difference from the bundle's
+/// `wall_ns` is the guard wait plus the assembly around them.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ProjectionWork {
+    /// Listing one directory's children.
+    pub children: Work,
+    /// The whole-tree totals.
+    pub total: Work,
+    /// Every requested per-directory roll-up, summed.
+    pub rollups: Work,
+    /// Answering the requested query.
+    ///
+    /// Counts what the result carries -- rows and the bytes of their names -- and how long
+    /// it took. It deliberately does not claim an `entries_visited`: a report may serve
+    /// from maintained roll-up state or re-aggregate by walking, and reporting a walk it
+    /// did not do, or a zero for one it did, would be worse than reporting neither.
+    /// `Selection::is_unfiltered` is what decides which of those happened, and it is on
+    /// the query the caller already holds.
+    pub report: Work,
+}
+
+impl ProjectionWork {
+    /// The counted work of every projection, added term by term.
+    ///
+    /// `lock_wait_ns` is not among them -- it is the bundle's, not any projection's -- and
+    /// `wall_ns` sums the parts, which is less than the bundle's own wall time by whatever
+    /// the guard wait and the assembly around them cost.
+    pub fn sum(&self) -> Work {
+        [self.children, self.total, self.rollups, self.report].into_iter().fold(
+            Work::default(),
+            |acc, part| Work {
+                entries_visited: acc.entries_visited + part.entries_visited,
+                dirs_visited: acc.dirs_visited + part.dirs_visited,
+                rows: acc.rows + part.rows,
+                tally_rows: acc.tally_rows + part.tally_rows,
+                name_bytes: acc.name_bytes + part.name_bytes,
+                lock_wait_ns: 0,
+                wall_ns: acc.wall_ns + part.wall_ns,
+            },
+        )
+    }
 }
 
 /// The in-memory hierarchical index.
@@ -938,28 +1019,50 @@ impl IndexHandle {
     pub fn read(&self, request: &ReadRequest) -> crate::Result<ReadBundle> {
         let started = std::time::Instant::now();
         let index = self.read_index()?;
-        // Each projection counts the entries it walks, so a bundle's visits are the sum
-        // of its parts -- including the root, counted once per projection that reads it,
-        // because that is what a projection actually does.
-        let mut work = Work { lock_wait_ns: nanos(started.elapsed()), ..Work::default() };
-        let children = request
-            .children_of
-            .as_deref()
-            .and_then(|path| child_page(&index, path, &request.children_page, &mut work));
-        let total = request.total.then(|| {
-            let root = &index.entry(EntryId::ROOT).rollup;
-            work.visit(EntryKind::Dir);
-            work.tally_rows += (root.by_ext.len() + root.by_group.len()) as u64;
-            let roll = index.total_bounded(request.extensions);
-            work.name_bytes += roll.by_ext.keys().map(|name| name.len() as u64).sum::<u64>();
-            work.name_bytes += roll.by_group.keys().map(|name| name.len() as u64).sum::<u64>();
-            roll
+        let lock_wait_ns = nanos(started.elapsed());
+        // Each projection counts into its own record, and the bundle's total is their sum
+        // -- including the root, counted once per projection that reads it, because that
+        // is what a projection actually does. Splitting them is what lets a serving loop
+        // answer "which part was slow" rather than only "this read was".
+        let mut projections = ProjectionWork::default();
+
+        let children = request.children_of.as_deref().and_then(|path| {
+            timed(&mut projections.children, |work| {
+                child_page(&index, path, &request.children_page, work)
+            })
         });
-        let rollups: Vec<Option<RollUp>> = request
-            .rollups
-            .iter()
-            .map(|path| index.rollup_measured(path, request.extensions, &mut work))
-            .collect();
+
+        let total = request.total.then(|| {
+            timed(&mut projections.total, |work| {
+                let root = &index.entry(EntryId::ROOT).rollup;
+                work.visit(EntryKind::Dir);
+                work.tally_rows += (root.by_ext.len() + root.by_group.len()) as u64;
+                let roll = index.total_bounded(request.extensions);
+                work.name_bytes += roll.by_ext.keys().map(|name| name.len() as u64).sum::<u64>();
+                work.name_bytes += roll.by_group.keys().map(|name| name.len() as u64).sum::<u64>();
+                roll
+            })
+        });
+
+        let rollups: Vec<Option<RollUp>> = timed(&mut projections.rollups, |work| {
+            request
+                .rollups
+                .iter()
+                .map(|path| index.rollup_measured(path, request.extensions, work))
+                .collect()
+        });
+
+        // The query algebra, answered through the same guard rather than through a second
+        // call that a write could land between.
+        let report = request.report.as_ref().map(|wanted| {
+            timed(&mut projections.report, |work| {
+                let rendered = crate::query::report(&index, &wanted.query, &wanted.provenance);
+                work.rows += rendered.row_count();
+                work.name_bytes += rendered.name_bytes();
+                rendered
+            })
+        });
+
         let bundle = ReadBundle {
             clock: index.clock(),
             scope: index.scope(),
@@ -969,9 +1072,11 @@ impl IndexHandle {
             total,
             rollups,
             children,
-            work,
+            report,
+            work: Work { lock_wait_ns, ..projections.sum() },
+            projections,
         };
-        // Stamped last, and after the guard is still held, so the figure covers the whole
+        // Stamped last, and while the guard is still held, so the figure covers the whole
         // call rather than the part that happened to be convenient to time.
         Ok(ReadBundle { work: Work { wall_ns: nanos(started.elapsed()), ..bundle.work }, ..bundle })
     }
@@ -2776,6 +2881,18 @@ impl<T, L: Iterator<Item = T>, R: Iterator<Item = T>> Iterator for Either<L, R> 
 
 /// A duration as nanoseconds, saturating rather than wrapping.
 ///
+/// Run one projection, charging its wall time to its own record.
+///
+/// The wall time is genuinely the projection's: the parts of a bundled read run in
+/// sequence inside one guard. The guard *wait* is not, which is why nothing here touches
+/// `lock_wait_ns` -- that one belongs to the bundle and stays there.
+fn timed<R>(work: &mut Work, run: impl FnOnce(&mut Work) -> R) -> R {
+    let started = std::time::Instant::now();
+    let value = run(work);
+    work.wall_ns = nanos(started.elapsed());
+    value
+}
+
 /// A read that took more than 584 years is a broken clock, not a number worth
 /// representing; saturating says so without making every caller handle a `u128`.
 fn nanos(elapsed: std::time::Duration) -> u64 {
@@ -3646,6 +3763,134 @@ mod tests {
         }
         stop.store(true, Ordering::Relaxed);
         writer.join().expect("writer");
+    }
+
+    /// Run facts for a bundled report under test.
+    ///
+    /// Fixed rather than sampled, because `report` is a pure function of its inputs and a
+    /// test that varied them would be testing the clock.
+    fn test_provenance() -> crate::query::Provenance {
+        crate::query::Provenance {
+            scan_started_at: None,
+            generated_at: std::time::UNIX_EPOCH,
+            source: crate::query::ReportSource::ColdScan,
+            complete: true,
+            errors: Vec::new(),
+        }
+    }
+
+    /// A report in the bundle describes the same instant as the rows beside it.
+    ///
+    /// This is the same property `a_bundled_read_cannot_straddle_a_commit` pins one level
+    /// down, at the level the contract actually asks for: a consumer drawing a listing
+    /// beside a "recently changed" panel made two calls, and a write landing between them
+    /// left the halves describing different moments -- each individually true, and
+    /// together wrong. Checked under a live writer, and by an invariant that a race breaks
+    /// rather than by a literal, because a literal agrees with a stale answer as readily
+    /// as with a fresh one.
+    #[test]
+    fn a_report_in_a_bundle_describes_the_same_instant_as_the_rows() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let handle = IndexHandle::new(Index::new("/root"));
+        handle
+            .apply(&Observation::new(vec![upsert("src", EntryKind::Dir, Attrs::default())]))
+            .expect("seed");
+
+        let stop = Arc::new(AtomicBool::new(false));
+        let writer_stop = Arc::clone(&stop);
+        let writer_handle = handle.clone();
+        let writer = std::thread::spawn(move || {
+            for round in 0..400i64 {
+                if writer_stop.load(Ordering::Relaxed) {
+                    break;
+                }
+                writer_handle
+                    .apply(&Observation::new(vec![upsert(
+                        &format!("src/f{round}.txt"),
+                        EntryKind::File,
+                        file_attrs(100, round + 1),
+                    )]))
+                    .expect("apply");
+            }
+        });
+
+        let request = ReadRequest {
+            total: true,
+            report: Some(ReportRequest {
+                query: crate::query::Query {
+                    views: vec![crate::query::ViewSpec::Summary],
+                    ..crate::query::Query::default()
+                },
+                provenance: test_provenance(),
+            }),
+            ..ReadRequest::default()
+        };
+        for _ in 0..300 {
+            let bundle = handle.read(&request).expect("bundle");
+            let total = bundle.total.as_ref().expect("totals were requested");
+            let report = bundle.report.as_ref().expect("a query was requested");
+            let Some(crate::query::Section::Summary(summary)) = report.sections.first() else {
+                panic!("the summary view produces one summary section");
+            };
+            assert_eq!(
+                summary.files, total.files,
+                "the report and the totals beside it must describe one instant"
+            );
+        }
+        stop.store(true, Ordering::Relaxed);
+        writer.join().expect("writer");
+    }
+
+    /// Every projection is charged separately, and the bundle is their sum.
+    ///
+    /// A bundle that reported only a total would answer "this read was slow" and never
+    /// "which part of it", which is the question a serving loop acts on. The guard wait is
+    /// the one term that stays on the bundle, because the projections waited together.
+    #[test]
+    fn a_bundle_says_which_projection_cost_what() {
+        let handle = paged_directory();
+        let bundle = handle
+            .read(&ReadRequest {
+                children_of: Some(PathBuf::new()),
+                total: true,
+                rollups: vec![PathBuf::from("a")],
+                report: Some(ReportRequest {
+                    query: crate::query::Query {
+                        views: vec![crate::query::ViewSpec::Files],
+                        ..crate::query::Query::default()
+                    },
+                    provenance: test_provenance(),
+                }),
+                ..ReadRequest::default()
+            })
+            .expect("bundle");
+
+        let parts = &bundle.projections;
+        assert!(parts.children.rows > 0, "a listing was asked for and returned rows");
+        assert!(parts.total.tally_rows > 0, "the totals ranked extension tallies");
+        assert!(parts.rollups.entries_visited > 0, "a roll-up resolved a path");
+        assert!(parts.report.rows > 0, "the files view returned rows");
+
+        // The bundle's counted terms are exactly the parts added up, so no projection's
+        // cost can go missing from the total or be counted into the wrong one.
+        let summed = parts.sum();
+        assert_eq!(bundle.work.entries_visited, summed.entries_visited);
+        assert_eq!(bundle.work.rows, summed.rows);
+        assert_eq!(bundle.work.tally_rows, summed.tally_rows);
+        assert_eq!(bundle.work.name_bytes, summed.name_bytes);
+
+        // The guard wait belongs to the bundle and to nothing else; the wall time covers
+        // the whole call, so it cannot be less than the parts it contains.
+        assert_eq!(parts.children.lock_wait_ns, 0);
+        assert_eq!(parts.report.lock_wait_ns, 0);
+        assert!(bundle.work.wall_ns >= summed.wall_ns);
+
+        // A bundle with no query asked for charges nothing to that projection, rather
+        // than charging an empty report's assembly to it.
+        let plain = handle.read(&ReadRequest::default()).expect("bundle");
+        assert!(plain.report.is_none());
+        assert_eq!(plain.projections.report, Work::default());
     }
 
     /// A directory of six children, three of them directories carrying subtrees, so a

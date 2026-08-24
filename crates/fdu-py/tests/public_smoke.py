@@ -290,6 +290,57 @@ def check_tags_are_a_named_fact_per_entry() -> None:
     fdu.clear_cache(root)
 
 
+def check_a_bundle_answers_a_query_at_the_same_instant_as_its_rows() -> None:
+    """A composed page is one read, not several that happen to agree.
+
+    The rows and a "recently changed" panel used to need two calls, and a write landing
+    between them left the halves describing different moments -- each individually true.
+    Passing a `Query` to `read()` puts both under one guard and one `clock`. What this
+    pins from Python is that the report arrives, that it is the same value `report()`
+    would return, and that the per-projection costs are separable: a bundle that reports
+    only a total says "this read was slow" and never "which part of it".
+    """
+
+    root = Path(tempfile.mkdtemp(prefix="fdu-bundle-query-"))
+    (root / "src").mkdir()
+    for index_of in range(4):
+        (root / "src" / f"f{index_of}.txt").write_text("x" * (index_of + 1), encoding="utf-8")
+
+    index = fdu.open(root)
+    query = fdu.Query(views=(fdu.View.SUMMARY,))
+    bundle = index.read(children_of="src", total=True, query=query)
+
+    assert bundle.report is not None, "a query was passed, so a report must come back"
+    summary = next(
+        section for section in bundle.report.sections if isinstance(section, fdu.SummarySection)
+    )
+    assert bundle.total is not None
+    assert summary.summary.files == bundle.total.files, (
+        "the report and the totals beside it describe one instant"
+    )
+
+    # The same answer a standalone report gives, from one guard instead of two.
+    standalone = index.report(query).sections[0]
+    assert isinstance(standalone, fdu.SummarySection)
+    assert summary.summary.files == standalone.summary.files
+
+    # Separable costs. The guard wait is the bundle's alone, because the projections
+    # waited together; everything counted is the parts added up.
+    parts = bundle.projections
+    assert parts.children.rows > 0, "a listing was asked for and returned rows"
+    assert parts.report.rows > 0, "the summary section is one row"
+    assert parts.children.lock_wait_ns == 0 and parts.report.lock_wait_ns == 0
+    counted = parts.children.rows + parts.total.rows + parts.rollups.rows + parts.report.rows
+    assert bundle.work.rows == counted, (bundle.work.rows, counted)
+
+    # No query asked for, nothing charged to that projection.
+    plain = index.read(total=True)
+    assert plain.report is None
+    assert plain.projections.report.rows == 0
+
+    fdu.clear_cache(root)
+
+
 def check_a_listing_pages_and_accounts_for_the_rest() -> None:
     """A wide directory is drawn a page at a time, and the page says what it left out.
 
@@ -1087,6 +1138,7 @@ def main() -> None:
     check_a_listing_pages_and_accounts_for_the_rest()
     check_partial_coverage_says_why()
     check_tags_are_a_named_fact_per_entry()
+    check_a_bundle_answers_a_query_at_the_same_instant_as_its_rows()
     check_empty_is_decidable_from_the_aggregate()
     check_the_event_loop_adapter_delivers_the_same_batches()
     check_the_sse_example_resumes_or_resyncs()

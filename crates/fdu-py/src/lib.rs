@@ -738,8 +738,28 @@ impl PyIndex {
         extensions = None,
         after = None,
         limit = None,
+        report = false,
+        views = None,
+        include = None,
+        exclude = None,
+        min_size = None,
+        modified_since = None,
+        modified_before = None,
+        kind = None,
+        tags = None,
+        not_tags = None,
+        depth = None,
+        limit_rows = None,
+        sort = None,
+        reverse = false,
+        size = "allocated",
+        words_per_page = 250,
     ))]
-    #[allow(clippy::needless_pass_by_value, clippy::too_many_arguments)]
+    #[allow(
+        clippy::needless_pass_by_value,
+        clippy::too_many_arguments,
+        clippy::fn_params_excessive_bools
+    )]
     fn read<'py>(
         &self,
         py: Python<'py>,
@@ -749,13 +769,73 @@ impl PyIndex {
         extensions: Option<usize>,
         after: Option<std::ffi::OsString>,
         limit: Option<usize>,
+        report: bool,
+        views: Option<Vec<String>>,
+        include: Option<Vec<String>>,
+        exclude: Option<Vec<String>>,
+        min_size: Option<&str>,
+        modified_since: Option<&str>,
+        modified_before: Option<&str>,
+        kind: Option<Vec<String>>,
+        tags: Option<Vec<String>>,
+        not_tags: Option<Vec<String>>,
+        depth: Option<&str>,
+        limit_rows: Option<&str>,
+        sort: Option<&str>,
+        reverse: bool,
+        size: &str,
+        words_per_page: u64,
     ) -> PyResult<Bound<'py, PyDict>> {
+        // Run state comes from beside the index, not from it: completeness and errors
+        // describe the operation that built this index, and the engine's read guard has
+        // no opinion about them. Read before the bundle because the report projection
+        // needs them for its envelope -- the same facts, so the report cannot disagree
+        // with the bundle it arrived in.
+        let (complete, source, errors) = {
+            let state = self.state();
+            (state.operation_complete, state.source, state.errors.clone())
+        };
+        let wanted = if report {
+            let query = build_query(
+                self.analysis.profile,
+                None,
+                views,
+                include,
+                exclude,
+                min_size,
+                modified_since,
+                modified_before,
+                kind,
+                tags,
+                not_tags,
+                &self.config.tags(),
+                depth,
+                limit_rows,
+                sort,
+                reverse,
+                size,
+                words_per_page,
+            )?;
+            Some(fdu_core::ReportRequest {
+                query,
+                provenance: Provenance {
+                    scan_started_at: self.state().scan_started_at,
+                    generated_at: SystemTime::now(),
+                    source,
+                    complete,
+                    errors: errors.iter().map(|error| error.message.clone()).collect(),
+                },
+            })
+        } else {
+            None
+        };
         let request = fdu_core::ReadRequest {
             children_of,
             children_page: fdu_core::ChildPageRequest { after, limit: row_bound(limit) },
             rollups: rollups.unwrap_or_default(),
             total,
             extensions: ext_bound(extensions),
+            report: wanted,
         };
         let bundle = self.inner.read(&request).map_err(to_py_err)?;
 
@@ -765,13 +845,6 @@ impl PyIndex {
         out.set_item("entries", bundle.entries)?;
         out.set_item("freshness", freshness_label(bundle.freshness))?;
         out.set_item("scope", scope_dict(py, &bundle.scope)?)?;
-        // Run state comes from beside the index, not from it: completeness and errors
-        // describe the operation that built this index, and the engine's read guard has
-        // no opinion about them.
-        let (complete, source, errors) = {
-            let state = self.state();
-            (state.operation_complete, state.source, state.errors.clone())
-        };
         out.set_item("complete", complete)?;
         out.set_item("source", source_label(source))?;
         out.set_item("errors", error_list(py, &errors)?)?;
@@ -788,7 +861,17 @@ impl PyIndex {
             "children",
             bundle.children.as_ref().map(|page| child_page_dict(py, page)).transpose()?,
         )?;
+        out.set_item(
+            "report",
+            bundle.report.as_ref().map(|rendered| report_dict(py, rendered)).transpose()?,
+        )?;
         out.set_item("work", work_dict(py, bundle.work)?)?;
+        let projections = PyDict::new(py);
+        projections.set_item("children", work_dict(py, bundle.projections.children)?)?;
+        projections.set_item("total", work_dict(py, bundle.projections.total)?)?;
+        projections.set_item("rollups", work_dict(py, bundle.projections.rollups)?)?;
+        projections.set_item("report", work_dict(py, bundle.projections.report)?)?;
+        out.set_item("projections", projections)?;
         Ok(out)
     }
 
@@ -1186,6 +1269,10 @@ fn bound_nanos(input: &str, when: std::time::SystemTime, field: &str) -> PyResul
 /// Convert a report into the dict shape Python callers get.
 fn report_dict<'py>(py: Python<'py>, report: &Report) -> PyResult<Bound<'py, PyDict>> {
     let dict = PyDict::new(py);
+    // The envelope identity, from the same two functions the serializers use, so a dict
+    // and a rendered document cannot claim different schemas or different producers.
+    dict.set_item("schema", fdu_core::report_format::report_schema(report))?;
+    dict.set_item("generator", fdu_core::report_format::generator())?;
     dict.set_item("root", report.root.as_os_str())?;
     dict.set_item("complete", report.complete)?;
     dict.set_item("errors", report.errors.clone())?;

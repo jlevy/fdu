@@ -421,7 +421,7 @@ This section records what was actually built, at the same file-and-function leve
 the two can be compared — and so the places where implementation contradicted the plan
 are on the record rather than in a commit message nobody re-reads.
 
-Twenty-one of the twenty-six beads under the contract epic are closed.
+Twenty-two of the twenty-six beads under the contract epic are closed.
 Every one cleared `make check`, which replays the golden corpus against the command line
 and against the Python package and fails on any unclassified difference.
 
@@ -436,6 +436,7 @@ and against the Python package and fails on any unclassified difference.
 | `fdu-5hip` | `RollUp::others`, `RollUp::is_empty`, `ChildSnapshot::is_empty_subtree` | `index.rs:contribution` |
 | `fdu-e2p7` | `Bound` on every roll-up’s extension rows, with `ExtRemainder` | `index.rs:named_rollup_bounded` |
 | `fdu-knyw` | `TreeNode::remainder` replaces a bare `truncated: bool` | `query/query_report.rs:withheld_children` |
+| `fdu-samw` | `ReadRequest::report` and `ReadBundle::report`: the whole query algebra under the bundle’s guard, with `ProjectionWork` saying what each part cost | `index.rs:IndexHandle::read`, `index.rs:ProjectionWork` |
 
 Four things about this group were not obvious from the outside.
 
@@ -461,6 +462,31 @@ It also means `remainder` stays present on the last page, so `next` — and only
 says whether paging continues.
 A consumer looping on `truncated` would never stop, which is why there is a test named
 for exactly that.
+
+**A bundle had to grow past three projections, and the provenance could not come with
+it.** The contract asks that every result carry version, cursor, lifecycle, coverage and
+work facts describing *the same observation boundary*, over nine query kinds.
+The bundle carried three; everything else was reachable only through `report()`, which
+takes its own guard — so a listing beside a “recently changed” panel was two calls with
+a write able to land between them, and the halves described different moments while each
+stayed individually true.
+`ReadRequest` now carries a `Query`, and the report is built inside the same guard.
+What could *not* move inside is the provenance: scan start, cache tier, completeness and
+errors are facts about the **run**, and a read guard has no opinion about them.
+They ride in with the query rather than being sampled where they were not measured.
+
+**A total that hides which part was slow is a counter that stopped working.**
+`ProjectionWork` charges children, totals, roll-ups and the report separately, and
+`ReadBundle::work` is their sum term by term.
+The one figure that stays shared is `lock_wait_ns`: the projections waited together, so
+splitting it would be inventing a number — and that is exactly the reason the original
+single `Work` gave for not splitting anything.
+Wall time *is* separable, because the parts run in sequence.
+The report projection deliberately reports no `entries_visited`: a report either serves
+from maintained roll-up state or re-aggregates by walking, and claiming a walk it did
+not do — or a zero for one it did — is worse than claiming neither.
+`Selection::is_unfiltered` is what decides which happened, and the caller already holds
+it.
 
 **Symlinks weigh nothing and are not nothing.** `contribution()` gave symlinks and
 devices a default roll-up, so a directory of a hundred symlinks was zero files, zero

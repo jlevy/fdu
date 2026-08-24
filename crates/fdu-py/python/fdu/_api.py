@@ -27,6 +27,7 @@ from ._models import (
     DirectoryTotals,
     EntryKind,
     Format,
+    ProjectionWork,
     Provenance,
     Query,
     RefreshResult,
@@ -337,12 +338,19 @@ class Index:
         extensions: int | None = None,
         after: str | None = None,
         limit: int | None = None,
+        query: Query | None = None,
     ) -> Bundle:
         """Several projections read under one guard, at one instant.
 
         A composed page must not straddle a commit: answering a listing and its parent's
         totals with two calls lets a write land between them, and the page is then
         internally inconsistent in a way nothing in it reports.
+
+        `query` adds a full report to the bundle, answered at the same instant as the
+        rows. This is what a listing beside a "recently changed" panel needs: two calls
+        would let a write land between them and leave the halves describing different
+        moments, each individually true and together wrong. It is the same `Query`
+        `report()` takes, not a second grammar.
 
         The returned `clock` is the version every part saw, so it is also the cursor to
         pass to `since()` next -- a cache key derives from what was actually read rather
@@ -352,6 +360,15 @@ class Index:
         instead of one of each per call.
         """
 
+        # The report's own row bound is `limit_rows`: `limit` on this call already means
+        # the child page's, and one name for two bounds is how a caller ends up bounding
+        # the listing when they meant the report.
+        report_kwargs: dict[str, object] = {"report": False}
+        if query is not None:
+            report_kwargs = dict(_query_kwargs(query))
+            report_kwargs["limit_rows"] = report_kwargs.pop("limit")
+            report_kwargs["report"] = True
+
         value = _call(
             self._native.read,
             children_of,
@@ -360,8 +377,11 @@ class Index:
             extensions,
             after,
             limit,
+            **report_kwargs,
         )
         children = value["children"]
+        report = value["report"]
+        projections = value["projections"]
         return Bundle(
             clock=int(value["clock"]),
             root=Path(str(value["root"])),
@@ -373,7 +393,16 @@ class Index:
                 None if roll is None else rollup_from_dict(roll) for roll in value["rollups"]
             ),
             children=None if children is None else _child_page(children),
+            # Parsed by the same function `report()` uses, from the same wire shape, so a
+            # bundled report cannot describe the tree differently from a standalone one.
+            report=None if report is None else report_from_dict(report),
             work=_work(value["work"]),
+            projections=ProjectionWork(
+                children=_work(projections["children"]),
+                total=_work(projections["total"]),
+                rollups=_work(projections["rollups"]),
+                report=_work(projections["report"]),
+            ),
         )
 
     def provenance(self, path: str | Path = Path()) -> Provenance | None:

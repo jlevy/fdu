@@ -768,6 +768,42 @@ pub enum Section {
 }
 
 impl Section {
+    /// Rows this section carries, counting a tree node as a row.
+    ///
+    /// A bundled read charges this to the report projection, so it has to be what the
+    /// *result* carries rather than what the view considered: `largest` ranks every entry
+    /// and emits twenty, and a counter that reported the ranking would be describing a
+    /// different question than "how much is a consumer about to copy out".
+    pub fn row_count(&self) -> u64 {
+        match self {
+            Self::Tree(root) => root.node_count(),
+            Self::Extensions { rows, .. } => rows.len() as u64,
+            Self::Groups { rows, .. } => rows.len() as u64,
+            Self::Files { rows, .. } => rows.len() as u64,
+            // One grouped answer and one summary row: each is a single row of a fixed
+            // schema, whatever its internal breadth.
+            Self::Metrics { .. } | Self::Summary(_) => 1,
+        }
+    }
+
+    /// Bytes of the names and paths this section carries.
+    ///
+    /// The one term in a result that grows without bound; everything else is a fixed-width
+    /// row that `row_count` multiplies.
+    pub fn name_bytes(&self) -> u64 {
+        match self {
+            Self::Tree(root) => root.name_bytes(),
+            Self::Extensions { rows, .. } => {
+                rows.iter().map(|row| row.extension.len() as u64).sum()
+            }
+            Self::Groups { rows, .. } => rows.iter().map(|row| row.label.len() as u64).sum(),
+            Self::Files { rows, .. } => {
+                rows.iter().map(|row| row.path.as_os_str().len() as u64).sum()
+            }
+            Self::Metrics { .. } | Self::Summary(_) => 0,
+        }
+    }
+
     /// Which view produced this section.
     pub fn view(&self) -> ViewSpec {
         match self {
@@ -777,6 +813,19 @@ impl Section {
             Self::Metrics { view, .. } | Self::Files { view, .. } => *view,
             Self::Summary(_) => ViewSpec::Summary,
         }
+    }
+}
+
+impl TreeNode {
+    /// This node and every node beneath it.
+    fn node_count(&self) -> u64 {
+        1 + self.children.iter().map(TreeNode::node_count).sum::<u64>()
+    }
+
+    /// Path bytes carried by this node and every node beneath it.
+    fn name_bytes(&self) -> u64 {
+        self.path.as_os_str().len() as u64
+            + self.children.iter().map(TreeNode::name_bytes).sum::<u64>()
     }
 }
 
@@ -816,6 +865,21 @@ pub struct Report {
     pub analysis: Option<ContentReportMetadata>,
     /// One section per requested view, in request order.
     pub sections: Vec<Section>,
+}
+
+impl Report {
+    /// Rows every section carries, summed.
+    ///
+    /// What a bundled read charges to its report projection: the size of the answer a
+    /// consumer is about to copy out, not the size of the question.
+    pub fn row_count(&self) -> u64 {
+        self.sections.iter().map(Section::row_count).sum()
+    }
+
+    /// Bytes of the names and paths every section carries, summed.
+    pub fn name_bytes(&self) -> u64 {
+        self.sections.iter().map(Section::name_bytes).sum()
+    }
 }
 
 /// Remarks a report makes about itself.
