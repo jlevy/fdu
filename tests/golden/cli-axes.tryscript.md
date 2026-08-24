@@ -19,6 +19,10 @@ patterns:
   # Paths are reported with the platform's own separator, so the separator is matched
   # rather than asserted. Every other character of the path still has to be exact.
   SEP: '[/\\]'
+  # The same separator inside a JSON string, where a Windows backslash is escaped and so
+  # occupies two characters of the raw output rather than one. A golden that used SEP
+  # here passed on Unix and failed on Windows against output that was entirely correct.
+  JSON_SEP: '/|\\\\'
   MTIME_NS: '-?\d+'
   SCAN_PATH: '[^\r\n]+'
   RFC3339: '\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{9}Z'
@@ -607,7 +611,7 @@ different kinds of evidence.
 ```console
 $ fdu --cache off --color never --view files --kind file --sort size --limit 3 --size apparent --format jsonl project
 {"schema": "fdu.report/4", "generator": "fdu 0.1.0", "root": "[SCAN_PATH]", "scan_started_at": "[RFC3339]", "generated_at": "[RFC3339]", "source": "cold_scan", "freshness": "fresh", "complete": true, "errors": []}
-{"view": "files", "bound": {"shown": 3, "total": 6}, "files": [{"path": "dist[SEP]acorn-0.1.0.tar.gz", "kind": "file", "bytes": 128, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "extension": ".tar.gz", "classification": {"file_type": "archive", "family": "binary", "group": "archives", "source": "compound_extension", "confidence": "certain", "flags": {"generated": false, "vendored": false, "documentation": false}}}, {"path": "README.md", "kind": "file", "bytes": 48, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "extension": ".md", "classification": {"file_type": "markdown", "family": "prose", "group": "docs", "source": "extension", "confidence": "certain", "flags": {"generated": false, "vendored": false, "documentation": true}}}, {"path": "Makefile", "kind": "file", "bytes": 28, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "extension": null, "classification": {"file_type": "make", "family": "code", "group": "code", "source": "exact_filename", "confidence": "certain", "flags": {"generated": false, "vendored": false, "documentation": false}}}]}
+{"view": "files", "bound": {"shown": 3, "total": 6}, "files": [{"path": "dist[JSON_SEP]acorn-0.1.0.tar.gz", "kind": "file", "bytes": 128, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "extension": ".tar.gz", "classification": {"file_type": "archive", "family": "binary", "group": "archives", "source": "compound_extension", "confidence": "certain", "flags": {"generated": false, "vendored": false, "documentation": false}}}, {"path": "README.md", "kind": "file", "bytes": 48, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "extension": ".md", "classification": {"file_type": "markdown", "family": "prose", "group": "docs", "source": "extension", "confidence": "certain", "flags": {"generated": false, "vendored": false, "documentation": true}}}, {"path": "Makefile", "kind": "file", "bytes": 28, "allocated": [ALLOCATED], "mtime_ns": [MTIME_NS], "extension": null, "classification": {"file_type": "make", "family": "code", "group": "code", "source": "exact_filename", "confidence": "certain", "flags": {"generated": false, "vendored": false, "documentation": false}}}]}
 ? 0
 ```
 

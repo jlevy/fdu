@@ -101,10 +101,10 @@ fn event_for(
     let mut paths = Vec::with_capacity(wanted);
     for argument in arguments {
         let relative = Path::new(argument);
-        if relative.is_absolute() {
+        if !crate::index::path_is_representable(relative) {
             return Err(format!(
-                "line {line}: {argument:?} is absolute; script paths are relative to the watch \
-                 root so a script stays portable"
+                "line {line}: {argument:?} escapes the watch root; script paths are relative to \
+                 it so a script stays portable"
             ));
         }
         paths.push(root.join(relative));
@@ -170,7 +170,12 @@ mod tests {
             ("teleport\ta.txt\n", "unknown directive"),
             ("create\n", "takes 1 path"),
             ("rename-both\tonly.txt\n", "takes 2 path"),
-            ("create\t/absolute.txt\n", "is absolute"),
+            // Rooted, and on Windows *not* absolute -- `is_absolute` answers `false` for a
+            // path with no drive prefix, which is how the first version of this guard
+            // passed on Unix and let the path through on Windows.
+            ("create\t/rooted.txt\n", "escapes the watch root"),
+            ("create\t../escape.txt\n", "escapes the watch root"),
+            ("rename-both\tok.txt\t../out.txt\n", "escapes the watch root"),
             ("error\n", "error takes a message"),
         ] {
             let Err(error) = parse_script(source, Path::new("/root")) else {

@@ -147,30 +147,46 @@ def check_empty_is_decidable_from_the_aggregate() -> None:
 
     root = Path(tempfile.mkdtemp(prefix="fdu-empty-"))
     (root / "target.txt").write_text("x", encoding="utf-8")
-    (root / "links").mkdir()
-    (root / "links" / "a").symlink_to(root / "target.txt")
-    (root / "links" / "b").symlink_to(root / "target.txt")
     (root / "hollow").mkdir()
 
+    # Creating a symlink on Windows needs a privilege the runner may not hold, so the
+    # half of this that needs one is Unix-only -- the same guard the kind-label check
+    # uses. The distinction itself is covered on every platform by the engine test
+    # `a_symlink_only_subtree_is_not_an_empty_one`, which builds its tree from
+    # observations rather than from a filesystem; what is Unix-only here is whether the
+    # count survives a real walk and the binding, not whether it is maintained.
+    links_are_testable = os.name != "nt"
+    if links_are_testable:
+        (root / "links").mkdir()
+        (root / "links" / "a").symlink_to(root / "target.txt")
+        (root / "links" / "b").symlink_to(root / "target.txt")
+
     index = fdu.open(root)
-    links = index.rollup("links")
     hollow = index.rollup("hollow")
-    assert links is not None and hollow is not None
-    assert (links.files, links.dirs, links.bytes) == (0, 0, 0)
+    assert hollow is not None
     assert (hollow.files, hollow.dirs, hollow.bytes) == (0, 0, 0)
-    assert links.others == 2, "the symlinks are counted even though they weigh nothing"
     assert hollow.others == 0
-    assert not links.is_empty and hollow.is_empty
+    assert hollow.is_empty and hollow.entries == 0
+
+    if links_are_testable:
+        links = index.rollup("links")
+        assert links is not None
+        assert (links.files, links.dirs, links.bytes) == (0, 0, 0), (
+            "a symlink weighs nothing, which is exactly why bytes cannot decide this"
+        )
+        assert links.others == 2, "and is counted anyway"
+        assert not links.is_empty
 
     # And a listing row carries the verdict, decided rather than left to the consumer:
     # deciding it needs the row's provenance as well as its counts.
     page = index.children()
     assert page is not None
     rows = {child.name: child for child in page.rows}
-    assert rows["links"].empty is False
     assert rows["hollow"].empty is True
     assert rows["target.txt"].empty is None, "a file has no subtree to be empty"
-    assert rows["links"].totals is not None and rows["links"].totals.entries == 2
+    if links_are_testable:
+        assert rows["links"].empty is False
+        assert rows["links"].totals is not None and rows["links"].totals.entries == 2
 
     fdu.clear_cache(root)
 

@@ -2729,7 +2729,13 @@ fn normalize(path: &Path) -> Option<Vec<&OsStr>> {
 /// The same rule as [`normalize`] without building anything: validation asks a yes or
 /// no question, and answering it by constructing a component list and dropping it was
 /// pure allocation.
-fn path_is_representable(path: &Path) -> bool {
+///
+/// Shared rather than re-derived because the obvious spelling of this check is
+/// `!path.is_absolute()`, and that is wrong on Windows: `/escape.txt` is rooted but
+/// carries no drive prefix, so `is_absolute` answers `false` and the path escapes the
+/// root anyway. `..` slips past the same check on every platform. Asking about
+/// components answers both at once.
+pub(crate) fn path_is_representable(path: &Path) -> bool {
     path.components().all(|component| matches!(component, Component::Normal(_) | Component::CurDir))
 }
 
