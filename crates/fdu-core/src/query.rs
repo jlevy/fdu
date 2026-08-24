@@ -16,7 +16,7 @@ pub(crate) use query_report::report_summary;
 pub use query_report::{
     AxisNames, ContentReportMetadata, FileRow, GroupRow, MetricGroup, MetricRow, MetricShare,
     MetricSummary, Provenance, Query, Remainder, Report, ReportSource, RunFacts, Section,
-    ShareMetric, SummaryRow, TreeNode, TypeRow, ViewSpec, document_words, report,
+    ShareMetric, SummaryRow, TreeNode, TypeRow, ViewSpec, document_words, report, report_measured,
 };
 // One bound vocabulary, defined in the shared contract layer and re-exported here so
 // `query::Bound` keeps naming it: the report's depth and row limits and a roll-up's

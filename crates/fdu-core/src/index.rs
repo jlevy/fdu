@@ -707,6 +707,20 @@ impl Visits for Uncounted {
     fn visit(&mut self, _kind: EntryKind) {}
 }
 
+impl Work {
+    /// Charge one entry this operation examined.
+    ///
+    /// The inherent form of the `Visits` implementation below, so callers outside this
+    /// module can charge honestly. `query::report` needs it: a filtered request
+    /// re-aggregates by walking the whole index, and a work record that did not count
+    /// that walk reported an O(index) route as free whenever its output was small --
+    /// which is precisely when such a route goes unnoticed.
+    #[inline]
+    pub fn visit_entry(&mut self, kind: EntryKind) {
+        <Self as Visits>::visit(self, kind);
+    }
+}
+
 impl Visits for Work {
     #[inline]
     fn visit(&mut self, kind: EntryKind) {
@@ -1193,7 +1207,13 @@ impl IndexHandle {
         let report = request.report.as_ref().map(|wanted| {
             timed(&mut projections.report, |work| {
                 let provenance = index.run_facts().provenance(wanted.generated_at);
-                let rendered = crate::query::report(&index, &wanted.query, &provenance);
+                // The measured form: a filtered report re-aggregates by walking the whole
+                // index, and this projection used to charge rows and bytes while leaving
+                // visits at zero. So a query that read every entry and returned three rows
+                // looked exactly like one that read three -- which defeats the structural
+                // gate this record exists to be.
+                let rendered =
+                    crate::query::report_measured(&index, &wanted.query, &provenance, work);
                 work.rows += rendered.row_count();
                 work.name_bytes += rendered.name_bytes();
                 rendered
@@ -4062,6 +4082,67 @@ mod tests {
     /// failing is the designed answer rather than a shortcoming: the caller restarts a
     /// bounded assembly, which is cheap, instead of the engine holding history, which is
     /// not.
+    /// A filtered report charges the walk it did, not the rows it returned.
+    ///
+    /// The two tiers are the whole point of the work record. An unfiltered request reads
+    /// maintained roll-ups and touches a handful of entries; a filtered one re-aggregates
+    /// by walking the entire index. Both can return one row. Charging only rows made them
+    /// identical in the record, so an accidental O(index) route was invisible exactly when
+    /// its output was small -- which is when it goes unnoticed and ships.
+    ///
+    /// Paired under the same output bound, so the only difference the assertion can be
+    /// reading is the traversal.
+    #[test]
+    fn a_filtered_report_charges_the_index_it_walked_rather_than_the_rows_it_returned() {
+        let handle = IndexHandle::new(Index::new("/root"));
+        let mut ops = vec![upsert("dir", EntryKind::Dir, Attrs::default())];
+        for i in 0..200_u64 {
+            ops.push(upsert(
+                Box::leak(format!("dir/file{i}.rs").into_boxed_str()),
+                EntryKind::File,
+                file_attrs(i + 1, i64::try_from(i).unwrap_or(0) + 1),
+            ));
+        }
+        handle.apply(&Observation::new(ops)).expect("apply");
+
+        let report_for = |selection: crate::query::Selection| ReadRequest {
+            report: Some(ReportRequest {
+                query: crate::query::Query {
+                    selection,
+                    views: vec![crate::query::ViewSpec::Summary],
+                    ..crate::query::Query::default()
+                },
+                generated_at: std::time::SystemTime::UNIX_EPOCH,
+            }),
+            ..ReadRequest::default()
+        };
+
+        let maintained =
+            handle.read(&report_for(crate::query::Selection::default())).expect("unfiltered read");
+        let reaggregated = handle
+            .read(&report_for(crate::query::Selection {
+                min_size: Some(150),
+                ..crate::query::Selection::default()
+            }))
+            .expect("filtered read");
+
+        // Same shape of answer: one summary row each.
+        assert_eq!(maintained.report.as_ref().expect("report").sections.len(), 1);
+        assert_eq!(reaggregated.report.as_ref().expect("report").sections.len(), 1);
+
+        let walked = reaggregated.projections.report.entries_visited;
+        assert!(
+            walked >= 200,
+            "a filtered summary re-aggregates the whole index, and must say so: {walked}"
+        );
+        assert!(
+            walked > maintained.projections.report.entries_visited * 10,
+            "the two tiers must be orders apart in the record, not merely different: \
+             {walked} against {}",
+            maintained.projections.report.entries_visited
+        );
+    }
+
     #[test]
     fn a_pinned_read_refuses_a_version_the_index_has_moved_past() {
         let handle = IndexHandle::new(Index::new("/root"));

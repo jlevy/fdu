@@ -980,9 +980,26 @@ fn display_notes(query: &Query) -> Vec<String> {
 /// Pure: the same index, query, and provenance always produce the same report, and
 /// nothing here reads the filesystem or mutates the index.
 pub fn report(index: &Index, query: &Query, provenance: &Provenance) -> Report {
+    report_measured(index, query, provenance, &mut crate::index::Work::default())
+}
+
+/// The same report, charging what it visited to the caller's work record.
+///
+/// Separate from [`report`] only because most callers have nowhere to put the number. The
+/// one that does -- a bundled read serving an interactive client -- needs it, because this
+/// is where the two cost tiers diverge: an unfiltered request reads maintained roll-ups
+/// and touches a handful of entries, while a filtered one re-aggregates by walking the
+/// whole index. Charging nothing made those indistinguishable whenever the output was
+/// small, which is exactly when an accidental O(index) route goes unnoticed.
+pub fn report_measured(
+    index: &Index,
+    query: &Query,
+    provenance: &Provenance,
+    work: &mut crate::index::Work,
+) -> Report {
     // One traversal serves every filtered view in the request, so asking for three views
     // costs one pass rather than three.
-    let walked = (!query.selection.is_unfiltered()).then(|| walk(index, &query.selection));
+    let walked = (!query.selection.is_unfiltered()).then(|| walk(index, &query.selection, work));
 
     let sections = query
         .views
@@ -1059,7 +1076,7 @@ struct Walked {
 ///
 /// Iterative rather than recursive: this engine is built for trees deep enough that a
 /// recursive post-order would exhaust the stack.
-fn walk(index: &Index, selection: &Selection) -> Walked {
+fn walk(index: &Index, selection: &Selection, work: &mut crate::index::Work) -> Walked {
     let mut walked = Walked {
         per_directory: BTreeMap::new(),
         by_ext: BTreeMap::new(),
@@ -1099,6 +1116,10 @@ fn walk(index: &Index, selection: &Selection) -> Walked {
             let (Some(kind), Some(attrs)) = (index.kind_of(child), index.attrs_of(child)) else {
                 continue;
             };
+            // Every entry this pass examines, admitted or not. The rejected ones are
+            // the point: a filter that admits nothing still read the whole index to
+            // find out, and a record counting only survivors reports that walk free.
+            work.visit_entry(kind);
             // Bound once, and as an `OsStr`: the bucket has to be derived from the same
             // bytes the index interned from, or a name that is not valid UTF-8 would be
             // filed under one label by the fast tier and another by this one.
