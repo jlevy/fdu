@@ -5,7 +5,7 @@ title: "A native walk budget: stop discovery at the cap, and say so"
 kind: task
 status: open
 priority: 1
-version: 7
+version: 8
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 refs:
   - kind: pr
@@ -21,7 +21,7 @@ labels: []
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-25T07:30:01.728Z
-updated_at: 2026-08-25T09:57:37.584Z
+updated_at: 2026-08-25T10:45:39.628Z
 closed_at: null
 close_reason: null
 resolution: null
@@ -126,3 +126,50 @@ outright for the adjacent reason -- a creation inside an unread subtree would be
 while its siblings stayed missing, assembling a subtree nobody walked one event at a time.
 
 Reopened: Reopened by exact-head adoption review at FDU d19b0ce against MetaBrowser 0577bb1. FDU checks max_files between whole directories and deliberately overshoots (scan.rs:180-196, 401-448), while the shipped Python provider stops before the next retained row once the regular-file count reaches the strict max_files limit (walker.py:412-415, 462-474). MetaBrowser defines max_files as the regular-file discovery limit and Phase 2 requires the same discovery stop. A provider fingerprint cannot identify equivalent scope if the same cap retains different inventories. Preserve FDU performance, but implement a strict externally observable cap or revise both providers and the conformance contract together with an agreement fixture; do not close on partial coverage alone.
+
+
+
+REOPEN ADDRESSED. The finding is right and the fix is a correction to the design, not a
+patch on it.
+
+The between-directories bound was externally observable: a capped walk retained "the cap,
+plus whatever was already in flight", which is a different number on every run, on every
+machine, and at every thread count. The cap is fingerprinted scope, so two indexes claiming
+one scope identity must hold the same inventory -- and that is the argument this side made
+to the consumer about *their* fingerprinted axis, turned back on this implementation.
+
+`Budget::admit(kind)` is now per entry and exact. Files are claimed with `fetch_update`
+rather than `fetch_add`, because the count must never pass the cap even momentarily: two
+workers reading the old value and both adding admit `cap + 1`, which is precisely the "close
+enough" the strictness exists to refuse. Nothing of any kind is retained once the cap is
+spent, so the inventory stops where the file count does rather than continuing to accrete
+directories.
+
+The reasoning the overshoot was built on was sound and its premise was false. It held that a
+half-listed directory would present a short tally as complete, silently. But a walk the cap
+stopped already marks coverage `Partial(Budget)` at the root, and `coverage_at` matches every
+path beneath it -- so every directory in a capped index already reports the reason its
+numbers are short. The objection the overshoot answered did not exist.
+
+The cost is a contended atomic per file, and it is paid only by callers who set a cap: an
+uncapped walk holds no `Budget` at all and touches no atomic, which is every default run and
+every measurement in the ledger.
+
+Tests reworked rather than adjusted: `the_cap_is_exact_and_a_short_directory_says_so` uses a
+cap that deliberately falls mid-directory and asserts the file count is exactly the cap, that
+some directory is therefore short, and that every directory still reports partial coverage
+with the budget reason. `the_cap_is_shared_across_workers` now asserts `== cap` at one and
+four workers, which rules out both a per-worker counter and an unsynchronised shared one.
+The fixture gained a level of nesting, because every top-level directory is seen while
+listing the root -- before a single file is counted -- so a one-level fixture cannot tell
+"refused because the cap was spent" from "admitted because it was seen first".
+
+Added `scan::tests::a_budget_admits_exactly_its_cap_under_contention`, and its doc states
+what it does *not* prove: it does not falsify a load-compare-`fetch_add`, whose window is two
+instructions wide and does not reproduce on any host tried. The `fetch_update` is correct by
+construction rather than by that test, and swapping it for the racier form is a change no
+test here catches. Recorded rather than left to be assumed.
+
+Still deliberate and unchanged: the cap governs discovery. Reconciliation walks from the
+index and does not consult it, so a refresh of a capped index can grow it past the cap.
+Watching a capped index is refused outright.
