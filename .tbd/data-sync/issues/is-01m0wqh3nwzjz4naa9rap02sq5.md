@@ -5,7 +5,7 @@ title: Clock cap-refused upserts that mutate existing index state
 kind: bug
 status: open
 priority: 1
-version: 4
+version: 6
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 refs:
   - kind: pr
@@ -14,15 +14,18 @@ refs:
   - kind: pr
     url: https://github.com/jlevy/fdu/pull/47#issuecomment-5412701379
     at: 2026-08-25T15:25:12.692Z
+  - kind: pr
+    url: https://github.com/jlevy/fdu/pull/47#pullrequestreview-5021835489
+    at: 2026-08-25T17:17:54.828Z
 labels:
   - pr47-review
   - metabrowser
 dependencies: []
 parent_id: is-01m0vx6yw0f8bddcwggvk2ha0p
 created_at: 2026-08-25T15:09:57.307Z
-updated_at: 2026-08-25T17:06:36.931Z
+updated_at: 2026-08-25T17:17:54.829Z
 ---
-At PR 47 exact head 353d48f6c795b72e1c4c94ed8f95b8e08b815c9b, Index::upsert_beneath mutates before the new max_files refusal: apply_upsert may create placeholder ancestor directories, and a kind-changing existing entry is removed before the cap check. The cap branch then increments refused and returns false. apply_validated consequently omits the op from the journal and, once coverage/run facts are already partial, can return without advancing the data clock even though rows or directory rollups changed. Preflight refusal before mutation or return an outcome that separately records mutation/refusal and an accurate effective delta; test a full capped index receiving a nested new file with missing parents and a directory/symlink replaced by a file, including second and later refusals, WatchBatch dirty signals, exact terminal state clock, and conservation.
+At PR #47 exact head d58d9c5036818f33fe390c31453eb7548ba7abfa, cap-refused mutations now advance the clock, but AppliedDelta is inaccurate. apply_upsert returns true when ensure_dir_chain created ancestors or upsert_beneath removed a kind-changing row; apply_validated_with then appends the original observed Op::Upsert to effective. That leaf file was refused and is absent, while the actual directory insertions or removal are omitted. The public journal therefore claims an effective mutation that did not happen and loses the mutations that did. The new tests assert only that since().deltas is nonempty, so they accept this false delta and do not exercise WatchBatch. Return a structured apply result separating refusal from the exact effective operations (or an explicit dirty/invalidation carrier that is not documented as replayable ops), and preserve the actual created-directory/removal paths under the same clock. Assert the complete delta contents, absence of the refused upsert, exact terminal state clock, WatchBatch dirty/state, and tally conservation for first and later refusals.
 
 ## Notes
 

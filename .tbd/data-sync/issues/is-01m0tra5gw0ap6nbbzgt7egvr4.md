@@ -5,7 +5,7 @@ title: "[bug] Gitignore bind walks the whole tree at open, even cache-only"
 kind: bug
 status: open
 priority: 1
-version: 6
+version: 8
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 refs:
   - kind: pr
@@ -14,57 +14,20 @@ refs:
   - kind: pr
     url: https://github.com/jlevy/fdu/pull/47#issuecomment-5412701379
     at: 2026-08-25T15:25:12.297Z
+  - kind: pr
+    url: https://github.com/jlevy/fdu/pull/47#pullrequestreview-5021835489
+    at: 2026-08-25T17:17:54.573Z
 labels: []
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T20:45:09.518Z
-updated_at: 2026-08-25T17:06:51.580Z
+updated_at: 2026-08-25T17:17:54.575Z
 closed_at: null
 close_reason: null
 resolution: null
 duplicate_of: null
 ---
-Found by the 2026-08-24 design review, reading `GitignoreSet::build` against the cache
-policy contract. `TagRules::from_names(names, root)` binds the gitignore matcher at
-argument-parse time (cli.rs and the Python config build), and `bind` runs
-`ignore::WalkBuilder` over the whole root to discover control files. Three consequences:
-
-1. **`--cache only` walks the tree.** The tier whose contract is "never touches the
-   tree" performs a full directory traversal at open whenever gitignore rules are
-   enabled, before cache policy is even consulted. The answer is still correct; the
-   promise is broken silently, and the cost is the whole point of cache-only.
-2. **A cold scan traverses twice.** The bind walk visits every directory, then the real
-   metadata walk visits them again. With gitignore default-on this doubles directory
-   I/O on the scan path for every fdu run on a git tree.
-3. **Every `.gitignore` save re-walks.** `TagRules::rebound(&root)` rebuilds the set, so
-   a control-file edit during watch costs a full-tree walk plus the full retag, on every
-   save.
-
-DESIGN. The index itself already knows where every `.gitignore` is -- control files are
-entries. Replace discovery-by-walk with discovery-from-index:
-
-- Scan path: gather control-file paths during the metadata walk itself (the walker
-  passes every directory; note `.gitignore` basenames as they stream by), bind matchers
-  after the walk delivers them, tag as a deferred pass or tag-on-insert once bound.
-  Alternative: keep bind-first for the scan path only if measurement shows the deferred
-  pass costs more than the double walk -- decide with `make perf-compare`, not by
-  argument.
-- Load path (fdu-ycyy's ordering): after entries materialize, `lookup` the `.gitignore`
-  entries the snapshot already lists, read just those files (bounded reads, not a walk),
-  bind, then evaluate tags. Cache-only then reads N control files and stats nothing
-  else, which is an honest reading of "does not walk".
-- Rebind path: the watch batch names the control file that changed; rebind by re-reading
-  the governed files recorded in the set, not by re-walking the root.
-
-TESTS. A structural counter (or a probe FS) proving `--cache only` with gitignore rules
-opens without a directory traversal; a counter proving one scan visits each directory
-once; a rebind test proving a `.gitignore` save reads control files only.
-
-INTERACTION. fdu-ycyy's install-before-materialize ordering must land first or together:
-bind-from-index requires the loaded structure to exist before matchers bind, which is
-the reverse of today's bind-at-parse. `ignore` 0.4.30+'s `IncrementalIgnore`
-(build_matchers) is the lazy per-directory alternative recorded on fdu-brt0 -- if the
-deferred-bind design gets complicated, measure that instead.
+At PR #47 exact head d58d9c5036818f33fe390c31453eb7548ba7abfa, pruned control-file events now reach Session, but the rebind is still not lossless or bounded. IndexHandle::rebind_tag_rules computes governed directories from the newly bound rules, calls adopt_tag_rules (which retags and rebuilds planes), then returns without a commit when the new governed set is empty. Deleting the last .gitignore therefore changes tags and rollups without advancing Clock or entering AppliedDelta; the new integration test observes the handle directly and never asserts a WatchBatch, cursor, or dirty set, so it passes this defect. Capture the union of old and new governed directories (or have retag return the exact moved set) and commit whenever answer-affecting bits/planes moved, including deletion to zero. In addition, adopt_pruned_control_dirs only extends/sorts/deduplicates and deletion deliberately retains history forever. A long-lived watch can grow this set without bound; snapshot load caps it at MAX_CONTROL_DIRS=1,000,000 while snapshot save writes any count, so the engine can write a snapshot it later refuses. Maintain the current control-file set with removal-aware updates, enforce one shared bound at mutation/save/load, and test last-file deletion through exact batch/cursor/dirty state plus create-delete churn and snapshot self-roundtrip at the bound.
 
 ## Notes
 
