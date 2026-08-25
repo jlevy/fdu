@@ -844,8 +844,29 @@ The model that results, stated once here and in detail on the beads:
   re-walks and re-records them, so the section could be deleted and every assertion
   still passed.
 
-- [ ] Later fold-in: `Classification.flags` (generated, vendored, documentation) become
+- [x] Later fold-in: `Classification.flags` (generated, vendored, documentation) become
   Name-tier rules instead of per-query recomputation (`fdu-n7mv`, P3)
+
+  Two of the three, and the third is the interesting one.
+  `vendored` and `documentation` ship as `TagTier::Path` rules — they read the relative
+  path, not just a basename, which is what that tier means — decided by a new pure-path
+  matcher that needs no binding, so `needs_path` and `needs_binding` are now separate
+  questions rather than one.
+  The classification reports both unchanged, from the same predicate, so a caller
+  filtering with `--not-tag vendored` and a row saying `vendored: true` cannot disagree
+  about a file.
+
+  `generated` cannot be a tag and the tag model’s own tier check is what says so: it
+  reads the file’s opening bytes, which is `TagTier::Content`, and enabling it would
+  turn a metadata walk into a content walk with no symptom but a slower scan.
+  It stays on the classification of a file whose bytes were read for another reason,
+  where it is free.
+
+  The fold found the drift it was meant to prevent.
+  The two copies of the stem check had already diverged: the classification’s used
+  `get(..len)`, the newer one indexed, and the indexing form panics on a name whose stem
+  length lands inside a multi-byte character.
+  One function now, and the test names `réadme.md` for exactly that reason.
 
 ### Phase 2: The customizable taxonomy
 

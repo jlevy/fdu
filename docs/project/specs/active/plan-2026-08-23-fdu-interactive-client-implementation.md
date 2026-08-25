@@ -845,7 +845,7 @@ the bead that owns it:
 | `ignore` lands behind a default-on `gitignore` feature (notify’s precedent; measured +1.06 MiB, 9 crates, no lean mode). The MSRV trap found by checking went deeper than a version pin: 0.4.30 declares no `rust-version` and still needs 1.88, so the workspace floor moved to 1.88 rather than the crate moving back | `fdu-brt0` |
 | `dotfile` ships as the zero-dependency Name-tier reference rule, unpromoted — the model is provable end-to-end before the dependency lands | `fdu-mvt3` |
 | Hidden admission is scope (prune + allowlist + fingerprint), its own bead, owning its `FORMAT_VERSION` bump | `fdu-xyvu` |
-| `Classification.flags` fold in later as Name-tier rules | `fdu-n7mv`, P3 |
+| `Classification.flags`: `vendored` and `documentation` fold in as Path-tier rules sharing one predicate with the classification; `generated` cannot, because its tier is refused | `fdu-n7mv` |
 | Keep the `others` leaf counts — the implemented contract requires them; the measurement (`fdu-2ig2`) runs on any quiet host or rides `fdu-n4gn` | beads |
 | `fdu-vrwy` stays its own change, not this PR | bead |
 

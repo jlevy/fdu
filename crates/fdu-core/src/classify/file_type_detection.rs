@@ -68,26 +68,25 @@ pub(super) fn shebang_interpreter(prefix: &[u8]) -> Option<&str> {
     tokens.find(|token| !token.starts_with('-')).and_then(|token| token.rsplit('/').next())
 }
 
+/// Orthogonal attributes of one path, two of which are also tag rules.
+///
+/// `vendored` and `documentation` are decided by [`crate::tags`] rather than here, because
+/// they are the same fact wearing two hats: a caller asking `--not-tag vendored` and a row
+/// reporting `vendored: true` must agree about every file, and two copies of the rule are
+/// how they come not to. The classification keeps reporting them unchanged -- a consumer
+/// reading the flag needs no tag rule enabled -- and now there is one predicate behind both.
+///
+/// `generated` stays here alone, and the tag model's own tier check is why: it reads the
+/// file's opening bytes, which is [`TagTier::Content`](crate::tags::TagTier::Content), and
+/// `TagRules::from_names` refuses that tier rather than turning a metadata walk into a
+/// content walk. It is available on the classification of a file whose bytes were read for
+/// some other reason, which is the only place it could ever be free.
 pub(super) fn flags(path: &Path, prefix: Option<&[u8]>) -> ClassificationFlags {
-    let mut flags = ClassificationFlags::default();
-    for component in path.components() {
-        let component = component.as_os_str().to_string_lossy();
-        if ["vendor", "vendored", "third_party", "third-party", "node_modules"]
-            .iter()
-            .any(|name| component.eq_ignore_ascii_case(name))
-        {
-            flags.vendored = true;
-        }
-        if ["doc", "docs", "documentation"].iter().any(|name| component.eq_ignore_ascii_case(name))
-        {
-            flags.documentation = true;
-        }
-    }
-    if let Some(name) = path.file_name().and_then(|name| name.to_str()) {
-        flags.documentation |= ["readme", "changelog", "contributing"]
-            .iter()
-            .any(|stem| name.eq_ignore_ascii_case(stem) || starts_with_stem(name, stem));
-    }
+    let mut flags = ClassificationFlags {
+        generated: false,
+        vendored: crate::tags::is_vendored(path),
+        documentation: crate::tags::is_documentation(path),
+    };
     if let Some(prefix) = prefix {
         let prefix = bounded(prefix, GENERATED_PROBE_BYTES);
         flags.generated = [
@@ -139,11 +138,6 @@ fn first_nonblank_line(prefix: &[u8]) -> Option<&[u8]> {
         .split(|byte| matches!(byte, b'\r' | b'\n'))
         .map(<[u8]>::trim_ascii_start)
         .find(|line| !line.is_empty())
-}
-
-fn starts_with_stem(name: &str, stem: &str) -> bool {
-    name.get(..stem.len()).is_some_and(|prefix| prefix.eq_ignore_ascii_case(stem))
-        && name.as_bytes().get(stem.len()) == Some(&b'.')
 }
 
 fn bounded(bytes: &[u8], limit: usize) -> &[u8] {

@@ -497,7 +497,7 @@ $ fdu --cache off --view summary --promote gitignore repo
 
 ```console
 $ fdu --cache off --view summary --tag-rules gitignore --promote gitignore --plane gitignor repo
-! fdu: unknown tag rule "gitignor"; available: dotfile, gitignore
+! fdu: unknown tag rule "gitignor"; available: dotfile, vendored, documentation, gitignore
 ? 2
 ```
 
@@ -505,7 +505,7 @@ $ fdu --cache off --view summary --tag-rules gitignore --promote gitignore --pla
 
 ```console
 $ fdu --cache off --tag-rules nope tagged
-! fdu: unknown tag rule "nope"; available: dotfile, gitignore
+! fdu: unknown tag rule "nope"; available: dotfile, vendored, documentation, gitignore
 ? 2
 ```
 

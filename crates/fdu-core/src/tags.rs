@@ -114,6 +114,14 @@ type NameMatcher = fn(&OsStr) -> bool;
 enum Matcher {
     /// Reads the basename. Free -- the walk already holds it.
     Name(NameMatcher),
+    /// Reads the relative path and nothing else.
+    ///
+    /// Path-tier by [`TagTier`]'s own definition -- it reads more than a basename -- and
+    /// distinct from the variant below in the thing that matters operationally: it needs no
+    /// state gathered from the tree, so it is decided the moment an entry lands and there
+    /// is nothing to bind. That is why the tier and the binding question are answered by
+    /// two different predicates rather than one.
+    PurePath(PurePathMatcher),
     /// Reads the relative path, against state gathered from the tree.
     ///
     /// Gated with the only rule that produces one. Without that feature the variant does
@@ -122,6 +130,9 @@ enum Matcher {
     #[cfg(feature = "gitignore")]
     Path(PathMatcher),
 }
+
+/// A rule decided by the relative path alone.
+type PurePathMatcher = fn(&Path) -> bool;
 
 /// State a [`TagTier::Path`] rule matches against.
 ///
@@ -279,6 +290,14 @@ fn catalogue() -> &'static [(TagRule, Decides)] {
                     Decides::Name(is_dotfile as NameMatcher),
                 ),
                 (
+                    TagRule { id: Cow::Borrowed("vendored"), tier: TagTier::Path },
+                    Decides::PurePath(is_vendored as PurePathMatcher),
+                ),
+                (
+                    TagRule { id: Cow::Borrowed("documentation"), tier: TagTier::Path },
+                    Decides::PurePath(is_documentation as PurePathMatcher),
+                ),
+                (
                     TagRule { id: Cow::Borrowed("gitignore"), tier: TagTier::Path },
                     Decides::Gitignore,
                 ),
@@ -296,6 +315,8 @@ fn catalogue() -> &'static [(TagRule, Decides)] {
 enum Decides {
     /// A pure function of the basename, ready to use as it stands.
     Name(NameMatcher),
+    /// A pure function of the relative path, ready to use as it stands.
+    PurePath(PurePathMatcher),
     /// Needs a `.gitignore` evaluator built from the root.
     Gitignore,
 }
@@ -316,6 +337,48 @@ fn available_names() -> String {
 /// Deliberately *not* the hidden-path scope rule. This tags an entry and leaves it in the
 /// index with both numbers visible; scope pruning removes it entirely. Different axes, and
 /// the spec's own axis test is what separates them.
+/// A path component naming a conventional vendored dependency tree.
+///
+/// The same predicate `Classification.flags.vendored` reports, and it has to be: the
+/// classification and the tag are two views of one fact, and two copies of the rule would
+/// let `--not-tag vendored` and a row's own `vendored: true` disagree about one file.
+/// [`crate::classify`] calls this rather than keeping its own list.
+pub(crate) fn is_vendored(relative_path: &Path) -> bool {
+    const NAMES: [&str; 5] = ["vendor", "vendored", "third_party", "third-party", "node_modules"];
+    relative_path.components().any(|component| {
+        let component = component.as_os_str().to_string_lossy();
+        NAMES.iter().any(|name| component.eq_ignore_ascii_case(name))
+    })
+}
+
+/// A conventional documentation tree, or a basename every project uses for one.
+///
+/// Shared with `Classification.flags.documentation` for the reason `is_vendored` is.
+pub(crate) fn is_documentation(relative_path: &Path) -> bool {
+    const DIRECTORIES: [&str; 3] = ["doc", "docs", "documentation"];
+    const STEMS: [&str; 3] = ["readme", "changelog", "contributing"];
+    if relative_path.components().any(|component| {
+        let component = component.as_os_str().to_string_lossy();
+        DIRECTORIES.iter().any(|name| component.eq_ignore_ascii_case(name))
+    }) {
+        return true;
+    }
+    relative_path.file_name().and_then(|name| name.to_str()).is_some_and(|name| {
+        STEMS.iter().any(|stem| name.eq_ignore_ascii_case(stem) || starts_with_stem(name, stem))
+    })
+}
+
+/// `readme.md` matches the `readme` stem; `readmes.txt` does not.
+///
+/// `get(..len)` rather than a slice index, because a name is arbitrary UTF-8 and the stem's
+/// byte length can land inside a character -- `réadme.md` would panic on the index form.
+/// The classification carried this shape and the first copy of this predicate did not; it
+/// is now one function rather than two, which is the point of the fold.
+fn starts_with_stem(name: &str, stem: &str) -> bool {
+    name.get(..stem.len()).is_some_and(|prefix| prefix.eq_ignore_ascii_case(stem))
+        && name.as_bytes().get(stem.len()) == Some(&b'.')
+}
+
 fn is_dotfile(name: &OsStr) -> bool {
     let bytes = name.as_encoded_bytes();
     bytes.first() == Some(&b'.') && bytes != b"." && bytes != b".."
@@ -452,6 +515,7 @@ impl TagRules {
             .iter()
             .map(|matcher| match matcher {
                 Matcher::Name(decide) => Matcher::Name(*decide),
+                Matcher::PurePath(decide) => Matcher::PurePath(*decide),
                 #[cfg(feature = "gitignore")]
                 Matcher::Path(PathMatcher::Gitignore(_)) => {
                     Matcher::Path(PathMatcher::Gitignore(bound.clone()))
@@ -499,7 +563,7 @@ impl TagRules {
         let mut governed = Vec::new();
         for matcher in &self.matchers {
             match matcher {
-                Matcher::Name(_) => {}
+                Matcher::Name(_) | Matcher::PurePath(_) => {}
                 #[cfg(feature = "gitignore")]
                 Matcher::Path(PathMatcher::Gitignore(set)) => {
                     governed.extend(set.governed_directories().map(Path::to_path_buf));
@@ -518,7 +582,7 @@ impl TagRules {
     pub fn is_control_file(&self, relative_path: &Path) -> bool {
         let _ = relative_path;
         self.matchers.iter().any(|matcher| match matcher {
-            Matcher::Name(_) => false,
+            Matcher::Name(_) | Matcher::PurePath(_) => false,
             #[cfg(feature = "gitignore")]
             Matcher::Path(PathMatcher::Gitignore(_)) => gitignore::is_control_file(relative_path),
         })
@@ -540,14 +604,7 @@ impl TagRules {
     /// reads one is precisely the per-record allocation the snapshot format exists to
     /// avoid. False is the common case, and it is the whole answer.
     pub fn needs_path(&self) -> bool {
-        #[cfg(feature = "gitignore")]
-        {
-            self.matchers.iter().any(|matcher| matches!(matcher, Matcher::Path(_)))
-        }
-        #[cfg(not(feature = "gitignore"))]
-        {
-            false
-        }
+        self.matchers.iter().any(|matcher| !matches!(matcher, Matcher::Name(_)))
     }
 
     /// Whether any rule is enabled.
@@ -595,14 +652,19 @@ impl TagRules {
         // is `FnOnce`, so it is moved out on first use and every later Path-tier rule
         // reads the value it produced. Both locals are Path-tier machinery, so a build
         // with no Path-tier rule does not have them -- or the closure they hold -- at all.
-        #[cfg(feature = "gitignore")]
         let (mut produce, mut path) = (Some(relative_path), None::<Cow<'a, Path>>);
         #[cfg(not(feature = "gitignore"))]
-        let (_, _) = (relative_path, is_dir);
+        let _ = is_dir;
         let mut bits: TagBits = 0;
         for (index, matcher) in self.matchers.iter().enumerate() {
             let hit = match matcher {
                 Matcher::Name(decide) => decide(name),
+                Matcher::PurePath(decide) => {
+                    if path.is_none() {
+                        path = produce.take().map(|produce| produce());
+                    }
+                    path.as_deref().is_some_and(decide)
+                }
                 #[cfg(feature = "gitignore")]
                 Matcher::Path(decide) => {
                     if path.is_none() {
@@ -706,6 +768,7 @@ fn bind(name: &str, decides: Decides) -> Result<Matcher, TagRuleError> {
     let _ = name;
     match decides {
         Decides::Name(matcher) => Ok(Matcher::Name(matcher)),
+        Decides::PurePath(matcher) => Ok(Matcher::PurePath(matcher)),
         // Unbound: the rule is named and positioned, and the state it matches against
         // arrives with `TagRules::bound_to` once an index can say where the control files
         // are. Nothing here can read the tree, because on the cache-only path nothing may.
@@ -904,6 +967,94 @@ mod tests {
         let error = TagRules::none().mask_of(["dotfile"]).expect_err("rejected");
         assert!(matches!(error, TagRuleError::NotEnabled { .. }), "{error:?}");
         assert!(error.to_string().contains("no tag rules"), "{error}");
+    }
+
+    /// A tag and a classification flag are one fact, so they answer identically.
+    ///
+    /// They were two copies of one list, and the copies had already drifted: the
+    /// classification's stem check used `get(..len)` and the newer one indexed, which
+    /// panics on a name whose stem length lands inside a character. One predicate now backs
+    /// both, and this is what says so -- for every path either view might see, including
+    /// the ones that separate the two lists.
+    #[test]
+    fn a_flag_and_its_tag_are_one_fact_with_one_predicate_behind_them() {
+        let rules =
+            TagRules::from_names(["vendored", "documentation"]).expect("both are in the catalogue");
+        let tag = |path: &str, name: &str| -> Vec<&str> {
+            let relative = std::path::PathBuf::from(path);
+            let bits =
+                rules.evaluate(OsStr::new(name), false, || Cow::Borrowed(relative.as_path()));
+            rules.names_of(bits)
+        };
+
+        for (path, expected) in [
+            ("node_modules/left-pad/index.js", vec!["vendored"]),
+            ("third-party/zlib/zlib.c", vec!["vendored"]),
+            ("VENDOR/thing.rs", vec!["vendored"]),
+            ("docs/guide.md", vec!["documentation"]),
+            ("README.md", vec!["documentation"]),
+            ("CHANGELOG", vec!["documentation"]),
+            // A stem is a whole component, not a prefix: `readmes.txt` is not a readme.
+            ("readmes.txt", vec![]),
+            // Multi-byte, which is where the drifted copy would have panicked rather than
+            // answered.
+            ("réadme.md", vec![]),
+            ("vendor/docs/api.md", vec!["vendored", "documentation"]),
+            ("src/main.rs", vec![]),
+        ] {
+            let name = std::path::Path::new(path)
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            assert_eq!(tag(path, &name), expected, "tagging {path}");
+
+            // The classification reports the same two, unchanged and without a rule
+            // enabled: a consumer reading the flag needs no tag set at all.
+            let verdict = crate::classify::classify_with(
+                crate::classify::TypeRegistry::compiled(),
+                std::path::Path::new(path),
+                None,
+            );
+            assert_eq!(
+                verdict.flags.vendored,
+                expected.contains(&"vendored"),
+                "classification disagrees about vendored for {path}",
+            );
+            assert_eq!(
+                verdict.flags.documentation,
+                expected.contains(&"documentation"),
+                "classification disagrees about documentation for {path}",
+            );
+        }
+    }
+
+    /// `generated` is not a tag rule, and the tier check is the reason rather than an
+    /// oversight.
+    ///
+    /// It reads the file's opening bytes. Enabling it as a tag would silently turn a
+    /// metadata walk into a content walk, and the only symptom would be that scans got
+    /// mysteriously slower -- which is exactly the failure `TagTier::Content` exists to
+    /// refuse. It stays on the classification of a file whose bytes were read for some
+    /// other reason, where it is free.
+    #[test]
+    fn the_generated_flag_stays_a_classification_because_its_tier_is_refused() {
+        let refused = TagRules::from_names(["generated"]).expect_err("not in the catalogue");
+        assert!(matches!(refused, TagRuleError::Unknown(_)), "{refused:?}");
+
+        let bytes = b"// Code generated by protoc. DO NOT EDIT.
+fn main() {}";
+        let verdict = crate::classify::classify_with(
+            crate::classify::TypeRegistry::compiled(),
+            std::path::Path::new("src/api.rs"),
+            Some(bytes),
+        );
+        assert!(verdict.flags.generated, "the classification still reports it");
+
+        // And nothing about it reaches the tag set, whose whole cost claim is that it
+        // never opens a file.
+        let named = TagRules::from_names(["vendored", "documentation", "dotfile"])
+            .expect("every Name- and Path-tier rule");
+        assert!(!named.needs_binding(), "none of these reads a control file");
     }
 
     /// A plane name has four answers, and each names a different next step.
