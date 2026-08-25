@@ -3,15 +3,15 @@ type: is
 id: is-01m0t5t249szzrfqrng85e36me
 title: Hidden-path admission as scope, with an exact-name allowlist
 kind: task
-status: closed
+status: open
 priority: 2
-version: 4
+version: 6
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 labels: []
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T15:21:47.400Z
-updated_at: 2026-08-25T06:35:17.988Z
+updated_at: 2026-08-25T06:57:38.195Z
 closed_at: 2026-08-25T06:35:17.988Z
 close_reason: |
   Shipped as `crates/fdu-core/src/admission.rs` plus wiring across all three surfaces.
@@ -82,4 +82,23 @@ critical plane path does.
 
 ## Notes
 
-Reopened: Reopened at exact PR #47 head 4eac1b2. The hidden-policy implementation bypasses admission on every macOS bulk-directory path. Initial parallel scan passes bulk entries directly to record_walk_entry at scan.rs:1981-2006; direct reconciliation passes them directly to process_entry at 3172-3192; parallel reconciliation does the same at 3503-3511. The portable fallbacks alone call admits before stat and before removing the name from known state. Current CI proves the regression: Test (macos-latest) fails four hidden_admission tests, and both macOS wheel smoke jobs retain .git/.github under hidden=prune. Apply the same admission and control-file accounting before process/baseline mutation on all bulk paths, then exercise actual bulk scan and both reconciliation paths on macOS.
+FDU47-B1 FIXED at ff210d0. The three macOS bulk-read paths now call `admits` before the
+entry reaches the walker, and `note_pruned_control_file` before it is dropped -- parallel
+scan, direct reconcile, and the worker-pool reconcile wave.
+
+The mistake is worth recording because the commit message that introduced it stated the
+rule correctly and then broke it: "asked once, by name, from all four listing loops". There
+are seven. The bulk reader does not look like a listing loop -- it hands over name, kind
+and attrs together, so there is no `read_dir` item to attach the check to, and it reads as
+a fast path rather than as another place the rule has to hold.
+
+A runtime test cannot reach `cfg(target_os = "macos")` code from a Linux host, so the guard
+is a source check: `scripts/check-admission-sites.mjs`, wired into `make test` as
+`admission-selfcheck`. It requires every listing loop in `scan.rs` to call `admits`, and
+refuses when it matches fewer loops than the engine has -- a renamed binding would
+otherwise empty the check while it went on reporting success. Reintroducing the exact
+defect makes it name the exact line the review named.
+
+`make cross-lint` passes again as well; two Windows-gated `is_multiple_of` lints, surfaced
+by the MSRV move to 1.88, had been sitting behind it and blocking the macOS target from
+being reached at all.
