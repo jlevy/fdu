@@ -224,6 +224,15 @@ struct InternedRollUp {
     planes: Vec<(crate::tags::Promoted, Plane)>,
 }
 
+/// The two interned breakdowns of one aggregate, borrowed together.
+///
+/// A roll-up and a plane keep the same reducers over different sets of entries, and this
+/// is what lets one naming pass serve both without either copying its maps to be named.
+struct Reducers<'a> {
+    by_ext: &'a BTreeMap<ExtId, ExtTally>,
+    by_group: &'a [(crate::classify::GroupId, ExtTally)],
+}
+
 /// One maintained plane: the reducers restricted to entries without a promoted tag.
 ///
 /// The untagged side is stored rather than the tagged one because it is the side a
@@ -278,6 +287,19 @@ impl From<&InternedRollUp> for RollUpScalars {
             bytes: rollup.bytes,
             allocated: rollup.allocated,
             newest_mtime_ns: rollup.newest_mtime_ns,
+        }
+    }
+}
+
+impl From<&Plane> for RollUpScalars {
+    fn from(plane: &Plane) -> Self {
+        Self {
+            files: plane.files,
+            dirs: plane.dirs,
+            others: plane.others,
+            bytes: plane.bytes,
+            allocated: plane.allocated,
+            newest_mtime_ns: plane.newest_mtime_ns,
         }
     }
 }
@@ -562,6 +584,14 @@ pub struct ChildSnapshot {
     /// `BTreeMap` per child to render a number. Ask [`IndexHandle::rollup_bounded`] for
     /// the breakdown of the directory a consumer actually opened.
     pub totals: Option<RollUpScalars>,
+    /// The same totals restricted to the plane the request named, when it named one.
+    ///
+    /// Beside `totals` rather than replacing them, because the listing this exists for is
+    /// the *dual-value* one -- "1.2 GB, 340 MB shown" -- and a consumer that had to choose
+    /// would call twice per directory to draw one row. `None` when no plane was requested,
+    /// which is the default and costs nothing; a directory whose descendants all carry the
+    /// tag reports a zeroed value, which is a plane that is empty rather than absent.
+    pub plane_totals: Option<RollUpScalars>,
     /// Origin, observation time, and coverage for this child.
     ///
     /// Captured here rather than looked up per child by path, because a consumer
@@ -654,6 +684,18 @@ pub struct ChildPageRequest {
     /// because none of them promises resumability: an extension map with everything in
     /// the remainder is a real answer, and a depth of zero is the root by itself.
     pub limit: Bound,
+    /// A maintained plane to report beside each row's totals, or `None` for none.
+    ///
+    /// Asked for here rather than by a second call because the second call is per row: a
+    /// browser drawing "size, and size excluding what git ignores" would take the read
+    /// guard once per child and re-resolve each path to reach state this page already has
+    /// in hand. Resolve the name against the index's rules with
+    /// [`TagRules::plane_of`](crate::tags::TagRules::plane_of).
+    ///
+    /// Naming a plane this index does not maintain leaves every row's `plane_totals` at
+    /// `None` rather than failing the page: the request is answerable, and the rows say
+    /// which part of it was not answered.
+    pub plane: Option<crate::tags::Promoted>,
 }
 
 impl ChildPageRequest {
@@ -1685,8 +1727,62 @@ impl Index {
                 stack.push((*child, path.join(name)));
             }
         }
+        let mut moved = false;
         for (id, bits) in computed {
-            self.entry_mut(id).tag_bits = bits;
+            let entry = self.entry_mut(id);
+            moved |= entry.tag_bits != bits;
+            entry.tag_bits = bits;
+        }
+        if moved {
+            self.rebuild_planes();
+        }
+    }
+
+    /// Rebuild every maintained plane from the tag bits as they now stand.
+    ///
+    /// The other half of a rebind, and it was missing. A plane is derived from tag bits at
+    /// the moment an entry is merged into its ancestors, so re-tagging alone leaves every
+    /// plane describing the *previous* answer. The visible form was that `gitignore` --
+    /// the whole reason planes exist -- reported a plane equal to the tree: its rules
+    /// cannot be bound until the walk has found the control files, so every entry was
+    /// merged while nothing was ignored, and the rebind that followed corrected the bits
+    /// and nothing else.
+    ///
+    /// Post-order, because a directory's planes are its children's planes plus its own
+    /// direct entries. It reuses [`Index::contribution`] rather than re-deriving the fold,
+    /// which costs one roll-up clone per entry: paid only here, on a path whose own doc
+    /// already says there is no cheaper answer than asking every entry again, and cheap
+    /// beside the rule evaluation that precedes it.
+    fn rebuild_planes(&mut self) {
+        if self.tag_rules.promoted().is_empty() {
+            return;
+        }
+        // Root-first, so walking it backwards finishes every child before its parent.
+        let mut order: Vec<EntryId> = Vec::new();
+        let mut stack = vec![EntryId::ROOT];
+        while let Some(id) = stack.pop() {
+            let Some(entry) = self.try_entry(id) else {
+                continue;
+            };
+            if !entry.kind.is_dir() {
+                continue;
+            }
+            order.push(id);
+            stack.extend(entry.children.values().copied());
+        }
+        for id in order.into_iter().rev() {
+            let children: Vec<EntryId> = self.entry(id).children.values().copied().collect();
+            let mut rebuilt: Vec<(crate::tags::Promoted, Plane)> = Vec::new();
+            for child in children {
+                for (tag, plane) in self.contribution(child).planes {
+                    match rebuilt.binary_search_by_key(&tag, |(id, _)| *id) {
+                        Ok(position) => rebuilt[position].1.merge(&plane),
+                        Err(position) => rebuilt.insert(position, (tag, plane)),
+                    }
+                }
+            }
+            rebuilt.retain(|(_, plane)| !plane.is_empty());
+            self.entry_mut(id).rollup.planes = rebuilt;
         }
     }
 
@@ -2431,6 +2527,73 @@ impl Index {
         entry.kind.is_dir().then(|| RollUpScalars::from(&entry.rollup))
     }
 
+    /// One maintained plane's roll-up for a directory by relative path.
+    ///
+    /// The same reducers [`Index::rollup_bounded`] answers with, restricted to the
+    /// descendants that do *not* carry the promoted tag -- for `gitignore`, what a browser
+    /// shows. The complement is the difference against the unrestricted roll-up, field by
+    /// field, except `newest_mtime_ns`: a maximum does not subtract, which is why the
+    /// stored side is the one a consumer reads.
+    ///
+    /// `None` covers three things that are all "no answer here": no such path, a path that
+    /// is not a directory, and a plane this index does not maintain. Resolve the name with
+    /// [`TagRules::plane_of`](crate::tags::TagRules::plane_of), which distinguishes them
+    /// and says which step fixes each.
+    pub fn plane_rollup_bounded(
+        &self,
+        path: &Path,
+        plane: crate::tags::Promoted,
+        extensions: Bound,
+    ) -> Option<RollUp> {
+        self.plane_rollup_of(self.lookup(path)?, plane, extensions)
+    }
+
+    /// [`Index::plane_rollup_bounded`] for an entry id already in hand.
+    pub fn plane_rollup_of(
+        &self,
+        id: EntryId,
+        plane: crate::tags::Promoted,
+        extensions: Bound,
+    ) -> Option<RollUp> {
+        let entry = self.maintained_plane_dir(id, plane)?;
+        // Absent means the plane accounts for nothing -- every descendant carries the tag
+        // -- because an empty plane is dropped rather than stored. That is a real zero and
+        // not a missing answer, so it names an empty aggregate instead of returning `None`.
+        let Some(plane) = entry.rollup.plane(plane) else {
+            return Some(RollUp::default());
+        };
+        Some(self.named_reducers(
+            RollUpScalars::from(plane),
+            &plane.by_ext,
+            &plane.by_group,
+            extensions,
+        ))
+    }
+
+    /// Map-free plane totals for in-crate reporting paths.
+    pub(crate) fn plane_scalars_of(
+        &self,
+        id: EntryId,
+        plane: crate::tags::Promoted,
+    ) -> Option<RollUpScalars> {
+        let entry = self.maintained_plane_dir(id, plane)?;
+        Some(entry.rollup.plane(plane).map_or_else(RollUpScalars::default, RollUpScalars::from))
+    }
+
+    /// The directory behind `id`, once this index is known to maintain `plane`.
+    ///
+    /// The membership check is not a formality. [`Promoted`](crate::tags::Promoted) is a
+    /// bit position, so one issued by another rule set names a real position here with a
+    /// different meaning, and answering it would report a `gitignore` plane's numbers under
+    /// a `dotfile` heading.
+    fn maintained_plane_dir(&self, id: EntryId, plane: crate::tags::Promoted) -> Option<&Entry> {
+        if !self.tag_rules.promoted().contains(&plane) {
+            return None;
+        }
+        let entry = self.try_entry(id)?;
+        entry.kind.is_dir().then_some(entry)
+    }
+
     /// Attributes for an entry id, or `None` when the handle is stale.
     pub fn attrs_of(&self, id: EntryId) -> Option<&Attrs> {
         Some(&self.try_entry(id)?.attrs)
@@ -2849,6 +3012,28 @@ impl Index {
     /// one pass for the selection plus `n` clones, rather than one clone per distinct
     /// extension for a map the caller is about to throw most of away.
     fn named_rollup_bounded(&self, rollup: &InternedRollUp, extensions: Bound) -> RollUp {
+        self.named_reducers(
+            RollUpScalars::from(rollup),
+            &rollup.by_ext,
+            &rollup.by_group,
+            extensions,
+        )
+    }
+
+    /// Name and bound one set of reducers, whichever aggregate they came from.
+    ///
+    /// Split out from [`Index::named_rollup_bounded`] because a plane keeps the same
+    /// reducers over a restricted set of entries, and naming them a second way is how the
+    /// two aggregates come to disagree about which extension row a limit dropped. The
+    /// interned ids and the ranking are properties of this index, not of the aggregate.
+    fn named_reducers(
+        &self,
+        scalars: RollUpScalars,
+        by_ext_ids: &BTreeMap<ExtId, ExtTally>,
+        by_group_ids: &[(crate::classify::GroupId, ExtTally)],
+        extensions: Bound,
+    ) -> RollUp {
+        let rollup = Reducers { by_ext: by_ext_ids, by_group: by_group_ids };
         let name_of = |id: &ExtId| -> &String {
             self.ext_names
                 .get(*id as usize)
@@ -2898,15 +3083,39 @@ impl Index {
             .collect();
 
         RollUp {
-            files: rollup.files,
-            dirs: rollup.dirs,
-            others: rollup.others,
-            bytes: rollup.bytes,
-            allocated: rollup.allocated,
-            newest_mtime_ns: rollup.newest_mtime_ns,
+            files: scalars.files,
+            dirs: scalars.dirs,
+            others: scalars.others,
+            bytes: scalars.bytes,
+            allocated: scalars.allocated,
+            newest_mtime_ns: scalars.newest_mtime_ns,
             by_ext,
             by_group,
             ext_remainder,
+        }
+    }
+
+    /// Count one directory into every plane its own tags do not exclude it from.
+    ///
+    /// Shared by the two places a directory joins its ancestors' planes -- an observed
+    /// upsert and the placeholder [`Index::ensure_dir_chain`] creates -- because they had
+    /// diverged. The placeholder built its contribution by hand as `dirs: 1` with no
+    /// planes at all, so on any real scan, where nearly every directory is materialised as
+    /// an ancestor before it is observed, a plane's `dirs` counted almost nothing. The
+    /// files and bytes were right, which is what made it hard to see: a plane read looked
+    /// correct until someone compared its directory count against the walking tier's.
+    fn count_dir_into_planes(&self, roll: &mut InternedRollUp, tag_bits: crate::tags::TagBits) {
+        for promoted in self.tag_rules.promoted() {
+            if tag_bits & (1 << promoted.0) != 0 {
+                continue;
+            }
+            match roll.planes.binary_search_by_key(promoted, |(id, _)| *id) {
+                Ok(position) => roll.planes[position].1.dirs += 1,
+                Err(position) => {
+                    roll.planes
+                        .insert(position, (*promoted, Plane { dirs: 1, ..Plane::default() }));
+                }
+            }
         }
     }
 
@@ -2919,17 +3128,7 @@ impl Index {
                 roll.dirs += 1;
                 // The directory counts itself into every plane it is not excluded from,
                 // beside the subtree state its own roll-up already carries.
-                for promoted in self.tag_rules.promoted() {
-                    if entry.tag_bits & (1 << promoted.0) != 0 {
-                        continue;
-                    }
-                    match roll.planes.binary_search_by_key(promoted, |(id, _)| *id) {
-                        Ok(position) => roll.planes[position].1.dirs += 1,
-                        Err(position) => roll
-                            .planes
-                            .insert(position, (*promoted, Plane { dirs: 1, ..Plane::default() })),
-                    }
-                }
+                self.count_dir_into_planes(&mut roll, entry.tag_bits);
                 roll
             }
             EntryKind::File => {
@@ -3128,8 +3327,10 @@ impl Index {
                 children_revision: 0,
             });
             self.insert_child(current, (*part).to_os_string(), child);
-            // A new empty directory contributes one to `dirs` all the way up.
-            let contribution = InternedRollUp { dirs: 1, ..InternedRollUp::default() };
+            // A new empty directory contributes one to `dirs` all the way up -- and to
+            // every plane that does not exclude it, which this line used to omit.
+            let mut contribution = InternedRollUp { dirs: 1, ..InternedRollUp::default() };
+            self.count_dir_into_planes(&mut contribution, tag_bits);
             self.merge_upward(Some(current), &contribution);
             stats.inserted += 1;
             current = child;
@@ -3479,7 +3680,7 @@ fn child_page(
         }
         emitted.absorb(index, *child);
         last = Some(name.clone());
-        let row = child_snapshot(index, name.as_os_str(), *child);
+        let row = child_snapshot(index, name.as_os_str(), *child, request.plane);
         work.visit(row.kind);
         work.rows += 1;
         work.name_bytes += name.as_encoded_bytes().len() as u64;
@@ -3566,7 +3767,12 @@ fn nanos(elapsed: std::time::Duration) -> u64 {
 }
 
 /// One child's captured row.
-fn child_snapshot(index: &Index, name: &std::ffi::OsStr, id: EntryId) -> ChildSnapshot {
+fn child_snapshot(
+    index: &Index,
+    name: &std::ffi::OsStr,
+    id: EntryId,
+    plane: Option<crate::tags::Promoted>,
+) -> ChildSnapshot {
     let entry = index.entry(id);
     let is_file = entry.kind == EntryKind::File;
     let classification =
@@ -3577,6 +3783,7 @@ fn child_snapshot(index: &Index, name: &std::ffi::OsStr, id: EntryId) -> ChildSn
         kind: entry.kind,
         attrs: entry.attrs,
         totals: entry.kind.is_dir().then(|| RollUpScalars::from(&entry.rollup)),
+        plane_totals: plane.and_then(|plane| index.plane_scalars_of(id, plane)),
         provenance: index.provenance_of(id),
         tags: index
             .tag_rules()
@@ -4368,7 +4575,7 @@ mod tests {
             ]))
             .expect("apply");
 
-        let zero = ChildPageRequest { after: None, limit: Bound::Limit(0) };
+        let zero = ChildPageRequest { after: None, limit: Bound::Limit(0), ..Default::default() };
         assert!(
             matches!(
                 handle.children_page(Path::new("dir"), &zero),
@@ -4388,7 +4595,7 @@ mod tests {
         );
 
         // One row is a page: truncated, and with a cursor to continue from.
-        let one = ChildPageRequest { after: None, limit: Bound::Limit(1) };
+        let one = ChildPageRequest { after: None, limit: Bound::Limit(1), ..Default::default() };
         let page = handle.children_page(Path::new("dir"), &one).expect("read").expect("directory");
         assert_eq!(page.rows.len(), 1);
 
@@ -4767,6 +4974,95 @@ mod tests {
         }
     }
 
+    /// One listing call carries both numbers, which is the whole point of asking for a plane.
+    ///
+    /// A browser drawing "1.2 GB, 340 MB shown" needs the restricted figure per row. Read a
+    /// row at a time it would take the read guard once per child and re-resolve each path
+    /// to reach state the page already had in hand, so the plane rides on the page request
+    /// and every directory row answers with both.
+    #[test]
+    fn a_listing_carries_the_plane_beside_the_whole_in_one_page() {
+        let rules = std::sync::Arc::new(
+            crate::tags::TagRules::from_names(["dotfile"])
+                .expect("enables")
+                .with_promoted(["dotfile"])
+                .expect("promotes"),
+        );
+        let mut index = Index::new("/root").with_tag_rules(rules);
+        let tag = index.tag_rules().plane_of("dotfile").expect("promoted");
+
+        index.apply_ok(&Observation::new(vec![
+            upsert("mixed", EntryKind::Dir, file_attrs(0, 1)),
+            upsert("mixed/kept.rs", EntryKind::File, file_attrs(10, 5)),
+            upsert("mixed/.hidden", EntryKind::File, file_attrs(90, 7)),
+            // Every descendant tagged, so its plane is dropped for holding nothing.
+            upsert("dotted", EntryKind::Dir, file_attrs(0, 1)),
+            upsert("dotted/.a", EntryKind::File, file_attrs(30, 3)),
+        ]));
+
+        let request = ChildPageRequest { plane: Some(tag), ..Default::default() };
+        let page = child_page(&index, Path::new(""), &request, &mut Work::default())
+            .expect("the root is a directory");
+        let row = |name: &str| {
+            page.rows
+                .iter()
+                .find(|row| row.name == std::ffi::OsStr::new(name))
+                .unwrap_or_else(|| panic!("{name} is listed"))
+        };
+
+        let mixed = row("mixed");
+        assert_eq!(mixed.totals.expect("a directory").bytes, 100, "the whole subtree");
+        assert_eq!(
+            mixed.plane_totals.expect("a plane was asked for").bytes,
+            10,
+            "the plane holds what does *not* carry the tag",
+        );
+
+        // Not `None`: this directory maintains the plane and the plane accounts for
+        // nothing. Reporting it absent would read as "no such plane", which is a different
+        // fact and the one that would send a consumer looking for a configuration mistake.
+        let dotted = row("dotted");
+        assert_eq!(dotted.totals.expect("a directory").bytes, 30);
+        assert_eq!(dotted.plane_totals.expect("maintained but empty"), RollUpScalars::default());
+
+        // And a page that did not ask carries no plane at all, which is the default cost.
+        let plain =
+            child_page(&index, Path::new(""), &ChildPageRequest::default(), &mut Work::default())
+                .expect("the root is a directory");
+        assert!(plain.rows.iter().all(|row| row.plane_totals.is_none()));
+    }
+
+    /// A plane this index does not maintain is absent, not answered from the totals.
+    ///
+    /// `Promoted` is a bit position, so one issued by another rule set names a real
+    /// position here with a different meaning. Answering it would report a `gitignore`
+    /// plane's numbers under a `dotfile` heading, and nothing in the value would say so.
+    #[test]
+    fn a_plane_from_another_rule_set_is_refused_rather_than_reinterpreted() {
+        let promoted = std::sync::Arc::new(
+            crate::tags::TagRules::from_names(["dotfile"])
+                .expect("enables")
+                .with_promoted(["dotfile"])
+                .expect("promotes"),
+        );
+        let elsewhere = promoted.plane_of("dotfile").expect("promoted");
+
+        let mut index = Index::new("/root").with_tag_rules(std::sync::Arc::new(
+            crate::tags::TagRules::from_names(["dotfile"]).expect("enables"),
+        ));
+        index.apply_ok(&Observation::new(vec![upsert(
+            "kept.rs",
+            EntryKind::File,
+            file_attrs(10, 5),
+        )]));
+
+        assert!(
+            index.plane_rollup_bounded(Path::new(""), elsewhere, Bound::All).is_none(),
+            "this index promotes nothing, so it maintains no plane to report",
+        );
+        assert!(index.plane_scalars_of(EntryId::ROOT, elsewhere).is_none());
+    }
+
     /// The tagged side derives by subtraction -- except its newest mtime, which cannot.
     ///
     /// A maximum does not un-merge: knowing the newest file in a subtree and the newest
@@ -5104,7 +5400,11 @@ mod tests {
             let page = handle
                 .children_page(
                     Path::new(""),
-                    &ChildPageRequest { after: after.clone(), limit: Bound::Limit(2) },
+                    &ChildPageRequest {
+                        after: after.clone(),
+                        limit: Bound::Limit(2),
+                        ..Default::default()
+                    },
                 )
                 .expect("read")
                 .expect("the root is a directory");
@@ -5135,7 +5435,11 @@ mod tests {
         let page = handle
             .children_page(
                 Path::new(""),
-                &ChildPageRequest { after: Some(OsString::from("d.txt")), limit: Bound::Limit(4) },
+                &ChildPageRequest {
+                    after: Some(OsString::from("d.txt")),
+                    limit: Bound::Limit(4),
+                    ..Default::default()
+                },
             )
             .expect("read")
             .expect("the root is a directory");

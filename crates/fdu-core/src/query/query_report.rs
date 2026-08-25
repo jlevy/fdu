@@ -1217,11 +1217,39 @@ fn merge_summary(into: &mut SummaryRow, from: &SummaryRow) {
     };
 }
 
+/// The maintained scalars this query answers in, for one directory.
+///
+/// The plane arm is a read of state the ancestor merge already maintains, not a narrowing
+/// of the unrestricted one: that is the whole reason a plane query stays on this tier. An
+/// unmaintained plane falls back to the whole subtree rather than to zero, which cannot
+/// happen through the surfaces -- every one of them resolves the name against this index's
+/// own rules first -- and is the answer that is merely incomplete rather than wrong.
+fn maintained_scalars(
+    index: &Index,
+    id: EntryId,
+    plane: Option<crate::tags::Promoted>,
+) -> Option<RollUpScalars> {
+    match plane {
+        Some(plane) => index.plane_scalars_of(id, plane),
+        None => index.rollup_scalars_of(id),
+    }
+}
+
+/// The maintained whole-tree breakdown this query answers in.
+fn maintained_total(index: &Index, plane: Option<crate::tags::Promoted>) -> crate::RollUp {
+    plane
+        .and_then(|plane| index.plane_rollup_of(EntryId::ROOT, plane, Bound::All))
+        .unwrap_or_else(|| index.total())
+}
+
 /// Build one view's section, using the pre-computed tier when the selection allows.
 fn build_section(view: ViewSpec, index: &Index, query: &Query, walked: Option<&Walked>) -> Section {
     match view {
         ViewSpec::Summary => Section::Summary(match walked {
-            None => summary_from_scalars(index.total_scalars()),
+            None => summary_from_scalars(
+                maintained_scalars(index, EntryId::ROOT, query.selection.plane)
+                    .unwrap_or_else(|| index.total_scalars()),
+            ),
             Some(walked) => walked.per_directory.get(&EntryId::ROOT).copied().unwrap_or_default(),
         }),
         ViewSpec::Extensions => {
@@ -1258,7 +1286,7 @@ fn summary_from_scalars(rollup: RollUpScalars) -> SummaryRow {
 /// Rows for the types view.
 fn extension_rows(index: &Index, query: &Query, walked: Option<&Walked>) -> (Vec<TypeRow>, usize) {
     let tallies: BTreeMap<String, ExtTally> = match walked {
-        None => index.total().by_ext,
+        None => maintained_total(index, query.selection.plane).by_ext,
         Some(walked) => walked.by_ext.clone(),
     };
 
@@ -1296,7 +1324,7 @@ fn extension_rows(index: &Index, query: &Query, walked: Option<&Walked>) -> (Vec
 /// same walk that answers every other filtered view, so the two tiers cannot disagree.
 fn group_rows(index: &Index, query: &Query, walked: Option<&Walked>) -> (Vec<GroupRow>, usize) {
     let tallies: BTreeMap<String, ExtTally> = match walked {
-        None => index.total().by_group,
+        None => maintained_total(index, query.selection.plane).by_group,
         Some(walked) => walked.by_group.clone(),
     };
 
@@ -1631,7 +1659,10 @@ fn every_entry(index: &Index) -> Vec<FileRow> {
 /// The tree view's root node, expanded to the requested depth.
 fn tree_node(index: &Index, query: &Query, walked: Option<&Walked>) -> TreeNode {
     let root_summary = match walked {
-        None => summary_from_scalars(index.total_scalars()),
+        None => summary_from_scalars(
+            maintained_scalars(index, EntryId::ROOT, query.selection.plane)
+                .unwrap_or_else(|| index.total_scalars()),
+        ),
         Some(walked) => walked.per_directory.get(&EntryId::ROOT).copied().unwrap_or_default(),
     };
 
@@ -1709,7 +1740,7 @@ fn expand(
             // Every directory child is withheld here, so the remainder is all of
             // them. Summed directly rather than by building rows: the rows would be
             // sorted and pathed for an ordering nothing will read.
-            built[cursor].node.remainder = withheld_children(index, walked, id);
+            built[cursor].node.remainder = withheld_children(index, query, walked, id);
             cursor += 1;
             continue;
         }
@@ -1754,9 +1785,17 @@ fn expand(
 /// The `walked` arm is not an optimisation of the other: a filtered query's totals are
 /// the walk's, and reading the precomputed roll-up there would answer about the whole
 /// subtree rather than about the selection.
-fn child_summary(index: &Index, walked: Option<&Walked>, child: EntryId) -> SummaryRow {
+fn child_summary(
+    index: &Index,
+    query: &Query,
+    walked: Option<&Walked>,
+    child: EntryId,
+) -> SummaryRow {
     match walked {
-        None => index.rollup_scalars_of(child).map(summary_from_scalars).unwrap_or_default(),
+        None => maintained_scalars(index, child, query.selection.plane)
+            .or_else(|| index.rollup_scalars_of(child))
+            .map(summary_from_scalars)
+            .unwrap_or_default(),
         Some(walked) => walked.per_directory.get(&child).copied().unwrap_or_default(),
     }
 }
@@ -1766,14 +1805,19 @@ fn child_summary(index: &Index, walked: Option<&Walked>, child: EntryId) -> Summ
 /// `None` when the node has no directory children: files are already counted in this
 /// node's own totals and never become tree rows, so a directory of files alone withholds
 /// nothing.
-fn withheld_children(index: &Index, walked: Option<&Walked>, id: EntryId) -> Option<Remainder> {
+fn withheld_children(
+    index: &Index,
+    query: &Query,
+    walked: Option<&Walked>,
+    id: EntryId,
+) -> Option<Remainder> {
     let children = index.children_of(id)?;
     let mut remainder = Remainder::default();
     for (_, child) in children {
         if index.kind_of(child) != Some(EntryKind::Dir) {
             continue;
         }
-        let summary = child_summary(index, walked, child);
+        let summary = child_summary(index, query, walked, child);
         remainder.rows += 1;
         remainder.files += summary.files;
         remainder.dirs += summary.dirs;
@@ -1808,7 +1852,7 @@ fn child_rows(
         if kind != EntryKind::Dir {
             continue;
         }
-        let summary = child_summary(index, walked, child);
+        let summary = child_summary(index, query, walked, child);
         let name = child_path
             .file_name()
             .map(|name| name.to_string_lossy().into_owned())
@@ -1956,6 +2000,92 @@ mod tests {
 
     fn query(views: &[ViewSpec], selection: Selection) -> Query {
         Query { selection, views: views.to_vec(), ..Query::default() }
+    }
+
+    /// A plane query stays on the reading tier, and the walking tier agrees with it.
+    ///
+    /// Two claims, and they have to be made together. That a plane does not push a query
+    /// onto the walking tier is the performance claim -- every other field on `Selection`
+    /// narrows what is considered, which invalidates the maintained roll-ups; a plane names
+    /// a restriction the engine already maintains. That the tiers agree is what makes the
+    /// first claim safe: the fast route is only an optimisation if the slow route reaches
+    /// the same numbers, and nothing about `--plane` would look wrong if it did not.
+    ///
+    /// The slow route is forced with `min_size: Some(0)`, which admits every entry and
+    /// still counts as a filter, so the two runs differ in tier and in nothing else.
+    #[test]
+    fn a_plane_reads_maintained_state_and_walks_to_the_same_answer_when_forced() {
+        let rules = std::sync::Arc::new(
+            crate::tags::TagRules::from_names(["dotfile"])
+                .expect("enables")
+                .with_promoted(["dotfile"])
+                .expect("promotes"),
+        );
+        let mut index = Index::new("/root").with_tag_rules(rules);
+        index
+            .apply(&Observation::new(vec![
+                upsert("src", EntryKind::Dir, Attrs::default()),
+                upsert("src/main.rs", EntryKind::File, attrs(100, 10)),
+                upsert("src/.env", EntryKind::File, attrs(400, 20)),
+                upsert("src/deep", EntryKind::Dir, Attrs::default()),
+                upsert("src/deep/nested.rs", EntryKind::File, attrs(50, 40)),
+                upsert(".cache", EntryKind::Dir, Attrs::default()),
+                upsert(".cache/blob.bin", EntryKind::File, attrs(900, 30)),
+                upsert("notes.txt", EntryKind::File, attrs(7, 5)),
+            ]))
+            .expect("apply");
+        let plane = index.tag_rules().plane_of("dotfile").expect("promoted");
+
+        let selection = Selection { plane: Some(plane), ..Selection::default() };
+        assert!(
+            selection.is_unfiltered(),
+            "a plane names maintained state, so it must not cost the walking tier",
+        );
+
+        let views = [ViewSpec::Summary, ViewSpec::Extensions, ViewSpec::Tree];
+        // Compared as rendered values because `Section` is not `PartialEq` -- deriving it
+        // for a test would put a trait on the public surface to serve this file.
+        let shape = |report: &Report| format!("{:?}", report.sections);
+        let read = run(&index, &query(&views, selection.clone()));
+        let walked =
+            run(&index, &query(&views, Selection { min_size: Some(0), ..selection.clone() }));
+        assert_eq!(shape(&read), shape(&walked), "the two tiers answer the same question");
+
+        // And it is a real restriction rather than a no-op that would agree trivially.
+        let whole = run(&index, &query(&views, Selection::default()));
+        assert_ne!(shape(&read), shape(&whole), "the plane excludes something");
+        let Section::Summary(plane_summary) = &read.sections[0] else {
+            panic!("the summary view is first");
+        };
+
+        // The part worth pinning, because it is the part that surprises: a plane excludes
+        // the entries that carry the tag, and a tag rides on the entry itself rather than
+        // on its ancestors. `.env` is out and `.cache` is out *as a directory*, but
+        // `.cache/blob.bin` is not a dotfile and stays in. That is the `dotfile` rule's
+        // decision rather than the plane's -- `gitignore` marks every entry under an
+        // ignored directory, so its plane does drop whole subtrees -- and reading it as a
+        // plane property is how one would come to expect the wrong number from the other.
+        assert_eq!(
+            plane_summary.bytes, 1_057,
+            "everything but .env: main.rs, nested.rs, blob.bin, notes.txt",
+        );
+        assert_eq!(plane_summary.files, 4);
+        assert_eq!(plane_summary.dirs, 2, "src and src/deep; .cache carries the tag itself");
+    }
+
+    /// A plane names a rule; naming nothing keeps every existing answer byte-identical.
+    ///
+    /// The default has to be provably free, not merely cheap: the golden corpus is a
+    /// promise to every caller who has never heard of a tag, and a plane that shifted one
+    /// figure for them would be a regression dressed as a feature.
+    #[test]
+    fn no_plane_answers_exactly_as_it_did_before_planes_existed() {
+        let index = sample();
+        let views = [ViewSpec::Summary, ViewSpec::Extensions, ViewSpec::Groups, ViewSpec::Tree];
+        let baseline = run(&index, &query(&views, Selection::default()));
+        let explicit =
+            run(&index, &query(&views, Selection { plane: None, ..Selection::default() }));
+        assert_eq!(format!("{:?}", baseline.sections), format!("{:?}", explicit.sections));
     }
 
     /// A directory of symlinks is not an empty directory, in either tier.

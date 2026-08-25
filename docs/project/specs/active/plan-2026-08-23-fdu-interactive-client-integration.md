@@ -778,20 +778,39 @@ The model that results, stated once here and in detail on the beads:
   a mask of zero is indistinguishable from no constraint, so accepting it would hand
   back every entry to a caller who believed they had narrowed.
 
-- [ ] The gitignore rule: the feature-gated `ignore` dependency with its supply-chain
+- [x] The gitignore rule: the feature-gated `ignore` dependency with its supply-chain
   and MSRV pins, an index-held evaluator with correct negation, `.gitignore`-edit
   escalation to `InvalidateSubtree`, watch re-tagging (`fdu-brt0`, blocked by
   `fdu-mvt3`)
 
-- [ ] Promotion: per-promoted-tag plane state through the reducer path, the partition
+- [x] Promotion: per-promoted-tag plane state through the reducer path, the partition
   property as property tests, plane reads gating the precomputed tier, dual-value
   listing rows — and the recorded subtlety that a derived complement’s `newest_mtime`
   cannot come from subtraction (`fdu-pxfz`, blocked by `fdu-mvt3`)
 
-- [ ] Surfaces: `--plane` taking a promoted rule’s name, `Selection(plane=...)`,
-  per-plane values in Python, tagged-fixture goldens in every format, parity rows, and
-  plane-equals-all equivalence when nothing is tagged (`fdu-7rwf`, blocked by the two
-  above)
+- [x] Surfaces: `--promote`/`--plane`, `Selection(plane=...)`,
+  `ScanOptions(promote=...)`, per-plane values in Python, tagged-fixture goldens, parity
+  rows, and plane-equals-all equivalence when nothing is tagged (`fdu-7rwf`, blocked by
+  the two above)
+
+  Shipped with one flag more than this plan named.
+  `--plane` is Selection and `--promote` is Scope, kept apart for the reason the tag
+  model already established: promotion moves the snapshot fingerprint and a selection
+  flag that invalidated a cache would be the `--not-tag` mistake again.
+  Three flags to reach one number is the honest price of a cache-correct model.
+
+  The surfaces found three defects in the maintained state beneath them, all of the same
+  shape — a plane read is fast because it reads state maintained elsewhere, so a wrong
+  plane looks exactly like a right one.
+  `ensure_dir_chain` built its placeholder’s contribution by hand with no planes, so on
+  a real walk a plane’s directory count was near zero while its files and bytes were
+  right; a rebind re-tagged every entry and left the planes derived from the old bits,
+  which made `gitignore` — the rule planes exist for — report a plane equal to the tree;
+  and an unfiltered `--view summary` was answered by a tier that retains aggregate
+  tallies and no index, which returned the whole tree under the plane’s heading.
+  None of the three could be seen from one tier.
+  What found them was running the walking tier over the same restriction and requiring
+  the two to agree, which is now `crates/fdu-core/tests/plane_equivalence.rs`.
 
 - [ ] Hidden-path admission as scope: prune hidden components except an exact-name
   allowlist, fingerprinted into snapshot identity — a scope rule, deliberately not a

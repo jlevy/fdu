@@ -163,6 +163,7 @@ def _query_kwargs(query: Query) -> dict[str, object]:
         "kind": [kind.value for kind in selection.kinds],
         "tags": list(selection.tags),
         "not_tags": list(selection.not_tags),
+        "plane": selection.plane,
         "depth": _bound(selection.depth),
         "limit": _bound(selection.limit),
         "sort": selection.sort.value if selection.sort is not None else None,
@@ -301,27 +302,44 @@ class Index:
             _renderer=renderer,
         )
 
-    def total(self, extensions: int | None = None) -> RollUp:
+    def total(self, extensions: int | None = None, *, plane: str | None = None) -> RollUp:
         """Roll-up totals for the whole tree.
 
         `extensions` bounds the per-extension breakdown to that many rows, largest by
         apparent bytes; what it drops is aggregated into `extension_remainder` rather
         than discarded. `None` keeps every row.
+
+        `plane` names a promoted tag rule and answers in its plane: the same reducers over
+        the entries that do *not* carry the tag. See `rollup`.
         """
 
-        return rollup_from_dict(_call(self._native.total, extensions), self.provenance())
+        return rollup_from_dict(_call(self._native.total, extensions, plane), self.provenance())
 
-    def rollup(self, path: str | Path, extensions: int | None = None) -> RollUp | None:
+    def rollup(
+        self, path: str | Path, extensions: int | None = None, *, plane: str | None = None
+    ) -> RollUp | None:
         """Roll-up totals for one directory, or `None` if it is absent or not a directory.
 
         `extensions` bounds the per-extension breakdown; see `total`.
+
+        `plane` names a rule listed in `ScanOptions.promote` and answers in its plane --
+        the subtree excluding entries carrying the tag. It reads maintained state rather
+        than re-aggregating, so it costs what an ordinary roll-up costs. Every field
+        subtracts to give the complement except `newest_mtime_ns`: a maximum does not
+        un-merge, which is why the untagged side is the stored one. An unpromoted or
+        unknown name raises `ValueError` naming what is promoted.
         """
 
-        raw = _call(self._native.rollup, path, extensions)
+        raw = _call(self._native.rollup, path, extensions, plane)
         return None if raw is None else rollup_from_dict(raw, self.provenance(path))
 
     def children(
-        self, path: str | Path = Path(), *, after: str | None = None, limit: int | None = None
+        self,
+        path: str | Path = Path(),
+        *,
+        after: str | None = None,
+        limit: int | None = None,
+        plane: str | None = None,
     ) -> ChildPage | None:
         """One page of a directory's children, in one call.
 
@@ -338,9 +356,13 @@ class Index:
 
         Rows carry scalar subtree totals. For the per-extension breakdown of the one
         directory being inspected, call `rollup()`.
+
+        `plane` names a promoted rule and fills each directory row's `plane` field beside
+        its `totals`, so a dual-value listing -- size, and size excluding what the tag
+        marks -- comes from this one call rather than one more per row.
         """
 
-        raw = _call(self._native.children, path, after, limit)
+        raw = _call(self._native.children, path, after, limit, plane)
         return None if raw is None else _child_page(raw)
 
     def read(
@@ -584,6 +606,19 @@ def _child(item: dict[str, Any]) -> Child:
         if item.get("files") is not None
         else None
     )
+    raw_plane = item.get("plane")
+    plane = (
+        None
+        if raw_plane is None
+        else DirectoryTotals(
+            files=int(raw_plane["files"]),
+            dirs=int(raw_plane["dirs"]),
+            others=int(raw_plane["others"]),
+            bytes=int(raw_plane["bytes"]),
+            allocated=int(raw_plane["allocated"]),
+            newest_mtime_ns=int(raw_plane["newest_mtime_ns"]) or None,
+        )
+    )
     empty = item.get("empty")
     return Child(
         name=str(item["name"]),
@@ -598,6 +633,7 @@ def _child(item: dict[str, Any]) -> Child:
         ),
         extension=None if extension is None else str(extension),
         tags=tuple(str(tag) for tag in item.get("tags", ())),
+        plane=plane,
         empty=None if empty is None else bool(empty),
     )
 
@@ -755,6 +791,7 @@ def open(
         threads=scan_options.threads,
         type_rules=_native_rules(scan_options.type_rules),
         tag_rules=list(scan_options.tag_rules),
+        promote=list(scan_options.promote),
         analyze=str(analysis_options.analyze),
         analysis_workers=analysis_options.workers,
     )
@@ -780,6 +817,7 @@ def scan(
         threads=scan_options.threads,
         type_rules=_native_rules(scan_options.type_rules),
         tag_rules=list(scan_options.tag_rules),
+        promote=list(scan_options.promote),
         analyze=str(analysis_options.analyze),
         analysis_workers=analysis_options.workers,
     )
@@ -820,6 +858,7 @@ def report(
         threads=scan_options.threads,
         type_rules=_native_rules(scan_options.type_rules),
         tag_rules=list(scan_options.tag_rules),
+        promote=list(scan_options.promote),
         analyze=str(analysis_options.analyze),
         analysis_workers=analysis_options.workers,
         **_query_kwargs(selected),

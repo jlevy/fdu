@@ -332,6 +332,54 @@ Fingerprint invalidation as a snapshot round-trip under changed rules.
 A tagged fixture under `tests/golden/fixtures/` with a `.gitignore` including a
 negation, and goldens in every format.
 
+### `fdu-7rwf` — what the surfaces found underneath them
+
+Shipped, and the interesting part is not the surfaces.
+`--promote` on Scope, `--plane` on Selection, `ScanOptions(promote=)`,
+`Selection(plane=)`, `Child.plane` beside `Child.totals`, and `plane=` on `total()`,
+`rollup()` and `children()` were mechanical.
+Exposing them found three defects in the maintained state beneath, each of which had
+been passing every test that existed.
+
+They share one shape, and it is worth stating because it will recur for any maintained
+projection. A plane read is fast precisely because it reads state maintained somewhere
+else, on a different code path, at a different time — so a wrong plane is not
+distinguishable from a right one by looking at it.
+All three produced well-formed numbers of the right magnitude under the right heading.
+
+- **`ensure_dir_chain` built its placeholder’s contribution by hand.** It wrote
+  `InternedRollUp { dirs: 1, .. }` with no planes at all, and on a real walk nearly
+  every directory is materialised as an ancestor before it is observed — so a plane’s
+  directory count was near zero while its files and bytes were exactly right.
+  The fix is one shared `count_dir_into_planes`, because two hand-written copies of the
+  rule is how the two paths diverged in the first place.
+- **A rebind re-tagged every entry and left the planes derived from the old bits.**
+  `retag` is the *only* way a Path-tier rule’s bits are ever correct — the control files
+  are not known until the walk ends — so this made `gitignore`, the rule planes exist
+  for, report a plane equal to the whole tree.
+  `rebuild_planes` now runs when any bit moved.
+- **An unfiltered `--view summary` was answered by the tier that retains no index.**
+  `Selection::plane` is deliberately outside `is_unfiltered`, which is what keeps a
+  plane query on the roll-up tier; the planner reads that same predicate to decide
+  whether aggregate tallies alone will do, and aggregate tallies hold no plane.
+  It did not fail when asked for one.
+  It returned the whole tree.
+
+None of the three is visible from one tier.
+What found them is `crates/fdu-core/tests/plane_equivalence.rs`: scan a real tree, then
+require the maintained plane and a walk over the same restriction to agree, at every
+directory, for both a Name-tier and a Path-tier rule, with and without a rebind.
+The walking tier is the only independent computation of the same answer that exists,
+which makes it the oracle — and the two-tier design that made planes worth building is
+what supplies it.
+
+One test-harness gap surfaced alongside them.
+`public_smoke.py` calls each check by name from `main`, which is readable and has a
+silent failure mode: a check that is written and never listed passes forever and looks
+exactly like one that passes.
+A new check went unrun for three mutation attempts before that was noticed, so the file
+now parses its own source and asserts that every `check_` it defines is called.
+
 ### `fdu-b2vy` / `fdu-ctp5` / `fdu-e2p7` — the taxonomy
 
 **Groups.** `ContentFamily` (`classify.rs:19`) is a closed five-value enum answering an

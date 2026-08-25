@@ -363,6 +363,20 @@ pub struct Cli {
     #[arg(long, value_name = "LIST", help_heading = "SCOPE")]
     pub tag_rules: Option<String>,
 
+    /// Tag rules to maintain a plane for, comma-separated. Each must be in --tag-rules.
+    ///
+    /// Scope, and separately from --tag-rules, because promotion is what costs. An enabled
+    /// rule is a branch per insert; a promoted one keeps a second set of per-directory
+    /// totals up every ancestor on every mutation, whether or not anyone reads them. That
+    /// is what makes --plane a roll-up read rather than a walk, and it is paid at scan
+    /// time.
+    ///
+    /// A snapshot recorded without a plane cannot be reinterpreted as one with an empty
+    /// plane -- "nothing was outside the tag" and "nobody was counting" are different
+    /// facts -- so this moves the cache fingerprint as any Scope flag does.
+    #[arg(long, value_name = "LIST", help_heading = "SCOPE")]
+    pub promote: Option<String>,
+
     // ---- selection: which retained entries this query considers ----
     /// Report only entries matching this glob; repeatable.
     #[arg(long, value_name = "GLOB", help_heading = "SELECTION")]
@@ -402,6 +416,18 @@ pub struct Cli {
     /// Exclude entries carrying this tag; repeatable, and wins over --tag.
     #[arg(long = "not-tag", value_name = "TAG", help_heading = "SELECTION")]
     pub not_tag: Vec<String>,
+
+    /// Answer in this tag's plane: the subtree excluding entries that carry it.
+    ///
+    /// The rule must be promoted with --promote, which is what maintains the plane. This
+    /// is Selection rather than Scope precisely because it does not: naming a plane reads
+    /// state that is already there, so it narrows the answer without invalidating the
+    /// cache -- the same line --tag holds against --tag-rules.
+    ///
+    /// Unlike --not-tag, which re-aggregates by walking, this is a read of maintained
+    /// totals. The two give the same answer; only one of them is free.
+    #[arg(long, value_name = "TAG", help_heading = "SELECTION")]
+    pub plane: Option<String>,
 
     /// Directory levels to show; does not limit scanning. Accepts `all` [tree default: 2].
     ///
@@ -1037,25 +1063,41 @@ impl Cli {
         Ok(Some(std::sync::Arc::new(registry)))
     }
 
-    /// Build the enabled tag-rule set from --tag-rules.
+    /// Build the enabled tag-rule set from --tag-rules and --promote.
     ///
     /// Returned rather than stored because two callers need it and they need it for
     /// opposite reasons: the scan records the fingerprint, and the query resolves names to
     /// bits against the same set. Building it twice would let those drift.
+    ///
+    /// Promotion is applied here, in the same place, for that same reason twice over: it
+    /// moves the fingerprint the scan records *and* it decides which names --plane will
+    /// accept. A set built without it would record a snapshot the plane read could not be
+    /// answered from.
     fn load_tag_rules(&self) -> anyhow::Result<std::sync::Arc<TagRules>> {
-        let Some(list) = self.tag_rules.as_deref() else {
-            return Ok(std::sync::Arc::new(TagRules::none().clone()));
+        // `--promote` with no `--tag-rules` reaches the library against the empty set and
+        // is refused there, saying this index evaluates no tag rules -- which is the
+        // answer, and one the CLI would only paraphrase.
+        let rules = match self.tag_rules.as_deref() {
+            None => TagRules::none().clone(),
+            Some(list) => {
+                let names = parse_list(list, "--tag-rules", |token, _| Ok(token.to_string()))?;
+                // Reported as the library words it, with no `invalid --tag-rules:` framing
+                // added on top: the message already quotes the name that was rejected and
+                // lists the ones that exist, so a prefix would add only the one thing the
+                // Python surface cannot say the same way -- and the parity harness caught
+                // exactly that.
+                // Named here, bound later. A Path-tier rule reads control files whose
+                // locations only an index knows, so naming and binding are separate steps
+                // and the engine closes the gap once it has one.
+                TagRules::from_names(names).map_err(|error| usage(&anyhow::anyhow!("{error}")))?
+            }
         };
-        let names = parse_list(list, "--tag-rules", |token, _| Ok(token.to_string()))?;
-        // Reported as the library words it, with no `invalid --tag-rules:` framing added
-        // on top: the message already quotes the name that was rejected and lists the ones
-        // that exist, so a prefix would add only the one thing the Python surface cannot
-        // say the same way -- and the parity harness caught exactly that.
-        // Named here, bound later. A Path-tier rule reads control files whose locations
-        // only an index knows, so naming and binding are separate steps and the engine
-        // closes the gap once it has one.
+        let Some(list) = self.promote.as_deref() else {
+            return Ok(std::sync::Arc::new(rules));
+        };
+        let names = parse_list(list, "--promote", |token, _| Ok(token.to_string()))?;
         let rules =
-            TagRules::from_names(names).map_err(|error| usage(&anyhow::anyhow!("{error}")))?;
+            rules.with_promoted(names).map_err(|error| usage(&anyhow::anyhow!("{error}")))?;
         Ok(std::sync::Arc::new(rules))
     }
 
@@ -1142,6 +1184,12 @@ impl Cli {
             tags.mask_of(&self.tag).map_err(|error| usage(&anyhow::anyhow!("{error}")))?;
         selection.tags.none =
             tags.mask_of(&self.not_tag).map_err(|error| usage(&anyhow::anyhow!("{error}")))?;
+        selection.plane = self
+            .plane
+            .as_deref()
+            .map(|name| tags.plane_of(name))
+            .transpose()
+            .map_err(|error| usage(&anyhow::anyhow!("{error}")))?;
         if let Some(sort) = &self.sort {
             selection.sort = Some(parse_sort(sort)?);
         }
@@ -1902,8 +1950,10 @@ mod tests {
             threads: None,
             type_rules: None,
             tag_rules: None,
+            promote: None,
             tag: Vec::new(),
             not_tag: Vec::new(),
+            plane: None,
             include: Vec::new(),
             exclude: Vec::new(),
             min_size: None,

@@ -170,8 +170,15 @@ pub(crate) fn plan_report(config: &OpenConfig, query: &Query) -> ReportPlan {
     // Analysis reads file contents keyed by retained entries and writes its own sidecar,
     // so the aggregate-only tier cannot answer it.
     let analysis_requested = config.analysis.profile.is_enabled();
-    let summary_is_sufficient =
-        query.views.as_slice() == [ViewSpec::Summary] && query.selection.is_unfiltered();
+    // A plane is deliberately not part of `is_unfiltered` -- it names maintained state
+    // rather than narrowing what is considered, which is what keeps a plane query on the
+    // roll-up tier. That makes it the one selection value this test cannot read off
+    // `is_unfiltered`: the compact tier retains aggregate tallies and no index, so it has
+    // no plane to read and would answer a plane request with the whole tree. Identical
+    // shape, wrong numbers, and nothing in the output to say so.
+    let summary_is_sufficient = query.views.as_slice() == [ViewSpec::Summary]
+        && query.selection.is_unfiltered()
+        && query.selection.plane.is_none();
     let policy_requires_index = match config.policy {
         // Must answer from the snapshot without touching the tree, so there is no scan
         // to reduce in the first place.

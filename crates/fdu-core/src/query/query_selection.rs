@@ -131,6 +131,26 @@ pub struct Selection {
     /// once at insert, and asking a different question of them re-reads, never re-walks
     /// the filesystem.
     pub tags: TagFilter,
+    /// A maintained plane to answer in, or `None` for the whole subtree.
+    ///
+    /// Deliberately not part of [`is_unfiltered`](Self::is_unfiltered), which is the one
+    /// thing about this field worth stating twice. Every other field here narrows *which
+    /// entries are considered*, and narrowing means the precomputed roll-ups no longer
+    /// answer, so the report re-aggregates by walking the whole index. A plane is the
+    /// opposite: the engine has already maintained this exact restriction on the
+    /// ancestor-merge path, so a plane-only request is still a roll-up read. Treating it
+    /// as an ordinary filter would put every plane query on the walking tier -- the
+    /// hundred-millisecond route this whole design exists to avoid -- and it would be
+    /// invisible, because the answers would be identical.
+    ///
+    /// Combined with a real filter it falls to the walking tier as anything does, and
+    /// there it acts as one more exclusion: an entry carrying the promoted tag is outside
+    /// the plane, so it is not admitted. That the two tiers agree is the property test.
+    ///
+    /// Resolve the name against the index's rules with
+    /// [`TagRules::plane_of`](crate::tags::TagRules::plane_of); a bit position from
+    /// another rule set means something else here.
+    pub plane: Option<crate::tags::Promoted>,
     /// How deep a rendered tree descends, or `None` to let each view apply its own.
     ///
     /// Optional for the same reason `limit` and `sort` are. The depth that suits a tree
@@ -219,6 +239,14 @@ impl Selection {
             return false;
         }
         if !self.tags.admits(candidate.tags) {
+            return false;
+        }
+        // A plane holds the entries *without* its tag, so carrying it puts an entry
+        // outside. This is what makes the walking tier answer the same question the
+        // maintained plane answers, rather than a similar one.
+        if let Some(plane) = self.plane
+            && candidate.tags & (1 << plane.0) != 0
+        {
             return false;
         }
         // Exclusion wins: a pattern the caller wrote to keep something out should not be

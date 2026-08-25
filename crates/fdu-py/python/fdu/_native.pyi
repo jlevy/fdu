@@ -23,15 +23,19 @@ class Index:
     def status(self) -> dict[str, Any]: ...
     def report(self, **kwargs: object) -> dict[str, Any]: ...
     def report_handle(self, **kwargs: object) -> OneShot: ...
-    def total(self, extensions: int | None = None) -> dict[str, Any]: ...
+    def total(self, extensions: int | None = None, plane: str | None = None) -> dict[str, Any]: ...
     def rollup(
-        self, path: str | PathLike[str], extensions: int | None = None
+        self,
+        path: str | PathLike[str],
+        extensions: int | None = None,
+        plane: str | None = None,
     ) -> dict[str, Any] | None: ...
     def children(
         self,
         path: str | PathLike[str] | None = None,
         after: str | None = None,
         limit: int | None = None,
+        plane: str | None = None,
     ) -> dict[str, Any] | None: ...
     def read(
         self,
@@ -52,6 +56,7 @@ class Index:
         kind: str | None = None,
         tags: list[str] | None = None,
         not_tags: list[str] | None = None,
+        plane: str | None = None,
         depth: str | None = None,
         limit_rows: str | None = None,
         sort: str | None = None,

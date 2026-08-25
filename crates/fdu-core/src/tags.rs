@@ -184,6 +184,24 @@ pub enum TagRuleError {
         /// What this index does evaluate.
         enabled: String,
     },
+    /// An enabled rule that maintains no plane.
+    ///
+    /// Separate from `NotEnabled` because the two are fixed differently and one of them
+    /// costs: enabling a rule is a branch per insert, while promoting one multiplies the
+    /// reducer path on every mutation whether or not anyone reads it. A caller who
+    /// misreads this as "not enabled" enables an already-enabled rule and is told the
+    /// same thing again.
+    ///
+    /// Refused rather than answered from the totals, which is the tempting fallback: a
+    /// tree where nothing carries the tag has a plane equal to the whole, so serving the
+    /// whole would look right on exactly the trees that cannot tell the difference, and
+    /// wrong everywhere the answer mattered.
+    NotPromoted {
+        /// The rule that was asked for.
+        id: String,
+        /// What this index does maintain a plane for.
+        promoted: String,
+    },
     /// A real rule this build was compiled without.
     ///
     /// Its own variant, not `Unknown`, because the answer is a build flag rather than a
@@ -226,6 +244,12 @@ impl std::fmt::Display for TagRuleError {
             }
             Self::NotEnabled { id, enabled } => {
                 write!(f, "tag rule {id:?} is not enabled; enabled here: {enabled}")
+            }
+            Self::NotPromoted { id, promoted } if promoted.is_empty() => {
+                write!(f, "tag rule {id:?} maintains no plane: this index promotes no tag rules")
+            }
+            Self::NotPromoted { id, promoted } => {
+                write!(f, "tag rule {id:?} maintains no plane; promoted here: {promoted}")
             }
             Self::TooMany(count) => {
                 write!(f, "{count} tag rules exceeds the {MAX_TAG_RULES} a tag set can carry")
@@ -365,7 +389,20 @@ impl TagRules {
         let mut promoted = Vec::new();
         for name in names {
             let name = name.as_ref();
-            let id = self.id_of(name).ok_or_else(|| TagRuleError::Unknown(name.to_string()))?;
+            // The same three-way answer `mask_of` gives, because a caller promoting a rule
+            // makes the same three mistakes: a typo, a real rule left off `from_names`, and
+            // a name given twice. Reporting the second as `Unknown` sent the caller to
+            // check their spelling of a name that was spelled correctly.
+            let id = match self.id_of(name) {
+                Some(id) => id,
+                None if catalogue().iter().any(|(rule, _)| rule.id == name) => {
+                    return Err(TagRuleError::NotEnabled {
+                        id: name.to_string(),
+                        enabled: self.enabled_names(),
+                    });
+                }
+                None => return Err(TagRuleError::Unknown(name.to_string())),
+            };
             if promoted.contains(&Promoted(id)) {
                 return Err(TagRuleError::Duplicate(name.to_string()));
             }
@@ -599,12 +636,7 @@ impl TagRules {
                 if catalogue().iter().any(|(rule, _)| rule.id == name) {
                     return Err(TagRuleError::NotEnabled {
                         id: name.to_string(),
-                        enabled: self
-                            .rules
-                            .iter()
-                            .map(|rule| rule.id.as_ref())
-                            .collect::<Vec<_>>()
-                            .join(", "),
+                        enabled: self.enabled_names(),
                     });
                 }
                 return Err(TagRuleError::Unknown(name.to_string()));
@@ -612,6 +644,42 @@ impl TagRules {
             mask |= 1 << id;
         }
         Ok(mask)
+    }
+
+    /// Resolve one rule name to the plane this set maintains for it.
+    ///
+    /// The plane counterpart of [`mask_of`](Self::mask_of), and here for the same reason: a
+    /// [`Promoted`] indexes into *this* set's bit order and means nothing against another,
+    /// so the surfaces must not resolve names themselves. It answers in four ways rather
+    /// than two, and each names the step that fixes it -- a typo, a rule to enable, a rule
+    /// to promote, or the plane.
+    pub fn plane_of(&self, name: &str) -> Result<Promoted, TagRuleError> {
+        let Some(id) = self.id_of(name) else {
+            if catalogue().iter().any(|(rule, _)| rule.id == name) {
+                return Err(TagRuleError::NotEnabled {
+                    id: name.to_string(),
+                    enabled: self.enabled_names(),
+                });
+            }
+            return Err(TagRuleError::Unknown(name.to_string()));
+        };
+        if !self.promoted.contains(&Promoted(id)) {
+            return Err(TagRuleError::NotPromoted {
+                id: name.to_string(),
+                promoted: self.promoted_names().join(", "),
+            });
+        }
+        Ok(Promoted(id))
+    }
+
+    /// Names of the rules this set maintains planes for, in bit order.
+    pub fn promoted_names(&self) -> Vec<&str> {
+        self.promoted.iter().filter_map(|Promoted(id)| self.name_of(*id)).collect()
+    }
+
+    /// The enabled rules as one comma-separated list, for an error that must name them.
+    fn enabled_names(&self) -> String {
+        self.rules.iter().map(|rule| rule.id.as_ref()).collect::<Vec<_>>().join(", ")
     }
 
     /// Names of the tags set in `bits`, in bit order.
@@ -836,6 +904,60 @@ mod tests {
         let error = TagRules::none().mask_of(["dotfile"]).expect_err("rejected");
         assert!(matches!(error, TagRuleError::NotEnabled { .. }), "{error:?}");
         assert!(error.to_string().contains("no tag rules"), "{error}");
+    }
+
+    /// A plane name has four answers, and each names a different next step.
+    ///
+    /// The one that matters is the third. An enabled-but-unpromoted rule is spelled right
+    /// and enabled, so both of the errors a caller would reach for first are wrong advice:
+    /// they would go on checking a spelling that is correct, or re-enabling a rule that is
+    /// already on, while the thing that is missing is promotion -- which is the one of the
+    /// three that costs, and therefore the one nobody enables by accident.
+    #[test]
+    fn a_plane_name_is_answered_by_the_step_that_would_fix_it() {
+        let enabled = TagRules::from_names(["dotfile"]).expect("enables");
+
+        let typo = enabled.plane_of("dotfil").expect_err("rejected");
+        assert!(matches!(typo, TagRuleError::Unknown(_)), "{typo:?}");
+        assert!(typo.to_string().contains("available:"), "{typo}");
+
+        let off = TagRules::none().plane_of("dotfile").expect_err("rejected");
+        assert!(matches!(off, TagRuleError::NotEnabled { .. }), "{off:?}");
+
+        let unpromoted = enabled.plane_of("dotfile").expect_err("rejected");
+        assert!(matches!(unpromoted, TagRuleError::NotPromoted { .. }), "{unpromoted:?}");
+        let message = unpromoted.to_string();
+        assert!(message.contains("maintains no plane"), "{message}");
+        assert!(message.contains("promotes no tag rules"), "{message}");
+
+        let promoted = enabled.with_promoted(["dotfile"]).expect("promotes");
+        assert_eq!(
+            promoted.plane_of("dotfile").expect("promoted"),
+            Promoted(promoted.id_of("dotfile").expect("enabled")),
+            "the plane is this set's own bit position",
+        );
+        assert_eq!(promoted.promoted_names(), vec!["dotfile"]);
+    }
+
+    /// Promoting a real rule that is off is not a spelling problem.
+    ///
+    /// It reported one: `with_promoted` resolved through the enabled set and called every
+    /// miss `Unknown`, so promoting `gitignore` without enabling it sent the caller to
+    /// check the spelling of a name spelled correctly.
+    #[test]
+    fn promoting_a_rule_that_is_off_says_to_enable_it_rather_than_to_respell_it() {
+        let error = TagRules::from_names(["dotfile"])
+            .expect("enables")
+            .with_promoted(["gitignore"])
+            .expect_err("rejected");
+        assert!(matches!(error, TagRuleError::NotEnabled { .. }), "{error:?}");
+        assert!(error.to_string().contains("dotfile"), "names what is enabled: {error}");
+
+        let typo = TagRules::from_names(["dotfile"])
+            .expect("enables")
+            .with_promoted(["dotfil"])
+            .expect_err("rejected");
+        assert!(matches!(typo, TagRuleError::Unknown(_)), "{typo:?}");
     }
 
     #[test]

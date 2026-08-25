@@ -355,6 +355,81 @@ $ fdu --cache off --view files --tag-rules dotfile,gitignore --tag dotfile --for
 ? 0
 ```
 
+### A Promoted Rule Maintains a Plane, and `--plane` Reads It
+
+Promotion is Scope and the plane is Selection, which is the same line `--tag-rules` and
+`--tag` hold — and here the line is about cost.
+Enabling a rule is a branch per insert; promoting one makes every directory maintain a
+second set of totals, restricted to the entries that do *not* carry the tag, up every
+ancestor on every mutation whether or not anyone reads them.
+That is what buys the read: `--plane` is a roll-up lookup, where `--not-tag` reaches the
+same numbers by re-aggregating the whole index.
+
+```console
+$ fdu --cache off --view tree --size apparent --tag-rules gitignore --promote gitignore --plane gitignore repo
+      26 B  ██████████   100%  . (4 files)
+      11 B  ████░░░░░░    42%    docs (2 files)
+       0 B  ░░░░░░░░░░     0%    target (0 files)
+Performance: walked 7 files / 29 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+? 0
+```
+
+`target` still has a row and it is empty, which is the honest shape: the directory
+exists in the tree and holds nothing the plane admits.
+The same tree without a plane is what the walk actually found.
+
+```console
+$ fdu --cache off --view tree --size apparent --tag-rules gitignore repo
+      29 B  ██████████   100%  . (7 files)
+      12 B  ████░░░░░░    41%    docs (3 files)
+       1 B  ░░░░░░░░░░     3%    target (1 file)
+Performance: walked 7 files / 29 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+? 0
+```
+
+The two tiers answer the same question, so a plane and the filter that re-derives it
+agree to the byte.
+
+```console
+$ fdu --cache off --view summary --size apparent --tag-rules gitignore --promote gitignore --plane gitignore repo
+      26 B  4 files, 1 directory
+Performance: walked 7 files / 29 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+? 0
+```
+
+```console
+$ fdu --cache off --view summary --size apparent --tag-rules gitignore --not-tag gitignore repo
+      26 B  4 files, 1 directory
+Performance: walked 7 files / 29 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+? 0
+```
+
+### A Plane Name Is Answered by the Step That Would Fix It
+
+Three ways to name a plane wrongly, and they need three different next steps: promote
+the rule, enable it, or correct the spelling.
+The middle one is why an unpromoted rule is refused rather than answered from the totals
+— a tree where nothing carries the tag has a plane equal to the whole, so serving the
+whole would look right on exactly the trees that cannot tell the difference.
+
+```console
+$ fdu --cache off --view summary --tag-rules gitignore --plane gitignore repo
+! fdu: tag rule "gitignore" maintains no plane: this index promotes no tag rules
+? 2
+```
+
+```console
+$ fdu --cache off --view summary --promote gitignore repo
+! fdu: tag rule "gitignore" is not enabled: this index evaluates no tag rules
+? 2
+```
+
+```console
+$ fdu --cache off --view summary --tag-rules gitignore --promote gitignore --plane gitignor repo
+! fdu: unknown tag rule "gitignor"; available: dotfile, gitignore
+? 2
+```
+
 ### An Unknown Tag Rule Lists the Ones That Exist
 
 ```console

@@ -281,6 +281,20 @@ fn child_list<'py>(
             // row's provenance as well as its counts: a partial subtree reporting zero
             // means "nothing found yet".
             put_scalar(&entry, "empty", child.is_empty_subtree())?;
+            // Beside the whole-subtree numbers, never in place of them: the listing this
+            // serves shows both -- "1.2 GB, 340 MB outside .gitignore" -- and a row that
+            // carried only one would send the consumer back for the other per directory.
+            // Absent unless a plane was asked for, which is the default.
+            if let Some(plane) = child.plane_totals {
+                let totals = PyDict::new(py);
+                put_scalar(&totals, "files", plane.files)?;
+                put_scalar(&totals, "dirs", plane.dirs)?;
+                put_scalar(&totals, "others", plane.others)?;
+                put_scalar(&totals, "bytes", plane.bytes)?;
+                put_scalar(&totals, "allocated", plane.allocated)?;
+                put_scalar(&totals, "newest_mtime_ns", plane.newest_mtime_ns)?;
+                entry.set_item("plane", totals)?;
+            }
         } else {
             put_scalar(&entry, "bytes", child.attrs.size)?;
             put_scalar(&entry, "allocated", child.attrs.allocated)?;
@@ -605,6 +619,7 @@ impl PyIndex {
         kind = None,
         tags = None,
         not_tags = None,
+        plane = None,
         depth = None,
         limit = None,
         sort = None,
@@ -627,6 +642,7 @@ impl PyIndex {
         kind: Option<Vec<String>>,
         tags: Option<Vec<String>>,
         not_tags: Option<Vec<String>>,
+        plane: Option<&str>,
         depth: Option<&str>,
         limit: Option<&str>,
         sort: Option<&str>,
@@ -646,6 +662,7 @@ impl PyIndex {
             kind,
             tags,
             not_tags,
+            plane,
             depth,
             limit,
             sort,
@@ -677,6 +694,7 @@ impl PyIndex {
         kind = None,
         tags = None,
         not_tags = None,
+        plane = None,
         depth = None,
         limit = None,
         sort = None,
@@ -698,6 +716,7 @@ impl PyIndex {
         kind: Option<Vec<String>>,
         tags: Option<Vec<String>>,
         not_tags: Option<Vec<String>>,
+        plane: Option<&str>,
         depth: Option<&str>,
         limit: Option<&str>,
         sort: Option<&str>,
@@ -717,6 +736,7 @@ impl PyIndex {
             kind,
             tags,
             not_tags,
+            plane,
             depth,
             limit,
             sort,
@@ -746,6 +766,7 @@ impl PyIndex {
         kind = None,
         tags = None,
         not_tags = None,
+        plane = None,
         depth = None,
         limit = None,
         sort = None,
@@ -769,6 +790,7 @@ impl PyIndex {
         kind: Option<Vec<String>>,
         tags: Option<Vec<String>>,
         not_tags: Option<Vec<String>>,
+        plane: Option<&str>,
         depth: Option<&str>,
         limit: Option<&str>,
         sort: Option<&str>,
@@ -790,6 +812,7 @@ impl PyIndex {
             kind,
             tags,
             not_tags,
+            plane,
             &self.config.tags(),
             depth,
             limit,
@@ -828,29 +851,30 @@ impl PyIndex {
     }
 
     /// Roll-up totals for the whole tree.
-    #[pyo3(signature = (extensions = None))]
+    #[pyo3(signature = (extensions = None, plane = None))]
     fn total<'py>(
         &self,
         py: Python<'py>,
         extensions: Option<usize>,
+        plane: Option<&str>,
     ) -> PyResult<Bound<'py, PyDict>> {
-        let total = self.inner.total_bounded(ext_bound(extensions)).map_err(to_py_err)?;
-        rollup_dict(py, &total)
+        // The root is a directory in every index, so a plane read of it cannot be absent
+        // for the reasons the per-path one can, and the name was resolved already.
+        self.rollup_at(py, Path::new(""), extensions, plane)?
+            .ok_or_else(|| PyValueError::new_err("the index root has no roll-up"))
     }
 
     /// Roll-up totals for one directory, or `None` if it is absent or not a directory.
-    #[pyo3(signature = (path, extensions = None))]
+    #[pyo3(signature = (path, extensions = None, plane = None))]
     #[allow(clippy::needless_pass_by_value)]
     fn rollup<'py>(
         &self,
         py: Python<'py>,
         path: PathBuf,
         extensions: Option<usize>,
+        plane: Option<&str>,
     ) -> PyResult<Option<Bound<'py, PyDict>>> {
-        match self.inner.rollup_bounded(&path, ext_bound(extensions)).map_err(to_py_err)? {
-            Some(roll) => Ok(Some(rollup_dict(py, &roll)?)),
-            None => Ok(None),
-        }
+        self.rollup_at(py, &path, extensions, plane)
     }
 
     /// Several projections evaluated under one read guard.
@@ -883,6 +907,7 @@ impl PyIndex {
         kind = None,
         tags = None,
         not_tags = None,
+        plane = None,
         depth = None,
         limit_rows = None,
         sort = None,
@@ -917,6 +942,7 @@ impl PyIndex {
         kind: Option<Vec<String>>,
         tags: Option<Vec<String>>,
         not_tags: Option<Vec<String>>,
+        plane: Option<&str>,
         depth: Option<&str>,
         limit_rows: Option<&str>,
         sort: Option<&str>,
@@ -931,6 +957,13 @@ impl PyIndex {
         // and with nothing else: a refresh landing between the two acquisitions paired an
         // old projection with new status, or the reverse, both halves individually true.
         // The engine holds these facts beside the tree now, so they arrive with the rows.
+        // Resolved before the report is built, and used for both halves of the bundle: a
+        // caller asking to see the tree without what git ignores means the child rows as
+        // well as the report, and one plane name cannot resolve to two answers.
+        let rows_plane = plane
+            .map(|name| self.config.tags().plane_of(name))
+            .transpose()
+            .map_err(|error| PyValueError::new_err(error.to_string()))?;
         let wanted = if report {
             let query = build_query(
                 self.analysis.profile,
@@ -945,6 +978,7 @@ impl PyIndex {
                 kind,
                 tags,
                 not_tags,
+                plane,
                 &self.config.tags(),
                 depth,
                 limit_rows,
@@ -960,7 +994,11 @@ impl PyIndex {
         };
         let request = fdu_core::ReadRequest {
             children_of,
-            children_page: fdu_core::ChildPageRequest { after, limit: row_bound(limit) },
+            children_page: fdu_core::ChildPageRequest {
+                after,
+                limit: row_bound(limit),
+                plane: rows_plane,
+            },
             rollups: rollups.unwrap_or_default(),
             total,
             extensions: ext_bound(extensions),
@@ -1053,19 +1091,27 @@ impl PyIndex {
     /// directory costs what is drawn rather than what it holds. Rows carry scalar subtree
     /// totals; ask `rollup()` for the extension breakdown of the one directory being
     /// inspected.
-    #[pyo3(signature = (path = None, after = None, limit = None))]
+    #[pyo3(signature = (path = None, after = None, limit = None, plane = None))]
     fn children<'py>(
         &self,
         py: Python<'py>,
         path: Option<PathBuf>,
         after: Option<std::ffi::OsString>,
         limit: Option<usize>,
+        plane: Option<&str>,
     ) -> PyResult<Option<Bound<'py, PyDict>>> {
         let path = path.unwrap_or_default();
         // One capture under one read lock, rather than a lookup per child per field:
         // `ChildSnapshot` already carries kind, attrs, totals and provenance together, so
         // a listing cannot see two different instants down its own rows.
-        let request = fdu_core::ChildPageRequest { after, limit: row_bound(limit) };
+        let request = fdu_core::ChildPageRequest {
+            after,
+            limit: row_bound(limit),
+            plane: plane
+                .map(|name| self.config.tags().plane_of(name))
+                .transpose()
+                .map_err(|error| PyValueError::new_err(error.to_string()))?,
+        };
         let Some(page) = self.inner.children_page(&path, &request).map_err(to_py_err)? else {
             return Ok(None);
         };
@@ -1270,6 +1316,40 @@ fn parse_cursor(value: &Bound<'_, PyAny>) -> PyResult<fdu_core::Cursor> {
 }
 
 impl PyIndex {
+    /// One directory's roll-up, in the whole subtree or in the plane the caller named.
+    ///
+    /// The one place either question is answered, so `total()` and `rollup()` cannot come
+    /// to disagree about what naming a plane means -- including the part worth stating: an
+    /// unpromoted or misspelled name is refused here, listing what this index does
+    /// maintain, rather than quietly answering with the unrestricted totals.
+    fn rollup_at<'py>(
+        &self,
+        py: Python<'py>,
+        path: &Path,
+        extensions: Option<usize>,
+        plane: Option<&str>,
+    ) -> PyResult<Option<Bound<'py, PyDict>>> {
+        let roll = match plane {
+            None => self.inner.rollup_bounded(path, ext_bound(extensions)).map_err(to_py_err)?,
+            Some(name) => {
+                let plane = self
+                    .config
+                    .tags()
+                    .plane_of(name)
+                    .map_err(|error| PyValueError::new_err(error.to_string()))?;
+                self.inner
+                    .with_index(|index| {
+                        index.plane_rollup_bounded(path, plane, ext_bound(extensions))
+                    })
+                    .map_err(to_py_err)?
+            }
+        };
+        match roll {
+            Some(roll) => Ok(Some(rollup_dict(py, &roll)?)),
+            None => Ok(None),
+        }
+    }
+
     /// The run-state lock.
     ///
     /// Poisoning is not recoverable state here, so it is unwrapped rather than
@@ -1299,6 +1379,7 @@ impl PyIndex {
         kind: Option<Vec<String>>,
         tags: Option<Vec<String>>,
         not_tags: Option<Vec<String>>,
+        plane: Option<&str>,
         depth: Option<&str>,
         limit: Option<&str>,
         sort: Option<&str>,
@@ -1323,6 +1404,7 @@ impl PyIndex {
             kind,
             tags,
             not_tags,
+            plane,
             &self.config.tags(),
             depth,
             limit,
@@ -2098,12 +2180,25 @@ impl PyWatch {
 ///
 /// `None` and an empty list are the same request -- no rules -- and both fingerprint to
 /// zero, so a caller who does not ask for tags keeps every snapshot they already have.
-fn enabled_tag_rules(names: Option<Vec<String>>) -> PyResult<Arc<fdu_core::tags::TagRules>> {
-    let Some(names) = names else {
-        return Ok(Arc::new(fdu_core::tags::TagRules::none().clone()));
+fn enabled_tag_rules(
+    names: Option<Vec<String>>,
+    promote: Option<Vec<String>>,
+) -> PyResult<Arc<fdu_core::tags::TagRules>> {
+    let rules = match names {
+        None => fdu_core::tags::TagRules::none().clone(),
+        Some(names) => fdu_core::tags::TagRules::from_names(names)
+            .map_err(|error| PyValueError::new_err(error.to_string()))?,
     };
-    let rules = fdu_core::tags::TagRules::from_names(names)
-        .map_err(|error| PyValueError::new_err(error.to_string()))?;
+    // Promotion belongs to the same set for the same reason enabling does: it moves the
+    // fingerprint the snapshot records, and it decides which names a plane read accepts.
+    // Applying it anywhere else would let an index be written under one answer to those
+    // two questions and read under another. `promote` without `tag_rules` is refused by
+    // the library against the empty set, which says so exactly.
+    let Some(promote) = promote else {
+        return Ok(Arc::new(rules));
+    };
+    let rules =
+        rules.with_promoted(promote).map_err(|error| PyValueError::new_err(error.to_string()))?;
     Ok(Arc::new(rules))
 }
 
@@ -2145,6 +2240,7 @@ fn build_query(
     kind: Option<Vec<String>>,
     tags: Option<Vec<String>>,
     not_tags: Option<Vec<String>>,
+    plane: Option<&str>,
     rules: &fdu_core::tags::TagRules,
     depth: Option<&str>,
     limit: Option<&str>,
@@ -2201,6 +2297,13 @@ fn build_query(
         .map_err(|error| PyValueError::new_err(error.to_string()))?;
     selection.tags.none = rules
         .mask_of(not_tags.unwrap_or_default())
+        .map_err(|error| PyValueError::new_err(error.to_string()))?;
+    // Against the same set, for the stricter of the two reasons: a plane is a bit position
+    // in *this* rule set's order, so one resolved elsewhere would name a real plane here
+    // and mean a different tag.
+    selection.plane = plane
+        .map(|name| rules.plane_of(name))
+        .transpose()
         .map_err(|error| PyValueError::new_err(error.to_string()))?;
     if let Some(value) = sort {
         selection.sort = Some(parse_sort(value)?);
@@ -2272,6 +2375,7 @@ impl PyOneShot {
     threads = None,
     type_rules = None,
     tag_rules = None,
+    promote = None,
     analyze = "none",
     analysis_workers = 0,
     views = None,
@@ -2284,6 +2388,7 @@ impl PyOneShot {
     kind = None,
     tags = None,
     not_tags = None,
+    plane = None,
     depth = None,
     limit = None,
     sort = None,
@@ -2307,6 +2412,7 @@ fn report_once(
     threads: Option<usize>,
     type_rules: Option<&PyTypeRegistry>,
     tag_rules: Option<Vec<String>>,
+    promote: Option<Vec<String>>,
     analyze: &str,
     analysis_workers: usize,
     views: Option<Vec<String>>,
@@ -2319,6 +2425,7 @@ fn report_once(
     kind: Option<Vec<String>>,
     tags: Option<Vec<String>>,
     not_tags: Option<Vec<String>>,
+    plane: Option<&str>,
     depth: Option<&str>,
     limit: Option<&str>,
     sort: Option<&str>,
@@ -2327,7 +2434,7 @@ fn report_once(
     words_per_page: u64,
     as_of_ns: Option<i64>,
 ) -> PyResult<PyOneShot> {
-    let rules = enabled_tag_rules(tag_rules)?;
+    let rules = enabled_tag_rules(tag_rules, promote)?;
     let analysis = parse_analysis_request(analyze, analysis_workers)?;
     let config = OpenConfig {
         scan: ScanConfig {
@@ -2356,6 +2463,7 @@ fn report_once(
         kind,
         tags,
         not_tags,
+        plane,
         &rules,
         depth,
         limit,
@@ -2551,6 +2659,7 @@ fn clear_all_caches(root: PathBuf) -> PyResult<usize> {
     threads = None,
     type_rules = None,
     tag_rules = None,
+    promote = None,
     analyze = "none",
     analysis_workers = 0
 ))]
@@ -2565,12 +2674,13 @@ fn open(
     threads: Option<usize>,
     type_rules: Option<&PyTypeRegistry>,
     tag_rules: Option<Vec<String>>,
+    promote: Option<Vec<String>>,
     analyze: &str,
     analysis_workers: usize,
 ) -> PyResult<PyIndex> {
     let operation_started_at = SystemTime::now();
     let policy = parse_cache_policy(cache)?;
-    let tags = enabled_tag_rules(tag_rules)?;
+    let tags = enabled_tag_rules(tag_rules, promote)?;
     let analysis = parse_analysis_request(analyze, analysis_workers)?;
     let config = OpenConfig {
         scan: ScanConfig {
@@ -2631,6 +2741,7 @@ fn open(
     threads = None,
     type_rules = None,
     tag_rules = None,
+    promote = None,
     analyze = "none",
     analysis_workers = 0
 ))]
@@ -2644,11 +2755,12 @@ fn scan(
     threads: Option<usize>,
     type_rules: Option<&PyTypeRegistry>,
     tag_rules: Option<Vec<String>>,
+    promote: Option<Vec<String>>,
     analyze: &str,
     analysis_workers: usize,
 ) -> PyResult<PyIndex> {
     let scan_started_at = Some(SystemTime::now());
-    let tags = enabled_tag_rules(tag_rules)?;
+    let tags = enabled_tag_rules(tag_rules, promote)?;
     let analysis = parse_analysis_request(analyze, analysis_workers)?;
     let config = OpenConfig {
         scan: ScanConfig {

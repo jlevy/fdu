@@ -216,6 +216,19 @@ class ScanOptions:
     #: query; the default evaluates none and fingerprints to zero, which is what every
     #: existing snapshot recorded.
     tag_rules: tuple[str, ...] = ()
+    #: Enabled rules to maintain a plane for, by name. Each must also be in `tag_rules`.
+    #:
+    #: Promotion is what makes `Selection(plane=...)` a roll-up read instead of a walk, and
+    #: it is paid at scan time: every directory keeps a second set of totals -- the same
+    #: files, dirs, bytes and per-extension tallies, restricted to the entries *not*
+    #: carrying the tag -- maintained up every ancestor on every mutation, whether or not
+    #: anyone reads them. Enabling a rule costs one branch per insert; promoting one
+    #: multiplies the reducer path, which is why it is separate and explicit.
+    #:
+    #: Scope, and it moves the fingerprint on its own: a snapshot written without a plane
+    #: cannot be reinterpreted as one with an empty plane, because "nothing was outside the
+    #: tag" and "nobody was counting" are different facts.
+    promote: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if self.max_depth is not None and self.max_depth < 0:
@@ -224,6 +237,8 @@ class ScanOptions:
             raise ValueError("threads must be at least 1")
         if isinstance(self.tag_rules, str):
             raise TypeError("tag_rules takes a tuple of names; wrap the single value in a tuple")
+        if isinstance(self.promote, str):
+            raise TypeError("promote takes a tuple of names; wrap the single value in a tuple")
 
 
 @dataclass(frozen=True, slots=True)
@@ -264,6 +279,22 @@ class Selection:
     #: Tags that exclude an entry outright. Wins over `tags`, as `exclude` wins over
     #: `include`.
     not_tags: tuple[str, ...] = ()
+    #: A promoted tag whose plane this query answers in, or `None` for the whole subtree.
+    #:
+    #: The plane is the subtree *excluding* entries that carry the tag, so
+    #: `plane="gitignore"` reports the tree as a browser shows it. The rule must be listed
+    #: in `ScanOptions.promote`; naming an unpromoted one is refused rather than answered
+    #: from the totals, which would look right on exactly the trees that cannot tell the
+    #: difference.
+    #:
+    #: The one field here that does not cost what the others cost. Every other value
+    #: narrows which entries are considered, so the precomputed roll-ups stop answering and
+    #: the report re-aggregates by walking the index. A plane is a restriction the engine
+    #: has already maintained, so a plane-only query is still a roll-up read.
+    #: `not_tags=("gitignore",)` gives the same numbers by walking; only one of them is
+    #: free. Combined with any other filter, this falls to the walking tier as anything
+    #: does, and both tiers agree.
+    plane: str | None = None
     #: Accepts a raw token as well as an int or `Bound`, so a caller passing user input
     #: straight through gets the library's own grammar and wording rather than having to
     #: pre-validate and invent a second opinion about what is acceptable.
@@ -789,6 +820,16 @@ class Child:
     Empty unless the index was opened with ``tag_rules=``, which is the default. A name
     here is a named boolean fact about this entry alone -- never about its ancestors, so a
     file inside a ``dotfile`` directory is not itself tagged.
+    """
+
+    plane: DirectoryTotals | None = None
+    """The same totals restricted to the requested plane, or ``None`` if none was asked for.
+
+    Beside ``totals`` rather than replacing them, because the listing this exists for shows
+    both -- "1.2 GB, 340 MB outside .gitignore" -- and a row carrying only one would send
+    the consumer back per directory for the other. Present on directory rows only, when
+    ``children(plane=...)`` or ``read(plane=...)`` named a promoted rule. A directory whose
+    every descendant carries the tag reports zeros: a plane that is empty, not absent.
     """
 
     empty: bool | None = None

@@ -51,8 +51,8 @@ There are no subcommands: the grammar is always “report on a path”.
 
 | Axis | Question | Options |
 | --- | --- | --- |
-| Scope | What is scanned and cached? | `PATH`, `--scan-depth N`, `--order`, `--threads`, `--type-rules FILE`, `--tag-rules LIST` |
-| Selection | Which entries does this query consider? | `--include`, `--exclude`, `--min-size`, `--modified-since`, `--modified-before`, `--kind`, `--tag`, `--not-tag`, `--depth`, `-n/--limit`, `--sort`, `--reverse`, `--size` |
+| Scope | What is scanned and cached? | `PATH`, `--scan-depth N`, `--order`, `--threads`, `--type-rules FILE`, `--tag-rules LIST`, `--promote LIST` |
+| Selection | Which entries does this query consider? | `--include`, `--exclude`, `--min-size`, `--modified-since`, `--modified-before`, `--kind`, `--tag`, `--not-tag`, `--plane TAG`, `--depth`, `-n/--limit`, `--sort`, `--reverse`, `--size` |
 | View | Which roll-up is reported? | `--view tree,groups,families,types,extensions,languages,documents,files,summary` |
 | Format | How is it serialized? | `--format text\|json\|jsonl\|yaml`, `--color` |
 | Mode | How is work performed? | `--cache auto\|refresh\|read-only\|only\|off`, `--analyze none\|basic\|code\|documents\|full` |
@@ -76,6 +76,23 @@ at all. A tag rides on the entry itself, never on its ancestors: `--not-tag dotf
 drops `.git` and keeps what is inside it, which is what separates a tag from scope
 pruning. `gitignore` reads the tree’s `.gitignore` files with git’s own precedence, so a
 nested `!keep.log` beats a broader `*.log` above it.
+
+`--promote LIST` is the third tag flag, and the one that costs.
+Promoting a rule makes every directory maintain a second set of totals beside its own:
+the same files, dirs, bytes and per-extension tallies, restricted to the entries that do
+*not* carry the tag.
+`--plane TAG` then answers in that set — `--promote gitignore --plane gitignore` reports
+the tree as a browser would show it, skipping what git ignores.
+
+Promotion is scope and the plane is selection, which is the same line `--tag-rules` and
+`--tag` hold, and it is worth being precise about why.
+Enabling a rule is a branch per insert; promoting one multiplies the ancestor-merge path
+on every mutation, whether or not anyone ever asks for the plane.
+That cost is what buys the read: `--plane` is a roll-up lookup rather than a walk, so it
+narrows the answer without invalidating the cache, while `--not-tag gitignore` gives the
+same numbers by re-aggregating the whole index.
+Naming a plane that was not promoted is refused, listing what was — a plane served from
+the totals would look right on exactly the trees that cannot tell the difference.
 
 Cost has three layers.
 A single unfiltered `--view summary PATH` is the one exact composition that retains only

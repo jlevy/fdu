@@ -293,6 +293,90 @@ def check_tags_are_a_named_fact_per_entry() -> None:
     fdu.clear_cache(root)
 
 
+def check_a_promoted_plane_serves_a_dual_value_listing_from_one_call() -> None:
+    """A browser shows two numbers per row, and gets both from one read.
+
+    The listing this exists for is "1.2 GB, 340 MB shown". Reaching the second figure a row
+    at a time would take the read guard once per child and re-resolve each path, so the
+    plane rides on the page request and every directory row answers with both -- which is
+    the part no Rust test can pin, because it is about what one Python call returns.
+
+    Three refusals are pinned beside it, because they need three different next steps:
+    promote the rule, enable it, or fix the spelling. The middle one matters most -- an
+    unpromoted plane served from the totals would look right on exactly the trees that
+    cannot tell the difference.
+    """
+
+    root = Path(tempfile.mkdtemp(prefix="fdu-plane-"))
+    (root / "src").mkdir()
+    (root / "src" / "main.rs").write_text("fn main() {}", encoding="utf-8")
+    (root / "src" / ".env").write_text("SECRET=1", encoding="utf-8")
+    (root / ".cache").mkdir()
+    (root / ".cache" / "blob").write_text("cached", encoding="utf-8")
+
+    scan = fdu.ScanOptions(tag_rules=("dotfile",), promote=("dotfile",))
+    index = fdu.open(root, scan=scan)
+
+    page = index.children(plane="dotfile")
+    assert page is not None
+    rows = {child.name: child for child in page.rows}
+
+    src = rows["src"]
+    assert src.totals is not None and src.plane is not None
+    assert src.totals.files == 2, src.totals
+    assert src.plane.files == 1, "the plane holds what does not carry the tag"
+    assert src.plane.bytes < src.totals.bytes
+
+    # A tagged directory is outside the plane as an entry, and its untagged contents are
+    # still inside it: a tag rides on the entry, never on its ancestors.
+    cache = rows[".cache"]
+    assert cache.totals is not None and cache.plane is not None
+    assert cache.plane.files == 1, "blob is not itself a dotfile"
+
+    # Not asking costs nothing and says nothing.
+    plain = index.children()
+    assert plain is not None
+    assert all(child.plane is None for child in plain.rows)
+
+    # The whole-tree roll-up answers in the plane too, and the complement subtracts.
+    whole = index.total()
+    plane = index.total(plane="dotfile")
+    assert plane.files < whole.files
+    assert plane.bytes < whole.bytes
+
+    # And a report answers in the plane while staying on the roll-up tier: the same
+    # numbers `not_tags` reaches by re-aggregating the whole index.
+    def totals(report: fdu.Report) -> fdu.SummaryRow:
+        for section in report.sections:
+            if isinstance(section, fdu.SummarySection):
+                return section.summary
+        raise AssertionError("a default report carries a summary section")
+
+    read = index.report(
+        fdu.Query(views=(fdu.View.SUMMARY,), selection=fdu.Selection(plane="dotfile"))
+    )
+    walked = index.report(
+        fdu.Query(views=(fdu.View.SUMMARY,), selection=fdu.Selection(not_tags=("dotfile",)))
+    )
+    assert totals(read) == totals(walked), (totals(read), totals(walked))
+
+    for name, expected in [
+        ("dotfile", None),
+        ("gitignore", "not enabled"),
+        ("dotfil", "unknown tag rule"),
+    ]:
+        unpromoted = fdu.open(root, scan=fdu.ScanOptions(tag_rules=("dotfile",)))
+        try:
+            unpromoted.total(plane=name)
+        except fdu.InvalidArgumentError as error:
+            wanted = expected if expected is not None else "maintains no plane"
+            assert wanted in str(error), (name, str(error))
+        else:  # pragma: no cover - the failure this guards is a silent one
+            raise AssertionError(f"naming plane {name!r} must be refused")
+
+    fdu.clear_cache(root)
+
+
 def check_a_bundle_answers_a_query_at_the_same_instant_as_its_rows() -> None:
     """A composed page is one read, not several that happen to agree.
 
@@ -1737,6 +1821,7 @@ def main() -> None:
     check_a_listing_pages_and_accounts_for_the_rest()
     check_partial_coverage_says_why()
     check_tags_are_a_named_fact_per_entry()
+    check_a_promoted_plane_serves_a_dual_value_listing_from_one_call()
     check_a_bundle_answers_a_query_at_the_same_instant_as_its_rows()
     check_empty_is_decidable_from_the_aggregate()
     check_the_envelope_is_typed_and_its_facts_are_independent()
@@ -1795,6 +1880,26 @@ def main() -> None:
     assert wire["schema"] == "fdu.report/4"
     assert wire["generator"] == f"fdu {fdu.__version__}"
     assert json.loads(json.dumps(wire)) == wire
+
+    # Every check in this file is called by name from `main`, which is the readable
+    # arrangement and the one with a silent failure mode: a check that is written and never
+    # listed passes forever, and looks exactly like a check that passes. This file's own
+    # source is the only place that can tell the difference.
+    own_source = Path(__file__).read_text(encoding="utf-8")
+    tree = ast.parse(own_source)
+    written = {
+        node.name
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name.startswith("check_")
+    }
+    listed = {
+        call.func.id
+        for call in ast.walk(tree)
+        if isinstance(call, ast.Call)
+        and isinstance(call.func, ast.Name)
+        and call.func.id.startswith("check_")
+    }
+    assert written <= listed, f"written but never run: {sorted(written - listed)}"
 
     package_dir = Path(fdu.__file__).parent
     public_names = {name for name in dir(fdu) if not name.startswith("_") or name == "__version__"}
