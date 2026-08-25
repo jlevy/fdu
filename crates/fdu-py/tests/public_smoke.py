@@ -1312,7 +1312,7 @@ def check_bounded_pages_assemble_into_one_complete_answer() -> None:
 
         def assemble(limit: int) -> list[Path]:
             collected: list[Path] = []
-            after: fdu.EntryCursor | None = None
+            after: str | None = None
             pin = index.cursor()
             while True:
                 page = index.read(
@@ -1394,7 +1394,7 @@ def check_bounded_pages_assemble_into_one_complete_answer() -> None:
         example = _load_example("browser_provider.py")
         pin = index.cursor()
         assembled: list[Path] = []
-        cursor: fdu.EntryCursor | None = None
+        cursor: str | None = None
         while True:
             catalog = example.catalog_page(index, limit=4, after=cursor, pin=pin)
             assembled.extend(row.path for row in catalog.rows)
@@ -1404,13 +1404,19 @@ def check_bounded_pages_assemble_into_one_complete_answer() -> None:
             cursor = catalog.next
         assert assembled == whole, "the example's page assembles the same complete answer"
 
-        # And it is a value rather than a path, so a caller cannot hand back half of one.
-        try:
-            index.read(entries=True, entries_limit=2, entries_after="d0/f0.rs", query=query)
-        except ValueError as error:
-            assert "continuation" in str(error) or "path" in str(error), error
-        else:  # pragma: no cover - the guard above is the point
-            raise AssertionError("a bare path carries none of what a continuation carries")
+        # And it is engine-issued, so neither a path nor an edited token is accepted.
+        assert page.next is not None
+        # A deterministic edit rather than a substitution: a token need not contain any
+        # particular character, and `replace` on one that does not is a no-op that would
+        # hand the engine its own valid token.
+        flipped = ("1" if page.next[0] == "0" else "0") + page.next[1:]
+        for invented in ["d0/f0.rs", "", page.next[:-2], flipped]:
+            try:
+                index.read(entries=True, entries_limit=2, entries_after=invented, query=query)
+            except ValueError as error:
+                assert "continuation" in str(error), error
+            else:  # pragma: no cover - the guard above is the point
+                raise AssertionError(f"{invented!r} is not a token this engine issued")
 
 
 def _bundled_report(bundle: fdu.Bundle) -> fdu.Report:

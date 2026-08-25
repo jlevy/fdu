@@ -339,25 +339,10 @@ fn entry_page_dict<'py>(
     // The continuation, rendered as a value rather than as a path. It carries the counts
     // this page established so the next one need not re-establish them, which is what
     // keeps an assembly's cost proportional to its pages rather than to its length.
-    match &page.next {
-        None => out.set_item("next", py.None())?,
-        Some(next) => {
-            let cursor = PyDict::new(py);
-            put_text(&cursor, "after", Some(next.after.as_os_str()))?;
-            put_scalar(&cursor, "total", next.total)?;
-            put_scalar(&cursor, "delivered", next.delivered)?;
-            let carried = PyDict::new(py);
-            put_scalar(&carried, "files", next.totals.files)?;
-            put_scalar(&carried, "dirs", next.totals.dirs)?;
-            put_scalar(&carried, "others", next.totals.others)?;
-            put_scalar(&carried, "bytes", next.totals.bytes)?;
-            put_scalar(&carried, "allocated", next.totals.allocated)?;
-            put_scalar(&carried, "newest_mtime_ns", next.totals.newest_mtime_ns)?;
-            cursor.set_item("totals", carried)?;
-            cursor.set_item("version", cursor_dict(py, next.version)?)?;
-            out.set_item("next", cursor)?;
-        }
-    }
+    // One opaque token rather than a mapping of the fields. The engine issues it and only
+    // the engine reads it, which is what keeps a continuation from being a claim a caller
+    // can edit -- and a string is exactly what a wire format with a `str` cursor carries.
+    put_text(&out, "next", page.next.as_ref().map(fdu_core::EntryCursor::encode).as_deref())?;
     let totals = PyDict::new(py);
     put_scalar(&totals, "files", page.totals.files)?;
     put_scalar(&totals, "dirs", page.totals.dirs)?;
@@ -1524,50 +1509,19 @@ fn cursor_dict(py: Python<'_>, cursor: fdu_core::Cursor) -> PyResult<Bound<'_, P
 
 /// Read a page continuation a caller was handed and gave back.
 ///
-/// A value rather than a path, because it carries what the first page established: the
-/// selection's size, its aggregates, and how many rows have been delivered. Handing one
-/// back is what keeps the next page's cost proportional to that page; constructing one by
-/// hand is constructing a claim about an answer nobody computed, which is why every field
-/// is required rather than defaulted.
+/// One opaque token, decoded by the engine that issued it. It began as a mapping of the
+/// counts, which made the denominator a value a caller could set: a page's own
+/// documentation said the engine would report whatever it was told, which is an admission
+/// rather than a defence.
 fn parse_entry_cursor(value: &Bound<'_, PyAny>) -> PyResult<fdu_core::EntryCursor> {
-    let mapping = value.cast::<PyDict>().map_err(|_| {
+    let token: String = value.extract().map_err(|_| {
         PyValueError::new_err(
-            "entries_after takes the `next` value from a previous page, not a path: a bare \
-             path cannot carry the counts the page it continues already established",
+            "entries_after takes the opaque `next` token a previous page returned, not a \
+             path or a mapping: a path carries none of the counts the page it continues \
+             already established",
         )
     })?;
-    let field = |name: &'static str| -> PyResult<Bound<'_, PyAny>> {
-        mapping
-            .get_item(name)?
-            .ok_or_else(|| PyValueError::new_err(format!("a page continuation needs {name:?}")))
-    };
-    let totals = field("totals")?;
-    let totals = totals.cast::<PyDict>().map_err(|_| {
-        PyValueError::new_err("a page continuation's 'totals' is the mapping the page returned")
-    })?;
-    let tally = |name: &'static str| -> PyResult<u64> {
-        totals
-            .get_item(name)?
-            .ok_or_else(|| PyValueError::new_err(format!("a continuation's totals need {name:?}")))?
-            .extract()
-    };
-    Ok(fdu_core::EntryCursor {
-        after: field("after")?.extract::<PathBuf>()?,
-        total: field("total")?.extract()?,
-        totals: fdu_core::RollUpScalars {
-            files: tally("files")?,
-            dirs: tally("dirs")?,
-            others: tally("others")?,
-            bytes: tally("bytes")?,
-            allocated: tally("allocated")?,
-            newest_mtime_ns: totals
-                .get_item("newest_mtime_ns")?
-                .ok_or_else(|| PyValueError::new_err("a continuation's totals need a mtime"))?
-                .extract()?,
-        },
-        delivered: field("delivered")?.extract()?,
-        version: parse_cursor(&field("version")?)?,
-    })
+    fdu_core::EntryCursor::decode(&token).map_err(|error| PyValueError::new_err(error.to_string()))
 }
 
 /// Read a cursor a caller stored and handed back.

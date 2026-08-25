@@ -269,6 +269,96 @@ impl Selection {
     }
 }
 
+impl Selection {
+    /// Identity of everything about this selection that shapes a result.
+    ///
+    /// Not `Hash`, and deliberately: `Selection` holds compiled patterns and a size metric
+    /// that only affects rendering, so a derived hash would be an identity over the
+    /// implementation rather than over the question. Each component is mixed in by hand,
+    /// in a fixed order, from the value a caller supplied -- `Pattern::source` rather than
+    /// its compiled alternatives, so two engines parsing one glob agree.
+    ///
+    /// This exists because a resumable page carries counts established under one selection.
+    /// Replaying that cursor under another returns the second selection's rows with the
+    /// first one's denominator, and nothing in the page says so -- which is a wrong answer
+    /// rather than a missing one, and the reason the cursor binds this value.
+    pub fn shape(&self) -> u64 {
+        // A plain accumulator threaded through free functions rather than nested closures:
+        // each helper needs `hash` mutably, and closures capturing it cannot call each
+        // other.
+        let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+        let hash = &mut hash;
+
+        mix(hash, b"selection/1\x1f");
+        for (label, patterns) in
+            [(&b"include"[..], &self.include), (&b"exclude"[..], &self.exclude)]
+        {
+            mix(hash, label);
+            // Sorted: `include` is any-of and `exclude` wins outright, so what decides is
+            // the set. Two callers listing the same globs in different orders have not
+            // asked different questions, and this is an identity over the question.
+            let mut sources: Vec<&str> = patterns.iter().map(Pattern::source).collect();
+            sources.sort_unstable();
+            for source in sources {
+                mix(hash, source.as_bytes());
+                mix(hash, b"\x1f");
+            }
+            mix(hash, b"\x1e");
+        }
+        optional(hash, self.min_size);
+        optional(hash, self.max_size);
+        let mut kinds: Vec<u8> = self.kinds.iter().map(|kind| *kind as u8).collect();
+        kinds.sort_unstable();
+        mix(hash, &kinds);
+        mix(hash, b"\x1e");
+        optional(hash, self.modified.since.map(i64::cast_unsigned));
+        optional(hash, self.modified.before.map(i64::cast_unsigned));
+        scalar(hash, u64::from(self.tags.any));
+        scalar(hash, u64::from(self.tags.none));
+        optional(hash, self.plane.map(|plane| u64::from(plane.0)));
+        optional(hash, self.depth.map(bound_shape));
+        optional(hash, self.limit.map(bound_shape));
+        optional(hash, self.sort.map(|sort| sort as u64));
+        scalar(hash, u64::from(self.reverse));
+        // `size` is deliberately absent: it decides which number a *report* renders, not
+        // which entries a page admits, so binding it would refuse a continuation that asks
+        // the same question in different units.
+        *hash
+    }
+}
+
+/// Mix one field's bytes into a shape accumulator, FNV-1a.
+fn mix(hash: &mut u64, bytes: &[u8]) {
+    for byte in bytes {
+        *hash ^= u64::from(*byte);
+        *hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+}
+
+/// Mix one number in, width-tagged by construction.
+fn scalar(hash: &mut u64, value: u64) {
+    mix(hash, &value.to_le_bytes());
+}
+
+/// Mix an optional number in, distinguishing absent from any value it could hold.
+fn optional(hash: &mut u64, value: Option<u64>) {
+    match value {
+        Some(inner) => {
+            scalar(hash, 1);
+            scalar(hash, inner);
+        }
+        None => scalar(hash, 0),
+    }
+}
+
+/// One bound as a number, distinguishing "all" from any finite limit.
+fn bound_shape(bound: Bound) -> u64 {
+    match bound {
+        Bound::All => u64::MAX,
+        Bound::Limit(limit) => limit as u64,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

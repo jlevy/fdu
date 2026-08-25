@@ -18,6 +18,9 @@ use fdu_core::{
     CachePolicy, EntryCursor, EntryPageRequest, IndexHandle, OpenConfig, ReadRequest, ScanConfig,
 };
 
+/// One edit to a request field that decides which rows a page returns.
+type Elsewhere = fn(&mut EntryPageRequest);
+
 /// Files per directory in the fixture, and directories in it.
 const PER_DIR: usize = 7;
 const DIRS: usize = 5;
@@ -366,12 +369,14 @@ fn every_page_reports_the_denominator_the_first_one_established() {
     assert_eq!(delivered, total, "and the assembly is still complete");
 }
 
-/// A continuation from another version is refused rather than answered.
+/// A continuation from another version is refused with an error, not an absent page.
 ///
-/// The counts inside it were established against one image of the index. Serving it
-/// against another would report a denominator for a tree that is no longer there, which is
-/// worse than the stale-pin case a caller can already detect: nothing in the page would
-/// say so.
+/// The counts inside it were established against one image of the index. Serving it against
+/// another would report a denominator for a tree that is no longer there. The *shape* of
+/// the refusal matters as much as the refusal: this used to return `None`, which the read
+/// folded into an absent projection -- indistinguishable from "that root is not a
+/// directory", so a consumer that cannot tell those apart restarts an assembly it should
+/// have failed.
 #[test]
 fn a_continuation_from_another_version_is_refused() {
     let dir = fixture();
@@ -387,11 +392,110 @@ fn a_continuation_from_another_version_is_refused() {
     fdu_core::scan::reconcile_handle(&handle, &ScanConfig::default(), &mut |_| {})
         .expect("refresh");
 
-    let served = handle.read(&request(3, Some(cursor), Selection::default())).expect("read");
+    // No `expected` pin: the refusal is the cursor's own, not a courtesy the caller has to
+    // ask for by redundantly pinning a read it already pinned by continuing.
+    let refused = handle
+        .read(&request(3, Some(cursor), Selection::default()))
+        .expect_err("a continuation carrying counts from another image cannot be answered");
     assert!(
-        served.entry_page.is_none(),
-        "a continuation carrying counts from another image cannot be answered from this one"
+        matches!(refused, fdu_core::Error::VersionUnavailable { .. }),
+        "and it says which kind of stale it is: {refused}"
     );
+}
+
+/// A continuation is bound to the question it was issued for, not only to the version.
+///
+/// The hole the version check alone left open: an *honest* cursor from one query, replayed
+/// against another at the same instant, returned the second query's rows under the first
+/// one's denominator and remainder. Nothing in the page revealed it -- a wrong answer
+/// rather than a missing one.
+#[test]
+fn a_continuation_belongs_to_one_question_and_is_refused_by_any_other() {
+    let dir = fixture();
+    let handle = opened(dir.path());
+    let issued = handle
+        .read(&request(3, None, Selection::default()))
+        .expect("read")
+        .entry_page
+        .expect("page")
+        .next
+        .expect("a continuation");
+
+    let elsewhere = |mut wanted: ReadRequest, edit: fn(&mut EntryPageRequest)| {
+        edit(wanted.entry_page.as_mut().expect("a page was requested"));
+        handle.read(&wanted)
+    };
+    let cases: [(&str, Elsewhere); 4] = [
+        ("a different subtree", |page| page.root = PathBuf::from("d0")),
+        ("a different depth bound", |page| page.max_depth = Some(1)),
+        ("a different selection", |page| {
+            page.selection.kinds = vec![fdu_core::EntryKind::File];
+        }),
+        ("a different size bound", |page| {
+            page.selection.min_size = Some(4);
+        }),
+    ];
+    // The request's own `plane` is not exercised here because this fixture promotes none,
+    // and a page cannot name a plane the index does not maintain. It reaches the same
+    // fingerprint as the four above, on the line beside them.
+    for (what, edit) in cases {
+        let refused = elsewhere(request(3, Some(issued.clone()), Selection::default()), edit)
+            .expect_err(what);
+        assert!(
+            refused.to_string().contains("continuation"),
+            "{what} must be refused as a continuation, not answered: {refused}"
+        );
+    }
+
+    // And the same question still works, or the four above are about a cursor that no
+    // longer resumes anything.
+    let served = handle
+        .read(&request(3, Some(issued), Selection::default()))
+        .expect("the question it was issued for")
+        .entry_page
+        .expect("page");
+    assert!(!served.rows.is_empty());
+}
+
+/// A token is engine-issued: a tampered one is refused rather than believed.
+///
+/// The counts are not a caller's to choose, and the type makes that so within Rust by
+/// having no public fields and no constructor. Across a boundary that carries a string the
+/// type cannot help, so the token carries a checksum -- which rules out the accident that
+/// design invites: a token round-tripped through a wire format that dropped or reordered a
+/// field, arriving as an honest-looking claim about an answer nobody computed.
+#[test]
+fn a_tampered_token_is_refused() {
+    let dir = fixture();
+    let handle = opened(dir.path());
+    let issued = handle
+        .read(&request(3, None, Selection::default()))
+        .expect("read")
+        .entry_page
+        .expect("page")
+        .next
+        .expect("a continuation");
+
+    let token = issued.encode();
+    assert_eq!(fdu_core::EntryCursor::decode(&token).expect("its own token round-trips"), issued);
+
+    // Flip one nibble in the middle: a field's value, not its framing.
+    let mut edited: Vec<char> = token.chars().collect();
+    let middle = edited.len() / 2;
+    edited[middle] = if edited[middle] == '0' { '1' } else { '0' };
+    let edited: String = edited.into_iter().collect();
+    assert!(edited != token, "the edit has to change something");
+    assert!(
+        fdu_core::EntryCursor::decode(&edited).is_err(),
+        "a token with one nibble changed is not a token this engine issued"
+    );
+
+    for invented in ["", "not-a-token", "00", &token[..token.len() - 2]] {
+        assert!(
+            fdu_core::EntryCursor::decode(invented).is_err(),
+            "{invented:?} is not a continuation"
+        );
+    }
 }
 
 /// A tree wide and deep enough that a prefix scan and a seek differ by a lot.

@@ -1039,6 +1039,30 @@ pub struct EntryPageRequest {
 }
 
 impl EntryPageRequest {
+    /// Identity of every field that decides which rows this request returns.
+    ///
+    /// Everything a continuation has to be held to, and nothing else. `limit` is absent on
+    /// purpose: a caller may page the same answer in different-sized bites, and refusing
+    /// that would make the bound part of the question rather than of the request. `after`
+    /// is absent because it *is* the continuation.
+    fn shape(&self) -> u64 {
+        let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+        for bytes in [
+            &b"entry-page/1\x1f"[..],
+            self.root.as_os_str().as_encoded_bytes(),
+            b"\x1f",
+            &self.max_depth.map_or(u64::MAX, |depth| depth as u64).to_le_bytes(),
+            &self.selection.shape().to_le_bytes(),
+            &self.plane.map_or(u64::MAX, |plane| u64::from(plane.0)).to_le_bytes(),
+        ] {
+            for byte in bytes {
+                hash ^= u64::from(*byte);
+                hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+            }
+        }
+        hash
+    }
+
     /// Refuse a bound that would produce a truncated page nobody can continue.
     pub fn validate(&self) -> crate::Result<()> {
         if self.limit == 0 {
@@ -1070,33 +1094,216 @@ pub struct EntryRow {
 
 /// Where one assembly resumes, and what it has already established.
 ///
-/// Opaque to a consumer: hand back what the previous page returned. The fields are public
-/// so a Rust caller can inspect them, but constructing one by hand is constructing a claim
-/// about an answer nobody computed.
+/// **Engine-issued and opaque.** Every field is private and there is no constructor: the
+/// only way to hold one is to have been given one by the page it continues. That is not
+/// tidiness. The value carries a denominator the engine will otherwise trust, so a public
+/// `total` is a number a caller can set — and the first version of this said so in its own
+/// documentation, which is an admission rather than a defence.
 ///
 /// It exists because a bare path cursor made continuation cost O(index) per page. Every
 /// page reports a denominator over the whole selection -- "40 of 12,000" -- and an
 /// arbitrary predicate over a tree has no ordered index to count through, so the first page
-/// has to walk the selection to learn its size. Recomputing that on every page made
-/// assembling P pages cost P passes; carrying it forward makes the rest of the assembly
-/// cost one bounded seek and one page each.
+/// has to walk the selection to learn its size. Carrying it forward makes the rest of the
+/// assembly cost one bounded seek and one page each.
 ///
-/// Version-bound, and that is not belt-and-braces beside [`ReadRequest::expected`]: the
-/// counts inside were computed against one image of the index, so a continuation replayed
-/// against another would report a denominator for a tree that is no longer there. The
-/// engine refuses it whether or not the caller also pinned the request.
+/// **Bound to the question, not only to the version.** `shape` fingerprints every field of
+/// the request that decides which rows come back -- the subtree, the depth bound, the
+/// selection, the plane -- and a page refuses a cursor whose shape does not match. Binding
+/// the version alone let an honest cursor from one query be replayed against another at the
+/// same instant, returning the second query's rows under the first one's denominator: a
+/// wrong answer with nothing in the page to reveal it.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct EntryCursor {
     /// Last path delivered. The scan resumes strictly after it, in path order.
-    pub after: PathBuf,
+    after: PathBuf,
     /// Matches in the whole selection, established by the first page.
-    pub total: u64,
+    total: u64,
     /// Scalar totals over every match, established by the first page.
-    pub totals: RollUpScalars,
-    /// Rows delivered before this page, so the remainder needs no recount.
-    pub delivered: u64,
+    totals: RollUpScalars,
+    /// Rows delivered before the page this continues.
+    delivered: u64,
     /// The index image this assembly is pinned to.
-    pub version: Cursor,
+    version: Cursor,
+    /// Identity of every request field that decides which rows the assembly returns.
+    shape: u64,
+}
+
+impl EntryCursor {
+    /// The path this continuation resumes after.
+    ///
+    /// The one field worth reading from outside, and the only one that is: it is what a
+    /// consumer shows in a "resuming from" line, and unlike the counts it is not a claim
+    /// the engine will act on -- a wrong path yields a wrong *page*, which the next
+    /// remainder contradicts, rather than a right page under a wrong denominator.
+    #[must_use]
+    pub fn after(&self) -> &Path {
+        &self.after
+    }
+
+    /// The index image this assembly is pinned to.
+    #[must_use]
+    pub const fn version(&self) -> Cursor {
+        self.version
+    }
+
+    /// One opaque token, for a boundary that carries a string rather than a value.
+    ///
+    /// The consuming contract's catalog cursor is a `str`, and this is what belongs in it:
+    /// carrying the *path* alone there would drop the counts and put every page back to
+    /// paying for the whole selection. A token is not adapter state -- it is this value,
+    /// encoded.
+    ///
+    /// Not portable between platforms, and it says so on decode rather than guessing: a
+    /// path is bytes on unix and UTF-16 on Windows, and an index is no more portable than
+    /// its paths are.
+    #[must_use]
+    pub fn encode(&self) -> String {
+        let mut bytes = Vec::with_capacity(96);
+        bytes.extend_from_slice(&TOKEN_MAGIC.to_le_bytes());
+        for scalar in [
+            self.total,
+            self.delivered,
+            self.version.session.0,
+            self.version.clock.0,
+            self.shape,
+            self.totals.files,
+            self.totals.dirs,
+            self.totals.others,
+            self.totals.bytes,
+            self.totals.allocated,
+            self.totals.newest_mtime_ns.cast_unsigned(),
+        ] {
+            bytes.extend_from_slice(&scalar.to_le_bytes());
+        }
+        let (tag, path) = encode_path(&self.after);
+        bytes.push(tag);
+        bytes.extend_from_slice(&(path.len() as u64).to_le_bytes());
+        bytes.extend_from_slice(&path);
+        bytes.extend_from_slice(&token_checksum(&bytes).to_le_bytes());
+        // Hex by hand rather than through `format!` per byte: one allocation, and a token
+        // is on the hot boundary of every continued page.
+        let mut hex = String::with_capacity(bytes.len() * 2);
+        for byte in &bytes {
+            hex.push(char::from(TOKEN_DIGITS[usize::from(byte >> 4)]));
+            hex.push(char::from(TOKEN_DIGITS[usize::from(byte & 0x0f)]));
+        }
+        hex
+    }
+
+    /// The cursor a token names, or an error naming what is wrong with it.
+    ///
+    /// Every failure is the same failure from a caller's side -- this is not a token this
+    /// engine issued -- so they share one message rather than describing the encoding to
+    /// somebody who is not supposed to know it has one.
+    pub fn decode(token: &str) -> crate::Result<Self> {
+        Self::decode_inner(token).ok_or_else(|| crate::Error::InvalidValue {
+            kind: "page continuation",
+            value: token.chars().take(16).collect(),
+            hint: "expected the opaque token a previous page returned; it is not a value to \
+                   construct, and one from another platform or another engine cannot be read \
+                   here"
+                .into(),
+        })
+    }
+
+    fn decode_inner(token: &str) -> Option<Self> {
+        if !token.len().is_multiple_of(2) {
+            return None;
+        }
+        let bytes: Option<Vec<u8>> = token
+            .as_bytes()
+            .chunks(2)
+            .map(|pair| u8::from_str_radix(std::str::from_utf8(pair).ok()?, 16).ok())
+            .collect();
+        let bytes = bytes?;
+        // Magic, eleven scalars, the path tag and length, and the trailing checksum.
+        let fixed = 8 + 11 * 8 + 1 + 8;
+        if bytes.len() < fixed + 8 {
+            return None;
+        }
+        let (body, tail) = bytes.split_at(bytes.len() - 8);
+        if token_checksum(body) != u64::from_le_bytes(tail.try_into().ok()?) {
+            return None;
+        }
+        let mut scalars = body[8..].chunks_exact(8).map(|chunk| {
+            u64::from_le_bytes(chunk.try_into().expect("chunks_exact yields eight bytes"))
+        });
+        if u64::from_le_bytes(body[..8].try_into().ok()?) != TOKEN_MAGIC {
+            return None;
+        }
+        let mut next = || scalars.next();
+        let (total, delivered) = (next()?, next()?);
+        let version = Cursor { session: SessionId(next()?), clock: Clock(next()?) };
+        let shape = next()?;
+        let totals = RollUpScalars {
+            files: next()?,
+            dirs: next()?,
+            others: next()?,
+            bytes: next()?,
+            allocated: next()?,
+            newest_mtime_ns: next()?.cast_signed(),
+        };
+        let tag = body[fixed - 9];
+        let length =
+            usize::try_from(u64::from_le_bytes(body[fixed - 8..fixed].try_into().ok()?)).ok()?;
+        let path = body.get(fixed..fixed + length)?;
+        if body.len() != fixed + length {
+            return None;
+        }
+        Some(Self { after: decode_path(tag, path)?, total, totals, delivered, version, shape })
+    }
+}
+
+/// Identifies a token this engine issued, and which layout it used.
+const TOKEN_MAGIC: u64 = 0x6664_755f_7061_6765;
+
+/// Lowercase hex, for a token that has to survive a text field unchanged.
+const TOKEN_DIGITS: &[u8; 16] = b"0123456789abcdef";
+
+/// FNV-1a over a token's body, so a hand-edited one is refused rather than believed.
+///
+/// Not a signature and not claimed to be: a caller determined to forge one can recompute
+/// it. What it rules out is the accident the previous design invited -- a token round-
+/// tripped through a wire format that dropped or reordered a field, arriving as an honest-
+/// looking claim about an answer nobody computed.
+fn token_checksum(body: &[u8]) -> u64 {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in body {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    hash
+}
+
+#[cfg(unix)]
+fn encode_path(path: &Path) -> (u8, Vec<u8>) {
+    use std::os::unix::ffi::OsStrExt;
+    (0, path.as_os_str().as_bytes().to_vec())
+}
+
+#[cfg(unix)]
+fn decode_path(tag: u8, bytes: &[u8]) -> Option<PathBuf> {
+    use std::os::unix::ffi::OsStrExt;
+    (tag == 0).then(|| PathBuf::from(std::ffi::OsStr::from_bytes(bytes)))
+}
+
+#[cfg(windows)]
+fn encode_path(path: &Path) -> (u8, Vec<u8>) {
+    use std::os::windows::ffi::OsStrExt;
+    (1, path.as_os_str().encode_wide().flat_map(u16::to_le_bytes).collect())
+}
+
+#[cfg(windows)]
+fn decode_path(tag: u8, bytes: &[u8]) -> Option<PathBuf> {
+    use std::os::windows::ffi::OsStringExt;
+    if tag != 1 || bytes.len() % 2 != 0 {
+        return None;
+    }
+    let wide: Vec<u16> = bytes
+        .chunks_exact(2)
+        .map(|pair| u16::from_le_bytes(pair.try_into().expect("chunks_exact yields two bytes")))
+        .collect();
+    Some(PathBuf::from(std::ffi::OsString::from_wide(&wide)))
 }
 
 /// A bounded page of matches, and exactly how much of the answer it is not.
@@ -1589,9 +1796,27 @@ impl IndexHandle {
             })
         });
 
-        let flat_page = request.entry_page.as_ref().and_then(|wanted| {
-            timed(&mut projections.entry_page, |work| entry_page(&index, wanted, work))
-        });
+        // Not `and_then`: a continuation the engine refuses is an error, and folding it
+        // into `None` would make a refused assembly look like an absent projection.
+        let flat_page = match &request.entry_page {
+            None => None,
+            Some(wanted) => {
+                let mut refusal = None;
+                let page = timed(&mut projections.entry_page, |work| {
+                    match entry_page(&index, wanted, work) {
+                        Ok(page) => page,
+                        Err(error) => {
+                            refusal = Some(error);
+                            None
+                        }
+                    }
+                });
+                if let Some(error) = refusal {
+                    return Err(error);
+                }
+                page
+            }
+        };
 
         let total = request.total.then(|| {
             timed(&mut projections.total, |work| {
@@ -4233,11 +4458,40 @@ fn seek_after(
 /// key is stable while the set behind it shifts. A page ordered by size would have to
 /// carry the size *and* the path to break ties, and would still repeat a row whose size
 /// changed between pages.
-fn entry_page(index: &Index, request: &EntryPageRequest, work: &mut Work) -> Option<EntryPage> {
+fn entry_page(
+    index: &Index,
+    request: &EntryPageRequest,
+    work: &mut Work,
+) -> crate::Result<Option<EntryPage>> {
     debug_assert!(request.limit > 0, "a zero page limit is unresumable; reject it at the request");
-    let root_id = index.lookup_visiting(&request.root, work)?;
+    // Before the lookup, so a continuation the engine will not honour says so whether or
+    // not the subtree it names still exists. Answering `None` here -- as this did -- makes
+    // a refused continuation indistinguishable from a root that is not a directory, and a
+    // consumer that cannot tell those apart restarts an assembly it should have failed.
+    let shape = request.shape();
+    if let Some(cursor) = &request.after {
+        if cursor.version != index.cursor() {
+            return Err(crate::Error::VersionUnavailable {
+                requested: cursor.version,
+                current: index.cursor(),
+            });
+        }
+        if cursor.shape != shape {
+            return Err(crate::Error::InvalidValue {
+                kind: "page continuation",
+                value: cursor.after.display().to_string(),
+                hint: "this continuation belongs to a different question: the subtree, depth \
+                       bound, selection or plane changed since the page that issued it, and \
+                       its counts describe that answer rather than this one"
+                    .into(),
+            });
+        }
+    }
+    let Some(root_id) = index.lookup_visiting(&request.root, work) else {
+        return Ok(None);
+    };
     if !index.entry(root_id).kind.is_dir() {
-        return None;
+        return Ok(None);
     }
 
     let mut page = EntryPage::default();
@@ -4260,15 +4514,18 @@ fn entry_page(index: &Index, request: &EntryPageRequest, work: &mut Work) -> Opt
     // page after it is handed that answer, so it stops as soon as it has its rows -- and
     // reaches them through a seek that never looks at an entry before the cursor. That is
     // the difference between assembling P pages in P passes and in one pass plus P pages.
-    let (counting, mut delivered) = if let Some(cursor) = &request.after {
-        if cursor.version != index.cursor() {
-            // The counts inside were established against a different image. Refusing
-            // is the only honest answer: recomputing them would silently change the
-            // denominator mid-assembly, and reusing them would report a total for a
-            // tree that is no longer there.
-            return None;
+    let (counting, delivered_before) = if let Some(cursor) = &request.after {
+        if seek_after(index, root_id, request, &cursor.after, &mut stack, work).is_none() {
+            // The cursor names a path this subtree no longer holds. The version matched, so
+            // this is not a stale assembly -- it is a continuation that cannot be resumed
+            // where it says, which a caller has to restart rather than silently receive a
+            // page from the top.
+            return Err(crate::Error::InvalidValue {
+                kind: "page continuation",
+                value: cursor.after.display().to_string(),
+                hint: "the path this continuation resumes after is no longer in the index".into(),
+            });
         }
-        seek_after(index, root_id, request, &cursor.after, &mut stack, work)?;
         page.total = cursor.total;
         page.totals = cursor.totals;
         (false, cursor.delivered)
@@ -4336,6 +4593,7 @@ fn entry_page(index: &Index, request: &EntryPageRequest, work: &mut Work) -> Opt
                 totals: RollUpScalars::default(),
                 delivered: 0,
                 version: index.cursor(),
+                shape,
             });
             page.rows.push(EntryRow { path, entry });
         }
@@ -4343,8 +4601,23 @@ fn entry_page(index: &Index, request: &EntryPageRequest, work: &mut Work) -> Opt
 
     // Derived from one count, so the two cannot disagree: everything matched, minus what
     // earlier pages carried, minus what this one carries.
-    delivered = delivered.saturating_add(page.rows.len() as u64);
-    page.remaining = page.total.saturating_sub(delivered);
+    //
+    // Checked rather than saturating. Saturation turned "this cursor claims more rows were
+    // delivered than the selection holds" into a quiet zero remainder and a terminal page,
+    // so an impossible state read as a complete answer. It is impossible only while the
+    // cursor is the engine's own; the point of saying so here is that the arithmetic no
+    // longer depends on that being true.
+    let delivered = delivered_before
+        .checked_add(page.rows.len() as u64)
+        .and_then(|carried| page.total.checked_sub(carried).map(|left| (carried, left)));
+    let Some((_, remaining)) = delivered else {
+        return Err(crate::Error::InvalidValue {
+            kind: "page continuation",
+            value: delivered_before.to_string(),
+            hint: "this continuation accounts for more rows than the selection holds".into(),
+        });
+    };
+    page.remaining = remaining;
     if page.remaining == 0 {
         // Terminal. The last row's path is still a valid cursor, but handing one back
         // beside a zero remainder is the shape a consumer reads as "there is more".
@@ -4354,9 +4627,9 @@ fn entry_page(index: &Index, request: &EntryPageRequest, work: &mut Work) -> Opt
         // pass has finished, and a cursor is only worth building for the row it ends on.
         next.total = page.total;
         next.totals = page.totals;
-        next.delivered = delivered;
+        next.delivered = page.total - page.remaining;
     }
-    Some(page)
+    Ok(Some(page))
 }
 
 fn child_snapshot(

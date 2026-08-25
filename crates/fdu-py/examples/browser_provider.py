@@ -370,7 +370,7 @@ def catalog_page(
     index: fdu.Index,
     *,
     limit: int,
-    after: fdu.EntryCursor | None = None,
+    after: str | None = None,
     pin: fdu.Cursor | None = None,
 ) -> fdu.EntryPage:
     """One bounded, resumable page of the whole tree, in path order.
@@ -381,11 +381,15 @@ def catalog_page(
 
     Two things an adapter should not reinvent. The remainder is exact and paired with the
     continuation -- zero remaining and a continuation are the same fact, so a consumer
-    checks them against each other rather than trusting one. And the continuation carries
-    what the first page established, which is what keeps an assembly's cost proportional to
-    its pages; a wire format whose cursor is a string should carry this value *encoded*
-    rather than reducing it to a path, because a path is the half that makes every page pay
-    for the whole selection again.
+    checks them against each other rather than trusting one. And `next` is an opaque token
+    the engine issues: pass it back unchanged into a wire format's `str` cursor. Do not
+    parse it, build one, or reduce it to the path inside -- the path is the half that makes
+    every page pay for the whole selection again, and the rest is the engine's own claim
+    about an answer it computed.
+
+    A token is bound to the question it was issued for, so an adapter cannot accidentally
+    resume one query's assembly under another: that is refused rather than answered with
+    the first query's denominator.
     """
 
     return index.read(

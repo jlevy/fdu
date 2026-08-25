@@ -1097,42 +1097,6 @@ class EntryRow:
 
 
 @dataclass(frozen=True, slots=True)
-class EntryCursor:
-    """Where one assembly resumes, and what it has already established.
-
-    Opaque: pass back what the previous page returned. The fields are readable so a caller
-    can inspect an assembly in flight, but building one by hand is building a claim about
-    an answer nobody computed, and the engine will report whatever it is told.
-
-    It exists because a bare path cursor made continuation cost O(index) per page. Every
-    page reports a denominator over the whole selection -- "40 of 12,000" -- and an
-    arbitrary predicate over a tree has no ordered index to count through, so the first
-    page walks the selection to learn its size. Carrying that forward is what makes the
-    rest of the assembly cost one bounded seek and one page each.
-    """
-
-    after: Path
-    """Last path delivered; the scan resumes strictly after it, in path order."""
-
-    total: int
-    """Matches in the whole selection, established by the first page."""
-
-    totals: DirectoryTotals
-    """Scalar totals over every match, established by the first page."""
-
-    delivered: int
-    """Rows delivered before the page this continues, so the remainder needs no recount."""
-
-    version: Cursor
-    """The index image this assembly is pinned to.
-
-    Not redundant beside ``expected``: the counts above were computed against one image, so
-    a continuation replayed against another would report a denominator for a tree that is
-    no longer there. The engine refuses it whether or not the caller also pinned the read.
-    """
-
-
-@dataclass(frozen=True, slots=True)
 class EntryPage:
     """A bounded page of matches, and exactly how much of the answer it is not.
 
@@ -1158,12 +1122,18 @@ class EntryPage:
     would reveal.
     """
 
-    next: EntryCursor | None
+    next: str | None
     """Continuation to pass as ``entries_after``; ``None`` on the last page.
 
-    Hand it back unchanged. It carries what this page established -- the selection's size,
-    its aggregates, and how many rows have been delivered -- so the next page costs the
-    next page rather than another pass over the selection.
+    An opaque token the engine issues and only the engine reads. Hand it back unchanged; do
+    not parse it, build one, or carry its parts separately. Inside it are the answers this
+    page paid for -- the selection's size, its aggregates, how many rows have been
+    delivered -- so the next page costs the next page rather than another pass, and the
+    question it was issued for, so replaying it against a different subtree, depth bound,
+    selection or plane is refused rather than answered with this page's denominator.
+
+    A string because that is what a consumer's wire format carries. Reducing it to the path
+    inside would drop the counts and put every page back to paying for the whole selection.
     """
 
     totals: DirectoryTotals
