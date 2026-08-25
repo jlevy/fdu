@@ -863,7 +863,12 @@ def check_a_batch_reports_what_it_cost_and_not_what_it_waited() -> None:
                 deadline = time.monotonic() + 30
                 applied = None
                 for batch in watch:
-                    if batch.dirty:
+                    # The batch carrying the file, not merely the first dirty one. A
+                    # backend that registers its watch after the root already exists
+                    # escalates at startup, so on macOS the first dirty batch is that
+                    # recovery -- at the root, whose relative path is empty and whose name
+                    # bytes are therefore legitimately zero.
+                    if any(change.path.name == "added.rs" for change in batch.changes):
                         applied = batch
                         break
                     if time.monotonic() > deadline:
@@ -878,7 +883,9 @@ def check_a_batch_reports_what_it_cost_and_not_what_it_waited() -> None:
             f"{applied.work.wall_ns / 1e9:.3f}s, having waited about {delay}s for the change"
         )
         assert applied.work.rows == len(applied.changes), applied.work
-        assert applied.work.name_bytes > 0, "the rows it carries cost something to hold"
+        assert applied.work.name_bytes >= len("added.rs"), (
+            f"the row it carries costs at least its own name: {applied.work}"
+        )
 
 
 def check_a_pinned_assembly_pins_its_clock_too() -> None:
