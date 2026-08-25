@@ -5,8 +5,15 @@ title: "Spec: fdu for interactive clients — the metabrowser contract"
 kind: epic
 status: open
 priority: 1
-version: 67
+version: 68
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
+refs:
+  - kind: pr
+    url: https://github.com/jlevy/fdu/pull/47#pullrequestreview-5017522830
+    at: 2026-08-25T09:57:38.755Z
+  - kind: pr
+    url: https://github.com/jlevy/fdu/pull/44#issuecomment-5408704238
+    at: 2026-08-25T09:57:38.756Z
 labels: []
 dependencies: []
 child_order_hints:
@@ -62,7 +69,7 @@ child_order_hints:
   - is-01kzqn502680awzhvddzntq32d
   - is-01m0w5fbs0n1xv9rxrmrp79mda
 created_at: 2026-08-23T07:31:34.794Z
-updated_at: 2026-08-25T09:54:55.212Z
+updated_at: 2026-08-25T09:57:38.756Z
 ---
 Root epic for the interactive-client integration spec: partitioned tallies (tag planes), the embedder watch contract, the session integration shape, and the adoption proof. Each capability lands engine-first and clears the parity harness. The measured basis and the requirement-by-requirement contract map are in the spec.
 

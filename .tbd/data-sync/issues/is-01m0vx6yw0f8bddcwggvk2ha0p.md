@@ -5,7 +5,7 @@ title: "A native walk budget: stop discovery at the cap, and say so"
 kind: task
 status: open
 priority: 1
-version: 6
+version: 7
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 refs:
   - kind: pr
@@ -14,11 +14,14 @@ refs:
   - kind: pr
     url: https://github.com/jlevy/metabrowser/pull/74
     at: 2026-08-25T09:54:14.655Z
+  - kind: pr
+    url: https://github.com/jlevy/fdu/pull/47#pullrequestreview-5017522830
+    at: 2026-08-25T09:57:37.582Z
 labels: []
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-25T07:30:01.728Z
-updated_at: 2026-08-25T09:54:14.655Z
+updated_at: 2026-08-25T09:57:37.584Z
 closed_at: null
 close_reason: null
 resolution: null
