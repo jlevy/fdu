@@ -202,9 +202,14 @@ class ScanOptions:
     partial with reason :attr:`CoverageReason.BUDGET` and a typed resource-stop issue says
     so.
 
-    Checked between directories, never inside one, so the observed count can overshoot by
-    the entries of the directories already being read. A directory is listed whole or not
-    at all: a half-listed one would report its own tallies as complete, silently.
+    Strict: a capped walk retains exactly this many files, never one more, however many
+    workers are reading. The cap is part of the scope identity, and two indexes claiming one
+    identity have to hold the same inventory -- "the cap, plus whatever was in flight" is a
+    different number on every run and on every machine.
+
+    A directory may therefore be listed only partly. That is not silent: a walk the cap
+    stopped marks coverage partial from the root down, so every directory reports
+    :attr:`CoverageReason.BUDGET` as the reason its numbers are short.
     """
     one_filesystem: bool = False
     #: Directory visit order. Breadth-first is the default because it is the order whose

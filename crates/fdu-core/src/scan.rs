@@ -188,11 +188,14 @@ pub struct ScanConfig {
     /// Directories are the structure the files hang from; capping them would make the
     /// answer's *shape* depend on the cap rather than its size.
     ///
-    /// The bound is checked between directories and never inside one. A directory is read
-    /// whole or not at all, because a half-listed directory reports its own tallies as
-    /// though they were complete -- silently, which is the one thing a bound must never be.
-    /// So the observed count can overshoot the cap by the entries of the directories
-    /// already in flight, and that overshoot is the price of never lying about a directory.
+    /// Strict: a capped walk retains exactly this many files, never one more, however many
+    /// workers are reading. The cap is fingerprinted scope, and two indexes claiming one
+    /// scope identity have to hold the same inventory -- "the cap, plus whatever was in
+    /// flight" is a different number on every run and on every machine.
+    ///
+    /// A directory may therefore be listed only partly. That is not silent: a walk the cap
+    /// stopped marks coverage partial from the root down, so every directory in the index
+    /// reports `budget` as the reason its numbers are short.
     pub max_files: Option<u64>,
 }
 
@@ -407,10 +410,21 @@ pub struct ScanReport {
 /// `None` for an uncapped walk, which is the default, so an uncapped walk touches no
 /// atomic at all -- the cost of the feature is paid only by callers who asked for it.
 ///
-/// Charged **per directory**, not per file. A per-file `fetch_add` would put a contended
-/// write on the hottest loop in the program for a bound almost no walk reaches; per
-/// directory the write happens once per `read_dir`, which is already the expensive part,
-/// and the read side is a relaxed load of a line that is otherwise shared.
+/// Charged **per file**, exactly, and that is not the cheap choice -- it puts a contended
+/// atomic on the hottest loop in the program. It is the correct one, because the cap is
+/// fingerprinted scope: two indexes claiming one scope identity have to hold the same
+/// number of files, and a bound that admits "the cap, plus whatever was already in flight"
+/// makes the identity a claim the engine does not keep.
+///
+/// The first version charged per directory and stopped between them, so a directory was
+/// read whole or not at all. That reasoning was about not presenting a half-listed
+/// directory's tallies as complete -- but the walk already marks partial coverage from the
+/// root down when the cap bites, so the half-listed case is not silent, and the objection
+/// it answered did not exist.
+///
+/// The cost is paid only by callers who set a cap. An uncapped walk holds no `Budget` at
+/// all and touches no atomic, which is every default run and every measurement in the
+/// ledger.
 #[derive(Debug)]
 pub(crate) struct Budget {
     cap: u64,
@@ -425,11 +439,25 @@ impl Budget {
         })
     }
 
-    /// Record files observed in one directory.
-    fn charge(&self, files: u64) {
-        if files > 0 {
-            self.files.fetch_add(files, std::sync::atomic::Ordering::Relaxed);
+    /// Claim room for one entry, returning whether the walk may retain it.
+    ///
+    /// Only regular files are counted, matching what the bound is named for; everything
+    /// else is admitted while the cap has room and refused once it does not, so nothing is
+    /// retained past the file the cap stopped on. `fetch_update` rather than `fetch_add`
+    /// because the count must never pass the cap even momentarily: two workers reading the
+    /// old value and both adding would admit `cap + 1`, which is precisely the "close
+    /// enough" this exists to refuse.
+    fn admit(&self, kind: EntryKind) -> bool {
+        if kind != EntryKind::File {
+            return !self.spent();
         }
+        self.files
+            .fetch_update(
+                std::sync::atomic::Ordering::Relaxed,
+                std::sync::atomic::Ordering::Relaxed,
+                |seen| (seen < self.cap).then_some(seen + 1),
+            )
+            .is_ok()
     }
 
     /// Whether the cap has been reached, so no further directory should be entered.
@@ -1178,7 +1206,6 @@ fn scan_internal(
             }
         };
         report.dirs_read += 1;
-        let files_before = report.files_walked;
 
         for item in listing {
             let item = match item {
@@ -1205,6 +1232,16 @@ fn scan_internal(
 
             let attrs = attrs_from(&meta);
             let kind = kind_from(&meta);
+            if let Some(budget) = &budget
+                && !budget.admit(kind)
+            {
+                // Nothing further is retained: no row, no descent, and the walk says the
+                // cap is why. Recorded rather than skipped silently, because a directory
+                // that stops mid-listing reports a short tally, and a short tally with no
+                // reason attached reads as a complete one.
+                report.budget_stopped = true;
+                continue;
+            }
             report.observe(kind, attrs);
             batch.push(Op::Upsert { path: rel_path.clone(), kind, attrs });
             if batch.len() >= config.batch_size {
@@ -1215,20 +1252,8 @@ fn scan_internal(
             }
 
             if should_descend(kind, attrs, depth, root_dev, config) {
-                if within_budget(budget.as_ref()) {
-                    queue.push_back((rel_path, depth + 1));
-                } else {
-                    // Not enqueued, and the walk says so. Silently dropping the subtree
-                    // would leave a directory reporting a complete roll-up over a subtree
-                    // nobody read.
-                    report.budget_stopped = true;
-                }
+                queue.push_back((rel_path, depth + 1));
             }
-        }
-        // Once per directory rather than once per file: the write lands next to the
-        // `read_dir` that already dominates this loop's cost.
-        if let Some(budget) = &budget {
-            budget.charge(report.files_walked - files_before);
         }
     }
 
@@ -2147,7 +2172,6 @@ fn walk_worker(
                 continue;
             }
             let abs_dir = root.join(&rel_dir);
-            let files_before = report.files_walked;
             #[cfg(target_os = "macos")]
             {
                 if let Some(diagnostics) = diagnostics {
@@ -2189,9 +2213,6 @@ fn walk_worker(
                             consumer_gone = true;
                             break 'walk;
                         }
-                    }
-                    if let Some(budget) = budget {
-                        budget.charge(report.files_walked - files_before);
                     }
                     continue;
                 }
@@ -2265,12 +2286,6 @@ fn walk_worker(
                     break 'walk;
                 }
             }
-            // Once per directory, after it is fully listed. The `read_dir` failure above
-            // returns here having observed nothing, so its charge is zero and costs a
-            // branch rather than a write.
-            if let Some(budget) = budget {
-                budget.charge(report.files_walked - files_before);
-            }
         }
         report.attribution.send_ns += chunk_send_ns;
         let chunk_work_ns = elapsed_ns(chunk_started).saturating_sub(chunk_send_ns);
@@ -2320,15 +2335,18 @@ fn record_walk_entry(
     chunk_send_ns: &mut u64,
     diagnostics: Option<&ScanDiagnosticsRecorder>,
 ) -> bool {
-    let rel_path = rel_dir.join(name);
-    let mut descend = should_descend(kind, attrs, depth, root_dev, config);
-    if descend && !within_budget(budget) {
-        // In scope, and not read, because the cap was reached first. Recorded rather than
-        // dropped: a silently skipped subtree leaves its parent reporting a complete
-        // roll-up over entries nobody looked at.
-        descend = false;
+    if let Some(budget) = budget
+        && !budget.admit(kind)
+    {
+        // Nothing further is retained: no row, no descent, and the walk says the cap is
+        // why. Recorded rather than skipped silently, because a directory that stops
+        // mid-listing reports a short tally, and a short tally with no reason attached
+        // reads as a complete one.
         report.budget_stopped = true;
+        return true;
     }
+    let rel_path = rel_dir.join(name);
+    let descend = should_descend(kind, attrs, depth, root_dev, config);
     report.observe(kind, attrs);
     batch.push(Op::Upsert { path: rel_path.clone(), kind, attrs });
     if batch.len() >= config.batch_size {
@@ -4397,6 +4415,54 @@ mod tests {
     /// with it. Both builds compiled, passed every other test, and reported zero. This
     /// asserts the relationships a real walk must satisfy, so the next such edit fails
     /// here instead of in a report someone believes.
+    /// A capped walk retains exactly the cap, however many workers are claiming from it.
+    ///
+    /// The walk-level tests fix the count for one walk; this fixes it for concurrent
+    /// claimants, which they cannot: a per-thread counter or a per-claim reservation would
+    /// satisfy them and fail here.
+    ///
+    /// **What this does not prove**, stated because the gap is easy to assume away: it does
+    /// not falsify a load-compare-`fetch_add`, which admits `cap + workers` when several
+    /// threads read the old value and all add. That window is two instructions wide, and
+    /// running this against such an implementation passes on every host tried. The
+    /// `fetch_update` is correct by construction rather than by this test, and swapping it
+    /// for the racier form is a change no test here will catch.
+    #[test]
+    fn a_budget_admits_exactly_its_cap_under_contention() {
+        const CAP: u64 = 1_000;
+        const WORKERS: usize = 8;
+        const ATTEMPTS: usize = 400;
+
+        let budget =
+            std::sync::Arc::new(Budget { cap: CAP, files: std::sync::atomic::AtomicU64::new(0) });
+        let admitted = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+        std::thread::scope(|scope| {
+            for _ in 0..WORKERS {
+                let budget = std::sync::Arc::clone(&budget);
+                let admitted = std::sync::Arc::clone(&admitted);
+                scope.spawn(move || {
+                    for _ in 0..ATTEMPTS {
+                        if budget.admit(EntryKind::File) {
+                            admitted.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        }
+                    }
+                });
+            }
+        });
+
+        assert!(
+            (WORKERS * ATTEMPTS) as u64 > CAP,
+            "the workers must collectively ask for more than the cap, or nothing contends"
+        );
+        assert_eq!(
+            admitted.load(std::sync::atomic::Ordering::Relaxed),
+            CAP,
+            "exactly the cap was admitted, never one more"
+        );
+        assert!(!budget.admit(EntryKind::File), "and a spent budget admits nothing further");
+        assert!(!budget.admit(EntryKind::Dir), "of any kind");
+    }
+
     #[test]
     fn a_walk_moves_every_counter_it_should() {
         // Both walkers, because they are separate loops with separate call sites. The

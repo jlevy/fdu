@@ -330,9 +330,8 @@ pub struct Cli {
     ///
     /// Scope, not a display limit: the walk stops reading, so the entries beyond the cap
     /// are absent from the index rather than withheld from the output. Coverage becomes
-    /// partial and says `budget`. Checked between directories, so the count can overshoot
-    /// by the entries of the directories already being read -- a directory is listed whole
-    /// or not at all.
+    /// partial and says `budget`. Exactly N files are retained, never one more, so a
+    /// directory may be listed only partly -- which the partial coverage says.
     #[arg(long, value_name = "N", help_heading = "SCOPE")]
     pub max_files: Option<u64>,
 

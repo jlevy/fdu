@@ -1437,10 +1437,16 @@ def check_a_file_cap_stops_the_walk_rather_than_the_answer() -> None:
         assert full.status.complete is True
         assert full_scope.max_files is None
 
+        cap = 2 * per_dir + 3
         capped = fdu.open(
             root,
             cache=fdu.CachePolicy.OFF,
-            scan=fdu.ScanOptions(max_files=2 * per_dir, threads=1),
+            scan=fdu.ScanOptions(max_files=cap, threads=1),
+        )
+        assert capped.total().files == cap, (
+            "the cap is strict: exactly that many files, never one more, because the cap is "
+            "part of the scope identity and two indexes claiming one identity must hold the "
+            "same inventory"
         )
         assert capped.total().files < full.total().files, (
             "the cap has to leave entries out of the index, not out of one answer"
@@ -1453,7 +1459,7 @@ def check_a_file_cap_stops_the_walk_rather_than_the_answer() -> None:
 
         # Scope, so it is part of the identity a consumer keys a cache on.
         capped_scope = capped.read().scope
-        assert capped_scope.max_files == 2 * per_dir
+        assert capped_scope.max_files == cap
         assert capped_scope.hidden_fingerprint == full_scope.hidden_fingerprint, (
             "the cap must not be smuggled into another fingerprint"
         )

@@ -33,13 +33,20 @@ fn fixture() -> tempfile::TempDir {
     let root = dir.path();
     for directory in 0..DIRS {
         let child = root.join(format!("d{directory:02}"));
-        std::fs::create_dir_all(&child).expect("mkdir");
+        // One level of nesting, so some directories are only *reached* after the cap has
+        // filled. Every top-level directory is seen while listing the root, before a single
+        // file has been counted, so a fixture one level deep cannot tell "refused because
+        // the cap was spent" from "admitted because it was seen first".
+        std::fs::create_dir_all(child.join("sub")).expect("mkdir");
         for file in 0..PER_DIR {
             std::fs::write(child.join(format!("f{file}.txt")), b"x").expect("write");
         }
     }
     dir
 }
+
+/// Directories in the fixture: one per top level, plus each one's `sub`, plus the root.
+const TREE_DIRS: usize = DIRS * 2;
 
 fn scanned(root: &Path, max_files: Option<u64>, threads: Option<usize>) -> (Index, ScanReport) {
     let config = ScanConfig { max_files, threads, ..ScanConfig::default() };
@@ -55,7 +62,7 @@ fn a_capped_walk_reads_fewer_directories_than_an_uncapped_one() {
     let dir = fixture();
 
     let (full, full_report) = scanned(dir.path(), None, Some(1));
-    assert_eq!(full_report.dirs_read, (DIRS + 1) as u64, "root plus every child directory");
+    assert_eq!(full_report.dirs_read, (TREE_DIRS + 1) as u64, "root plus every directory");
     assert!(full_report.is_complete(), "nothing bounded it");
     assert_eq!(full_report.coverage(), Status::Complete);
     assert_eq!(full.total().files, (DIRS * PER_DIR) as u64);
@@ -81,53 +88,50 @@ fn a_capped_walk_reads_fewer_directories_than_an_uncapped_one() {
     assert!(capped.total().files < full.total().files, "and holds fewer entries");
 }
 
-/// The overshoot a between-directories bound allows is bounded, and directories are whole.
+/// The cap is exact, and a short directory says why rather than saying nothing.
 ///
-/// A cap checked inside a directory would hit the number exactly and leave that directory
-/// reporting its own tallies as though it had been listed completely -- wrong, and silent,
-/// which is the pair "truncate freely, never silently" exists to forbid. Overshooting by
-/// at most the directories already in flight is the price, and it is the right one.
+/// Strictness is not a nicety here: the cap is fingerprinted scope, so two indexes claiming
+/// one scope identity have to hold the same inventory. A bound that admits "the cap, plus
+/// whatever was already in flight" is a different number on every run and on every machine,
+/// which makes the identity a claim the engine does not keep.
+///
+/// The first version stopped between directories so a directory was read whole or not at
+/// all, reasoning that a half-listed directory would present a short tally as complete. The
+/// reasoning was sound and the premise was wrong: a walk the cap stopped marks coverage
+/// partial from the root down, so the short tally is already not silent. The objection it
+/// answered did not exist, and the overshoot it bought was observable.
 #[test]
-fn a_directory_is_read_whole_or_not_at_all() {
+fn the_cap_is_exact_and_a_short_directory_says_so() {
     let dir = fixture();
-    let cap = (2 * PER_DIR) as u64;
+    let cap = (2 * PER_DIR + 3) as u64;
+    assert!(
+        !cap.is_multiple_of(PER_DIR as u64),
+        "the cap must fall mid-directory, or this proves nothing about partial listings"
+    );
     let (capped, report) = scanned(dir.path(), Some(cap), Some(1));
 
-    assert!(report.files_walked >= cap, "the cap is a floor for a serial walk, not a ceiling");
-    assert_eq!(
-        report.files_walked % (PER_DIR as u64),
-        0,
-        "every directory that was read contributed all {PER_DIR} of its files: {}",
-        report.files_walked
-    );
+    assert_eq!(report.files_walked, cap, "exactly the cap, never one more");
+    assert_eq!(capped.total().files, cap, "and the index holds exactly that many");
 
-    // A directory *row* exists for every child of a directory that was read, whether or
-    // not that child was itself entered -- so a row is not evidence the subtree was walked,
-    // and the two cases have to be told apart by what they report rather than by presence.
-    // Every retained roll-up is therefore either the whole directory or nothing at all.
-    let mut read = 0;
-    let mut unread = 0;
-    for directory in 0..DIRS {
-        let name = format!("d{directory:02}");
-        let Some(rollup) = capped.rollup(Path::new(&name)) else {
-            continue;
-        };
-        assert!(
-            rollup.files == PER_DIR as u64 || rollup.files == 0,
-            "{name} was listed whole or not at all, never partly: {}",
-            rollup.files
-        );
-        if rollup.files == 0 { unread += 1 } else { read += 1 }
-    }
+    // Nothing at all is retained past the file the cap stopped on -- not a directory, not
+    // a symlink. Charging only files while still admitting everything else would keep the
+    // file count exact and the *inventory* different, which is the thing the fingerprint
+    // claims and the whole reason the cap is strict.
     assert!(
-        read > 0 && unread > 0,
-        "the fixture must produce both cases: {read} read, {unread} not"
+        capped.total().dirs < TREE_DIRS as u64,
+        "no directory reached after the cap was spent is retained: {} of {TREE_DIRS}",
+        capped.total().dirs
     );
 
-    // And the zero is never presented as a complete answer. This is the assertion that
-    // makes the design honest rather than merely bounded: a consumer asking about a
-    // directory the cap kept the walk out of is told its coverage is partial and why,
-    // instead of reading an empty directory that is not empty.
+    // Some directory was listed only partly, which is what the strict cap costs.
+    let short = (0..DIRS)
+        .filter_map(|directory| capped.rollup(Path::new(&format!("d{directory:02}"))))
+        .any(|rollup| rollup.files > 0 && rollup.files < PER_DIR as u64);
+    assert!(short, "the cap fell inside a directory, so one of them is short");
+
+    // And no directory presents its short or absent tally as a complete answer. That is
+    // what makes the strictness honest rather than merely exact: a consumer asking about a
+    // directory the cap cut off is told its coverage is partial and why.
     for directory in 0..DIRS {
         let name = format!("d{directory:02}");
         let Some(provenance) = capped.provenance(Path::new(&name)) else {
@@ -242,49 +246,22 @@ fn a_budget_stopped_walk_is_not_cached() {
     );
 }
 
-/// The cap is one budget for the whole walk, not one per worker.
+/// The cap is one number, whatever the thread count.
 ///
-/// A per-worker counter admits `cap * workers` files and makes the bound depend on a thread
-/// count that is deliberately not part of the scope -- so the same cap over the same tree
-/// would retain different sets on two machines, which is exactly what fingerprinting the
-/// cap is supposed to prevent.
+/// A per-worker counter admits `cap * workers`; an unsynchronised shared one admits
+/// `cap + workers` when several read the old value and all add. "Exactly the cap" rules out
+/// both, and it is what the fingerprint needs -- the thread count is deliberately not part
+/// of the scope, so it must not decide how much a capped index holds.
 #[test]
 fn the_cap_is_shared_across_workers() {
     let dir = fixture();
-    // Five directories' worth, chosen so the two hypotheses give different numbers. A
-    // shared counter admits at most `cap + workers * PER_DIR` = 56; a per-worker counter
-    // admits about `workers * cap` = 80. At the obvious cap of two directories they are
-    // both 32 and the test proves nothing -- which is what the first draft did, and the
-    // per-worker mutation passed against it.
-    let cap = (5 * PER_DIR) as u64;
-    let workers = 2;
+    let cap = (5 * PER_DIR - 2) as u64;
     let (_, serial) = scanned(dir.path(), Some(cap), Some(1));
-    let (_, parallel) = scanned(dir.path(), Some(cap), Some(workers));
+    let (_, parallel) = scanned(dir.path(), Some(cap), Some(4));
 
     assert!(serial.budget_stopped && parallel.budget_stopped, "both walks hit the cap");
-
-    // The invariant, stated rather than inferred. One shared counter means at most one
-    // directory per worker is still being read when the cap falls, so the overshoot is
-    // bounded by `workers * PER_DIR`. A per-worker counter admits `workers * cap` before
-    // the same overshoot -- which is a different number, and the reason to write the bound
-    // out: "fewer than the whole tree" is satisfied by both, and a first draft of this test
-    // asserted exactly that and passed against a per-worker budget.
-    //
-    // `threads` is explicit, so `WorkerPool::fixed` makes `workers` the real count rather
-    // than a floor the adaptive pool may grow past.
-    let overshoot = (workers * PER_DIR) as u64;
-    assert!(
-        parallel.files_walked <= cap + overshoot,
-        "one budget for the walk, not one per worker: {} > {} + {}",
-        parallel.files_walked,
-        cap,
-        overshoot
-    );
-    assert!(
-        serial.files_walked <= cap + PER_DIR as u64,
-        "and a serial walk overshoots by at most the one directory it was in: {}",
-        serial.files_walked
-    );
+    assert_eq!(serial.files_walked, cap, "serial");
+    assert_eq!(parallel.files_walked, cap, "and four workers agree to the file");
 }
 
 /// Stopping at the cap is reported as a typed condition, not inferred from a count.
