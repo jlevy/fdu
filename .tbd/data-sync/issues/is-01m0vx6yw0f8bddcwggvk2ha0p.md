@@ -3,17 +3,27 @@ type: is
 id: is-01m0vx6yw0f8bddcwggvk2ha0p
 title: "A native walk budget: stop discovery at the cap, and say so"
 kind: task
-status: closed
+status: open
 priority: 1
-version: 4
+version: 7
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
+refs:
+  - kind: pr
+    url: https://github.com/jlevy/fdu/pull/47
+    at: 2026-08-25T09:54:14.654Z
+  - kind: pr
+    url: https://github.com/jlevy/metabrowser/pull/74
+    at: 2026-08-25T09:54:14.655Z
+  - kind: pr
+    url: https://github.com/jlevy/fdu/pull/47#pullrequestreview-5017522830
+    at: 2026-08-25T09:57:37.582Z
 labels: []
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-25T07:30:01.728Z
-updated_at: 2026-08-25T08:59:08.587Z
-closed_at: 2026-08-25T08:59:08.587Z
-close_reason: "Native walk budget shipped: --max-files / ScanOptions.max_files, fingerprinted into ScanScope, snapshot format 4, coverage Partial(Budget) with a typed ResourceStop issue. Eight engine tests plus a Python smoke check, mutation-checked. Reconcile-side budgeting is recorded in the notes as deliberately out of scope; watching a capped index is refused."
+updated_at: 2026-08-25T09:57:37.584Z
+closed_at: null
+close_reason: null
 resolution: null
 duplicate_of: null
 ---
@@ -114,3 +124,5 @@ correctly needs a budget seeded from the index's current file count and an addit
 rule, and it must never reach the removal branch above. Watching a capped index is refused
 outright for the adjacent reason -- a creation inside an unread subtree would be admitted
 while its siblings stayed missing, assembling a subtree nobody walked one event at a time.
+
+Reopened: Reopened by exact-head adoption review at FDU d19b0ce against MetaBrowser 0577bb1. FDU checks max_files between whole directories and deliberately overshoots (scan.rs:180-196, 401-448), while the shipped Python provider stops before the next retained row once the regular-file count reaches the strict max_files limit (walker.py:412-415, 462-474). MetaBrowser defines max_files as the regular-file discovery limit and Phase 2 requires the same discovery stop. A provider fingerprint cannot identify equivalent scope if the same cap retains different inventories. Preserve FDU performance, but implement a strict externally observable cap or revise both providers and the conformance contract together with an agreement fixture; do not close on partial coverage alone.
