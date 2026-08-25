@@ -19,24 +19,50 @@
     "which is checked rather than hashed."
   ],
   "recipe": {
-    "components": ["hidden_allowlist", "max_depth", "max_files"],
+    "components": [
+      "hidden_allowlist",
+      "max_depth",
+      "max_files"
+    ],
     "pair_encoding": "sorted [name, value] string pairs",
-    "json": { "ensure_ascii": false, "separators": [",", ":"] },
+    "json": {
+      "ensure_ascii": false,
+      "separators": [
+        ",",
+        ":"
+      ]
+    },
     "hash": "sha256-hex"
   },
   "cases": [
     {
       "name": "consumer-defaults",
       "why": "the config a consumer gets without asking for anything",
-      "hidden_allowlist": [".logs", ".state"],
+      "hidden_allowlist": [
+        ".logs",
+        ".state"
+      ],
       "max_depth": 20,
       "max_files": 500000,
       "digest": "b5cae1a2474e08d2d228d6885d64f8190e53fdb9b3bdc6edb44676c8ef1de468"
     },
     {
+      "name": "this-repository-s-provider",
+      "why": "the scope open_tree actually opens, so the digest and the open cannot drift",
+      "hidden_allowlist": [
+        ".github"
+      ],
+      "max_depth": 20,
+      "max_files": 500000,
+      "digest": "1fa8e93bc42da3a50d6b39b4d421ed49d811ce124b4bb58343d45b2f797470de"
+    },
+    {
       "name": "provider-allowlist",
       "why": "what this repository's reference provider opens with",
-      "hidden_allowlist": [".github", ".cargo"],
+      "hidden_allowlist": [
+        ".github",
+        ".cargo"
+      ],
       "max_depth": 20,
       "max_files": 500000,
       "digest": "7477d7235c4ef211989fe3a90c5d9792ffbc48445776ac5dc9880ea4ebd70c77"
@@ -44,7 +70,10 @@
     {
       "name": "allowlist-order-is-not-identity",
       "why": "the allowlist is a set, so its written order must not reach the digest",
-      "hidden_allowlist": [".cargo", ".github"],
+      "hidden_allowlist": [
+        ".cargo",
+        ".github"
+      ],
       "max_depth": 20,
       "max_files": 500000,
       "digest": "7477d7235c4ef211989fe3a90c5d9792ffbc48445776ac5dc9880ea4ebd70c77"
@@ -60,7 +89,10 @@
     {
       "name": "non-ascii-allowlist",
       "why": "the case that catches ensure_ascii, and the only one that can",
-      "hidden_allowlist": [".café", ".日本"],
+      "hidden_allowlist": [
+        ".café",
+        ".日本"
+      ],
       "max_depth": 20,
       "max_files": 500000,
       "digest": "b3db66bcd8269feb807229152fbbf605a9b575485e887893c2e58a44d776099e"
@@ -68,7 +100,9 @@
     {
       "name": "narrow-scope",
       "why": "the smallest legal bounds, so a digest cannot be reading a default",
-      "hidden_allowlist": [".github"],
+      "hidden_allowlist": [
+        ".github"
+      ],
       "max_depth": 1,
       "max_files": 1,
       "digest": "e99c07f8fd951a312e453b45ecf72932ac8d4ec316e53c419f018e9412c1437c"

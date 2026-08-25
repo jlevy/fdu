@@ -68,6 +68,19 @@ PLANE_RULE = "gitignore"
 #: authors wrote and expect to see.
 HIDDEN_ALLOW = (".github",)
 
+#: The bounds a provider view is opened under, and part of its scope identity.
+#:
+#: Both are required rather than optional, and that is the point of naming them here: a
+#: consuming contract has no way to spell an unbounded walk, so a provider that opened
+#: without them would have an inventory the digest above cannot describe.
+#:
+#: The cap bounds the *index* rather than one walk -- a refresh that finds more is refused
+#: at the same bound, and so is a file arriving under a live watch -- so an index opened
+#: this way stays inside its bound for as long as it lives. Coverage says `budget` when it
+#: is holding the line, which is the fact a view layer needs to caption a short tally.
+MAX_DEPTH = 20
+MAX_FILES = 500_000
+
 
 @dataclass(frozen=True, slots=True)
 class Row:
@@ -220,6 +233,24 @@ def semantic_fingerprint(scope: fdu.ScanScope) -> str:
     )
 
 
+def _options() -> fdu.ScanOptions:
+    """The one scope this provider opens under, so the digest and the open cannot drift.
+
+    Both `open_tree` and `scope_fingerprint` need it, and building it twice is how an
+    adapter ends up hashing a scope it did not open.
+    """
+
+    return fdu.ScanOptions(
+        max_depth=MAX_DEPTH,
+        max_files=MAX_FILES,
+        tag_rules=(PLANE_RULE,),
+        promote=(PLANE_RULE,),
+        hidden="prune",
+        hidden_allow=HIDDEN_ALLOW,
+        special="prune",
+    )
+
+
 def open_tree(root: Path) -> fdu.Index:
     """Open an index a browser can serve from: promoted plane, hidden and special pruned.
 
@@ -229,25 +260,14 @@ def open_tree(root: Path) -> fdu.Index:
     file. Excluding at the scope keeps one inventory behind both, and the scope digest above
     records which inventory it is.
 
-    **What is missing here, and it is one thing.** A consumer opens bounded -- a positive
-    depth and a positive file cap, both of which `scope_fingerprint` above requires. This
-    opens unbounded, because a bounded fdu index cannot currently be watched
-    (`ScanConfig::validate_for_watch_scope`), and `main()` below follows the tree. Both
-    cannot be honest until that gap closes, and giving an unbounded scope invented digest
-    bytes would hide it rather than close it -- so `scope_fingerprint` refuses these
-    options today, deliberately. `fdu-7sou`.
+    Bounded, which is what a consumer opens with and what `scope_fingerprint` above
+    requires: the digest names a depth and a cap, so a provider that opened without them
+    would have an inventory the digest cannot describe. Both bounds survive the watch
+    `main()` starts below -- depth is checked per event, and the cap is held by the index
+    itself.
     """
 
-    return fdu.open(
-        root,
-        scan=fdu.ScanOptions(
-            tag_rules=(PLANE_RULE,),
-            promote=(PLANE_RULE,),
-            hidden="prune",
-            hidden_allow=HIDDEN_ALLOW,
-            special="prune",
-        ),
-    )
+    return fdu.open(root, scan=_options())
 
 
 def listing(index: fdu.Index, path: Path, limit: int | None = None) -> tuple[Row, ...]:
@@ -346,7 +366,15 @@ def main() -> None:
     # The scope arrives on a bundle rather than on the index, because it is a fact about
     # one coherent read: an index that rebinds its rules mid-session has a scope that moved,
     # and a value cached off the handle would keep saying the old one.
-    print(json.dumps({"identity": semantic_fingerprint(index.read().scope)}))
+    bundle = index.read()
+    print(
+        json.dumps(
+            {
+                "semantic": semantic_fingerprint(bundle.scope),
+                "scope": scope_fingerprint(_options()),
+            }
+        )
+    )
     for row in listing(index, Path(), limit=10):
         print(json.dumps({"name": row.name, "bytes": row.bytes, "shown": row.shown_bytes}))
 

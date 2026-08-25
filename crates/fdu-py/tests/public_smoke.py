@@ -533,6 +533,12 @@ def check_the_browser_provider_example_holds_the_contract_it_documents() -> None
         )
         assert example.scope_fingerprint(replayed) == case["digest"], case["name"]
 
+    # The provider's own scope is one of the fixture cases above, which is what keeps the
+    # digest and the open from drifting: `open_tree` builds this same value.
+    assert example.scope_fingerprint(example._options()) == next(
+        case["digest"] for case in fixture["cases"] if case["name"] == "this-repository-s-provider"
+    ), "the scope the example opens must be the scope its digest names"
+
     options = fdu.ScanOptions(
         hidden="prune",
         special="prune",
