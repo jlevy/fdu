@@ -866,14 +866,19 @@ impl ReconcileTarget<'_> {
         Ok(())
     }
 
-    fn begin_reconcile(&mut self, path: &Path) -> Result<u64> {
+    fn begin_reconcile(&mut self, path: &Path) -> Result<(u64, AppliedDelta)> {
         match self {
             Self::Direct(index) => index.begin_reconcile(path),
             Self::Shared(handle) => handle.begin_reconcile(path),
         }
     }
 
-    fn finish_reconcile(&mut self, path: &Path, started_at: u64, coverage: Status) -> Result<()> {
+    fn finish_reconcile(
+        &mut self,
+        path: &Path,
+        started_at: u64,
+        coverage: Status,
+    ) -> Result<AppliedDelta> {
         match self {
             Self::Direct(index) => index.finish_reconcile(path, started_at, coverage),
             Self::Shared(handle) => handle.finish_reconcile(path, started_at, coverage),
@@ -2938,21 +2943,28 @@ fn reconcile_target(
         return Err(Error::SubtreeOutsideScanScope { path: subtree, scope: config.scope() });
     }
     let subtree = resolve_subtree_root(target, &subtree, config)?;
-    let started_at = target.begin_reconcile(&subtree)?;
+    // The sweep's own transitions go through the sink like every other committed delta.
+    // They are effective commits -- they advance the clock and enter the journal -- and a
+    // caller told it would receive "every effective committed delta" was quietly receiving
+    // only the ones that carried operations.
+    let (started_at, opened) = target.begin_reconcile(&subtree)?;
+    sink(&opened);
     match reconcile_target_inner(target, &subtree, config, MAX_DEFERRED_RECONCILE_OPS, sink) {
         Ok(report) => {
-            target.finish_reconcile(&subtree, started_at, report.coverage())?;
+            let closed = target.finish_reconcile(&subtree, started_at, report.coverage())?;
+            sink(&closed);
             Ok(report)
         }
         Err(error) => {
             // The pass returned an error rather than completing around one, which is
             // a different fact from an unreadable directory and reads differently to a
             // consumer deciding whether to retry.
-            target.finish_reconcile(
+            let closed = target.finish_reconcile(
                 &subtree,
                 started_at,
                 Status::Partial(CoverageReason::Failed),
             )?;
+            sink(&closed);
             Err(error)
         }
     }
@@ -5539,8 +5551,45 @@ mod tests {
         // revalidated, and the interval is where the index records that -- so a clock that
         // had not moved would be an index claiming nothing had changed about how far its
         // answers can be trusted, immediately after checking every one of them.
+        //
+        // Asserted through the sink rather than only against the index clock. This callback
+        // is documented as receiving every effective committed delta, and checking the
+        // clock alone let it receive none of them and still pass.
+        assert_sweep_deltas(&deltas, before_clock, Path::new(""));
         assert_eq!(index.clock().0, before_clock.0 + 2);
         assert_eq!(index.total(), before_total);
+    }
+
+    /// The two deltas a completed sweep publishes, in order, at consecutive clocks.
+    #[track_caller]
+    fn assert_sweep_deltas(deltas: &[AppliedDelta], before: crate::Clock, subtree: &Path) {
+        let state: Vec<(u64, &crate::StateChange)> = deltas
+            .iter()
+            .flat_map(|delta| delta.state.iter().map(move |change| (delta.clock.0, change)))
+            .collect();
+        assert_eq!(
+            state,
+            vec![
+                (
+                    before.0 + 1,
+                    &crate::StateChange::Freshness {
+                        path: subtree.to_path_buf(),
+                        freshness: crate::Freshness::Reconciling,
+                        reason: None,
+                    }
+                ),
+                (
+                    before.0 + 2,
+                    &crate::StateChange::Freshness {
+                        path: subtree.to_path_buf(),
+                        freshness: crate::Freshness::Fresh,
+                        reason: None,
+                    }
+                ),
+                (before.0 + 2, &crate::StateChange::Verified { path: subtree.to_path_buf() }),
+            ],
+            "the sweep announced itself and then recorded what it verified: {deltas:?}"
+        );
     }
 
     #[test]
@@ -5832,9 +5881,10 @@ mod tests {
             deltas.iter().all(|delta| delta.ops.is_empty()),
             "an unchanged tree publishes no mutation: {deltas:?}"
         );
-        // Two state commits, as in the direct case: the sweep announced itself and then
-        // recorded what it verified. Arbitration of the no-ops is what the test is about,
-        // and it is unaffected -- no op reached a delta.
+        // The same two deltas through the same sink, so the shared path cannot quietly
+        // publish less than the direct one. Arbitration of the no-ops is what the test is
+        // about, and it is unaffected -- no op reached a delta.
+        assert_sweep_deltas(&deltas, before_clock, Path::new(""));
         assert_eq!(handle.clock().expect("clock").0, before_clock.0 + 2);
     }
 

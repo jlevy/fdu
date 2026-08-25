@@ -1361,7 +1361,7 @@ impl IndexHandle {
         Ok(())
     }
 
-    pub(crate) fn begin_reconcile(&self, path: &Path) -> crate::Result<u64> {
+    pub(crate) fn begin_reconcile(&self, path: &Path) -> crate::Result<(u64, AppliedDelta)> {
         self.write_index()?.begin_reconcile(path)
     }
 
@@ -1370,7 +1370,7 @@ impl IndexHandle {
         path: &Path,
         started_at: u64,
         coverage: Status,
-    ) -> crate::Result<()> {
+    ) -> crate::Result<AppliedDelta> {
         self.write_index()?.finish_reconcile(path, started_at, coverage)
     }
 
@@ -1946,14 +1946,14 @@ impl Index {
     /// keep and a trust state that says so, at a cursor that names exactly that pairing.
     /// Before this was a commit, the same cursor named the answer before the sweep started
     /// and the answer during it, and nothing in either said which one had been read.
-    pub(crate) fn begin_reconcile(&mut self, path: &Path) -> crate::Result<u64> {
+    pub(crate) fn begin_reconcile(&mut self, path: &Path) -> crate::Result<(u64, AppliedDelta)> {
         let epoch = self.mark_unfresh(path, Freshness::Reconciling);
-        self.commit_state(vec![StateChange::Freshness {
+        let applied = self.commit_state(vec![StateChange::Freshness {
             path: path.to_path_buf(),
             freshness: Freshness::Reconciling,
             reason: None,
         }])?;
-        Ok(epoch)
+        Ok((epoch, applied))
     }
 
     /// Record what a completed sweep established, and commit it.
@@ -1967,17 +1967,16 @@ impl Index {
         path: &Path,
         started_at: u64,
         coverage: Status,
-    ) -> crate::Result<()> {
+    ) -> crate::Result<AppliedDelta> {
         self.freshness_marks
             .retain(|marked, mark| !marked.starts_with(path) || mark.epoch > started_at);
         if let Status::Partial(reason) = coverage {
             self.mark_unfresh_because(path, Freshness::Partial, Some(reason));
-            self.commit_state(vec![StateChange::Freshness {
+            return self.commit_state(vec![StateChange::Freshness {
                 path: path.to_path_buf(),
                 freshness: Freshness::Partial,
                 reason: Some(reason),
-            }])?;
-            return Ok(());
+            }]);
         }
         // A completed sweep stat'd every entry beneath `path`, including the ones the
         // producer elided as no-ops before they ever reached a delta. Per-entry
@@ -2006,8 +2005,7 @@ impl Index {
                 reason: None,
             },
             StateChange::Verified { path: path.to_path_buf() },
-        ])?;
-        Ok(())
+        ])
     }
 
     /// When a completed reconciliation last covered this path, if one did.
@@ -4432,7 +4430,7 @@ mod tests {
         index.apply_ok(&Observation::new(vec![upsert("part", EntryKind::Dir, file_attrs(0, 1))]));
         let before = index.cursor();
 
-        let started = index.begin_reconcile(Path::new("part")).expect("announce");
+        let (started, _) = index.begin_reconcile(Path::new("part")).expect("announce");
         index.finish_reconcile(Path::new("part"), started, Status::Complete).expect("commit");
 
         let since = index.since(before).expect("resume from before the sweep");
@@ -5046,7 +5044,7 @@ mod tests {
         index.apply_ok(&Observation::new(vec![upsert("part", EntryKind::Dir, file_attrs(0, 1))]));
         assert_eq!(index.coverage_at(Path::new("")), Status::Complete, "nothing lost yet");
 
-        let started = index.begin_reconcile(Path::new("part")).expect("announce the sweep");
+        let (started, _) = index.begin_reconcile(Path::new("part")).expect("announce the sweep");
         index
             .finish_reconcile(
                 Path::new("part"),
@@ -5141,7 +5139,7 @@ mod tests {
         index.apply_ok(&Observation::new(vec![upsert("part", EntryKind::Dir, file_attrs(0, 1))]));
         // A sweep that ended without reading everything -- which is what a reconciliation
         // error looks like from here.
-        let started = index.begin_reconcile(Path::new("part")).expect("announce the sweep");
+        let (started, _) = index.begin_reconcile(Path::new("part")).expect("announce the sweep");
         index
             .finish_reconcile(
                 Path::new("part"),

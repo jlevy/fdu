@@ -747,10 +747,57 @@ def check_the_envelope_is_typed_and_its_facts_are_independent() -> None:
             assert any(change.transition is fdu.Transition.PHASE for change in moved.state), (
                 moved.state
             )
+            # Each transition keeps the commit it landed at. Stamping them with the range's
+            # terminal position would say every one of them happened last, which is both
+            # false and unorderable against the operations beside them.
+            assert all(
+                before.clock < change.clock <= moved.cursor.clock for change in moved.state
+            ), (before, moved.cursor, moved.state)
 
         # Giving the watch back puts the phase back, so the state is a fact rather than a
         # latch: an index that once had a watch does not go on claiming one.
         assert index.read().status.phase is fdu.Phase.READY
+
+
+def check_state_and_operations_interleave_at_their_own_clocks() -> None:
+    """A transition carries the commit it landed at, so it can be placed among the rows.
+
+    A refresh commits three things in order: the sweep announces itself, the rows it finds
+    apply, and the sweep records what it verified. Flattened onto one terminal position all
+    three would claim to have happened at the end -- and a consumer replaying them would
+    apply the rows *before* being told the subtree was under reconciliation, which is the
+    ordering the announcement exists to prevent.
+    """
+
+    with tempfile.TemporaryDirectory(prefix="fdu-interleave-") as raw:
+        root = Path(raw)
+        (root / "a.txt").write_text("x", encoding="utf-8")
+        index = fdu.open(root, cache=fdu.CachePolicy.OFF)
+
+        before = index.cursor()
+        (root / "b.txt").write_text("yy", encoding="utf-8")
+        index.refresh()
+
+        moved = index.since(before)
+        opened = [
+            change
+            for change in moved.state
+            if change.transition is fdu.Transition.FRESHNESS
+            and change.freshness is fdu.Freshness.RECONCILING
+        ]
+        verified = [
+            change for change in moved.state if change.transition is fdu.Transition.VERIFIED
+        ]
+        assert opened and verified, moved.state
+        assert moved.changes, "the new file applied in between"
+
+        # Strictly ordered, and the rows sit between the two ends of the sweep.
+        announced = opened[0].clock
+        recorded = verified[0].clock
+        applied = [change.clock for change in moved.changes]
+        assert announced < min(applied) <= max(applied) < recorded, (
+            f"announced at {announced}, rows at {applied}, verified at {recorded}"
+        )
 
 
 def check_a_pinned_assembly_pins_its_clock_too() -> None:
@@ -1605,6 +1652,7 @@ def main() -> None:
     check_a_bundle_answers_a_query_at_the_same_instant_as_its_rows()
     check_empty_is_decidable_from_the_aggregate()
     check_the_envelope_is_typed_and_its_facts_are_independent()
+    check_state_and_operations_interleave_at_their_own_clocks()
     check_a_pinned_assembly_pins_its_clock_too()
     check_a_state_transition_advances_the_version_and_reaches_the_feed()
     check_the_event_loop_adapter_delivers_the_same_batches()

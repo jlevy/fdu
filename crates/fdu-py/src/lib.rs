@@ -2045,15 +2045,11 @@ impl PyWatch {
                 dict.set_item("mtime_ns", change.mtime_ns)?;
                 list.append(dict)?;
             }
-            for change in &batch.state {
-                // The clock is the batch's own terminal position: a batch is delivered
-                // whole, so the transition is in effect by the time a consumer sees any of
-                // it. `since` can be finer because it replays deltas one at a time.
-                state.append(state_change_dict(
-                    py,
-                    batch.cursor.map_or(0, |cursor| cursor.clock.0),
-                    change,
-                )?)?;
+            for committed in &batch.state {
+                // The clock the transition committed at, not the batch's terminal one.
+                // Stamping them all with the end said every transition happened last, which
+                // is both false and unorderable against the changes beside them.
+                state.append(state_change_dict(py, committed.clock.0, &committed.change)?)?;
             }
         }
         out.set_item("changes", list)?;

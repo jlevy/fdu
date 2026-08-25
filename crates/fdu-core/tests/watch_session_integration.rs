@@ -435,14 +435,31 @@ fn a_re_tag_commits_and_the_batch_cursor_follows_it() {
     let batch = retagged.expect("the saved control file should arrive");
 
     assert!(
-        batch.state.iter().any(|change| matches!(
-            change,
+        batch.state.iter().any(|committed| matches!(
+            &committed.change,
             fdu_core::StateChange::Retagged { directories } if !directories.is_empty()
         )),
         "the batch must carry the re-tag it committed: {:?}",
         batch.state
     );
+    // Every transition sits at its own commit, inside the range the batch carried. The
+    // re-tag is last because it is committed after the deltas that triggered it.
     let cursor = batch.cursor.expect("a batch that applied something names a position");
+    assert!(
+        batch.state.iter().all(|committed| committed.clock <= cursor.clock),
+        "a transition cannot sit past the position the batch reports: {:?}",
+        batch.state
+    );
+    let highest_op = batch.changes.iter().map(|change| change.clock).max().unwrap_or(0);
+    assert!(
+        batch
+            .state
+            .iter()
+            .filter(|committed| matches!(committed.change, fdu_core::StateChange::Retagged { .. }))
+            .all(|committed| committed.clock.0 >= highest_op),
+        "the re-tag commits after what triggered it: {:?}",
+        batch.state
+    );
     assert!(
         handle.since(cursor).expect("resume").deltas.is_empty(),
         "the cursor must sit past the re-tag, not behind it"

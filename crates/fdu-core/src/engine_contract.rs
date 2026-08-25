@@ -743,6 +743,21 @@ impl StateChange {
     }
 }
 
+/// One state transition together with the commit it landed at.
+///
+/// The pair, because a transition without its clock is not placeable: a consumer ordering
+/// it against the rows, or resuming from a position just before or after it, needs to know
+/// which commit it belongs to. Flattening a batch's transitions into one list and stamping
+/// them all with the batch's terminal position loses exactly that -- every transition then
+/// claims to have happened at the end, and the interleaving with operations is gone.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct CommittedState {
+    /// The commit this transition landed at.
+    pub clock: Clock,
+    /// What moved.
+    pub change: StateChange,
+}
+
 /// A committed batch containing only effective changes.
 ///
 /// Rows and state travel together. A delta carrying only [`StateChange`]s is ordinary and

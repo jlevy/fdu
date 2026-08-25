@@ -18,7 +18,7 @@ use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use crate::engine_contract::{AppliedDelta, EntryKind, Op, Result, StateChange};
+use crate::engine_contract::{AppliedDelta, CommittedState, EntryKind, Op, Result, StateChange};
 use crate::index::IndexHandle;
 use crate::query::{Provenance, Query, Report, ReportSource, Selection, report};
 use crate::scan::ScanConfig;
@@ -114,7 +114,10 @@ pub struct Batch {
     /// Coverage moving, a sweep verifying a subtree, a replaced run envelope, re-bound tag
     /// rules: each changes what the rows mean without changing any row, so a consumer that
     /// only watched paths would keep an answer that is wrong and was never contradicted.
-    pub state: Vec<StateChange>,
+    ///
+    /// Each keeps the clock it committed at rather than the batch's terminal position, so
+    /// a consumer can order it against `changes` and resume from either side of it.
+    pub state: Vec<CommittedState>,
 }
 
 /// How many dirty directories a batch enumerates before it says "all of them".
@@ -350,7 +353,15 @@ impl Session {
             // own terminal position under the same guard. `None` only when the slice is
             // empty: a batch that carried nothing names no new place to resume from.
             cursor: (!applied.is_empty()).then_some(since.cursor),
-            state: applied.iter().flat_map(|delta| delta.state.iter().cloned()).collect(),
+            state: applied
+                .iter()
+                .flat_map(|delta| {
+                    delta
+                        .state
+                        .iter()
+                        .map(|change| CommittedState { clock: delta.clock, change: change.clone() })
+                })
+                .collect(),
         };
         if !applied.is_empty() {
             self.resume = since.cursor;
