@@ -471,9 +471,25 @@ def check_the_browser_provider_example_holds_the_contract_it_documents() -> None
 
     example = _load_example("browser_provider.py")
 
-    # (1) Identity. Built by hand rather than by calling the example twice, so the test
-    # says what the recipe *is* -- a second implementation has to reproduce these bytes,
-    # and a test that only compared the function to itself would accept any recipe.
+    # (1) Identity, and it is two digests rather than one. Scope says what was admitted to
+    # the index; semantic says what the rules make of it. A consumer keying on one combined
+    # value re-reads for both; one keying on neither serves an answer across a change that
+    # invalidated it.
+    #
+    # The expected bytes are built by hand rather than by calling the example twice, so the
+    # test says what the recipe *is*: sorted `[name, value]` **string** pairs, compact JSON,
+    # SHA-256. A test that compared the function to itself would have accepted the first
+    # draft, which hashed objects with integer values -- internally consistent, and agreeing
+    # with nothing.
+    def pair_digest(components: dict[str, str]) -> str:
+        return hashlib.sha256(
+            json.dumps(
+                [[name, components[name]] for name in sorted(components)],
+                ensure_ascii=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+
     base = fdu.ScanScope(
         max_depth=None,
         follow_symlinks=False,
@@ -483,36 +499,51 @@ def check_the_browser_provider_example_holds_the_contract_it_documents() -> None
         reducers_fingerprint=33,
         hidden_fingerprint=44,
     )
-    expected = hashlib.sha256(
-        json.dumps(
-            [
-                {"name": "hidden", "value": 44},
-                {"name": "reducers", "value": 33},
-                {"name": "tag_rules", "value": 11},
-                {"name": "type_rules", "value": 22},
-            ],
-            ensure_ascii=True,
-            separators=(",", ":"),
-            sort_keys=True,
-        ).encode("utf-8")
-    ).hexdigest()
-    assert example.semantic_fingerprint(base) == expected, example.semantic_fingerprint(base)
+    expected_semantic = pair_digest({"reducers": "33", "tag_rules": "11", "type_rules": "22"})
+    assert example.semantic_fingerprint(base) == expected_semantic
 
-    # Stable for identical components, and moved by every one of them. The loop is the
-    # claim: a recipe that dropped `hidden` would pass three of these four.
-    assert example.semantic_fingerprint(dataclasses.replace(base)) == expected
+    options = fdu.ScanOptions(hidden="prune", hidden_allow=(".github", ".cargo"))
+    expected_scope = pair_digest(
+        {
+            "follow_symlinks": "false",
+            # A structured value is a compact canonical JSON string inside the outer array.
+            "hidden_allowlist": '["' + '","'.join([".cargo", ".github"]) + '"]',
+            "max_depth": "null",
+            "stay_on_filesystem": "false",
+        }
+    )
+    assert example.scope_fingerprint(options) == expected_scope
+
+    # The two move independently, which is the whole reason there are two. Every component
+    # of each reaches its own digest and neither reaches the other's.
     for field, value in [
         ("tag_rules_fingerprint", 99),
         ("type_rules_fingerprint", 99),
         ("reducers_fingerprint", 99),
-        ("hidden_fingerprint", 99),
     ]:
-        moved = example.semantic_fingerprint(dataclasses.replace(base, **{field: value}))
-        assert moved != expected, f"{field} does not reach the combined identity"
+        moved = dataclasses.replace(base, **{field: value})
+        assert example.semantic_fingerprint(moved) != expected_semantic, field
 
-    # Fields that are not fingerprints stay out of it: they are already answered by the
-    # fingerprints that cover them, and folding them in would invalidate caches twice.
-    assert example.semantic_fingerprint(dataclasses.replace(base, max_depth=3)) == expected
+    # The engine's own `hidden_fingerprint` is a cache key, not the consumer's encoding:
+    # the scope digest carries the allowlist itself, because a digest of a list is not the
+    # list and no second implementation could reproduce it.
+    assert (
+        example.semantic_fingerprint(dataclasses.replace(base, hidden_fingerprint=99))
+        == expected_semantic
+    ), "hidden admission is scope identity, not semantic identity"
+
+    for changed in [
+        dataclasses.replace(options, hidden_allow=(".github",)),
+        dataclasses.replace(options, max_depth=3),
+        dataclasses.replace(options, one_filesystem=True),
+    ]:
+        assert example.scope_fingerprint(changed) != expected_scope, changed
+
+    # The allowlist is a set, so its written order is not part of its identity.
+    assert (
+        example.scope_fingerprint(dataclasses.replace(options, hidden_allow=(".cargo", ".github")))
+        == expected_scope
+    )
 
     root = Path(tempfile.mkdtemp(prefix="fdu-provider-"))
     (root / "docs").mkdir()
@@ -555,14 +586,17 @@ def check_the_browser_provider_example_holds_the_contract_it_documents() -> None
         assert "loop" in inner, sorted(inner)
         assert not inner["loop"].is_dir, "counted as a leaf, never descended into"
 
-    # (5) The paged recency slice measures its window from the caller's instant, not from
+    # (5) The bounded recency slice measures its window from the caller's instant, not from
     # its own. Shown by moving the instant rather than by waiting: `modified_since="1h"`
     # against a reference two hours ahead puts a file written now *below* the threshold,
     # which can only happen if the caller's `as_of` is what the window is measured from.
-    # A slice that resolved its own instant per page is how a paged assembly drifts while
-    # its version stands still.
+    #
+    # A slice, deliberately not a page: `Selection.limit` bounds the rows and the section
+    # reports what it withheld, but there is no cursor to resume from and no version to pin
+    # a continuation to, so this cannot be assembled into a complete answer. That gate is
+    # `fdu-91ru`, and the example says so rather than looking like it pages.
     def recent_names(as_of: datetime) -> set[str]:
-        bundle = example.recent_page(index, as_of=as_of, limit=50)
+        bundle = example.recent_slice(index, as_of=as_of, limit=50)
         assert bundle.report is not None
         section = bundle.report.sections[0]
         assert isinstance(section, fdu.FilesSection)

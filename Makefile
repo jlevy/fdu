@@ -52,7 +52,7 @@ build:
 release:
 	$(CARGO) build --locked --release -p fdu --all-features
 
-test: rust-test test-golden content-selfcheck yaml-selfcheck vocabulary-selfcheck test-performance
+test: rust-test test-golden content-selfcheck yaml-selfcheck vocabulary-selfcheck admission-selfcheck test-performance
 
 rust-test:
 	$(CARGO) test --locked --all-features
@@ -67,6 +67,12 @@ yaml-selfcheck: build $(NODE_INSTALL_STAMP)
 # fail in a second rather than after a compile.
 vocabulary-selfcheck:
 	node scripts/check-vocabularies.mjs
+
+# No build either, and for a reason a build could not serve: the sites it polices are
+# behind `cfg(target_os = "macos")`, so compiling on this host does not reach them and a
+# test on this host cannot execute them. The source is the same on every platform.
+admission-selfcheck:
+	node scripts/check-admission-sites.mjs
 
 content-selfcheck: build
 	$(NODE) scripts/content-selfcheck.mjs

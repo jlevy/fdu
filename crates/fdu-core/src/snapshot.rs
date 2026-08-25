@@ -899,8 +899,8 @@ fn os_string_from_bytes(bytes: &[u8]) -> OsString {
 #[cfg(windows)]
 fn os_string_from_bytes(bytes: &[u8]) -> Option<OsString> {
     use std::os::windows::ffi::OsStringExt;
-    // Stable since 1.87, against an MSRV of 1.85 — see the note in content_cache.rs.
-    if bytes.len() % std::mem::size_of::<u16>() != 0 {
+    // Available now the floor is 1.88 — see the note in content_cache.rs.
+    if !bytes.len().is_multiple_of(std::mem::size_of::<u16>()) {
         return None;
     }
     let units: Vec<u16> = bytes

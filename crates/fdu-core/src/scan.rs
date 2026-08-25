@@ -1984,6 +1984,16 @@ fn walk_worker(
                     }
                     report.dirs_read += 1;
                     for entry in entries {
+                        // The same admission the portable loop applies, and it was missing
+                        // here: `admits` is asked from every listing loop, and the bulk
+                        // reader is a listing loop that does not look like one -- it hands
+                        // over name, kind and attrs together, so there is no `read_dir`
+                        // item to attach the check to and it reads as a fast path rather
+                        // than as a fourth place the rule has to hold.
+                        if !admits(&entry.name, config) {
+                            note_pruned_control_file(&entry.name, &rel_dir, config, &mut report);
+                            continue;
+                        }
                         if !record_walk_entry(
                             &rel_dir,
                             depth,
@@ -3174,6 +3184,15 @@ fn reconcile_target_inner(
             if let Some(entries) = bulk_reader.as_mut().and_then(|reader| reader.read(&abs_dir)) {
                 report.scan.dirs_read += 1;
                 for entry in entries {
+                    if !admits(&entry.name, config) {
+                        note_pruned_control_file(
+                            &entry.name,
+                            rel_dir.as_path(),
+                            config,
+                            &mut report.scan,
+                        );
+                        continue;
+                    }
                     let baseline = match known.remove(&entry.name) {
                         Some(baseline) => baseline,
                         None => target.expectation(&rel_dir.join(&entry.name))?,
@@ -3504,6 +3523,12 @@ fn reconcile_wave_worker(
                 let used_bulk = if let Some(entries) = bulk_reader.read(&abs_dir) {
                     result.scan.dirs_read += 1;
                     for entry in entries {
+                        if !admits(&entry.name, config) {
+                            if config.tags().is_control_file(Path::new(&entry.name)) {
+                                pruned_controls.push(rel_dir.clone());
+                            }
+                            continue;
+                        }
                         let baseline = known
                             .remove(&entry.name)
                             .unwrap_or_else(|| index.expectation(&rel_dir.join(&entry.name)));
