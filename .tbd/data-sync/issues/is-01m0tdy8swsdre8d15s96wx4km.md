@@ -5,7 +5,7 @@ title: Watch invalidation batches lose required dirty information
 kind: bug
 status: open
 priority: 1
-version: 12
+version: 13
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 labels:
   - pr47-review
@@ -17,7 +17,7 @@ dependencies:
     target: is-01m0prhqd27m471dn47yt973k0
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T17:43:53.915Z
-updated_at: 2026-08-25T01:54:32.455Z
+updated_at: 2026-08-25T01:59:53.513Z
 closed_at: 2026-08-24T23:31:11.228Z
 close_reason: |
   Shipped. `make check` green, parity holds.
@@ -106,3 +106,9 @@ EXACT-HEAD REVIEW at PR #47 278457a (2026-08-25). The new session resume clock i
 First, the state commits made by begin_reconcile/finish_reconcile never reach the reconciliation sink, so Batch.state omits them; this is reopened on fdu-jxs0. Second, Retagged carries an unbounded Vec<PathBuf> (engine_contract.rs:717-720), while AppliedDelta::len charges that entire vector as one transition (782-783). Session all_dirty drops only dirty_rollups: it still copies every governed directory into Batch.state and also emits one synthetic Change per directory (watch_session.rs:290-304, 334-348). A large control-file set therefore bypasses the journal retention budget and the language-boundary bound exactly when all_dirty claims the path list was dropped. Represent retag scope as bounded paths plus an explicit all marker; charge embedded paths against retention (or evict the oversized delta and advance the journal floor), and omit individual state/changes when all_dirty is the lossless answer.
 
 The unchanged P1 teardown remainder also remains: aio.py still joins for five seconds without checking worker.is_alive(), so a watch interval longer than that can return from teardown with a live worker. The existing provider-state and per-batch-work remainder remains too.
+
+EXACT-HEAD REVIEW at PR #47 fad3d2f (2026-08-25; all 19 checks green). The complete journal-slice construction and async teardown fixes are accepted: Session now resumes from one Cursor and builds from IndexHandle::since after rebind; aio caps the internal pull to 250 ms, checks worker liveness, and raises typed WatchTeardownError.
+
+The carrier remains open for three exact-head gaps. First, Session::next_batch returns None at watch_session.rs:279-281 before consulting since() whenever the filesystem watcher times out. A direct producer commit does not wake that watcher, and the new test at watch_session_integration.rs:345-355 writes b.txt after the direct apply to supply an unrelated wakeup. A refresh/hint commit on an otherwise idle tree is therefore withheld until some later filesystem event. Notify the session on every IndexHandle commit and wait for watcher-or-journal readiness, or perform a bounded journal check without adding a second watcher; test a direct apply alone.
+
+Second, Retagged remains an unbounded Vec<PathBuf> charged as one retained state item, then flattened into unbounded state and synthetic changes even when all_dirty drops dirty_rollups. Use a bounded paths-or-all representation and charge embedded paths against retention. Third, the batch still lacks resulting provider state and per-batch work in the same atomic value.

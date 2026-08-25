@@ -5,7 +5,7 @@ title: "Spec: fdu for interactive clients — the metabrowser contract"
 kind: epic
 status: open
 priority: 1
-version: 57
+version: 58
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 labels: []
 dependencies: []
@@ -57,7 +57,7 @@ child_order_hints:
   - is-01m0tra5gw0ap6nbbzgt7egvr4
   - is-01m0tra6d42b6r8vsecjnh36e8
 created_at: 2026-08-23T07:31:34.794Z
-updated_at: 2026-08-25T01:54:33.661Z
+updated_at: 2026-08-25T01:59:55.368Z
 ---
 Root epic for the interactive-client integration spec: partitioned tallies (tag planes), the embedder watch contract, the session integration shape, and the adoption proof. Each capability lands engine-first and clears the parity harness. The measured basis and the requirement-by-requirement contract map are in the spec.
 
@@ -102,3 +102,5 @@ MONITOR UPDATE: PR #47 advanced from 558461a to exact head 56dcf56 (2026-08-24; 
 MONITOR UPDATE: PR #47 advanced from 56dcf56 to exact head 715f748 (2026-08-25). Removing WatcherGap from coverage is aligned and fdu-5yqb is correctly closed; py.detach on the actual read and exact-or-absent CPU are also aligned. Adoption is still blocked: fdu-vfx7 remains open because a direct producer commit can interleave between multiple watcher/reconcile deltas and be skipped by the returned terminal cursor, and long watch intervals let asyncio teardown return with its worker still alive. fdu-kbir was reopened again because model_ns double-counts extension conversion, one Work type now has conflicting total-versus-projection semantics, binding-payload accounting is non-exhaustive, and the timing-based GIL proof fails the macOS/Python 3.14 CI job. fdu-91ru, fdu-jxs0, and fdu-fltq remain open for the coherent envelope/data clock and recovery distinction.
 
 MONITOR UPDATE: PR #47 advanced from 715f748 to exact head 278457a (2026-08-25; all 19 checks green). The 278457a performance follow-up fully resolves the reviewed fdu-kbir remainder: direct non-overlapping phase timings, distinct ProjectionCost, structural payload charging with an independent oracle, and a forced GIL-progress test; fdu-kbir stays closed. ac38584 correctly makes answer-affecting state a clocked journal commit, but its live delivery is incomplete, so fdu-jxs0 was reopened: reconcile begin/finish commits do not reach the sink used by WatchBatch, and PyWatch replaces actual state clocks with the terminal batch clock. fdu-vfx7 remains open because Retagged's unbounded directory vector bypasses all_dirty and journal retention, async teardown can still return with a live worker, and resulting provider state/work are absent. fdu-fltq remains open for provider-gap versus consumer-reset semantics; fdu-91ru remains open for typed issues/lifecycle and caller-pinned as_of. Remaining adoption gates are unchanged.
+
+MONITOR UPDATE: PR #47 advanced from 278457a to exact head fad3d2f (2026-08-25; all 19 checks green). The complete journal slice fixes the prior concurrent-producer cursor omission and makes reconcile state visible through Session; the short internal async pull plus liveness check and typed teardown error close the teardown finding. Adoption remains blocked on mapped owners: fdu-vfx7 now records that a journal-only producer commit cannot wake an idle Session, plus the unbounded Retagged carrier and missing resulting state/work; fdu-jxs0 remains open for the public reconcile sink and exact per-transition clocks; fdu-fltq remains open because provider gaps still become reset and consumer truncation emits the MetaBrowser-invalid reset + all_dirty combination. fdu-91ru remains open for typed lifecycle/issues and caller-pinned as_of.
