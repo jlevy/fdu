@@ -466,6 +466,19 @@ ambiguity, a fingerprint colliding with the default.
   `:55`) to `Last-Event-ID` and resync.
   Blocked by `fdu-gav9`: an event-loop adapter over a surface that raises under
   concurrent access relocates the defect rather than fixing it.
+- **The terminal state** (`fdu-vfx7`): `Index::engine_state()` assembles trust,
+  coverage, lifecycle and run facts in one place, and `Index::since` captures it inside
+  the guard that already produced the journal slice and the cursor.
+  A batch therefore says what moved, where to resume, *and* how far to trust what the
+  consumer now holds, all from one instant.
+  The field the transitions list used to occupy is now `transitions`, because the two
+  answer different questions and sharing a name invited the mistake this fixes: a
+  consumer folding interval events into its own copy of the state is the mirror the
+  boundary exists to forbid.
+  A follow-up read is not an equivalent substitute and cannot be made one — the next
+  commit can land between the two calls, and the index retains only its current image,
+  so there is nothing to ask for the state as of a position already passed.
+  Both acceptance tests force that interleave rather than racing it.
 
 ### `fdu-4o0m` — the session, and the trace surface
 
@@ -632,6 +645,7 @@ before and after: `--view types` and `--view extensions` are byte-identical.
 | `fdu-mz1a` | `Watch.dirty_rollups`: the roll-ups each batch invalidated | `watch.rs`, `fdu-py/src/lib.rs` |
 | `fdu-rhu3` | `WatchBackend::Poll { interval }`, reachable as `poll_interval` | `watch.rs:WatchBackend` |
 | `fdu-97pb` | `fdu.aio.watch_batches()` and an SSE-resume example | `fdu-py/python/fdu/aio.py`, `examples/sse_resume.py` |
+| `fdu-vfx7` | `EngineState`, carried as `Batch::state` and `Since::state`; `Batch::transitions` renamed from `state` so the two cannot be confused | `index.rs:EngineState`, `watch_session.rs:Batch`, `fdu-py/src/lib.rs:engine_state_dict` |
 
 `WatchConfig` lost `Copy` when the poll interval arrived, which threaded `&WatchConfig`
 through `validate`, `apply_intent`, `verify_intent` and `run_worker`. That is the kind

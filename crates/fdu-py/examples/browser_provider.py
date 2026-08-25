@@ -97,6 +97,13 @@ class Invalidation:
     everything: bool
     #: The consumer's own history expired; its cursor is worthless and it must re-read.
     resync: bool
+    #: Trust, coverage and lifecycle at the batch's own cursor; `None` for an idle step.
+    #:
+    #: A provider contract carries this beside the invalidation because a view layer needs
+    #: both to repaint honestly: which numbers to drop, and what a caption may claim about
+    #: the ones it keeps. Re-reading it afterwards is a different instant, so the two
+    #: halves of one repaint would describe two states with nothing saying so.
+    state: fdu.Status | None
 
 
 def _pair_digest(components: dict[str, str]) -> str:
@@ -221,12 +228,17 @@ def invalidation(batch: fdu.WatchBatch) -> Invalidation:
     move is a full re-read. It is deliberately separate from `all_dirty`, which says the
     tree changed everywhere -- one is "you are lost", the other is "everything moved".
 
+    `state` is the terminal envelope the batch captured under the same read as its changes
+    and its cursor, so an adapter never re-reads for it. That matters more than it looks:
+    a follow-up read is a later instant, and the index keeps only its current image, so
+    there is nothing to ask for the state as of a position already passed. The batch also
+    carries `transitions`, the interval events -- report those, never fold them into a
+    consumer-side copy of the state, which is the mirror this field makes unnecessary.
+
     **What this cannot do yet.** The entry rows still cross the boundary: there is no
-    invalidations-only interest mode, so `changes` is materialised whether or not a consumer
-    reads it, and the batch does not carry the terminal provider state a consumer would
-    otherwise re-read for. Both are open on `fdu-vfx7`. This function is written to want
-    nothing from `changes` so that the mode, when it lands, changes the engine rather than
-    this adapter.
+    invalidations-only interest mode, so `changes` is materialised whether or not a
+    consumer reads it. Open on `fdu-vfx7`. This function is written to want nothing from
+    `changes` so that the mode, when it lands, changes the engine rather than this adapter.
     """
 
     return Invalidation(
@@ -234,6 +246,7 @@ def invalidation(batch: fdu.WatchBatch) -> Invalidation:
         queries=tuple(str(kind) for kind in batch.dirty_queries),
         everything=batch.all_dirty,
         resync=batch.reset,
+        state=batch.state,
     )
 
 

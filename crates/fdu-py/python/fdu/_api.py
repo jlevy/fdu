@@ -516,7 +516,8 @@ class Index:
             truncated=bool(value["truncated"]),
             cursor=_cursor(value["cursor"]),
             changes=tuple(_change(item) for item in value["ops"]),
-            state=tuple(_state_change(item) for item in value["state"]),
+            transitions=tuple(_state_change(item) for item in value["transitions"]),
+            state=status_from_dict(value["state"]),
         )
 
     def watch(self, options: WatchOptions | None = None) -> Watch:
@@ -640,6 +641,7 @@ def _child(item: dict[str, Any]) -> Child:
 
 def _watch_batch(value: dict[str, Any]) -> WatchBatch:
     raw_cursor = value["cursor"]
+    raw_state = value["state"]
     return WatchBatch(
         changes=tuple(_change(item) for item in value["changes"]),
         dirty=bool(value["dirty"]),
@@ -647,7 +649,8 @@ def _watch_batch(value: dict[str, Any]) -> WatchBatch:
         all_dirty=bool(value["all_dirty"]),
         reset=bool(value["reset"]),
         cursor=None if raw_cursor is None else _cursor(raw_cursor),
-        state=tuple(_state_change(item) for item in value["state"]),
+        transitions=tuple(_state_change(item) for item in value["transitions"]),
+        state=None if raw_state is None else status_from_dict(raw_state),
         issues=tuple(_operation_error(item) for item in value["issues"]),
         dirty_queries=tuple(QueryKind(str(kind)) for kind in value["dirty_queries"]),
         work=_work(value["work"]),

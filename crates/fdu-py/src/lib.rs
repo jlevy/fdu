@@ -1261,10 +1261,10 @@ impl PyIndex {
                 ops.append(item)?;
             }
         }
-        let state = PyList::empty(py);
+        let transitions = PyList::empty(py);
         for delta in &since.deltas {
             for change in &delta.state {
-                state.append(state_change_dict(py, delta.clock.0, change)?)?;
+                transitions.append(state_change_dict(py, delta.clock.0, change)?)?;
             }
         }
 
@@ -1272,7 +1272,11 @@ impl PyIndex {
         out.set_item("truncated", since.truncated)?;
         out.set_item("cursor", cursor_dict(py, since.cursor)?)?;
         out.set_item("ops", ops)?;
-        out.set_item("state", state)?;
+        out.set_item("transitions", transitions)?;
+        // From the same guarded read as the ops and the cursor. Asking afterwards is a
+        // second instant, and the index keeps only its current image, so there is nothing
+        // to ask for the state as of a position already passed.
+        out.set_item("state", engine_state_dict(py, &since.state)?)?;
         Ok(out)
     }
 
@@ -1536,6 +1540,27 @@ fn coverage_label_value(status: fdu_core::Status) -> &'static str {
 /// Separate from the status label rather than folded into it, because a consumer that
 /// only branches on complete-or-not should not have to learn six new strings to keep
 /// working.
+/// The complete answer-shaping state at one clock, as a dict.
+///
+/// One renderer for every carrier of it, so a batch and a delta range cannot describe the
+/// same five facts with different keys. The field names match what a bundled read already
+/// spells flat -- a consumer that learned them once from `read()` reads them here without
+/// a second vocabulary.
+fn engine_state_dict<'py>(
+    py: Python<'py>,
+    state: &fdu_core::EngineState,
+) -> PyResult<Bound<'py, PyDict>> {
+    let out = PyDict::new(py);
+    put_scalar(&out, "clock", state.clock.0)?;
+    put_text(&out, "freshness", freshness_label(state.freshness))?;
+    put_text(&out, "phase", state.phase.as_str())?;
+    put_text(&out, "coverage_reason", coverage_reason_label(state.coverage))?;
+    put_scalar(&out, "complete", state.run.complete)?;
+    put_text(&out, "source", source_label(state.run.source))?;
+    out.set_item("errors", error_list(py, &state.run.errors)?)?;
+    Ok(out)
+}
+
 fn coverage_reason_label(status: fdu_core::Status) -> Option<&'static str> {
     let fdu_core::Status::Partial(reason) = status else {
         return None;
@@ -2097,7 +2122,11 @@ impl PyWatch {
 
         let out = PyDict::new(py);
         let list = PyList::empty(py);
-        let state = PyList::empty(py);
+        let transitions = PyList::empty(py);
+        // `None` for an idle step, matching `work` and `cursor` beside it. A step is idle
+        // only when nothing committed since the consumer's position, so the state it is
+        // already holding is still the current one and there is nothing to restate.
+        let mut state: Option<Bound<'_, PyDict>> = None;
         let mut issues = PyList::empty(py);
         let mut dirty_queries: Vec<&'static str> = Vec::new();
         let mut batch_work = work_dict(py, fdu_core::Work::default())?;
@@ -2135,14 +2164,16 @@ impl PyWatch {
             dirty_queries =
                 batch.dirty_queries.iter().map(|kind| fdu_core::QueryKind::as_str(*kind)).collect();
             batch_work = work_dict(py, batch.work)?;
-            for committed in &batch.state {
+            for committed in &batch.transitions {
                 // The clock the transition committed at, not the batch's terminal one.
                 // Stamping them all with the end said every transition happened last, which
                 // is both false and unorderable against the changes beside them.
-                state.append(state_change_dict(py, committed.clock.0, &committed.change)?)?;
+                transitions.append(state_change_dict(py, committed.clock.0, &committed.change)?)?;
             }
+            state = Some(engine_state_dict(py, &batch.state)?);
         }
         out.set_item("changes", list)?;
+        out.set_item("transitions", transitions)?;
         out.set_item("state", state)?;
         out.set_item("issues", issues)?;
         out.set_item("dirty_queries", dirty_queries)?;

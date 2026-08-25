@@ -1076,15 +1076,15 @@ def check_the_envelope_is_typed_and_its_facts_are_independent() -> None:
             assert watching.status.freshness is settled.status.freshness
             # And it reached the change feed, because it changed what a read answers.
             moved = index.since(before)
-            assert any(change.transition is fdu.Transition.PHASE for change in moved.state), (
-                moved.state
+            assert any(change.transition is fdu.Transition.PHASE for change in moved.transitions), (
+                moved.transitions
             )
             # Each transition keeps the commit it landed at. Stamping them with the range's
             # terminal position would say every one of them happened last, which is both
             # false and unorderable against the operations beside them.
             assert all(
-                before.clock < change.clock <= moved.cursor.clock for change in moved.state
-            ), (before, moved.cursor, moved.state)
+                before.clock < change.clock <= moved.cursor.clock for change in moved.transitions
+            ), (before, moved.cursor, moved.transitions)
 
         # Giving the watch back puts the phase back, so the state is a fact rather than a
         # latch: an index that once had a watch does not go on claiming one.
@@ -1113,14 +1113,14 @@ def check_state_and_operations_interleave_at_their_own_clocks() -> None:
         moved = index.since(before)
         opened = [
             change
-            for change in moved.state
+            for change in moved.transitions
             if change.transition is fdu.Transition.FRESHNESS
             and change.freshness is fdu.Freshness.RECONCILING
         ]
         verified = [
-            change for change in moved.state if change.transition is fdu.Transition.VERIFIED
+            change for change in moved.transitions if change.transition is fdu.Transition.VERIFIED
         ]
-        assert opened and verified, moved.state
+        assert opened and verified, moved.transitions
         assert moved.changes, "the new file applied in between"
 
         # Strictly ordered, and the rows sit between the two ends of the sweep.
@@ -1164,6 +1164,56 @@ def check_a_batch_names_which_projections_went_stale() -> None:
         assert fdu.QueryKind.METADATA not in kinds, (
             f"identity facts are fixed for an opened index, so they are never named: {kinds}"
         )
+
+
+def check_a_batch_carries_the_state_at_its_own_cursor() -> None:
+    """A batch says where the engine ended up, not only what moved on the way.
+
+    `changes` says what moved and `transitions` says what shifted underneath them; neither
+    says how far to trust what a consumer is now holding. Answering that with a follow-up
+    read is a different instant -- the next commit can land between the two calls, and the
+    index keeps only its current image, so there is nothing to ask for the state as of a
+    position already passed. Folding the transitions into a consumer-side copy is the other
+    way to get it wrong: two authorities for one fact, diverging the first time one is
+    dropped, reordered or misapplied, with nothing able to detect it.
+
+    The teeth here are the interleave. A commit lands *after* the batch and before the
+    assertions, so an implementation that read the state at assertion time would report the
+    later one -- and the two are deliberately made to differ.
+    """
+
+    with tempfile.TemporaryDirectory(prefix="fdu-terminal-") as raw:
+        root = Path(raw)
+        (root / "seed.txt").write_text("seed", encoding="utf-8")
+        index = fdu.open(root, cache=fdu.CachePolicy.OFF)
+
+        with index.watch(fdu.WatchOptions(interval=0.2)) as watch:
+            (root / "added.rs").write_text("fn main() {}", encoding="utf-8")
+            deadline = time.monotonic() + 30
+            carried: fdu.WatchBatch | None = None
+            for batch in watch:
+                if batch.cursor is not None:
+                    carried = batch
+                    break
+                if time.monotonic() > deadline:
+                    break
+
+        assert carried is not None, "a write should produce a batch that names a position"
+        cursor = carried.cursor
+        assert cursor is not None
+        assert carried.state is not None, "a batch that names a position names its state"
+        assert carried.state.freshness is fdu.Freshness.FRESH, carried.state
+        assert carried.state.phase is fdu.Phase.WATCHING, (
+            f"the batch came from a watch, so that is the phase it saw: {carried.state}"
+        )
+
+        # The commit a follow-up read would have seen and this batch must not. Closing the
+        # watch is itself an answer-affecting transition, so the phase has already moved.
+        assert index.read().status.phase is fdu.Phase.READY, "the index has moved on"
+        assert carried.state.phase is fdu.Phase.WATCHING, (
+            "and the batch still describes the instant it was taken"
+        )
+        assert cursor.clock <= index.cursor().clock, "which is at or behind where the index is"
 
 
 def check_a_batch_reports_what_it_cost_and_not_what_it_waited() -> None:
@@ -1312,15 +1362,15 @@ def check_a_state_transition_advances_the_version_and_reaches_the_feed() -> None
         )
         changed = index.since(before)
         assert not changed.changes, f"nothing about a path moved: {changed.changes}"
-        transitions = {change.transition for change in changed.state}
-        assert fdu.Transition.VERIFIED in transitions, changed.state
-        assert fdu.Transition.FRESHNESS in transitions, changed.state
+        transitions = {change.transition for change in changed.transitions}
+        assert fdu.Transition.VERIFIED in transitions, changed.transitions
+        assert fdu.Transition.FRESHNESS in transitions, changed.transitions
         assert changed.cursor == after, "the feed ends where the index stands"
 
         # And every transition names where it applies, so a consumer can invalidate a
         # subtree rather than everything.
         verified = next(
-            change for change in changed.state if change.transition is fdu.Transition.VERIFIED
+            change for change in changed.transitions if change.transition is fdu.Transition.VERIFIED
         )
         assert verified.paths == (Path(""),), verified
 
@@ -1330,9 +1380,9 @@ def check_a_state_transition_advances_the_version_and_reaches_the_feed() -> None
         # again. That is the point: an answer's trust window moved, and a consumer holding
         # the previous one has to hear so. Only a genuinely identical envelope is skipped,
         # which the engine's own tests pin because nothing here can produce one.
-        assert fdu.Transition.RUN_FACTS in transitions, changed.state
+        assert fdu.Transition.RUN_FACTS in transitions, changed.transitions
         index.refresh()
-        repeated = {change.transition for change in index.since(after).state}
+        repeated = {change.transition for change in index.since(after).transitions}
         assert repeated == transitions, (
             f"a repeated sweep is the same kind of transition: {repeated} vs {transitions}"
         )
@@ -2076,6 +2126,7 @@ def main() -> None:
     check_empty_is_decidable_from_the_aggregate()
     check_the_envelope_is_typed_and_its_facts_are_independent()
     check_state_and_operations_interleave_at_their_own_clocks()
+    check_a_batch_carries_the_state_at_its_own_cursor()
     check_a_batch_names_which_projections_went_stale()
     check_a_batch_reports_what_it_cost_and_not_what_it_waited()
     check_a_pinned_assembly_pins_its_clock_too()

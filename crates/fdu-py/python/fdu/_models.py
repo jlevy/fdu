@@ -1673,11 +1673,29 @@ class WatchBatch:
     cursor: Cursor | None
     """Where the index stands after this batch, or ``None`` for an idle step."""
 
-    state: tuple[StateChange, ...] = ()
+    transitions: tuple[StateChange, ...] = ()
     """Answer-affecting transitions this batch committed, in commit order.
 
     A batch can carry these and no changes at all: a sweep that verified a subtree without
     finding a single difference still moved what the rows may be trusted to mean.
+
+    Interval events, and not the same thing as :attr:`state`: these say what moved, that
+    says where it ended up. Read them to *report* what happened; never fold them into a
+    copy of the state, which is the mirror :attr:`state` exists to make unnecessary.
+    """
+
+    state: Status | None = None
+    """The complete answer-shaping state at :attr:`cursor`, or ``None`` for an idle step.
+
+    Captured inside the same guarded read as the changes and the cursor, so what moved,
+    where to resume, and how far to trust what you hold all describe one instant. Calling
+    :meth:`Index.read` afterwards is not equivalent and cannot be made so: the next commit
+    can land between the two calls, and the index keeps only its current image, so there
+    is nothing to ask for the state as of a position already passed.
+
+    ``None`` only for an idle step, alongside ``cursor`` and ``work``. A step is idle only
+    when nothing committed since the consumer's position, so the state it already holds is
+    still current and there is nothing to restate.
     """
 
     dirty_queries: tuple[QueryKind, ...] = ()
@@ -1765,8 +1783,15 @@ class ChangeSet:
 
     changes: tuple[Change, ...]
 
-    state: tuple[StateChange, ...] = ()
+    transitions: tuple[StateChange, ...] = ()
     """Transitions committed in the same range, in commit order."""
+
+    state: Status | None = None
+    """The complete answer-shaping state at :attr:`cursor`.
+
+    From the same guarded read as the changes and the cursor. ``None`` only for a value
+    built by hand; every :meth:`Index.since` fills it.
+    """
 
 
 @dataclass(frozen=True, slots=True)

@@ -439,30 +439,30 @@ fn a_re_tag_commits_and_the_batch_cursor_follows_it() {
     let batch = retagged.expect("the saved control file should arrive");
 
     assert!(
-        batch.state.iter().any(|committed| matches!(
+        batch.transitions.iter().any(|committed| matches!(
             &committed.change,
             fdu_core::StateChange::Retagged { directories, .. } if !directories.is_empty()
         )),
         "the batch must carry the re-tag it committed: {:?}",
-        batch.state
+        batch.transitions
     );
     // Every transition sits at its own commit, inside the range the batch carried. The
     // re-tag is last because it is committed after the deltas that triggered it.
     let cursor = batch.cursor.expect("a batch that applied something names a position");
     assert!(
-        batch.state.iter().all(|committed| committed.clock <= cursor.clock),
+        batch.transitions.iter().all(|committed| committed.clock <= cursor.clock),
         "a transition cannot sit past the position the batch reports: {:?}",
-        batch.state
+        batch.transitions
     );
     let highest_op = batch.changes.iter().map(|change| change.clock).max().unwrap_or(0);
     assert!(
         batch
-            .state
+            .transitions
             .iter()
             .filter(|committed| matches!(committed.change, fdu_core::StateChange::Retagged { .. }))
             .all(|committed| committed.clock.0 >= highest_op),
         "the re-tag commits after what triggered it: {:?}",
-        batch.state
+        batch.transitions
     );
     assert!(
         handle.since(cursor).expect("resume").deltas.is_empty(),
@@ -541,5 +541,80 @@ fn losing_watch_precision_is_an_issue_rather_than_a_reset() {
     assert!(
         !batch.dirty_rollups.is_empty() || batch.all_dirty,
         "and the aggregates it may have moved are still named"
+    );
+}
+
+/// A batch carries the terminal state at its own cursor, from the read that built it.
+///
+/// The changes say what moved and the transitions say what shifted underneath them;
+/// neither says where it all ended up. A consumer that answered that with a follow-up
+/// read would pair this batch's changes with a later commit's lifecycle, and nothing in
+/// either value would say so -- and folding the transitions into a consumer-side copy is
+/// the mirror the boundary exists to forbid.
+///
+/// The commit here lands *after* the batch and before the assertions, which is what gives
+/// the test teeth: an implementation that read the state at assertion time would report
+/// the later one, and the two are deliberately made to differ.
+#[test]
+fn a_batch_carries_the_terminal_state_at_its_own_cursor() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    fs::write(dir.path().join("seed.txt"), b"seed").expect("seed");
+
+    let config = OpenConfig { policy: CachePolicy::Off, ..OpenConfig::default() };
+    let (index, _report) = open(dir.path(), &config).expect("open");
+    let handle = IndexHandle::new(index);
+    let mut session = Session::new(
+        handle.clone(),
+        ScanConfig::default(),
+        Query {
+            selection: Selection::default(),
+            views: vec![ViewSpec::Summary],
+            ..Query::default()
+        },
+        WatchConfig::default(),
+    )
+    .expect("session");
+
+    fs::write(dir.path().join("later.txt"), b"later").expect("write");
+    let deadline = Instant::now() + SETTLE;
+    let mut carried = None;
+    while Instant::now() < deadline && carried.is_none() {
+        let Some(batch) = session.next_batch(Duration::from_millis(100)).expect("batch") else {
+            continue;
+        };
+        if batch.cursor.is_some() {
+            carried = Some(batch);
+        }
+    }
+    let batch = carried.expect("a write should produce a batch that names a position");
+    let cursor = batch.cursor.expect("filtered on above");
+
+    assert_eq!(
+        batch.state.clock, cursor.clock,
+        "the state must name the position the batch reports, or the two can be paired wrongly"
+    );
+    assert_eq!(batch.state.freshness, fdu_core::Freshness::Fresh, "nothing has cost trust yet");
+
+    // The commit a follow-up read would have seen and this batch must not.
+    handle
+        .apply(&fdu_core::Observation::new(vec![fdu_core::Op::InvalidateSubtree {
+            path: std::path::PathBuf::new(),
+            reason: fdu_core::InvalidateReason::WatchOverflow,
+        }]))
+        .expect("a direct producer commits against the same handle");
+
+    assert_eq!(
+        handle.freshness().expect("freshness"),
+        fdu_core::Freshness::Stale,
+        "the index has moved on"
+    );
+    assert_eq!(
+        batch.state.freshness,
+        fdu_core::Freshness::Fresh,
+        "and the batch still describes the instant it was taken"
+    );
+    assert!(
+        batch.state.clock < handle.clock().expect("clock"),
+        "which is strictly behind where the index now is"
     );
 }

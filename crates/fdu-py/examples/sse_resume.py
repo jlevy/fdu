@@ -24,7 +24,7 @@ having to evict 64k ops from a journal to reach the interesting one.
 
 **What this clock carries.** `since()` replays data changes *and* the transitions that
 decide what those changes mean: a subtree moving from cached to verified, coverage
-narrowing, a replaced run envelope, re-bound tag rules. They arrive in `ChangeSet.state`,
+narrowing, a replaced run envelope, re-bound tag rules. They arrive in `ChangeSet.transitions`,
 committed at the same clock as the rows they describe, so a client resuming from a cursor
 is current on what changed and on how far to trust it. That was not true when this example
 was written -- trust moved by direct mutation, off the clock -- and a feed built on it had

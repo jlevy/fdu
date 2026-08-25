@@ -513,6 +513,18 @@ enum Slot {
 pub struct Since {
     /// Deltas applied strictly after the requested clock, oldest first.
     pub deltas: Vec<AppliedDelta>,
+    /// The complete answer-shaping state at [`Since::cursor`].
+    ///
+    /// Captured here rather than fetched afterwards, and the reason is the same one the
+    /// cursor has: a second call is a second instant. A consumer that read the deltas and
+    /// then asked for status would pair one commit's changes with a later commit's
+    /// lifecycle, and nothing in either value would say so.
+    ///
+    /// This is what makes a batch self-sufficient. The alternative -- hand over the
+    /// transitions and let the consumer fold them into its own copy of the state -- is the
+    /// mirror the boundary exists to forbid: two authorities for one fact, diverging the
+    /// first time a transition is dropped, reordered, or misapplied.
+    pub state: EngineState,
     /// Where the caller now is, captured with the deltas rather than sampled after them.
     ///
     /// Resuming from this is exact. Asking the index for its clock in a second call is
@@ -522,6 +534,49 @@ pub struct Since {
     /// True when the requested clock is older than the retained journal, meaning the
     /// caller has missed changes and must re-read state rather than trust `deltas`.
     pub truncated: bool,
+}
+
+/// Everything about an index that shapes what an answer *means*, at one clock.
+///
+/// Distinct from the answer itself and from the changes that produced it. A consumer needs
+/// all three and needs them from one instant: the rows, what moved, and how far to trust
+/// what it is holding. This is the third.
+///
+/// Every field is independent, which is why they are all here rather than collapsed into
+/// one verdict. An index can be complete and stale, fresh and missing a directory it could
+/// not read, or reconciling while both are true of what it has so far.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct EngineState {
+    /// The version this state describes.
+    pub clock: Clock,
+    /// Whether the index is fully verified, or holds anything stale or unverified.
+    pub freshness: Freshness,
+    /// Whether the whole index accounts for its scope, and why it does not.
+    pub coverage: Status,
+    /// Where the index stands in its own lifecycle.
+    pub phase: Phase,
+    /// Origin, completeness and typed issues of the operation that last filled it.
+    pub run: crate::query::RunFacts,
+}
+
+impl Default for EngineState {
+    /// The state of an index that has just been created and holds nothing.
+    ///
+    /// Written out rather than derived, because [`Freshness`] deliberately has no
+    /// `Default`: there is no answer to "how much do you trust this?" that is safe to
+    /// invent for an arbitrary engine, and deriving one here would put that invention in
+    /// the contract. What *is* well defined is the state of an empty index -- it has no
+    /// freshness marks, so it has nothing stale and nothing missing -- and that is what
+    /// this returns. `default_is_the_state_of_a_new_index` holds the two in agreement.
+    fn default() -> Self {
+        Self {
+            clock: Clock::default(),
+            freshness: Freshness::Fresh,
+            coverage: Status::Complete,
+            phase: Phase::default(),
+            run: crate::query::RunFacts::default(),
+        }
+    }
 }
 
 /// Summary of what one [`Index::apply`] call did.
@@ -1412,14 +1467,15 @@ impl IndexHandle {
             })
         });
 
+        let state = index.engine_state();
         let bundle = ReadBundle {
             clock: index.clock(),
             cursor: index.cursor(),
             scope: index.scope(),
-            freshness: index.freshness(),
-            coverage: index.coverage_at(Path::new("")),
-            phase: index.phase(),
-            run: index.run_facts().clone(),
+            freshness: state.freshness,
+            coverage: state.coverage,
+            phase: state.phase,
+            run: state.run,
             entries: index.len(),
             root: index.root_path().to_path_buf(),
             total,
@@ -2339,7 +2395,24 @@ impl Index {
             // that commit for good, with nothing reporting the loss.
             cursor: self.cursor(),
             truncated: cursor.clock < self.journal_floor,
+            // Under the same guard as the slice and the cursor, which is the whole claim.
+            state: self.engine_state(),
         })
+    }
+
+    /// Capture the complete answer-shaping state as it stands.
+    ///
+    /// The one place it is assembled, so a bundle's envelope and a batch's terminal state
+    /// cannot come to describe the same index differently. Callers hold a read guard; this
+    /// only reads.
+    pub fn engine_state(&self) -> EngineState {
+        EngineState {
+            clock: self.clock,
+            freshness: self.freshness(),
+            coverage: self.coverage_at(Path::new("")),
+            phase: self.phase(),
+            run: self.run_facts().clone(),
+        }
     }
 
     /// Where this index stands in its own lifecycle.
@@ -4859,6 +4932,82 @@ mod tests {
     /// path lets one cursor name two different answers, and nothing in either says which
     /// was read. Coverage narrowing, a sweep verifying a subtree, and a replaced run
     /// envelope are all changes to what the rows mean, so each is a commit.
+    /// A delta range carries the state at its own cursor, not the state whenever it is read.
+    ///
+    /// This is the difference a follow-up read cannot make up, and the reason the state
+    /// rides inside `since()` rather than beside it. A consumer that took the changes and
+    /// then asked the index for its status would pair one commit's changes with a later
+    /// commit's lifecycle, and nothing in either value would say so.
+    ///
+    /// The interleave is forced rather than raced: the second commit lands between the
+    /// capture and the comparison, so the two answers *must* differ. Without that commit
+    /// the test would pass against an implementation that re-read the state afterwards,
+    /// which is exactly the implementation it exists to reject.
+    #[test]
+    fn a_delta_range_carries_the_state_at_its_own_cursor() {
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![
+            upsert("watched", EntryKind::Dir, file_attrs(0, 1)),
+            upsert("watched/a.txt", EntryKind::File, file_attrs(10, 1)),
+        ]));
+        let before = index.cursor();
+        index.apply_ok(&Observation::new(vec![upsert(
+            "watched/b.txt",
+            EntryKind::File,
+            file_attrs(20, 2),
+        )]));
+
+        let captured = index.since(before).expect("resume from before the second write");
+        assert_eq!(
+            captured.state.clock, captured.cursor.clock,
+            "the state names the position it describes, so the two cannot be paired wrongly"
+        );
+        assert_eq!(captured.state.freshness, Freshness::Fresh, "nothing has cost trust yet");
+
+        // The commit a follow-up read would have seen and this capture must not.
+        index.apply_ok(&Observation::new(vec![Op::InvalidateSubtree {
+            path: PathBuf::from("watched"),
+            reason: crate::engine_contract::InvalidateReason::WatchOverflow,
+        }]));
+
+        assert_eq!(index.freshness(), Freshness::Stale, "the index has moved on");
+        assert_eq!(
+            captured.state.freshness,
+            Freshness::Fresh,
+            "and the range still describes the instant it was taken"
+        );
+        assert!(
+            captured.state.clock < index.clock(),
+            "which is strictly behind where the index now is: {:?} vs {:?}",
+            captured.state.clock,
+            index.clock()
+        );
+
+        // And resuming from that position sees the commit the earlier state predates,
+        // rather than a hole where it should have been.
+        let next = index.since(captured.cursor).expect("resume");
+        assert_eq!(
+            next.state.freshness,
+            Freshness::Stale,
+            "the later range carries the later state"
+        );
+        assert_eq!(next.state.clock, index.clock(), "and names the index's own position");
+    }
+
+    /// A state that is assembled twice is two answers, so it is assembled once.
+    ///
+    /// [`EngineState::default`] is written out by hand because [`Freshness`] deliberately
+    /// has none, and a hand-written default is a claim that can drift from the thing it
+    /// claims to describe. This holds it to the one index it is meant to match.
+    #[test]
+    fn default_is_the_state_of_a_new_index() {
+        assert_eq!(
+            EngineState::default(),
+            Index::new("/root").engine_state(),
+            "the default must be the state of an index that holds nothing, not a guess"
+        );
+    }
+
     #[test]
     fn a_state_transition_advances_the_version_and_reaches_the_feed() {
         let mut index = Index::new("/root");

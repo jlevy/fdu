@@ -982,9 +982,18 @@ from emitting millions of provenance-only entry changes into the feed it serves.
 - [x] Trust transitions on the committed delta contract, so `since()` and polling cannot
   disagree about the visible state (`fdu-jxs0`, `fdu-livs`). `AppliedDelta` carries
   `StateChange` beside `Op`; coverage, verification, the run envelope, and re-tagging
-  each commit through it; and `Batch.state` and `ChangeSet.state` deliver them to both
-  surfaces. Charged against the journal’s operation budget rather than being free,
-  because a free transition is a retention bound a producer can walk past
+  each commit through it; and `Batch.transitions` and `ChangeSet.transitions` deliver
+  them to both surfaces.
+  Charged against the journal’s operation budget rather than being free, because a free
+  transition is a retention bound a producer can walk past
+- [x] The terminal engine state on every batch and delta range (`fdu-vfx7`), captured
+  inside the same guarded read as the journal slice and the cursor.
+  Transitions are interval events and say what moved; this says where it ended up, which
+  is the question a consumer resuming from a cursor actually has.
+  A follow-up read is not equivalent and cannot be made so: the next commit can land
+  between the two calls, and the index retains only its current image, so there is
+  nothing to ask for the state as of a position already passed.
+  Folding transitions into a consumer-side copy is the mirror the boundary forbids
 
 ### Phase 6: Adoption proof
 

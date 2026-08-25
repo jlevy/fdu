@@ -154,7 +154,24 @@ pub struct Batch {
     ///
     /// Each keeps the clock it committed at rather than the batch's terminal position, so
     /// a consumer can order it against `changes` and resume from either side of it.
-    pub state: Vec<CommittedState>,
+    ///
+    /// Interval events, and deliberately not the same thing as [`Batch::state`]: these say
+    /// what moved, that says where it ended up. A consumer needs the second and must not
+    /// have to derive it from the first.
+    pub transitions: Vec<CommittedState>,
+    /// The complete answer-shaping state at [`Batch::cursor`].
+    ///
+    /// Captured inside the same read guard as the journal slice and the cursor, so the
+    /// changes, the position and the trust state all describe one instant. A follow-up
+    /// read is not equivalent and cannot be made so: the next commit can land between the
+    /// two calls, and the index intentionally retains only its current image, so there is
+    /// nothing to ask for the state *as of* a position already passed.
+    ///
+    /// This is the field that keeps `transitions` from being load-bearing. Folding
+    /// transitions into a consumer-side copy of the state is the mirror the boundary
+    /// exists to forbid -- two authorities for one fact, diverging the first time a
+    /// transition is dropped, reordered or misapplied, with nothing to detect it.
+    pub state: crate::EngineState,
 }
 
 impl Batch {
@@ -165,8 +182,8 @@ impl Batch {
     /// built keeps a later field from quietly acquiring a value beside it. A consumer
     /// reading "re-read everything, and also here are the changes" and acting on the second
     /// half applies a suffix to state it has just discarded.
-    fn reset_at(cursor: crate::Cursor) -> Self {
-        Self { dirty: true, reset: true, cursor: Some(cursor), ..Self::default() }
+    fn reset_at(cursor: crate::Cursor, state: crate::EngineState) -> Self {
+        Self { dirty: true, reset: true, cursor: Some(cursor), state, ..Self::default() }
     }
 
     /// Whether this batch says only things a consumer can act on together.
@@ -177,7 +194,7 @@ impl Batch {
                 && self.dirty_rollups.is_empty()
                 && self.dirty_queries.is_empty()
                 && !self.all_dirty
-                && self.state.is_empty()
+                && self.transitions.is_empty()
                 && self.issues.is_empty());
         let all_dirty_replaces_the_list = !self.all_dirty || self.dirty_rollups.is_empty();
         reset_is_alone && all_dirty_replaces_the_list
@@ -433,7 +450,7 @@ impl Session {
             // every other signal, because the changes it missed are unnamed and unnameable.
             // A partial list beside it would read as complete and be applied as one.
             self.resume = since.cursor;
-            let mut reset = Batch::reset_at(since.cursor);
+            let mut reset = Batch::reset_at(since.cursor, since.state);
             reset.work = work;
             reset.work.wall_ns = reset
                 .work
@@ -497,7 +514,7 @@ impl Session {
             // own terminal position under the same guard. `None` only when the slice is
             // empty: a batch that carried nothing names no new place to resume from.
             cursor: (!applied.is_empty()).then_some(since.cursor),
-            state: applied
+            transitions: applied
                 .iter()
                 .flat_map(|delta| {
                     delta
@@ -506,6 +523,12 @@ impl Session {
                         .map(|change| CommittedState { clock: delta.clock, change: change.clone() })
                 })
                 .collect(),
+            // From the same `since` as the slice and the cursor, so it is the state at
+            // that position rather than the state whenever a consumer next asks. Carried
+            // even when the slice is empty: "nothing changed, and here is what you are
+            // still holding" is an answer, and a poll that returned no state would make a
+            // consumer re-read to learn it.
+            state: since.state,
         };
         if !applied.is_empty() {
             self.resume = since.cursor;
@@ -712,7 +735,8 @@ mod tests {
     #[test]
     fn a_reset_batch_carries_nothing_a_consumer_could_apply() {
         let cursor = crate::Cursor { session: crate::SessionId(1), clock: Clock(9) };
-        let reset = Batch::reset_at(cursor);
+        let state = crate::EngineState { clock: Clock(9), ..Default::default() };
+        let reset = Batch::reset_at(cursor, state.clone());
 
         assert!(reset.reset && reset.dirty, "it happened, and the position is unresumable");
         assert_eq!(reset.cursor, Some(cursor), "and it still says where the index now is");
@@ -729,7 +753,7 @@ mod tests {
                 mtime_ns: Some(0),
                 clock: 9,
             }],
-            ..Batch::reset_at(cursor)
+            ..Batch::reset_at(cursor, state.clone())
         };
         assert!(!with_changes.is_consistent(), "a reset cannot also hand over a suffix");
 
