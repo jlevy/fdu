@@ -4,14 +4,14 @@ id: is-01m0vx6yw0f8bddcwggvk2ha0p
 title: A walk budget, or the decision that fdu does not have one
 kind: task
 status: open
-priority: 2
-version: 1
+priority: 1
+version: 2
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 labels: []
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-25T07:30:01.728Z
-updated_at: 2026-08-25T07:30:01.728Z
+updated_at: 2026-08-25T08:03:01.244Z
 ---
 The interactive-client contract declares a file budget as *scope* -- it is validated as
 positive, it is part of the scope fingerprint, and the reference provider truncates
@@ -37,3 +37,7 @@ Option 1 makes `CoverageReason::Budget` reachable, which is the reason it was de
 Option 2 is a product decision on the consumer's side, not fdu's.
 
 Blocked on the joint answer; recorded so the adapter does not silently pick one.
+
+## Notes
+
+JOINT DECISION (MetaBrowser fdb69a0, 2026-08-25): option 1 is selected. InventoryConfig.max_files remains fingerprinted semantic scope to preserve the shipped Python resource stop and partial-coverage behavior. FDU must add a native walk budget that stops discovery, reports partial coverage with reason budget, and emits the typed resource-budget issue. Projection row bounds do not substitute for this resource contract. Consumer decision and adoption gate: https://github.com/jlevy/metabrowser/blob/fdb69a0a7942459c5ef650db2c3149b8e9dba168/docs/project/specs/active/plan-2026-08-23-inventory-provider-refactor-and-fdu-adoption.md
