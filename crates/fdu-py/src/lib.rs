@@ -638,7 +638,8 @@ impl PyIndex {
         sort = None,
         reverse = false,
         size = "allocated",
-        words_per_page = 250
+        words_per_page = 250,
+        as_of_ns = None
     ))]
     #[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
     fn report<'py>(
@@ -660,6 +661,7 @@ impl PyIndex {
         reverse: bool,
         size: &str,
         words_per_page: u64,
+        as_of_ns: Option<i64>,
     ) -> PyResult<Bound<'py, PyDict>> {
         let report = self.build_report(
             views,
@@ -678,6 +680,7 @@ impl PyIndex {
             reverse,
             size,
             words_per_page,
+            as_of_ns,
         )?;
         report_dict(py, &report)
     }
@@ -707,7 +710,8 @@ impl PyIndex {
         sort = None,
         reverse = false,
         size = "allocated",
-        words_per_page = 250
+        words_per_page = 250,
+        as_of_ns = None
     ))]
     #[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
     fn report_handle(
@@ -728,6 +732,7 @@ impl PyIndex {
         reverse: bool,
         size: &str,
         words_per_page: u64,
+        as_of_ns: Option<i64>,
     ) -> PyResult<PyOneShot> {
         let report = self.build_report(
             views,
@@ -746,6 +751,7 @@ impl PyIndex {
             reverse,
             size,
             words_per_page,
+            as_of_ns,
         )?;
         Ok(PyOneShot { report })
     }
@@ -773,7 +779,8 @@ impl PyIndex {
         sort = None,
         reverse = false,
         size = "allocated",
-        words_per_page = 250
+        words_per_page = 250,
+        as_of_ns = None
     ))]
     #[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
     fn watch(
@@ -796,6 +803,7 @@ impl PyIndex {
         reverse: bool,
         size: &str,
         words_per_page: u64,
+        as_of_ns: Option<i64>,
     ) -> PyResult<PyWatch> {
         let query = build_query(
             self.analysis.profile,
@@ -817,6 +825,7 @@ impl PyIndex {
             reverse,
             size,
             words_per_page,
+            as_of_ns,
         )?;
 
         // The session watches *this* index, not a copy of it. An `IndexHandle` clone is an
@@ -908,6 +917,7 @@ impl PyIndex {
         reverse = false,
         size = "allocated",
         words_per_page = 250,
+        as_of_ns = None,
         expected = None,
     ))]
     #[allow(
@@ -941,6 +951,7 @@ impl PyIndex {
         reverse: bool,
         size: &str,
         words_per_page: u64,
+        as_of_ns: Option<i64>,
         expected: Option<&Bound<'py, PyAny>>,
     ) -> PyResult<Bound<'py, PyDict>> {
         // Run state is no longer sampled here. It used to be read from a second lock
@@ -969,6 +980,7 @@ impl PyIndex {
                 reverse,
                 size,
                 words_per_page,
+                as_of_ns,
             )?;
             Some(fdu_core::ReportRequest { query, generated_at: SystemTime::now() })
         } else {
@@ -1318,6 +1330,7 @@ impl PyIndex {
         reverse: bool,
         size: &str,
         words_per_page: u64,
+        as_of_ns: Option<i64>,
     ) -> PyResult<Report> {
         // `now` is the report's own generated_at as well as the clock the time bounds are
         // resolved against, so both come from one reading rather than two.
@@ -1342,6 +1355,7 @@ impl PyIndex {
             reverse,
             size,
             words_per_page,
+            as_of_ns,
         )?;
         // Read in place rather than cloning: `report` is a pure reader, so it runs under
         // the shared lock. Snapshotting here instead would copy every entry per call,
@@ -2112,6 +2126,26 @@ fn enabled_tag_rules(names: Option<Vec<String>>) -> PyResult<Arc<fdu_core::tags:
 /// Extracted so the session path and the one-shot cannot disagree about what a request
 /// means. Every value grammar here belongs to the library and is called, not restated.
 #[allow(clippy::too_many_arguments, clippy::needless_pass_by_value)]
+/// A caller-supplied epoch instant as a `SystemTime`.
+///
+/// Signed nanoseconds, because that is what every other time this binding exchanges is,
+/// and pre-epoch values are representable rather than an error nobody expected.
+fn epoch_nanos_to_time(nanos: i64) -> PyResult<SystemTime> {
+    let magnitude = std::time::Duration::from_nanos(nanos.unsigned_abs());
+    let at = if nanos < 0 {
+        SystemTime::UNIX_EPOCH.checked_sub(magnitude)
+    } else {
+        SystemTime::UNIX_EPOCH.checked_add(magnitude)
+    };
+    at.ok_or_else(|| {
+        PyValueError::new_err(format!("as_of is not a representable instant: {nanos}"))
+    })
+}
+
+// One function assembling one query from the whole grammar. Splitting it would move
+// arguments into a struct that exists only to be destructured here, which is the same
+// count spelled differently.
+#[allow(clippy::too_many_arguments)]
 fn build_query(
     profile: AnalysisSet,
     default_view: Option<ViewSpec>,
@@ -2132,8 +2166,16 @@ fn build_query(
     reverse: bool,
     size: &str,
     words_per_page: u64,
+    as_of_ns: Option<i64>,
 ) -> PyResult<Query> {
-    let now = SystemTime::now();
+    // The caller's reference instant, or this one. A pinned read fixes the tree and not
+    // the clock, so a relative bound resolved afresh on every page let a version-pinned
+    // assembly change membership while its version stood still -- and nothing reported it,
+    // because the version genuinely had not moved.
+    let now = match as_of_ns {
+        Some(nanos) => epoch_nanos_to_time(nanos)?,
+        None => SystemTime::now(),
+    };
     let mut selection =
         Selection { reverse, size: parse_size_metric(size)?, ..Selection::default() };
     if let Some(value) = depth {
@@ -2262,6 +2304,7 @@ impl PyOneShot {
     reverse = false,
     size = "allocated",
     words_per_page = 250,
+    as_of_ns = None,
 ))]
 #[allow(
     clippy::too_many_arguments,
@@ -2296,6 +2339,7 @@ fn report_once(
     reverse: bool,
     size: &str,
     words_per_page: u64,
+    as_of_ns: Option<i64>,
 ) -> PyResult<PyOneShot> {
     let rules = enabled_tag_rules(tag_rules)?;
     let analysis = parse_analysis_request(analyze, analysis_workers)?;
@@ -2333,6 +2377,7 @@ fn report_once(
         reverse,
         size,
         words_per_page,
+        as_of_ns,
     )?;
 
     let prepared = py.detach(|| fdu_core::prepare_report(&root, &config, &query));

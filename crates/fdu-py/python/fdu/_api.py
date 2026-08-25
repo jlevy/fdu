@@ -167,6 +167,10 @@ def _query_kwargs(query: Query) -> dict[str, object]:
         "reverse": selection.reverse,
         "size": selection.size.value,
         "words_per_page": query.words_per_page,
+        # The instant relative bounds resolve against. `None` means "now", resolved in the
+        # binding, which is right for a one-shot; a pinned assembly passes the same value
+        # with every page so its membership cannot drift while its version stands still.
+        "as_of_ns": None if query.as_of is None else _epoch_nanos(query.as_of),
     }
 
 

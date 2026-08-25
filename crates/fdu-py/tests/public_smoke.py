@@ -714,6 +714,74 @@ def _payload_bytes(value: object, charge_keys: bool = False) -> int:
     return 8
 
 
+def check_a_pinned_assembly_pins_its_clock_too() -> None:
+    """A version pin fixes the tree. It does not fix a relative recency cutoff.
+
+    ``modified_since="1s"`` is resolved when the query is built, so page two of a
+    version-pinned assembly resolved it against a later instant than page one. Membership
+    moved while the version stood still, and nothing reported it -- the version genuinely
+    had not moved. ``Query.as_of`` is the reference instant a caller carries across the
+    pages of one answer.
+    """
+
+    with tempfile.TemporaryDirectory(prefix="fdu-asof-") as raw:
+        root = Path(raw)
+        recent = root / "recent.txt"
+        recent.write_text("x", encoding="utf-8")
+        index = fdu.open(root, cache=fdu.CachePolicy.OFF)
+
+        # Half a second old, against a one-second window: inside it now, outside it shortly.
+        now = datetime.now(tz=UTC)
+        stamp = (now - timedelta(seconds=0.5)).timestamp()
+        os.utime(recent, (stamp, stamp))
+        index.refresh()
+
+        def names(as_of: datetime | None) -> set[str]:
+            report = index.report(
+                fdu.Query(
+                    views=(fdu.View.FILES,),
+                    selection=fdu.Selection(modified_since="1s", kinds=(fdu.EntryKind.FILE,)),
+                    as_of=as_of,
+                )
+            )
+            section = report.sections[0]
+            assert isinstance(section, fdu.FilesSection)
+            return {row.path.name for row in section.files}
+
+        pinned_at = datetime.now(tz=UTC)
+        assert names(pinned_at) == {"recent.txt"}, "the file is inside the window to begin with"
+
+        # The wall clock moves past the boundary. This is the whole scenario: a second page
+        # of the same assembly, taken a moment later.
+        time.sleep(1.0)
+
+        assert names(None) == set(), (
+            "without a pinned instant the cutoff follows the clock, which is correct for a "
+            "one-shot and is exactly what breaks a paged assembly"
+        )
+        assert names(pinned_at) == {"recent.txt"}, (
+            "a page pinned to the assembly's own instant must return what the first page "
+            "did; a version pin alone does not do that"
+        )
+
+        # And the two pins compose, which is the actual scenario: a second page of a
+        # version-pinned assembly, taken after the boundary, asking for the same answer.
+        page_two = index.read(
+            expected=index.cursor(),
+            query=fdu.Query(
+                views=(fdu.View.FILES,),
+                selection=fdu.Selection(modified_since="1s", kinds=(fdu.EntryKind.FILE,)),
+                as_of=pinned_at,
+            ),
+        )
+        assert page_two.report is not None
+        section = page_two.report.sections[0]
+        assert isinstance(section, fdu.FilesSection)
+        assert {row.path.name for row in section.files} == {"recent.txt"}, (
+            "the version was pinned and so was the instant, so page two is page one"
+        )
+
+
 def check_a_state_transition_advances_the_version_and_reaches_the_feed() -> None:
     """Coverage, trust, and the run envelope move through commits like any other change.
 
@@ -1497,6 +1565,7 @@ def main() -> None:
     check_tags_are_a_named_fact_per_entry()
     check_a_bundle_answers_a_query_at_the_same_instant_as_its_rows()
     check_empty_is_decidable_from_the_aggregate()
+    check_a_pinned_assembly_pins_its_clock_too()
     check_a_state_transition_advances_the_version_and_reaches_the_feed()
     check_the_event_loop_adapter_delivers_the_same_batches()
     check_the_sse_example_resumes_or_resyncs()

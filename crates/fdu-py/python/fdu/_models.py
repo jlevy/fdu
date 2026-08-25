@@ -310,6 +310,19 @@ class Query:
     selection: Selection = field(default_factory=Selection)
     words_per_page: int = 250
 
+    as_of: datetime | int | None = None
+    """The instant relative recency bounds resolve against; now, when absent.
+
+    An expected cursor pins the *tree*, and that is not the whole of an answer. A bound
+    like ``modified_since="7d"`` is resolved when the query is built, so an assembly of
+    version-pinned pages -- each pinned to the same version, and therefore believed to be
+    one answer -- silently changed membership as the wall clock moved beneath it. Nothing
+    reported that, because the version genuinely had not moved.
+
+    Set this once and pass it with every page of a pinned sequence. Absolute bounds are
+    unaffected: they name an instant already and there is nothing to resolve.
+    """
+
     def __post_init__(self) -> None:
         # A lone `View` is a `StrEnum` and therefore an iterable string, so passing one
         # unwrapped would iterate its characters; rejecting it here gives a clear error

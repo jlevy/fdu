@@ -58,6 +58,7 @@ class Index:
         reverse: bool = False,
         size: str = "allocated",
         words_per_page: int = 250,
+        as_of_ns: int | None = None,
         expected: dict[str, Any] | None = None,
     ) -> dict[str, Any]: ...
     def provenance(self, path: str | PathLike[str] | None = None) -> dict[str, Any] | None: ...
