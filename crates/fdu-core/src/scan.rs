@@ -228,26 +228,6 @@ impl Default for ScanConfig {
     }
 }
 
-/// Why watching cannot narrow its scan scope, said once for every surface.
-///
-/// The CLI used to carry this guidance and the library carried "requires event-scope
-/// filtering", which names the implementation rather than the caller's next move -- so a
-/// library caller hitting the same wall got jargon and the CLI user got help. Two
-/// messages for one rule also drift, and the parity harness could not tell they were the
-/// same rule.
-///
-/// The knobs are named by the calling surface: `--scan-depth` on the command line,
-/// `max_depth` through the API. Everything else is identical, so the harness can verify
-/// mechanically that both surfaces state the same rule.
-pub const WATCH_SCOPE_GUIDANCE: &str = concat!(
-    "watching cannot be combined with max_files: a file cap bounds what the index holds, ",
-    "and a watcher would have to decide which of two entries the cap admits without ever ",
-    "having read them. max_depth and one_filesystem do work while watching, because each ",
-    "is a property of the entry an event names rather than of the walk that found it. So ",
-    "does selection such as depth, include, and modified_since, which filters the retained ",
-    "index rather than narrowing the scan"
-);
-
 impl ScanConfig {
     /// The file-type rules in effect: the supplied registry, or the compiled default.
     pub fn types(&self) -> &std::sync::Arc<crate::classify::TypeRegistry> {
@@ -355,20 +335,25 @@ impl ScanConfig {
         Ok(())
     }
 
+    /// A watch validates exactly as any other operation does.
+    ///
+    /// It used to refuse every narrowed scope, which is why this is still its own name: a
+    /// watcher could not hold a boundary it had no way to redraw. Each axis now has a
+    /// place where it *is* decidable, so there is nothing left to refuse.
+    ///
+    /// - `max_depth` and `one_filesystem` are properties of the entry an event names, and
+    ///   `within_scope` asks them per event.
+    /// - `max_files` is a property of the whole inventory, so the index keeps it: a new
+    ///   file row past the cap is refused where the previous state of the path is already
+    ///   known, and the same commit marks coverage partial with reason `budget`.
+    ///
+    /// Kept rather than inlined because the distinction is worth a name even when the
+    /// bodies agree: a future axis decidable only during a walk would be refused here, and
+    /// a caller reading `validate_for_scope` at a watch site would not know that was the
+    /// question.
     #[cfg(feature = "watch")]
     pub(crate) fn validate_for_watch_scope(&self, indexed: ScanScope) -> Result<()> {
-        self.validate_for_scope(indexed)?;
-        if self.max_files.is_some() {
-            // The one axis that is not a property of an entry. Depth and the filesystem
-            // boundary can be redrawn around a single event, because a path and a `stat`
-            // answer both; a cap cannot, because whether *this* file is inside it depends
-            // on every other file, including the ones the capped walk never read. The
-            // index would end up holding a subtree nobody walked, assembled one event at a
-            // time, and the cap it claims in its own identity would be one it does not
-            // keep.
-            return Err(Error::UnsupportedScanConfig(WATCH_SCOPE_GUIDANCE));
-        }
-        Ok(())
+        self.validate_for_scope(indexed)
     }
 }
 

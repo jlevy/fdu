@@ -41,29 +41,18 @@
 # This file shrinks as the API closes. Extra hunks mean drift; missing hunks mean a gap
 # was fixed and the file should be re-recorded so the change is visible in review.
 
-# 22 sessions differ, and every one of them has a named cause.
+# 21 sessions differ, and every one of them has a named cause.
 #
 #  13  Each surface names its own parameter  [surface-label]
 #      There is no --view or --analyze in Python, so its diagnostics name the parameter.
 #      Everything after the label is identical, and that is the part encoding behaviour:
 #      the rule the caller hits is the same rule, proven line by line rather than assumed.
 #
-#      One entry here also differs by an error-kind prefix. The library reports the watch
-#      scope rule as a runtime error and names its kind; the CLI catches it up front and
-#      reports a usage error, which exits 2 rather than 1. The rule text is one constant
-#      either way, with only the knob names substituted, and a unit test pins that.
-#
-#   1  The same rule, in each surface's own names for the same knobs  [surface-vocabulary]
-#      The command line calls it --scan-depth and the API calls it max_depth. They are
-#      different words, not different punctuation, so this is checked by eliding the knob
-#      names on both sides and requiring the rest of the sentence to be identical.
-#
-#      The rule itself is one constant -- scan::WATCH_SCOPE_GUIDANCE -- with the knob names
-#      substituted for the command line in a single whole-word pass. It was two separate
-#      messages that had already drifted: the CLI explained what to do instead, and the
-#      library said "requires event-scope filtering", so a library caller got jargon and a
-#      CLI user got help. A unit test pins the substitution, because doing it sequentially
-#      produced `--scan---depth` the first time (the fdu-7j6z bug, again).
+#      Some entries here also differ by an error-kind prefix: the library reports a scan
+#      configuration it cannot serve as a runtime error and names its kind, while the CLI
+#      catches the same case up front and reports a usage error. Everything after the kind
+#      is compared exactly, so the two are one rule with two framings rather than two
+#      rules.
 #
 #   3  Output carrying walk telemetry the report schema excludes  [run-telemetry]
 #      A note quoting how many bytes analysis read, or the performance footer itself.
@@ -425,11 +414,10 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
 @@ -1,1 +1,1 @@
 -fdu: invalid --modified-since "2300-01-01T00:00:00Z": that time is outside the range fdu can represent (about 1677 to 2262)
 +fdu: invalid modified_since "2300-01-01T00:00:00Z": that time is outside the range fdu can represent (about 1677 to 2262)
-  ✗ Watching Rejects a File Cap, and Only a File Cap
-    stderr:
-@@ -1,1 +1,1 @@
--fdu: watching cannot be combined with --max-files: a file cap bounds what the index holds, and a watcher would have to decide which of two entries the cap admits without ever having read them. --scan-depth and --one-filesystem do work while watching, because each is a property of the entry an event names rather than of the walk that found it. So does selection such as --depth, --include, and --modified-since, which filters the retained index rather than narrowing the scan
-+fdu: unsupported scan configuration: watching cannot be combined with max_files: a file cap bounds what the index holds, and a watcher would have to decide which of two entries the cap admits without ever having read them. max_depth and one_filesystem do work while watching, because each is a property of the entry an event names rather than of the walk that found it. So does selection such as depth, include, and modified_since, which filters the retained index rather than narrowing the scan
+  ✓ A File Cap Bounds the Index, Not Just the Walk
+  ✓ A File Cap Bounds the Index, Not Just the Walk
+  ✓ A File Cap Bounds the Index, Not Just the Walk
+  ✓ A File Cap Bounds the Index, Not Just the Walk
   ✓ A Missing Root Is a Fatal Filesystem Error
   ✓ Create a Regular File
   ✓ Reject It as the Root

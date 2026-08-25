@@ -193,20 +193,29 @@ so even an abrupt kill leaves the next run warm.
 `crates/fdu/tests/watch_persistence.rs` pins this automatically; running it by hand is
 how you confirm it against a real signal.
 
-One scope flag is rejected under `--watch`, and only one:
+Every scope flag is legal under `--watch`, and the bounds hold against live events:
 
 ```shell
-./target/debug/fdu --watch --max-files 10 "$tree"       # exit 2
+./target/debug/fdu --watch --scan-depth 2 --max-files 1000 "$tree"
 ```
 
-✅ It fails with a usage error naming `--max-files` and saying why: whether a file is
-inside a cap depends on every *other* file, including the ones the capped walk never
-read, so a watcher has nothing to decide one event with.
+✅ It starts a live watch rather than exiting.
+Depth and the filesystem boundary are properties of the entry an event names, so the
+boundary is redrawn around each event; the file cap is a property of the whole
+inventory, so the index keeps it — a file past the cap is refused where the previous
+state of the path is already known, and the same commit marks coverage partial with
+reason `budget`.
 
-`--scan-depth` and `--one-filesystem` are accepted, because each is a property of the
-entry an event names rather than of the walk that found it — the boundary is redrawn
-around each event. Those two start a live watch rather than exiting, so run them
-interactively rather than as part of a scripted pass.
+This one exits rather than watching, which is the check that the cap is a bound the
+index keeps rather than a hint to the walk:
+
+```shell
+./target/debug/fdu --max-files 2 "$tree"                # exit 2
+```
+
+✅ Partial coverage is the exit status.
+The tally is short by design and says so, rather than reporting a complete-looking
+number over an inventory the cap truncated.
 
 ## 7. Python wheel
 

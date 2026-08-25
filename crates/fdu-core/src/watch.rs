@@ -1858,24 +1858,82 @@ mod tests {
         );
     }
 
-    /// A capped scan is still refused, and that is the axis the refusal is left on.
+    /// A capped scan is watchable, and the cap survives the watch.
+    ///
+    /// This used to be a refusal, on the argument that a cap is not a property of the
+    /// entry an event names. That is true and is why `within_scope` does not carry it --
+    /// but it does not follow that nothing can: the *index* knows how many files it holds,
+    /// so the cap is kept where the previous state of a path is already in hand.
     #[test]
-    fn a_capped_scan_still_refuses_to_be_watched() {
+    fn a_capped_index_refuses_a_watched_file_past_its_cap() {
         let dir = tempfile::tempdir().expect("tempdir");
+        for index in 0..4 {
+            fs::write(dir.path().join(format!("f{index}.txt")), b"seed").expect("seed");
+        }
+        let capped = crate::ScanConfig { max_files: Some(4), ..crate::ScanConfig::default() };
+        let (index, _) = crate::scan::scan_into_index(dir.path(), &capped).expect("scan");
+        let handle = crate::IndexHandle::new(index);
+        assert_eq!(handle.total().expect("total").files, 4, "the walk filled the cap");
+
+        fs::write(dir.path().join("late.txt"), b"one too many").expect("write");
+        let observation = Observation::new(vec![Op::Upsert {
+            path: PathBuf::from("late.txt"),
+            kind: EntryKind::File,
+            attrs: Attrs::default(),
+        }]);
+        apply_observation(&handle, &observation, &capped, &mut |_| {})
+            .expect("a capped scope is watchable");
+
+        assert_eq!(handle.total().expect("total").files, 4, "and the cap is still the cap");
+        assert!(handle.kind(Path::new("late.txt")).expect("query").is_none());
+        assert_eq!(
+            handle.with_index(|index| index.coverage_at(Path::new(""))).expect("coverage"),
+            crate::Status::Partial(crate::CoverageReason::Budget),
+            "a refused row is a coverage fact, not a silent drop"
+        );
+    }
+
+    /// A slot freed by a deletion is available to the next arrival.
+    ///
+    /// The consequence worth stating rather than discovering: the cap bounds the retained
+    /// set, so which files a long-lived capped index holds depends on the order events
+    /// arrived -- as which files a capped *walk* holds depends on the order it reached
+    /// them. Coverage says the set is short either way.
+    #[test]
+    fn a_deletion_frees_a_slot_the_next_arrival_can_take() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        for index in 0..4 {
+            fs::write(dir.path().join(format!("f{index}.txt")), b"seed").expect("seed");
+        }
         let capped = crate::ScanConfig { max_files: Some(4), ..crate::ScanConfig::default() };
         let (index, _) = crate::scan::scan_into_index(dir.path(), &capped).expect("scan");
         let handle = crate::IndexHandle::new(index);
 
-        let error = apply_observation(&handle, &Observation::default(), &capped, &mut |_| {})
-            .expect_err("a cap is not a property of the entry an event names");
-        assert!(matches!(error, Error::UnsupportedScanConfig(_)));
-        assert!(error.to_string().contains("max_files"), "{error}");
+        fs::remove_file(dir.path().join("f0.txt")).expect("unlink");
+        fs::write(dir.path().join("late.txt"), b"takes the slot").expect("write");
+        let observation = Observation::new(vec![
+            Op::Remove { path: PathBuf::from("f0.txt") },
+            Op::Upsert {
+                path: PathBuf::from("late.txt"),
+                kind: EntryKind::File,
+                attrs: Attrs::default(),
+            },
+        ]);
+        apply_observation(&handle, &observation, &capped, &mut |_| {})
+            .expect("a capped scope is watchable");
+
+        assert_eq!(handle.total().expect("total").files, 4, "still exactly the cap");
+        assert_eq!(handle.kind(Path::new("late.txt")).expect("query"), Some(EntryKind::File));
     }
 
-    /// A refused scope fails before the queue is touched, so the intent survives to be
-    /// applied once the scope is one the watcher can hold.
+    /// A scope that does not match the index still fails before the queue is touched.
+    ///
+    /// The remaining refusal, and the one that has to keep this shape: applying an
+    /// observation gathered under one scope to an index built under another would mix two
+    /// inventories, and the intent has to survive so it can be applied under the right
+    /// config rather than being lost to a configuration mistake.
     #[test]
-    fn apply_next_rejects_a_capped_scope_without_consuming_an_observation() {
+    fn apply_next_rejects_a_mismatched_scope_without_consuming_an_observation() {
         let dir = tempfile::tempdir().expect("tempdir");
         let capped = crate::ScanConfig { max_files: Some(4), ..crate::ScanConfig::default() };
         let (index, _) = crate::scan::scan_into_index(dir.path(), &capped).expect("scan");
@@ -1885,10 +1943,10 @@ mod tests {
         sender.try_send(CoalescedIntent::default()).expect("queue intent");
 
         let error = watcher
-            .apply_next(&handle, &capped, Duration::ZERO, &mut |_| {})
-            .expect_err("restricted scope must fail before receive");
+            .apply_next(&handle, &crate::ScanConfig::default(), Duration::ZERO, &mut |_| {})
+            .expect_err("a scope the index was not built under must fail before receive");
 
-        assert!(matches!(error, Error::UnsupportedScanConfig(_)));
+        assert!(matches!(error, Error::ScanScopeMismatch { .. }));
         assert!(watcher.next_observation(Duration::ZERO).expect("receive").is_some());
     }
 

@@ -501,9 +501,18 @@ def render(args: Args, report: fdu.Report) -> str:
 
 
 def exit_code(args: Args, status: fdu.Status) -> int:
+    """The command line's table: 0 complete, 0 partial when allowed, 2 partial otherwise.
+
+    Two rather than one, matching `finish` in the CLI. The shim returned one for years
+    because no session in the corpus produced a partial answer -- every fixture is a small
+    readable tree -- so the first case that did (a file cap) was also the first to compare
+    the two, and found them different. A hand-written stand-in is only as good as what the
+    corpus asks it.
+    """
+
     if status.complete or args.allow_partial:
         return 0
-    return 1
+    return 2
 
 
 def main(argv: list[str] | None = None) -> int:

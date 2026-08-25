@@ -202,14 +202,23 @@ class ScanOptions:
     partial with reason :attr:`CoverageReason.BUDGET` and a typed resource-stop issue says
     so.
 
-    Strict: a capped walk retains exactly this many files, never one more, however many
-    workers are reading. The cap is part of the scope identity, and two indexes claiming one
-    identity have to hold the same inventory -- "the cap, plus whatever was in flight" is a
-    different number on every run and on every machine.
+    Strict, and it bounds the *index* rather than one walk. A capped walk retains exactly
+    this many files, never one more, however many workers are reading -- and a refresh that
+    finds more, or a live watch handed one event at a time, is refused at the same bound.
+    Anything less makes the cap a hint: an index built under it would grow past it the first
+    time anything changed, while its scan identity went on claiming a cap it no longer kept.
 
-    A directory may therefore be listed only partly. That is not silent: a walk the cap
-    stopped marks coverage partial from the root down, so every directory reports
-    :attr:`CoverageReason.BUDGET` as the reason its numbers are short.
+    A directory may therefore be listed only partly, and a file created under a watch may
+    never appear. Neither is silent: the commit that refuses a row marks coverage partial
+    from the root down with :attr:`CoverageReason.BUDGET`, in the same delta rather than a
+    later one -- at a cursor between them the index would have dropped an entry and still
+    claimed to cover everything.
+
+    Which files a long-lived capped index holds therefore depends on the order events
+    arrived, as which files a capped walk holds depends on the order it reached them. That
+    is a property of a cap over a changing tree: no rule bounds the retained set and is
+    history-independent at once. Directories are not counted, so the shape of the tree
+    survives even where its contents are truncated.
     """
     one_filesystem: bool = False
     #: Directory visit order. Breadth-first is the default because it is the order whose

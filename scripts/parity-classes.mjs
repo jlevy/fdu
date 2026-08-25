@@ -26,14 +26,6 @@ const sameName = (line) => sameSeparator(line).replace(/--(?=[a-z])/g, '').repla
 // decision -- a general "strip any prefix" rule would hide real differences.
 const ERROR_KINDS = ['unsupported scan configuration: '];
 
-// The two surfaces have different NAMES for the same knob, not merely different
-// punctuation: the flag is --scan-depth and the field is max_depth. Comparing with these
-// elided on both sides proves the rest of the sentence is identical without this file
-// having to restate the pairing -- the pairing lives in cli.rs, where a unit test pins it.
-// Longest first, and one pass, so `depth` cannot match inside `--scan-depth`.
-const KNOBS =
-  /--scan-depth|--max-files|--one-filesystem|--modified-since|--include|--depth|max_depth|max_files|one_filesystem|modified_since|include|depth/g;
-const withoutKnobs = (line) => sameSeparator(withoutKind(line)).replace(KNOBS, '<knob>');
 const withoutKind = (line) => {
   // The kind sits after the program name, which both surfaces print: the shim says
   // `fdu: unsupported scan configuration: ...` where the CLI says `fdu: ...`.
@@ -58,10 +50,11 @@ export const CLASSES = [
       'Everything after the label is identical, and that is the part encoding behaviour:',
       'the rule the caller hits is the same rule, proven line by line rather than assumed.',
       '',
-      'One entry here also differs by an error-kind prefix. The library reports the watch',
-      'scope rule as a runtime error and names its kind; the CLI catches it up front and',
-      'reports a usage error, which exits 2 rather than 1. The rule text is one constant',
-      'either way, with only the knob names substituted, and a unit test pins that.',
+      'Some entries here also differ by an error-kind prefix: the library reports a scan',
+      'configuration it cannot serve as a runtime error and names its kind, while the CLI',
+      'catches the same case up front and reports a usage error. Everything after the kind',
+      'is compared exactly, so the two are one rule with two framings rather than two',
+      'rules.',
     ],
     // Strip the flag dashes and normalise -/_ ; if the lines then match exactly, the
     // label is the whole of the difference. Anything else and this class does not apply.
@@ -69,27 +62,6 @@ export const CLASSES = [
       removed.length > 0 &&
       removed.length === added.length &&
       removed.every((line, i) => sameName(line) === sameName(withoutKind(added[i]))) &&
-      removed.some((line, i) => line !== added[i]),
-  },
-  {
-    id: 'surface-vocabulary',
-    title: 'The same rule, in each surface\'s own names for the same knobs',
-    why: [
-      'The command line calls it --scan-depth and the API calls it max_depth. They are',
-      'different words, not different punctuation, so this is checked by eliding the knob',
-      'names on both sides and requiring the rest of the sentence to be identical.',
-      '',
-      'The rule itself is one constant -- scan::WATCH_SCOPE_GUIDANCE -- with the knob names',
-      'substituted for the command line in a single whole-word pass. It was two separate',
-      'messages that had already drifted: the CLI explained what to do instead, and the',
-      'library said "requires event-scope filtering", so a library caller got jargon and a',
-      'CLI user got help. A unit test pins the substitution, because doing it sequentially',
-      'produced `--scan---depth` the first time (the fdu-7j6z bug, again).',
-    ],
-    matches: ({ removed, added }) =>
-      removed.length > 0 &&
-      removed.length === added.length &&
-      removed.every((line, i) => withoutKnobs(line) === withoutKnobs(added[i])) &&
       removed.some((line, i) => line !== added[i]),
   },
   {

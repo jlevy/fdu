@@ -877,24 +877,28 @@ fn a_row_that_moves_below_the_depth_bound_is_removed() {
     assert!(!holds(&handle, "sub/top.txt"), "and its new path is outside the bound");
 }
 
-/// A capped scan still refuses to be watched, and the message says which knob and why.
+/// A capped scan is watchable, and the cap holds against live events.
+///
+/// The scope a consuming provider opens with, completed: a positive depth *and* a positive
+/// file cap. The cap is the axis a per-event predicate cannot decide -- whether this file
+/// is inside it depends on every other file -- so the index keeps it instead, where the
+/// count it already maintains answers the question in one comparison.
 #[test]
-fn a_capped_scan_cannot_be_watched_and_says_which_axis() {
+fn a_capped_watch_holds_its_cap_against_live_events() {
     let dir = tempfile::tempdir().expect("tempdir");
-    fs::write(dir.path().join("a.txt"), b"one").expect("seed");
-    let scan = ScanConfig { max_files: Some(4), ..ScanConfig::default() };
-    let config =
-        OpenConfig { scan: scan.clone(), policy: CachePolicy::Off, ..OpenConfig::default() };
-    let (index, _report) = open(dir.path(), &config).expect("open");
-    let handle = IndexHandle::new(index);
+    for index in 0..4 {
+        fs::write(dir.path().join(format!("f{index}.txt")), b"seed").expect("seed");
+    }
+    let scan = ScanConfig { max_files: Some(4), max_depth: Some(4), ..ScanConfig::default() };
+    let (handle, mut session) = pruning_session(dir.path(), scan);
 
-    let error = Session::new(handle, scan, Query::default(), WatchConfig::default())
-        .err()
-        .expect("a cap is not a property of the entry an event names");
-    let message = error.to_string();
-    assert!(message.contains("max_files"), "{message}");
-    assert!(
-        !message.contains("cannot be combined with max_depth"),
-        "the two axes that became watchable must not still be named as refusals: {message}"
-    );
+    fs::write(dir.path().join("late.txt"), b"one too many").expect("write");
+    // A directory, which the cap does not count: the tree stays navigable to what is
+    // already in it, and this also proves the batch arrived rather than being lost.
+    fs::create_dir(dir.path().join("marker")).expect("mkdir");
+
+    wait_for(&mut session, |change| change.path.ends_with("marker"))
+        .expect("the directory should arrive");
+    assert!(!holds(&handle, "late.txt"), "the cap is a bound the index keeps, not a walk hint");
+    assert!(holds(&handle, "marker"), "and a directory is not what the cap counts");
 }

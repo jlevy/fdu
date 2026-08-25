@@ -544,20 +544,35 @@ $ fdu --modified-since 2300-01-01T00:00:00Z .
 ? 2
 ```
 
-## Watching Rejects a File Cap, and Only a File Cap
+## A File Cap Bounds the Index, Not Just the Walk
 
-One scope flag is refused under `--watch`, and the message says which and why.
-Whether a file is inside a cap depends on every *other* file, including the ones the
-capped walk never read, so a watcher has nothing to decide it with.
-
-`--scan-depth` and `--one-filesystem` are each a property of the entry an event names,
-so the same boundary can be redrawn around one event; they are accepted, as selection
-flags always have been.
+`--max-files` is scope of the strongest kind: the walk stops reading at the cap, and the
+index refuses to hold more files than that afterwards, through a refresh and under a
+live watch alike. Partial coverage is the exit status rather than a silent short tally,
+and every scope flag is now legal with `--watch`.
 
 ```console
-$ fdu --watch --max-files 10 .
-! fdu: watching cannot be combined with --max-files: a file cap bounds what the index holds, and a watcher would have to decide which of two entries the cap admits without ever having read them. --scan-depth and --one-filesystem do work while watching, because each is a property of the entry an event names rather than of the walk that found it. So does selection such as --depth, --include, and --modified-since, which filters the retained index rather than narrowing the scan
+$ mkdir capped
+? 0
+```
+
+```console
+$ sh -c 'printf x > capped/a.txt; printf x > capped/b.txt; printf x > capped/c.txt'
+? 0
+```
+
+```console
+$ fdu --cache off --color never --size apparent --depth 0 --max-files 2 capped
+       2 B  ██████████   100%  . (2 files)
+Performance: walked 2 files / 2 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
 ? 2
+```
+
+```console
+$ fdu --cache off --color never --size apparent --depth 0 capped
+       3 B  ██████████   100%  . (3 files)
+Performance: walked 3 files / 3 B; content read 0 B; analysis 0 fresh, 0 cached; cold scan; total [PERF_TIME]
+? 0
 ```
 
 ## A Missing Root Is a Fatal Filesystem Error

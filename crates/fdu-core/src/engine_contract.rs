@@ -904,6 +904,17 @@ impl AppliedDelta {
         Self { clock, ops: Vec::new(), state }
     }
 
+    /// A delta carrying both, for a commit whose mutations *caused* a transition.
+    ///
+    /// The file cap is the one that needs this: refusing a row and losing coverage are the
+    /// same event, so publishing them at two clocks would name a moment at which the index
+    /// had dropped an entry and still claimed complete coverage. That moment never
+    /// happened, and a consumer resuming at the cursor between them would read it.
+    #[must_use]
+    pub const fn of_both(clock: Clock, ops: Vec<Op>, state: Vec<StateChange>) -> Self {
+        Self { clock, ops, state }
+    }
+
     #[inline]
     /// Whether the committed batch carries neither a mutation nor a transition.
     ///

@@ -595,6 +595,14 @@ pub struct ApplyStats {
     /// Conditional observations rejected because the indexed state changed after the
     /// producer captured its baseline.
     pub stale: u64,
+    /// Files the scope's own cap refused to admit.
+    ///
+    /// Distinct from `stale`, which is arbitration: nothing about the observation was
+    /// wrong, and re-observing it will not help. The index holds as many files as its
+    /// scope says it may, so this is the cap being kept rather than an operation failing.
+    /// It never reaches zero silently: the same commit marks coverage partial with reason
+    /// `budget`, and a consumer reads that rather than this.
+    pub refused: u64,
 }
 
 impl ApplyStats {
@@ -2265,17 +2273,43 @@ impl Index {
             }
         }
 
-        if changed_ops == 0 {
+        // A refusal is a change to what the index *covers* even when no row moved, so it
+        // has to be able to advance the clock on its own: a batch of nothing but refused
+        // files leaves the answers the same and the claim about them different.
+        let lost_coverage = (stats.refused > 0
+            && self.coverage_at(Path::new("")) != Status::Partial(CoverageReason::Budget))
+        .then(|| StateChange::Freshness {
+            path: PathBuf::new(),
+            freshness: Freshness::Partial,
+            reason: Some(CoverageReason::Budget),
+        });
+
+        if changed_ops == 0 && lost_coverage.is_none() {
             return ApplyOutcome { stats, applied: None };
         }
 
         self.clock = next_clock;
+        if lost_coverage.is_some() {
+            self.mark_unfresh_because(
+                Path::new(""),
+                Freshness::Partial,
+                Some(CoverageReason::Budget),
+            );
+        }
         if !journal {
             // The caller declared this history unread: no delta is minted and the
             // journal keeps whatever it held, which `establish_baseline` clears.
             return ApplyOutcome { stats, applied: None };
         }
-        let applied = self.retain(AppliedDelta::of_ops(self.clock, effective));
+        // One delta rather than two, because refusing a row and losing coverage are one
+        // event: at a cursor between them the index would have dropped an entry and still
+        // claimed to cover everything, and a consumer resuming there would read a moment
+        // that never happened.
+        let applied = self.retain(AppliedDelta::of_both(
+            self.clock,
+            effective,
+            lost_coverage.into_iter().collect(),
+        ));
         ApplyOutcome { stats, applied: Some(applied) }
     }
 
@@ -3689,6 +3723,30 @@ impl Index {
             // Clearing here would be untestable defensive code, which reads as a hazard
             // that does not exist.
             self.remove_entry(id, stats);
+        }
+
+        if kind == EntryKind::File
+            && let Some(cap) = self.scope.max_files
+            && self.entry(EntryId::ROOT).rollup.files >= cap
+        {
+            // The index holds its own scope's cap, which is the only place that claim can
+            // be kept. The walk's budget stops *discovery* at the cap and is what makes a
+            // capped scan cheap; this is what makes the cap survive everything after it --
+            // a refresh that finds new files, and a watcher that is handed one event at a
+            // time and has no way to know which of two entries a walk would have reached
+            // first.
+            //
+            // Files only. A directory carries no bytes of its own and admitting one keeps
+            // the tree navigable to what is already there; refusing directories would make
+            // a capped index lose the shape of the tree as well as its contents.
+            //
+            // Which files a full index then holds depends on the order events arrived, as
+            // which files a capped *walk* holds depends on the order it reached them. That
+            // is a property of a cap over a changing tree and not of this implementation:
+            // no rule bounds the retained set and is history-independent at once. The
+            // coverage says the set is short, which is the fact a consumer can act on.
+            stats.refused += 1;
+            return false;
         }
 
         let ext_id = (kind == EntryKind::File)

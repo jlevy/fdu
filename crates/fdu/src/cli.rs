@@ -675,17 +675,6 @@ impl Cli {
         };
 
         #[cfg(feature = "watch")]
-        if self.watch && self.max_files.is_some() {
-            // The one scope axis a watcher cannot redraw around a single event: whether a
-            // file is inside a cap depends on every other file, including the ones the
-            // capped walk never read. --scan-depth and --one-filesystem are each a
-            // property of the entry an event names, so they stay legal here, as selection
-            // always has -- and the message says which is which rather than only naming
-            // the conflict.
-            return Err(usage(&anyhow::anyhow!(watch_scope_guidance())));
-        }
-
-        #[cfg(feature = "watch")]
         if self.watch && analysis.profile.is_enabled() {
             return Err(usage(&anyhow::anyhow!(
                 "--analyze is not yet supported with --watch; use a one-shot report"
@@ -1295,47 +1284,6 @@ impl Cli {
             .map_err(|message| anyhow::anyhow!(message))?;
         Ok(AnalysisRequest { profile, workers: self.analysis_workers })
     }
-}
-
-/// What each knob is called on the command line, given its name in the API.
-const WATCH_SCOPE_VOCABULARY: [(&str, &str); 6] = [
-    ("max_depth", "--scan-depth"),
-    ("max_files", "--max-files"),
-    ("one_filesystem", "--one-filesystem"),
-    ("modified_since", "--modified-since"),
-    ("depth", "--depth"),
-    ("include", "--include"),
-];
-
-/// The library's watch-scope rule, in the command line's vocabulary.
-///
-/// One rule, stated once, with only the knob names differing. It used to be two separate
-/// messages -- the CLI's naming flags and the library's naming implementation -- which
-/// drifted apart and which the parity harness could not tell were the same rule.
-///
-/// The substitution is an explicit whole-word map rather than a blind replace, which is
-/// the bug fdu-7j6z was: `message.replace("analyze", "--analyze")` rewrote the user's own
-/// token. Here every replacement is a field name that cannot appear inside a value, which
-/// `the_watch_guidance_substitutes_whole_words_only` asserts, and the parity run verifies
-/// the two surfaces stay equivalent.
-fn watch_scope_guidance() -> String {
-    // One pass over whole words, never re-scanning what was already substituted. A
-    // sequential replace does re-scan: max_depth becomes --scan-depth, and then `depth`
-    // matches inside it, giving `--scan---depth`. That is fdu-7j6z again, and it appeared
-    // again here the moment the same shortcut was taken.
-    fdu_core::scan::WATCH_SCOPE_GUIDANCE
-        .split_inclusive(|character: char| !character.is_ascii_alphanumeric() && character != '_')
-        .map(|piece| {
-            let end = piece
-                .find(|character: char| !character.is_ascii_alphanumeric() && character != '_')
-                .unwrap_or(piece.len());
-            let (word, tail) = piece.split_at(end);
-            match WATCH_SCOPE_VOCABULARY.iter().find(|(field, _)| *field == word) {
-                Some((_, flag)) => format!("{flag}{tail}"),
-                None => piece.to_string(),
-            }
-        })
-        .collect()
 }
 
 /// Format transient one-shot work without adding it to the machine-report schema.
@@ -2158,52 +2106,6 @@ mod tests {
         // du's meaning of depth 0 survives the rename from --max-depth.
         let zero = Cli { depth: Some("0".to_string()), ..cli() }.resolved_query().expect("parses");
         assert_eq!(zero.selection.depth, Some(Bound::Limit(0)));
-    }
-
-    /// The default the CLI used to declare itself now comes from the library, so every
-    /// surface renders the same tree for the same request. While the CLI owned it, a
-    /// Python caller leaving depth unset got an unbounded tree and no warning.
-    /// The CLI's wording and the library's must stay one rule with different knob names,
-    /// because that equivalence is what the parity harness verifies mechanically.
-    ///
-    /// Asserted against the constant and the vocabulary rather than by quoting prose. The
-    /// first three versions of this test quoted phrases and went stale the moment the rule
-    /// was reworded, which is a test measuring its own copy of the thing under test.
-    #[test]
-    fn the_watch_guidance_substitutes_whole_words_only() {
-        let source = fdu_core::scan::WATCH_SCOPE_GUIDANCE;
-        let text = watch_scope_guidance();
-
-        // A sequential replace produced `--scan---depth`: max_depth became --scan-depth and
-        // then `depth` matched inside the replacement. That is fdu-7j6z, and it reappeared
-        // here the moment the same shortcut was taken.
-        assert!(!text.contains("---"), "{text} re-substituted a replacement");
-
-        // Whole words throughout, because `--scan-depth` contains `depth`. Checking with a
-        // plain `contains` fails here for the same reason a sequential replace corrupts the
-        // text -- which is the point, and is why this assertion is written the careful way.
-        let names_word = |haystack: &str, word: &str| {
-            // Hyphens stay inside the token, so `--scan-depth` is one word and not three.
-            // Splitting on them is what made this assertion see a bare `depth` that is not
-            // there -- the same tokenisation mistake, one layer up.
-            haystack
-                .split(|c: char| !c.is_ascii_alphanumeric() && c != '_' && c != '-')
-                .any(|w| w == word)
-        };
-        for (field, flag) in WATCH_SCOPE_VOCABULARY {
-            if names_word(source, field) {
-                assert!(text.contains(flag), "{text} must name {flag} where the rule says {field}");
-            }
-            assert!(!names_word(&text, field), "{text} still names {field} untranslated");
-        }
-
-        // Substitution only: everything that is not a knob name survives untouched, so the
-        // two surfaces state the same rule rather than two rules that happen to agree.
-        let mut rebuilt = text.clone();
-        for (field, flag) in WATCH_SCOPE_VOCABULARY {
-            rebuilt = rebuilt.replace(flag, field);
-        }
-        assert_eq!(rebuilt, source, "the CLI wording must be the library's, knob names aside");
     }
 
     #[test]

@@ -15,7 +15,9 @@
 
 use std::path::Path;
 
-use fdu_core::{CachePolicy, Index, OpenConfig, ScanConfig, ScanReport, ScanScope, Status};
+use fdu_core::{
+    CachePolicy, Index, IndexHandle, OpenConfig, ScanConfig, ScanReport, ScanScope, Status,
+};
 
 /// Files per directory in the fixture below.
 const PER_DIR: usize = 8;
@@ -300,4 +302,60 @@ fn a_zero_cap_is_a_configuration_error() {
         error.to_string().contains("max_files"),
         "and the message has to name the knob: {error}"
     );
+}
+
+/// A refresh of a capped index does not grow it past the cap.
+///
+/// The half the walk's own budget cannot cover. `Budget` stops *discovery*, which is what
+/// makes a capped scan cheap, but reconciliation walks from the index and never consults
+/// it -- so before the index kept the cap itself, one refresh turned a bounded inventory
+/// into an unbounded one while the scan identity went on claiming a cap.
+#[test]
+fn a_refresh_does_not_grow_a_capped_index_past_its_cap() {
+    let dir = tempfile::tempdir().expect("temp");
+    for index in 0..6 {
+        std::fs::write(dir.path().join(format!("f{index}.txt")), b"seed").expect("write");
+    }
+    let scan = ScanConfig { max_files: Some(4), ..ScanConfig::default() };
+    let config = OpenConfig { scan: scan.clone(), policy: CachePolicy::Off, ..Default::default() };
+    let (index, _) = fdu_core::open(dir.path(), &config).expect("open");
+    let handle = IndexHandle::new(index);
+    let held = handle.total().expect("total").files;
+    assert_eq!(held, 4, "the walk stopped at the cap");
+
+    for index in 0..8 {
+        std::fs::write(dir.path().join(format!("late{index}.txt")), b"more").expect("write");
+    }
+    fdu_core::scan::reconcile_handle(&handle, &scan, &mut |_| {}).expect("refresh");
+
+    assert_eq!(
+        handle.total().expect("total").files,
+        4,
+        "a refresh finds more than the cap allows and keeps the cap"
+    );
+    assert_eq!(
+        handle.with_index(|index| index.coverage_at(std::path::Path::new(""))).expect("coverage"),
+        fdu_core::Status::Partial(fdu_core::CoverageReason::Budget),
+        "and says the inventory is short rather than dropping rows silently"
+    );
+}
+
+/// An uncapped index is not bounded by anything, which is what makes the test above a test.
+#[test]
+fn an_uncapped_refresh_admits_everything_it_finds() {
+    let dir = tempfile::tempdir().expect("temp");
+    for index in 0..6 {
+        std::fs::write(dir.path().join(format!("f{index}.txt")), b"seed").expect("write");
+    }
+    let config = OpenConfig { policy: CachePolicy::Off, ..Default::default() };
+    let (index, _) = fdu_core::open(dir.path(), &config).expect("open");
+    let handle = IndexHandle::new(index);
+
+    for index in 0..8 {
+        std::fs::write(dir.path().join(format!("late{index}.txt")), b"more").expect("write");
+    }
+    fdu_core::scan::reconcile_handle(&handle, &ScanConfig::default(), &mut |_| {})
+        .expect("refresh");
+
+    assert_eq!(handle.total().expect("total").files, 14);
 }
