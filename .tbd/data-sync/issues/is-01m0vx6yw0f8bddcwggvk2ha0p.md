@@ -3,9 +3,9 @@ type: is
 id: is-01m0vx6yw0f8bddcwggvk2ha0p
 title: "A native walk budget: stop discovery at the cap, and say so"
 kind: task
-status: closed
+status: open
 priority: 1
-version: 10
+version: 15
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 refs:
   - kind: pr
@@ -17,12 +17,21 @@ refs:
   - kind: pr
     url: https://github.com/jlevy/fdu/pull/47#pullrequestreview-5017522830
     at: 2026-08-25T09:57:37.582Z
+  - kind: pr
+    url: https://github.com/jlevy/fdu/pull/47#pullrequestreview-5019372007
+    at: 2026-08-25T13:21:14.058Z
+  - kind: other
+    url: https://github.com/jlevy/fdu/actions/runs/32851927452/job/97814746382
+    at: 2026-08-25T13:22:46.188Z
+  - kind: pr
+    url: https://github.com/jlevy/fdu/pull/47#issuecomment-5411017628
+    at: 2026-08-25T13:22:59.790Z
 labels: []
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-25T07:30:01.728Z
-updated_at: 2026-08-25T13:04:01.063Z
-closed_at: 2026-08-25T13:04:01.063Z
+updated_at: 2026-08-25T13:22:59.791Z
+closed_at: null
 close_reason: null
 resolution: null
 duplicate_of: null
@@ -104,3 +113,7 @@ a_deletion_frees_a_slot_the_next_arrival_can_take, and the live
 a_capped_watch_holds_its_cap_against_live_events. Four mutations checked: the
 refusal removed, off by one, directories counted, and the refusal not marking
 coverage.
+
+Reopened: Exact-head review at PR #47 head 71772fc38d2efb555ed5b383a2dbe1709bcd6b42 found that live max_files refusal changes coverage without completing the typed/reporting contract. Index::apply marks root freshness Partial(Budget), but no ResourceStop issue is added to EngineState on the same clock. merge_apply_stats omits ApplyStats.refused, and ReconcileReport::is_complete ignores refused, so a refresh can report complete while its terminal index is partial. Reopen until refusal count, reconcile completion or coverage, and terminal typed issue state agree atomically. Evidence: crates/fdu-core/src/index.rs:2276-2297 and scan.rs:969-979, 4231-4238.
+
+EXACT-HEAD CI REGRESSION at 71772fc38d2efb555ed5b383a2dbe1709bcd6b42. Windows golden CI is red in the new max_files scenario: https://github.com/jlevy/fdu/actions/runs/32851927452/job/97814746382. The capped command returns complete with one 3-byte file, and the immediately following uncapped control also reports the same one 3-byte file instead of the intended three 1-byte files. That control isolates the failure to the non-portable sh -c fixture setup at tests/golden/cli-surface.tryscript.md:559-561 rather than to cap enforcement. Replace it with repository-standard cross-platform fixture creation, then retain the capped exit-2 and uncapped exit-0 assertions. This is a branch-caused required-check failure and belongs on this max_files bead.

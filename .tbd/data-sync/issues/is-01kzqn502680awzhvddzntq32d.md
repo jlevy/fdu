@@ -3,9 +3,9 @@ type: is
 id: is-01kzqn502680awzhvddzntq32d
 title: "P3: watch scope validation errors"
 kind: task
-status: closed
+status: open
 priority: 1
-version: 8
+version: 10
 spec_path: docs/project/specs/active/plan-2026-08-10-fdu-composable-cli-surface.md
 refs:
   - kind: pr
@@ -17,14 +17,17 @@ refs:
   - kind: pr
     url: https://github.com/jlevy/fdu/pull/47#pullrequestreview-5017522830
     at: 2026-08-25T09:57:37.843Z
+  - kind: pr
+    url: https://github.com/jlevy/fdu/pull/47#pullrequestreview-5019372007
+    at: 2026-08-25T13:21:13.810Z
 labels:
   - pr47-review
   - metabrowser
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-11T05:36:29.253Z
-updated_at: 2026-08-25T13:03:42.925Z
-closed_at: 2026-08-25T13:03:42.925Z
+updated_at: 2026-08-25T13:21:13.811Z
+closed_at: null
 close_reason: null
 resolution: null
 duplicate_of: null
@@ -95,3 +98,5 @@ where the command line returns 2.
 
 make check and make cross-lint pass; parity holds at 21 recorded deviations,
 one fewer than before because the watch-scope message no longer exists.
+
+Reopened: Exact-head review at PR #47 head 71772fc38d2efb555ed5b383a2dbe1709bcd6b42 found that one_filesystem watch admission does not preserve the scan semantics it claims to implement. The scan retains the boundary entry and stops descent, but watch::admitted converts an upsert for that boundary row to Remove when the row device differs. InvalidateSubtree is tested with zeroed attrs, so it is admitted and reconciliation can then refuse the subtree as outside scope. Reopen until scan, live upsert, invalidation, and reconciliation implement one retained-boundary rule, with mount-boundary tests. Evidence: crates/fdu-core/src/watch.rs:472-505, scan.rs:4282-4285, 4336-4338, and 4355-4407.

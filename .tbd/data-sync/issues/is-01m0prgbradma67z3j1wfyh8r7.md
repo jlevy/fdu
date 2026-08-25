@@ -5,7 +5,7 @@ title: "Spec: fdu for interactive clients — the metabrowser contract"
 kind: epic
 status: open
 priority: 1
-version: 72
+version: 75
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 refs:
   - kind: pr
@@ -20,6 +20,12 @@ refs:
   - kind: pr
     url: https://github.com/jlevy/fdu/pull/47#pullrequestreview-5018663775
     at: 2026-08-25T12:07:06.705Z
+  - kind: pr
+    url: https://github.com/jlevy/fdu/pull/47#pullrequestreview-5019372007
+    at: 2026-08-25T13:21:13.562Z
+  - kind: pr
+    url: https://github.com/jlevy/fdu/pull/47#issuecomment-5411017628
+    at: 2026-08-25T13:22:59.547Z
 labels: []
 dependencies: []
 child_order_hints:
@@ -75,7 +81,7 @@ child_order_hints:
   - is-01kzqn502680awzhvddzntq32d
   - is-01m0w5fbs0n1xv9rxrmrp79mda
 created_at: 2026-08-23T07:31:34.794Z
-updated_at: 2026-08-25T12:07:19.441Z
+updated_at: 2026-08-25T13:23:14.709Z
 ---
 Root epic for the interactive-client integration spec: partitioned tallies (tag planes), the embedder watch contract, the session integration shape, and the adoption proof. Each capability lands engine-first and clears the parity harness. The measured basis and the requirement-by-requirement contract map are in the spec.
 
@@ -134,3 +140,5 @@ New exact-head adoption drift is deduplicated as follows. fdu-vfyw remains open 
 EXACT-HEAD ADOPTION REVIEW at PR #47 9f9bd3d (2026-08-25): accepted invalidations-only WatchBatch delivery/work (`515d52c`) and strict concurrent max_files (`1b76062`). Reopened fdu-91ru: EntryPage is functionally bounded/lossless but starts from root and performs a full selection pass on every continuation (`index.rs:4040-4123`), making P-page assembly O(index × P) and violating MetaBrowser #74’s explicit no-repeat-projection gate. Formal review: https://github.com/jlevy/fdu/pull/47#pullrequestreview-5018121437. Open adoption gates: fdu-91ru, fdu-7sou, fdu-97dd, fdu-vfyw, fdu-bjhy, fdu-kl7r.
 
 EXACT-HEAD ADOPTION REVIEW at PR #47 d0a6a6a (2026-08-25): accepted native special-object exclusion across scan, snapshot, reconciliation, refresh, watch, Python, and tally conservation; fdu-bjhy stays closed. The exact shared identity remains open on fdu-vfyw because browser_provider.scope_fingerprint adds internal `exclude_special` to the MetaBrowser digest, whose authoritative component set is exactly hidden_allowlist/max_depth/max_files. Keep the internal ScanScope bit but do not expose it as an application scope axis. Review: https://github.com/jlevy/fdu/pull/47#pullrequestreview-5018663775. Open adoption gates remain fdu-91ru, fdu-7sou, fdu-97dd, fdu-vfyw, and fdu-kl7r.
+
+EXACT-HEAD ADOPTION REVIEW at PR #47 71772fc38d2efb555ed5b383a2dbe1709bcd6b42 / MetaBrowser #74 0577bb125c4a607719befa3f213362f5522d5724 (2026-08-25). Accepted the exact MetaBrowser scope-digest bytes, the shared bounded open builder, native special-object pruning, and the direction of an index-owned global file cap. Formal review https://github.com/jlevy/fdu/pull/47#pullrequestreview-5019372007 found live hidden-path admission bypass on fdu-xyvu; reopened fdu-7sou for retained one_filesystem boundary drift, fdu-97dd for refusal state/report/typed-issue drift, and fdu-vfx7 for a state-only-batch acceptance-test race; fdu-vfyw remains open for the stale row-carrying reference adapter, and fdu-kl7r for the deliberate global-cap agreement change on the MetaBrowser side. fdu-91ru remains open because continuations still repeat the full selection pass. Exact-head CI is red only on the new Windows max-files golden: its non-portable fixture setup creates one 3-byte file even in the uncapped control; actionable follow-up https://github.com/jlevy/fdu/pull/47#issuecomment-5411017628. Open adoption/review gates are fdu-91ru, fdu-7sou, fdu-97dd, fdu-vfx7, fdu-xyvu, fdu-vfyw, and fdu-kl7r.
