@@ -145,10 +145,18 @@ def scope_fingerprint(options: fdu.ScanOptions) -> str:
     `hidden="keep"` has no counterpart on the consuming side, whose model always prunes
     hidden names except an allowlist. A provider adapter therefore prunes; the mode exists
     for fdu's own command line, which counts what is there.
+
+    `special` is the same shape of decision one axis over. The browser's entry model names
+    three kinds -- file, directory, symlink -- so a provider has nothing to call a socket
+    and must exclude it rather than reclassify it, which would make every tally wrong by
+    one in a way no field reveals. It reaches this digest as a boolean rather than as the
+    mode word, because "keep" against "prune" is the surface's spelling and two surfaces
+    spelling one fact differently is how a shared fingerprint stops being shared.
     """
 
     return _pair_digest(
         {
+            "exclude_special": "true" if options.special == "prune" else "false",
             "follow_symlinks": "false",
             "hidden_allowlist": json.dumps(
                 sorted(options.hidden_allow), ensure_ascii=True, separators=(",", ":")
@@ -188,7 +196,14 @@ def semantic_fingerprint(scope: fdu.ScanScope) -> str:
 
 
 def open_tree(root: Path) -> fdu.Index:
-    """Open an index a browser can serve from: promoted plane, hidden paths pruned."""
+    """Open an index a browser can serve from: promoted plane, hidden and special pruned.
+
+    `special="prune"` is not a preference. The rows this provider yields carry one of three
+    kinds, so an index holding a fourth would force the adapter to either drop rows the
+    engine counted -- making the totals disagree with the listing -- or call a socket a
+    file. Excluding at the scope keeps one inventory behind both, and the scope digest above
+    records which inventory it is.
+    """
 
     return fdu.open(
         root,
@@ -197,6 +212,7 @@ def open_tree(root: Path) -> fdu.Index:
             promote=(PLANE_RULE,),
             hidden="prune",
             hidden_allow=HIDDEN_ALLOW,
+            special="prune",
         ),
     )
 

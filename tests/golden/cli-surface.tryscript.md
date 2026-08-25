@@ -52,6 +52,8 @@ SCOPE
                              [default: keep]
       --hidden-allow <LIST>  Hidden names to scan anyway, comma-separated. Only meaningful with
                              --hidden prune
+      --special <MODE>       Whether sockets, FIFOs and device nodes are scanned at all: keep
+                             (default) or prune [default: keep]
 
 SELECTION
       --include <GLOB>          Report only entries matching this glob; repeatable

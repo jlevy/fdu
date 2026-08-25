@@ -925,6 +925,7 @@ def open(
         promote=list(scan_options.promote),
         hidden=scan_options.hidden,
         hidden_allow=list(scan_options.hidden_allow),
+        special=scan_options.special,
         analyze=str(analysis_options.analyze),
         analysis_workers=analysis_options.workers,
     )
@@ -954,6 +955,7 @@ def scan(
         promote=list(scan_options.promote),
         hidden=scan_options.hidden,
         hidden_allow=list(scan_options.hidden_allow),
+        special=scan_options.special,
         analyze=str(analysis_options.analyze),
         analysis_workers=analysis_options.workers,
     )
@@ -998,6 +1000,7 @@ def report(
         promote=list(scan_options.promote),
         hidden=scan_options.hidden,
         hidden_allow=list(scan_options.hidden_allow),
+        special=scan_options.special,
         analyze=str(analysis_options.analyze),
         analysis_workers=analysis_options.workers,
         **_query_kwargs(selected),

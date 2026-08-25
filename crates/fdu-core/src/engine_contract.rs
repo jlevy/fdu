@@ -247,6 +247,17 @@ pub struct ScanScope {
     /// which entries the cap admitted is decided by the order the walk happened to reach
     /// them in.
     pub max_files: Option<u64>,
+    /// Whether entries that are neither files, directories nor symlinks are excluded.
+    ///
+    /// Sockets, FIFOs, device nodes and anything else the platform reports as none of the
+    /// three. fdu's own command line counts them -- they are real entries and a tool that
+    /// answers "what is in this tree" should say so -- but a consumer whose entry algebra
+    /// has no name for them needs them gone rather than reclassified: counting a socket as
+    /// a regular file is a wrong answer where omitting it is a scoped one.
+    ///
+    /// Scope, so it is fingerprinted: an index built with them excluded holds a different
+    /// set of entries than one built without.
+    pub exclude_special: bool,
 }
 
 /// Where a value came from, so a consumer can trade speed for certainty knowingly.

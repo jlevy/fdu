@@ -114,7 +114,14 @@ const SCOPE_FOLLOW_SYMLINKS: u8 = 1 << 0;
 const SCOPE_ONE_FILESYSTEM: u8 = 1 << 1;
 
 /// All scope bits understood by this format version.
-const SCOPE_KNOWN_FLAGS: u8 = SCOPE_FOLLOW_SYMLINKS | SCOPE_ONE_FILESYSTEM;
+/// The walk excluded entries that are neither files, directories nor symlinks.
+///
+/// A flag rather than a new field, which the byte had room for. The bit clear means
+/// "kept", which is what every snapshot written before this existed meant, so the encoding
+/// stayed compatible without a version move.
+const SCOPE_EXCLUDE_SPECIAL: u8 = 1 << 2;
+
+const SCOPE_KNOWN_FLAGS: u8 = SCOPE_FOLLOW_SYMLINKS | SCOPE_ONE_FILESYSTEM | SCOPE_EXCLUDE_SPECIAL;
 
 /// Encoded byte width of the fixed scan-scope header.
 ///
@@ -830,6 +837,9 @@ fn put_scope(buf: &mut Vec<u8>, scope: ScanScope) -> Result<()> {
     if scope.one_filesystem {
         flags |= SCOPE_ONE_FILESYSTEM;
     }
+    if scope.exclude_special {
+        flags |= SCOPE_EXCLUDE_SPECIAL;
+    }
     buf.push(flags);
     buf.extend_from_slice(&scope.tag_rules_fingerprint.to_le_bytes());
     buf.extend_from_slice(&scope.type_rules_fingerprint.to_le_bytes());
@@ -854,6 +864,7 @@ fn read_scope(reader: &mut impl Read) -> ParseResult<ScanScope> {
         max_depth,
         follow_symlinks: flags & SCOPE_FOLLOW_SYMLINKS != 0,
         one_filesystem: flags & SCOPE_ONE_FILESYSTEM != 0,
+        exclude_special: flags & SCOPE_EXCLUDE_SPECIAL != 0,
         tag_rules_fingerprint: read_u64(reader)?,
         type_rules_fingerprint: read_u64(reader)?,
         reducers_fingerprint: read_u64(reader)?,
@@ -2003,6 +2014,7 @@ mod tests {
             reducers_fingerprint: 33,
             hidden_fingerprint: 44,
             max_files: Some(55),
+            exclude_special: true,
         };
         let index = Index::new_with_scope("/some/root", scope);
 

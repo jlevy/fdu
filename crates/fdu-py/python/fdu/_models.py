@@ -263,6 +263,19 @@ class ScanOptions:
     #: needs kept -- `.github`, `.cargo` -- and a second glob dialect here would interact
     #: with `Selection.include` and the tag rules in ways nobody could predict.
     hidden_allow: tuple[str, ...] = ()
+    #: Whether special filesystem objects are scanned at all: ``"keep"`` (the default) or
+    #: ``"prune"``. Sockets, FIFOs and device nodes -- everything that is not a file, a
+    #: directory or a symlink.
+    #:
+    #: Scope beside `hidden`, and just as strong: a pruned special object has no row, no
+    #: tally and no provenance, and a path that *becomes* one loses the row it had, on a
+    #: scan, on a refresh and under a live watch alike.
+    #:
+    #: Kept by default, because they occupy directory entries a du replacement is being
+    #: asked about. Pruning exists for consumers whose own model has no name for them: a
+    #: viewer that can render only files, directories and symlinks would otherwise have to
+    #: call a socket a file, which is a wrong answer rather than a missing one.
+    special: str = "keep"
 
     def __post_init__(self) -> None:
         if self.max_depth is not None and self.max_depth < 0:
@@ -1496,6 +1509,14 @@ class ScanScope:
 
     follow_symlinks: bool
     one_filesystem: bool
+    exclude_special: bool
+    """Whether sockets, FIFOs and device nodes were pruned rather than recorded.
+
+    Scope of the same kind as :attr:`hidden_fingerprint`: a pruned special object has no
+    row and no tally, so an index built with this set holds a different inventory than one
+    built without it, and neither can be reinterpreted as the other.
+    """
+
     tag_rules_fingerprint: int
     type_rules_fingerprint: int
     reducers_fingerprint: int
@@ -2058,6 +2079,7 @@ def scan_scope_from_dict(value: dict[str, Any]) -> ScanScope:
         max_files=None if files is None else int(files),
         follow_symlinks=bool(value["follow_symlinks"]),
         one_filesystem=bool(value["one_filesystem"]),
+        exclude_special=bool(value["exclude_special"]),
         tag_rules_fingerprint=int(value["tag_rules_fingerprint"]),
         type_rules_fingerprint=int(value["type_rules_fingerprint"]),
         reducers_fingerprint=int(value["reducers_fingerprint"]),

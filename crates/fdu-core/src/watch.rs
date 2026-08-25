@@ -39,7 +39,9 @@ use notify::{EventKind, RecursiveMode, Watcher as NotifyWatcher};
 
 mod scripted_events;
 
-use crate::engine_contract::{AppliedDelta, Error, InvalidateReason, Observation, Op, Result};
+use crate::engine_contract::{
+    AppliedDelta, Error, InvalidateReason, Observation, ObservationOp, Op, Result,
+};
 use crate::scan;
 use crate::{ApplyOutcome, IndexHandle, ScanConfig};
 
@@ -429,13 +431,49 @@ fn apply_reverified_with(
     scan_config.validate_for_watch_scope(scope)?;
     for _ in 0..MAX_OPTIMISTIC_APPLY_ATTEMPTS {
         let clock = index.clock()?;
-        let candidate = verifier(&root, observation)?;
+        let candidate = retained(verifier(&root, observation)?, scan_config);
         if let Some(outcome) = index.apply_if_clock(clock, &candidate)? {
             return Ok(outcome);
         }
     }
 
     index.invalidate_root(InvalidateReason::WatchContention)
+}
+
+/// Hold a verified observation to the scan's own kind admission, after the `stat`.
+///
+/// The watcher is the third producer of upserts, beside the walk and reconciliation, and
+/// the only one that learns a kind from an event rather than from a listing it controls.
+/// Without this it would be the hole in the rule: a scope that excludes special objects
+/// would exclude them at boot and at refresh, and then a `mkfifo` under a live watch would
+/// put one back -- an index whose contents depend on whether anyone was watching.
+///
+/// An excluded kind becomes a removal rather than a dropped op, for the reason the single-
+/// path reconcile does the same: the path may already hold a row. A file replaced in place
+/// by a socket is exactly one event, and ignoring it would leave the file's row standing
+/// over a socket forever.
+///
+/// Applied to the candidate rather than inside each verifier, because both verifiers ---
+/// the intent path and the test one --- would otherwise carry the rule separately, which
+/// is the divergence `retains` exists to prevent.
+fn retained(observation: Observation, config: &ScanConfig) -> Observation {
+    if !config.exclude_special {
+        return observation;
+    }
+    let ops = observation
+        .ops
+        .into_iter()
+        .map(|observed| match observed.op {
+            // Rebuilt rather than rebatched through `Observation::new`, which would flatten
+            // every expectation to `Any`: substituting one op must not also decide the
+            // arbitration precondition its producer attached to the path.
+            Op::Upsert { path, kind, .. } if !scan::retains(kind, config) => {
+                ObservationOp { op: Op::Remove { path }, expectation: observed.expectation }
+            }
+            _ => observed,
+        })
+        .collect();
+    Observation::from_ops(ops)
 }
 
 #[cfg(test)]
@@ -752,9 +790,93 @@ fn relative_to(root: &Path, path: &Path) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::EntryKind;
+    use crate::engine_contract::{Expectation, PathExpectation, PathState};
+    use crate::{Attrs, EntryKind};
     use notify::event::{CreateKind, Flag, MetadataKind, ModifyKind, RenameMode};
     use std::fs;
+
+    /// An excluded kind becomes a removal of the path, not a dropped operation.
+    ///
+    /// Asserted here rather than through a live session, and the reason is worth writing
+    /// down: on Linux a rename onto a watched path escalates to a root invalidation, so
+    /// reconciliation sweeps the stale row away and both implementations look alike from
+    /// outside. The integration tests prove the *rule* holds end to end; only this one
+    /// separates excluding the object from ignoring its event, which is the difference
+    /// that matters on any backend that reports the file without invalidating its parent.
+    #[test]
+    fn an_excluded_kind_becomes_a_removal_rather_than_a_dropped_operation() {
+        let config = ScanConfig { exclude_special: true, ..ScanConfig::default() };
+        let observation = Observation::new(vec![
+            Op::Upsert {
+                path: PathBuf::from("sock"),
+                kind: EntryKind::Other,
+                attrs: Attrs::default(),
+            },
+            Op::Upsert {
+                path: PathBuf::from("file.txt"),
+                kind: EntryKind::File,
+                attrs: Attrs::default(),
+            },
+        ]);
+
+        let held = retained(observation, &config);
+        assert_eq!(held.len(), 2, "the batch keeps its length: one op in, one op out");
+        assert!(
+            matches!(&held.ops[0].op, Op::Remove { path } if path == Path::new("sock")),
+            "the socket's upsert became a removal of the path it named: {:?}",
+            held.ops[0].op
+        );
+        assert!(
+            matches!(&held.ops[1].op, Op::Upsert { kind: EntryKind::File, .. }),
+            "and nothing else was touched: {:?}",
+            held.ops[1].op
+        );
+    }
+
+    /// Keeping is keeping: the default scope hands the batch back unchanged.
+    #[test]
+    fn a_default_scope_leaves_a_special_object_alone() {
+        let observation = Observation::new(vec![Op::Upsert {
+            path: PathBuf::from("sock"),
+            kind: EntryKind::Other,
+            attrs: Attrs::default(),
+        }]);
+        let held = retained(observation.clone(), &ScanConfig::default());
+        assert_eq!(held, observation, "nothing excludes it, so nothing rewrites it");
+    }
+
+    /// Substituting an operation must not also rewrite its arbitration precondition.
+    ///
+    /// The batch a producer hands over carries, per path, the state it believed the index
+    /// was in. Rebatching through `Observation::new` would flatten every one of those to
+    /// `Any` -- turning a conditional removal into an unconditional one, and silently
+    /// widening what an excluded kind is allowed to overwrite.
+    #[test]
+    fn a_substituted_removal_keeps_the_expectation_its_producer_attached() {
+        // A concrete precondition rather than a blank one, so a rebuild that discarded it
+        // would be visible: `Any` is what the flattening bug produces.
+        let expectation = PathExpectation::new(
+            PathState::Present { kind: EntryKind::File, attrs: Attrs::default() },
+            None,
+            None,
+        );
+        let observation = Observation::from_ops(vec![ObservationOp::if_state(
+            Op::Upsert {
+                path: PathBuf::from("sock"),
+                kind: EntryKind::Other,
+                attrs: Attrs::default(),
+            },
+            expectation,
+        )]);
+
+        let config = ScanConfig { exclude_special: true, ..ScanConfig::default() };
+        let held = retained(observation, &config);
+        assert_eq!(
+            held.ops[0].expectation,
+            Expectation::State(expectation),
+            "the precondition belongs to the path, not to the operation that was replaced"
+        );
+    }
 
     fn queued_test_watcher(root: PathBuf) -> (SyncSender<CoalescedIntent>, Watcher) {
         let (sender, intents) = sync_channel(1);

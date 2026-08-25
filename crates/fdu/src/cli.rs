@@ -405,6 +405,18 @@ pub struct Cli {
     #[arg(long, value_name = "LIST", help_heading = "SCOPE")]
     pub hidden_allow: Option<String>,
 
+    /// Whether sockets, FIFOs and device nodes are scanned at all: keep (default) or prune.
+    ///
+    /// Scope of the same strong kind as --hidden: a pruned special object has no row, no
+    /// tally and no provenance, and a path that becomes one loses the row it had.
+    ///
+    /// Kept by default, because they occupy directory entries a du replacement is being
+    /// asked about. Pruning exists for consumers whose own model has no name for them:
+    /// a viewer that can render only files, directories and symlinks would otherwise have
+    /// to reclassify a socket as a file, which is a wrong answer rather than a missing one.
+    #[arg(long, value_name = "MODE", default_value = "keep", help_heading = "SCOPE")]
+    pub special: String,
+
     // ---- selection: which retained entries this query considers ----
     /// Report only entries matching this glob; repeatable.
     #[arg(long, value_name = "GLOB", help_heading = "SELECTION")]
@@ -651,6 +663,7 @@ impl Cli {
                 one_filesystem: self.one_filesystem,
                 order,
                 threads: self.threads,
+                exclude_special: self.parse_special()?,
                 types,
                 tags: Some(tags),
                 hidden,
@@ -1151,6 +1164,21 @@ impl Cli {
         let policy = fdu_core::admission::parse_policy(self.hidden.trim(), allow)
             .map_err(|error| usage(&anyhow::anyhow!("{error}")))?;
         Ok(policy.map(std::sync::Arc::new))
+    }
+
+    /// Read --special as the boolean the scan config holds.
+    ///
+    /// Named for what is kept rather than for the flag, because the config field is
+    /// `exclude_special` and a `special: bool` at the boundary would read as "are specials
+    /// on" at one end and "are they off" at the other.
+    fn parse_special(&self) -> anyhow::Result<bool> {
+        match self.special.trim().to_ascii_lowercase().as_str() {
+            "keep" => Ok(false),
+            "prune" => Ok(true),
+            other => Err(usage(&anyhow::anyhow!(
+                "invalid --special {other:?}: expected one of keep, prune"
+            ))),
+        }
     }
 
     fn parse_cache_policy(&self) -> anyhow::Result<CachePolicy> {
@@ -2007,6 +2035,7 @@ mod tests {
             promote: None,
             hidden: "keep".to_string(),
             hidden_allow: None,
+            special: "keep".to_string(),
             tag: Vec::new(),
             not_tag: Vec::new(),
             plane: None,

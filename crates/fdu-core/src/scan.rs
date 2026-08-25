@@ -197,6 +197,17 @@ pub struct ScanConfig {
     /// stopped marks coverage partial from the root down, so every directory in the index
     /// reports `budget` as the reason its numbers are short.
     pub max_files: Option<u64>,
+    /// Exclude entries that are neither files, directories nor symlinks.
+    ///
+    /// Off by default, because fdu's own command line counts what is there and a socket is
+    /// there. On, for a consumer whose entry algebra has three kinds and no name for the
+    /// fourth: excluding is a scoped answer, and reclassifying a device node as a regular
+    /// file is a wrong one.
+    ///
+    /// Semantic, and fingerprinted into [`ScanScope`] for the reason every other admission
+    /// rule is: it decides what the index *holds*, so a snapshot recorded with it on is
+    /// never read with it off.
+    pub exclude_special: bool,
 }
 
 impl Default for ScanConfig {
@@ -204,6 +215,7 @@ impl Default for ScanConfig {
         Self {
             max_depth: None,
             max_files: None,
+            exclude_special: false,
             batch_size: DEFAULT_BATCH_SIZE,
             follow_symlinks: false,
             one_filesystem: false,
@@ -262,6 +274,7 @@ impl ScanConfig {
             reducers_fingerprint: REDUCERS_FINGERPRINT,
             hidden_fingerprint: self.hidden().fingerprint(),
             max_files: self.max_files,
+            exclude_special: self.exclude_special,
         }
     }
 
@@ -1232,6 +1245,11 @@ fn scan_internal(
 
             let attrs = attrs_from(&meta);
             let kind = kind_from(&meta);
+            if !retains(kind, config) {
+                // Before the budget, deliberately: an entry the scope does not hold must
+                // not spend a slot that a retained one could have used.
+                continue;
+            }
             if let Some(budget) = &budget
                 && !budget.admit(kind)
             {
@@ -2335,6 +2353,11 @@ fn record_walk_entry(
     chunk_send_ns: &mut u64,
     diagnostics: Option<&ScanDiagnosticsRecorder>,
 ) -> bool {
+    if !retains(kind, config) {
+        // Before the budget, deliberately: an entry the scope does not hold must not spend
+        // a slot that a retained one could have used.
+        return true;
+    }
     if let Some(budget) = budget
         && !budget.admit(kind)
     {
@@ -3124,6 +3147,14 @@ pub fn revalidate(
 
             let kind = kind_from(&meta);
             let attrs = attrs_from(&meta);
+            if !retains(kind, config) {
+                // Out of `seen` again, so the sweep's removal pass drops whatever the index
+                // still holds here. That is not hypothetical: a file replaced by a socket
+                // keeps its old row otherwise, forever, because nothing after this would
+                // ever look at the path again.
+                seen.remove(&name);
+                continue;
+            }
             report.observe(kind, attrs);
             batch.push(ObservationOp::if_state(
                 Op::Upsert { path: rel_path.clone(), kind, attrs },
@@ -3518,6 +3549,16 @@ fn reconcile_target_inner(
         };
         let kind = kind_from(&meta);
         let attrs = attrs_from(&meta);
+        if !retains(kind, config) {
+            // Present on disk and outside the scope, which is a removal rather than a
+            // no-op: the index may hold the row this path used to have.
+            batch.push(ObservationOp::if_state(
+                Op::Remove { path: subtree.to_path_buf() },
+                baseline,
+            ));
+            flush_reconcile_batch(target, &mut batch, sink, &mut report.apply)?;
+            return Ok(report);
+        }
         report.scan.observe(kind, attrs);
         push_reconcile_upsert(
             target,
@@ -3576,6 +3617,19 @@ fn reconcile_target_inner(
                              report: &mut ReconcileReport|
          -> Result<()> {
             let rel_path = rel_dir.join(&name);
+            if !retains(kind, config) {
+                // A removal rather than a `continue`, because the name was already taken
+                // out of `known` and the sweep below will not see it: whatever row the
+                // path used to have would stand over an object the scope does not hold.
+                batch
+                    .push(ObservationOp::if_state(Op::Remove { path: rel_path.clone() }, baseline));
+                if batch.len() >= config.batch_size.max(1) {
+                    flush_reconcile_batch(target, batch, sink, &mut report.apply)?;
+                }
+                // And nothing below it either: a directory is never `Other`, so there is
+                // no subtree here to drop, and `Op::Remove` covers the path itself.
+                return Ok(());
+            }
             report.scan.observe(kind, attrs);
             push_reconcile_upsert(
                 target,
@@ -3904,6 +3958,19 @@ fn reconcile_wave_worker(
                 let mut process_entry =
                     |name: OsString, kind: EntryKind, attrs: Attrs, baseline: PathExpectation| {
                         let rel_path = rel_dir.join(&name);
+                        if !retains(kind, config) {
+                            // A removal rather than a skip, for the reason the serial
+                            // reconcile gives: the name is already out of `known`, so the
+                            // sweep below will not drop the row the path used to have.
+                            defer_reconcile_op(
+                                Op::Remove { path: rel_path },
+                                &mut result.operations,
+                                deferred_count,
+                                overflowed,
+                                max_deferred_ops,
+                            );
+                            return;
+                        }
                         result.scan.entries += 1;
                         if kind == EntryKind::File {
                             result.scan.files_walked += 1;
@@ -4189,6 +4256,17 @@ fn merge_reconcile_report(total: &mut ReconcileReport, addition: ReconcileReport
     total.scan.errors.extend(addition.scan.errors);
     total.scan.control_dirs.extend(addition.scan.control_dirs);
     merge_apply_stats(&mut total.apply, addition.apply);
+}
+
+/// Whether this scan retains an entry of `kind` at all.
+///
+/// The kind half of admission, beside the name half below. Asked wherever a kind first
+/// becomes known -- after the metadata read, in both walkers, in reconciliation and in the
+/// watcher -- because that is the only place it can be: a name does not say whether it
+/// belongs to a socket, so this half cannot be folded into `admits` and cannot run before
+/// the `stat` the way that one does.
+pub(crate) fn retains(kind: EntryKind, config: &ScanConfig) -> bool {
+    !config.exclude_special || kind != EntryKind::Other
 }
 
 /// Whether one directory entry is inside the scan scope, by name alone.

@@ -495,6 +495,7 @@ def check_the_browser_provider_example_holds_the_contract_it_documents() -> None
         max_files=None,
         follow_symlinks=False,
         one_filesystem=False,
+        exclude_special=False,
         tag_rules_fingerprint=11,
         type_rules_fingerprint=22,
         reducers_fingerprint=33,
@@ -506,6 +507,7 @@ def check_the_browser_provider_example_holds_the_contract_it_documents() -> None
     options = fdu.ScanOptions(hidden="prune", hidden_allow=(".github", ".cargo"))
     expected_scope = pair_digest(
         {
+            "exclude_special": "false",
             "follow_symlinks": "false",
             # A structured value is a compact canonical JSON string inside the outer array.
             "hidden_allowlist": '["' + '","'.join([".cargo", ".github"]) + '"]',
@@ -542,8 +544,17 @@ def check_the_browser_provider_example_holds_the_contract_it_documents() -> None
         dataclasses.replace(options, max_depth=3),
         dataclasses.replace(options, max_files=1000),
         dataclasses.replace(options, one_filesystem=True),
+        dataclasses.replace(options, special="prune"),
     ]:
         assert example.scope_fingerprint(changed) != expected_scope, changed
+
+    # Excluding special objects is scope, not meaning: it changes which entries the index
+    # holds rather than what any of them is called, so it moves the digest above and not
+    # this one. The engine's own `ScanScope` reports it for the same reason.
+    assert (
+        example.semantic_fingerprint(dataclasses.replace(base, exclude_special=True))
+        == expected_semantic
+    ), "excluding special objects is scope identity, not semantic identity"
 
     # The allowlist is a set, so its written order is not part of its identity.
     assert (

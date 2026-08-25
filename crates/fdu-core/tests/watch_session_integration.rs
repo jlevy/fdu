@@ -695,3 +695,135 @@ fn an_invalidations_only_feed_carries_no_rows_and_loses_no_signal() {
     );
     assert!(invalidations.work.wall_ns > 0, "the mode still charges its own assembly");
 }
+
+/// A socket created under a live watch does not enter an index whose scope excludes them.
+///
+/// The watcher is the third producer of rows, beside the walk and reconciliation, and the
+/// only one that learns a kind from an event rather than from a listing it controls. A
+/// scope enforced by the other two and not by this one would hold until somebody started
+/// watching -- an index whose contents depend on whether anyone was looking.
+#[test]
+fn a_socket_created_under_a_pruning_watch_never_enters_the_index() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    fs::write(dir.path().join("existing.txt"), b"hello").expect("seed");
+    let scan = ScanConfig { exclude_special: true, ..ScanConfig::default() };
+    let (handle, mut session) = pruning_session(dir.path(), scan);
+
+    let Ok(_listener) = std::os::unix::net::UnixListener::bind(dir.path().join("sock")) else {
+        return;
+    };
+    // Created after the socket, so its arrival proves the watcher reached the socket's
+    // event too: one backend, one queue, and this is behind it.
+    fs::write(dir.path().join("after.rs"), b"fn main() {}").expect("create");
+
+    wait_for(&mut session, |change| change.path.ends_with("after.rs"))
+        .expect("the ordinary file should arrive");
+    assert!(!holds(&handle, "sock"), "a socket is outside this scope however it arrives");
+    assert!(holds(&handle, "after.rs"), "and nothing else was dropped with it");
+}
+
+/// A file replaced in place by a socket loses its row, under a live watch too.
+///
+/// The case that separates "skip the event" from "exclude the object". The path survives
+/// the replacement, so nothing else will revisit it; unless the exclusion removes the row,
+/// the index reports a five-byte file at a path that holds a socket for as long as the
+/// session runs.
+#[test]
+fn a_watched_file_replaced_by_a_socket_loses_the_row_it_had() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    fs::write(dir.path().join("doomed.txt"), b"hello").expect("seed");
+    let scan = ScanConfig { exclude_special: true, ..ScanConfig::default() };
+    let (handle, mut session) = pruning_session(dir.path(), scan);
+    assert!(holds(&handle, "doomed.txt"), "the file starts recorded");
+
+    fs::remove_file(dir.path().join("doomed.txt")).expect("unlink");
+    let Ok(_listener) = std::os::unix::net::UnixListener::bind(dir.path().join("doomed.txt"))
+    else {
+        return;
+    };
+    fs::write(dir.path().join("after.rs"), b"fn main() {}").expect("create");
+
+    wait_for(&mut session, |change| change.path.ends_with("after.rs"))
+        .expect("the ordinary file should arrive");
+    assert!(!holds(&handle, "doomed.txt"), "the row outlived the file it described");
+}
+
+/// A socket renamed *over* a live file removes the row, with no absence in between.
+///
+/// The case that separates "drop the event" from "exclude the object", and the reason the
+/// unlink-then-bind test above cannot make it: an unlink is itself an event, so the row is
+/// already gone before the socket exists and a watcher that merely ignored the create
+/// would look correct. A rename onto the path is one event, File to Other, with the path
+/// never absent -- so the removal has to be the exclusion's own doing or it does not
+/// happen at all.
+#[test]
+fn a_socket_renamed_over_a_watched_file_removes_the_row() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let staging = tempfile::tempdir().expect("staging");
+    fs::write(dir.path().join("doomed.txt"), b"hello").expect("seed");
+    let scan = ScanConfig { exclude_special: true, ..ScanConfig::default() };
+    let (handle, mut session) = pruning_session(dir.path(), scan);
+    assert!(holds(&handle, "doomed.txt"), "the file starts recorded");
+
+    // Bound outside the watched root, so the only event this produces inside it is the
+    // arrival on the destination. `rename` needs one filesystem, which two directories
+    // under the same temporary root are.
+    let Ok(_listener) = std::os::unix::net::UnixListener::bind(staging.path().join("sock")) else {
+        return;
+    };
+    if fs::rename(staging.path().join("sock"), dir.path().join("doomed.txt")).is_err() {
+        return;
+    }
+    fs::write(dir.path().join("after.rs"), b"fn main() {}").expect("create");
+
+    wait_for(&mut session, |change| change.path.ends_with("after.rs"))
+        .expect("the ordinary file should arrive");
+    assert!(!holds(&handle, "doomed.txt"), "the row outlived the file it described");
+}
+
+/// Keeping is still keeping: the default scope records a socket the watcher reports.
+///
+/// Without this, the two tests above pass for a watcher that drops every special object
+/// unconditionally and never reads the flag at all.
+#[test]
+fn a_socket_created_under_a_default_watch_is_recorded() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    fs::write(dir.path().join("existing.txt"), b"hello").expect("seed");
+    let (handle, mut session) = pruning_session(dir.path(), ScanConfig::default());
+
+    let Ok(_listener) = std::os::unix::net::UnixListener::bind(dir.path().join("sock")) else {
+        return;
+    };
+    fs::write(dir.path().join("after.rs"), b"fn main() {}").expect("create");
+
+    wait_for(&mut session, |change| change.path.ends_with("after.rs"))
+        .expect("the ordinary file should arrive");
+    assert!(holds(&handle, "sock"), "nothing excludes it, so the watcher's row stands");
+}
+
+/// A session sharing its index with the caller, so the index can be read while it watches.
+fn pruning_session(root: &Path, scan: ScanConfig) -> (IndexHandle, Session) {
+    let config =
+        OpenConfig { scan: scan.clone(), policy: CachePolicy::Off, ..OpenConfig::default() };
+    let (index, _report) = open(root, &config).expect("open");
+    let handle = IndexHandle::new(index);
+    let session = Session::new(handle.clone(), scan, Query::default(), WatchConfig::default())
+        .expect("session");
+    (handle, session)
+}
+
+/// Whether the index holds a row for `name` directly under the root.
+fn holds(handle: &IndexHandle, name: &str) -> bool {
+    let request = fdu_core::ReadRequest {
+        entry_page: Some(fdu_core::EntryPageRequest { limit: u32::MAX, ..Default::default() }),
+        ..Default::default()
+    };
+    handle
+        .read(&request)
+        .expect("read")
+        .entry_page
+        .expect("page")
+        .rows
+        .iter()
+        .any(|row| row.path == Path::new(name))
+}

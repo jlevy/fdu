@@ -535,6 +535,7 @@ fn scope_dict<'py>(py: Python<'py>, scope: &fdu_core::ScanScope) -> PyResult<Bou
     put_scalar(&value, "max_files", scope.max_files)?;
     put_scalar(&value, "follow_symlinks", scope.follow_symlinks)?;
     put_scalar(&value, "one_filesystem", scope.one_filesystem)?;
+    put_scalar(&value, "exclude_special", scope.exclude_special)?;
     put_scalar(&value, "tag_rules_fingerprint", scope.tag_rules_fingerprint)?;
     put_scalar(&value, "type_rules_fingerprint", scope.type_rules_fingerprint)?;
     put_scalar(&value, "reducers_fingerprint", scope.reducers_fingerprint)?;
@@ -2446,6 +2447,22 @@ impl PyWatch {
 ///
 /// `None` and an empty list are the same request -- no rules -- and both fingerprint to
 /// zero, so a caller who does not ask for tags keeps every snapshot they already have.
+/// Read the `special` keyword as the boolean the scan config holds.
+///
+/// Absent is `keep`, matching the command line's default rather than Rust's, so the two
+/// surfaces answer alike for a caller who passed nothing. Spelled as words rather than
+/// taken as a bool because it is a scope mode beside `hidden`, and the pair reading
+/// `hidden="prune", special=True` would say the same thing two ways.
+fn parse_special(special: Option<&str>) -> PyResult<bool> {
+    match special.unwrap_or("keep").trim().to_ascii_lowercase().as_str() {
+        "keep" => Ok(false),
+        "prune" => Ok(true),
+        other => Err(PyValueError::new_err(format!(
+            "invalid special {other:?}: expected one of keep, prune"
+        ))),
+    }
+}
+
 /// Resolve the hidden-path admission rule a caller asked for.
 ///
 /// `None` and `"keep"` are the same request -- admit everything -- and both fingerprint to
@@ -2661,6 +2678,7 @@ impl PyOneShot {
     promote = None,
     hidden = None,
     hidden_allow = None,
+    special = None,
     analyze = "none",
     analysis_workers = 0,
     views = None,
@@ -2701,6 +2719,7 @@ fn report_once(
     promote: Option<Vec<String>>,
     hidden: Option<&str>,
     hidden_allow: Option<Vec<String>>,
+    special: Option<&str>,
     analyze: &str,
     analysis_workers: usize,
     views: Option<Vec<String>>,
@@ -2735,6 +2754,7 @@ fn report_once(
             types: type_rules.map(|registry| Arc::clone(&registry.inner)),
             tags: Some(Arc::clone(&rules)),
             hidden: hidden.clone(),
+            exclude_special: parse_special(special)?,
             ..ScanConfig::default()
         },
         cache_path: fdu_core::default_cache_path(&root),
@@ -2954,6 +2974,7 @@ fn clear_all_caches(root: PathBuf) -> PyResult<usize> {
     promote = None,
     hidden = None,
     hidden_allow = None,
+    special = None,
     analyze = "none",
     analysis_workers = 0
 ))]
@@ -2972,6 +2993,7 @@ fn open(
     promote: Option<Vec<String>>,
     hidden: Option<&str>,
     hidden_allow: Option<Vec<String>>,
+    special: Option<&str>,
     analyze: &str,
     analysis_workers: usize,
 ) -> PyResult<PyIndex> {
@@ -2990,6 +3012,7 @@ fn open(
             types: type_rules.map(|rules| Arc::clone(&rules.inner)),
             tags: Some(Arc::clone(&tags)),
             hidden: hidden.clone(),
+            exclude_special: parse_special(special)?,
             ..ScanConfig::default()
         },
         cache_path: fdu_core::default_cache_path(&root),
@@ -3044,6 +3067,7 @@ fn open(
     promote = None,
     hidden = None,
     hidden_allow = None,
+    special = None,
     analyze = "none",
     analysis_workers = 0
 ))]
@@ -3061,6 +3085,7 @@ fn scan(
     promote: Option<Vec<String>>,
     hidden: Option<&str>,
     hidden_allow: Option<Vec<String>>,
+    special: Option<&str>,
     analyze: &str,
     analysis_workers: usize,
 ) -> PyResult<PyIndex> {
@@ -3078,6 +3103,7 @@ fn scan(
             types: type_rules.map(|rules| Arc::clone(&rules.inner)),
             tags: Some(Arc::clone(&tags)),
             hidden: hidden.clone(),
+            exclude_special: parse_special(special)?,
             ..ScanConfig::default()
         },
         cache_path: None,
