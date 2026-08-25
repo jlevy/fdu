@@ -5,7 +5,7 @@ title: "P3: watch scope validation errors"
 kind: task
 status: open
 priority: 1
-version: 11
+version: 13
 spec_path: docs/project/specs/active/plan-2026-08-10-fdu-composable-cli-surface.md
 refs:
   - kind: pr
@@ -20,13 +20,18 @@ refs:
   - kind: pr
     url: https://github.com/jlevy/fdu/pull/47#pullrequestreview-5019372007
     at: 2026-08-25T13:21:13.810Z
+  - kind: pr
+    url: https://github.com/jlevy/fdu/pull/47#pullrequestreview-5020603690
+    at: 2026-08-25T15:10:55.912Z
 labels:
   - pr47-review
   - metabrowser
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
+child_order_hints:
+  - is-01m0wqh3ydkn7yztpt80t9d857
 created_at: 2026-08-11T05:36:29.253Z
-updated_at: 2026-08-25T14:49:51.814Z
+updated_at: 2026-08-25T15:10:55.925Z
 closed_at: null
 close_reason: null
 resolution: null
