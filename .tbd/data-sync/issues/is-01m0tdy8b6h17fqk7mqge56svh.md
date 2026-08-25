@@ -5,7 +5,7 @@ title: Complete the coherent read envelope and version-pinned paging
 kind: bug
 status: open
 priority: 1
-version: 18
+version: 19
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 labels:
   - pr47-review
@@ -17,7 +17,7 @@ dependencies:
     target: is-01m0tdy9ceep2byvbtyvwc2vky
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T17:43:53.445Z
-updated_at: 2026-08-25T06:31:32.539Z
+updated_at: 2026-08-25T08:06:11.038Z
 closed_at: null
 close_reason: null
 resolution: null
@@ -68,3 +68,11 @@ limit and opaque advancing cursor, return exact remaining rows, honor
 MetaBrowser provider-harness scenarios against the FDU binding before closing this gate.
 
 EXACT-HEAD FOLLOW-UP at PR #47 4eac1b2 (2026-08-25). `browser_provider.recent_page` does not implement recent-result paging. `after` and `limit` are the child-page arguments on `index.read(children_of=Path())`, while the `FILES` report is independently truncated by `Selection.limit` and has no continuation. The call also omits `expected`, and the smoke test invokes only one 50-row result, so it cannot prove advancing pages, one version, or exact lossless remainder. This confirms rather than closes the native filtered-tree/catalog paging gate. See the formal review on PR #47 at this head.
+
+
+
+CONFIRMED (MB74-D4, answered on PR #47 at head `eaae030`): the consumer paging contract
+stays bounded and lossless. Filtered-tree and catalog pages need native version-pinned
+continuations and exact remainders; unbounded FFI, adapter-side mirrors, and false terminal
+pages are all forbidden. This bead is the implementation owner, and it is the item that
+most directly gates the adoption spike.
