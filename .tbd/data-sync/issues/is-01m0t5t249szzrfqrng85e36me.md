@@ -5,7 +5,7 @@ title: Hidden-path admission as scope, with an exact-name allowlist
 kind: task
 status: open
 priority: 2
-version: 8
+version: 9
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 refs:
   - kind: pr
@@ -15,7 +15,7 @@ labels: []
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T15:21:47.400Z
-updated_at: 2026-08-25T13:21:14.538Z
+updated_at: 2026-08-25T14:49:27.558Z
 closed_at: 2026-08-25T06:35:17.988Z
 close_reason: |
   Shipped as `crates/fdu-core/src/admission.rs` plus wiring across all three surfaces.
@@ -86,25 +86,39 @@ critical plane path does.
 
 ## Notes
 
-FDU47-B1 FIXED at ff210d0. The three macOS bulk-read paths now call `admits` before the
-entry reaches the walker, and `note_pruned_control_file` before it is dropped -- parallel
-scan, direct reconcile, and the worker-pool reconcile wave.
+FDU47-E1 addressed at 353d48f: the live boundary now holds the hidden-path rule.
 
-The mistake is worth recording because the commit message that introduced it stated the
-rule correctly and then broke it: "asked once, by name, from all four listing loops". There
-are seven. The bulk reader does not look like a listing loop -- it hands over name, kind
-and attrs together, so there is no `read_dir` item to attach the check to, and it reads as
-a fast path rather than as another place the rule has to hold.
+watch::admitted checked kind, depth and device and never HiddenPolicy, and its
+fast path returned early when those three were default. So under hidden="prune"
+a hidden file or directory created after boot entered the index and stayed there
+until whatever reconciliation happened next -- the same "an index whose contents
+depend on whether anyone was watching" failure as the special-object case, one
+axis over.
 
-A runtime test cannot reach `cfg(target_os = "macos")` code from a Linux host, so the guard
-is a source check: `scripts/check-admission-sites.mjs`, wired into `make test` as
-`admission-selfcheck`. It requires every listing loop in `scan.rs` to call `admits`, and
-refuses when it matches fewer loops than the engine has -- a renamed binding would
-otherwise empty the check while it went on reporting success. Reintroducing the exact
-defect makes it name the exact line the review named.
+The rule asks every path *component*, not the leaf. The walk never descends into
+a pruned directory, so nothing beneath one is in the index either, and a backend
+reports `.git/HEAD` as its own path with nothing in that name saying its parent
+was pruned. Checking only the leaf would admit an entire pruned subtree one event
+at a time.
 
-`make cross-lint` passes again as well; two Windows-gated `is_multiple_of` lints, surfaced
-by the MSRV move to 1.88, had been sitting behind it and blocking the macOS target from
-being reached at all.
+Out-of-scope upserts become removals (a path that crosses the boundary without
+going absent would otherwise keep its old row); out-of-scope invalidations are
+dropped, since there is no subtree in scope to reconcile.
 
-EXACT-HEAD WATCHER GAP at PR #47 71772fc38d2efb555ed5b383a2dbe1709bcd6b42 (2026-08-25). The bulk-scan fix remains accepted, but the live watcher is a separate admission producer and does not apply HiddenPolicy at all. watch::admitted checks only kind plus depth/device; its fast path also returns early when those axes are default. A hidden file or hidden directory subtree created after boot under hidden=prune is therefore inserted even though scan and refresh prune it. Apply the exact hidden policy to every relative path component in the single watcher admission funnel, preserving allowlisted hidden components; out-of-scope upserts remove a stale row and out-of-scope invalidations are dropped. Add live tests for a hidden file, hidden subtree, allowlisted hidden path, and visible-to-hidden replacement. Evidence: crates/fdu-core/src/watch.rs:472-510 versus scan.rs:4288-4300.
+The fast path now asks ScanConfig::narrows_entries rather than naming the axes,
+because a fast path that names them is one that forgets the next one added --
+which is exactly how this happened, one axis after a mutation check that was
+supposed to prevent it. every_narrowing_axis_is_visible_to_the_admission_fast_path
+turns each axis on alone and requires it to be visible there; writing it found
+the one_filesystem disagreement (FDU47-E3) independently.
+
+Tests, all live: a hidden file, a hidden subtree (with the directory created
+before the session so the child's own event actually arrives -- created live, the
+child event vanishes and the test would pass for a leaf-only rule), an
+allowlisted hidden path admitted, a visible-to-hidden rename removed, and the
+default scope still recording a hidden path so the four above cannot pass for a
+watcher that prunes always.
+
+Mutations checked: hidden admission removed, leaf-only instead of every
+component, the fast path forgetting the axis, and pruning regardless of the
+policy. Each fails a named test.

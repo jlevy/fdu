@@ -5,7 +5,7 @@ title: "A native walk budget: stop discovery at the cap, and say so"
 kind: task
 status: open
 priority: 1
-version: 15
+version: 16
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 refs:
   - kind: pr
@@ -30,7 +30,7 @@ labels: []
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-25T07:30:01.728Z
-updated_at: 2026-08-25T13:22:59.791Z
+updated_at: 2026-08-25T14:49:51.397Z
 closed_at: null
 close_reason: null
 resolution: null
@@ -72,48 +72,36 @@ over the same tree; and a `--cache only` open under a different cap refuses the 
 
 ## Notes
 
-The remainder the reviewer kept this open for -- capped refresh and watch
-semantics -- is closed at ce8d78b, together with fdu-7sou, because one mechanism
-answers both.
+FDU47-E2 addressed at 353d48f: a cap refusal is now one event with three faces
+that agree at one clock.
 
-The strict discovery cap (1b76062) stays and keeps its own job: scan::Budget
-stops the walk *reading* at the cap, which is what makes a capped scan cheap.
-What it could not do is survive anything after the scan. Reconciliation walks
-from the index and never consulted it, so one refresh turned a bounded inventory
-into an unbounded one while the scan identity went on claiming a cap; and a watch
-was refused outright, which left the cap a scan-only bound.
+The gap was real and was mine. Index::apply marked Partial(Budget) atomically
+but merge_apply_stats dropped `refused` and ReconcileReport::is_complete ignored
+it -- so a refresh reported complete while its own terminal index said partial
+(budget), two answers about one call from the same operation. And the coverage
+loss carried no typed issue, so a consumer mapping resource exhaustion to its own
+RESOURCE_BUDGET state had nothing to map.
 
-The index now keeps the cap itself. upsert_beneath refuses a new file row once
-the root roll-up reaches max_files -- the one place a new row is allocated, and
-the one place the previous state of the path is already in hand. Walk, refresh
-and watch are all bounded by one rule, and validate_for_watch_scope has nothing
-left to refuse.
+Now: the count reaches the merged report, is_complete counts it for the same
+reason it counts `stale` (the sweep finished and the index does not hold what it
+found), coverage() names the cap ahead of whatever the walk itself reported
+(because it is the reason the *index* is short rather than a reason the walk
+was), and the refusal commits the coverage transition and the RunFacts
+transition in one delta.
 
-Directories are not counted: a directory carries no bytes of its own, and
-admitting one keeps the tree navigable to what is there. The refusal and the
-coverage loss ride in one commit (AppliedDelta::of_both) rather than two clocks,
-because a cursor between them would name a moment at which the index had dropped
-an entry and still claimed to cover everything.
+Reported once per scope rather than once per refusal -- a long watch over a full
+tree refuses on every arrival -- and that follows from the guard rather than a
+second check inside it. An `already_reported` branch there would be unreachable
+given the guard, and unreachable defensive code reads as a hazard that does not
+exist.
 
-Recorded honestly, because it is a property of the axis rather than of this
-implementation: which files a long-lived capped index holds depends on the order
-events arrived, as which files a capped walk holds depends on the order it
-reached them. No rule bounds the retained set and is history-independent at once.
-Coverage says the set is short, which is the fact a consumer can act on.
+Tests: a_refusal_reports_a_count_a_coverage_and_a_typed_issue_together and
+a_repeated_refusal_reports_one_issue_rather_than_one_each. Mutations checked:
+`refused` dropped from the merge, from is_complete, and from coverage; the typed
+issue and completeness loss withheld; and the exactly-once guard removed. Each
+fails a named test.
 
-FDU47-C2 asked for one observable rule pinned by a boundary-case fixture. This is
-the rule; the fixture is fdu-kl7r's, and the divergence it has to pin is that the
-consumer's reference walker gives each subtree rewalk a fresh budget, so its
-retained set is bounded per walk rather than in total. One side has to move, and
-this is the side that keeps the bound a bound.
-
-Tests: a_refresh_does_not_grow_a_capped_index_past_its_cap and its uncapped
-control in walk_budget.rs; a_capped_index_refuses_a_watched_file_past_its_cap,
-a_deletion_frees_a_slot_the_next_arrival_can_take, and the live
-a_capped_watch_holds_its_cap_against_live_events. Four mutations checked: the
-refusal removed, off by one, directories counted, and the refusal not marking
-coverage.
-
-Reopened: Exact-head review at PR #47 head 71772fc38d2efb555ed5b383a2dbe1709bcd6b42 found that live max_files refusal changes coverage without completing the typed/reporting contract. Index::apply marks root freshness Partial(Budget), but no ResourceStop issue is added to EngineState on the same clock. merge_apply_stats omits ApplyStats.refused, and ReconcileReport::is_complete ignores refused, so a refresh can report complete while its terminal index is partial. Reopen until refusal count, reconcile completion or coverage, and terminal typed issue state agree atomically. Evidence: crates/fdu-core/src/index.rs:2276-2297 and scan.rs:969-979, 4231-4238.
-
-EXACT-HEAD CI REGRESSION at 71772fc38d2efb555ed5b383a2dbe1709bcd6b42. Windows golden CI is red in the new max_files scenario: https://github.com/jlevy/fdu/actions/runs/32851927452/job/97814746382. The capped command returns complete with one 3-byte file, and the immediately following uncapped control also reports the same one 3-byte file instead of the intended three 1-byte files. That control isolates the failure to the non-portable sh -c fixture setup at tests/golden/cli-surface.tryscript.md:559-561 rather than to cap enforcement. Replace it with repository-standard cross-platform fixture creation, then retain the capped exit-2 and uncapped exit-0 assertions. This is a branch-caused required-check failure and belongs on this max_files bead.
+Also fixed here: the Windows CI red on the new max-files golden was fixture
+setup, not cap enforcement -- `sh -c 'printf x > a; printf x > b; printf x > c'`
+produced one 3-byte file there, so the uncapped control saw one file too.
+Replaced with the repository's standard node writer.
