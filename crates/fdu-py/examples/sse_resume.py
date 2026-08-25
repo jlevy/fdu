@@ -22,13 +22,17 @@ from the journal, which no error will ever surface.
 `decide` is a pure function over the `ChangeSet` so both branches are testable without
 having to evict 64k ops from a journal to reach the interesting one.
 
-**What this clock does not yet carry.** `since()` replays *data* changes. Provenance and
-trust transitions -- a subtree moving from cached to verified, say -- do not ride this
-clock today, so a client resuming from one is current on what changed and not on how far
-to trust it. The interactive-client contract records that the resume cursor is not
-complete for a production SSE feed until those transitions share the clock, which is
-`fdu-jxs0`. Until then a feed built on this either omits trust from its envelope or
-re-reads provenance on reconnect; what it must not do is imply currency it does not have.
+**What this clock carries.** `since()` replays data changes *and* the transitions that
+decide what those changes mean: a subtree moving from cached to verified, coverage
+narrowing, a replaced run envelope, re-bound tag rules. They arrive in `ChangeSet.state`,
+committed at the same clock as the rows they describe, so a client resuming from a cursor
+is current on what changed and on how far to trust it. That was not true when this example
+was written -- trust moved by direct mutation, off the clock -- and a feed built on it had
+to omit trust from its envelope or re-read provenance on reconnect.
+
+A state transition names the subtrees it applies to, so a consumer invalidates those and
+keeps the rest. `Transition.RUN_FACTS` names none: it is about the index as a whole, and
+what it moved to is read from the envelope the next read returns anyway.
 """
 
 from __future__ import annotations

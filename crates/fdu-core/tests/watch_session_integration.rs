@@ -305,3 +305,146 @@ fn a_batch_cursor_never_runs_ahead_of_the_deltas_it_carried() {
     assert!(written > 0, "the writer must actually have interleaved");
     assert!(checked > 0, "at least one batch must have been examined");
 }
+
+/// A batch that stepped over another producer's commit says so, rather than skipping it.
+///
+/// An index has one writer at a time but not one producer: a caller can refresh a subtree,
+/// ingest its own hints, or rebind tag rules against the same handle while a watch runs.
+/// Those commits are real and this stream does not deliver them, so a batch naming a
+/// position past one would drop it permanently -- and nothing in the batch would report
+/// the loss. A gap is exactly what `reset` means, so that is what it is called.
+///
+/// The control matters as much as the case: a stream with no second producer must *not*
+/// report a reset, or the signal would mean nothing and a consumer would re-read forever.
+#[test]
+fn a_commit_this_stream_did_not_deliver_makes_the_batch_a_reset() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    fs::write(dir.path().join("a.txt"), b"12345").expect("seed");
+
+    let config = OpenConfig { policy: CachePolicy::Off, ..OpenConfig::default() };
+    let (index, _report) = open(dir.path(), &config).expect("open");
+    let handle = IndexHandle::new(index);
+    let mut session = Session::new(
+        handle.clone(),
+        ScanConfig::default(),
+        Query {
+            selection: Selection::default(),
+            views: vec![ViewSpec::Summary],
+            ..Query::default()
+        },
+        WatchConfig::default(),
+    )
+    .expect("session");
+
+    // A second producer, committing where this stream cannot see it.
+    handle
+        .apply(&fdu_core::Observation::new(vec![fdu_core::Op::Upsert {
+            path: std::path::PathBuf::from("elsewhere.txt"),
+            kind: fdu_core::EntryKind::File,
+            attrs: fdu_core::Attrs { size: 1, ..fdu_core::Attrs::default() },
+        }]))
+        .expect("apply");
+
+    fs::write(dir.path().join("b.txt"), b"678").expect("create");
+    assert!(
+        next_applied_batch(&mut session).expect("the created file should arrive").reset,
+        "a batch whose deltas do not continue from this session's position is a reset"
+    );
+
+    fs::write(dir.path().join("c.txt"), b"9").expect("create");
+    assert!(
+        !next_applied_batch(&mut session).expect("the second file should arrive").reset,
+        "and an uninterrupted stream is not"
+    );
+}
+
+/// The next batch that actually applied something, or nothing within the settle window.
+fn next_applied_batch(session: &mut Session) -> Option<fdu_core::session::Batch> {
+    let deadline = Instant::now() + SETTLE;
+    while Instant::now() < deadline {
+        if let Some(batch) = session.next_batch(Duration::from_millis(100)).expect("batch")
+            && batch.dirty
+        {
+            return Some(batch);
+        }
+    }
+    None
+}
+
+/// A re-tag is a commit, and the batch that caused it names a position past it.
+///
+/// A saved `.gitignore` changes what the rules decide about entries nothing touched, so it
+/// is an answer-affecting change with no path event of its own. The batch used to capture
+/// its cursor *before* rebinding: the position it handed back therefore sat behind a
+/// transition the batch had already applied, and a consumer resuming from it would be told
+/// nothing had happened. Now the rebind commits, the batch carries it, and the cursor
+/// follows it -- which is what makes `since(batch.cursor)` empty rather than a lie.
+#[test]
+#[cfg(feature = "gitignore")]
+fn a_re_tag_commits_and_the_batch_cursor_follows_it() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    fs::create_dir_all(dir.path().join("src")).expect("mkdir");
+    fs::write(dir.path().join("src/keep.rs"), b"fn main() {}").expect("seed");
+
+    let tags = std::sync::Arc::new(
+        fdu_core::tags::TagRules::from_names(["gitignore"]).expect("the rule is compiled in"),
+    );
+    let scan = ScanConfig { tags: Some(tags.clone()), ..ScanConfig::default() };
+    let config =
+        OpenConfig { policy: CachePolicy::Off, scan: scan.clone(), ..OpenConfig::default() };
+    let (index, _report) = open(dir.path(), &config).expect("open");
+    let handle = IndexHandle::new(index);
+    let mut session = Session::new(
+        handle.clone(),
+        scan,
+        Query {
+            selection: Selection::default(),
+            views: vec![ViewSpec::Summary],
+            ..Query::default()
+        },
+        WatchConfig::default(),
+    )
+    .expect("session");
+
+    fs::write(dir.path().join(".gitignore"), b"*.rs\n").expect("save a control file");
+
+    let deadline = Instant::now() + SETTLE;
+    let mut retagged = None;
+    while Instant::now() < deadline && retagged.is_none() {
+        let Some(batch) = session.next_batch(Duration::from_millis(100)).expect("batch") else {
+            continue;
+        };
+        if batch.changes.iter().any(|change| change.path.ends_with(".gitignore")) {
+            retagged = Some(batch);
+        }
+    }
+    let batch = retagged.expect("the saved control file should arrive");
+
+    assert!(
+        batch.state.iter().any(|change| matches!(
+            change,
+            fdu_core::StateChange::Retagged { directories } if !directories.is_empty()
+        )),
+        "the batch must carry the re-tag it committed: {:?}",
+        batch.state
+    );
+    let cursor = batch.cursor.expect("a batch that applied something names a position");
+    assert!(
+        handle.since(cursor).expect("resume").deltas.is_empty(),
+        "the cursor must sit past the re-tag, not behind it"
+    );
+    // And the tag itself moved, which is what made the transition worth reporting.
+    assert_eq!(
+        handle
+            .with_index(|index| {
+                index
+                    .tags_of(Path::new("src/keep.rs"))
+                    .into_iter()
+                    .map(str::to_owned)
+                    .collect::<Vec<String>>()
+            })
+            .expect("tags"),
+        vec!["gitignore"],
+        "the rebind must have taken effect, or the batch reported a transition that did not happen"
+    );
+}

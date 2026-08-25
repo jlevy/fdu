@@ -1385,6 +1385,55 @@ class WatchBatch:
     cursor: Cursor | None
     """Where the index stands after this batch, or ``None`` for an idle step."""
 
+    state: tuple[StateChange, ...] = ()
+    """Answer-affecting transitions this batch committed, in commit order.
+
+    A batch can carry these and no changes at all: a sweep that verified a subtree without
+    finding a single difference still moved what the rows may be trusted to mean.
+    """
+
+
+class Transition(StrEnum):
+    """What kind of answer-affecting state a commit moved."""
+
+    VERIFIED = "verified"
+    """A reconciliation sweep completed over a subtree, promoting its provenance."""
+
+    FRESHNESS = "freshness"
+    """How far a subtree may be trusted changed."""
+
+    RUN_FACTS = "run_facts"
+    """The envelope describing the operation behind the current state was replaced."""
+
+    RETAGGED = "retagged"
+    """Tag rules were bound against their control files again."""
+
+
+@dataclass(frozen=True, slots=True)
+class StateChange:
+    """One committed transition that changes what the rows mean, not what they say.
+
+    A consumer watching only paths would keep an answer that is wrong and was never
+    contradicted: coverage narrowing, a sweep verifying a subtree, a re-tag that moved the
+    tags of entries nothing touched. Each rides in the same clocked commit as the rows it
+    describes, so one cursor names one answer.
+    """
+
+    clock: int
+    """The commit this transition landed at."""
+
+    transition: Transition
+    """Which state moved."""
+
+    paths: tuple[Path, ...]
+    """Subtree roots it applies to, or empty for the index as a whole."""
+
+    freshness: Freshness | None
+    """The trust state a :attr:`Transition.FRESHNESS` moved to."""
+
+    reason: CoverageReason | None
+    """Why coverage is partial, when it is."""
+
 
 @dataclass(frozen=True, slots=True)
 class ChangeSet:
@@ -1393,6 +1442,9 @@ class ChangeSet:
     """Where to resume, captured with the changes rather than sampled after them."""
 
     changes: tuple[Change, ...]
+
+    state: tuple[StateChange, ...] = ()
+    """Transitions committed in the same range, in commit order."""
 
 
 @dataclass(frozen=True, slots=True)

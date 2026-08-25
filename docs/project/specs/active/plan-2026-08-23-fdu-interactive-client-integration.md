@@ -492,6 +492,28 @@ The resumable-cursor mapping needs no new machinery — `since(clock)` with
 `ChangeSet.truncated` already models SSE resume including the “gap too large, resync”
 case — so it becomes documentation with a tested example rather than API.
 
+**One commit carries rows and state alike.** A fifth addition turned out to be
+load-bearing rather than cosmetic.
+Coverage, trust, the run envelope, and the tag rules all decide what a projection
+*means*, and each used to move by direct mutation: no clock, no journal entry, nothing a
+consumer could resume against.
+One cursor could therefore name the answer before a transition and the answer after it,
+with nothing in either saying which had been read.
+So a committed delta now carries `state` beside `ops`, a state-only delta is ordinary,
+and the transitions ride the clock that already orders the rows they describe.
+Three consequences worth stating, because each was a defect before it was a rule:
+
+- A reconciliation sweep that finds no difference at all still advances the version.
+  It promoted the provenance of everything it stat’d, and the sweep — not the entry — is
+  the unit, which is what keeps a sweep over millions of entries from emitting millions
+  of provenance-only changes.
+- A re-tag commits before the batch that caused it reports a position, so the cursor
+  follows the transition rather than preceding it.
+- A batch that stepped over another producer’s commit is a `reset`. An index has one
+  writer at a time but not one producer — a caller can refresh or ingest hints against
+  the same handle while a watch runs — and a batch naming a position past a commit it
+  did not deliver drops that commit for good.
+
 ### Two things called streaming, and the one that is missing
 
 fdu streams, and it is worth being exact about what: the watch session is a real change
@@ -853,12 +875,13 @@ This phase is now complete apart from the per-row tags, which wait on Phase 1.
 - [x] `Index.refresh(path=...)` scoped reconciliation in the Python surface (`fdu-fh0k`)
 - [x] Polling backend selection in `WatchOptions`, with its interval stated (`fdu-rhu3`)
 - [x] The asyncio adapter and the thread-affinity documentation, with a tested
-  SSE-resume example mapping `since`/`truncated` to `Last-Event-ID`/resync — carrying
-  the reconciliation’s verdict that this cursor is not yet complete for a production
-  feed, since trust transitions do not ride this clock until `fdu-jxs0` (`fdu-97pb`,
+  SSE-resume example mapping `since`/`truncated` to `Last-Event-ID`/resync (`fdu-97pb`,
   blocked by `fdu-gav9`: an event-loop adapter over a surface that raises under
   concurrent access would only relocate the defect).
-  The adapter owns the affinity rule rather than documenting it — it opens, drains and
+  The example carried the reconciliation’s verdict that this cursor was not yet complete
+  for a production feed, because trust transitions did not ride the clock; `fdu-jxs0`
+  put them on it, and the caveat is now a statement of what the cursor covers The
+  adapter owns the affinity rule rather than documenting it — it opens, drains and
   closes the watch on the worker thread, because `PyWatch` is `unsendable` and handing
   one across panics
 
@@ -889,8 +912,12 @@ from emitting millions of provenance-only entry changes into the feed it serves.
 - [ ] Provenance composed through the reducer path, with the non-invertibility of those
   aggregates under deletion and revalidation given an explicit recompute path
   (`fdu-fka6`, `fdu-b1ts`)
-- [ ] Trust transitions on the committed delta contract, so `since()` and polling cannot
-  disagree about the visible state (`fdu-jxs0`, `fdu-livs`)
+- [x] Trust transitions on the committed delta contract, so `since()` and polling cannot
+  disagree about the visible state (`fdu-jxs0`, `fdu-livs`). `AppliedDelta` carries
+  `StateChange` beside `Op`; coverage, verification, the run envelope, and re-tagging
+  each commit through it; and `Batch.state` and `ChangeSet.state` deliver them to both
+  surfaces. Charged against the journal’s operation budget rather than being free,
+  because a free transition is a retention bound a producer can walk past
 
 ### Phase 6: Adoption proof
 

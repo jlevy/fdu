@@ -44,7 +44,7 @@ use crate::content::{
 use crate::engine_contract::{
     AppliedDelta, Attrs, Bound, Clock, CoverageReason, Cursor, EntryIdentity, EntryKind,
     Expectation, Freshness, InvalidateReason, Observation, Op, PathExpectation, PathState,
-    Provenance, ScanScope, SessionId, Source, Status,
+    Provenance, ScanScope, SessionId, Source, StateChange, Status,
 };
 
 /// Verification intervals kept before the oldest are dropped.
@@ -1014,10 +1014,17 @@ impl IndexHandle {
     /// about: their tags may have changed without any entry beneath them being touched.
     ///
     /// A no-op, and cheap, when no enabled rule reads a control file.
-    pub fn rebind_tag_rules(&self) -> crate::Result<Vec<PathBuf>> {
+    ///
+    /// Returns the committed delta, which carries the governed directories as a
+    /// [`StateChange::Retagged`]. Re-tagging is an answer-affecting change that names no
+    /// path event -- entries whose tags moved were never themselves touched -- so it
+    /// advances the clock and enters the journal like any other commit. A caller that took
+    /// its resume position before this call and re-read afterwards would otherwise be told
+    /// nothing had happened.
+    pub fn rebind_tag_rules(&self) -> crate::Result<Option<AppliedDelta>> {
         let mut index = self.write_index()?;
         if index.tag_rules().is_empty() {
-            return Ok(Vec::new());
+            return Ok(None);
         }
         let root = index.root_path().to_path_buf();
         // Where the control files are is a question the index answers, not the filesystem:
@@ -1027,7 +1034,12 @@ impl IndexHandle {
         let bound = index.tag_rules().bound_to(&root, directories.iter().map(PathBuf::as_path));
         let governed = bound.governed_directories();
         index.adopt_tag_rules(Arc::new(bound));
-        Ok(governed)
+        if governed.is_empty() {
+            // Rules that read control files but govern nothing changed nothing a consumer
+            // can observe, and a commit for it would be the news that nothing happened.
+            return Ok(None);
+        }
+        index.commit_state(vec![StateChange::Retagged { directories: governed }]).map(Some)
     }
 
     /// Arbitrate and apply one observation under the single-writer lock.
@@ -1136,8 +1148,7 @@ impl IndexHandle {
     /// beside it. A caller holding them in its own lock is a caller whose reads can pair
     /// one instant's rows with another instant's status.
     pub fn set_run_facts(&self, run: crate::query::RunFacts) -> crate::Result<()> {
-        self.write_index()?.set_run_facts(run);
-        Ok(())
+        self.write_index()?.set_run_facts(run)
     }
 
     /// Several projections evaluated under one read guard.
@@ -1333,7 +1344,7 @@ impl IndexHandle {
     }
 
     pub(crate) fn begin_reconcile(&self, path: &Path) -> crate::Result<u64> {
-        Ok(self.write_index()?.begin_reconcile(path))
+        self.write_index()?.begin_reconcile(path)
     }
 
     pub(crate) fn finish_reconcile(
@@ -1342,8 +1353,7 @@ impl IndexHandle {
         started_at: u64,
         coverage: Status,
     ) -> crate::Result<()> {
-        self.write_index()?.finish_reconcile(path, started_at, coverage);
-        Ok(())
+        self.write_index()?.finish_reconcile(path, started_at, coverage)
     }
 
     #[cfg(feature = "watch")]
@@ -1806,14 +1816,24 @@ impl Index {
             // journal keeps whatever it held, which `establish_baseline` clears.
             return ApplyOutcome { stats, applied: None };
         }
-        let applied = AppliedDelta { clock: self.clock, ops: effective };
+        let applied = self.retain(AppliedDelta::of_ops(self.clock, effective));
+        ApplyOutcome { stats, applied: Some(applied) }
+    }
+
+    /// Put a committed delta into the bounded journal and hand it back.
+    ///
+    /// Eviction is by the operation budget rather than by delta count, so one enormous
+    /// batch cannot evict a thousand small ones it does not outweigh. A delta larger than
+    /// the whole budget empties the journal and raises the floor to its own clock: it
+    /// cannot be retained, and pretending otherwise would leave a floor that says history
+    /// reaches further back than it does.
+    fn retain(&mut self, applied: AppliedDelta) -> AppliedDelta {
         if applied.len() > self.journal_op_capacity {
             self.journal.clear();
             self.journal_ops = 0;
             self.journal_floor = applied.clock;
-            return ApplyOutcome { stats, applied: Some(applied) };
+            return applied;
         }
-
         while self.journal_ops + applied.len() > self.journal_op_capacity {
             if let Some(dropped) = self.journal.pop_front() {
                 self.journal_ops -= dropped.len();
@@ -1822,7 +1842,25 @@ impl Index {
         }
         self.journal_ops += applied.len();
         self.journal.push_back(applied.clone());
-        ApplyOutcome { stats, applied: Some(applied) }
+        applied
+    }
+
+    /// Commit answer-affecting state transitions at a fresh clock.
+    ///
+    /// The counterpart to [`Self::apply`] for everything that changes what a projection
+    /// means without changing any path's values: coverage, trust, provenance, and the tag
+    /// rules. Both go through the same clock and the same journal, which is the only way a
+    /// cursor can name one answer rather than a family of them.
+    ///
+    /// Callers pass only transitions that actually happened -- a no-op state change does
+    /// not advance the clock, for the same reason a no-op upsert does not.
+    fn commit_state(&mut self, state: Vec<StateChange>) -> crate::Result<AppliedDelta> {
+        debug_assert!(!state.is_empty(), "a commit with nothing in it must not be minted");
+        let Some(next_clock) = self.clock.checked_next() else {
+            return Err(crate::Error::ClockExhausted);
+        };
+        self.clock = next_clock;
+        Ok(self.retain(AppliedDelta::of_state(next_clock, state)))
     }
 
     /// Apply trusted bootstrap data without exposing it as live change history.
@@ -1871,16 +1909,44 @@ impl Index {
         }
     }
 
-    pub(crate) fn begin_reconcile(&mut self, path: &Path) -> u64 {
-        self.mark_unfresh(path, Freshness::Reconciling)
+    /// Announce that a sweep is checking this subtree, and commit the announcement.
+    ///
+    /// A consumer reading between the announcement and the sweep's end sees rows it may
+    /// keep and a trust state that says so, at a cursor that names exactly that pairing.
+    /// Before this was a commit, the same cursor named the answer before the sweep started
+    /// and the answer during it, and nothing in either said which one had been read.
+    pub(crate) fn begin_reconcile(&mut self, path: &Path) -> crate::Result<u64> {
+        let epoch = self.mark_unfresh(path, Freshness::Reconciling);
+        self.commit_state(vec![StateChange::Freshness {
+            path: path.to_path_buf(),
+            freshness: Freshness::Reconciling,
+            reason: None,
+        }])?;
+        Ok(epoch)
     }
 
-    pub(crate) fn finish_reconcile(&mut self, path: &Path, started_at: u64, coverage: Status) {
+    /// Record what a completed sweep established, and commit it.
+    ///
+    /// Two transitions, one commit, because they are one fact: the subtree's trust state
+    /// moved *and* -- when the sweep completed -- an interval now covers it. Splitting
+    /// them across two clocks would publish a moment at which the subtree reads as fresh
+    /// but unverified, which never happened.
+    pub(crate) fn finish_reconcile(
+        &mut self,
+        path: &Path,
+        started_at: u64,
+        coverage: Status,
+    ) -> crate::Result<()> {
         self.freshness_marks
             .retain(|marked, mark| !marked.starts_with(path) || mark.epoch > started_at);
         if let Status::Partial(reason) = coverage {
             self.mark_unfresh_because(path, Freshness::Partial, Some(reason));
-            return;
+            self.commit_state(vec![StateChange::Freshness {
+                path: path.to_path_buf(),
+                freshness: Freshness::Partial,
+                reason: Some(reason),
+            }])?;
+            return Ok(());
         }
         // A completed sweep stat'd every entry beneath `path`, including the ones the
         // producer elided as no-ops before they ever reached a delta. Per-entry
@@ -1902,6 +1968,15 @@ impl Index {
             self.verified.sort_by_key(|(_, at)| *at);
             self.verified.drain(..excess);
         }
+        self.commit_state(vec![
+            StateChange::Freshness {
+                path: path.to_path_buf(),
+                freshness: Freshness::Fresh,
+                reason: None,
+            },
+            StateChange::Verified { path: path.to_path_buf() },
+        ])?;
+        Ok(())
     }
 
     /// When a completed reconciliation last covered this path, if one did.
@@ -1990,12 +2065,43 @@ impl Index {
         &self.run
     }
 
-    /// Record what the operation that just finished did.
+    /// Install the run envelope on an index no consumer can have observed yet.
+    ///
+    /// The open paths' form, and consuming for the reason that makes it correct: an owned
+    /// index is one nobody is reading. There is no transition at open -- nothing holds an
+    /// answer these facts would contradict -- and minting a clock for the first envelope
+    /// would publish a change away from a state that was never visible. Every later
+    /// replacement goes through [`Self::set_run_facts`], which commits.
+    #[must_use]
+    pub fn with_run_facts(mut self, run: crate::query::RunFacts) -> Self {
+        self.install_run_facts(run);
+        self
+    }
+
+    pub(crate) fn install_run_facts(&mut self, run: crate::query::RunFacts) {
+        self.run = run;
+    }
+
+    /// Record what the operation that just finished did, and commit the transition.
     ///
     /// Called by the paths that already hold the write guard, so these facts commit with
     /// the tree they describe rather than shortly after it.
-    pub fn set_run_facts(&mut self, run: crate::query::RunFacts) {
+    ///
+    /// The envelope is not copied into the journal. A consumer reads it under the same
+    /// guard as the rows, so what the change feed owes it is *that* the envelope moved --
+    /// which is what tells it to reread. A second copy in the delta could only ever agree
+    /// with the first or be wrong about it.
+    ///
+    /// Unchanged facts are not a transition, for the same reason a no-op upsert is not a
+    /// change: an idle revalidation loop would otherwise advance the clock forever and
+    /// evict real history to store the news that nothing happened.
+    pub fn set_run_facts(&mut self, run: crate::query::RunFacts) -> crate::Result<()> {
+        if self.run == run {
+            return Ok(());
+        }
         self.run = run;
+        self.commit_state(vec![StateChange::RunFacts])?;
+        Ok(())
     }
 
     /// This index's identity, for minting and checking resume tokens.
@@ -4232,6 +4338,97 @@ mod tests {
         assert_eq!(bundle.total.expect("total").files, 1, "and the rows are the same read's");
     }
 
+    /// Every answer-affecting transition advances the version and reaches the change feed.
+    ///
+    /// The rule this test exists for: a state change delivered outside the clocked commit
+    /// path lets one cursor name two different answers, and nothing in either says which
+    /// was read. Coverage narrowing, a sweep verifying a subtree, and a replaced run
+    /// envelope are all changes to what the rows mean, so each is a commit.
+    #[test]
+    fn a_state_transition_advances_the_version_and_reaches_the_feed() {
+        let mut index = Index::new("/root");
+        index.apply_ok(&Observation::new(vec![upsert("part", EntryKind::Dir, file_attrs(0, 1))]));
+        let before = index.cursor();
+
+        let started = index.begin_reconcile(Path::new("part")).expect("announce");
+        index.finish_reconcile(Path::new("part"), started, Status::Complete).expect("commit");
+
+        let since = index.since(before).expect("resume from before the sweep");
+        assert!(
+            index.clock() > before.clock,
+            "a sweep that changed no row still changed what the rows may be trusted to mean"
+        );
+        assert!(
+            since.deltas.iter().all(|delta| delta.ops.is_empty()),
+            "nothing about a path changed: {:?}",
+            since.deltas
+        );
+        let transitions: Vec<&StateChange> =
+            since.deltas.iter().flat_map(|delta| &delta.state).collect();
+        assert!(
+            transitions.contains(&&StateChange::Freshness {
+                path: PathBuf::from("part"),
+                freshness: Freshness::Reconciling,
+                reason: None,
+            }),
+            "the sweep announced itself: {transitions:?}"
+        );
+        assert!(
+            transitions.contains(&&StateChange::Verified { path: PathBuf::from("part") }),
+            "and recorded what it verified: {transitions:?}"
+        );
+        assert_eq!(since.cursor, index.cursor(), "the feed ends where the index stands");
+    }
+
+    /// A replaced run envelope is a commit; an identical one is not.
+    ///
+    /// Both halves matter. Without the first, a refresh could hand a consumer new rows and
+    /// a new envelope at a cursor it already held, so a cached answer would never be
+    /// invalidated. Without the second, an idle revalidation loop would advance the clock
+    /// forever and evict real history to store the news that nothing had happened.
+    #[test]
+    fn a_run_envelope_commits_only_when_it_actually_moved() {
+        let facts = |complete: bool| crate::query::RunFacts {
+            scan_started_at: None,
+            source: crate::query::ReportSource::WarmRevalidate,
+            complete,
+            errors: Vec::new(),
+        };
+        let handle = IndexHandle::new(Index::new("/root"));
+        handle.set_run_facts(facts(false)).expect("record");
+
+        let before = handle.cursor().expect("cursor");
+        handle.set_run_facts(facts(false)).expect("record the same facts again");
+        assert_eq!(handle.cursor().expect("cursor"), before, "an unchanged envelope is no news");
+
+        handle.set_run_facts(facts(true)).expect("record different facts");
+        let since = handle.since(before).expect("resume");
+        assert!(handle.cursor().expect("cursor").clock > before.clock);
+        assert_eq!(
+            since.deltas.iter().flat_map(|delta| &delta.state).collect::<Vec<_>>(),
+            vec![&StateChange::RunFacts],
+            "the feed says the envelope moved; the reader reads what it moved to"
+        );
+    }
+
+    /// A state-only delta is charged against the journal like any other.
+    ///
+    /// Retention is bounded by operations, and a transition that cost nothing would let a
+    /// producer fill the journal with entries the bound never sees -- which is the one
+    /// thing the bound exists to prevent in a long-lived server.
+    #[test]
+    fn state_transitions_are_charged_against_the_journal_budget() {
+        let mut index = Index::with_journal_op_capacity("/root", 2);
+        let start = index.cursor();
+        for _ in 0..4 {
+            index.commit_state(vec![StateChange::RunFacts]).expect("commit");
+        }
+
+        assert_eq!(index.journal_ops, 2, "the budget is enforced, not merely declared");
+        let since = index.since(start).expect("resume from the start");
+        assert!(since.truncated, "and a consumer that fell behind it is told so");
+    }
+
     #[test]
     fn a_bundled_read_cannot_straddle_a_commit() {
         use std::sync::atomic::{AtomicBool, Ordering};
@@ -4767,12 +4964,14 @@ mod tests {
         index.apply_ok(&Observation::new(vec![upsert("part", EntryKind::Dir, file_attrs(0, 1))]));
         assert_eq!(index.coverage_at(Path::new("")), Status::Complete, "nothing lost yet");
 
-        let started = index.begin_reconcile(Path::new("part"));
-        index.finish_reconcile(
-            Path::new("part"),
-            started,
-            Status::Partial(CoverageReason::Inaccessible),
-        );
+        let started = index.begin_reconcile(Path::new("part")).expect("announce the sweep");
+        index
+            .finish_reconcile(
+                Path::new("part"),
+                started,
+                Status::Partial(CoverageReason::Inaccessible),
+            )
+            .expect("commit the coverage transition");
 
         assert_eq!(
             index.coverage_at(Path::new("part")),
@@ -4860,12 +5059,14 @@ mod tests {
         index.apply_ok(&Observation::new(vec![upsert("part", EntryKind::Dir, file_attrs(0, 1))]));
         // A sweep that ended without reading everything -- which is what a reconciliation
         // error looks like from here.
-        let started = index.begin_reconcile(Path::new("part"));
-        index.finish_reconcile(
-            Path::new("part"),
-            started,
-            Status::Partial(CoverageReason::Inaccessible),
-        );
+        let started = index.begin_reconcile(Path::new("part")).expect("announce the sweep");
+        index
+            .finish_reconcile(
+                Path::new("part"),
+                started,
+                Status::Partial(CoverageReason::Inaccessible),
+            )
+            .expect("commit the coverage transition");
         let handle = IndexHandle::new(index);
 
         let page = handle
@@ -5804,7 +6005,7 @@ mod tests {
 
         // A sweep re-observes both: one is unchanged and elided, one is updated.
         index.set_applying_source(Source::Revalidated, 2_000);
-        index.begin_reconcile(Path::new(""));
+        index.begin_reconcile(Path::new("")).expect("announce the sweep");
         index.apply_ok(&Observation::new(vec![
             Op::Upsert {
                 path: "a/kept.txt".into(),
@@ -5817,7 +6018,7 @@ mod tests {
                 attrs: file_attrs(9, 2),
             },
         ]));
-        index.finish_reconcile(Path::new(""), 0, Status::Complete);
+        index.finish_reconcile(Path::new(""), 0, Status::Complete).expect("commit the sweep");
 
         let kept = index.provenance(Path::new("a/kept.txt")).expect("present");
         let changed = index.provenance(Path::new("a/changed.txt")).expect("present");
@@ -5848,7 +6049,7 @@ mod tests {
             "nothing has checked it yet"
         );
         // A completed sweep then covers the whole tree.
-        index.finish_reconcile(Path::new(""), 0, Status::Complete);
+        index.finish_reconcile(Path::new(""), 0, Status::Complete).expect("commit the sweep");
         let path = Path::new("a/file.txt");
         assert_eq!(
             index.provenance(path).expect("present").source,
@@ -5879,7 +6080,9 @@ mod tests {
         // dropping the oldest only ever under-claims trust.
         let mut index = Index::new("/root");
         for which in 0..(MAX_VERIFIED_INTERVALS * 2) {
-            index.finish_reconcile(&PathBuf::from(format!("dir-{which}")), 0, Status::Complete);
+            index
+                .finish_reconcile(&PathBuf::from(format!("dir-{which}")), 0, Status::Complete)
+                .expect("commit the sweep");
         }
         assert!(
             index.verified.len() <= MAX_VERIFIED_INTERVALS,

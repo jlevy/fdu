@@ -18,7 +18,7 @@ use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use crate::engine_contract::{AppliedDelta, EntryKind, Op, Result};
+use crate::engine_contract::{AppliedDelta, Clock, EntryKind, Op, Result, StateChange};
 use crate::index::IndexHandle;
 use crate::query::{Provenance, Query, Report, ReportSource, Selection, report};
 use crate::scan::ScanConfig;
@@ -109,6 +109,12 @@ pub struct Batch {
     /// `None` when the batch carried no deltas: it names no new position, and saying so
     /// beats inventing one.
     pub cursor: Option<crate::Cursor>,
+    /// Answer-affecting transitions this batch committed, in commit order.
+    ///
+    /// Coverage moving, a sweep verifying a subtree, a replaced run envelope, re-bound tag
+    /// rules: each changes what the rows mean without changing any row, so a consumer that
+    /// only watched paths would keep an answer that is wrong and was never contradicted.
+    pub state: Vec<StateChange>,
 }
 
 /// How many dirty directories a batch enumerates before it says "all of them".
@@ -126,7 +132,31 @@ const MAX_DIRTY_ROLLUPS: usize = 1024;
 /// keeps the index from having to learn what a consumer's cache wants.
 fn dirty_rollups(applied: &[AppliedDelta]) -> Vec<PathBuf> {
     let mut dirty: BTreeSet<PathBuf> = BTreeSet::new();
+    let mut dirty_with_ancestors = |path: &PathBuf, own_key: bool| {
+        if own_key {
+            dirty.insert(path.clone());
+        }
+        let mut ancestor = path.parent();
+        while let Some(current) = ancestor {
+            dirty.insert(current.to_path_buf());
+            ancestor = current.parent();
+        }
+        // The root is an ancestor of everything and its totals always move.
+        dirty.insert(PathBuf::new());
+    };
     for delta in applied {
+        for change in &delta.state {
+            // Re-bound rules re-tag entries that were never touched, so a cached listing
+            // beneath a governed directory holds tags the index no longer agrees with.
+            // The other transitions move trust rather than values: they are carried in
+            // `Batch::state`, and inventing roll-up dirtiness for them would make every
+            // reconciliation sweep look like a mutation of the numbers.
+            if let StateChange::Retagged { directories } = change {
+                for directory in directories {
+                    dirty_with_ancestors(directory, true);
+                }
+            }
+        }
         for op in &delta.ops {
             let (path, own_key) = match op {
                 // A file's own key is not a roll-up, so naming it would invalidate
@@ -141,16 +171,7 @@ fn dirty_rollups(applied: &[AppliedDelta]) -> Vec<PathBuf> {
                 // entry is gone. Guessing in the cheap direction is the whole trade.
                 Op::Remove { path } | Op::InvalidateSubtree { path, .. } => (path, true),
             };
-            if own_key {
-                dirty.insert(path.clone());
-            }
-            let mut ancestor = path.parent();
-            while let Some(current) = ancestor {
-                dirty.insert(current.to_path_buf());
-                ancestor = current.parent();
-            }
-            // The root is an ancestor of everything and its totals always move.
-            dirty.insert(PathBuf::new());
+            dirty_with_ancestors(path, own_key);
         }
     }
     dirty.into_iter().collect()
@@ -162,6 +183,16 @@ pub struct Session {
     watcher: Watcher,
     scan: ScanConfig,
     query: Query,
+    /// The position the last batch reported, or where the session started.
+    ///
+    /// A batch may only name a position it can prove it reached without stepping over a
+    /// commit. This stream is not the index's only writer -- a caller can refresh, or
+    /// ingest its own hints, against the same handle while a watch runs -- so a clock
+    /// between two carried deltas belongs to a commit this batch does not deliver.
+    /// Comparing against this is how the batch tells the difference between "here is
+    /// everything since your last position" and "something happened that I cannot hand
+    /// you".
+    resume: Clock,
 }
 
 impl Session {
@@ -177,7 +208,8 @@ impl Session {
         // never leaves a watcher registered on the tree.
         scan.validate_for_watch_scope(index.scope()?)?;
         let watcher = Watcher::new(&root, watch)?;
-        Ok(Self { index, watcher, scan, query })
+        let resume = index.clock()?;
+        Ok(Self { index, watcher, scan, query, resume })
     }
 
     /// The query this session answers.
@@ -226,12 +258,22 @@ impl Session {
             return Ok(None);
         };
 
+        // A control file that moved changes what the tag rules decide about entries this
+        // batch never touched, so it is rebound before anything is derived from the batch.
+        // Two reasons, and the second is the one that bites: the tags reported below must
+        // be the ones the new file produces, and the rebind is itself a commit -- so a
+        // cursor captured before it would name a position past a transition the batch does
+        // not carry, and resuming from it would skip the re-tag permanently.
+        if let Some(retag) = self.rebind_tags_for(&applied)? {
+            applied.push(retag);
+        }
+
         // A dropped event, an unpaired rename, or a watch registered after its
         // directory already had contents: in each case the engine re-scans and the index
         // ends up right, but a consumer replaying `changes` alone would be applying a
         // suffix to state that no longer matches. It has to re-read, and this is the only
         // thing that tells it so.
-        let reset = applied.iter().any(|delta| {
+        let escalated = applied.iter().any(|delta| {
             delta.ops.iter().any(|op| {
                 matches!(
                     op,
@@ -255,30 +297,14 @@ impl Session {
             // stale row survives an invalidation that named it.
             dirty_rollups: if all_dirty { Vec::new() } else { dirty_rollups },
             all_dirty,
-            reset,
+            reset: escalated || self.stepped_over_a_commit(&applied),
             // The last delta's own clock. `SessionId` is fixed for the life of an index,
             // so only the clock ever needed capturing, and the delta already carries it.
             cursor: applied.last().map(|delta| crate::Cursor { session, clock: delta.clock }),
+            state: applied.iter().flat_map(|delta| delta.state.iter().cloned()).collect(),
         };
-        // A control file that moved changes what the tag rules decide about entries the
-        // batch never touched, so it is handled before the rows are read: rebinding first
-        // means the tags this batch reports are the ones the new file produces, not the
-        // ones the old one did.
-        //
-        // The escalations go out even though nothing beneath those directories was
-        // upserted or removed. That is the point -- a consumer holding rows for a subtree
-        // has no other way to learn that its tags moved, and a silently re-tagged subtree
-        // is a view that is wrong without ever having been told it changed.
-        for governed in self.rebind_tags_for(&applied)? {
-            batch.changes.push(Change {
-                path: governed,
-                kind: ChangeKind::Invalidate,
-                entry_kind: None,
-                bytes: None,
-                allocated: None,
-                mtime_ns: None,
-                clock: applied.last().map_or(0, |delta| delta.clock.0),
-            });
+        if let Some(last) = applied.last() {
+            self.resume = last.clock;
         }
 
         // Tags are read from the index, which is where they were computed, so this needs a
@@ -300,8 +326,51 @@ impl Session {
                     batch.changes.push(change);
                 }
             }
+            // A re-tagged subtree is escalated even though nothing beneath it was upserted
+            // or removed. That is the point -- a consumer holding rows for it has no other
+            // way to learn that their tags moved, and a silently re-tagged subtree is a
+            // view that is wrong without ever having been told so. Emitted in the delta's
+            // own place in the sequence, so `changes` stays in commit order.
+            for change in &delta.state {
+                let StateChange::Retagged { directories } = change else {
+                    continue;
+                };
+                for governed in directories {
+                    batch.changes.push(Change {
+                        path: governed.clone(),
+                        kind: ChangeKind::Invalidate,
+                        entry_kind: None,
+                        bytes: None,
+                        allocated: None,
+                        mtime_ns: None,
+                        clock: delta.clock.0,
+                    });
+                }
+            }
         }
         Ok(Some(batch))
+    }
+
+    /// Whether a commit landed between this session's position and the deltas it carries.
+    ///
+    /// The index has one writer at a time but not one *producer*: a caller can refresh a
+    /// subtree, ingest hints, or rebind rules against the same handle while a watch runs.
+    /// Those commits are real and this stream does not deliver them, so a batch that
+    /// stepped over one cannot honestly hand back a position past it -- resuming there
+    /// would drop the commit for good, and nothing would report the loss.
+    ///
+    /// A gap is `reset`, which is exactly what it means: the consumer's position cannot be
+    /// advanced by replay and it has to re-read. Clocks are minted strictly increasing
+    /// under the write guard, so contiguity is the whole test.
+    fn stepped_over_a_commit(&self, applied: &[AppliedDelta]) -> bool {
+        let mut expected = self.resume.0.saturating_add(1);
+        for delta in applied {
+            if delta.clock.0 != expected {
+                return true;
+            }
+            expected = delta.clock.0.saturating_add(1);
+        }
+        false
     }
 
     /// Re-read the tag rules' control files when this batch moved one.
@@ -309,7 +378,7 @@ impl Session {
     /// Returns the directories whose tags may have changed, or nothing at all -- the
     /// common case, and one cheap `any` over the batch -- when no control file was
     /// touched or no enabled rule reads one.
-    fn rebind_tags_for(&self, applied: &[AppliedDelta]) -> Result<Vec<PathBuf>> {
+    fn rebind_tags_for(&self, applied: &[AppliedDelta]) -> Result<Option<AppliedDelta>> {
         let moved = self.index.with_index(|index| {
             let rules = index.tag_rules();
             !rules.is_empty()
@@ -319,7 +388,7 @@ impl Session {
                     .any(|op| rules.is_control_file(op.path()))
         })?;
         if !moved {
-            return Ok(Vec::new());
+            return Ok(None);
         }
         self.index.rebind_tag_rules()
     }
@@ -411,7 +480,7 @@ mod tests {
     use crate::engine_contract::{Attrs, Clock, EntryKind};
 
     fn delta(clock: u64, ops: Vec<Op>) -> AppliedDelta {
-        AppliedDelta { clock: Clock(clock), ops }
+        AppliedDelta::of_ops(Clock(clock), ops)
     }
 
     /// A removed directory's own cached roll-up has to be invalidated too.
@@ -436,6 +505,39 @@ mod tests {
         );
         assert!(dirty.contains(&PathBuf::from("src")), "and its ancestors: {dirty:?}");
         assert!(dirty.contains(&PathBuf::new()), "including the root: {dirty:?}");
+    }
+
+    /// A re-tag dirties the directories it governs, though no path event names them.
+    ///
+    /// The one way a cached row goes wrong with nothing to invalidate it: the entries did
+    /// not move, the rules did. A consumer holding a listing for a governed subtree has no
+    /// path change to react to, so if this set does not name the directory, the row stays
+    /// and is wrong.
+    #[test]
+    fn a_retag_dirties_the_directories_it_governs() {
+        let dirty = dirty_rollups(&[AppliedDelta::of_state(
+            Clock(1),
+            vec![StateChange::Retagged { directories: vec![PathBuf::from("src/deep")] }],
+        )]);
+
+        assert!(dirty.contains(&PathBuf::from("src/deep")), "the governed directory: {dirty:?}");
+        assert!(dirty.contains(&PathBuf::from("src")), "and its ancestors: {dirty:?}");
+        assert!(dirty.contains(&PathBuf::new()), "including the root: {dirty:?}");
+    }
+
+    /// Trust moving is not values moving, so it does not dirty a roll-up.
+    ///
+    /// It still reaches the consumer -- in `Batch::state`, which is where it belongs. If a
+    /// verified sweep dirtied every ancestor it touched, every reconciliation would look
+    /// like a mutation of the numbers and a consumer would discard a cache that was right.
+    #[test]
+    fn a_trust_transition_does_not_dirty_what_it_did_not_move() {
+        let dirty = dirty_rollups(&[AppliedDelta::of_state(
+            Clock(1),
+            vec![StateChange::Verified { path: PathBuf::from("src") }, StateChange::RunFacts],
+        )]);
+
+        assert!(dirty.is_empty(), "no roll-up value moved: {dirty:?}");
     }
 
     /// The set is sorted, deduplicated, and rooted, whatever order the ops arrived in.

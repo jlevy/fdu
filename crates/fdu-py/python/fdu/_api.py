@@ -26,10 +26,12 @@ from ._models import (
     ChildPage,
     ChildRemainder,
     Classification,
+    CoverageReason,
     Cursor,
     DirectoryTotals,
     EntryKind,
     Format,
+    Freshness,
     ProjectionWork,
     Provenance,
     Query,
@@ -37,7 +39,9 @@ from ._models import (
     Report,
     RollUp,
     ScanOptions,
+    StateChange,
     Status,
+    Transition,
     WalkTelemetry,
     WatchBatch,
     WatchOptions,
@@ -465,6 +469,7 @@ class Index:
             truncated=bool(value["truncated"]),
             cursor=_cursor(value["cursor"]),
             changes=tuple(_change(item) for item in value["ops"]),
+            state=tuple(_state_change(item) for item in value["state"]),
         )
 
     def watch(self, options: WatchOptions | None = None) -> Watch:
@@ -568,6 +573,19 @@ def _watch_batch(value: dict[str, Any]) -> WatchBatch:
         all_dirty=bool(value["all_dirty"]),
         reset=bool(value["reset"]),
         cursor=None if raw_cursor is None else _cursor(raw_cursor),
+        state=tuple(_state_change(item) for item in value["state"]),
+    )
+
+
+def _state_change(value: dict[str, Any]) -> StateChange:
+    raw_freshness = value["freshness"]
+    raw_reason = value["reason"]
+    return StateChange(
+        clock=int(value["clock"]),
+        transition=Transition(str(value["transition"])),
+        paths=tuple(Path(path) for path in value["paths"]),
+        freshness=None if raw_freshness is None else Freshness(str(raw_freshness)),
+        reason=None if raw_reason is None else CoverageReason(str(raw_reason)),
     )
 
 

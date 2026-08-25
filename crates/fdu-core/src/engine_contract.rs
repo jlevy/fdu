@@ -673,26 +673,114 @@ impl Observation {
     }
 }
 
-/// A committed batch containing only effective mutations.
+/// One answer-affecting change that is not a change to any path's values.
+///
+/// Coverage, trust, provenance, and the tag rules all decide what a projection *means*,
+/// so a consumer caching an answer has to be told when they move for the same reason it
+/// has to be told a file changed size. They ride in the committed delta beside the ops,
+/// under the same clock, because a transition delivered through some other channel is a
+/// transition a cursor cannot name: one position would identify two different answers,
+/// and nothing in either would report which.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub enum StateChange {
+    /// A reconciliation sweep completed over this subtree.
+    ///
+    /// Provenance beneath it moved from cached to revalidated. The sweep is the unit,
+    /// not the entry: an unchanged upsert promotes one entry's source without changing
+    /// any value it reports, and a sweep performs millions of those. The index stores
+    /// the interval for exactly that reason, and the interval is what commits.
+    Verified {
+        /// Relative root of the subtree the sweep covered.
+        path: PathBuf,
+    },
+    /// How far a subtree may be trusted changed.
+    Freshness {
+        /// Relative root of the subtree whose trust state moved.
+        path: PathBuf,
+        /// The state it moved to.
+        freshness: Freshness,
+        /// Why coverage is partial, when it is.
+        reason: Option<CoverageReason>,
+    },
+    /// The facts describing the operation behind the current state were replaced.
+    ///
+    /// Carries no payload: the envelope is read from the index under the same guard as
+    /// the rows, so a consumer learns *that* it moved here and reads *what it moved to*
+    /// from the read it was going to make anyway. Copying it into the journal would
+    /// retain a second copy that can only ever agree or be wrong.
+    RunFacts,
+    /// The tag rules were bound against their control files again.
+    ///
+    /// Entries beneath these directories may carry different tags without any of them
+    /// having been touched -- the one way a cached row goes wrong with no path event
+    /// ever naming it.
+    Retagged {
+        /// Directories the rebuilt rules govern.
+        directories: Vec<PathBuf>,
+    },
+}
+
+impl StateChange {
+    /// The subtree roots this transition applies to.
+    ///
+    /// Empty for a transition about the index as a whole rather than about any part of
+    /// it, which is what makes `RunFacts` different in kind from the other three.
+    pub fn paths(&self) -> &[PathBuf] {
+        match self {
+            Self::Verified { path } | Self::Freshness { path, .. } => std::slice::from_ref(path),
+            Self::RunFacts => &[],
+            Self::Retagged { directories } => directories,
+        }
+    }
+}
+
+/// A committed batch containing only effective changes.
+///
+/// Rows and state travel together. A delta carrying only [`StateChange`]s is ordinary and
+/// is the whole point: coverage moving with nothing else moving is still an answer
+/// changing, and a clock that did not advance for it would let one cursor name the answer
+/// before and the answer after.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct AppliedDelta {
     /// Logical commit clock minted for the whole batch.
     pub clock: Clock,
     /// Effective mutations committed at that clock.
     pub ops: Vec<Op>,
+    /// Answer-affecting state transitions committed at that clock.
+    pub state: Vec<StateChange>,
 }
 
 impl AppliedDelta {
-    #[inline]
-    /// Whether the committed batch contains no operations.
-    pub fn is_empty(&self) -> bool {
-        self.ops.is_empty()
+    /// A delta carrying only path mutations.
+    #[must_use]
+    pub const fn of_ops(clock: Clock, ops: Vec<Op>) -> Self {
+        Self { clock, ops, state: Vec::new() }
+    }
+
+    /// A delta carrying only state transitions.
+    #[must_use]
+    pub const fn of_state(clock: Clock, state: Vec<StateChange>) -> Self {
+        Self { clock, ops: Vec::new(), state }
     }
 
     #[inline]
-    /// Number of effective operations in the committed batch.
+    /// Whether the committed batch carries neither a mutation nor a transition.
+    ///
+    /// Never true of a delta the index minted: a batch with nothing effective in it does
+    /// not advance the clock and never becomes a delta at all.
+    pub fn is_empty(&self) -> bool {
+        self.ops.is_empty() && self.state.is_empty()
+    }
+
+    #[inline]
+    /// What this delta costs against the journal's retention budget.
+    ///
+    /// State transitions are charged like ops rather than being free. A free transition
+    /// would let a pathological producer -- a reconciliation loop over sibling subtrees,
+    /// say -- fill the journal with entries the budget never sees, and the bound exists
+    /// precisely so a long-lived server's change history cannot grow without limit.
     pub fn len(&self) -> usize {
-        self.ops.len()
+        self.ops.len() + self.state.len()
     }
 }
 

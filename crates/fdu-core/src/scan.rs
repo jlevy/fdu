@@ -868,7 +868,7 @@ impl ReconcileTarget<'_> {
 
     fn begin_reconcile(&mut self, path: &Path) -> Result<u64> {
         match self {
-            Self::Direct(index) => Ok(index.begin_reconcile(path)),
+            Self::Direct(index) => index.begin_reconcile(path),
             Self::Shared(handle) => handle.begin_reconcile(path),
         }
     }
@@ -876,9 +876,8 @@ impl ReconcileTarget<'_> {
     fn finish_reconcile(&mut self, path: &Path, started_at: u64, coverage: Status) -> Result<()> {
         match self {
             Self::Direct(index) => index.finish_reconcile(path, started_at, coverage),
-            Self::Shared(handle) => handle.finish_reconcile(path, started_at, coverage)?,
+            Self::Shared(handle) => handle.finish_reconcile(path, started_at, coverage),
         }
-        Ok(())
     }
 }
 
@@ -5530,8 +5529,17 @@ mod tests {
 
         assert!(report.is_complete());
         assert_eq!(report.apply.unchanged, 5, "3 files + 2 dirs all already known");
-        assert!(deltas.is_empty());
-        assert_eq!(index.clock(), before_clock);
+        assert!(
+            deltas.iter().all(|delta| delta.ops.is_empty()),
+            "an unchanged tree publishes no mutation: {deltas:?}"
+        );
+        // The sweep itself is still a transition, and the two commits are the whole of it:
+        // the subtree entered reconciliation, and the sweep that ended verified it. Every
+        // one of those five unchanged entries had its provenance promoted from cached to
+        // revalidated, and the interval is where the index records that -- so a clock that
+        // had not moved would be an index claiming nothing had changed about how far its
+        // answers can be trusted, immediately after checking every one of them.
+        assert_eq!(index.clock().0, before_clock.0 + 2);
         assert_eq!(index.total(), before_total);
     }
 
@@ -5820,8 +5828,14 @@ mod tests {
 
         assert!(report.is_complete());
         assert_eq!(report.apply.unchanged, 5, "3 files + 2 dirs all already known");
-        assert!(deltas.is_empty());
-        assert_eq!(handle.clock().expect("clock"), before_clock);
+        assert!(
+            deltas.iter().all(|delta| delta.ops.is_empty()),
+            "an unchanged tree publishes no mutation: {deltas:?}"
+        );
+        // Two state commits, as in the direct case: the sweep announced itself and then
+        // recorded what it verified. Arbitration of the no-ops is what the test is about,
+        // and it is unaffected -- no op reached a delta.
+        assert_eq!(handle.clock().expect("clock").0, before_clock.0 + 2);
     }
 
     #[test]

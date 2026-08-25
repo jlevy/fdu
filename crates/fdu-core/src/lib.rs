@@ -86,7 +86,7 @@ pub use crate::cache::{
 pub use crate::engine_contract::{
     AppliedDelta, Attrs, Bound, Clock, CoverageReason, Cursor, EntryKind, Error, Expectation,
     Fingerprint, Freshness, InvalidateReason, Observation, ObservationOp, Op, PathExpectation,
-    PathState, Provenance, Result, ScanScope, SessionId, Source, Status,
+    PathState, Provenance, Result, ScanScope, SessionId, Source, StateChange, Status,
 };
 pub use crate::index::{
     ApplyOutcome, ApplyStats, ChildPage, ChildPageRequest, ChildRemainder, ChildSnapshot, EntryId,
@@ -458,7 +458,7 @@ fn record_run(
     scan: &ScanReport,
     started_at: Option<std::time::SystemTime>,
 ) {
-    index.set_run_facts(crate::query::RunFacts {
+    index.install_run_facts(crate::query::RunFacts {
         scan_started_at: started_at,
         source,
         complete: scan.is_complete(),

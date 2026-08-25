@@ -1163,11 +1163,18 @@ impl PyIndex {
                 ops.append(item)?;
             }
         }
+        let state = PyList::empty(py);
+        for delta in &since.deltas {
+            for change in &delta.state {
+                state.append(state_change_dict(py, delta.clock.0, change)?)?;
+            }
+        }
 
         let out = PyDict::new(py);
         out.set_item("truncated", since.truncated)?;
         out.set_item("cursor", cursor_dict(py, since.cursor)?)?;
         out.set_item("ops", ops)?;
+        out.set_item("state", state)?;
         Ok(out)
     }
 
@@ -1397,6 +1404,45 @@ fn coverage_reason_label(status: fdu_core::Status) -> Option<&'static str> {
         fdu_core::CoverageReason::Inaccessible => "inaccessible",
         _ => "failed",
     })
+}
+
+/// Why a coverage reason is partial, as a stable label.
+fn reason_label(reason: fdu_core::CoverageReason) -> &'static str {
+    coverage_reason_label(fdu_core::Status::Partial(reason)).unwrap_or("failed")
+}
+
+/// One committed state transition, rendered for a consumer.
+///
+/// The same shape wherever it appears -- resumed from the journal or delivered by a live
+/// batch -- because it is the same fact. `paths` is a list rather than a scalar so a
+/// re-tag naming many governed directories and a sweep naming one subtree read the same
+/// way, and an index-wide transition is the empty list rather than a special case.
+fn state_change_dict<'py>(
+    py: Python<'py>,
+    clock: u64,
+    change: &fdu_core::StateChange,
+) -> PyResult<Bound<'py, PyDict>> {
+    let item = PyDict::new(py);
+    item.set_item("clock", clock)?;
+    let (transition, freshness, reason) = match change {
+        fdu_core::StateChange::Verified { .. } => ("verified", None, None),
+        fdu_core::StateChange::Freshness { freshness, reason, .. } => {
+            ("freshness", Some(freshness_label(*freshness)), reason.map(reason_label))
+        }
+        fdu_core::StateChange::RunFacts => ("run_facts", None, None),
+        fdu_core::StateChange::Retagged { .. } => ("retagged", None, None),
+    };
+    item.set_item("transition", transition)?;
+    item.set_item("freshness", freshness)?;
+    item.set_item("reason", reason)?;
+    let paths: Vec<OsString> =
+        change.paths().iter().map(|path| path.as_os_str().to_os_string()).collect();
+    payload::scalars(3);
+    for path in &paths {
+        payload::text(path.len());
+    }
+    item.set_item("paths", paths)?;
+    Ok(item)
 }
 
 fn provenance_dict(
@@ -1899,6 +1945,7 @@ impl PyWatch {
 
         let out = PyDict::new(py);
         let list = PyList::empty(py);
+        let state = PyList::empty(py);
         let mut dirty = false;
         let mut all_dirty = false;
         let mut reset = false;
@@ -1929,8 +1976,19 @@ impl PyWatch {
                 dict.set_item("mtime_ns", change.mtime_ns)?;
                 list.append(dict)?;
             }
+            for change in &batch.state {
+                // The clock is the batch's own terminal position: a batch is delivered
+                // whole, so the transition is in effect by the time a consumer sees any of
+                // it. `since` can be finer because it replays deltas one at a time.
+                state.append(state_change_dict(
+                    py,
+                    batch.cursor.map_or(0, |cursor| cursor.clock.0),
+                    change,
+                )?)?;
+            }
         }
         out.set_item("changes", list)?;
+        out.set_item("state", state)?;
         out.set_item("dirty", dirty)?;
         out.set_item("dirty_rollups", dirty_rollups)?;
         out.set_item("all_dirty", all_dirty)?;
@@ -2442,8 +2500,7 @@ fn open(
     // Onto the index, before anything can read it. The engine recorded what the *scan*
     // did; this adds what analysis did, which the engine has no view of, and commits the
     // combined answer where a read finds it under the same guard as the rows.
-    let mut index = index;
-    index.set_run_facts(fdu_core::query::RunFacts {
+    let index = index.with_run_facts(fdu_core::query::RunFacts {
         scan_started_at,
         source,
         complete: operation_complete,
@@ -2512,8 +2569,7 @@ fn scan(
     }
     // A bare scan never consults the cache, so it is always cold.
     let telemetry = PerformanceSummary::from_open_report(&report);
-    let mut index = index;
-    index.set_run_facts(fdu_core::query::RunFacts {
+    let index = index.with_run_facts(fdu_core::query::RunFacts {
         scan_started_at,
         source: ReportSource::ColdScan,
         complete: operation_complete,

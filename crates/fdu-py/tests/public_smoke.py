@@ -12,6 +12,7 @@ import asyncio
 import contextlib
 import dataclasses
 import importlib.util
+import itertools
 import json
 import os
 import re
@@ -529,13 +530,13 @@ def check_one_bundle_answers_a_whole_page() -> None:
     # The GIL is released for the duration of the native read, through the real public
     # `Index.read`. Threads that merely all finish would prove nothing -- with the GIL
     # held they run one after another and still finish -- so the oracle is *when* a second
-    # thread gets its turn. It sleeps a short delay (which releases the GIL, so it always
-    # reaches the next line on time) and then timestamps, which needs the GIL back. If the
-    # read holds it, that timestamp slides to the end of the read.
+    # thread gets its turn. The probe sleeps (which releases the GIL, so it always wakes
+    # on time) and then timestamps, which needs the GIL back. If the read holds it, every
+    # such timestamp lands after the read returned, and none inside it.
     #
-    # Its own tree, sized from measurement: 20k files make a filtered summary take about
-    # ten milliseconds, ~99% of it the native span. The shared fixture is three files and
-    # finishes far too fast to separate the two cases.
+    # Its own tree: 20k files make a filtered summary a span worth timing against, almost
+    # all of it native. The shared fixture is three files and finishes far too fast to
+    # separate the two cases.
     wide = Path(tempfile.mkdtemp(prefix="fdu-gil-"))
     for group in range(20):
         bucket = wide / f"d{group}"
@@ -548,32 +549,65 @@ def check_one_bundle_answers_a_whole_page() -> None:
         views=(fdu.View.SUMMARY,),
         selection=fdu.Selection(min_size=1, kinds=(fdu.EntryKind.FILE,)),
     )
-    probe_delay = 0.002
-    ran_at: list[float] = []
+
+    def timed_read() -> tuple[float, float, fdu.Bundle]:
+        at = time.monotonic()
+        bundle = wide_index.read(total=True, query=filtered)
+        return at, time.monotonic(), bundle
+
+    # Sized from what this machine actually does, not from a constant. How long a filtered
+    # walk of 20k entries takes varies several-fold across hosts, and the first version of
+    # this fixed the probe delay in advance -- which is a claim about the machine. On a
+    # fast one the read finished before the probe was even due and the assertion failed for
+    # being right. So: warm the caches, measure, and derive the sampling interval from the
+    # measurement.
+    timed_read()
+    warm_started, warm_returned, _ = timed_read()
+    baseline = warm_returned - warm_started
+    tick = max(baseline / 8, 0.0002)
+    assert baseline > tick * 4, (
+        f"a 20k-entry filtered walk finished in {baseline:.4f}s, too short to sample "
+        "against; the fixture needs to grow before this can claim anything"
+    )
+
+    # A repeating sampler rather than one shot. A single probe has to be scheduled at
+    # exactly the right moment, which is what made the first version fragile; a sampler
+    # only has to run *at all* during the read, and how many times it managed to is the
+    # measurement. With the GIL held that count is zero, whatever the machine's speed.
+    samples: list[float] = []
+    stop = threading.Event()
 
     def probe() -> None:
-        time.sleep(probe_delay)
-        ran_at.append(time.monotonic())
+        while not stop.is_set():
+            samples.append(time.monotonic())
+            time.sleep(tick)
 
     prober = threading.Thread(target=probe, name="fdu-gil-probe")
     prober.start()
-    started_read = time.monotonic()
-    measured = wide_index.read(total=True, query=filtered)
-    returned = time.monotonic()
+    time.sleep(tick * 8)  # let it reach a steady rhythm, and time that rhythm
+    started_read, returned, measured = timed_read()
+    stop.set()
     prober.join(timeout=30)
 
     elapsed = returned - started_read
-    assert ran_at, "the probe thread never ran"
-    assert elapsed > probe_delay * 4, (
-        f"the read must outlast the probe by a wide margin to prove anything: {elapsed:.4f}s"
+    # What the sampler actually achieves, not what it was asked for: `time.sleep` rounds
+    # up by a platform-dependent amount, so the instrument's real resolution has to be
+    # read off the instrument. Measured *before* the read, and that is the whole trick --
+    # a held GIL slows the sampler down, so timing its cadence during the read would
+    # report "too coarse to measure" for the one condition this test exists to catch.
+    before = [at for at in samples if at < started_read]
+    assert len(before) > 2, "the probe thread never reached a rhythm"
+    gaps = sorted(b - a for a, b in itertools.pairwise(before))
+    cadence = gaps[len(gaps) // 2]
+    assert elapsed > cadence * 4, (
+        f"the sampler ticks every {cadence:.4f}s and the read took {elapsed:.4f}s, too "
+        "close to separate; the fixture needs to grow before this can claim anything"
     )
-    # Not merely "before the read returned" -- that is nearly true even with the GIL held,
-    # because the thread runs the instant the call gives it back. It has to get its turn
-    # early, which only a released GIL allows.
-    waited = ran_at[0] - started_read
-    assert waited < elapsed / 2, (
-        "another Python thread must run *while* the native read works, not after it: the "
-        f"probe waited {waited:.4f}s of a {elapsed:.4f}s call"
+    inside = [at for at in samples if started_read < at < returned]
+    assert len(inside) >= 3, (
+        "another Python thread must run *while* the native read works, not after it: "
+        f"{len(inside)} of {len(samples)} samples landed inside a {elapsed:.4f}s call "
+        f"sampled every {cadence:.4f}s"
     )
 
     # The binding's own cost, which no engine-side counter can see. An exact delta rather
@@ -606,6 +640,56 @@ def check_one_bundle_answers_a_whole_page() -> None:
     assert checkpoint.total is None and checkpoint.children is None
     assert checkpoint.cursor.session == index.cursor().session
     fdu.clear_cache(root)
+
+
+def check_a_state_transition_advances_the_version_and_reaches_the_feed() -> None:
+    """Coverage, trust, and the run envelope move through commits like any other change.
+
+    A transition delivered outside the clocked commit path lets one cursor name two
+    different answers, and nothing in either says which was read. So a refresh that finds
+    no difference at all still advances the version -- it verified the subtree, and what
+    the rows may be trusted to mean is exactly what moved.
+    """
+
+    with tempfile.TemporaryDirectory(prefix="fdu-state-") as raw:
+        root = Path(raw)
+        (root / "src").mkdir()
+        (root / "src" / "main.rs").write_text("fn main() {}", encoding="utf-8")
+        index = fdu.open(root, cache=fdu.CachePolicy.OFF)
+
+        before = index.cursor()
+        index.refresh()
+
+        after = index.cursor()
+        assert after.clock > before.clock, (
+            "a sweep that changed no row still changed how far its rows may be trusted"
+        )
+        changed = index.since(before)
+        assert not changed.changes, f"nothing about a path moved: {changed.changes}"
+        transitions = {change.transition for change in changed.state}
+        assert fdu.Transition.VERIFIED in transitions, changed.state
+        assert fdu.Transition.FRESHNESS in transitions, changed.state
+        assert changed.cursor == after, "the feed ends where the index stands"
+
+        # And every transition names where it applies, so a consumer can invalidate a
+        # subtree rather than everything.
+        verified = next(
+            change for change in changed.state if change.transition is fdu.Transition.VERIFIED
+        )
+        assert verified.paths == (Path(""),), verified
+
+        # The envelope moves with the rows rather than in a second write nobody is told
+        # about. Its watermark is a fact about *this* run -- when the sweep began -- so a
+        # repeated sweep over an unchanged tree records a different envelope and commits
+        # again. That is the point: an answer's trust window moved, and a consumer holding
+        # the previous one has to hear so. Only a genuinely identical envelope is skipped,
+        # which the engine's own tests pin because nothing here can produce one.
+        assert fdu.Transition.RUN_FACTS in transitions, changed.state
+        index.refresh()
+        repeated = {change.transition for change in index.since(after).state}
+        assert repeated == transitions, (
+            f"a repeated sweep is the same kind of transition: {repeated} vs {transitions}"
+        )
 
 
 def check_the_event_loop_adapter_delivers_the_same_batches() -> None:
@@ -1331,6 +1415,7 @@ def main() -> None:
     check_tags_are_a_named_fact_per_entry()
     check_a_bundle_answers_a_query_at_the_same_instant_as_its_rows()
     check_empty_is_decidable_from_the_aggregate()
+    check_a_state_transition_advances_the_version_and_reaches_the_feed()
     check_the_event_loop_adapter_delivers_the_same_batches()
     check_the_sse_example_resumes_or_resyncs()
     check_a_bounded_tree_says_what_it_withheld()

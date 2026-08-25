@@ -423,7 +423,7 @@ pub enum ReportSource {
 ///
 /// `generated_at` is deliberately absent: it belongs to a rendering, not to the index,
 /// and stamping it here would freeze one instant across every later report.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RunFacts {
     /// When the walk or revalidation behind this index began.
     pub scan_started_at: Option<SystemTime>,
