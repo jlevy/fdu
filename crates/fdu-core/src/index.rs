@@ -1296,7 +1296,7 @@ fn encode_path(path: &Path) -> (u8, Vec<u8>) {
 #[cfg(windows)]
 fn decode_path(tag: u8, bytes: &[u8]) -> Option<PathBuf> {
     use std::os::windows::ffi::OsStringExt;
-    if tag != 1 || bytes.len() % 2 != 0 {
+    if tag != 1 || !bytes.len().is_multiple_of(2) {
         return None;
     }
     let wide: Vec<u16> = bytes
