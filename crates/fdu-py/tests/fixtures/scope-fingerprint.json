@@ -58,7 +58,7 @@
     },
     {
       "name": "provider-allowlist",
-      "why": "what this repository's reference provider opens with",
+      "why": "a two-name allowlist, so the order case below has two names to reorder; the provider's own scope is the next case",
       "hidden_allowlist": [
         ".github",
         ".cargo"

@@ -5,15 +5,16 @@ apart. A browser boots against a tree, draws a directory with two numbers per ro
 the tree as it changes, and reconnects without re-reading everything -- and each of those
 has one decision that fails silently if it is made naively.
 
-**Identity is one string, and it must combine every fingerprint.** fdu reports its scope as
-several named fingerprints because they answer different questions -- which tag rules ran,
-which taxonomy classified, which reducers were maintained, which entries were admitted at
-all. A consumer's cache key has to move when *any* of them does, so this composes them into
-one value the way a consumer can reproduce: named components, sorted by name, canonical JSON,
-SHA-256. Sorted because a caller listing the same components in another order has not asked
-a different question; canonical because two encoders must agree byte for byte; and one
-combined value because a consumer that keys on a subset caches an answer across a change
-that invalidated it, which no field of the answer reveals.
+**Identity is two strings, and which fact goes in which is the decision.** The consuming
+contract keys on a *scope* digest and a *semantic* digest separately, because they
+invalidate different things: a changed allowlist means the index holds different entries,
+while a changed taxonomy means the same entries are labelled differently. fdu reports
+several named fingerprints, so each has to be routed to the right side and encoded the way
+the consumer encodes it -- named components, sorted by name, compact UTF-8 JSON, SHA-256.
+Sorted because a caller listing the same components in another order has not asked a
+different question; canonical because two engines must agree byte for byte; and split
+because a consumer keying on one combined value re-reads for both, while one keying on
+neither serves an answer across a change that invalidated it.
 
 **Two numbers per row come from one call.** A browser shows "1.2 GB, 340 MB shown" -- the
 subtree, and the subtree excluding what git ignores. Asking for the second per row would
@@ -36,12 +37,12 @@ caller's instant. `modified_since="1h"` resolved afresh per request asks about a
 window each time, so membership drifts while the version stands still. `as_of` is chosen
 once, by the caller.
 
-**What this example cannot do yet, and says so where it matters.** A filtered report is
-bounded but has no continuation, so `recent_slice` is a slice rather than a page
-(`fdu-91ru`). A watch batch materialises entry rows whether or not a consumer reads them,
-and does not carry terminal provider state, so `invalidation` is written to want nothing
-from `changes` (`fdu-vfx7`). Both are engine gaps; neither is worked around here, because
-an adapter that papered over them would be the mirror this design exists to avoid.
+**What this example cannot do yet, and says so where it matters.** A *sorted* answer has
+no continuation, so `recent_slice` is a slice rather than a page: a resumable cursor has to
+seek in the order it emits, and path order is the only total order the tree already holds
+(`fdu-t5h2`). Path-ordered answers do page -- see `catalog_page`. That is the one gap left
+here, and it is an engine gap rather than something worked around, because an adapter that
+papered over it would be the mirror this design exists to avoid.
 """
 
 from __future__ import annotations
@@ -310,10 +311,11 @@ def invalidation(batch: fdu.WatchBatch) -> Invalidation:
     carries `transitions`, the interval events -- report those, never fold them into a
     consumer-side copy of the state, which is the mirror this field makes unnecessary.
 
-    **What this cannot do yet.** The entry rows still cross the boundary: there is no
-    invalidations-only interest mode, so `changes` is materialised whether or not a
-    consumer reads it. Open on `fdu-vfx7`. This function is written to want nothing from
-    `changes` so that the mode, when it lands, changes the engine rather than this adapter.
+    Nothing here reads `changes`, and `main()` opens the watch with
+    `Interest.INVALIDATIONS` so the engine never builds them: no entry row crosses the
+    binding for a consumer that re-reads on dirty. That this function did not have to
+    change when the mode landed is the point -- it was written to want nothing from
+    `changes`, so the mode changed the engine and not the adapter.
     """
 
     return Invalidation(
@@ -422,12 +424,35 @@ def main() -> None:
     for row in listing(index, Path(), limit=10):
         print(json.dumps({"name": row.name, "bytes": row.bytes, "shown": row.shown_bytes}))
 
-    with index.watch(fdu.WatchOptions(interval=1.0)) as watch:
+    # Invalidations only: a consumer that re-reads on dirty never looks at the rows, and
+    # materialising them costs a tag lookup and a path clone per operation and then the
+    # whole crossing. The batch still carries everything below.
+    options = fdu.WatchOptions(interval=1.0, interest=fdu.Interest.INVALIDATIONS)
+    with index.watch(options) as watch:
         for batch in watch:
-            if not (batch.changes or batch.dirty):
+            if not batch.dirty:
                 continue
             discard = invalidation(batch)
-            print(json.dumps({"repaint": [str(path) for path in discard.rollups]}))
+            # `work` is absent on an idle step rather than zero, which is the distinction
+            # the surface makes everywhere: a number nobody measured is `None`.
+            work = batch.work
+            print(
+                json.dumps(
+                    {
+                        "repaint": [str(path) for path in discard.rollups],
+                        "queries": list(discard.queries),
+                        # The terminal state at this batch's own cursor, so a caption can
+                        # say how far to trust what it kept without a second read.
+                        "freshness": None
+                        if discard.state is None
+                        else str(discard.state.freshness),
+                        # And what the batch cost across the whole public boundary, which
+                        # is the number a provider harness compares between engines.
+                        "wall_ns": None if work is None else work.wall_ns,
+                        "rows_built": None if work is None else work.rows,
+                    }
+                )
+            )
             break
 
 

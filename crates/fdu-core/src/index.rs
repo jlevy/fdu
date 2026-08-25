@@ -2314,15 +2314,23 @@ impl Index {
         // A refusal is a change to what the index *covers* even when no row moved, so it
         // has to be able to advance the clock on its own: a batch of nothing but refused
         // files leaves the answers the same and the claim about them different.
-        let lost_coverage = (stats.refused > 0
+        //
+        // Two transitions, because a consumer reads two different fields for two different
+        // decisions: `coverage` says the index is short, and the typed issue says why in a
+        // value it can match on. Publishing one without the other leaves a partial answer
+        // whose reason a consumer would have to infer from prose -- and the run envelope
+        // still claiming the operation was complete.
+        let refused = stats.refused > 0;
+        let lost_coverage = (refused
             && self.coverage_at(Path::new("")) != Status::Partial(CoverageReason::Budget))
         .then(|| StateChange::Freshness {
             path: PathBuf::new(),
             freshness: Freshness::Partial,
             reason: Some(CoverageReason::Budget),
         });
+        let lost_completeness = refused && (self.run.complete || !self.run_reports_the_cap());
 
-        if changed_ops == 0 && lost_coverage.is_none() {
+        if changed_ops == 0 && lost_coverage.is_none() && !lost_completeness {
             return ApplyOutcome { stats, applied: None };
         }
 
@@ -2334,20 +2342,37 @@ impl Index {
                 Some(CoverageReason::Budget),
             );
         }
+        if lost_completeness {
+            // Exactly once, and by the guard above rather than by a second check here: it
+            // is false as soon as the envelope is incomplete *and* already carries the
+            // issue, which is the state this branch leaves behind. A `!already_reported`
+            // test inside would be unreachable, and unreachable defensive code reads as a
+            // hazard that does not exist.
+            self.run.complete = false;
+            self.run.errors.push(crate::Issue {
+                kind: crate::IssueKind::ResourceStop,
+                path: None,
+                message: format!(
+                    "the file cap of {} refused an entry the tree still holds",
+                    self.scope.max_files.unwrap_or_default()
+                ),
+                os_error: None,
+            });
+        }
         if !journal {
             // The caller declared this history unread: no delta is minted and the
             // journal keeps whatever it held, which `establish_baseline` clears.
             return ApplyOutcome { stats, applied: None };
         }
-        // One delta rather than two, because refusing a row and losing coverage are one
-        // event: at a cursor between them the index would have dropped an entry and still
-        // claimed to cover everything, and a consumer resuming there would read a moment
-        // that never happened.
-        let applied = self.retain(AppliedDelta::of_both(
-            self.clock,
-            effective,
-            lost_coverage.into_iter().collect(),
-        ));
+        // One delta rather than three, because refusing a row, losing coverage and losing
+        // completeness are one event: at a cursor between them the index would have dropped
+        // an entry and still claimed to cover everything, and a consumer resuming there
+        // would read a moment that never happened.
+        let mut transitions: Vec<StateChange> = lost_coverage.into_iter().collect();
+        if lost_completeness {
+            transitions.push(StateChange::RunFacts);
+        }
+        let applied = self.retain(AppliedDelta::of_both(self.clock, effective, transitions));
         ApplyOutcome { stats, applied: Some(applied) }
     }
 
@@ -2655,6 +2680,16 @@ impl Index {
     /// What the operation that built this index's current state did.
     pub fn run_facts(&self) -> &crate::query::RunFacts {
         &self.run
+    }
+
+    /// Whether the run envelope already carries the cap's own typed issue.
+    ///
+    /// Asked so a long watch that refuses a thousand files reports one issue rather than a
+    /// thousand identical ones. The issue is about the *scope*, not about a path: which
+    /// file was refused is not a fact a consumer can act on, and the count of refusals is
+    /// already in `ApplyStats`.
+    fn run_reports_the_cap(&self) -> bool {
+        self.run.errors.iter().any(|issue| issue.kind == crate::IssueKind::ResourceStop)
     }
 
     /// Install the run envelope on an index no consumer can have observed yet.

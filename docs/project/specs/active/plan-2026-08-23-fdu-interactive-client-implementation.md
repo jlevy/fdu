@@ -504,13 +504,21 @@ Watching used to refuse every narrowed scope, on one rule over three axes.
 Splitting the rule by *what each axis is a property of* is what made a bounded consumer
 handle possible, and the split is the whole design:
 
-- **`max_depth` and `one_filesystem` are properties of the entry an event names.** A
-  path and one `stat` decide both, so the boundary the walk drew can be redrawn around a
-  single event. `scan::within_scope` is that predicate, beside `admits` (by name,
-  mid-listing) and `retains` (by kind, after the `stat`). Depth counts components, which
-  agrees with `should_descend` by construction: it admits a child at
-  `parent_depth + 1 < max`, so the deepest entry a walk records has exactly `max`
-  components.
+- **The hidden-path rule and `max_depth` are properties of the path itself**, so
+  `within_scope` redraws both around a single event with no I/O at all.
+  The hidden rule asks every *component*, not the leaf: the walk never descends into a
+  pruned directory, so nothing beneath one is in the index, and a backend reports
+  `.git/HEAD` as its own path with nothing in that name saying its parent was pruned.
+- **`one_filesystem` needs a `stat`, and of the entry’s parent.** `should_descend` gates
+  descent, not retention, so a mountpoint is listed by its parent and *recorded* while
+  nothing under it is ever read.
+  The rule is therefore “did the walk descend into this entry’s parent” — asking the
+  entry’s own device rejects the very row the scan keeps, so a live event on a
+  mountpoint would delete it and the next rescan put it back.
+  `scan::within_scope` is that predicate, beside `admits` (by name, mid-listing) and
+  `retains` (by kind, after the `stat`). Depth counts components, which agrees with
+  `should_descend` by construction: it admits a child at `parent_depth + 1 < max`, so
+  the deepest entry a walk records has exactly `max` components.
 - **`max_files` is a property of the whole inventory**, so no per-event predicate can
   decide it — whether *this* file is inside the cap depends on every other file,
   including the ones the capped walk never read.

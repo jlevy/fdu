@@ -341,8 +341,11 @@ impl ScanConfig {
     /// watcher could not hold a boundary it had no way to redraw. Each axis now has a
     /// place where it *is* decidable, so there is nothing left to refuse.
     ///
-    /// - `max_depth` and `one_filesystem` are properties of the entry an event names, and
-    ///   `within_scope` asks them per event.
+    /// - `max_depth` and the hidden-path rule are properties of the path itself, and
+    ///   `within_scope` asks them per event with no I/O at all.
+    /// - `one_filesystem` needs a `stat`, and of the entry's *parent* rather than the
+    ///   entry: the walk retains a mountpoint and stops below it, so the question is
+    ///   whether the walk descended into the parent. `on_root_filesystem` asks that.
     /// - `max_files` is a property of the whole inventory, so the index keeps it: a new
     ///   file row past the cap is refused where the previous state of the path is already
     ///   known, and the same commit marks coverage partial with reason `budget`.
@@ -354,6 +357,24 @@ impl ScanConfig {
     #[cfg(feature = "watch")]
     pub(crate) fn validate_for_watch_scope(&self, indexed: ScanScope) -> Result<()> {
         self.validate_for_scope(indexed)
+    }
+
+    /// Whether any axis narrows what an already-observed entry may be.
+    ///
+    /// The watcher's fast path asks this instead of restating the list, because a fast
+    /// path that names its axes by hand is one that forgets the next axis added -- which
+    /// is not hypothetical: the first version of it named three and hidden admission was
+    /// the fourth, so a hidden file created under a live watch entered a pruned index and
+    /// stayed there until the next reconciliation.
+    ///
+    /// Every axis `retains` or `within_scope` asks about has to appear here, and
+    /// `every_narrowing_axis_is_visible_to_the_admission_fast_path` fails if one does not.
+    #[cfg(feature = "watch")]
+    pub(crate) fn narrows_entries(&self) -> bool {
+        self.exclude_special
+            || self.max_depth.is_some()
+            || self.one_filesystem
+            || self.hidden().is_pruning()
     }
 }
 
@@ -970,12 +991,26 @@ impl ReconcileReport {
     /// True when the filesystem walk was complete and no conditional observation lost
     /// a race with another producer.
     pub fn coverage(&self) -> Status {
-        if self.is_complete() { Status::Complete } else { self.scan.coverage() }
+        if self.is_complete() {
+            Status::Complete
+        } else if self.apply.refused > 0 {
+            // The cap outranks whatever the walk itself reported, because it is the reason
+            // the *index* is short rather than a reason the walk was: a sweep can read
+            // every entry in scope and still be told the index may not hold them.
+            Status::Partial(CoverageReason::Budget)
+        } else {
+            self.scan.coverage()
+        }
     }
 
     /// Whether this reconciliation read everything in scope and applied it all.
+    ///
+    /// `refused` counts here for the same reason `stale` does: the sweep finished and the
+    /// index does not hold what it found. Leaving it out let a refresh report complete
+    /// while its own terminal index said `partial (budget)` -- two answers about one
+    /// operation, from the same call.
     pub fn is_complete(&self) -> bool {
-        self.scan.is_complete() && self.apply.stale == 0
+        self.scan.is_complete() && self.apply.stale == 0 && self.apply.refused == 0
     }
 }
 
@@ -4235,6 +4270,7 @@ fn merge_apply_stats(total: &mut ApplyStats, addition: ApplyStats) {
     total.unchanged += addition.unchanged;
     total.invalidated += addition.invalidated;
     total.stale += addition.stale;
+    total.refused += addition.refused;
 }
 
 fn merge_reconcile_report(total: &mut ReconcileReport, addition: ReconcileReport) {
@@ -4275,14 +4311,45 @@ pub(crate) fn retains(kind: EntryKind, config: &ScanConfig) -> bool {
 /// A device of zero is treated as the root's, matching `should_descend`: it is what a
 /// platform reports when it does not distinguish filesystems, and refusing every entry
 /// there would empty the index rather than bound it.
-/// Gated with its only caller. The walk asks these two axes through `should_descend`,
-/// which has a parent depth in hand and does not need the path form; only the watcher
-/// needs the boundary restated as a predicate over one entry.
+/// Gated with its only caller. The walk asks these axes as it goes -- `admits` per name
+/// while listing, `should_descend` with a parent depth in hand -- and does not need the
+/// path form; only the watcher, handed one path at a time, needs the boundary restated as
+/// a predicate over a single entry. Both axes here are pure: no I/O, only the path.
 #[cfg(feature = "watch")]
-pub(crate) fn within_scope(path: &Path, attrs: Attrs, root_dev: u64, config: &ScanConfig) -> bool {
+pub(crate) fn within_scope(path: &Path, config: &ScanConfig) -> bool {
+    // Every component, not just the last. The walk never descends into a pruned directory,
+    // so nothing beneath one is in the index either -- and a backend reports `.git/HEAD` as
+    // its own path, with nothing in the name saying its parent was pruned. Checking only
+    // the leaf would admit an entire pruned subtree one event at a time.
+    let admitted_path =
+        !config.hidden().is_pruning() || path.iter().all(|name| admits(name, config));
     let within_depth = config.max_depth.is_none_or(|max| path.components().count() <= max);
-    let same_filesystem = !config.one_filesystem || attrs.dev == root_dev || attrs.dev == 0;
-    within_depth && same_filesystem
+    admitted_path && within_depth
+}
+
+/// Whether the filesystem boundary admits `path`, asked of its **parent**.
+///
+/// Separate from [`within_scope`] because it is not a property of the path: it needs a
+/// `stat`, and of a different entry than the one being admitted. Both halves of that are
+/// worth stating, because the first version of this got the second half wrong.
+///
+/// The scan retains a mountpoint and stops *below* it: `should_descend` gates descent, not
+/// retention, so a directory on another filesystem is listed by its parent and recorded,
+/// and nothing under it is ever read. The rule is therefore "the walk descended into this
+/// entry's parent", which is the parent's device -- not the entry's. Asking the entry's own
+/// device rejects the mountpoint row the scan deliberately keeps, so a live event on it
+/// would delete that row while a rescan put it back.
+///
+/// A parent that cannot be `stat`ed admits: the walk that built the index already drew this
+/// boundary, and refusing on a transient error would remove rows the tree still holds.
+#[cfg(feature = "watch")]
+pub(crate) fn on_root_filesystem(root: &Path, path: &Path, root_dev: u64) -> bool {
+    let Some(parent) = path.parent() else {
+        // The root itself is always inside its own filesystem.
+        return true;
+    };
+    fs::symlink_metadata(root.join(parent))
+        .map_or(true, |meta| attrs_from(&meta).dev == root_dev || attrs_from(&meta).dev == 0)
 }
 
 /// Whether one directory entry is inside the scan scope, by name alone.
@@ -4520,6 +4587,48 @@ mod tests {
     /// threads read the old value and all add. That window is two instructions wide, and
     /// running this against such an implementation passes on every host tried. The
     /// `fetch_update` is correct by construction rather than by this test, and swapping it
+    /// Every axis that narrows an entry is visible to the watcher's fast path.
+    ///
+    /// The fast path skips rebuilding a batch when nothing narrows, so an axis missing
+    /// from `narrows_entries` is an axis a live watch silently stops enforcing. That is
+    /// not a hypothetical failure mode: it named three axes while the hidden rule was the
+    /// fourth, and a hidden file created under a live watch entered a pruned index.
+    ///
+    /// Asserted by construction rather than by listing the axes again: each one is turned
+    /// on alone, against a default that must be false.
+    #[cfg(feature = "watch")]
+    #[test]
+    fn every_narrowing_axis_is_visible_to_the_admission_fast_path() {
+        assert!(!ScanConfig::default().narrows_entries(), "the default narrows nothing");
+
+        let pruning = crate::admission::parse_policy("prune", Vec::<String>::new())
+            .expect("policy")
+            .expect("pruning is a policy");
+        let axes: [(&str, ScanConfig); 4] = [
+            ("exclude_special", ScanConfig { exclude_special: true, ..ScanConfig::default() }),
+            ("max_depth", ScanConfig { max_depth: Some(1), ..ScanConfig::default() }),
+            ("one_filesystem", ScanConfig { one_filesystem: true, ..ScanConfig::default() }),
+            (
+                "hidden",
+                ScanConfig { hidden: Some(std::sync::Arc::new(pruning)), ..ScanConfig::default() },
+            ),
+        ];
+        for (axis, config) in axes {
+            assert!(config.narrows_entries(), "{axis} narrows an entry and must be named here");
+            // And it really does narrow something, or the assertion above is about a field
+            // the boundary never reads. `one_filesystem` is excluded from this half rather
+            // than fudged: it is the one axis that is not a property of the path, so
+            // `on_root_filesystem` answers it with a `stat` of the parent and there is
+            // nothing to demonstrate against a literal.
+            assert!(
+                axis == "one_filesystem"
+                    || !within_scope(Path::new("a/.b/c"), &config)
+                    || !retains(EntryKind::Other, &config),
+                "{axis} must exclude something the default admits"
+            );
+        }
+    }
+
     /// for the racier form is a change no test here will catch.
     #[test]
     fn a_budget_admits_exactly_its_cap_under_contention() {
@@ -6210,6 +6319,47 @@ mod tests {
 
         assert_eq!(system_time_ns(before_epoch), -1_000_000_000);
         assert_eq!(system_time_ns(std::time::UNIX_EPOCH), 0);
+    }
+
+    /// The filesystem boundary is asked of the parent, which is what retains a mountpoint.
+    ///
+    /// `should_descend` gates descent, not retention: a directory on another filesystem is
+    /// listed by its parent and *recorded*, and nothing under it is ever read. So the rule
+    /// for a live event is "the walk descended into this entry's parent". The first
+    /// version asked the entry's own device, which rejected the very row the scan keeps --
+    /// a live event on a mountpoint would have deleted it, and the next rescan put it back.
+    ///
+    /// Two devices cannot be fabricated in a unit test without a mount, so this pins the
+    /// half that is checkable: *whose* device is consulted. Against a `root_dev` nothing
+    /// matches, the root is still admitted (it has no parent to disqualify it) and a child
+    /// is not (its parent is the root, whose device does not match).
+    #[cfg(feature = "watch")]
+    #[test]
+    fn the_filesystem_boundary_is_asked_of_the_parent_not_the_entry() {
+        let dir = tempfile::tempdir().expect("temp");
+        fs::create_dir(dir.path().join("sub")).expect("mkdir");
+        fs::write(dir.path().join("sub/file.txt"), b"x").expect("write");
+
+        let real = attrs_from(&fs::symlink_metadata(dir.path()).expect("stat")).dev;
+        // The root has no parent, so no device can disqualify it.
+        assert!(on_root_filesystem(dir.path(), Path::new(""), real.wrapping_add(1)));
+        // Everything else is judged by the parent it hangs from.
+        assert!(!on_root_filesystem(dir.path(), Path::new("sub"), real.wrapping_add(1)));
+        assert!(on_root_filesystem(dir.path(), Path::new("sub"), real));
+        assert!(on_root_filesystem(dir.path(), Path::new("sub/file.txt"), real));
+
+        // And `should_descend` agrees about the entry the boundary keeps: a directory on
+        // another device is not descended into, which is exactly why it is still recorded.
+        let bounded = ScanConfig { one_filesystem: true, ..ScanConfig::default() };
+        let elsewhere = Attrs { dev: real.wrapping_add(1), ..Attrs::default() };
+        assert!(
+            !should_descend(EntryKind::Dir, elsewhere, 0, real, &bounded),
+            "the walk stops at the mountpoint"
+        );
+        assert!(
+            on_root_filesystem(dir.path(), Path::new("sub"), real),
+            "and keeps the row for it, which the live rule must not take away"
+        );
     }
 
     #[cfg(not(unix))]

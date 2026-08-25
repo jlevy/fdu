@@ -980,3 +980,116 @@ fn a_capped_watch_holds_its_cap_against_live_events() {
     settle(&mut session);
     assert!(!holds(&handle, "late.txt"), "the cap is a bound the index keeps, not a walk hint");
 }
+
+/// A hidden path created under a live watch does not enter a pruned index.
+///
+/// The fourth admission axis, and the one the watcher's boundary forgot. Under
+/// `hidden="prune"` a scan and a refresh both exclude `.env`; without this the first
+/// backend event put one in, and it stayed until whatever reconciliation happened next —
+/// an index whose contents depend on whether anyone was watching, one axis over from the
+/// special-object case.
+#[test]
+fn a_hidden_path_created_under_a_pruning_watch_never_enters_the_index() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    fs::write(dir.path().join("visible.txt"), b"seed").expect("seed");
+    let (handle, mut session) = pruning_session(dir.path(), pruning_hidden());
+
+    fs::write(dir.path().join(".env"), b"SECRET=1").expect("write");
+    fs::write(dir.path().join("after.rs"), b"fn main() {}").expect("create");
+
+    assert!(wait_until(&mut session, &handle, |held| holds(held, "after.rs")));
+    settle(&mut session);
+    assert!(!holds(&handle, ".env"), "a hidden name is outside this scope however it arrives");
+}
+
+/// And neither does anything *inside* a hidden directory.
+///
+/// The case checking only the leaf name would miss: the walk never descends into `.git`,
+/// so nothing beneath it is in the index either — but a backend reports `.git/HEAD` as its
+/// own path, and nothing in that name says its parent was pruned.
+#[test]
+fn nothing_inside_a_hidden_directory_enters_a_pruning_watch() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    fs::write(dir.path().join("visible.txt"), b"seed").expect("seed");
+    // Created before the session, so the backend is already watching it and the write
+    // below arrives as an event on `.git/HEAD` itself. Creating the directory live instead
+    // makes the child's own event vanish -- the watch on it is installed after the fact --
+    // and the test would then pass for a boundary that only ever checked the leaf name.
+    fs::create_dir(dir.path().join(".git")).expect("mkdir");
+    let (handle, mut session) = pruning_session(dir.path(), pruning_hidden());
+    assert!(!holds(&handle, ".git"), "the scan pruned it, which is the state under test");
+
+    fs::write(dir.path().join(".git/HEAD"), b"ref: refs/heads/main").expect("write");
+    fs::write(dir.path().join("after.rs"), b"fn main() {}").expect("create");
+
+    assert!(wait_until(&mut session, &handle, |held| holds(held, "after.rs")));
+    settle(&mut session);
+    assert!(!holds(&handle, ".git"), "the directory itself stays pruned");
+    assert!(
+        !holds(&handle, ".git/HEAD"),
+        "and a path whose own name is admitted is still outside a pruned parent"
+    );
+}
+
+/// The allowlist holds under a live watch too, or pruning would be all-or-nothing.
+#[test]
+fn an_allowlisted_hidden_path_is_admitted_under_a_watch() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    fs::write(dir.path().join("visible.txt"), b"seed").expect("seed");
+    let (handle, mut session) = pruning_session(dir.path(), pruning_hidden());
+
+    fs::create_dir(dir.path().join(".github")).expect("mkdir");
+    fs::write(dir.path().join(".github/ci.yml"), b"on: push").expect("write");
+
+    assert!(
+        wait_until(&mut session, &handle, |held| holds(held, ".github/ci.yml")),
+        "an allowlisted hidden name is inside the scope, and so is what it contains"
+    );
+}
+
+/// A visible row whose path becomes hidden loses the row it had.
+///
+/// The replacement case, one axis over from the socket one: the entry survives, its name
+/// does not, and nothing re-lists the parent. Unless the exclusion is a removal the index
+/// keeps a row at a path its own scope no longer holds.
+#[test]
+fn a_row_renamed_to_a_hidden_name_is_removed() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    fs::write(dir.path().join("visible.txt"), b"seed").expect("seed");
+    let (handle, mut session) = pruning_session(dir.path(), pruning_hidden());
+    assert!(holds(&handle, "visible.txt"), "it starts inside the scope");
+
+    fs::rename(dir.path().join("visible.txt"), dir.path().join(".hidden.txt")).expect("rename");
+    fs::write(dir.path().join("after.rs"), b"fn main() {}").expect("create");
+
+    assert!(wait_until(&mut session, &handle, |held| holds(held, "after.rs")));
+    settle(&mut session);
+    assert!(!holds(&handle, "visible.txt"), "the row describes a path that no longer holds it");
+    assert!(!holds(&handle, ".hidden.txt"), "and its new name is outside the scope");
+}
+
+/// Keeping is keeping: the default scope records a hidden path the watcher reports.
+///
+/// Without this the four tests above pass for a watcher that prunes hidden names always
+/// and never reads the policy.
+#[test]
+fn a_hidden_path_under_a_default_watch_is_recorded() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    fs::write(dir.path().join("visible.txt"), b"seed").expect("seed");
+    let (handle, mut session) = pruning_session(dir.path(), ScanConfig::default());
+
+    fs::write(dir.path().join(".env"), b"SECRET=1").expect("write");
+
+    assert!(
+        wait_until(&mut session, &handle, |held| holds(held, ".env")),
+        "nothing prunes it, so the watcher's row stands"
+    );
+}
+
+/// A scan config that prunes hidden names except an allowlist, as a provider opens with.
+fn pruning_hidden() -> ScanConfig {
+    let policy = fdu_core::admission::parse_policy("prune", vec![".github".to_string()])
+        .expect("policy")
+        .expect("pruning is a policy");
+    ScanConfig { hidden: Some(std::sync::Arc::new(policy)), ..ScanConfig::default() }
+}

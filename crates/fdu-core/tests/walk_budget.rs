@@ -359,3 +359,76 @@ fn an_uncapped_refresh_admits_everything_it_finds() {
 
     assert_eq!(handle.total().expect("total").files, 14);
 }
+
+/// A refusal is one event with three faces, and they agree at one clock.
+///
+/// A count, a coverage verdict, and a typed issue, all committed together. Splitting them
+/// is the failure this pins: the first version marked coverage partial and left the run
+/// envelope saying the refresh had been complete, so a caller reading `is_complete()` and
+/// a caller reading `coverage()` got opposite answers about the same call — and a consumer
+/// mapping the typed issue to its own resource-budget state had nothing to map.
+#[test]
+fn a_refusal_reports_a_count_a_coverage_and_a_typed_issue_together() {
+    let dir = tempfile::tempdir().expect("temp");
+    for index in 0..4 {
+        std::fs::write(dir.path().join(format!("f{index}.txt")), b"seed").expect("write");
+    }
+    let scan = ScanConfig { max_files: Some(4), ..ScanConfig::default() };
+    let config = OpenConfig { scan: scan.clone(), policy: CachePolicy::Off, ..Default::default() };
+    let (index, _) = fdu_core::open(dir.path(), &config).expect("open");
+    let handle = IndexHandle::new(index);
+
+    for index in 0..3 {
+        std::fs::write(dir.path().join(format!("late{index}.txt")), b"more").expect("write");
+    }
+    let report = fdu_core::scan::reconcile_handle(&handle, &scan, &mut |_| {}).expect("refresh");
+
+    assert!(report.apply.refused > 0, "the refusals are counted rather than dropped");
+    assert!(!report.is_complete(), "so the operation is not complete");
+    assert_eq!(
+        report.coverage(),
+        Status::Partial(fdu_core::CoverageReason::Budget),
+        "and the reason is the cap rather than whatever the walk itself reported"
+    );
+
+    let state = handle.with_index(fdu_core::Index::engine_state).expect("state");
+    assert_eq!(state.coverage, Status::Partial(fdu_core::CoverageReason::Budget));
+    assert!(!state.run.complete, "the run envelope agrees with the coverage");
+    let issue = state
+        .run
+        .errors
+        .iter()
+        .find(|issue| issue.kind == fdu_core::IssueKind::ResourceStop)
+        .expect("a typed issue a consumer can match on, not prose it has to parse");
+    assert!(issue.message.contains('4'), "naming the cap that refused: {}", issue.message);
+}
+
+/// The issue is reported once however many entries the cap refuses.
+///
+/// A long watch over a full tree refuses on every arrival. One issue per refusal would
+/// make the run envelope grow without bound while saying the same thing each time.
+#[test]
+fn a_repeated_refusal_reports_one_issue_rather_than_one_each() {
+    let dir = tempfile::tempdir().expect("temp");
+    for index in 0..2 {
+        std::fs::write(dir.path().join(format!("f{index}.txt")), b"seed").expect("write");
+    }
+    let scan = ScanConfig { max_files: Some(2), ..ScanConfig::default() };
+    let config = OpenConfig { scan: scan.clone(), policy: CachePolicy::Off, ..Default::default() };
+    let (index, _) = fdu_core::open(dir.path(), &config).expect("open");
+    let handle = IndexHandle::new(index);
+
+    for round in 0..3 {
+        std::fs::write(dir.path().join(format!("late{round}.txt")), b"more").expect("write");
+        fdu_core::scan::reconcile_handle(&handle, &scan, &mut |_| {}).expect("refresh");
+    }
+
+    let state = handle.with_index(fdu_core::Index::engine_state).expect("state");
+    let stops = state
+        .run
+        .errors
+        .iter()
+        .filter(|issue| issue.kind == fdu_core::IssueKind::ResourceStop)
+        .count();
+    assert_eq!(stops, 1, "one scope, one issue: {:?}", state.run.errors);
+}

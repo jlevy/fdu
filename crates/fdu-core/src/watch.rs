@@ -43,7 +43,7 @@ use crate::engine_contract::{
     AppliedDelta, Error, InvalidateReason, Observation, ObservationOp, Op, Result,
 };
 use crate::scan;
-use crate::{ApplyOutcome, Attrs, IndexHandle, ScanConfig};
+use crate::{ApplyOutcome, IndexHandle, ScanConfig};
 
 /// Optimistic re-verification retries before the applying driver guarantees progress
 /// through conservative root invalidation and reconciliation.
@@ -450,11 +450,20 @@ fn apply_reverified_with(
 /// something outside it back -- an index whose contents depend on whether anyone was
 /// watching.
 ///
-/// Three axes, all answerable from a path and one `stat`, which is exactly what a watcher
-/// has. The kind (a socket in a scope that excludes them), the depth, and the filesystem
-/// boundary. Not the file cap: whether *this* file is inside a cap depends on every other
-/// file, including the ones the capped walk never read, which is why a capped scan still
-/// refuses to be watched and says so.
+/// Four axes, and they are not all the same shape. The kind comes with the event. The
+/// hidden-path rule and the depth are properties of the path and need no I/O. The
+/// filesystem boundary needs a `stat` -- of the entry's *parent*, because the walk retains
+/// a mountpoint and stops below it, so the question is whether the walk descended into the
+/// parent rather than what device the entry sits on.
+///
+/// Not the file cap: whether *this* file is inside a cap depends on every other file,
+/// including the ones the capped walk never read, which is why the index keeps that one
+/// instead, where the count it already maintains answers the question.
+///
+/// The fast path asks `ScanConfig::narrows_entries` rather than naming the axes, because a
+/// fast path that names them is one that forgets the next one: this listed three while the
+/// hidden rule was the fourth, and a hidden file created under a live watch entered a
+/// pruned index and stayed until the next reconciliation.
 ///
 /// An out-of-scope upsert becomes a removal rather than a dropped op, for the reason the
 /// single-path reconcile does the same: the path may already hold a row. A file replaced in
@@ -470,7 +479,7 @@ fn apply_reverified_with(
 /// the intent path and the test one --- would otherwise carry the rule separately, which
 /// is the divergence these predicates exist to prevent.
 fn admitted(observation: Observation, root: &Path, config: &ScanConfig) -> Observation {
-    if !config.exclude_special && config.max_depth.is_none() && !config.one_filesystem {
+    if !config.narrows_entries() {
         return observation;
     }
     // Read once per apply rather than per op, and only for the axis that needs it. A root
@@ -482,29 +491,48 @@ fn admitted(observation: Observation, root: &Path, config: &ScanConfig) -> Obser
         .then(|| std::fs::symlink_metadata(root).ok().map(|meta| scan::observe(&meta).1.dev))
         .flatten()
         .unwrap_or(0);
+    // One `stat` per distinct parent rather than per op. A coalesced intent is usually one
+    // directory's worth of events, so this is one call for the batch in the common case,
+    // and never more than one per directory it touched.
+    let mut parents: BTreeMap<PathBuf, bool> = BTreeMap::new();
+    let mut inside = |path: &Path| -> bool {
+        if !config.one_filesystem {
+            return true;
+        }
+        let parent = path.parent().unwrap_or(Path::new("")).to_path_buf();
+        *parents.entry(parent).or_insert_with(|| scan::on_root_filesystem(root, path, root_dev))
+    };
 
     let ops = observation
         .ops
         .into_iter()
-        .filter_map(|observed| match &observed.op {
-            Op::Upsert { path, kind, attrs }
-                if !scan::retains(*kind, config)
-                    || !scan::within_scope(path, *attrs, root_dev, config) =>
-            {
+        .filter_map(|observed| {
+            let outside = match &observed.op {
+                Op::Upsert { path, kind, .. } => {
+                    !scan::retains(*kind, config)
+                        || !scan::within_scope(path, config)
+                        || !inside(path)
+                }
+                Op::InvalidateSubtree { path, .. } => {
+                    !scan::within_scope(path, config) || !inside(path)
+                }
+                Op::Remove { .. } => false,
+            };
+            if !outside {
+                return Some(observed);
+            }
+            match observed.op {
                 // Rebuilt rather than rebatched through `Observation::new`, which would
                 // flatten every expectation to `Any`: substituting one op must not also
                 // decide the arbitration precondition its producer attached to the path.
-                Some(ObservationOp {
-                    op: Op::Remove { path: path.clone() },
+                Op::Upsert { path, .. } => Some(ObservationOp {
+                    op: Op::Remove { path },
                     expectation: observed.expectation,
-                })
+                }),
+                // An invalidation outside the boundary asks for a subtree that is not in
+                // scope, so there is nothing to reconcile and nothing to remove either.
+                _ => None,
             }
-            Op::InvalidateSubtree { path, .. }
-                if !scan::within_scope(path, Attrs::default(), root_dev, config) =>
-            {
-                None
-            }
-            _ => Some(observed),
         })
         .collect();
     Observation::from_ops(ops)
@@ -918,7 +946,7 @@ mod tests {
         let config = ScanConfig { max_depth: Some(2), ..ScanConfig::default() };
         for (path, inside) in [("a", true), ("a/b", true), ("a/b/c", false)] {
             assert_eq!(
-                scan::within_scope(Path::new(path), Attrs::default(), 0, &config),
+                scan::within_scope(Path::new(path), &config),
                 inside,
                 "{path:?} at a bound of two"
             );
