@@ -5,17 +5,20 @@ title: "Two-engine agreement oracle: conformance packet and recorded-observation
 kind: task
 status: open
 priority: 1
-version: 3
+version: 5
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 refs:
   - kind: pr
     url: https://github.com/jlevy/fdu/pull/47#pullrequestreview-5017522830
     at: 2026-08-25T09:57:38.534Z
+  - kind: pr
+    url: https://github.com/jlevy/fdu/pull/47#pullrequestreview-5018663775
+    at: 2026-08-25T12:07:06.491Z
 labels: []
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-25T06:09:16.076Z
-updated_at: 2026-08-25T09:57:38.535Z
+updated_at: 2026-08-25T12:07:06.492Z
 ---
 Split out of fdu-vfyw, which shipped fdu's side of the contract: the reference embedder
 example (crates/fdu-py/examples/browser_provider.py), the semantic_fingerprint recipe,
@@ -46,3 +49,5 @@ Any difference the replay finds is documented or eliminated, not averaged.
 null
 
 EXACT-HEAD AGREEMENT ADDITIONS from FDU d19b0ce / MetaBrowser 0577bb1 (2026-08-25): the fixture must now pin (1) the exact scope digest bytes for hidden_allowlist, max_depth, and max_files, including a non-ASCII allowed hidden component; (2) the observable max_files stop at a directory boundary case that distinguishes FDU whole-directory overshoot from the Python strict cap; and (3) FIFO/socket/special-object boot and live replacement, where the MetaBrowser provider view exposes only file, directory, and symlink. These cases decide design across both repositories; do not normalize the answers in an adapter-side mirror. Implementation owners are fdu-vfyw, reopened fdu-97dd, and fdu-bjhy.
+
+FDU FIXTURE UPDATE at d0a6a6a (2026-08-25). The fdu half of the special-object scenario now exists: boot, refresh, replacement, watch, three-kind rows, and tally conservation under native exclusion. The bead remains open for the combined two-engine packet/replay and exact shared identity bytes; the reference adapter still includes fdu-only scope components, tracked on fdu-vfyw.
