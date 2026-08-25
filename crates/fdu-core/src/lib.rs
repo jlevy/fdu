@@ -102,7 +102,9 @@ pub use crate::admission::HiddenPolicy;
 pub use crate::execution::{
     PerformanceSummary, prepare_report, prepare_report_with_scan_diagnostics,
 };
-pub use crate::scan::{ReconcileReport, ScanConfig, ScanOrder, ScanReport};
+pub use crate::scan::{
+    ReconcileReport, RefreshReceipt, RefusedPath, ScanConfig, ScanOrder, ScanReport,
+};
 #[cfg(feature = "watch")]
 pub use crate::watch_session::{Batch, Change, ChangeKind, Session};
 

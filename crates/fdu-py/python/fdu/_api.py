@@ -37,7 +37,9 @@ from ._models import (
     Provenance,
     Query,
     QueryKind,
+    RefreshReceipt,
     RefreshResult,
+    RefusedPath,
     Report,
     RollUp,
     ScanOptions,
@@ -496,6 +498,43 @@ class Index:
             stale=int(value["stale"]),
             clock=int(value["clock"]),
             status=status_from_dict(value),
+        )
+
+    def refresh_paths(self, paths: Sequence[str | Path]) -> RefreshReceipt:
+        """Reconcile a bounded set of hint paths as one operation.
+
+        The batched form of `refresh()`, and deliberately not a loop over it: iterating
+        gives one reconciliation and one terminal position per path, so a receipt covering
+        them describes a range rather than a boundary and a caller cannot say which of them
+        its cursor is past. It also pays one ancestor merge per path where the union costs
+        one.
+
+        Overlapping hints fold into their nearest common ancestor, so two paths under one
+        directory cost one walk. Paths the scope does not hold are refused by name rather
+        than walked to find nothing: "reconciled, unchanged" and "never looked" are
+        different answers, and only one of them means the caller should stop asking.
+
+        An empty sequence reads nothing, deliberately not the whole tree -- conflating them
+        would make a dropped hint list mean "re-read everything".
+        """
+        if isinstance(paths, (str, Path)):
+            raise TypeError("refresh_paths takes a sequence of paths; use refresh() for one")
+        value = _call(self._native.refresh_paths, [str(path) for path in paths])
+        return RefreshReceipt(
+            accepted=tuple(Path(path) for path in value["accepted"]),
+            rejected=tuple(
+                (Path(item["path"]), RefusedPath(str(item["reason"]))) for item in value["rejected"]
+            ),
+            walked=tuple(Path(path) for path in value["walked"]),
+            result=RefreshResult(
+                inserted=int(value["inserted"]),
+                updated=int(value["updated"]),
+                removed=int(value["removed"]),
+                unchanged=int(value["unchanged"]),
+                stale=int(value["stale"]),
+                clock=int(value["clock"]),
+                status=status_from_dict(value),
+            ),
         )
 
     def cursor(self) -> Cursor:

@@ -1588,6 +1588,60 @@ class RefreshResult:
     status: Status
 
 
+class RefusedPath(StrEnum):
+    """Why a batched refresh declined one of the paths it was given.
+
+    Typed rather than dropped. A caller feeding its own watcher's hints needs to tell
+    "reconciled, and nothing had changed" from "never looked" -- a receipt listing only
+    what it did makes those the same answer, and the caller re-sends a path forever waiting
+    for news that will never come.
+    """
+
+    OUTSIDE_ROOT = "outside_root"
+    """Not a canonical relative path inside the root."""
+
+    BEYOND_DEPTH = "beyond_depth"
+    """Deeper than the scan's depth bound, so nothing there is retained."""
+
+    NOT_ADMITTED = "not_admitted"
+    """Pruned by the scan's admission rule, so nothing there is retained."""
+
+    BOUNDED = "bounded"
+    """Past the per-request path limit; the request carried more than one refresh acts on."""
+
+
+@dataclass(frozen=True, slots=True)
+class RefreshReceipt:
+    """What one batched refresh did, and what it declined to do.
+
+    The result of :meth:`Index.refresh_paths`, which is one operation rather than a loop
+    over :meth:`Index.refresh`. Iterating gives N reconciliations and N terminal positions,
+    so a receipt covering them would describe a range rather than a boundary -- and a caller
+    could not say which of the N its cursor is past.
+    """
+
+    accepted: tuple[Path, ...]
+    """Paths this refresh reconciled, in the order they were given.
+
+    Includes a path folded into an accepted ancestor: it *was* reconciled, and saying
+    otherwise would make a caller re-send it forever.
+    """
+
+    rejected: tuple[tuple[Path, RefusedPath], ...]
+    """Paths it declined, in the order they were given, each with the reason."""
+
+    walked: tuple[Path, ...]
+    """The subtrees actually read, after folding each path into its nearest accepted
+    ancestor.
+
+    The measure of what batching bought: two hints under one directory cost one walk, which
+    is the whole difference between this and calling the scoped refresh once per path.
+    """
+
+    result: RefreshResult
+    """Mutation counts and the run envelope, merged across every subtree that was read."""
+
+
 @dataclass(frozen=True, slots=True)
 class Change:
     clock: int

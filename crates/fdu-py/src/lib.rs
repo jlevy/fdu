@@ -1168,8 +1168,9 @@ impl PyIndex {
             })
             .map_err(to_py_err)?;
         let mut complete = report.scan.is_complete();
-        let mut errors: Vec<fdu_core::Issue> =
-            report.scan.errors.iter().map(fdu_core::Issue::from_error).collect();
+        // Asked for, not rebuilt from per-path errors: a typed condition the walk reports
+        // without an I/O failure behind it has no error to be reconstructed from.
+        let mut errors: Vec<fdu_core::Issue> = report.scan.issues();
         let mut analyzed = None;
         if self.analysis.profile.is_enabled() {
             let analysis = py.detach(|| self.inner.analyze(self.analysis)).map_err(to_py_err)?;
@@ -1212,6 +1213,91 @@ impl PyIndex {
         out.set_item("complete", complete)?;
         out.set_item("freshness", self.freshness()?)?;
         out.set_item("clock", self.inner.clock().map_err(to_py_err)?.0)?;
+        Ok(out)
+    }
+
+    /// Reconcile a bounded set of hint paths as one operation.
+    ///
+    /// The shape a consumer's `refresh(paths)` maps onto, and deliberately not a loop over
+    /// `refresh(path)`. Iterating gives N reconciliations, N announcements and N terminal
+    /// positions, so a receipt covering them describes a range rather than a boundary and a
+    /// caller cannot say which of the N its cursor is past. It also pays N ancestor merges
+    /// where the union costs one.
+    ///
+    /// Overlapping hints fold into their nearest common ancestor, so two paths under one
+    /// directory cost one walk. Paths the scope does not hold are refused by name rather
+    /// than walked to find nothing -- "reconciled, unchanged" and "never looked" are
+    /// different answers, and only one of them means the caller should stop asking.
+    fn refresh_paths<'py>(
+        &self,
+        py: Python<'py>,
+        paths: &Bound<'py, pyo3::types::PyAny>,
+    ) -> PyResult<Bound<'py, PyDict>> {
+        let paths: Vec<PathBuf> = paths.extract()?;
+        let started_at = Some(SystemTime::now());
+        let config = self.config.clone();
+        let receipt = py
+            .detach(|| {
+                fdu_core::scan::reconcile_paths_handle(&self.inner, &paths, &config, &mut |_| {})
+            })
+            .map_err(to_py_err)?;
+        let report = receipt.reconciliation;
+        let mut complete = report.scan.is_complete();
+        let mut errors: Vec<fdu_core::Issue> = report.scan.issues();
+        let mut analyzed = None;
+        if self.analysis.profile.is_enabled() {
+            let analysis = py.detach(|| self.inner.analyze(self.analysis)).map_err(to_py_err)?;
+            let analysis_complete = analysis.is_complete();
+            append_analysis_error(&mut errors, analysis);
+            complete &= analysis_complete;
+            analyzed = Some(analysis);
+        }
+        self.inner
+            .set_run_facts(fdu_core::query::RunFacts {
+                scan_started_at: started_at,
+                source: ReportSource::WarmRevalidate,
+                complete,
+                errors: errors.clone(),
+            })
+            .map_err(to_py_err)?;
+        {
+            let mut state = self.state();
+            state.telemetry = PerformanceSummary::from_reconcile(
+                &report.scan,
+                analyzed,
+                ReportSource::WarmRevalidate,
+            );
+        }
+
+        let out = PyDict::new(py);
+        let stats = report.apply;
+        put_scalar(&out, "inserted", stats.inserted)?;
+        put_scalar(&out, "updated", stats.updated)?;
+        put_scalar(&out, "removed", stats.removed)?;
+        put_scalar(&out, "unchanged", stats.unchanged)?;
+        put_scalar(&out, "stale", stats.stale)?;
+        put_scalar(&out, "error_count", errors.len())?;
+        out.set_item("errors", error_list(py, &errors)?)?;
+        put_text(&out, "source", source_label(ReportSource::WarmRevalidate))?;
+        put_scalar(&out, "complete", complete)?;
+        put_text(&out, "freshness", self.freshness()?)?;
+        put_scalar(&out, "clock", self.inner.clock().map_err(to_py_err)?.0)?;
+        out.set_item(
+            "accepted",
+            receipt.accepted.iter().map(|path| path.as_os_str()).collect::<Vec<_>>(),
+        )?;
+        out.set_item(
+            "walked",
+            receipt.walked.iter().map(|path| path.as_os_str()).collect::<Vec<_>>(),
+        )?;
+        let rejected = PyList::empty(py);
+        for (path, reason) in &receipt.rejected {
+            let item = PyDict::new(py);
+            put_text(&item, "path", path.as_os_str())?;
+            put_text(&item, "reason", reason.as_str())?;
+            rejected.append(item)?;
+        }
+        out.set_item("rejected", rejected)?;
         Ok(out)
     }
 

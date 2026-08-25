@@ -993,7 +993,7 @@ from emitting millions of provenance-only entry changes into the feed it serves.
   The bound has to stop the walk rather than truncate an answer: a projection limit
   leaves the tree read anyway, which is the cost the cap exists to avoid.
   This is what finally makes `CoverageReason::Budget` reachable
-- [ ] A batched scoped refresh (`fdu-nlhl`): a bounded set of observed paths, the union
+- [x] A batched scoped refresh (`fdu-nlhl`): a bounded set of observed paths, the union
   reconciled under one guard, one commit, one cursor, and per-path acceptance beside the
   counts. Iterating a single-path refresh is not equivalent -- N calls are N commits and
   N cursors, so a receipt covering them describes a range rather than a boundary

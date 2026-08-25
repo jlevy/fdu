@@ -1172,6 +1172,68 @@ def check_a_batch_names_which_projections_went_stale() -> None:
         )
 
 
+def check_a_batched_refresh_is_one_operation_not_a_loop() -> None:
+    """Many hint paths, one walk per covering ancestor, one receipt, one position.
+
+    Iterating `refresh()` would get the rows right and the *shape* wrong: one
+    reconciliation and one terminal position per path, so a receipt covering them describes
+    a range rather than a boundary. The assertions here are therefore about which subtrees
+    were walked and what the caller can resume from, not about the tree.
+    """
+
+    with tempfile.TemporaryDirectory(prefix="fdu-batched-") as raw:
+        root = Path(raw)
+        for area in ("src", "docs"):
+            (root / area / "nested").mkdir(parents=True)
+            (root / area / "top.txt").write_text("x", encoding="utf-8")
+            (root / area / "nested" / "deep.txt").write_text("xx", encoding="utf-8")
+        (root / ".git").mkdir()
+        (root / ".git" / "config").write_text("[core]", encoding="utf-8")
+
+        index = fdu.open(
+            root,
+            cache=fdu.CachePolicy.OFF,
+            scan=fdu.ScanOptions(hidden="prune"),
+        )
+        before = index.cursor()
+        (root / "src" / "added.rs").write_text("fn main() {}", encoding="utf-8")
+
+        receipt = index.refresh_paths(["src/nested", "src", "docs", "../escape", ".git/config"])
+
+        assert receipt.accepted == (Path("src/nested"), Path("src"), Path("docs")), receipt
+        assert receipt.walked == (Path("docs"), Path("src")), (
+            f"overlapping hints cost one walk: {receipt.walked}"
+        )
+        assert receipt.rejected == (
+            (Path("../escape"), fdu.RefusedPath.OUTSIDE_ROOT),
+            (Path(".git/config"), fdu.RefusedPath.NOT_ADMITTED),
+        ), receipt.rejected
+
+        # One operation, so one place to resume from -- and it sits past everything the
+        # batch committed rather than in the middle of it.
+        after = index.cursor()
+        assert after.clock > before.clock
+        assert after.session == before.session
+        assert index.since(after).changes == (), "the position is terminal for this batch"
+
+        # And it did the work: the receipt's envelope describes the merged reconciliation.
+        assert receipt.result.inserted >= 1, receipt.result
+        assert index.rollup("src") is not None
+
+        # A single path is still the one-path call; the batched form takes a sequence and
+        # says so rather than iterating a string's characters.
+        try:
+            index.refresh_paths("src")  # pyright: ignore[reportArgumentType]
+        except TypeError as error:
+            assert "sequence" in str(error), error
+        else:  # pragma: no cover - the guard above is the point
+            raise AssertionError("a bare string must be refused")
+
+        # An empty hint set reads nothing, deliberately not the whole tree.
+        quiet = index.refresh_paths([])
+        assert quiet.accepted == () and quiet.walked == ()
+
+
 def check_a_file_cap_stops_the_walk_rather_than_the_answer() -> None:
     """`max_files` is scope: entries past the cap are absent, not withheld.
 
@@ -2207,6 +2269,7 @@ def main() -> None:
     check_state_and_operations_interleave_at_their_own_clocks()
     check_a_batch_carries_the_state_at_its_own_cursor()
     check_a_file_cap_stops_the_walk_rather_than_the_answer()
+    check_a_batched_refresh_is_one_operation_not_a_loop()
     check_a_batch_names_which_projections_went_stale()
     check_a_batch_reports_what_it_cost_and_not_what_it_waited()
     check_a_pinned_assembly_pins_its_clock_too()

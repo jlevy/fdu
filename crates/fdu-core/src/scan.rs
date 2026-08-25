@@ -481,7 +481,7 @@ impl ScanReport {
     ///
     /// One place, so the reasons a result is partial and the issues explaining it cannot
     /// drift apart: `coverage()` above and this list are derived from the same two facts.
-    pub(crate) fn issues(&self) -> Vec<crate::Issue> {
+    pub fn issues(&self) -> Vec<crate::Issue> {
         let mut issues: Vec<crate::Issue> =
             self.errors.iter().map(crate::Issue::from_error).collect();
         if self.budget_stopped {
@@ -3184,6 +3184,210 @@ pub fn reconcile_handle(
     sink: &mut dyn FnMut(&AppliedDelta),
 ) -> Result<ReconcileReport> {
     reconcile_subtree_handle(handle, Path::new(""), config, sink)
+}
+
+/// The most hint paths one batched refresh will act on.
+///
+/// A bound rather than an error, so a caller that sends more gets a complete answer about
+/// the ones it acted on and an explicit refusal for the rest. Matching the consumer
+/// contract's own limit, and for its reason: a refresh is a hint, and a hint set large
+/// enough to need paging is really a request to re-walk the tree.
+pub const MAX_REFRESH_PATHS: usize = 1024;
+
+/// Why a batched refresh declined one of the paths it was given.
+///
+/// Typed rather than dropped. A caller feeding its own watcher's hints needs to tell "I
+/// reconciled that and nothing had changed" from "I never looked", and a receipt that
+/// listed only what it did would make those two the same answer.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[non_exhaustive]
+pub enum RefusedPath {
+    /// Not a canonical relative path inside the root.
+    OutsideRoot,
+    /// Deeper than the scan's depth bound, so nothing there is retained.
+    BeyondDepth,
+    /// Pruned by the scan's admission rule, so nothing there is retained.
+    NotAdmitted,
+    /// Past [`MAX_REFRESH_PATHS`]; the request carried more than one refresh acts on.
+    Bounded,
+}
+
+impl RefusedPath {
+    /// The stable wire label, shared by every surface.
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::OutsideRoot => "outside_root",
+            Self::BeyondDepth => "beyond_depth",
+            Self::NotAdmitted => "not_admitted",
+            Self::Bounded => "bounded",
+        }
+    }
+}
+
+/// What one batched refresh did, and what it declined to do.
+#[derive(Debug, Default)]
+pub struct RefreshReceipt {
+    /// Walk and arbitration effects, merged across every subtree this refresh read.
+    pub reconciliation: ReconcileReport,
+    /// Paths this refresh reconciled, in the order they were given.
+    ///
+    /// Includes a path folded into an accepted ancestor: it *was* reconciled, and saying
+    /// otherwise would make a caller re-send it forever.
+    pub accepted: Vec<PathBuf>,
+    /// Paths it declined, in the order they were given, each with the reason.
+    pub rejected: Vec<(PathBuf, RefusedPath)>,
+    /// The subtrees actually walked, after folding each path into its nearest accepted
+    /// ancestor.
+    ///
+    /// The measure of what the batching bought: two hints under one directory cost one
+    /// walk, which is the whole difference between this and calling the scoped refresh
+    /// once per path.
+    pub walked: Vec<PathBuf>,
+}
+
+/// Reconcile a bounded set of hint paths as one operation.
+///
+/// The primitive a consumer's `refresh(paths)` maps onto, and it is deliberately not a
+/// loop over [`reconcile_subtree_handle`]. Iterating produces N reconciliations, N
+/// announcements and N terminal positions, so a receipt covering them describes a *range*
+/// rather than a boundary and a caller cannot say which of the N its cursor is past. It
+/// also pays N ancestor merges where the union costs one.
+///
+/// What this does instead: validates the scope once, resolves and classifies every path
+/// once, folds each path into its nearest accepted ancestor so overlapping hints cost one
+/// walk, announces every surviving subtree **before** reading any of them, walks them, and
+/// closes them. A consumer reading mid-batch therefore sees the whole batch marked
+/// reconciling rather than an arbitrary prefix of it.
+///
+/// An empty path set is a no-op with an empty receipt, not a whole-tree refresh. The
+/// whole-tree form is [`reconcile_handle`], and conflating the two would make a dropped
+/// hint list mean "re-read everything".
+pub fn reconcile_paths_handle(
+    handle: &IndexHandle,
+    paths: &[PathBuf],
+    config: &ScanConfig,
+    sink: &mut dyn FnMut(&AppliedDelta),
+) -> Result<RefreshReceipt> {
+    reconcile_paths_target(&mut ReconcileTarget::Shared(handle), paths, config, sink)
+}
+
+/// [`reconcile_paths_handle`] against an owned index.
+pub fn reconcile_paths(
+    index: &mut Index,
+    paths: &[PathBuf],
+    config: &ScanConfig,
+    sink: &mut dyn FnMut(&AppliedDelta),
+) -> Result<RefreshReceipt> {
+    reconcile_paths_target(&mut ReconcileTarget::Direct(index), paths, config, sink)
+}
+
+fn reconcile_paths_target(
+    target: &mut ReconcileTarget<'_>,
+    paths: &[PathBuf],
+    config: &ScanConfig,
+    sink: &mut dyn FnMut(&AppliedDelta),
+) -> Result<RefreshReceipt> {
+    config.validate_for_scope(target.scope()?)?;
+    let mut receipt = RefreshReceipt::default();
+    if paths.is_empty() {
+        return Ok(receipt);
+    }
+
+    // Classify first, walk later. Every refusal is decided from the request and the config
+    // alone, so none of it depends on what the walk finds -- which is what lets the whole
+    // batch be announced before any of it is read.
+    let mut resolved: Vec<PathBuf> = Vec::new();
+    for (position, path) in paths.iter().enumerate() {
+        if position >= MAX_REFRESH_PATHS {
+            receipt.rejected.push((path.clone(), RefusedPath::Bounded));
+            continue;
+        }
+        let Ok(normalized) = normalize_subtree(path) else {
+            receipt.rejected.push((path.clone(), RefusedPath::OutsideRoot));
+            continue;
+        };
+        if config.max_depth.is_some_and(|maximum| normalized.components().count() > maximum) {
+            receipt.rejected.push((path.clone(), RefusedPath::BeyondDepth));
+            continue;
+        }
+        if normalized.components().any(|part| !admits(part.as_os_str(), config)) {
+            // Reconciling a pruned path would walk it, find nothing to retain, and report
+            // success -- which reads as "checked, unchanged" about a path the scope has
+            // never held.
+            receipt.rejected.push((path.clone(), RefusedPath::NotAdmitted));
+            continue;
+        }
+        receipt.accepted.push(path.clone());
+        resolved.push(resolve_subtree_root(target, &normalized, config)?);
+    }
+
+    receipt.walked = covering_roots(resolved);
+    if receipt.walked.is_empty() {
+        return Ok(receipt);
+    }
+
+    // Announced together, before any of them is read. Announcing each just before its own
+    // walk would let a consumer read an index where half the batch is marked reconciling
+    // and half still claims to be fresh, with nothing saying the second half is about to
+    // move.
+    let mut opened: Vec<(PathBuf, u64)> = Vec::with_capacity(receipt.walked.len());
+    for subtree in &receipt.walked {
+        let (started_at, delta) = target.begin_reconcile(subtree)?;
+        sink(&delta);
+        opened.push((subtree.clone(), started_at));
+    }
+
+    let mut failure = None;
+    for (subtree, _) in &opened {
+        if failure.is_some() {
+            break;
+        }
+        match reconcile_target_inner(target, subtree, config, MAX_DEFERRED_RECONCILE_OPS, sink) {
+            Ok(report) => {
+                target.adopt_pruned_control_dirs(&report.scan.control_dirs)?;
+                merge_reconcile_report(&mut receipt.reconciliation, report);
+            }
+            Err(error) => failure = Some(error),
+        }
+    }
+
+    // Every announcement is closed, including the ones whose walk never ran, because an
+    // announcement left open is a subtree stuck at `Reconciling` for the life of the index.
+    for (subtree, started_at) in opened {
+        let status = if failure.is_some() {
+            Status::Partial(CoverageReason::Failed)
+        } else {
+            receipt.reconciliation.coverage()
+        };
+        let closed = target.finish_reconcile(&subtree, started_at, status)?;
+        sink(&closed);
+    }
+    match failure {
+        Some(error) => Err(error),
+        None => Ok(receipt),
+    }
+}
+
+/// Drop every path that a shallower path in the same set already covers.
+///
+/// Sorted first so an ancestor always precedes its descendants, which turns "is any
+/// accepted path a prefix of this one" into one comparison against the last kept root.
+fn covering_roots(mut paths: Vec<PathBuf>) -> Vec<PathBuf> {
+    paths.sort();
+    paths.dedup();
+    // The root covers everything, so a batch naming it is one walk of the whole tree.
+    if paths.first().is_some_and(|first| first.as_os_str().is_empty()) {
+        return vec![PathBuf::new()];
+    }
+    let mut roots: Vec<PathBuf> = Vec::with_capacity(paths.len());
+    for path in paths {
+        if roots.last().is_some_and(|kept| path.starts_with(kept)) {
+            continue;
+        }
+        roots.push(path);
+    }
+    roots
 }
 
 /// Reconcile one subtree of a shared index, widening to a missing/non-directory ancestor
