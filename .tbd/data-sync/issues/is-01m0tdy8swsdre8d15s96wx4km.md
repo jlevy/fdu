@@ -5,7 +5,7 @@ title: Watch invalidation batches lose required dirty information
 kind: bug
 status: open
 priority: 1
-version: 12
+version: 13
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 labels:
   - pr47-review
@@ -17,7 +17,7 @@ dependencies:
     target: is-01m0prhqd27m471dn47yt973k0
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T17:43:53.915Z
-updated_at: 2026-08-25T01:48:46.460Z
+updated_at: 2026-08-25T01:59:53.513Z
 closed_at: 2026-08-24T23:31:11.228Z
 close_reason: |
   Shipped. `make check` green, parity holds.
@@ -65,63 +65,50 @@ At PR 47 head e658915, two paths lose invalidation information. Core dirty_rollu
 
 ## Notes
 
-BOTH REVIEW P1s FIXED at 278457a+ (`make check` green, parity holds). The bead stays open
-for its mapped remainder: per-batch work counters.
+BOTH P1s FIXED (`make check` green); the bead stays open for its mapped remainder.
 
-P1-A, THE BATCH IS THE JOURNAL SLICE NOW. `Session::next_batch` built its batch from the
-deltas the watcher sink handed back. Those are not the same set as "everything the consumer
-has not seen": `apply_next` reconciles through several separately locked flushes, so a
-direct producer -- a caller refreshing, or ingesting its own hints, against the same handle
--- can commit between two of them. The batch omitted that commit and advanced its cursor
-past it, so resuming from the cursor skipped it for good.
+P1-A, the terminal cursor. `Batch.cursor` is now `Option<Cursor>` derived from the last
+delta the batch actually carried, not sampled from the index afterwards. Those clocks were
+assigned under the write guard that applied them, so the capture is atomic with no new
+locking; a commit landing after is unseen and replays on the next resume, which is
+correct. `None` when a batch carried no deltas -- it names no new position, and saying so
+beats inventing one. `SessionId` is immutable for an index's life, so only the clock ever
+needed atomic capture.
 
-`Session` holds the consumer's `resume: Cursor` and each batch is `IndexHandle::since(resume)`:
-one guard, the complete slice plus its terminal position, so the cursor cannot name a commit
-the slice does not carry. `since.truncated` becomes reset *and* all_dirty.
+Test: `a_batch_cursor_never_runs_ahead_of_the_deltas_it_carried` runs a writer committing
+continuously across the batch boundary and asserts the property that holds under either
+ordering -- a change is in this batch, or strictly after its cursor, never both absent and
+behind.
 
-My earlier fix detected the gap and reported `reset`. That was the weaker contract -- telling
-a consumer to throw everything away is not the same as handing it what it missed -- and the
-review was right that the test would have accepted a stream that simply never delivered the
-commit. `stepped_over_a_commit` is gone: with the slice the gap is unrepresentable rather
-than detected.
+P1-B, the async teardown. The join moved off the loop thread into an executor, and every
+await in the cleanup is now guarded with `contextlib.suppress(CancelledError)`. Two
+separate causes had to be fixed together: joining on the loop deadlocks (the worker's exit
+path needs the loop the join is blocking), and the first await in a cancelled task
+re-raises immediately, so an unguarded teardown aborted halfway and left the worker alive
+anyway.
 
-The re-tag rebind now happens before the slice is taken, so its commit is *inside* the
-slice rather than appended after it. `rebind_tags_for` returns nothing: there is one place a
-batch's contents come from.
+Test: cancellation latency bounded at 3s, a heartbeat task proving the loop kept running,
+and the worker counted *by name* -- the first version counted total threads and failed on
+the executor's own pool thread, which is not the leak being looked for. Mutation-checked:
+restoring the on-loop join fails it at 5.01s, exactly the timeout.
 
-`Recovery::of(escalated, truncated)` names the two incompletenesses because they differ in
-one bit that matters. An escalation names the subtree it re-scanned, so the dirty list still
-means something; a truncated journal cannot name what it dropped, so a list of survivors
-reads as complete and is not. Only the second sets all_dirty.
+STILL OPEN ON THIS BEAD: the batch omits provider state and per-batch work, which the
+observation envelope requires in the same atomic value.
 
-Test: `a_commit_from_another_producer_is_delivered_rather_than_skipped` forces the
-interleaving and asserts the other producer's path *arrives*, with no reset -- nothing was
-lost. Mutation-checked: building from the sink again yields `["b.txt"]` and drops
-`elsewhere.txt`.
+EXACT-HEAD REVIEW at PR #47 715f748 (2026-08-25): the claimed cursor and teardown fixes remain incomplete.
 
-P1-B, TEARDOWN CANNOT SUCCEED OVER A LIVE WORKER. Two independent causes, and fixing either
-alone leaves the defect.
+P1 CURSOR LOSS. Session::next_batch (crates/fdu-core/src/watch_session.rs:214-304) constructs applied only from watcher/reconcile sink deliveries and sets Batch.cursor to applied.last().clock. Watcher::apply_next invokes reconciliation, which can flush several batches under separate write guards (watch.rs:336-372; scan.rs:3620-3634). A direct producer commit C can land between watcher deltas A and B; the returned batch carries A/B and cursor B but omits C, so a consumer resuming at B loses C permanently. The new test at watch_session_integration.rs:242-306 checks only carried clocks <= cursor and would also accept that skipped interleaving. Fix the session against its prior delivered cursor: after applying the intent, read IndexHandle::since(previous_cursor) under one guard and build the batch from that complete journal slice and its terminal cursor; journal truncation must yield explicit reset/all-dirty. This is consumer resume state, not a second provider cursor.
 
-The caller's `interval` became the native wait the worker parked in, so `interval=60` meant
-a stop went unnoticed for up to a minute. Those are different questions: the interval is how
-often a caller wants to hear from an idle tree; the pull bound is how long the worker can be
-unreachable. The adapter now pulls with its own `_PULL_INTERVAL` (0.25s) and costs nothing
-observable, since an idle pull returns an empty batch and empty batches were already
-filtered.
+P1 TEARDOWN. asyncio cleanup at crates/fdu-py/python/fdu/aio.py:137-161 runs worker.join(timeout=5) off-loop but never checks worker.is_alive(). The worker may be blocked in PyWatch.__next__ -> session.next_batch(self.timeout) (crates/fdu-py/src/lib.rs:1889-1899); WatchOptions.interval can be any positive value. With interval=60 on an idle tree, cancellation returns after the five-second join timeout while the worker remains alive. The interval=0.1 test cannot detect this. Make the native wait interruptible or pull with a short internal timeout and require termination; if a timeout remains, raise a typed teardown failure instead of returning success with a live worker. Provider state and per-batch work also remain the bead's existing open remainder.
 
-`Thread.join` reports nothing -- it returns whether the thread died or the timeout expired --
-so the old code could not distinguish "stopped" from "gave up waiting", and returned normally
-either way. `worker.is_alive()` is now checked and `WatchTeardownError` raised. A teardown
-that returns normally says the registration is released, and a caller that believes it goes
-on to open the next watch or exit the process.
+EXACT-HEAD REVIEW at PR #47 278457a (2026-08-25). The new session resume clock is a correct safety improvement: a commit omitted by this producer now causes consumer reset instead of a cursor that silently skips it. The carrier is still not adoption-safe.
 
-Test: the cancellation test uses `interval=60.0`. At `interval=0.1` the two bounds are
-indistinguishable, which is why the previous version could not see this. Mutation-checked:
-passing the caller's options through to the watch raises `WatchTeardownError: the watch
-worker was still running 5.0s after being told to stop` -- exactly the reported failure.
+First, the state commits made by begin_reconcile/finish_reconcile never reach the reconciliation sink, so Batch.state omits them; this is reopened on fdu-jxs0. Second, Retagged carries an unbounded Vec<PathBuf> (engine_contract.rs:717-720), while AppliedDelta::len charges that entire vector as one transition (782-783). Session all_dirty drops only dirty_rollups: it still copies every governed directory into Batch.state and also emits one synthetic Change per directory (watch_session.rs:290-304, 334-348). A large control-file set therefore bypasses the journal retention budget and the language-boundary bound exactly when all_dirty claims the path list was dropped. Represent retag scope as bounded paths plus an explicit all marker; charge embedded paths against retention (or evict the oversized delta and advance the journal floor), and omit individual state/changes when all_dirty is the lossless answer.
 
-STILL OPEN: per-batch work counters. Provider *state* is deliberately not duplicated onto
-the batch -- a batch is a delta, and `Batch.state` now carries the transitions while the
-envelope is read under the same guard as the rows it describes. A second copy on the batch
-could only agree with that one or be wrong about it, which is the same argument that keeps
-`StateChange::RunFacts` payload-free.
+The unchanged P1 teardown remainder also remains: aio.py still joins for five seconds without checking worker.is_alive(), so a watch interval longer than that can return from teardown with a live worker. The existing provider-state and per-batch-work remainder remains too.
+
+EXACT-HEAD REVIEW at PR #47 fad3d2f (2026-08-25; all 19 checks green). The complete journal-slice construction and async teardown fixes are accepted: Session now resumes from one Cursor and builds from IndexHandle::since after rebind; aio caps the internal pull to 250 ms, checks worker liveness, and raises typed WatchTeardownError.
+
+The carrier remains open for three exact-head gaps. First, Session::next_batch returns None at watch_session.rs:279-281 before consulting since() whenever the filesystem watcher times out. A direct producer commit does not wake that watcher, and the new test at watch_session_integration.rs:345-355 writes b.txt after the direct apply to supply an unrelated wakeup. A refresh/hint commit on an otherwise idle tree is therefore withheld until some later filesystem event. Notify the session on every IndexHandle commit and wait for watcher-or-journal readiness, or perform a bounded journal check without adding a second watcher; test a direct apply alone.
+
+Second, Retagged remains an unbounded Vec<PathBuf> charged as one retained state item, then flattened into unbounded state and synthetic changes even when all_dirty drops dirty_rollups. Use a bounded paths-or-all representation and charge embedded paths against retention. Third, the batch still lacks resulting provider state and per-batch work in the same atomic value.
