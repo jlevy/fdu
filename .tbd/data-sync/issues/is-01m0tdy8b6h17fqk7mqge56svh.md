@@ -3,14 +3,17 @@ type: is
 id: is-01m0tdy8b6h17fqk7mqge56svh
 title: Complete the coherent read envelope and version-pinned paging
 kind: bug
-status: closed
+status: open
 priority: 1
-version: 26
+version: 28
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 refs:
   - kind: pr
     url: https://github.com/jlevy/fdu/pull/47#pullrequestreview-5018121437
     at: 2026-08-25T11:04:22.560Z
+  - kind: pr
+    url: https://github.com/jlevy/fdu/pull/47#pullrequestreview-5019981640
+    at: 2026-08-25T14:15:45.660Z
 labels:
   - pr47-review
   - metabrowser
@@ -21,8 +24,8 @@ dependencies:
     target: is-01m0tdy9ceep2byvbtyvwc2vky
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T17:43:53.445Z
-updated_at: 2026-08-25T13:56:53.430Z
-closed_at: 2026-08-25T13:56:53.430Z
+updated_at: 2026-08-25T14:15:45.660Z
+closed_at: null
 close_reason: null
 resolution: null
 duplicate_of: null
@@ -77,3 +80,5 @@ scanning from the top. Both fail named tests. The Python smoke test asserts the
 same cost property across the binding.
 
 make check and make cross-lint pass; parity holds at 21 recorded deviations.
+
+Reopened: Reopened against PR 47 exact head 1e9b85d4ce6b4c01fa800f8a25eb607ebb9675a0. The new EntryCursor is a public caller-constructible claim, not an opaque continuation: entry_page validates only version, does not bind root, max_depth, selection, or plane, trusts total/totals/delivered, and uses saturating arithmetic. Reusing a cursor across same-version requests or tampering fields can report false denominators, remainders, aggregates, or terminality. A stale cursor without ReadRequest.expected also returns None through the Option projection rather than VersionUnavailable despite the documented refusal. Require an engine-issued bounded continuation bound to the canonical request and version, validate its integrity and invariants without adapter state, return a typed continuation/version error, and add cross-request, tampering, and stale-without-expected tests while retaining flat continuation work.
