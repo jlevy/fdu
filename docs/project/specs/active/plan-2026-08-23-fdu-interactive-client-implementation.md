@@ -649,6 +649,7 @@ before and after: `--view types` and `--view extensions` are byte-identical.
 | `fdu-97dd` | `ScanConfig::max_files` and `ScanScope::max_files`; the walk stops descending at the cap, coverage becomes `Partial(Budget)`, and a typed `ResourceStop` issue says so | `scan.rs:Budget`, `snapshot.rs` (format 4), `cli.rs:--max-files`, `fdu-py/python/fdu/_models.py:ScanOptions` |
 | `fdu-nlhl` | `scan::reconcile_paths` and a `RefreshReceipt`: many hint paths as one operation, overlapping ones folded into one walk, every subtree announced before any is read, and typed per-path refusals | `scan.rs:reconcile_paths_target`, `scan.rs:covering_roots`, `fdu-py/python/fdu/_api.py:refresh_paths` |
 | `fdu-91ru` | `EntryPageRequest` / `EntryPage` on the bundled read: a bounded, resumable page in path order, with an exact remainder paired with its continuation and totals over the whole selection | `index.rs:entry_page`, `index.rs:push_children`, `fdu-py/src/lib.rs:entry_page_dict` |
+| `fdu-vfx7` | `Interest::{Rows, Invalidations}` and `Session::with_interest`; the batch’s cost measured across the binding, with the phases exact-or-absent rather than defaulting to zero | `watch_session.rs:Interest`, `fdu-py/src/lib.rs:PyWatch::__next__`, `fdu-py/python/fdu/_api.py:Watch.__next__` |
 
 `WatchConfig` lost `Copy` when the poll interval arrived, which threaded `&WatchConfig`
 through `validate`, `apply_intent`, `verify_intent` and `run_worker`. That is the kind

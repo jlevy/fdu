@@ -107,7 +107,7 @@ pub use crate::scan::{
     ReconcileReport, RefreshReceipt, RefusedPath, ScanConfig, ScanOrder, ScanReport,
 };
 #[cfg(feature = "watch")]
-pub use crate::watch_session::{Batch, Change, ChangeKind, Session};
+pub use crate::watch_session::{Batch, Change, ChangeKind, Interest, Session};
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};

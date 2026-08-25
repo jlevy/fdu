@@ -818,7 +818,8 @@ impl PyIndex {
         reverse = false,
         size = "allocated",
         words_per_page = 250,
-        as_of_ns = None
+        as_of_ns = None,
+        interest = "rows"
     ))]
     #[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
     fn watch(
@@ -843,6 +844,7 @@ impl PyIndex {
         size: &str,
         words_per_page: u64,
         as_of_ns: Option<i64>,
+        interest: &str,
     ) -> PyResult<PyWatch> {
         let query = build_query(
             self.analysis.profile,
@@ -889,8 +891,18 @@ impl PyIndex {
             }
         };
         let config = WatchConfig { backend, ..WatchConfig::default() };
-        let session =
-            Session::new(handle, self.config.clone(), query, config).map_err(to_py_err)?;
+        let interest = match interest {
+            "rows" => fdu_core::session::Interest::Rows,
+            "invalidations" => fdu_core::session::Interest::Invalidations,
+            other => {
+                return Err(PyValueError::new_err(format!(
+                    "invalid interest {other:?}: expected one of rows, invalidations"
+                )));
+            }
+        };
+        let session = Session::new(handle, self.config.clone(), query, config)
+            .map_err(to_py_err)?
+            .with_interest(interest);
 
         Ok(PyWatch { session: Some(session), timeout: Duration::from_secs_f64(interval) })
     }
@@ -2311,6 +2323,13 @@ impl PyWatch {
         // holding the GIL across it would freeze every other Python thread.
         let batch = py.detach(|| session.next_batch(self.timeout)).map_err(to_py_err)?;
 
+        // Weighed like a bundled read is, and for the same reason: the engine's `wall_ns`
+        // ends when `next_batch` returns, which is before any of this batch becomes a
+        // Python object. Publishing that as the batch's cost omitted the binding phase
+        // entirely -- and it is the phase that scales with the size of the mutation, which
+        // is exactly what an embedder comparing providers is trying to see.
+        let _ = payload::take();
+        let converted = std::time::Instant::now();
         let out = PyDict::new(py);
         let list = PyList::empty(py);
         let transitions = PyList::empty(py);
@@ -2321,6 +2340,8 @@ impl PyWatch {
         let mut issues = PyList::empty(py);
         let mut dirty_queries: Vec<&'static str> = Vec::new();
         let mut batch_work = work_dict(py, fdu_core::Work::default())?;
+        let mut batch_present = false;
+        let mut native_ns = 0u64;
         let mut dirty = false;
         let mut all_dirty = false;
         let mut reset = false;
@@ -2355,6 +2376,8 @@ impl PyWatch {
             dirty_queries =
                 batch.dirty_queries.iter().map(|kind| fdu_core::QueryKind::as_str(*kind)).collect();
             batch_work = work_dict(py, batch.work)?;
+            batch_present = true;
+            native_ns = batch.work.wall_ns;
             for committed in &batch.transitions {
                 // The clock the transition committed at, not the batch's terminal one.
                 // Stamping them all with the end said every transition happened last, which
@@ -2368,7 +2391,21 @@ impl PyWatch {
         out.set_item("state", state)?;
         out.set_item("issues", issues)?;
         out.set_item("dirty_queries", dirty_queries)?;
-        out.set_item("work", batch_work)?;
+        // Set here rather than in `work_dict`, because these are facts about the crossing
+        // and `work_dict` renders the engine's own record. Absent when there was no batch:
+        // nothing crossed, and a zero would say "measured, and free".
+        if batch_present {
+            batch_work.set_item("native_ns", native_ns)?;
+            batch_work.set_item("binding_bytes", payload::take())?;
+        }
+        // `None` for an idle step, which is what the model has always declared and the
+        // binding never delivered: a default-valued record says "measured, and free" about
+        // a step where nothing was produced and nothing crossed.
+        if batch_present {
+            out.set_item("work", batch_work.clone())?;
+        } else {
+            out.set_item("work", py.None())?;
+        }
         out.set_item("dirty", dirty)?;
         out.set_item("dirty_rollups", dirty_rollups)?;
         out.set_item("all_dirty", all_dirty)?;
@@ -2380,6 +2417,12 @@ impl PyWatch {
                 None => None,
             },
         )?;
+        // Stamped after every value above is built, including the cursor: the first draft
+        // of the equivalent on `read()` stamped it before the last of them and so excluded
+        // part of the conversion it claimed to measure.
+        if batch_present {
+            batch_work.set_item("conversion_ns", nanos_since(converted))?;
+        }
         Ok(Some(out.unbind()))
     }
 

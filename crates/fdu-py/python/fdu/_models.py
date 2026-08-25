@@ -407,6 +407,21 @@ class Query:
             raise ValueError("words_per_page must be positive")
 
 
+class Interest(StrEnum):
+    """What a watch consumer wants each batch to carry.
+
+    Closed on purpose. A capability set negotiated field by field becomes a branching axis
+    through the whole assembly, and these two are the modes a consumer actually has: apply
+    the rows, or re-read what went dirty.
+    """
+
+    ROWS = "rows"
+    """Everything: the rows that moved as well as what to discard."""
+
+    INVALIDATIONS = "invalidations"
+    """Only what to discard, and how far to trust what is kept. No entry row is built."""
+
+
 @dataclass(frozen=True, slots=True)
 class WatchOptions:
     """Configuration for an event-driven change feed."""
@@ -425,6 +440,20 @@ class WatchOptions:
     ``None`` uses the platform's native API, which is right for a local filesystem.
     Explicit rather than detected: choosing native on a filesystem that drops events
     fails silently, so the caller who knows what it mounted decides.
+    """
+
+    interest: Interest = Interest.ROWS
+    """What each batch should carry.
+
+    :attr:`Interest.INVALIDATIONS` builds no entry rows at all, which is the point rather
+    than a side effect: a consumer that re-reads on dirty never looks at ``changes``, and
+    materialising them costs a tag lookup and a path clone per operation, then the whole
+    crossing, for a value nobody reads. A ``git checkout`` moving fifty thousand files is
+    fifty thousand of each.
+
+    Everything a consumer acts on is still there: ``dirty``, the bounded
+    ``dirty_rollups``, ``dirty_queries``, ``all_dirty``, ``reset``, ``issues``, the
+    terminal ``state``, and the cursor.
     """
 
     def __post_init__(self) -> None:
@@ -948,15 +977,20 @@ class Work:
     no such phase.
     """
 
-    native_ns: int = 0
-    """Nanoseconds inside the engine, guard wait included.
+    native_ns: int | None = None
+    """Nanoseconds inside the engine, guard wait included; ``None`` when unmeasured.
 
     Runs with the GIL released, which is why it is named apart from the phases that do
     not.
+
+    Exact-or-absent, like :attr:`cpu_ns` and for the same reason: these used to default to
+    zero when the wire omitted them, so "this phase took no time" and "nobody measured this
+    phase" were the same value -- in the fields an embedder uses to compare engines. A
+    provider that reports zero for a phase it never timed understates itself.
     """
 
-    binding_bytes: int = 0
-    """Bytes this result copied into Python objects.
+    binding_bytes: int | None = None
+    """Bytes this result copied into Python objects; ``None`` when unmeasured.
 
     A cost no engine-side counter can see: ``name_bytes`` is what the engine *read*, and
     this is what a caller *pays* to receive. Counted as each field crosses, by one rule --
@@ -964,11 +998,11 @@ class Work:
     contributes eight, and dict keys are excluded as fixed schema rather than payload.
     """
 
-    conversion_ns: int = 0
-    """Nanoseconds building the extension's dict from the native result."""
+    conversion_ns: int | None = None
+    """Nanoseconds building the extension's dict; ``None`` when unmeasured."""
 
-    model_ns: int = 0
-    """Nanoseconds turning that dict into these dataclasses."""
+    model_ns: int | None = None
+    """Nanoseconds turning that dict into these dataclasses; ``None`` when unmeasured."""
 
     cpu_ns: int | None = None
     """CPU nanoseconds, when something measured them; ``None`` when nothing did.

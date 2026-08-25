@@ -618,3 +618,80 @@ fn a_batch_carries_the_terminal_state_at_its_own_cursor() {
         "which is strictly behind where the index now is"
     );
 }
+
+/// An invalidations-only feed derives everything it acts on, and builds no rows.
+///
+/// The point is what is *absent*: a consumer that re-reads on dirty never looks at
+/// `changes`, and materialising them costs a tag lookup and a path clone per operation,
+/// then the whole crossing. So the assertion that matters is that `changes` is empty while
+/// every signal a consumer acts on is still present and equal to what the row-carrying mode
+/// reports -- an empty batch would satisfy the first half and none of the second.
+#[test]
+fn an_invalidations_only_feed_carries_no_rows_and_loses_no_signal() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    fs::create_dir_all(dir.path().join("src")).expect("mkdir");
+    fs::write(dir.path().join("src/seed.rs"), b"fn main() {}").expect("seed");
+
+    let config = OpenConfig { policy: CachePolicy::Off, ..OpenConfig::default() };
+    let query = Query {
+        selection: Selection::default(),
+        views: vec![ViewSpec::Summary],
+        ..Query::default()
+    };
+
+    let mut sessions: Vec<Session> = Vec::new();
+    for interest in [fdu_core::Interest::Rows, fdu_core::Interest::Invalidations] {
+        let (index, _) = open(dir.path(), &config).expect("open");
+        sessions.push(
+            Session::new(
+                IndexHandle::new(index),
+                ScanConfig::default(),
+                query.clone(),
+                WatchConfig::default(),
+            )
+            .expect("session")
+            .with_interest(interest),
+        );
+    }
+
+    fs::write(dir.path().join("src/added.rs"), b"fn other() {}").expect("write");
+
+    let mut carried: Vec<fdu_core::Batch> = Vec::new();
+    for session in &mut sessions {
+        let deadline = Instant::now() + SETTLE;
+        let mut found = None;
+        while Instant::now() < deadline && found.is_none() {
+            let Some(batch) = session.next_batch(Duration::from_millis(100)).expect("batch") else {
+                continue;
+            };
+            if batch.dirty {
+                found = Some(batch);
+            }
+        }
+        carried.push(found.expect("a write should produce a dirty batch"));
+    }
+    let (rows, invalidations) = (&carried[0], &carried[1]);
+
+    assert!(!rows.changes.is_empty(), "the row-carrying mode carries rows");
+    assert!(
+        invalidations.changes.is_empty(),
+        "and the other builds none at all: {:?}",
+        invalidations.changes
+    );
+    assert_eq!(invalidations.work.rows, 0, "which is measured, not merely unreported");
+    assert_eq!(invalidations.work.name_bytes, 0);
+
+    // Everything a consumer acts on survives. An empty batch would pass the two assertions
+    // above and fail every one of these.
+    assert!(invalidations.dirty, "it still says something moved");
+    assert_eq!(invalidations.dirty_rollups, rows.dirty_rollups, "and which roll-ups to discard");
+    assert_eq!(invalidations.dirty_queries, rows.dirty_queries, "and which projections");
+    assert_eq!(invalidations.all_dirty, rows.all_dirty);
+    assert_eq!(invalidations.reset, rows.reset);
+    assert!(invalidations.cursor.is_some(), "and where to resume from");
+    assert_eq!(
+        invalidations.state.freshness, rows.state.freshness,
+        "and how far to trust what it kept"
+    );
+    assert!(invalidations.work.wall_ns > 0, "the mode still charges its own assembly");
+}

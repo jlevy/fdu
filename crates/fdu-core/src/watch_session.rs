@@ -325,6 +325,29 @@ impl Drop for Session {
     }
 }
 
+/// What a consumer wants each batch to carry.
+///
+/// Closed on purpose. A capability set negotiated field by field becomes a branching axis
+/// through the whole assembly, and the two modes here are the two a consumer actually has:
+/// apply the rows, or re-read what went dirty.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum Interest {
+    /// Everything: the rows that moved as well as what to discard.
+    #[default]
+    Rows,
+    /// Only what to discard, and how far to trust what is kept.
+    ///
+    /// No entry row is built, which is the point rather than a side effect. A consumer
+    /// that re-reads on dirty never looks at `changes`, and materialising them costs a tag
+    /// lookup and a path clone per operation, then the whole crossing, for a value nobody
+    /// reads. A `git checkout` moving fifty thousand files is fifty thousand of each.
+    ///
+    /// Everything a consumer needs to act is still here: `dirty`, the bounded
+    /// `dirty_rollups`, `dirty_queries`, `all_dirty`, `reset`, `issues`, the terminal
+    /// `state`, and the cursor. Deriving those needs the operations, not their rows.
+    Invalidations,
+}
+
 /// An index paired with a watcher, answering one query continuously.
 pub struct Session {
     index: IndexHandle,
@@ -339,6 +362,8 @@ pub struct Session {
     /// own hints, against the same handle while a watch runs -- and a batch assembled from
     /// what the watcher delivered would omit those commits while advancing past them.
     resume: crate::Cursor,
+    /// What each batch this session produces should carry.
+    interest: Interest,
 }
 
 impl Session {
@@ -360,7 +385,23 @@ impl Session {
         // being told out of band. Recorded after the watcher binds: a session that failed
         // to start never claimed to be watching.
         index.attach_watch()?;
-        Ok(Self { index, watcher, scan, query, resume })
+        Ok(Self { index, watcher, scan, query, resume, interest: Interest::default() })
+    }
+
+    /// Deliver only invalidations, never entry rows.
+    ///
+    /// A consumer that re-reads on dirty pays for `changes` it never looks at: a tag lookup
+    /// and a path clone per operation, then the whole crossing. This turns that off without
+    /// giving up anything it acts on.
+    #[must_use]
+    pub fn with_interest(mut self, interest: Interest) -> Self {
+        self.interest = interest;
+        self
+    }
+
+    /// What each batch from this session carries.
+    pub fn interest(&self) -> Interest {
+        self.interest
     }
 
     /// The query this session answers.
@@ -532,6 +573,21 @@ impl Session {
         };
         if !applied.is_empty() {
             self.resume = since.cursor;
+        }
+
+        // Nothing below this point builds anything a consumer in this mode reads, and all
+        // of it is proportional to the size of the mutation rather than to what the
+        // consumer will repaint. Returning here is the mode's whole content: no tag lookup,
+        // no path clone, no row, and nothing for the binding to convert.
+        if self.interest == Interest::Invalidations {
+            // `rows` and `name_bytes` stay at zero, which is measured rather than unknown:
+            // this batch carries no rows, so it cost none. The wall time still has to be
+            // closed here, or the mode would report its own assembly as free.
+            batch.work.wall_ns = batch
+                .work
+                .wall_ns
+                .saturating_add(u64::try_from(assembling.elapsed().as_nanos()).unwrap_or(u64::MAX));
+            return Ok(Some(batch));
         }
 
         // Tags are read from the index, which is where they were computed, so this needs a

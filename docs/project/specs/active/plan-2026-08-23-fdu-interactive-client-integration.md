@@ -1003,6 +1003,13 @@ from emitting millions of provenance-only entry changes into the feed it serves.
   reconciled under one guard, one commit, one cursor, and per-path acceptance beside the
   counts. Iterating a single-path refresh is not equivalent -- N calls are N commits and
   N cursors, so a receipt covering them describes a range rather than a boundary
+- [x] A closed invalidations-only interest mode (`fdu-vfx7`): the feed derives bounded
+  dirty paths, query kinds, issues and terminal state in Rust and builds no entry row at
+  all, because a consumer that re-reads on dirty never looks at them and materialising
+  them costs a tag lookup and a path clone per operation.
+  Plus the batch’s own cost measured across the whole boundary -- composed from its
+  phases rather than taken end to end, since a wall clock around a blocking poll reports
+  patience as cost
 - [x] The terminal engine state on every batch and delta range (`fdu-vfx7`), captured
   inside the same guarded read as the journal slice and the cursor.
   Transitions are interval events and say what moved; this says where it ended up, which

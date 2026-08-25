@@ -1264,6 +1264,63 @@ def _bundled_report(bundle: fdu.Bundle) -> fdu.Report:
     return report
 
 
+def check_an_invalidations_feed_builds_no_rows_and_charges_the_whole_crossing() -> None:
+    """The mode that skips rows, and the measurement that says what a batch really cost.
+
+    Two halves of one gap. A consumer that re-reads on dirty never looks at ``changes``, so
+    building and crossing them is pure cost -- fifty thousand tag lookups and path clones
+    for a ``git checkout``. And the batch's ``work`` used to stop at the engine, so the
+    phase that scales with the size of the mutation was the one phase nobody could see.
+
+    The absence assertions alone would pass against a feed that delivered nothing, so every
+    signal a consumer acts on is checked too.
+    """
+
+    with tempfile.TemporaryDirectory(prefix="fdu-interest-") as raw:
+        root = Path(raw)
+        (root / "src").mkdir()
+        (root / "src" / "seed.rs").write_text("fn main() {}", encoding="utf-8")
+
+        index = fdu.open(root, cache=fdu.CachePolicy.OFF)
+        options = fdu.WatchOptions(interval=0.2, interest=fdu.Interest.INVALIDATIONS)
+        with index.watch(options) as watch:
+            (root / "src" / "added.rs").write_text("fn other() {}", encoding="utf-8")
+            deadline = time.monotonic() + 30
+            carried: fdu.WatchBatch | None = None
+            for batch in watch:
+                if batch.dirty:
+                    carried = batch
+                    break
+                if time.monotonic() > deadline:
+                    break
+
+        assert carried is not None, "a write should produce a dirty batch"
+        assert carried.changes == (), f"no row is built at all: {carried.changes}"
+
+        # Everything a consumer acts on is still here. An empty feed would satisfy the line
+        # above and none of these.
+        assert carried.dirty is True
+        assert carried.dirty_rollups, carried
+        assert carried.dirty_queries, carried
+        assert carried.cursor is not None
+        assert carried.state is not None and carried.state.freshness is fdu.Freshness.FRESH
+
+        # And the batch charges the whole crossing, not only the engine's own span.
+        work = carried.work
+        assert work is not None
+        assert work.rows == 0 and work.name_bytes == 0, "measured as zero, not unreported"
+        assert work.native_ns is not None and work.native_ns > 0, work
+        assert work.conversion_ns is not None and work.conversion_ns > 0, work
+        assert work.model_ns is not None and work.model_ns > 0, work
+        assert work.binding_bytes is not None, work
+        # Summed from the phases rather than taken end to end: `next()` blocks for up to the
+        # interval, and a wall clock around it would report patience as cost.
+        assert work.wall_ns >= work.native_ns + work.conversion_ns + work.model_ns, work
+        assert work.wall_ns < 0.2 * 1_000_000_000, (
+            f"the interval must not reach the cost: {work.wall_ns / 1e9:.3f}s"
+        )
+
+
 def check_a_tree_report_parses_on_the_python_surface() -> None:
     """The tree view round-trips, which it did not.
 
@@ -2392,6 +2449,7 @@ def main() -> None:
     check_a_batched_refresh_is_one_operation_not_a_loop()
     check_bounded_pages_assemble_into_one_complete_answer()
     check_a_tree_report_parses_on_the_python_surface()
+    check_an_invalidations_feed_builds_no_rows_and_charges_the_whole_crossing()
     check_a_batch_names_which_projections_went_stale()
     check_a_batch_reports_what_it_cost_and_not_what_it_waited()
     check_a_pinned_assembly_pins_its_clock_too()

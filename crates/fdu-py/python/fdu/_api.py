@@ -208,7 +208,33 @@ class Watch(Iterator[WatchBatch]):
         return self
 
     def __next__(self) -> WatchBatch:
-        return _watch_batch(next(self._native))
+        # Summed from the phases, never taken end to end -- which is the one difference
+        # between measuring a batch and measuring a read. `next()` blocks for up to the
+        # interval, so a wall clock around it would report an idle tree's patience as the
+        # cost of the batch that eventually arrived, and the one figure an embedder compares
+        # providers on would be measuring how long it was willing to wait.
+        #
+        # The engine's `wall_ns` covers its own assembly, the extension's `conversion_ns`
+        # covers building the dict, and this closes the last phase: turning that dict into
+        # the dataclasses below. Reporting only the first would understate this path against
+        # a provider that has no crossing at all.
+        value = next(self._native)
+        returned = time.perf_counter_ns()
+        batch = _watch_batch(value)
+        if batch.work is None:
+            return batch
+        built = time.perf_counter_ns()
+        model_ns = built - returned
+        engine_ns = batch.work.wall_ns
+        conversion_ns = batch.work.conversion_ns or 0
+        return replace(
+            batch,
+            work=replace(
+                batch.work,
+                wall_ns=engine_ns + conversion_ns + model_ns,
+                model_ns=model_ns,
+            ),
+        )
 
     def report(self) -> Report:
         """The live answer, as of now, from the index this session has been updating.
@@ -593,11 +619,18 @@ class Index:
         arguments = _query_kwargs(selected.query)
         arguments["interval"] = selected.interval
         arguments["poll_interval"] = selected.poll_interval
+        arguments["interest"] = str(selected.interest)
         native = _call(
             self._native.watch,
             **arguments,
         )
         return Watch(native)
+
+
+def _optional_int(value: object) -> int | None:
+    """A measured count, or `None` where nothing measured one."""
+
+    return None if value is None else int(cast("int", value))
 
 
 def _work(value: dict[str, Any]) -> Work:
@@ -611,9 +644,12 @@ def _work(value: dict[str, Any]) -> Work:
         name_bytes=int(value["name_bytes"]),
         lock_wait_ns=int(value["lock_wait_ns"]),
         wall_ns=int(value["wall_ns"]),
-        native_ns=int(value.get("native_ns", 0)),
-        binding_bytes=int(value.get("binding_bytes", 0)),
-        conversion_ns=int(value.get("conversion_ns", 0)),
+        # Absent, not zero. A wire that omits a phase has not measured it, and folding
+        # that into "took no time" puts a number nothing measured in the one field an
+        # embedder compares providers on.
+        native_ns=_optional_int(value.get("native_ns")),
+        binding_bytes=_optional_int(value.get("binding_bytes")),
+        conversion_ns=_optional_int(value.get("conversion_ns")),
         cpu_ns=None if value.get("cpu_ns") is None else int(value["cpu_ns"]),
     )
 
@@ -732,6 +768,7 @@ def _child(item: dict[str, Any]) -> Child:
 def _watch_batch(value: dict[str, Any]) -> WatchBatch:
     raw_cursor = value["cursor"]
     raw_state = value["state"]
+    raw_work = value["work"]
     return WatchBatch(
         changes=tuple(_change(item) for item in value["changes"]),
         dirty=bool(value["dirty"]),
@@ -743,7 +780,7 @@ def _watch_batch(value: dict[str, Any]) -> WatchBatch:
         state=None if raw_state is None else status_from_dict(raw_state),
         issues=tuple(_operation_error(item) for item in value["issues"]),
         dirty_queries=tuple(QueryKind(str(kind)) for kind in value["dirty_queries"]),
-        work=_work(value["work"]),
+        work=None if raw_work is None else _work(raw_work),
     )
 
 
