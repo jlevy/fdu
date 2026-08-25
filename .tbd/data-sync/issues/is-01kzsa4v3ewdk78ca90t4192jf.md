@@ -3,18 +3,54 @@ type: is
 id: is-01kzsa4v3ewdk78ca90t4192jf
 title: "PR#6 C5: provenance changes bypass the clocked delta/change-feed contract"
 kind: bug
-status: open
+status: closed
 priority: 1
-version: 8
+version: 9
 labels: []
 dependencies:
   - type: blocks
     target: is-01m0rw7bvxtw87tgde30emgs56
 parent_id: is-01kzsa4b2j0b3rmvkhf4r0ktxz
 created_at: 2026-08-11T21:02:38.701Z
-updated_at: 2026-08-25T01:59:54.128Z
-closed_at: null
-close_reason: null
+updated_at: 2026-08-25T04:01:39.742Z
+closed_at: 2026-08-25T04:01:39.741Z
+close_reason: |
+  Closed again. The reopen note is dated at `fad3d2f`; both remaining defects it names were
+  fixed in `4fbb7d1`, which lands after it. Verified against the current head rather than
+  assumed, claim by claim.
+
+  1. "reconcile/reconcile_handle promise each effective committed delta, but reconcile_target
+     commits begin/finish state without sending either AppliedDelta to the sink."
+     Fixed. `begin_reconcile` and `finish_reconcile` return the `AppliedDelta` they committed,
+     and `reconcile_target` sinks both -- on the completing path and on the error path, where
+     the sweep still records `Partial(Failed)`. scan.rs:2951, 2955, 2967.
+
+  2. "The unchanged-tree test accepts an empty delta vector and checks only the index clock,
+     so it does not prove the documented callback."
+     Fixed, and this was the sharper half of the finding: the test passed while the sink
+     received nothing, because `all()` is vacuously true on an empty vector. It now asserts
+     the two deltas, their transitions, and their consecutive clocks, through
+     `assert_sweep_deltas` -- shared by the direct and shared paths so neither can quietly
+     publish less than the other. scan.rs:5558, 5887.
+
+  3. "Session::Batch flattens Vec<StateChange> away from each AppliedDelta clock."
+     Fixed. `CommittedState { clock, change }` pairs them, so the flattening is
+     unrepresentable rather than discouraged. watch_session.rs:157.
+
+  4. "PyWatch stamps every transition with the terminal cursor even though StateChange.clock
+     documents the actual commit."
+     Fixed. fdu-py/src/lib.rs:2059 uses the transition's own clock. Mutation-checked through
+     `since`: restoring the terminal stamp reports the sweep's announcement at clock 4 with
+     the rows it precedes at clock 2 -- the ordering the announcement exists to produce,
+     inverted.
+
+  The rule this bead carried is now enforced structurally in three places rather than by
+  review: `AppliedDelta` carries `state` beside `ops` so a transition cannot avoid the clock;
+  `CommittedState` carries the clock so a carrier cannot drop it; and transitions are charged
+  against the journal budget so a bounded history stays bounded.
+
+  If something here is still wrong, the finding is about `4fbb7d1` or later rather than about
+  `fad3d2f`, and I would rather have it named against that head.
 resolution: null
 duplicate_of: null
 ---
