@@ -5,7 +5,7 @@ title: Watch invalidation batches lose required dirty information
 kind: bug
 status: open
 priority: 1
-version: 17
+version: 18
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 labels:
   - pr47-review
@@ -17,7 +17,7 @@ dependencies:
     target: is-01m0prhqd27m471dn47yt973k0
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T17:43:53.915Z
-updated_at: 2026-08-25T06:31:32.842Z
+updated_at: 2026-08-25T07:18:51.773Z
 closed_at: null
 close_reason: null
 resolution: null
@@ -108,3 +108,48 @@ binding, and payload/cost tests for ordinary, state-only, all-dirty, reset, and 
 batches.
 
 EXACT-HEAD FOLLOW-UP at PR #47 4eac1b2 (2026-08-25). The new `browser_provider` reference still constructs paths from `batch.changes` and drops provider state and batch work. That codifies the open adoption defect instead of exercising the required invalidations-only carrier. Keep this bead open until a closed-interest mode crosses zero entry rows and the same batch carries complete terminal state plus public-boundary work, with provider-harness tests.
+
+
+
+FDU47-A1 SHIPPED: the terminal engine state now rides on every batch and delta range.
+
+`Index::engine_state()` is the one place trust, coverage, lifecycle and run facts are
+assembled, and `Index::since` captures it inside the guard that already produced the
+journal slice and the cursor. `Since::state` and `Batch::state` carry it. The field the
+transitions list used to occupy is now `Batch::transitions` / `WatchBatch.transitions` /
+`ChangeSet.transitions`, because the two answer different questions and sharing a name
+invited exactly the mistake this fixes.
+
+Why a follow-up read is not an equivalent substitute, restated so it is not re-litigated:
+the next commit can land between the two calls, and the index intentionally retains only
+its current image, so there is nothing to ask for the state *as of* a position already
+passed. Folding transitions into a consumer-side copy is the other way to get it wrong --
+two authorities for one fact, diverging the first time one is dropped, reordered or
+misapplied, with nothing able to detect it. This reverses the decision recorded in this
+bead's earlier close reason, which held that transitions plus a follow-up read were
+sufficient. They are not, for the reason above.
+
+`EngineState` has a hand-written `Default` because `Freshness` deliberately has none:
+there is no answer to "how much do you trust this?" that is safe to invent for an
+arbitrary engine, and deriving one would put that invention in the contract.
+`default_is_the_state_of_a_new_index` holds the hand-written value to
+`Index::new(..).engine_state()` so the claim cannot drift from what it describes.
+
+Acceptance, all three forcing the interleave rather than racing it -- a commit lands after
+the capture and before the assertions, so an implementation that re-read at assertion time
+would report the later state and fail:
+- `index.rs:a_delta_range_carries_the_state_at_its_own_cursor`
+- `tests/watch_session_integration.rs:a_batch_carries_the_terminal_state_at_its_own_cursor`
+- `public_smoke.py:check_a_batch_carries_the_state_at_its_own_cursor`
+
+Mutation-checked three ways, each confirmed to fail before being restored: `since()`
+returning `EngineState::default()`, the batch carrying `EngineState::default()`, and the
+Python binding dropping the field.
+
+`browser_provider.Invalidation` now carries `state`, and its docstring no longer lists
+terminal state as missing.
+
+STILL OPEN on this bead (FDU47-A3): the invalidations-only interest mode, so the feed
+derives bounded dirty paths, query kinds, issues and state in Rust without materializing
+entry rows; and instrumenting the public watch conversion, where `Batch.work` stops before
+binding payload, conversion and model construction.
