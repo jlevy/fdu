@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
+import time
 from collections.abc import Iterator, Sequence
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -368,6 +370,7 @@ class Index:
             report_kwargs["limit_rows"] = report_kwargs.pop("limit")
             report_kwargs["report"] = True
 
+        started = time.perf_counter_ns()
         value = _call(
             self._native.read,
             children_of,
@@ -384,7 +387,7 @@ class Index:
         children = value["children"]
         report = value["report"]
         projections = value["projections"]
-        return Bundle(
+        bundle = Bundle(
             clock=int(value["clock"]),
             cursor=_cursor(value["cursor"]),
             root=Path(str(value["root"])),
@@ -405,6 +408,19 @@ class Index:
                 total=_work(projections["total"]),
                 rollups=_work(projections["rollups"]),
                 report=_work(projections["report"]),
+            ),
+        )
+        # The only end-to-end figure, and the one an embedder should compare providers on.
+        # The native `wall_ns` ends when the extension returns its dict, which is before
+        # the models above are built -- so publishing that as the call's duration would
+        # omit a provider-specific part of this path and understate it against a
+        # pure-Python provider that has no such phase.
+        return dataclasses.replace(
+            bundle,
+            work=dataclasses.replace(
+                bundle.work,
+                wall_ns=time.perf_counter_ns() - started,
+                model_ns=time.perf_counter_ns() - started - bundle.work.native_ns,
             ),
         )
 
@@ -474,6 +490,7 @@ def _work(value: dict[str, Any]) -> Work:
         name_bytes=int(value["name_bytes"]),
         lock_wait_ns=int(value["lock_wait_ns"]),
         wall_ns=int(value["wall_ns"]),
+        native_ns=int(value.get("native_ns", 0)),
         binding_bytes=int(value.get("binding_bytes", 0)),
         conversion_ns=int(value.get("conversion_ns", 0)),
         cpu_ns=None if value.get("cpu_ns") is None else int(value["cpu_ns"]),

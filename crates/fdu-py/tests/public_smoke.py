@@ -526,33 +526,77 @@ def check_one_bundle_answers_a_whole_page() -> None:
     else:
         raise AssertionError("a zero page limit must be refused")
 
-    # Concurrent readers through the real Index.read path. The native read runs detached,
-    # so threads are not serialized behind one another for the length of a traversal --
-    # and a filtered report is a full traversal, which is what makes this worth pinning.
+    # The GIL is released for the duration of the native read, through the real public
+    # `Index.read`. Threads that merely all finish would prove nothing -- with the GIL
+    # held they run one after another and still finish -- so the oracle is *when* a second
+    # thread gets its turn. It sleeps a short delay (which releases the GIL, so it always
+    # reaches the next line on time) and then timestamps, which needs the GIL back. If the
+    # read holds it, that timestamp slides to the end of the read.
+    #
+    # Its own tree, sized from measurement: 20k files make a filtered summary take about
+    # ten milliseconds, ~99% of it the native span. The shared fixture is three files and
+    # finishes far too fast to separate the two cases.
+    wide = Path(tempfile.mkdtemp(prefix="fdu-gil-"))
+    for group in range(20):
+        bucket = wide / f"d{group}"
+        bucket.mkdir()
+        for n in range(1000):
+            (bucket / f"f{n}.rs").write_text("x", encoding="utf-8")
+    wide_index = fdu.open(wide, cache=fdu.CachePolicy.OFF)
+
     filtered = fdu.Query(
         views=(fdu.View.SUMMARY,),
         selection=fdu.Selection(min_size=1, kinds=(fdu.EntryKind.FILE,)),
     )
-    errors: list[BaseException] = []
+    probe_delay = 0.002
+    ran_at: list[float] = []
 
-    def hammer() -> None:
-        try:
-            for _ in range(20):
-                assert index.read(total=True, query=filtered).cursor.session > 0
-        except BaseException as error:
-            errors.append(error)
+    def probe() -> None:
+        time.sleep(probe_delay)
+        ran_at.append(time.monotonic())
 
-    workers = [threading.Thread(target=hammer) for _ in range(4)]
-    for worker in workers:
-        worker.start()
-    for worker in workers:
-        worker.join(timeout=60)
-        assert not worker.is_alive(), "a concurrent reader did not finish"
-    assert not errors, errors
+    prober = threading.Thread(target=probe, name="fdu-gil-probe")
+    prober.start()
+    started_read = time.monotonic()
+    measured = wide_index.read(total=True, query=filtered)
+    returned = time.monotonic()
+    prober.join(timeout=30)
 
-    # And the binding's own cost is reported, which no engine-side counter can see.
-    measured = index.read(total=True, query=filtered)
-    assert measured.work.binding_bytes > 0, measured.work
+    elapsed = returned - started_read
+    assert ran_at, "the probe thread never ran"
+    assert elapsed > probe_delay * 4, (
+        f"the read must outlast the probe by a wide margin to prove anything: {elapsed:.4f}s"
+    )
+    # Not merely "before the read returned" -- that is nearly true even with the GIL held,
+    # because the thread runs the instant the call gives it back. It has to get its turn
+    # early, which only a released GIL allows.
+    waited = ran_at[0] - started_read
+    assert waited < elapsed / 2, (
+        "another Python thread must run *while* the native read works, not after it: the "
+        f"probe waited {waited:.4f}s of a {elapsed:.4f}s call"
+    )
+
+    # The binding's own cost, which no engine-side counter can see. An exact delta rather
+    # than `> 0`: a counter that only has to be positive can omit whole field families and
+    # still pass, which is how the first version of this measurement drifted.
+    envelope = index.read()
+    with_rollup = index.read(rollups=[str(Path("src"))])
+    grew = with_rollup.work.binding_bytes - envelope.work.binding_bytes
+    roll = index.rollup(Path("src"))
+    assert roll is not None
+    # One roll-up: six scalars, then each extension and group key with three scalars.
+    expected = 8 * 6 + sum(
+        len(name) + 8 * 3 for name in (*roll.by_extension.keys(), *roll.by_group.keys())
+    )
+    assert grew == expected, f"one roll-up should cost {expected} bytes, not {grew}"
+
+    # Every phase is named, and they compose into the one end-to-end figure an embedder
+    # should compare providers on.
+    assert measured.work.native_ns > 0, measured.work
+    assert measured.work.conversion_ns > 0, measured.work
+    assert measured.work.wall_ns >= measured.work.native_ns + measured.work.conversion_ns, (
+        measured.work
+    )
     assert measured.work.cpu_ns is None, "CPU is absent rather than inferred"
 
     # An empty request is the constant-work checkpoint: it carries the envelope and reads

@@ -101,6 +101,7 @@ fn rollup_dict<'py>(py: Python<'py>, roll: &RollUp) -> PyResult<Bound<'py, PyDic
     dict.set_item("bytes", roll.bytes)?;
     dict.set_item("allocated", roll.allocated)?;
     dict.set_item("newest_mtime_ns", roll.newest_mtime_ns)?;
+    payload::scalars(6);
 
     let by_ext = PyDict::new(py);
     for (ext, tally) in &roll.by_ext {
@@ -109,6 +110,8 @@ fn rollup_dict<'py>(py: Python<'py>, roll: &RollUp) -> PyResult<Bound<'py, PyDic
         entry.set_item("bytes", tally.bytes)?;
         entry.set_item("allocated", tally.allocated)?;
         by_ext.set_item(ext, entry)?;
+        payload::text(ext.len());
+        payload::scalars(3);
     }
     dict.set_item("by_extension", by_ext)?;
 
@@ -119,6 +122,8 @@ fn rollup_dict<'py>(py: Python<'py>, roll: &RollUp) -> PyResult<Bound<'py, PyDic
         entry.set_item("bytes", tally.bytes)?;
         entry.set_item("allocated", tally.allocated)?;
         by_group.set_item(group, entry)?;
+        payload::text(group.len());
+        payload::scalars(3);
     }
     dict.set_item("by_group", by_group)?;
     dict.set_item("extension_remainder", ext_remainder_dict(py, roll.ext_remainder)?)?;
@@ -138,6 +143,7 @@ fn ext_remainder_dict(
     value.set_item("files", remainder.files)?;
     value.set_item("bytes", remainder.bytes)?;
     value.set_item("allocated", remainder.allocated)?;
+    payload::scalars(6);
     Ok(Some(value))
 }
 
@@ -284,6 +290,12 @@ fn child_list<'py>(
         entry.set_item("provenance", provenance_dict(py, child.provenance)?)?;
         entry.set_item("extension", child.extension.as_deref())?;
         entry.set_item("tags", child.tags.as_slice())?;
+        payload::text(child.name.as_os_str().len());
+        payload::text(entry_kind_label(child.kind).len());
+        payload::text(child.extension.as_deref().map_or(0, str::len));
+        for tag in &child.tags {
+            payload::text(tag.len());
+        }
         entry.set_item(
             "classification",
             row_classification_dict(py, child.classification.as_ref(), child.group.as_deref())?,
@@ -297,6 +309,7 @@ fn child_list<'py>(
             entry.set_item("bytes", totals.bytes)?;
             entry.set_item("allocated", totals.allocated)?;
             entry.set_item("newest_mtime_ns", totals.newest_mtime_ns)?;
+            payload::scalars(6);
             // Decided here rather than in the consumer, because deciding it needs the
             // row's provenance as well as its counts: a partial subtree reporting zero
             // means "nothing found yet".
@@ -317,33 +330,57 @@ fn nanos_since(started: std::time::Instant) -> u64 {
     u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX)
 }
 
-/// Bytes this bundle will materialize into Python objects.
+/// What a result copies into Python objects, accumulated as each field crosses.
 ///
-/// An estimate of the copy, not of the objects: path and name bytes, plus a fixed cost per
-/// scalar row, which is what actually crosses the boundary. Counted because no engine-side
-/// counter can see it -- the engine's `name_bytes` is what it *read*, and this is what a
-/// caller *pays* to receive, and the two differ by exactly the conversion this measures.
-fn materialized_bytes(bundle: &fdu_core::ReadBundle) -> u64 {
-    /// Rough bytes per scalar field crossing into a Python object.
-    const PER_SCALAR: u64 = 8;
+/// **The definition**, stated once because a number nobody can reproduce is not evidence:
+/// every string and path *value* contributes its own bytes, and every fixed-width leaf --
+/// an integer, a float, a boolean, or a null -- contributes [`SCALAR_BYTES`]. Dict keys
+/// are excluded: they are a fixed schema rather than payload, identical on every result of
+/// the same shape, and counting them would make the figure grow with the schema instead of
+/// with the answer.
+///
+/// A thread-local rather than a threaded-through parameter, and the reason is the shape of
+/// the alternative: the conversion runs through a dozen nested helpers that other paths
+/// also call, so passing an accumulator would change every signature to serve one caller.
+/// Conversion happens under the GIL and is single-threaded by construction, and `read`
+/// clears before it starts, so the count belongs to exactly one call.
+///
+/// Counted here rather than by measuring the finished bundle. An after-the-fact pass would
+/// be an extra O(output) traversal on the hot boundary, and -- as the first version of this
+/// proved -- it drifts: it counted names and six assumed scalars per row while omitting
+/// tags, classifications, provenance, extension and group tallies, and envelope errors.
+mod payload {
+    use std::cell::Cell;
 
-    let mut bytes = bundle.root.as_os_str().len() as u64;
-    if let Some(page) = &bundle.children {
-        for row in &page.rows {
-            bytes += row.name.len() as u64 + PER_SCALAR * 6;
-        }
-    }
-    bytes += bundle.rollups.iter().flatten().map(rollup_bytes).sum::<u64>();
-    bytes += bundle.total.as_ref().map_or(0, rollup_bytes);
-    if let Some(report) = &bundle.report {
-        bytes += report.name_bytes() + report.row_count() * PER_SCALAR * 6;
-    }
-    bytes
-}
+    /// Bytes charged for one fixed-width leaf.
+    ///
+    /// Eight, because that is what an integer, a float, a boolean or a null costs to carry
+    /// across as a logical field. Not the size of the resulting `PyObject`, which is an
+    /// allocator question rather than a payload one.
+    const SCALAR_BYTES: u64 = 8;
 
-fn rollup_bytes(roll: &fdu_core::RollUp) -> u64 {
-    let keys: u64 = roll.by_ext.keys().chain(roll.by_group.keys()).map(|k| k.len() as u64).sum();
-    keys + 8 * ((roll.by_ext.len() + roll.by_group.len()) as u64 * 3 + 6)
+    thread_local! {
+        static BYTES: Cell<u64> = const { Cell::new(0) };
+    }
+
+    /// Charge one text value by its own length.
+    pub(super) fn text(len: usize) {
+        add(len as u64);
+    }
+
+    /// Charge `count` fixed-width leaves.
+    pub(super) fn scalars(count: u64) {
+        add(count.saturating_mul(SCALAR_BYTES));
+    }
+
+    fn add(bytes: u64) {
+        BYTES.with(|total| total.set(total.get().saturating_add(bytes)));
+    }
+
+    /// Take the running total and reset, so the next call starts from nothing.
+    pub(super) fn take() -> u64 {
+        BYTES.with(|total| total.replace(0))
+    }
 }
 
 fn work_dict(py: Python<'_>, work: fdu_core::Work) -> PyResult<Bound<'_, PyDict>> {
@@ -367,6 +404,7 @@ fn child_page_dict<'py>(
     out.set_item("rows", child_list(py, &page.rows)?)?;
     out.set_item("remainder", child_remainder_dict(py, page.remainder)?)?;
     out.set_item("next", page.next.as_deref())?;
+    payload::text(page.next.as_deref().map_or(0, std::ffi::OsStr::len));
     Ok(out)
 }
 
@@ -385,6 +423,7 @@ fn child_remainder_dict(
     value.set_item("others", rest.others)?;
     value.set_item("bytes", rest.bytes)?;
     value.set_item("allocated", rest.allocated)?;
+    payload::scalars(6);
     Ok(Some(value))
 }
 
@@ -397,6 +436,7 @@ fn scope_dict<'py>(py: Python<'py>, scope: &fdu_core::ScanScope) -> PyResult<Bou
     value.set_item("tag_rules_fingerprint", scope.tag_rules_fingerprint)?;
     value.set_item("type_rules_fingerprint", scope.type_rules_fingerprint)?;
     value.set_item("reducers_fingerprint", scope.reducers_fingerprint)?;
+    payload::scalars(6);
     Ok(value)
 }
 
@@ -415,6 +455,7 @@ fn row_classification_dict<'py>(
     };
     let dict = classification_dict(py, classification)?;
     dict.set_item("group", group)?;
+    payload::text(group.map_or(0, str::len));
     Ok(Some(dict))
 }
 
@@ -433,6 +474,11 @@ fn classification_dict<'py>(
     flags.set_item("vendored", classification.flags.vendored)?;
     flags.set_item("documentation", classification.flags.documentation)?;
     dict.set_item("flags", flags)?;
+    payload::text(classification.file_type.as_str().len());
+    payload::text(classification.family.as_str().len());
+    payload::text(classification.source.as_str().len());
+    payload::text(classification.confidence.as_str().len());
+    payload::scalars(3);
     Ok(dict)
 }
 
@@ -883,8 +929,10 @@ impl PyIndex {
         // Reacquired only for conversion, which is bounded by what the request asked for.
         // What it copies is counted: bytes crossing the binding are a real cost that no
         // engine-side counter can see, and an embedder comparing providers needs it.
+        // Cleared, not merely read at the end: other calls on this thread also weigh what
+        // they convert, and this count must belong to this call alone.
+        let _ = payload::take();
         let converted = std::time::Instant::now();
-        let mut binding_bytes: u64 = 0;
         let out = PyDict::new(py);
         out.set_item("clock", bundle.clock.0)?;
         out.set_item("cursor", cursor_dict(py, bundle.cursor)?)?;
@@ -913,21 +961,35 @@ impl PyIndex {
             "report",
             bundle.report.as_ref().map(|rendered| report_dict(py, rendered)).transpose()?,
         )?;
-        binding_bytes += materialized_bytes(&bundle);
+        payload::text(bundle.root.as_os_str().len());
+        payload::text(source_label(bundle.run.source).len());
+        payload::text(freshness_label(bundle.freshness).len());
+        for error in &bundle.run.errors {
+            payload::text(error.len());
+        }
+        payload::scalars(2);
+
         let work = work_dict(py, bundle.work)?;
-        work.set_item("binding_bytes", binding_bytes)?;
-        work.set_item("conversion_ns", nanos_since(converted))?;
+        // The work record itself is telemetry about the call rather than payload, so it is
+        // built last and not weighed: counting it would make the figure depend on how much
+        // measurement the call did.
+        work.set_item("binding_bytes", payload::take())?;
+        // Stamped after every projection dict is built, including the ones below. The
+        // first version stamped it before them and so excluded part of the same
+        // conversion it claimed to measure.
+        work.set_item("native_ns", bundle.work.wall_ns)?;
         // CPU is absent rather than inferred. Wall minus lock wait is not CPU time on a
         // preemptive system, and reporting it as such would put a number in the record
         // that nothing measured -- in the one field an embedder uses to compare engines.
         work.set_item("cpu_ns", py.None())?;
-        out.set_item("work", work)?;
+        out.set_item("work", work.clone())?;
         let projections = PyDict::new(py);
         projections.set_item("children", work_dict(py, bundle.projections.children)?)?;
         projections.set_item("total", work_dict(py, bundle.projections.total)?)?;
         projections.set_item("rollups", work_dict(py, bundle.projections.rollups)?)?;
         projections.set_item("report", work_dict(py, bundle.projections.report)?)?;
         out.set_item("projections", projections)?;
+        work.set_item("conversion_ns", nanos_since(converted))?;
         Ok(out)
     }
 
@@ -1120,6 +1182,7 @@ fn cursor_dict(py: Python<'_>, cursor: fdu_core::Cursor) -> PyResult<Bound<'_, P
     let out = PyDict::new(py);
     out.set_item("session", cursor.session.0)?;
     out.set_item("clock", cursor.clock.0)?;
+    payload::scalars(2);
     Ok(out)
 }
 
@@ -1345,6 +1408,10 @@ fn provenance_dict(
     value.set_item("observed_at_ns", provenance.observed_at_ns)?;
     value.set_item("status", coverage_label_value(provenance.status))?;
     value.set_item("reason", coverage_reason_label(provenance.status))?;
+    payload::text(value_source_label(provenance.source).len());
+    payload::text(coverage_label_value(provenance.status).len());
+    payload::text(coverage_reason_label(provenance.status).map_or(0, str::len));
+    payload::scalars(1);
     Ok(value)
 }
 
@@ -1439,6 +1506,8 @@ fn report_dict<'py>(py: Python<'py>, report: &Report) -> PyResult<Bound<'py, PyD
                     item.set_item("files", row.files)?;
                     item.set_item("bytes", row.bytes)?;
                     item.set_item("allocated", row.allocated)?;
+                    payload::text(row.extension.len());
+                    payload::scalars(3);
                     list.append(item)?;
                 }
                 entry.set_item("extensions", list)?;
@@ -1454,6 +1523,9 @@ fn report_dict<'py>(py: Python<'py>, report: &Report) -> PyResult<Bound<'py, PyD
                     item.set_item("files", row.files)?;
                     item.set_item("bytes", row.bytes)?;
                     item.set_item("allocated", row.allocated)?;
+                    payload::text(row.id.len());
+                    payload::text(row.label.len());
+                    payload::scalars(3);
                     list.append(item)?;
                 }
                 entry.set_item("groups", list)?;
@@ -1475,6 +1547,13 @@ fn report_dict<'py>(py: Python<'py>, report: &Report) -> PyResult<Bound<'py, PyD
                     item.set_item("mtime_ns", row.mtime_ns)?;
                     item.set_item("tags", row.tags.as_slice())?;
                     item.set_item("extension", row.extension.as_deref())?;
+                    payload::text(row.path.as_os_str().len());
+                    payload::text(entry_kind_label(row.kind).len());
+                    payload::text(row.extension.as_deref().map_or(0, str::len));
+                    for tag in &row.tags {
+                        payload::text(tag.len());
+                    }
+                    payload::scalars(3);
                     item.set_item(
                         "classification",
                         row_classification_dict(
@@ -1612,6 +1691,7 @@ fn summary_dict<'py>(py: Python<'py>, row: &SummaryRow) -> PyResult<Bound<'py, P
     dict.set_item("bytes", row.bytes)?;
     dict.set_item("allocated", row.allocated)?;
     dict.set_item("newest_mtime_ns", row.newest_mtime_ns)?;
+    payload::scalars(6);
     Ok(dict)
 }
 
@@ -1633,6 +1713,7 @@ fn remainder_dict(
     value.set_item("others", remainder.others)?;
     value.set_item("bytes", remainder.bytes)?;
     value.set_item("allocated", remainder.allocated)?;
+    payload::scalars(6);
     Ok(Some(value))
 }
 
@@ -1654,6 +1735,9 @@ fn tree_dict<'py>(py: Python<'py>, root: &TreeNode) -> PyResult<Bound<'py, PyDic
         dict.set_item("truncated", node.truncated())?;
         dict.set_item("remainder", remainder_dict(py, node.remainder)?)?;
         dict.set_item("children", PyList::empty(py))?;
+        payload::text(node.name.len());
+        payload::text(node.path.as_os_str().len());
+        payload::scalars(7);
         Ok(dict)
     }
 

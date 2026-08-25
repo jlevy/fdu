@@ -675,22 +675,37 @@ class Work:
     """
 
     wall_ns: int
-    """Nanoseconds from entering the call to returning, guard wait included."""
+    """Nanoseconds for the whole public call, end to end.
+
+    The figure to compare providers on, and the only one that covers every phase. It
+    decomposes into :attr:`native_ns` (the engine read, with the GIL released),
+    :attr:`conversion_ns` (building the extension's dict), and :attr:`model_ns` (turning
+    that dict into these dataclasses) -- the last two are specific to this binding, so
+    reporting only the native span would understate this path against a provider that has
+    no such phase.
+    """
+
+    native_ns: int = 0
+    """Nanoseconds inside the engine, guard wait included.
+
+    Runs with the GIL released, which is why it is named apart from the phases that do
+    not.
+    """
 
     binding_bytes: int = 0
     """Bytes this result copied into Python objects.
 
-    A cost no engine-side counter can see. ``name_bytes`` is what the engine *read*;
-    this is what a caller *pays* to receive, and the two differ by exactly the conversion
-    that happens after the native read returns.
+    A cost no engine-side counter can see: ``name_bytes`` is what the engine *read*, and
+    this is what a caller *pays* to receive. Counted as each field crosses, by one rule --
+    every string and path value contributes its own bytes, every fixed-width leaf
+    contributes eight, and dict keys are excluded as fixed schema rather than payload.
     """
 
     conversion_ns: int = 0
-    """Nanoseconds spent turning the native result into Python objects.
+    """Nanoseconds building the extension's dict from the native result."""
 
-    Separate from ``wall_ns`` on purpose: the native read runs with the GIL released, and
-    this is the part that does not.
-    """
+    model_ns: int = 0
+    """Nanoseconds turning that dict into these dataclasses."""
 
     cpu_ns: int | None = None
     """CPU nanoseconds, when something measured them; ``None`` when nothing did.
