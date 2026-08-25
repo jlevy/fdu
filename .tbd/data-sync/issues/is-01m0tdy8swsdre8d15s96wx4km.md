@@ -3,9 +3,9 @@ type: is
 id: is-01m0tdy8swsdre8d15s96wx4km
 title: Watch invalidation batches lose required dirty information
 kind: bug
-status: closed
+status: open
 priority: 1
-version: 14
+version: 15
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 labels:
   - pr47-review
@@ -17,49 +17,9 @@ dependencies:
     target: is-01m0prhqd27m471dn47yt973k0
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T17:43:53.915Z
-updated_at: 2026-08-25T03:59:21.610Z
-closed_at: 2026-08-25T03:59:21.609Z
-close_reason: |
-  Shipped, all of it. `make check` green, parity holds.
-
-  WHAT LANDED, over four commits.
-
-  The data-loss bug (`Op::Remove` mapped to `is_directory = false`, so a deleted directory's
-  own cached roll-up was never invalidated and no later event could name it again). The
-  lossless carrier: one `Batch` with `all_dirty`, `reset`, `cursor`, `state`, `issues`,
-  `dirty_queries` and now `work`, replacing a bare list plus mutable side state on `PyWatch`.
-  The async surface: dirty-only batches no longer dropped, the worker joined rather than
-  merely told to stop, the join moved off the loop thread, its own short pull interval so a
-  long caller interval cannot delay a stop, and `WatchTeardownError` when the worker outlives
-  the teardown that returned.
-
-  Then the two review P1s: the batch is `since(resume)` -- a complete journal slice, so
-  another producer's commit is DELIVERED rather than skipped -- and the feed wakes on a
-  journal that moved rather than only on a filesystem event.
-
-  PER-BATCH WORK, the last item. `Batch.work` carries entries and dirs the batch actually
-  touched, rows after the selection, the bytes those rows cost to hold, and a wall time.
-
-  The wall time is the part with a decision in it. The interval is how long a pull may block
-  before returning empty-handed, and folding that into the cost would make an idle tree with a
-  one-minute interval report a minute of work for a batch that did nothing -- the one figure
-  an embedder compares providers on measuring its own patience. `WatchApplyReport.applied_ns`
-  reports the applying separately from the waiting, and the batch adds its own assembly.
-
-  PROVIDER STATE IS DELIBERATELY NOT ON THE BATCH, and this is the one place I did not do
-  what the bead asked. A batch is a delta. The envelope -- coverage, freshness, phase, run
-  facts, typed issues -- is read under the same guard as the rows it describes, and
-  `fdu-91ru` made that atomic. A copy on the batch could only agree with that one or be wrong
-  about it, and it could not be captured atomically with the batch's own cursor without a
-  second guard acquisition, which is the class of defect this epic has been closing. What the
-  batch owes a consumer is *that* state moved, and `Batch.state` carries those transitions
-  with the clock each landed at. The same argument keeps `StateChange::RunFacts` payload-free.
-
-  A TEST THAT DID NOT DISCRIMINATE, caught by mutation. The first version of the work test
-  created the file before the pull, so the event was already waiting and a naive whole-call
-  measurement looked correct -- the mutation passed. A timer now puts the change a second and
-  a half into a three-second interval, and the mutation reports 1.550s against a threshold of
-  0.5s. A test for "X is not Y" has to arrange for Y to be large.
+updated_at: 2026-08-25T05:33:16.810Z
+closed_at: null
+close_reason: null
 resolution: null
 duplicate_of: null
 ---
@@ -114,3 +74,35 @@ EXACT-HEAD REVIEW at PR #47 fad3d2f (2026-08-25; all 19 checks green). The compl
 The carrier remains open for three exact-head gaps. First, Session::next_batch returns None at watch_session.rs:279-281 before consulting since() whenever the filesystem watcher times out. A direct producer commit does not wake that watcher, and the new test at watch_session_integration.rs:345-355 writes b.txt after the direct apply to supply an unrelated wakeup. A refresh/hint commit on an otherwise idle tree is therefore withheld until some later filesystem event. Notify the session on every IndexHandle commit and wait for watcher-or-journal readiness, or perform a bounded journal check without adding a second watcher; test a direct apply alone.
 
 Second, Retagged remains an unbounded Vec<PathBuf> charged as one retained state item, then flattened into unbounded state and synthetic changes even when all_dirty drops dirty_rollups. Use a bounded paths-or-all representation and charge embedded paths against retention. Third, the batch still lacks resulting provider state and per-batch work in the same atomic value.
+
+Reopened: Exact-head review at PR #47 head `7aaaf84` against MetaBrowser #74 at `1e0f9b5`
+found that this adoption gate was closed before the carrier matched the implemented
+consumer contract.
+
+1. **The resulting provider state is still absent.** MetaBrowser `ChangeBatch` requires
+   `cursor`, `version`, and the complete `IndexState` from the same sequence, and the
+   coordinator installs `batch.state` as its authoritative lifecycle, coverage,
+   freshness, source, progress, and issue state. FDU `Batch.state` is only
+   `Vec<CommittedState>` and `Batch.issues` is an interval event; `Index::since()` returns
+   only deltas, cursor, and truncation. Reading afterward with
+   `ReadRequest.expected=batch.cursor` races the next commit and can fail because only the
+   current image is retained. Applying transitions in Python would create the forbidden
+   mirror state. Return an owned terminal envelope from the same guard that captures the
+   journal slice and cursor, then carry it through `Batch` and Python.
+2. **The v1 invalidation feed still crosses entry rows.** The maintained integration
+   spec says the v1 stream carries no entry rows, but `Session::next_batch()` constructs
+   one `Change` per selected op and `PyWatch::__next__()` constructs a Python dictionary
+   for every row before an adapter can discard it. Add a small closed interest mode so
+   the MetaBrowser path derives bounded dirty paths/query kinds and state in Rust without
+   materializing entry rows across the binding.
+3. **Public-boundary batch work is incomplete.** `Batch.work` records native work and
+   name bytes, but the watch conversion path does not count the logical binding payload,
+   conversion time, or Python model construction; `_work()` silently defaults absent
+   `binding_bytes` and `conversion_ns` to zero. Instrument the watch path as the bundled
+   read path is instrumented, during conversion and without a second output traversal.
+   CPU remains exact-or-absent.
+
+Acceptance needs forced concurrent commit/read coverage proving the batch envelope and
+cursor are one boundary, an invalidations-only test proving zero entry rows cross the
+binding, and payload/cost tests for ordinary, state-only, all-dirty, reset, and issue
+batches.
