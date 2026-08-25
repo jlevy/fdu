@@ -5,7 +5,7 @@ title: Watch invalidation batches lose required dirty information
 kind: bug
 status: open
 priority: 1
-version: 10
+version: 11
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 labels:
   - pr47-review
@@ -17,7 +17,7 @@ dependencies:
     target: is-01m0prhqd27m471dn47yt973k0
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T17:43:53.915Z
-updated_at: 2026-08-24T23:51:04.213Z
+updated_at: 2026-08-25T00:52:00.482Z
 closed_at: 2026-08-24T23:31:11.228Z
 close_reason: |
   Shipped. `make check` green, parity holds.
@@ -94,3 +94,9 @@ restoring the on-loop join fails it at 5.01s, exactly the timeout.
 
 STILL OPEN ON THIS BEAD: the batch omits provider state and per-batch work, which the
 observation envelope requires in the same atomic value.
+
+EXACT-HEAD REVIEW at PR #47 715f748 (2026-08-25): the claimed cursor and teardown fixes remain incomplete.
+
+P1 CURSOR LOSS. Session::next_batch (crates/fdu-core/src/watch_session.rs:214-304) constructs applied only from watcher/reconcile sink deliveries and sets Batch.cursor to applied.last().clock. Watcher::apply_next invokes reconciliation, which can flush several batches under separate write guards (watch.rs:336-372; scan.rs:3620-3634). A direct producer commit C can land between watcher deltas A and B; the returned batch carries A/B and cursor B but omits C, so a consumer resuming at B loses C permanently. The new test at watch_session_integration.rs:242-306 checks only carried clocks <= cursor and would also accept that skipped interleaving. Fix the session against its prior delivered cursor: after applying the intent, read IndexHandle::since(previous_cursor) under one guard and build the batch from that complete journal slice and its terminal cursor; journal truncation must yield explicit reset/all-dirty. This is consumer resume state, not a second provider cursor.
+
+P1 TEARDOWN. asyncio cleanup at crates/fdu-py/python/fdu/aio.py:137-161 runs worker.join(timeout=5) off-loop but never checks worker.is_alive(). The worker may be blocked in PyWatch.__next__ -> session.next_batch(self.timeout) (crates/fdu-py/src/lib.rs:1889-1899); WatchOptions.interval can be any positive value. With interval=60 on an idle tree, cancellation returns after the five-second join timeout while the worker remains alive. The interval=0.1 test cannot detect this. Make the native wait interruptible or pull with a short internal timeout and require termination; if a timeout remains, raise a typed teardown failure instead of returning success with a live worker. Provider state and per-batch work also remain the bead's existing open remainder.
