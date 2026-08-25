@@ -1065,6 +1065,21 @@ from emitting millions of provenance-only entry changes into the feed it serves.
   capped index holds depends on the order events arrived, as which files a capped walk
   holds depends on the order it reached them
 
+- [x] A page continuation costs a page rather than a pass (`fdu-91ru`): the first page
+  establishes the selection’s size, and every page after it is handed that answer and
+  seeks straight to its own rows.
+  Measured flat -- 666 entries visited for the first page of a 660-entry fixture, then
+  14 for page two and 14 for page twenty-five -- and the test asserts the flatness
+  rather than a ratio, because a continuation that crossed half the prefix would pass a
+  ratio. The cursor is version-bound beside `expected`, because its counts belong to one
+  image: a continuation replayed against another would report a denominator for a tree
+  that is no longer there, with nothing in the page saying so.
+  A wire format whose cursor is a string should carry the value encoded rather than
+  reduce it to a path -- that is a mapping, not adapter state.
+  Sorted queries still do not page, and cannot with this cursor: a resumable page has to
+  seek in the order it emits, and path order is the only total order the tree already
+  holds. `fdu-t5h2`
+
 - [x] The reference embedder produces the consuming contract’s own scope-digest bytes
   (`fdu-vfyw`, in part): exactly `hidden_allowlist`, `max_depth` and `max_files`,
   compact UTF-8 JSON, bounds required rather than defaulted.

@@ -1388,6 +1388,22 @@ def check_bounded_pages_assemble_into_one_complete_answer() -> None:
         assert continued.entry_page is not None
         assert continued.entry_page.total == page.total, "one denominator across the assembly"
 
+        # The example's catalog page is the same surface, and assembles the same way: the
+        # shape a wire format with a string cursor should carry *encoded* rather than
+        # reduce to a path.
+        example = _load_example("browser_provider.py")
+        pin = index.cursor()
+        assembled: list[Path] = []
+        cursor: fdu.EntryCursor | None = None
+        while True:
+            catalog = example.catalog_page(index, limit=4, after=cursor, pin=pin)
+            assembled.extend(row.path for row in catalog.rows)
+            assert catalog.remaining == catalog.total - len(assembled), catalog
+            if catalog.next is None:
+                break
+            cursor = catalog.next
+        assert assembled == whole, "the example's page assembles the same complete answer"
+
         # And it is a value rather than a path, so a caller cannot hand back half of one.
         try:
             index.read(entries=True, entries_limit=2, entries_after="d0/f0.rs", query=query)

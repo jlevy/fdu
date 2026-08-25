@@ -451,6 +451,53 @@ The integration tests prove the rule holds end to end; only a unit test on the a
 function separates excluding the object from dropping its event, which is the difference
 that matters on a backend reporting the file without invalidating its parent.
 
+### `fdu-91ru` — a continuation that costs a page
+
+The first version of the flat page was bounded and lossless and quadratic, which is a
+combination worth naming because two of the three look like success.
+Every call began at the root, filtered the whole subtree, recomputed the selection-wide
+denominator, and counted every match at or before the cursor — so assembling P pages
+cost P passes over the index.
+The lossless-assembly tests all passed, because losslessness is not the property that
+was broken.
+
+Two costs, and they need different answers:
+
+- **The seek.** A bare path cursor identifies where to resume and gives no way to get
+  there except forward from the top.
+  `seek_after` descends the cursor path instead: at each level it pushes the siblings
+  *after* the component it came through — a range over an ordered map, not a scan that
+  discards what it passes — then the cursor’s own children on top, which is exactly the
+  stack the walk would have left.
+  No entry before the cursor is looked at.
+- **The denominator.** An arbitrary predicate over a tree has no ordered index to count
+  through, so the first page has to walk the selection to learn its size.
+  That one is unavoidable; recomputing it per page is not.
+  `EntryCursor` carries the total, the aggregates and the delivered count forward.
+
+Measured on a 660-entry fixture at limit 5: 666 entries visited for the first page, then
+a flat 14 for every page after it, page 2 and page 25 alike.
+The test asserts flatness rather than a ratio, because flatness *is* the property — a
+continuation that crossed the prefix would cost more with every page, and a ratio
+against the first page would pass for one that crossed half of it.
+
+**The cursor is version-bound, and that is not belt-and-braces beside `expected`.** Its
+counts were established against one image, so replaying it against another would report
+a denominator for a tree that is no longer there — a wrong answer with nothing in the
+page saying so, which is worse than the stale-pin case a caller can already detect.
+
+**What a consuming wire format has to do with it.** A catalog query whose cursor is a
+string should carry this value *encoded*, not reduce it to a path: the path is the half
+that makes every page pay for the whole selection again.
+That is a mapping, not adapter state — no mirror, no retained result set, no second
+cursor.
+
+**What still does not page: sorted queries.** A resumable cursor has to seek in the
+order it emits. Path order is a total order the tree already holds; mtime order is not,
+so “recently changed” remains a bounded *slice* rather than a page.
+`fdu-t5h2` records the two shapes that could fix it and why neither should be built
+without a consumer asking.
+
 ### `fdu-7sou` / `fdu-97dd` — where each scope axis can be kept
 
 Watching used to refuse every narrowed scope, on one rule over three axes.

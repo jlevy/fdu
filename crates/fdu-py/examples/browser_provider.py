@@ -331,9 +331,14 @@ def recent_slice(index: fdu.Index, *, as_of: datetime, limit: int = 20) -> fdu.B
     A **slice**, not a page, and the name is the honest one. `Selection.limit` bounds the
     rows a filtered report returns and the section says how many it withheld, but there is
     no continuation: no cursor to resume from, no `expected` version to pin the next request
-    to, and no exact remaining-row count conserved to a terminal page. A consumer needing
-    the whole answer cannot assemble it from bounded requests, which is what a provider
-    contract requires. Native filtered-tree and catalog paging is open on `fdu-91ru`.
+    to, and no exact remaining-row count conserved to a terminal page.
+
+    Path-ordered queries *do* page -- see `catalog_page` below, which is the shape a
+    catalog maps onto. This one cannot use it, and the reason is the one thing that
+    separates them: "recently changed" is an order, and a resumable page needs its cursor
+    to seek in the order it emits. Path order is a total order the tree already holds;
+    mtime order is not, so a page in it needs either a maintained index over mtime or a
+    cursor that carries the sort key, and neither exists. `fdu-t5h2`.
 
     The earlier draft of this passed `after` and `limit` to `index.read(children_of=...)`
     and called itself a page. Those arguments bound the *child listing*, an unrelated
@@ -355,6 +360,45 @@ def recent_slice(index: fdu.Index, *, as_of: datetime, limit: int = 20) -> fdu.B
                 limit=limit,
             ),
             as_of=as_of,
+        ),
+    )
+
+
+def catalog_page(
+    index: fdu.Index,
+    *,
+    limit: int,
+    after: fdu.EntryCursor | None = None,
+    pin: fdu.Cursor | None = None,
+) -> fdu.EntryPage:
+    """One bounded, resumable page of the whole tree, in path order.
+
+    The shape a catalog query maps onto, and the one a consumer can assemble a complete
+    answer from: page until `next` is `None` and the concatenation is every match, in
+    order, with no repeats and no gaps.
+
+    Two things an adapter should not reinvent. The remainder is exact and paired with the
+    continuation -- zero remaining and a continuation are the same fact, so a consumer
+    checks them against each other rather than trusting one. And the continuation carries
+    what the first page established, which is what keeps an assembly's cost proportional to
+    its pages; a wire format whose cursor is a string should carry this value *encoded*
+    rather than reducing it to a path, because a path is the half that makes every page pay
+    for the whole selection again.
+    """
+
+    return index.read(
+        entries=True,
+        entries_limit=limit,
+        entries_after=after,
+        expected=pin,
+        query=fdu.Query(selection=fdu.Selection(kinds=(fdu.EntryKind.FILE,))),
+    ).entry_page or fdu.EntryPage(
+        rows=(),
+        total=0,
+        remaining=0,
+        next=None,
+        totals=fdu.DirectoryTotals(
+            files=0, dirs=0, others=0, bytes=0, allocated=0, newest_mtime_ns=None
         ),
     )
 
