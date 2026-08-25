@@ -3,9 +3,9 @@ type: is
 id: is-01m0tdy8b6h17fqk7mqge56svh
 title: Complete the coherent read envelope and version-pinned paging
 kind: bug
-status: open
+status: closed
 priority: 1
-version: 19
+version: 21
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 labels:
   - pr47-review
@@ -17,9 +17,9 @@ dependencies:
     target: is-01m0tdy9ceep2byvbtyvwc2vky
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T17:43:53.445Z
-updated_at: 2026-08-25T08:06:11.038Z
-closed_at: null
-close_reason: null
+updated_at: 2026-08-25T10:04:07.063Z
+closed_at: 2026-08-25T10:04:07.063Z
+close_reason: "Native bounded flat-page projections shipped: EntryPageRequest/EntryPage on the bundled read, required positive limit, path cursor, exact remaining paired with next, selection-wide totals, its own projection cost, and the caller's pin honoured. Eight engine tests plus a Python smoke check, mutation-checked twice. Found and fixed a separate defect: tree sections never parsed on the Python surface because the binding omitted TreeNode.kind."
 resolution: null
 duplicate_of: null
 ---
@@ -76,3 +76,56 @@ stays bounded and lossless. Filtered-tree and catalog pages need native version-
 continuations and exact remainders; unbounded FFI, adapter-side mirrors, and false terminal
 pages are all forbidden. This bead is the implementation owner, and it is the item that
 most directly gates the adoption spike.
+
+
+
+SHIPPED (MB74-D4). `EntryPageRequest` / `EntryPage` on `ReadRequest`/`ReadBundle`, and
+`Index.read(entries=True, entries_limit=..., entries_after=...)` on the Python surface.
+
+The invariant a provider contract needs and a truncating limit cannot give: page a pinned
+selection until `next` is `None` and the concatenation is the whole answer, in order, with
+no repeats and no gaps. `remaining` is exact and is zero **exactly** when `next` is `None`
+-- both derived from one count rather than reported independently, because that pairing is
+what a consumer checks to detect a lost suffix.
+
+Three design points, each forced rather than chosen:
+
+**Path order, and a path cursor.** A resumable cursor has to be a value the walk can seek
+past, and only the tree's own key is stable while the set behind it shifts -- the same
+argument `ChildPageRequest::after` already makes against an offset. A page ordered by size
+would need the size *and* the path to break ties and would still repeat a row whose size
+changed between pages.
+
+**Pre-order, one node per stack item.** Pop it, emit it, then push its children on top so
+they are visited before the siblings already waiting below. Pushing a whole directory's
+children and emitting them in the same step is the shape that looks right and is not: it
+emits every child of a directory before descending into any of them, which is
+breadth-per-directory rather than path order, and a cursor that seeks in path order then
+skips whole subtrees. The first implementation did exactly that and four tests caught it.
+
+**Per-entry totals, never per-subtree.** A flat page enumerates every match in its own
+right, so folding a matched directory's roll-up in would count its matched descendants
+twice.
+
+`totals` and `total` describe the selection rather than the page -- the denominator a
+bounded page needs to be honest about itself. Charged as its own projection because a
+page's cost scales with what it *considered*, not what it returned: a narrow selection over
+a wide tree pays that on every page, and folding it into `report` would hide it.
+
+Tests: `crates/fdu-core/tests/entry_paging.rs`, eight cases including assembly at six page
+sizes against the unpaged answer, plus
+`public_smoke.py:check_bounded_pages_assemble_into_one_complete_answer`. Mutation-checked:
+a `remaining` that ignores what the cursor already covered, and a `next` retained when
+nothing remains -- four tests fail on each.
+
+A defect this found, unrelated to paging and worse than it: **`TreeNode` has carried a
+`kind` since `others` arrived, the binding never emitted it, and the Python model requires
+it -- so every tree section the package produced raised `KeyError` on parse.** The tree view
+is the one a browser draws, and nothing caught it because the smoke suite asked for every
+view except that one. Fixed, with
+`public_smoke.py:check_a_tree_report_parses_on_the_python_surface` covering both the
+standalone report and the bundled read.
+
+NOT DONE: no CLI form. A flat page with an opaque cursor is not a shape a one-shot command
+line wants, and the repository's rule is one-directional -- nothing may be reachable *only*
+by flag, and a library-only capability is allowed.
