@@ -3,9 +3,9 @@ type: is
 id: is-01m0vx6yw0f8bddcwggvk2ha0p
 title: "A native walk budget: stop discovery at the cap, and say so"
 kind: task
-status: open
+status: closed
 priority: 1
-version: 8
+version: 10
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 refs:
   - kind: pr
@@ -21,8 +21,8 @@ labels: []
 dependencies: []
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-25T07:30:01.728Z
-updated_at: 2026-08-25T10:45:39.628Z
-closed_at: null
+updated_at: 2026-08-25T13:04:01.063Z
+closed_at: 2026-08-25T13:04:01.063Z
 close_reason: null
 resolution: null
 duplicate_of: null
@@ -63,113 +63,44 @@ over the same tree; and a `--cache only` open under a different cap refuses the 
 
 ## Notes
 
-SHIPPED. `ScanConfig::max_files` / `ScanScope::max_files`, `--max-files`,
-`ScanOptions.max_files`, snapshot format 4.
+The remainder the reviewer kept this open for -- capped refresh and watch
+semantics -- is closed at ce8d78b, together with fdu-7sou, because one mechanism
+answers both.
 
-Three things this turned out to require that the plan did not say:
+The strict discovery cap (1b76062) stays and keeps its own job: scan::Budget
+stops the walk *reading* at the cap, which is what makes a capped scan cheap.
+What it could not do is survive anything after the scan. Reconciliation walks
+from the index and never consulted it, so one refresh turned a bounded inventory
+into an unbounded one while the scan identity went on claiming a cap; and a watch
+was refused outright, which left the cap a scan-only bound.
 
-**The budget cannot ride on `should_descend`.** That looked like the one shared decision
-point both walkers already consult -- and reconciliation consults it too, where a `false`
-for a directory means "out of scope, so remove what the index holds below it". Correct for
-depth and filesystem bounds, which are fixed for the life of an index; catastrophic for a
-bound that flips partway through a walk, which would have deleted subtrees for the crime of
-being discovered late. The budget is asked at the two discovery sites instead, where the
-only consequence of `false` is that a directory is not enqueued.
+The index now keeps the cap itself. upsert_beneath refuses a new file row once
+the root roll-up reaches max_files -- the one place a new row is allocated, and
+the one place the previous state of the path is already in hand. Walk, refresh
+and watch are all bounded by one rule, and validate_for_watch_scope has nothing
+left to refuse.
 
-**Checking only at enqueue time does nothing on a wide tree.** The root holds no files of
-its own, so nothing is charged before all of its children are queued. The check that
-matters is at *take* time, and the first version of this shipped with only the enqueue
-gate and a test that passed because the fixture was deep enough to hide it.
+Directories are not counted: a directory carries no bytes of its own, and
+admitting one keeps the tree navigable to what is there. The refusal and the
+coverage loss ride in one commit (AppliedDelta::of_both) rather than two clocks,
+because a cursor between them would name a moment at which the index had dropped
+an entry and still claimed to cover everything.
 
-**A directory is read whole or not at all.** The cap is checked between directories, never
-inside one: a half-listed directory reports its own tallies as complete, silently, which is
-the one thing a bound must never be. The cost is an overshoot bounded by the directories
-already in flight, and that is the right trade.
+Recorded honestly, because it is a property of the axis rather than of this
+implementation: which files a long-lived capped index holds depends on the order
+events arrived, as which files a capped walk holds depends on the order it
+reached them. No rule bounds the retained set and is history-independent at once.
+Coverage says the set is short, which is the fact a consumer can act on.
 
-Two defects the budget exposed in existing code, both the same shape -- a second copy of
-something the engine already assembles:
+FDU47-C2 asked for one observable rule pinned by a boundary-case fixture. This is
+the rule; the fixture is fdu-kl7r's, and the divergence it has to pin is that the
+consumer's reference walker gives each subtree rewalk a fresh budget, so its
+retained set is bounded per walk rather than in total. One side has to move, and
+this is the side that keeps the bound a bound.
 
-- `PyIndex.status` built its own four-field envelope, so the standalone accessor reported
-  no lifecycle phase and no coverage reason while a bundled read of the same index reported
-  both. Now routed through `Index::engine_state()`.
-- The PyO3 open path rebuilt run facts from `report.errors()` plus the analysis failure,
-  which silently dropped every typed condition that is not a per-path I/O error. A
-  budget-stopped walk reported partial with an empty reason list, because nothing had
-  failed and there was nothing to reconstruct it from. `OpenReport::issues()` is now the
-  one assembler and the binding asks for it.
-
-`Error::ScanScopeMismatch` and `Error::SubtreeOutsideScanScope` now box their `ScanScope`s:
-the added field pushed the variant past clippy's large-Err threshold, and that variant sets
-the size of every `Result` the crate returns.
-
-Tests: `crates/fdu-core/tests/walk_budget.rs`, eight cases, plus
-`public_smoke.py:check_a_file_cap_stops_the_walk_rather_than_the_answer`. The load-bearing
-assertion is on **directories read**, because every softer assertion a capped result invites
--- fewer rows, partial coverage, a typed issue -- passes just as well against a projection
-limit that reads the whole tree and trims the answer.
-
-Mutation-checked, and one mutation *passed* and forced the test to be rewritten: the
-per-worker-budget mutation survived `files_walked < whole tree`, because at a cap of two
-directories the shared bound and the per-worker bound are the same number. The test now
-states the invariant -- `files_walked <= cap + workers * PER_DIR` -- at a cap where the two
-hypotheses give 56 and 80.
-
-Also pinned: a budget-stopped walk is never saved as a warm baseline. It would be a stable
-answer to reread and a wrong one to build on, since a later reconcile against it would treat
-"never discovered" and "since deleted" as the same thing.
-
-NOT DONE, and deliberate: the cap governs discovery. Reconciliation walks from the index and
-does not consult it, so a refresh of a capped index can grow it past the cap. Doing that
-correctly needs a budget seeded from the index's current file count and an additive-only
-rule, and it must never reach the removal branch above. Watching a capped index is refused
-outright for the adjacent reason -- a creation inside an unread subtree would be admitted
-while its siblings stayed missing, assembling a subtree nobody walked one event at a time.
-
-Reopened: Reopened by exact-head adoption review at FDU d19b0ce against MetaBrowser 0577bb1. FDU checks max_files between whole directories and deliberately overshoots (scan.rs:180-196, 401-448), while the shipped Python provider stops before the next retained row once the regular-file count reaches the strict max_files limit (walker.py:412-415, 462-474). MetaBrowser defines max_files as the regular-file discovery limit and Phase 2 requires the same discovery stop. A provider fingerprint cannot identify equivalent scope if the same cap retains different inventories. Preserve FDU performance, but implement a strict externally observable cap or revise both providers and the conformance contract together with an agreement fixture; do not close on partial coverage alone.
-
-
-
-REOPEN ADDRESSED. The finding is right and the fix is a correction to the design, not a
-patch on it.
-
-The between-directories bound was externally observable: a capped walk retained "the cap,
-plus whatever was already in flight", which is a different number on every run, on every
-machine, and at every thread count. The cap is fingerprinted scope, so two indexes claiming
-one scope identity must hold the same inventory -- and that is the argument this side made
-to the consumer about *their* fingerprinted axis, turned back on this implementation.
-
-`Budget::admit(kind)` is now per entry and exact. Files are claimed with `fetch_update`
-rather than `fetch_add`, because the count must never pass the cap even momentarily: two
-workers reading the old value and both adding admit `cap + 1`, which is precisely the "close
-enough" the strictness exists to refuse. Nothing of any kind is retained once the cap is
-spent, so the inventory stops where the file count does rather than continuing to accrete
-directories.
-
-The reasoning the overshoot was built on was sound and its premise was false. It held that a
-half-listed directory would present a short tally as complete, silently. But a walk the cap
-stopped already marks coverage `Partial(Budget)` at the root, and `coverage_at` matches every
-path beneath it -- so every directory in a capped index already reports the reason its
-numbers are short. The objection the overshoot answered did not exist.
-
-The cost is a contended atomic per file, and it is paid only by callers who set a cap: an
-uncapped walk holds no `Budget` at all and touches no atomic, which is every default run and
-every measurement in the ledger.
-
-Tests reworked rather than adjusted: `the_cap_is_exact_and_a_short_directory_says_so` uses a
-cap that deliberately falls mid-directory and asserts the file count is exactly the cap, that
-some directory is therefore short, and that every directory still reports partial coverage
-with the budget reason. `the_cap_is_shared_across_workers` now asserts `== cap` at one and
-four workers, which rules out both a per-worker counter and an unsynchronised shared one.
-The fixture gained a level of nesting, because every top-level directory is seen while
-listing the root -- before a single file is counted -- so a one-level fixture cannot tell
-"refused because the cap was spent" from "admitted because it was seen first".
-
-Added `scan::tests::a_budget_admits_exactly_its_cap_under_contention`, and its doc states
-what it does *not* prove: it does not falsify a load-compare-`fetch_add`, whose window is two
-instructions wide and does not reproduce on any host tried. The `fetch_update` is correct by
-construction rather than by that test, and swapping it for the racier form is a change no
-test here catches. Recorded rather than left to be assumed.
-
-Still deliberate and unchanged: the cap governs discovery. Reconciliation walks from the
-index and does not consult it, so a refresh of a capped index can grow it past the cap.
-Watching a capped index is refused outright.
+Tests: a_refresh_does_not_grow_a_capped_index_past_its_cap and its uncapped
+control in walk_budget.rs; a_capped_index_refuses_a_watched_file_past_its_cap,
+a_deletion_frees_a_slot_the_next_arrival_can_take, and the live
+a_capped_watch_holds_its_cap_against_live_events. Four mutations checked: the
+refusal removed, off by one, directories counted, and the refusal not marking
+coverage.
