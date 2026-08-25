@@ -417,7 +417,6 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
   ✓ A File Cap Bounds the Index, Not Just the Walk
   ✓ A File Cap Bounds the Index, Not Just the Walk
   ✓ A File Cap Bounds the Index, Not Just the Walk
-  ✓ A File Cap Bounds the Index, Not Just the Walk
   ✓ A Missing Root Is a Fatal Filesystem Error
   ✓ Create a Regular File
   ✓ Reject It as the Root

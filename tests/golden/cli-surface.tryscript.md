@@ -552,12 +552,8 @@ live watch alike. Partial coverage is the exit status rather than a silent short
 and every scope flag is now legal with `--watch`.
 
 ```console
-$ mkdir capped
-? 0
-```
-
-```console
-$ sh -c 'printf x > capped/a.txt; printf x > capped/b.txt; printf x > capped/c.txt'
+$ node -e "const fs=require('node:fs'); fs.mkdirSync('capped'); for (const name of ['a','b','c']) fs.writeFileSync('capped/' + name + '.txt', 'x'); console.log('capped fixture prepared')"
+capped fixture prepared
 ? 0
 ```
 

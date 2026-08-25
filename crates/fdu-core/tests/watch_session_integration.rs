@@ -628,10 +628,6 @@ fn a_batch_carries_the_terminal_state_at_its_own_cursor() {
 /// reports -- an empty batch would satisfy the first half and none of the second.
 #[test]
 fn an_invalidations_only_feed_carries_no_rows_and_loses_no_signal() {
-    let dir = tempfile::tempdir().expect("tempdir");
-    fs::create_dir_all(dir.path().join("src")).expect("mkdir");
-    fs::write(dir.path().join("src/seed.rs"), b"fn main() {}").expect("seed");
-
     let config = OpenConfig { policy: CachePolicy::Off, ..OpenConfig::default() };
     let query = Query {
         selection: Selection::default(),
@@ -639,49 +635,53 @@ fn an_invalidations_only_feed_carries_no_rows_and_loses_no_signal() {
         ..Query::default()
     };
 
-    let mut sessions: Vec<Session> = Vec::new();
+    // Driven to the same *state* rather than to the first batch that happens to be dirty.
+    // Attaching a watch can commit a lifecycle transition of its own, so "the first dirty
+    // batch" is a different interval in each session depending on scheduling -- which is
+    // how the row-carrying half came to be compared against a state-only batch and failed
+    // on macOS. Both feeds are folded from open to the instant the write is applied, which
+    // is one interval by construction.
+    let mut folded: Vec<Folded> = Vec::new();
     for interest in [fdu_core::Interest::Rows, fdu_core::Interest::Invalidations] {
+        // A tree each, seeded identically. Sharing one would let the second session's
+        // opening scan find the write the first session watched arrive, so the two feeds
+        // would cover different spans -- which is the defect this restructure fixes, one
+        // level up.
+        let dir = tempfile::tempdir().expect("tempdir");
+        fs::create_dir_all(dir.path().join("src")).expect("mkdir");
+        fs::write(dir.path().join("src/seed.rs"), b"fn main() {}").expect("seed");
+
         let (index, _) = open(dir.path(), &config).expect("open");
-        sessions.push(
-            Session::new(
-                IndexHandle::new(index),
-                ScanConfig::default(),
-                query.clone(),
-                WatchConfig::default(),
-            )
-            .expect("session")
-            .with_interest(interest),
-        );
-    }
+        let handle = IndexHandle::new(index);
+        let mut session = Session::new(
+            handle.clone(),
+            ScanConfig::default(),
+            query.clone(),
+            WatchConfig::default(),
+        )
+        .expect("session")
+        .with_interest(interest);
 
-    fs::write(dir.path().join("src/added.rs"), b"fn other() {}").expect("write");
+        fs::write(dir.path().join("src/added.rs"), b"fn other() {}").expect("write");
 
-    let mut carried: Vec<fdu_core::Batch> = Vec::new();
-    for session in &mut sessions {
         let deadline = Instant::now() + SETTLE;
-        let mut found = None;
-        while Instant::now() < deadline && found.is_none() {
-            let Some(batch) = session.next_batch(Duration::from_millis(100)).expect("batch") else {
-                continue;
-            };
-            if batch.dirty {
-                found = Some(batch);
+        let mut fold = Folded::default();
+        while Instant::now() < deadline && !holds(&handle, "src/added.rs") {
+            if let Some(batch) = session.next_batch(Duration::from_millis(100)).expect("batch") {
+                fold.absorb(&batch);
             }
         }
-        carried.push(found.expect("a write should produce a dirty batch"));
+        assert!(holds(&handle, "src/added.rs"), "the write must reach the index in {SETTLE:?}");
+        folded.push(fold);
     }
-    let (rows, invalidations) = (&carried[0], &carried[1]);
+    let (rows, invalidations) = (&folded[0], &folded[1]);
 
-    assert!(!rows.changes.is_empty(), "the row-carrying mode carries rows");
-    assert!(
-        invalidations.changes.is_empty(),
-        "and the other builds none at all: {:?}",
-        invalidations.changes
-    );
-    assert_eq!(invalidations.work.rows, 0, "which is measured, not merely unreported");
-    assert_eq!(invalidations.work.name_bytes, 0);
+    assert!(rows.changes > 0, "the row-carrying mode carries rows");
+    assert_eq!(invalidations.changes, 0, "and the other builds none at all");
+    assert_eq!(invalidations.rows, 0, "which is measured, not merely unreported");
+    assert_eq!(invalidations.name_bytes, 0);
 
-    // Everything a consumer acts on survives. An empty batch would pass the two assertions
+    // Everything a consumer acts on survives. An empty feed would pass the two assertions
     // above and fail every one of these.
     assert!(invalidations.dirty, "it still says something moved");
     assert_eq!(invalidations.dirty_rollups, rows.dirty_rollups, "and which roll-ups to discard");
@@ -689,11 +689,45 @@ fn an_invalidations_only_feed_carries_no_rows_and_loses_no_signal() {
     assert_eq!(invalidations.all_dirty, rows.all_dirty);
     assert_eq!(invalidations.reset, rows.reset);
     assert!(invalidations.cursor.is_some(), "and where to resume from");
-    assert_eq!(
-        invalidations.state.freshness, rows.state.freshness,
-        "and how far to trust what it kept"
-    );
-    assert!(invalidations.work.wall_ns > 0, "the mode still charges its own assembly");
+    assert_eq!(invalidations.freshness, rows.freshness, "and how far to trust what it kept");
+    assert!(invalidations.wall_ns > 0, "the mode still charges its own assembly");
+}
+
+/// One feed's whole interval, so two modes are compared over the same span of time.
+///
+/// Per batch, either mode may split one write across several; the question is whether the
+/// invalidations feed loses a *signal*, not whether it batches identically.
+#[derive(Default)]
+struct Folded {
+    changes: usize,
+    rows: u64,
+    name_bytes: u64,
+    wall_ns: u64,
+    dirty: bool,
+    all_dirty: bool,
+    reset: bool,
+    cursor: Option<fdu_core::Cursor>,
+    dirty_rollups: std::collections::BTreeSet<std::path::PathBuf>,
+    dirty_queries: std::collections::BTreeSet<String>,
+    freshness: Option<fdu_core::Freshness>,
+}
+
+impl Folded {
+    fn absorb(&mut self, batch: &fdu_core::Batch) {
+        self.changes += batch.changes.len();
+        self.rows += batch.work.rows;
+        self.name_bytes += batch.work.name_bytes;
+        self.wall_ns += batch.work.wall_ns;
+        self.dirty |= batch.dirty;
+        self.all_dirty |= batch.all_dirty;
+        self.reset |= batch.reset;
+        self.cursor = batch.cursor.or(self.cursor);
+        self.dirty_rollups.extend(batch.dirty_rollups.iter().cloned());
+        self.dirty_queries.extend(batch.dirty_queries.iter().map(|kind| format!("{kind:?}")));
+        // The terminal state of the last batch that carried one, which is the state at the
+        // end of the interval -- the same question `Batch::state` answers per batch.
+        self.freshness = Some(batch.state.freshness);
+    }
 }
 
 /// A socket created under a live watch does not enter an index whose scope excludes them.
@@ -716,10 +750,9 @@ fn a_socket_created_under_a_pruning_watch_never_enters_the_index() {
     // event too: one backend, one queue, and this is behind it.
     fs::write(dir.path().join("after.rs"), b"fn main() {}").expect("create");
 
-    wait_for(&mut session, |change| change.path.ends_with("after.rs"))
-        .expect("the ordinary file should arrive");
+    assert!(wait_until(&mut session, &handle, |held| holds(held, "after.rs")));
+    settle(&mut session);
     assert!(!holds(&handle, "sock"), "a socket is outside this scope however it arrives");
-    assert!(holds(&handle, "after.rs"), "and nothing else was dropped with it");
 }
 
 /// A file replaced in place by a socket loses its row, under a live watch too.
@@ -743,8 +776,8 @@ fn a_watched_file_replaced_by_a_socket_loses_the_row_it_had() {
     };
     fs::write(dir.path().join("after.rs"), b"fn main() {}").expect("create");
 
-    wait_for(&mut session, |change| change.path.ends_with("after.rs"))
-        .expect("the ordinary file should arrive");
+    assert!(wait_until(&mut session, &handle, |held| holds(held, "after.rs")));
+    settle(&mut session);
     assert!(!holds(&handle, "doomed.txt"), "the row outlived the file it described");
 }
 
@@ -776,8 +809,8 @@ fn a_socket_renamed_over_a_watched_file_removes_the_row() {
     }
     fs::write(dir.path().join("after.rs"), b"fn main() {}").expect("create");
 
-    wait_for(&mut session, |change| change.path.ends_with("after.rs"))
-        .expect("the ordinary file should arrive");
+    assert!(wait_until(&mut session, &handle, |held| holds(held, "after.rs")));
+    settle(&mut session);
     assert!(!holds(&handle, "doomed.txt"), "the row outlived the file it described");
 }
 
@@ -796,9 +829,50 @@ fn a_socket_created_under_a_default_watch_is_recorded() {
     };
     fs::write(dir.path().join("after.rs"), b"fn main() {}").expect("create");
 
-    wait_for(&mut session, |change| change.path.ends_with("after.rs"))
-        .expect("the ordinary file should arrive");
-    assert!(holds(&handle, "sock"), "nothing excludes it, so the watcher's row stands");
+    assert!(
+        wait_until(&mut session, &handle, |held| holds(held, "sock")),
+        "nothing excludes it, so the watcher's row stands"
+    );
+}
+
+/// Drain batches until the index satisfies `settled`, or the window expires.
+///
+/// The index rather than the change stream, and that is the point. Waiting for some
+/// *other* path's change and then asserting about this one assumes the backend delivers in
+/// the order the writes happened, which `FSEvents` does not promise: it reports directories
+/// and coalesces, so a file written second can be applied first. Two tests here were
+/// written that way and one of them failed on macOS for exactly that reason.
+fn wait_until(
+    session: &mut Session,
+    handle: &IndexHandle,
+    settled: impl Fn(&IndexHandle) -> bool,
+) -> bool {
+    let deadline = Instant::now() + SETTLE;
+    while Instant::now() < deadline {
+        if settled(handle) {
+            return true;
+        }
+        let _ = session.next_batch(Duration::from_millis(100)).expect("batch");
+    }
+    settled(handle)
+}
+
+/// Drain until the tree goes quiet, so a late event cannot land after an assertion.
+///
+/// The other half of the ordering problem, and the one no amount of waiting can turn into
+/// a positive: a test that something is *absent* cannot wait for its arrival. So it waits
+/// for the run to stop producing, which bounds how much later an event could still come --
+/// and pairs with a positive assertion in the same test, so quiescence-before-anything-
+/// happened cannot pass for quiescence-after.
+fn settle(session: &mut Session) {
+    let deadline = Instant::now() + SETTLE;
+    let mut quiet = 0;
+    while Instant::now() < deadline && quiet < 3 {
+        match session.next_batch(Duration::from_millis(100)).expect("batch") {
+            Some(_) => quiet = 0,
+            None => quiet += 1,
+        }
+    }
 }
 
 /// A session sharing its index with the caller, so the index can be read while it watches.
@@ -845,9 +919,11 @@ fn a_depth_bounded_watch_holds_its_bound_against_live_events() {
     fs::write(dir.path().join("sub/deeper/far.txt"), b"below the bound").expect("write");
     fs::write(dir.path().join("sub/near.txt"), b"inside").expect("write");
 
-    wait_for(&mut session, |change| change.path.ends_with("near.txt"))
-        .expect("the entry inside the bound should arrive");
-    assert!(holds(&handle, "sub/near.txt"), "depth two is inside a bound of two");
+    assert!(
+        wait_until(&mut session, &handle, |held| holds(held, "sub/near.txt")),
+        "depth two is inside a bound of two"
+    );
+    settle(&mut session);
     assert!(
         !holds(&handle, "sub/deeper/far.txt"),
         "and depth three is not, however the event arrived"
@@ -871,8 +947,8 @@ fn a_row_that_moves_below_the_depth_bound_is_removed() {
     fs::rename(dir.path().join("top.txt"), dir.path().join("sub/top.txt")).expect("rename");
     fs::write(dir.path().join("after.rs"), b"fn main() {}").expect("create");
 
-    wait_for(&mut session, |change| change.path.ends_with("after.rs"))
-        .expect("the ordinary file should arrive");
+    assert!(wait_until(&mut session, &handle, |held| holds(held, "after.rs")));
+    settle(&mut session);
     assert!(!holds(&handle, "top.txt"), "the row describes a path that no longer holds it");
     assert!(!holds(&handle, "sub/top.txt"), "and its new path is outside the bound");
 }
@@ -897,8 +973,10 @@ fn a_capped_watch_holds_its_cap_against_live_events() {
     // already in it, and this also proves the batch arrived rather than being lost.
     fs::create_dir(dir.path().join("marker")).expect("mkdir");
 
-    wait_for(&mut session, |change| change.path.ends_with("marker"))
-        .expect("the directory should arrive");
+    assert!(
+        wait_until(&mut session, &handle, |held| holds(held, "marker")),
+        "a directory is not what the cap counts"
+    );
+    settle(&mut session);
     assert!(!holds(&handle, "late.txt"), "the cap is a bound the index keeps, not a walk hint");
-    assert!(holds(&handle, "marker"), "and a directory is not what the cap counts");
 }
