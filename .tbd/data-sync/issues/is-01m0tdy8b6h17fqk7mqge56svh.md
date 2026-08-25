@@ -5,7 +5,7 @@ title: Complete the coherent read envelope and version-pinned paging
 kind: bug
 status: open
 priority: 1
-version: 13
+version: 14
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 labels:
   - pr47-review
@@ -17,7 +17,7 @@ dependencies:
     target: is-01m0tdy9ceep2byvbtyvwc2vky
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T17:43:53.445Z
-updated_at: 2026-08-24T23:34:02.447Z
+updated_at: 2026-08-25T00:59:44.751Z
 closed_at: 2026-08-24T23:31:10.933Z
 close_reason: |
   Shipped. `make check` green.
@@ -74,26 +74,19 @@ At PR 47 head e658915, the core ReadBundle captures clock, scope, freshness, and
 
 ## Notes
 
-REMAINS OPEN at `a3960fb`; I closed it prematurely and have reopened it. What landed is
-the one-guard capture and the expected-version refusal. Three things remain.
+ITEM 2 RESOLVED by fdu-jxs0. `set_run_facts` is now a clocked commit that enters the
+journal, so a cursor names exactly one envelope: the refresh's rows commit, then the
+envelope commits at a distinct clock, and a consumer between them holds a position whose
+envelope is the prior one -- coherent, and it learns of the transition from the feed.
 
-1. THE ENVELOPE IS INCOMPLETE. `ReadBundle.run` carries `complete`, `source`,
-   `scan_started_at`, and untyped string errors. Lifecycle phase, progress, coverage
-   reason, and typed operation issues are absent. The contract wants all of them from one
-   boundary, and strings are not a vocabulary a consumer can branch on.
+Worth recording because it changes what the "narrow fix" can be. Run facts cannot
+literally share the rows' commit on the Python path: analysis runs after reconciliation
+and contributes errors the engine has no view of. Since freshness is `Reconciling` from
+`begin_reconcile` until `finish_reconcile`, the interim window is honestly labelled
+in-flight rather than mislabelled current, which is what item 2 was actually about.
 
-2. REFRESH COMMITS THE ENVELOPE SEPARATELY. It mutates the tree, then calls
-   `set_run_facts` in a second write that advances neither the clock nor the journal. So
-   one cursor can name two different answer envelopes -- exactly the class of defect this
-   bead exists to remove, reintroduced by the fix for it. The general rule is on
-   `fdu-jxs0`: every answer-affecting lifecycle, coverage, freshness, progress or issue
-   transition advances the clock and reaches the change feed at the same atomic boundary
-   as the rows it describes. The narrow fix here is that run facts commit with the apply
-   that produced them.
-
-3. PINNED READS MUST PIN `as_of` TOO. `build_query` resolves relative `modified_since` /
-   `modified_before` against a fresh `SystemTime::now()` on every call. An expected cursor
-   pins tree state, not that cutoff, so a multi-page recency assembly can change membership
-   without the version moving -- a pinned assembly that is not actually pinned. Carry one
-   caller-chosen reference instant through every page of a pinned sequence, and test an
-   age-boundary crossing between pages.
+STILL OPEN: item 1 (lifecycle phase, progress, coverage reason, and typed issues in the
+envelope -- `errors: Vec<String>` is not a vocabulary a consumer can branch on) and item 3
+(`build_query` resolves relative `modified_since`/`modified_before` against a fresh
+`SystemTime::now()` per call, so a version-pinned multi-page recency assembly can change
+membership without the version moving).
