@@ -29,6 +29,7 @@ from ._models import (
     CoverageReason,
     Cursor,
     DirectoryTotals,
+    EntryCursor,
     EntryKind,
     EntryPage,
     EntryRow,
@@ -407,7 +408,7 @@ class Index:
         entries: bool = False,
         entries_of: str | Path | None = None,
         entries_limit: int | None = None,
-        entries_after: str | Path | None = None,
+        entries_after: EntryCursor | None = None,
         entries_depth: int | None = None,
         query: Query | None = None,
         expected: Cursor | None = None,
@@ -475,7 +476,7 @@ class Index:
             entries,
             None if entries_of is None else str(entries_of),
             entries_limit,
-            None if entries_after is None else str(entries_after),
+            None if entries_after is None else _entry_cursor_dict(entries_after),
             entries_depth,
             **report_kwargs,
             expected=(
@@ -690,7 +691,7 @@ def _entry_page(value: dict[str, Any]) -> EntryPage:
         rows=tuple(EntryRow(path=Path(str(item["path"])), entry=_child(item)) for item in rows),
         total=int(value["total"]),
         remaining=int(value["remaining"]),
-        next=None if cursor is None else str(cursor),
+        next=None if cursor is None else _entry_cursor(cursor),
         totals=DirectoryTotals(
             files=int(totals["files"]),
             dirs=int(totals["dirs"]),
@@ -699,6 +700,59 @@ def _entry_page(value: dict[str, Any]) -> EntryPage:
             allocated=int(totals["allocated"]),
             newest_mtime_ns=int(totals["newest_mtime_ns"]) or None,
         ),
+    )
+
+
+def _entry_cursor_dict(value: object) -> dict[str, Any]:
+    """One page continuation, on its way back to the engine.
+
+    Takes `object` rather than the typed value on purpose: the annotation on `read` states
+    what a caller *should* pass, and this is the boundary where one who did not finds out.
+    A type checker would call the check redundant against the annotation, which is exactly
+    the reasoning that lets a `str` through at runtime -- `entries_after` took a path before
+    it took a value, so the mistake this catches has an obvious cause and deserves a
+    sentence rather than a traceback out of an encoder.
+    """
+
+    if not isinstance(value, EntryCursor):
+        raise ValueError(
+            "entries_after takes the page's `next` continuation, not a path: a bare path "
+            "cannot carry the counts the page it continues already established"
+        )
+    cursor = value
+    return {
+        "after": str(cursor.after),
+        "total": cursor.total,
+        "totals": {
+            "files": cursor.totals.files,
+            "dirs": cursor.totals.dirs,
+            "others": cursor.totals.others,
+            "bytes": cursor.totals.bytes,
+            "allocated": cursor.totals.allocated,
+            "newest_mtime_ns": cursor.totals.newest_mtime_ns or 0,
+        },
+        "delivered": cursor.delivered,
+        "version": {"session": cursor.version.session, "clock": cursor.version.clock},
+    }
+
+
+def _entry_cursor(value: dict[str, Any]) -> EntryCursor:
+    """One page continuation, carried across the boundary as a value rather than a path."""
+
+    totals: dict[str, Any] = value["totals"]
+    return EntryCursor(
+        after=Path(str(value["after"])),
+        total=int(value["total"]),
+        totals=DirectoryTotals(
+            files=int(totals["files"]),
+            dirs=int(totals["dirs"]),
+            others=int(totals["others"]),
+            bytes=int(totals["bytes"]),
+            allocated=int(totals["allocated"]),
+            newest_mtime_ns=int(totals["newest_mtime_ns"]) or None,
+        ),
+        delivered=int(value["delivered"]),
+        version=_cursor(value["version"]),
     )
 
 

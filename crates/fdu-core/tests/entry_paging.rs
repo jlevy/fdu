@@ -14,7 +14,9 @@ use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use fdu_core::query::Selection;
-use fdu_core::{CachePolicy, EntryPageRequest, IndexHandle, OpenConfig, ReadRequest, ScanConfig};
+use fdu_core::{
+    CachePolicy, EntryCursor, EntryPageRequest, IndexHandle, OpenConfig, ReadRequest, ScanConfig,
+};
 
 /// Files per directory in the fixture, and directories in it.
 const PER_DIR: usize = 7;
@@ -46,7 +48,7 @@ fn opened(root: &Path) -> IndexHandle {
     IndexHandle::new(index)
 }
 
-fn request(limit: u32, after: Option<PathBuf>, selection: Selection) -> ReadRequest {
+fn request(limit: u32, after: Option<EntryCursor>, selection: Selection) -> ReadRequest {
     ReadRequest {
         entry_page: Some(EntryPageRequest { after, limit, selection, ..Default::default() }),
         ..Default::default()
@@ -279,4 +281,132 @@ fn paging_a_narrow_selection_charges_the_entries_it_examined() {
         page.rows.len()
     );
     assert_eq!(charged.rows, page.rows.len() as u64, "and charges the rows it returned");
+}
+
+/// Page two costs a page, not a pass over everything before it.
+///
+/// The property a provider contract needs beside losslessness, and the one the first
+/// version of this surface did not have: every page restarted at the root, filtered the
+/// whole subtree, and recomputed the selection-wide denominator, so assembling P pages
+/// cost P passes over the index. Bounded and lossless and quadratic is still unusable at
+/// the sizes a catalog is for.
+///
+/// `entries_visited` makes it directly testable, which is why the counter exists. The
+/// assertion is a ratio rather than a constant: the first page pays for the denominator,
+/// and what must not happen is that every page after it pays again.
+#[test]
+fn continuing_an_assembly_costs_a_page_rather_than_a_pass() {
+    let dir = wide_fixture();
+    let handle = opened(dir.path());
+    let selection = Selection::default();
+    let limit = 5;
+
+    let mut wanted = request(limit, None, selection.clone());
+    let pin = handle.cursor().expect("cursor");
+    wanted.expected = Some(pin);
+    let first = handle.read(&wanted).expect("read");
+    let opening = first.projections.entry_page.entries_visited;
+    let page = first.entry_page.expect("page");
+    assert!(page.total > 200, "the fixture has to be big enough to tell the two apart");
+
+    // Deep into the assembly, so a scan-from-the-top would have the whole prefix to cross.
+    let mut cursor = page.next.expect("a continuation");
+    let mut costs = Vec::new();
+    while costs.len() < 20 {
+        let mut wanted = request(limit, Some(cursor.clone()), selection.clone());
+        wanted.expected = Some(pin);
+        let bundle = handle.read(&wanted).expect("read");
+        costs.push(bundle.projections.entry_page.entries_visited);
+        match bundle.entry_page.expect("page").next {
+            Some(next) => cursor = next,
+            None => break,
+        }
+    }
+    assert_eq!(costs.len(), 20, "the fixture must not run out of pages before the telling ones");
+
+    // Flat, which is the property rather than a proxy for it. A continuation that crossed
+    // the prefix would cost more with every page; one that does not costs the same at page
+    // twenty as at page two, whatever the tree's size.
+    let (first_few, last_few) = (costs[0], *costs.last().expect("pages"));
+    assert!(last_few <= first_few * 2, "continuation cost must not grow with position: {costs:?}");
+    assert!(
+        first_few * 4 < opening,
+        "and it must not repeat the opening pass: {first_few} visited against {opening}"
+    );
+}
+
+/// The denominator is established once and carried, not recomputed per page.
+#[test]
+fn every_page_reports_the_denominator_the_first_one_established() {
+    let dir = wide_fixture();
+    let handle = opened(dir.path());
+    let selection = Selection { kinds: vec![fdu_core::EntryKind::File], ..Selection::default() };
+
+    let pin = handle.cursor().expect("cursor");
+    let mut wanted = request(7, None, selection.clone());
+    wanted.expected = Some(pin);
+    let first = handle.read(&wanted).expect("read").entry_page.expect("page");
+    let (total, totals) = (first.total, first.totals);
+
+    let mut cursor = first.next.expect("a continuation");
+    let mut delivered = first.rows.len() as u64;
+    loop {
+        let mut wanted = request(7, Some(cursor.clone()), selection.clone());
+        wanted.expected = Some(pin);
+        let page = handle.read(&wanted).expect("read").entry_page.expect("page");
+        assert_eq!(page.total, total, "one denominator across the assembly");
+        assert_eq!(page.totals, totals, "and one set of aggregates");
+        delivered += page.rows.len() as u64;
+        assert_eq!(page.remaining, total - delivered, "the remainder counts down from it");
+        match page.next {
+            Some(next) => cursor = next,
+            None => break,
+        }
+    }
+    assert_eq!(delivered, total, "and the assembly is still complete");
+}
+
+/// A continuation from another version is refused rather than answered.
+///
+/// The counts inside it were established against one image of the index. Serving it
+/// against another would report a denominator for a tree that is no longer there, which is
+/// worse than the stale-pin case a caller can already detect: nothing in the page would
+/// say so.
+#[test]
+fn a_continuation_from_another_version_is_refused() {
+    let dir = fixture();
+    let handle = opened(dir.path());
+    let page = handle
+        .read(&request(3, None, Selection::default()))
+        .expect("read")
+        .entry_page
+        .expect("page");
+    let cursor = page.next.expect("a continuation");
+
+    std::fs::write(dir.path().join("d0/late.rs"), b"late").expect("write");
+    fdu_core::scan::reconcile_handle(&handle, &ScanConfig::default(), &mut |_| {})
+        .expect("refresh");
+
+    let served = handle.read(&request(3, Some(cursor), Selection::default())).expect("read");
+    assert!(
+        served.entry_page.is_none(),
+        "a continuation carrying counts from another image cannot be answered from this one"
+    );
+}
+
+/// A tree wide and deep enough that a prefix scan and a seek differ by a lot.
+fn wide_fixture() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().expect("temp");
+    let root = dir.path();
+    for outer in 0..12 {
+        for inner in 0..6 {
+            let leaf = root.join(format!("d{outer:02}/s{inner}"));
+            std::fs::create_dir_all(&leaf).expect("mkdir");
+            for file in 0..8 {
+                std::fs::write(leaf.join(format!("f{file}.rs")), vec![b'x'; file + 1])
+                    .expect("write");
+            }
+        }
+    }
+    dir
 }

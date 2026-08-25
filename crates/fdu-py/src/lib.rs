@@ -336,7 +336,28 @@ fn entry_page_dict<'py>(
     out.set_item("rows", rows)?;
     put_scalar(&out, "total", page.total)?;
     put_scalar(&out, "remaining", page.remaining)?;
-    put_text(&out, "next", page.next.as_deref().map(std::path::Path::as_os_str))?;
+    // The continuation, rendered as a value rather than as a path. It carries the counts
+    // this page established so the next one need not re-establish them, which is what
+    // keeps an assembly's cost proportional to its pages rather than to its length.
+    match &page.next {
+        None => out.set_item("next", py.None())?,
+        Some(next) => {
+            let cursor = PyDict::new(py);
+            put_text(&cursor, "after", Some(next.after.as_os_str()))?;
+            put_scalar(&cursor, "total", next.total)?;
+            put_scalar(&cursor, "delivered", next.delivered)?;
+            let carried = PyDict::new(py);
+            put_scalar(&carried, "files", next.totals.files)?;
+            put_scalar(&carried, "dirs", next.totals.dirs)?;
+            put_scalar(&carried, "others", next.totals.others)?;
+            put_scalar(&carried, "bytes", next.totals.bytes)?;
+            put_scalar(&carried, "allocated", next.totals.allocated)?;
+            put_scalar(&carried, "newest_mtime_ns", next.totals.newest_mtime_ns)?;
+            cursor.set_item("totals", carried)?;
+            cursor.set_item("version", cursor_dict(py, next.version)?)?;
+            out.set_item("next", cursor)?;
+        }
+    }
     let totals = PyDict::new(py);
     put_scalar(&totals, "files", page.totals.files)?;
     put_scalar(&totals, "dirs", page.totals.dirs)?;
@@ -997,7 +1018,7 @@ impl PyIndex {
         entries: bool,
         entries_of: Option<PathBuf>,
         entries_limit: Option<u32>,
-        entries_after: Option<PathBuf>,
+        entries_after: Option<Bound<'py, PyAny>>,
         entries_depth: Option<usize>,
         report: bool,
         views: Option<Vec<String>>,
@@ -1093,7 +1114,7 @@ impl PyIndex {
             )?;
             Some(fdu_core::EntryPageRequest {
                 root: entries_of.unwrap_or_default(),
-                after: entries_after,
+                after: entries_after.map(|value| parse_entry_cursor(&value)).transpose()?,
                 // Required rather than defaulted: a page bound a caller did not choose is
                 // a number this surface invented, and every one of them is wrong for
                 // somebody. The engine refuses zero for its own reason.
@@ -1499,6 +1520,54 @@ fn cursor_dict(py: Python<'_>, cursor: fdu_core::Cursor) -> PyResult<Bound<'_, P
     put_scalar(&out, "session", cursor.session.0)?;
     put_scalar(&out, "clock", cursor.clock.0)?;
     Ok(out)
+}
+
+/// Read a page continuation a caller was handed and gave back.
+///
+/// A value rather than a path, because it carries what the first page established: the
+/// selection's size, its aggregates, and how many rows have been delivered. Handing one
+/// back is what keeps the next page's cost proportional to that page; constructing one by
+/// hand is constructing a claim about an answer nobody computed, which is why every field
+/// is required rather than defaulted.
+fn parse_entry_cursor(value: &Bound<'_, PyAny>) -> PyResult<fdu_core::EntryCursor> {
+    let mapping = value.cast::<PyDict>().map_err(|_| {
+        PyValueError::new_err(
+            "entries_after takes the `next` value from a previous page, not a path: a bare \
+             path cannot carry the counts the page it continues already established",
+        )
+    })?;
+    let field = |name: &'static str| -> PyResult<Bound<'_, PyAny>> {
+        mapping
+            .get_item(name)?
+            .ok_or_else(|| PyValueError::new_err(format!("a page continuation needs {name:?}")))
+    };
+    let totals = field("totals")?;
+    let totals = totals.cast::<PyDict>().map_err(|_| {
+        PyValueError::new_err("a page continuation's 'totals' is the mapping the page returned")
+    })?;
+    let tally = |name: &'static str| -> PyResult<u64> {
+        totals
+            .get_item(name)?
+            .ok_or_else(|| PyValueError::new_err(format!("a continuation's totals need {name:?}")))?
+            .extract()
+    };
+    Ok(fdu_core::EntryCursor {
+        after: field("after")?.extract::<PathBuf>()?,
+        total: field("total")?.extract()?,
+        totals: fdu_core::RollUpScalars {
+            files: tally("files")?,
+            dirs: tally("dirs")?,
+            others: tally("others")?,
+            bytes: tally("bytes")?,
+            allocated: tally("allocated")?,
+            newest_mtime_ns: totals
+                .get_item("newest_mtime_ns")?
+                .ok_or_else(|| PyValueError::new_err("a continuation's totals need a mtime"))?
+                .extract()?,
+        },
+        delivered: field("delivered")?.extract()?,
+        version: parse_cursor(&field("version")?)?,
+    })
 }
 
 /// Read a cursor a caller stored and handed back.

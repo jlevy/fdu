@@ -1009,13 +1009,17 @@ pub struct ReadRequest {
 pub struct EntryPageRequest {
     /// Subtree the page is drawn from; empty for the whole tree.
     pub root: PathBuf,
-    /// Resume strictly after this path; `None` starts at the first match.
+    /// Resume from the continuation the previous page returned; `None` starts the answer.
     ///
-    /// A path rather than an offset, for the reason [`ChildPageRequest::after`] gives: an
-    /// offset silently repeats or skips rows when the set shifts underneath it. Rows are
-    /// emitted in path order, which is a total order over a tree, so the cursor is exactly
-    /// the last row emitted and resuming is "the first match strictly greater".
-    pub after: Option<PathBuf>,
+    /// Opaque on purpose. It began as a bare path, which is enough to *identify* where to
+    /// resume and not enough to resume *cheaply*: the denominator a page reports is over
+    /// the whole selection, so recomputing it per page made assembling P pages cost P
+    /// passes over the index. The continuation carries that answer forward instead, so
+    /// only the first page pays for it.
+    ///
+    /// A path rather than an offset inside it, for the reason [`ChildPageRequest::after`]
+    /// gives: an offset silently repeats or skips rows when the set shifts underneath it.
+    pub after: Option<EntryCursor>,
     /// Rows this page may carry. Must be positive.
     ///
     /// Zero is refused for the same reason a zero child page is: it is simultaneously
@@ -1064,6 +1068,37 @@ pub struct EntryRow {
     pub entry: ChildSnapshot,
 }
 
+/// Where one assembly resumes, and what it has already established.
+///
+/// Opaque to a consumer: hand back what the previous page returned. The fields are public
+/// so a Rust caller can inspect them, but constructing one by hand is constructing a claim
+/// about an answer nobody computed.
+///
+/// It exists because a bare path cursor made continuation cost O(index) per page. Every
+/// page reports a denominator over the whole selection -- "40 of 12,000" -- and an
+/// arbitrary predicate over a tree has no ordered index to count through, so the first page
+/// has to walk the selection to learn its size. Recomputing that on every page made
+/// assembling P pages cost P passes; carrying it forward makes the rest of the assembly
+/// cost one bounded seek and one page each.
+///
+/// Version-bound, and that is not belt-and-braces beside [`ReadRequest::expected`]: the
+/// counts inside were computed against one image of the index, so a continuation replayed
+/// against another would report a denominator for a tree that is no longer there. The
+/// engine refuses it whether or not the caller also pinned the request.
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct EntryCursor {
+    /// Last path delivered. The scan resumes strictly after it, in path order.
+    pub after: PathBuf,
+    /// Matches in the whole selection, established by the first page.
+    pub total: u64,
+    /// Scalar totals over every match, established by the first page.
+    pub totals: RollUpScalars,
+    /// Rows delivered before this page, so the remainder needs no recount.
+    pub delivered: u64,
+    /// The index image this assembly is pinned to.
+    pub version: Cursor,
+}
+
 /// A bounded page of matches, and exactly how much of the answer it is not.
 #[derive(Clone, Debug, Default)]
 pub struct EntryPage {
@@ -1079,8 +1114,11 @@ pub struct EntryPage {
     /// with nothing remaining, or a remainder with nowhere to continue, is a lost suffix
     /// that nothing else would reveal.
     pub remaining: u64,
-    /// Cursor for the next page, or `None` on the terminal page.
-    pub next: Option<PathBuf>,
+    /// Continuation for the next page, or `None` on the terminal page.
+    ///
+    /// Hand it back unchanged. It carries the answers this page already paid for, which is
+    /// what keeps the next page's cost proportional to the next page.
+    pub next: Option<EntryCursor>,
     /// Scalar totals over every match, not only this page's rows.
     ///
     /// The denominator a bounded page needs to be honest about itself: "40 of 12,000,
@@ -4069,14 +4107,79 @@ fn push_children(
     depth: usize,
     stack: &mut Vec<(EntryId, PathBuf, usize)>,
 ) {
+    push_children_after(index, id, path, depth, None, stack);
+}
+
+/// Push `id`'s children, optionally only those sorting strictly after one name.
+///
+/// The `after` form is the whole of the seek. Children are held in name order, so
+/// resuming a pre-order walk below a directory is "the siblings past the one we came
+/// through" -- a range over an ordered map rather than a scan that discards what it
+/// passes.
+fn push_children_after(
+    index: &Index,
+    id: EntryId,
+    path: &Path,
+    depth: usize,
+    after: Option<&OsStr>,
+    stack: &mut Vec<(EntryId, PathBuf, usize)>,
+) {
     let Some(children) = index.children_of(id) else {
         return;
     };
-    let children: Vec<(PathBuf, EntryId)> =
-        children.map(|(name, child)| (path.join(name), child)).collect();
+    let children: Vec<(PathBuf, EntryId)> = children
+        .filter(|(name, _)| after.is_none_or(|bound| *name > bound))
+        .map(|(name, child)| (path.join(name), child))
+        .collect();
     for (child_path, child) in children.into_iter().rev() {
         stack.push((child, child_path, depth));
     }
+}
+
+/// Rebuild the traversal stack as it stood just after `after` was emitted.
+///
+/// The alternative -- start at the root and scan forward, discarding every match at or
+/// before the cursor -- is what made page P cost a pass over everything before it. This
+/// costs one descent: at each level of the cursor path, push the siblings that come after
+/// the component we came through, then the cursor's own children on top. No entry before
+/// the cursor is ever looked at.
+///
+/// Returns `None` when the cursor names a path this subtree no longer holds, which is a
+/// caller resuming into a tree that moved. The version pin catches that first; this is the
+/// case where the pin matched and the path is still gone, and the honest answer is to
+/// refuse rather than to silently restart at the top.
+fn seek_after(
+    index: &Index,
+    root_id: EntryId,
+    request: &EntryPageRequest,
+    after: &Path,
+    stack: &mut Vec<(EntryId, PathBuf, usize)>,
+    work: &mut Work,
+) -> Option<()> {
+    let relative = after.strip_prefix(&request.root).ok()?;
+    let parts: Vec<&OsStr> = normalize(relative)?;
+    let mut current = root_id;
+    let mut path = request.root.clone();
+
+    // Top-down, so the deepest frame is pushed last and pops first -- the same order the
+    // walk would have left the stack in.
+    for (level, part) in parts.iter().enumerate() {
+        let depth = level + 1;
+        let child = *index.entry(current).children.get(*part)?;
+        work.visit(index.entry(child).kind);
+        // Siblings after this one, at this level. Below the depth bound there is nothing
+        // to resume into, so nothing is pushed.
+        if request.max_depth.is_none_or(|maximum| depth <= maximum) {
+            push_children_after(index, current, &path, depth, Some(*part), stack);
+        }
+        path.push(part);
+        current = child;
+    }
+    // The cursor's own subtree comes next in pre-order, before any of its siblings.
+    if request.max_depth.is_none_or(|maximum| parts.len() < maximum) {
+        push_children(index, current, &path, parts.len() + 1, stack);
+    }
+    Some(())
 }
 
 /// One bounded, resumable page of the entries a selection admits, in path order.
@@ -4103,7 +4206,6 @@ fn entry_page(index: &Index, request: &EntryPageRequest, work: &mut Work) -> Opt
     }
 
     let mut page = EntryPage::default();
-    let mut seen_after_cursor: u64 = 0;
     // Pre-order, one node per stack item: pop it, emit it, then push *its* children on
     // top, so they are visited before the siblings already waiting below. Pushing a whole
     // directory's children and emitting them in the same step is the shape that looks
@@ -4113,11 +4215,40 @@ fn entry_page(index: &Index, request: &EntryPageRequest, work: &mut Work) -> Opt
     //
     // Depth-first over name-ordered children *is* lexicographic path order, because the
     // separator sorts below every character a name may begin with -- so `d0/f0.rs`
-    // precedes `d0z.rs`, and "the first match strictly greater than the cursor" is a
-    // single forward scan.
+    // precedes `d0z.rs`, and one forward scan visits the matches in cursor order.
     let mut stack: Vec<(EntryId, PathBuf, usize)> = Vec::new();
-    push_children(index, root_id, &request.root, 1, &mut stack);
+
+    // Two shapes, and the difference is what the page has left to learn.
+    //
+    // The first page has to establish the denominator, and for an arbitrary predicate over
+    // a tree there is no ordered index to count through: it walks the whole selection. Every
+    // page after it is handed that answer, so it stops as soon as it has its rows -- and
+    // reaches them through a seek that never looks at an entry before the cursor. That is
+    // the difference between assembling P pages in P passes and in one pass plus P pages.
+    let (counting, mut delivered) = if let Some(cursor) = &request.after {
+        if cursor.version != index.cursor() {
+            // The counts inside were established against a different image. Refusing
+            // is the only honest answer: recomputing them would silently change the
+            // denominator mid-assembly, and reusing them would report a total for a
+            // tree that is no longer there.
+            return None;
+        }
+        seek_after(index, root_id, request, &cursor.after, &mut stack, work)?;
+        page.total = cursor.total;
+        page.totals = cursor.totals;
+        (false, cursor.delivered)
+    } else {
+        push_children(index, root_id, &request.root, 1, &mut stack);
+        (true, 0)
+    };
+
     while let Some((id, path, depth)) = stack.pop() {
+        if !counting && page.rows.len() >= request.limit as usize {
+            // Nothing left to learn from the rest of the subtree: the denominator arrived
+            // with the cursor, so walking on would cost the whole selection to confirm a
+            // number this page was already given.
+            break;
+        }
         let (Some(kind), Some(attrs)) = (index.kind_of(id), index.attrs_of(id)) else {
             continue;
         };
@@ -4143,46 +4274,52 @@ fn entry_page(index: &Index, request: &EntryPageRequest, work: &mut Work) -> Opt
             continue;
         }
 
-        page.total += 1;
-        // Per entry, never per subtree. A flat page enumerates every match in its own
-        // right, so folding a matched directory's roll-up in would count its matched
-        // descendants twice -- once as themselves and once inside their ancestor.
-        match kind {
-            EntryKind::File => {
-                page.totals.files += 1;
-                page.totals.bytes += attrs.size;
-                page.totals.allocated += attrs.allocated;
-                page.totals.newest_mtime_ns = page.totals.newest_mtime_ns.max(attrs.mtime_ns);
+        if counting {
+            page.total += 1;
+            // Per entry, never per subtree. A flat page enumerates every match in its own
+            // right, so folding a matched directory's roll-up in would count its matched
+            // descendants twice -- once as themselves and once inside their ancestor.
+            match kind {
+                EntryKind::File => {
+                    page.totals.files += 1;
+                    page.totals.bytes += attrs.size;
+                    page.totals.allocated += attrs.allocated;
+                    page.totals.newest_mtime_ns = page.totals.newest_mtime_ns.max(attrs.mtime_ns);
+                }
+                EntryKind::Dir => page.totals.dirs += 1,
+                EntryKind::Symlink | EntryKind::Other => page.totals.others += 1,
             }
-            EntryKind::Dir => page.totals.dirs += 1,
-            EntryKind::Symlink | EntryKind::Other => page.totals.others += 1,
-        }
-        // The cursor is exclusive, and it is compared against every match rather than
-        // seeked to: a tree has no ordered index over paths to seek in, so the scan is the
-        // seek. Counting the skipped matches here is what makes `remaining` exact without
-        // a second pass.
-        if request.after.as_ref().is_some_and(|after| path <= *after) {
-            seen_after_cursor += 1;
-            continue;
         }
         if page.rows.len() < request.limit as usize {
             let entry = child_snapshot(index, file_name, id, request.plane);
             work.visit(entry.kind);
             work.rows += 1;
             work.name_bytes += path.as_os_str().as_encoded_bytes().len() as u64;
-            page.next = Some(path.clone());
+            page.next = Some(EntryCursor {
+                after: path.clone(),
+                total: 0,
+                totals: RollUpScalars::default(),
+                delivered: 0,
+                version: index.cursor(),
+            });
             page.rows.push(EntryRow { path, entry });
         }
     }
 
     // Derived from one count, so the two cannot disagree: everything matched, minus what
-    // the cursor already covered, minus what this page carries.
-    page.remaining =
-        page.total.saturating_sub(seen_after_cursor).saturating_sub(page.rows.len() as u64);
+    // earlier pages carried, minus what this one carries.
+    delivered = delivered.saturating_add(page.rows.len() as u64);
+    page.remaining = page.total.saturating_sub(delivered);
     if page.remaining == 0 {
         // Terminal. The last row's path is still a valid cursor, but handing one back
         // beside a zero remainder is the shape a consumer reads as "there is more".
         page.next = None;
+    } else if let Some(next) = &mut page.next {
+        // Filled in here rather than per row: the totals are only final once the counting
+        // pass has finished, and a cursor is only worth building for the row it ends on.
+        next.total = page.total;
+        next.totals = page.totals;
+        next.delivered = delivered;
     }
     Some(page)
 }

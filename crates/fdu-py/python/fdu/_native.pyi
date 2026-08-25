@@ -48,7 +48,7 @@ class Index:
         entries: bool = False,
         entries_of: str | PathLike[str] | None = None,
         entries_limit: int | None = None,
-        entries_after: str | PathLike[str] | None = None,
+        entries_after: dict[str, Any] | None = None,
         entries_depth: int | None = None,
         report: bool = False,
         views: list[str] | None = None,

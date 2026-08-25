@@ -1312,7 +1312,7 @@ def check_bounded_pages_assemble_into_one_complete_answer() -> None:
 
         def assemble(limit: int) -> list[Path]:
             collected: list[Path] = []
-            after: str | None = None
+            after: fdu.EntryCursor | None = None
             pin = index.cursor()
             while True:
                 page = index.read(
@@ -1369,6 +1369,32 @@ def check_bounded_pages_assemble_into_one_complete_answer() -> None:
         narrow = fdu.Query(selection=fdu.Selection(include=("f0.rs",)))
         bundle = index.read(entries=True, entries_limit=2, query=narrow)
         assert bundle.projections.entry_page.entries_visited > 2, bundle.projections.entry_page
+
+        # But only the *first* page pays for the denominator. A continuation is handed that
+        # answer and seeks straight to its own rows, so an assembly costs one pass plus its
+        # pages rather than one pass per page -- which is what a catalog assembled from
+        # bounded requests needs, and what a bare path cursor could not give.
+        opening = index.read(entries=True, entries_limit=2, query=query)
+        page = opening.entry_page
+        assert page is not None and page.next is not None
+        continued = index.read(entries=True, entries_limit=2, entries_after=page.next, query=query)
+        assert (
+            continued.projections.entry_page.entries_visited
+            < opening.projections.entry_page.entries_visited
+        ), (
+            "a continuation must not repeat the opening pass: "
+            f"{continued.projections.entry_page} against {opening.projections.entry_page}"
+        )
+        assert continued.entry_page is not None
+        assert continued.entry_page.total == page.total, "one denominator across the assembly"
+
+        # And it is a value rather than a path, so a caller cannot hand back half of one.
+        try:
+            index.read(entries=True, entries_limit=2, entries_after="d0/f0.rs", query=query)
+        except ValueError as error:
+            assert "continuation" in str(error) or "path" in str(error), error
+        else:  # pragma: no cover - the guard above is the point
+            raise AssertionError("a bare path carries none of what a continuation carries")
 
 
 def _bundled_report(bundle: fdu.Bundle) -> fdu.Report:
