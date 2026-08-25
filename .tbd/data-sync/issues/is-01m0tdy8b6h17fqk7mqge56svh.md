@@ -3,9 +3,9 @@ type: is
 id: is-01m0tdy8b6h17fqk7mqge56svh
 title: Complete the coherent read envelope and version-pinned paging
 kind: bug
-status: open
+status: closed
 priority: 1
-version: 14
+version: 15
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 labels:
   - pr47-review
@@ -17,56 +17,72 @@ dependencies:
     target: is-01m0tdy9ceep2byvbtyvwc2vky
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T17:43:53.445Z
-updated_at: 2026-08-25T00:59:44.751Z
-closed_at: 2026-08-24T23:31:10.933Z
+updated_at: 2026-08-25T02:27:18.590Z
+closed_at: 2026-08-25T02:27:18.589Z
 close_reason: |
-  Shipped. `make check` green.
+  Shipped. `make check` green, parity holds (23 recorded deviations matched).
 
-  THE DEFECT, verified. `PyIndex.read` sampled `RunState` under its own mutex *before* the
-  engine bundle, and the comment there argued the report and the bundle would agree with
-  each other -- true, and beside the point. Both could disagree with the engine image
-  captured after. `build_report` and `status_dict` did the same thing, so three read paths
-  each paired one instant's rows with another instant's claim about how far to trust them,
-  both halves individually true.
+  All three remaining items from the reopen at a3960fb.
 
-  THE FIX, and it is a placement rather than a mechanism. `RunFacts { scan_started_at,
-  source, complete, errors }` moved from beside the index into it, under the same
-  `RwLock` as the tree. `IndexHandle::read` returns them in the bundle;
-  `ReportRequest.provenance` is gone, replaced by a bare `generated_at` -- the one run fact
-  that genuinely belongs to a rendering rather than to an index. `RunFacts::provenance()`
-  builds the envelope from inside the guard. The binding's `RunState` is down to
-  `telemetry`, which is about the call rather than about the index and correctly stays.
+  ITEM 2 was resolved by `fdu-jxs0` rather than here: `set_run_facts` is a clocked commit
+  that enters the journal, so one cursor names exactly one envelope. Recorded in this bead's
+  notes at the time, with the reason the "narrow fix" could not be literal -- analysis runs
+  above the engine and contributes issues after reconciliation, so the envelope necessarily
+  commits after the rows. What made that safe is that the interim window is honestly labelled
+  `Reconciling` rather than silently current.
 
-  `open_for_report` records the facts on all three paths through one `record_run` helper, so
-  they cannot disagree about what they claim; cache-only records a default `ScanReport`,
-  because a tier that walks nothing has nothing that could have failed. `refresh` pushes its
-  own -- including analysis failures, which the engine has no view of -- through the new
-  `IndexHandle::set_run_facts`. `status_dict` now takes freshness under the same guard too:
-  a status envelope assembled from four instants was exactly the thing it described itself
-  as not being.
+  ITEM 3, `as_of`. `build_query` resolved relative bounds against a fresh `SystemTime::now()`
+  per call, so an expected cursor pinned the tree and not the cutoff: a version-pinned
+  assembly changed membership while its version stood still, and nothing reported it because
+  the version genuinely had not moved. `Query.as_of` is the reference instant a caller carries
+  across the pages of one answer; absent, it is now, which is right for a one-shot. Test: a
+  file half a second inside a one-second window, the wall clock crossing the boundary, and the
+  same question asked again -- unpinned it falls out, pinned it stays, including through a
+  real `read(expected=...)` page two so the two pins are shown to compose. Mutation-checked.
 
-  PINNING. `ReadRequest.expected: Option<Cursor>`, checked under the guard before any
-  projection runs, returning `Error::VersionUnavailable { requested, current }`. Retaining
-  only the current image *is* the retention policy, so an aged-out pin failing is the
-  designed answer: the caller restarts a bounded assembly, which is cheap, rather than the
-  engine holding history, which is not. `ReadBundle` also carries `cursor` beside `clock`,
-  so one value serves the cache key, the next replay, and the next page's pin.
+  ITEM 1, THE ENVELOPE. Three parts.
 
-  TESTS.
-  - `a_pinned_read_refuses_a_version_the_index_has_moved_past`: a pin at the current version
-    reads; after a write the same pin fails; unpinned, the same request reads the new tree.
-  - `an_empty_read_is_a_checkpoint_that_visits_nothing`: zero entries and dirs visited, no
-    projections, and the envelope still present -- the constant-work form the provider
-    contract requires, checked rather than asserted.
-  - `the_run_envelope_arrives_with_the_rows_it_describes`: source, completeness and errors
-    come back from the same read as the totals.
-  - Python: a successful pin before the tree moves, a refused one after, and a checkpoint
-    read asserting `work.entries_visited == 0`.
+  Typed issues. `RunFacts.errors: Vec<String>` -> `Vec<Issue>`, where `Issue` carries an
+  `IssueKind`, the path, the rendered message, and the OS error number. The kind is what a
+  consumer branches on -- retry, prompt for access, drop a subtree -- and reading that out of
+  prose makes the decision depend on the wording. I/O failures are classified by the operating
+  system's own error kind, because that is the only place the distinction lives: a permission
+  failure and a vanished path arrive through the same `Error::Io` variant.
 
-  NOTE FOR fdu-hfdw. The checkpoint test asserts zero visits, which is currently true partly
-  because the report projection charges none. When `fdu-hfdw` threads a visit sink through
-  `query::report`, that test keeps its meaning and gains teeth: an empty request must still
-  visit nothing once a filtered report starts charging honestly.
+  The binding's own `ErrorDetail` is gone. It had three coarse kinds and existed only in the
+  Python surface, so the CLI and a library consumer saw different vocabularies for the same
+  condition. One vocabulary, in the engine, shared by every surface. `Provenance.errors` stays
+  rendered strings: a report is text, and goldens are unmoved by this.
+
+  Coverage reason. `ReadBundle.coverage: Status` beside `freshness`. `complete` says *that* an
+  answer is partial; this says why, which is the half a consumer can act on.
+
+  Lifecycle phase. `Phase` declared whole, following the `CoverageReason` precedent, with
+  three members reachable today -- `Ready`, `Reconciling`, `Watching` -- and four documented
+  as needing the session (`fdu-4o0m`). Derived rather than stored, since each part is already
+  a fact the index holds; a sweep in flight outranks an attached watch, because the fact a
+  consumer must act on is that the answers are moving under it.
+
+  `Watching` needed the index to know a watch exists: a counter, attached by `Session::new`
+  after the watcher binds (a session that failed to start never claimed to watch) and given
+  back in `Drop`. That transition commits, per `fdu-jxs0` -- it changes what a read answers.
+  `StateChange::Phase` is emitted only where the phase is a fact of its own: a sweep already
+  commits a `Freshness` transition and the phase derives from it, so emitting both would
+  report one fact twice and let a consumer see them disagree.
+
+  Test: `check_the_envelope_is_typed_and_its_facts_are_independent` pins that a watch
+  attaching moves the phase and *nothing else* -- coverage and freshness are exactly what they
+  were -- that the transition reaches the change feed, and that dropping the watch puts the
+  phase back, so the state is a fact rather than a latch. Mutation-checked both ways: never
+  attaching fails it, and never detaching fails it.
+
+  NOT DONE, and deliberately: progress. Entries-applied-so-far is only meaningful while a walk
+  is publishing, which is `fdu-4o0m`. A progress field that could only ever report a finished
+  run would lie by implication.
+
+  A PROCESS NOTE. I reverted this file's uncommitted work with `git checkout` while undoing a
+  mutation check, and had to redo it. Mutation checks restore from a scratch copy of the file;
+  `git checkout` restores from HEAD, which is everything since the last commit.
 resolution: null
 duplicate_of: null
 ---
