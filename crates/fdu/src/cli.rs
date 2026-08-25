@@ -326,6 +326,16 @@ pub struct Cli {
     #[arg(long, value_name = "N", help_heading = "SCOPE")]
     pub scan_depth: Option<usize>,
 
+    /// Stop descending once N files have been observed.
+    ///
+    /// Scope, not a display limit: the walk stops reading, so the entries beyond the cap
+    /// are absent from the index rather than withheld from the output. Coverage becomes
+    /// partial and says `budget`. Checked between directories, so the count can overshoot
+    /// by the entries of the directories already being read -- a directory is listed whole
+    /// or not at all.
+    #[arg(long, value_name = "N", help_heading = "SCOPE")]
+    pub max_files: Option<u64>,
+
     /// Stay on the filesystem the root lives on.
     #[arg(long, action = ArgAction::SetTrue, help_heading = "SCOPE")]
     pub one_filesystem: bool,
@@ -638,6 +648,7 @@ impl Cli {
         let config = OpenConfig {
             scan: ScanConfig {
                 max_depth: self.scan_depth,
+                max_files: self.max_files,
                 one_filesystem: self.one_filesystem,
                 order,
                 threads: self.threads,
@@ -652,7 +663,9 @@ impl Cli {
         };
 
         #[cfg(feature = "watch")]
-        if self.watch && (self.scan_depth.is_some() || self.one_filesystem) {
+        if self.watch
+            && (self.scan_depth.is_some() || self.max_files.is_some() || self.one_filesystem)
+        {
             // Scope narrows what is observed, and a watcher cannot filter raw backend
             // events against that boundary yet. Selection flags stay legal with --watch
             // precisely because they filter the retained index instead, and the message
@@ -1258,8 +1271,9 @@ impl Cli {
 }
 
 /// What each knob is called on the command line, given its name in the API.
-const WATCH_SCOPE_VOCABULARY: [(&str, &str); 5] = [
+const WATCH_SCOPE_VOCABULARY: [(&str, &str); 6] = [
     ("max_depth", "--scan-depth"),
+    ("max_files", "--max-files"),
     ("one_filesystem", "--one-filesystem"),
     ("modified_since", "--modified-since"),
     ("depth", "--depth"),
@@ -1985,6 +1999,7 @@ mod tests {
         Cli {
             path: Some(PathBuf::from(".")),
             scan_depth: None,
+            max_files: None,
             one_filesystem: false,
             order: None,
             threads: None,

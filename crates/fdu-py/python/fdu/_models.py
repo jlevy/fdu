@@ -193,6 +193,19 @@ class ScanOptions:
     """Filesystem scope for an initial scan and later refreshes."""
 
     max_depth: int | None = None
+    max_files: int | None = None
+    """Stop descending once this many files have been observed; ``None`` for unlimited.
+
+    Scope, not a display limit. The walk stops *reading*, so entries beyond the cap are
+    absent from the index rather than withheld from an answer -- which is the cost a cap
+    exists to avoid, and which a bound on a projection does not save. Coverage becomes
+    partial with reason :attr:`CoverageReason.BUDGET` and a typed resource-stop issue says
+    so.
+
+    Checked between directories, never inside one, so the observed count can overshoot by
+    the entries of the directories already being read. A directory is listed whole or not
+    at all: a half-listed one would report its own tallies as complete, silently.
+    """
     one_filesystem: bool = False
     #: Directory visit order. Breadth-first is the default because it is the order whose
     #: partial results mean something: a consumer reading mid-walk sees top-level totals
@@ -249,6 +262,10 @@ class ScanOptions:
     def __post_init__(self) -> None:
         if self.max_depth is not None and self.max_depth < 0:
             raise ValueError("max_depth must be non-negative")
+        if self.max_files is not None and self.max_files < 1:
+            # `None` is how "no cap" is spelled; zero would be a walk that stops before
+            # its first directory, which nobody means and a typo produces.
+            raise ValueError("max_files must be at least 1")
         if self.threads is not None and self.threads < 1:
             raise ValueError("threads must be at least 1")
         if isinstance(self.tag_rules, str):
@@ -451,8 +468,10 @@ class IssueKind(StrEnum):
     RESOURCE_STOP = "resource_stop"
     """A limit stopped the operation before it finished.
 
-    **Not reachable yet.** fdu has no walk budget; the member exists so the vocabulary is
-    the consumer contract's rather than a subset of it.
+    Produced by :attr:`ScanOptions.max_files`. Carries no path, because the limit is a
+    property of the walk rather than of any one entry: the paths it declined to read are
+    exactly the ones it never discovered. :attr:`CoverageReason.BUDGET` is the same fact on
+    the coverage axis.
     """
 
     OBSERVATION_GAP = "observation_gap"
@@ -604,13 +623,15 @@ class Status:
 class CoverageReason(StrEnum):
     """Why a value's coverage is partial.
 
-    The interactive-client contract's vocabulary, declared whole. Two members are
-    reachable from today's engine -- ``INACCESSIBLE`` and ``FAILED``. The other four are
-    declared and currently unreachable: an in-progress walk and a cancellation both need
-    the session, fdu has no walk budget, and a watcher gap marks a subtree *untrusted*
-    rather than *uncovered* -- its totals still account for every entry, they may simply
-    be wrong. Matching on all six today means not having to revisit the match when the
-    engine learns to produce them.
+    The interactive-client contract's vocabulary, declared whole. Three members are
+    reachable from today's engine -- ``INACCESSIBLE``, ``FAILED`` and ``BUDGET``, the last
+    of them produced by :attr:`ScanOptions.max_files`. ``BUILDING`` and ``CANCELLED`` both
+    need the session and stay unreachable for now.
+
+    A watcher gap is deliberately not among them: it marks a subtree *untrusted* rather
+    than *uncovered*, since its totals still account for every entry -- they may simply be
+    wrong. Matching on all five today means not having to revisit the match when the engine
+    learns to produce the rest.
     """
 
     BUILDING = "building"
@@ -1363,6 +1384,14 @@ class ScanScope:
     """
 
     max_depth: int | None
+    max_files: int | None
+    """The file cap the index was built under, or ``None`` for an unlimited walk.
+
+    Scope rather than a projection bound, so it belongs to the identity: an index built
+    under one cap holds a different set of entries than one built under another, and which
+    entries the cap admitted depends on the order the walk reached them in.
+    """
+
     follow_symlinks: bool
     one_filesystem: bool
     tag_rules_fingerprint: int
@@ -1849,8 +1878,10 @@ def status_from_dict(value: dict[str, Any]) -> Status:
 
 def scan_scope_from_dict(value: dict[str, Any]) -> ScanScope:
     depth = value["max_depth"]
+    files = value["max_files"]
     return ScanScope(
         max_depth=None if depth is None else int(depth),
+        max_files=None if files is None else int(files),
         follow_symlinks=bool(value["follow_symlinks"]),
         one_filesystem=bool(value["one_filesystem"]),
         tag_rules_fingerprint=int(value["tag_rules_fingerprint"]),

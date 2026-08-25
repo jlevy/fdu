@@ -67,7 +67,7 @@ const CRC32C_TABLES: [[u32; 256]; 8] = make_crc32c_tables();
 /// leaf-count change, which recompute-at-load absorbed, an admission rule cannot be
 /// re-derived from a recording made without it: the entries it would have kept are absent
 /// from the file, not from the tree.
-const FORMAT_VERSION: u32 = 3;
+const FORMAT_VERSION: u32 = 4;
 
 /// Version of the rules that decide which bucket an entry's bytes are tallied under.
 ///
@@ -98,6 +98,15 @@ const NO_PARENT: u32 = u32::MAX;
 /// Sentinel for an unlimited scan depth in the snapshot header.
 const UNLIMITED_DEPTH: u64 = u64::MAX;
 
+/// Sentinel for an absent file budget, matching how depth spells "no bound".
+///
+/// `u64::MAX` rather than a presence flag beside the value, and for the same reason depth
+/// uses it: a cap of `u64::MAX` and no cap admit exactly the same walks, so collapsing
+/// them costs nothing anyone can observe -- while a separate flag would create a second
+/// spelling for one state, and two spellings for one state is a bug waiting for a reader
+/// who checks only one of them.
+const UNLIMITED_FILES: u64 = u64::MAX;
+
 /// Scope flag for symlink-following traversal.
 const SCOPE_FOLLOW_SYMLINKS: u8 = 1 << 0;
 
@@ -112,7 +121,7 @@ const SCOPE_KNOWN_FLAGS: u8 = SCOPE_FOLLOW_SYMLINKS | SCOPE_ONE_FILESYSTEM;
 /// Depth, the flag byte, and four fingerprints: tag rules, type rules, reducers, and the
 /// hidden-path admission rule.
 #[cfg(test)]
-const SERIALIZED_SCOPE_BYTES: usize = 8 + 1 + 8 * 4;
+const SERIALIZED_SCOPE_BYTES: usize = 8 + 1 + 8 * 4 + 8;
 
 /// Smallest possible on-disk record: parent slot, kind, name length, and six 8-byte
 /// attribute fields, with a zero-length name. Used to sanity-check a declared entry
@@ -826,6 +835,7 @@ fn put_scope(buf: &mut Vec<u8>, scope: ScanScope) -> Result<()> {
     buf.extend_from_slice(&scope.type_rules_fingerprint.to_le_bytes());
     buf.extend_from_slice(&scope.reducers_fingerprint.to_le_bytes());
     buf.extend_from_slice(&scope.hidden_fingerprint.to_le_bytes());
+    buf.extend_from_slice(&scope.max_files.unwrap_or(UNLIMITED_FILES).to_le_bytes());
     Ok(())
 }
 
@@ -848,6 +858,13 @@ fn read_scope(reader: &mut impl Read) -> ParseResult<ScanScope> {
         type_rules_fingerprint: read_u64(reader)?,
         reducers_fingerprint: read_u64(reader)?,
         hidden_fingerprint: read_u64(reader)?,
+        max_files: match read_u64(reader)? {
+            UNLIMITED_FILES => None,
+            // Zero is rejected at config validation, so a zero here is a corrupt or
+            // hand-edited file rather than a scope anyone could have asked for.
+            0 => return Err(ParseError::Invalid),
+            cap => Some(cap),
+        },
     })
 }
 
@@ -1985,6 +2002,7 @@ mod tests {
             type_rules_fingerprint: 22,
             reducers_fingerprint: 33,
             hidden_fingerprint: 44,
+            max_files: Some(55),
         };
         let index = Index::new_with_scope("/some/root", scope);
 

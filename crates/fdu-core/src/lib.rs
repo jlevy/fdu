@@ -254,6 +254,24 @@ impl OpenReport {
         &self.scan.errors
     }
 
+    /// Every operational condition that makes this result partial, typed.
+    ///
+    /// The engine's own view plus the analysis pass's, which it has no view of. One
+    /// assembler, because the alternative is what was here: a consumer rebuilding the list
+    /// from `errors()` and the analysis failure, which silently dropped every typed
+    /// condition that is not a per-path I/O error. A walk stopped by its file budget is
+    /// exactly that -- nothing failed, so `errors()` is empty, and a reconstruction from it
+    /// reported a partial answer with no reason attached.
+    pub fn issues(&self) -> Vec<Issue> {
+        let mut issues = self.scan.issues();
+        if let Some(message) =
+            self.analysis.as_ref().and_then(content::AnalysisReport::failure_message)
+        {
+            issues.push(Issue::reported(IssueKind::ProviderFailure, message));
+        }
+        issues
+    }
+
     /// Human-readable diagnostics for every operational condition that makes this result partial.
     pub fn error_messages(&self) -> Vec<String> {
         let mut errors = self.scan.errors.iter().map(ToString::to_string).collect::<Vec<_>>();
@@ -465,7 +483,7 @@ fn record_run(
         scan_started_at: started_at,
         source,
         complete: scan.is_complete(),
-        errors: scan.errors.iter().map(crate::Issue::from_error).collect(),
+        errors: scan.issues(),
     });
 }
 

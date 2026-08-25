@@ -177,12 +177,30 @@ pub struct ScanConfig {
     /// The default admits everything, fingerprints to zero, and costs one `bool` per entry
     /// -- fdu's own command line counts what is there, and pruning is opt-in.
     pub hidden: Option<std::sync::Arc<crate::admission::HiddenPolicy>>,
+    /// Files this walk may observe before it stops descending, or `None` for unlimited.
+    ///
+    /// Semantic, and fingerprinted into [`ScanScope`] for a reason worth stating: a cap
+    /// changes which entries exist in the index, and *which* ones depends on the order the
+    /// walk reached them in. Two indexes of one tree under two caps are not nested sets a
+    /// reader could reconcile, so a snapshot taken under one is never read under another.
+    ///
+    /// Files rather than entries, matching the bound a consumer contract actually states.
+    /// Directories are the structure the files hang from; capping them would make the
+    /// answer's *shape* depend on the cap rather than its size.
+    ///
+    /// The bound is checked between directories and never inside one. A directory is read
+    /// whole or not at all, because a half-listed directory reports its own tallies as
+    /// though they were complete -- silently, which is the one thing a bound must never be.
+    /// So the observed count can overshoot the cap by the entries of the directories
+    /// already in flight, and that overshoot is the price of never lying about a directory.
+    pub max_files: Option<u64>,
 }
 
 impl Default for ScanConfig {
     fn default() -> Self {
         Self {
             max_depth: None,
+            max_files: None,
             batch_size: DEFAULT_BATCH_SIZE,
             follow_symlinks: false,
             one_filesystem: false,
@@ -207,10 +225,10 @@ impl Default for ScanConfig {
 /// `max_depth` through the API. Everything else is identical, so the harness can verify
 /// mechanically that both surfaces state the same rule.
 pub const WATCH_SCOPE_GUIDANCE: &str = concat!(
-    "watching requires full scope and cannot be combined with max_depth or one_filesystem: ",
-    "a watcher cannot filter backend events against a narrowed boundary. Selection such as ",
-    "depth, include, and modified_since does work while watching, because it filters the ",
-    "retained index rather than narrowing the scan"
+    "watching requires full scope and cannot be combined with max_depth, max_files or ",
+    "one_filesystem: a watcher cannot filter backend events against a narrowed boundary. ",
+    "Selection such as depth, include, and modified_since does work while watching, because ",
+    "it filters the retained index rather than narrowing the scan"
 );
 
 impl ScanConfig {
@@ -240,6 +258,7 @@ impl ScanConfig {
             type_rules_fingerprint: self.types().fingerprint(),
             reducers_fingerprint: REDUCERS_FINGERPRINT,
             hidden_fingerprint: self.hidden().fingerprint(),
+            max_files: self.max_files,
         }
     }
 
@@ -289,6 +308,14 @@ impl ScanConfig {
                 "follow_symlinks requires cycle, root-boundary, and filesystem-boundary semantics",
             ));
         }
+        if self.max_files == Some(0) {
+            // Absent is how "no cap" is spelled. Zero would otherwise mean a walk that
+            // stops before its first directory, which is a scan nobody asked for and is
+            // indistinguishable at the surface from a typo.
+            return Err(Error::UnsupportedScanConfig(
+                "max_files must be nonzero; omit it for an unlimited walk",
+            ));
+        }
         #[cfg(not(unix))]
         if self.one_filesystem {
             return Err(Error::UnsupportedScanConfig(
@@ -302,7 +329,10 @@ impl ScanConfig {
         self.validate()?;
         let requested = self.scope();
         if indexed != requested {
-            return Err(Error::ScanScopeMismatch { indexed, requested });
+            return Err(Error::ScanScopeMismatch {
+                indexed: Box::new(indexed),
+                requested: Box::new(requested),
+            });
         }
         Ok(())
     }
@@ -310,7 +340,12 @@ impl ScanConfig {
     #[cfg(feature = "watch")]
     pub(crate) fn validate_for_watch_scope(&self, indexed: ScanScope) -> Result<()> {
         self.validate_for_scope(indexed)?;
-        if self.max_depth.is_some() || self.one_filesystem {
+        if self.max_depth.is_some() || self.max_files.is_some() || self.one_filesystem {
+            // A budget belongs here for a reason of its own, beyond the shared one: a
+            // watcher applies events to an index the cap left incomplete, so a creation
+            // inside an unread subtree would be admitted while its siblings stay missing.
+            // The index would then hold a subtree nobody walked, assembled one event at a
+            // time, with nothing recording that it was never discovered.
             return Err(Error::UnsupportedScanConfig(WATCH_SCOPE_GUIDANCE));
         }
         Ok(())
@@ -342,6 +377,14 @@ pub struct ScanReport {
     pub errors: Vec<Error>,
     /// Where the walk's time went, summed across workers.
     pub attribution: WalkAttribution,
+    /// True when the file cap stopped the walk descending, so entries in scope were
+    /// never read.
+    ///
+    /// Distinct from an error: nothing failed, and everything reported is correct. What is
+    /// missing is unnamed and unnameable -- the walk stopped before discovering it -- which
+    /// is why this is a flag rather than a list, and why it degrades coverage rather than
+    /// freshness. The entries that *are* here were read and are current.
+    pub budget_stopped: bool,
     /// Directories where the walk saw a control file it pruned rather than retained.
     ///
     /// Empty unless a hidden-path rule pruned one, which needs an enabled Path-tier rule to
@@ -355,10 +398,63 @@ pub struct ScanReport {
     pub control_dirs: Vec<PathBuf>,
 }
 
+/// The shared file counter one walk enforces its cap with.
+///
+/// Runtime state rather than configuration: the cap is what a caller asked for and lives
+/// in [`ScanConfig`]; this is how much of it a particular walk has spent, and it exists
+/// only for the duration of that walk.
+///
+/// `None` for an uncapped walk, which is the default, so an uncapped walk touches no
+/// atomic at all -- the cost of the feature is paid only by callers who asked for it.
+///
+/// Charged **per directory**, not per file. A per-file `fetch_add` would put a contended
+/// write on the hottest loop in the program for a bound almost no walk reaches; per
+/// directory the write happens once per `read_dir`, which is already the expensive part,
+/// and the read side is a relaxed load of a line that is otherwise shared.
+#[derive(Debug)]
+pub(crate) struct Budget {
+    cap: u64,
+    files: std::sync::atomic::AtomicU64,
+}
+
+impl Budget {
+    /// The counter for `config`, or `None` when it set no cap.
+    fn for_config(config: &ScanConfig) -> Option<std::sync::Arc<Self>> {
+        config.max_files.map(|cap| {
+            std::sync::Arc::new(Self { cap, files: std::sync::atomic::AtomicU64::new(0) })
+        })
+    }
+
+    /// Record files observed in one directory.
+    fn charge(&self, files: u64) {
+        if files > 0 {
+            self.files.fetch_add(files, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+
+    /// Whether the cap has been reached, so no further directory should be entered.
+    fn spent(&self) -> bool {
+        self.files.load(std::sync::atomic::Ordering::Relaxed) >= self.cap
+    }
+}
+
+/// Whether a walk holding `budget` may still descend.
+///
+/// A free function taking an `Option` so both walkers ask the same question in the same
+/// shape, and so the uncapped case is one `is_none` rather than a branch each walker
+/// spells for itself.
+fn within_budget(budget: Option<&std::sync::Arc<Budget>>) -> bool {
+    budget.is_none_or(|budget| !budget.spent())
+}
+
 impl ScanReport {
     /// True when every directory in scope was read successfully.
+    ///
+    /// A budget-stopped walk is not complete even though it hit no error: the cap is a
+    /// deliberate decision to stop reading scope, and an answer that omits scope is
+    /// partial however cleanly it got that way.
     pub fn is_complete(&self) -> bool {
-        self.errors.is_empty()
+        self.errors.is_empty() && !self.budget_stopped
     }
 
     /// This walk's coverage, as the index records it.
@@ -368,11 +464,38 @@ impl ScanReport {
     /// what it could not read is `Inaccessible` -- distinct from one that failed
     /// outright, which its caller reports as `Failed`.
     pub fn coverage(&self) -> Status {
-        if self.errors.is_empty() {
-            Status::Complete
-        } else {
+        if !self.errors.is_empty() {
+            // Worst wins, and [`CoverageReason`] declares which that is: `Inaccessible`
+            // outranks `Budget`, so a walk that both hit the cap and failed to read
+            // something reports the failure. The cap is a decision; a failure is not, and
+            // only one of the two is worth a consumer's attention first.
             Status::Partial(CoverageReason::Inaccessible)
+        } else if self.budget_stopped {
+            Status::Partial(CoverageReason::Budget)
+        } else {
+            Status::Complete
         }
+    }
+
+    /// Everything this walk has to report as a typed condition.
+    ///
+    /// One place, so the reasons a result is partial and the issues explaining it cannot
+    /// drift apart: `coverage()` above and this list are derived from the same two facts.
+    pub(crate) fn issues(&self) -> Vec<crate::Issue> {
+        let mut issues: Vec<crate::Issue> =
+            self.errors.iter().map(crate::Issue::from_error).collect();
+        if self.budget_stopped {
+            issues.push(crate::Issue {
+                kind: crate::IssueKind::ResourceStop,
+                path: None,
+                message: format!(
+                    "the file budget stopped discovery after {} files",
+                    self.files_walked
+                ),
+                os_error: None,
+            });
+        }
+        issues
     }
 
     /// Fold one worker's share of a parallel walk into the whole-walk report.
@@ -383,6 +506,7 @@ impl ScanReport {
         self.bytes_walked += other.bytes_walked;
         self.errors.extend(other.errors);
         self.control_dirs.extend(other.control_dirs);
+        self.budget_stopped |= other.budget_stopped;
         self.attribution.absorb(other.attribution);
     }
 
@@ -1024,8 +1148,18 @@ fn scan_internal(
     let walk_started = std::time::Instant::now();
     let mut batch: Vec<Op> = Vec::with_capacity(config.batch_size);
     let mut queue: VecDeque<(PathBuf, usize)> = VecDeque::from(vec![(PathBuf::new(), 0)]);
+    let budget = Budget::for_config(config);
 
     while let Some((rel_dir, depth)) = take_next(&mut queue, config.order) {
+        if !within_budget(budget.as_ref()) {
+            // Asked here as well as at enqueue time, and this is the one that does the
+            // work on a wide tree: the root holds no files of its own, so nothing is
+            // charged before all of its children are queued, and a check that only guarded
+            // the enqueue would let every one of them be read. Between directories, so the
+            // one being listed is never torn.
+            report.budget_stopped = true;
+            break;
+        }
         let abs_dir = root.join(&rel_dir);
         crate::counters::bump(|c| c.dir_opens += 1);
         if let Some(diagnostics) = &diagnostics {
@@ -1044,6 +1178,7 @@ fn scan_internal(
             }
         };
         report.dirs_read += 1;
+        let files_before = report.files_walked;
 
         for item in listing {
             let item = match item {
@@ -1080,8 +1215,20 @@ fn scan_internal(
             }
 
             if should_descend(kind, attrs, depth, root_dev, config) {
-                queue.push_back((rel_path, depth + 1));
+                if within_budget(budget.as_ref()) {
+                    queue.push_back((rel_path, depth + 1));
+                } else {
+                    // Not enqueued, and the walk says so. Silently dropping the subtree
+                    // would leave a directory reporting a complete roll-up over a subtree
+                    // nobody read.
+                    report.budget_stopped = true;
+                }
             }
+        }
+        // Once per directory rather than once per file: the write lands next to the
+        // `read_dir` that already dominates this loop's cost.
+        if let Some(budget) = &budget {
+            budget.charge(report.files_walked - files_before);
         }
     }
 
@@ -1794,6 +1941,10 @@ fn scan_concurrent(
         policy,
     );
     let (sender, receiver) = std::sync::mpsc::channel::<WalkMessage>();
+    // One counter for the whole walk, not one per worker: a per-worker cap would admit
+    // `cap * workers` files and make the bound depend on a thread count that is explicitly
+    // not part of the scope.
+    let budget = Budget::for_config(config);
 
     let mut report = std::thread::scope(|scope| {
         let mut handles: Vec<_> = (0..pool.initial)
@@ -1801,8 +1952,17 @@ fn scan_concurrent(
                 let sender = sender.clone();
                 let queue = &queue;
                 let diagnostics = diagnostics.clone();
+                let budget = budget.clone();
                 scope.spawn(move || {
-                    walk_worker(root, config, root_dev, queue, &sender, diagnostics.as_ref())
+                    walk_worker(
+                        root,
+                        config,
+                        root_dev,
+                        queue,
+                        &sender,
+                        diagnostics.as_ref(),
+                        budget.as_ref(),
+                    )
                 })
             })
             .collect();
@@ -1827,6 +1987,7 @@ fn scan_concurrent(
                         let sender = sender.clone();
                         let queue = &queue;
                         let diagnostics = diagnostics.clone();
+                        let budget = budget.clone();
                         handles.push(scope.spawn(move || {
                             walk_worker(
                                 root,
@@ -1835,6 +1996,7 @@ fn scan_concurrent(
                                 queue,
                                 &sender,
                                 diagnostics.as_ref(),
+                                budget.as_ref(),
                             )
                         }));
                     }
@@ -1952,6 +2114,7 @@ fn walk_worker(
     queue: &DirectoryQueue,
     sender: &std::sync::mpsc::Sender<WalkMessage>,
     diagnostics: Option<&std::sync::Arc<ScanDiagnosticsRecorder>>,
+    budget: Option<&std::sync::Arc<Budget>>,
 ) -> ScanReport {
     let _counter_guard = crate::counters::thread_flush_guard();
     let _worker_guard = diagnostics.map(ScanDiagnosticsRecorder::worker_guard);
@@ -1965,6 +2128,10 @@ fn walk_worker(
     let mut bulk_reader = macos_bulk::Reader::new();
 
     'walk: while let Some(claim) = queue.claim(&mut claimed, &mut report.attribution) {
+        // A claim's directories are read even if the cap falls partway through it. That is
+        // the overshoot the between-directories rule buys: a directory is whole or absent,
+        // and no new directory enters the queue once the cap is reached, so the queue
+        // drains and the walk ends rather than deadlocking on partially-claimed work.
         // One timing pair per claimed chunk, never per entry: the chunk is the unit
         // the amortization argument is made in, so it is the unit the evidence is
         // collected in.
@@ -1972,7 +2139,15 @@ fn walk_worker(
         let mut chunk_send_ns: u64 = 0;
         let entries_before = report.entries;
         for (rel_dir, depth, region) in claimed.drain(..) {
+            if !within_budget(budget) {
+                // Drained rather than abandoned: the queue counts a claimed directory as
+                // dealt with, so skipping it here lets the walk wind down through the same
+                // path it always does. Nothing below it is discovered, which is the point.
+                report.budget_stopped = true;
+                continue;
+            }
             let abs_dir = root.join(&rel_dir);
+            let files_before = report.files_walked;
             #[cfg(target_os = "macos")]
             {
                 if let Some(diagnostics) = diagnostics {
@@ -2003,6 +2178,7 @@ fn walk_worker(
                             entry.attrs,
                             root_dev,
                             config,
+                            budget,
                             &mut batch,
                             &mut discovered,
                             &mut report,
@@ -2013,6 +2189,9 @@ fn walk_worker(
                             consumer_gone = true;
                             break 'walk;
                         }
+                    }
+                    if let Some(budget) = budget {
+                        budget.charge(report.files_walked - files_before);
                     }
                     continue;
                 }
@@ -2073,6 +2252,7 @@ fn walk_worker(
                     attrs,
                     root_dev,
                     config,
+                    budget,
                     &mut batch,
                     &mut discovered,
                     &mut report,
@@ -2084,6 +2264,12 @@ fn walk_worker(
                     consumer_gone = true;
                     break 'walk;
                 }
+            }
+            // Once per directory, after it is fully listed. The `read_dir` failure above
+            // returns here having observed nothing, so its charge is zero and costs a
+            // branch rather than a write.
+            if let Some(budget) = budget {
+                budget.charge(report.files_walked - files_before);
             }
         }
         report.attribution.send_ns += chunk_send_ns;
@@ -2126,6 +2312,7 @@ fn record_walk_entry(
     attrs: Attrs,
     root_dev: u64,
     config: &ScanConfig,
+    budget: Option<&std::sync::Arc<Budget>>,
     batch: &mut Vec<Op>,
     discovered: &mut Vec<(PathBuf, usize, RegionId)>,
     report: &mut ScanReport,
@@ -2134,7 +2321,14 @@ fn record_walk_entry(
     diagnostics: Option<&ScanDiagnosticsRecorder>,
 ) -> bool {
     let rel_path = rel_dir.join(name);
-    let descend = should_descend(kind, attrs, depth, root_dev, config);
+    let mut descend = should_descend(kind, attrs, depth, root_dev, config);
+    if descend && !within_budget(budget) {
+        // In scope, and not read, because the cap was reached first. Recorded rather than
+        // dropped: a silently skipped subtree leaves its parent reporting a complete
+        // roll-up over entries nobody looked at.
+        descend = false;
+        report.budget_stopped = true;
+    }
     report.observe(kind, attrs);
     batch.push(Op::Upsert { path: rel_path.clone(), kind, attrs });
     if batch.len() >= config.batch_size {
@@ -3012,7 +3206,10 @@ fn reconcile_target(
     config.validate_for_scope(target.scope()?)?;
     let subtree = normalize_subtree(subtree)?;
     if config.max_depth.is_some_and(|maximum| subtree.components().count() > maximum) {
-        return Err(Error::SubtreeOutsideScanScope { path: subtree, scope: config.scope() });
+        return Err(Error::SubtreeOutsideScanScope {
+            path: subtree,
+            scope: Box::new(config.scope()),
+        });
     }
     let subtree = resolve_subtree_root(target, &subtree, config)?;
     // The sweep's own transitions go through the sink like every other committed delta.
@@ -3803,6 +4000,16 @@ fn note_pruned_control_file(
     }
 }
 
+/// Whether a directory entry is inside the scan scope, so the walk should enter it.
+///
+/// Deliberately **not** where the file budget is asked. Reconciliation calls this too, and
+/// reads a `false` for a directory as "out of scope, so remove what the index holds below
+/// it" -- correct for a depth or filesystem bound, which are fixed for the life of an
+/// index, and catastrophic for a bound that flips partway through a walk. A budget that
+/// answered here would delete subtrees for the crime of being discovered late.
+///
+/// The budget is asked at the two discovery sites instead, where the only consequence of
+/// `false` is that a directory is not enqueued.
 fn should_descend(
     kind: EntryKind,
     attrs: Attrs,
@@ -3869,7 +4076,7 @@ fn resolve_subtree_root(
         if metadata.file_type().is_symlink() {
             return Err(Error::SubtreeOutsideScanScope {
                 path: subtree.to_path_buf(),
-                scope: config.scope(),
+                scope: Box::new(config.scope()),
             });
         }
         if !metadata.is_dir() {
@@ -3879,7 +4086,7 @@ fn resolve_subtree_root(
         if config.one_filesystem && attrs.dev != root_dev && attrs.dev != 0 {
             return Err(Error::SubtreeOutsideScanScope {
                 path: subtree.to_path_buf(),
-                scope: config.scope(),
+                scope: Box::new(config.scope()),
             });
         }
     }

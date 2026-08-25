@@ -428,13 +428,13 @@ FAIL [ROOT]/tests/parity/.corpus/cli-surface.tryscript.md
   ✗ Watching Rejects a Narrowed Scan Scope
     stderr:
 @@ -1,1 +1,1 @@
--fdu: watching requires full scope and cannot be combined with --scan-depth or --one-filesystem: a watcher cannot filter backend events against a narrowed boundary. Selection such as --depth, --include, and --modified-since does work while watching, because it filters the retained index rather than narrowing the scan
-+fdu: unsupported scan configuration: watching requires full scope and cannot be combined with max_depth or one_filesystem: a watcher cannot filter backend events against a narrowed boundary. Selection such as depth, include, and modified_since does work while watching, because it filters the retained index rather than narrowing the scan
+-fdu: watching requires full scope and cannot be combined with --scan-depth, --max-files or --one-filesystem: a watcher cannot filter backend events against a narrowed boundary. Selection such as --depth, --include, and --modified-since does work while watching, because it filters the retained index rather than narrowing the scan
++fdu: unsupported scan configuration: watching requires full scope and cannot be combined with max_depth, max_files or one_filesystem: a watcher cannot filter backend events against a narrowed boundary. Selection such as depth, include, and modified_since does work while watching, because it filters the retained index rather than narrowing the scan
   ✗ Watching Rejects a Narrowed Scan Scope
     stderr:
 @@ -1,1 +1,1 @@
--fdu: watching requires full scope and cannot be combined with --scan-depth or --one-filesystem: a watcher cannot filter backend events against a narrowed boundary. Selection such as --depth, --include, and --modified-since does work while watching, because it filters the retained index rather than narrowing the scan
-+fdu: unsupported scan configuration: watching requires full scope and cannot be combined with max_depth or one_filesystem: a watcher cannot filter backend events against a narrowed boundary. Selection such as depth, include, and modified_since does work while watching, because it filters the retained index rather than narrowing the scan
+-fdu: watching requires full scope and cannot be combined with --scan-depth, --max-files or --one-filesystem: a watcher cannot filter backend events against a narrowed boundary. Selection such as --depth, --include, and --modified-since does work while watching, because it filters the retained index rather than narrowing the scan
++fdu: unsupported scan configuration: watching requires full scope and cannot be combined with max_depth, max_files or one_filesystem: a watcher cannot filter backend events against a narrowed boundary. Selection such as depth, include, and modified_since does work while watching, because it filters the retained index rather than narrowing the scan
   ✓ A Missing Root Is a Fatal Filesystem Error
   ✓ Create a Regular File
   ✓ Reject It as the Root

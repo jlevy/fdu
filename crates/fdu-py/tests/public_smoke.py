@@ -492,6 +492,7 @@ def check_the_browser_provider_example_holds_the_contract_it_documents() -> None
 
     base = fdu.ScanScope(
         max_depth=None,
+        max_files=None,
         follow_symlinks=False,
         one_filesystem=False,
         tag_rules_fingerprint=11,
@@ -509,6 +510,7 @@ def check_the_browser_provider_example_holds_the_contract_it_documents() -> None
             # A structured value is a compact canonical JSON string inside the outer array.
             "hidden_allowlist": '["' + '","'.join([".cargo", ".github"]) + '"]',
             "max_depth": "null",
+            "max_files": "null",
             "stay_on_filesystem": "false",
         }
     )
@@ -531,10 +533,14 @@ def check_the_browser_provider_example_holds_the_contract_it_documents() -> None
         example.semantic_fingerprint(dataclasses.replace(base, hidden_fingerprint=99))
         == expected_semantic
     ), "hidden admission is scope identity, not semantic identity"
+    assert (
+        example.semantic_fingerprint(dataclasses.replace(base, max_files=1000)) == expected_semantic
+    ), "a walk budget is scope identity too: it changes which entries exist, not their meaning"
 
     for changed in [
         dataclasses.replace(options, hidden_allow=(".github",)),
         dataclasses.replace(options, max_depth=3),
+        dataclasses.replace(options, max_files=1000),
         dataclasses.replace(options, one_filesystem=True),
     ]:
         assert example.scope_fingerprint(changed) != expected_scope, changed
@@ -1164,6 +1170,79 @@ def check_a_batch_names_which_projections_went_stale() -> None:
         assert fdu.QueryKind.METADATA not in kinds, (
             f"identity facts are fixed for an opened index, so they are never named: {kinds}"
         )
+
+
+def check_a_file_cap_stops_the_walk_rather_than_the_answer() -> None:
+    """`max_files` is scope: entries past the cap are absent, not withheld.
+
+    A projection limit would satisfy every soft assertion here -- fewer rows, partial
+    coverage, a typed issue -- while still reading the whole tree, which is the cost the
+    cap exists to avoid. So the load-bearing check is that the *index* holds less, and that
+    a directory the walk never entered says its coverage is partial rather than reporting an
+    empty directory that is not empty.
+    """
+
+    with tempfile.TemporaryDirectory(prefix="fdu-budget-") as raw:
+        root = Path(raw)
+        per_dir = 8
+        dirs = 12
+        for directory in range(dirs):
+            child = root / f"d{directory:02d}"
+            child.mkdir()
+            for index in range(per_dir):
+                (child / f"f{index}.txt").write_text("x", encoding="utf-8")
+
+        full = fdu.open(root, cache=fdu.CachePolicy.OFF)
+        full_scope = full.read().scope
+        assert full.total().files == dirs * per_dir
+        assert full.status.complete is True
+        assert full_scope.max_files is None
+
+        capped = fdu.open(
+            root,
+            cache=fdu.CachePolicy.OFF,
+            scan=fdu.ScanOptions(max_files=2 * per_dir, threads=1),
+        )
+        assert capped.total().files < full.total().files, (
+            "the cap has to leave entries out of the index, not out of one answer"
+        )
+        assert capped.status.complete is False
+        assert capped.status.coverage_reason is fdu.CoverageReason.BUDGET
+        assert any(issue.kind is fdu.IssueKind.RESOURCE_STOP for issue in capped.status.errors), (
+            f"and say so as a typed value: {capped.status.errors}"
+        )
+
+        # Scope, so it is part of the identity a consumer keys a cache on.
+        capped_scope = capped.read().scope
+        assert capped_scope.max_files == 2 * per_dir
+        assert capped_scope.hidden_fingerprint == full_scope.hidden_fingerprint, (
+            "the cap must not be smuggled into another fingerprint"
+        )
+        assert capped_scope.tag_rules_fingerprint == full_scope.tag_rules_fingerprint
+        assert capped_scope.type_rules_fingerprint == full_scope.type_rules_fingerprint
+
+        # A directory the walk never entered still has a row -- it was seen as a child of a
+        # directory that was read -- and must not report its unread zero as a complete one.
+        unread = [
+            name
+            for name in (f"d{directory:02d}" for directory in range(dirs))
+            if (rollup := capped.rollup(name)) is not None and rollup.files == 0
+        ]
+        assert unread, "the fixture must leave some directory unentered"
+        for name in unread:
+            provenance = capped.provenance(name)
+            assert provenance is not None
+            assert provenance.reason is fdu.CoverageReason.BUDGET, (
+                f"{name} was never read, and says so: {provenance}"
+            )
+
+        # Zero is not how an unlimited walk is spelled, and one judge decides that.
+        try:
+            fdu.ScanOptions(max_files=0)
+        except ValueError as error:
+            assert "max_files" in str(error), error
+        else:  # pragma: no cover - the guard above is the point
+            raise AssertionError("a zero cap must be refused")
 
 
 def check_a_batch_carries_the_state_at_its_own_cursor() -> None:
@@ -2127,6 +2206,7 @@ def main() -> None:
     check_the_envelope_is_typed_and_its_facts_are_independent()
     check_state_and_operations_interleave_at_their_own_clocks()
     check_a_batch_carries_the_state_at_its_own_cursor()
+    check_a_file_cap_stops_the_walk_rather_than_the_answer()
     check_a_batch_names_which_projections_went_stale()
     check_a_batch_reports_what_it_cost_and_not_what_it_waited()
     check_a_pinned_assembly_pins_its_clock_too()

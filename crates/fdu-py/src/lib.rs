@@ -489,6 +489,7 @@ fn child_remainder_dict(
 fn scope_dict<'py>(py: Python<'py>, scope: &fdu_core::ScanScope) -> PyResult<Bound<'py, PyDict>> {
     let value = PyDict::new(py);
     put_scalar(&value, "max_depth", scope.max_depth)?;
+    put_scalar(&value, "max_files", scope.max_files)?;
     put_scalar(&value, "follow_symlinks", scope.follow_symlinks)?;
     put_scalar(&value, "one_filesystem", scope.one_filesystem)?;
     put_scalar(&value, "tag_rules_fingerprint", scope.tag_rules_fingerprint)?;
@@ -1502,21 +1503,13 @@ fn error_list<'py>(py: Python<'py>, errors: &[fdu_core::Issue]) -> PyResult<Boun
 }
 
 fn status_dict<'py>(py: Python<'py>, index: &PyIndex) -> PyResult<Bound<'py, PyDict>> {
-    let status = PyDict::new(py);
-    // One guard for all four, including freshness: a status envelope whose fields came
-    // from different instants is exactly the thing this describes itself as not being.
-    let (complete, source, errors, freshness) = index
-        .inner
-        .with_index(|inner| {
-            let run = inner.run_facts();
-            (run.complete, run.source, run.errors.clone(), inner.freshness())
-        })
-        .map_err(to_py_err)?;
-    status.set_item("complete", complete)?;
-    status.set_item("freshness", freshness_label(freshness))?;
-    status.set_item("source", source_label(source))?;
-    status.set_item("errors", error_list(py, &errors)?)?;
-    Ok(status)
+    // One guard for every field, and one assembler for every carrier of them. This used to
+    // build its own four-field envelope, which meant the standalone accessor reported no
+    // lifecycle phase and no coverage reason while a bundled read of the same index
+    // reported both -- two answers to one question, from one instant, differing only in
+    // which call the consumer happened to make.
+    let state = index.inner.with_index(fdu_core::Index::engine_state).map_err(to_py_err)?;
+    engine_state_dict(py, &state)
 }
 
 fn value_source_label(source: fdu_core::Source) -> &'static str {
@@ -2418,6 +2411,7 @@ impl PyOneShot {
     *,
     cache = "auto",
     max_depth = None,
+    max_files = None,
     one_filesystem = false,
     order = None,
     threads = None,
@@ -2457,6 +2451,7 @@ fn report_once(
     root: PathBuf,
     cache: &str,
     max_depth: Option<usize>,
+    max_files: Option<u64>,
     one_filesystem: bool,
     order: Option<&str>,
     threads: Option<usize>,
@@ -2492,6 +2487,7 @@ fn report_once(
     let config = OpenConfig {
         scan: ScanConfig {
             max_depth,
+            max_files,
             one_filesystem,
             order: parse_scan_order(order)?,
             threads,
@@ -2708,6 +2704,7 @@ fn clear_all_caches(root: PathBuf) -> PyResult<usize> {
     *,
     cache = "auto",
     max_depth = None,
+    max_files = None,
     one_filesystem = false,
     order = None,
     threads = None,
@@ -2725,6 +2722,7 @@ fn open(
     root: PathBuf,
     cache: &str,
     max_depth: Option<usize>,
+    max_files: Option<u64>,
     one_filesystem: bool,
     order: Option<&str>,
     threads: Option<usize>,
@@ -2744,6 +2742,7 @@ fn open(
     let config = OpenConfig {
         scan: ScanConfig {
             max_depth,
+            max_files,
             one_filesystem,
             order: parse_scan_order(order)?,
             threads,
@@ -2760,12 +2759,11 @@ fn open(
     let opened = py.detach(|| fdu_core::open(&root, &config));
     let (index, report) = opened.map_err(to_py_err)?;
     let operation_complete = report.is_complete();
-    let mut errors = report.errors().iter().map(fdu_core::Issue::from_error).collect::<Vec<_>>();
-    if let Some(message) =
-        report.analysis.as_ref().and_then(fdu_core::content::AnalysisReport::failure_message)
-    {
-        errors.push(fdu_core::Issue::reported(fdu_core::IssueKind::ProviderFailure, message));
-    }
+    // Asked for, not rebuilt. Reconstructing this from `errors()` plus the analysis failure
+    // dropped every typed condition that is not a per-path I/O error -- a walk stopped by
+    // its file budget reported partial with an empty reason list, because nothing had
+    // failed and there was nothing to reconstruct it from.
+    let errors = report.issues();
     let source = match report.path_taken {
         fdu_core::OpenPath::ColdScan => ReportSource::ColdScan,
         fdu_core::OpenPath::WarmRevalidate => ReportSource::WarmRevalidate,
@@ -2796,6 +2794,7 @@ fn open(
     root,
     *,
     max_depth = None,
+    max_files = None,
     one_filesystem = false,
     order = None,
     threads = None,
@@ -2812,6 +2811,7 @@ fn scan(
     py: Python<'_>,
     root: PathBuf,
     max_depth: Option<usize>,
+    max_files: Option<u64>,
     one_filesystem: bool,
     order: Option<&str>,
     threads: Option<usize>,
@@ -2830,6 +2830,7 @@ fn scan(
     let config = OpenConfig {
         scan: ScanConfig {
             max_depth,
+            max_files,
             one_filesystem,
             order: parse_scan_order(order)?,
             threads,

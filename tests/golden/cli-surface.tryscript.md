@@ -40,6 +40,7 @@ ARGUMENTS
 
 SCOPE
       --scan-depth <N>       Limit scanning and retention to N entry levels
+      --max-files <N>        Stop descending once N files have been observed
       --one-filesystem       Stay on the filesystem the root lives on
       --order <ORDER>        Directory visit order: breadth-first (default) or depth-first
       --threads <N>          Walker threads, or unset to choose automatically
@@ -549,13 +550,13 @@ Selection flags are not refused: they filter what a full index reports.
 
 ```console
 $ fdu --watch --scan-depth 2 .
-! fdu: watching requires full scope and cannot be combined with --scan-depth or --one-filesystem: a watcher cannot filter backend events against a narrowed boundary. Selection such as --depth, --include, and --modified-since does work while watching, because it filters the retained index rather than narrowing the scan
+! fdu: watching requires full scope and cannot be combined with --scan-depth, --max-files or --one-filesystem: a watcher cannot filter backend events against a narrowed boundary. Selection such as --depth, --include, and --modified-since does work while watching, because it filters the retained index rather than narrowing the scan
 ? 2
 ```
 
 ```console
 $ fdu --watch --one-filesystem .
-! fdu: watching requires full scope and cannot be combined with --scan-depth or --one-filesystem: a watcher cannot filter backend events against a narrowed boundary. Selection such as --depth, --include, and --modified-since does work while watching, because it filters the retained index rather than narrowing the scan
+! fdu: watching requires full scope and cannot be combined with --scan-depth, --max-files or --one-filesystem: a watcher cannot filter backend events against a narrowed boundary. Selection such as --depth, --include, and --modified-since does work while watching, because it filters the retained index rather than narrowing the scan
 ? 2
 ```
 

@@ -131,6 +131,11 @@ def _pair_digest(components: dict[str, str]) -> str:
 def scope_fingerprint(options: fdu.ScanOptions) -> str:
     """Identity of what was admitted to the index: budgets, visibility, boundaries.
 
+    `max_files` belongs here for the reason the name implies: it decides which entries the
+    index holds, and *which* ones depends on the order the walk reached them in -- so two
+    caps over one tree are two scopes rather than one scope at two sizes, and an answer
+    cached across the change is wrong in a way no field of the answer reveals.
+
     Built from the options the adapter opened with rather than from `ScanScope`, and that
     is deliberate. The engine reports its own `hidden_fingerprint` -- a digest it uses as a
     cache key -- while the consumer's encoding wants the *allowlist*, as a compact
@@ -149,6 +154,7 @@ def scope_fingerprint(options: fdu.ScanOptions) -> str:
                 sorted(options.hidden_allow), ensure_ascii=True, separators=(",", ":")
             ),
             "max_depth": "null" if options.max_depth is None else str(options.max_depth),
+            "max_files": "null" if options.max_files is None else str(options.max_files),
             "stay_on_filesystem": "true" if options.one_filesystem else "false",
         }
     )

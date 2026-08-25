@@ -235,6 +235,18 @@ pub struct ScanScope {
     /// is what stops it being tried. See
     /// [`HiddenPolicy`](crate::admission::HiddenPolicy).
     pub hidden_fingerprint: u64,
+    /// Files the walk may observe before it stops descending, or unlimited when absent.
+    ///
+    /// Scope rather than a projection limit, and the distinction is the whole point: a
+    /// bound on an *answer* still reads the tree, so it saves serialization and nothing
+    /// else. This one stops the discovery, which is the cost a caller sets a cap to avoid.
+    ///
+    /// Here rather than beside the operational knobs because it changes what an index
+    /// *contains*: a snapshot recorded under one cap holds a different set of entries than
+    /// one recorded under another, and neither is a subset a reader could correct for --
+    /// which entries the cap admitted is decided by the order the walk happened to reach
+    /// them in.
+    pub max_files: Option<u64>,
 }
 
 /// Where a value came from, so a consumer can trade speed for certainty knowingly.
@@ -326,8 +338,9 @@ pub enum CoverageReason {
     Building,
     /// A cap stopped the walk before it finished.
     ///
-    /// **Not reachable yet**: fdu has no walk budget. Declared because the contract has
-    /// it and a bounded walk is a plausible future scope knob.
+    /// Produced by [`ScanScope::max_files`]: the walk stopped descending, so entries in
+    /// scope were never read. Distinct from `Inaccessible` in that nothing failed and
+    /// everything reported is correct -- what is missing was never looked at.
     Budget,
     /// A caller stopped the walk.
     ///
@@ -986,8 +999,9 @@ pub enum IssueKind {
     FilesystemBoundary,
     /// A limit stopped the operation before it finished.
     ///
-    /// **Not reachable yet.** fdu has no walk budget; the entry exists so the vocabulary
-    /// is the consumer contract's rather than a subset of it.
+    /// Carries no path, because the limit is a property of the walk rather than of any
+    /// one entry: the paths it declined to read are exactly the ones it never discovered.
+    /// [`CoverageReason::Budget`] is the same fact on the coverage axis.
     ResourceStop,
     /// The provider's own observation of the tree had a hole, which it then covered.
     ///
@@ -1103,12 +1117,18 @@ pub enum Error {
     UnsupportedScanConfig(&'static str),
 
     /// Requested scan semantics differ from the index's immutable scope.
+    ///
+    /// Both scopes are boxed. A `Result` carries its error variant by value on every
+    /// return in the crate, so the largest variant sets the size of every `Result` fdu
+    /// returns -- and two inline `ScanScope`s made this variant alone larger than the
+    /// whole rest of the enum. Boxing costs one allocation on a path that is already
+    /// giving up.
     #[error("scan scope mismatch: index has {indexed:?}, requested {requested:?}")]
     ScanScopeMismatch {
         /// Scope represented by the index.
-        indexed: ScanScope,
+        indexed: Box<ScanScope>,
         /// Scope requested by the operation.
-        requested: ScanScope,
+        requested: Box<ScanScope>,
     },
 
     /// A requested relative subtree lies beyond the configured scan boundary.
@@ -1116,8 +1136,8 @@ pub enum Error {
     SubtreeOutsideScanScope {
         /// Rejected relative path.
         path: PathBuf,
-        /// Scope that excludes the path.
-        scope: ScanScope,
+        /// Scope that excludes the path. Boxed for the reason above.
+        scope: Box<ScanScope>,
     },
 
     /// A writer panicked while owning the shared index lock.

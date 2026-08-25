@@ -986,6 +986,17 @@ from emitting millions of provenance-only entry changes into the feed it serves.
   them to both surfaces.
   Charged against the journal’s operation budget rather than being free, because a free
   transition is a retention bound a producer can walk past
+- [x] A native walk budget as scope (`fdu-97dd`), stopping discovery at the cap and
+  reporting partial coverage with reason `budget` plus a typed resource-stop issue.
+  The consuming contract fingerprints the cap and its reference provider enforces it, so
+  an engine without one returns a different inventory under the same fingerprint.
+  The bound has to stop the walk rather than truncate an answer: a projection limit
+  leaves the tree read anyway, which is the cost the cap exists to avoid.
+  This is what finally makes `CoverageReason::Budget` reachable
+- [ ] A batched scoped refresh (`fdu-nlhl`): a bounded set of observed paths, the union
+  reconciled under one guard, one commit, one cursor, and per-path acceptance beside the
+  counts. Iterating a single-path refresh is not equivalent -- N calls are N commits and
+  N cursors, so a receipt covering them describes a range rather than a boundary
 - [x] The terminal engine state on every batch and delta range (`fdu-vfx7`), captured
   inside the same guarded read as the journal slice and the cursor.
   Transitions are interval events and say what moved; this says where it ended up, which
