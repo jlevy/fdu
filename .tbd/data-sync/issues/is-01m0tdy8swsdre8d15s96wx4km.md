@@ -3,9 +3,9 @@ type: is
 id: is-01m0tdy8swsdre8d15s96wx4km
 title: Watch invalidation batches lose required dirty information
 kind: bug
-status: open
+status: closed
 priority: 1
-version: 18
+version: 20
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 labels:
   - pr47-review
@@ -17,9 +17,9 @@ dependencies:
     target: is-01m0prhqd27m471dn47yt973k0
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T17:43:53.915Z
-updated_at: 2026-08-25T07:18:51.773Z
-closed_at: null
-close_reason: null
+updated_at: 2026-08-25T10:26:52.622Z
+closed_at: 2026-08-25T10:26:52.622Z
+close_reason: "Last two items shipped: the invalidations-only interest mode (no entry row built, every invalidation signal still derived in Rust) and full-boundary batch work (the binding conversion and model phases measured, composed from phases rather than end to end so the interval never becomes cost). Work's binding phases are now exact-or-absent rather than defaulting to zero, and an idle step reports no work at all. Engine and Python tests, mutation-checked twice."
 resolution: null
 duplicate_of: null
 ---
@@ -153,3 +153,50 @@ STILL OPEN on this bead (FDU47-A3): the invalidations-only interest mode, so the
 derives bounded dirty paths, query kinds, issues and state in Rust without materializing
 entry rows; and instrumenting the public watch conversion, where `Batch.work` stops before
 binding payload, conversion and model construction.
+
+
+
+FDU47-A3 SHIPPED, which closes this bead's last two items.
+
+**The invalidations-only interest mode.** `Interest::{Rows, Invalidations}`, set with
+`Session::with_interest` and reachable as `WatchOptions(interest=...)`. Under
+`Invalidations` no entry row is built at all: `next_batch` returns before the tag lookup,
+the path clone and the row construction, so nothing is materialised for the binding to
+convert. A `git checkout` moving fifty thousand files is fifty thousand of each, for a
+value a re-read-on-dirty consumer never looks at.
+
+Everything a consumer acts on is still derived in Rust: `dirty`, the bounded
+`dirty_rollups`, `dirty_queries`, `all_dirty`, `reset`, `issues`, the terminal `state`, and
+the cursor. Deriving those needs the operations, not their rows. The mode still closes its
+own wall time, so it does not report its assembly as free, and `rows`/`name_bytes` stay at
+zero as a *measured* zero.
+
+The enum is closed on purpose: a capability set negotiated field by field becomes a
+branching axis through the whole assembly, and these two are the modes a consumer has.
+
+**Full-boundary batch work.** `Batch.work` stopped when `next_batch` returned, which is
+before any of the batch becomes a Python object -- so the phase that scales with the size
+of the mutation was the one phase nobody could see. The binding now weighs the conversion
+the way a bundled read does (`payload::take()` for bytes, a timer for the span), and the
+Python iterator closes the model-building phase.
+
+Composed from the phases, never taken end to end, and that is the one difference between
+measuring a batch and measuring a read: `next()` blocks for up to the interval, so a wall
+clock around it would report an idle tree's patience as the cost of the batch that
+eventually arrived. The first draft did exactly that and
+`check_a_batch_reports_what_it_cost_and_not_what_it_waited` caught it.
+
+**Exact-or-absent, applied to the binding phases.** `Work.native_ns`, `binding_bytes`,
+`conversion_ns` and `model_ns` were `int = 0`, and `_work` defaulted a missing field to
+zero -- so "this phase took no time" and "nobody measured this phase" were the same value,
+in the fields an embedder uses to compare engines. They are now `int | None`, following the
+rule `cpu_ns` already stated and the consuming contract already applies to CPU time. An
+idle step's `work` is `None` outright, which the model had always declared and the binding
+never delivered.
+
+Tests: `watch_session_integration.rs:an_invalidations_only_feed_carries_no_rows_and_loses_no_signal`
+runs both modes over one tree and requires the second to build no rows *and* to agree with
+the first on every signal -- an empty feed would satisfy the first half and none of the
+second. Plus
+`public_smoke.py:check_an_invalidations_feed_builds_no_rows_and_charges_the_whole_crossing`.
+Mutation-checked: making the mode a no-op, and leaving the conversion span unmeasured.
