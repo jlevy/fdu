@@ -3,9 +3,9 @@ type: is
 id: is-01m0tdy9ceep2byvbtyvwc2vky
 title: Release the GIL and measure the full Python read boundary
 kind: task
-status: open
+status: closed
 priority: 1
-version: 8
+version: 9
 spec_path: docs/project/specs/active/plan-2026-08-23-fdu-interactive-client-integration.md
 labels:
   - pr47-review
@@ -16,9 +16,74 @@ dependencies:
     target: is-01m0prhqd27m471dn47yt973k0
 parent_id: is-01m0prgbradma67z3j1wfyh8r7
 created_at: 2026-08-24T17:43:54.508Z
-updated_at: 2026-08-25T00:49:15.302Z
-closed_at: null
-close_reason: null
+updated_at: 2026-08-25T01:31:41.390Z
+closed_at: 2026-08-25T01:31:41.390Z
+close_reason: |
+  Shipped. `make check` green, parity holds (23 recorded deviations matched).
+
+  All three findings from the 715f748 review.
+
+  FINDING 1, THE PHASES DID NOT DECOMPOSE. `model_ns` was `wall - native`, which looked
+  equivalent to timing the model phase and was not: it swallowed the extension's own
+  `conversion_ns` too, so summing the three double-counted a span already reported. It is
+  now timed directly, from the instant the extension hands the dict back. `wall_ns` is the
+  public call end to end, and `wall_ns >= native_ns + conversion_ns + model_ns` is asserted
+  rather than assumed.
+
+  The shared type was the other half, and it was the worse half. `Work` described a whole
+  public call while the same type carried each projection's engine-local span, so `wall_ns`
+  meant two things and the smaller silently answered questions asked about the larger. New
+  `ProjectionCost` -- entries, dirs, rows, tally rows, name bytes, and `engine_ns`. No
+  `lock_wait_ns`: the projections waited together, so attributing one wait to one of them
+  would be inventing a number, and the type now says that instead of a zero saying it.
+
+  FINDING 2, THE PAYLOAD RULE WAS NOT APPLIED EXHAUSTIVELY -- and the fix is structural
+  rather than a list of patches. Every emission on the read path now goes through
+  `put_scalar` / `put_text` / `put_nested`, which charge before they set. The old shape --
+  `set_item` calls followed by a separate `payload::scalars(n)` -- is an unenforced
+  convention, and it drifted exactly the way those do: a count that had been six was still
+  six when the shape had gone to four, and to seven. A `Charge` impl on `Option` fixes the
+  null family, which the stated rule had always covered and the code had charged zero for.
+
+  THE TEST IS AN ORACLE, NOT AN EXPECTATION. A second implementation of the documented rule,
+  in Python, walks the native dict and must agree with what the binding charged. A
+  per-family expected figure only covers the family somebody wrote it for, which is how this
+  drifted twice. Eleven request shapes plus an analysed index, chosen so that every branch is
+  reached: present and absent remainders, present and absent section bounds, a bounded tree,
+  an absent extension, an unclassified row, an absent roll-up, and the metric families --
+  which exist only on an analysed index, so a shape list over a plain one never reaches
+  `metric_row_dict` at all.
+
+  It found a live defect while being written: three `bound` nulls, one per bounded section,
+  emitted and uncharged. Mutation-checked against an over-charge as well -- restoring the
+  four-fields-charged-as-six that shipped here fails it. The first attempt at that mutation
+  *passed*, because no shape produced an extension remainder; that gap is why the shape list
+  is what it is.
+
+  Two carve-outs, stated because a number nobody can reproduce is not evidence. `work` and
+  `projections` are telemetry about the call rather than part of the answer. Keys of maps
+  keyed by data -- `by_extension`, `by_group`, and the three detection maps -- are payload;
+  schema keys are not, since counting them would make the figure grow with the schema.
+
+  FINDING 3, THE GIL TEST IS NOW FORCED RATHER THAN TIMED. CI disproved the threshold
+  version on macOS/3.14 exactly as predicted: 0.0070s against a required 0.0080s, failing
+  for being right. Two intermediate versions are worth recording as dead ends. Deriving the
+  probe delay from a measured warm baseline still left a statistical margin. Reading the
+  sampler's cadence to detect "too coarse to measure" was worse than useless when measured
+  during the read -- a held GIL slows the sampler, so it reported the instrument as too
+  coarse for the one condition the test exists to catch.
+
+  What works has no timing in it. A contending thread busy-loops, yielding each iteration;
+  `sys.setswitchinterval(5.0)` stops the interpreter handing the GIL away *voluntarily*, so
+  between the two `len()` calls the main thread cannot yield -- while a GIL the native read
+  genuinely releases is handed over immediately, interval or not. The count separates the
+  cases exactly, at any speed. Mutation-checked: removing `py.detach` yields **0** turns
+  during a call that visited 20,021 entries.
+
+  Also fixed: `_native.pyi` had never carried `read`'s report parameters, and had `views`,
+  `depth`, and `limit_rows` typed as the wrong scalar kinds.
+
+  CPU stays `None`, and `py.detach` was correct as reviewed.
 resolution: null
 duplicate_of: null
 ---
